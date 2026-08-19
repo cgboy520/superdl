@@ -259,7 +259,7 @@ class TestFailureModes:
 
 class TestRelease:
     async def test_release_flow_and_port_reuse(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await _provision_running(client, sm, fake)
         # 关机
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -283,7 +283,7 @@ class TestRelease:
         assert events[-1]["event_metadata"]["disk_wipe"] == "blkdiscard"
 
         # 端口回池并被下一实例复用
-        _, _, key2 = await create_user_with_key(client, "13900000031")
+        _, _, _key2 = await create_user_with_key(client, "13900000031")
         async with sm() as session:
             row = (
                 await session.execute(select(PortAllocation).where(PortAllocation.port == port))

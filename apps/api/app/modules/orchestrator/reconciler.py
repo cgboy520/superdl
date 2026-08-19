@@ -124,19 +124,18 @@ async def _reconcile_instances(
                         )
                         counts["to_stopped"] += 1
 
-                elif instance.status == sm_def.RELEASING:
-                    if not st.exists:
-                        await transition(
-                            session,
-                            instance,
-                            sm_def.RELEASED,
-                            reason="released",
-                            actor="system",
-                            metadata={"disk_wipe": "blkdiscard"},
-                        )
-                        await free_port(session, instance.id)
-                        await detach_for_instance(session, instance.id)
-                        counts["to_released"] += 1
+                elif instance.status == sm_def.RELEASING and not st.exists:
+                    await transition(
+                        session,
+                        instance,
+                        sm_def.RELEASED,
+                        reason="released",
+                        actor="system",
+                        metadata={"disk_wipe": "blkdiscard"},
+                    )
+                    await free_port(session, instance.id)
+                    await detach_for_instance(session, instance.id)
+                    counts["to_released"] += 1
 
                 await session.commit()
         except Exception:

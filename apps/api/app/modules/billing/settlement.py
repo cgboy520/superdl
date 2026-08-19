@@ -184,34 +184,36 @@ async def settle_previous_hour(
 
     window_start, window_end = prev_hour_range(at or now_utc())
     settled = 0
-    async with sm() as lock_session:
-        async with try_advisory_lock(lock_session, LockKey.HOURLY_SETTLEMENT) as got:
-            if not got:
-                return 0
-            async with sm() as session:
-                instances = await orchestrator_service.billing_candidates(
-                    session, window_start, window_end
-                )
-            for inst_id, user_id, price, gpu_count in instances:
-                # 每实例独立事务:单个失败不拖垮整轮
-                try:
-                    async with sm() as session:
-                        charged = await settle_instance_window(
-                            session,
-                            instance_id=inst_id,
-                            user_id=user_id,
-                            unit_price=price,
-                            gpu_count=gpu_count,
-                            window_start=window_start,
-                            window_end=window_end,
-                            source="hourly",
-                        )
-                        await session.commit()
-                        if charged > 0:
-                            settled += 1
-                except Exception:
-                    logger.exception("hourly_settlement_failed", instance_id=inst_id)
-                    SETTLEMENT_FAILED_TOTAL.labels(kind="hourly").inc()
+    async with (
+        sm() as lock_session,
+        try_advisory_lock(lock_session, LockKey.HOURLY_SETTLEMENT) as got,
+    ):
+        if not got:
+            return 0
+        async with sm() as session:
+            instances = await orchestrator_service.billing_candidates(
+                session, window_start, window_end
+            )
+        for inst_id, user_id, price, gpu_count in instances:
+            # 每实例独立事务:单个失败不拖垮整轮
+            try:
+                async with sm() as session:
+                    charged = await settle_instance_window(
+                        session,
+                        instance_id=inst_id,
+                        user_id=user_id,
+                        unit_price=price,
+                        gpu_count=gpu_count,
+                        window_start=window_start,
+                        window_end=window_end,
+                        source="hourly",
+                    )
+                    await session.commit()
+                    if charged > 0:
+                        settled += 1
+            except Exception:
+                logger.exception("hourly_settlement_failed", instance_id=inst_id)
+                SETTLEMENT_FAILED_TOTAL.labels(kind="hourly").inc()
     if settled:
         logger.info("hourly_settlement_done", hour=window_start.isoformat(), settled=settled)
     return settled
@@ -233,53 +235,55 @@ async def settle_daily_disks(
     now = at or now_utc()
     day = day_floor(now) - timedelta(days=1)  # 结算昨日
     settled = 0
-    async with sm() as lock_session:
-        async with try_advisory_lock(lock_session, LockKey.DAILY_DISK_SETTLEMENT) as got:
-            if not got:
-                return 0
-            async with sm() as session:
-                disks = await orchestrator_service.billable_disks(session)
-                disk_rows = [
-                    (d.id, d.user_id, d.price_gb_month, d.size_gb, d.created_at) for d in disks
-                ]
-            for disk_id, user_id, price, size_gb, created_at in disk_rows:
-                if ensure_utc(created_at) >= day + timedelta(days=1):
-                    continue  # 当日结算窗口之后创建的盘不出账
-                try:
-                    async with sm() as session:
-                        amount = as_amount(as_price(price) * Decimal(size_gb) / Decimal(30))
-                        inserted = (
-                            await session.execute(
-                                pg_insert(BillDailyDisk)
-                                .values(
-                                    disk_id=disk_id,
-                                    user_id=user_id,
-                                    day=day,
-                                    size_gb=size_gb,
-                                    unit_price=price,
-                                    amount=amount,
-                                )
-                                .on_conflict_do_nothing(index_elements=["disk_id", "day"])
-                                .returning(BillDailyDisk.id)
+    async with (
+        sm() as lock_session,
+        try_advisory_lock(lock_session, LockKey.DAILY_DISK_SETTLEMENT) as got,
+    ):
+        if not got:
+            return 0
+        async with sm() as session:
+            disks = await orchestrator_service.billable_disks(session)
+            disk_rows = [
+                (d.id, d.user_id, d.price_gb_month, d.size_gb, d.created_at) for d in disks
+            ]
+        for disk_id, user_id, price, size_gb, created_at in disk_rows:
+            if ensure_utc(created_at) >= day + timedelta(days=1):
+                continue  # 当日结算窗口之后创建的盘不出账
+            try:
+                async with sm() as session:
+                    amount = as_amount(as_price(price) * Decimal(size_gb) / Decimal(30))
+                    inserted = (
+                        await session.execute(
+                            pg_insert(BillDailyDisk)
+                            .values(
+                                disk_id=disk_id,
+                                user_id=user_id,
+                                day=day,
+                                size_gb=size_gb,
+                                unit_price=price,
+                                amount=amount,
                             )
-                        ).scalar_one_or_none()
-                        if inserted is None:
-                            continue  # 已结算(幂等)
-                        if amount > 0:
-                            await wallet.debit(
-                                session,
-                                user_id,
-                                amount,
-                                type_="consume",
-                                ref_type="bill_daily_disk",
-                                ref_id=str(inserted),
-                                remark="数据盘日常费用",
-                            )
-                        await session.commit()
-                        settled += 1
-                except Exception:
-                    logger.exception("daily_disk_settlement_failed", disk_id=disk_id)
-                    SETTLEMENT_FAILED_TOTAL.labels(kind="daily_disk").inc()
+                            .on_conflict_do_nothing(index_elements=["disk_id", "day"])
+                            .returning(BillDailyDisk.id)
+                        )
+                    ).scalar_one_or_none()
+                    if inserted is None:
+                        continue  # 已结算(幂等)
+                    if amount > 0:
+                        await wallet.debit(
+                            session,
+                            user_id,
+                            amount,
+                            type_="consume",
+                            ref_type="bill_daily_disk",
+                            ref_id=str(inserted),
+                            remark="数据盘日常费用",
+                        )
+                    await session.commit()
+                    settled += 1
+            except Exception:
+                logger.exception("daily_disk_settlement_failed", disk_id=disk_id)
+                SETTLEMENT_FAILED_TOTAL.labels(kind="daily_disk").inc()
     if settled:
         logger.info("daily_disk_settlement_done", day=day.isoformat(), settled=settled)
     return settled

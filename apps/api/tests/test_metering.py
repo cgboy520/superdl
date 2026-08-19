@@ -90,7 +90,7 @@ class TestMetricsProxy:
 
 class TestAggregation:
     async def test_aggregate_idempotent(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)
         prom.set_client(prom_mock([(1e9, 50.0), (1e9 + 60, 70.0), (1e9 + 120, 90.0)]))
         at = datetime.now(UTC) + timedelta(hours=1)
         assert await aggregate_previous_hour(sm, at=at) == 1

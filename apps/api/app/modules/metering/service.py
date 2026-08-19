@@ -83,60 +83,62 @@ async def aggregate_previous_hour(
 
     window_start, window_end = prev_hour_range(at or now_utc())
     written = 0
-    async with sm() as lock_session:
-        async with try_advisory_lock(lock_session, LockKey.USAGE_AGGREGATION) as got:
-            if not got:
-                return 0
-            async with sm() as session:
-                candidates = await orchestrator_service.billing_candidates(
-                    session, window_start, window_end
+    async with (
+        sm() as lock_session,
+        try_advisory_lock(lock_session, LockKey.USAGE_AGGREGATION) as got,
+    ):
+        if not got:
+            return 0
+        async with sm() as session:
+            candidates = await orchestrator_service.billing_candidates(
+                session, window_start, window_end
+            )
+            instances = await orchestrator_service.admin_list_instances(session)
+            loc = {i.id: (i.k8s_namespace, i.uuid) for i in instances}
+        for inst_id, _user_id, _price, _gpus in candidates:
+            ns_pod = loc.get(inst_id)
+            if not ns_pod or not ns_pod[0]:
+                continue
+            try:
+                values = await prom.query_range(
+                    "gpu_util",
+                    ns_pod[0],
+                    ns_pod[1],
+                    start=window_start.timestamp(),
+                    end=window_end.timestamp(),
+                    step="60s",
                 )
-                instances = await orchestrator_service.admin_list_instances(session)
-                loc = {i.id: (i.k8s_namespace, i.uuid) for i in instances}
-            for inst_id, _user_id, _price, _gpus in candidates:
-                ns_pod = loc.get(inst_id)
-                if not ns_pod or not ns_pod[0]:
-                    continue
-                try:
-                    values = await prom.query_range(
-                        "gpu_util",
-                        ns_pod[0],
-                        ns_pod[1],
-                        start=window_start.timestamp(),
-                        end=window_end.timestamp(),
-                        step="60s",
+                vram = await prom.query_range(
+                    "vram_used_mb",
+                    ns_pod[0],
+                    ns_pod[1],
+                    start=window_start.timestamp(),
+                    end=window_end.timestamp(),
+                    step="60s",
+                )
+            except prom.PrometheusUnavailable:
+                logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
+                return written
+            utils = [v for _, v in values]
+            async with sm() as session:
+                await session.execute(
+                    pg_insert(UsageHourly)
+                    .values(
+                        instance_id=inst_id,
+                        hour_start=window_start,
+                        gpu_util_avg=(sum(utils) / len(utils)) if utils else None,
+                        # p95 最近秩法:ceil(0.95n)-1
+                        gpu_util_p95=(
+                            sorted(utils)[max(0, math.ceil(len(utils) * 0.95) - 1)]
+                            if utils
+                            else None
+                        ),
+                        vram_max_mb=int(max((v for _, v in vram), default=0)) or None,
                     )
-                    vram = await prom.query_range(
-                        "vram_used_mb",
-                        ns_pod[0],
-                        ns_pod[1],
-                        start=window_start.timestamp(),
-                        end=window_end.timestamp(),
-                        step="60s",
-                    )
-                except prom.PrometheusUnavailable:
-                    logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
-                    return written
-                utils = [v for _, v in values]
-                async with sm() as session:
-                    await session.execute(
-                        pg_insert(UsageHourly)
-                        .values(
-                            instance_id=inst_id,
-                            hour_start=window_start,
-                            gpu_util_avg=(sum(utils) / len(utils)) if utils else None,
-                            # p95 最近秩法:ceil(0.95n)-1
-                            gpu_util_p95=(
-                                sorted(utils)[max(0, math.ceil(len(utils) * 0.95) - 1)]
-                                if utils
-                                else None
-                            ),
-                            vram_max_mb=int(max((v for _, v in vram), default=0)) or None,
-                        )
-                        .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
-                    )
-                    await session.commit()
-                    written += 1
+                    .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
+                )
+                await session.commit()
+                written += 1
     return written
 
 
@@ -196,3 +198,23 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
         "diff_pct": round(total_diff_pct, 1),
         "outliers": sorted(diffs, key=lambda d: -d["diff_pct"]),
     }
+
+
+async def avg_gpu_util_last_24h(session: AsyncSession) -> float | None:
+    """近 24h 全池 GPU 利用率均值(超卖报表用;数据缺失返回 None)。"""
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from app.core.timeutil import now_utc
+    from app.modules.metering.models import UsageHourly
+
+    since = now_utc() - timedelta(hours=24)
+    value = (
+        await session.execute(
+            select(func.avg(UsageHourly.gpu_util_avg)).where(
+                UsageHourly.hour_start >= since, UsageHourly.gpu_util_avg.is_not(None)
+            )
+        )
+    ).scalar_one()
+    return float(value) if value is not None else None

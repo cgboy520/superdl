@@ -39,7 +39,7 @@ AM_PAYLOAD = {
 
 class TestBalanceWarnNotification:
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
         from decimal import Decimal
 
         async with sm() as session:
@@ -56,7 +56,7 @@ class TestBalanceWarnNotification:
         assert "小时" in warns[0]["content"]
 
     async def test_read_flow(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
         from decimal import Decimal
 
         async with sm() as session:
@@ -80,7 +80,7 @@ class TestBalanceWarnNotification:
 
 class TestAlertmanagerWebhook:
     async def test_ingest_and_dedup(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)  # user_id=1
+        headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # user_id=1
         resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
         assert resp.status_code == 200
         assert resp.json()["ingested"] == 1
@@ -113,7 +113,7 @@ class TestAlertmanagerWebhook:
         assert resp.status_code == 200
 
     async def test_arrears_notice_recorded(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(session, user_id, balance, type_="adjust")

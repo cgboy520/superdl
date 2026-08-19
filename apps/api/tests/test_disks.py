@@ -188,7 +188,7 @@ class TestDiskArrearsChain:
     async def test_grace_frozen_wipe_and_recovery(self, client, sm, fake):
         headers, user_id, _key = await create_user_with_key(client, "13500000030")
         await fund_wallet(sm, user_id)
-        disk = await create_disk(client, headers)
+        await create_disk(client, headers)
         # 清空余额 → grace
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)

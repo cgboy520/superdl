@@ -9,23 +9,23 @@ from app.modules.catalog.models import PlatformImage, Sku
 
 
 def make_sku(**overrides) -> Sku:
-    defaults = dict(
-        name="RTX 4090 · 共享标准",
-        gpu_model="RTX4090",
-        tier="shared_std",
-        gpu_cores_pct=50,
-        vram_gb=8,
-        oversell_cores=Decimal("1.50"),
-        oversell_vram=Decimal("1.10"),
-        pool_label="hami",
-        vcpu=8,
-        mem_gb=32,
-        disk_gb=100,
-        price_hourly=Decimal("1.6800"),
-        max_gpus_per_instance=1,
-        cuda_max="12.8",
-        status="on",
-    )
+    defaults = {
+        "name": "RTX 4090 · 共享标准",
+        "gpu_model": "RTX4090",
+        "tier": "shared_std",
+        "gpu_cores_pct": 50,
+        "vram_gb": 8,
+        "oversell_cores": Decimal("1.50"),
+        "oversell_vram": Decimal("1.10"),
+        "pool_label": "hami",
+        "vcpu": 8,
+        "mem_gb": 32,
+        "disk_gb": 100,
+        "price_hourly": Decimal("1.6800"),
+        "max_gpus_per_instance": 1,
+        "cuda_max": "12.8",
+        "status": "on",
+    }
     defaults.update(overrides)
     return Sku(**defaults)
 

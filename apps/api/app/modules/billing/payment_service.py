@@ -139,43 +139,43 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
     from app.core.locks import LockKey, try_advisory_lock
 
     credited = 0
-    async with sm() as lock_session:
-        async with try_advisory_lock(lock_session, LockKey.PAYMENT_RECONCILE) as got:
-            if not got:
-                return 0
-            async with sm() as session:
-                orders = list(
-                    (
-                        await session.execute(
-                            select(Order)
-                            .where(
-                                Order.status == "pending",
-                                Order.created_at < now_utc() - timedelta(seconds=60),
-                            )
-                            .order_by(Order.id)
-                            .limit(50)
+    async with (
+        sm() as lock_session,
+        try_advisory_lock(lock_session, LockKey.PAYMENT_RECONCILE) as got,
+    ):
+        if not got:
+            return 0
+        async with sm() as session:
+            orders = list(
+                (
+                    await session.execute(
+                        select(Order)
+                        .where(
+                            Order.status == "pending",
+                            Order.created_at < now_utc() - timedelta(seconds=60),
                         )
-                    ).scalars()
-                )
-            for order in orders:
-                try:
-                    channel = get_channel(order.channel)
-                    result = await channel.query_order(order)
-                except AppError as exc:
-                    logger.warning("order_query_failed", order_no=order.order_no, error=exc.message)
-                    continue
-                if result.status == "paid" and result.channel_txn_id and result.amount is not None:
-                    async with sm() as session:
-                        await handle_callback(
-                            session,
-                            order.channel,
-                            CallbackResult(
-                                order.order_no, result.channel_txn_id, result.amount, True
-                            ),
-                        )
-                    credited += 1
-                    logger.info("lost_callback_recovered", order_no=order.order_no)
-                    PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL.inc()
+                        .order_by(Order.id)
+                        .limit(50)
+                    )
+                ).scalars()
+            )
+        for order in orders:
+            try:
+                channel = get_channel(order.channel)
+                result = await channel.query_order(order)
+            except AppError as exc:
+                logger.warning("order_query_failed", order_no=order.order_no, error=exc.message)
+                continue
+            if result.status == "paid" and result.channel_txn_id and result.amount is not None:
+                async with sm() as session:
+                    await handle_callback(
+                        session,
+                        order.channel,
+                        CallbackResult(order.order_no, result.channel_txn_id, result.amount, True),
+                    )
+                credited += 1
+                logger.info("lost_callback_recovered", order_no=order.order_no)
+                PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL.inc()
     return credited
 
 

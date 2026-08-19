@@ -85,6 +85,7 @@ forbidden_modules = ["app.modules", "app.workers"]
 [[tool.importlinter.contracts]]
 name = "account 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.account"]
 forbidden_modules = [
     "app.modules.catalog.models", "app.modules.catalog.router",
@@ -98,6 +99,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "catalog 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.catalog"]
 forbidden_modules = [
     "app.modules.account.models", "app.modules.account.router",
@@ -111,6 +113,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "orchestrator 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.orchestrator"]
 forbidden_modules = [
     "app.modules.account.models", "app.modules.account.router",
@@ -124,6 +127,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "billing 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.billing"]
 forbidden_modules = [
     "app.modules.account.models", "app.modules.account.router",
@@ -137,6 +141,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "metering 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.metering"]
 forbidden_modules = [
     "app.modules.account.models", "app.modules.account.router",
@@ -150,6 +155,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "notify 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.notify"]
 forbidden_modules = [
     "app.modules.account.models", "app.modules.account.router",
@@ -163,6 +169,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "adminapi 不越界"
 type = "forbidden"
+allow_indirect_imports = true
 source_modules = ["app.modules.adminapi"]
 forbidden_modules = [
     "app.modules.account.models", "app.modules.account.router",

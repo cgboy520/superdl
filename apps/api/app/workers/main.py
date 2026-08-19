@@ -28,10 +28,8 @@ _stop = asyncio.Event()
 
 
 def _touch_heartbeat() -> None:
-    try:
+    with contextlib.suppress(OSError):  # 只读文件系统等场景放弃心跳
         HEARTBEAT_FILE.write_text(now_utc().isoformat())
-    except OSError:  # pragma: no cover - 只读文件系统等
-        pass
 
 
 async def outbox_loop(worker_id: str) -> None:
@@ -63,7 +61,9 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
             "DELETE FROM outbox_tasks WHERE status IN ('done', 'discarded') "
             "AND updated_at < now() - interval '7 days'"
         ),
-        "audit_log": f"DELETE FROM audit_log WHERE created_at < now() - interval '{retention} days'",
+        "audit_log": (
+            f"DELETE FROM audit_log WHERE created_at < now() - interval '{retention} days'"
+        ),
     }
     counts: dict[str, int] = {}
     async with sm() as session:

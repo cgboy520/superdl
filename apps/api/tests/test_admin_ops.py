@@ -33,7 +33,7 @@ async def second_admin_headers(
 
 class TestTenants:
     async def test_list_and_freeze(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="ops")
 
         tenants = (await client.get("/api/admin/v1/tenants", headers=ah)).json()
@@ -58,7 +58,7 @@ class TestTenants:
 
 class TestAdjustments:
     async def test_dual_review_flow(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
         finance_a = await second_admin_headers(sm, client, "fin-a")
         finance_b = await second_admin_headers(sm, client, "fin-b")
 
@@ -98,7 +98,7 @@ class TestAdjustments:
         assert resp.status_code == 409
 
     async def test_negative_adjustment_and_reject(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
         fin_a = await second_admin_headers(sm, client, "fin-c")
         fin_b = await second_admin_headers(sm, client, "fin-d")
 
@@ -135,7 +135,7 @@ class TestNodesAndReports:
         assert {"kata", "hami", "mig"} <= pools
 
     async def test_oversell_report(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)  # hami 池 50% × 1
+        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池 50% × 1
         ah = await admin_headers(sm, client, role="finance")
         report = (await client.get("/api/admin/v1/reports/oversell", headers=ah)).json()
         hami = next(r for r in report if r["pool"] == "hami")
@@ -144,7 +144,7 @@ class TestNodesAndReports:
         assert hami["oversell_ratio"] == round(0.5 / 32, 3)
 
     async def test_audit_search(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="admin")
         rows = (await client.get("/api/admin/v1/audit", headers=ah)).json()
         assert any(r["action"] == "POST /api/v1/instances" for r in rows)

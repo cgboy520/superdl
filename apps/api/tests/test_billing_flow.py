@@ -56,7 +56,7 @@ class TestTailBilling:
     async def test_stop_charges_tail_in_same_transaction(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], fake
     ):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await _provision_running(client, sm, fake)
         expected = await backdate_running_event(sm, uuid, 30)
 
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -75,7 +75,7 @@ class TestTailBilling:
 
     async def test_pod_lost_also_charges_tail(self, client, sm, fake):
         """故障停费:running→failed 同样是计费边,尾账照出。"""
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, uuid, user_id = await _provision_running(client, sm, fake)
         expected = await backdate_running_event(sm, uuid, 15)
         fake.kill_pod(f"tenant-{user_id}", uuid)
         await reconcile_once(sm)
@@ -169,7 +169,7 @@ class TestArrearsChain:
 
 class TestWalletApi:
     async def test_wallet_and_ledger_endpoints(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, _user_id = await _provision_running(client, sm, fake)
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "100.00"
         ledger = (await client.get("/api/v1/wallet/ledger", headers=headers)).json()
@@ -188,7 +188,7 @@ class TestWalletApi:
 
 class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             for i in range(5):
                 await wallet.credit(

@@ -197,28 +197,12 @@ async def admin_list_nodes(session: DbSession) -> list[dict]:
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])
 async def oversell_report(session: DbSession) -> list[dict]:
     """镇店报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。"""
-    from sqlalchemy import func as sa_func
-    from sqlalchemy import select as sa_select
-
-    from app.core.timeutil import now_utc
-    from app.modules.metering.models import UsageHourly
-
     nodes = await orchestrator_service.cluster_nodes()
     physical: dict[str, int] = {}
     for n in nodes:
         physical[n.pool_label] = physical.get(n.pool_label, 0) + n.gpu_total
     sold = await orchestrator_service.running_gpu_share_by_pool(session)
-
-    from datetime import timedelta
-
-    since = now_utc() - timedelta(hours=24)
-    util_avg = (
-        await session.execute(
-            sa_select(sa_func.avg(UsageHourly.gpu_util_avg)).where(
-                UsageHourly.hour_start >= since, UsageHourly.gpu_util_avg.is_not(None)
-            )
-        )
-    ).scalar_one()
+    util_avg = await metering_service.avg_gpu_util_last_24h(session)
 
     out = []
     for pool, total in sorted(physical.items()):
@@ -229,7 +213,7 @@ async def oversell_report(session: DbSession) -> list[dict]:
                 "physical_gpus": total,
                 "sold_share": sold_share,
                 "oversell_ratio": round(sold_share / total, 3) if total else 0.0,
-                "util_avg_24h": round(float(util_avg), 1) if util_avg is not None else None,
+                "util_avg_24h": round(util_avg, 1) if util_avg is not None else None,
             }
         )
     return out

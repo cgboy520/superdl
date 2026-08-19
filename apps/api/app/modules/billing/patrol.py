@@ -29,13 +29,15 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         "unfrozen": 0,
         "disks": 0,
     }
-    async with sm() as lock_session:
-        async with try_advisory_lock(lock_session, LockKey.BALANCE_PATROL) as got:
-            if not got:
-                return counts
-            await _patrol_running(sm, counts)
-            await _patrol_frozen_and_arrears_stopped(sm, counts)
-            await _patrol_disks(sm, counts)
+    async with (
+        sm() as lock_session,
+        try_advisory_lock(lock_session, LockKey.BALANCE_PATROL) as got,
+    ):
+        if not got:
+            return counts
+        await _patrol_running(sm, counts)
+        await _patrol_frozen_and_arrears_stopped(sm, counts)
+        await _patrol_disks(sm, counts)
     if any(counts.values()):
         logger.info("balance_patrol_done", **counts)
     return counts

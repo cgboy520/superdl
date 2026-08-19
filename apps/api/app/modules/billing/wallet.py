@@ -137,7 +137,7 @@ async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Dec
         .tuples()
         .all()
     )
-    return {iid: amount for iid, amount in rows}
+    return dict(rows)
 
 
 async def balances_by_user(session: AsyncSession) -> dict[int, Decimal]:
