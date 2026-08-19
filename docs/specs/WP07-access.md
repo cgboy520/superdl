@@ -1,5 +1,9 @@
 # WP7 · 接入
 
+> ✅ 已随 WP3 交付:端口池(port_allocations 分配/复用/耗尽处理)、Jupyter token 生成与重置、
+> `GET /instances/{uuid}/access`(SSH 指令 + Jupyter URL)、Real 编排器的 Service(NodePort)+Ingress。
+> 泛域名证书与 Cilium Gateway 实配属集群侧(deploy/cluster)。
+
 ## 目标
 SSH 端口池落地 + JupyterLab 泛域名 Ingress + token。
 

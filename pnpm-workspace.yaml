@@ -2,6 +2,7 @@ packages:
   - apps/web
   - apps/admin
   - packages/*
+  - e2e
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
