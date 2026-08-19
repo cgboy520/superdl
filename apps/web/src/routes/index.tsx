@@ -8,7 +8,10 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { AppTopBar } from "../components/layout/AppTopBar";
 import { SiteFooter } from "../components/layout/SiteFooter";
+import { CtaBanner } from "../features/landing/CtaBanner";
+import { GpuRankSection } from "../features/landing/GpuRankSection";
 import { HeroSection } from "../features/landing/HeroSection";
+import { PricingSection } from "../features/landing/PricingSection";
 import { QuickEntrySection } from "../features/landing/QuickEntrySection";
 
 export const Route = createFileRoute("/")({
@@ -21,6 +24,9 @@ function LandingPage() {
       <AppTopBar variant="public" />
       <HeroSection />
       <QuickEntrySection />
+      <PricingSection />
+      <GpuRankSection />
+      <CtaBanner />
       <SiteFooter />
     </div>
   );
