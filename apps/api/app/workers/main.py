@@ -4,31 +4,76 @@
 """
 
 import asyncio
+import contextlib
 import os
+import signal
 import socket
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger, setup_logging
 from app.core.outbox import process_one, reap_stuck_running
+from app.core.timeutil import now_utc
 
 logger = get_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 1.0
 
+# K8s liveness:exec 探针检查该文件 mtime(循环每轮触碰)
+HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
+
+_stop = asyncio.Event()
+
+
+def _touch_heartbeat() -> None:
+    try:
+        HEARTBEAT_FILE.write_text(now_utc().isoformat())
+    except OSError:  # pragma: no cover - 只读文件系统等
+        pass
+
 
 async def outbox_loop(worker_id: str) -> None:
     sm = get_sessionmaker()
     logger.info("outbox_worker_started", worker_id=worker_id)
-    while True:
+    while not _stop.is_set():
+        _touch_heartbeat()
         try:
             processed = await process_one(sm, worker_id)
         except Exception:
             logger.exception("outbox_loop_error")
             processed = False
-        if not processed:
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+        if not processed and not _stop.is_set():
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(_stop.wait(), timeout=POLL_INTERVAL_SECONDS)
+
+
+async def cleanup_expired_rows(sm) -> dict[str, int]:
+    """数据保洁(每日):过期验证码/已用 refresh 记录/已完成 outbox/超保留期审计。"""
+    from sqlalchemy import text
+
+    from app.core.config import get_settings
+
+    retention = get_settings().audit_retention_days
+    stmts = {
+        "sms_codes": "DELETE FROM sms_codes WHERE expires_at < now() - interval '7 days'",
+        "used_refresh_tokens": "DELETE FROM used_refresh_tokens WHERE expires_at < now()",
+        "outbox_done": (
+            "DELETE FROM outbox_tasks WHERE status IN ('done', 'discarded') "
+            "AND updated_at < now() - interval '7 days'"
+        ),
+        "audit_log": f"DELETE FROM audit_log WHERE created_at < now() - interval '{retention} days'",
+    }
+    counts: dict[str, int] = {}
+    async with sm() as session:
+        for name, stmt in stmts.items():
+            result = await session.execute(text(stmt))
+            counts[name] = result.rowcount or 0
+        await session.commit()
+    if any(counts.values()):
+        logger.info("cleanup_expired_rows", **counts)
+    return counts
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
@@ -100,6 +145,15 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     scheduler.add_job(
+        cleanup_expired_rows,
+        "cron",
+        hour=19,  # UTC 19 = 北京 03:00 低峰
+        minute=0,
+        args=[sm],
+        id="cleanup_expired_rows",
+        coalesce=True,
+    )
+    scheduler.add_job(
         balance_patrol,
         "interval",
         minutes=5,
@@ -112,14 +166,27 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
 
 async def main() -> None:
     setup_logging()
+    from app.core.errors import init_sentry
     from app.main import wire_modules
 
+    init_sentry()
     wire_modules()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
+
+    # SIGTERM/SIGINT 优雅停机:停调度器 → 让 outbox 循环收尾当前任务后退出
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(NotImplementedError):  # pragma: no cover - win 兜底
+            loop.add_signal_handler(sig, _stop.set)
+
     scheduler = AsyncIOScheduler(timezone="UTC")
     register_scheduled_jobs(scheduler)
     scheduler.start()
-    await outbox_loop(worker_id)
+    try:
+        await outbox_loop(worker_id)
+    finally:
+        scheduler.shutdown(wait=False)
+        logger.info("worker_shutdown_complete", worker_id=worker_id)
 
 
 if __name__ == "__main__":

@@ -8,14 +8,16 @@ from prometheus_client import make_asgi_app
 from app.core.audit import AuditMiddleware
 from app.core.config import get_settings
 from app.core.db import dispose_engine
-from app.core.errors import install_error_handlers
+from app.core.errors import init_sentry, install_error_handlers
 from app.core.logging import setup_logging
+from app.core.observability import ObservabilityMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
+    init_sentry()
     settings = get_settings()
     if settings.environment == "dev" and settings.bootstrap_admin_password:
         from app.core.db import get_sessionmaker
@@ -37,6 +39,7 @@ def create_app() -> FastAPI:
     )
     install_error_handlers(app)
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ObservabilityMiddleware)
     app.add_middleware(AuditMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -48,7 +51,23 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", tags=["infra"], include_in_schema=False)
     async def healthz() -> dict[str, str]:
+        """liveness:进程活着即可,不探依赖(避免 DB 抖动引发重启风暴)。"""
         return {"status": "ok"}
+
+    @app.get("/readyz", tags=["infra"], include_in_schema=False)
+    async def readyz() -> dict[str, str]:
+        """readiness:探 DB,失败摘流量。"""
+        from fastapi.responses import JSONResponse
+        from sqlalchemy import text
+
+        from app.core.db import get_sessionmaker
+
+        try:
+            async with get_sessionmaker()() as session:
+                await session.execute(text("SELECT 1"))
+        except Exception:
+            return JSONResponse(status_code=503, content={"status": "db_unavailable"})  # type: ignore[return-value]
+        return {"status": "ready"}
 
     # /metrics:配置了 SUPERDL_METRICS_TOKEN 即要求 Bearer(prod 校验强制配置)
     metrics_app = make_asgi_app()

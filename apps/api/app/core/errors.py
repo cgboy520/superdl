@@ -99,3 +99,51 @@ def install_error_handlers(app: FastAPI) -> None:
                 "detail": jsonable_encoder(exc.errors()),
             },
         )
+
+    @app.exception_handler(Exception)
+    async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+        """未捕获异常兜底:结构化留痕 + 统一错误体(此前走框架默认 500,无上报)。"""
+        from app.core.logging import get_logger
+
+        get_logger("app.errors").exception(
+            "unhandled_exception", path=request.url.path, method=request.method
+        )
+        _capture_exception(exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "code": ErrorCode.INTERNAL.value,
+                "message": "服务器内部错误,请稍后重试",
+                "detail": None,
+            },
+        )
+
+
+def _capture_exception(exc: Exception) -> None:
+    """Sentry seam:配置 SUPERDL_SENTRY_DSN 且安装 sentry-sdk 才生效,否则静默跳过。"""
+    from app.core.config import get_settings
+
+    if not get_settings().sentry_dsn:
+        return
+    try:  # pragma: no cover - 可选依赖
+        import sentry_sdk  # type: ignore[import-not-found]
+
+        sentry_sdk.capture_exception(exc)
+    except ImportError:
+        pass
+
+
+def init_sentry() -> None:
+    """启动时初始化 Sentry(可选依赖,未安装仅告警一次)。"""
+    from app.core.config import get_settings
+    from app.core.logging import get_logger
+
+    dsn = get_settings().sentry_dsn
+    if not dsn:
+        return
+    try:  # pragma: no cover - 可选依赖
+        import sentry_sdk  # type: ignore[import-not-found]
+
+        sentry_sdk.init(dsn=dsn, environment=get_settings().environment)
+    except ImportError:
+        get_logger("app.errors").warning("sentry_dsn_set_but_sdk_missing")

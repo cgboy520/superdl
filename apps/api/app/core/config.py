@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # /metrics 抓取鉴权(Prometheus scrape 配置同一 Bearer;prod 必配)
     metrics_token: str | None = None
 
+    # 错误上报(可选:配置 DSN 且安装 sentry-sdk 即启用)
+    sentry_dsn: str | None = None
+
+    # 数据保洁保留期
+    audit_retention_days: int = 365  # 等保要求日志留存 ≥6 个月,默认留 1 年
+
     # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"
 

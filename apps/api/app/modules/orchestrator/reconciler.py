@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.k8s import get_orchestrator
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
+from app.core.metrics import RECONCILE_LEAKED_TOTAL
 from app.core.timeutil import now_utc
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.disks import detach_for_instance
@@ -170,5 +171,6 @@ async def _reclaim_leaked_pods(
         if db_status in (sm_def.STOPPING, sm_def.RELEASING):
             continue  # 删除任务在途
         logger.error("leaked_pod_reclaimed", namespace=ns, pod=name, db_status=db_status)
+        RECONCILE_LEAKED_TOTAL.inc()
         await orch.delete_instance(ns, name)
         counts["leaked"] += 1

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 from app.core.logging import get_logger
+from app.core.metrics import OUTBOX_DEAD_TOTAL
 from app.core.timeutil import now_utc
 
 logger = get_logger(__name__)
@@ -119,6 +120,7 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
             retries = task.retries + 1
             if retries > MAX_RETRIES:
                 logger.error("outbox_task_dead", task_id=task.id, task_type=task.type, error=error)
+                OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
                 await session.execute(
                     update(OutboxTask)
                     .where(OutboxTask.id == task.id)

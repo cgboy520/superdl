@@ -9,6 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
+from app.core.metrics import (
+    PAYMENT_CALLBACK_MISMATCH_TOTAL,
+    PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL,
+)
 from app.core.money import as_amount
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
@@ -101,6 +105,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
             expected=str(order.amount),
             got=str(result.amount),
         )
+        PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
         raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "回调金额与订单不符")
     if not result.success:
         order.status = "failed"
@@ -170,6 +175,7 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                         )
                     credited += 1
                     logger.info("lost_callback_recovered", order_no=order.order_no)
+                    PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL.inc()
     return credited
 
 

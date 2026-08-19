@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
+from app.core.metrics import SETTLEMENT_FAILED_TOTAL
 from app.core.money import as_amount, as_price
 from app.core.timeutil import ensure_utc, hour_floor, now_utc, prev_hour_range
 from app.modules.billing import wallet
@@ -210,6 +211,7 @@ async def settle_previous_hour(
                             settled += 1
                 except Exception:
                     logger.exception("hourly_settlement_failed", instance_id=inst_id)
+                    SETTLEMENT_FAILED_TOTAL.labels(kind="hourly").inc()
     if settled:
         logger.info("hourly_settlement_done", hour=window_start.isoformat(), settled=settled)
     return settled
@@ -277,6 +279,7 @@ async def settle_daily_disks(
                         settled += 1
                 except Exception:
                     logger.exception("daily_disk_settlement_failed", disk_id=disk_id)
+                    SETTLEMENT_FAILED_TOTAL.labels(kind="daily_disk").inc()
     if settled:
         logger.info("daily_disk_settlement_done", day=day.isoformat(), settled=settled)
     return settled

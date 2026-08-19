@@ -69,3 +69,34 @@ additionalPrometheusRulesMap:
             expr: increase(juicefs_mount_errors_total[10m]) > 0
             labels: {severity: critical}
             annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响"}
+  # 平台自身业务指标(API /metrics 暴露;抓取需配 SUPERDL_METRICS_TOKEN 同一 Bearer)
+  superdl-platform:
+    groups:
+      - name: superdl.platform
+        rules:
+          - alert: OutboxTaskDead
+            expr: increase(superdl_outbox_dead_total[10m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "outbox 任务进入死信({{ $labels.task_type }}):编排执行链路断裂,管理端总览可重放"}
+          - alert: SettlementFailed
+            expr: increase(superdl_settlement_failed_total[1h]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "结算失败({{ $labels.kind }}):检查 worker 日志,结算函数幂等可重跑"}
+          - alert: PaymentCallbackMismatch
+            expr: increase(superdl_payment_callback_mismatch_total[10m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "支付回调金额与订单不符:疑似攻击或渠道异常,见财务异常清单"}
+          - alert: LeakedPodsReclaimed
+            expr: increase(superdl_reconcile_leaked_total[30m]) > 3
+            labels: {severity: warning}
+            annotations: {summary: "30 分钟内回收泄漏 Pod 超 3 个:编排链路可能存在系统性问题"}
+          - alert: ApiHighErrorRate
+            expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"5.."}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.05
+            for: 5m
+            labels: {severity: critical}
+            annotations: {summary: "API 5xx 率 >5% 持续 5 分钟"}
+          - alert: WorkerDown
+            expr: absent(superdl_outbox_dead_total)
+            for: 10m
+            labels: {severity: warning}
+            annotations: {summary: "平台指标缺失:API/worker 可能未被抓取或已下线"}
