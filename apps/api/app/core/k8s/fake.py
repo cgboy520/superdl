@@ -29,9 +29,13 @@ class FakeOrchestrator:
     # 统计(测试断言用)
     create_calls: int = 0
     delete_calls: int = 0
+    wiped_disks: list[tuple[str, str]] = field(default_factory=list)
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
+
+    async def wipe_disk(self, namespace: str, subpath: str) -> None:
+        self.wiped_disks.append((namespace, subpath))
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
         if self.fail_next_create:

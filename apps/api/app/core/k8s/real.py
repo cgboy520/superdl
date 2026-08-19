@@ -29,6 +29,14 @@ def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
 
 
+# 租户命名空间兜底配额(应用层 create_instance 的每用户配额是主闸;这里防绕过与失控 Pod)
+TENANT_QUOTA = {"pods": "64", "services": "64", "persistentvolumeclaims": "128"}
+# 租户容器禁访的内网/元数据网段(Egress 白名单公网,黑名单私网)
+PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
+JUICEFS_PVC_NAME = "juicefs-shared"
+JUICEFS_STORAGE_CLASS = "juicefs-sc"
+
+
 class RealOrchestrator:
     def __init__(self) -> None:
         try:
@@ -37,6 +45,7 @@ class RealOrchestrator:
             config.load_kube_config()
         self.core = client.CoreV1Api()
         self.net = client.NetworkingV1Api()
+        self.batch = client.BatchV1Api()
         self.settings = get_settings()
 
     # ---------- namespace ----------
@@ -55,19 +64,76 @@ class RealOrchestrator:
             if not _is_conflict(exc):
                 raise
         self._ensure_default_netpol_sync(namespace)
+        self._ensure_quota_sync(namespace)
+        self._ensure_juicefs_pvc_sync(namespace)
 
     def _ensure_default_netpol_sync(self, namespace: str) -> None:
-        """默认拒东西向;放行出公网,禁访节点/Service 网段与云元数据(细则由 Cilium 集群策略补)。"""
+        """入方向默认拒(北向经 LB/Ingress);出方向放行公网 + DNS,
+        禁访节点/Service/Pod 网段与云元数据(169.254.0.0/16)。"""
         policy = client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
             spec=client.V1NetworkPolicySpec(
                 pod_selector=client.V1LabelSelector(),
-                policy_types=["Ingress"],
-                ingress=[],  # 拒全部东西向入方向;SSH/Jupyter 经 LB/Ingress 从北向进入
+                policy_types=["Ingress", "Egress"],
+                ingress=[],  # 拒全部东西向入方向
+                egress=[
+                    # DNS(kube-system CoreDNS)
+                    client.V1NetworkPolicyEgressRule(
+                        to=[
+                            client.V1NetworkPolicyPeer(
+                                namespace_selector=client.V1LabelSelector(
+                                    match_labels={"kubernetes.io/metadata.name": "kube-system"}
+                                )
+                            )
+                        ],
+                        ports=[
+                            client.V1NetworkPolicyPort(protocol="UDP", port=53),
+                            client.V1NetworkPolicyPort(protocol="TCP", port=53),
+                        ],
+                    ),
+                    # 公网:0.0.0.0/0 除私网与元数据段
+                    client.V1NetworkPolicyEgressRule(
+                        to=[
+                            client.V1NetworkPolicyPeer(
+                                ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=PRIVATE_CIDRS)
+                            )
+                        ]
+                    ),
+                ],
             ),
         )
         try:
             self.net.create_namespaced_network_policy(namespace, policy)
+        except client.ApiException as exc:
+            if not _is_conflict(exc):
+                raise
+
+    def _ensure_quota_sync(self, namespace: str) -> None:
+        quota = client.V1ResourceQuota(
+            metadata=client.V1ObjectMeta(name="tenant-quota", namespace=namespace),
+            spec=client.V1ResourceQuotaSpec(hard=dict(TENANT_QUOTA)),
+        )
+        try:
+            self.core.create_namespaced_resource_quota(namespace, quota)
+        except client.ApiException as exc:
+            if not _is_conflict(exc):
+                raise
+
+    def _ensure_juicefs_pvc_sync(self, namespace: str) -> None:
+        """每租户 namespace 一只共享 JuiceFS PVC(数据盘 subPath 挂载的底座)。
+        容量是名义值 —— 真实额度由 JuiceFS 目录配额管。"""
+        pvc = client.V1PersistentVolumeClaim(
+            metadata=client.V1ObjectMeta(
+                name=JUICEFS_PVC_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
+            ),
+            spec=client.V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteMany"],
+                storage_class_name=JUICEFS_STORAGE_CLASS,
+                resources=client.V1VolumeResourceRequirements(requests={"storage": "10Ti"}),
+            ),
+        )
+        try:
+            self.core.create_namespaced_persistent_volume_claim(namespace, pvc)
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
@@ -125,7 +191,8 @@ class RealOrchestrator:
             ),
             spec=client.V1PodSpec(
                 runtime_class_name=spec.runtime_class,
-                host_users=spec.host_users if not spec.host_users else None,
+                # 仅共享池显式收紧(hostUsers: false 开 userns);独享 Kata 走默认
+                host_users=False if spec.host_users is False else None,
                 restart_policy="Never",
                 node_selector=spec.node_selector or None,
                 termination_grace_period_seconds=30,
@@ -193,6 +260,9 @@ class RealOrchestrator:
                 labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
             ),
             spec=client.V1IngressSpec(
+                # TLS:不指定 secretName,由 ingress-nginx default-ssl-certificate
+                # 提供 *.app 泛域名证书(证书 Secret 无需复制进每个租户 ns)
+                tls=[client.V1IngressTLS(hosts=[spec.jupyter_host])],
                 rules=[
                     client.V1IngressRule(
                         host=spec.jupyter_host,
@@ -211,7 +281,7 @@ class RealOrchestrator:
                             ]
                         ),
                     )
-                ]
+                ],
             ),
         )
         try:
@@ -266,48 +336,150 @@ class RealOrchestrator:
             if p.metadata.namespace.startswith(prefix)
         ]
 
+    # ---------- 数据盘擦除 ----------
+
+    async def wipe_disk(self, namespace: str, subpath: str) -> None:
+        await asyncio.to_thread(self._wipe_disk_sync, namespace, subpath)
+
+    def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
+        """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录。幂等:
+        Job 已成功 → 清理并返回;进行中 → 抛错交 outbox 退避重试;失败 → 删 Job 重建。"""
+        if "/" in subpath or ".." in subpath or not subpath:
+            raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+        job_name = f"wipe-{subpath[-40:]}".lower()
+        try:
+            existing: Any = self.batch.read_namespaced_job(job_name, namespace)
+        except client.ApiException as exc:
+            if not _is_not_found(exc):
+                raise
+            existing = None
+        if existing is not None:
+            if (existing.status.succeeded or 0) >= 1:
+                self.batch.delete_namespaced_job(
+                    job_name, namespace, propagation_policy="Background"
+                )
+                return
+            if (existing.status.failed or 0) >= 1:
+                self.batch.delete_namespaced_job(
+                    job_name, namespace, propagation_policy="Background"
+                )
+                raise RuntimeError(f"disk wipe job failed, recreated next retry: {job_name}")
+            raise RuntimeError(f"disk wipe job still running: {job_name}")
+        job = client.V1Job(
+            metadata=client.V1ObjectMeta(
+                name=job_name, namespace=namespace, labels={MANAGED_LABEL: "true"}
+            ),
+            spec=client.V1JobSpec(
+                backoff_limit=1,
+                ttl_seconds_after_finished=3600,
+                template=client.V1PodTemplateSpec(
+                    spec=client.V1PodSpec(
+                        restart_policy="Never",
+                        automount_service_account_token=False,
+                        containers=[
+                            client.V1Container(
+                                name="wipe",
+                                image="busybox:1.36",
+                                command=["rm", "-rf", f"/data/{subpath}"],
+                                volume_mounts=[
+                                    client.V1VolumeMount(name="juicefs", mount_path="/data")
+                                ],
+                                security_context=client.V1SecurityContext(
+                                    allow_privilege_escalation=False,
+                                    capabilities=client.V1Capabilities(drop=["ALL"]),
+                                ),
+                            )
+                        ],
+                        volumes=[
+                            client.V1Volume(
+                                name="juicefs",
+                                persistent_volume_claim=(
+                                    client.V1PersistentVolumeClaimVolumeSource(
+                                        claim_name=JUICEFS_PVC_NAME
+                                    )
+                                ),
+                            )
+                        ],
+                    )
+                ),
+            ),
+        )
+        try:
+            self.batch.create_namespaced_job(namespace, job)
+        except client.ApiException as exc:
+            if not _is_conflict(exc):
+                raise
+        raise RuntimeError(f"disk wipe job created, awaiting completion: {job_name}")
+
+    # ---------- 库存与节点 ----------
+
+    @staticmethod
+    def _gpu_amount(resources: dict[str, Any] | None) -> int:
+        """整卡 + MIG 分片统一计数(HAMi 共享池的 nvidia.com/gpu 为虚拟化后份额)。"""
+        total = 0
+        for key, value in (resources or {}).items():
+            if key == "nvidia.com/gpu" or key.startswith("nvidia.com/mig-"):
+                total += int(value)
+        return total
+
     async def available_gpus(self, pool_label: str) -> int:
         return await asyncio.to_thread(self._available_gpus_sync, pool_label)
 
     def _available_gpus_sync(self, pool_label: str) -> int:
         nodes: Any = self.core.list_node(label_selector=f"{POOL_NODE_LABEL}={pool_label}")
-        total = 0
-        for node in nodes.items:
-            allocatable = node.status.allocatable or {}
-            total += int(allocatable.get("nvidia.com/gpu", "0"))
+        total = sum(self._gpu_amount(n.status.allocatable) for n in nodes.items)
+        used = self._used_gpus_by_pool().get(pool_label, 0)
+        return max(0, total - used)
+
+    def _used_gpus_by_pool(self) -> dict[str, int]:
+        """全部受管 Pod 一次拉取,按池聚合已用份额(整卡 + MIG + HAMi 虚拟份额)。"""
         pods: Any = self.core.list_pod_for_all_namespaces(
             label_selector=MANAGED_LABEL, field_selector="status.phase!=Failed"
         )
-        used = 0
+        used: dict[str, int] = {}
         for pod in pods.items:
-            if (pod.spec.node_selector or {}).get(POOL_NODE_LABEL) != pool_label:
+            pool = (pod.spec.node_selector or {}).get(POOL_NODE_LABEL)
+            if pool is None:
                 continue
             for c in pod.spec.containers:
                 limits = (c.resources and c.resources.limits) or {}
-                used += int(limits.get("nvidia.com/gpu", "0"))
-        return max(0, total - used)
+                used[pool] = used.get(pool, 0) + self._gpu_amount(limits)
+        return used
+
+    def _used_gpus_by_node(self) -> dict[str, int]:
+        pods: Any = self.core.list_pod_for_all_namespaces(
+            label_selector=MANAGED_LABEL, field_selector="status.phase!=Failed"
+        )
+        used: dict[str, int] = {}
+        for pod in pods.items:
+            node = pod.spec.node_name
+            if not node:
+                continue
+            for c in pod.spec.containers:
+                limits = (c.resources and c.resources.limits) or {}
+                used[node] = used.get(node, 0) + self._gpu_amount(limits)
+        return used
 
     async def list_nodes(self) -> list[NodeInfo]:
         return await asyncio.to_thread(self._list_nodes_sync)
 
     def _list_nodes_sync(self) -> list[NodeInfo]:
         nodes: Any = self.core.list_node(label_selector=POOL_NODE_LABEL)
+        used_by_node = self._used_gpus_by_node()  # 一次拉取,不再每节点全量扫 Pod
         out: list[NodeInfo] = []
         for node in nodes.items:
             labels = node.metadata.labels or {}
-            allocatable = node.status.allocatable or {}
             conditions = node.status.conditions or []
             ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
             cordoned = bool(node.spec.unschedulable)
-            pool = labels.get(POOL_NODE_LABEL, "unknown")
-            total = int(allocatable.get("nvidia.com/gpu", "0"))
+            total = self._gpu_amount(node.status.allocatable)
             out.append(
                 NodeInfo(
                     name=node.metadata.name,
-                    pool_label=pool,
+                    pool_label=labels.get(POOL_NODE_LABEL, "unknown"),
                     gpu_model=labels.get("nvidia.com/gpu.product", "GPU"),
                     gpu_total=total,
-                    gpu_used=max(0, total - self._available_gpus_sync(pool)),
+                    gpu_used=min(total, used_by_node.get(node.metadata.name, 0)),
                     status="Cordoned" if cordoned else ("Ready" if ready else "NotReady"),
                 )
             )

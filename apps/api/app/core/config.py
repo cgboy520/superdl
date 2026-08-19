@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     disk_grace_days: int = 7
     disk_frozen_days: int = 30
 
+    # 每用户配额(防单账号无限开机;K8s ResourceQuota 是集群侧兜底)
+    max_instances_per_user: int = 10
+    max_gpus_per_user: int = 8
+
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警

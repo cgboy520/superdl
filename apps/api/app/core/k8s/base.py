@@ -59,6 +59,11 @@ class K8sOrchestrator(Protocol):
         """列出全部租户实例 Pod (namespace, name)。reconciler 泄漏检测用。"""
         ...
 
+    async def wipe_disk(self, namespace: str, subpath: str) -> None:
+        """真实擦除数据盘的 JuiceFS 子路径(集群侧 Job)。幂等;
+        未完成时抛异常交 outbox 退避重试,下次执行看到已完成即返回。"""
+        ...
+
     async def available_gpus(self, pool_label: str) -> int:
         """池内近似可租卡数(近似库存;创建以调度结果为准)。"""
         ...

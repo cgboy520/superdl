@@ -103,6 +103,38 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     }
 
 
+async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) -> None:
+    """每用户配额(实例数 / GPU 总数):防单账号无限开机(K8s 侧 ResourceQuota 是兜底)。"""
+    from sqlalchemy import func
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    live = (
+        (
+            await session.execute(
+                select(func.count(), func.coalesce(func.sum(Instance.gpu_count), 0)).where(
+                    Instance.user_id == user_id,
+                    Instance.status.notin_(("released", "failed")),
+                )
+            )
+        )
+        .tuples()
+        .one()
+    )
+    count, gpus = live
+    if count >= settings.max_instances_per_user:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            f"实例数已达上限({settings.max_instances_per_user} 台),请释放后再创建或联系客服提额",
+        )
+    if gpus + new_gpus > settings.max_gpus_per_user:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            f"GPU 总数将超过上限({settings.max_gpus_per_user} 卡),请释放后再创建或联系客服提额",
+        )
+
+
 async def create_instance(
     session: AsyncSession,
     user_id: int,
@@ -132,6 +164,7 @@ async def create_instance(
             ErrorCode.VALIDATION_ERROR,
             f"GPU 数量须在 1~{sku.max_gpus_per_instance} 之间",
         )
+    await _check_user_quota(session, user_id, gpu_count)
     # 计费护栏:开机前校验余额 ≥ 1 小时预估费用
     estimate = as_amount(sku.price_hourly * gpu_count)
     await billing_service.require_balance_at_least(

@@ -1,0 +1,7 @@
+# ingress-nginx:默认证书 = superdl 命名空间的 *.app 泛域名证书,
+# 使租户 Jupyter Ingress 不写 secretName 也走 TLS(cert-manager 签发,见 deploy/app/k8s/05)。
+controller:
+  extraArgs:
+    default-ssl-certificate: "superdl/superdl-jupyter-wildcard-tls"
+  config:
+    ssl-redirect: "true"

@@ -115,13 +115,16 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("disk.wipe")
 async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
-    """擦除 JuiceFS 子路径并置 deleted。实际文件删除由集群侧任务执行(人工清单 #5),
-    控制面负责状态推进与审计留痕。"""
+    """真实擦除 JuiceFS 子路径(集群侧 Job)后置 deleted。
+    wipe_disk 幂等:Job 未完成抛错 → outbox 退避重试,完成后本 handler 收尾状态。"""
+    from app.core.config import get_settings
     from app.modules.orchestrator.models import DataDisk
 
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return
+    namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
+    await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
     logger.info("disk_wiped", disk_id=disk.id, subpath=disk.juicefs_subpath)
     disk.status = "deleted"
     disk.mounted_instance_id = None
