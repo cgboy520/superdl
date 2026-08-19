@@ -1,9 +1,12 @@
-/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号经 VITE_ICP_NUMBER 注入。 */
+/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。
+ * 备案号走后端 site-config(管理端·平台配置在线维护),VITE_ICP_NUMBER 仅作构建期兜底。 */
 
-const ICP_NUMBER = import.meta.env.VITE_ICP_NUMBER as string | undefined;
+const ICP_FALLBACK = import.meta.env.VITE_ICP_NUMBER as string | undefined;
 
 import { copy, marketing } from "@superdl/ui";
 import { theme, Typography } from "antd";
+
+import { useSiteConfig } from "../../api/queries";
 
 function FooterCol({
   title,
@@ -36,6 +39,9 @@ function FooterCol({
 export function SiteFooter() {
   const { token } = theme.useToken();
   const f = marketing.footer;
+  const { data: site } = useSiteConfig();
+  const icp = site?.icp_number ?? ICP_FALLBACK;
+  const police = site?.police_record_number;
   return (
     <footer style={{ background: token.colorBgContainer, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
       <div
@@ -65,18 +71,31 @@ export function SiteFooter() {
         >
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {f.copyright}
-            {" · "}
-            {ICP_NUMBER ? (
-              <a
-                href="https://beian.miit.gov.cn/"
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: "inherit" }}
-              >
-                {ICP_NUMBER}
-              </a>
-            ) : (
-              "备案号待配置(VITE_ICP_NUMBER)"
+            {icp && (
+              <>
+                {" · "}
+                <a
+                  href="https://beian.miit.gov.cn/"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "inherit" }}
+                >
+                  {icp}
+                </a>
+              </>
+            )}
+            {police && (
+              <>
+                {" · "}
+                <a
+                  href="https://beian.mps.gov.cn/"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "inherit" }}
+                >
+                  {police}
+                </a>
+              </>
             )}
           </Typography.Text>
         </div>

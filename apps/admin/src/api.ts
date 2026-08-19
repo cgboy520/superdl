@@ -10,7 +10,10 @@ import {
   adminAlertsApiAdminV1AlertsGet,
   adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
   adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost,
+  adminGetPlatformConfigApiAdminV1PlatformConfigGet,
   adminGetPoliciesApiAdminV1PoliciesGet,
+  adminTestSmsApiAdminV1PlatformConfigTestSmsPost,
+  adminUpdatePlatformConfigApiAdminV1PlatformConfigPut,
   adminListDeadTasksApiAdminV1OutboxDeadGet,
   adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet,
   adminPublishAnnouncementApiAdminV1AnnouncementsPost,
@@ -41,7 +44,9 @@ import type {
   AnnouncementCreate,
   OrderBackfillRequest,
   OutboxDiscardRequest,
+  PlatformConfigUpdateRequest,
   PolicyUpdateRequest,
+  SmsTestRequest,
   AdjustmentReview,
   AdminForceStopRequest,
   AdminLoginRequest,
@@ -418,6 +423,55 @@ export function usePublishAnnouncement(opts?: MutOpts<unknown, { data: Announcem
 export function useUpdatePolicies(opts?: MutOpts<unknown, { data: PolicyUpdateRequest }>) {
   return useMutation({
     mutationFn: (v: { data: PolicyUpdateRequest }) => adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
+    ...opts?.mutation,
+  });
+}
+
+// ---------- WP20 平台配置(渠道凭据与合规;仅 admin 角色) ----------
+
+export interface PlatformConfigItem {
+  key: string;
+  group: "payment_wechat" | "payment_alipay" | "sms" | "real_name" | "compliance";
+  kind: "str" | "text" | "bool" | "choice" | "secret";
+  choices: string[];
+  hint: string;
+  source: "override" | "env" | "unset";
+  configured: boolean;
+  value: string | null;
+  preview: string | null;
+  updated_at: string | null;
+}
+
+export function usePlatformConfig() {
+  const queryKey = ["admin", "platform-config"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: async () =>
+      (await adminGetPlatformConfigApiAdminV1PlatformConfigGet()) as unknown as {
+        items: PlatformConfigItem[];
+      },
+    // 表单页:禁用全局 60s 轮询,避免编辑中被刷新
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  return { ...q, queryKey };
+}
+
+export function useUpdatePlatformConfig(
+  opts?: MutOpts<unknown, { data: PlatformConfigUpdateRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { data: PlatformConfigUpdateRequest }) =>
+      adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useTestSms(opts?: MutOpts<unknown, { data: SmsTestRequest }>) {
+  return useMutation({
+    mutationFn: (v: { data: SmsTestRequest }) =>
+      adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
     ...opts?.mutation,
   });
 }

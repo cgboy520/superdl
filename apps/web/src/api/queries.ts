@@ -13,6 +13,7 @@ import {
   getLedgerApiV1WalletLedgerGet,
   getPoliciesApiV1PoliciesGet,
   getRechargeApiV1WalletRechargesOrderNoGet,
+  getSiteConfigApiV1SiteConfigGet,
   getWalletApiV1WalletGet,
   instancesMetricsSummaryApiV1MetricsInstancesGet,
   listDisksApiV1DisksGet,
@@ -86,6 +87,9 @@ export const useBillSummary = (month: string) =>
 /** 策略常量(盘价/回收天数等):公开端点,常量性质给长缓存。 */
 export const usePolicies = () =>
   useApiQuery(["policies"], () => getPoliciesApiV1PoliciesGet(), { retry: 1 });
+/** 站点公开配置(备案号/可用支付渠道):公开端点,页脚与充值弹窗消费。 */
+export const useSiteConfig = () =>
+  useApiQuery(["site-config"], () => getSiteConfigApiV1SiteConfigGet(), { retry: 1 });
 /** 实例列表 sparkline 批量摘要:断源时 available=false(200),独立于 5s 实例轮询。 */
 export const useMetricsSummary = (opts?: QueryOpts) =>
   useApiQuery(["metrics-summary"], () => instancesMetricsSummaryApiV1MetricsInstancesGet(), opts);

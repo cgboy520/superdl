@@ -56,6 +56,7 @@ import {
   useMe,
   usePolicies,
   useRecharge,
+  useSiteConfig,
   useWallet,
 } from "../api/queries";
 import { downloadCsv, toCsv } from "../lib/csv";
@@ -78,6 +79,18 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [amount, setAmount] = useState<number>(100);
   const [order, setOrder] = useState<RechargeOut | null>(null);
   const [idem, setIdem] = useState(() => crypto.randomUUID());
+  const [pickedChannel, setPickedChannel] = useState<string | null>(null);
+
+  // 渠道开关来自管理端·平台配置(site-config 公开端点),商户接入后即时开放
+  const { data: site } = useSiteConfig();
+  const enabled = {
+    wechat: site?.payment_channels.wechat ?? false,
+    alipay: site?.payment_channels.alipay ?? false,
+    mock: site?.payment_channels.mock ?? false,
+  };
+  const firstEnabled = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
+  const channel = pickedChannel ?? firstEnabled;
+  const anyEnabled = enabled.wechat || enabled.alipay || enabled.mock;
 
   const create = useCreateRecharge({
     onSuccess: (d) => setOrder(d as RechargeOut),
@@ -102,20 +115,31 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
       {!order ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Tabs
-            activeKey="mock"
+            activeKey={channel}
+            onChange={setPickedChannel}
             size="small"
             items={[
               {
                 key: "wechat",
-                label: <Tooltip title={copy.channelComingSoon}>微信支付</Tooltip>,
-                disabled: true,
+                label: enabled.wechat ? (
+                  "微信支付"
+                ) : (
+                  <Tooltip title={copy.channelComingSoon}>微信支付</Tooltip>
+                ),
+                disabled: !enabled.wechat,
               },
               {
                 key: "alipay",
-                label: <Tooltip title={copy.channelComingSoon}>支付宝</Tooltip>,
-                disabled: true,
+                label: enabled.alipay ? (
+                  "支付宝"
+                ) : (
+                  <Tooltip title={copy.channelComingSoon}>支付宝</Tooltip>
+                ),
+                disabled: !enabled.alipay,
               },
-              { key: "mock", label: "模拟支付(开发环境)" },
+              ...(enabled.mock
+                ? [{ key: "mock", label: "模拟支付(开发环境)" }]
+                : []),
             ]}
           />
           <Radio.Group
@@ -136,10 +160,11 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           <Button
             type="primary"
             block
+            disabled={!anyEnabled}
             loading={create.isPending}
             onClick={() =>
               create.mutate({
-                body: { amount: amount.toFixed(2), channel: "mock" },
+                body: { amount: amount.toFixed(2), channel },
                 idempotencyKey: idem,
               })
             }
@@ -169,15 +194,27 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           <div style={{ display: "flex", justifyContent: "center" }}>
             <QRCode value={order.qr_url ?? order.order_no} size={168} />
           </div>
-          <Button
-            block
-            loading={mockPay.isPending}
-            onClick={() =>
-              mockPay.mutate({ order_no: order.order_no, amount: order.amount })
-            }
-          >
-            模拟支付成功(开发环境)
-          </Button>
+          {order.channel === "wechat" && (
+            <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
+              请使用微信「扫一扫」完成支付
+            </Typography.Text>
+          )}
+          {order.channel === "alipay" && (
+            <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
+              请使用支付宝「扫一扫」完成支付
+            </Typography.Text>
+          )}
+          {order.channel === "mock" && (
+            <Button
+              block
+              loading={mockPay.isPending}
+              onClick={() =>
+                mockPay.mutate({ order_no: order.order_no, amount: order.amount })
+              }
+            >
+              模拟支付成功(开发环境)
+            </Button>
+          )}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             支付完成后本窗口每 2 秒自动确认到账;超时未支付订单 2 小时后自动关闭
           </Typography.Text>
