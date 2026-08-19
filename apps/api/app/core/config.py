@@ -1,7 +1,10 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEV_JWT_SECRET = "dev-secret-change-me"
 
 
 class Settings(BaseSettings):
@@ -74,6 +77,41 @@ class Settings(BaseSettings):
     alipay_app_id: str | None = None
     alipay_private_key: str | None = None
     alipay_public_key: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_prod(self) -> "Settings":
+        """生产配置 fail-fast:任何开发默认值漏改都在启动时拒绝,而非静默事故。"""
+        if self.environment != "prod":
+            return self
+        problems: list[str] = []
+        if self.jwt_secret == _DEV_JWT_SECRET or len(self.jwt_secret) < 32:
+            problems.append("jwt_secret 仍为开发默认值或长度不足 32 字符")
+        if self.sms_provider == "mock":
+            problems.append("sms_provider 不得为 mock(验证码将是固定值)")
+        elif not (
+            self.sms_access_key_id
+            and self.sms_access_key_secret
+            and self.sms_sign_name
+            and self.sms_template_verify
+            and self.sms_template_notice
+        ):
+            problems.append("阿里云短信凭据/签名/模板码不完整(SUPERDL_SMS_*)")
+        if self.k8s_backend == "fake":
+            problems.append("k8s_backend 不得为 fake")
+        if self.payment_mock:
+            problems.append("payment_mock 必须为 false")
+        if "superdl:superdl@localhost" in self.database_url:
+            problems.append("database_url 仍为本地开发默认")
+        if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
+            problems.append("cors_origins 含 localhost")
+        for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url"):
+            if "example.com" in getattr(self, name):
+                problems.append(f"{name} 仍为占位域名")
+        if not self.alertmanager_token:
+            problems.append("alertmanager_token 未配置")
+        if problems:
+            raise ValueError("生产配置校验失败:" + ";".join(problems))
+        return self
 
 
 @lru_cache

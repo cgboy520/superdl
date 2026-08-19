@@ -44,6 +44,49 @@ class TestNoDefaultBootstrapAdmin:
         assert Settings().bootstrap_admin_password is None
 
 
+class TestProdConfigValidation:
+    def test_prod_rejects_dev_defaults(self):
+        """environment=prod + 任一开发默认值 → 启动即拒。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError) as ei:
+            Settings(
+                _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+                environment="prod",
+                database_url="postgresql+asyncpg://superdl:superdl@localhost:5432/superdl",
+            )
+        msg = str(ei.value)
+        for keyword in ("jwt_secret", "sms_provider", "k8s_backend", "payment_mock"):
+            assert keyword in msg
+
+    def test_prod_accepts_complete_config(self):
+        from app.core.config import Settings
+
+        s = Settings(
+            _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+            environment="prod",
+            jwt_secret="x" * 40,
+            sms_provider="aliyun",
+            sms_access_key_id="ak",
+            sms_access_key_secret="sk",
+            sms_sign_name="SuperDL",
+            sms_template_verify="SMS_1",
+            sms_template_notice="SMS_2",
+            k8s_backend="real",
+            payment_mock=False,
+            database_url="postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
+            cors_origins=["https://console.superdl.cn"],
+            ssh_host="ssh1.superdl.cn",
+            jupyter_domain_suffix="app.superdl.cn",
+            public_base_url="https://api.superdl.cn",
+            alertmanager_token="token",
+        )
+        assert s.environment == "prod"
+
+
 class TestSmsCodeBruteForce:
     async def test_code_burned_after_max_attempts(self, client: AsyncClient, sm):
         """同一条验证码失败 5 次后作废:正确码也不再放行(计次持久化于 DB)。"""
