@@ -145,6 +145,7 @@ class TestMockChannelProdGuard:
         monkeypatch.setattr(settings, "payment_mock", True)
         import pytest as _pytest
 
-        with _pytest.raises(AppError) as exc:
-            get_channel("mock")
+        async with sm() as session:
+            with _pytest.raises(AppError) as exc:
+                await get_channel("mock", session)
         assert exc.value.code == "PAYMENT_CHANNEL_ERROR"

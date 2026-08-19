@@ -390,6 +390,95 @@ async def admin_update_policies(
     return {"updated": sorted(body.updates)}
 
 
+# ---------- 平台配置:支付/短信/实名/合规(角色:仅 admin —— 渠道凭据不下放 ops) ----------
+
+
+@router.get("/platform-config", dependencies=[require_roles()])
+async def admin_get_platform_config(session: DbSession) -> dict:
+    """分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。"""
+    from app.core.platform_config import (
+        SETTING_SPECS,
+        get_effective_platform_config,
+        list_platform_overrides,
+        secret_preview,
+    )
+
+    eff = await get_effective_platform_config(session)
+    overrides = await list_platform_overrides(session)
+    items = []
+    for key, spec in SETTING_SPECS.items():
+        value = eff[key]
+        row = overrides.get(key)
+        items.append(
+            {
+                "key": key,
+                "group": spec.group,
+                "kind": spec.kind,
+                "choices": list(spec.choices),
+                "hint": spec.hint,
+                "source": "override" if row is not None else ("env" if value else "unset"),
+                "configured": bool(value),
+                "value": None if spec.kind == "secret" else value,
+                "preview": secret_preview(value) if spec.kind == "secret" and value else None,
+                "updated_at": row.updated_at.isoformat() if row is not None else None,
+            }
+        )
+    return {"items": items}
+
+
+class PlatformConfigUpdateRequest(BaseModel):
+    updates: dict[str, str] = Field(min_length=1)
+    reason: str = Field(min_length=2, max_length=200)
+
+
+@router.put("/platform-config")
+async def admin_update_platform_config(
+    body: PlatformConfigUpdateRequest,
+    session: DbSession,
+    request: Request,
+    admin: AdminUser = require_roles(),
+) -> dict:
+    """在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。"""
+    from app.core.errors import AppError, ErrorCode
+    from app.core.platform_config import set_platform_settings
+
+    try:
+        await set_platform_settings(session, body.updates, updated_by=admin.id)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
+    await session.commit()
+    set_audit_target(
+        request, "platform_config", detail={"keys": sorted(body.updates), "reason": body.reason}
+    )
+    return {"updated": sorted(body.updates)}
+
+
+class SmsTestRequest(BaseModel):
+    phone: str = Field(pattern=r"^1\d{10}$")
+
+
+@router.post("/platform-config/test-sms", dependencies=[require_roles()])
+async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> dict:
+    """按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。"""
+    import secrets
+
+    from app.core.errors import AppError, ErrorCode
+    from app.core.platform_config import get_effective_platform_config
+    from app.core.ratelimit import check_rate_limit
+    from app.core.sms import SmsError, get_sms_channel
+
+    check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
+    cfg = await get_effective_platform_config(session)
+    channel = await get_sms_channel(session)
+    code = f"{secrets.randbelow(10**6):06d}"
+    try:
+        await channel.send(body.phone, cfg["sms_template_verify"] or "", {"code": code})
+    except SmsError as exc:
+        raise AppError(ErrorCode.SMS_SEND_FAILED, f"发送失败:{exc}", http_status=502) from exc
+    set_audit_target(request, f"test-sms:{body.phone}")
+    return {"ok": True, "provider": cfg["sms_provider"]}
+
+
 # ---------- 公告发布(角色:ops) ----------
 
 

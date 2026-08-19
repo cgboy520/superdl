@@ -6,6 +6,22 @@ from pydantic import BaseModel, Field
 from app.core.money import MoneyOut
 
 
+class PaymentChannelsOut(BaseModel):
+    """可用支付渠道(充值弹窗按此启用 Tab)。"""
+
+    wechat: bool
+    alipay: bool
+    mock: bool
+
+
+class SiteConfigOut(BaseModel):
+    """站点公开配置(页脚备案号等,未登录可访问)。"""
+
+    icp_number: str | None
+    police_record_number: str | None
+    payment_channels: PaymentChannelsOut
+
+
 class SkuMarketOut(BaseModel):
     """市场卡片视图(用户端)。"""
 

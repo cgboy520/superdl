@@ -2,21 +2,19 @@
 
 镜像 payment_channels 的 Protocol + 工厂模式:
 - mock:落结构化日志(dev/test 默认);
-- aliyun:dysmsapi SendSms(RPC 签名 V1),凭据与模板码经 SUPERDL_SMS_* 注入。
+- aliyun:dysmsapi SendSms(RPC 签名 V1),凭据与模板码走平台配置中心
+  (env SUPERDL_SMS_* 为默认值层,DB 覆盖免重启生效)。
 签名/模板报备是人工事项 #6;prod 下配置完整性由 Settings 校验把关。
 """
 
-import base64
-import hashlib
-import hmac
 import json
-import urllib.parse
 from typing import Protocol
 from uuid import uuid4
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.aliyun import rpc_signed_params
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 
@@ -36,11 +34,6 @@ class SmsChannel(Protocol):
 class MockSmsChannel:
     async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
         logger.info("mock_sms_sent", phone=phone, template=template, params=params)
-
-
-def _percent_encode(value: str) -> str:
-    # 阿里云 RPC 签名要求 RFC3986:仅 A-Za-z0-9-_.~ 不编码,空格 %20,* %2A
-    return urllib.parse.quote(value, safe="")
 
 
 class AliyunSmsChannel:
@@ -70,27 +63,21 @@ class AliyunSmsChannel:
         nonce: str,
         timestamp: str,
     ) -> dict[str, str]:
-        query = {
-            "AccessKeyId": self._ak,
-            "Action": "SendSms",
-            "Format": "JSON",
-            "PhoneNumbers": phone,
-            "RegionId": "cn-hangzhou",
-            "SignName": self._sign_name,
-            "SignatureMethod": "HMAC-SHA1",
-            "SignatureNonce": nonce,
-            "SignatureVersion": "1.0",
-            "TemplateCode": template,
-            "TemplateParam": json.dumps(params, ensure_ascii=False, separators=(",", ":")),
-            "Timestamp": timestamp,
-            "Version": "2017-05-25",
-        }
-        canonical = "&".join(
-            f"{_percent_encode(k)}={_percent_encode(v)}" for k, v in sorted(query.items())
+        return rpc_signed_params(
+            {
+                "Action": "SendSms",
+                "PhoneNumbers": phone,
+                "RegionId": "cn-hangzhou",
+                "SignName": self._sign_name,
+                "TemplateCode": template,
+                "TemplateParam": json.dumps(params, ensure_ascii=False, separators=(",", ":")),
+                "Version": "2017-05-25",
+            },
+            access_key_id=self._ak,
+            access_key_secret=self._secret,
+            nonce=nonce,
+            timestamp=timestamp,
         )
-        to_sign = f"POST&{_percent_encode('/')}&{_percent_encode(canonical)}"
-        digest = hmac.new((self._secret + "&").encode(), to_sign.encode(), hashlib.sha1).digest()
-        return {**query, "Signature": base64.b64encode(digest).decode()}
 
     async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
         signed = self.signed_params(
@@ -119,16 +106,16 @@ def set_sms_channel(channel: SmsChannel | None) -> None:
     _channel = channel
 
 
-def get_sms_channel() -> SmsChannel:
+async def get_sms_channel(session: AsyncSession) -> SmsChannel:
     if _channel is not None:
         return _channel
-    settings = get_settings()
-    if settings.sms_provider == "mock":
+    from app.core.platform_config import get_effective_platform_config
+
+    cfg = await get_effective_platform_config(session)
+    if cfg["sms_provider"] == "mock":
         return MockSmsChannel()
-    if not (
-        settings.sms_access_key_id and settings.sms_access_key_secret and settings.sms_sign_name
-    ):
-        raise SmsError("阿里云短信凭据未配置(SUPERDL_SMS_ACCESS_KEY_ID/SECRET/SIGN_NAME)")
+    if not (cfg["sms_access_key_id"] and cfg["sms_access_key_secret"] and cfg["sms_sign_name"]):
+        raise SmsError("阿里云短信凭据未配置(管理端·平台配置,或 SUPERDL_SMS_*)")
     return AliyunSmsChannel(
-        settings.sms_access_key_id, settings.sms_access_key_secret, settings.sms_sign_name
+        cfg["sms_access_key_id"], cfg["sms_access_key_secret"], cfg["sms_sign_name"]
     )

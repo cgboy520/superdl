@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.platform_config import get_effective_platform_config
 from app.core.sms import get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.notify.models import Notification
@@ -62,10 +63,9 @@ async def _send_sms_notice(session: AsyncSession, user_id: int, title: str) -> N
 
     try:
         user = await get_user(session, user_id)
-        settings = get_settings()
-        await get_sms_channel().send(
-            user.phone, settings.sms_template_notice or "", {"title": title}
-        )
+        cfg = await get_effective_platform_config(session)
+        channel = await get_sms_channel(session)
+        await channel.send(user.phone, cfg["sms_template_notice"] or "", {"title": title})
     except Exception as exc:
         logger.warning("sms_notify_failed", user_id=user_id, error=str(exc))
 

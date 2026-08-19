@@ -6,11 +6,11 @@ from fastapi import APIRouter, Header, Query, Request
 from sqlalchemy import func, select
 
 from app.core.audit import set_audit_target
-from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
 from app.modules.account.deps import CurrentUser
 from app.modules.billing import payment_service, wallet
@@ -34,6 +34,7 @@ router = APIRouter(tags=["billing"])
 async def get_policies(session: DbSession) -> PoliciesOut:
     """计费/回收策略。公开(未登录市场页也要展示盘价);env 默认 + DB 覆盖,管理端在线调整。"""
     p = await get_effective_policies(session)
+    cfg = await get_effective_platform_config(session)
     return PoliciesOut(
         disk_price_gb_month=p.disk_price_gb_month,
         disk_min_gb=p.disk_min_gb,
@@ -42,7 +43,7 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         disk_frozen_days=p.disk_frozen_days,
         freeze_grace_hours=p.freeze_grace_hours,
         low_balance_warn_hours_default=p.low_balance_warn_hours,
-        real_name_required_for_recharge=get_settings().real_name_required_for_recharge,
+        real_name_required_for_recharge=cfg["real_name_required_for_recharge"] == "true",
     )
 
 
@@ -234,7 +235,8 @@ async def create_recharge(
     request: Request,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> RechargeOut:
-    if get_settings().real_name_required_for_recharge and user.verification_status != "verified":
+    cfg = await get_effective_platform_config(session)
+    if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
         raise AppError(
             ErrorCode.REAL_NAME_REQUIRED,
             "按监管要求,充值前需完成实名认证",

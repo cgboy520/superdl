@@ -1,18 +1,29 @@
 """实名认证 provider seam(三要素核验:姓名 + 身份证号 + 手机号)。
 
-mock:dev/test 即时通过(可注入失败);真实供应商(阿里云实人认证/腾讯云慧眼)
-资质到位后按 Protocol 接入,业务流程零改动。PIPL 约束:身份证号不落明文,
-只存脱敏展示串(前 4 + 后 2);核验结果即时返回,原文不留存。
+- mock:dev/test 即时通过(可注入失败);
+- aliyun:实人认证·手机号三要素核验简版(Cloudauth 2019-03-07
+  Mobile3MetaSimpleVerify),凭据走平台配置中心(env 为默认值层)。
+PIPL 约束:身份证号不落明文,只存脱敏展示串(前 4 + 后 2);
+核验结果即时返回,原文不留存、不进日志。
 """
 
 from typing import Protocol
+from uuid import uuid4
 
-from app.core.config import get_settings
+import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.aliyun import rpc_signed_params
+from app.core.timeutil import now_utc
+
+
+class RealNameError(RuntimeError):
+    """渠道故障(网络/签名/欠费)。调用方转 AppError(REAL_NAME_CHANNEL_ERROR)。"""
 
 
 class RealNameProvider(Protocol):
     async def verify(self, name: str, id_number: str, phone: str) -> bool:
-        """三要素核验。渠道故障抛异常;核验不一致返回 False。"""
+        """三要素核验。渠道故障抛 RealNameError;核验不一致返回 False。"""
         ...
 
 
@@ -21,6 +32,65 @@ class MockRealNameProvider:
 
     async def verify(self, name: str, id_number: str, phone: str) -> bool:
         return not id_number.endswith("0000")
+
+
+class AliyunRealNameProvider:
+    """阿里云实人认证·手机号三要素核验简版(BizCode:1 一致 / 2 不一致 / 3 无记录)。"""
+
+    ENDPOINT = "https://cloudauth.aliyuncs.com/"
+
+    def __init__(
+        self,
+        access_key_id: str,
+        access_key_secret: str,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._ak = access_key_id
+        self._secret = access_key_secret
+        self._transport = transport  # 测试注入 MockTransport
+
+    def signed_params(
+        self, name: str, id_number: str, phone: str, *, nonce: str, timestamp: str
+    ) -> dict[str, str]:
+        return rpc_signed_params(
+            {
+                "Action": "Mobile3MetaSimpleVerify",
+                "Version": "2019-03-07",
+                "RegionId": "cn-hangzhou",
+                "ParamType": "normal",
+                "UserName": name,
+                "IdentifyNum": id_number,
+                "Mobile": phone,
+            },
+            access_key_id=self._ak,
+            access_key_secret=self._secret,
+            nonce=nonce,
+            timestamp=timestamp,
+        )
+
+    async def verify(self, name: str, id_number: str, phone: str) -> bool:
+        signed = self.signed_params(
+            name,
+            id_number,
+            phone,
+            nonce=uuid4().hex,
+            timestamp=now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        try:
+            async with httpx.AsyncClient(timeout=10, transport=self._transport) as client:
+                resp = await client.post(self.ENDPOINT, data=signed)
+            body = resp.json()
+        except Exception as exc:
+            raise RealNameError(f"realname request failed: {exc}") from exc
+        if body.get("Code") != "200":
+            raise RealNameError(f"realname rejected: {body.get('Code')} {body.get('Message')}")
+        biz_code = (body.get("ResultObject") or {}).get("BizCode")
+        if biz_code == "1":
+            return True
+        if biz_code in ("2", "3"):  # 不一致 / 运营商无记录,均视为核验未通过
+            return False
+        raise RealNameError(f"realname unexpected BizCode: {biz_code}")
 
 
 _provider: RealNameProvider | None = None
@@ -32,11 +102,18 @@ def set_realname_provider(provider: RealNameProvider | None) -> None:
     _provider = provider
 
 
-def get_realname_provider() -> RealNameProvider:
+async def get_realname_provider(session: AsyncSession) -> RealNameProvider:
     if _provider is not None:
         return _provider
-    # 目前仅 mock;真实供应商接入时按 settings.real_name_provider 分支
-    _ = get_settings()
+    from app.core.platform_config import get_effective_platform_config
+
+    cfg = await get_effective_platform_config(session)
+    if cfg["real_name_provider"] == "aliyun":
+        if not (cfg["real_name_access_key_id"] and cfg["real_name_access_key_secret"]):
+            raise RealNameError("阿里云实名认证凭据未配置(管理端·平台配置)")
+        return AliyunRealNameProvider(
+            cfg["real_name_access_key_id"], cfg["real_name_access_key_secret"]
+        )
     return MockRealNameProvider()
 
 

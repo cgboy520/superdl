@@ -8,11 +8,15 @@
 未配置凭据时报 PAYMENT_CHANNEL_ERROR,不影响 mock 渠道与其余功能。
 """
 
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
+from app.core.platform_config import get_effective_platform_config
 
 if TYPE_CHECKING:
     from app.modules.billing.models import Order
@@ -104,25 +108,58 @@ class MockChannel:
         return QueryResult("paid", channel_txn_id=hit[0], amount=hit[1])
 
 
+# 参与渠道构造的配置键(工厂据此做实例缓存指纹;配置变更即重建,免重启生效)
+WECHAT_CFG_KEYS = (
+    "wechat_mchid",
+    "wechat_appid",
+    "wechat_private_key",
+    "wechat_cert_serial_no",
+    "wechat_apiv3_key",
+    "wechat_public_key",
+    "wechat_public_key_id",
+)
+ALIPAY_CFG_KEYS = ("alipay_app_id", "alipay_private_key", "alipay_public_key")
+
+
 class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7 联调
-    """微信支付 Native(扫码)。凭据经 SUPERDL_WECHAT_* 注入。"""
+    """微信支付 Native(扫码),APIv3。
+
+    验签双模式(wechatpayv3 原生支持):配置了微信支付公钥 + 公钥 ID(PUB_KEY_ID_*)
+    走公钥模式(2024-10 后新商户唯一模式);否则回退平台证书模式(SDK 自动拉取轮换)。
+    """
 
     name = "wechat"
 
-    def __init__(self) -> None:
-        s = get_settings()
-        if not (s.wechat_mchid and s.wechat_private_key and s.wechat_cert_serial_no):
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "微信支付未配置商户凭据(人工事项 #6)")
+    def __init__(self, cfg: Mapping[str, str]) -> None:
+        required = (
+            "wechat_mchid",
+            "wechat_appid",
+            "wechat_private_key",
+            "wechat_cert_serial_no",
+            "wechat_apiv3_key",
+        )
+        if not all(cfg[k] for k in required):
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, "微信支付商户凭据不完整(管理端·平台配置)"
+            )
+        public_key = cfg["wechat_public_key"] or None
+        public_key_id = cfg["wechat_public_key_id"] or None
+        if bool(public_key) != bool(public_key_id):
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, "微信支付公钥模式需同时配置公钥与公钥 ID"
+            )
         from wechatpayv3 import WeChatPay, WeChatPayType  # type: ignore[import-untyped]
 
         self._wxpay = WeChatPay(
             wechatpay_type=WeChatPayType.NATIVE,
-            mchid=s.wechat_mchid,
-            private_key=s.wechat_private_key,
-            cert_serial_no=s.wechat_cert_serial_no,
-            apiv3_key=s.wechat_apiv3_key,
-            appid=s.wechat_appid,
-            notify_url=f"{s.public_base_url}/api/v1/webhooks/wechatpay",
+            mchid=cfg["wechat_mchid"],
+            private_key=cfg["wechat_private_key"],
+            cert_serial_no=cfg["wechat_cert_serial_no"],
+            apiv3_key=cfg["wechat_apiv3_key"],
+            appid=cfg["wechat_appid"],
+            notify_url=f"{get_settings().public_base_url}/api/v1/webhooks/wechatpay",
+            public_key=public_key,
+            public_key_id=public_key_id,
         )
 
     async def create_payment(self, order: "Order") -> str:
@@ -188,10 +225,9 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
 
     GATEWAY = "https://openapi.alipay.com/gateway.do"
 
-    def __init__(self) -> None:
-        s = get_settings()
-        if not (s.alipay_app_id and s.alipay_private_key and s.alipay_public_key):
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "支付宝未配置商户凭据(人工事项 #6)")
+    def __init__(self, cfg: Mapping[str, str]) -> None:
+        if not (cfg["alipay_app_id"] and cfg["alipay_private_key"] and cfg["alipay_public_key"]):
+            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "支付宝商户凭据不完整(管理端·平台配置)")
         from alipay.aop.api.AlipayClientConfig import (
             AlipayClientConfig,  # type: ignore[import-untyped]
         )
@@ -199,14 +235,14 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
             DefaultAlipayClient,  # type: ignore[import-untyped]
         )
 
-        cfg = AlipayClientConfig()
-        cfg.server_url = self.GATEWAY
-        cfg.app_id = s.alipay_app_id
-        cfg.app_private_key = s.alipay_private_key
-        cfg.alipay_public_key = s.alipay_public_key
-        self._client = DefaultAlipayClient(alipay_client_config=cfg)
-        self._public_key = s.alipay_public_key
-        self._notify_url = f"{s.public_base_url}/api/v1/webhooks/alipay"
+        client_cfg = AlipayClientConfig()
+        client_cfg.server_url = self.GATEWAY
+        client_cfg.app_id = cfg["alipay_app_id"]
+        client_cfg.app_private_key = cfg["alipay_private_key"]
+        client_cfg.alipay_public_key = cfg["alipay_public_key"]
+        self._client = DefaultAlipayClient(alipay_client_config=client_cfg)
+        self._public_key = cfg["alipay_public_key"]
+        self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
     async def create_payment(self, order: "Order") -> str:
         import asyncio
@@ -297,15 +333,26 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         )
 
 
-def get_channel(name: str) -> PaymentChannel:
+# 真实渠道实例缓存:按配置指纹缓存(配置变更即重建,免重启生效;
+# 平台证书模式下避免每次回调都重新实例化 SDK 触发平台证书拉取)
+_real_channel_cache: dict[str, tuple[tuple[str, ...], PaymentChannel]] = {}
+
+
+async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     settings = get_settings()
     if name == "mock":
         # 双保险:生产环境无条件拒绝 mock(无验签渠道 = 无鉴权入账口)
         if settings.environment == "prod" or not settings.payment_mock:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "mock 渠道仅限开发环境")
         return MockChannel()
-    if name == "wechat":
-        return WechatChannel()
-    if name == "alipay":
-        return AlipayChannel()
-    raise AppError(ErrorCode.VALIDATION_ERROR, f"未知支付渠道:{name}")
+    if name not in ("wechat", "alipay"):
+        raise AppError(ErrorCode.VALIDATION_ERROR, f"未知支付渠道:{name}")
+    cfg = await get_effective_platform_config(session)
+    keys = WECHAT_CFG_KEYS if name == "wechat" else ALIPAY_CFG_KEYS
+    fingerprint = tuple(cfg[k] for k in keys)
+    cached = _real_channel_cache.get(name)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    channel: PaymentChannel = WechatChannel(cfg) if name == "wechat" else AlipayChannel(cfg)
+    _real_channel_cache[name] = (fingerprint, channel)
+    return channel

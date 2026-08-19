@@ -14,6 +14,7 @@ from app.core.metrics import (
     PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL,
 )
 from app.core.money import as_amount
+from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Order
@@ -54,7 +55,10 @@ async def create_recharge(
         if existing is not None:
             return existing
 
-    channel = get_channel(channel_name)
+    cfg = await get_effective_platform_config(session)
+    if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "该支付渠道暂未开通,请选择其他支付方式")
+    channel = await get_channel(channel_name, session)
     order = Order(
         order_no=_gen_order_no(),
         user_id=user_id,
@@ -161,7 +165,8 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
             )
         for order in orders:
             try:
-                channel = get_channel(order.channel)
+                async with sm() as cfg_session:
+                    channel = await get_channel(order.channel, cfg_session)
                 result = await channel.query_order(order)
             except AppError as exc:
                 logger.warning("order_query_failed", order_no=order.order_no, error=exc.message)
@@ -186,7 +191,8 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
     ).scalar_one_or_none()
     if order is None:
         raise AppError(ErrorCode.ORDER_NOT_FOUND, "订单不存在", http_status=404)
-    result = await get_channel(order.channel).query_order(order)
+    channel = await get_channel(order.channel, session)
+    result = await channel.query_order(order)
     matches = (
         result.status == "paid"
         and result.amount is not None
@@ -217,7 +223,8 @@ async def backfill_order(session: AsyncSession, order_no: str) -> Order:
         raise AppError(ErrorCode.CONFLICT, "订单已入账,无需补单")
     if order.status not in ("pending", "closed"):
         raise AppError(ErrorCode.CONFLICT, f"订单状态 {order.status} 不可补单")
-    result = await get_channel(order.channel).query_order(order)
+    channel = await get_channel(order.channel, session)
+    result = await channel.query_order(order)
     if result.status != "paid" or not result.channel_txn_id or result.amount is None:
         raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, f"渠道侧状态为 {result.status},不能补单")
     if as_amount(result.amount) != order.amount:

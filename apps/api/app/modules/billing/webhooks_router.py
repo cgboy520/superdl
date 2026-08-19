@@ -15,7 +15,7 @@ if get_settings().environment != "prod":
     @router.post("/webhooks/mock")
     async def mock_webhook(request: Request, session: DbSession) -> dict[str, str]:
         """dev/test 专用:模拟支付成功回调。"""
-        channel = get_channel("mock")
+        channel = await get_channel("mock", session)
         result = await channel.parse_callback(dict(request.headers), await request.body())
         status = await payment_service.handle_callback(session, "mock", result)
         return {"status": status}
@@ -23,7 +23,7 @@ if get_settings().environment != "prod":
 
 @router.post("/webhooks/wechatpay")
 async def wechatpay_webhook(request: Request, session: DbSession) -> dict[str, str]:
-    channel = get_channel("wechat")
+    channel = await get_channel("wechat", session)
     result = await channel.parse_callback(dict(request.headers), await request.body())
     status = await payment_service.handle_callback(session, "wechat", result)
     return {"code": "SUCCESS", "message": status}
@@ -31,7 +31,7 @@ async def wechatpay_webhook(request: Request, session: DbSession) -> dict[str, s
 
 @router.post("/webhooks/alipay")
 async def alipay_webhook(request: Request, session: DbSession) -> dict[str, str]:
-    channel = get_channel("alipay")
+    channel = await get_channel("alipay", session)
     result = await channel.parse_callback(dict(request.headers), await request.body())
     status = await payment_service.handle_callback(session, "alipay", result)
     return {"status": status}

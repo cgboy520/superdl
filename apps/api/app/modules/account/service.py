@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
+from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.core.sms import SmsError, get_sms_channel
@@ -46,7 +47,8 @@ async def send_sms_code(
             f"发送过于频繁,请 {settings.sms_send_interval_seconds} 秒后再试",
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
-    code = MOCK_SMS_CODE if settings.sms_provider == "mock" else f"{secrets.randbelow(10**6):06d}"
+    cfg = await get_effective_platform_config(session)
+    code = MOCK_SMS_CODE if cfg["sms_provider"] == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
         phone=phone,
         code=code,
@@ -56,7 +58,8 @@ async def send_sms_code(
     session.add(row)
     await session.commit()
     try:
-        await get_sms_channel().send(phone, settings.sms_template_verify or "", {"code": code})
+        channel = await get_sms_channel(session)
+        await channel.send(phone, cfg["sms_template_verify"] or "", {"code": code})
     except SmsError as exc:
         # 渠道失败:作废刚落库的验证码,避免"码在库里但用户收不到"的脏数据
         row.used_at = now_utc()
@@ -206,12 +209,26 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
 
     身份证号只存脱敏串(PIPL:原文即用即弃,不落库不打日志)。
     """
-    from app.modules.account.realname import get_realname_provider, mask_id_number
+    from app.modules.account.realname import (
+        RealNameError,
+        get_realname_provider,
+        mask_id_number,
+    )
 
     if user.verification_status == "verified":
         raise AppError(ErrorCode.CONFLICT, "已完成实名认证,无需重复提交")
     check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
-    ok = await get_realname_provider().verify(name, id_number, user.phone)
+    provider = await get_realname_provider(session)
+    try:
+        ok = await provider.verify(name, id_number, user.phone)
+    except RealNameError as exc:
+        # 渠道故障 ≠ 核验不一致:502 上抛,不消耗用户的"不一致"心智
+        logger.error("real_name_channel_error", user_id=user.id, error=str(exc))
+        raise AppError(
+            ErrorCode.REAL_NAME_CHANNEL_ERROR,
+            "实名核验服务暂不可用,请稍后重试",
+            http_status=status.HTTP_502_BAD_GATEWAY,
+        ) from exc
     if not ok:
         raise AppError(ErrorCode.REAL_NAME_MISMATCH, "实名信息与运营商记录不一致,请核对后重试")
     user.id_name = name
