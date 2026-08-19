@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminUpdatePoliciesApiAdminV1PoliciesPut200 = { [key: string]: unknown };
+export interface OutboxTaskStatusOut {
+  id: number;
+  status: string;
+}

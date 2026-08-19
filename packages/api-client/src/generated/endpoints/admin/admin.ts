@@ -21,54 +21,50 @@ import type {
 
 import type {
   AdjustmentCreate,
+  AdjustmentOut,
   AdjustmentReview,
-  AdminAlertsApiAdminV1AlertsGet200Item,
-  AdminAuditLogApiAdminV1AuditGet200Item,
+  AdjustmentStatusOut,
+  AdminAlertOut,
   AdminAuditLogApiAdminV1AuditGetParams,
-  AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200,
-  AdminCreateAdjustmentApiAdminV1AdjustmentsPost201,
-  AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200,
   AdminForceStopRequest,
-  AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200,
-  AdminGetPlatformConfigApiAdminV1PlatformConfigGet200,
-  AdminGetPoliciesApiAdminV1PoliciesGet200,
   AdminInstanceOut,
-  AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item,
-  AdminListDeadTasksApiAdminV1OutboxDeadGet200Item,
   AdminListInstancesApiAdminV1InstancesGetParams,
-  AdminListNodesApiAdminV1NodesGet200Item,
-  AdminListOrdersApiAdminV1OrdersGet200Item,
   AdminListOrdersApiAdminV1OrdersGetParams,
-  AdminListTenantsApiAdminV1TenantsGet200Item,
   AdminLoginRequest,
+  AdminOrderOut,
   AdminOut,
-  AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item,
-  AdminPublishAnnouncementApiAdminV1AnnouncementsPost201,
-  AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200,
-  AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200,
-  AdminTestSmsApiAdminV1PlatformConfigTestSmsPost200,
   AdminToken,
-  AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200,
-  AdminUpdatePlatformConfigApiAdminV1PlatformConfigPut200,
-  AdminUpdatePoliciesApiAdminV1PoliciesPut200,
-  AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200,
   AnnouncementCreate,
+  AnnouncementResultOut,
+  AuditLogOut,
+  DeadTaskOut,
   HTTPValidationError,
   InstanceOut,
+  NodeOut,
+  OrderBackfillOut,
   OrderBackfillRequest,
+  OrderVerifyOut,
   OutboxDiscardRequest,
-  OversellReportApiAdminV1ReportsOversellGet200Item,
+  OutboxTaskStatusOut,
+  OversellPoolOut,
+  PaymentAnomalyOut,
+  PlatformConfigOut,
   PlatformConfigUpdateRequest,
+  PoliciesAdminOut,
   PolicyUpdateRequest,
-  ReconciliationApiAdminV1ReconciliationGet200,
   ReconciliationApiAdminV1ReconciliationGetParams,
-  RevenueReportApiAdminV1ReportsRevenueGet200,
+  ReconciliationOut,
   RevenueReportApiAdminV1ReportsRevenueGetParams,
+  RevenueReportOut,
   SkuAdminOut,
   SkuCreate,
   SkuUpdate,
+  SmsTestOut,
   SmsTestRequest,
-  TenantFreezeRequest
+  TenantFreezeRequest,
+  TenantOut,
+  TenantStatusOut,
+  UpdatedKeysOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -104,9 +100,9 @@ export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl = () => {
 /**
  * @summary Admin List Adjustments
  */
-export const adminListAdjustmentsApiAdminV1AdjustmentsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item[]> => {
+export const adminListAdjustmentsApiAdminV1AdjustmentsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentOut[]> => {
 
-  return customFetch<AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item[]>(getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl(),
+  return customFetch<AdjustmentOut[]>(getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -204,9 +200,9 @@ export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
 /**
  * @summary Admin Create Adjustment
  */
-export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdminCreateAdjustmentApiAdminV1AdjustmentsPost201> => {
+export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentStatusOut> => {
 
-  return customFetch<AdminCreateAdjustmentApiAdminV1AdjustmentsPost201>(getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl(),
+  return customFetch<AdjustmentStatusOut>(getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -305,9 +301,9 @@ export const getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost
  * @summary Admin Review Adjustment
  */
 export const adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost = async (adjustmentId: number,
-    adjustmentReview: AdjustmentReview, options?: Parameters<typeof customFetch>[1]): Promise<AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200> => {
+    adjustmentReview: AdjustmentReview, options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentStatusOut> => {
 
-  return customFetch<AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200>(getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPostUrl(adjustmentId),
+  return customFetch<AdjustmentStatusOut>(getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPostUrl(adjustmentId),
   {
     ...options,
     method: 'POST',
@@ -412,9 +408,9 @@ export const getAdminAlertsApiAdminV1AlertsGetUrl = () => {
  * 管理端告警流(总览右栏数据源)。
  * @summary Admin Alerts
  */
-export const adminAlertsApiAdminV1AlertsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertsApiAdminV1AlertsGet200Item[]> => {
+export const adminAlertsApiAdminV1AlertsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertOut[]> => {
 
-  return customFetch<AdminAlertsApiAdminV1AlertsGet200Item[]>(getAdminAlertsApiAdminV1AlertsGetUrl(),
+  return customFetch<AdminAlertOut[]>(getAdminAlertsApiAdminV1AlertsGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -513,9 +509,9 @@ export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl = () => {
  * 公告群发(站内信 announcement 类型,全部 active 用户)。
  * @summary Admin Publish Announcement
  */
-export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdminPublishAnnouncementApiAdminV1AnnouncementsPost201> => {
+export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementResultOut> => {
 
-  return customFetch<AdminPublishAnnouncementApiAdminV1AnnouncementsPost201>(getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl(),
+  return customFetch<AnnouncementResultOut>(getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -620,9 +616,9 @@ export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiA
 /**
  * @summary Admin Audit Log
  */
-export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiAdminV1AuditGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminAuditLogApiAdminV1AuditGet200Item[]> => {
+export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiAdminV1AuditGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditLogOut[]> => {
 
-  return customFetch<AdminAuditLogApiAdminV1AuditGet200Item[]>(getAdminAuditLogApiAdminV1AuditGetUrl(params),
+  return customFetch<AuditLogOut[]>(getAdminAuditLogApiAdminV1AuditGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -821,9 +817,9 @@ export const getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetUrl = () => {
  * 异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。
  * @summary Admin Payment Anomalies
  */
-export const adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item[]> => {
+export const adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PaymentAnomalyOut[]> => {
 
-  return customFetch<AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item[]>(getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetUrl(),
+  return customFetch<PaymentAnomalyOut[]>(getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -923,9 +919,9 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200> => {
+    orderBackfillRequest: OrderBackfillRequest, options?: Parameters<typeof customFetch>[1]): Promise<OrderBackfillOut> => {
 
-  return customFetch<AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200>(getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl(orderNo),
+  return customFetch<OrderBackfillOut>(getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl(orderNo),
   {
     ...options,
     method: 'POST',
@@ -1030,9 +1026,9 @@ export const getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostUrl = (o
  * 向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。
  * @summary Admin Verify Order
  */
-export const adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost = async (orderNo: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200> => {
+export const adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost = async (orderNo: string, options?: Parameters<typeof customFetch>[1]): Promise<OrderVerifyOut> => {
 
-  return customFetch<AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200>(getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostUrl(orderNo),
+  return customFetch<OrderVerifyOut>(getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostUrl(orderNo),
   {
     ...options,
     method: 'POST'
@@ -1445,9 +1441,9 @@ export const getAdminListNodesApiAdminV1NodesGetUrl = () => {
 /**
  * @summary Admin List Nodes
  */
-export const adminListNodesApiAdminV1NodesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListNodesApiAdminV1NodesGet200Item[]> => {
+export const adminListNodesApiAdminV1NodesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<NodeOut[]> => {
 
-  return customFetch<AdminListNodesApiAdminV1NodesGet200Item[]>(getAdminListNodesApiAdminV1NodesGetUrl(),
+  return customFetch<NodeOut[]>(getAdminListNodesApiAdminV1NodesGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -1552,9 +1548,9 @@ export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrder
 /**
  * @summary Admin List Orders
  */
-export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminListOrdersApiAdminV1OrdersGet200Item[]> => {
+export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrderOut[]> => {
 
-  return customFetch<AdminListOrdersApiAdminV1OrdersGet200Item[]>(getAdminListOrdersApiAdminV1OrdersGetUrl(params),
+  return customFetch<AdminOrderOut[]>(getAdminListOrdersApiAdminV1OrdersGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1653,9 +1649,9 @@ export const getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl = () => {
  * 死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。
  * @summary Admin List Dead Tasks
  */
-export const adminListDeadTasksApiAdminV1OutboxDeadGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListDeadTasksApiAdminV1OutboxDeadGet200Item[]> => {
+export const adminListDeadTasksApiAdminV1OutboxDeadGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeadTaskOut[]> => {
 
-  return customFetch<AdminListDeadTasksApiAdminV1OutboxDeadGet200Item[]>(getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl(),
+  return customFetch<DeadTaskOut[]>(getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -1755,9 +1751,9 @@ export const getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl = (task
  * @summary Admin Discard Dead Task
  */
 export const adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost = async (taskId: number,
-    outboxDiscardRequest: OutboxDiscardRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200> => {
+    outboxDiscardRequest: OutboxDiscardRequest, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskStatusOut> => {
 
-  return customFetch<AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200>(getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl(taskId),
+  return customFetch<OutboxTaskStatusOut>(getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl(taskId),
   {
     ...options,
     method: 'POST',
@@ -1862,9 +1858,9 @@ export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl = (taskId: 
  * 重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。
  * @summary Admin Retry Dead Task
  */
-export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200> => {
+export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskStatusOut> => {
 
-  return customFetch<AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200>(getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl(taskId),
+  return customFetch<OutboxTaskStatusOut>(getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl(taskId),
   {
     ...options,
     method: 'POST'
@@ -1963,9 +1959,9 @@ export const getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl = () => {
  * 分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。
  * @summary Admin Get Platform Config
  */
-export const adminGetPlatformConfigApiAdminV1PlatformConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminGetPlatformConfigApiAdminV1PlatformConfigGet200> => {
+export const adminGetPlatformConfigApiAdminV1PlatformConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PlatformConfigOut> => {
 
-  return customFetch<AdminGetPlatformConfigApiAdminV1PlatformConfigGet200>(getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl(),
+  return customFetch<PlatformConfigOut>(getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -2064,9 +2060,9 @@ export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl = () => 
  * 在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。
  * @summary Admin Update Platform Config
  */
-export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminUpdatePlatformConfigApiAdminV1PlatformConfigPut200> => {
+export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
 
-  return customFetch<AdminUpdatePlatformConfigApiAdminV1PlatformConfigPut200>(getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl(),
+  return customFetch<UpdatedKeysOut>(getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl(),
   {
     ...options,
     method: 'PUT',
@@ -2165,9 +2161,9 @@ export const getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl = () => {
  * 按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。
  * @summary Admin Test Sms
  */
-export const adminTestSmsApiAdminV1PlatformConfigTestSmsPost = async (smsTestRequest: SmsTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminTestSmsApiAdminV1PlatformConfigTestSmsPost200> => {
+export const adminTestSmsApiAdminV1PlatformConfigTestSmsPost = async (smsTestRequest: SmsTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<SmsTestOut> => {
 
-  return customFetch<AdminTestSmsApiAdminV1PlatformConfigTestSmsPost200>(getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl(),
+  return customFetch<SmsTestOut>(getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -2266,9 +2262,9 @@ export const getAdminGetPoliciesApiAdminV1PoliciesGetUrl = () => {
  * 当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。
  * @summary Admin Get Policies
  */
-export const adminGetPoliciesApiAdminV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminGetPoliciesApiAdminV1PoliciesGet200> => {
+export const adminGetPoliciesApiAdminV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesAdminOut> => {
 
-  return customFetch<AdminGetPoliciesApiAdminV1PoliciesGet200>(getAdminGetPoliciesApiAdminV1PoliciesGetUrl(),
+  return customFetch<PoliciesAdminOut>(getAdminGetPoliciesApiAdminV1PoliciesGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -2367,9 +2363,9 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
  * 在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
  * @summary Admin Update Policies
  */
-export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminUpdatePoliciesApiAdminV1PoliciesPut200> => {
+export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
 
-  return customFetch<AdminUpdatePoliciesApiAdminV1PoliciesPut200>(getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl(),
+  return customFetch<UpdatedKeysOut>(getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl(),
   {
     ...options,
     method: 'PUT',
@@ -2475,9 +2471,9 @@ export const getReconciliationApiAdminV1ReconciliationGetUrl = (params: Reconcil
  * 日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。
  * @summary Reconciliation
  */
-export const reconciliationApiAdminV1ReconciliationGet = async (params: ReconciliationApiAdminV1ReconciliationGetParams, options?: Parameters<typeof customFetch>[1]): Promise<ReconciliationApiAdminV1ReconciliationGet200> => {
+export const reconciliationApiAdminV1ReconciliationGet = async (params: ReconciliationApiAdminV1ReconciliationGetParams, options?: Parameters<typeof customFetch>[1]): Promise<ReconciliationOut> => {
 
-  return customFetch<ReconciliationApiAdminV1ReconciliationGet200>(getReconciliationApiAdminV1ReconciliationGetUrl(params),
+  return customFetch<ReconciliationOut>(getReconciliationApiAdminV1ReconciliationGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2576,9 +2572,9 @@ export const getOversellReportApiAdminV1ReportsOversellGetUrl = () => {
  * 镇店报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。
  * @summary Oversell Report
  */
-export const oversellReportApiAdminV1ReportsOversellGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OversellReportApiAdminV1ReportsOversellGet200Item[]> => {
+export const oversellReportApiAdminV1ReportsOversellGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OversellPoolOut[]> => {
 
-  return customFetch<OversellReportApiAdminV1ReportsOversellGet200Item[]>(getOversellReportApiAdminV1ReportsOversellGetUrl(),
+  return customFetch<OversellPoolOut[]>(getOversellReportApiAdminV1ReportsOversellGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -2684,9 +2680,9 @@ export const getRevenueReportApiAdminV1ReportsRevenueGetUrl = (params?: RevenueR
  * 今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。
  * @summary Revenue Report
  */
-export const revenueReportApiAdminV1ReportsRevenueGet = async (params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: Parameters<typeof customFetch>[1]): Promise<RevenueReportApiAdminV1ReportsRevenueGet200> => {
+export const revenueReportApiAdminV1ReportsRevenueGet = async (params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: Parameters<typeof customFetch>[1]): Promise<RevenueReportOut> => {
 
-  return customFetch<RevenueReportApiAdminV1ReportsRevenueGet200>(getRevenueReportApiAdminV1ReportsRevenueGetUrl(params),
+  return customFetch<RevenueReportOut>(getRevenueReportApiAdminV1ReportsRevenueGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -3091,9 +3087,9 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = () => {
 /**
  * @summary Admin List Tenants
  */
-export const adminListTenantsApiAdminV1TenantsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListTenantsApiAdminV1TenantsGet200Item[]> => {
+export const adminListTenantsApiAdminV1TenantsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {
 
-  return customFetch<AdminListTenantsApiAdminV1TenantsGet200Item[]>(getAdminListTenantsApiAdminV1TenantsGetUrl(),
+  return customFetch<TenantOut[]>(getAdminListTenantsApiAdminV1TenantsGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -3192,9 +3188,9 @@ export const getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl = (userId:
  * @summary Admin Freeze Tenant
  */
 export const adminFreezeTenantApiAdminV1TenantsUserIdFreezePost = async (userId: number,
-    tenantFreezeRequest: TenantFreezeRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200> => {
+    tenantFreezeRequest: TenantFreezeRequest, options?: Parameters<typeof customFetch>[1]): Promise<TenantStatusOut> => {
 
-  return customFetch<AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200>(getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl(userId),
+  return customFetch<TenantStatusOut>(getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl(userId),
   {
     ...options,
     method: 'POST',
@@ -3299,9 +3295,9 @@ export const getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl = (use
  * @summary Admin Unfreeze Tenant
  */
 export const adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost = async (userId: number,
-    tenantFreezeRequest: TenantFreezeRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200> => {
+    tenantFreezeRequest: TenantFreezeRequest, options?: Parameters<typeof customFetch>[1]): Promise<TenantStatusOut> => {
 
-  return customFetch<AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200>(getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl(userId),
+  return customFetch<TenantStatusOut>(getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl(userId),
   {
     ...options,
     method: 'POST',

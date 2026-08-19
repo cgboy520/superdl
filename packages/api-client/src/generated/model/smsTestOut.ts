@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminGetPoliciesApiAdminV1PoliciesGet200 = { [key: string]: unknown };
+export interface SmsTestOut {
+  ok: boolean;
+  provider: string;
+}

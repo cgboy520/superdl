@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminCreateAdjustmentApiAdminV1AdjustmentsPost201 = { [key: string]: unknown };
+export type DeadTaskOutPayload = { [key: string]: unknown };

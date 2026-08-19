@@ -5,4 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item = { [key: string]: unknown };
+export interface UpdatedKeysOut {
+  updated: string[];
+}

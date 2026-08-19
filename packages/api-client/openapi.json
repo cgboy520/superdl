@@ -26,6 +26,73 @@
         "title": "AdjustmentCreate",
         "type": "object"
       },
+      "AdjustmentOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "review_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Comment"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "amount",
+          "reason",
+          "status",
+          "created_by",
+          "reviewed_by",
+          "review_comment",
+          "created_at"
+        ],
+        "title": "AdjustmentOut",
+        "type": "object"
+      },
       "AdjustmentReview": {
         "properties": {
           "approve": {
@@ -49,6 +116,62 @@
           "approve"
         ],
         "title": "AdjustmentReview",
+        "type": "object"
+      },
+      "AdjustmentStatusOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "AdjustmentStatusOut",
+        "type": "object"
+      },
+      "AdminAlertOut": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "content",
+          "severity",
+          "created_at"
+        ],
+        "title": "AdminAlertOut",
         "type": "object"
       },
       "AdminForceStopRequest": {
@@ -203,6 +326,63 @@
         "title": "AdminLoginRequest",
         "type": "object"
       },
+      "AdminOrderOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "order_no": {
+            "title": "Order No",
+            "type": "string"
+          },
+          "qr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Url"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "order_no",
+          "amount",
+          "channel",
+          "status",
+          "qr_url",
+          "expires_at",
+          "created_at",
+          "user_id"
+        ],
+        "title": "AdminOrderOut",
+        "type": "object"
+      },
       "AdminOut": {
         "properties": {
           "id": {
@@ -268,6 +448,88 @@
           "content"
         ],
         "title": "AnnouncementCreate",
+        "type": "object"
+      },
+      "AnnouncementResultOut": {
+        "properties": {
+          "reached": {
+            "title": "Reached",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reached"
+        ],
+        "title": "AnnouncementResultOut",
+        "type": "object"
+      },
+      "AuditLogOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "result": {
+            "title": "Result",
+            "type": "integer"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "id",
+          "actor_type",
+          "actor_id",
+          "action",
+          "target",
+          "ip",
+          "result",
+          "created_at"
+        ],
+        "title": "AuditLogOut",
         "type": "object"
       },
       "BillHourlyOut": {
@@ -409,6 +671,57 @@
           "items"
         ],
         "title": "DailySummaryOut",
+        "type": "object"
+      },
+      "DeadTaskOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "retries": {
+            "title": "Retries",
+            "type": "integer"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "payload",
+          "retries",
+          "last_error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DeadTaskOut",
         "type": "object"
       },
       "DiskCreate": {
@@ -1018,6 +1331,44 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "NodeOut": {
+        "properties": {
+          "gpu_model": {
+            "title": "Gpu Model",
+            "type": "string"
+          },
+          "gpu_total": {
+            "title": "Gpu Total",
+            "type": "integer"
+          },
+          "gpu_used": {
+            "title": "Gpu Used",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pool_label": {
+            "title": "Pool Label",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "pool_label",
+          "gpu_model",
+          "gpu_total",
+          "gpu_used",
+          "status"
+        ],
+        "title": "NodeOut",
+        "type": "object"
+      },
       "NotificationOut": {
         "properties": {
           "content": {
@@ -1070,6 +1421,24 @@
         "title": "NotificationOut",
         "type": "object"
       },
+      "OrderBackfillOut": {
+        "properties": {
+          "order_no": {
+            "title": "Order No",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_no",
+          "status"
+        ],
+        "title": "OrderBackfillOut",
+        "type": "object"
+      },
       "OrderBackfillRequest": {
         "properties": {
           "reason": {
@@ -1085,6 +1454,63 @@
         "title": "OrderBackfillRequest",
         "type": "object"
       },
+      "OrderVerifyOut": {
+        "properties": {
+          "channel_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Amount"
+          },
+          "channel_status": {
+            "title": "Channel Status",
+            "type": "string"
+          },
+          "channel_txn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Txn Id"
+          },
+          "matches": {
+            "title": "Matches",
+            "type": "boolean"
+          },
+          "order_amount": {
+            "title": "Order Amount",
+            "type": "string"
+          },
+          "order_no": {
+            "title": "Order No",
+            "type": "string"
+          },
+          "order_status": {
+            "title": "Order Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_no",
+          "order_status",
+          "order_amount",
+          "channel_status",
+          "channel_txn_id",
+          "channel_amount",
+          "matches"
+        ],
+        "title": "OrderVerifyOut",
+        "type": "object"
+      },
       "OutboxDiscardRequest": {
         "properties": {
           "reason": {
@@ -1098,6 +1524,64 @@
           "reason"
         ],
         "title": "OutboxDiscardRequest",
+        "type": "object"
+      },
+      "OutboxTaskStatusOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "OutboxTaskStatusOut",
+        "type": "object"
+      },
+      "OversellPoolOut": {
+        "properties": {
+          "oversell_ratio": {
+            "title": "Oversell Ratio",
+            "type": "number"
+          },
+          "physical_gpus": {
+            "title": "Physical Gpus",
+            "type": "integer"
+          },
+          "pool": {
+            "title": "Pool",
+            "type": "string"
+          },
+          "sold_share": {
+            "title": "Sold Share",
+            "type": "number"
+          },
+          "util_avg_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Util Avg 24H"
+          }
+        },
+        "required": [
+          "pool",
+          "physical_gpus",
+          "sold_share",
+          "oversell_ratio",
+          "util_avg_24h"
+        ],
+        "title": "OversellPoolOut",
         "type": "object"
       },
       "Page_BillHourlyOut_": {
@@ -1154,6 +1638,57 @@
         "title": "Page[LedgerEntryOut]",
         "type": "object"
       },
+      "PaymentAnomalyOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "lost_callback",
+              "closed_order",
+              "negative_balance"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "order_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order No"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "order_no",
+          "user_id",
+          "amount",
+          "detail",
+          "created_at"
+        ],
+        "title": "PaymentAnomalyOut",
+        "type": "object"
+      },
       "PaymentChannelsOut": {
         "description": "可用支付渠道(充值弹窗按此启用 Tab)。",
         "properties": {
@@ -1178,6 +1713,123 @@
         "title": "PaymentChannelsOut",
         "type": "object"
       },
+      "PlatformConfigItemOut": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "group": {
+            "enum": [
+              "payment_wechat",
+              "payment_alipay",
+              "sms",
+              "real_name",
+              "compliance"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "str",
+              "text",
+              "bool",
+              "choice",
+              "secret"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "source": {
+            "enum": [
+              "override",
+              "env",
+              "unset"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "key",
+          "group",
+          "kind",
+          "choices",
+          "hint",
+          "source",
+          "configured",
+          "value",
+          "preview",
+          "updated_at"
+        ],
+        "title": "PlatformConfigItemOut",
+        "type": "object"
+      },
+      "PlatformConfigOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformConfigItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PlatformConfigOut",
+        "type": "object"
+      },
       "PlatformConfigUpdateRequest": {
         "properties": {
           "reason": {
@@ -1200,6 +1852,38 @@
           "reason"
         ],
         "title": "PlatformConfigUpdateRequest",
+        "type": "object"
+      },
+      "PoliciesAdminOut": {
+        "properties": {
+          "effective": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Effective",
+            "type": "object"
+          },
+          "overrides": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Overrides",
+            "type": "object"
+          },
+          "specs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PolicySpecOut"
+            },
+            "title": "Specs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "effective",
+          "overrides",
+          "specs"
+        ],
+        "title": "PoliciesAdminOut",
         "type": "object"
       },
       "PoliciesOut": {
@@ -1249,6 +1933,29 @@
           "low_balance_warn_hours_default"
         ],
         "title": "PoliciesOut",
+        "type": "object"
+      },
+      "PolicySpecOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "max": {
+            "title": "Max",
+            "type": "string"
+          },
+          "min": {
+            "title": "Min",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "min",
+          "max"
+        ],
+        "title": "PolicySpecOut",
         "type": "object"
       },
       "PolicyUpdateRequest": {
@@ -1375,6 +2082,70 @@
         "title": "RechargeOut",
         "type": "object"
       },
+      "ReconciliationOut": {
+        "properties": {
+          "billed_total": {
+            "title": "Billed Total",
+            "type": "string"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "diff_pct": {
+            "title": "Diff Pct",
+            "type": "number"
+          },
+          "estimated_total": {
+            "title": "Estimated Total",
+            "type": "string"
+          },
+          "outliers": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationOutlier"
+            },
+            "title": "Outliers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "day",
+          "billed_total",
+          "estimated_total",
+          "diff_pct",
+          "outliers"
+        ],
+        "title": "ReconciliationOut",
+        "type": "object"
+      },
+      "ReconciliationOutlier": {
+        "properties": {
+          "billed": {
+            "title": "Billed",
+            "type": "string"
+          },
+          "diff_pct": {
+            "title": "Diff Pct",
+            "type": "number"
+          },
+          "estimated": {
+            "title": "Estimated",
+            "type": "string"
+          },
+          "instance_id": {
+            "title": "Instance Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instance_id",
+          "billed",
+          "estimated",
+          "diff_pct"
+        ],
+        "title": "ReconciliationOutlier",
+        "type": "object"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -1426,6 +2197,39 @@
           "sms_code"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RevenueReportOut": {
+        "properties": {
+          "month_revenue": {
+            "title": "Month Revenue",
+            "type": "string"
+          },
+          "today_revenue": {
+            "title": "Today Revenue",
+            "type": "string"
+          },
+          "today_signups": {
+            "title": "Today Signups",
+            "type": "integer"
+          },
+          "yesterday_revenue": {
+            "title": "Yesterday Revenue",
+            "type": "string"
+          },
+          "yesterday_signups": {
+            "title": "Yesterday Signups",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "today_revenue",
+          "yesterday_revenue",
+          "month_revenue",
+          "today_signups",
+          "yesterday_signups"
+        ],
+        "title": "RevenueReportOut",
         "type": "object"
       },
       "SiteConfigOut": {
@@ -2012,6 +2816,24 @@
         "title": "SmsCodeRequest",
         "type": "object"
       },
+      "SmsTestOut": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "provider"
+        ],
+        "title": "SmsTestOut",
+        "type": "object"
+      },
       "SmsTestRequest": {
         "properties": {
           "phone": {
@@ -2097,6 +2919,72 @@
         "title": "TenantFreezeRequest",
         "type": "object"
       },
+      "TenantOut": {
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "disk_gb": {
+            "title": "Disk Gb",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instances": {
+            "title": "Instances",
+            "type": "integer"
+          },
+          "phone_masked": {
+            "title": "Phone Masked",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_consumed": {
+            "title": "Total Consumed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "phone_masked",
+          "status",
+          "balance",
+          "total_consumed",
+          "instances",
+          "disk_gb",
+          "created_at"
+        ],
+        "title": "TenantOut",
+        "type": "object"
+      },
+      "TenantStatusOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "TenantStatusOut",
+        "type": "object"
+      },
       "TokenPair": {
         "properties": {
           "access_token": {
@@ -2123,6 +3011,22 @@
           "user"
         ],
         "title": "TokenPair",
+        "type": "object"
+      },
+      "UpdatedKeysOut": {
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updated"
+        ],
+        "title": "UpdatedKeysOut",
         "type": "object"
       },
       "UserOut": {
@@ -2260,8 +3164,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/AdjustmentOut"
                   },
                   "title": "Response Admin List Adjustments Api Admin V1 Adjustments Get",
                   "type": "array"
@@ -2298,9 +3201,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Create Adjustment Api Admin V1 Adjustments Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdjustmentStatusOut"
                 }
               }
             },
@@ -2357,9 +3258,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Review Adjustment Api Admin V1 Adjustments  Adjustment Id  Review Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdjustmentStatusOut"
                 }
               }
             },
@@ -2397,8 +3296,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/AdminAlertOut"
                   },
                   "title": "Response Admin Alerts Api Admin V1 Alerts Get",
                   "type": "array"
@@ -2438,9 +3336,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Publish Announcement Api Admin V1 Announcements Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AnnouncementResultOut"
                 }
               }
             },
@@ -2505,8 +3401,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/AuditLogOut"
                   },
                   "title": "Response Admin Audit Log Api Admin V1 Audit Get",
                   "type": "array"
@@ -2588,8 +3483,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/PaymentAnomalyOut"
                   },
                   "title": "Response Admin Payment Anomalies Api Admin V1 Finance Anomalies Get",
                   "type": "array"
@@ -2640,9 +3534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Backfill Order Api Admin V1 Finance Orders  Order No  Backfill Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OrderBackfillOut"
                 }
               }
             },
@@ -2690,9 +3582,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Verify Order Api Admin V1 Finance Orders  Order No  Verify Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OrderVerifyOut"
                 }
               }
             },
@@ -2887,8 +3777,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/NodeOut"
                   },
                   "title": "Response Admin List Nodes Api Admin V1 Nodes Get",
                   "type": "array"
@@ -2936,8 +3825,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/AdminOrderOut"
                   },
                   "title": "Response Admin List Orders Api Admin V1 Orders Get",
                   "type": "array"
@@ -2978,8 +3866,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/DeadTaskOut"
                   },
                   "title": "Response Admin List Dead Tasks Api Admin V1 Outbox Dead Get",
                   "type": "array"
@@ -3030,9 +3917,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Discard Dead Task Api Admin V1 Outbox  Task Id  Discard Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OutboxTaskStatusOut"
                 }
               }
             },
@@ -3080,9 +3965,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Retry Dead Task Api Admin V1 Outbox  Task Id  Retry Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OutboxTaskStatusOut"
                 }
               }
             },
@@ -3119,9 +4002,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Get Platform Config Api Admin V1 Platform Config Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PlatformConfigOut"
                 }
               }
             },
@@ -3156,9 +4037,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Update Platform Config Api Admin V1 Platform Config Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/UpdatedKeysOut"
                 }
               }
             },
@@ -3205,9 +4084,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Test Sms Api Admin V1 Platform Config Test Sms Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SmsTestOut"
                 }
               }
             },
@@ -3244,9 +4121,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Get Policies Api Admin V1 Policies Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PoliciesAdminOut"
                 }
               }
             },
@@ -3281,9 +4156,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Update Policies Api Admin V1 Policies Put",
-                  "type": "object"
+                  "$ref": "#/components/schemas/UpdatedKeysOut"
                 }
               }
             },
@@ -3331,9 +4204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Reconciliation Api Admin V1 Reconciliation Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReconciliationOut"
                 }
               }
             },
@@ -3371,8 +4242,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/OversellPoolOut"
                   },
                   "title": "Response Oversell Report Api Admin V1 Reports Oversell Get",
                   "type": "array"
@@ -3414,9 +4284,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Revenue Report Api Admin V1 Reports Revenue Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/RevenueReportOut"
                 }
               }
             },
@@ -3584,8 +4452,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/TenantOut"
                   },
                   "title": "Response Admin List Tenants Api Admin V1 Tenants Get",
                   "type": "array"
@@ -3635,9 +4502,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Freeze Tenant Api Admin V1 Tenants  User Id  Freeze Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/TenantStatusOut"
                 }
               }
             },
@@ -3694,9 +4559,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Admin Unfreeze Tenant Api Admin V1 Tenants  User Id  Unfreeze Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/TenantStatusOut"
                 }
               }
             },
@@ -5618,13 +6481,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Alipay Webhook Api V1 Webhooks Alipay Post",
-                  "type": "object"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"

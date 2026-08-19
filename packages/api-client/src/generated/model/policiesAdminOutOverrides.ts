@@ -5,4 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200 = { [key: string]: unknown };
+export type PoliciesAdminOutOverrides = {[key: string]: string};

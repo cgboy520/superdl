@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminAlertsApiAdminV1AlertsGet200Item = { [key: string]: unknown };
+export interface AdjustmentStatusOut {
+  id: number;
+  status: string;
+}

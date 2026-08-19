@@ -20,7 +20,6 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  AlipayWebhookApiV1WebhooksAlipayPost200,
   MockWebhookApiV1WebhooksMockPost200,
   WechatpayWebhookApiV1WebhooksWechatpayPost200
 } from '../../model';
@@ -58,9 +57,9 @@ export const getAlipayWebhookApiV1WebhooksAlipayPostUrl = () => {
 /**
  * @summary Alipay Webhook
  */
-export const alipayWebhookApiV1WebhooksAlipayPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlipayWebhookApiV1WebhooksAlipayPost200> => {
+export const alipayWebhookApiV1WebhooksAlipayPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
 
-  return customFetch<AlipayWebhookApiV1WebhooksAlipayPost200>(getAlipayWebhookApiV1WebhooksAlipayPostUrl(),
+  return customFetch<unknown>(getAlipayWebhookApiV1WebhooksAlipayPostUrl(),
   {
     ...options,
     method: 'POST'

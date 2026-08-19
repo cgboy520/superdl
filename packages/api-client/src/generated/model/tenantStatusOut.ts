@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200 = { [key: string]: unknown };
+export interface TenantStatusOut {
+  id: number;
+  status: string;
+}

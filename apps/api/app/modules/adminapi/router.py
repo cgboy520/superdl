@@ -6,7 +6,33 @@ from app.core.db import DbSession
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.schemas import AdminLoginRequest, AdminOut, AdminToken
+from app.modules.adminapi.schemas import (
+    AdjustmentOut,
+    AdjustmentStatusOut,
+    AdminAlertOut,
+    AdminLoginRequest,
+    AdminOrderOut,
+    AdminOut,
+    AdminToken,
+    AnnouncementResultOut,
+    AuditLogOut,
+    DeadTaskOut,
+    NodeOut,
+    OrderBackfillOut,
+    OrderVerifyOut,
+    OutboxTaskStatusOut,
+    OversellPoolOut,
+    PaymentAnomalyOut,
+    PlatformConfigItemOut,
+    PlatformConfigOut,
+    PoliciesAdminOut,
+    ReconciliationOut,
+    RevenueReportOut,
+    SmsTestOut,
+    TenantOut,
+    TenantStatusOut,
+    UpdatedKeysOut,
+)
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import SkuAdminOut, SkuCreate, SkuUpdate
 from app.modules.metering import service as metering_service
@@ -87,7 +113,7 @@ async def admin_force_stop(
 
 
 @router.get("/reconciliation", dependencies=[require_roles("finance", "readonly")])
-async def reconciliation(session: DbSession, day: str) -> dict:
+async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
     from datetime import UTC, datetime
 
@@ -97,24 +123,25 @@ async def reconciliation(session: DbSession, day: str) -> dict:
         d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, "day 格式应为 YYYY-MM-DD") from exc
-    return await metering_service.reconciliation_report(session, d)
+    report = await metering_service.reconciliation_report(session, d)
+    return ReconciliationOut.model_validate(report)
 
 
 @router.get("/alerts", dependencies=[require_roles("ops", "finance", "readonly")])
-async def admin_alerts(session: DbSession) -> list[dict]:
+async def admin_alerts(session: DbSession) -> list[AdminAlertOut]:
     """管理端告警流(总览右栏数据源)。"""
     from app.modules.notify import service as notify_service
 
     rows = await notify_service.admin_alert_stream(session)
     return [
-        {
-            "id": r.id,
-            "type": r.type,
-            "title": r.title,
-            "content": r.content,
-            "severity": r.severity,
-            "created_at": r.created_at.isoformat(),
-        }
+        AdminAlertOut(
+            id=r.id,
+            type=r.type,
+            title=r.title,
+            content=r.content,
+            severity=r.severity,
+            created_at=r.created_at.isoformat(),
+        )
         for r in rows
     ]
 
@@ -127,7 +154,7 @@ class TenantFreezeRequest(BaseModel):
 
 
 @router.get("/tenants", dependencies=[require_roles("ops", "finance", "readonly")])
-async def admin_list_tenants(session: DbSession) -> list[dict]:
+async def admin_list_tenants(session: DbSession) -> list[TenantOut]:
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
@@ -139,16 +166,16 @@ async def admin_list_tenants(session: DbSession) -> list[dict]:
     for u in users:
         st = stats.get(u.id, {"instances": 0, "disk_gb": 0})
         out.append(
-            {
-                "id": u.id,
-                "phone_masked": u.phone[:3] + "****" + u.phone[-4:],
-                "status": u.status,
-                "balance": format(balances.get(u.id, 0), "f"),
-                "total_consumed": format(consumed.get(u.id, 0), "f"),
-                "instances": st["instances"],
-                "disk_gb": st["disk_gb"],
-                "created_at": u.created_at.isoformat(),
-            }
+            TenantOut(
+                id=u.id,
+                phone_masked=u.phone[:3] + "****" + u.phone[-4:],
+                status=u.status,
+                balance=format(balances.get(u.id, 0), "f"),
+                total_consumed=format(consumed.get(u.id, 0), "f"),
+                instances=st["instances"],
+                disk_gb=st["disk_gb"],
+                created_at=u.created_at.isoformat(),
+            )
         )
     return out
 
@@ -156,46 +183,46 @@ async def admin_list_tenants(session: DbSession) -> list[dict]:
 @router.post("/tenants/{user_id}/freeze", dependencies=[require_roles("ops")])
 async def admin_freeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
-) -> dict:
+) -> TenantStatusOut:
     from app.modules.account import service as account_service
 
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
     set_audit_target(request, f"user:{user_id}", detail={"reason": body.reason})
-    return {"id": user.id, "status": user.status}
+    return TenantStatusOut(id=user.id, status=user.status)
 
 
 @router.post("/tenants/{user_id}/unfreeze", dependencies=[require_roles("ops")])
 async def admin_unfreeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
-) -> dict:
+) -> TenantStatusOut:
     from app.modules.account import service as account_service
 
     user = await account_service.admin_set_user_status(session, user_id, "active")
     set_audit_target(request, f"user:{user_id}", detail={"reason": body.reason})
-    return {"id": user.id, "status": user.status}
+    return TenantStatusOut(id=user.id, status=user.status)
 
 
 # ---------- 节点与超卖报表(角色:admin / ops / readonly) ----------
 
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
-async def admin_list_nodes(session: DbSession) -> list[dict]:
+async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
     nodes = await orchestrator_service.cluster_nodes()
     return [
-        {
-            "name": n.name,
-            "pool_label": n.pool_label,
-            "gpu_model": n.gpu_model,
-            "gpu_total": n.gpu_total,
-            "gpu_used": n.gpu_used,
-            "status": n.status,
-        }
+        NodeOut(
+            name=n.name,
+            pool_label=n.pool_label,
+            gpu_model=n.gpu_model,
+            gpu_total=n.gpu_total,
+            gpu_used=n.gpu_used,
+            status=n.status,
+        )
         for n in nodes
     ]
 
 
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])
-async def oversell_report(session: DbSession) -> list[dict]:
+async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
     """镇店报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。"""
     nodes = await orchestrator_service.cluster_nodes()
     physical: dict[str, int] = {}
@@ -218,13 +245,13 @@ async def oversell_report(session: DbSession) -> list[dict]:
         sold_share = round(sold.get(pool, 0.0), 2)
         hours = util_hours.get(pool, 0)
         out.append(
-            {
-                "pool": pool,
-                "physical_gpus": total,
-                "sold_share": sold_share,
-                "oversell_ratio": round(sold_share / total, 3) if total else 0.0,
-                "util_avg_24h": round(util_sum[pool] / hours, 1) if hours else None,
-            }
+            OversellPoolOut(
+                pool=pool,
+                physical_gpus=total,
+                sold_share=sold_share,
+                oversell_ratio=round(sold_share / total, 3) if total else 0.0,
+                util_avg_24h=round(util_sum[pool] / hours, 1) if hours else None,
+            )
         )
     return out
 
@@ -244,20 +271,20 @@ class AdjustmentReview(BaseModel):
 
 
 @router.get("/adjustments", dependencies=[require_roles("finance", "readonly")])
-async def admin_list_adjustments(session: DbSession) -> list[dict]:
+async def admin_list_adjustments(session: DbSession) -> list[AdjustmentOut]:
     rows = await service.list_adjustments(session)
     return [
-        {
-            "id": r.id,
-            "user_id": r.user_id,
-            "amount": format(r.amount, "f"),
-            "reason": r.reason,
-            "status": r.status,
-            "created_by": r.created_by,
-            "reviewed_by": r.reviewed_by,
-            "review_comment": r.review_comment,
-            "created_at": r.created_at.isoformat(),
-        }
+        AdjustmentOut(
+            id=r.id,
+            user_id=r.user_id,
+            amount=format(r.amount, "f"),
+            reason=r.reason,
+            status=r.status,
+            created_by=r.created_by,
+            reviewed_by=r.reviewed_by,
+            review_comment=r.review_comment,
+            created_at=r.created_at.isoformat(),
+        )
         for r in rows
     ]
 
@@ -268,7 +295,7 @@ async def admin_create_adjustment(
     session: DbSession,
     request: Request,
     admin: AdminUser = require_roles("finance"),
-) -> dict:
+) -> AdjustmentStatusOut:
     adj = await service.create_adjustment(
         session,
         user_id=body.user_id,
@@ -277,7 +304,7 @@ async def admin_create_adjustment(
         created_by=admin.id,
     )
     set_audit_target(request, f"adjustment:{adj.id}", detail={"amount": str(adj.amount)})
-    return {"id": adj.id, "status": adj.status}
+    return AdjustmentStatusOut(id=adj.id, status=adj.status)
 
 
 @router.post("/adjustments/{adjustment_id}/review")
@@ -287,7 +314,7 @@ async def admin_review_adjustment(
     session: DbSession,
     request: Request,
     admin: AdminUser = require_roles("finance"),
-) -> dict:
+) -> AdjustmentStatusOut:
     adj = await service.review_adjustment(
         session,
         adjustment_id,
@@ -296,7 +323,7 @@ async def admin_review_adjustment(
         comment=body.comment,
     )
     set_audit_target(request, f"adjustment:{adj.id}", detail={"approve": body.approve})
-    return {"id": adj.id, "status": adj.status}
+    return AdjustmentStatusOut(id=adj.id, status=adj.status)
 
 
 # ---------- 审计检索(所有已认证管理角色可读) ----------
@@ -305,7 +332,7 @@ async def admin_review_adjustment(
 @router.get("/audit", dependencies=[require_roles("readonly", "ops", "finance")])
 async def admin_audit_log(
     session: DbSession, actor_type: str | None = None, limit: int = 100
-) -> list[dict]:
+) -> list[AuditLogOut]:
     from sqlalchemy import select as sa_select
 
     from app.core.audit import AuditLog
@@ -315,16 +342,16 @@ async def admin_audit_log(
         stmt = stmt.where(AuditLog.actor_type == actor_type)
     rows = (await session.execute(stmt)).scalars().all()
     return [
-        {
-            "id": r.id,
-            "actor_type": r.actor_type,
-            "actor_id": r.actor_id,
-            "action": r.action,
-            "target": r.target,
-            "ip": str(r.ip) if r.ip else None,
-            "result": r.result,
-            "created_at": r.created_at.isoformat(),
-        }
+        AuditLogOut(
+            id=r.id,
+            actor_type=r.actor_type,
+            actor_id=r.actor_id,
+            action=r.action,
+            target=r.target,
+            ip=str(r.ip) if r.ip else None,
+            result=r.result,
+            created_at=r.created_at.isoformat(),
+        )
         for r in rows
     ]
 
@@ -333,49 +360,48 @@ async def admin_audit_log(
 
 
 @router.get("/orders", dependencies=[require_roles("finance", "readonly")])
-async def admin_list_orders(session: DbSession, status: str | None = None) -> list[dict]:
+async def admin_list_orders(session: DbSession, status: str | None = None) -> list[AdminOrderOut]:
     from app.modules.billing import service as billing_service
-    from app.modules.billing.schemas import RechargeOut
 
     rows = await billing_service.admin_list_orders(session, status)
-    return [
-        {**RechargeOut.model_validate(r).model_dump(mode="json"), "user_id": r.user_id}
-        for r in rows
-    ]
+    return [AdminOrderOut.model_validate(r) for r in rows]
 
 
 # ---------- 收入报表(总览 KPI) ----------
 
 
 @router.get("/reports/revenue", dependencies=[require_roles("ops", "finance", "readonly")])
-async def revenue_report(session: DbSession, tz_offset_minutes: int = 0) -> dict:
+async def revenue_report(session: DbSession, tz_offset_minutes: int = 0) -> RevenueReportOut:
     """今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。"""
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
     revenue = await billing_service.revenue_summary(session, tz_offset_minutes=tz_offset_minutes)
     signups = await account_service.signup_counts(session, tz_offset_minutes=tz_offset_minutes)
-    return {**revenue, **signups}
+    return RevenueReportOut.model_validate({**revenue, **signups})
 
 
 # ---------- 系统设置:策略参数在线调整(角色:ops) ----------
 
 
 @router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
-async def admin_get_policies(session: DbSession) -> dict:
+async def admin_get_policies(session: DbSession) -> PoliciesAdminOut:
     """当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。"""
     from dataclasses import asdict
 
     from app.core.policies import POLICY_SPECS, get_effective_policies, list_policy_overrides
 
     effective = await get_effective_policies(session)
-    return {
-        "effective": {k: str(v) for k, v in asdict(effective).items()},
-        "overrides": await list_policy_overrides(session),
-        "specs": {
-            k: {"kind": v[0], "min": str(v[1]), "max": str(v[2])} for k, v in POLICY_SPECS.items()
-        },
-    }
+    return PoliciesAdminOut.model_validate(
+        {
+            "effective": {k: str(v) for k, v in asdict(effective).items()},
+            "overrides": await list_policy_overrides(session),
+            "specs": {
+                k: {"kind": v[0], "min": str(v[1]), "max": str(v[2])}
+                for k, v in POLICY_SPECS.items()
+            },
+        }
+    )
 
 
 class PolicyUpdateRequest(BaseModel):
@@ -386,7 +412,7 @@ class PolicyUpdateRequest(BaseModel):
 @router.put("/policies", dependencies=[require_roles("ops")])
 async def admin_update_policies(
     body: PolicyUpdateRequest, session: DbSession, request: Request
-) -> dict:
+) -> UpdatedKeysOut:
     """在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。"""
     from app.core.errors import AppError, ErrorCode
     from app.core.policies import set_policy_overrides
@@ -397,14 +423,14 @@ async def admin_update_policies(
         raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
     await session.commit()
     set_audit_target(request, "policies", detail={"updates": body.updates, "reason": body.reason})
-    return {"updated": sorted(body.updates)}
+    return UpdatedKeysOut(updated=sorted(body.updates))
 
 
 # ---------- 平台配置:支付/短信/实名/合规(角色:仅 admin —— 渠道凭据不下放 ops) ----------
 
 
 @router.get("/platform-config", dependencies=[require_roles()])
-async def admin_get_platform_config(session: DbSession) -> dict:
+async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
     """分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。"""
     from app.core.platform_config import (
         SETTING_SPECS,
@@ -420,20 +446,20 @@ async def admin_get_platform_config(session: DbSession) -> dict:
         value = eff[key]
         row = overrides.get(key)
         items.append(
-            {
-                "key": key,
-                "group": spec.group,
-                "kind": spec.kind,
-                "choices": list(spec.choices),
-                "hint": spec.hint,
-                "source": "override" if row is not None else ("env" if value else "unset"),
-                "configured": bool(value),
-                "value": None if spec.kind == "secret" else value,
-                "preview": secret_preview(value) if spec.kind == "secret" and value else None,
-                "updated_at": row.updated_at.isoformat() if row is not None else None,
-            }
+            PlatformConfigItemOut(
+                key=key,
+                group=spec.group,
+                kind=spec.kind,
+                choices=list(spec.choices),
+                hint=spec.hint,
+                source="override" if row is not None else ("env" if value else "unset"),
+                configured=bool(value),
+                value=None if spec.kind == "secret" else value,
+                preview=secret_preview(value) if spec.kind == "secret" and value else None,
+                updated_at=row.updated_at.isoformat() if row is not None else None,
+            )
         )
-    return {"items": items}
+    return PlatformConfigOut(items=items)
 
 
 class PlatformConfigUpdateRequest(BaseModel):
@@ -447,7 +473,7 @@ async def admin_update_platform_config(
     session: DbSession,
     request: Request,
     admin: AdminUser = require_roles(),
-) -> dict:
+) -> UpdatedKeysOut:
     """在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。"""
     from app.core.errors import AppError, ErrorCode
     from app.core.platform_config import set_platform_settings
@@ -460,7 +486,7 @@ async def admin_update_platform_config(
     set_audit_target(
         request, "platform_config", detail={"keys": sorted(body.updates), "reason": body.reason}
     )
-    return {"updated": sorted(body.updates)}
+    return UpdatedKeysOut(updated=sorted(body.updates))
 
 
 class SmsTestRequest(BaseModel):
@@ -468,7 +494,7 @@ class SmsTestRequest(BaseModel):
 
 
 @router.post("/platform-config/test-sms", dependencies=[require_roles()])
-async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> dict:
+async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> SmsTestOut:
     """按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。"""
     import secrets
 
@@ -486,7 +512,7 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     except SmsError as exc:
         raise AppError(ErrorCode.SMS_SEND_FAILED, f"发送失败:{exc}", http_status=502) from exc
     set_audit_target(request, f"test-sms:{body.phone}")
-    return {"ok": True, "provider": cfg["sms_provider"]}
+    return SmsTestOut(ok=True, provider=cfg["sms_provider"])
 
 
 # ---------- 公告发布(角色:ops) ----------
@@ -500,7 +526,7 @@ class AnnouncementCreate(BaseModel):
 @router.post("/announcements", dependencies=[require_roles("ops")], status_code=201)
 async def admin_publish_announcement(
     body: AnnouncementCreate, session: DbSession, request: Request
-) -> dict:
+) -> AnnouncementResultOut:
     """公告群发(站内信 announcement 类型,全部 active 用户)。"""
     from app.modules.notify import service as notify_service
 
@@ -508,14 +534,14 @@ async def admin_publish_announcement(
         session, title=body.title, content=body.content
     )
     set_audit_target(request, "announcement", detail={"title": body.title, "reached": reached})
-    return {"reached": reached}
+    return AnnouncementResultOut(reached=reached)
 
 
 # ---------- outbox 死信(角色:ops) ----------
 
 
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
-async def admin_list_dead_tasks(session: DbSession) -> list[dict]:
+async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
     """死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。"""
     from sqlalchemy import select as sa_select
 
@@ -534,15 +560,15 @@ async def admin_list_dead_tasks(session: DbSession) -> list[dict]:
         .all()
     )
     return [
-        {
-            "id": r.id,
-            "type": r.type,
-            "payload": r.payload,
-            "retries": r.retries,
-            "last_error": r.last_error,
-            "created_at": r.created_at.isoformat(),
-            "updated_at": r.updated_at.isoformat(),
-        }
+        DeadTaskOut(
+            id=r.id,
+            type=r.type,
+            payload=r.payload,
+            retries=r.retries,
+            last_error=r.last_error,
+            created_at=r.created_at.isoformat(),
+            updated_at=r.updated_at.isoformat(),
+        )
         for r in rows
     ]
 
@@ -552,7 +578,9 @@ class OutboxDiscardRequest(BaseModel):
 
 
 @router.post("/outbox/{task_id}/retry", dependencies=[require_roles("ops")])
-async def admin_retry_dead_task(task_id: int, session: DbSession, request: Request) -> dict:
+async def admin_retry_dead_task(
+    task_id: int, session: DbSession, request: Request
+) -> OutboxTaskStatusOut:
     """重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。"""
     from app.core.errors import AppError, ErrorCode
     from app.core.outbox import OutboxTask
@@ -570,13 +598,13 @@ async def admin_retry_dead_task(task_id: int, session: DbSession, request: Reque
     task.locked_at = None
     await session.commit()
     set_audit_target(request, f"outbox:{task_id}", detail={"type": task.type})
-    return {"id": task.id, "status": task.status}
+    return OutboxTaskStatusOut(id=task.id, status=task.status)
 
 
 @router.post("/outbox/{task_id}/discard", dependencies=[require_roles("ops")])
 async def admin_discard_dead_task(
     task_id: int, body: OutboxDiscardRequest, session: DbSession, request: Request
-) -> dict:
+) -> OutboxTaskStatusOut:
     """忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。"""
     from app.core.errors import AppError, ErrorCode
     from app.core.outbox import OutboxTask
@@ -589,19 +617,20 @@ async def admin_discard_dead_task(
     task.status = "discarded"
     await session.commit()
     set_audit_target(request, f"outbox:{task_id}", detail={"reason": body.reason})
-    return {"id": task.id, "status": task.status}
+    return OutboxTaskStatusOut(id=task.id, status=task.status)
 
 
 @router.get("/finance/anomalies", dependencies=[require_roles("finance", "readonly")])
-async def admin_payment_anomalies(session: DbSession) -> list[dict]:
+async def admin_payment_anomalies(session: DbSession) -> list[PaymentAnomalyOut]:
     """异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。"""
     from app.modules.billing import service as billing_service
 
-    return await billing_service.list_payment_anomalies(session)
+    rows = await billing_service.list_payment_anomalies(session)
+    return [PaymentAnomalyOut.model_validate(r) for r in rows]
 
 
 @router.post("/finance/orders/{order_no}/verify", dependencies=[require_roles("finance")])
-async def admin_verify_order(order_no: str, session: DbSession, request: Request) -> dict:
+async def admin_verify_order(order_no: str, session: DbSession, request: Request) -> OrderVerifyOut:
     """向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。"""
     from app.modules.billing import service as billing_service
 
@@ -609,7 +638,7 @@ async def admin_verify_order(order_no: str, session: DbSession, request: Request
     set_audit_target(
         request, f"order:{order_no}", detail={"channel_status": result["channel_status"]}
     )
-    return result
+    return OrderVerifyOut.model_validate(result)
 
 
 class OrderBackfillRequest(BaseModel):
@@ -619,7 +648,7 @@ class OrderBackfillRequest(BaseModel):
 @router.post("/finance/orders/{order_no}/backfill", dependencies=[require_roles("finance")])
 async def admin_backfill_order(
     order_no: str, body: OrderBackfillRequest, session: DbSession, request: Request
-) -> dict:
+) -> OrderBackfillOut:
     """人工补单:服务端实时向渠道核验已支付且金额一致才入账,操作者无法凭空造账。"""
     from app.modules.billing import service as billing_service
 
@@ -627,4 +656,4 @@ async def admin_backfill_order(
     set_audit_target(
         request, f"order:{order_no}", detail={"reason": body.reason, "amount": str(order.amount)}
     )
-    return {"order_no": order.order_no, "status": order.status}
+    return OrderBackfillOut(order_no=order.order_no, status=order.status)

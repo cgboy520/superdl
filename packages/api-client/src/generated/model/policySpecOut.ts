@@ -5,4 +5,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminPublishAnnouncementApiAdminV1AnnouncementsPost201 = { [key: string]: unknown };
+export interface PolicySpecOut {
+  kind: string;
+  max: string;
+  min: string;
+}

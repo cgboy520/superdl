@@ -5,4 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminListNodesApiAdminV1NodesGet200Item = { [key: string]: unknown };
+export interface AnnouncementResultOut {
+  reached: number;
+}

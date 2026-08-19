@@ -64,129 +64,24 @@ import {
 export { isApiError } from "@superdl/api-client";
 export type { ApiError, InstanceOut, SkuAdminOut, SkuCreate, SkuUpdate } from "@superdl/api-client";
 
-// ---------- 精确行类型(后端 dict 端点) ----------
+// ---------- 行类型:全部来自生成契约(WP21 后端补齐 response_model,不再手写) ----------
 
-export interface TenantRow {
-  id: number;
-  phone_masked: string;
-  status: string;
-  balance: string;
-  total_consumed: string;
-  instances: number;
-  disk_gb: number;
-  created_at: string;
-}
-
-export interface NodeRow {
-  name: string;
-  pool_label: string;
-  gpu_model: string;
-  gpu_total: number;
-  gpu_used: number;
-  status: string;
-}
-
-export interface OversellRow {
-  pool: string;
-  physical_gpus: number;
-  sold_share: number;
-  oversell_ratio: number;
-  util_avg_24h: number | null;
-}
-
-export interface ReconciliationReport {
-  day: string;
-  billed_total: string;
-  estimated_total: string;
-  diff_pct: number;
-  outliers: { instance_id: number; billed: string; estimated: string; diff_pct: number }[];
-}
-
-export interface AdjustmentRow {
-  id: number;
-  user_id: number;
-  amount: string;
-  reason: string;
-  status: string;
-  created_by: number;
-  reviewed_by: number | null;
-  review_comment: string | null;
-  created_at: string;
-}
-
-export interface AuditRow {
-  id: number;
-  actor_type: string;
-  actor_id: string | null;
-  action: string;
-  target: string | null;
-  ip: string | null;
-  result: number;
-  created_at: string;
-}
-
-export interface AlertRow {
-  id: number;
-  type: string;
-  title: string;
-  content: string;
-  severity: string;
-  created_at: string;
-}
-
-export interface OrderRow {
-  order_no: string;
-  amount: string;
-  channel: string;
-  status: string;
-  qr_url: string | null;
-  expires_at: string;
-  created_at: string;
-  user_id: number;
-}
-
-export interface AnomalyRow {
-  kind: "lost_callback" | "closed_order" | "negative_balance";
-  order_no: string | null;
-  user_id: number;
-  amount: string;
-  detail: string;
-  created_at: string;
-}
-
-export interface DeadTaskRow {
-  id: number;
-  type: string;
-  payload: Record<string, unknown>;
-  retries: number;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RevenueReport {
-  today_revenue: string;
-  yesterday_revenue: string;
-  month_revenue: string;
-  today_signups: number;
-  yesterday_signups: number;
-}
-
-export interface PoliciesAdminView {
-  effective: Record<string, string>;
-  overrides: Record<string, string>;
-  specs: Record<string, { kind: string; min: string; max: string }>;
-}
-
-export interface OrderVerifyResult {
-  order_no: string;
-  order_status: string;
-  order_amount: string;
-  channel_status: string;
-  channel_txn_id: string | null;
-  channel_amount: string | null;
-  matches: boolean;
-}
+export type {
+  AdjustmentOut as AdjustmentRow,
+  AdminAlertOut as AlertRow,
+  AdminOrderOut as OrderRow,
+  AuditLogOut as AuditRow,
+  DeadTaskOut as DeadTaskRow,
+  NodeOut as NodeRow,
+  OrderVerifyOut as OrderVerifyResult,
+  OversellPoolOut as OversellRow,
+  PaymentAnomalyOut as AnomalyRow,
+  PlatformConfigItemOut as PlatformConfigItem,
+  PoliciesAdminOut as PoliciesAdminView,
+  ReconciliationOut as ReconciliationReport,
+  RevenueReportOut as RevenueReport,
+  TenantOut as TenantRow,
+} from "@superdl/api-client";
 
 // ---------- 查询 hooks ----------
 
@@ -211,7 +106,7 @@ export function useTenants() {
   const queryKey = ["admin", "tenants"] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () => (await adminListTenantsApiAdminV1TenantsGet()) as unknown as TenantRow[],
+    queryFn: () => adminListTenantsApiAdminV1TenantsGet(),
   });
   return { ...q, queryKey };
 }
@@ -219,32 +114,28 @@ export function useTenants() {
 export function useNodes() {
   return useQuery({
     queryKey: ["admin", "nodes"],
-    queryFn: async () => (await adminListNodesApiAdminV1NodesGet()) as unknown as NodeRow[],
+    queryFn: () => adminListNodesApiAdminV1NodesGet(),
   });
 }
 
 export function useOversellReport() {
   return useQuery({
     queryKey: ["admin", "oversell"],
-    queryFn: async () =>
-      (await oversellReportApiAdminV1ReportsOversellGet()) as unknown as OversellRow[],
+    queryFn: () => oversellReportApiAdminV1ReportsOversellGet(),
   });
 }
 
 export function useReconciliation(day: string) {
   return useQuery({
     queryKey: ["admin", "reconciliation", day],
-    queryFn: async () =>
-      (await reconciliationApiAdminV1ReconciliationGet({
-        day,
-      })) as unknown as ReconciliationReport,
+    queryFn: () => reconciliationApiAdminV1ReconciliationGet({ day }),
   });
 }
 
 export function useAlerts(options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: ["admin", "alerts"],
-    queryFn: async () => (await adminAlertsApiAdminV1AlertsGet()) as unknown as AlertRow[],
+    queryFn: () => adminAlertsApiAdminV1AlertsGet(),
     refetchInterval: options?.refetchInterval,
   });
 }
@@ -253,8 +144,7 @@ export function useOrders(params?: { status?: string }) {
   const queryKey = ["admin", "orders", params] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () =>
-      (await adminListOrdersApiAdminV1OrdersGet(params)) as unknown as OrderRow[],
+    queryFn: () => adminListOrdersApiAdminV1OrdersGet(params),
   });
   return { ...q, queryKey };
 }
@@ -263,8 +153,7 @@ export function useAdjustments() {
   const queryKey = ["admin", "adjustments"] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () =>
-      (await adminListAdjustmentsApiAdminV1AdjustmentsGet()) as unknown as AdjustmentRow[],
+    queryFn: () => adminListAdjustmentsApiAdminV1AdjustmentsGet(),
   });
   return { ...q, queryKey };
 }
@@ -272,7 +161,7 @@ export function useAdjustments() {
 export function useAuditLog(params?: { actor_type?: string }) {
   return useQuery({
     queryKey: ["admin", "audit", params],
-    queryFn: async () => (await adminAuditLogApiAdminV1AuditGet(params)) as unknown as AuditRow[],
+    queryFn: () => adminAuditLogApiAdminV1AuditGet(params),
   });
 }
 
@@ -346,8 +235,7 @@ export function useAnomalies() {
   const queryKey = ["admin", "anomalies"] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () =>
-      (await adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet()) as unknown as AnomalyRow[],
+    queryFn: () => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet(),
   });
   return { ...q, queryKey };
 }
@@ -356,8 +244,7 @@ export function useDeadTasks() {
   const queryKey = ["admin", "outbox-dead"] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () =>
-      (await adminListDeadTasksApiAdminV1OutboxDeadGet()) as unknown as DeadTaskRow[],
+    queryFn: () => adminListDeadTasksApiAdminV1OutboxDeadGet(),
   });
   return { ...q, queryKey };
 }
@@ -366,10 +253,7 @@ export function useRevenueReport() {
   const tz = -new Date().getTimezoneOffset();
   return useQuery({
     queryKey: ["admin", "revenue", tz],
-    queryFn: async () =>
-      (await revenueReportApiAdminV1ReportsRevenueGet({
-        tz_offset_minutes: tz,
-      })) as unknown as RevenueReport,
+    queryFn: () => revenueReportApiAdminV1ReportsRevenueGet({ tz_offset_minutes: tz }),
   });
 }
 
@@ -377,18 +261,15 @@ export function useAdminPolicies() {
   const queryKey = ["admin", "policies"] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () =>
-      (await adminGetPoliciesApiAdminV1PoliciesGet()) as unknown as PoliciesAdminView,
+    queryFn: () => adminGetPoliciesApiAdminV1PoliciesGet(),
   });
   return { ...q, queryKey };
 }
 
 export function useVerifyOrder() {
   return useMutation({
-    mutationFn: async (v: { orderNo: string }) =>
-      (await adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost(
-        v.orderNo,
-      )) as unknown as OrderVerifyResult,
+    mutationFn: (v: { orderNo: string }) =>
+      adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost(v.orderNo),
   });
 }
 
@@ -429,27 +310,11 @@ export function useUpdatePolicies(opts?: MutOpts<unknown, { data: PolicyUpdateRe
 
 // ---------- WP20 平台配置(渠道凭据与合规;仅 admin 角色) ----------
 
-export interface PlatformConfigItem {
-  key: string;
-  group: "payment_wechat" | "payment_alipay" | "sms" | "real_name" | "compliance";
-  kind: "str" | "text" | "bool" | "choice" | "secret";
-  choices: string[];
-  hint: string;
-  source: "override" | "env" | "unset";
-  configured: boolean;
-  value: string | null;
-  preview: string | null;
-  updated_at: string | null;
-}
-
 export function usePlatformConfig() {
   const queryKey = ["admin", "platform-config"] as const;
   const q = useQuery({
     queryKey,
-    queryFn: async () =>
-      (await adminGetPlatformConfigApiAdminV1PlatformConfigGet()) as unknown as {
-        items: PlatformConfigItem[];
-      },
+    queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
     // 表单页:禁用全局 60s 轮询,避免编辑中被刷新
     refetchInterval: false,
     refetchOnWindowFocus: false,

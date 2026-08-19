@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RevenueReportApiAdminV1ReportsRevenueGet200 = { [key: string]: unknown };
+export interface OrderBackfillOut {
+  order_no: string;
+  status: string;
+}
