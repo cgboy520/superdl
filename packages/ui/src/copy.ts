@@ -37,7 +37,7 @@ export const copy = {
   outOfStock: "已租完",
   stockAvailable: (n: number) => `${n} 卡可租`,
   noCapacityGuide: "当前规格空闲 GPU 不足,试试其他档位或稍后再来",
-  createFailedRefund: "创建失败,已全额退款,可重新创建或更换规格",
+  createFailedNoCharge: "计费自实例开始运行才开始,本次创建失败未产生任何费用",
 
   // 合规
   antiMiningNotice: "严禁将实例用于挖矿等违规用途,违者封号并不予退款(见用户协议)",

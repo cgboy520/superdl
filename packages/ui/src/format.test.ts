@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addAmounts,
+  compareAmounts,
   formatCountdown,
   formatDaysLeft,
   formatDuration,
@@ -20,6 +21,21 @@ describe("addAmounts", () => {
     expect(addAmounts("-1.50", "1.00")).toBe("-0.50");
     expect(addAmounts(null, "2.00")).toBe("2.00");
     expect(addAmounts(null, undefined)).toBe("0.00");
+  });
+});
+
+describe("compareAmounts", () => {
+  it("BigInt 精确比较无浮点误差", () => {
+    expect(compareAmounts("0.30", "0.3000")).toBe(0);
+    expect(compareAmounts("100.00", "99.9999")).toBe(1);
+    expect(compareAmounts("1.6799", "1.68")).toBe(-1);
+    // 浮点会翻车的经典例:0.1+0.2 场景下字符串比较仍然精确
+    expect(compareAmounts("0.3000", "0.2999")).toBe(1);
+  });
+  it("负数与空值", () => {
+    expect(compareAmounts("-0.01", "0")).toBe(-1);
+    expect(compareAmounts(null, "0.00")).toBe(0);
+    expect(compareAmounts(undefined, "-1")).toBe(1);
   });
 });
 

@@ -69,6 +69,22 @@ export function formatDaysLeft(
   return days === 0 ? "今日到期" : `剩 ${days} 天`;
 }
 
+/** 金额字符串比较(BigInt 万分位精度,禁浮点):a<b → -1,a==b → 0,a>b → 1。 */
+export function compareAmounts(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  const scaled = (s: string | null | undefined): bigint => {
+    if (!s) return 0n;
+    const neg = s.startsWith("-");
+    const [int = "0", frac = ""] = (neg ? s.slice(1) : s).split(".");
+    const v = BigInt(int + (frac + "0000").slice(0, 4));
+    return neg ? -v : v;
+  };
+  const d = scaled(a) - scaled(b);
+  return d < 0n ? -1 : d > 0n ? 1 : 0;
+}
+
 /** 两个金额字符串相加(BigInt 分级精确,2 位小数,禁浮点)。展示层用。 */
 export function addAmounts(a: string | null | undefined, b: string | null | undefined): string {
   const cents = (s: string | null | undefined): bigint => {

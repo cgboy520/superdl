@@ -4,8 +4,8 @@
  * 数据盘「新建」为行内直建:提交时先建盘再建实例;建盘成功而实例失败须提示盘已计费。
  */
 
-import { type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { copy, formatHourlyPrice, formatSizeGb, mulPrice } from "@superdl/ui";
+import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
+import { compareAmounts, copy, formatHourlyPrice, formatSizeGb, mulPrice } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -133,7 +133,8 @@ function CreatePage() {
   // 「约 ¥X/日」为展示层估算(月价/30);入账以后端日结为准
   const diskDaily = diskPriceGbMonth ? (diskGb * Number(diskPriceGbMonth)) / 30 : 0;
   const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
-  const enough = Number(wallet?.balance ?? "0") >= Number(hourlyTotal);
+  // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)
+  const enough = compareAmounts(wallet?.balance ?? "0", hourlyTotal) >= 0;
 
   const imageRef = imageTab === "platform" ? platformImage?.[3] : customImage.trim();
   const canSubmit = Boolean(imageRef) && keyIds.length > 0;
@@ -166,7 +167,10 @@ function CreatePage() {
           },
           idempotencyKey,
         });
-      } catch {
+      } catch (err) {
+        if (isApiError(err) && err.code === "NO_CAPACITY") {
+          message.warning(copy.noCapacityGuide, 6);
+        }
         if (diskMode === "new" && diskId != null) {
           message.warning(copy.diskCreatedButInstanceFailed, 6);
         }

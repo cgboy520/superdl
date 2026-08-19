@@ -24,7 +24,13 @@ import {
 import { useMemo, useState } from "react";
 
 import { useRenameInstance } from "../api/mutations";
-import { useDailySummary, useInstanceAccess, useInstances, useMetricsSummary } from "../api/queries";
+import {
+  useDailySummary,
+  useInstanceAccess,
+  useInstanceEvents,
+  useInstances,
+  useMetricsSummary,
+} from "../api/queries";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
 import { TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
@@ -117,6 +123,49 @@ function UtilCell({
     <Space size={8} align="center">
       <GpuSparkline points={item.points} />
       <span style={{ fontSize: 12 }}>{Math.round(item.last ?? 0)}%</span>
+    </Space>
+  );
+}
+
+/**
+ * failed 状态闭环(铁律「给等待路径」):
+ * 从未运行 = 创建失败 → 原因 + 已退款说明 + 重新创建;运行过 = 故障停机 → 按停机结算说明。
+ */
+function FailedCell({ instance }: { instance: InstanceOut }) {
+  const { data: events } = useInstanceEvents(instance.uuid);
+  const failedEvents = (events ?? []).filter((e) => e.to_status === "failed");
+  const reason = failedEvents[failedEvents.length - 1]?.reason;
+  const everRan = (events ?? []).some((e) => e.to_status === "running");
+  return (
+    <Space orientation="vertical" size={4}>
+      <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
+      {reason ? (
+        <Typography.Text
+          type="secondary"
+          style={{ fontSize: 12, maxWidth: 200, display: "inline-block" }}
+          ellipsis={{ tooltip: reason }}
+        >
+          {reason}
+        </Typography.Text>
+      ) : null}
+      {everRan ? (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          运行中故障已停止计费,费用按实际运行结算
+        </Typography.Text>
+      ) : (
+        <Space size={6}>
+          <Tooltip title={copy.createFailedNoCharge}>
+            <Tag color="green" style={{ marginInlineEnd: 0 }}>
+              未扣费
+            </Tag>
+          </Tooltip>
+          <Link to="/market/create/$skuId" params={{ skuId: String(instance.sku_id) }}>
+            <Button size="small" type="primary">
+              重新创建
+            </Button>
+          </Link>
+        </Space>
+      )}
     </Space>
   );
 }
@@ -249,13 +298,16 @@ function InstancesPage() {
           },
           {
             title: "状态",
-            render: (_, r) => (
-              <Tooltip title={r.status === "stopped" ? copy.freezePolicy : undefined}>
-                <span>
-                  <InstanceStatusBadge status={r.status} frozenDeadline={r.frozen_deadline} />
-                </span>
-              </Tooltip>
-            ),
+            render: (_, r) =>
+              r.status === "failed" ? (
+                <FailedCell instance={r} />
+              ) : (
+                <Tooltip title={r.status === "stopped" ? copy.freezePolicy : undefined}>
+                  <span>
+                    <InstanceStatusBadge status={r.status} frozenDeadline={r.frozen_deadline} />
+                  </span>
+                </Tooltip>
+              ),
           },
           {
             title: "规格详情",
