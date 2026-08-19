@@ -9,50 +9,267 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConsoleRouteImport } from './routes/_console'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ConsoleIndexRouteImport } from './routes/_console.index'
+import { Route as ConsoleBillingRouteImport } from './routes/_console.billing'
+import { Route as ConsoleInstancesRouteImport } from './routes/_console.instances'
+import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
+import { Route as ConsoleSettingsRouteImport } from './routes/_console.settings'
+import { Route as ConsoleStorageRouteImport } from './routes/_console.storage'
+import { Route as ConsoleInstancesUuidRouteImport } from './routes/_console.instances.$uuid'
+import { Route as ConsoleMarketCreateSkuIdRouteImport } from './routes/_console.market.create.$skuId'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ConsoleRoute = ConsoleRouteImport.update({
+  id: '/_console',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleBillingRoute = ConsoleBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleInstancesRoute = ConsoleInstancesRouteImport.update({
+  id: '/instances',
+  path: '/instances',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleMarketRoute = ConsoleMarketRouteImport.update({
+  id: '/market',
+  path: '/market',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleSettingsRoute = ConsoleSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleStorageRoute = ConsoleStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleInstancesUuidRoute = ConsoleInstancesUuidRouteImport.update({
+  id: '/$uuid',
+  path: '/$uuid',
+  getParentRoute: () => ConsoleInstancesRoute,
+} as any)
+const ConsoleMarketCreateSkuIdRoute =
+  ConsoleMarketCreateSkuIdRouteImport.update({
+    id: '/create/$skuId',
+    path: '/create/$skuId',
+    getParentRoute: () => ConsoleMarketRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof ConsoleIndexRoute
+  '/login': typeof LoginRoute
+  '/billing': typeof ConsoleBillingRoute
+  '/instances': typeof ConsoleInstancesRouteWithChildren
+  '/market': typeof ConsoleMarketRouteWithChildren
+  '/settings': typeof ConsoleSettingsRoute
+  '/storage': typeof ConsoleStorageRoute
+  '/instances/$uuid': typeof ConsoleInstancesUuidRoute
+  '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/billing': typeof ConsoleBillingRoute
+  '/instances': typeof ConsoleInstancesRouteWithChildren
+  '/market': typeof ConsoleMarketRouteWithChildren
+  '/settings': typeof ConsoleSettingsRoute
+  '/storage': typeof ConsoleStorageRoute
+  '/': typeof ConsoleIndexRoute
+  '/instances/$uuid': typeof ConsoleInstancesUuidRoute
+  '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_console': typeof ConsoleRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_console/billing': typeof ConsoleBillingRoute
+  '/_console/instances': typeof ConsoleInstancesRouteWithChildren
+  '/_console/market': typeof ConsoleMarketRouteWithChildren
+  '/_console/settings': typeof ConsoleSettingsRoute
+  '/_console/storage': typeof ConsoleStorageRoute
+  '/_console/': typeof ConsoleIndexRoute
+  '/_console/instances/$uuid': typeof ConsoleInstancesUuidRoute
+  '/_console/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/billing'
+    | '/instances'
+    | '/market'
+    | '/settings'
+    | '/storage'
+    | '/instances/$uuid'
+    | '/market/create/$skuId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/login'
+    | '/billing'
+    | '/instances'
+    | '/market'
+    | '/settings'
+    | '/storage'
+    | '/'
+    | '/instances/$uuid'
+    | '/market/create/$skuId'
+  id:
+    | '__root__'
+    | '/_console'
+    | '/login'
+    | '/_console/billing'
+    | '/_console/instances'
+    | '/_console/market'
+    | '/_console/settings'
+    | '/_console/storage'
+    | '/_console/'
+    | '/_console/instances/$uuid'
+    | '/_console/market/create/$skuId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  ConsoleRoute: typeof ConsoleRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_console': {
+      id: '/_console'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ConsoleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_console/': {
+      id: '/_console/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof ConsoleIndexRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/billing': {
+      id: '/_console/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof ConsoleBillingRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/instances': {
+      id: '/_console/instances'
+      path: '/instances'
+      fullPath: '/instances'
+      preLoaderRoute: typeof ConsoleInstancesRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/market': {
+      id: '/_console/market'
+      path: '/market'
+      fullPath: '/market'
+      preLoaderRoute: typeof ConsoleMarketRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/settings': {
+      id: '/_console/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof ConsoleSettingsRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/storage': {
+      id: '/_console/storage'
+      path: '/storage'
+      fullPath: '/storage'
+      preLoaderRoute: typeof ConsoleStorageRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/instances/$uuid': {
+      id: '/_console/instances/$uuid'
+      path: '/$uuid'
+      fullPath: '/instances/$uuid'
+      preLoaderRoute: typeof ConsoleInstancesUuidRouteImport
+      parentRoute: typeof ConsoleInstancesRoute
+    }
+    '/_console/market/create/$skuId': {
+      id: '/_console/market/create/$skuId'
+      path: '/create/$skuId'
+      fullPath: '/market/create/$skuId'
+      preLoaderRoute: typeof ConsoleMarketCreateSkuIdRouteImport
+      parentRoute: typeof ConsoleMarketRoute
     }
   }
 }
 
+interface ConsoleInstancesRouteChildren {
+  ConsoleInstancesUuidRoute: typeof ConsoleInstancesUuidRoute
+}
+
+const ConsoleInstancesRouteChildren: ConsoleInstancesRouteChildren = {
+  ConsoleInstancesUuidRoute: ConsoleInstancesUuidRoute,
+}
+
+const ConsoleInstancesRouteWithChildren =
+  ConsoleInstancesRoute._addFileChildren(ConsoleInstancesRouteChildren)
+
+interface ConsoleMarketRouteChildren {
+  ConsoleMarketCreateSkuIdRoute: typeof ConsoleMarketCreateSkuIdRoute
+}
+
+const ConsoleMarketRouteChildren: ConsoleMarketRouteChildren = {
+  ConsoleMarketCreateSkuIdRoute: ConsoleMarketCreateSkuIdRoute,
+}
+
+const ConsoleMarketRouteWithChildren = ConsoleMarketRoute._addFileChildren(
+  ConsoleMarketRouteChildren,
+)
+
+interface ConsoleRouteChildren {
+  ConsoleBillingRoute: typeof ConsoleBillingRoute
+  ConsoleInstancesRoute: typeof ConsoleInstancesRouteWithChildren
+  ConsoleMarketRoute: typeof ConsoleMarketRouteWithChildren
+  ConsoleSettingsRoute: typeof ConsoleSettingsRoute
+  ConsoleStorageRoute: typeof ConsoleStorageRoute
+  ConsoleIndexRoute: typeof ConsoleIndexRoute
+}
+
+const ConsoleRouteChildren: ConsoleRouteChildren = {
+  ConsoleBillingRoute: ConsoleBillingRoute,
+  ConsoleInstancesRoute: ConsoleInstancesRouteWithChildren,
+  ConsoleMarketRoute: ConsoleMarketRouteWithChildren,
+  ConsoleSettingsRoute: ConsoleSettingsRoute,
+  ConsoleStorageRoute: ConsoleStorageRoute,
+  ConsoleIndexRoute: ConsoleIndexRoute,
+}
+
+const ConsoleRouteWithChildren =
+  ConsoleRoute._addFileChildren(ConsoleRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  ConsoleRoute: ConsoleRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
