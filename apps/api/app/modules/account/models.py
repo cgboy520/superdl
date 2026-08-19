@@ -14,6 +14,7 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="active")  # active / frozen
     low_balance_warn_hours: Mapped[int] = mapped_column(default=24)  # 余额预警阈值(用户可设)
+    token_version: Mapped[int] = mapped_column(default=0)  # 撤销闸:+1 即失效全部在外 token
     # 实名/企业字段预留(MVP 不做流程,避免日后迁移)
     id_name: Mapped[str | None] = mapped_column(String(64))
     id_number: Mapped[str | None] = mapped_column(String(32))
@@ -36,6 +37,17 @@ class SshKey(Base):
     public_key: Mapped[str] = mapped_column(Text)
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)  # SHA256:base64
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class UsedRefreshToken(Base):
+    """refresh token 一次性消费记录(轮换):jti 重放 = 疑似泄露,触发全量撤销。"""
+
+    __tablename__ = "used_refresh_tokens"
+
+    jti: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    expires_at: Mapped[datetime] = mapped_column(index=True)  # 过期即可清理
+    used_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class SmsCode(Base):

@@ -26,7 +26,9 @@ async def get_current_user(
     if user is None:
         raise unauthorized()
     if user.status == "frozen":
-        raise forbidden("账号已被冻结")
+        raise forbidden("账号已被冻结")  # 冻结优先:给明确原因而非笼统 401
+    if payload.get("ver", 0) != user.token_version:
+        raise unauthorized()  # 已被撤销(冻结期版本推进/refresh 重放触发)
     request.state.audit_actor = AuditActor("user", str(user.id))
     return user
 

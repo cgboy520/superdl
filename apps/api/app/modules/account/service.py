@@ -1,8 +1,9 @@
 import secrets
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import status
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -12,7 +13,7 @@ from app.core.ratelimit import check_rate_limit
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.core.sms import SmsError, get_sms_channel
 from app.core.timeutil import now_utc
-from app.modules.account.models import SmsCode, SshKey, User
+from app.modules.account.models import SmsCode, SshKey, UsedRefreshToken, User
 from app.modules.account.schemas import TokenPair, UserOut
 from app.modules.account.sshkey_util import parse_public_key
 
@@ -98,9 +99,10 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
 
 
 def _issue_tokens(user: User) -> TokenPair:
+    extra = {"ver": user.token_version}
     return TokenPair(
-        access_token=create_token(str(user.id), "user", token_type="access"),
-        refresh_token=create_token(str(user.id), "user", token_type="refresh"),
+        access_token=create_token(str(user.id), "user", token_type="access", extra=extra),
+        refresh_token=create_token(str(user.id), "user", token_type="refresh", extra=extra),
         user=UserOut.model_validate(user),
     )
 
@@ -160,10 +162,32 @@ async def login(
 
 
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
+    """轮换式刷新:refresh 一次性消费(jti 落库),重放视为泄露 → 撤销全部在外 token。"""
     payload = decode_token(refresh_token, "user", expected_type="refresh")
     user = await session.get(User, int(payload["sub"]))
     if user is None or user.status == "frozen":
         raise unauthorized()
+    if payload.get("ver", 0) != user.token_version:
+        raise unauthorized()
+    jti = str(payload.get("jti", ""))
+    inserted = (
+        await session.execute(
+            pg_insert(UsedRefreshToken)
+            .values(
+                jti=jti,
+                user_id=user.id,
+                expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+            )
+            .on_conflict_do_nothing(index_elements=["jti"])
+            .returning(UsedRefreshToken.jti)
+        )
+    ).scalar_one_or_none()
+    if inserted is None:
+        user.token_version += 1
+        await session.commit()
+        logger.warning("refresh_token_replayed", user_id=user.id)
+        raise unauthorized()
+    await session.commit()
     return _issue_tokens(user)
 
 
@@ -246,5 +270,7 @@ async def admin_list_users(session: AsyncSession) -> list[User]:
 async def admin_set_user_status(session: AsyncSession, user_id: int, status_: str) -> User:
     user = await get_user(session, user_id)
     user.status = status_
+    if status_ == "frozen":
+        user.token_version += 1  # 冻结即撤销全部在外 token(含 refresh)
     await session.commit()
     return user
