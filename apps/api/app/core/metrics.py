@@ -4,7 +4,7 @@
 死信、泄漏 Pod、回调金额不符都是必须有人被叫醒的事。
 """
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 OUTBOX_DEAD_TOTAL = Counter(
     "superdl_outbox_dead_total", "outbox 任务重试耗尽进入死信的次数", ["task_type"]
@@ -22,6 +22,12 @@ PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL = Counter(
 PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
     "superdl_payment_closed_order_rescued_total",
     "关单后有效成功回调自动入账数(非零说明本地关单早于渠道侧过期,需核对 TTL)",
+)
+# WorkerDown 告警依据:带 label 的 Counter 在首次 inc 前不产生任何序列,
+# absent(superdl_outbox_dead_total) 会在 worker 健康时常驻误报 —— 心跳 Gauge 才是正解
+WORKER_HEARTBEAT_TS = Gauge(
+    "superdl_worker_heartbeat_timestamp_seconds",
+    "worker 主循环最近一次心跳的 Unix 时间戳",
 )
 HTTP_REQUEST_DURATION = Histogram(
     "superdl_http_request_duration_seconds",

@@ -1,19 +1,7 @@
 # PostgreSQL 逻辑备份(每日 02:30 北京 = 18:30 UTC,保留由对象存储生命周期策略管)。
 # ⚠️ 这是最低保障(RPO=24h)。钱包/账本库正式生产应上 pgBackRest/WAL-G 做 PITR
 #    (RPO≈分钟级),或直接用云 RDS 自动备份 —— 见 runbooks/pg-backup-restore.md。
-apiVersion: v1
-kind: Secret
-metadata:
-  name: superdl-pg-backup
-  namespace: superdl
-type: Opaque
-stringData:
-  PGURL: "postgresql://CHANGE_ME"          # 只读备份账号
-  S3_ENDPOINT: "https://oss-cn-CHANGE.aliyuncs.com"
-  S3_BUCKET: "superdl-pg-backup"
-  AWS_ACCESS_KEY_ID: "CHANGE_ME"
-  AWS_SECRET_ACCESS_KEY: "CHANGE_ME"
----
+# 凭据 Secret(superdl-pg-backup)模板见 ../secrets.example.yaml,不在整目录 apply 路径内。
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -30,8 +18,10 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          containers:
-            - name: backup
+          # 不在运行期 apt-get 装工具(供应链面 + 依赖外网源,曾是启动脆弱点):
+          # 转储与上传各用官方镜像,经 emptyDir 交接
+          initContainers:
+            - name: dump
               image: postgres:18
               envFrom:
                 - secretRef: {name: superdl-pg-backup}
@@ -39,12 +29,30 @@ spec:
                 - sh
                 - -ec
                 - |
-                  apt-get update -qq && apt-get install -y -qq awscli >/dev/null
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
-                  pg_dump "$PGURL" -Fc -f /tmp/superdl-$ts.dump
-                  aws s3 cp /tmp/superdl-$ts.dump "s3://$S3_BUCKET/daily/superdl-$ts.dump" \
-                    --endpoint-url "$S3_ENDPOINT"
-                  echo "backup done: superdl-$ts.dump"
+                  pg_dump "$PGURL" -Fc -f /backup/superdl-$ts.dump
+                  echo "dump done: superdl-$ts.dump"
+              volumeMounts:
+                - {name: backup, mountPath: /backup}
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 1Gi}
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.32.0
+              envFrom:
+                - secretRef: {name: superdl-pg-backup}
+              command:
+                - sh
+                - -ec
+                - |
+                  aws s3 cp /backup/ "s3://$S3_BUCKET/daily/" --recursive \
+                    --exclude "*" --include "superdl-*.dump" --endpoint-url "$S3_ENDPOINT"
+                  echo "upload done"
+              volumeMounts:
+                - {name: backup, mountPath: /backup, readOnly: true}
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {cpu: "1", memory: 512Mi}
+          volumes:
+            - {name: backup, emptyDir: {}}

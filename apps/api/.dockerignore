@@ -1,0 +1,13 @@
+# API 镜像构建上下文 = apps/api(Dockerfile 用 COPY . .):
+# 排除敏感与无关内容,防止 .env/缓存被打进镜像层
+.env
+.env.*
+!.env.example
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+coverage.json
+htmlcov
+tests

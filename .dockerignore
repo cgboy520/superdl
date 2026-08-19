@@ -1,0 +1,19 @@
+# 前端镜像构建上下文 = 仓库根(deploy/app/frontend.Dockerfile 用 COPY . .):
+# 排除敏感与无关内容,防止 .git/.env 被打进镜像层
+.git
+.github
+**/.env
+**/.env.*
+!**/.env.example
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+apps/api/.venv
+apps/api/.pytest_cache
+apps/api/.ruff_cache
+apps/api/coverage.json
+**/__pycache__
+docs
+e2e/test-results
+e2e/playwright-report

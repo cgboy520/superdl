@@ -13,16 +13,28 @@ spec:
     metadata:
       labels: {app: superdl-web}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101            # nginx-unprivileged
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: web
           image: ghcr.io/OWNER/superdl-web:latest
           ports:
-            - {containerPort: 80, name: http}
+            - {containerPort: 8080, name: http}
           readinessProbe:
             httpGet: {path: /, port: http}
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {cpu: 500m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service
@@ -48,16 +60,28 @@ spec:
     metadata:
       labels: {app: superdl-admin}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101            # nginx-unprivileged
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: admin
           image: ghcr.io/OWNER/superdl-admin:latest
           ports:
-            - {containerPort: 80, name: http}
+            - {containerPort: 8080, name: http}
           readinessProbe:
             httpGet: {path: /, port: http}
           resources:
             requests: {cpu: 50m, memory: 64Mi}
             limits: {cpu: 500m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service

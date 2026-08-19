@@ -7,8 +7,9 @@ RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm --filter ${APP} build
 
-FROM nginx:1.27-alpine
+# 非特权 nginx(uid 101,监听 8080,pid/cache 走 /tmp):配合 K8s runAsNonRoot + 只读根
+FROM nginxinc/nginx-unprivileged:1.27-alpine
 ARG APP=web
 COPY deploy/app/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/${APP}/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 8080

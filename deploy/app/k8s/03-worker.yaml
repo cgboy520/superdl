@@ -31,6 +31,8 @@ spec:
             - secretRef: {name: superdl-api-secrets}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+          ports:
+            - {containerPort: 9000, name: metrics}  # PodMonitor 抓取(集群内,无 Ingress 暴露)
           livenessProbe:
             exec:
               command:

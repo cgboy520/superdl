@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger, setup_logging
+from app.core.metrics import WORKER_HEARTBEAT_TS
 from app.core.outbox import process_one, reap_stuck_running
 from app.core.timeutil import now_utc
 
@@ -24,10 +25,15 @@ POLL_INTERVAL_SECONDS = 1.0
 # K8s liveness:exec 探针检查该文件 mtime(循环每轮触碰)
 HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
 
+# /metrics 端口(结算/死信/reconciler 指标都在 worker 进程内,必须单独暴露被抓取;
+# 仅集群内可达 —— 无 Ingress 路由,PodMonitor 直抓 Pod 端口)
+METRICS_PORT = int(os.environ.get("SUPERDL_WORKER_METRICS_PORT", "9000"))
+
 _stop = asyncio.Event()
 
 
 def _touch_heartbeat() -> None:
+    WORKER_HEARTBEAT_TS.set(now_utc().timestamp())
     with contextlib.suppress(OSError):  # 只读文件系统等场景放弃心跳
         HEARTBEAT_FILE.write_text(now_utc().isoformat())
 
@@ -172,6 +178,11 @@ async def main() -> None:
     init_sentry()
     wire_modules()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
+
+    from prometheus_client import start_http_server
+
+    start_http_server(METRICS_PORT)
+    logger.info("worker_metrics_listening", port=METRICS_PORT)
 
     # SIGTERM/SIGINT 优雅停机:停调度器 → 让 outbox 循环收尾当前任务后退出
     loop = asyncio.get_running_loop()

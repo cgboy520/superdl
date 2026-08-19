@@ -10,6 +10,7 @@ HAMi v2.9 · kube-prometheus-stack 88.x · JuiceFS CSI(JuiceFS 1.4.x LTS)· Topo
 2. **RKE2**:`rke2/` 下 server/agent 配置;禁用默认 CNI,装 Cilium
    ```bash
    curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=latest sh -   # v1.36
+   cp rke2/audit-policy.yaml /etc/rancher/rke2/audit-policy.yaml      # 先放审计策略(缺失则 apiserver 起不来)
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml && systemctl enable --now rke2-server
    ```
 3. **节点池标签**(分池铁律,Kata 与 HAMi 永不混布):
