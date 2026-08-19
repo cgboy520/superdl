@@ -83,6 +83,7 @@ class TestProdConfigValidation:
             jupyter_domain_suffix="app.superdl.cn",
             public_base_url="https://api.superdl.cn",
             alertmanager_token="token",
+            metrics_token="mtoken",
         )
         assert s.environment == "prod"
 
@@ -135,3 +136,44 @@ class TestSmsCodeBruteForce:
             "/api/v1/auth/sms-code", json={"phone": "13800000199", "purpose": "register"}
         )
         assert resp.status_code == 429
+
+
+class TestSecurityHeaders:
+    async def test_headers_on_api_responses(self, client: AsyncClient):
+        resp = await client.get("/healthz")
+        assert resp.headers["x-content-type-options"] == "nosniff"
+        assert resp.headers["x-frame-options"] == "DENY"
+        assert "default-src 'none'" in resp.headers["content-security-policy"]
+        assert resp.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+    async def test_docs_exempt_from_csp(self, client: AsyncClient):
+        resp = await client.get("/docs")
+        assert "content-security-policy" not in resp.headers
+
+
+class TestMetricsGuard:
+    async def test_metrics_token_enforced(self, client: AsyncClient):
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        settings.metrics_token = "mtok"
+        try:
+            assert (await client.get("/metrics/")).status_code == 401
+            resp = await client.get("/metrics/", headers={"Authorization": "Bearer mtok"})
+            assert resp.status_code == 200
+        finally:
+            settings.metrics_token = None
+
+    async def test_metrics_open_when_unconfigured(self, client: AsyncClient):
+        assert (await client.get("/metrics/")).status_code == 200
+
+
+class TestAuditRoleAccess:
+    async def test_ops_and_finance_can_read_audit(self, client: AsyncClient, sm):
+        """审计只读对全部管理角色开放(此前 ops/finance 反而 403)。"""
+        from tests.test_catalog import admin_headers
+
+        for role in ("ops", "finance", "readonly"):
+            headers = await admin_headers(sm, client, role=role)
+            resp = await client.get("/api/admin/v1/audit", headers=headers)
+            assert resp.status_code == 200, (role, resp.text)

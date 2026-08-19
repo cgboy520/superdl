@@ -305,10 +305,10 @@ async def admin_review_adjustment(
     return {"id": adj.id, "status": adj.status}
 
 
-# ---------- 审计检索(角色:admin) ----------
+# ---------- 审计检索(所有已认证管理角色可读) ----------
 
 
-@router.get("/audit", dependencies=[require_roles("readonly")])
+@router.get("/audit", dependencies=[require_roles("readonly", "ops", "finance")])
 async def admin_audit_log(
     session: DbSession, actor_type: str | None = None, limit: int = 100
 ) -> list[dict]:

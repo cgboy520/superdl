@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.db import dispose_engine
 from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
+from app.core.security_headers import SecurityHeadersMiddleware
 
 
 @asynccontextmanager
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         # 用户端与管理端共用一份 OpenAPI(orval 按 tag 分组生成)
     )
     install_error_handlers(app)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(AuditMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -48,7 +50,20 @@ def create_app() -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.mount("/metrics", make_asgi_app())
+    # /metrics:配置了 SUPERDL_METRICS_TOKEN 即要求 Bearer(prod 校验强制配置)
+    metrics_app = make_asgi_app()
+
+    async def metrics_guard(scope, receive, send):
+        from starlette.datastructures import Headers
+        from starlette.responses import PlainTextResponse
+
+        token = get_settings().metrics_token
+        if token and Headers(scope=scope).get("authorization") != f"Bearer {token}":
+            await PlainTextResponse("unauthorized", status_code=401)(scope, receive, send)
+            return
+        await metrics_app(scope, receive, send)
+
+    app.mount("/metrics", metrics_guard)
 
     _register_module_routers(app)
     wire_modules()

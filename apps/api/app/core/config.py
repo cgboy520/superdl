@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # 告警接入
     alertmanager_token: str | None = None
 
+    # /metrics 抓取鉴权(Prometheus scrape 配置同一 Bearer;prod 必配)
+    metrics_token: str | None = None
+
     # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"
 
@@ -109,6 +112,8 @@ class Settings(BaseSettings):
                 problems.append(f"{name} 仍为占位域名")
         if not self.alertmanager_token:
             problems.append("alertmanager_token 未配置")
+        if not self.metrics_token:
+            problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
         if problems:
             raise ValueError("生产配置校验失败:" + ";".join(problems))
         return self
