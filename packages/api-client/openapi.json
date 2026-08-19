@@ -1048,6 +1048,21 @@
         "title": "NotificationOut",
         "type": "object"
       },
+      "OrderBackfillRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OrderBackfillRequest",
+        "type": "object"
+      },
       "Page_BillHourlyOut_": {
         "properties": {
           "items": {
@@ -2312,6 +2327,148 @@
           }
         },
         "summary": "Admin Login",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/anomalies": {
+      "get": {
+        "description": "异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。",
+        "operationId": "admin_payment_anomalies_api_admin_v1_finance_anomalies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin Payment Anomalies Api Admin V1 Finance Anomalies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Payment Anomalies",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/orders/{order_no}/backfill": {
+      "post": {
+        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账,操作者无法凭空造账。",
+        "operationId": "admin_backfill_order_api_admin_v1_finance_orders__order_no__backfill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_no",
+            "required": true,
+            "schema": {
+              "title": "Order No",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderBackfillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Backfill Order Api Admin V1 Finance Orders  Order No  Backfill Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Backfill Order",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/orders/{order_no}/verify": {
+      "post": {
+        "description": "向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。",
+        "operationId": "admin_verify_order_api_admin_v1_finance_orders__order_no__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_no",
+            "required": true,
+            "schema": {
+              "title": "Order No",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Verify Order Api Admin V1 Finance Orders  Order No  Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Verify Order",
         "tags": [
           "admin"
         ]

@@ -348,3 +348,41 @@ async def admin_list_orders(session: DbSession, status: str | None = None) -> li
         {**RechargeOut.model_validate(r).model_dump(mode="json"), "user_id": r.user_id}
         for r in rows
     ]
+
+
+@router.get("/finance/anomalies", dependencies=[require_roles("finance", "readonly")])
+async def admin_payment_anomalies(session: DbSession) -> list[dict]:
+    """异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。"""
+    from app.modules.billing import service as billing_service
+
+    return await billing_service.list_payment_anomalies(session)
+
+
+@router.post("/finance/orders/{order_no}/verify", dependencies=[require_roles("finance")])
+async def admin_verify_order(order_no: str, session: DbSession, request: Request) -> dict:
+    """向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。"""
+    from app.modules.billing import service as billing_service
+
+    result = await billing_service.verify_order(session, order_no)
+    set_audit_target(
+        request, f"order:{order_no}", detail={"channel_status": result["channel_status"]}
+    )
+    return result
+
+
+class OrderBackfillRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=200)
+
+
+@router.post("/finance/orders/{order_no}/backfill", dependencies=[require_roles("finance")])
+async def admin_backfill_order(
+    order_no: str, body: OrderBackfillRequest, session: DbSession, request: Request
+) -> dict:
+    """人工补单:服务端实时向渠道核验已支付且金额一致才入账,操作者无法凭空造账。"""
+    from app.modules.billing import service as billing_service
+
+    order = await billing_service.backfill_order(session, order_no)
+    set_audit_target(
+        request, f"order:{order_no}", detail={"reason": body.reason, "amount": str(order.amount)}
+    )
+    return {"order_no": order.order_no, "status": order.status}

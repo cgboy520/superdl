@@ -15,6 +15,7 @@ class LockKey(IntEnum):
     RECONCILER = 1004
     OUTBOX_REAPER = 1005
     USAGE_AGGREGATION = 1006
+    PAYMENT_RECONCILE = 1007
 
 
 @asynccontextmanager

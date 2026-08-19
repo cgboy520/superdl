@@ -34,7 +34,7 @@ async def outbox_loop(worker_id: str) -> None:
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     """各模块定时任务注册。随 WP 推进逐个接入(结算/巡检/聚合)。"""
     from app.modules.billing.patrol import balance_patrol
-    from app.modules.billing.payment_service import close_expired_orders
+    from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.settlement import settle_daily_disks, settle_previous_hour
     from app.modules.metering.service import aggregate_previous_hour
     from app.modules.orchestrator.reconciler import reconcile_once
@@ -88,6 +88,15 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         minutes=10,
         args=[sm],
         id="close_expired_orders",
+        coalesce=True,
+    )
+    scheduler.add_job(
+        reconcile_pending_orders,
+        "interval",
+        minutes=2,
+        args=[sm],
+        id="payment_reconcile",
+        max_instances=1,
         coalesce=True,
     )
     scheduler.add_job(

@@ -25,6 +25,7 @@ import type {
   AdminAlertsApiAdminV1AlertsGet200Item,
   AdminAuditLogApiAdminV1AuditGet200Item,
   AdminAuditLogApiAdminV1AuditGetParams,
+  AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200,
   AdminCreateAdjustmentApiAdminV1AdjustmentsPost201,
   AdminForceStopRequest,
   AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200,
@@ -37,11 +38,14 @@ import type {
   AdminListTenantsApiAdminV1TenantsGet200Item,
   AdminLoginRequest,
   AdminOut,
+  AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item,
   AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200,
   AdminToken,
   AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200,
+  AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200,
   HTTPValidationError,
   InstanceOut,
+  OrderBackfillRequest,
   OversellReportApiAdminV1ReportsOversellGet200Item,
   ReconciliationApiAdminV1ReconciliationGet200,
   ReconciliationApiAdminV1ReconciliationGetParams,
@@ -677,6 +681,316 @@ export function useAdminLoginApiAdminV1AuthLoginPost<TData = Awaited<ReturnType<
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminLoginApiAdminV1AuthLoginPostQueryOptions(adminLoginRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/finance/anomalies`
+}
+
+/**
+ * 异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。
+ * @summary Admin Payment Anomalies
+ */
+export const adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item[]> => {
+
+  return customFetch<AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item[]>(getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetQueryKey = () => {
+    return [
+    `/api/admin/v1/finance/anomalies`
+    ] as const;
+    }
+
+
+export const getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>> = ({ signal }) => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>>
+export type AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetQueryError = unknown
+
+
+export function useAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet<TData = Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet<TData = Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet<TData = Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Payment Anomalies
+ */
+
+export function useAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet<TData = Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl = (orderNo: string,) => {
+
+
+
+
+  return `/api/admin/v1/finance/orders/${orderNo}/backfill`
+}
+
+/**
+ * 人工补单:服务端实时向渠道核验已支付且金额一致才入账,操作者无法凭空造账。
+ * @summary Admin Backfill Order
+ */
+export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
+    orderBackfillRequest: OrderBackfillRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200> => {
+
+  return customFetch<AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200>(getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl(orderNo),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(orderBackfillRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryKey = (orderNo: string,
+    orderBackfillRequest?: OrderBackfillRequest,) => {
+    return [
+    'POST', `/api/admin/v1/finance/orders/${orderNo}/backfill`, orderBackfillRequest
+    ] as const;
+    }
+
+
+export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryOptions = <TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(orderNo: string,
+    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryKey(orderNo,orderBackfillRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>> = ({ signal }) => adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(orderNo,orderBackfillRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orderNo !== null && orderNo !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>>
+export type AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryError = HTTPValidationError
+
+
+export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
+ orderNo: string,
+    orderBackfillRequest: OrderBackfillRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
+ orderNo: string,
+    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
+ orderNo: string,
+    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Backfill Order
+ */
+
+export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
+ orderNo: string,
+    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryOptions(orderNo,orderBackfillRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostUrl = (orderNo: string,) => {
+
+
+
+
+  return `/api/admin/v1/finance/orders/${orderNo}/verify`
+}
+
+/**
+ * 向渠道核验订单状态与金额(补单前置;渠道结果是唯一事实源)。
+ * @summary Admin Verify Order
+ */
+export const adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost = async (orderNo: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200> => {
+
+  return customFetch<AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200>(getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostUrl(orderNo),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryKey = (orderNo: string,) => {
+    return [
+    'POST', `/api/admin/v1/finance/orders/${orderNo}/verify`
+    ] as const;
+    }
+
+
+export const getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryOptions = <TData = Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError = HTTPValidationError>(orderNo: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryKey(orderNo);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>> = ({ signal }) => adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost(orderNo, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orderNo !== null && orderNo !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>>
+export type AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryError = HTTPValidationError
+
+
+export function useAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost<TData = Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError = HTTPValidationError>(
+ orderNo: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost<TData = Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError = HTTPValidationError>(
+ orderNo: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost<TData = Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError = HTTPValidationError>(
+ orderNo: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Verify Order
+ */
+
+export function useAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost<TData = Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError = HTTPValidationError>(
+ orderNo: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryOptions(orderNo,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
