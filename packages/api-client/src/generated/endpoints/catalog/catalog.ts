@@ -5,13 +5,18 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation
+  useQuery
 } from '@tanstack/react-query';
 import type {
-  MutationFunction,
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
   QueryClient,
-  UseMutationOptions,
-  UseMutationResult
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
+  UseQueryOptions,
+  UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
@@ -27,6 +32,21 @@ import { customFetch } from '../../../mutator';
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
+
+const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
+  const result = { queryKey } as T & { queryKey: K };
+  for (const key of Object.keys(query)) {
+    // The explicit queryKey always wins, matching the previous
+    // `{ ...query, queryKey }` spread where it was set last.
+    if (key === 'queryKey') continue;
+    Object.defineProperty(result, key, {
+      enumerable: true,
+      configurable: true,
+      get: () => (query as Record<string, unknown>)[key],
+    });
+  }
+  return result;
+};
 
 export const getListImagesApiV1ImagesGetUrl = () => {
 
@@ -55,51 +75,81 @@ export const listImagesApiV1ImagesGet = async ( options?: Parameters<typeof cust
 
 
 
-export const getListImagesApiV1ImagesGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError,void, TContext> => {
-
-const mutationKey = ['listImagesApiV1ImagesGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListImagesApiV1ImagesGetQueryKey = () => {
+    return [
+    `/api/v1/images`
+    ] as const;
+    }
 
 
+export const getListImagesApiV1ImagesGetQueryOptions = <TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListImagesApiV1ImagesGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, void> = () => {
 
-
-          return  listImagesApiV1ImagesGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>> = ({ signal }) => listImagesApiV1ImagesGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListImagesApiV1ImagesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>>
+export type ListImagesApiV1ImagesGetQueryError = unknown
 
-    export type ListImagesApiV1ImagesGetMutationResult = NonNullable<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>>
 
-    export type ListImagesApiV1ImagesGetMutationError = unknown
-
-    /**
+export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>,
+          TError,
+          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>,
+          TError,
+          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Images
  */
-export const useListImagesApiV1ImagesGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getListImagesApiV1ImagesGetMutationOptions(options), queryClient);
-    }
-    export const getListSkusApiV1SkusGetUrl = (params?: ListSkusApiV1SkusGetParams,) => {
+
+export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListImagesApiV1ImagesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getListSkusApiV1SkusGetUrl = (params?: ListSkusApiV1SkusGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -133,47 +183,77 @@ export const listSkusApiV1SkusGet = async (params?: ListSkusApiV1SkusGetParams, 
 
 
 
-export const getListSkusApiV1SkusGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError,{params?: ListSkusApiV1SkusGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError,{params?: ListSkusApiV1SkusGetParams}, TContext> => {
-
-const mutationKey = ['listSkusApiV1SkusGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListSkusApiV1SkusGetQueryKey = (params?: ListSkusApiV1SkusGetParams,) => {
+    return [
+    `/api/v1/skus`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getListSkusApiV1SkusGetQueryOptions = <TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSkusApiV1SkusGetQueryKey(params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, {params?: ListSkusApiV1SkusGetParams}> = (props) => {
-          const {params} = props ?? {};
 
-          return  listSkusApiV1SkusGet(params,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>> = ({ signal }) => listSkusApiV1SkusGet(params, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListSkusApiV1SkusGetQueryResult = NonNullable<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>>
+export type ListSkusApiV1SkusGetQueryError = HTTPValidationError
 
-    export type ListSkusApiV1SkusGetMutationResult = NonNullable<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>>
 
-    export type ListSkusApiV1SkusGetMutationError = HTTPValidationError
-
-    /**
+export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListSkusApiV1SkusGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>,
+          TError,
+          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
+ params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>,
+          TError,
+          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
+ params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Skus
  */
-export const useListSkusApiV1SkusGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError,{params?: ListSkusApiV1SkusGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listSkusApiV1SkusGet>>,
-        TError,
-        {params?: ListSkusApiV1SkusGetParams},
-        TContext
-      > => {
-      return useMutation(getListSkusApiV1SkusGetMutationOptions(options), queryClient);
-    }
+
+export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
+ params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSkusApiV1SkusGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+

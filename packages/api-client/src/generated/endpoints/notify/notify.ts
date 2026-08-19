@@ -5,20 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
-  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
-  UseMutationOptions,
-  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -85,51 +81,81 @@ export const listNotificationsApiV1NotificationsGet = async (params?: ListNotifi
 
 
 
-export const getListNotificationsApiV1NotificationsGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError,{params?: ListNotificationsApiV1NotificationsGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError,{params?: ListNotificationsApiV1NotificationsGetParams}, TContext> => {
-
-const mutationKey = ['listNotificationsApiV1NotificationsGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListNotificationsApiV1NotificationsGetQueryKey = (params?: ListNotificationsApiV1NotificationsGetParams,) => {
+    return [
+    `/api/v1/notifications`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getListNotificationsApiV1NotificationsGetQueryOptions = <TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNotificationsApiV1NotificationsGetQueryKey(params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, {params?: ListNotificationsApiV1NotificationsGetParams}> = (props) => {
-          const {params} = props ?? {};
 
-          return  listNotificationsApiV1NotificationsGet(params,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>> = ({ signal }) => listNotificationsApiV1NotificationsGet(params, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListNotificationsApiV1NotificationsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>>
+export type ListNotificationsApiV1NotificationsGetQueryError = HTTPValidationError
 
-    export type ListNotificationsApiV1NotificationsGetMutationResult = NonNullable<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>>
 
-    export type ListNotificationsApiV1NotificationsGetMutationError = HTTPValidationError
-
-    /**
+export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListNotificationsApiV1NotificationsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
+ params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
+ params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Notifications
  */
-export const useListNotificationsApiV1NotificationsGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError,{params?: ListNotificationsApiV1NotificationsGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>,
-        TError,
-        {params?: ListNotificationsApiV1NotificationsGetParams},
-        TContext
-      > => {
-      return useMutation(getListNotificationsApiV1NotificationsGetMutationOptions(options), queryClient);
-    }
-    export const getMarkReadApiV1NotificationsNotificationIdReadPostUrl = (notificationId: number,) => {
+
+export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
+ params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNotificationsApiV1NotificationsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getMarkReadApiV1NotificationsNotificationIdReadPostUrl = (notificationId: number,) => {
 
 
 

@@ -5,13 +5,18 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation
+  useQuery
 } from '@tanstack/react-query';
 import type {
-  MutationFunction,
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
   QueryClient,
-  UseMutationOptions,
-  UseMutationResult
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
+  UseQueryOptions,
+  UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
@@ -26,6 +31,21 @@ import { customFetch } from '../../../mutator';
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
+
+const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
+  const result = { queryKey } as T & { queryKey: K };
+  for (const key of Object.keys(query)) {
+    // The explicit queryKey always wins, matching the previous
+    // `{ ...query, queryKey }` spread where it was set last.
+    if (key === 'queryKey') continue;
+    Object.defineProperty(result, key, {
+      enumerable: true,
+      configurable: true,
+      get: () => (query as Record<string, unknown>)[key],
+    });
+  }
+  return result;
+};
 
 export const getGetInstanceMetricsApiV1InstancesUuidMetricsGetUrl = (uuid: string,
     params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,) => {
@@ -63,47 +83,83 @@ export const getInstanceMetricsApiV1InstancesUuidMetricsGet = async (uuid: strin
 
 
 
-export const getGetInstanceMetricsApiV1InstancesUuidMetricsGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError,{uuid: string;params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError,{uuid: string;params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams}, TContext> => {
-
-const mutationKey = ['getInstanceMetricsApiV1InstancesUuidMetricsGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getGetInstanceMetricsApiV1InstancesUuidMetricsGetQueryKey = (uuid: string,
+    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,) => {
+    return [
+    `/api/v1/instances/${uuid}/metrics`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getGetInstanceMetricsApiV1InstancesUuidMetricsGetQueryOptions = <TData = Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError = HTTPValidationError>(uuid: string,
+    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstanceMetricsApiV1InstancesUuidMetricsGetQueryKey(uuid,params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, {uuid: string;params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams}> = (props) => {
-          const {uuid,params} = props ?? {};
 
-          return  getInstanceMetricsApiV1InstancesUuidMetricsGet(uuid,params,requestOptions)
-        }
-
-
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>> = ({ signal }) => getInstanceMetricsApiV1InstancesUuidMetricsGet(uuid,params, { signal, ...requestOptions });
 
 
 
 
-  return  { mutationFn, ...mutationOptions }}
 
-    export type GetInstanceMetricsApiV1InstancesUuidMetricsGetMutationResult = NonNullable<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>>
+   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-    export type GetInstanceMetricsApiV1InstancesUuidMetricsGetMutationError = HTTPValidationError
+export type GetInstanceMetricsApiV1InstancesUuidMetricsGetQueryResult = NonNullable<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>>
+export type GetInstanceMetricsApiV1InstancesUuidMetricsGetQueryError = HTTPValidationError
 
-    /**
+
+export function useGetInstanceMetricsApiV1InstancesUuidMetricsGet<TData = Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params: undefined |  GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstanceMetricsApiV1InstancesUuidMetricsGet<TData = Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>,
+          TError,
+          Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstanceMetricsApiV1InstancesUuidMetricsGet<TData = Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Get Instance Metrics
  */
-export const useGetInstanceMetricsApiV1InstancesUuidMetricsGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError,{uuid: string;params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>,
-        TError,
-        {uuid: string;params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams},
-        TContext
-      > => {
-      return useMutation(getGetInstanceMetricsApiV1InstancesUuidMetricsGetMutationOptions(options), queryClient);
-    }
+
+export function useGetInstanceMetricsApiV1InstancesUuidMetricsGet<TData = Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params?: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceMetricsApiV1InstancesUuidMetricsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetInstanceMetricsApiV1InstancesUuidMetricsGetQueryOptions(uuid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+

@@ -5,20 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
-  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
-  UseMutationOptions,
-  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -484,51 +480,81 @@ export const meApiV1MeGet = async ( options?: Parameters<typeof customFetch>[1])
 
 
 
-export const getMeApiV1MeGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError,void, TContext> => {
-
-const mutationKey = ['meApiV1MeGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getMeApiV1MeGetQueryKey = () => {
+    return [
+    `/api/v1/me`
+    ] as const;
+    }
 
 
+export const getMeApiV1MeGetQueryOptions = <TData = Awaited<ReturnType<typeof meApiV1MeGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMeApiV1MeGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof meApiV1MeGet>>, void> = () => {
 
-
-          return  meApiV1MeGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof meApiV1MeGet>>> = ({ signal }) => meApiV1MeGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type MeApiV1MeGetQueryResult = NonNullable<Awaited<ReturnType<typeof meApiV1MeGet>>>
+export type MeApiV1MeGetQueryError = unknown
 
-    export type MeApiV1MeGetMutationResult = NonNullable<Awaited<ReturnType<typeof meApiV1MeGet>>>
 
-    export type MeApiV1MeGetMutationError = unknown
-
-    /**
+export function useMeApiV1MeGet<TData = Awaited<ReturnType<typeof meApiV1MeGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof meApiV1MeGet>>,
+          TError,
+          Awaited<ReturnType<typeof meApiV1MeGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMeApiV1MeGet<TData = Awaited<ReturnType<typeof meApiV1MeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof meApiV1MeGet>>,
+          TError,
+          Awaited<ReturnType<typeof meApiV1MeGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMeApiV1MeGet<TData = Awaited<ReturnType<typeof meApiV1MeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Me
  */
-export const useMeApiV1MeGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof meApiV1MeGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getMeApiV1MeGetMutationOptions(options), queryClient);
-    }
-    export const getSetWarnThresholdApiV1MeWarnThresholdPatchUrl = () => {
+
+export function useMeApiV1MeGet<TData = Awaited<ReturnType<typeof meApiV1MeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof meApiV1MeGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMeApiV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getSetWarnThresholdApiV1MeWarnThresholdPatchUrl = () => {
 
 
 
@@ -654,51 +680,81 @@ export const listSshKeysApiV1SshKeysGet = async ( options?: Parameters<typeof cu
 
 
 
-export const getListSshKeysApiV1SshKeysGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError,void, TContext> => {
-
-const mutationKey = ['listSshKeysApiV1SshKeysGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListSshKeysApiV1SshKeysGetQueryKey = () => {
+    return [
+    `/api/v1/ssh-keys`
+    ] as const;
+    }
 
 
+export const getListSshKeysApiV1SshKeysGetQueryOptions = <TData = Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSshKeysApiV1SshKeysGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, void> = () => {
 
-
-          return  listSshKeysApiV1SshKeysGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>> = ({ signal }) => listSshKeysApiV1SshKeysGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListSshKeysApiV1SshKeysGetQueryResult = NonNullable<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>>
+export type ListSshKeysApiV1SshKeysGetQueryError = unknown
 
-    export type ListSshKeysApiV1SshKeysGetMutationResult = NonNullable<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>>
 
-    export type ListSshKeysApiV1SshKeysGetMutationError = unknown
-
-    /**
+export function useListSshKeysApiV1SshKeysGet<TData = Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>,
+          TError,
+          Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSshKeysApiV1SshKeysGet<TData = Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>,
+          TError,
+          Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSshKeysApiV1SshKeysGet<TData = Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Ssh Keys
  */
-export const useListSshKeysApiV1SshKeysGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getListSshKeysApiV1SshKeysGetMutationOptions(options), queryClient);
-    }
-    export const getAddSshKeyApiV1SshKeysPostUrl = () => {
+
+export function useListSshKeysApiV1SshKeysGet<TData = Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSshKeysApiV1SshKeysGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSshKeysApiV1SshKeysGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAddSshKeyApiV1SshKeysPostUrl = () => {
 
 
 

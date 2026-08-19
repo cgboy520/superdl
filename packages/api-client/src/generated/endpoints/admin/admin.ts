@@ -5,20 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
-  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
-  UseMutationOptions,
-  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -102,51 +98,81 @@ export const adminListAdjustmentsApiAdminV1AdjustmentsGet = async ( options?: Pa
 
 
 
-export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError,void, TContext> => {
-
-const mutationKey = ['adminListAdjustmentsApiAdminV1AdjustmentsGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/adjustments`
+    ] as const;
+    }
 
 
+export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, void> = () => {
 
-
-          return  adminListAdjustmentsApiAdminV1AdjustmentsGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>> = ({ signal }) => adminListAdjustmentsApiAdminV1AdjustmentsGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminListAdjustmentsApiAdminV1AdjustmentsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>>
+export type AdminListAdjustmentsApiAdminV1AdjustmentsGetQueryError = unknown
 
-    export type AdminListAdjustmentsApiAdminV1AdjustmentsGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>>
 
-    export type AdminListAdjustmentsApiAdminV1AdjustmentsGetMutationError = unknown
-
-    /**
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin List Adjustments
  */
-export const useAdminListAdjustmentsApiAdminV1AdjustmentsGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getAdminListAdjustmentsApiAdminV1AdjustmentsGetMutationOptions(options), queryClient);
-    }
-    export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
+
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
 
 
 
@@ -380,51 +406,81 @@ export const adminAlertsApiAdminV1AlertsGet = async ( options?: Parameters<typeo
 
 
 
-export const getAdminAlertsApiAdminV1AlertsGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError,void, TContext> => {
-
-const mutationKey = ['adminAlertsApiAdminV1AlertsGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminAlertsApiAdminV1AlertsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/alerts`
+    ] as const;
+    }
 
 
+export const getAdminAlertsApiAdminV1AlertsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminAlertsApiAdminV1AlertsGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, void> = () => {
 
-
-          return  adminAlertsApiAdminV1AlertsGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>> = ({ signal }) => adminAlertsApiAdminV1AlertsGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminAlertsApiAdminV1AlertsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>>
+export type AdminAlertsApiAdminV1AlertsGetQueryError = unknown
 
-    export type AdminAlertsApiAdminV1AlertsGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>>
 
-    export type AdminAlertsApiAdminV1AlertsGetMutationError = unknown
-
-    /**
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin Alerts
  */
-export const useAdminAlertsApiAdminV1AlertsGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getAdminAlertsApiAdminV1AlertsGetMutationOptions(options), queryClient);
-    }
-    export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiAdminV1AuditGetParams,) => {
+
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminAlertsApiAdminV1AlertsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiAdminV1AuditGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -457,51 +513,81 @@ export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiA
 
 
 
-export const getAdminAuditLogApiAdminV1AuditGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError,{params?: AdminAuditLogApiAdminV1AuditGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError,{params?: AdminAuditLogApiAdminV1AuditGetParams}, TContext> => {
-
-const mutationKey = ['adminAuditLogApiAdminV1AuditGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminAuditLogApiAdminV1AuditGetQueryKey = (params?: AdminAuditLogApiAdminV1AuditGetParams,) => {
+    return [
+    `/api/admin/v1/audit`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getAdminAuditLogApiAdminV1AuditGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError = HTTPValidationError>(params?: AdminAuditLogApiAdminV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminAuditLogApiAdminV1AuditGetQueryKey(params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, {params?: AdminAuditLogApiAdminV1AuditGetParams}> = (props) => {
-          const {params} = props ?? {};
 
-          return  adminAuditLogApiAdminV1AuditGet(params,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>> = ({ signal }) => adminAuditLogApiAdminV1AuditGet(params, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminAuditLogApiAdminV1AuditGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>>
+export type AdminAuditLogApiAdminV1AuditGetQueryError = HTTPValidationError
 
-    export type AdminAuditLogApiAdminV1AuditGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>>
 
-    export type AdminAuditLogApiAdminV1AuditGetMutationError = HTTPValidationError
-
-    /**
+export function useAdminAuditLogApiAdminV1AuditGet<TData = Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminAuditLogApiAdminV1AuditGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAuditLogApiAdminV1AuditGet<TData = Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError = HTTPValidationError>(
+ params?: AdminAuditLogApiAdminV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAuditLogApiAdminV1AuditGet<TData = Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError = HTTPValidationError>(
+ params?: AdminAuditLogApiAdminV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin Audit Log
  */
-export const useAdminAuditLogApiAdminV1AuditGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError,{params?: AdminAuditLogApiAdminV1AuditGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>,
-        TError,
-        {params?: AdminAuditLogApiAdminV1AuditGetParams},
-        TContext
-      > => {
-      return useMutation(getAdminAuditLogApiAdminV1AuditGetMutationOptions(options), queryClient);
-    }
-    export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
+
+export function useAdminAuditLogApiAdminV1AuditGet<TData = Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError = HTTPValidationError>(
+ params?: AdminAuditLogApiAdminV1AuditGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditLogApiAdminV1AuditGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminAuditLogApiAdminV1AuditGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
 
 
 
@@ -634,51 +720,81 @@ export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminLis
 
 
 
-export const getAdminListInstancesApiAdminV1InstancesGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError,{params?: AdminListInstancesApiAdminV1InstancesGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError,{params?: AdminListInstancesApiAdminV1InstancesGetParams}, TContext> => {
-
-const mutationKey = ['adminListInstancesApiAdminV1InstancesGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminListInstancesApiAdminV1InstancesGetQueryKey = (params?: AdminListInstancesApiAdminV1InstancesGetParams,) => {
+    return [
+    `/api/admin/v1/instances`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getAdminListInstancesApiAdminV1InstancesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError = HTTPValidationError>(params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListInstancesApiAdminV1InstancesGetQueryKey(params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, {params?: AdminListInstancesApiAdminV1InstancesGetParams}> = (props) => {
-          const {params} = props ?? {};
 
-          return  adminListInstancesApiAdminV1InstancesGet(params,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>> = ({ signal }) => adminListInstancesApiAdminV1InstancesGet(params, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminListInstancesApiAdminV1InstancesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>>
+export type AdminListInstancesApiAdminV1InstancesGetQueryError = HTTPValidationError
 
-    export type AdminListInstancesApiAdminV1InstancesGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>>
 
-    export type AdminListInstancesApiAdminV1InstancesGetMutationError = HTTPValidationError
-
-    /**
+export function useAdminListInstancesApiAdminV1InstancesGet<TData = Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListInstancesApiAdminV1InstancesGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListInstancesApiAdminV1InstancesGet<TData = Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError = HTTPValidationError>(
+ params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListInstancesApiAdminV1InstancesGet<TData = Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError = HTTPValidationError>(
+ params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin List Instances
  */
-export const useAdminListInstancesApiAdminV1InstancesGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError,{params?: AdminListInstancesApiAdminV1InstancesGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>,
-        TError,
-        {params?: AdminListInstancesApiAdminV1InstancesGetParams},
-        TContext
-      > => {
-      return useMutation(getAdminListInstancesApiAdminV1InstancesGetMutationOptions(options), queryClient);
-    }
-    export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl = (uuid: string,) => {
+
+export function useAdminListInstancesApiAdminV1InstancesGet<TData = Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError = HTTPValidationError>(
+ params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListInstancesApiAdminV1InstancesGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl = (uuid: string,) => {
 
 
 
@@ -812,51 +928,81 @@ export const adminMeApiAdminV1MeGet = async ( options?: Parameters<typeof custom
 
 
 
-export const getAdminMeApiAdminV1MeGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError,void, TContext> => {
-
-const mutationKey = ['adminMeApiAdminV1MeGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminMeApiAdminV1MeGetQueryKey = () => {
+    return [
+    `/api/admin/v1/me`
+    ] as const;
+    }
 
 
+export const getAdminMeApiAdminV1MeGetQueryOptions = <TData = Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminMeApiAdminV1MeGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, void> = () => {
 
-
-          return  adminMeApiAdminV1MeGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>> = ({ signal }) => adminMeApiAdminV1MeGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminMeApiAdminV1MeGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>>
+export type AdminMeApiAdminV1MeGetQueryError = unknown
 
-    export type AdminMeApiAdminV1MeGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>>
 
-    export type AdminMeApiAdminV1MeGetMutationError = unknown
-
-    /**
+export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin Me
  */
-export const useAdminMeApiAdminV1MeGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getAdminMeApiAdminV1MeGetMutationOptions(options), queryClient);
-    }
-    export const getAdminListNodesApiAdminV1NodesGetUrl = () => {
+
+export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminMeApiAdminV1MeGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminMeApiAdminV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListNodesApiAdminV1NodesGetUrl = () => {
 
 
 
@@ -882,51 +1028,81 @@ export const adminListNodesApiAdminV1NodesGet = async ( options?: Parameters<typ
 
 
 
-export const getAdminListNodesApiAdminV1NodesGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError,void, TContext> => {
-
-const mutationKey = ['adminListNodesApiAdminV1NodesGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminListNodesApiAdminV1NodesGetQueryKey = () => {
+    return [
+    `/api/admin/v1/nodes`
+    ] as const;
+    }
 
 
+export const getAdminListNodesApiAdminV1NodesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListNodesApiAdminV1NodesGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, void> = () => {
 
-
-          return  adminListNodesApiAdminV1NodesGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>> = ({ signal }) => adminListNodesApiAdminV1NodesGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminListNodesApiAdminV1NodesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>>
+export type AdminListNodesApiAdminV1NodesGetQueryError = unknown
 
-    export type AdminListNodesApiAdminV1NodesGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>>
 
-    export type AdminListNodesApiAdminV1NodesGetMutationError = unknown
-
-    /**
+export function useAdminListNodesApiAdminV1NodesGet<TData = Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListNodesApiAdminV1NodesGet<TData = Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListNodesApiAdminV1NodesGet<TData = Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin List Nodes
  */
-export const useAdminListNodesApiAdminV1NodesGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getAdminListNodesApiAdminV1NodesGetMutationOptions(options), queryClient);
-    }
-    export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrdersApiAdminV1OrdersGetParams,) => {
+
+export function useAdminListNodesApiAdminV1NodesGet<TData = Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListNodesApiAdminV1NodesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListNodesApiAdminV1NodesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrdersApiAdminV1OrdersGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -959,51 +1135,81 @@ export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrder
 
 
 
-export const getAdminListOrdersApiAdminV1OrdersGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError,{params?: AdminListOrdersApiAdminV1OrdersGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError,{params?: AdminListOrdersApiAdminV1OrdersGetParams}, TContext> => {
-
-const mutationKey = ['adminListOrdersApiAdminV1OrdersGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminListOrdersApiAdminV1OrdersGetQueryKey = (params?: AdminListOrdersApiAdminV1OrdersGetParams,) => {
+    return [
+    `/api/admin/v1/orders`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getAdminListOrdersApiAdminV1OrdersGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError = HTTPValidationError>(params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListOrdersApiAdminV1OrdersGetQueryKey(params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, {params?: AdminListOrdersApiAdminV1OrdersGetParams}> = (props) => {
-          const {params} = props ?? {};
 
-          return  adminListOrdersApiAdminV1OrdersGet(params,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>> = ({ signal }) => adminListOrdersApiAdminV1OrdersGet(params, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminListOrdersApiAdminV1OrdersGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>>
+export type AdminListOrdersApiAdminV1OrdersGetQueryError = HTTPValidationError
 
-    export type AdminListOrdersApiAdminV1OrdersGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>>
 
-    export type AdminListOrdersApiAdminV1OrdersGetMutationError = HTTPValidationError
-
-    /**
+export function useAdminListOrdersApiAdminV1OrdersGet<TData = Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListOrdersApiAdminV1OrdersGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListOrdersApiAdminV1OrdersGet<TData = Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError = HTTPValidationError>(
+ params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListOrdersApiAdminV1OrdersGet<TData = Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError = HTTPValidationError>(
+ params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin List Orders
  */
-export const useAdminListOrdersApiAdminV1OrdersGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError,{params?: AdminListOrdersApiAdminV1OrdersGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>,
-        TError,
-        {params?: AdminListOrdersApiAdminV1OrdersGetParams},
-        TContext
-      > => {
-      return useMutation(getAdminListOrdersApiAdminV1OrdersGetMutationOptions(options), queryClient);
-    }
-    export const getReconciliationApiAdminV1ReconciliationGetUrl = (params: ReconciliationApiAdminV1ReconciliationGetParams,) => {
+
+export function useAdminListOrdersApiAdminV1OrdersGet<TData = Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError = HTTPValidationError>(
+ params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOrdersApiAdminV1OrdersGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListOrdersApiAdminV1OrdersGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getReconciliationApiAdminV1ReconciliationGetUrl = (params: ReconciliationApiAdminV1ReconciliationGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -1037,51 +1243,81 @@ export const reconciliationApiAdminV1ReconciliationGet = async (params: Reconcil
 
 
 
-export const getReconciliationApiAdminV1ReconciliationGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError,{params: ReconciliationApiAdminV1ReconciliationGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError,{params: ReconciliationApiAdminV1ReconciliationGetParams}, TContext> => {
-
-const mutationKey = ['reconciliationApiAdminV1ReconciliationGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getReconciliationApiAdminV1ReconciliationGetQueryKey = (params?: ReconciliationApiAdminV1ReconciliationGetParams,) => {
+    return [
+    `/api/admin/v1/reconciliation`, ...(params ? [params] : [])
+    ] as const;
+    }
 
 
+export const getReconciliationApiAdminV1ReconciliationGetQueryOptions = <TData = Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError = HTTPValidationError>(params: ReconciliationApiAdminV1ReconciliationGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getReconciliationApiAdminV1ReconciliationGetQueryKey(params);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, {params: ReconciliationApiAdminV1ReconciliationGetParams}> = (props) => {
-          const {params} = props ?? {};
 
-          return  reconciliationApiAdminV1ReconciliationGet(params,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>> = ({ signal }) => reconciliationApiAdminV1ReconciliationGet(params, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ReconciliationApiAdminV1ReconciliationGetQueryResult = NonNullable<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>>
+export type ReconciliationApiAdminV1ReconciliationGetQueryError = HTTPValidationError
 
-    export type ReconciliationApiAdminV1ReconciliationGetMutationResult = NonNullable<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>>
 
-    export type ReconciliationApiAdminV1ReconciliationGetMutationError = HTTPValidationError
-
-    /**
+export function useReconciliationApiAdminV1ReconciliationGet<TData = Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError = HTTPValidationError>(
+ params: ReconciliationApiAdminV1ReconciliationGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>,
+          TError,
+          Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useReconciliationApiAdminV1ReconciliationGet<TData = Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError = HTTPValidationError>(
+ params: ReconciliationApiAdminV1ReconciliationGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>,
+          TError,
+          Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useReconciliationApiAdminV1ReconciliationGet<TData = Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError = HTTPValidationError>(
+ params: ReconciliationApiAdminV1ReconciliationGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Reconciliation
  */
-export const useReconciliationApiAdminV1ReconciliationGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError,{params: ReconciliationApiAdminV1ReconciliationGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>,
-        TError,
-        {params: ReconciliationApiAdminV1ReconciliationGetParams},
-        TContext
-      > => {
-      return useMutation(getReconciliationApiAdminV1ReconciliationGetMutationOptions(options), queryClient);
-    }
-    export const getOversellReportApiAdminV1ReportsOversellGetUrl = () => {
+
+export function useReconciliationApiAdminV1ReconciliationGet<TData = Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError = HTTPValidationError>(
+ params: ReconciliationApiAdminV1ReconciliationGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getReconciliationApiAdminV1ReconciliationGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getOversellReportApiAdminV1ReportsOversellGetUrl = () => {
 
 
 
@@ -1108,51 +1344,81 @@ export const oversellReportApiAdminV1ReportsOversellGet = async ( options?: Para
 
 
 
-export const getOversellReportApiAdminV1ReportsOversellGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError,void, TContext> => {
-
-const mutationKey = ['oversellReportApiAdminV1ReportsOversellGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getOversellReportApiAdminV1ReportsOversellGetQueryKey = () => {
+    return [
+    `/api/admin/v1/reports/oversell`
+    ] as const;
+    }
 
 
+export const getOversellReportApiAdminV1ReportsOversellGetQueryOptions = <TData = Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOversellReportApiAdminV1ReportsOversellGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, void> = () => {
 
-
-          return  oversellReportApiAdminV1ReportsOversellGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>> = ({ signal }) => oversellReportApiAdminV1ReportsOversellGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type OversellReportApiAdminV1ReportsOversellGetQueryResult = NonNullable<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>>
+export type OversellReportApiAdminV1ReportsOversellGetQueryError = unknown
 
-    export type OversellReportApiAdminV1ReportsOversellGetMutationResult = NonNullable<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>>
 
-    export type OversellReportApiAdminV1ReportsOversellGetMutationError = unknown
-
-    /**
+export function useOversellReportApiAdminV1ReportsOversellGet<TData = Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>,
+          TError,
+          Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useOversellReportApiAdminV1ReportsOversellGet<TData = Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>,
+          TError,
+          Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useOversellReportApiAdminV1ReportsOversellGet<TData = Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Oversell Report
  */
-export const useOversellReportApiAdminV1ReportsOversellGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getOversellReportApiAdminV1ReportsOversellGetMutationOptions(options), queryClient);
-    }
-    export const getAdminListSkusApiAdminV1SkusGetUrl = () => {
+
+export function useOversellReportApiAdminV1ReportsOversellGet<TData = Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof oversellReportApiAdminV1ReportsOversellGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getOversellReportApiAdminV1ReportsOversellGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListSkusApiAdminV1SkusGetUrl = () => {
 
 
 
@@ -1178,51 +1444,81 @@ export const adminListSkusApiAdminV1SkusGet = async ( options?: Parameters<typeo
 
 
 
-export const getAdminListSkusApiAdminV1SkusGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError,void, TContext> => {
-
-const mutationKey = ['adminListSkusApiAdminV1SkusGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminListSkusApiAdminV1SkusGetQueryKey = () => {
+    return [
+    `/api/admin/v1/skus`
+    ] as const;
+    }
 
 
+export const getAdminListSkusApiAdminV1SkusGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListSkusApiAdminV1SkusGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, void> = () => {
 
-
-          return  adminListSkusApiAdminV1SkusGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>> = ({ signal }) => adminListSkusApiAdminV1SkusGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminListSkusApiAdminV1SkusGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>>
+export type AdminListSkusApiAdminV1SkusGetQueryError = unknown
 
-    export type AdminListSkusApiAdminV1SkusGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>>
 
-    export type AdminListSkusApiAdminV1SkusGetMutationError = unknown
-
-    /**
+export function useAdminListSkusApiAdminV1SkusGet<TData = Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListSkusApiAdminV1SkusGet<TData = Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListSkusApiAdminV1SkusGet<TData = Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin List Skus
  */
-export const useAdminListSkusApiAdminV1SkusGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getAdminListSkusApiAdminV1SkusGetMutationOptions(options), queryClient);
-    }
-    export const getAdminCreateSkuApiAdminV1SkusPostUrl = () => {
+
+export function useAdminListSkusApiAdminV1SkusGet<TData = Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSkusApiAdminV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListSkusApiAdminV1SkusGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCreateSkuApiAdminV1SkusPostUrl = () => {
 
 
 
@@ -1455,51 +1751,81 @@ export const adminListTenantsApiAdminV1TenantsGet = async ( options?: Parameters
 
 
 
-export const getAdminListTenantsApiAdminV1TenantsGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError,void, TContext> => {
-
-const mutationKey = ['adminListTenantsApiAdminV1TenantsGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getAdminListTenantsApiAdminV1TenantsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/tenants`
+    ] as const;
+    }
 
 
+export const getAdminListTenantsApiAdminV1TenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListTenantsApiAdminV1TenantsGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, void> = () => {
 
-
-          return  adminListTenantsApiAdminV1TenantsGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>> = ({ signal }) => adminListTenantsApiAdminV1TenantsGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type AdminListTenantsApiAdminV1TenantsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>>
+export type AdminListTenantsApiAdminV1TenantsGetQueryError = unknown
 
-    export type AdminListTenantsApiAdminV1TenantsGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>>
 
-    export type AdminListTenantsApiAdminV1TenantsGetMutationError = unknown
-
-    /**
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Admin List Tenants
  */
-export const useAdminListTenantsApiAdminV1TenantsGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getAdminListTenantsApiAdminV1TenantsGetMutationOptions(options), queryClient);
-    }
-    export const getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl = (userId: number,) => {
+
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListTenantsApiAdminV1TenantsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl = (userId: number,) => {
 
 
 

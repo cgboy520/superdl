@@ -5,20 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
-  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
-  UseMutationOptions,
-  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -80,51 +76,81 @@ export const listInstancesApiV1InstancesGet = async ( options?: Parameters<typeo
 
 
 
-export const getListInstancesApiV1InstancesGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError,void, TContext> => {
-
-const mutationKey = ['listInstancesApiV1InstancesGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListInstancesApiV1InstancesGetQueryKey = () => {
+    return [
+    `/api/v1/instances`
+    ] as const;
+    }
 
 
+export const getListInstancesApiV1InstancesGetQueryOptions = <TData = Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInstancesApiV1InstancesGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, void> = () => {
 
-
-          return  listInstancesApiV1InstancesGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>> = ({ signal }) => listInstancesApiV1InstancesGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListInstancesApiV1InstancesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>>
+export type ListInstancesApiV1InstancesGetQueryError = unknown
 
-    export type ListInstancesApiV1InstancesGetMutationResult = NonNullable<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>>
 
-    export type ListInstancesApiV1InstancesGetMutationError = unknown
-
-    /**
+export function useListInstancesApiV1InstancesGet<TData = Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>,
+          TError,
+          Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInstancesApiV1InstancesGet<TData = Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>,
+          TError,
+          Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInstancesApiV1InstancesGet<TData = Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Instances
  */
-export const useListInstancesApiV1InstancesGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getListInstancesApiV1InstancesGetMutationOptions(options), queryClient);
-    }
-    export const getCreateInstanceApiV1InstancesPostUrl = () => {
+
+export function useListInstancesApiV1InstancesGet<TData = Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstancesApiV1InstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListInstancesApiV1InstancesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCreateInstanceApiV1InstancesPostUrl = () => {
 
 
 
@@ -351,51 +377,81 @@ export const getInstanceApiV1InstancesUuidGet = async (uuid: string, options?: P
 
 
 
-export const getGetInstanceApiV1InstancesUuidGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError,{uuid: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError,{uuid: string}, TContext> => {
-
-const mutationKey = ['getInstanceApiV1InstancesUuidGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getGetInstanceApiV1InstancesUuidGetQueryKey = (uuid: string,) => {
+    return [
+    `/api/v1/instances/${uuid}`
+    ] as const;
+    }
 
 
+export const getGetInstanceApiV1InstancesUuidGetQueryOptions = <TData = Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError = HTTPValidationError>(uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstanceApiV1InstancesUuidGetQueryKey(uuid);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, {uuid: string}> = (props) => {
-          const {uuid} = props ?? {};
 
-          return  getInstanceApiV1InstancesUuidGet(uuid,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>> = ({ signal }) => getInstanceApiV1InstancesUuidGet(uuid, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type GetInstanceApiV1InstancesUuidGetQueryResult = NonNullable<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>>
+export type GetInstanceApiV1InstancesUuidGetQueryError = HTTPValidationError
 
-    export type GetInstanceApiV1InstancesUuidGetMutationResult = NonNullable<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>>
 
-    export type GetInstanceApiV1InstancesUuidGetMutationError = HTTPValidationError
-
-    /**
+export function useGetInstanceApiV1InstancesUuidGet<TData = Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError = HTTPValidationError>(
+ uuid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>,
+          TError,
+          Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstanceApiV1InstancesUuidGet<TData = Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>,
+          TError,
+          Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstanceApiV1InstancesUuidGet<TData = Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Get Instance
  */
-export const useGetInstanceApiV1InstancesUuidGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError,{uuid: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>,
-        TError,
-        {uuid: string},
-        TContext
-      > => {
-      return useMutation(getGetInstanceApiV1InstancesUuidGetMutationOptions(options), queryClient);
-    }
-    export const getRenameInstanceApiV1InstancesUuidPatchUrl = (uuid: string,) => {
+
+export function useGetInstanceApiV1InstancesUuidGet<TData = Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceApiV1InstancesUuidGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetInstanceApiV1InstancesUuidGetQueryOptions(uuid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getRenameInstanceApiV1InstancesUuidPatchUrl = (uuid: string,) => {
 
 
 
@@ -528,51 +584,81 @@ export const getInstanceAccessApiV1InstancesUuidAccessGet = async (uuid: string,
 
 
 
-export const getGetInstanceAccessApiV1InstancesUuidAccessGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError,{uuid: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError,{uuid: string}, TContext> => {
-
-const mutationKey = ['getInstanceAccessApiV1InstancesUuidAccessGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getGetInstanceAccessApiV1InstancesUuidAccessGetQueryKey = (uuid: string,) => {
+    return [
+    `/api/v1/instances/${uuid}/access`
+    ] as const;
+    }
 
 
+export const getGetInstanceAccessApiV1InstancesUuidAccessGetQueryOptions = <TData = Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError = HTTPValidationError>(uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstanceAccessApiV1InstancesUuidAccessGetQueryKey(uuid);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, {uuid: string}> = (props) => {
-          const {uuid} = props ?? {};
 
-          return  getInstanceAccessApiV1InstancesUuidAccessGet(uuid,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>> = ({ signal }) => getInstanceAccessApiV1InstancesUuidAccessGet(uuid, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type GetInstanceAccessApiV1InstancesUuidAccessGetQueryResult = NonNullable<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>>
+export type GetInstanceAccessApiV1InstancesUuidAccessGetQueryError = HTTPValidationError
 
-    export type GetInstanceAccessApiV1InstancesUuidAccessGetMutationResult = NonNullable<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>>
 
-    export type GetInstanceAccessApiV1InstancesUuidAccessGetMutationError = HTTPValidationError
-
-    /**
+export function useGetInstanceAccessApiV1InstancesUuidAccessGet<TData = Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError = HTTPValidationError>(
+ uuid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>,
+          TError,
+          Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstanceAccessApiV1InstancesUuidAccessGet<TData = Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>,
+          TError,
+          Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstanceAccessApiV1InstancesUuidAccessGet<TData = Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary Get Instance Access
  */
-export const useGetInstanceAccessApiV1InstancesUuidAccessGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError,{uuid: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>,
-        TError,
-        {uuid: string},
-        TContext
-      > => {
-      return useMutation(getGetInstanceAccessApiV1InstancesUuidAccessGetMutationOptions(options), queryClient);
-    }
-    export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string,) => {
+
+export function useGetInstanceAccessApiV1InstancesUuidAccessGet<TData = Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstanceAccessApiV1InstancesUuidAccessGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetInstanceAccessApiV1InstancesUuidAccessGetQueryOptions(uuid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string,) => {
 
 
 
@@ -599,51 +685,81 @@ export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string
 
 
 
-export const getListInstanceEventsApiV1InstancesUuidEventsGetMutationOptions = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError,{uuid: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError,{uuid: string}, TContext> => {
-
-const mutationKey = ['listInstanceEventsApiV1InstancesUuidEventsGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListInstanceEventsApiV1InstancesUuidEventsGetQueryKey = (uuid: string,) => {
+    return [
+    `/api/v1/instances/${uuid}/events`
+    ] as const;
+    }
 
 
+export const getListInstanceEventsApiV1InstancesUuidEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInstanceEventsApiV1InstancesUuidEventsGetQueryKey(uuid);
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, {uuid: string}> = (props) => {
-          const {uuid} = props ?? {};
 
-          return  listInstanceEventsApiV1InstancesUuidEventsGet(uuid,requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>> = ({ signal }) => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListInstanceEventsApiV1InstancesUuidEventsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>>
+export type ListInstanceEventsApiV1InstancesUuidEventsGetQueryError = HTTPValidationError
 
-    export type ListInstanceEventsApiV1InstancesUuidEventsGetMutationResult = NonNullable<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>>
 
-    export type ListInstanceEventsApiV1InstancesUuidEventsGetMutationError = HTTPValidationError
-
-    /**
+export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Instance Events
  */
-export const useListInstanceEventsApiV1InstancesUuidEventsGet = <TError = HTTPValidationError,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError,{uuid: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>,
-        TError,
-        {uuid: string},
-        TContext
-      > => {
-      return useMutation(getListInstanceEventsApiV1InstancesUuidEventsGetMutationOptions(options), queryClient);
-    }
-    export const getResetJupyterTokenApiV1InstancesUuidResetJupyterTokenPostUrl = (uuid: string,) => {
+
+export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListInstanceEventsApiV1InstancesUuidEventsGetQueryOptions(uuid,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getResetJupyterTokenApiV1InstancesUuidResetJupyterTokenPostUrl = (uuid: string,) => {
 
 
 

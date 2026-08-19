@@ -5,20 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
-  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
-  UseMutationOptions,
-  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -78,51 +74,81 @@ export const listDisksApiV1DisksGet = async ( options?: Parameters<typeof custom
 
 
 
-export const getListDisksApiV1DisksGetMutationOptions = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError,void, TContext> => {
-
-const mutationKey = ['listDisksApiV1DisksGet'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
+export const getListDisksApiV1DisksGetQueryKey = () => {
+    return [
+    `/api/v1/disks`
+    ] as const;
+    }
 
 
+export const getListDisksApiV1DisksGetQueryOptions = <TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDisksApiV1DisksGetQueryKey();
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, void> = () => {
 
-
-          return  listDisksApiV1DisksGet(requestOptions)
-        }
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>> = ({ signal }) => listDisksApiV1DisksGet({ signal, ...requestOptions });
 
 
 
 
 
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
 
-  return  { mutationFn, ...mutationOptions }}
+export type ListDisksApiV1DisksGetQueryResult = NonNullable<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>>
+export type ListDisksApiV1DisksGetQueryError = unknown
 
-    export type ListDisksApiV1DisksGetMutationResult = NonNullable<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>>
 
-    export type ListDisksApiV1DisksGetMutationError = unknown
-
-    /**
+export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>,
+          TError,
+          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>,
+          TError,
+          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
  * @summary List Disks
  */
-export const useListDisksApiV1DisksGet = <TError = unknown,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof listDisksApiV1DisksGet>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getListDisksApiV1DisksGetMutationOptions(options), queryClient);
-    }
-    export const getCreateDiskApiV1DisksPostUrl = () => {
+
+export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListDisksApiV1DisksGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCreateDiskApiV1DisksPostUrl = () => {
 
 
 
