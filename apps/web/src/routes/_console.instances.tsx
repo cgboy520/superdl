@@ -6,7 +6,7 @@
 
 import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
-import { copy, formatDateTime, formatHourlyPrice, formatMoney } from "@superdl/ui";
+import { copy, formatDateTime, formatHourlyPrice, formatMoney, localToday } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Alert, App, Button, Input, Popover, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -22,15 +22,6 @@ export const Route = createFileRoute("/_console/instances")({
   beforeLoad: requireAuth,
   component: InstancesPage,
 });
-
-function todayLocal(): { date: string; tz: number } {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    tz: -d.getTimezoneOffset(),
-  };
-}
 
 function QuickToolsCell({ instance }: { instance: InstanceOut }) {
   const navigate = useNavigate();
@@ -163,8 +154,8 @@ function InstancesPage() {
   const [q, setQ] = useState("");
   const { data: instances, isLoading, refetch } = useInstances({ refetchInterval: 5_000 });
   const { data: metrics } = useMetricsSummary({ refetchInterval: 45_000 });
-  const { date, tz } = todayLocal();
-  const { data: daily } = useDailySummary(date, tz, { refetchInterval: 60_000 });
+  const { date, tzOffsetMinutes } = localToday();
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
 
   const todayByInstance = useMemo(
     () => new Map((daily?.items ?? []).map((it) => [it.instance_id, it.total_amount])),

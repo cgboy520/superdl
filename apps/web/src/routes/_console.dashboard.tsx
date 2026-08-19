@@ -1,10 +1,10 @@
-/** 概览:轻量首屏 —— 实例数/余额/未读通知 + 快捷入口。 */
+/** 概览:轻量首屏 —— 实例数/余额/今日消费/未读通知 + 快捷入口。 */
 
-import { copy, formatMoney, tabularNums } from "@superdl/ui";
+import { addAmounts, copy, formatMoney, localToday, tabularNums } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
 
-import { useInstances, useNotifications, useWallet } from "../api/queries";
+import { useDailySummary, useInstances, useNotifications, useWallet } from "../api/queries";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/dashboard")({
@@ -16,6 +16,9 @@ function Overview() {
   const { data: instances } = useInstances();
   const { data: wallet } = useWallet();
   const { data: unread } = useNotifications({ unread: true });
+  const { date, tzOffsetMinutes } = localToday();
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes);
+  const todayTotal = formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null);
 
   const running = instances?.filter((i) => i.status === "running").length ?? 0;
   const hasWarn = (unread ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
@@ -37,14 +40,14 @@ function Overview() {
           }
         />
       )}
-      <Row gutter={16}>
-        <Col span={8}>
+      <Row gutter={[16, 16]}>
+        <Col xs={12} lg={6}>
           <Card>
             <Statistic title="实例总数" value={instances?.length ?? 0} />
             <Typography.Text type="secondary">运行中 {running} 台</Typography.Text>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={12} lg={6}>
           <Card>
             <Statistic
               title="可用余额"
@@ -53,7 +56,12 @@ function Overview() {
             />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={12} lg={6}>
+          <Card>
+            <Statistic title="今日消费" value={todayTotal} valueStyle={tabularNums} />
+          </Card>
+        </Col>
+        <Col xs={12} lg={6}>
           <Card>
             <Statistic title="未读通知" value={unread?.length ?? 0} />
           </Card>

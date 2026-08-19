@@ -69,6 +69,30 @@ export function formatDaysLeft(
   return days === 0 ? "今日到期" : `剩 ${days} 天`;
 }
 
+/** 两个金额字符串相加(BigInt 分级精确,2 位小数,禁浮点)。展示层用。 */
+export function addAmounts(a: string | null | undefined, b: string | null | undefined): string {
+  const cents = (s: string | null | undefined): bigint => {
+    if (!s) return 0n;
+    const neg = s.startsWith("-");
+    const [int = "0", frac = ""] = (neg ? s.slice(1) : s).split(".");
+    const v = BigInt(int + (frac + "00").slice(0, 2));
+    return neg ? -v : v;
+  };
+  const sum = cents(a) + cents(b);
+  const neg = sum < 0n;
+  const abs = (neg ? -sum : sum).toString().padStart(3, "0");
+  return `${neg ? "-" : ""}${abs.slice(0, -2)}.${abs.slice(-2)}`;
+}
+
+/** 本地"今天"(YYYY-MM-DD)与时区偏移(分,UTC 以东为正)—— 当日消费查询参数。 */
+export function localToday(now: Date = new Date()): { date: string; tzOffsetMinutes: number } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    tzOffsetMinutes: -now.getTimezoneOffset(),
+  };
+}
+
 /** ISO 时间 → "2026-08-19 10:30" */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "-";

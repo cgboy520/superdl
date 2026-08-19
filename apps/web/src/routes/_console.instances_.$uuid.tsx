@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatHourlyPrice,
   formatMoney,
+  localToday,
   tabularNums,
 } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -28,6 +29,7 @@ import { useState } from "react";
 
 import { useResetJupyterToken } from "../api/mutations";
 import {
+  useDailySummary,
   useHourlyBills,
   useInstance,
   useInstanceAccess,
@@ -213,6 +215,10 @@ function InstanceDetail() {
   const navigate = useNavigate();
   const [releaseOpen, setReleaseOpen] = useState(false);
   const { data: instance } = useInstance(uuid, { refetchInterval: 5_000 });
+  const { date, tzOffsetMinutes } = localToday();
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
+  const todayAmount =
+    (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? null;
 
   if (!instance) return null;
   const running = instance.status === "running";
@@ -246,6 +252,7 @@ function InstanceDetail() {
                   label: "计费",
                   children: `${formatHourlyPrice(instance.price_hourly)} × ${instance.gpu_count} 卡`,
                 },
+                { label: "今日消费", children: formatMoney(todayAmount) },
                 { label: "创建于", children: formatDateTime(instance.created_at) },
               ]}
             />

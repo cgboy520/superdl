@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addAmounts,
   formatCountdown,
   formatDaysLeft,
   formatDuration,
@@ -9,6 +10,18 @@ import {
   formatSizeGb,
   mulPrice,
 } from "./format";
+
+describe("addAmounts", () => {
+  it("BigInt 精确相加无浮点误差", () => {
+    expect(addAmounts("1.10", "2.80")).toBe("3.90");
+    expect(addAmounts("0.01", "0.02")).toBe("0.03");
+  });
+  it("负数与空值", () => {
+    expect(addAmounts("-1.50", "1.00")).toBe("-0.50");
+    expect(addAmounts(null, "2.00")).toBe("2.00");
+    expect(addAmounts(null, undefined)).toBe("0.00");
+  });
+});
 
 describe("mulPrice", () => {
   it("BigInt 精确乘法无浮点误差", () => {
