@@ -7,7 +7,19 @@ import {
   formatHourlyPrice,
   formatMoney,
   formatSizeGb,
+  mulPrice,
 } from "./format";
+
+describe("mulPrice", () => {
+  it("BigInt 精确乘法无浮点误差", () => {
+    expect(mulPrice("1.9900", 2)).toBe("3.9800");
+    expect(mulPrice("0.98", 3)).toBe("2.9400");
+    expect(mulPrice("0.0001", 8)).toBe("0.0008");
+  });
+  it("空值兜底", () => {
+    expect(mulPrice(null, 4)).toBe("0.0000");
+  });
+});
 
 describe("formatDaysLeft", () => {
   const now = new Date("2026-08-19T12:00:00Z");

@@ -23,6 +23,15 @@ export function formatHourlyPrice(price: string | null | undefined): string {
   return `¥${int}.${frac}/时`;
 }
 
+/** 十进制字符串 × 整数(BigInt 精确到 4 位小数,禁浮点)。展示层用;计费权威在后端。 */
+export function mulPrice(price: string | null | undefined, count: number): string {
+  if (!price) return "0.0000";
+  const [int = "0", frac = ""] = price.split(".");
+  const scaled = BigInt(int + (frac + "0000").slice(0, 4)) * BigInt(count);
+  const s = scaled.toString().padStart(5, "0");
+  return `${s.slice(0, -4)}.${s.slice(-4)}`;
+}
+
 /** 秒 → "X 小时 Y 分"(不足 1 分钟显示"不足 1 分钟") */
 export function formatDuration(seconds: number): string {
   if (seconds < 60) return seconds <= 0 ? "0 分钟" : "不足 1 分钟";
