@@ -2,11 +2,29 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatCountdown,
+  formatDaysLeft,
   formatDuration,
   formatHourlyPrice,
   formatMoney,
   formatSizeGb,
 } from "./format";
+
+describe("formatDaysLeft", () => {
+  const now = new Date("2026-08-19T12:00:00Z");
+  it("宽限期剩余天数", () => {
+    expect(formatDaysLeft("2026-08-17T00:00:00Z", 7, now)).toBe("剩 4 天");
+  });
+  it("最后一天显示今日到期", () => {
+    expect(formatDaysLeft("2026-08-12T20:00:00Z", 7, now)).toBe("今日到期");
+  });
+  it("已越过截止", () => {
+    expect(formatDaysLeft("2026-08-01T00:00:00Z", 7, now)).toBe("已到期");
+  });
+  it("起点缺失返回 null", () => {
+    expect(formatDaysLeft(null, 7, now)).toBeNull();
+    expect(formatDaysLeft(undefined, 30, now)).toBeNull();
+  });
+});
 
 describe("formatMoney", () => {
   it("千分位与两位小数", () => {

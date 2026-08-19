@@ -43,6 +43,23 @@ export function formatCountdown(deadline: string | Date, now: Date = new Date())
   return `剩 ${Math.max(1, Math.floor(ms / 60_000))}m`;
 }
 
+/**
+ * 天级倒计时:起点 + 天数 → "剩 X 天" / "今日到期" / "已到期"(存储宽限/冻结列用)。
+ * 返回 null 表示起点缺失(调用方自行兜底)。
+ */
+export function formatDaysLeft(
+  startedAt: string | null | undefined,
+  totalDays: number,
+  now: Date = new Date(),
+): string | null {
+  if (!startedAt) return null;
+  const deadline = new Date(startedAt).getTime() + totalDays * 86_400_000;
+  const ms = deadline - now.getTime();
+  if (ms <= 0) return "已到期";
+  const days = Math.floor(ms / 86_400_000);
+  return days === 0 ? "今日到期" : `剩 ${days} 天`;
+}
+
 /** ISO 时间 → "2026-08-19 10:30" */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "-";

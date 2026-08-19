@@ -44,4 +44,26 @@ export const copy = {
 
   // 安全
   sshKeyOnly: "实例仅支持 SSH 密钥登录,不支持密码登录",
+
+  // 预留功能(可见但禁用,铁律 #2;不虚假承诺具体时间)
+  comingSoon: "即将上线",
+  billingModeComingSoon: "包日/包周/包月计费即将上线,当前仅支持按量计费",
+  myImagesComingSoon: "保存镜像功能上线后,可在此选择自己保存的镜像",
+  channelComingSoon: "商户资质接入后开放,当前请使用模拟支付(开发环境)",
+  realNameComingSoon: "实名认证即将上线",
+
+  // 计费规则说明(市场/创建页「计费规则」链接)
+  billingRules: [
+    "按量计费:实例「运行中」时段按秒累计,精确到关机瞬间,单价 × 卡数 × 时长",
+    "关机即停止 GPU 计费;数据盘按日计费(日常费用),关机也会产生",
+    "计费依据为实例事件流水,可在实例详情「事件」页自查",
+    "余额不足时实例将被停机,欠费冻结 72 小时后回收实例盘(数据盘不受影响)",
+  ],
+
+  // 数据盘行内直建(创建实例页)
+  diskCreatedButInstanceFailed:
+    "数据盘已创建并开始按日计费;实例创建未成功,可在「存储」页管理或删除该盘",
+
+  // 监控降级(实例列表 sparkline)
+  metricsUnavailableShort: "监控暂不可用",
 } as const;
