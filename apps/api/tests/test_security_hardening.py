@@ -1,3 +1,5 @@
+import base64
+
 from httpx import AsyncClient
 
 from tests.test_catalog import admin_headers
@@ -84,6 +86,7 @@ class TestProdConfigValidation:
             public_base_url="https://api.superdl.cn",
             alertmanager_token="token",
             metrics_token="mtoken",
+            config_encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
         )
         assert s.environment == "prod"
 

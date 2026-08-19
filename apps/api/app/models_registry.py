@@ -3,7 +3,7 @@
 新增模块的 models.py 必须在这里 import,否则迁移看不见。
 """
 
-from app.core import audit, outbox, policies
+from app.core import audit, outbox, platform_config, policies
 from app.core.db import Base
 from app.modules.account import models as account_models
 from app.modules.adminapi import models as adminapi_models
@@ -24,5 +24,6 @@ __all__ = [
     "notify_models",
     "orchestrator_models",
     "outbox",
+    "platform_config",
     "policies",
 ]

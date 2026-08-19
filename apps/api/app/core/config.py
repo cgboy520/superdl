@@ -46,8 +46,19 @@ class Settings(BaseSettings):
     disk_grace_days: int = 7
     disk_frozen_days: int = 30
 
-    # 实名认证:资质就绪后打开(充值前强制;《网络安全法》要求)
+    # 实名认证:资质就绪后打开(充值前强制;《网络安全法》要求)。
+    # provider/凭据与开关均可被平台配置中心(platform_settings)在线覆盖
     real_name_required_for_recharge: bool = False
+    real_name_provider: Literal["mock", "aliyun"] = "mock"
+    real_name_access_key_id: str | None = None
+    real_name_access_key_secret: str | None = None
+
+    # 平台配置中心:敏感项落库加密主密钥(urlsafe-base64 的 32 字节;只走 env,prod 必配)
+    config_encryption_key: str | None = None
+
+    # 合规备案(站点页脚;可被平台配置中心覆盖)
+    icp_number: str | None = None
+    police_record_number: str | None = None
 
     # 每用户配额(防单账号无限开机;K8s ResourceQuota 是集群侧兜底)
     max_instances_per_user: int = 10
@@ -85,11 +96,15 @@ class Settings(BaseSettings):
     payment_mock: bool = True
     public_base_url: str = "https://api.superdl.example.com"
     recharge_order_ttl_seconds: int = 2 * 3600
+    payment_wechat_enabled: bool = False  # 渠道开关(凭据配置完成后在管理端开启)
+    payment_alipay_enabled: bool = False
     wechat_mchid: str | None = None
     wechat_private_key: str | None = None
     wechat_cert_serial_no: str | None = None
     wechat_apiv3_key: str | None = None
     wechat_appid: str | None = None
+    wechat_public_key: str | None = None  # 微信支付公钥模式(2024-10 后新商户唯一模式)
+    wechat_public_key_id: str | None = None  # PUB_KEY_ID_*
     alipay_app_id: str | None = None
     alipay_private_key: str | None = None
     alipay_public_key: str | None = None
@@ -127,6 +142,16 @@ class Settings(BaseSettings):
             problems.append("alertmanager_token 未配置")
         if not self.metrics_token:
             problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
+        if not self.config_encryption_key:
+            problems.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
+        else:
+            import base64
+
+            try:
+                if len(base64.urlsafe_b64decode(self.config_encryption_key)) != 32:
+                    problems.append("config_encryption_key 解码后须为 32 字节")
+            except Exception:
+                problems.append("config_encryption_key 不是合法 urlsafe-base64")
         if problems:
             raise ValueError("生产配置校验失败:" + ";".join(problems))
         return self

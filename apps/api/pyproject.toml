@@ -17,6 +17,7 @@ dependencies = [
     "prometheus-client>=0.26",
     "apscheduler>=3.11,<4",
     "httpx>=0.28",
+    "cryptography>=45.0",
     "kubernetes>=36.0.3",
     "wechatpayv3>=2.0.3",
     "alipay-sdk-python>=3.7.1160",
