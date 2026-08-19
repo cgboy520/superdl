@@ -22,6 +22,9 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
+    # dev 启动引导管理员(prod 置空,用运维脚本创建)
+    bootstrap_admin_password: str | None = "admin123"
+
     # 短信:dev/test 用 mock(验证码固定 + 落日志)
     sms_provider: Literal["mock", "aliyun"] = "mock"
     sms_code_ttl_seconds: int = 300

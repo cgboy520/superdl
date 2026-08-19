@@ -15,6 +15,13 @@ from app.core.logging import setup_logging
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
+    settings = get_settings()
+    if settings.environment == "dev" and settings.bootstrap_admin_password:
+        from app.core.db import get_sessionmaker
+        from app.modules.adminapi.service import ensure_bootstrap_admin
+
+        async with get_sessionmaker()() as session:
+            await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
     yield
     await dispose_engine()
 
@@ -50,8 +57,12 @@ def create_app() -> FastAPI:
 def _register_module_routers(app: FastAPI) -> None:
     """各业务模块的路由注册。随 WP 推进逐个接入。"""
     from app.modules.account.router import router as account_router
+    from app.modules.adminapi.router import router as admin_router
+    from app.modules.catalog.router import router as catalog_router
 
     app.include_router(account_router, prefix="/api/v1")
+    app.include_router(catalog_router, prefix="/api/v1")
+    app.include_router(admin_router, prefix="/api/admin/v1")
 
 
 app = create_app()

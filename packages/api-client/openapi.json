@@ -1,6 +1,73 @@
 {
   "components": {
     "schemas": {
+      "AdminLoginRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "AdminLoginRequest",
+        "type": "object"
+      },
+      "AdminOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "role"
+        ],
+        "title": "AdminOut",
+        "type": "object"
+      },
+      "AdminToken": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "admin": {
+            "$ref": "#/components/schemas/AdminOut"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "admin"
+        ],
+        "title": "AdminToken",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -12,6 +79,49 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageOut": {
+        "properties": {
+          "cuda_version": {
+            "title": "Cuda Version",
+            "type": "string"
+          },
+          "framework": {
+            "title": "Framework",
+            "type": "string"
+          },
+          "framework_version": {
+            "title": "Framework Version",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image_ref": {
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "is_prewarmed": {
+            "title": "Is Prewarmed",
+            "type": "boolean"
+          },
+          "python_version": {
+            "title": "Python Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "framework",
+          "framework_version",
+          "python_version",
+          "cuda_version",
+          "image_ref",
+          "is_prewarmed"
+        ],
+        "title": "ImageOut",
         "type": "object"
       },
       "LoginRequest": {
@@ -101,6 +211,529 @@
           "sms_code"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "SkuAdminOut": {
+        "description": "管理端全量视图(含超卖参数与池标签)。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cuda_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Max"
+          },
+          "disk_gb": {
+            "title": "Disk Gb",
+            "type": "integer"
+          },
+          "gpu_cores_pct": {
+            "title": "Gpu Cores Pct",
+            "type": "integer"
+          },
+          "gpu_model": {
+            "title": "Gpu Model",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_gpus_per_instance": {
+            "title": "Max Gpus Per Instance",
+            "type": "integer"
+          },
+          "mem_gb": {
+            "title": "Mem Gb",
+            "type": "integer"
+          },
+          "mig_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mig Profile"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "oversell_cores": {
+            "title": "Oversell Cores",
+            "type": "string"
+          },
+          "oversell_vram": {
+            "title": "Oversell Vram",
+            "type": "string"
+          },
+          "pool_label": {
+            "title": "Pool Label",
+            "type": "string"
+          },
+          "price_hourly": {
+            "title": "Price Hourly",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "vcpu": {
+            "title": "Vcpu",
+            "type": "integer"
+          },
+          "vram_gb": {
+            "title": "Vram Gb",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "gpu_model",
+          "tier",
+          "mig_profile",
+          "gpu_cores_pct",
+          "vram_gb",
+          "oversell_cores",
+          "oversell_vram",
+          "pool_label",
+          "vcpu",
+          "mem_gb",
+          "disk_gb",
+          "price_hourly",
+          "max_gpus_per_instance",
+          "cuda_max",
+          "status",
+          "created_at"
+        ],
+        "title": "SkuAdminOut",
+        "type": "object"
+      },
+      "SkuCreate": {
+        "properties": {
+          "cuda_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Max"
+          },
+          "disk_gb": {
+            "default": 100,
+            "minimum": 10.0,
+            "title": "Disk Gb",
+            "type": "integer"
+          },
+          "gpu_cores_pct": {
+            "default": 100,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Gpu Cores Pct",
+            "type": "integer"
+          },
+          "gpu_model": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Gpu Model",
+            "type": "string"
+          },
+          "max_gpus_per_instance": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Gpus Per Instance",
+            "type": "integer"
+          },
+          "mem_gb": {
+            "minimum": 1.0,
+            "title": "Mem Gb",
+            "type": "integer"
+          },
+          "mig_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mig Profile"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "oversell_cores": {
+            "anyOf": [
+              {
+                "maximum": 9.99,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "1.00",
+            "title": "Oversell Cores"
+          },
+          "oversell_vram": {
+            "anyOf": [
+              {
+                "maximum": 9.99,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "1.00",
+            "title": "Oversell Vram"
+          },
+          "pool_label": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Pool Label",
+            "type": "string"
+          },
+          "price_hourly": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Price Hourly"
+          },
+          "tier": {
+            "pattern": "^(dedicated|mig|shared_std|shared_eco)$",
+            "title": "Tier",
+            "type": "string"
+          },
+          "vcpu": {
+            "minimum": 1.0,
+            "title": "Vcpu",
+            "type": "integer"
+          },
+          "vram_gb": {
+            "minimum": 1.0,
+            "title": "Vram Gb",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "gpu_model",
+          "tier",
+          "vram_gb",
+          "pool_label",
+          "vcpu",
+          "mem_gb",
+          "price_hourly"
+        ],
+        "title": "SkuCreate",
+        "type": "object"
+      },
+      "SkuMarketOut": {
+        "description": "市场卡片视图(用户端)。",
+        "properties": {
+          "available_count": {
+            "default": 0,
+            "title": "Available Count",
+            "type": "integer"
+          },
+          "cuda_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Max"
+          },
+          "disk_gb": {
+            "title": "Disk Gb",
+            "type": "integer"
+          },
+          "gpu_cores_pct": {
+            "title": "Gpu Cores Pct",
+            "type": "integer"
+          },
+          "gpu_model": {
+            "title": "Gpu Model",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_gpus_per_instance": {
+            "title": "Max Gpus Per Instance",
+            "type": "integer"
+          },
+          "mem_gb": {
+            "title": "Mem Gb",
+            "type": "integer"
+          },
+          "mig_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mig Profile"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_hourly": {
+            "title": "Price Hourly",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "vcpu": {
+            "title": "Vcpu",
+            "type": "integer"
+          },
+          "vram_gb": {
+            "title": "Vram Gb",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "gpu_model",
+          "tier",
+          "mig_profile",
+          "gpu_cores_pct",
+          "vram_gb",
+          "vcpu",
+          "mem_gb",
+          "disk_gb",
+          "price_hourly",
+          "max_gpus_per_instance",
+          "cuda_max"
+        ],
+        "title": "SkuMarketOut",
+        "type": "object"
+      },
+      "SkuUpdate": {
+        "properties": {
+          "cuda_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Max"
+          },
+          "disk_gb": {
+            "anyOf": [
+              {
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Gb"
+          },
+          "gpu_cores_pct": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Cores Pct"
+          },
+          "max_gpus_per_instance": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Gpus Per Instance"
+          },
+          "mem_gb": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Gb"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "oversell_cores": {
+            "anyOf": [
+              {
+                "maximum": 9.99,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oversell Cores"
+          },
+          "oversell_vram": {
+            "anyOf": [
+              {
+                "maximum": 9.99,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oversell Vram"
+          },
+          "pool_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool Label"
+          },
+          "price_hourly": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Hourly"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "pattern": "^(on|off)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "vcpu": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vcpu"
+          },
+          "vram_gb": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vram Gb"
+          }
+        },
+        "title": "SkuUpdate",
         "type": "object"
       },
       "SmsCodeRequest": {
@@ -314,6 +947,204 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/v1/auth/login": {
+      "post": {
+        "operationId": "admin_login_api_admin_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Login",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/me": {
+      "get": {
+        "operationId": "admin_me_api_admin_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Me",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/skus": {
+      "get": {
+        "operationId": "admin_list_skus_api_admin_v1_skus_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkuAdminOut"
+                  },
+                  "title": "Response Admin List Skus Api Admin V1 Skus Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Skus",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "admin_create_sku_api_admin_v1_skus_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkuCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkuAdminOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Create Sku",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/skus/{sku_id}": {
+      "patch": {
+        "operationId": "admin_update_sku_api_admin_v1_skus__sku_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sku_id",
+            "required": true,
+            "schema": {
+              "title": "Sku Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkuUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkuAdminOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Update Sku",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",
@@ -471,6 +1302,32 @@
         ]
       }
     },
+    "/api/v1/images": {
+      "get": {
+        "description": "平台镜像目录(框架→版本→Python→CUDA 级联数据源)。",
+        "operationId": "list_images_api_v1_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImageOut"
+                  },
+                  "title": "Response List Images Api V1 Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Images",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/me": {
       "get": {
         "operationId": "me_api_v1_me_get",
@@ -540,6 +1397,76 @@
         "summary": "Set Warn Threshold",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/api/v1/skus": {
+      "get": {
+        "description": "算力市场:仅在架 SKU,含近似库存(30s 缓存)。未登录可访问。",
+        "operationId": "list_skus_api_v1_skus_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tier"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gpu_model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gpu Model"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkuMarketOut"
+                  },
+                  "title": "Response List Skus Api V1 Skus Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Skus",
+        "tags": [
+          "catalog"
         ]
       }
     },

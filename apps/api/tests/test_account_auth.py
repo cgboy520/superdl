@@ -46,9 +46,7 @@ class TestRegister:
         assert resp.status_code == 200
         assert resp.json()["phone"] == PHONE
 
-    async def test_duplicate_phone(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
+    async def test_duplicate_phone(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
         await send_code(client)

@@ -5,6 +5,14 @@
 """
 
 from decimal import ROUND_HALF_EVEN, Decimal
+from typing import Annotated
+
+from pydantic import PlainSerializer
+
+# API 出参金额一律序列化为字符串(保 scale、避免 float);前端按字符串渲染
+MoneyOut = Annotated[
+    Decimal, PlainSerializer(lambda v: format(v, "f"), return_type=str, when_used="json")
+]
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
