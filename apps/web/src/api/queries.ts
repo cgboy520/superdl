@@ -1,0 +1,84 @@
+/**
+ * 读操作薄查询层:生成函数 + useQuery。
+ * (当前 orval 配置把 GET 生成为 mutation 形态 hook,不可直接当查询用;
+ *  在 api-client 修正 orval 配置前,由本层提供正确的 useQuery 语义。)
+ */
+
+import {
+  billSummaryApiV1BillsSummaryGet,
+  getInstanceAccessApiV1InstancesUuidAccessGet,
+  getInstanceApiV1InstancesUuidGet,
+  getInstanceMetricsApiV1InstancesUuidMetricsGet,
+  getLedgerApiV1WalletLedgerGet,
+  getRechargeApiV1WalletRechargesOrderNoGet,
+  getWalletApiV1WalletGet,
+  listDisksApiV1DisksGet,
+  listHourlyBillsApiV1BillsHourlyGet,
+  listImagesApiV1ImagesGet,
+  listInstanceEventsApiV1InstancesUuidEventsGet,
+  listInstancesApiV1InstancesGet,
+  listNotificationsApiV1NotificationsGet,
+  listSkusApiV1SkusGet,
+  listSshKeysApiV1SshKeysGet,
+  meApiV1MeGet,
+} from "@superdl/api-client";
+import type {
+  ApiError,
+  GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
+  GetLedgerApiV1WalletLedgerGetParams,
+  ListHourlyBillsApiV1BillsHourlyGetParams,
+  ListSkusApiV1SkusGetParams,
+} from "@superdl/api-client";
+import { useQuery } from "@tanstack/react-query";
+
+interface QueryOpts {
+  enabled?: boolean;
+  refetchInterval?: number;
+  retry?: number | boolean;
+}
+
+function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts) {
+  return useQuery<T, ApiError>({
+    queryKey: key,
+    queryFn: fn,
+    ...opts,
+  });
+}
+
+
+
+export const useMe = (opts?: QueryOpts) => useApiQuery(["me"], () => meApiV1MeGet(), opts);
+export const useWallet = (opts?: QueryOpts) => useApiQuery(["wallet"], () => getWalletApiV1WalletGet(), opts);
+export const useNotifications = (params?: { unread?: boolean }, opts?: QueryOpts) =>
+  useApiQuery(["notifications", params], () => listNotificationsApiV1NotificationsGet(params), opts);
+export const useSkus = (params?: ListSkusApiV1SkusGetParams, opts?: QueryOpts) =>
+  useApiQuery(["skus", params], () => listSkusApiV1SkusGet(params), opts);
+export const useImages = () => useApiQuery(["images"], () => listImagesApiV1ImagesGet());
+export const useSshKeys = () => useApiQuery(["ssh-keys"], () => listSshKeysApiV1SshKeysGet());
+export const useDisks = (opts?: QueryOpts) => useApiQuery(["disks"], () => listDisksApiV1DisksGet(), opts);
+export const useInstances = (opts?: QueryOpts) =>
+  useApiQuery(["instances"], () => listInstancesApiV1InstancesGet(), opts);
+export const useInstance = (uuid: string, opts?: QueryOpts) =>
+  useApiQuery(["instances", uuid], () => getInstanceApiV1InstancesUuidGet(uuid), opts);
+export const useInstanceEvents = (uuid: string) =>
+  useApiQuery(["instances", uuid, "events"], () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid));
+export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
+  useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
+export const useInstanceMetrics = (
+  uuid: string,
+  params: GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
+  opts?: QueryOpts,
+) =>
+  useApiQuery(
+    ["instances", uuid, "metrics", params],
+    () => getInstanceMetricsApiV1InstancesUuidMetricsGet(uuid, params),
+    opts,
+  );
+export const useHourlyBills = (params?: ListHourlyBillsApiV1BillsHourlyGetParams) =>
+  useApiQuery(["bills", params], () => listHourlyBillsApiV1BillsHourlyGet(params));
+export const useLedger = (params?: GetLedgerApiV1WalletLedgerGetParams) =>
+  useApiQuery(["ledger", params], () => getLedgerApiV1WalletLedgerGet(params));
+export const useBillSummary = (month: string) =>
+  useApiQuery(["bill-summary", month], () => billSummaryApiV1BillsSummaryGet({ month }));
+export const useRecharge = (orderNo: string, opts?: QueryOpts) =>
+  useApiQuery(["recharge", orderNo], () => getRechargeApiV1WalletRechargesOrderNoGet(orderNo), opts);
