@@ -1,0 +1,49 @@
+# API/前端入口(TLS 由 cert-manager 泛域名证书,见 05-cert-manager.yaml)。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: superdl-api
+  namespace: superdl
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["api.superdl.example.com"]
+      secretName: superdl-api-tls
+  rules:
+    - host: api.superdl.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: superdl-api, port: {name: http}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: superdl-frontends
+  namespace: superdl
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["console.superdl.example.com", "admin.superdl.example.com"]
+      secretName: superdl-frontends-tls
+  rules:
+    - host: console.superdl.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: superdl-web, port: {name: http}}
+    - host: admin.superdl.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: superdl-admin, port: {name: http}}

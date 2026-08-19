@@ -1,0 +1,70 @@
+# 用户控制台 + 管理控制台(nginx 静态托管,/api 反代集群内 API)。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-web
+  namespace: superdl
+  labels: {app: superdl-web}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: superdl-web}
+  template:
+    metadata:
+      labels: {app: superdl-web}
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/OWNER/superdl-web:latest
+          ports:
+            - {containerPort: 80, name: http}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: superdl-web
+  namespace: superdl
+spec:
+  selector: {app: superdl-web}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-admin
+  namespace: superdl
+  labels: {app: superdl-admin}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: superdl-admin}
+  template:
+    metadata:
+      labels: {app: superdl-admin}
+    spec:
+      containers:
+        - name: admin
+          image: ghcr.io/OWNER/superdl-admin:latest
+          ports:
+            - {containerPort: 80, name: http}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: superdl-admin
+  namespace: superdl
+spec:
+  selector: {app: superdl-admin}
+  ports:
+    - {name: http, port: 80, targetPort: http}

@@ -52,3 +52,39 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18
+          until docker exec pg pg_isready -U superdl; do sleep 1; done
+      - name: Migrate + seed + start API/worker
+        working-directory: apps/api
+        env:
+          SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
+        run: |
+          uv sync --frozen
+          uv run alembic upgrade head
+          uv run python scripts/seed_dev.py
+          nohup uv run uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
+          nohup uv run python -m app.workers.main > /tmp/worker.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
+      - name: Playwright smoke
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @superdl/e2e exec playwright install --with-deps chromium
+          pnpm --filter @superdl/e2e test:e2e
+      - name: Dump logs on failure
+        if: failure()
+        run: tail -80 /tmp/api.log /tmp/worker.log

@@ -9,6 +9,10 @@ RUN uv sync --frozen --no-dev
 COPY . .
 ENV PATH="/srv/api/.venv/bin:$PATH"
 
+# 非 root 运行(K8s 侧再配 runAsNonRoot/readOnlyRootFilesystem)
+RUN useradd --system --uid 10001 --no-create-home superdl
+USER 10001
+
 EXPOSE 8000
 # 同一镜像双入口:serve(默认)/ worker(compose 里覆盖 command)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

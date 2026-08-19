@@ -1,0 +1,33 @@
+# cert-manager ClusterIssuer(cert-manager 本体经 helm 安装,见 deploy/cluster/helmfile.yaml)。
+# Jupyter 泛域名(*.app.superdl.example.com)必须 DNS-01;示例用阿里云 DNS webhook,
+# 也可换 cloudflare 等 —— solver 配置按 DNS 服务商文档替换。
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-dns
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ops@superdl.example.com
+    privateKeySecretRef:
+      name: letsencrypt-dns-account
+    solvers:
+      - dns01:
+          webhook:
+            groupName: acme.superdl
+            solverName: alidns
+            config:
+              accessKeySecretRef: {name: alidns-credentials, key: access-key}
+              secretKeySecretRef: {name: alidns-credentials, key: secret-key}
+---
+# 泛域名证书:Jupyter per-instance 子域共用一张(development-plan §2.4)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: superdl-jupyter-wildcard
+  namespace: superdl
+spec:
+  secretName: superdl-jupyter-wildcard-tls
+  issuerRef: {name: letsencrypt-dns, kind: ClusterIssuer}
+  dnsNames:
+    - "*.app.superdl.example.com"

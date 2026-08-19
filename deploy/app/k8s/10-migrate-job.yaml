@@ -1,0 +1,27 @@
+# 迁移 Job:每次发布前 apply(generateName 不支持 apply,用带版本号的 name)。
+# CI 发布流程:kubectl create -f 10-migrate-job.yaml(name 后缀替换为镜像 tag)
+#            → kubectl wait --for=condition=complete → 再滚动 api/worker。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: superdl-migrate-CHANGE_TAG
+  namespace: superdl
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: migrate
+          image: ghcr.io/OWNER/superdl-api:latest
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}

@@ -1,0 +1,67 @@
+# API(serve 入口):2 副本 + PDB;迁移由 10-migrate-job.yaml 在发布前执行。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-api
+  namespace: superdl
+  labels: {app: superdl-api}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: superdl-api}
+  template:
+    metadata:
+      labels: {app: superdl-api}
+    spec:
+      serviceAccountName: superdl-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: ghcr.io/OWNER/superdl-api:latest  # CI 按 tag 覆盖
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          ports:
+            - {containerPort: 8000, name: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "2", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: superdl-api
+  namespace: superdl
+spec:
+  selector: {app: superdl-api}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: superdl-api
+  namespace: superdl
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: superdl-api}

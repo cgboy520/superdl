@@ -1,0 +1,52 @@
+# worker(outbox + 定时任务):单副本即可(advisory lock 允许多副本,资源上单副本够用)。
+# liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-worker
+  namespace: superdl
+  labels: {app: superdl-worker}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: superdl-worker}
+  template:
+    metadata:
+      labels: {app: superdl-worker}
+    spec:
+      serviceAccountName: superdl-api
+      terminationGracePeriodSeconds: 60  # SIGTERM 后收尾当前 outbox 任务
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/superdl-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          env:
+            - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
