@@ -1,0 +1,57 @@
+# kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
+prometheus:
+  prometheusSpec:
+    retention: 15d                       # 原方案保留:避开 Thanos
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests: {cpu: 500m, memory: 2Gi}
+grafana:
+  grafana.ini:
+    security:
+      allow_embedding: true              # 管理端 iframe 嵌入(反代注入只读 Viewer)
+    auth.anonymous:
+      enabled: false
+alertmanager:
+  config:
+    route:
+      receiver: superdl-api
+      group_by: [alertname, namespace]
+      repeat_interval: 4h
+    receivers:
+      - name: superdl-api
+        webhook_configs:
+          - url: "http://superdl-api.superdl.svc:8000/api/v1/webhooks/alertmanager"
+            http_config:
+              authorization:
+                type: Bearer
+                credentials: "<SUPERDL_ALERTMANAGER_TOKEN>"
+additionalPrometheusRulesMap:
+  superdl-gpu:
+    groups:
+      - name: superdl.gpu
+        rules:
+          # 5 条核心告警(原方案 §人工事项 5)
+          - alert: GPUXidCriticalError
+            expr: increase(DCGM_FI_DEV_XID_ERRORS{xid=~"48|63|64|79|94|95"}[5m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.node }}):自动 cordon + 补偿 SOP"}
+          - alert: GPUHighTemperature
+            expr: DCGM_FI_DEV_GPU_TEMP > 85
+            for: 5m
+            labels: {severity: warning}
+            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.node }})"}
+          - alert: NodeGPUUnavailable
+            expr: (kube_node_status_capacity{resource="nvidia_com_gpu"} > 0) and on(node) (kube_node_status_condition{condition="Ready",status="true"} == 0)
+            for: 2m
+            labels: {severity: critical}
+            annotations: {summary: "GPU 节点 NotReady:{{ $labels.node }}"}
+          - alert: SharedPoolUtilSaturated
+            expr: avg by (node) (DCGM_FI_DEV_GPU_UTIL{superdl_pool="hami"}) > 95
+            for: 30m
+            labels: {severity: warning}
+            annotations: {summary: "共享池节点持续打满(超卖回调阈值 85% 参考)"}
+          - alert: JuiceFSMountFailed
+            expr: increase(juicefs_mount_errors_total[10m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响"}

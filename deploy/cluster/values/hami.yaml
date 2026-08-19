@@ -1,0 +1,13 @@
+# HAMi v2.9(CNCF Incubating):仅共享池,libvgpu CUDA 层限额是超卖计费可信度根基
+scheduler:
+  defaultSchedulerPolicy:
+    nodeSchedulerPolicy: binpack     # 原方案保留:binpack 调度
+    gpuSchedulerPolicy: binpack
+devicePlugin:
+  runtimeClassName: ""               # 共享池 runc(修正一:HAMi 与 Kata 互斥)
+  nodeSelector:
+    superdl.io/pool: hami            # 只接管 hami 池,与官方 device plugin 互斥
+devices:
+  nvidia:
+    gpuCorePolicy: force             # 算力份额硬限
+    # 显存超卖谨慎 ≤1.2:由 SKU 参数控制售卖,节点层不再放大

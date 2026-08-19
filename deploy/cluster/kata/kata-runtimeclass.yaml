@@ -1,0 +1,15 @@
+# Kata 4.0(Rust runtime 默认;勿在 3.x 建设)。仅 kata 池节点安装。
+# 安装:kubectl apply -k github.com/kata-containers/kata-containers/tools/packaging/kata-deploy/kata-deploy/overlays/rke2?ref=4.0.0
+# (kata-deploy DaemonSet 需 patch nodeSelector: superdl.io/pool=kata)
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-qemu
+handler: kata-qemu
+overhead:
+  podFixed:
+    memory: "512Mi"     # VM 开销计入配额
+    cpu: "250m"
+scheduling:
+  nodeSelector:
+    superdl.io/pool: kata     # 分池铁律:RuntimeClass 级兜底

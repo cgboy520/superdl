@@ -1,0 +1,26 @@
+# GPU Operator v26.3:驱动由 Ansible 预装(driver.enabled=false 避免与 HAMi/Kata 池互扰)
+driver:
+  enabled: false           # 装机基线已装宿主驱动
+toolkit:
+  enabled: true
+devicePlugin:
+  enabled: true
+  # HAMi 池节点由 HAMi 自己的 device plugin 接管(按节点标签互斥,见 hami values)
+  nodeSelector:
+    superdl.io/pool: kata  # 官方 device plugin 只服务整卡(kata)池
+migManager:
+  enabled: true
+  nodeSelector:
+    superdl.io/pool: mig
+mig:
+  strategy: single
+dcgmExporter:
+  enabled: true            # DCGM 指标 → usage_hourly 聚合 + 大盘 24450
+  serviceMonitor:
+    enabled: true
+sandboxWorkloads:
+  enabled: true            # kata 池 VFIO 直通(vfio-manager)
+vfioManager:
+  enabled: true
+  nodeSelector:
+    superdl.io/pool: kata

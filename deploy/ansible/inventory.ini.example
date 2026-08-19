@@ -1,0 +1,18 @@
+# 按池分组(分池铁律:kata 与 hami 永不混布)
+[servers]
+cp-01 ansible_host=10.0.0.10
+
+[kata]
+gpu-kata-01 ansible_host=10.0.1.11 nvme_devices='["/dev/nvme1n1"]'
+
+[hami]
+gpu-hami-01 ansible_host=10.0.2.11 nvme_devices='["/dev/nvme1n1"]'
+gpu-hami-02 ansible_host=10.0.2.12 nvme_devices='["/dev/nvme1n1"]'
+
+[mig]
+gpu-mig-01 ansible_host=10.0.3.11 nvme_devices='["/dev/nvme1n1"]'
+
+[gpu_nodes:children]
+kata
+hami
+mig

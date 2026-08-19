@@ -1,0 +1,5 @@
+# /etc/rancher/rke2/config.yaml —— GPU agent 节点(装机后按池打标签)
+server: https://<server-ip>:9345
+token: <cluster-token>
+node-label:
+  - "superdl.io/pool=<kata|hami|mig>"    # 分池铁律:装机时定池,Kata 与 HAMi 永不混布

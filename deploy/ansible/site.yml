@@ -1,0 +1,58 @@
+# 装机基线(人工事项 #1):ansible-playbook -i inventory.ini site.yml
+# 覆盖:内核参数(IOMMU/userns)、NVIDIA 驱动、NVMe VG(TopoLVM)、镜像预热
+- hosts: gpu_nodes
+  become: true
+  vars:
+    nvidia_driver_version: "580"          # 与 GPU Operator v26.3 兼容矩阵核对后锁定
+    prewarm_images:
+      - registry.superdl.local/pytorch:2.9.0-cu128
+      - registry.superdl.local/tensorflow:2.20-cu128
+  tasks:
+    - name: 禁用 nouveau
+      copy:
+        dest: /etc/modprobe.d/blacklist-nouveau.conf
+        content: |
+          blacklist nouveau
+          options nouveau modeset=0
+      notify: update-initramfs
+
+    - name: 内核参数(IOMMU 直通 + userns)
+      copy:
+        dest: /etc/default/grub.d/99-superdl.cfg
+        content: >
+          GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT
+          intel_iommu=on iommu=pt"
+      notify: update-grub
+      when: "'kata' in group_names"
+
+    - name: sysctl(userns 上限,共享池加固前提)
+      sysctl:
+        name: user.max_user_namespaces
+        value: "65536"
+        state: present
+
+    - name: 安装 NVIDIA 驱动(宿主装驱动,GPU Operator driver.enabled=false)
+      apt:
+        name: "nvidia-driver-{{ nvidia_driver_version }}-server"
+        update_cache: true
+      when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
+
+    - name: 创建 TopoLVM VG(实例盘本地 NVMe)
+      shell: |
+        set -e
+        vgs superdl-nvme >/dev/null 2>&1 && exit 0
+        pvcreate {{ nvme_devices | join(' ') }}
+        vgcreate superdl-nvme {{ nvme_devices | join(' ') }}
+      args: {executable: /bin/bash}
+      when: nvme_devices is defined
+
+    - name: 镜像预热(平台镜像秒级启动)
+      shell: "/var/lib/rancher/rke2/bin/crictl pull {{ item }}"
+      loop: "{{ prewarm_images }}"
+      ignore_errors: true          # 首装时 rke2 未起,由 cron 周期重试
+
+  handlers:
+    - name: update-grub
+      command: update-grub
+    - name: update-initramfs
+      command: update-initramfs -u

@@ -1,0 +1,15 @@
+# JuiceFS CSI(JuiceFS 1.4.x LTS)。
+# 修正三:后端首选云 OSS(MinIO 已归档禁选);自建选 SeaweedFS 4.4x。
+storageClasses:
+  - name: juicefs-shared
+    enabled: true
+    reclaimPolicy: Retain
+    backend:
+      name: superdl-data
+      metaurl: "redis://:<password>@redis-sentinel:26379/1"   # 元数据 Redis 三节点哨兵(原方案保留)
+      storage: oss                                            # 或 s3(SeaweedFS 网关)
+      bucket: "https://<bucket>.<oss-endpoint>"
+      # access-key/secret-key 经 Secret 注入,不落明文
+    mountOptions:
+      - cache-size=102400        # 热数据本地缓存 100G
+      - writeback

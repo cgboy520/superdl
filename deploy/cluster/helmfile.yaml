@@ -1,0 +1,50 @@
+# helmfile apply —— 平台组件(版本锁定于 2026-08-19 核实值,升级须走变更评审)
+repositories:
+  - name: cilium
+    url: https://helm.cilium.io
+  - name: nvidia
+    url: https://helm.ngc.nvidia.com/nvidia
+  - name: hami
+    url: https://project-hami.github.io/HAMi
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: juicefs
+    url: https://juicedata.github.io/charts
+  - name: topolvm
+    url: https://topolvm.github.io/topolvm
+
+releases:
+  - name: cilium
+    namespace: kube-system
+    chart: cilium/cilium
+    version: "1.20.0"
+    values: [values/cilium.yaml]
+
+  - name: gpu-operator
+    namespace: gpu-operator
+    chart: nvidia/gpu-operator
+    version: "v26.3.0"
+    values: [values/gpu-operator.yaml]
+
+  - name: hami
+    namespace: kube-system
+    chart: hami/hami
+    version: "2.9.0"
+    values: [values/hami.yaml]
+
+  - name: kube-prometheus-stack
+    namespace: monitoring
+    chart: prometheus-community/kube-prometheus-stack
+    version: "88.0.0"
+    values: [values/kps.yaml]
+
+  - name: juicefs-csi-driver
+    namespace: kube-system
+    chart: juicefs/juicefs-csi-driver
+    values: [values/juicefs.yaml]
+
+  - name: topolvm
+    namespace: topolvm-system
+    chart: topolvm/topolvm
+    version: "17.0.0"
+    values: [values/topolvm.yaml]

@@ -1,0 +1,14 @@
+# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁时 blkdiscard(擦盘)
+storageClasses:
+  - name: topolvm-provisioner
+    storageClass:
+      fsType: ext4
+      isDefaultClass: false
+      volumeBindingMode: WaitForFirstConsumer
+      allowVolumeExpansion: true
+lvmd:
+  deviceClasses:
+    - name: nvme
+      volume-group: superdl-nvme      # 装机基线创建的 VG
+      default: true
+      spare-gb: 50

@@ -1,0 +1,15 @@
+# /etc/rancher/rke2/config.yaml —— server 节点
+# RKE2 v1.36(latest 通道):K8s 1.36,userns(hostUsers:false)GA,已移除 containerd 1.x
+write-kubeconfig-mode: "0640"
+cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(启 Gateway API)
+disable:
+  - rke2-ingress-nginx       # Ingress 走 Cilium Gateway API
+  - rke2-canal
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 12
+kube-apiserver-arg:
+  - audit-policy-file=/etc/rancher/rke2/audit-policy.yaml   # 审计开关(原方案保留项)
+  - audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
+  - audit-log-maxage=30
+node-taint:
+  - "CriticalAddonsOnly=true:NoExecute"   # server 不跑业务负载
