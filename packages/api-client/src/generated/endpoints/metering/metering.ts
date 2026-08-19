@@ -22,7 +22,8 @@ import type {
 import type {
   GetInstanceMetricsApiV1InstancesUuidMetricsGet200,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
-  HTTPValidationError
+  HTTPValidationError,
+  InstanceMetricsSummaryOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -152,6 +153,110 @@ export function useGetInstanceMetricsApiV1InstancesUuidMetricsGet<TData = Awaite
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetInstanceMetricsApiV1InstancesUuidMetricsGetQueryOptions(uuid,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getInstancesMetricsSummaryApiV1MetricsInstancesGetUrl = () => {
+
+
+
+
+  return `/api/v1/metrics/instances`
+}
+
+/**
+ * 本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline)。
+ *
+ * 路径前缀特意避开 /instances/*:orchestrator 的 GET /instances/{uuid} 先注册,
+ * 会把子路径当 uuid 吞掉。断源降级为 available=false(200),详情端点维持 503 语义。
+ * @summary Instances Metrics Summary
+ */
+export const instancesMetricsSummaryApiV1MetricsInstancesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<InstanceMetricsSummaryOut> => {
+
+  return customFetch<InstanceMetricsSummaryOut>(getInstancesMetricsSummaryApiV1MetricsInstancesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getInstancesMetricsSummaryApiV1MetricsInstancesGetQueryKey = () => {
+    return [
+    `/api/v1/metrics/instances`
+    ] as const;
+    }
+
+
+export const getInstancesMetricsSummaryApiV1MetricsInstancesGetQueryOptions = <TData = Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getInstancesMetricsSummaryApiV1MetricsInstancesGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>> = ({ signal }) => instancesMetricsSummaryApiV1MetricsInstancesGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type InstancesMetricsSummaryApiV1MetricsInstancesGetQueryResult = NonNullable<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>>
+export type InstancesMetricsSummaryApiV1MetricsInstancesGetQueryError = unknown
+
+
+export function useInstancesMetricsSummaryApiV1MetricsInstancesGet<TData = Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>,
+          TError,
+          Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useInstancesMetricsSummaryApiV1MetricsInstancesGet<TData = Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>,
+          TError,
+          Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useInstancesMetricsSummaryApiV1MetricsInstancesGet<TData = Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Instances Metrics Summary
+ */
+
+export function useInstancesMetricsSummaryApiV1MetricsInstancesGet<TData = Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof instancesMetricsSummaryApiV1MetricsInstancesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getInstancesMetricsSummaryApiV1MetricsInstancesGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

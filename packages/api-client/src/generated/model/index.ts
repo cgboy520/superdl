@@ -46,6 +46,8 @@ export * from './instanceAccessOut';
 export * from './instanceCreate';
 export * from './instanceEventOut';
 export * from './instanceEventOutEventMetadata';
+export * from './instanceGpuSeries';
+export * from './instanceMetricsSummaryOut';
 export * from './instanceOut';
 export * from './instanceOutSpec';
 export * from './instanceRename';

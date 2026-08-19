@@ -708,6 +708,71 @@
         "title": "InstanceEventOut",
         "type": "object"
       },
+      "InstanceGpuSeries": {
+        "properties": {
+          "last": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "points": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "points",
+          "last"
+        ],
+        "title": "InstanceGpuSeries",
+        "type": "object"
+      },
+      "InstanceMetricsSummaryOut": {
+        "description": "实例列表 sparkline 数据源。断源时 available=false(200,不 503)。",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceGpuSeries"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "items"
+        ],
+        "title": "InstanceMetricsSummaryOut",
+        "type": "object"
+      },
       "InstanceOut": {
         "properties": {
           "created_at": {
@@ -4090,6 +4155,33 @@
         "summary": "Set Warn Threshold",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/api/v1/metrics/instances": {
+      "get": {
+        "description": "本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline)。\n\n路径前缀特意避开 /instances/*:orchestrator 的 GET /instances/{uuid} 先注册,\n会把子路径当 uuid 吞掉。断源降级为 available=false(200),详情端点维持 503 语义。",
+        "operationId": "instances_metrics_summary_api_v1_metrics_instances_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceMetricsSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Instances Metrics Summary",
+        "tags": [
+          "metering"
         ]
       }
     },

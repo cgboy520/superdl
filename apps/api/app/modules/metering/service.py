@@ -17,6 +17,7 @@ from app.core.money import as_amount
 from app.core.timeutil import now_utc, prev_hour_range
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
+from app.modules.metering.schemas import InstanceGpuSeries, InstanceMetricsSummaryOut
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,32 @@ async def instance_metrics(ns: str, pod: str, range_key: str) -> dict[str, Any]:
             http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
         ) from exc
     return {"range": range_key, "series": series}
+
+
+SUMMARY_CAP = 20  # 列表 sparkline 最多取前 N 台 running,防批量放大 Prometheus 压力
+
+
+async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetricsSummaryOut:
+    """批量取各实例近 1h gpu_util 稀疏序列(targets: [(uuid, ns)])。
+
+    Prometheus 断源返回 available=false 而非抛错 —— 实例列表页不能因监控毁掉;
+    单实例查询失败仅跳过该台。
+    """
+    end = now_utc().timestamp()
+    start = end - RANGES["1h"]
+    items: list[InstanceGpuSeries] = []
+    for uuid, ns in targets[:SUMMARY_CAP]:
+        try:
+            points = await prom.query_range("gpu_util", ns, uuid, start=start, end=end, step="300s")
+        except prom.PrometheusUnavailable:
+            return InstanceMetricsSummaryOut(available=False, items=[])
+        except Exception:  # 单台异常不拖垮整批
+            logger.warning("metrics_summary_instance_failed", uuid=uuid)
+            continue
+        items.append(
+            InstanceGpuSeries(uuid=uuid, points=points, last=points[-1][1] if points else None)
+        )
+    return InstanceMetricsSummaryOut(available=True, items=items)
 
 
 async def aggregate_previous_hour(
