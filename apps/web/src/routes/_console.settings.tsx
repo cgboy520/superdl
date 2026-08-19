@@ -1,4 +1,4 @@
-/** 账户设置:SSH 公钥管理 / 通知阈值 / 登出。 */
+/** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名预留+登出)。 */
 
 import { copy, formatDateTime } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -12,8 +12,10 @@ import {
   Popconfirm,
   Space,
   Table,
+  Tooltip,
   Typography,
 } from "antd";
+import { useState } from "react";
 
 import { useAddSshKey, useDeleteSshKey, useSetWarnThreshold } from "../api/mutations";
 import { useMe, useSshKeys } from "../api/queries";
@@ -31,6 +33,7 @@ function SettingsPage() {
   const { data: me } = useMe();
   const { data: keys, isLoading } = useSshKeys();
   const [form] = Form.useForm();
+  const [warnHours, setWarnHours] = useState<number>();
 
   const addKey = useAddSshKey({
     onSuccess: () => {
@@ -47,7 +50,11 @@ function SettingsPage() {
         账户设置
       </Typography.Title>
 
-      <Card title="SSH 公钥" extra={<Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>}>
+      <Card
+        id="ssh"
+        title="SSH 公钥"
+        extra={<Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>}
+      >
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Table
             rowKey="id"
@@ -119,25 +126,43 @@ function SettingsPage() {
           <InputNumber
             min={1}
             max={168}
-            defaultValue={me?.low_balance_warn_hours}
-            onPressEnter={(e) => setThreshold.mutate(Number((e.target as HTMLInputElement).value))}
+            value={warnHours ?? me?.low_balance_warn_hours}
+            onChange={(v) => setWarnHours(v ?? undefined)}
+            onPressEnter={() => {
+              const v = warnHours ?? me?.low_balance_warn_hours;
+              if (v != null) setThreshold.mutate(v);
+            }}
           />
-          <Typography.Text type="secondary">回车保存;预计可用时长低于该值时提醒</Typography.Text>
+          <Button
+            loading={setThreshold.isPending}
+            onClick={() => {
+              const v = warnHours ?? me?.low_balance_warn_hours;
+              if (v != null) setThreshold.mutate(v);
+            }}
+          >
+            保存
+          </Button>
+          <Typography.Text type="secondary">预计可用时长低于该值时提醒</Typography.Text>
         </Space>
       </Card>
 
       <Card title="账号">
-        <Space orientation="vertical">
+        <Space orientation="vertical" size={12}>
           <Typography.Text>手机号:{me?.phone}</Typography.Text>
-          <Button
-            danger
-            onClick={() => {
-              authStore.getState().logout();
-              void navigate({ to: "/login" });
-            }}
-          >
-            退出登录
-          </Button>
+          <Space>
+            <Tooltip title={copy.realNameComingSoon}>
+              <Button disabled>实名认证</Button>
+            </Tooltip>
+            <Button
+              danger
+              onClick={() => {
+                authStore.getState().logout();
+                void navigate({ to: "/login" });
+              }}
+            >
+              退出登录
+            </Button>
+          </Space>
         </Space>
       </Card>
     </Space>
