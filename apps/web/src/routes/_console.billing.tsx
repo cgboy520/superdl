@@ -208,6 +208,7 @@ function LedgerTable() {
         rowKey="id"
         size="small"
         pagination={false}
+        scroll={{ x: 760 }}
         dataSource={merged}
         columns={[
           { title: "时间", render: (_, r) => formatDateTime(r.created_at) },
@@ -442,6 +443,7 @@ function BillingPage() {
                   rowKey="id"
                   size="small"
                   pagination={false}
+                  scroll={{ x: 760 }}
                   dataSource={bills?.items ?? []}
                   columns={[
                     { title: "计费小时", render: (_, r) => formatDateTime(r.hour_start) },

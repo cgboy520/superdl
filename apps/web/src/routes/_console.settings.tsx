@@ -61,6 +61,7 @@ function SettingsPage() {
             size="small"
             loading={isLoading}
             pagination={false}
+            scroll={{ x: 640 }}
             dataSource={keys ?? []}
             locale={{ emptyText: "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)" }}
             columns={[

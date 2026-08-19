@@ -3,7 +3,7 @@
  * readonly 等无权角色:按钮可见但禁用 + tooltip 说明(条件操作可见原则)。
  */
 
-import { Button, Form, Input, Modal, Tooltip, message } from "antd";
+import { App, Button, Form, Input, Modal, Tooltip } from "antd";
 import { useState } from "react";
 
 import { isApiError } from "../api";
@@ -31,6 +31,7 @@ export function ReasonAction({
   disabledReason,
   onSubmit,
 }: Props) {
+  const { message } = App.useApp();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);

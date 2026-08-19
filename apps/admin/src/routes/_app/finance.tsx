@@ -2,6 +2,7 @@ import { formatDateTime, formatMoney } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  App,
   Button,
   Card,
   Col,
@@ -19,7 +20,6 @@ import {
   Tabs,
   Tag,
   Tooltip,
-  message,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useState } from "react";
@@ -106,6 +106,7 @@ function OrdersTab() {
         options={["pending", "paid", "closed", "failed"].map((v) => ({ value: v, label: v }))}
       />
       <Table<OrderRow>
+        scroll={{ x: 900 }}
         rowKey="order_no"
         dataSource={orders}
         columns={[
@@ -130,6 +131,7 @@ function OrdersTab() {
 }
 
 function AdjustmentsTab() {
+  const { message } = App.useApp();
   const role = useAdminRole();
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
@@ -181,6 +183,7 @@ function AdjustmentsTab() {
         </Button>
       </Tooltip>
       <Table<AdjustmentRow>
+        scroll={{ x: 1000 }}
         rowKey="id"
         dataSource={rows}
         columns={[

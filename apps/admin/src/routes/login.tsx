@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Button, Card, Form, Input, Typography, message } from "antd";
+import { App, Button, Card, Form, Input, Typography } from "antd";
 
 import { isApiError, useAdminLogin } from "../api";
 import { authStore } from "../stores/auth";
@@ -9,6 +9,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const login = useAdminLogin({
     mutation: {

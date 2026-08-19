@@ -54,7 +54,7 @@ function NotificationBell() {
       }
     >
       <Badge count={unread?.length ?? 0} size="small">
-        <Button type="text" icon={<BellOutlined style={WHITE} />} />
+        <Button type="text" aria-label="通知" icon={<BellOutlined style={WHITE} />} />
       </Badge>
     </Popover>
   );

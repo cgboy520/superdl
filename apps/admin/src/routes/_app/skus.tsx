@@ -2,6 +2,7 @@ import { formatHourlyPrice, skuTierMap, type SkuTier } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  App,
   Alert,
   Button,
   Card,
@@ -9,7 +10,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Select,
   Switch,
   Table,
@@ -51,6 +51,7 @@ interface SkuFormValues {
 }
 
 function SkusPage() {
+  const { modal } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
@@ -117,7 +118,7 @@ function SkusPage() {
       }
     };
     if (values.oversell_vram > 1.2) {
-      Modal.confirm({
+      modal.confirm({
         title: "显存超卖超过 1.2,确认提交?",
         content: "显存超卖过高会显著增加共享池 OOM 互扰风险,请确认已有压测数据支撑。",
         okText: "确认提交",
@@ -141,6 +142,7 @@ function SkusPage() {
       }
     >
       <Table<SkuAdminOut>
+        scroll={{ x: 1000 }}
         rowKey="id"
         dataSource={skus ?? []}
         pagination={false}

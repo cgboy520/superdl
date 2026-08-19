@@ -163,6 +163,7 @@ function MarketPage() {
             size="middle"
             rowKey="id"
             loading={isLoading}
+            scroll={{ x: 880 }}
             dataSource={skus}
             columns={columns}
             pagination={false}

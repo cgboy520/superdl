@@ -24,6 +24,7 @@ export function AuditTable() {
         ]}
       />
       <Table<AuditRow>
+        scroll={{ x: 900 }}
         rowKey="id"
         dataSource={rows}
         size="small"

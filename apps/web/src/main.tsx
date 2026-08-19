@@ -30,7 +30,7 @@ configureApiClient({
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 10_000 },
+    queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 10_000 },
   },
 });
 

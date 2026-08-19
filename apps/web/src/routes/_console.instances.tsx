@@ -195,7 +195,20 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   return (
     <Space orientation="vertical" size={0}>
       <Tooltip title="点击改名">
-        <Typography.Text strong style={{ cursor: "pointer" }} onClick={() => setEditing(true)}>
+        <Typography.Text
+          strong
+          style={{ cursor: "pointer" }}
+          role="button"
+          tabIndex={0}
+          aria-label={`改名:${instance.name}`}
+          onClick={() => setEditing(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setEditing(true);
+            }
+          }}
+        >
           {instance.name}
         </Typography.Text>
       </Tooltip>
@@ -247,11 +260,13 @@ function InstancesPage() {
             <Button type="primary">租用新实例</Button>
           </Link>
           <Tooltip title="刷新列表">
-            <Button icon={<ReloadOutlined />} onClick={() => void refetch()} />
+            <Button aria-label="刷新列表" icon={<ReloadOutlined />} onClick={() => void refetch()} />
           </Tooltip>
         </Space>
         <Space size={12}>
-          <Link to="/settings">密钥登录设置</Link>
+          <Link to="/settings" hash="ssh">
+            密钥登录设置
+          </Link>
           <Input
             allowClear
             prefix={<SearchOutlined />}

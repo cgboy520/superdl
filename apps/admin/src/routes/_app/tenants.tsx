@@ -8,7 +8,7 @@ import {
 } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Badge, Button, Card, Select, Space, Table, Tabs, Tag, Tooltip, message } from "antd";
+import { App, Badge, Button, Card, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
 
 import {
@@ -39,6 +39,7 @@ function TenantsTab() {
 
   return (
     <Table<TenantRow>
+      scroll={{ x: 1000 }}
       rowKey="id"
       dataSource={tenants}
       columns={[
@@ -97,6 +98,7 @@ function TenantsTab() {
 }
 
 function InstancesTab() {
+  const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [status, setStatus] = useState<string | undefined>();
@@ -121,6 +123,7 @@ function InstancesTab() {
         />
       </Space>
       <Table<InstanceOut>
+        scroll={{ x: 1000 }}
         rowKey="uuid"
         dataSource={instances ?? []}
         columns={[

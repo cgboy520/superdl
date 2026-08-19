@@ -207,6 +207,7 @@ function StoragePage() {
             rowKey="uuid"
             loading={isLoading}
             pagination={false}
+            scroll={{ x: 920 }}
             dataSource={disks ?? []}
             columns={[
               { title: "名称", dataIndex: "name" },
@@ -303,7 +304,7 @@ function StoragePage() {
         title={`扩容:${expandTarget?.name ?? ""}`}
         open={Boolean(expandTarget)}
         onClose={() => setExpandTarget(null)}
-        size={420}
+        width={420}
         footer={
           <Button
             type="primary"

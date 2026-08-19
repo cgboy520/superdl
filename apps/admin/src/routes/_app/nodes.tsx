@@ -52,6 +52,7 @@ function NodesPage() {
     <>
       <Card title="节点">
         <Table<NodeRow>
+          scroll={{ x: 800 }}
           rowKey="name"
           dataSource={nodes}
           pagination={false}
