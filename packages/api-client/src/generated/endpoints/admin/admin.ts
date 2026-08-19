@@ -30,6 +30,7 @@ import type {
   AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200,
   AdminForceStopRequest,
   AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200,
+  AdminGetPlatformConfigApiAdminV1PlatformConfigGet200,
   AdminGetPoliciesApiAdminV1PoliciesGet200,
   AdminInstanceOut,
   AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item,
@@ -45,8 +46,10 @@ import type {
   AdminPublishAnnouncementApiAdminV1AnnouncementsPost201,
   AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200,
   AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200,
+  AdminTestSmsApiAdminV1PlatformConfigTestSmsPost200,
   AdminToken,
   AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200,
+  AdminUpdatePlatformConfigApiAdminV1PlatformConfigPut200,
   AdminUpdatePoliciesApiAdminV1PoliciesPut200,
   AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200,
   AnnouncementCreate,
@@ -55,6 +58,7 @@ import type {
   OrderBackfillRequest,
   OutboxDiscardRequest,
   OversellReportApiAdminV1ReportsOversellGet200Item,
+  PlatformConfigUpdateRequest,
   PolicyUpdateRequest,
   ReconciliationApiAdminV1ReconciliationGet200,
   ReconciliationApiAdminV1ReconciliationGetParams,
@@ -63,6 +67,7 @@ import type {
   SkuAdminOut,
   SkuCreate,
   SkuUpdate,
+  SmsTestRequest,
   TenantFreezeRequest
 } from '../../model';
 
@@ -1935,6 +1940,309 @@ export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awa
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions(taskId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/platform-config`
+}
+
+/**
+ * 分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。
+ * @summary Admin Get Platform Config
+ */
+export const adminGetPlatformConfigApiAdminV1PlatformConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminGetPlatformConfigApiAdminV1PlatformConfigGet200> => {
+
+  return customFetch<AdminGetPlatformConfigApiAdminV1PlatformConfigGet200>(getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetPlatformConfigApiAdminV1PlatformConfigGetQueryKey = () => {
+    return [
+    `/api/admin/v1/platform-config`
+    ] as const;
+    }
+
+
+export const getAdminGetPlatformConfigApiAdminV1PlatformConfigGetQueryOptions = <TData = Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetPlatformConfigApiAdminV1PlatformConfigGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>> = ({ signal }) => adminGetPlatformConfigApiAdminV1PlatformConfigGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminGetPlatformConfigApiAdminV1PlatformConfigGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>>
+export type AdminGetPlatformConfigApiAdminV1PlatformConfigGetQueryError = unknown
+
+
+export function useAdminGetPlatformConfigApiAdminV1PlatformConfigGet<TData = Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetPlatformConfigApiAdminV1PlatformConfigGet<TData = Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetPlatformConfigApiAdminV1PlatformConfigGet<TData = Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Get Platform Config
+ */
+
+export function useAdminGetPlatformConfigApiAdminV1PlatformConfigGet<TData = Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPlatformConfigApiAdminV1PlatformConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminGetPlatformConfigApiAdminV1PlatformConfigGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl = () => {
+
+
+
+
+  return `/api/admin/v1/platform-config`
+}
+
+/**
+ * 在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。
+ * @summary Admin Update Platform Config
+ */
+export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminUpdatePlatformConfigApiAdminV1PlatformConfigPut200> => {
+
+  return customFetch<AdminUpdatePlatformConfigApiAdminV1PlatformConfigPut200>(getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(platformConfigUpdateRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutQueryKey = (platformConfigUpdateRequest?: PlatformConfigUpdateRequest,) => {
+    return [
+    'PUT', `/api/admin/v1/platform-config`, platformConfigUpdateRequest
+    ] as const;
+    }
+
+
+export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError = HTTPValidationError>(platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutQueryKey(platformConfigUpdateRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>> = ({ signal }) => adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(platformConfigUpdateRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUpdatePlatformConfigApiAdminV1PlatformConfigPutQueryResult = NonNullable<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>>
+export type AdminUpdatePlatformConfigApiAdminV1PlatformConfigPutQueryError = HTTPValidationError
+
+
+export function useAdminUpdatePlatformConfigApiAdminV1PlatformConfigPut<TData = Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError = HTTPValidationError>(
+ platformConfigUpdateRequest: PlatformConfigUpdateRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdatePlatformConfigApiAdminV1PlatformConfigPut<TData = Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError = HTTPValidationError>(
+ platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdatePlatformConfigApiAdminV1PlatformConfigPut<TData = Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError = HTTPValidationError>(
+ platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Update Platform Config
+ */
+
+export function useAdminUpdatePlatformConfigApiAdminV1PlatformConfigPut<TData = Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError = HTTPValidationError>(
+ platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePlatformConfigApiAdminV1PlatformConfigPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutQueryOptions(platformConfigUpdateRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/platform-config/test-sms`
+}
+
+/**
+ * 按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。
+ * @summary Admin Test Sms
+ */
+export const adminTestSmsApiAdminV1PlatformConfigTestSmsPost = async (smsTestRequest: SmsTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminTestSmsApiAdminV1PlatformConfigTestSmsPost200> => {
+
+  return customFetch<AdminTestSmsApiAdminV1PlatformConfigTestSmsPost200>(getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(smsTestRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostQueryKey = (smsTestRequest?: SmsTestRequest,) => {
+    return [
+    'POST', `/api/admin/v1/platform-config/test-sms`, smsTestRequest
+    ] as const;
+    }
+
+
+export const getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError = HTTPValidationError>(smsTestRequest: SmsTestRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostQueryKey(smsTestRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>> = ({ signal }) => adminTestSmsApiAdminV1PlatformConfigTestSmsPost(smsTestRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminTestSmsApiAdminV1PlatformConfigTestSmsPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>>
+export type AdminTestSmsApiAdminV1PlatformConfigTestSmsPostQueryError = HTTPValidationError
+
+
+export function useAdminTestSmsApiAdminV1PlatformConfigTestSmsPost<TData = Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError = HTTPValidationError>(
+ smsTestRequest: SmsTestRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTestSmsApiAdminV1PlatformConfigTestSmsPost<TData = Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError = HTTPValidationError>(
+ smsTestRequest: SmsTestRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTestSmsApiAdminV1PlatformConfigTestSmsPost<TData = Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError = HTTPValidationError>(
+ smsTestRequest: SmsTestRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Test Sms
+ */
+
+export function useAdminTestSmsApiAdminV1PlatformConfigTestSmsPost<TData = Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError = HTTPValidationError>(
+ smsTestRequest: SmsTestRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTestSmsApiAdminV1PlatformConfigTestSmsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostQueryOptions(smsTestRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

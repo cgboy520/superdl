@@ -23,6 +23,7 @@ import type {
   HTTPValidationError,
   ImageOut,
   ListSkusApiV1SkusGetParams,
+  SiteConfigOut,
   SkuMarketOut
 } from '../../model';
 
@@ -138,6 +139,107 @@ export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof li
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListImagesApiV1ImagesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getGetSiteConfigApiV1SiteConfigGetUrl = () => {
+
+
+
+
+  return `/api/v1/site-config`
+}
+
+/**
+ * 站点公开配置:备案号 + 可用支付渠道(页脚/充值弹窗动态渲染;免登录)。
+ * @summary Get Site Config
+ */
+export const getSiteConfigApiV1SiteConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<SiteConfigOut> => {
+
+  return customFetch<SiteConfigOut>(getGetSiteConfigApiV1SiteConfigGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSiteConfigApiV1SiteConfigGetQueryKey = () => {
+    return [
+    `/api/v1/site-config`
+    ] as const;
+    }
+
+
+export const getGetSiteConfigApiV1SiteConfigGetQueryOptions = <TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSiteConfigApiV1SiteConfigGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>> = ({ signal }) => getSiteConfigApiV1SiteConfigGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSiteConfigApiV1SiteConfigGetQueryResult = NonNullable<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>>
+export type GetSiteConfigApiV1SiteConfigGetQueryError = unknown
+
+
+export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>,
+          TError,
+          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>,
+          TError,
+          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Site Config
+ */
+
+export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSiteConfigApiV1SiteConfigGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

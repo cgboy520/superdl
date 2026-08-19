@@ -1154,6 +1154,54 @@
         "title": "Page[LedgerEntryOut]",
         "type": "object"
       },
+      "PaymentChannelsOut": {
+        "description": "可用支付渠道(充值弹窗按此启用 Tab)。",
+        "properties": {
+          "alipay": {
+            "title": "Alipay",
+            "type": "boolean"
+          },
+          "mock": {
+            "title": "Mock",
+            "type": "boolean"
+          },
+          "wechat": {
+            "title": "Wechat",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "wechat",
+          "alipay",
+          "mock"
+        ],
+        "title": "PaymentChannelsOut",
+        "type": "object"
+      },
+      "PlatformConfigUpdateRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "updates": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1,
+            "title": "Updates",
+            "type": "object"
+          }
+        },
+        "required": [
+          "updates",
+          "reason"
+        ],
+        "title": "PlatformConfigUpdateRequest",
+        "type": "object"
+      },
       "PoliciesOut": {
         "description": "计费/回收策略常量(公开只读;前端展示口径的唯一来源,禁止前端硬编码)。",
         "properties": {
@@ -1378,6 +1426,43 @@
           "sms_code"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "SiteConfigOut": {
+        "description": "站点公开配置(页脚备案号等,未登录可访问)。",
+        "properties": {
+          "icp_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icp Number"
+          },
+          "payment_channels": {
+            "$ref": "#/components/schemas/PaymentChannelsOut"
+          },
+          "police_record_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Police Record Number"
+          }
+        },
+        "required": [
+          "icp_number",
+          "police_record_number",
+          "payment_channels"
+        ],
+        "title": "SiteConfigOut",
         "type": "object"
       },
       "SkuAdminOut": {
@@ -1925,6 +2010,20 @@
           "purpose"
         ],
         "title": "SmsCodeRequest",
+        "type": "object"
+      },
+      "SmsTestRequest": {
+        "properties": {
+          "phone": {
+            "pattern": "^1\\d{10}$",
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "title": "SmsTestRequest",
         "type": "object"
       },
       "SshKeyCreate": {
@@ -3006,6 +3105,131 @@
           }
         ],
         "summary": "Admin Retry Dead Task",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/platform-config": {
+      "get": {
+        "description": "分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。",
+        "operationId": "admin_get_platform_config_api_admin_v1_platform_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Get Platform Config Api Admin V1 Platform Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Get Platform Config",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。",
+        "operationId": "admin_update_platform_config_api_admin_v1_platform_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Update Platform Config Api Admin V1 Platform Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Update Platform Config",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/platform-config/test-sms": {
+      "post": {
+        "description": "按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。",
+        "operationId": "admin_test_sms_api_admin_v1_platform_config_test_sms_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Test Sms Api Admin V1 Platform Config Test Sms Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Test Sms",
         "tags": [
           "admin"
         ]
@@ -4916,6 +5140,28 @@
         "summary": "Get Policies",
         "tags": [
           "billing"
+        ]
+      }
+    },
+    "/api/v1/site-config": {
+      "get": {
+        "description": "站点公开配置:备案号 + 可用支付渠道(页脚/充值弹窗动态渲染;免登录)。",
+        "operationId": "get_site_config_api_v1_site_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Site Config",
+        "tags": [
+          "catalog"
         ]
       }
     },
