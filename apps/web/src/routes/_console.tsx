@@ -1,29 +1,22 @@
-/** 控制台布局:左 200px 固定导航 + 顶栏(余额/通知铃/用户菜单)。market 未登录可看。 */
+/**
+ * 控制台布局:全宽品牌顶栏(56px)压浅色可折叠侧栏(200px,lg 断点收起)——
+ * AutoDL「顶栏压侧栏」结构 × SuperDL 靛蓝(ui-ux-spec §2)。market 未登录可看。
+ */
 
 import {
   AppstoreOutlined,
-  BellOutlined,
   CloudServerOutlined,
   DashboardOutlined,
   HddOutlined,
-  LogoutOutlined,
   SettingOutlined,
-  UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { colorPrimary, copy, formatDateTime, formatMoney } from "@superdl/ui";
-import {
-  createFileRoute,
-  Link,
-  Outlet,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
-import { Badge, Button, Dropdown, Layout, List, Menu, Popover, Space, Typography } from "antd";
+import { copy } from "@superdl/ui";
+import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Layout, Menu, theme, Typography } from "antd";
 
-import { useMarkNotificationRead } from "../api/mutations";
-import { useMe, useNotifications, useWallet } from "../api/queries";
-import { useIsLoggedIn, authStore } from "../stores/auth";
+import { AppTopBar } from "../components/layout/AppTopBar";
+import { TopBarUser } from "../components/layout/TopBarUser";
 
 export const Route = createFileRoute("/_console")({
   component: ConsoleLayout,
@@ -38,97 +31,9 @@ const NAV = [
   { key: "/settings", icon: <SettingOutlined />, label: "账户设置" },
 ];
 
-function NotificationBell() {
-  const { data: unread } = useNotifications({ unread: true }, { refetchInterval: 30_000 });
-  const { data: all } = useNotifications({});
-  const markRead = useMarkNotificationRead();
-  return (
-    <Popover
-      trigger="click"
-      placement="bottomRight"
-      content={
-        <List
-          style={{ width: 360, maxHeight: 420, overflow: "auto" }}
-          dataSource={all ?? []}
-          locale={{ emptyText: "暂无通知" }}
-          renderItem={(n) => (
-            <List.Item
-              style={{ opacity: n.read_at ? 0.55 : 1, cursor: n.read_at ? undefined : "pointer" }}
-              onClick={() => {
-                if (!n.read_at) markRead.mutate(n.id);
-              }}
-            >
-              <List.Item.Meta
-                title={n.title}
-                description={
-                  <>
-                    <div>{n.content}</div>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {formatDateTime(n.created_at)}
-                    </Typography.Text>
-                  </>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      }
-    >
-      <Badge count={unread?.length ?? 0} size="small">
-        <Button type="text" icon={<BellOutlined />} />
-      </Badge>
-    </Popover>
-  );
-}
-
-function TopBarUser() {
-  const navigate = useNavigate();
-  const loggedIn = useIsLoggedIn();
-  const { data: me } = useMe({ enabled: loggedIn });
-  const { data: wallet } = useWallet({ enabled: loggedIn });
-
-  if (!loggedIn) {
-    return (
-      <Button type="primary" onClick={() => navigate({ to: "/login" })}>
-        登录 / 注册
-      </Button>
-    );
-  }
-  return (
-    <Space size={16}>
-      <Link to="/billing">
-        <Space size={4}>
-          <WalletOutlined />
-          <span>{formatMoney(wallet?.balance)}</span>
-        </Space>
-      </Link>
-      <NotificationBell />
-      <Dropdown
-        menu={{
-          items: [
-            { key: "settings", icon: <SettingOutlined />, label: "账户设置" },
-            { key: "logout", icon: <LogoutOutlined />, label: "退出登录" },
-          ],
-          onClick: ({ key }) => {
-            if (key === "logout") {
-              authStore.getState().logout();
-              void navigate({ to: "/login" });
-            } else {
-              void navigate({ to: "/settings" });
-            }
-          },
-        }}
-      >
-        <Button type="text" icon={<UserOutlined />}>
-          {me?.phone}
-        </Button>
-      </Dropdown>
-    </Space>
-  );
-}
-
 function ConsoleLayout() {
   const navigate = useNavigate();
+  const { token } = theme.useToken();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const selected =
     NAV.slice()
@@ -136,51 +41,38 @@ function ConsoleLayout() {
       .find((n) => pathname.startsWith(n.key))?.key ?? "/dashboard";
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Layout.Sider width={200} theme="light" style={{ borderRight: "1px solid #f0f0f0" }}>
-        <div
-          style={{
-            height: 56,
-            display: "flex",
-            alignItems: "center",
-            paddingLeft: 24,
-            fontSize: 18,
-            fontWeight: 700,
-            color: colorPrimary,
-          }}
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <AppTopBar variant="console" right={<TopBarUser />} />
+      <Layout style={{ flex: 1 }}>
+        <Layout.Sider
+          width={200}
+          theme="light"
+          collapsible
+          breakpoint="lg"
+          collapsedWidth={64}
+          style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
         >
-          SuperDL
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[selected]}
-          items={NAV}
-          onClick={({ key }) => void navigate({ to: key })}
-          style={{ borderInlineEnd: "none" }}
-        />
-      </Layout.Sider>
-      <Layout>
-        <Layout.Header
-          style={{
-            background: "#fff",
-            borderBottom: "1px solid #f0f0f0",
-            display: "flex",
-            justifyContent: "flex-end",
-            alignItems: "center",
-            paddingInline: 24,
-            height: 56,
-            lineHeight: "56px",
-          }}
-        >
-          <TopBarUser />
-        </Layout.Header>
-        <Layout.Content style={{ padding: 24, maxWidth: 1280, width: "100%", margin: "0 auto" }}>
-          <Outlet />
-        </Layout.Content>
-        <Layout.Footer style={{ textAlign: "center", color: "#999", fontSize: 12 }}>
-          {copy.antiMiningNotice}
-        </Layout.Footer>
+          <Menu
+            mode="inline"
+            selectedKeys={[selected]}
+            items={NAV}
+            onClick={({ key }) => void navigate({ to: key })}
+            style={{ borderInlineEnd: "none", paddingTop: 8 }}
+          />
+        </Layout.Sider>
+        <Layout>
+          <Layout.Content style={{ padding: 24 }}>
+            <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+              <Outlet />
+            </div>
+          </Layout.Content>
+          <Layout.Footer style={{ textAlign: "center", paddingBlock: 16 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {copy.antiMiningNotice}
+            </Typography.Text>
+          </Layout.Footer>
+        </Layout>
       </Layout>
-    </Layout>
+    </div>
   );
 }
