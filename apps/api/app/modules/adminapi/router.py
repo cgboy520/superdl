@@ -202,18 +202,28 @@ async def oversell_report(session: DbSession) -> list[dict]:
     for n in nodes:
         physical[n.pool_label] = physical.get(n.pool_label, 0) + n.gpu_total
     sold = await orchestrator_service.running_gpu_share_by_pool(session)
-    util_avg = await metering_service.avg_gpu_util_last_24h(session)
+    # 按池加权平均(超卖调参依据,禁止用全集群均值冒充各池):
+    # 实例小时数据在 metering,池归属在 orchestrator,此处组装
+    util_by_instance = await metering_service.gpu_util_last_24h_by_instance(session)
+    pool_of = await orchestrator_service.pool_by_instance(session, util_by_instance.keys())
+    util_sum: dict[str, float] = {}
+    util_hours: dict[str, int] = {}
+    for iid, (total_util, hours) in util_by_instance.items():
+        pool = pool_of.get(iid, "unknown")
+        util_sum[pool] = util_sum.get(pool, 0.0) + total_util
+        util_hours[pool] = util_hours.get(pool, 0) + hours
 
     out = []
     for pool, total in sorted(physical.items()):
         sold_share = round(sold.get(pool, 0.0), 2)
+        hours = util_hours.get(pool, 0)
         out.append(
             {
                 "pool": pool,
                 "physical_gpus": total,
                 "sold_share": sold_share,
                 "oversell_ratio": round(sold_share / total, 3) if total else 0.0,
-                "util_avg_24h": round(util_avg, 1) if util_avg is not None else None,
+                "util_avg_24h": round(util_sum[pool] / hours, 1) if hours else None,
             }
         )
     return out

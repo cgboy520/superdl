@@ -87,7 +87,8 @@ async def review_adjustment(
     from app.modules.adminapi.models import AdminAdjustment
     from app.modules.billing import service as billing_service
 
-    adj = await session.get(AdminAdjustment, adjustment_id)
+    # 行锁:并发复核同一单时后到者等锁,醒来看到非 pending 即 409(防双入账)
+    adj = await session.get(AdminAdjustment, adjustment_id, with_for_update=True)
     if adj is None:
         raise not_found("调账单不存在")
     if adj.status != "pending":

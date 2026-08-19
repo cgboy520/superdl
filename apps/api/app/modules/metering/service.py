@@ -200,8 +200,12 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
     }
 
 
-async def avg_gpu_util_last_24h(session: AsyncSession) -> float | None:
-    """近 24h 全池 GPU 利用率均值(超卖报表用;数据缺失返回 None)。"""
+async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tuple[float, int]]:
+    """近 24h 各实例 GPU 利用率聚合:instance_id → (sum(小时均值), 小时数)。
+
+    供超卖报表按池加权平均(池归属在 orchestrator 侧,此处不跨模块查表);
+    无数据返回空 dict。
+    """
     from datetime import timedelta
 
     from sqlalchemy import func, select
@@ -210,11 +214,11 @@ async def avg_gpu_util_last_24h(session: AsyncSession) -> float | None:
     from app.modules.metering.models import UsageHourly
 
     since = now_utc() - timedelta(hours=24)
-    value = (
+    rows = (
         await session.execute(
-            select(func.avg(UsageHourly.gpu_util_avg)).where(
-                UsageHourly.hour_start >= since, UsageHourly.gpu_util_avg.is_not(None)
-            )
+            select(UsageHourly.instance_id, func.sum(UsageHourly.gpu_util_avg), func.count())
+            .where(UsageHourly.hour_start >= since, UsageHourly.gpu_util_avg.is_not(None))
+            .group_by(UsageHourly.instance_id)
         )
-    ).scalar_one()
-    return float(value) if value is not None else None
+    ).all()
+    return {int(iid): (float(total), int(n)) for iid, total, n in rows}

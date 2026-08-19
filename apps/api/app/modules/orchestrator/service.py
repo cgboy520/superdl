@@ -6,7 +6,7 @@
 """
 
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
@@ -699,6 +699,15 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
         share = inst.gpu_count * (inst.spec.get("gpu_cores_pct", 100) / 100.0)
         by_pool[pool] = by_pool.get(pool, 0.0) + share
     return by_pool
+
+
+async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
+    """实例 → 池标签(不限状态,已释放实例也算:超卖报表按池聚合近 24h 利用率用)。"""
+    ids = list(instance_ids)
+    if not ids:
+        return {}
+    rows = (await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars()
+    return {inst.id: inst.spec.get("pool_label", "unknown") for inst in rows}
 
 
 async def cluster_nodes() -> list[Any]:

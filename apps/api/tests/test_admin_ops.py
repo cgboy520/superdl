@@ -1,11 +1,19 @@
 """管理端补充 API:租户管理/调账双复核/节点/超卖报表/审计检索。"""
 
+import asyncio
+from datetime import timedelta
+
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import AppError, ErrorCode
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
+from app.core.timeutil import now_utc
+from app.modules.adminapi import service as admin_service
 from app.modules.adminapi.service import create_admin
+from app.modules.billing.models import BalanceLedger
 from tests.test_catalog import admin_headers
 from tests.test_orchestrator_lifecycle import _provision_running
 
@@ -126,6 +134,46 @@ class TestAdjustments:
         )
         assert resp.status_code == 403
 
+    async def test_concurrent_review_single_credit(self, client, sm, fake):
+        """P0 竞态回归:两名复核人并发 approve 同一单,行锁保证只入账一次。"""
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        async with sm() as session:
+            creator = await create_admin(session, "fin-race-a", "pass1234", "finance")
+            r1 = await create_admin(session, "fin-race-b", "pass1234", "finance")
+            r2 = await create_admin(session, "fin-race-c", "pass1234", "finance")
+            creator_id, r1_id, r2_id = creator.id, r1.id, r2.id
+        async with sm() as session:
+            adj = await admin_service.create_adjustment(
+                session,
+                user_id=user_id,
+                amount="10.00",
+                reason="并发复核竞态",
+                created_by=creator_id,
+            )
+            adj_id = adj.id
+
+        async def review(reviewer_id: int) -> str:
+            async with sm() as session:
+                try:
+                    await admin_service.review_adjustment(
+                        session, adj_id, approve=True, reviewer_id=reviewer_id, comment=None
+                    )
+                    return "approved"
+                except AppError as exc:
+                    return str(exc.code)
+
+        results = await asyncio.gather(review(r1_id), review(r2_id))
+        assert sorted(results) == [str(ErrorCode.CONFLICT), "approved"]
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "110.00"  # 100 + 10,并发只入账一次
+        async with sm() as session:
+            entries = (
+                (await session.execute(select(BalanceLedger).where(BalanceLedger.type == "adjust")))
+                .scalars()
+                .all()
+            )
+        assert len(entries) == 1
+
 
 class TestNodesAndReports:
     async def test_nodes_view(self, client, sm, fake):
@@ -142,6 +190,38 @@ class TestNodesAndReports:
         assert hami["physical_gpus"] == 32
         assert hami["sold_share"] == 0.5
         assert hami["oversell_ratio"] == round(0.5 / 32, 3)
+
+    async def test_oversell_report_pool_scoped_utilization(self, client, sm, fake):
+        """P0 回归:利用率按池加权聚合;无数据的池必须是 null,不得用集群均值冒充。"""
+        from app.modules.metering.models import UsageHourly
+        from app.modules.orchestrator.models import Instance
+
+        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池实例
+        hour = now_utc().replace(minute=0, second=0, microsecond=0)
+        async with sm() as session:
+            inst_id = (await session.execute(select(Instance.id))).scalar_one()
+            session.add_all(
+                [
+                    UsageHourly(
+                        instance_id=inst_id,
+                        hour_start=hour - timedelta(hours=2),
+                        gpu_util_avg=30.0,
+                    ),
+                    UsageHourly(
+                        instance_id=inst_id,
+                        hour_start=hour - timedelta(hours=1),
+                        gpu_util_avg=60.0,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        ah = await admin_headers(sm, client, role="finance")
+        report = (await client.get("/api/admin/v1/reports/oversell", headers=ah)).json()
+        by_pool = {r["pool"]: r for r in report}
+        assert by_pool["hami"]["util_avg_24h"] == 45.0  # (30+60)/2,仅 hami 池
+        assert by_pool["kata"]["util_avg_24h"] is None
+        assert by_pool["mig"]["util_avg_24h"] is None
 
     async def test_audit_search(self, client, sm, fake):
         _headers, _uuid, _user_id = await _provision_running(client, sm, fake)
