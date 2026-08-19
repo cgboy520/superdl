@@ -14,7 +14,7 @@ from typing import Any
 from kubernetes import client, config
 
 from app.core.config import get_settings
-from app.core.k8s.base import InstancePodSpec, PodStatus
+from app.core.k8s.base import InstancePodSpec, NodeInfo, PodStatus
 
 INSTANCE_LABEL = "superdl.io/instance"
 MANAGED_LABEL = "superdl.io/managed"
@@ -286,3 +286,29 @@ class RealOrchestrator:
                 limits = (c.resources and c.resources.limits) or {}
                 used += int(limits.get("nvidia.com/gpu", "0"))
         return max(0, total - used)
+
+    async def list_nodes(self) -> list[NodeInfo]:
+        return await asyncio.to_thread(self._list_nodes_sync)
+
+    def _list_nodes_sync(self) -> list[NodeInfo]:
+        nodes: Any = self.core.list_node(label_selector=POOL_NODE_LABEL)
+        out: list[NodeInfo] = []
+        for node in nodes.items:
+            labels = node.metadata.labels or {}
+            allocatable = node.status.allocatable or {}
+            conditions = node.status.conditions or []
+            ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
+            cordoned = bool(node.spec.unschedulable)
+            pool = labels.get(POOL_NODE_LABEL, "unknown")
+            total = int(allocatable.get("nvidia.com/gpu", "0"))
+            out.append(
+                NodeInfo(
+                    name=node.metadata.name,
+                    pool_label=pool,
+                    gpu_model=labels.get("nvidia.com/gpu.product", "GPU"),
+                    gpu_total=total,
+                    gpu_used=max(0, total - self._available_gpus_sync(pool)),
+                    status="Cordoned" if cordoned else ("Ready" if ready else "NotReady"),
+                )
+            )
+        return out

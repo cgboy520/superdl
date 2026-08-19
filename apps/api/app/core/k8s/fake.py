@@ -81,3 +81,23 @@ class FakeOrchestrator:
     def inject_leaked_pod(self, namespace: str, name: str, spec: InstancePodSpec) -> None:
         """模拟 DB 已 released 但 K8s 残留的泄漏 Pod。"""
         self.pods[(namespace, name)] = _FakePod(spec=spec, ready=True)
+
+    async def list_nodes(self):
+        """管理端节点视图(Fake:按池合成节点)。"""
+        from app.core.k8s.base import NodeInfo
+
+        models = {"kata": "RTX4090", "hami": "RTX4090", "mig": "H100"}
+        nodes = []
+        for pool, cap in self.pool_capacity.items():
+            used = cap - await self.available_gpus(pool)
+            nodes.append(
+                NodeInfo(
+                    name=f"fake-{pool}-node-1",
+                    pool_label=pool,
+                    gpu_model=models.get(pool, "GPU"),
+                    gpu_total=cap,
+                    gpu_used=used,
+                    status="Ready",
+                )
+            )
+        return nodes

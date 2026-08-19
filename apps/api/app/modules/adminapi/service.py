@@ -52,3 +52,89 @@ async def ensure_bootstrap_admin(session: AsyncSession, password: str) -> None:
     if existing is None:
         await create_admin(session, "admin", password, "admin")
         logger.info("bootstrap_admin_created", username="admin")
+
+
+async def create_adjustment(
+    session: AsyncSession, *, user_id: int, amount, reason: str, created_by: int
+):
+    from decimal import Decimal
+
+    from app.core.errors import AppError, ErrorCode
+    from app.core.money import as_amount
+    from app.modules.adminapi.models import AdminAdjustment
+
+    amount = as_amount(Decimal(str(amount)))
+    if amount == 0:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "调账金额不能为 0")
+    adj = AdminAdjustment(user_id=user_id, amount=amount, reason=reason, created_by=created_by)
+    session.add(adj)
+    await session.commit()
+    await session.refresh(adj)
+    return adj
+
+
+async def review_adjustment(
+    session: AsyncSession,
+    adjustment_id: int,
+    *,
+    approve: bool,
+    reviewer_id: int,
+    comment: str | None,
+):
+    """双人复核:复核人不得是发起人;通过即生效(钱包 + 流水,同事务)。"""
+    from app.core.errors import AppError, ErrorCode, not_found
+    from app.core.timeutil import now_utc
+    from app.modules.adminapi.models import AdminAdjustment
+    from app.modules.billing import service as billing_service
+
+    adj = await session.get(AdminAdjustment, adjustment_id)
+    if adj is None:
+        raise not_found("调账单不存在")
+    if adj.status != "pending":
+        raise AppError(ErrorCode.CONFLICT, "调账单已处理", http_status=409)
+    if adj.created_by == reviewer_id:
+        raise AppError(
+            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED, "调账必须由第二位管理员复核", http_status=403
+        )
+    adj.reviewed_by = reviewer_id
+    adj.review_comment = comment
+    adj.reviewed_at = now_utc()
+    if not approve:
+        adj.status = "rejected"
+        await session.commit()
+        return adj
+    adj.status = "approved"
+    if adj.amount > 0:
+        await billing_service.credit(
+            session,
+            adj.user_id,
+            adj.amount,
+            type_="adjust",
+            ref_type="adjustment",
+            ref_id=str(adj.id),
+            remark=f"调账:{adj.reason}",
+        )
+    else:
+        await billing_service.debit(
+            session,
+            adj.user_id,
+            -adj.amount,
+            type_="adjust",
+            ref_type="adjustment",
+            ref_id=str(adj.id),
+            remark=f"调账:{adj.reason}",
+        )
+    await session.commit()
+    return adj
+
+
+async def list_adjustments(session: AsyncSession):
+    from app.modules.adminapi.models import AdminAdjustment
+
+    return list(
+        (
+            await session.execute(
+                select(AdminAdjustment).order_by(AdminAdjustment.id.desc()).limit(200)
+            )
+        ).scalars()
+    )

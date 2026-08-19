@@ -207,3 +207,14 @@ async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dic
         .all()
     )
     return dict(rows)
+
+
+async def admin_list_users(session: AsyncSession) -> list[User]:
+    return list((await session.execute(select(User).order_by(User.id.desc()).limit(500))).scalars())
+
+
+async def admin_set_user_status(session: AsyncSession, user_id: int, status_: str) -> User:
+    user = await get_user(session, user_id)
+    user.status = status_
+    await session.commit()
+    return user

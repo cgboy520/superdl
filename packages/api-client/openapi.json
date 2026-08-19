@@ -1,6 +1,56 @@
 {
   "components": {
     "schemas": {
+      "AdjustmentCreate": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "amount",
+          "reason"
+        ],
+        "title": "AdjustmentCreate",
+        "type": "object"
+      },
+      "AdjustmentReview": {
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "required": [
+          "approve"
+        ],
+        "title": "AdjustmentReview",
+        "type": "object"
+      },
       "AdminForceStopRequest": {
         "properties": {
           "reason": {
@@ -1569,6 +1619,21 @@
         "title": "SshKeyOut",
         "type": "object"
       },
+      "TenantFreezeRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "TenantFreezeRequest",
+        "type": "object"
+      },
       "TokenPair": {
         "properties": {
           "access_token": {
@@ -1718,6 +1783,142 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/v1/adjustments": {
+      "get": {
+        "operationId": "admin_list_adjustments_api_admin_v1_adjustments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin List Adjustments Api Admin V1 Adjustments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Adjustments",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "admin_create_adjustment_api_admin_v1_adjustments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Create Adjustment Api Admin V1 Adjustments Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Create Adjustment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/adjustments/{adjustment_id}/review": {
+      "post": {
+        "operationId": "admin_review_adjustment_api_admin_v1_adjustments__adjustment_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adjustment_id",
+            "required": true,
+            "schema": {
+              "title": "Adjustment Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Review Adjustment Api Admin V1 Adjustments  Adjustment Id  Review Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Review Adjustment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/alerts": {
       "get": {
         "description": "管理端告警流(总览右栏数据源)。",
@@ -1745,6 +1946,75 @@
           }
         ],
         "summary": "Admin Alerts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/audit": {
+      "get": {
+        "operationId": "admin_audit_log_api_admin_v1_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "actor_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin Audit Log Api Admin V1 Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Audit Log",
         "tags": [
           "admin"
         ]
@@ -1949,6 +2219,96 @@
         ]
       }
     },
+    "/api/admin/v1/nodes": {
+      "get": {
+        "operationId": "admin_list_nodes_api_admin_v1_nodes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin List Nodes Api Admin V1 Nodes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Nodes",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/orders": {
+      "get": {
+        "operationId": "admin_list_orders_api_admin_v1_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin List Orders Api Admin V1 Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Orders",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/reconciliation": {
       "get": {
         "description": "日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。",
@@ -1994,6 +2354,38 @@
           }
         ],
         "summary": "Reconciliation",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/reports/oversell": {
+      "get": {
+        "description": "镇店报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。",
+        "operationId": "oversell_report_api_admin_v1_reports_oversell_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Oversell Report Api Admin V1 Reports Oversell Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Oversell Report",
         "tags": [
           "admin"
         ]
@@ -2125,6 +2517,155 @@
           }
         ],
         "summary": "Admin Update Sku",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/tenants": {
+      "get": {
+        "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin List Tenants Api Admin V1 Tenants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Tenants",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/tenants/{user_id}/freeze": {
+      "post": {
+        "operationId": "admin_freeze_tenant_api_admin_v1_tenants__user_id__freeze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantFreezeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Freeze Tenant Api Admin V1 Tenants  User Id  Freeze Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Freeze Tenant",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/tenants/{user_id}/unfreeze": {
+      "post": {
+        "operationId": "admin_unfreeze_tenant_api_admin_v1_tenants__user_id__unfreeze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantFreezeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Unfreeze Tenant Api Admin V1 Tenants  User Id  Unfreeze Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Unfreeze Tenant",
         "tags": [
           "admin"
         ]

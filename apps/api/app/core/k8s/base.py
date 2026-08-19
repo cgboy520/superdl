@@ -62,3 +62,19 @@ class K8sOrchestrator(Protocol):
     async def available_gpus(self, pool_label: str) -> int:
         """池内近似可租卡数(近似库存;创建以调度结果为准)。"""
         ...
+
+    async def list_nodes(self) -> list["NodeInfo"]:
+        """管理端节点视图。"""
+        ...
+
+
+@dataclass(frozen=True)
+class NodeInfo:
+    """管理端节点视图。"""
+
+    name: str
+    pool_label: str
+    gpu_model: str
+    gpu_total: int
+    gpu_used: int
+    status: str  # Ready / NotReady / Cordoned

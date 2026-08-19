@@ -611,3 +611,62 @@ async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrea
     from app.modules.orchestrator import disks as disks_service
 
     return await disks_service.arrears_transition_disks(session, user_id, in_arrears)
+
+
+async def instance_disk_stats_by_user(session: AsyncSession) -> dict[int, dict[str, int]]:
+    """管理端租户表:user_id → {instances, disk_gb}。"""
+    inst_rows = (
+        (
+            await session.execute(
+                select(Instance.user_id, func.count())
+                .where(Instance.status != sm_def.RELEASED)
+                .group_by(Instance.user_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    from app.modules.orchestrator.models import DataDisk
+
+    disk_rows = (
+        (
+            await session.execute(
+                select(DataDisk.user_id, func.coalesce(func.sum(DataDisk.size_gb), 0))
+                .where(DataDisk.status != "deleted")
+                .group_by(DataDisk.user_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    stats: dict[int, dict[str, int]] = {}
+    for uid, n in inst_rows:
+        stats.setdefault(uid, {"instances": 0, "disk_gb": 0})["instances"] = int(n)
+    for uid, gb in disk_rows:
+        stats.setdefault(uid, {"instances": 0, "disk_gb": 0})["disk_gb"] = int(gb)
+    return stats
+
+
+async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
+    """超卖报表:各池已售算力份额(等效整卡数)。共享档按 gpu_cores_pct 折算。"""
+    rows = (
+        (
+            await session.execute(
+                select(Instance).where(
+                    Instance.status.in_((sm_def.RUNNING, sm_def.STARTING, sm_def.CREATING))
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_pool: dict[str, float] = {}
+    for inst in rows:
+        pool = inst.spec.get("pool_label", "unknown")
+        share = inst.gpu_count * (inst.spec.get("gpu_cores_pct", 100) / 100.0)
+        by_pool[pool] = by_pool.get(pool, 0.0) + share
+    return by_pool
+
+
+async def cluster_nodes() -> list[Any]:
+    return await get_orchestrator().list_nodes()

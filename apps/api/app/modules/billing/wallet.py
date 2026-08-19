@@ -138,3 +138,35 @@ async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Dec
         .all()
     )
     return {iid: amount for iid, amount in rows}
+
+
+async def balances_by_user(session: AsyncSession) -> dict[int, Decimal]:
+    rows = (await session.execute(select(Wallet.user_id, Wallet.balance))).tuples().all()
+    return dict(rows)
+
+
+async def consumed_by_user(session: AsyncSession) -> dict[int, Decimal]:
+    """累计消费(ledger consume 合计的绝对值)。"""
+    from sqlalchemy import func
+
+    rows = (
+        (
+            await session.execute(
+                select(BalanceLedger.user_id, func.coalesce(-func.sum(BalanceLedger.amount), 0))
+                .where(BalanceLedger.type == "consume")
+                .group_by(BalanceLedger.user_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return dict(rows)
+
+
+async def admin_list_orders(session: AsyncSession, status: str | None = None) -> list:
+    from app.modules.billing.models import Order
+
+    stmt = select(Order).order_by(Order.id.desc()).limit(200)
+    if status:
+        stmt = stmt.where(Order.status == status)
+    return list((await session.execute(stmt)).scalars())
