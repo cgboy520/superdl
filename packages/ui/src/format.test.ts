@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   addAmounts,
   compareAmounts,
+  diskDailyEstimate,
   formatCountdown,
   formatDaysLeft,
   formatDuration,
@@ -121,5 +122,23 @@ describe("formatSizeGb", () => {
     expect(formatSizeGb(100)).toBe("100 GB");
     expect(formatSizeGb(1024)).toBe("1 TB");
     expect(formatSizeGb(1536)).toBe("1.5 TB");
+  });
+});
+
+describe("diskDailyEstimate", () => {
+  it("月价折日价 HALF_UP 到分", () => {
+    expect(diskDailyEstimate("0.5000", 100)).toBe("1.67"); // 50/30=1.666…→1.67
+    expect(diskDailyEstimate("0.5000", 60)).toBe("1.00"); // 30/30=1.00
+    expect(diskDailyEstimate("0.1000", 10)).toBe("0.03"); // 1/30=0.0333→0.03
+    expect(diskDailyEstimate("1.2345", 30)).toBe("1.23"); // 37.035/30=1.2345→1.23
+  });
+  it("边界:空价/0GB/非整数 GB 返回 0.00", () => {
+    expect(diskDailyEstimate(null, 100)).toBe("0.00");
+    expect(diskDailyEstimate("", 100)).toBe("0.00");
+    expect(diskDailyEstimate("0.50", 0)).toBe("0.00");
+    expect(diskDailyEstimate("0.50", 1.5)).toBe("0.00");
+  });
+  it("不产生浮点误差(0.1+0.2 类场景)", () => {
+    expect(diskDailyEstimate("0.3000", 1000)).toBe("10.00"); // 300/30
   });
 });

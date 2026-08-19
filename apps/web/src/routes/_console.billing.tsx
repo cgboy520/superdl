@@ -43,7 +43,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import ReactECharts from "echarts-for-react";
+import EChart from "../components/EChart";
 import { useMemo, useState } from "react";
 
 import { useCreateRecharge, useMockPay, useSetWarnThreshold } from "../api/mutations";
@@ -98,7 +98,9 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const mockPay = useMockPay({ onSuccess: () => message.success("模拟支付已发送") });
   const { data: polled } = useRecharge(order?.order_no ?? "", {
     enabled: Boolean(order),
-    refetchInterval: 2_000,
+    // 到终态(paid/closed/failed)即停,不再空转打接口
+    refetchInterval: (q) =>
+      q.state.data && q.state.data.status !== "pending" ? false : 2_000,
   });
 
   const status = polled?.status ?? order?.status;
@@ -453,7 +455,7 @@ function BillingPage() {
               </Col>
               <Col xs={24} md={14}>
                 {pieData.length ? (
-                  <ReactECharts
+                  <EChart
                     style={{ height: 160 }}
                     option={{
                       tooltip: { trigger: "item" },

@@ -32,16 +32,21 @@ import type {
   GetLedgerApiV1WalletLedgerGetParams,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   ListSkusApiV1SkusGetParams,
+  RechargeOut,
 } from "@superdl/api-client";
 import { useQuery } from "@tanstack/react-query";
 
-interface QueryOpts {
+interface QueryOpts<T = unknown> {
   enabled?: boolean;
-  refetchInterval?: number;
+  /** 数值,或函数式(如「到终态即停轮询」,入参为 query 快照) */
+  refetchInterval?:
+    | number
+    | false
+    | ((query: { state: { data: T | undefined } }) => number | false | undefined);
   retry?: number | boolean;
 }
 
-function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts) {
+function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts<NoInfer<T>>) {
   return useQuery<T, ApiError>({
     queryKey: key,
     queryFn: fn,
@@ -100,5 +105,5 @@ export const useDailySummary = (date: string, tzOffsetMinutes: number, opts?: Qu
     () => billDailySummaryApiV1BillsDailySummaryGet({ date, tz_offset_minutes: tzOffsetMinutes }),
     opts,
   );
-export const useRecharge = (orderNo: string, opts?: QueryOpts) =>
+export const useRecharge = (orderNo: string, opts?: QueryOpts<RechargeOut>) =>
   useApiQuery(["recharge", orderNo], () => getRechargeApiV1WalletRechargesOrderNoGet(orderNo), opts);

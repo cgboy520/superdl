@@ -1,5 +1,6 @@
 /** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名预留+登出)。 */
 
+import { TableErrorEmpty } from "../components/QueryState";
 import { copy, formatDateTime } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -36,7 +37,7 @@ function SettingsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const { data: me } = useMe();
-  const { data: keys, isLoading } = useSshKeys();
+  const { data: keys, isLoading, isError, refetch } = useSshKeys();
   const [form] = Form.useForm();
   const [warnHours, setWarnHours] = useState<number>();
 
@@ -68,7 +69,13 @@ function SettingsPage() {
             pagination={false}
             scroll={{ x: 640 }}
             dataSource={keys ?? []}
-            locale={{ emptyText: "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)" }}
+            locale={{
+              emptyText: isError ? (
+                <TableErrorEmpty onRetry={() => void refetch()} />
+              ) : (
+                "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)"
+              ),
+            }}
             columns={[
               { title: "名称", dataIndex: "name" },
               {

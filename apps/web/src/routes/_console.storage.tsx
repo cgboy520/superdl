@@ -7,6 +7,7 @@ import { type DiskOut } from "@superdl/api-client";
 import {
   colorPrimary,
   copy,
+  diskDailyEstimate,
   formatDateTime,
   formatDaysLeft,
   formatSizeGb,
@@ -37,6 +38,7 @@ import { useState } from "react";
 import { useCreateDisk, useDeleteDisk, useExpandDisk } from "../api/mutations";
 import { useDisks, useInstances, usePolicies } from "../api/queries";
 import { DiskStatusBadge } from "../components/common";
+import { TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/storage")({
@@ -153,7 +155,7 @@ function ExpiryCell({
 
 function StoragePage() {
   const { message } = App.useApp();
-  const { data: disks, isLoading } = useDisks({ refetchInterval: 10_000 });
+  const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: 10_000 });
   const { data: instances } = useInstances();
   const { data: policies } = usePolicies();
   const [createOpen, setCreateOpen] = useState(false);
@@ -196,7 +198,9 @@ function StoragePage() {
       </Space>
       <MountOverview priceText={priceText} />
       <Card>
-        {(disks ?? []).length === 0 && !isLoading ? (
+        {isError ? (
+          <TableErrorEmpty onRetry={() => void refetch()} />
+        ) : (disks ?? []).length === 0 && !isLoading ? (
           <Empty description={copy.diskRetention}>
             <Button type="primary" onClick={() => setCreateOpen(true)}>
               创建第一块数据盘
@@ -218,7 +222,7 @@ function StoragePage() {
                   <Space orientation="vertical" size={0}>
                     <span>¥{r.price_gb_month}/GB·月</span>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      约 ¥{((r.size_gb * Number(r.price_gb_month)) / 30).toFixed(2)}/日
+                      约 ¥{diskDailyEstimate(r.price_gb_month, r.size_gb)}/日
                     </Typography.Text>
                   </Space>
                 ),
@@ -335,7 +339,7 @@ function StoragePage() {
             />
             <Typography.Text type="secondary">
               扩容后每日费用增加约 ¥
-              {(((newSize - expandTarget.size_gb) * Number(expandTarget.price_gb_month)) / 30).toFixed(2)}
+              {diskDailyEstimate(expandTarget.price_gb_month, newSize - expandTarget.size_gb)}
               (按本盘快照价)
             </Typography.Text>
           </Space>

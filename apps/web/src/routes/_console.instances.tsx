@@ -88,7 +88,10 @@ function QuickToolsCell({ instance }: { instance: InstanceOut }) {
           type="link"
           disabled={!access}
           style={{ paddingInline: 4 }}
-          onClick={() => window.open(access?.jupyter_url, "_blank")}
+          onClick={() => {
+                if (access?.jupyter_url)
+                  window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+              }}
         >
           JupyterLab
         </Button>

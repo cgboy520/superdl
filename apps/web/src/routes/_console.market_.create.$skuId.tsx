@@ -5,7 +5,7 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, copy, formatHourlyPrice, formatSizeGb, mulPrice } from "@superdl/ui";
+import { compareAmounts, copy, diskDailyEstimate, formatHourlyPrice, formatSizeGb, mulPrice } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -79,7 +79,7 @@ function CreatePage() {
   const [ecoOpen, setEcoOpen] = useState(false);
   const [ecoChecked, setEcoChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
 
   const cascade = useMemo(() => {
@@ -113,9 +113,10 @@ function CreatePage() {
   });
   const createDisk = useCreateDisk();
   const addKey = useAddSshKey({
-    onSuccess: () => {
+    onSuccess: (key) => {
       message.success("公钥已添加");
       keyForm.resetFields();
+      setKeyIds((ids) => (ids.includes(key.id) ? ids : [...ids, key.id])); // 添加即勾选
     },
   });
 
@@ -130,8 +131,8 @@ function CreatePage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  // 「约 ¥X/日」为展示层估算(月价/30);入账以后端日结为准
-  const diskDaily = diskPriceGbMonth ? (diskGb * Number(diskPriceGbMonth)) / 30 : 0;
+  // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
+  const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
   const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
   // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)
   const enough = compareAmounts(wallet?.balance ?? "0", hourlyTotal) >= 0;
@@ -168,6 +169,8 @@ function CreatePage() {
           idempotencyKey,
         });
       } catch (err) {
+        // 本次提交已被后端记账到该幂等键:换新键,避免改参重提命中旧结果
+        setIdempotencyKey(crypto.randomUUID());
         if (isApiError(err) && err.code === "NO_CAPACITY") {
           message.warning(copy.noCapacityGuide, 6);
         }
@@ -342,7 +345,7 @@ function CreatePage() {
               <Typography.Text type="secondary">
                 {formatSizeGb(newDiskGb)}
                 {diskPriceGbMonth
-                  ? ` · ¥${diskPriceGbMonth}/GB·月,约 ¥${diskDaily.toFixed(2)}/日`
+                  ? ` · ¥${diskPriceGbMonth}/GB·月,约 ¥${diskDaily}/日`
                   : ""}
                 ;提交时将自动创建并随实例挂载
               </Typography.Text>
@@ -424,7 +427,7 @@ function CreatePage() {
             label: "日常费用",
             hint: "关机也会产生",
             value:
-              diskGb > 0 && diskPriceGbMonth ? `约 ¥${diskDaily.toFixed(2)}/日` : "¥0.00/日",
+              diskGb > 0 && diskPriceGbMonth ? `约 ¥${diskDaily}/日` : "¥0.00/日",
           },
           { label: "配置费用", value: formatHourlyPrice(hourlyTotal) },
         ]}

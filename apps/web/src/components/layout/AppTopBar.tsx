@@ -37,7 +37,8 @@ export function AppTopBar({
       <Link to="/" style={{ display: "inline-flex", textDecoration: "none" }}>
         <BrandLogo variant="light" />
       </Link>
-      <nav className="topbar-nav-center" style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      {/* 布局收敛到 CSS 类:内联 display 会压过窄屏媒体查询的 display:none(390px 折行的根因) */}
+      <nav className="topbar-nav-center">
         <Link to="/market" className="topbar-link">
           算力市场
         </Link>

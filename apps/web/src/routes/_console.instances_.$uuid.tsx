@@ -24,7 +24,7 @@ import {
   Timeline,
   Typography,
 } from "antd";
-import ReactECharts from "echarts-for-react";
+import EChart from "../components/EChart";
 import { useState } from "react";
 
 import { useResetJupyterToken } from "../api/mutations";
@@ -38,6 +38,7 @@ import {
 } from "../api/queries";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
 import { InstanceActions, ReleaseModal } from "../components/InstanceActions";
+import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
@@ -84,7 +85,7 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
       />
       {Object.entries(SERIES_META).map(([key, meta]) => (
         <Card key={key} size="small" title={meta.name} loading={isLoading}>
-          <ReactECharts
+          <EChart
             style={{ height: 180 }}
             option={{
               grid: { left: 48, right: 16, top: 16, bottom: 24 },
@@ -128,7 +129,9 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
           <Button
             type="primary"
             disabled={!access}
-            onClick={() => window.open(access?.jupyter_url, "_blank")}
+            onClick={() => {
+              if (access?.jupyter_url) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+            }}
           >
             打开 JupyterLab
           </Button>
@@ -154,10 +157,11 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
 
 function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
   void instanceId;
-  const { data: events } = useInstanceEvents(uuid);
+  const { data: events, isError, refetch } = useInstanceEvents(uuid);
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="info" showIcon title={copy.eventsAreBilling} />
+      {isError && <DataErrorAlert onRetry={() => void refetch()} />}
       <Timeline
         items={(events ?? []).map((e) => ({
           color:
@@ -182,12 +186,15 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
 }
 
 function BillsTab({ instanceId }: { instanceId: number }) {
-  const { data } = useHourlyBills({ instance_id: instanceId, limit: 100 });
+  const { data, isError, refetch } = useHourlyBills({ instance_id: instanceId, limit: 100 });
   return (
     <Table
       rowKey="id"
       size="small"
       pagination={false}
+      locale={{
+        emptyText: isError ? <TableErrorEmpty onRetry={() => void refetch()} /> : undefined,
+      }}
       dataSource={data?.items ?? []}
       columns={[
         { title: "计费小时", render: (_, r) => formatDateTime(r.hour_start) },
@@ -214,13 +221,20 @@ function InstanceDetail() {
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
   const [releaseOpen, setReleaseOpen] = useState(false);
-  const { data: instance } = useInstance(uuid, { refetchInterval: 5_000 });
+  const {
+    data: instance,
+    isError: instanceError,
+    refetch: refetchInstance,
+  } = useInstance(uuid, { refetchInterval: 5_000 });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
   const todayAmount =
     (instance && daily?.items.find((it) => it.instance_id === instance.id)?.total_amount) ?? null;
 
-  if (!instance) return null;
+  if (instanceError && !instance) {
+    return <DataErrorAlert onRetry={() => void refetchInstance()} />;
+  }
+  if (!instance) return null; // 首载中(spinner 由路由级 pending 呈现)
   const running = instance.status === "running";
   const canRelease = ["stopped", "frozen", "failed"].includes(instance.status);
 

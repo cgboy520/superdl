@@ -32,6 +32,19 @@ export function mulPrice(price: string | null | undefined, count: number): strin
   return `${s.slice(0, -4)}.${s.slice(-4)}`;
 }
 
+/**
+ * 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_UP 到分)。
+ * 展示层估算;入账以后端日结(HALF_EVEN)为准。返回 "1.67" 形式的两位小数串。
+ */
+export function diskDailyEstimate(priceGbMonth: string | null | undefined, gb: number): string {
+  if (!priceGbMonth || gb <= 0 || !Number.isInteger(gb)) return "0.00";
+  const [int = "0", frac = ""] = priceGbMonth.split(".");
+  const monthlyScaled = BigInt(int + (frac + "0000").slice(0, 4)) * BigInt(gb); // 万分位
+  const cents = (monthlyScaled + 1500n) / 3000n; // ÷30(天)÷100(万分位→分),HALF_UP
+  const s = cents.toString().padStart(3, "0");
+  return `${s.slice(0, -2)}.${s.slice(-2)}`;
+}
+
 /** 秒 → "X 小时 Y 分"(不足 1 分钟显示"不足 1 分钟") */
 export function formatDuration(seconds: number): string {
   if (seconds < 60) return seconds <= 0 ? "0 分钟" : "不足 1 分钟";

@@ -34,7 +34,9 @@ export const instanceStatusMap: Record<InstanceStatus, StatusMeta> = {
   frozen: { label: "已冻结", color: statusColors.orange, badge: "warning" },
   releasing: { label: "释放中", color: statusColors.red, badge: "error", animated: true },
   released: { label: "已释放", color: statusColors.gray, badge: "default" },
-  failed: { label: "创建失败", color: statusColors.red, badge: "error" },
+  // 中性文案:创建失败与运行中故障共用此状态(精确原因看事件时间线),
+  // 徽标不得把运行故障说成「创建失败」
+  failed: { label: "已失败", color: statusColors.red, badge: "error" },
 };
 
 export type SkuTier = "dedicated" | "mig" | "shared_std" | "shared_eco";

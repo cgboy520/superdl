@@ -24,6 +24,13 @@ body {
   scrollbar-width: thin;
 }
 
+/* 品牌顶栏(AppTopBar)内导航:布局在类里定义,窄屏媒体查询才能生效 */
+.topbar-nav-center {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
 /* 品牌顶栏(AppTopBar)内导航链接:深底白字,不走 antd Menu */
 .topbar-link {
   color: rgba(255, 255, 255, 0.85);

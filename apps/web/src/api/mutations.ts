@@ -4,7 +4,9 @@
  * 成功后广播失效全部查询 —— 应用规模下最稳的一致性策略。
  */
 
-import type { ApiError } from "@superdl/api-client";
+import type { ApiError,
+  SshKeyOut,
+} from "@superdl/api-client";
 import {
   addSshKeyApiV1SshKeysPost,
   createDiskApiV1DisksPost,
@@ -128,7 +130,7 @@ export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation((uuid: string) => deleteDiskApiV1DisksUuidDelete(uuid), o);
 
 // ---------- ssh keys / notify ----------
-export const useAddSshKey = (o?: { onSuccess?: () => void }) =>
+export const useAddSshKey = (o?: { onSuccess?: (key: SshKeyOut) => void }) =>
   useApiMutation(
     (body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body),
     o,

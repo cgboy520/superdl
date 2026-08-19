@@ -9,6 +9,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
+import { TableErrorEmpty } from "../components/QueryState";
 import { useSkus } from "../api/queries";
 import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
@@ -32,7 +33,12 @@ function MarketPage() {
   const [gpuCount, setGpuCount] = useState(1);
   const [selectedId, setSelectedId] = useState<number>();
 
-  const { data: allSkus, isLoading } = useSkus({}, { refetchInterval: 30_000 });
+  const {
+    data: allSkus,
+    isLoading,
+    isError,
+    refetch,
+  } = useSkus({}, { refetchInterval: 30_000 });
 
   const freeByModel = useMemo(() => {
     const m = new Map<string, number>();
@@ -167,7 +173,13 @@ function MarketPage() {
             dataSource={skus}
             columns={columns}
             pagination={false}
-            locale={{ emptyText: "没有符合条件的规格,试试放宽筛选" }}
+            locale={{
+              emptyText: isError ? (
+                <TableErrorEmpty onRetry={() => void refetch()} />
+              ) : (
+                "没有符合条件的规格,试试放宽筛选"
+              ),
+            }}
             rowSelection={{
               type: "radio",
               selectedRowKeys: selected ? [selected.id] : [],
