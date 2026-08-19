@@ -8,10 +8,10 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.config import get_settings
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.money import as_amount
+from app.core.policies import get_effective_policies
 from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import wallet
@@ -85,7 +85,8 @@ async def _patrol_frozen_and_arrears_stopped(
 ) -> None:
     from app.modules.orchestrator import service as orchestrator_service
 
-    settings = get_settings()
+    async with sm() as policy_session:
+        policies = await get_effective_policies(policy_session)
     now = now_utc()
 
     async with sm() as session:
@@ -102,13 +103,13 @@ async def _patrol_frozen_and_arrears_stopped(
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
                 if fresh.status != "stopped":
                     continue
-                deadline = now + timedelta(hours=settings.freeze_grace_hours)
+                deadline = now + timedelta(hours=policies.freeze_grace_hours)
                 await orchestrator_service.freeze_instance(session, fresh, deadline)
                 await notify_service.send_arrears_notice(
                     session,
                     inst.user_id,
                     action="freeze",
-                    detail=f"欠费冻结,{settings.freeze_grace_hours} 小时后将回收实例盘",
+                    detail=f"欠费冻结,{policies.freeze_grace_hours} 小时后将回收实例盘",
                 )
                 await session.commit()
                 counts["frozen"] += 1

@@ -6,11 +6,11 @@ from fastapi import APIRouter, Header, Query, Request
 from sqlalchemy import func, select
 
 from app.core.audit import set_audit_target
-from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+from app.core.policies import get_effective_policies
 from app.modules.account.deps import CurrentUser
 from app.modules.billing import payment_service, wallet
 from app.modules.billing.models import BalanceLedger, BillDailyDisk, BillHourly
@@ -30,17 +30,17 @@ router = APIRouter(tags=["billing"])
 
 
 @router.get("/policies")
-async def get_policies() -> PoliciesOut:
-    """计费/回收策略常量。公开(未登录市场页也要展示盘价),纯读配置无 DB。"""
-    s = get_settings()
+async def get_policies(session: DbSession) -> PoliciesOut:
+    """计费/回收策略。公开(未登录市场页也要展示盘价);env 默认 + DB 覆盖,管理端在线调整。"""
+    p = await get_effective_policies(session)
     return PoliciesOut(
-        disk_price_gb_month=Decimal(s.disk_price_gb_month),
-        disk_min_gb=s.disk_min_gb,
-        disk_max_gb=s.disk_max_gb,
-        disk_grace_days=s.disk_grace_days,
-        disk_frozen_days=s.disk_frozen_days,
-        freeze_grace_hours=s.freeze_grace_hours,
-        low_balance_warn_hours_default=s.low_balance_warn_hours,
+        disk_price_gb_month=p.disk_price_gb_month,
+        disk_min_gb=p.disk_min_gb,
+        disk_max_gb=p.disk_max_gb,
+        disk_grace_days=p.disk_grace_days,
+        disk_frozen_days=p.disk_frozen_days,
+        freeze_grace_hours=p.freeze_grace_hours,
+        low_balance_warn_hours_default=p.low_balance_warn_hours,
     )
 
 

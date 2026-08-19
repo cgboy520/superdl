@@ -350,6 +350,48 @@ async def admin_list_orders(session: DbSession, status: str | None = None) -> li
     ]
 
 
+# ---------- 系统设置:策略参数在线调整(角色:ops) ----------
+
+
+@router.get("/policies", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_get_policies(session: DbSession) -> dict:
+    """当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。"""
+    from dataclasses import asdict
+
+    from app.core.policies import POLICY_SPECS, get_effective_policies, list_policy_overrides
+
+    effective = await get_effective_policies(session)
+    return {
+        "effective": {k: str(v) for k, v in asdict(effective).items()},
+        "overrides": await list_policy_overrides(session),
+        "specs": {
+            k: {"kind": v[0], "min": str(v[1]), "max": str(v[2])} for k, v in POLICY_SPECS.items()
+        },
+    }
+
+
+class PolicyUpdateRequest(BaseModel):
+    updates: dict[str, str] = Field(min_length=1)
+    reason: str = Field(min_length=2, max_length=200)
+
+
+@router.put("/policies", dependencies=[require_roles("ops")])
+async def admin_update_policies(
+    body: PolicyUpdateRequest, session: DbSession, request: Request
+) -> dict:
+    """在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。"""
+    from app.core.errors import AppError, ErrorCode
+    from app.core.policies import set_policy_overrides
+
+    try:
+        await set_policy_overrides(session, body.updates)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
+    await session.commit()
+    set_audit_target(request, "policies", detail={"updates": body.updates, "reason": body.reason})
+    return {"updated": sorted(body.updates)}
+
+
 # ---------- 公告发布(角色:ops) ----------
 
 

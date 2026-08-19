@@ -392,7 +392,7 @@ export const getGetPoliciesApiV1PoliciesGetUrl = () => {
 }
 
 /**
- * 计费/回收策略常量。公开(未登录市场页也要展示盘价),纯读配置无 DB。
+ * 计费/回收策略。公开(未登录市场页也要展示盘价);env 默认 + DB 覆盖,管理端在线调整。
  * @summary Get Policies
  */
 export const getPoliciesApiV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesOut> => {

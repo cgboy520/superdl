@@ -1198,6 +1198,30 @@
         "title": "PoliciesOut",
         "type": "object"
       },
+      "PolicyUpdateRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "updates": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1,
+            "title": "Updates",
+            "type": "object"
+          }
+        },
+        "required": [
+          "updates",
+          "reason"
+        ],
+        "title": "PolicyUpdateRequest",
+        "type": "object"
+      },
       "RechargeCreate": {
         "properties": {
           "amount": {
@@ -2950,6 +2974,82 @@
         ]
       }
     },
+    "/api/admin/v1/policies": {
+      "get": {
+        "description": "当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。",
+        "operationId": "admin_get_policies_api_admin_v1_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Get Policies Api Admin V1 Policies Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Get Policies",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。",
+        "operationId": "admin_update_policies_api_admin_v1_policies_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Update Policies Api Admin V1 Policies Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Update Policies",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/reconciliation": {
       "get": {
         "description": "日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。",
@@ -4664,7 +4764,7 @@
     },
     "/api/v1/policies": {
       "get": {
-        "description": "计费/回收策略常量。公开(未登录市场页也要展示盘价),纯读配置无 DB。",
+        "description": "计费/回收策略。公开(未登录市场页也要展示盘价);env 默认 + DB 覆盖,管理端在线调整。",
         "operationId": "get_policies_api_v1_policies_get",
         "responses": {
           "200": {

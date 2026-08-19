@@ -1,16 +1,15 @@
 """数据盘服务:创建/扩容/删除/挂载管理。独立于实例生命周期(留存抓手)。"""
 
-from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
+from app.core.policies import get_effective_policies
 from app.core.timeutil import now_utc
 from app.modules.billing import service as billing_service
 from app.modules.orchestrator.models import DataDisk
@@ -21,13 +20,13 @@ BILLABLE_STATUSES = ("active", "grace")  # frozen 不再计费
 
 
 async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: int) -> DataDisk:
-    settings = get_settings()
-    if not settings.disk_min_gb <= size_gb <= settings.disk_max_gb:
+    policies = await get_effective_policies(session)
+    if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
-            f"容量须在 {settings.disk_min_gb}~{settings.disk_max_gb} GB 之间",
+            f"容量须在 {policies.disk_min_gb}~{policies.disk_max_gb} GB 之间",
         )
-    price = as_price(Decimal(settings.disk_price_gb_month))
+    price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)
     await billing_service.require_balance_at_least(
         session, user_id, daily, hint=f"新建数据盘需要至少 1 日费用 ¥{daily}"
@@ -77,8 +76,9 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
         raise AppError(ErrorCode.VALIDATION_ERROR, "仅正常状态的数据盘可以扩容")
     if new_size_gb <= disk.size_gb:
         raise AppError(ErrorCode.DISK_SHRINK_FORBIDDEN, "数据盘只支持扩容,不支持缩容")
-    if new_size_gb > get_settings().disk_max_gb:
-        raise AppError(ErrorCode.VALIDATION_ERROR, f"容量上限 {get_settings().disk_max_gb} GB")
+    max_gb = (await get_effective_policies(session)).disk_max_gb
+    if new_size_gb > max_gb:
+        raise AppError(ErrorCode.VALIDATION_ERROR, f"容量上限 {max_gb} GB")
     disk.size_gb = new_size_gb
     await session.commit()
     return disk
@@ -129,7 +129,7 @@ async def list_billable_disks(session: AsyncSession) -> list[DataDisk]:
 
 async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
     """欠费巡检钩子:active↔grace→frozen→deleting 链路。返回变更数。"""
-    settings = get_settings()
+    policies = await get_effective_policies(session)
     now = now_utc()
     changed = 0
     disks = list(
@@ -157,14 +157,14 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
         elif disk.status == "grace" and disk.grace_started_at is not None:
             from datetime import timedelta
 
-            if now - disk.grace_started_at > timedelta(days=settings.disk_grace_days):
+            if now - disk.grace_started_at > timedelta(days=policies.disk_grace_days):
                 disk.status = "frozen"
                 disk.frozen_started_at = now
                 changed += 1
         elif disk.status == "frozen" and disk.frozen_started_at is not None:
             from datetime import timedelta
 
-            if now - disk.frozen_started_at > timedelta(days=settings.disk_frozen_days):
+            if now - disk.frozen_started_at > timedelta(days=policies.disk_frozen_days):
                 disk.status = "deleting"
                 enqueue(session, "disk.wipe", {"disk_id": disk.id})
                 changed += 1

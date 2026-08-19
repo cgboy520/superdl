@@ -30,6 +30,7 @@ import type {
   AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200,
   AdminForceStopRequest,
   AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200,
+  AdminGetPoliciesApiAdminV1PoliciesGet200,
   AdminInstanceOut,
   AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item,
   AdminListDeadTasksApiAdminV1OutboxDeadGet200Item,
@@ -46,6 +47,7 @@ import type {
   AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200,
   AdminToken,
   AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200,
+  AdminUpdatePoliciesApiAdminV1PoliciesPut200,
   AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200,
   AnnouncementCreate,
   HTTPValidationError,
@@ -53,6 +55,7 @@ import type {
   OrderBackfillRequest,
   OutboxDiscardRequest,
   OversellReportApiAdminV1ReportsOversellGet200Item,
+  PolicyUpdateRequest,
   ReconciliationApiAdminV1ReconciliationGet200,
   ReconciliationApiAdminV1ReconciliationGetParams,
   SkuAdminOut,
@@ -1930,6 +1933,208 @@ export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awa
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions(taskId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminGetPoliciesApiAdminV1PoliciesGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/policies`
+}
+
+/**
+ * 当前生效策略 + 取值范围(供设置屏渲染)+ DB 覆盖项。
+ * @summary Admin Get Policies
+ */
+export const adminGetPoliciesApiAdminV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminGetPoliciesApiAdminV1PoliciesGet200> => {
+
+  return customFetch<AdminGetPoliciesApiAdminV1PoliciesGet200>(getAdminGetPoliciesApiAdminV1PoliciesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetPoliciesApiAdminV1PoliciesGetQueryKey = () => {
+    return [
+    `/api/admin/v1/policies`
+    ] as const;
+    }
+
+
+export const getAdminGetPoliciesApiAdminV1PoliciesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetPoliciesApiAdminV1PoliciesGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>> = ({ signal }) => adminGetPoliciesApiAdminV1PoliciesGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminGetPoliciesApiAdminV1PoliciesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>>
+export type AdminGetPoliciesApiAdminV1PoliciesGetQueryError = unknown
+
+
+export function useAdminGetPoliciesApiAdminV1PoliciesGet<TData = Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetPoliciesApiAdminV1PoliciesGet<TData = Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetPoliciesApiAdminV1PoliciesGet<TData = Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Get Policies
+ */
+
+export function useAdminGetPoliciesApiAdminV1PoliciesGet<TData = Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetPoliciesApiAdminV1PoliciesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminGetPoliciesApiAdminV1PoliciesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
+
+
+
+
+  return `/api/admin/v1/policies`
+}
+
+/**
+ * 在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
+ * @summary Admin Update Policies
+ */
+export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminUpdatePoliciesApiAdminV1PoliciesPut200> => {
+
+  return customFetch<AdminUpdatePoliciesApiAdminV1PoliciesPut200>(getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(policyUpdateRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdatePoliciesApiAdminV1PoliciesPutQueryKey = (policyUpdateRequest?: PolicyUpdateRequest,) => {
+    return [
+    'PUT', `/api/admin/v1/policies`, policyUpdateRequest
+    ] as const;
+    }
+
+
+export const getAdminUpdatePoliciesApiAdminV1PoliciesPutQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError = HTTPValidationError>(policyUpdateRequest: PolicyUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdatePoliciesApiAdminV1PoliciesPutQueryKey(policyUpdateRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>> = ({ signal }) => adminUpdatePoliciesApiAdminV1PoliciesPut(policyUpdateRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUpdatePoliciesApiAdminV1PoliciesPutQueryResult = NonNullable<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>>
+export type AdminUpdatePoliciesApiAdminV1PoliciesPutQueryError = HTTPValidationError
+
+
+export function useAdminUpdatePoliciesApiAdminV1PoliciesPut<TData = Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError = HTTPValidationError>(
+ policyUpdateRequest: PolicyUpdateRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdatePoliciesApiAdminV1PoliciesPut<TData = Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError = HTTPValidationError>(
+ policyUpdateRequest: PolicyUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdatePoliciesApiAdminV1PoliciesPut<TData = Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError = HTTPValidationError>(
+ policyUpdateRequest: PolicyUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Update Policies
+ */
+
+export function useAdminUpdatePoliciesApiAdminV1PoliciesPut<TData = Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError = HTTPValidationError>(
+ policyUpdateRequest: PolicyUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdatePoliciesApiAdminV1PoliciesPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUpdatePoliciesApiAdminV1PoliciesPutQueryOptions(policyUpdateRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
