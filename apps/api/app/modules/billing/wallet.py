@@ -118,3 +118,23 @@ async def require_balance_at_least(
             f"余额不足:{hint}",
             detail={"balance": format(balance, "f"), "required": format(as_amount(amount), "f")},
         )
+
+
+async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Decimal]:
+    """对账用:窗口内各实例的事件计费合计(bills_hourly)。"""
+    from sqlalchemy import func
+
+    from app.modules.billing.models import BillHourly
+
+    rows = (
+        (
+            await session.execute(
+                select(BillHourly.instance_id, func.sum(BillHourly.amount))
+                .where(BillHourly.hour_start >= start, BillHourly.hour_start < end)
+                .group_by(BillHourly.instance_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return {iid: amount for iid, amount in rows}

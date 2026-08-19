@@ -31,6 +31,8 @@ import type {
   AdminToken,
   HTTPValidationError,
   InstanceOut,
+  ReconciliationApiAdminV1ReconciliationGet200,
+  ReconciliationApiAdminV1ReconciliationGetParams,
   SkuAdminOut,
   SkuCreate,
   SkuUpdate
@@ -412,6 +414,84 @@ export const useAdminMeApiAdminV1MeGet = <TError = unknown,
         TContext
       > => {
       return useMutation(getAdminMeApiAdminV1MeGetMutationOptions(options), queryClient);
+    }
+    export const getReconciliationApiAdminV1ReconciliationGetUrl = (params: ReconciliationApiAdminV1ReconciliationGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/reconciliation?${stringifiedParams}` : `/api/admin/v1/reconciliation`
+}
+
+/**
+ * 日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。
+ * @summary Reconciliation
+ */
+export const reconciliationApiAdminV1ReconciliationGet = async (params: ReconciliationApiAdminV1ReconciliationGetParams, options?: Parameters<typeof customFetch>[1]): Promise<ReconciliationApiAdminV1ReconciliationGet200> => {
+
+  return customFetch<ReconciliationApiAdminV1ReconciliationGet200>(getReconciliationApiAdminV1ReconciliationGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getReconciliationApiAdminV1ReconciliationGetMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError,{params: ReconciliationApiAdminV1ReconciliationGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError,{params: ReconciliationApiAdminV1ReconciliationGetParams}, TContext> => {
+
+const mutationKey = ['reconciliationApiAdminV1ReconciliationGet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, {params: ReconciliationApiAdminV1ReconciliationGetParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  reconciliationApiAdminV1ReconciliationGet(params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReconciliationApiAdminV1ReconciliationGetMutationResult = NonNullable<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>>
+
+    export type ReconciliationApiAdminV1ReconciliationGetMutationError = HTTPValidationError
+
+    /**
+ * @summary Reconciliation
+ */
+export const useReconciliationApiAdminV1ReconciliationGet = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>, TError,{params: ReconciliationApiAdminV1ReconciliationGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof reconciliationApiAdminV1ReconciliationGet>>,
+        TError,
+        {params: ReconciliationApiAdminV1ReconciliationGetParams},
+        TContext
+      > => {
+      return useMutation(getReconciliationApiAdminV1ReconciliationGetMutationOptions(options), queryClient);
     }
     export const getAdminListSkusApiAdminV1SkusGetUrl = () => {
 

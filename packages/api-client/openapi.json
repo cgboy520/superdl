@@ -1748,6 +1748,56 @@
         ]
       }
     },
+    "/api/admin/v1/reconciliation": {
+      "get": {
+        "description": "日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。",
+        "operationId": "reconciliation_api_admin_v1_reconciliation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "day",
+            "required": true,
+            "schema": {
+              "title": "Day",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reconciliation Api Admin V1 Reconciliation Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reconciliation",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/skus": {
       "get": {
         "operationId": "admin_list_skus_api_admin_v1_skus_get",
@@ -2549,6 +2599,66 @@
         "summary": "List Instance Events",
         "tags": [
           "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/metrics": {
+      "get": {
+        "description": "实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。",
+        "operationId": "get_instance_metrics_api_v1_instances__uuid__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1h",
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Instance Metrics Api V1 Instances  Uuid  Metrics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Instance Metrics",
+        "tags": [
+          "metering"
         ]
       }
     },

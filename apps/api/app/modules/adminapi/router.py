@@ -7,6 +7,7 @@ from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import AdminLoginRequest, AdminOut, AdminToken
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import SkuAdminOut, SkuCreate, SkuUpdate
+from app.modules.metering import service as metering_service
 from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import AdminForceStopRequest, InstanceOut
 
@@ -74,3 +75,20 @@ async def admin_force_stop(
     instance = await orchestrator_service.admin_force_stop(session, uuid, reason=body.reason)
     set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
     return InstanceOut.model_validate(instance)
+
+
+# ---------- 财务对账(角色:finance / admin) ----------
+
+
+@router.get("/reconciliation", dependencies=[require_roles("finance", "readonly")])
+async def reconciliation(session: DbSession, day: str) -> dict:
+    """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
+    from datetime import UTC, datetime
+
+    from app.core.errors import AppError, ErrorCode
+
+    try:
+        d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "day 格式应为 YYYY-MM-DD") from exc
+    return await metering_service.reconciliation_report(session, d)

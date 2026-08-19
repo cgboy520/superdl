@@ -36,6 +36,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders
     from app.modules.billing.settlement import settle_previous_hour
+    from app.modules.metering.service import aggregate_previous_hour
     from app.modules.orchestrator.reconciler import reconcile_once
 
     sm = get_sessionmaker()
@@ -62,6 +63,14 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         minute=2,
         args=[sm],
         id="hourly_settlement",
+        coalesce=True,
+    )
+    scheduler.add_job(
+        aggregate_previous_hour,
+        "cron",
+        minute=5,
+        args=[sm],
+        id="usage_aggregation",
         coalesce=True,
     )
     scheduler.add_job(
