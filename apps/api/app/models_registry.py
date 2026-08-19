@@ -5,5 +5,6 @@
 
 from app.core import audit, outbox
 from app.core.db import Base
+from app.modules.account import models as account_models
 
-__all__ = ["Base", "audit", "outbox"]
+__all__ = ["Base", "account_models", "audit", "outbox"]

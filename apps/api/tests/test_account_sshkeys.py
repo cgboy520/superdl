@@ -1,0 +1,68 @@
+from httpx import AsyncClient
+
+from tests.test_account_auth import register
+
+# 合法的 ed25519 测试公钥(ssh-keygen 真实生成)
+ED25519_KEY = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOblF2Q+8knaANZllifZUQ6+S0sWDtiFm9UJtgAJtx5R dev@test"
+)
+
+
+async def auth_client(client: AsyncClient) -> dict[str, str]:
+    data = await register(client, "13800000009")
+    return {"Authorization": f"Bearer {data['access_token']}"}
+
+
+class TestSshKeys:
+    async def test_add_list_delete(self, client: AsyncClient):
+        headers = await auth_client(client)
+        resp = await client.post(
+            "/api/v1/ssh-keys",
+            json={"name": "laptop", "public_key": ED25519_KEY},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        key = resp.json()
+        assert key["fingerprint"].startswith("SHA256:")
+
+        resp = await client.get("/api/v1/ssh-keys", headers=headers)
+        assert len(resp.json()) == 1
+
+        resp = await client.delete(f"/api/v1/ssh-keys/{key['id']}", headers=headers)
+        assert resp.status_code == 204
+        resp = await client.get("/api/v1/ssh-keys", headers=headers)
+        assert resp.json() == []
+
+    async def test_duplicate_fingerprint(self, client: AsyncClient):
+        headers = await auth_client(client)
+        await client.post(
+            "/api/v1/ssh-keys", json={"name": "a", "public_key": ED25519_KEY}, headers=headers
+        )
+        resp = await client.post(
+            "/api/v1/ssh-keys", json={"name": "b", "public_key": ED25519_KEY}, headers=headers
+        )
+        assert resp.json()["code"] == "SSH_KEY_DUPLICATE"
+
+    async def test_invalid_key(self, client: AsyncClient):
+        headers = await auth_client(client)
+        for bad in ["not a key", "ssh-ed25519 %%%invalid%%%", "ssh-dss AAAA abc"]:
+            resp = await client.post(
+                "/api/v1/ssh-keys", json={"name": "x", "public_key": bad}, headers=headers
+            )
+            assert resp.json()["code"] == "SSH_KEY_INVALID", bad
+
+    async def test_type_mismatch_rejected(self, client: AsyncClient):
+        headers = await auth_client(client)
+        # 声明 ssh-rsa 但 blob 是 ed25519
+        blob_part = ED25519_KEY.split()[1]
+        resp = await client.post(
+            "/api/v1/ssh-keys",
+            json={"name": "x", "public_key": f"ssh-rsa {blob_part}"},
+            headers=headers,
+        )
+        assert resp.json()["code"] == "SSH_KEY_INVALID"
+
+    async def test_requires_auth(self, client: AsyncClient):
+        resp = await client.get("/api/v1/ssh-keys")
+        assert resp.status_code == 401
+        assert resp.json()["code"] == "UNAUTHORIZED"
