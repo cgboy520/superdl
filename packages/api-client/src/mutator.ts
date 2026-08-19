@@ -36,6 +36,23 @@ export function isApiError(e: unknown): e is ApiError {
   return typeof e === "object" && e !== null && "code" in e && "status" in e;
 }
 
+/** 直连用户端刷新接口(绕过拦截器,避免 401→refresh 递归)。失败返回 null。 */
+export async function requestTokenRefresh(
+  refreshToken: string,
+): Promise<{ access_token: string; refresh_token: string } | null> {
+  try {
+    const resp = await fetch(`${config.baseUrl}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as { access_token: string; refresh_token: string };
+  } catch {
+    return null;
+  }
+}
+
 export const customFetch = async <T>(url: string, options: RequestInit): Promise<T> => {
   const doFetch = (): Promise<Response> => {
     const headers = new Headers(options.headers);

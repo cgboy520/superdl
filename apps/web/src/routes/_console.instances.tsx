@@ -8,12 +8,25 @@ import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons"
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
 import { copy, formatDateTime, formatHourlyPrice, formatMoney, localToday } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, App, Button, Input, Popover, Space, Table, Tag, Tooltip, Typography } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Empty,
+  Input,
+  Popover,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
 import { useMemo, useState } from "react";
 
 import { useRenameInstance } from "../api/mutations";
 import { useDailySummary, useInstanceAccess, useInstances, useMetricsSummary } from "../api/queries";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
+import { TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
@@ -152,7 +165,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
 function InstancesPage() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
-  const { data: instances, isLoading, refetch } = useInstances({ refetchInterval: 5_000 });
+  const { data: instances, isLoading, isError, refetch } = useInstances({ refetchInterval: 5_000 });
   const { data: metrics } = useMetricsSummary({ refetchInterval: 45_000 });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
@@ -205,7 +218,30 @@ function InstancesPage() {
         loading={isLoading}
         dataSource={rows}
         pagination={false}
-        locale={{ emptyText: q ? "没有匹配的实例" : "还没有实例,去算力市场租一台吧" }}
+        scroll={{ x: 960 }}
+        locale={{
+          emptyText: isError ? (
+            <TableErrorEmpty onRetry={() => void refetch()} />
+          ) : q ? (
+            "没有匹配的实例"
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <Space orientation="vertical" size={4}>
+                  <Typography.Text strong>还没有实例</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    按量计费,关机不收 GPU 费用;数据盘独立保留
+                  </Typography.Text>
+                </Space>
+              }
+            >
+              <Link to="/market">
+                <Button type="primary">去算力市场</Button>
+              </Link>
+            </Empty>
+          ),
+        }}
         columns={[
           {
             title: "名称 / ID",

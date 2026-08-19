@@ -1,4 +1,4 @@
-import { configureApiClient } from "@superdl/api-client";
+import { configureApiClient, requestTokenRefresh } from "@superdl/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import React from "react";
@@ -14,19 +14,10 @@ configureApiClient({
   refreshToken: async () => {
     const rt = authStore.getState().refreshToken;
     if (!rt) return false;
-    try {
-      const resp = await fetch("/api/v1/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: rt }),
-      });
-      if (!resp.ok) return false;
-      const pair = (await resp.json()) as { access_token: string; refresh_token: string };
-      authStore.getState().login(pair.access_token, pair.refresh_token);
-      return true;
-    } catch {
-      return false;
-    }
+    const pair = await requestTokenRefresh(rt);
+    if (!pair) return false;
+    authStore.getState().login(pair.access_token, pair.refresh_token);
+    return true;
   },
   onUnauthorized: () => {
     authStore.getState().logout();

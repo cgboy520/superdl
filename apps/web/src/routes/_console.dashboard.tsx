@@ -5,6 +5,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
 
 import { useDailySummary, useInstances, useNotifications, useWallet } from "../api/queries";
+import { DataErrorAlert, moneyOr } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/dashboard")({
@@ -13,21 +14,34 @@ export const Route = createFileRoute("/_console/dashboard")({
 });
 
 function Overview() {
-  const { data: instances } = useInstances();
-  const { data: wallet } = useWallet();
+  const instancesQ = useInstances();
+  const walletQ = useWallet();
+  const { data: instances } = instancesQ;
+  const { data: wallet } = walletQ;
   const { data: unread } = useNotifications({ unread: true });
   const { date, tzOffsetMinutes } = localToday();
-  const { data: daily } = useDailySummary(date, tzOffsetMinutes);
-  const todayTotal = formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null);
+  const dailyQ = useDailySummary(date, tzOffsetMinutes);
+  const { data: daily } = dailyQ;
+  const todayTotal = daily ? formatMoney(addAmounts(daily.gpu_total, daily.disk_total)) : "—";
 
   const running = instances?.filter((i) => i.status === "running").length ?? 0;
   const hasWarn = (unread ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
+  const hasError = instancesQ.isError || walletQ.isError || dailyQ.isError;
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         概览
       </Typography.Title>
+      {hasError && (
+        <DataErrorAlert
+          onRetry={() => {
+            void instancesQ.refetch();
+            void walletQ.refetch();
+            void dailyQ.refetch();
+          }}
+        />
+      )}
       {hasWarn && (
         <Alert
           type="warning"
@@ -43,15 +57,17 @@ function Overview() {
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="实例总数" value={instances?.length ?? 0} />
-            <Typography.Text type="secondary">运行中 {running} 台</Typography.Text>
+            <Statistic title="实例总数" value={instances ? instances.length : "—"} />
+            <Typography.Text type="secondary">
+              {instances ? `运行中 ${running} 台` : " "}
+            </Typography.Text>
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card>
             <Statistic
               title="可用余额"
-              value={formatMoney(wallet?.balance)}
+              value={moneyOr(wallet?.balance, wallet != null)}
               styles={{ content: tabularNums }}
             />
           </Card>
@@ -63,7 +79,7 @@ function Overview() {
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="未读通知" value={unread?.length ?? 0} />
+            <Statistic title="未读通知" value={unread ? unread.length : "—"} />
           </Card>
         </Col>
       </Row>

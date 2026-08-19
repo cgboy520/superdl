@@ -47,6 +47,7 @@ import ReactECharts from "echarts-for-react";
 import { useMemo, useState } from "react";
 
 import { useCreateRecharge, useMockPay, useSetWarnThreshold } from "../api/mutations";
+import { DataErrorAlert, moneyOr } from "../components/QueryState";
 import {
   useBillSummary,
   useDailySummary,
@@ -257,9 +258,12 @@ function BillingPage() {
   const [warnHours, setWarnHours] = useState<number>();
   const [activeTab, setActiveTab] = useState<"bills" | "ledger">("bills");
   const [exporting, setExporting] = useState(false);
-  const { data: wallet } = useWallet({ refetchInterval: 10_000 });
+  const walletQ = useWallet({ refetchInterval: 10_000 });
+  const { data: wallet } = walletQ;
   const { data: me } = useMe();
-  const month = new Date().toISOString().slice(0, 7);
+  // 本地时区取当月(toISOString 是 UTC 切片,+08:00 月初凌晨会切到上个月)
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const { data: summary } = useBillSummary(month);
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes);
@@ -338,13 +342,14 @@ function BillingPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         费用中心
       </Typography.Title>
-      <Row gutter={16}>
-        <Col span={12}>
+      {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
           <Card>
             <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
               <Statistic
                 title="可用余额"
-                value={formatMoney(wallet?.balance)}
+                value={moneyOr(wallet?.balance, wallet != null)}
                 styles={{ content: { fontSize: 32, ...tabularNums } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>
@@ -374,10 +379,10 @@ function BillingPage() {
             </Space>
           </Card>
         </Col>
-        <Col span={12}>
+        <Col xs={24} lg={12}>
           <Card title={`本月消费(${month})`}>
             <Row>
-              <Col span={10}>
+              <Col xs={24} md={10}>
                 <Statistic
                   title="GPU 时费"
                   value={formatMoney(summary?.gpu_total)}
@@ -394,7 +399,7 @@ function BillingPage() {
                   styles={{ content: { fontSize: 16, ...tabularNums } }}
                 />
               </Col>
-              <Col span={14}>
+              <Col xs={24} md={14}>
                 {pieData.length ? (
                   <ReactECharts
                     style={{ height: 160 }}
