@@ -7,6 +7,7 @@ import {
   PayCircleOutlined,
   TagsOutlined,
   TeamOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import { adminColors } from "@superdl/ui";
 import {
@@ -39,6 +40,7 @@ const MENU = [
   { key: "/tenants", icon: <TeamOutlined />, label: <Link to="/tenants">租户与实例</Link> },
   { key: "/finance", icon: <PayCircleOutlined />, label: <Link to="/finance">财务对账</Link> },
   { key: "/audit", icon: <AuditOutlined />, label: <Link to="/audit">审计日志</Link> },
+  { key: "/settings", icon: <SettingOutlined />, label: <Link to="/settings">系统设置</Link> },
 ];
 
 const ROLE_LABEL: Record<string, string> = {

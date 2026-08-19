@@ -26,6 +26,7 @@ function Overview() {
 
   const running = instances?.filter((i) => i.status === "running").length ?? 0;
   const hasWarn = (unread ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
+  const announcement = (unread ?? []).find((n) => n.type === "announcement");
   const hasError = instancesQ.isError || walletQ.isError || dailyQ.isError;
 
   return (
@@ -40,6 +41,14 @@ function Overview() {
             void walletQ.refetch();
             void dailyQ.refetch();
           }}
+        />
+      )}
+      {announcement && (
+        <Alert
+          type="info"
+          showIcon
+          title={`公告:${announcement.title}`}
+          description={announcement.content}
         />
       )}
       {hasWarn && (

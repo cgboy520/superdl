@@ -1,19 +1,42 @@
-import { adminColors, formatDateTime, statusColors } from "@superdl/ui";
+import { adminColors, formatDateTime, formatMoney, statusColors } from "@superdl/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Badge, Card, Col, Empty, Row, Statistic, Typography } from "antd";
+import {
+  App,
+  Badge,
+  Button,
+  Card,
+  Col,
+  Empty,
+  Popconfirm,
+  Row,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
 import ReactECharts from "echarts-for-react";
 
 import {
   type AlertRow,
+  type DeadTaskRow,
   type NodeRow,
   type OversellRow,
   type TenantRow,
+  isApiError,
   useAdminInstances,
   useAlerts,
+  useDeadTasks,
+  useDiscardDeadTask,
   useNodes,
   useOversellReport,
+  useRetryDeadTask,
+  useRevenueReport,
   useTenants,
 } from "../../api";
+import { ReasonAction } from "../../components/ReasonAction";
+import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
   component: Overview,
@@ -94,36 +117,149 @@ function PoolOccupancy({ nodes }: { nodes: NodeRow[] }) {
   return <ReactECharts option={option} style={{ height: 220 }} />;
 }
 
+/** 值班首屏第二排:任务死信(重放交还幂等 handler;忽略需原因)。 */
+function DeadTasksCard() {
+  const { message } = App.useApp();
+  const qc = useQueryClient();
+  const role = useAdminRole();
+  const writable = canWriteOps(role);
+  const { data, queryKey } = useDeadTasks();
+  const rows: DeadTaskRow[] = data ?? [];
+  const retry = useRetryDeadTask();
+  const discard = useDiscardDeadTask();
+  const refresh = () => void qc.invalidateQueries({ queryKey });
+
+  if (rows.length === 0) return null;
+  return (
+    <Col span={24}>
+    <Card
+      title={
+        <Space size={8}>
+          任务死信
+          <Tag color="red">{rows.length} 条待处理</Tag>
+        </Space>
+      }
+    >
+      <Table<DeadTaskRow>
+        size="small"
+        rowKey="id"
+        pagination={false}
+        scroll={{ x: 860 }}
+        dataSource={rows}
+        columns={[
+          { title: "任务", dataIndex: "type", width: 150 },
+          {
+            title: "载荷",
+            dataIndex: "payload",
+            render: (v: Record<string, unknown>) => (
+              <code style={{ fontSize: 12 }}>{JSON.stringify(v)}</code>
+            ),
+          },
+          { title: "重试", dataIndex: "retries", width: 70 },
+          {
+            title: "最后错误",
+            dataIndex: "last_error",
+            render: (v: string | null) => (
+              <span style={{ color: "#F87171", fontSize: 12 }}>{v ?? "-"}</span>
+            ),
+          },
+          { title: "时间", dataIndex: "updated_at", width: 150, render: formatDateTime },
+          {
+            title: "操作",
+            width: 170,
+            render: (_, r) => (
+              <Space>
+                <Popconfirm
+                  title="重放该任务?(handler 幂等,置回队列重新执行)"
+                  disabled={!writable}
+                  onConfirm={async () => {
+                    try {
+                      await retry.mutateAsync({ taskId: r.id });
+                      message.success("已置回队列");
+                      refresh();
+                    } catch (e) {
+                      message.error(isApiError(e) ? e.message : "重放失败");
+                    }
+                  }}
+                >
+                  <Button size="small" type="primary" disabled={!writable}>
+                    重放
+                  </Button>
+                </Popconfirm>
+                <ReasonAction
+                  label="忽略"
+                  title="忽略死信"
+                  confirmText={`确认不再执行任务 #${r.id}(${r.type})?`}
+                  danger
+                  disabled={!writable}
+                  disabledReason="仅运维/超管可操作"
+                  onSubmit={async (reason) => {
+                    await discard.mutateAsync({ taskId: r.id, data: { reason } });
+                    refresh();
+                  }}
+                />
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Card>
+    </Col>
+  );
+}
+
 function Overview() {
   const { data: oversell } = useOversellReport();
   const { data: nodesData } = useNodes();
   const { data: instances } = useAdminInstances();
   const { data: tenants } = useTenants();
   const { data: alertsData } = useAlerts();
+  const { data: revenue } = useRevenueReport();
 
   const oversellRows: OversellRow[] = oversell ?? [];
   const nodes: NodeRow[] = nodesData ?? [];
   const alerts: AlertRow[] = alertsData ?? [];
   const tenantRows: TenantRow[] = tenants ?? [];
   const running = (instances ?? []).filter((i) => i.status === "running").length;
+  const signupDelta = revenue ? revenue.today_signups - revenue.yesterday_signups : 0;
 
   return (
     <Row gutter={[16, 16]}>
-      <Col span={6}>
+      <Col xs={12} xl={4}>
+        <Card>
+          <Statistic title="今日收入" value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            昨日 {revenue ? formatMoney(revenue.yesterday_revenue) : "—"}
+          </Typography.Text>
+        </Card>
+      </Col>
+      <Col xs={12} xl={4}>
+        <Card>
+          <Statistic title="本月收入" value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
+        </Card>
+      </Col>
+      <Col xs={12} xl={4}>
+        <Card>
+          <Statistic title="今日新注册" value={revenue ? revenue.today_signups : "—"} />
+          <Typography.Text
+            style={{ fontSize: 12, color: signupDelta >= 0 ? "#4ADE80" : "#F87171" }}
+          >
+            {signupDelta >= 0 ? "▲" : "▼"} {Math.abs(signupDelta)} 较昨日
+          </Typography.Text>
+        </Card>
+      </Col>
+      <Col xs={12} xl={4}>
         <Card><Statistic title="活跃实例" value={running} /></Card>
       </Col>
-      <Col span={6}>
-        <Card><Statistic title="租户数" value={tenantRows.length} /></Card>
-      </Col>
-      <Col span={6}>
+      <Col xs={12} xl={4}>
         <Card>
           <Statistic
             title="付费租户"
-            value={tenantRows.filter((t) => Number(t.total_consumed) > 0).length}
+            value={`${tenantRows.filter((t) => Number(t.total_consumed) > 0).length} / ${tenantRows.length}`}
           />
         </Card>
       </Col>
-      <Col span={6}>
+      <Col xs={12} xl={4}>
         <Card>
           <Statistic
             title="告警(总)"
@@ -132,6 +268,8 @@ function Overview() {
           />
         </Card>
       </Col>
+
+      <DeadTasksCard />
 
       <Col span={17}>
         <Card

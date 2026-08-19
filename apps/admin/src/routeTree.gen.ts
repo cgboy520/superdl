@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppFinanceRouteImport } from './routes/_app/finance'
 import { Route as AppNodesRouteImport } from './routes/_app/nodes'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSkusRouteImport } from './routes/_app/skus'
 import { Route as AppTenantsRouteImport } from './routes/_app/tenants'
 
@@ -47,6 +48,11 @@ const AppNodesRoute = AppNodesRouteImport.update({
   path: '/nodes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSkusRoute = AppSkusRouteImport.update({
   id: '/skus',
   path: '/skus',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AppAuditRoute
   '/finance': typeof AppFinanceRoute
   '/nodes': typeof AppNodesRoute
+  '/settings': typeof AppSettingsRoute
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
 }
@@ -72,6 +79,7 @@ export interface FileRoutesByTo {
   '/audit': typeof AppAuditRoute
   '/finance': typeof AppFinanceRoute
   '/nodes': typeof AppNodesRoute
+  '/settings': typeof AppSettingsRoute
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
   '/': typeof AppIndexRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   '/_app/audit': typeof AppAuditRoute
   '/_app/finance': typeof AppFinanceRoute
   '/_app/nodes': typeof AppNodesRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/_app/skus': typeof AppSkusRoute
   '/_app/tenants': typeof AppTenantsRoute
   '/_app/': typeof AppIndexRoute
@@ -90,9 +99,24 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/login' | '/audit' | '/finance' | '/nodes' | '/skus' | '/tenants'
+    | '/'
+    | '/login'
+    | '/audit'
+    | '/finance'
+    | '/nodes'
+    | '/settings'
+    | '/skus'
+    | '/tenants'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/audit' | '/finance' | '/nodes' | '/skus' | '/tenants' | '/'
+  to:
+    | '/login'
+    | '/audit'
+    | '/finance'
+    | '/nodes'
+    | '/settings'
+    | '/skus'
+    | '/tenants'
+    | '/'
   id:
     | '__root__'
     | '/_app'
@@ -100,6 +124,7 @@ export interface FileRouteTypes {
     | '/_app/audit'
     | '/_app/finance'
     | '/_app/nodes'
+    | '/_app/settings'
     | '/_app/skus'
     | '/_app/tenants'
     | '/_app/'
@@ -154,6 +179,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppNodesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/skus': {
       id: '/_app/skus'
       path: '/skus'
@@ -175,6 +207,7 @@ interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
   AppFinanceRoute: typeof AppFinanceRoute
   AppNodesRoute: typeof AppNodesRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppSkusRoute: typeof AppSkusRoute
   AppTenantsRoute: typeof AppTenantsRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -184,6 +217,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
   AppFinanceRoute: AppFinanceRoute,
   AppNodesRoute: AppNodesRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppSkusRoute: AppSkusRoute,
   AppTenantsRoute: AppTenantsRoute,
   AppIndexRoute: AppIndexRoute,

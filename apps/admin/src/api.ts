@@ -8,6 +8,16 @@
 
 import {
   adminAlertsApiAdminV1AlertsGet,
+  adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
+  adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost,
+  adminGetPoliciesApiAdminV1PoliciesGet,
+  adminListDeadTasksApiAdminV1OutboxDeadGet,
+  adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet,
+  adminPublishAnnouncementApiAdminV1AnnouncementsPost,
+  adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost,
+  adminUpdatePoliciesApiAdminV1PoliciesPut,
+  adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost,
+  revenueReportApiAdminV1ReportsRevenueGet,
   adminAuditLogApiAdminV1AuditGet,
   adminCreateAdjustmentApiAdminV1AdjustmentsPost,
   adminCreateSkuApiAdminV1SkusPost,
@@ -28,6 +38,10 @@ import {
 } from "@superdl/api-client";
 import type {
   AdjustmentCreate,
+  AnnouncementCreate,
+  OrderBackfillRequest,
+  OutboxDiscardRequest,
+  PolicyUpdateRequest,
   AdjustmentReview,
   AdminForceStopRequest,
   AdminLoginRequest,
@@ -124,6 +138,49 @@ export interface OrderRow {
   expires_at: string;
   created_at: string;
   user_id: number;
+}
+
+export interface AnomalyRow {
+  kind: "lost_callback" | "closed_order" | "negative_balance";
+  order_no: string | null;
+  user_id: number;
+  amount: string;
+  detail: string;
+  created_at: string;
+}
+
+export interface DeadTaskRow {
+  id: number;
+  type: string;
+  payload: Record<string, unknown>;
+  retries: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RevenueReport {
+  today_revenue: string;
+  yesterday_revenue: string;
+  month_revenue: string;
+  today_signups: number;
+  yesterday_signups: number;
+}
+
+export interface PoliciesAdminView {
+  effective: Record<string, string>;
+  overrides: Record<string, string>;
+  specs: Record<string, { kind: string; min: string; max: string }>;
+}
+
+export interface OrderVerifyResult {
+  order_no: string;
+  order_status: string;
+  order_amount: string;
+  channel_status: string;
+  channel_txn_id: string | null;
+  channel_amount: string | null;
+  matches: boolean;
 }
 
 // ---------- 查询 hooks ----------
@@ -273,6 +330,94 @@ export function useReviewAdjustment(
   return useMutation({
     mutationFn: (v: { adjustmentId: number; data: AdjustmentReview }) =>
       adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost(v.adjustmentId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+
+// ---------- WP16 运营刚需 ----------
+
+export function useAnomalies() {
+  const queryKey = ["admin", "anomalies"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: async () =>
+      (await adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet()) as unknown as AnomalyRow[],
+  });
+  return { ...q, queryKey };
+}
+
+export function useDeadTasks() {
+  const queryKey = ["admin", "outbox-dead"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: async () =>
+      (await adminListDeadTasksApiAdminV1OutboxDeadGet()) as unknown as DeadTaskRow[],
+  });
+  return { ...q, queryKey };
+}
+
+export function useRevenueReport() {
+  const tz = -new Date().getTimezoneOffset();
+  return useQuery({
+    queryKey: ["admin", "revenue", tz],
+    queryFn: async () =>
+      (await revenueReportApiAdminV1ReportsRevenueGet({
+        tz_offset_minutes: tz,
+      })) as unknown as RevenueReport,
+  });
+}
+
+export function useAdminPolicies() {
+  const queryKey = ["admin", "policies"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: async () =>
+      (await adminGetPoliciesApiAdminV1PoliciesGet()) as unknown as PoliciesAdminView,
+  });
+  return { ...q, queryKey };
+}
+
+export function useVerifyOrder() {
+  return useMutation({
+    mutationFn: async (v: { orderNo: string }) =>
+      (await adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost(
+        v.orderNo,
+      )) as unknown as OrderVerifyResult,
+  });
+}
+
+export function useBackfillOrder() {
+  return useMutation({
+    mutationFn: (v: { orderNo: string; data: OrderBackfillRequest }) =>
+      adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(v.orderNo, v.data),
+  });
+}
+
+export function useRetryDeadTask() {
+  return useMutation({
+    mutationFn: (v: { taskId: number }) => adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(v.taskId),
+  });
+}
+
+export function useDiscardDeadTask() {
+  return useMutation({
+    mutationFn: (v: { taskId: number; data: OutboxDiscardRequest }) =>
+      adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost(v.taskId, v.data),
+  });
+}
+
+export function usePublishAnnouncement(opts?: MutOpts<unknown, { data: AnnouncementCreate }>) {
+  return useMutation({
+    mutationFn: (v: { data: AnnouncementCreate }) =>
+      adminPublishAnnouncementApiAdminV1AnnouncementsPost(v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useUpdatePolicies(opts?: MutOpts<unknown, { data: PolicyUpdateRequest }>) {
+  return useMutation({
+    mutationFn: (v: { data: PolicyUpdateRequest }) => adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
     ...opts?.mutation,
   });
 }
