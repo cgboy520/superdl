@@ -33,6 +33,11 @@ import { TierTag } from "../components/common";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
+  validateSearch: (search: Record<string, unknown>): { gpus?: number } => {
+    // 市场页带入的 GPU 数量(可改)
+    const g = Number(search.gpus);
+    return Number.isInteger(g) && g >= 1 && g <= 8 ? { gpus: g } : {};
+  },
   beforeLoad: requireAuth,
   component: CreatePage,
 });

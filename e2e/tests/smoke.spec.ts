@@ -57,13 +57,12 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByRole("button", { name: "添加公钥" }).click();
   await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
 
-  // ── 市场:共享标准卡片 CTA 即库存 ────────────────────────
+  // ── 市场:筛选链 + SKU 表格单选(WP13 AutoDL 化)→ 结算条下一步 ──
   await page.goto("/market");
-  const cta = page
-    .getByText("共享·标准", { exact: true })
-    .locator("xpath=following::button[contains(., '卡可租')][1]");
-  await expect(cta).toBeVisible({ timeout: 15_000 });
-  await cta.click();
+  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
+  await expect(skuRow).toBeVisible({ timeout: 15_000 });
+  await skuRow.getByRole("radio").check();
+  await page.getByRole("button", { name: "下一步:配置实例" }).click();
   await expect(page).toHaveURL(/market\/create/);
 
   // ── 创建实例:自定义镜像 + 选公钥 → 创建并开机 ──────────
