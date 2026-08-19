@@ -1,0 +1,48 @@
+# 本地开发环境。mock 短信与 mock 支付由 API 自身提供
+# (SUPERDL_SMS_PROVIDER=mock / SUPERDL_PAYMENT_MOCK=true,dev 默认开启)。
+name: superdl
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: superdl
+      POSTGRES_PASSWORD: superdl
+      POSTGRES_DB: superdl
+    ports:
+      - "5432:5432"
+    volumes:
+      # postgres:18 起数据目录约定改为挂载 /var/lib/postgresql(内含版本子目录)
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superdl"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    profiles: ["full"]
+    build:
+      context: ../../apps/api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@postgres:5432/superdl
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    profiles: ["full"]
+    build:
+      context: ../../apps/api
+    command: python -m app.workers.main
+    environment:
+      SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@postgres:5432/superdl
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

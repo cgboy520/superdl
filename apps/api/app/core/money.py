@@ -1,0 +1,47 @@
+"""金额铁律:全链路 Decimal/numeric,禁止 float。
+
+- 单价 4 位小数(numeric(12,4))
+- 账单/流水入账 2 位小数(numeric(14,2)),舍入 ROUND_HALF_EVEN(半舍向偶)
+"""
+
+from decimal import ROUND_HALF_EVEN, Decimal
+
+ZERO = Decimal("0.00")
+CENT = Decimal("0.01")
+PRICE_QUANT = Decimal("0.0001")
+AMOUNT_QUANT = Decimal("0.01")
+
+SECONDS_PER_HOUR = Decimal(3600)
+
+
+def as_price(value: Decimal | str | int) -> Decimal:
+    """规整为 4 位小数单价。float 直接拒绝。"""
+    if isinstance(value, float):
+        raise TypeError("float is forbidden for money")
+    return Decimal(value).quantize(PRICE_QUANT, rounding=ROUND_HALF_EVEN)
+
+
+def as_amount(value: Decimal | str | int) -> Decimal:
+    """规整为 2 位小数入账金额,ROUND_HALF_EVEN。"""
+    if isinstance(value, float):
+        raise TypeError("float is forbidden for money")
+    return Decimal(value).quantize(AMOUNT_QUANT, rounding=ROUND_HALF_EVEN)
+
+
+def hourly_charge(unit_price_hourly: Decimal, seconds_used: int) -> Decimal:
+    """按秒折算的小时费用:unit_price × seconds/3600,入账 2 位小数。
+
+    seconds_used ∈ [0, 3600];整小时恰好等于单价的 2 位入账值。
+    """
+    if not 0 <= seconds_used <= 3600:
+        raise ValueError(f"seconds_used out of range: {seconds_used}")
+    raw = as_price(unit_price_hourly) * Decimal(seconds_used) / SECONDS_PER_HOUR
+    return as_amount(raw)
+
+
+def disk_daily_charge(price_gb_month: Decimal, size_gb: int) -> Decimal:
+    """数据盘日结:GB·月单价 / 30 × 容量,入账 2 位小数。"""
+    if size_gb < 0:
+        raise ValueError(f"size_gb out of range: {size_gb}")
+    raw = as_price(price_gb_month) * Decimal(size_gb) / Decimal(30)
+    return as_amount(raw)

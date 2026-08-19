@@ -1,0 +1,52 @@
+from functools import lru_cache
+from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="SUPERDL_", env_file=".env", extra="ignore")
+
+    environment: Literal["dev", "test", "prod"] = "dev"
+
+    database_url: str = "postgresql+asyncpg://superdl:superdl@localhost:5432/superdl"
+    db_pool_size: int = 10
+
+    # JWT:用户端与管理端物理隔离,audience 不同
+    jwt_secret: str = "dev-secret-change-me"
+    jwt_issuer: str = "superdl"
+    jwt_user_audience: str = "superdl:user"
+    jwt_admin_audience: str = "superdl:admin"
+    access_token_ttl_seconds: int = 2 * 3600
+    refresh_token_ttl_seconds: int = 30 * 24 * 3600
+
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
+
+    # 短信:dev/test 用 mock(验证码固定 + 落日志)
+    sms_provider: Literal["mock", "aliyun"] = "mock"
+    sms_code_ttl_seconds: int = 300
+    sms_send_interval_seconds: int = 60
+
+    # 计费参数(可运营调整)
+    freeze_grace_hours: int = 72  # 欠费冻结时长
+    low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
+    creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
+
+    # K8s 编排(WP3 起使用;dev 默认 fake)
+    k8s_backend: Literal["fake", "real"] = "fake"
+    k8s_namespace_prefix: str = "tenant-"
+    ssh_host: str = "ssh1.superdl.example.com"
+    ssh_port_range_start: int = 30000
+    ssh_port_range_end: int = 32767
+    jupyter_domain_suffix: str = "app.superdl.example.com"
+
+    # Prometheus 代理(WP6)
+    prometheus_url: str = "http://localhost:9090"
+
+    # 支付(WP5;dev 用 mock 渠道)
+    payment_mock: bool = True
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

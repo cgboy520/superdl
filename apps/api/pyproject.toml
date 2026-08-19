@@ -1,0 +1,170 @@
+[project]
+name = "superdl-api"
+version = "0.1.0"
+description = "SuperDL GPU 算力租赁平台 — API 模块化单体"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141,<0.142",
+    "uvicorn[standard]>=0.52",
+    "sqlalchemy[asyncio]>=2.0.52,<2.1",
+    "asyncpg>=0.31",
+    "alembic>=1.19",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.15",
+    "pyjwt>=2.13",
+    "bcrypt>=5.0",
+    "structlog>=26.1",
+    "prometheus-client>=0.26",
+    "apscheduler>=3.11,<4",
+    "httpx>=0.28",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14",
+    "pyright>=1.1",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.0",
+    "pytest-cov>=6.0",
+    "testcontainers[postgres]>=4.9",
+    "import-linter>=2.3",
+    "greenlet>=3.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "DTZ", "T20"]
+# B008: FastAPI Depends() 在默认参数中是惯用法;RUF001/2/3: 中文注释里 ×、·等符号是有意使用
+ignore = ["SIM108", "B008", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/*" = ["I"]
+
+[tool.pyright]
+include = ["app", "tests"]
+exclude = ["**/__pycache__", ".venv", "alembic"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:testcontainers"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/export_openapi.py"]
+
+[tool.coverage.report]
+precision = 1
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "core 不依赖业务模块与 workers"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = ["app.modules", "app.workers"]
+
+[[tool.importlinter.contracts]]
+name = "account 不越界"
+type = "forbidden"
+source_modules = ["app.modules.account"]
+forbidden_modules = [
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.adminapi.router",
+]
+
+[[tool.importlinter.contracts]]
+name = "catalog 不越界"
+type = "forbidden"
+source_modules = ["app.modules.catalog"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.adminapi.router",
+]
+
+[[tool.importlinter.contracts]]
+name = "orchestrator 不越界"
+type = "forbidden"
+source_modules = ["app.modules.orchestrator"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.adminapi.router",
+]
+
+[[tool.importlinter.contracts]]
+name = "billing 不越界"
+type = "forbidden"
+source_modules = ["app.modules.billing"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.adminapi.router",
+]
+
+[[tool.importlinter.contracts]]
+name = "metering 不越界"
+type = "forbidden"
+source_modules = ["app.modules.metering"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.adminapi.router",
+]
+
+[[tool.importlinter.contracts]]
+name = "notify 不越界"
+type = "forbidden"
+source_modules = ["app.modules.notify"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.adminapi.router",
+]
+
+[[tool.importlinter.contracts]]
+name = "adminapi 不越界"
+type = "forbidden"
+source_modules = ["app.modules.adminapi"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+]

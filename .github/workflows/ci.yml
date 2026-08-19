@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run pyright
+      - run: uv run lint-imports
+      - name: pytest (billing coverage gate ≥90%)
+        run: uv run pytest --cov=app --cov-report=term
+      - name: alembic check (migrations match models)
+        run: |
+          docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18
+          until docker exec pg pg_isready -U superdl; do sleep 1; done
+          uv run alembic upgrade head
+          uv run alembic check
+        env:
+          SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
+      - name: openapi.json is up to date
+        run: |
+          uv run python -m app.export_openapi
+          git diff --exit-code ../../packages/api-client/openapi.json
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

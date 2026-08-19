@@ -1,0 +1,41 @@
+// 全仓统一 ESLint 配置(flat config)。各包的 `eslint src` 自动向上找到此文件。
+import js from "@eslint/js";
+import reactHooks from "eslint-plugin-react-hooks";
+import globals from "globals";
+import tseslint from "typescript-eslint";
+
+export default tseslint.config(
+  {
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/routeTree.gen.ts",
+      "packages/api-client/src/generated/**",
+      "apps/api/**",
+      "deploy/**",
+    ],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+    plugins: {
+      "react-hooks": reactHooks,
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      // 禁止手写 fetch:必须走 @superdl/api-client 生成的 hooks(mutator 内是唯一豁免)
+      "no-restricted-globals": ["error", { name: "fetch", message: "使用 @superdl/api-client 生成的 hooks,禁止手写 fetch" }],
+    },
+  },
+  {
+    files: ["packages/api-client/src/mutator.ts"],
+    rules: {
+      "no-restricted-globals": "off",
+    },
+  },
+);
