@@ -165,11 +165,14 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
     async def create_payment(self, order: "Order") -> str:
         import asyncio
 
+        # time_expire:渠道侧与本地 expires_at 同步过期,消灭「本地已关单、渠道仍可付」
+        # 的资金悬置窗口(RFC3339,aware-UTC 直接序列化)
         code, message = await asyncio.to_thread(
             self._wxpay.pay,
             description=f"SuperDL 充值 {order.order_no}",
             out_trade_no=order.order_no,
             amount={"total": int(order.amount * 100)},
+            time_expire=order.expires_at.isoformat(timespec="seconds"),
         )
         import json
 
@@ -255,10 +258,16 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
             AlipayTradePrecreateRequest,
         )
 
+        from app.core.timeutil import now_utc
+
         model = AlipayTradePrecreateModel()
         model.out_trade_no = order.order_no
         model.total_amount = str(order.amount)
         model.subject = f"SuperDL 充值 {order.order_no}"
+        # 渠道侧与本地 expires_at 同步过期(相对分钟数,至少 1m),
+        # 消灭「本地已关单、渠道仍可付」的资金悬置窗口
+        remaining_min = int((order.expires_at - now_utc()).total_seconds() // 60)
+        model.timeout_express = f"{max(1, remaining_min)}m"
         req = AlipayTradePrecreateRequest(biz_model=model)
         req.notify_url = self._notify_url
         try:

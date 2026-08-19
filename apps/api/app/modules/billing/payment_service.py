@@ -11,6 +11,7 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.metrics import (
     PAYMENT_CALLBACK_MISMATCH_TOTAL,
+    PAYMENT_CLOSED_ORDER_RESCUED_TOTAL,
     PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL,
 )
 from app.core.money import as_amount
@@ -97,7 +98,10 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         raise not_found("订单不存在")
     if order.status == "paid":
         return "ok"  # 重放:已入账,直接确认
-    if order.status != "pending":
+    # 关单后到达的有效成功回调(验签已过):用户真金白银已付,按人工补单同等校验
+    # (渠道一致 + 金额一致)自动入账,不再悬置到异常清单等人工兜底
+    rescued = order.status == "closed" and result.success
+    if order.status != "pending" and not rescued:
         logger.warning("callback_on_closed_order", order_no=order.order_no, status=order.status)
         return "ok"
     if order.channel != channel_name:
@@ -130,6 +134,9 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         remark=f"{channel_name} 充值",
     )
     await session.commit()
+    if rescued:
+        logger.info("closed_order_auto_credited", order_no=order.order_no)
+        PAYMENT_CLOSED_ORDER_RESCUED_TOTAL.inc()
     logger.info("recharge_paid", order_no=order.order_no, amount=str(order.amount))
     return "ok"
 

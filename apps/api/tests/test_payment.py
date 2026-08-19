@@ -1,6 +1,7 @@
 """支付:充值单/mock 渠道/回调幂等。验收:重放回调不重复入账。"""
 
 from datetime import timedelta
+from decimal import Decimal
 
 from httpx import AsyncClient
 from sqlalchemy import select, update
@@ -99,6 +100,28 @@ class TestRecharge:
         resp = await pay_mock(client, "R-not-exists", "10.00")
         assert resp.status_code == 404
 
+    async def test_get_unknown_order_404(self, client: AsyncClient, sm):
+        headers = await user_headers(client, "13700000037")
+        resp = await client.get("/api/v1/wallet/recharges/R-not-exists", headers=headers)
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ORDER_NOT_FOUND"
+
+    async def test_failure_callback_marks_order_failed(self, client: AsyncClient, sm):
+        """渠道回调明示支付失败 → 订单转 failed,不入账。"""
+        headers = await user_headers(client, "13700000038")
+        order = await create_order(client, headers, "20.00")
+        resp = await client.post(
+            "/api/v1/webhooks/mock",
+            json={"order_no": order["order_no"], "amount": "20.00", "success": False},
+        )
+        assert resp.status_code == 200
+        detail = (
+            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
+        ).json()
+        assert detail["status"] == "failed"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "0.00"
+
     async def test_expired_orders_closed(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
@@ -112,10 +135,100 @@ class TestRecharge:
             await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
         ).json()
         assert detail["status"] == "closed"
-        # 关闭后的回调不入账
-        await pay_mock(client, order["order_no"], "20.00")
+        # 关单后的有效成功回调(验签+金额一致):自动入账,资金不悬置
+        resp = await pay_mock(client, order["order_no"], "20.00")
+        assert resp.status_code == 200
+        detail = (
+            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
+        ).json()
+        assert detail["status"] == "paid"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"
+
+    async def test_closed_order_callback_amount_mismatch_no_credit(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """关单救回仅限金额一致:金额不符仍拒绝,走人工调账。"""
+        headers = await user_headers(client, "13700000031")
+        order = await create_order(client, headers, "20.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="closed")
+            )
+            await session.commit()
+        resp = await pay_mock(client, order["order_no"], "19.99")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
+        detail = (
+            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
+        ).json()
+        assert detail["status"] == "closed"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
+
+    async def test_closed_order_failure_callback_stays_closed(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """关单后到达的失败回调:不救回、不改状态。"""
+        headers = await user_headers(client, "13700000032")
+        order = await create_order(client, headers, "20.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="closed")
+            )
+            await session.commit()
+        resp = await client.post(
+            "/api/v1/webhooks/mock",
+            json={"order_no": order["order_no"], "amount": "20.00", "success": False},
+        )
+        assert resp.status_code == 200
+        detail = (
+            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
+        ).json()
+        assert detail["status"] == "closed"
+
+    async def test_failed_order_callback_not_rescued(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """自动救回仅限 closed(超时关单):failed 订单收到成功回调不入账。"""
+        headers = await user_headers(client, "13700000033")
+        order = await create_order(client, headers, "20.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
+            )
+            await session.commit()
+        resp = await pay_mock(client, order["order_no"], "20.00")
+        assert resp.status_code == 200
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "0.00"
+
+    async def test_callback_channel_mismatch_rejected(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """回调渠道与订单渠道不符 → 拒绝(服务层直连构造跨渠道回调)。"""
+        import pytest as _pytest
+
+        from app.core.errors import AppError
+        from app.modules.billing.payment_channels import CallbackResult
+        from app.modules.billing.payment_service import handle_callback
+
+        headers = await user_headers(client, "13700000034")
+        order = await create_order(client, headers, "20.00")
+        async with sm() as session:
+            with _pytest.raises(AppError) as exc:
+                await handle_callback(
+                    session,
+                    "alipay",
+                    CallbackResult(order["order_no"], "txn-x", Decimal("20.00"), True),
+                )
+        assert exc.value.code == "PAYMENT_CHANNEL_ERROR"
+
+    async def test_mock_callback_malformed_body(self, client: AsyncClient, sm):
+        """mock 回调体缺字段/非法 JSON → 解析失败 400。"""
+        resp = await client.post("/api/v1/webhooks/mock", json={"amount": "1.00"})
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
 
     async def test_wechat_channel_requires_credentials(self, client: AsyncClient, sm):
         headers = await user_headers(client)
@@ -131,6 +244,107 @@ class TestRecharge:
             "/api/v1/wallet/recharges", json={"amount": "20.00", "channel": "mock"}
         )
         assert resp.status_code == 401
+
+
+class TestRealChannelWebhookRoutes:
+    async def test_wechat_webhook_without_credentials(self, client: AsyncClient, sm):
+        resp = await client.post("/api/v1/webhooks/wechatpay", content=b"{}")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
+
+    async def test_alipay_webhook_without_credentials(self, client: AsyncClient, sm):
+        resp = await client.post("/api/v1/webhooks/alipay", content=b"a=1")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
+
+    async def test_alipay_webhook_plain_text_success(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """P1 回归:支付宝应答必须是纯文本 success(JSON 会被渠道判失败重试 8 次)。"""
+        from app.modules.billing.payment_channels import MockChannel
+
+        async def fake_get_channel(name, session):
+            return MockChannel()
+
+        monkeypatch.setattr("app.modules.billing.webhooks_router.get_channel", fake_get_channel)
+        headers = await user_headers(client, "13700000035")
+        order = await create_order(client, headers, "20.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(channel="alipay")
+            )
+            await session.commit()
+        resp = await client.post(
+            "/api/v1/webhooks/alipay",
+            json={"order_no": order["order_no"], "amount": "20.00", "txn_id": "ali-txn-1"},
+        )
+        assert resp.status_code == 200
+        assert resp.text == "success"
+        assert resp.headers["content-type"].startswith("text/plain")
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"
+
+    async def test_wechat_webhook_success_envelope(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """微信 APIv3 应答 {"code": "SUCCESS"};入账走同一 handle_callback。"""
+        from app.modules.billing.payment_channels import MockChannel
+
+        async def fake_get_channel(name, session):
+            return MockChannel()
+
+        monkeypatch.setattr("app.modules.billing.webhooks_router.get_channel", fake_get_channel)
+        headers = await user_headers(client, "13700000036")
+        order = await create_order(client, headers, "30.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(channel="wechat")
+            )
+            await session.commit()
+        resp = await client.post(
+            "/api/v1/webhooks/wechatpay",
+            json={"order_no": order["order_no"], "amount": "30.00", "txn_id": "wx-txn-1"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "SUCCESS"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "30.00"
+
+
+class TestChannelFactory:
+    async def test_unknown_channel_rejected(self, sm):
+        import pytest as _pytest
+
+        from app.core.errors import AppError
+        from app.modules.billing.payment_channels import get_channel
+
+        async with sm() as session:
+            with _pytest.raises(AppError) as exc:
+                await get_channel("paypal", session)
+        assert exc.value.code == "VALIDATION_ERROR"
+
+    async def test_real_channel_fingerprint_cache(self, sm, monkeypatch):
+        """WP20 渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建(免重启)。"""
+        import app.modules.billing.payment_channels as pc
+
+        cfg = dict.fromkeys(pc.WECHAT_CFG_KEYS, "") | {
+            "alipay_app_id": "app-1",
+            "alipay_private_key": "key-1",
+            "alipay_public_key": "pub-1",
+        }
+
+        async def fake_cfg(session):
+            return dict(cfg)
+
+        monkeypatch.setattr(pc, "get_effective_platform_config", fake_cfg)
+        monkeypatch.setattr(pc, "_real_channel_cache", {})
+        async with sm() as session:
+            c1 = await pc.get_channel("alipay", session)
+            c2 = await pc.get_channel("alipay", session)
+            assert c1 is c2
+            cfg["alipay_private_key"] = "key-2"
+            c3 = await pc.get_channel("alipay", session)
+            assert c3 is not c1
 
 
 class TestMockChannelProdGuard:

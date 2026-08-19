@@ -19,6 +19,10 @@ PAYMENT_CALLBACK_MISMATCH_TOTAL = Counter(
 PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL = Counter(
     "superdl_payment_lost_callback_recovered_total", "查单 poller 收敛的丢回调订单数"
 )
+PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
+    "superdl_payment_closed_order_rescued_total",
+    "关单后有效成功回调自动入账数(非零说明本地关单早于渠道侧过期,需核对 TTL)",
+)
 HTTP_REQUEST_DURATION = Histogram(
     "superdl_http_request_duration_seconds",
     "HTTP 请求时延(route 为路由模板,避免高基数)",

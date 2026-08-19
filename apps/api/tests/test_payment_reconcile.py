@@ -62,6 +62,30 @@ class TestReconcilePoller:
         ).json()
         assert detail["status"] == "pending"
 
+    async def test_skipped_when_lock_held(self, client: AsyncClient, sm):
+        """advisory lock 已被占(另一副本在跑)→ 本轮直接让出。"""
+        from app.core.locks import LockKey, try_advisory_lock
+
+        async with sm() as session, try_advisory_lock(session, LockKey.PAYMENT_RECONCILE) as got:
+            assert got
+            assert await reconcile_pending_orders(sm) == 0
+
+    async def test_channel_unreachable_skipped(self, client: AsyncClient, sm):
+        """渠道不可达(如凭据未配)→ 跳过该单,下轮再试,不阻塞其他单。"""
+        headers = await user_headers(client, "13700000027")
+        order = await create_order(client, headers, "12.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(channel="wechat")
+            )
+            await session.commit()
+        await _backdate_order(sm, order["order_no"], 2)
+        assert await reconcile_pending_orders(sm) == 0
+        detail = (
+            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
+        ).json()
+        assert detail["status"] == "pending"
+
 
 class TestBackfill:
     async def test_backfill_closed_order_after_verify(self, client: AsyncClient, sm):
@@ -117,6 +141,51 @@ class TestBackfill:
         assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
+
+    async def test_verify_unknown_order_404(self, client: AsyncClient, sm):
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.post("/api/admin/v1/finance/orders/R-not-exists/verify", headers=ah)
+        assert resp.status_code == 404
+
+    async def test_verify_reports_unpaid_mismatch(self, client: AsyncClient, sm):
+        """渠道侧未支付:verify 如实报 pending,matches=False。"""
+        headers = await user_headers(client, "13700000028")
+        order = await create_order(client, headers, "9.00")
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.post(
+            f"/api/admin/v1/finance/orders/{order['order_no']}/verify", headers=ah
+        )
+        assert resp.status_code == 200
+        assert resp.json()["channel_status"] == "pending"
+        assert resp.json()["matches"] is False
+
+    async def test_backfill_unknown_order_404(self, client: AsyncClient, sm):
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.post(
+            "/api/admin/v1/finance/orders/R-not-exists/backfill",
+            json={"reason": "测试"},
+            headers=ah,
+        )
+        assert resp.status_code == 404
+
+    async def test_backfill_refused_on_failed_status(self, client: AsyncClient, sm):
+        """failed 状态不可补单(仅 pending/closed 可救)。"""
+        headers = await user_headers(client, "13700000029")
+        order = await create_order(client, headers, "11.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
+            )
+            await session.commit()
+        MockChannel.mark_paid(order["order_no"], "txn-failed-order", "11.00")
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.post(
+            f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
+            json={"reason": "测试"},
+            headers=ah,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "CONFLICT"
 
     async def test_backfill_refused_on_amount_mismatch(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000025")

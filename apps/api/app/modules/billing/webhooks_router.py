@@ -1,6 +1,7 @@
 """支付回调(无用户鉴权,验签即鉴权)。重放安全。"""
 
 from fastapi import APIRouter, Request
+from fastapi.responses import PlainTextResponse
 
 from app.core.config import get_settings
 from app.core.db import DbSession
@@ -30,8 +31,9 @@ async def wechatpay_webhook(request: Request, session: DbSession) -> dict[str, s
 
 
 @router.post("/webhooks/alipay")
-async def alipay_webhook(request: Request, session: DbSession) -> dict[str, str]:
+async def alipay_webhook(request: Request, session: DbSession) -> PlainTextResponse:
     channel = await get_channel("alipay", session)
     result = await channel.parse_callback(dict(request.headers), await request.body())
-    status = await payment_service.handle_callback(session, "alipay", result)
-    return {"status": status}
+    await payment_service.handle_callback(session, "alipay", result)
+    # 支付宝要求应答纯文本 success(非 JSON),否则渠道判通知失败并重试 8 次
+    return PlainTextResponse("success")
