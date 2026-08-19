@@ -52,6 +52,27 @@ class BillSummaryOut(BaseModel):
     items: list[BillSummaryItem]
 
 
+class PoliciesOut(BaseModel):
+    """计费/回收策略常量(公开只读;前端展示口径的唯一来源,禁止前端硬编码)。"""
+
+    disk_price_gb_month: MoneyOut
+    disk_min_gb: int
+    disk_max_gb: int
+    disk_grace_days: int
+    disk_frozen_days: int
+    freeze_grace_hours: int
+    low_balance_warn_hours_default: int
+
+
+class DailySummaryOut(BaseModel):
+    """当日消费汇总(本地日界由 tz_offset_minutes 折算)。"""
+
+    date: str
+    gpu_total: MoneyOut
+    disk_total: MoneyOut
+    items: list[BillSummaryItem]
+
+
 class RechargeCreate(BaseModel):
     amount: Decimal
     channel: str = "mock"  # wechat / alipay / mock(dev)

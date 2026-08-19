@@ -5,11 +5,13 @@
  */
 
 import {
+  billDailySummaryApiV1BillsDailySummaryGet,
   billSummaryApiV1BillsSummaryGet,
   getInstanceAccessApiV1InstancesUuidAccessGet,
   getInstanceApiV1InstancesUuidGet,
   getInstanceMetricsApiV1InstancesUuidMetricsGet,
   getLedgerApiV1WalletLedgerGet,
+  getPoliciesApiV1PoliciesGet,
   getRechargeApiV1WalletRechargesOrderNoGet,
   getWalletApiV1WalletGet,
   listDisksApiV1DisksGet,
@@ -80,5 +82,15 @@ export const useLedger = (params?: GetLedgerApiV1WalletLedgerGetParams) =>
   useApiQuery(["ledger", params], () => getLedgerApiV1WalletLedgerGet(params));
 export const useBillSummary = (month: string) =>
   useApiQuery(["bill-summary", month], () => billSummaryApiV1BillsSummaryGet({ month }));
+/** 策略常量(盘价/回收天数等):公开端点,常量性质给长缓存。 */
+export const usePolicies = () =>
+  useApiQuery(["policies"], () => getPoliciesApiV1PoliciesGet(), { retry: 1 });
+/** 当日消费(按用户本地日界):date 由调用方传入本地 YYYY-MM-DD。 */
+export const useDailySummary = (date: string, tzOffsetMinutes: number, opts?: QueryOpts) =>
+  useApiQuery(
+    ["bill-daily-summary", date, tzOffsetMinutes],
+    () => billDailySummaryApiV1BillsDailySummaryGet({ date, tz_offset_minutes: tzOffsetMinutes }),
+    opts,
+  );
 export const useRecharge = (orderNo: string, opts?: QueryOpts) =>
   useApiQuery(["recharge", orderNo], () => getRechargeApiV1WalletRechargesOrderNoGet(orderNo), opts);

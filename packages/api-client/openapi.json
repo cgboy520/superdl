@@ -357,6 +357,38 @@
         "title": "BillSummaryOut",
         "type": "object"
       },
+      "DailySummaryOut": {
+        "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算)。",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "disk_total": {
+            "title": "Disk Total",
+            "type": "string"
+          },
+          "gpu_total": {
+            "title": "Gpu Total",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BillSummaryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "gpu_total",
+          "disk_total",
+          "items"
+        ],
+        "title": "DailySummaryOut",
+        "type": "object"
+      },
       "DiskCreate": {
         "properties": {
           "name": {
@@ -1003,6 +1035,50 @@
           "items"
         ],
         "title": "Page[LedgerEntryOut]",
+        "type": "object"
+      },
+      "PoliciesOut": {
+        "description": "计费/回收策略常量(公开只读;前端展示口径的唯一来源,禁止前端硬编码)。",
+        "properties": {
+          "disk_frozen_days": {
+            "title": "Disk Frozen Days",
+            "type": "integer"
+          },
+          "disk_grace_days": {
+            "title": "Disk Grace Days",
+            "type": "integer"
+          },
+          "disk_max_gb": {
+            "title": "Disk Max Gb",
+            "type": "integer"
+          },
+          "disk_min_gb": {
+            "title": "Disk Min Gb",
+            "type": "integer"
+          },
+          "disk_price_gb_month": {
+            "title": "Disk Price Gb Month",
+            "type": "string"
+          },
+          "freeze_grace_hours": {
+            "title": "Freeze Grace Hours",
+            "type": "integer"
+          },
+          "low_balance_warn_hours_default": {
+            "title": "Low Balance Warn Hours Default",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "disk_price_gb_month",
+          "disk_min_gb",
+          "disk_max_gb",
+          "disk_grace_days",
+          "disk_frozen_days",
+          "freeze_grace_hours",
+          "low_balance_warn_hours_default"
+        ],
+        "title": "PoliciesOut",
         "type": "object"
       },
       "RechargeCreate": {
@@ -2943,6 +3019,66 @@
         ]
       }
     },
+    "/api/v1/bills/daily-summary": {
+      "get": {
+        "description": "当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源)。\n\n本地日界折算 UTC 窗口:BillHourly.hour_start 为 UTC 整点,offset 为整分时\n窗口边界不会切开小时账单。",
+        "operationId": "bill_daily_summary_api_v1_bills_daily_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 480,
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bill Daily Summary",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v1/bills/hourly": {
       "get": {
         "operationId": "list_hourly_bills_api_v1_bills_hourly_get",
@@ -4046,6 +4182,28 @@
         "summary": "Mark Read",
         "tags": [
           "notify"
+        ]
+      }
+    },
+    "/api/v1/policies": {
+      "get": {
+        "description": "计费/回收策略常量。公开(未登录市场页也要展示盘价),纯读配置无 DB。",
+        "operationId": "get_policies_api_v1_policies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoliciesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Policies",
+        "tags": [
+          "billing"
         ]
       }
     },

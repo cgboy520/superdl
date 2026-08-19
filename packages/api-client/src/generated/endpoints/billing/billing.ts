@@ -20,13 +20,16 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BillDailySummaryApiV1BillsDailySummaryGetParams,
   BillSummaryApiV1BillsSummaryGetParams,
   BillSummaryOut,
+  DailySummaryOut,
   GetLedgerApiV1WalletLedgerGetParams,
   HTTPValidationError,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   PageBillHourlyOut,
   PageLedgerEntryOut,
+  PoliciesOut,
   RechargeCreate,
   RechargeOut,
   WalletOut
@@ -53,6 +56,117 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getBillDailySummaryApiV1BillsDailySummaryGetUrl = (params: BillDailySummaryApiV1BillsDailySummaryGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/bills/daily-summary?${stringifiedParams}` : `/api/v1/bills/daily-summary`
+}
+
+/**
+ * 当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源)。
+ *
+ * 本地日界折算 UTC 窗口:BillHourly.hour_start 为 UTC 整点,offset 为整分时
+ * 窗口边界不会切开小时账单。
+ * @summary Bill Daily Summary
+ */
+export const billDailySummaryApiV1BillsDailySummaryGet = async (params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<DailySummaryOut> => {
+
+  return customFetch<DailySummaryOut>(getBillDailySummaryApiV1BillsDailySummaryGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getBillDailySummaryApiV1BillsDailySummaryGetQueryKey = (params?: BillDailySummaryApiV1BillsDailySummaryGetParams,) => {
+    return [
+    `/api/v1/bills/daily-summary`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getBillDailySummaryApiV1BillsDailySummaryGetQueryOptions = <TData = Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError = HTTPValidationError>(params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getBillDailySummaryApiV1BillsDailySummaryGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>> = ({ signal }) => billDailySummaryApiV1BillsDailySummaryGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type BillDailySummaryApiV1BillsDailySummaryGetQueryResult = NonNullable<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>>
+export type BillDailySummaryApiV1BillsDailySummaryGetQueryError = HTTPValidationError
+
+
+export function useBillDailySummaryApiV1BillsDailySummaryGet<TData = Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError = HTTPValidationError>(
+ params: BillDailySummaryApiV1BillsDailySummaryGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>,
+          TError,
+          Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useBillDailySummaryApiV1BillsDailySummaryGet<TData = Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError = HTTPValidationError>(
+ params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>,
+          TError,
+          Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useBillDailySummaryApiV1BillsDailySummaryGet<TData = Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError = HTTPValidationError>(
+ params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Bill Daily Summary
+ */
+
+export function useBillDailySummaryApiV1BillsDailySummaryGet<TData = Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError = HTTPValidationError>(
+ params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof billDailySummaryApiV1BillsDailySummaryGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getBillDailySummaryApiV1BillsDailySummaryGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
 
 export const getListHourlyBillsApiV1BillsHourlyGetUrl = (params?: ListHourlyBillsApiV1BillsHourlyGetParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -258,6 +372,107 @@ export function useBillSummaryApiV1BillsSummaryGet<TData = Awaited<ReturnType<ty
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getBillSummaryApiV1BillsSummaryGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getGetPoliciesApiV1PoliciesGetUrl = () => {
+
+
+
+
+  return `/api/v1/policies`
+}
+
+/**
+ * 计费/回收策略常量。公开(未登录市场页也要展示盘价),纯读配置无 DB。
+ * @summary Get Policies
+ */
+export const getPoliciesApiV1PoliciesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PoliciesOut> => {
+
+  return customFetch<PoliciesOut>(getGetPoliciesApiV1PoliciesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPoliciesApiV1PoliciesGetQueryKey = () => {
+    return [
+    `/api/v1/policies`
+    ] as const;
+    }
+
+
+export const getGetPoliciesApiV1PoliciesGetQueryOptions = <TData = Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPoliciesApiV1PoliciesGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>> = ({ signal }) => getPoliciesApiV1PoliciesGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetPoliciesApiV1PoliciesGetQueryResult = NonNullable<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>>
+export type GetPoliciesApiV1PoliciesGetQueryError = unknown
+
+
+export function useGetPoliciesApiV1PoliciesGet<TData = Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>,
+          TError,
+          Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPoliciesApiV1PoliciesGet<TData = Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>,
+          TError,
+          Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetPoliciesApiV1PoliciesGet<TData = Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Policies
+ */
+
+export function useGetPoliciesApiV1PoliciesGet<TData = Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getPoliciesApiV1PoliciesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetPoliciesApiV1PoliciesGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
