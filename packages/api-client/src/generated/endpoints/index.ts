@@ -2,6 +2,7 @@ export * from "./account/account";
 export * from "./admin/admin";
 export * from "./billing/billing";
 export * from "./catalog/catalog";
+export * from "./disks/disks";
 export * from "./instances/instances";
 export * from "./metering/metering";
 export * from "./webhooks/webhooks";

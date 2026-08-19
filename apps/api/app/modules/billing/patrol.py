@@ -21,13 +21,21 @@ logger = get_logger(__name__)
 
 
 async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
-    counts = {"warned": 0, "stopped": 0, "frozen": 0, "reclaimed": 0, "unfrozen": 0}
+    counts = {
+        "warned": 0,
+        "stopped": 0,
+        "frozen": 0,
+        "reclaimed": 0,
+        "unfrozen": 0,
+        "disks": 0,
+    }
     async with sm() as lock_session:
         async with try_advisory_lock(lock_session, LockKey.BALANCE_PATROL) as got:
             if not got:
                 return counts
             await _patrol_running(sm, counts)
             await _patrol_frozen_and_arrears_stopped(sm, counts)
+            await _patrol_disks(sm, counts)
     if any(counts.values()):
         logger.info("balance_patrol_done", **counts)
     return counts
@@ -130,3 +138,32 @@ async def _patrol_frozen_and_arrears_stopped(
                 await session.commit()
         except Exception:
             logger.exception("patrol_frozen_failed", instance_id=inst.id)
+
+
+async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
+    """数据盘欠费链路:欠费 → grace(7 天只读)→ frozen(30 天)→ 清除;回款即恢复。"""
+    from sqlalchemy import select as sa_select
+
+    from app.modules.orchestrator import service as orchestrator_service
+
+    async with sm() as session:
+        disks = await orchestrator_service.billable_disks(session)
+        # frozen 的盘也要巡检(可能恢复或到期清除)
+        user_ids = {d.user_id for d in disks}
+        from app.modules.billing.models import Wallet as _W
+
+        frozen_users = (
+            (await session.execute(sa_select(_W.user_id).where(_W.balance <= 0))).scalars().all()
+        )
+        user_ids |= set(frozen_users)
+    for user_id in user_ids:
+        try:
+            async with sm() as session:
+                balance = await wallet.get_balance(session, user_id)
+                changed = await orchestrator_service.disks_arrears_transition(
+                    session, user_id, balance <= 0
+                )
+                await session.commit()
+                counts["disks"] += changed
+        except Exception:
+            logger.exception("patrol_disks_failed", user_id=user_id)

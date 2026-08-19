@@ -62,3 +62,23 @@ class PortAllocation(Base):
     port: Mapped[int] = mapped_column(unique=True)
     instance_id: Mapped[int | None] = mapped_column(index=True)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class DataDisk(Base):
+    """数据盘:独立于实例生命周期(留存抓手)。JuiceFS 子路径,挂载点 /root/data。"""
+
+    __tablename__ = "data_disks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(32), unique=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    size_gb: Mapped[int]
+    juicefs_subpath: Mapped[str] = mapped_column(String(128), unique=True)
+    price_gb_month: Mapped[Decimal] = mapped_column(Numeric(12, 4))  # 创建时快照
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    # active / grace(欠费宽限,只读) / frozen / deleting / deleted
+    mounted_instance_id: Mapped[int | None] = mapped_column(index=True)
+    grace_started_at: Mapped[datetime | None]
+    frozen_started_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

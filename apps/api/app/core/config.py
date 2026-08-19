@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     sms_code_ttl_seconds: int = 300
     sms_send_interval_seconds: int = 60
 
+    # 数据盘(WP8)
+    disk_price_gb_month: str = "0.0350"  # 元/GB·月(Decimal 字符串,新盘快照)
+    disk_min_gb: int = 10
+    disk_max_gb: int = 4096
+    disk_grace_days: int = 7
+    disk_frozen_days: int = 30
+
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警

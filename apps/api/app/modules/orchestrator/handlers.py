@@ -111,3 +111,17 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
         # failed 终态:清资源 + 回收端口,不再迁移状态
         await free_port(session, instance.id)
     # releasing → released 由 reconciler 在确认 Pod 消失后完成(含擦盘事件与端口回收)
+
+
+@outbox_handler("disk.wipe")
+async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
+    """擦除 JuiceFS 子路径并置 deleted。实际文件删除由集群侧任务执行(人工清单 #5),
+    控制面负责状态推进与审计留痕。"""
+    from app.modules.orchestrator.models import DataDisk
+
+    disk = await session.get(DataDisk, task.payload["disk_id"])
+    if disk is None or disk.status != "deleting":
+        return
+    logger.info("disk_wiped", disk_id=disk.id, subpath=disk.juicefs_subpath)
+    disk.status = "deleted"
+    disk.mounted_instance_id = None

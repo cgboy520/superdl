@@ -192,6 +192,123 @@
         "title": "BillSummaryOut",
         "type": "object"
       },
+      "DiskCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "size_gb": {
+            "minimum": 1.0,
+            "title": "Size Gb",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size_gb"
+        ],
+        "title": "DiskCreate",
+        "type": "object"
+      },
+      "DiskExpand": {
+        "properties": {
+          "size_gb": {
+            "minimum": 1.0,
+            "title": "Size Gb",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size_gb"
+        ],
+        "title": "DiskExpand",
+        "type": "object"
+      },
+      "DiskOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "frozen_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frozen Started At"
+          },
+          "grace_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Started At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mounted_instance_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mounted Instance Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_gb_month": {
+            "title": "Price Gb Month",
+            "type": "string"
+          },
+          "size_gb": {
+            "title": "Size Gb",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "uuid",
+          "name",
+          "size_gb",
+          "status",
+          "price_gb_month",
+          "mounted_instance_id",
+          "grace_started_at",
+          "frozen_started_at",
+          "created_at"
+        ],
+        "title": "DiskOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2234,6 +2351,184 @@
         "summary": "Bill Summary",
         "tags": [
           "billing"
+        ]
+      }
+    },
+    "/api/v1/disks": {
+      "get": {
+        "operationId": "list_disks_api_v1_disks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiskOut"
+                  },
+                  "title": "Response List Disks Api V1 Disks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Disks",
+        "tags": [
+          "disks"
+        ]
+      },
+      "post": {
+        "operationId": "create_disk_api_v1_disks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Disk",
+        "tags": [
+          "disks"
+        ]
+      }
+    },
+    "/api/v1/disks/{uuid}": {
+      "delete": {
+        "description": "删除数据盘(不可恢复,前端多级确认)。挂载中禁止。",
+        "operationId": "delete_disk_api_v1_disks__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Disk",
+        "tags": [
+          "disks"
+        ]
+      },
+      "patch": {
+        "description": "扩容(只增不减)。",
+        "operationId": "expand_disk_api_v1_disks__uuid__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiskExpand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Expand Disk",
+        "tags": [
+          "disks"
         ]
       }
     },

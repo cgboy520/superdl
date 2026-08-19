@@ -131,3 +131,20 @@ class TestRecharge:
             "/api/v1/wallet/recharges", json={"amount": "20.00", "channel": "mock"}
         )
         assert resp.status_code == 401
+
+
+class TestMockChannelProdGuard:
+    async def test_mock_channel_refused_in_prod(self, client, sm, monkeypatch):
+        """安全:生产环境 mock 渠道无条件拒绝(即使 payment_mock 误开)。"""
+        from app.core.config import get_settings
+        from app.core.errors import AppError
+        from app.modules.billing.payment_channels import get_channel
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "prod")
+        monkeypatch.setattr(settings, "payment_mock", True)
+        import pytest as _pytest
+
+        with _pytest.raises(AppError) as exc:
+            get_channel("mock")
+        assert exc.value.code == "PAYMENT_CHANNEL_ERROR"

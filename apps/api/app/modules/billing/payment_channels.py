@@ -139,7 +139,8 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
 def get_channel(name: str) -> PaymentChannel:
     settings = get_settings()
     if name == "mock":
-        if not settings.payment_mock:
+        # 双保险:生产环境无条件拒绝 mock(无验签渠道 = 无鉴权入账口)
+        if settings.environment == "prod" or not settings.payment_mock:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "mock 渠道仅限开发环境")
         return MockChannel()
     if name == "wechat":

@@ -211,3 +211,70 @@ async def settle_previous_hour(
     if settled:
         logger.info("hourly_settlement_done", hour=window_start.isoformat(), settled=settled)
     return settled
+
+
+async def settle_daily_disks(
+    sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
+) -> int:
+    """数据盘日结:对上一自然日,UNIQUE(disk_id, day) 幂等入账。关机也扣(「日常费用」)。
+
+    插入与扣款同一事务(RETURNING 判定新行),重复执行零重复扣款。
+    """
+    from datetime import timedelta
+
+    from app.core.timeutil import day_floor
+    from app.modules.billing.models import BillDailyDisk
+    from app.modules.orchestrator import service as orchestrator_service
+
+    now = at or now_utc()
+    day = day_floor(now) - timedelta(days=1)  # 结算昨日
+    settled = 0
+    async with sm() as lock_session:
+        async with try_advisory_lock(lock_session, LockKey.DAILY_DISK_SETTLEMENT) as got:
+            if not got:
+                return 0
+            async with sm() as session:
+                disks = await orchestrator_service.billable_disks(session)
+                disk_rows = [
+                    (d.id, d.user_id, d.price_gb_month, d.size_gb, d.created_at) for d in disks
+                ]
+            for disk_id, user_id, price, size_gb, created_at in disk_rows:
+                if ensure_utc(created_at) >= day + timedelta(days=1):
+                    continue  # 当日结算窗口之后创建的盘不出账
+                try:
+                    async with sm() as session:
+                        amount = as_amount(as_price(price) * Decimal(size_gb) / Decimal(30))
+                        inserted = (
+                            await session.execute(
+                                pg_insert(BillDailyDisk)
+                                .values(
+                                    disk_id=disk_id,
+                                    user_id=user_id,
+                                    day=day,
+                                    size_gb=size_gb,
+                                    unit_price=price,
+                                    amount=amount,
+                                )
+                                .on_conflict_do_nothing(index_elements=["disk_id", "day"])
+                                .returning(BillDailyDisk.id)
+                            )
+                        ).scalar_one_or_none()
+                        if inserted is None:
+                            continue  # 已结算(幂等)
+                        if amount > 0:
+                            await wallet.debit(
+                                session,
+                                user_id,
+                                amount,
+                                type_="consume",
+                                ref_type="bill_daily_disk",
+                                ref_id=str(inserted),
+                                remark="数据盘日常费用",
+                            )
+                        await session.commit()
+                        settled += 1
+                except Exception:
+                    logger.exception("daily_disk_settlement_failed", disk_id=disk_id)
+    if settled:
+        logger.info("daily_disk_settlement_done", day=day.isoformat(), settled=settled)
+    return settled

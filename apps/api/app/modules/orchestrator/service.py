@@ -143,6 +143,14 @@ async def create_instance(
     if not selected:
         raise AppError(ErrorCode.SSH_KEY_INVALID, "请至少选择一个 SSH 公钥(实例仅支持密钥登录)")
 
+    disk_id_validated: int | None = None
+    if data_disk_id is not None:
+        from app.modules.orchestrator import disks as disks_service
+
+        # 先校验归属与状态;实例 id 生成后再占用
+        disk = await disks_service.get_disk_by_id_for_user(session, user_id, data_disk_id)
+        disk_id_validated = disk.id
+
     instance = Instance(
         uuid=uuid4().hex,
         user_id=user_id,
@@ -156,11 +164,15 @@ async def create_instance(
         k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
         jupyter_token=secrets.token_urlsafe(24),
         authorized_keys=selected,
-        data_disk_id=data_disk_id,
+        data_disk_id=disk_id_validated,
         idempotency_key=idempotency_key,
     )
     session.add(instance)
     await session.flush()
+    if disk_id_validated is not None:
+        from app.modules.orchestrator import disks as disks_service
+
+        await disks_service.attach_for_instance(session, user_id, disk_id_validated, instance.id)
     session.add(
         InstanceEvent(
             instance_id=instance.id,
@@ -584,3 +596,18 @@ async def list_instances_by_status(session: AsyncSession, status: str) -> list[I
     return list(
         (await session.execute(select(Instance).where(Instance.status == status))).scalars()
     )
+
+
+# ---------- 数据盘门面(billing/巡检经此访问,模块边界) ----------
+
+
+async def billable_disks(session: AsyncSession) -> list[Any]:
+    from app.modules.orchestrator import disks as disks_service
+
+    return await disks_service.list_billable_disks(session)
+
+
+async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
+    from app.modules.orchestrator import disks as disks_service
+
+    return await disks_service.arrears_transition_disks(session, user_id, in_arrears)

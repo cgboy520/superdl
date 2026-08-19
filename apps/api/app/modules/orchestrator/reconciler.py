@@ -19,6 +19,7 @@ from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.orchestrator import statemachine as sm_def
+from app.modules.orchestrator.disks import detach_for_instance
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.service import free_port, transition
 
@@ -89,6 +90,7 @@ async def _reconcile_instances(
                             metadata={"hint": "调度或拉取镜像超时,未产生任何费用"},
                         )
                         await free_port(session, instance.id)
+                        await detach_for_instance(session, instance.id)
                         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
                         counts["to_failed"] += 1
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)
@@ -104,6 +106,7 @@ async def _reconcile_instances(
                             metadata={"phase": st.phase if st.exists else "Missing"},
                         )
                         await free_port(session, instance.id)
+                        await detach_for_instance(session, instance.id)
                         if st.exists:
                             await orch.delete_instance(instance.k8s_namespace, instance.uuid)
                         counts["to_failed"] += 1
@@ -131,6 +134,7 @@ async def _reconcile_instances(
                             metadata={"disk_wipe": "blkdiscard"},
                         )
                         await free_port(session, instance.id)
+                        await detach_for_instance(session, instance.id)
                         counts["to_released"] += 1
 
                 await session.commit()
