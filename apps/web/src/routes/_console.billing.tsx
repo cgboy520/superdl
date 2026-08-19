@@ -1,12 +1,25 @@
-/** 费用中心:余额卡/充值 Modal(mock 渠道+轮询)/消费概览环图/账单与收支明细。 */
+/**
+ * 费用中心:余额卡(阈值带保存钮)/充值 Modal(渠道 Tab 预留+真二维码+有效期)/
+ * 消费概览(月+今日)环图/账单与收支明细(客户端 CSV 导出)。
+ */
 
-import { type LedgerEntryOut, type RechargeOut } from "@superdl/api-client";
 import {
+  listHourlyBillsApiV1BillsHourlyGet,
+  getLedgerApiV1WalletLedgerGet,
+  type BillHourlyOut,
+  type LedgerEntryOut,
+  type RechargeOut,
+} from "@superdl/api-client";
+import {
+  addAmounts,
   copy,
+  formatCountdown,
   formatDateTime,
   formatDuration,
   formatHourlyPrice,
   formatMoney,
+  localToday,
+  statusColors,
   tabularNums,
 } from "@superdl/ui";
 import { createFileRoute } from "@tanstack/react-router";
@@ -19,6 +32,7 @@ import {
   Empty,
   InputNumber,
   Modal,
+  QRCode,
   Radio,
   Row,
   Space,
@@ -26,6 +40,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import ReactECharts from "echarts-for-react";
@@ -34,12 +49,14 @@ import { useMemo, useState } from "react";
 import { useCreateRecharge, useMockPay, useSetWarnThreshold } from "../api/mutations";
 import {
   useBillSummary,
+  useDailySummary,
   useHourlyBills,
   useLedger,
   useMe,
   useRecharge,
   useWallet,
 } from "../api/queries";
+import { downloadCsv, toCsv } from "../lib/csv";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/billing")({
@@ -81,7 +98,24 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Modal title="充值" open={open} onCancel={reset} footer={null}>
       {!order ? (
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          <Tabs
+            activeKey="mock"
+            size="small"
+            items={[
+              {
+                key: "wechat",
+                label: <Tooltip title={copy.channelComingSoon}>微信支付</Tooltip>,
+                disabled: true,
+              },
+              {
+                key: "alipay",
+                label: <Tooltip title={copy.channelComingSoon}>支付宝</Tooltip>,
+                disabled: true,
+              },
+              { key: "mock", label: "模拟支付(开发环境)" },
+            ]}
+          />
           <Radio.Group
             optionType="button"
             value={[50, 100, 500].includes(amount) ? amount : undefined}
@@ -97,9 +131,6 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             onChange={(v) => setAmount(v ?? 0)}
             addonBefore="¥"
           />
-          <Typography.Text type="secondary">
-            渠道:mock(开发环境);微信/支付宝待商户资质接入后开放
-          </Typography.Text>
           <Button
             type="primary"
             block
@@ -126,23 +157,15 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
         </Space>
       ) : (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <Alert type="info" showIcon message={`订单 ${order.order_no},等待支付…`} />
-          <div
-            style={{
-              height: 160,
-              border: "1px dashed #d9d9d9",
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <Typography.Text type="secondary">二维码占位</Typography.Text>
-            <Typography.Text code copyable style={{ fontSize: 11 }}>
-              {order.qr_url}
-            </Typography.Text>
+          <Alert
+            type="info"
+            showIcon
+            message={`订单 ${order.order_no} · 有效期${formatCountdown(
+              polled?.expires_at ?? order.expires_at,
+            ).replace("剩 ", " ")},等待支付…`}
+          />
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <QRCode value={order.qr_url ?? order.order_no} size={168} />
           </div>
           <Button
             block
@@ -197,7 +220,9 @@ function LedgerTable() {
           {
             title: "金额",
             render: (_, r) => (
-              <span style={{ ...tabularNums, color: r.amount.startsWith("-") ? undefined : "#16A34A" }}>
+              <span
+                style={{ ...tabularNums, color: r.amount.startsWith("-") ? undefined : statusColors.green }}
+              >
                 {r.amount.startsWith("-") ? "" : "+"}
                 {formatMoney(r.amount)}
               </span>
@@ -229,12 +254,79 @@ function LedgerTable() {
 function BillingPage() {
   const { message } = App.useApp();
   const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [warnHours, setWarnHours] = useState<number>();
+  const [activeTab, setActiveTab] = useState<"bills" | "ledger">("bills");
+  const [exporting, setExporting] = useState(false);
   const { data: wallet } = useWallet({ refetchInterval: 10_000 });
   const { data: me } = useMe();
   const month = new Date().toISOString().slice(0, 7);
   const { data: summary } = useBillSummary(month);
+  const { date, tzOffsetMinutes } = localToday();
+  const { data: daily } = useDailySummary(date, tzOffsetMinutes);
   const { data: bills } = useHourlyBills({ limit: 50 });
   const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success("阈值已更新") });
+
+  const saveThreshold = (v: number | undefined) => {
+    if (v != null && v >= 1 && v <= 168) setThreshold.mutate(v);
+  };
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      if (activeTab === "bills") {
+        const rows: BillHourlyOut[] = [];
+        let cursor: string | undefined;
+        for (let i = 0; i < 200; i++) {
+          const page = await listHourlyBillsApiV1BillsHourlyGet({ month, limit: 100, cursor });
+          rows.push(...page.items);
+          if (!page.next_cursor) break;
+          cursor = page.next_cursor;
+        }
+        downloadCsv(
+          `superdl-hourly-${month}.csv`,
+          toCsv(
+            ["计费小时", "实例ID", "运行秒数", "单价(元/时)", "卡数", "金额(元)"],
+            rows.map((r) => [
+              formatDateTime(r.hour_start),
+              r.instance_id,
+              r.seconds_used,
+              r.unit_price,
+              r.gpu_count,
+              r.amount,
+            ]),
+          ),
+        );
+      } else {
+        const rows: LedgerEntryOut[] = [];
+        let cursor: string | undefined;
+        for (let i = 0; i < 200; i++) {
+          const page = await getLedgerApiV1WalletLedgerGet({ limit: 100, cursor });
+          rows.push(...page.items);
+          if (!page.next_cursor) break;
+          cursor = page.next_cursor;
+        }
+        downloadCsv(
+          "superdl-ledger.csv",
+          toCsv(
+            ["时间", "类型", "金额(元)", "余额快照(元)", "关联", "备注"],
+            rows.map((r) => [
+              formatDateTime(r.created_at),
+              LEDGER_TYPE[r.type]?.label ?? r.type,
+              r.amount,
+              r.balance_after,
+              r.ref_type ? `${r.ref_type}:${r.ref_id ?? ""}` : "",
+              r.remark ?? "",
+            ]),
+          ),
+        );
+      }
+      message.success("已导出 CSV");
+    } catch {
+      message.error("导出失败,请稍后重试");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const pieData = (summary?.items ?? []).map((i) => ({
     name: `实例 #${i.instance_id}`,
@@ -265,13 +357,19 @@ function BillingPage() {
                 size="small"
                 min={1}
                 max={168}
-                defaultValue={me?.low_balance_warn_hours}
-                onPressEnter={(e) =>
-                  setThreshold.mutate(Number((e.target as HTMLInputElement).value))
-                }
+                value={warnHours ?? me?.low_balance_warn_hours}
+                onChange={(v) => setWarnHours(v ?? undefined)}
+                onPressEnter={() => saveThreshold(warnHours ?? me?.low_balance_warn_hours)}
               />
+              <Button
+                size="small"
+                loading={setThreshold.isPending}
+                onClick={() => saveThreshold(warnHours ?? me?.low_balance_warn_hours)}
+              >
+                保存
+              </Button>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                预计可用时长低于该值时短信+站内信提醒(回车保存)
+                预计可用时长低于该值时短信+站内信提醒
               </Typography.Text>
             </Space>
           </Card>
@@ -288,6 +386,11 @@ function BillingPage() {
                 <Statistic
                   title="日常费用(数据盘)"
                   value={formatMoney(summary?.disk_total)}
+                  valueStyle={{ fontSize: 16, ...tabularNums }}
+                />
+                <Statistic
+                  title="今日消费"
+                  value={formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null)}
                   valueStyle={{ fontSize: 16, ...tabularNums }}
                 />
               </Col>
@@ -318,6 +421,13 @@ function BillingPage() {
 
       <Card>
         <Tabs
+          activeKey={activeTab}
+          onChange={(k) => setActiveTab(k as "bills" | "ledger")}
+          tabBarExtraContent={
+            <Button size="small" loading={exporting} onClick={() => void exportCsv()}>
+              导出 CSV
+            </Button>
+          }
           items={[
             {
               key: "bills",
