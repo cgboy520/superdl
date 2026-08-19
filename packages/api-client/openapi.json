@@ -83,6 +83,115 @@
         "title": "AdminToken",
         "type": "object"
       },
+      "BillHourlyOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "gpu_count": {
+            "title": "Gpu Count",
+            "type": "integer"
+          },
+          "hour_start": {
+            "format": "date-time",
+            "title": "Hour Start",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instance_id": {
+            "title": "Instance Id",
+            "type": "integer"
+          },
+          "seconds_used": {
+            "title": "Seconds Used",
+            "type": "integer"
+          },
+          "unit_price": {
+            "title": "Unit Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "instance_id",
+          "hour_start",
+          "seconds_used",
+          "unit_price",
+          "gpu_count",
+          "amount"
+        ],
+        "title": "BillHourlyOut",
+        "type": "object"
+      },
+      "BillSummaryItem": {
+        "properties": {
+          "instance_id": {
+            "title": "Instance Id",
+            "type": "integer"
+          },
+          "instance_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Name"
+          },
+          "total_amount": {
+            "title": "Total Amount",
+            "type": "string"
+          },
+          "total_seconds": {
+            "title": "Total Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instance_id",
+          "total_amount",
+          "total_seconds"
+        ],
+        "title": "BillSummaryItem",
+        "type": "object"
+      },
+      "BillSummaryOut": {
+        "properties": {
+          "disk_total": {
+            "title": "Disk Total",
+            "type": "string"
+          },
+          "gpu_total": {
+            "title": "Gpu Total",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BillSummaryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "gpu_total",
+          "disk_total",
+          "items"
+        ],
+        "title": "BillSummaryOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -397,6 +506,76 @@
         "title": "InstanceRename",
         "type": "object"
       },
+      "LedgerEntryOut": {
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "balance_after": {
+            "title": "Balance After",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Id"
+          },
+          "ref_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Type"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "amount",
+          "balance_after",
+          "ref_type",
+          "ref_id",
+          "remark",
+          "created_at"
+        ],
+        "title": "LedgerEntryOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "password": {
@@ -436,6 +615,60 @@
           "phone"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "Page_BillHourlyOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BillHourlyOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[BillHourlyOut]",
+        "type": "object"
+      },
+      "Page_LedgerEntryOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[LedgerEntryOut]",
         "type": "object"
       },
       "RefreshRequest": {
@@ -1191,6 +1424,24 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WalletOut": {
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "string"
+          },
+          "frozen_amount": {
+            "title": "Frozen Amount",
+            "type": "string"
+          }
+        },
+        "required": [
+          "balance",
+          "frozen_amount"
+        ],
+        "title": "WalletOut",
+        "type": "object"
+      },
       "WarnThresholdUpdate": {
         "properties": {
           "low_balance_warn_hours": {
@@ -1704,6 +1955,157 @@
         "summary": "Send Sms Code",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/api/v1/bills/hourly": {
+      "get": {
+        "operationId": "list_hourly_bills_api_v1_bills_hourly_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instance_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Instance Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_BillHourlyOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Hourly Bills",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/bills/summary": {
+      "get": {
+        "description": "月度汇总 + 按实例成本归因(消费概览环图数据源)。",
+        "operationId": "bill_summary_api_v1_bills_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bill Summary",
+        "tags": [
+          "billing"
         ]
       }
     },
@@ -2513,6 +2915,103 @@
         "summary": "Delete Ssh Key",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/api/v1/wallet": {
+      "get": {
+        "operationId": "get_wallet_api_v1_wallet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Wallet",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/wallet/ledger": {
+      "get": {
+        "operationId": "get_ledger_api_v1_wallet_ledger_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LedgerEntryOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ledger",
+        "tags": [
+          "billing"
         ]
       }
     }

@@ -21,6 +21,7 @@ from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.outbox import enqueue
+from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
@@ -77,6 +78,7 @@ async def transition(
         reason=reason,
         actor=actor,
         event_metadata=metadata,
+        created_at=now_utc(),  # 计费依赖精确时刻,显式生成而非 server_default
     )
     session.add(event)
     await session.flush()
@@ -167,6 +169,7 @@ async def create_instance(
             reason="create",
             actor="user",
             event_metadata={"sku_id": sku.id, "gpu_count": gpu_count},
+            created_at=now_utc(),
         )
     )
     enqueue(session, "instance.create", {"instance_id": instance.id})
@@ -440,3 +443,144 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
     enqueue(session, "instance.stop", {"instance_id": instance.id})
     await session.commit()
     return instance
+
+
+# ---------- billing 只读接口(事件是计费主依据,经 service 层暴露) ----------
+
+
+async def billing_events_before(
+    session: AsyncSession, instance_id: int, before: Any
+) -> list[tuple[Any, str | None, str]]:
+    """实例截至某时刻的事件 (created_at, from_status, to_status),按发生序。"""
+    return list(
+        (
+            await session.execute(
+                select(
+                    InstanceEvent.created_at,
+                    InstanceEvent.from_status,
+                    InstanceEvent.to_status,
+                )
+                .where(
+                    InstanceEvent.instance_id == instance_id,
+                    InstanceEvent.created_at < before,
+                )
+                .order_by(InstanceEvent.id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+
+
+async def billing_candidates(
+    session: AsyncSession, window_start: Any, window_end: Any
+) -> list[tuple[int, int, Any, int]]:
+    """小时结算候选:(instance_id, user_id, price_hourly, gpu_count)。
+
+    候选 = 截至窗口末仍在 running 的实例 ∪ 窗口内有事件的实例。
+    """
+    latest = (
+        select(InstanceEvent.instance_id, InstanceEvent.to_status)
+        .where(InstanceEvent.created_at < window_end)
+        .distinct(InstanceEvent.instance_id)
+        .order_by(InstanceEvent.instance_id, InstanceEvent.id.desc())
+    ).subquery()
+    a_ids = set(
+        (
+            await session.execute(
+                select(latest.c.instance_id).where(latest.c.to_status == sm_def.RUNNING)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    b_ids = set(
+        (
+            await session.execute(
+                select(InstanceEvent.instance_id)
+                .where(
+                    InstanceEvent.created_at >= window_start,
+                    InstanceEvent.created_at < window_end,
+                )
+                .distinct()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    candidates = a_ids | b_ids
+    if not candidates:
+        return []
+    return list(
+        (
+            await session.execute(
+                select(
+                    Instance.id, Instance.user_id, Instance.price_hourly, Instance.gpu_count
+                ).where(Instance.id.in_(candidates))
+            )
+        )
+        .tuples()
+        .all()
+    )
+
+
+async def list_running_instances_by_user(session: AsyncSession) -> dict[int, list[Instance]]:
+    """欠费巡检用:user_id → running 实例列表。"""
+    rows = (
+        (await session.execute(select(Instance).where(Instance.status == sm_def.RUNNING)))
+        .scalars()
+        .all()
+    )
+    by_user: dict[int, list[Instance]] = {}
+    for inst in rows:
+        by_user.setdefault(inst.user_id, []).append(inst)
+    return by_user
+
+
+async def arrears_stop(session: AsyncSession, instance: Instance) -> None:
+    """欠费停机(巡检调用,actor=system)。同事务落事件+outbox。"""
+    await transition(
+        session,
+        instance,
+        sm_def.STOPPING,
+        reason="arrears_stop",
+        actor="system",
+        metadata={"hint": "余额耗尽自动关机"},
+    )
+    enqueue(session, "instance.stop", {"instance_id": instance.id})
+
+
+async def freeze_instance(session: AsyncSession, instance: Instance, deadline: Any) -> None:
+    await transition(
+        session,
+        instance,
+        sm_def.FROZEN,
+        reason="arrears_freeze",
+        actor="system",
+        metadata={"deadline": deadline.isoformat()},
+    )
+    instance.frozen_deadline = deadline
+
+
+async def unfreeze_instance(session: AsyncSession, instance: Instance) -> None:
+    await transition(session, instance, sm_def.STOPPED, reason="recharge_unfreeze", actor="system")
+    instance.frozen_deadline = None
+
+
+async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
+    await transition(
+        session,
+        instance,
+        sm_def.RELEASING,
+        reason="arrears_reclaim",
+        actor="system",
+        metadata={"hint": "冻结 72 小时到期回收(数据盘不受影响)"},
+    )
+    instance.frozen_deadline = None
+    enqueue(session, "instance.release", {"instance_id": instance.id})
+
+
+async def list_instances_by_status(session: AsyncSession, status: str) -> list[Instance]:
+    return list(
+        (await session.execute(select(Instance).where(Instance.status == status))).scalars()
+    )

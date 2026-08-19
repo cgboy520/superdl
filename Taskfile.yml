@@ -46,7 +46,8 @@ tasks:
       - uv run ruff check .
       - uv run pyright
       - uv run lint-imports
-      - uv run pytest
+      - uv run pytest --cov=app --cov-report=json
+      - uv run python scripts/check_billing_coverage.py
 
   check-fe:
     desc: 前端全部质量闸门

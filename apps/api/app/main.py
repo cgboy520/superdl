@@ -59,21 +59,25 @@ def _register_module_routers(app: FastAPI) -> None:
     """各业务模块的路由注册。随 WP 推进逐个接入。"""
     from app.modules.account.router import router as account_router
     from app.modules.adminapi.router import router as admin_router
+    from app.modules.billing.router import router as billing_router
     from app.modules.catalog.router import router as catalog_router
     from app.modules.orchestrator.router import router as orchestrator_router
 
     app.include_router(account_router, prefix="/api/v1")
     app.include_router(catalog_router, prefix="/api/v1")
     app.include_router(orchestrator_router, prefix="/api/v1")
+    app.include_router(billing_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
 
 
 def wire_modules() -> None:
-    """跨模块运行时接线:outbox handlers 注册 + 库存 provider。api 与 worker 双入口共用。"""
+    """跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听。双入口共用。"""
+    from app.modules.billing.edge_listener import register_billing_edge_listener
     from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
     from app.modules.orchestrator.service import register_inventory_provider
 
     register_inventory_provider()
+    register_billing_edge_listener()
 
 
 app = create_app()
