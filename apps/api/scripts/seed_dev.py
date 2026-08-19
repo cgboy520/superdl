@@ -19,28 +19,67 @@ from app.modules.adminapi.service import ensure_bootstrap_admin
 from app.modules.catalog.models import PlatformImage, Sku
 
 SKUS = [
-    dict(
-        name="RTX 4090 · 独享整卡", gpu_model="RTX4090", tier="dedicated",
-        gpu_cores_pct=100, vram_gb=24, pool_label="kata", vcpu=16, mem_gb=64,
-        price_hourly=Decimal("3.9900"), max_gpus_per_instance=8, cuda_max="12.8", status="on",
-    ),
-    dict(
-        name="H100 · MIG 1g.10gb", gpu_model="H100", tier="mig", mig_profile="1g.10gb",
-        gpu_cores_pct=100, vram_gb=10, pool_label="mig", vcpu=8, mem_gb=32,
-        price_hourly=Decimal("2.5000"), max_gpus_per_instance=1, cuda_max="12.8", status="on",
-    ),
-    dict(
-        name="RTX 4090 · 共享标准", gpu_model="RTX4090", tier="shared_std",
-        gpu_cores_pct=50, vram_gb=8, oversell_cores=Decimal("1.50"),
-        oversell_vram=Decimal("1.10"), pool_label="hami", vcpu=8, mem_gb=32,
-        price_hourly=Decimal("1.6800"), max_gpus_per_instance=1, cuda_max="12.8", status="on",
-    ),
-    dict(
-        name="RTX 4090 · 共享经济", gpu_model="RTX4090", tier="shared_eco",
-        gpu_cores_pct=30, vram_gb=7, oversell_cores=Decimal("2.00"),
-        oversell_vram=Decimal("1.20"), pool_label="hami", vcpu=6, mem_gb=24,
-        price_hourly=Decimal("0.9900"), max_gpus_per_instance=1, cuda_max="12.8", status="on",
-    ),
+    {
+        "name": "RTX 4090 · 独享整卡",
+        "gpu_model": "RTX4090",
+        "tier": "dedicated",
+        "gpu_cores_pct": 100,
+        "vram_gb": 24,
+        "pool_label": "kata",
+        "vcpu": 16,
+        "mem_gb": 64,
+        "price_hourly": Decimal("3.9900"),
+        "max_gpus_per_instance": 8,
+        "cuda_max": "12.8",
+        "status": "on",
+    },
+    {
+        "name": "H100 · MIG 1g.10gb",
+        "gpu_model": "H100",
+        "tier": "mig",
+        "mig_profile": "1g.10gb",
+        "gpu_cores_pct": 100,
+        "vram_gb": 10,
+        "pool_label": "mig",
+        "vcpu": 8,
+        "mem_gb": 32,
+        "price_hourly": Decimal("2.5000"),
+        "max_gpus_per_instance": 1,
+        "cuda_max": "12.8",
+        "status": "on",
+    },
+    {
+        "name": "RTX 4090 · 共享标准",
+        "gpu_model": "RTX4090",
+        "tier": "shared_std",
+        "gpu_cores_pct": 50,
+        "vram_gb": 8,
+        "oversell_cores": Decimal("1.50"),
+        "oversell_vram": Decimal("1.10"),
+        "pool_label": "hami",
+        "vcpu": 8,
+        "mem_gb": 32,
+        "price_hourly": Decimal("1.6800"),
+        "max_gpus_per_instance": 1,
+        "cuda_max": "12.8",
+        "status": "on",
+    },
+    {
+        "name": "RTX 4090 · 共享经济",
+        "gpu_model": "RTX4090",
+        "tier": "shared_eco",
+        "gpu_cores_pct": 30,
+        "vram_gb": 7,
+        "oversell_cores": Decimal("2.00"),
+        "oversell_vram": Decimal("1.20"),
+        "pool_label": "hami",
+        "vcpu": 6,
+        "mem_gb": 24,
+        "price_hourly": Decimal("0.9900"),
+        "max_gpus_per_instance": 1,
+        "cuda_max": "12.8",
+        "status": "on",
+    },
 ]
 
 IMAGES = [
@@ -63,15 +102,16 @@ async def main() -> None:
                 session.add(Sku(**data))
         for fw, ver, py, cuda, ref in IMAGES:
             exists = (
-                await session.execute(
-                    select(PlatformImage).where(PlatformImage.image_ref == ref)
-                )
+                await session.execute(select(PlatformImage).where(PlatformImage.image_ref == ref))
             ).scalar_one_or_none()
             if exists is None:
                 session.add(
                     PlatformImage(
-                        framework=fw, framework_version=ver, python_version=py,
-                        cuda_version=cuda, image_ref=ref,
+                        framework=fw,
+                        framework_version=ver,
+                        python_version=py,
+                        cuda_version=cuda,
+                        image_ref=ref,
                     )
                 )
         await session.commit()
