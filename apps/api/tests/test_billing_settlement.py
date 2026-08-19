@@ -325,3 +325,66 @@ class TestHourlySettlementJob:
             running += e.amount
             assert e.balance_after == running  # 每条 balance_after 快照自洽
         assert w.balance == running
+
+
+class TestTinyDurationTail:
+    async def test_seconds_rounding_to_zero_amount_no_crash(self, sm):
+        """运行数秒即关机:金额舍入 0.00 → 留账单行不扣款,后续补差从 0 起算。"""
+        inst_id = await seed_instance(
+            sm, events=[ev(0, "creating", "running"), ev(5 / 60, "running", "stopping")]
+        )
+        async with sm() as session:
+            charged = await settle_instance_window(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("1.6800"),
+                gpu_count=1,
+                window_start=H,
+                window_end=H + timedelta(seconds=5),
+                source="tail",
+            )
+            await session.commit()
+        assert charged == Decimal("0.00")
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+            entries = (await session.execute(select(BalanceLedger))).scalars().all()
+        assert bill.amount == Decimal("0.00")
+        assert not [e for e in entries if e.type == "consume"]
+
+        # 同小时再跑 30 分钟 → 补差从 0 起,全额入账
+        async with sm() as session:
+            session.add_all(
+                [
+                    InstanceEvent(
+                        instance_id=inst_id,
+                        from_status="stopped",
+                        to_status="running",
+                        reason="seed",
+                        actor="system",
+                        created_at=H + timedelta(minutes=1),
+                    ),
+                    InstanceEvent(
+                        instance_id=inst_id,
+                        from_status="running",
+                        to_status="stopping",
+                        reason="seed",
+                        actor="system",
+                        created_at=H + timedelta(minutes=31),
+                    ),
+                ]
+            )
+            await session.commit()
+        async with sm() as session:
+            second = await settle_instance_window(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("1.6800"),
+                gpu_count=1,
+                window_start=H,
+                window_end=H_END,
+                source="hourly",
+            )
+            await session.commit()
+        assert second == Decimal("0.84")

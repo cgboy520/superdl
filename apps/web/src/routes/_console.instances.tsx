@@ -83,7 +83,7 @@ function NameCell({ instance }: { instance: InstanceOut }) {
     );
   }
   return (
-    <Space direction="vertical" size={0}>
+    <Space orientation="vertical" size={0}>
       <Typography.Text
         strong
         style={{ cursor: "pointer" }}
@@ -104,7 +104,7 @@ function InstancesPage() {
   const { data: instances, isLoading } = useInstances({ refetchInterval: 5_000 });
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           容器实例
@@ -133,7 +133,7 @@ function InstancesPage() {
             render: (_, r) => (
               <Popover
                 content={
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     <span>{r.spec["sku_name"] as string}</span>
                     <span>
                       {r.spec["vcpu"] as number} vCPU / {r.spec["mem_gb"] as number}G 内存 /

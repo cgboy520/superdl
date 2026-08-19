@@ -32,7 +32,7 @@ import { useDisks, useImages, useSkus, useSshKeys, useWallet } from "../api/quer
 import { TierTag } from "../components/common";
 import { requireAuth } from "../lib/guard";
 
-export const Route = createFileRoute("/_console/market/create/$skuId")({
+export const Route = createFileRoute("/_console/market_/create/$skuId")({
   beforeLoad: requireAuth,
   component: CreatePage,
 });
@@ -137,12 +137,12 @@ function CreatePage() {
   return (
     <Row gutter={24}>
       <Col span={16}>
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Card
             title="已选规格"
             extra={<Link to="/market">更换规格</Link>}
           >
-            <Space direction="vertical" size={8}>
+            <Space orientation="vertical" size={8}>
               <Space>
                 <Typography.Text strong>{sku.name}</Typography.Text>
                 <TierTag tier={sku.tier} />
@@ -172,7 +172,7 @@ function CreatePage() {
                   key: "platform",
                   label: "平台镜像",
                   children: (
-                    <Space direction="vertical" style={{ width: "100%" }}>
+                    <Space orientation="vertical" style={{ width: "100%" }}>
                       <Cascader
                         style={{ width: "100%" }}
                         options={cascade}
@@ -190,7 +190,7 @@ function CreatePage() {
                   key: "custom",
                   label: "自定义镜像",
                   children: (
-                    <Space direction="vertical" style={{ width: "100%" }}>
+                    <Space orientation="vertical" style={{ width: "100%" }}>
                       <Input
                         placeholder="registry.example.com/your/image:tag"
                         value={customImage}
@@ -207,7 +207,7 @@ function CreatePage() {
           </Card>
 
           <Card title="数据盘(可选)">
-            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               <Radio.Group
                 value={diskMode}
                 onChange={(e) => setDiskMode(e.target.value as typeof diskMode)}
@@ -298,7 +298,7 @@ function CreatePage() {
       <Col span={8}>
         <div style={{ position: "sticky", top: 24 }}>
           <Card title="费用明细">
-            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
               <Typography.Text type="secondary">开机费用(按量,关机即停)</Typography.Text>
               <Row justify="space-between">
                 <span>

@@ -42,13 +42,13 @@ function SettingsPage() {
   const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success("已保存") });
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         账户设置
       </Typography.Title>
 
       <Card title="SSH 公钥" extra={<Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>}>
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Table
             rowKey="id"
             size="small"
@@ -127,7 +127,7 @@ function SettingsPage() {
       </Card>
 
       <Card title="账号">
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <Typography.Text>手机号:{me?.phone}</Typography.Text>
           <Button
             danger

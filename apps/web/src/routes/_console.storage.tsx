@@ -134,7 +134,7 @@ function StoragePage() {
     id == null ? "—" : (instances ?? []).find((i) => i.id === id)?.name ?? `#${id}`;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           存储
@@ -259,7 +259,7 @@ function StoragePage() {
         }
       >
         {expandTarget && (
-          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
             <Alert
               type="info"
               showIcon

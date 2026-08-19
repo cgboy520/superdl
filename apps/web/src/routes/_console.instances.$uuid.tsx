@@ -69,7 +69,7 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   }
   const series = (data?.series ?? {}) as Record<string, [number, number][]>;
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Radio.Group
         value={range}
         onChange={(e) => setRange(e.target.value as typeof range)}
@@ -113,9 +113,9 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
     return <Alert type="info" showIcon message="实例运行中才能获取接入信息" />;
   }
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card size="small" title="SSH">
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <Typography.Text code>{access?.ssh_command}</Typography.Text>
           {access && <CopyButton text={access.ssh_command} label="复制指令" />}
           <Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>
@@ -154,14 +154,14 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
   void instanceId;
   const { data: events } = useInstanceEvents(uuid);
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="info" showIcon message={copy.eventsAreBilling} />
       <Timeline
         items={(events ?? []).map((e) => ({
           color:
             e.to_status === "running" ? "green" : e.to_status === "failed" ? "red" : "gray",
           children: (
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Typography.Text strong>
                 {e.from_status ?? "—"} → {e.to_status}
                 {(e.from_status === "running" || e.to_status === "running") && (
@@ -219,10 +219,10 @@ function InstanceDetail() {
   const canRelease = ["stopped", "frozen", "failed"].includes(instance.status);
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card>
         <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
-          <Space direction="vertical" size={4}>
+          <Space orientation="vertical" size={4}>
             <Space>
               <Typography.Title level={4} style={{ margin: 0 }}>
                 {instance.name}
@@ -280,7 +280,7 @@ function InstanceDetail() {
       />
 
       <Card title="危险区" style={{ borderColor: "#ffccc7" }}>
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <Typography.Text type="secondary">
             释放实例将清除实例盘全部数据(数据盘不受影响),不可恢复。
           </Typography.Text>

@@ -38,7 +38,7 @@ function MarketPage() {
   );
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         算力市场
       </Typography.Title>
@@ -90,7 +90,7 @@ function MarketPage() {
                   }
                   loading={isLoading}
                 >
-                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                  <Space orientation="vertical" size={4} style={{ width: "100%" }}>
                     <Typography.Text strong>
                       {shared
                         ? `${sku.gpu_cores_pct}% 算力(均值) · ${sku.vram_gb}G 显存`

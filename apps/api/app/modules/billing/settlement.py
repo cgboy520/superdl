@@ -133,6 +133,8 @@ async def upsert_hour_bill(
         row.detail = {**(row.detail or {}), "source": source, "charged": True}
         charged = row.amount
 
+    if charged <= 0:
+        return Decimal("0.00")  # 秒数过少舍入为 0:留账单行(0.00),不产生扣款
     await wallet.debit(
         session,
         user_id,

@@ -18,7 +18,7 @@ import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
 import { Route as ConsoleSettingsRouteImport } from './routes/_console.settings'
 import { Route as ConsoleStorageRouteImport } from './routes/_console.storage'
 import { Route as ConsoleInstancesUuidRouteImport } from './routes/_console.instances.$uuid'
-import { Route as ConsoleMarketCreateSkuIdRouteImport } from './routes/_console.market.create.$skuId'
+import { Route as ConsoleMarketCreateSkuIdRouteImport } from './routes/_console.market_.create.$skuId'
 
 const ConsoleRoute = ConsoleRouteImport.update({
   id: '/_console',
@@ -66,9 +66,9 @@ const ConsoleInstancesUuidRoute = ConsoleInstancesUuidRouteImport.update({
 } as any)
 const ConsoleMarketCreateSkuIdRoute =
   ConsoleMarketCreateSkuIdRouteImport.update({
-    id: '/create/$skuId',
-    path: '/create/$skuId',
-    getParentRoute: () => ConsoleMarketRoute,
+    id: '/market_/create/$skuId',
+    path: '/market/create/$skuId',
+    getParentRoute: () => ConsoleRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -76,7 +76,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/billing': typeof ConsoleBillingRoute
   '/instances': typeof ConsoleInstancesRouteWithChildren
-  '/market': typeof ConsoleMarketRouteWithChildren
+  '/market': typeof ConsoleMarketRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
@@ -86,7 +86,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/billing': typeof ConsoleBillingRoute
   '/instances': typeof ConsoleInstancesRouteWithChildren
-  '/market': typeof ConsoleMarketRouteWithChildren
+  '/market': typeof ConsoleMarketRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
   '/': typeof ConsoleIndexRoute
@@ -99,12 +99,12 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_console/billing': typeof ConsoleBillingRoute
   '/_console/instances': typeof ConsoleInstancesRouteWithChildren
-  '/_console/market': typeof ConsoleMarketRouteWithChildren
+  '/_console/market': typeof ConsoleMarketRoute
   '/_console/settings': typeof ConsoleSettingsRoute
   '/_console/storage': typeof ConsoleStorageRoute
   '/_console/': typeof ConsoleIndexRoute
   '/_console/instances/$uuid': typeof ConsoleInstancesUuidRoute
-  '/_console/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
+  '/_console/market_/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -140,7 +140,7 @@ export interface FileRouteTypes {
     | '/_console/storage'
     | '/_console/'
     | '/_console/instances/$uuid'
-    | '/_console/market/create/$skuId'
+    | '/_console/market_/create/$skuId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -213,12 +213,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleInstancesUuidRouteImport
       parentRoute: typeof ConsoleInstancesRoute
     }
-    '/_console/market/create/$skuId': {
-      id: '/_console/market/create/$skuId'
-      path: '/create/$skuId'
+    '/_console/market_/create/$skuId': {
+      id: '/_console/market_/create/$skuId'
+      path: '/market/create/$skuId'
       fullPath: '/market/create/$skuId'
       preLoaderRoute: typeof ConsoleMarketCreateSkuIdRouteImport
-      parentRoute: typeof ConsoleMarketRoute
+      parentRoute: typeof ConsoleRoute
     }
   }
 }
@@ -234,34 +234,24 @@ const ConsoleInstancesRouteChildren: ConsoleInstancesRouteChildren = {
 const ConsoleInstancesRouteWithChildren =
   ConsoleInstancesRoute._addFileChildren(ConsoleInstancesRouteChildren)
 
-interface ConsoleMarketRouteChildren {
-  ConsoleMarketCreateSkuIdRoute: typeof ConsoleMarketCreateSkuIdRoute
-}
-
-const ConsoleMarketRouteChildren: ConsoleMarketRouteChildren = {
-  ConsoleMarketCreateSkuIdRoute: ConsoleMarketCreateSkuIdRoute,
-}
-
-const ConsoleMarketRouteWithChildren = ConsoleMarketRoute._addFileChildren(
-  ConsoleMarketRouteChildren,
-)
-
 interface ConsoleRouteChildren {
   ConsoleBillingRoute: typeof ConsoleBillingRoute
   ConsoleInstancesRoute: typeof ConsoleInstancesRouteWithChildren
-  ConsoleMarketRoute: typeof ConsoleMarketRouteWithChildren
+  ConsoleMarketRoute: typeof ConsoleMarketRoute
   ConsoleSettingsRoute: typeof ConsoleSettingsRoute
   ConsoleStorageRoute: typeof ConsoleStorageRoute
   ConsoleIndexRoute: typeof ConsoleIndexRoute
+  ConsoleMarketCreateSkuIdRoute: typeof ConsoleMarketCreateSkuIdRoute
 }
 
 const ConsoleRouteChildren: ConsoleRouteChildren = {
   ConsoleBillingRoute: ConsoleBillingRoute,
   ConsoleInstancesRoute: ConsoleInstancesRouteWithChildren,
-  ConsoleMarketRoute: ConsoleMarketRouteWithChildren,
+  ConsoleMarketRoute: ConsoleMarketRoute,
   ConsoleSettingsRoute: ConsoleSettingsRoute,
   ConsoleStorageRoute: ConsoleStorageRoute,
   ConsoleIndexRoute: ConsoleIndexRoute,
+  ConsoleMarketCreateSkuIdRoute: ConsoleMarketCreateSkuIdRoute,
 }
 
 const ConsoleRouteWithChildren =

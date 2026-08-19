@@ -21,7 +21,7 @@ function Overview() {
   const hasWarn = (unread ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         概览
       </Typography.Title>

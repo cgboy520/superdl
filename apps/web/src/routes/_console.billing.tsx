@@ -81,7 +81,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Modal title="充值" open={open} onCancel={reset} footer={null}>
       {!order ? (
-        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Radio.Group
             optionType="button"
             value={[50, 100, 500].includes(amount) ? amount : undefined}
@@ -115,7 +115,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           </Button>
         </Space>
       ) : paid ? (
-        <Space direction="vertical" align="center" style={{ width: "100%" }}>
+        <Space orientation="vertical" align="center" style={{ width: "100%" }}>
           <Typography.Title level={4} type="success">
             支付成功
           </Typography.Title>
@@ -125,7 +125,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           </Button>
         </Space>
       ) : (
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Alert type="info" showIcon message={`订单 ${order.order_no},等待支付…`} />
           <div
             style={{
@@ -179,7 +179,7 @@ function LedgerTable() {
   }, [rows, data]);
 
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
+    <Space orientation="vertical" style={{ width: "100%" }}>
       <Table
         rowKey="id"
         size="small"
@@ -242,7 +242,7 @@ function BillingPage() {
   }));
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         费用中心
       </Typography.Title>
