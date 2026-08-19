@@ -16,6 +16,7 @@ from app.modules.billing.wallet import (
     get_or_create_wallet,
     lock_wallet,
     require_balance_at_least,
+    revenue_summary,
 )
 
 __all__ = [
@@ -31,5 +32,6 @@ __all__ = [
     "list_payment_anomalies",
     "lock_wallet",
     "require_balance_at_least",
+    "revenue_summary",
     "verify_order",
 ]

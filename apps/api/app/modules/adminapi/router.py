@@ -350,6 +350,20 @@ async def admin_list_orders(session: DbSession, status: str | None = None) -> li
     ]
 
 
+# ---------- 收入报表(总览 KPI) ----------
+
+
+@router.get("/reports/revenue", dependencies=[require_roles("ops", "finance", "readonly")])
+async def revenue_report(session: DbSession, tz_offset_minutes: int = 0) -> dict:
+    """今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。"""
+    from app.modules.account import service as account_service
+    from app.modules.billing import service as billing_service
+
+    revenue = await billing_service.revenue_summary(session, tz_offset_minutes=tz_offset_minutes)
+    signups = await account_service.signup_counts(session, tz_offset_minutes=tz_offset_minutes)
+    return {**revenue, **signups}
+
+
 # ---------- 系统设置:策略参数在线调整(角色:ops) ----------
 
 

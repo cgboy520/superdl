@@ -268,6 +268,27 @@ async def list_active_user_ids(session: AsyncSession) -> list[int]:
     return list((await session.execute(select(User.id).where(User.status == "active"))).scalars())
 
 
+async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict:
+    """今日/昨日新注册数(本地日界)。"""
+    from sqlalchemy import func
+
+    offset = timedelta(minutes=tz_offset_minutes)
+    local_now = now_utc() + offset
+    day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - offset
+    prev_day_start = day_start - timedelta(days=1)
+
+    async def _count(start, end=None) -> int:
+        stmt = select(func.count()).select_from(User).where(User.created_at >= start)
+        if end is not None:
+            stmt = stmt.where(User.created_at < end)
+        return (await session.execute(stmt)).scalar_one()
+
+    return {
+        "today_signups": await _count(day_start),
+        "yesterday_signups": await _count(prev_day_start, day_start),
+    }
+
+
 async def admin_list_users(session: AsyncSession) -> list[User]:
     return list((await session.execute(select(User).order_by(User.id.desc()).limit(500))).scalars())
 

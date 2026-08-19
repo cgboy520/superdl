@@ -3132,6 +3132,57 @@
         ]
       }
     },
+    "/api/admin/v1/reports/revenue": {
+      "get": {
+        "description": "今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。",
+        "operationId": "revenue_report_api_admin_v1_reports_revenue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revenue Report Api Admin V1 Reports Revenue Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revenue Report",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/skus": {
       "get": {
         "operationId": "admin_list_skus_api_admin_v1_skus_get",

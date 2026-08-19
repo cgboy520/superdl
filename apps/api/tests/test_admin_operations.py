@@ -59,6 +59,33 @@ class TestOutboxDead:
         assert resp.status_code == 403
 
 
+class TestRevenueReport:
+    async def test_today_revenue_and_signups(self, client: AsyncClient, sm):
+        from decimal import Decimal
+
+        from app.modules.billing.models import BalanceLedger
+
+        data = await register(client, "13600000043")
+        async with sm() as session:
+            session.add(
+                BalanceLedger(
+                    user_id=data["user"]["id"],
+                    type="consume",
+                    amount=Decimal("-12.50"),
+                    balance_after=Decimal("87.50"),
+                )
+            )
+            await session.commit()
+
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.get("/api/admin/v1/reports/revenue", headers=ah)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["today_revenue"] == "12.50"
+        assert body["month_revenue"] == "12.50"
+        assert body["today_signups"] >= 1
+
+
 class TestAnnouncement:
     async def test_publish_reaches_all_active_users(self, client: AsyncClient, sm):
         u1 = await register(client, "13600000041")

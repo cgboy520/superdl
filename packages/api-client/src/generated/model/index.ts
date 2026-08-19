@@ -82,6 +82,8 @@ export * from './reconciliationApiAdminV1ReconciliationGet200';
 export * from './reconciliationApiAdminV1ReconciliationGetParams';
 export * from './refreshRequest';
 export * from './registerRequest';
+export * from './revenueReportApiAdminV1ReportsRevenueGet200';
+export * from './revenueReportApiAdminV1ReportsRevenueGetParams';
 export * from './skuAdminOut';
 export * from './skuCreate';
 export * from './skuMarketOut';

@@ -163,6 +163,35 @@ async def consumed_by_user(session: AsyncSession) -> dict[int, Decimal]:
     return dict(rows)
 
 
+async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict:
+    """今日/本月消费额(ledger consume 绝对值)与环比基数。本地日界按 tz_offset 折算。"""
+    from datetime import timedelta
+
+    from sqlalchemy import func
+
+    from app.core.timeutil import now_utc
+
+    offset = timedelta(minutes=tz_offset_minutes)
+    local_now = now_utc() + offset
+    day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - offset
+    month_start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - offset
+    prev_day_start = day_start - timedelta(days=1)
+
+    async def _consume_since(start, end=None) -> str:
+        stmt = select(func.coalesce(-func.sum(BalanceLedger.amount), 0)).where(
+            BalanceLedger.type == "consume", BalanceLedger.created_at >= start
+        )
+        if end is not None:
+            stmt = stmt.where(BalanceLedger.created_at < end)
+        return format((await session.execute(stmt)).scalar_one(), "f")
+
+    return {
+        "today_revenue": await _consume_since(day_start),
+        "yesterday_revenue": await _consume_since(prev_day_start, day_start),
+        "month_revenue": await _consume_since(month_start),
+    }
+
+
 async def admin_list_orders(session: AsyncSession, status: str | None = None) -> list:
     from app.modules.billing.models import Order
 

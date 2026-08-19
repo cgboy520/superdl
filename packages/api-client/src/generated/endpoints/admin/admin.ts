@@ -58,6 +58,8 @@ import type {
   PolicyUpdateRequest,
   ReconciliationApiAdminV1ReconciliationGet200,
   ReconciliationApiAdminV1ReconciliationGetParams,
+  RevenueReportApiAdminV1ReportsRevenueGet200,
+  RevenueReportApiAdminV1ReportsRevenueGetParams,
   SkuAdminOut,
   SkuCreate,
   SkuUpdate,
@@ -2344,6 +2346,114 @@ export function useOversellReportApiAdminV1ReportsOversellGet<TData = Awaited<Re
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getOversellReportApiAdminV1ReportsOversellGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getRevenueReportApiAdminV1ReportsRevenueGetUrl = (params?: RevenueReportApiAdminV1ReportsRevenueGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/reports/revenue?${stringifiedParams}` : `/api/admin/v1/reports/revenue`
+}
+
+/**
+ * 今日/本月消费额(营收口径 = ledger consume 绝对值)与新注册数。本地日界经 tz_offset。
+ * @summary Revenue Report
+ */
+export const revenueReportApiAdminV1ReportsRevenueGet = async (params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: Parameters<typeof customFetch>[1]): Promise<RevenueReportApiAdminV1ReportsRevenueGet200> => {
+
+  return customFetch<RevenueReportApiAdminV1ReportsRevenueGet200>(getRevenueReportApiAdminV1ReportsRevenueGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevenueReportApiAdminV1ReportsRevenueGetQueryKey = (params?: RevenueReportApiAdminV1ReportsRevenueGetParams,) => {
+    return [
+    `/api/admin/v1/reports/revenue`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getRevenueReportApiAdminV1ReportsRevenueGetQueryOptions = <TData = Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError = HTTPValidationError>(params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getRevenueReportApiAdminV1ReportsRevenueGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>> = ({ signal }) => revenueReportApiAdminV1ReportsRevenueGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type RevenueReportApiAdminV1ReportsRevenueGetQueryResult = NonNullable<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>>
+export type RevenueReportApiAdminV1ReportsRevenueGetQueryError = HTTPValidationError
+
+
+export function useRevenueReportApiAdminV1ReportsRevenueGet<TData = Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError = HTTPValidationError>(
+ params: undefined |  RevenueReportApiAdminV1ReportsRevenueGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>,
+          TError,
+          Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRevenueReportApiAdminV1ReportsRevenueGet<TData = Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError = HTTPValidationError>(
+ params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>,
+          TError,
+          Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useRevenueReportApiAdminV1ReportsRevenueGet<TData = Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError = HTTPValidationError>(
+ params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Revenue Report
+ */
+
+export function useRevenueReportApiAdminV1ReportsRevenueGet<TData = Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError = HTTPValidationError>(
+ params?: RevenueReportApiAdminV1ReportsRevenueGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof revenueReportApiAdminV1ReportsRevenueGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getRevenueReportApiAdminV1ReportsRevenueGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
