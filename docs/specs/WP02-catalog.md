@@ -1,5 +1,7 @@
 # WP2 · 商品
 
+> ✅ 已交付并通过验收用例(tests/test_catalog.py)。
+
 ## 目标
 SKU 管理(admin CRUD)+ 用户端市场查询 + 平台镜像目录 + 近似库存。
 

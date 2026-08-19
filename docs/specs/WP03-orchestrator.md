@@ -1,5 +1,7 @@
 # WP3 · 编排核心
 
+> ✅ 已交付并通过验收用例(tests/test_orchestrator_lifecycle.py:kill pod→failed 停费/泄漏回收/超时退款/端口池)。
+
 ## 目标
 实例状态机 + outbox 编排 + reconciler 对账 + 端口池。K8s 走接口抽象,单测全 mock,
 kind 集成测试断言对象结构与 reconciler 行为。

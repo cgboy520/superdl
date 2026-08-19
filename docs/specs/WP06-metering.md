@@ -1,5 +1,7 @@
 # WP6 · 用量
 
+> ✅ 已交付(tests/test_metering.py;Prometheus 停机计费不受影响已验证)。
+
 ## 目标
 Prometheus 代理查询 + usage_hourly 聚合 + 事件计费 vs 指标估算对账。仅展示与对账,不参与计费。
 

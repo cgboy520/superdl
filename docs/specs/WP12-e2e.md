@@ -1,5 +1,7 @@
 # WP12 · E2E 演练
 
+> ✅ 已交付:后端 API 级演练 tests/test_e2e_lifecycle.py 一次通过;浏览器冒烟 e2e/tests/smoke.spec.ts 全绿(注册→充值→开实例→运行→关机尾账→账单→释放)。
+
 ## 目标
 一条脚本跑通全生命周期(FakeOrchestrator + mock 支付):
 注册 → 充值 → 买共享档实例 + 数据盘 → 获取 SSH/Jupyter 接入信息 → 停机(尾账)→

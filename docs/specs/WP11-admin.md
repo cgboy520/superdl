@@ -1,5 +1,7 @@
 # WP11 · 管理前端 5 屏
 
+> ✅ 已交付(fork 子代理):5 屏+登录+审计页;闸门全绿;Grafana 为占位卡(生产反代接入),节点 cordon/drain 走集群 Runbook。
+
 规格来源:`docs/ui-ux-spec.md` §4。深色 NOC 风,角色 admin/ops/finance/readonly。
 
 ## 屏清单

@@ -1,5 +1,7 @@
 # WP10 · 用户前端 6 屏
 
+> ✅ 已交付(fork 子代理):6 屏+登录/概览/设置全部实现;Playwright 冒烟全绿(e2e/tests/smoke.spec.ts)。
+
 规格来源:`docs/ui-ux-spec.md` §3(逐条落实,含六条铁律与四个超越点)。
 
 ## 屏清单

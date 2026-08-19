@@ -1,5 +1,7 @@
 # WP9 · 通知
 
+> ✅ 已交付(tests/test_notify.py:去重/告警幂等/token 鉴权)。
+
 ## 目标
 站内信 + 短信(mock/aliyun)+ Alertmanager webhook + 余额预警。
 
