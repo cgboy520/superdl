@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel
 
@@ -49,3 +50,20 @@ class BillSummaryOut(BaseModel):
     gpu_total: MoneyOut
     disk_total: MoneyOut
     items: list[BillSummaryItem]
+
+
+class RechargeCreate(BaseModel):
+    amount: Decimal
+    channel: str = "mock"  # wechat / alipay / mock(dev)
+
+
+class RechargeOut(BaseModel):
+    order_no: str
+    amount: MoneyOut
+    channel: str
+    status: str
+    qr_url: str | None
+    expires_at: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

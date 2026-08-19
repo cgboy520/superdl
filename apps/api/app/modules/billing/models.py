@@ -68,3 +68,28 @@ class BillDailyDisk(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))  # 元/GB·月
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Order(Base):
+    """充值订单。支付回调幂等靠 channel_txn_id 唯一 + status 检查。"""
+
+    __tablename__ = "orders"
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_no: Mapped[str] = mapped_column(String(40), unique=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    type: Mapped[str] = mapped_column(String(16), default="recharge")
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    channel: Mapped[str] = mapped_column(String(16))  # wechat / alipay / mock
+    channel_txn_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # pending / paid / closed / failed
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    qr_url: Mapped[str | None] = mapped_column(String(512))
+    paid_at: Mapped[datetime | None]
+    expires_at: Mapped[datetime]
+    # 发票字段预留(MVP 不做开票流程)
+    invoice_title: Mapped[str | None] = mapped_column(String(128))
+    invoice_tax_id: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

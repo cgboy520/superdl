@@ -3,3 +3,4 @@ export * from "./admin/admin";
 export * from "./billing/billing";
 export * from "./catalog/catalog";
 export * from "./instances/instances";
+export * from "./webhooks/webhooks";

@@ -1,20 +1,24 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query, Request
 from sqlalchemy import func, select
 
+from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
 from app.modules.account.deps import CurrentUser
-from app.modules.billing import wallet
+from app.modules.billing import payment_service, wallet
 from app.modules.billing.models import BalanceLedger, BillDailyDisk, BillHourly
 from app.modules.billing.schemas import (
     BillHourlyOut,
     BillSummaryItem,
     BillSummaryOut,
     LedgerEntryOut,
+    RechargeCreate,
+    RechargeOut,
     WalletOut,
 )
 
@@ -138,3 +142,27 @@ async def bill_summary(user: CurrentUser, session: DbSession, month: str) -> Bil
     return BillSummaryOut(
         month=month, gpu_total=gpu_total, disk_total=Decimal(disk_total), items=items
     )
+
+
+# ---------- 充值(WP5) ----------
+
+
+@router.post("/wallet/recharges", status_code=201)
+async def create_recharge(
+    body: RechargeCreate,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> RechargeOut:
+    order = await payment_service.create_recharge(
+        session, user.id, body.amount, body.channel, idempotency_key
+    )
+    set_audit_target(request, f"order:{order.order_no}")
+    return RechargeOut.model_validate(order)
+
+
+@router.get("/wallet/recharges/{order_no}")
+async def get_recharge(order_no: str, user: CurrentUser, session: DbSession) -> RechargeOut:
+    order = await payment_service.get_order(session, user.id, order_no)
+    return RechargeOut.model_validate(order)

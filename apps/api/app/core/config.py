@@ -47,8 +47,18 @@ class Settings(BaseSettings):
     # Prometheus 代理(WP6)
     prometheus_url: str = "http://localhost:9090"
 
-    # 支付(WP5;dev 用 mock 渠道)
+    # 支付(WP5;dev 用 mock 渠道;真实商户凭据经环境变量注入,人工事项 #6)
     payment_mock: bool = True
+    public_base_url: str = "https://api.superdl.example.com"
+    recharge_order_ttl_seconds: int = 2 * 3600
+    wechat_mchid: str | None = None
+    wechat_private_key: str | None = None
+    wechat_cert_serial_no: str | None = None
+    wechat_apiv3_key: str | None = None
+    wechat_appid: str | None = None
+    alipay_app_id: str | None = None
+    alipay_private_key: str | None = None
+    alipay_public_key: str | None = None
 
 
 @lru_cache
