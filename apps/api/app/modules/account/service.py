@@ -10,6 +10,7 @@ from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
 from app.core.ratelimit import check_rate_limit
 from app.core.security import create_token, decode_token, hash_password, verify_password
+from app.core.sms import SmsError, get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode, SshKey, User
 from app.modules.account.schemas import TokenPair, UserOut
@@ -45,19 +46,26 @@ async def send_sms_code(
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
     code = MOCK_SMS_CODE if settings.sms_provider == "mock" else f"{secrets.randbelow(10**6):06d}"
-    session.add(
-        SmsCode(
-            phone=phone,
-            code=code,
-            purpose=purpose,
-            expires_at=now_utc() + timedelta(seconds=settings.sms_code_ttl_seconds),
-        )
+    row = SmsCode(
+        phone=phone,
+        code=code,
+        purpose=purpose,
+        expires_at=now_utc() + timedelta(seconds=settings.sms_code_ttl_seconds),
     )
+    session.add(row)
     await session.commit()
-    if settings.sms_provider == "mock":
-        logger.info("mock_sms_sent", phone=phone, purpose=purpose, code=code)
-    else:  # pragma: no cover - 真实短信渠道(人工事项 #6)
-        raise NotImplementedError("SMS provider not wired yet")
+    try:
+        await get_sms_channel().send(phone, settings.sms_template_verify or "", {"code": code})
+    except SmsError as exc:
+        # 渠道失败:作废刚落库的验证码,避免"码在库里但用户收不到"的脏数据
+        row.used_at = now_utc()
+        await session.commit()
+        logger.error("sms_send_failed", phone=phone, error=str(exc))
+        raise AppError(
+            ErrorCode.SMS_SEND_FAILED,
+            "短信发送失败,请稍后重试",
+            http_status=status.HTTP_502_BAD_GATEWAY,
+        ) from exc
 
 
 async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpose: str) -> None:

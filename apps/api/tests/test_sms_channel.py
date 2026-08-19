@@ -1,0 +1,100 @@
+"""短信渠道 seam:阿里云签名、MockTransport 收发、验证码发送失败降级、通知短信尽力而为。"""
+
+import httpx
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.core.sms import AliyunSmsChannel, MockSmsChannel, SmsError, set_sms_channel
+
+
+@pytest.fixture(autouse=True)
+def _reset_channel():
+    yield
+    set_sms_channel(None)
+
+
+class _FailingChannel:
+    async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
+        raise SmsError("provider down")
+
+
+class TestAliyunSignature:
+    def test_signature_snapshot(self):
+        """RPC V1 签名回归锚点(排序/RFC3986 编码/HMAC-SHA1 任一变动都会破坏此值)。"""
+        ch = AliyunSmsChannel("testid", "testsecret", "SuperDL")
+        p = ch.signed_params(
+            "13800000000",
+            "SMS_123",
+            {"code": "654321"},
+            nonce="fixed-nonce",
+            timestamp="2026-08-19T12:00:00Z",
+        )
+        assert p["Signature"] == "NWkyltdUd0U90o8ecQHBMY1f67U="
+        assert p["TemplateParam"] == '{"code":"654321"}'
+        assert p["SignName"] == "SuperDL"
+
+    async def test_send_ok_and_rejected(self):
+        seen: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = dict(pair.split("=", 1) for pair in request.content.decode().split("&"))
+            seen.append(body)
+            if len(seen) == 1:
+                return httpx.Response(200, json={"Code": "OK"})
+            return httpx.Response(
+                200, json={"Code": "isv.BUSINESS_LIMIT_CONTROL", "Message": "限流"}
+            )
+
+        ch = AliyunSmsChannel("ak", "sk", "SuperDL", transport=httpx.MockTransport(handler))
+        await ch.send("13800000000", "SMS_123", {"code": "1234"})
+        assert "Signature" in seen[0] and seen[0]["Action"] == "SendSms"
+        with pytest.raises(SmsError, match="BUSINESS_LIMIT_CONTROL"):
+            await ch.send("13800000000", "SMS_123", {"code": "1234"})
+
+
+class TestVerifyCodeSendFailure:
+    async def test_channel_failure_invalidates_code(self, client: AsyncClient, sm):
+        """渠道失败 → 502 SMS_SEND_FAILED,且刚落库的验证码被作废。"""
+        from app.modules.account.models import SmsCode
+
+        set_sms_channel(_FailingChannel())
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000090", "purpose": "register"}
+        )
+        assert resp.status_code == 502
+        assert resp.json()["code"] == "SMS_SEND_FAILED"
+        async with sm() as session:
+            row = (
+                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000090"))
+            ).scalar_one()
+            assert row.used_at is not None  # 已作废,不可被消费
+
+    async def test_mock_channel_keeps_working(self, client: AsyncClient):
+        set_sms_channel(MockSmsChannel())
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000091", "purpose": "register"}
+        )
+        assert resp.status_code == 204
+
+
+class TestNotifySmsBestEffort:
+    async def test_notify_survives_channel_failure(self, client: AsyncClient, sm):
+        """通知短信失败不影响站内信落库(尽力而为)。"""
+        from app.modules.notify.models import Notification
+        from app.modules.notify.service import send_low_balance_warning
+        from tests.test_account_auth import register
+
+        data = await register(client, "13800000092")
+        set_sms_channel(_FailingChannel())
+        async with sm() as session:
+            await send_low_balance_warning(
+                session, data["user"]["id"], est_hours=1.5, balance="3.20"
+            )
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(Notification).where(Notification.user_id == data["user"]["id"])
+                )
+            ).scalar_one()
+            assert row.type == "balance_warn"

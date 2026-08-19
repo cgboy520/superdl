@@ -26,10 +26,15 @@ class Settings(BaseSettings):
     # 且 environment=dev 时,在无任何管理员的库里创建 admin 账号。生产用运维脚本创建。
     bootstrap_admin_password: str | None = None
 
-    # 短信:dev/test 用 mock(验证码固定 + 落日志)
+    # 短信:dev/test 用 mock(验证码固定 + 落日志);aliyun 凭据与模板码经环境变量注入
     sms_provider: Literal["mock", "aliyun"] = "mock"
     sms_code_ttl_seconds: int = 300
     sms_send_interval_seconds: int = 60
+    sms_access_key_id: str | None = None
+    sms_access_key_secret: str | None = None
+    sms_sign_name: str | None = None  # 报备的短信签名
+    sms_template_verify: str | None = None  # 验证码模板码(变量 code)
+    sms_template_notice: str | None = None  # 通知模板码(变量 title)
 
     # 数据盘
     disk_price_gb_month: str = "0.0350"  # 元/GB·月(Decimal 字符串,新盘快照)

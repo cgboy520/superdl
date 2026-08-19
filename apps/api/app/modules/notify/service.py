@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.sms import get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.notify.models import Notification
 
@@ -50,13 +51,23 @@ async def notify(
     ).scalar_one_or_none()
     if result is None:
         return False
-    if sms:
-        settings = get_settings()
-        if settings.sms_provider == "mock":
-            logger.info("mock_sms_notify", user_id=user_id, title=title)
-        else:  # pragma: no cover - 真实渠道接入(人工事项 #6)
-            logger.warning("sms_provider_not_wired", user_id=user_id)
+    if sms and user_id is not None:
+        await _send_sms_notice(session, user_id, title)
     return True
+
+
+async def _send_sms_notice(session: AsyncSession, user_id: int, title: str) -> None:
+    """通知短信:尽力而为,失败仅记日志(站内信已落库,不因渠道故障中断业务事务)。"""
+    from app.modules.account.service import get_user
+
+    try:
+        user = await get_user(session, user_id)
+        settings = get_settings()
+        await get_sms_channel().send(
+            user.phone, settings.sms_template_notice or "", {"title": title}
+        )
+    except Exception as exc:
+        logger.warning("sms_notify_failed", user_id=user_id, error=str(exc))
 
 
 async def send_low_balance_warning(
