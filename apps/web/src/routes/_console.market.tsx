@@ -129,7 +129,7 @@ function MarketPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         算力市场
       </Typography.Title>
-      <Alert type="warning" showIcon message={copy.antiMiningNotice} />
+      <Alert type="warning" showIcon title={copy.antiMiningNotice} />
 
       <Card title="计费方式" styles={{ body: { paddingBlock: 16 } }}>
         <ChipRow

@@ -32,7 +32,7 @@ function Overview() {
         <Alert
           type="warning"
           showIcon
-          message="有余额或欠费相关预警,请查看通知并及时充值"
+          title="有余额或欠费相关预警,请查看通知并及时充值"
           action={
             <Link to="/billing">
               <Button size="small">去充值</Button>
@@ -52,13 +52,13 @@ function Overview() {
             <Statistic
               title="可用余额"
               value={formatMoney(wallet?.balance)}
-              valueStyle={tabularNums}
+              styles={{ content: tabularNums }}
             />
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="今日消费" value={todayTotal} valueStyle={tabularNums} />
+            <Statistic title="今日消费" value={todayTotal} styles={{ content: tabularNums }} />
           </Card>
         </Col>
         <Col xs={12} lg={6}>

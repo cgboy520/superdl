@@ -120,7 +120,7 @@ function CreatePage() {
   });
 
   if (!sku) {
-    return <Alert type="warning" showIcon message="规格不存在或已下架" />;
+    return <Alert type="warning" showIcon title="规格不存在或已下架" />;
   }
 
   const diskPriceGbMonth = policies?.disk_price_gb_month;
@@ -366,7 +366,7 @@ function CreatePage() {
       <Card title="SSH 密钥">
         {(keys ?? []).length === 0 ? (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-            <Alert type="warning" showIcon message={copy.sshKeyOnly} />
+            <Alert type="warning" showIcon title={copy.sshKeyOnly} />
             <Form
               form={keyForm}
               layout="inline"

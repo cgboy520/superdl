@@ -323,7 +323,7 @@ function StoragePage() {
             <Alert
               type="info"
               showIcon
-              message={`当前 ${formatSizeGb(expandTarget.size_gb)},只支持扩容不支持缩容`}
+              title={`当前 ${formatSizeGb(expandTarget.size_gb)},只支持扩容不支持缩容`}
             />
             <Slider
               min={expandTarget.size_gb}

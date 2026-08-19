@@ -64,10 +64,10 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   );
 
   if (!running) {
-    return <Alert type="info" showIcon message="实例未运行,暂无实时监控" />;
+    return <Alert type="info" showIcon title="实例未运行,暂无实时监控" />;
   }
   if (error && isApiError(error) && error.status === 503) {
-    return <Alert type="warning" showIcon message={copy.monitoringDown} />;
+    return <Alert type="warning" showIcon title={copy.monitoringDown} />;
   }
   const series = (data?.series ?? {}) as Record<string, [number, number][]>;
   return (
@@ -112,7 +112,7 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
   const { data: access } = useInstanceAccess(uuid, { enabled: running });
   const reset = useResetJupyterToken();
   if (!running) {
-    return <Alert type="info" showIcon message="实例运行中才能获取接入信息" />;
+    return <Alert type="info" showIcon title="实例运行中才能获取接入信息" />;
   }
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -157,12 +157,12 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
   const { data: events } = useInstanceEvents(uuid);
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Alert type="info" showIcon message={copy.eventsAreBilling} />
+      <Alert type="info" showIcon title={copy.eventsAreBilling} />
       <Timeline
         items={(events ?? []).map((e) => ({
           color:
             e.to_status === "running" ? "green" : e.to_status === "failed" ? "red" : "gray",
-          children: (
+          content: (
             <Space orientation="vertical" size={0}>
               <Typography.Text strong>
                 {e.from_status ?? "—"} → {e.to_status}

@@ -160,7 +160,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           <Alert
             type="info"
             showIcon
-            message={`订单 ${order.order_no} · 有效期${formatCountdown(
+            title={`订单 ${order.order_no} · 有效期${formatCountdown(
               polled?.expires_at ?? order.expires_at,
             ).replace("剩 ", " ")},等待支付…`}
           />
@@ -345,7 +345,7 @@ function BillingPage() {
               <Statistic
                 title="可用余额"
                 value={formatMoney(wallet?.balance)}
-                valueStyle={{ fontSize: 32, ...tabularNums }}
+                styles={{ content: { fontSize: 32, ...tabularNums } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>
                 充值
@@ -381,17 +381,17 @@ function BillingPage() {
                 <Statistic
                   title="GPU 时费"
                   value={formatMoney(summary?.gpu_total)}
-                  valueStyle={tabularNums}
+                  styles={{ content: tabularNums }}
                 />
                 <Statistic
                   title="日常费用(数据盘)"
                   value={formatMoney(summary?.disk_total)}
-                  valueStyle={{ fontSize: 16, ...tabularNums }}
+                  styles={{ content: { fontSize: 16, ...tabularNums } }}
                 />
                 <Statistic
                   title="今日消费"
                   value={formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null)}
-                  valueStyle={{ fontSize: 16, ...tabularNums }}
+                  styles={{ content: { fontSize: 16, ...tabularNums } }}
                 />
               </Col>
               <Col span={14}>

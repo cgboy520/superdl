@@ -178,7 +178,7 @@ function InstancesPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         容器实例
       </Typography.Title>
-      <Alert type="info" showIcon message={copy.freezePolicy} />
+      <Alert type="info" showIcon title={copy.freezePolicy} />
       <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
         <Space size={8}>
           <Link to="/market">
