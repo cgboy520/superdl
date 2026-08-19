@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     ssh_port_range_end: int = 32767
     jupyter_domain_suffix: str = "app.superdl.example.com"
 
+    # 告警接入(WP9)
+    alertmanager_token: str | None = None
+
     # Prometheus 代理(WP6)
     prometheus_url: str = "http://localhost:9090"
 

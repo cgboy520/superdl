@@ -24,6 +24,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminAlertsApiAdminV1AlertsGet200Item,
   AdminForceStopRequest,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminLoginRequest,
@@ -60,7 +61,78 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
+export const getAdminAlertsApiAdminV1AlertsGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/alerts`
+}
+
+/**
+ * 管理端告警流(总览右栏数据源)。
+ * @summary Admin Alerts
+ */
+export const adminAlertsApiAdminV1AlertsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertsApiAdminV1AlertsGet200Item[]> => {
+
+  return customFetch<AdminAlertsApiAdminV1AlertsGet200Item[]>(getAdminAlertsApiAdminV1AlertsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminAlertsApiAdminV1AlertsGetMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError,void, TContext> => {
+
+const mutationKey = ['adminAlertsApiAdminV1AlertsGet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, void> = () => {
+
+
+          return  adminAlertsApiAdminV1AlertsGet(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminAlertsApiAdminV1AlertsGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>>
+
+    export type AdminAlertsApiAdminV1AlertsGetMutationError = unknown
+
+    /**
+ * @summary Admin Alerts
+ */
+export const useAdminAlertsApiAdminV1AlertsGet = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAdminAlertsApiAdminV1AlertsGetMutationOptions(options), queryClient);
+    }
+    export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
 
 
 

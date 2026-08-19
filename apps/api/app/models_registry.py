@@ -10,6 +10,7 @@ from app.modules.adminapi import models as adminapi_models
 from app.modules.billing import models as billing_models
 from app.modules.catalog import models as catalog_models
 from app.modules.metering import models as metering_models
+from app.modules.notify import models as notify_models
 from app.modules.orchestrator import models as orchestrator_models
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "billing_models",
     "catalog_models",
     "metering_models",
+    "notify_models",
     "orchestrator_models",
     "outbox",
 ]

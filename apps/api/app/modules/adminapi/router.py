@@ -92,3 +92,22 @@ async def reconciliation(session: DbSession, day: str) -> dict:
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, "day 格式应为 YYYY-MM-DD") from exc
     return await metering_service.reconciliation_report(session, d)
+
+
+@router.get("/alerts", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_alerts(session: DbSession) -> list[dict]:
+    """管理端告警流(总览右栏数据源)。"""
+    from app.modules.notify import service as notify_service
+
+    rows = await notify_service.admin_alert_stream(session)
+    return [
+        {
+            "id": r.id,
+            "type": r.type,
+            "title": r.title,
+            "content": r.content,
+            "severity": r.severity,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
