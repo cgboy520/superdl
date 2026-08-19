@@ -33,6 +33,13 @@ class InstanceOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminInstanceOut(InstanceOut):
+    """管理端全局实例视图:含租户与调度节点(不暴露给用户端)。"""
+
+    user_id: int
+    node_name: str | None
+
+
 class InstanceEventOut(BaseModel):
     id: int
     from_status: str | None

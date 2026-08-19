@@ -264,7 +264,7 @@ export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostUrl = () => {
 }
 
 /**
- * Alertmanager 告警接入。配置了 token 则必须携带 Bearer;生产未配 token 拒绝。
+ * Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。
  * @summary Alertmanager Webhook
  */
 export const alertmanagerWebhookApiV1WebhooksAlertmanagerPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200> => {

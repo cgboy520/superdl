@@ -11,7 +11,11 @@ from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import SkuAdminOut, SkuCreate, SkuUpdate
 from app.modules.metering import service as metering_service
 from app.modules.orchestrator import service as orchestrator_service
-from app.modules.orchestrator.schemas import AdminForceStopRequest, InstanceOut
+from app.modules.orchestrator.schemas import (
+    AdminForceStopRequest,
+    AdminInstanceOut,
+    InstanceOut,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -62,11 +66,11 @@ async def admin_update_sku(
 @router.get("/instances", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_instances(
     session: DbSession, status: str | None = None, user_id: int | None = None
-) -> list[InstanceOut]:
+) -> list[AdminInstanceOut]:
     instances = await orchestrator_service.admin_list_instances(
         session, status_filter=status, user_id=user_id
     )
-    return [InstanceOut.model_validate(i) for i in instances]
+    return [AdminInstanceOut.model_validate(i) for i in instances]
 
 
 @router.post("/instances/{uuid}/force-stop", dependencies=[require_roles("ops")])

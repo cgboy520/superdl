@@ -28,6 +28,7 @@ import type {
   AdminCreateAdjustmentApiAdminV1AdjustmentsPost201,
   AdminForceStopRequest,
   AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200,
+  AdminInstanceOut,
   AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListNodesApiAdminV1NodesGet200Item,
@@ -705,9 +706,9 @@ export const getAdminListInstancesApiAdminV1InstancesGetUrl = (params?: AdminLis
 /**
  * @summary Admin List Instances
  */
-export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut[]> => {
+export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminInstanceOut[]> => {
 
-  return customFetch<InstanceOut[]>(getAdminListInstancesApiAdminV1InstancesGetUrl(params),
+  return customFetch<AdminInstanceOut[]>(getAdminListInstancesApiAdminV1InstancesGetUrl(params),
   {
     ...options,
     method: 'GET'

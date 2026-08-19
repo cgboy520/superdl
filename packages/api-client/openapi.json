@@ -66,6 +66,121 @@
         "title": "AdminForceStopRequest",
         "type": "object"
       },
+      "AdminInstanceOut": {
+        "description": "管理端全局实例视图:含租户与调度节点(不暴露给用户端)。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_disk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Disk Id"
+          },
+          "frozen_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frozen Deadline"
+          },
+          "gpu_count": {
+            "title": "Gpu Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image_ref": {
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Name"
+          },
+          "price_hourly": {
+            "title": "Price Hourly",
+            "type": "string"
+          },
+          "sku_id": {
+            "title": "Sku Id",
+            "type": "integer"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "title": "Spec",
+            "type": "object"
+          },
+          "ssh_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Port"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "uuid",
+          "name",
+          "status",
+          "sku_id",
+          "spec",
+          "price_hourly",
+          "gpu_count",
+          "image_ref",
+          "ssh_port",
+          "data_disk_id",
+          "frozen_deadline",
+          "created_at",
+          "user_id",
+          "node_name"
+        ],
+        "title": "AdminInstanceOut",
+        "type": "object"
+      },
       "AdminLoginRequest": {
         "properties": {
           "password": {
@@ -2104,7 +2219,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/InstanceOut"
+                    "$ref": "#/components/schemas/AdminInstanceOut"
                   },
                   "title": "Response Admin List Instances Api Admin V1 Instances Get",
                   "type": "array"
@@ -4328,7 +4443,7 @@
     },
     "/api/v1/webhooks/alertmanager": {
       "post": {
-        "description": "Alertmanager 告警接入。配置了 token 则必须携带 Bearer;生产未配 token 拒绝。",
+        "description": "Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。",
         "operationId": "alertmanager_webhook_api_v1_webhooks_alertmanager_post",
         "parameters": [
           {

@@ -13,6 +13,8 @@ export * from './adminAuditLogApiAdminV1AuditGetParams';
 export * from './adminCreateAdjustmentApiAdminV1AdjustmentsPost201';
 export * from './adminForceStopRequest';
 export * from './adminFreezeTenantApiAdminV1TenantsUserIdFreezePost200';
+export * from './adminInstanceOut';
+export * from './adminInstanceOutSpec';
 export * from './adminListAdjustmentsApiAdminV1AdjustmentsGet200Item';
 export * from './adminListInstancesApiAdminV1InstancesGetParams';
 export * from './adminListNodesApiAdminV1NodesGet200Item';
