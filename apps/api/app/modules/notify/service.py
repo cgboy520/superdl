@@ -111,6 +111,28 @@ async def send_arrears_notice(
     # patrol 的事务里调用,由调用方 commit;此处不强制
 
 
+async def publish_announcement(session: AsyncSession, *, title: str, content: str) -> int:
+    """公告群发:对全部 active 用户写 announcement 站内信。返回触达人数。
+
+    MVP 规模直接逐用户落行;用户量上来后改 outbox 任务分批。
+    """
+    from app.modules.account.service import list_active_user_ids
+
+    user_ids = await list_active_user_ids(session)
+    for uid in user_ids:
+        await notify(
+            session,
+            uid,
+            type_="announcement",
+            title=title,
+            content=content,
+            severity="info",
+        )
+    await session.commit()
+    logger.info("announcement_published", title=title, reached=len(user_ids))
+    return len(user_ids)
+
+
 async def list_notifications(
     session: AsyncSession, user_id: int, *, unread_only: bool = False, limit: int = 50
 ) -> list[Notification]:

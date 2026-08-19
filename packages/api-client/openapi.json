@@ -248,6 +248,28 @@
         "title": "AdminToken",
         "type": "object"
       },
+      "AnnouncementCreate": {
+        "properties": {
+          "content": {
+            "maxLength": 2000,
+            "minLength": 2,
+            "title": "Content",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "AnnouncementCreate",
+        "type": "object"
+      },
       "BillHourlyOut": {
         "properties": {
           "amount": {
@@ -1061,6 +1083,21 @@
           "reason"
         ],
         "title": "OrderBackfillRequest",
+        "type": "object"
+      },
+      "OutboxDiscardRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OutboxDiscardRequest",
         "type": "object"
       },
       "Page_BillHourlyOut_": {
@@ -2222,6 +2259,55 @@
         ]
       }
     },
+    "/api/admin/v1/announcements": {
+      "post": {
+        "description": "公告群发(站内信 announcement 类型,全部 active 用户)。",
+        "operationId": "admin_publish_announcement_api_admin_v1_announcements_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnouncementCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Publish Announcement Api Admin V1 Announcements Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Publish Announcement",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/audit": {
       "get": {
         "operationId": "admin_audit_log_api_admin_v1_audit_get",
@@ -2717,6 +2803,148 @@
           }
         ],
         "summary": "Admin List Orders",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/outbox/dead": {
+      "get": {
+        "description": "死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。",
+        "operationId": "admin_list_dead_tasks_api_admin_v1_outbox_dead_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin List Dead Tasks Api Admin V1 Outbox Dead Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Dead Tasks",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/outbox/{task_id}/discard": {
+      "post": {
+        "description": "忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。",
+        "operationId": "admin_discard_dead_task_api_admin_v1_outbox__task_id__discard_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboxDiscardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Discard Dead Task Api Admin V1 Outbox  Task Id  Discard Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Discard Dead Task",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/outbox/{task_id}/retry": {
+      "post": {
+        "description": "重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。",
+        "operationId": "admin_retry_dead_task_api_admin_v1_outbox__task_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Retry Dead Task Api Admin V1 Outbox  Task Id  Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Retry Dead Task",
         "tags": [
           "admin"
         ]

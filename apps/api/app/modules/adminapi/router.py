@@ -350,6 +350,109 @@ async def admin_list_orders(session: DbSession, status: str | None = None) -> li
     ]
 
 
+# ---------- 公告发布(角色:ops) ----------
+
+
+class AnnouncementCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=128)
+    content: str = Field(min_length=2, max_length=2000)
+
+
+@router.post("/announcements", dependencies=[require_roles("ops")], status_code=201)
+async def admin_publish_announcement(
+    body: AnnouncementCreate, session: DbSession, request: Request
+) -> dict:
+    """公告群发(站内信 announcement 类型,全部 active 用户)。"""
+    from app.modules.notify import service as notify_service
+
+    reached = await notify_service.publish_announcement(
+        session, title=body.title, content=body.content
+    )
+    set_audit_target(request, "announcement", detail={"title": body.title, "reached": reached})
+    return {"reached": reached}
+
+
+# ---------- outbox 死信(角色:ops) ----------
+
+
+@router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
+async def admin_list_dead_tasks(session: DbSession) -> list[dict]:
+    """死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。"""
+    from sqlalchemy import select as sa_select
+
+    from app.core.outbox import OutboxTask
+
+    rows = (
+        (
+            await session.execute(
+                sa_select(OutboxTask)
+                .where(OutboxTask.status == "dead")
+                .order_by(OutboxTask.id.desc())
+                .limit(100)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "type": r.type,
+            "payload": r.payload,
+            "retries": r.retries,
+            "last_error": r.last_error,
+            "created_at": r.created_at.isoformat(),
+            "updated_at": r.updated_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+class OutboxDiscardRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=200)
+
+
+@router.post("/outbox/{task_id}/retry", dependencies=[require_roles("ops")])
+async def admin_retry_dead_task(task_id: int, session: DbSession, request: Request) -> dict:
+    """重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。"""
+    from app.core.errors import AppError, ErrorCode
+    from app.core.outbox import OutboxTask
+    from app.core.timeutil import now_utc
+
+    task = await session.get(OutboxTask, task_id)
+    if task is None:
+        raise AppError(ErrorCode.NOT_FOUND, "任务不存在", http_status=404)
+    if task.status != "dead":
+        raise AppError(ErrorCode.CONFLICT, f"任务状态 {task.status} 不可重放")
+    task.status = "pending"
+    task.retries = 0
+    task.next_retry_at = now_utc()
+    task.locked_by = None
+    task.locked_at = None
+    await session.commit()
+    set_audit_target(request, f"outbox:{task_id}", detail={"type": task.type})
+    return {"id": task.id, "status": task.status}
+
+
+@router.post("/outbox/{task_id}/discard", dependencies=[require_roles("ops")])
+async def admin_discard_dead_task(
+    task_id: int, body: OutboxDiscardRequest, session: DbSession, request: Request
+) -> dict:
+    """忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。"""
+    from app.core.errors import AppError, ErrorCode
+    from app.core.outbox import OutboxTask
+
+    task = await session.get(OutboxTask, task_id)
+    if task is None:
+        raise AppError(ErrorCode.NOT_FOUND, "任务不存在", http_status=404)
+    if task.status != "dead":
+        raise AppError(ErrorCode.CONFLICT, f"任务状态 {task.status} 不可忽略")
+    task.status = "discarded"
+    await session.commit()
+    set_audit_target(request, f"outbox:{task_id}", detail={"reason": body.reason})
+    return {"id": task.id, "status": task.status}
+
+
 @router.get("/finance/anomalies", dependencies=[require_roles("finance", "readonly")])
 async def admin_payment_anomalies(session: DbSession) -> list[dict]:
     """异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。"""

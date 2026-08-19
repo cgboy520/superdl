@@ -27,10 +27,12 @@ import type {
   AdminAuditLogApiAdminV1AuditGetParams,
   AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost200,
   AdminCreateAdjustmentApiAdminV1AdjustmentsPost201,
+  AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200,
   AdminForceStopRequest,
   AdminFreezeTenantApiAdminV1TenantsUserIdFreezePost200,
   AdminInstanceOut,
   AdminListAdjustmentsApiAdminV1AdjustmentsGet200Item,
+  AdminListDeadTasksApiAdminV1OutboxDeadGet200Item,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListNodesApiAdminV1NodesGet200Item,
   AdminListOrdersApiAdminV1OrdersGet200Item,
@@ -39,13 +41,17 @@ import type {
   AdminLoginRequest,
   AdminOut,
   AdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet200Item,
+  AdminPublishAnnouncementApiAdminV1AnnouncementsPost201,
+  AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200,
   AdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost200,
   AdminToken,
   AdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost200,
   AdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost200,
+  AnnouncementCreate,
   HTTPValidationError,
   InstanceOut,
   OrderBackfillRequest,
+  OutboxDiscardRequest,
   OversellReportApiAdminV1ReportsOversellGet200Item,
   ReconciliationApiAdminV1ReconciliationGet200,
   ReconciliationApiAdminV1ReconciliationGetParams,
@@ -474,6 +480,107 @@ export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typ
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminAlertsApiAdminV1AlertsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/announcements`
+}
+
+/**
+ * 公告群发(站内信 announcement 类型,全部 active 用户)。
+ * @summary Admin Publish Announcement
+ */
+export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdminPublishAnnouncementApiAdminV1AnnouncementsPost201> => {
+
+  return customFetch<AdminPublishAnnouncementApiAdminV1AnnouncementsPost201>(getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(announcementCreate)
+  }
+);}
+
+
+
+
+
+export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryKey = (announcementCreate?: AnnouncementCreate,) => {
+    return [
+    'POST', `/api/admin/v1/announcements`, announcementCreate
+    ] as const;
+    }
+
+
+export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryKey(announcementCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>> = ({ signal }) => adminPublishAnnouncementApiAdminV1AnnouncementsPost(announcementCreate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>>
+export type AdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryError = HTTPValidationError
+
+
+export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
+ announcementCreate: AnnouncementCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
+ announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
+ announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Publish Announcement
+ */
+
+export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
+ announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions(announcementCreate,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -1513,6 +1620,316 @@ export function useAdminListOrdersApiAdminV1OrdersGet<TData = Awaited<ReturnType
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListOrdersApiAdminV1OrdersGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/outbox/dead`
+}
+
+/**
+ * 死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。
+ * @summary Admin List Dead Tasks
+ */
+export const adminListDeadTasksApiAdminV1OutboxDeadGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListDeadTasksApiAdminV1OutboxDeadGet200Item[]> => {
+
+  return customFetch<AdminListDeadTasksApiAdminV1OutboxDeadGet200Item[]>(getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListDeadTasksApiAdminV1OutboxDeadGetQueryKey = () => {
+    return [
+    `/api/admin/v1/outbox/dead`
+    ] as const;
+    }
+
+
+export const getAdminListDeadTasksApiAdminV1OutboxDeadGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListDeadTasksApiAdminV1OutboxDeadGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>> = ({ signal }) => adminListDeadTasksApiAdminV1OutboxDeadGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListDeadTasksApiAdminV1OutboxDeadGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>>
+export type AdminListDeadTasksApiAdminV1OutboxDeadGetQueryError = unknown
+
+
+export function useAdminListDeadTasksApiAdminV1OutboxDeadGet<TData = Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListDeadTasksApiAdminV1OutboxDeadGet<TData = Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListDeadTasksApiAdminV1OutboxDeadGet<TData = Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Dead Tasks
+ */
+
+export function useAdminListDeadTasksApiAdminV1OutboxDeadGet<TData = Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeadTasksApiAdminV1OutboxDeadGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListDeadTasksApiAdminV1OutboxDeadGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl = (taskId: number,) => {
+
+
+
+
+  return `/api/admin/v1/outbox/${taskId}/discard`
+}
+
+/**
+ * 忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。
+ * @summary Admin Discard Dead Task
+ */
+export const adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost = async (taskId: number,
+    outboxDiscardRequest: OutboxDiscardRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200> => {
+
+  return customFetch<AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost200>(getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl(taskId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(outboxDiscardRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostQueryKey = (taskId: number,
+    outboxDiscardRequest?: OutboxDiscardRequest,) => {
+    return [
+    'POST', `/api/admin/v1/outbox/${taskId}/discard`, outboxDiscardRequest
+    ] as const;
+    }
+
+
+export const getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostQueryOptions = <TData = Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError = HTTPValidationError>(taskId: number,
+    outboxDiscardRequest: OutboxDiscardRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostQueryKey(taskId,outboxDiscardRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>> = ({ signal }) => adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost(taskId,outboxDiscardRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: taskId !== null && taskId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>>
+export type AdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostQueryError = HTTPValidationError
+
+
+export function useAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost<TData = Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError = HTTPValidationError>(
+ taskId: number,
+    outboxDiscardRequest: OutboxDiscardRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost<TData = Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError = HTTPValidationError>(
+ taskId: number,
+    outboxDiscardRequest: OutboxDiscardRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost<TData = Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError = HTTPValidationError>(
+ taskId: number,
+    outboxDiscardRequest: OutboxDiscardRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Discard Dead Task
+ */
+
+export function useAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost<TData = Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError = HTTPValidationError>(
+ taskId: number,
+    outboxDiscardRequest: OutboxDiscardRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostQueryOptions(taskId,outboxDiscardRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl = (taskId: number,) => {
+
+
+
+
+  return `/api/admin/v1/outbox/${taskId}/retry`
+}
+
+/**
+ * 重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。
+ * @summary Admin Retry Dead Task
+ */
+export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200> => {
+
+  return customFetch<AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost200>(getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl(taskId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryKey = (taskId: number,) => {
+    return [
+    'POST', `/api/admin/v1/outbox/${taskId}/retry`
+    ] as const;
+    }
+
+
+export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions = <TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryKey(taskId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>> = ({ signal }) => adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(taskId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: taskId !== null && taskId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>>
+export type AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryError = HTTPValidationError
+
+
+export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
+ taskId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
+ taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
+ taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Retry Dead Task
+ */
+
+export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
+ taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions(taskId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

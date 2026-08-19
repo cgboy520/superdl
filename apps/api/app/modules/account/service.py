@@ -263,6 +263,11 @@ async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dic
     return dict(rows)
 
 
+async def list_active_user_ids(session: AsyncSession) -> list[int]:
+    """公告群发等场景:全部 active 用户 id。"""
+    return list((await session.execute(select(User.id).where(User.status == "active"))).scalars())
+
+
 async def admin_list_users(session: AsyncSession) -> list[User]:
     return list((await session.execute(select(User).order_by(User.id.desc()).limit(500))).scalars())
 

@@ -38,7 +38,7 @@ class OutboxTask(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(
         String(16), default="pending", index=True
-    )  # pending / running / done / dead
+    )  # pending / running / done / dead / discarded(管理端人工忽略)
     retries: Mapped[int] = mapped_column(default=0)
     next_retry_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
     locked_by: Mapped[str | None] = mapped_column(String(64))
