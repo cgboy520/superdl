@@ -8,7 +8,7 @@ import { CheckCircleOutlined } from "@ant-design/icons";
 import type { TokenPair } from "@superdl/api-client";
 import { brand, marketing } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { App, Button, Form, Grid, Input, Segmented, Space, Typography } from "antd";
+import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 import { useLogin, useRegister, useSendSmsCode } from "../api/mutations";
@@ -114,12 +114,18 @@ function LoginPage() {
   const login = useLogin({ onSuccess: onLoggedIn });
   const register = useRegister({ onSuccess: onLoggedIn });
 
-  const submit = (values: { phone: string; sms_code?: string; password?: string }) => {
+  const submit = (values: {
+    phone: string;
+    sms_code?: string;
+    password?: string;
+    accept_terms?: boolean;
+  }) => {
     if (mode === "register") {
       register.mutate({
         phone: values.phone,
         sms_code: values.sms_code ?? "",
         password: values.password || null,
+        accept_terms: values.accept_terms === true,
       });
     } else if (mode === "sms") {
       login.mutate({ phone: values.phone, sms_code: values.sms_code });
@@ -205,6 +211,31 @@ function LoginPage() {
                 <Input.Password
                   placeholder={mode === "register" ? "设置密码(可选,至少 8 位)" : "密码"}
                 />
+              </Form.Item>
+            )}
+            {mode === "register" && (
+              <Form.Item
+                name="accept_terms"
+                valuePropName="checked"
+                rules={[
+                  {
+                    validator: (_, v) =>
+                      v === true
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("请先阅读并同意用户协议与隐私政策")),
+                  },
+                ]}
+              >
+                <Checkbox>
+                  我已阅读并同意{" "}
+                  <a href="/legal/terms" target="_blank" rel="noreferrer">
+                    《用户协议》
+                  </a>
+                  <a href="/legal/privacy" target="_blank" rel="noreferrer">
+                    《隐私政策》
+                  </a>
+                  ,并知悉平台禁止挖矿等使用限制
+                </Checkbox>
               </Form.Item>
             )}
             <Button

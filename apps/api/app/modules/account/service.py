@@ -113,8 +113,11 @@ async def register(
     sms_code: str,
     password: str | None,
     *,
+    accept_terms: bool = False,
     client_ip: str | None = None,
 ) -> TokenPair:
+    if not accept_terms:
+        raise AppError(ErrorCode.TERMS_NOT_ACCEPTED, "请先阅读并同意《用户协议》与《隐私政策》")
     check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
@@ -195,6 +198,27 @@ async def get_user(session: AsyncSession, user_id: int) -> User:
     user = await session.get(User, user_id)
     if user is None:
         raise not_found("用户不存在")
+    return user
+
+
+async def submit_real_name(session: AsyncSession, user: User, name: str, id_number: str) -> User:
+    """实名认证:三要素核验(姓名+身份证+账号手机号)。核验通过即 verified。
+
+    身份证号只存脱敏串(PIPL:原文即用即弃,不落库不打日志)。
+    """
+    from app.modules.account.realname import get_realname_provider, mask_id_number
+
+    if user.verification_status == "verified":
+        raise AppError(ErrorCode.CONFLICT, "已完成实名认证,无需重复提交")
+    check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
+    ok = await get_realname_provider().verify(name, id_number, user.phone)
+    if not ok:
+        raise AppError(ErrorCode.REAL_NAME_MISMATCH, "实名信息与运营商记录不一致,请核对后重试")
+    user.id_name = name
+    user.id_number = mask_id_number(id_number)
+    user.verification_status = "verified"
+    await session.commit()
+    logger.info("real_name_verified", user_id=user.id)
     return user
 
 

@@ -1184,6 +1184,11 @@
           "low_balance_warn_hours_default": {
             "title": "Low Balance Warn Hours Default",
             "type": "integer"
+          },
+          "real_name_required_for_recharge": {
+            "default": false,
+            "title": "Real Name Required For Recharge",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1220,6 +1225,28 @@
           "reason"
         ],
         "title": "PolicyUpdateRequest",
+        "type": "object"
+      },
+      "RealNameRequest": {
+        "description": "实名认证(三要素核验:姓名 + 身份证号 + 账号手机号)。",
+        "properties": {
+          "id_number": {
+            "pattern": "^\\d{17}[\\dXx]$",
+            "title": "Id Number",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "id_number"
+        ],
+        "title": "RealNameRequest",
         "type": "object"
       },
       "RechargeCreate": {
@@ -1315,6 +1342,11 @@
       },
       "RegisterRequest": {
         "properties": {
+          "accept_terms": {
+            "default": false,
+            "title": "Accept Terms",
+            "type": "boolean"
+          },
           "password": {
             "anyOf": [
               {
@@ -2016,6 +2048,10 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "verification_status": {
+            "title": "Verification Status",
+            "type": "string"
           }
         },
         "required": [
@@ -2023,6 +2059,7 @@
           "phone",
           "status",
           "low_balance_warn_hours",
+          "verification_status",
           "created_at"
         ],
         "title": "UserOut",
@@ -4643,6 +4680,53 @@
           }
         ],
         "summary": "Me",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/me/real-name": {
+      "post": {
+        "description": "实名认证(三要素核验;身份证号仅存脱敏串)。",
+        "operationId": "submit_real_name_api_v1_me_real_name_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RealNameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Real Name",
         "tags": [
           "account"
         ]

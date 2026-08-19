@@ -15,6 +15,7 @@ class RegisterRequest(BaseModel):
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
     password: str | None = Field(default=None, min_length=8, max_length=64)
+    accept_terms: bool = False  # 必须显式同意用户协议与隐私政策(服务端强校验)
 
 
 class LoginRequest(BaseModel):
@@ -32,6 +33,7 @@ class UserOut(BaseModel):
     phone: str
     status: str
     low_balance_warn_hours: int
+    verification_status: str  # unverified / verified
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -61,3 +63,10 @@ class SshKeyOut(BaseModel):
 
 class WarnThresholdUpdate(BaseModel):
     low_balance_warn_hours: int = Field(ge=1, le=168)
+
+
+class RealNameRequest(BaseModel):
+    """实名认证(三要素核验:姓名 + 身份证号 + 账号手机号)。"""
+
+    name: str = Field(min_length=2, max_length=32)
+    id_number: str = Field(pattern=r"^\d{17}[\dXx]$")

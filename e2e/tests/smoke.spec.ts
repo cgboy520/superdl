@@ -38,6 +38,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByPlaceholder("手机号").fill(phone);
   await page.getByRole("button", { name: "获取验证码" }).click();
   await page.getByPlaceholder("短信验证码").fill("123456");
+  await page.getByRole("checkbox").check(); // 同意用户协议/隐私政策
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
 

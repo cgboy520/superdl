@@ -32,7 +32,9 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert (
         await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
     ).status_code == 204
-    reg = await client.post("/api/v1/auth/register", json={"phone": phone, "sms_code": "123456"})
+    reg = await client.post(
+        "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
+    )
     assert reg.status_code == 201
     h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
     user_id = reg.json()["user"]["id"]

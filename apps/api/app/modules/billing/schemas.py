@@ -61,6 +61,7 @@ class PoliciesOut(BaseModel):
     disk_grace_days: int
     disk_frozen_days: int
     freeze_grace_hours: int
+    real_name_required_for_recharge: bool = False
     low_balance_warn_hours_default: int
 
 

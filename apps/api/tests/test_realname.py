@@ -1,0 +1,89 @@
+"""实名认证 seam:核验通过/不一致/重复提交/脱敏入库;充值前强制开关。"""
+
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.core.config import get_settings
+from app.modules.account.models import User
+from tests.test_account_auth import register
+
+
+async def _headers(client: AsyncClient, phone: str) -> tuple[dict, int]:
+    data = await register(client, phone)
+    return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
+
+
+class TestRealName:
+    async def test_verify_success_masks_id_number(self, client: AsyncClient, sm):
+        headers, user_id = await _headers(client, "13800000160")
+        resp = await client.post(
+            "/api/v1/me/real-name",
+            json={"name": "张三", "id_number": "110101199001011234"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["verification_status"] == "verified"
+        async with sm() as session:
+            user = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
+            assert user.id_name == "张三"
+            assert user.id_number is not None
+            assert user.id_number.startswith("1101")
+            assert "*" in user.id_number
+            assert "199001011234" not in user.id_number  # 不落明文
+
+        # 重复提交被拒
+        resp = await client.post(
+            "/api/v1/me/real-name",
+            json={"name": "张三", "id_number": "110101199001011234"},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "CONFLICT"
+
+    async def test_mismatch_rejected(self, client: AsyncClient):
+        headers, _ = await _headers(client, "13800000161")
+        resp = await client.post(
+            "/api/v1/me/real-name",
+            json={"name": "李四", "id_number": "110101199001010000"},  # mock:0000 结尾不一致
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "REAL_NAME_MISMATCH"
+
+    async def test_recharge_gate_when_required(self, client: AsyncClient):
+        settings = get_settings()
+        settings.real_name_required_for_recharge = True
+        try:
+            headers, _ = await _headers(client, "13800000162")
+            resp = await client.post(
+                "/api/v1/wallet/recharges",
+                json={"amount": "50.00", "channel": "mock"},
+                headers=headers,
+            )
+            assert resp.status_code == 403
+            assert resp.json()["code"] == "REAL_NAME_REQUIRED"
+
+            # 完成实名后放行
+            await client.post(
+                "/api/v1/me/real-name",
+                json={"name": "王五", "id_number": "110101199001011111"},
+                headers=headers,
+            )
+            resp = await client.post(
+                "/api/v1/wallet/recharges",
+                json={"amount": "50.00", "channel": "mock"},
+                headers=headers,
+            )
+            assert resp.status_code == 201, resp.text
+        finally:
+            settings.real_name_required_for_recharge = False
+
+    async def test_register_requires_terms(self, client: AsyncClient):
+        await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000163", "purpose": "register"}
+        )
+        resp = await client.post(
+            "/api/v1/auth/register", json={"phone": "13800000163", "sms_code": "123456"}
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "TERMS_NOT_ACCEPTED"

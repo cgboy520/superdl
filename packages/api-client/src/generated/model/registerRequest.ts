@@ -6,6 +6,7 @@
  */
 
 export interface RegisterRequest {
+  accept_terms?: boolean;
   password?: string | null;
   /**
      * 中国大陆手机号

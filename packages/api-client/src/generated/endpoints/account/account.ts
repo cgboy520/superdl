@@ -22,6 +22,7 @@ import type {
 import type {
   HTTPValidationError,
   LoginRequest,
+  RealNameRequest,
   RefreshRequest,
   RegisterRequest,
   SmsCodeRequest,
@@ -543,6 +544,107 @@ export function useMeApiV1MeGet<TData = Awaited<ReturnType<typeof meApiV1MeGet>>
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getMeApiV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getSubmitRealNameApiV1MeRealNamePostUrl = () => {
+
+
+
+
+  return `/api/v1/me/real-name`
+}
+
+/**
+ * 实名认证(三要素核验;身份证号仅存脱敏串)。
+ * @summary Submit Real Name
+ */
+export const submitRealNameApiV1MeRealNamePost = async (realNameRequest: RealNameRequest, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
+
+  return customFetch<UserOut>(getSubmitRealNameApiV1MeRealNamePostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(realNameRequest)
+  }
+);}
+
+
+
+
+
+export const getSubmitRealNameApiV1MeRealNamePostQueryKey = (realNameRequest?: RealNameRequest,) => {
+    return [
+    'POST', `/api/v1/me/real-name`, realNameRequest
+    ] as const;
+    }
+
+
+export const getSubmitRealNameApiV1MeRealNamePostQueryOptions = <TData = Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError = HTTPValidationError>(realNameRequest: RealNameRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSubmitRealNameApiV1MeRealNamePostQueryKey(realNameRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>> = ({ signal }) => submitRealNameApiV1MeRealNamePost(realNameRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SubmitRealNameApiV1MeRealNamePostQueryResult = NonNullable<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>>
+export type SubmitRealNameApiV1MeRealNamePostQueryError = HTTPValidationError
+
+
+export function useSubmitRealNameApiV1MeRealNamePost<TData = Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError = HTTPValidationError>(
+ realNameRequest: RealNameRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>,
+          TError,
+          Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSubmitRealNameApiV1MeRealNamePost<TData = Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError = HTTPValidationError>(
+ realNameRequest: RealNameRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>,
+          TError,
+          Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSubmitRealNameApiV1MeRealNamePost<TData = Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError = HTTPValidationError>(
+ realNameRequest: RealNameRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Submit Real Name
+ */
+
+export function useSubmitRealNameApiV1MeRealNamePost<TData = Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError = HTTPValidationError>(
+ realNameRequest: RealNameRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof submitRealNameApiV1MeRealNamePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getSubmitRealNameApiV1MeRealNamePostQueryOptions(realNameRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header, Query, Request
 from sqlalchemy import func, select
 
 from app.core.audit import set_audit_target
+from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount
@@ -41,6 +42,7 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         disk_frozen_days=p.disk_frozen_days,
         freeze_grace_hours=p.freeze_grace_hours,
         low_balance_warn_hours_default=p.low_balance_warn_hours,
+        real_name_required_for_recharge=get_settings().real_name_required_for_recharge,
     )
 
 
@@ -232,6 +234,12 @@ async def create_recharge(
     request: Request,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> RechargeOut:
+    if get_settings().real_name_required_for_recharge and user.verification_status != "verified":
+        raise AppError(
+            ErrorCode.REAL_NAME_REQUIRED,
+            "按监管要求,充值前需完成实名认证",
+            http_status=403,
+        )
     order = await payment_service.create_recharge(
         session, user.id, body.amount, body.channel, idempotency_key
     )

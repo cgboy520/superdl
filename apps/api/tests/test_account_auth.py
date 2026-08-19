@@ -28,7 +28,7 @@ async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
 
 async def register(client: AsyncClient, phone: str = PHONE, password: str | None = None) -> dict:
     await send_code(client, phone, "register")
-    body: dict = {"phone": phone, "sms_code": "123456"}
+    body: dict = {"phone": phone, "sms_code": "123456", "accept_terms": True}
     if password:
         body["password"] = password
     resp = await client.post("/api/v1/auth/register", json=body)
@@ -51,7 +51,8 @@ class TestRegister:
         await age_sms_codes(sm)
         await send_code(client)
         resp = await client.post(
-            "/api/v1/auth/register", json={"phone": PHONE, "sms_code": "123456"}
+            "/api/v1/auth/register",
+            json={"phone": PHONE, "sms_code": "123456", "accept_terms": True},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "PHONE_TAKEN"
@@ -59,7 +60,8 @@ class TestRegister:
     async def test_wrong_code(self, client: AsyncClient):
         await send_code(client)
         resp = await client.post(
-            "/api/v1/auth/register", json={"phone": PHONE, "sms_code": "999999"}
+            "/api/v1/auth/register",
+            json={"phone": PHONE, "sms_code": "999999", "accept_terms": True},
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "SMS_CODE_INVALID"
@@ -67,7 +69,8 @@ class TestRegister:
     async def test_code_single_use(self, client: AsyncClient):
         await register(client)  # 消费了验证码
         resp = await client.post(
-            "/api/v1/auth/register", json={"phone": "13800000002", "sms_code": "123456"}
+            "/api/v1/auth/register",
+            json={"phone": "13800000002", "sms_code": "123456", "accept_terms": True},
         )
         # 另一手机号没发过码
         assert resp.json()["code"] == "SMS_CODE_INVALID"
@@ -80,7 +83,8 @@ class TestRegister:
             )
             await session.commit()
         resp = await client.post(
-            "/api/v1/auth/register", json={"phone": PHONE, "sms_code": "123456"}
+            "/api/v1/auth/register",
+            json={"phone": PHONE, "sms_code": "123456", "accept_terms": True},
         )
         assert resp.json()["code"] == "SMS_CODE_INVALID"
 

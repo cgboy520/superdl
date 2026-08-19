@@ -15,6 +15,7 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(16), default="active")  # active / frozen
     low_balance_warn_hours: Mapped[int] = mapped_column(default=24)  # 余额预警阈值(用户可设)
     token_version: Mapped[int] = mapped_column(default=0)  # 撤销闸:+1 即失效全部在外 token
+    verification_status: Mapped[str] = mapped_column(String(16), default="unverified")
     # 实名/企业字段预留(MVP 不做流程,避免日后迁移)
     id_name: Mapped[str | None] = mapped_column(String(64))
     id_number: Mapped[str | None] = mapped_column(String(32))

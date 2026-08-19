@@ -76,6 +76,7 @@ export * from './pageLedgerEntryOut';
 export * from './policiesOut';
 export * from './policyUpdateRequest';
 export * from './policyUpdateRequestUpdates';
+export * from './realNameRequest';
 export * from './rechargeCreate';
 export * from './rechargeOut';
 export * from './reconciliationApiAdminV1ReconciliationGet200';

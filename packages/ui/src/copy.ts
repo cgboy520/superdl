@@ -50,7 +50,6 @@ export const copy = {
   billingModeComingSoon: "包日/包周/包月计费即将上线,当前仅支持按量计费",
   myImagesComingSoon: "保存镜像功能上线后,可在此选择自己保存的镜像",
   channelComingSoon: "商户资质接入后开放,当前请使用模拟支付(开发环境)",
-  realNameComingSoon: "实名认证即将上线",
 
   // 计费规则说明(市场/创建页「计费规则」链接)
   billingRules: [

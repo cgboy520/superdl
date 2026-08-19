@@ -1,4 +1,6 @@
-/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。 */
+/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号经 VITE_ICP_NUMBER 注入。 */
+
+const ICP_NUMBER = import.meta.env.VITE_ICP_NUMBER as string | undefined;
 
 import { copy, marketing } from "@superdl/ui";
 import { theme, Typography } from "antd";
@@ -63,6 +65,19 @@ export function SiteFooter() {
         >
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {f.copyright}
+            {" · "}
+            {ICP_NUMBER ? (
+              <a
+                href="https://beian.miit.gov.cn/"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "inherit" }}
+              >
+                {ICP_NUMBER}
+              </a>
+            ) : (
+              "备案号待配置(VITE_ICP_NUMBER)"
+            )}
           </Typography.Text>
         </div>
       </div>

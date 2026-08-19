@@ -23,6 +23,7 @@ import {
   restartInstanceApiV1InstancesUuidRestartPost,
   sendSmsCodeApiV1AuthSmsCodePost,
   setWarnThresholdApiV1MeWarnThresholdPatch,
+  submitRealNameApiV1MeRealNamePost,
   startInstanceApiV1InstancesUuidStartPost,
   stopInstanceApiV1InstancesUuidStopPost,
 } from "@superdl/api-client";
@@ -31,6 +32,7 @@ import type {
   DiskExpand,
   InstanceCreate,
   LoginRequest,
+  RealNameRequest,
   RechargeCreate,
   RegisterRequest,
   SmsCodeRequest,
@@ -101,6 +103,11 @@ export const useMockPay = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     (vars: { order_no: string; amount: string }) =>
       mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
+    o,
+  );
+export const useSubmitRealName = (o?: { onSuccess?: () => void }) =>
+  useApiMutation(
+    (body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body),
     o,
   );
 export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>

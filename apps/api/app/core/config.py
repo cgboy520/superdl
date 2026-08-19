@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     disk_grace_days: int = 7
     disk_frozen_days: int = 30
 
+    # 实名认证:资质就绪后打开(充值前强制;《网络安全法》要求)
+    real_name_required_for_recharge: bool = False
+
     # 每用户配额(防单账号无限开机;K8s ResourceQuota 是集群侧兜底)
     max_instances_per_user: int = 10
     max_gpus_per_user: int = 8

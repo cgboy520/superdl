@@ -6,6 +6,7 @@ from app.modules.account import service
 from app.modules.account.deps import CurrentUser
 from app.modules.account.schemas import (
     LoginRequest,
+    RealNameRequest,
     RefreshRequest,
     RegisterRequest,
     SmsCodeRequest,
@@ -32,7 +33,12 @@ async def send_sms_code(body: SmsCodeRequest, session: DbSession, request: Reque
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, session: DbSession, request: Request) -> TokenPair:
     pair = await service.register(
-        session, body.phone, body.sms_code, body.password, client_ip=_client_ip(request)
+        session,
+        body.phone,
+        body.sms_code,
+        body.password,
+        accept_terms=body.accept_terms,
+        client_ip=_client_ip(request),
     )
     set_audit_target(request, f"user:{pair.user.id}")
     return pair
@@ -62,6 +68,16 @@ async def set_warn_threshold(
     body: WarnThresholdUpdate, user: CurrentUser, session: DbSession
 ) -> UserOut:
     updated = await service.set_warn_threshold(session, user, body.low_balance_warn_hours)
+    return UserOut.model_validate(updated)
+
+
+@router.post("/me/real-name")
+async def submit_real_name(
+    body: RealNameRequest, user: CurrentUser, session: DbSession, request: Request
+) -> UserOut:
+    """实名认证(三要素核验;身份证号仅存脱敏串)。"""
+    updated = await service.submit_real_name(session, user, body.name, body.id_number)
+    set_audit_target(request, f"user:{user.id}", detail={"action": "real_name_verified"})
     return UserOut.model_validate(updated)
 
 

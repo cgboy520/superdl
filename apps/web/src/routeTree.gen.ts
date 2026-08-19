@@ -18,6 +18,8 @@ import { Route as ConsoleInstancesRouteImport } from './routes/_console.instance
 import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
 import { Route as ConsoleSettingsRouteImport } from './routes/_console.settings'
 import { Route as ConsoleStorageRouteImport } from './routes/_console.storage'
+import { Route as LegalPrivacyRouteImport } from './routes/legal.privacy'
+import { Route as LegalTermsRouteImport } from './routes/legal.terms'
 import { Route as ConsoleInstancesUuidRouteImport } from './routes/_console.instances_.$uuid'
 import { Route as ConsoleMarketCreateSkuIdRouteImport } from './routes/_console.market_.create.$skuId'
 
@@ -65,6 +67,16 @@ const ConsoleStorageRoute = ConsoleStorageRouteImport.update({
   path: '/storage',
   getParentRoute: () => ConsoleRoute,
 } as any)
+const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
+  id: '/legal/privacy',
+  path: '/legal/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalTermsRoute = LegalTermsRouteImport.update({
+  id: '/legal/terms',
+  path: '/legal/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConsoleInstancesUuidRoute = ConsoleInstancesUuidRouteImport.update({
   id: '/instances_/$uuid',
   path: '/instances/$uuid',
@@ -86,6 +98,8 @@ export interface FileRoutesByFullPath {
   '/market': typeof ConsoleMarketRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
   '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -98,6 +112,8 @@ export interface FileRoutesByTo {
   '/market': typeof ConsoleMarketRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
   '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -112,6 +128,8 @@ export interface FileRoutesById {
   '/_console/market': typeof ConsoleMarketRoute
   '/_console/settings': typeof ConsoleSettingsRoute
   '/_console/storage': typeof ConsoleStorageRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/_console/instances_/$uuid': typeof ConsoleInstancesUuidRoute
   '/_console/market_/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
@@ -126,6 +144,8 @@ export interface FileRouteTypes {
     | '/market'
     | '/settings'
     | '/storage'
+    | '/legal/privacy'
+    | '/legal/terms'
     | '/instances/$uuid'
     | '/market/create/$skuId'
   fileRoutesByTo: FileRoutesByTo
@@ -138,6 +158,8 @@ export interface FileRouteTypes {
     | '/market'
     | '/settings'
     | '/storage'
+    | '/legal/privacy'
+    | '/legal/terms'
     | '/instances/$uuid'
     | '/market/create/$skuId'
   id:
@@ -151,6 +173,8 @@ export interface FileRouteTypes {
     | '/_console/market'
     | '/_console/settings'
     | '/_console/storage'
+    | '/legal/privacy'
+    | '/legal/terms'
     | '/_console/instances_/$uuid'
     | '/_console/market_/create/$skuId'
   fileRoutesById: FileRoutesById
@@ -159,6 +183,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConsoleRoute: typeof ConsoleRouteWithChildren
   LoginRoute: typeof LoginRoute
+  LegalPrivacyRoute: typeof LegalPrivacyRoute
+  LegalTermsRoute: typeof LegalTermsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -226,6 +252,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleStorageRouteImport
       parentRoute: typeof ConsoleRoute
     }
+    '/legal/privacy': {
+      id: '/legal/privacy'
+      path: '/legal/privacy'
+      fullPath: '/legal/privacy'
+      preLoaderRoute: typeof LegalPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/terms': {
+      id: '/legal/terms'
+      path: '/legal/terms'
+      fullPath: '/legal/terms'
+      preLoaderRoute: typeof LegalTermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_console/instances_/$uuid': {
       id: '/_console/instances_/$uuid'
       path: '/instances/$uuid'
@@ -272,6 +312,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConsoleRoute: ConsoleRouteWithChildren,
   LoginRoute: LoginRoute,
+  LegalPrivacyRoute: LegalPrivacyRoute,
+  LegalTermsRoute: LegalTermsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

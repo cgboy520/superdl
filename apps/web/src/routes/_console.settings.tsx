@@ -12,12 +12,17 @@ import {
   Popconfirm,
   Space,
   Table,
-  Tooltip,
+  Tag,
   Typography,
 } from "antd";
 import { useState } from "react";
 
-import { useAddSshKey, useDeleteSshKey, useSetWarnThreshold } from "../api/mutations";
+import {
+  useAddSshKey,
+  useDeleteSshKey,
+  useSetWarnThreshold,
+  useSubmitRealName,
+} from "../api/mutations";
 import { useMe, useSshKeys } from "../api/queries";
 import { requireAuth } from "../lib/guard";
 import { authStore } from "../stores/auth";
@@ -147,25 +152,77 @@ function SettingsPage() {
         </Space>
       </Card>
 
+      <RealNameCard verified={me?.verification_status === "verified"} />
+
       <Card title="账号">
         <Space orientation="vertical" size={12}>
           <Typography.Text>手机号:{me?.phone}</Typography.Text>
-          <Space>
-            <Tooltip title={copy.realNameComingSoon}>
-              <Button disabled>实名认证</Button>
-            </Tooltip>
-            <Button
-              danger
-              onClick={() => {
-                authStore.getState().logout();
-                void navigate({ to: "/login" });
-              }}
-            >
-              退出登录
-            </Button>
-          </Space>
+          <Button
+            danger
+            onClick={() => {
+              authStore.getState().logout();
+              void navigate({ to: "/login" });
+            }}
+          >
+            退出登录
+          </Button>
         </Space>
       </Card>
     </Space>
+  );
+}
+
+function RealNameCard({ verified }: { verified: boolean }) {
+  const { message } = App.useApp();
+  const [form] = Form.useForm<{ name: string; id_number: string }>();
+  const submit = useSubmitRealName({
+    onSuccess: () => message.success("实名认证已完成"),
+  });
+  return (
+    <Card
+      title={
+        <Space size={8}>
+          实名认证
+          <Tag color={verified ? "green" : "orange"}>{verified ? "已认证" : "未认证"}</Tag>
+        </Space>
+      }
+    >
+      {verified ? (
+        <Typography.Text type="secondary">已完成实名认证,信息仅存脱敏形态。</Typography.Text>
+      ) : (
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            按监管要求完成三要素核验(姓名 + 身份证号 + 账号手机号);信息仅用于核验,身份证号只保存脱敏形态。
+          </Typography.Text>
+          <Form
+            form={form}
+            layout="inline"
+            onFinish={(v) => submit.mutate({ name: v.name, id_number: v.id_number })}
+          >
+            <Form.Item
+              name="name"
+              rules={[{ required: true, min: 2, message: "请输入与身份证一致的姓名" }]}
+            >
+              <Input placeholder="真实姓名" style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item
+              name="id_number"
+              rules={[
+                {
+                  required: true,
+                  pattern: /^\d{17}[\dXx]$/,
+                  message: "请输入 18 位身份证号",
+                },
+              ]}
+            >
+              <Input placeholder="身份证号(18 位)" style={{ width: 220 }} maxLength={18} />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" loading={submit.isPending}>
+              提交核验
+            </Button>
+          </Form>
+        </Space>
+      )}
+    </Card>
   );
 }

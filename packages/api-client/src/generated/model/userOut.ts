@@ -11,4 +11,5 @@ export interface UserOut {
   low_balance_warn_hours: number;
   phone: string;
   status: string;
+  verification_status: string;
 }

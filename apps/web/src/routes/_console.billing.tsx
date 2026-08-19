@@ -22,7 +22,7 @@ import {
   statusColors,
   tabularNums,
 } from "@superdl/ui";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Alert,
   App,
@@ -54,6 +54,7 @@ import {
   useHourlyBills,
   useLedger,
   useMe,
+  usePolicies,
   useRecharge,
   useWallet,
 } from "../api/queries";
@@ -262,6 +263,7 @@ function BillingPage() {
   const walletQ = useWallet({ refetchInterval: 10_000 });
   const { data: wallet } = walletQ;
   const { data: me } = useMe();
+  const { data: policies } = usePolicies();
   // 本地时区取当月(toISOString 是 UTC 切片,+08:00 月初凌晨会切到上个月)
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -344,6 +346,18 @@ function BillingPage() {
         费用中心
       </Typography.Title>
       {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
+      {policies?.real_name_required_for_recharge && me?.verification_status !== "verified" && (
+        <Alert
+          type="warning"
+          showIcon
+          title="按监管要求,完成实名认证后方可充值"
+          action={
+            <Link to="/settings">
+              <Button size="small">去认证</Button>
+            </Link>
+          }
+        />
+      )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card>

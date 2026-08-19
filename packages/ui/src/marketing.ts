@@ -78,8 +78,11 @@ export const marketing = {
     },
     compliance: {
       title: "合规",
-      links: [{ label: "用户协议(即将上线)", to: "" }],
+      links: [
+        { label: "用户协议", to: "/legal/terms" },
+        { label: "隐私政策", to: "/legal/privacy" },
+      ],
     },
-    copyright: "© 2026 SuperDL · 备案号占位",
+    copyright: "© 2026 SuperDL",
   },
 } as const;
