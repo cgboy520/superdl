@@ -24,10 +24,13 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminForceStopRequest,
+  AdminListInstancesApiAdminV1InstancesGetParams,
   AdminLoginRequest,
   AdminOut,
   AdminToken,
   HTTPValidationError,
+  InstanceOut,
   SkuAdminOut,
   SkuCreate,
   SkuUpdate
@@ -144,6 +147,191 @@ export function useAdminLoginApiAdminV1AuthLoginPost<TData = Awaited<ReturnType<
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminLoginApiAdminV1AuthLoginPostQueryOptions(adminLoginRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListInstancesApiAdminV1InstancesGetUrl = (params?: AdminListInstancesApiAdminV1InstancesGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/instances?${stringifiedParams}` : `/api/admin/v1/instances`
+}
+
+/**
+ * @summary Admin List Instances
+ */
+export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut[]> => {
+
+  return customFetch<InstanceOut[]>(getAdminListInstancesApiAdminV1InstancesGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListInstancesApiAdminV1InstancesGetMutationOptions = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError,{params?: AdminListInstancesApiAdminV1InstancesGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError,{params?: AdminListInstancesApiAdminV1InstancesGetParams}, TContext> => {
+
+const mutationKey = ['adminListInstancesApiAdminV1InstancesGet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, {params?: AdminListInstancesApiAdminV1InstancesGetParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  adminListInstancesApiAdminV1InstancesGet(params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminListInstancesApiAdminV1InstancesGetMutationResult = NonNullable<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>>
+
+    export type AdminListInstancesApiAdminV1InstancesGetMutationError = HTTPValidationError
+
+    /**
+ * @summary Admin List Instances
+ */
+export const useAdminListInstancesApiAdminV1InstancesGet = <TError = HTTPValidationError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>, TError,{params?: AdminListInstancesApiAdminV1InstancesGetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof adminListInstancesApiAdminV1InstancesGet>>,
+        TError,
+        {params?: AdminListInstancesApiAdminV1InstancesGetParams},
+        TContext
+      > => {
+      return useMutation(getAdminListInstancesApiAdminV1InstancesGetMutationOptions(options), queryClient);
+    }
+    export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/instances/${uuid}/force-stop`
+}
+
+/**
+ * 强制停止(原因必填,通知用户由 WP9 接入)。
+ * @summary Admin Force Stop
+ */
+export const adminForceStopApiAdminV1InstancesUuidForceStopPost = async (uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
+
+  return customFetch<InstanceOut>(getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminForceStopRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostQueryKey = (uuid: string,
+    adminForceStopRequest?: AdminForceStopRequest,) => {
+    return [
+    'POST', `/api/admin/v1/instances/${uuid}/force-stop`, adminForceStopRequest
+    ] as const;
+    }
+
+
+export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostQueryOptions = <TData = Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError = HTTPValidationError>(uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminForceStopApiAdminV1InstancesUuidForceStopPostQueryKey(uuid,adminForceStopRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>> = ({ signal }) => adminForceStopApiAdminV1InstancesUuidForceStopPost(uuid,adminForceStopRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminForceStopApiAdminV1InstancesUuidForceStopPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>>
+export type AdminForceStopApiAdminV1InstancesUuidForceStopPostQueryError = HTTPValidationError
+
+
+export function useAdminForceStopApiAdminV1InstancesUuidForceStopPost<TData = Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError = HTTPValidationError>(
+ uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminForceStopApiAdminV1InstancesUuidForceStopPost<TData = Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError = HTTPValidationError>(
+ uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminForceStopApiAdminV1InstancesUuidForceStopPost<TData = Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError = HTTPValidationError>(
+ uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Force Stop
+ */
+
+export function useAdminForceStopApiAdminV1InstancesUuidForceStopPost<TData = Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError = HTTPValidationError>(
+ uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminForceStopApiAdminV1InstancesUuidForceStopPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminForceStopApiAdminV1InstancesUuidForceStopPostQueryOptions(uuid,adminForceStopRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

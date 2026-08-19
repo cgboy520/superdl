@@ -51,6 +51,7 @@ def create_app() -> FastAPI:
     app.mount("/metrics", make_asgi_app())
 
     _register_module_routers(app)
+    wire_modules()
     return app
 
 
@@ -59,10 +60,20 @@ def _register_module_routers(app: FastAPI) -> None:
     from app.modules.account.router import router as account_router
     from app.modules.adminapi.router import router as admin_router
     from app.modules.catalog.router import router as catalog_router
+    from app.modules.orchestrator.router import router as orchestrator_router
 
     app.include_router(account_router, prefix="/api/v1")
     app.include_router(catalog_router, prefix="/api/v1")
+    app.include_router(orchestrator_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
+
+
+def wire_modules() -> None:
+    """跨模块运行时接线:outbox handlers 注册 + 库存 provider。api 与 worker 双入口共用。"""
+    from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
+    from app.modules.orchestrator.service import register_inventory_provider
+
+    register_inventory_provider()
 
 
 app = create_app()

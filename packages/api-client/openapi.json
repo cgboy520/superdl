@@ -1,6 +1,21 @@
 {
   "components": {
     "schemas": {
+      "AdminForceStopRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AdminForceStopRequest",
+        "type": "object"
+      },
       "AdminLoginRequest": {
         "properties": {
           "password": {
@@ -122,6 +137,264 @@
           "is_prewarmed"
         ],
         "title": "ImageOut",
+        "type": "object"
+      },
+      "InstanceAccessOut": {
+        "properties": {
+          "jupyter_url": {
+            "title": "Jupyter Url",
+            "type": "string"
+          },
+          "ssh_command": {
+            "title": "Ssh Command",
+            "type": "string"
+          },
+          "ssh_host": {
+            "title": "Ssh Host",
+            "type": "string"
+          },
+          "ssh_port": {
+            "title": "Ssh Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ssh_host",
+          "ssh_port",
+          "ssh_command",
+          "jupyter_url"
+        ],
+        "title": "InstanceAccessOut",
+        "type": "object"
+      },
+      "InstanceCreate": {
+        "properties": {
+          "data_disk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Disk Id"
+          },
+          "gpu_count": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Gpu Count",
+            "type": "integer"
+          },
+          "image_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sku_id": {
+            "title": "Sku Id",
+            "type": "integer"
+          },
+          "ssh_key_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "title": "Ssh Key Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sku_id",
+          "image_ref",
+          "ssh_key_ids"
+        ],
+        "title": "InstanceCreate",
+        "type": "object"
+      },
+      "InstanceEventOut": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Metadata"
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_status",
+          "to_status",
+          "reason",
+          "actor",
+          "event_metadata",
+          "created_at"
+        ],
+        "title": "InstanceEventOut",
+        "type": "object"
+      },
+      "InstanceOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_disk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Disk Id"
+          },
+          "frozen_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frozen Deadline"
+          },
+          "gpu_count": {
+            "title": "Gpu Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image_ref": {
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price_hourly": {
+            "title": "Price Hourly",
+            "type": "string"
+          },
+          "sku_id": {
+            "title": "Sku Id",
+            "type": "integer"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "title": "Spec",
+            "type": "object"
+          },
+          "ssh_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Port"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "uuid",
+          "name",
+          "status",
+          "sku_id",
+          "spec",
+          "price_hourly",
+          "gpu_count",
+          "image_ref",
+          "ssh_port",
+          "data_disk_id",
+          "frozen_deadline",
+          "created_at"
+        ],
+        "title": "InstanceOut",
+        "type": "object"
+      },
+      "InstanceRename": {
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "InstanceRename",
         "type": "object"
       },
       "LoginRequest": {
@@ -988,6 +1261,138 @@
         ]
       }
     },
+    "/api/admin/v1/instances": {
+      "get": {
+        "operationId": "admin_list_instances_api_admin_v1_instances_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstanceOut"
+                  },
+                  "title": "Response Admin List Instances Api Admin V1 Instances Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Instances",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/instances/{uuid}/force-stop": {
+      "post": {
+        "description": "强制停止(原因必填,通知用户由 WP9 接入)。",
+        "operationId": "admin_force_stop_api_admin_v1_instances__uuid__force_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminForceStopRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Force Stop",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/me": {
       "get": {
         "operationId": "admin_me_api_admin_v1_me_get",
@@ -1325,6 +1730,533 @@
         "summary": "List Images",
         "tags": [
           "catalog"
+        ]
+      }
+    },
+    "/api/v1/instances": {
+      "get": {
+        "operationId": "list_instances_api_v1_instances_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstanceOut"
+                  },
+                  "title": "Response List Instances Api V1 Instances Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Instances",
+        "tags": [
+          "instances"
+        ]
+      },
+      "post": {
+        "operationId": "create_instance_api_v1_instances_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}": {
+      "delete": {
+        "description": "释放实例(清除实例盘,数据盘不受影响)。前端多级确认后调用。",
+        "operationId": "release_instance_api_v1_instances__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release Instance",
+        "tags": [
+          "instances"
+        ]
+      },
+      "get": {
+        "operationId": "get_instance_api_v1_instances__uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Instance",
+        "tags": [
+          "instances"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_instance_api_v1_instances__uuid__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/access": {
+      "get": {
+        "operationId": "get_instance_access_api_v1_instances__uuid__access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceAccessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Instance Access",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/events": {
+      "get": {
+        "description": "状态时间线 = 计费依据,对用户透明。",
+        "operationId": "list_instance_events_api_v1_instances__uuid__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstanceEventOut"
+                  },
+                  "title": "Response List Instance Events Api V1 Instances  Uuid  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Instance Events",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/reset-jupyter-token": {
+      "post": {
+        "operationId": "reset_jupyter_token_api_v1_instances__uuid__reset_jupyter_token_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Jupyter Token",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/restart": {
+      "post": {
+        "operationId": "restart_instance_api_v1_instances__uuid__restart_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restart Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/start": {
+      "post": {
+        "operationId": "start_instance_api_v1_instances__uuid__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/stop": {
+      "post": {
+        "operationId": "stop_instance_api_v1_instances__uuid__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stop Instance",
+        "tags": [
+          "instances"
         ]
       }
     },

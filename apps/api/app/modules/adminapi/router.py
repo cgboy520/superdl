@@ -7,6 +7,8 @@ from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import AdminLoginRequest, AdminOut, AdminToken
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import SkuAdminOut, SkuCreate, SkuUpdate
+from app.modules.orchestrator import service as orchestrator_service
+from app.modules.orchestrator.schemas import AdminForceStopRequest, InstanceOut
 
 router = APIRouter(tags=["admin"])
 
@@ -49,3 +51,26 @@ async def admin_update_sku(
         request, f"sku:{sku.id}", detail=body.model_dump(exclude_unset=True, mode="json")
     )
     return SkuAdminOut.model_validate(sku)
+
+
+# ---------- 全局实例(角色:admin / ops) ----------
+
+
+@router.get("/instances", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_list_instances(
+    session: DbSession, status: str | None = None, user_id: int | None = None
+) -> list[InstanceOut]:
+    instances = await orchestrator_service.admin_list_instances(
+        session, status_filter=status, user_id=user_id
+    )
+    return [InstanceOut.model_validate(i) for i in instances]
+
+
+@router.post("/instances/{uuid}/force-stop", dependencies=[require_roles("ops")])
+async def admin_force_stop(
+    uuid: str, body: AdminForceStopRequest, session: DbSession, request: Request
+) -> InstanceOut:
+    """强制停止(原因必填,通知用户由 WP9 接入)。"""
+    instance = await orchestrator_service.admin_force_stop(session, uuid, reason=body.reason)
+    set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
+    return InstanceOut.model_validate(instance)

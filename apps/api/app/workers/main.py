@@ -32,7 +32,9 @@ async def outbox_loop(worker_id: str) -> None:
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """各模块定时任务注册。随 WP 推进逐个接入(结算/巡检/reconciler/聚合)。"""
+    """各模块定时任务注册。随 WP 推进逐个接入(结算/巡检/聚合)。"""
+    from app.modules.orchestrator.reconciler import reconcile_once
+
     sm = get_sessionmaker()
 
     scheduler.add_job(
@@ -42,10 +44,22 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         args=[sm],
         id="outbox_reaper",
     )
+    scheduler.add_job(
+        reconcile_once,
+        "interval",
+        seconds=30,
+        args=[sm],
+        id="reconciler",
+        max_instances=1,
+        coalesce=True,
+    )
 
 
 async def main() -> None:
     setup_logging()
+    from app.main import wire_modules
+
+    wire_modules()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
     scheduler = AsyncIOScheduler(timezone="UTC")
     register_scheduled_jobs(scheduler)
