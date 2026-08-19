@@ -10,7 +10,12 @@ import { authStore } from "./stores/auth";
 configureApiClient({
   baseUrl: "",
   getToken: () => authStore.getState().accessToken,
-  onUnauthorized: () => authStore.getState().logout(),
+  onUnauthorized: () => {
+    authStore.getState().logout();
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+    }
+  },
 });
 
 const queryClient = new QueryClient({

@@ -9,50 +9,191 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppAuditRouteImport } from './routes/_app/audit'
+import { Route as AppFinanceRouteImport } from './routes/_app/finance'
+import { Route as AppNodesRouteImport } from './routes/_app/nodes'
+import { Route as AppSkusRouteImport } from './routes/_app/skus'
+import { Route as AppTenantsRouteImport } from './routes/_app/tenants'
 
-const IndexRoute = IndexRouteImport.update({
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAuditRoute = AppAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFinanceRoute = AppFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNodesRoute = AppNodesRouteImport.update({
+  id: '/nodes',
+  path: '/nodes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSkusRoute = AppSkusRouteImport.update({
+  id: '/skus',
+  path: '/skus',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTenantsRoute = AppTenantsRouteImport.update({
+  id: '/tenants',
+  path: '/tenants',
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
+  '/login': typeof LoginRoute
+  '/audit': typeof AppAuditRoute
+  '/finance': typeof AppFinanceRoute
+  '/nodes': typeof AppNodesRoute
+  '/skus': typeof AppSkusRoute
+  '/tenants': typeof AppTenantsRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/audit': typeof AppAuditRoute
+  '/finance': typeof AppFinanceRoute
+  '/nodes': typeof AppNodesRoute
+  '/skus': typeof AppSkusRoute
+  '/tenants': typeof AppTenantsRoute
+  '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_app/audit': typeof AppAuditRoute
+  '/_app/finance': typeof AppFinanceRoute
+  '/_app/nodes': typeof AppNodesRoute
+  '/_app/skus': typeof AppSkusRoute
+  '/_app/tenants': typeof AppTenantsRoute
+  '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    '/' | '/login' | '/audit' | '/finance' | '/nodes' | '/skus' | '/tenants'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/login' | '/audit' | '/finance' | '/nodes' | '/skus' | '/tenants' | '/'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/login'
+    | '/_app/audit'
+    | '/_app/finance'
+    | '/_app/nodes'
+    | '/_app/skus'
+    | '/_app/tenants'
+    | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/': {
+      id: '/_app/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/audit': {
+      id: '/_app/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AppAuditRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/finance': {
+      id: '/_app/finance'
+      path: '/finance'
+      fullPath: '/finance'
+      preLoaderRoute: typeof AppFinanceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/nodes': {
+      id: '/_app/nodes'
+      path: '/nodes'
+      fullPath: '/nodes'
+      preLoaderRoute: typeof AppNodesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/skus': {
+      id: '/_app/skus'
+      path: '/skus'
+      fullPath: '/skus'
+      preLoaderRoute: typeof AppSkusRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/tenants': {
+      id: '/_app/tenants'
+      path: '/tenants'
+      fullPath: '/tenants'
+      preLoaderRoute: typeof AppTenantsRouteImport
+      parentRoute: typeof AppRoute
     }
   }
 }
 
+interface AppRouteChildren {
+  AppAuditRoute: typeof AppAuditRoute
+  AppFinanceRoute: typeof AppFinanceRoute
+  AppNodesRoute: typeof AppNodesRoute
+  AppSkusRoute: typeof AppSkusRoute
+  AppTenantsRoute: typeof AppTenantsRoute
+  AppIndexRoute: typeof AppIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAuditRoute: AppAuditRoute,
+  AppFinanceRoute: AppFinanceRoute,
+  AppNodesRoute: AppNodesRoute,
+  AppSkusRoute: AppSkusRoute,
+  AppTenantsRoute: AppTenantsRoute,
+  AppIndexRoute: AppIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
