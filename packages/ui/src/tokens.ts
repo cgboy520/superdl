@@ -1,10 +1,28 @@
 /**
  * 两端共享设计 token(ui-ux-spec §2)。
- * 用户端:浅色,主色靛蓝(避开 antd 默认蓝与 AutoDL 品牌蓝)
+ * 用户端:浅色,主色靛蓝(避开 antd 默认蓝与 AutoDL 品牌蓝);布局对齐 AutoDL
+ * 「顶栏压侧栏」结构,顶栏/Hero 用 brand 渐变常量。
  * 管理端:深色 NOC 风,亮青作数据强调、琥珀作告警
  */
 
 export const colorPrimary = "#4F46E5";
+
+/** 系统字体栈(中文优先苹方/雅黑;数字对齐靠全局 tabular-nums,见 apps/web/src/styles.css) */
+export const fontFamily =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", ' +
+  '"Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';
+
+/** 品牌渐变与品牌面(用户端公开层 + 控制台顶栏) */
+export const brand = {
+  /** 控制台/公开页全宽顶栏底 */
+  topBarBg: "linear-gradient(90deg, #4338CA 0%, #4F46E5 100%)",
+  /** 主页 Hero / 登录页左栏底 */
+  heroBg: "linear-gradient(135deg, #312E81 0%, #4F46E5 55%, #6D28D9 100%)",
+  /** 浅靛强调面(菜单选中底/高亮块) */
+  indigo50: "#EEF2FF",
+  /** 页面底色(= colorBgLayout) */
+  pageBg: "#F5F6FA",
+} as const;
 
 export const adminColors = {
   bgBase: "#0B1220",
@@ -27,7 +45,26 @@ export const webTheme = {
   token: {
     colorPrimary,
     colorInfo: colorPrimary,
+    colorLink: colorPrimary,
+    colorSuccess: statusColors.green,
+    colorWarning: statusColors.orange,
+    colorError: statusColors.red,
+    colorBgLayout: brand.pageBg,
     borderRadius: 6,
+    fontFamily,
+  },
+  components: {
+    Layout: { siderBg: "#FFFFFF", footerBg: "transparent" },
+    Menu: {
+      itemSelectedBg: brand.indigo50,
+      itemSelectedColor: colorPrimary,
+      itemMarginInline: 8,
+      itemBorderRadius: 6,
+    },
+    Table: { headerBg: "#F9FAFB", cellPaddingBlock: 12 },
+    Card: { borderRadiusLG: 10 },
+    Button: { fontWeight: 500 },
+    Statistic: { contentFontSize: 28 },
   },
 } as const;
 
@@ -41,7 +78,11 @@ export const adminThemeToken = {
   borderRadius: 6,
 } as const;
 
-/** 数字列(金额/端口/利用率)统一 tabular-nums */
+/**
+ * 数字列(金额/端口/利用率)统一 tabular-nums。
+ * @deprecated apps/web 已在 body 级全局启用 tabular-nums(styles.css),新代码无需再 spread;
+ * 保留导出仅为兼容存量调用点与 admin 端。
+ */
 export const tabularNums: { fontVariantNumeric: "tabular-nums" } = {
   fontVariantNumeric: "tabular-nums",
 };

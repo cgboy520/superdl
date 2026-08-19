@@ -1,0 +1,48 @@
+/* 全局基线:reset / 等宽数字 / 顶栏链接 / 滚动条。业务样式一律走 antd token,禁止堆积于此。 */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+/* 数字密集型产品:金额/端口/利用率全局等宽对齐(tokens.tabularNums 因此弃用) */
+body {
+  font-variant-numeric: tabular-nums;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+}
+* {
+  scrollbar-width: thin;
+}
+
+/* 品牌顶栏(AppTopBar)内导航链接:深底白字,不走 antd Menu */
+.topbar-link {
+  color: rgba(255, 255, 255, 0.85);
+  padding: 6px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.2s, color 0.2s;
+}
+.topbar-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+}
+.topbar-link--active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 768px) {
+  .topbar-nav-center {
+    display: none;
+  }
+}

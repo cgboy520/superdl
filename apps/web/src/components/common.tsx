@@ -9,7 +9,7 @@ import {
   formatMoney,
   instanceStatusMap,
   skuTierMap,
-  tabularNums,
+  statusColors,
   type SkuTier,
 } from "@superdl/ui";
 import { App, Badge, Button, Tag } from "antd";
@@ -25,7 +25,7 @@ export function InstanceStatusBadge({
   const meta = instanceStatusMap[status as InstanceStatus] ?? {
     label: status,
     badge: "default" as const,
-    color: "#999",
+    color: statusColors.gray,
   };
   return (
     <span>
@@ -43,7 +43,7 @@ export function DiskStatusBadge({ status }: { status: string }) {
   const meta = diskStatusMap[status as DiskStatus] ?? {
     label: status,
     badge: "default" as const,
-    color: "#999",
+    color: statusColors.gray,
   };
   return <Badge status={meta.badge} text={meta.label} />;
 }
@@ -61,7 +61,7 @@ export function TierTag({ tier }: { tier: string }) {
 
 export function Money({ value, suffix }: { value: string | null | undefined; suffix?: string }) {
   return (
-    <span style={tabularNums}>
+    <span>
       {formatMoney(value)}
       {suffix}
     </span>
@@ -69,7 +69,7 @@ export function Money({ value, suffix }: { value: string | null | undefined; suf
 }
 
 export function HourlyPrice({ value }: { value: string | null | undefined }) {
-  return <span style={tabularNums}>{formatHourlyPrice(value)}</span>;
+  return <span>{formatHourlyPrice(value)}</span>;
 }
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {

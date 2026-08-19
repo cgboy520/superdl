@@ -6,6 +6,7 @@ import ReactDOM from "react-dom/client";
 
 import { routeTree } from "./routeTree.gen";
 import { authStore } from "./stores/auth";
+import "./styles.css";
 
 configureApiClient({
   baseUrl: "",
