@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     sms_code_ttl_seconds: int = 300
     sms_send_interval_seconds: int = 60
 
-    # 数据盘(WP8)
+    # 数据盘
     disk_price_gb_month: str = "0.0350"  # 元/GB·月(Decimal 字符串,新盘快照)
     disk_min_gb: int = 10
     disk_max_gb: int = 4096
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
 
-    # K8s 编排(WP3 起使用;dev 默认 fake)
+    # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
     k8s_namespace_prefix: str = "tenant-"
     ssh_host: str = "ssh1.superdl.example.com"
@@ -51,13 +51,13 @@ class Settings(BaseSettings):
     ssh_port_range_end: int = 32767
     jupyter_domain_suffix: str = "app.superdl.example.com"
 
-    # 告警接入(WP9)
+    # 告警接入
     alertmanager_token: str | None = None
 
-    # Prometheus 代理(WP6)
+    # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"
 
-    # 支付(WP5;dev 用 mock 渠道;真实商户凭据经环境变量注入,人工事项 #6)
+    # 支付(dev 用 mock 渠道;真实商户凭据经环境变量注入,人工事项 #6)
     payment_mock: bool = True
     public_base_url: str = "https://api.superdl.example.com"
     recharge_order_ttl_seconds: int = 2 * 3600

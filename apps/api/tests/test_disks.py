@@ -1,4 +1,4 @@
-"""WP8 数据盘:CRUD/挂载生命周期/日结幂等/欠费链路。验收:跨实例挂载,释放实例盘保留。"""
+"""数据盘:CRUD/挂载生命周期/日结幂等/欠费链路。验收:跨实例挂载,释放实例盘保留。"""
 
 from datetime import timedelta
 from decimal import Decimal

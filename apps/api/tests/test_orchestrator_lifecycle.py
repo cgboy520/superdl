@@ -213,7 +213,7 @@ class TestFailureModes:
         assert counts["to_failed"] == 1
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "failed"
-        # 计费边:running→failed 事件在案(WP4 结算按此停费)
+        # 计费边:running→failed 事件在案(结算按此停费)
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
         assert events[-1]["from_status"] == "running"
         assert events[-1]["to_status"] == "failed"

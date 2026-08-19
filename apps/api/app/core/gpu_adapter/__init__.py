@@ -1,9 +1,9 @@
 """GPU 资源申请抽象层。
 
 今天:device-plugin 语法(HAMi 软切分 / MIG / 整卡直通)。
-未来:DRA 成熟后仅改此层(12~18 个月观察项,见 development-plan §3.3)。
+未来:DRA 成熟后仅改此层(见 development-plan §3.3)。
 
-分池铁律(修正一):
+分池铁律:
 - dedicated → Kata 4.0(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
 - mig       → runc + MIG device plugin,mig 池
 - shared_*  → runc + HAMi 软切分 + userns 加固(hostUsers=false),hami 池

@@ -1,6 +1,6 @@
 # 集群部署(人工事项 #2~#5 配套 Runbook)
 
-版本锁定(development-plan §3.3,2026-08-19 核实):
+版本锁定(development-plan §3.3):
 RKE2 **v1.36**(latest 通道,为 userns GA)· Cilium 1.20 · GPU Operator v26.3 ·
 HAMi v2.9 · kube-prometheus-stack 88.x · JuiceFS CSI(JuiceFS 1.4.x LTS)· TopoLVM chart 17.x · Kata 4.0
 
@@ -20,9 +20,9 @@ HAMi v2.9 · kube-prometheus-stack 88.x · JuiceFS CSI(JuiceFS 1.4.x LTS)· Topo
    ```
 4. **组件**:`helmfile apply`(见 `helmfile.yaml`;需先装 helmfile+helm)
 5. **Kata 4.0**:`kata/` 下 kata-deploy(仅 kata 池节点)+ RuntimeClass
-6. **验证清单**:`runbooks/w1-validation.md`(含修正二的多卡直通实测)
+6. **验证清单**:`runbooks/w1-validation.md`(含多卡直通实测)
 7. **告警**:`monitoring/alert-rules.yaml`(5 条)已随 kps values 装入;
-   DCGM 大盘以 grafana.com dashboard **24450** 为底导入改造(12239 已废弃)
+   DCGM 大盘以 grafana.com dashboard **24450** 为底导入改造
 
 ## 回退预案
 

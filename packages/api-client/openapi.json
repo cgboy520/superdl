@@ -2393,7 +2393,7 @@
     },
     "/api/admin/v1/instances/{uuid}/force-stop": {
       "post": {
-        "description": "强制停止(原因必填,通知用户由 WP9 接入)。",
+        "description": "强制停止(原因必填)。",
         "operationId": "admin_force_stop_api_admin_v1_instances__uuid__force_stop_post",
         "parameters": [
           {

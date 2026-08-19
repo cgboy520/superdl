@@ -1,4 +1,4 @@
-# helmfile apply —— 平台组件(版本锁定于 2026-08-19 核实值,升级须走变更评审)
+# helmfile apply —— 平台组件(版本锁定,升级须走变更评审)
 repositories:
   - name: cilium
     url: https://helm.cilium.io

@@ -1,6 +1,6 @@
 """近似库存:市场页只展示近似值(30s 进程内缓存),创建以 K8s 调度结果为准。
 
-真实容量估算由 orchestrator 在启动时注册 provider(WP3);此前用 stub。
+真实容量估算由 orchestrator 在启动时注册 provider;未注册时用 stub。
 """
 
 import time
@@ -15,7 +15,7 @@ _cache: dict[int, tuple[int, float]] = {}
 
 
 async def _stub_provider(_sku: Any) -> int:
-    """WP3 前的占位:固定可租数,让市场页先跑通。"""
+    """占位 provider:固定可租数。"""
     return 8
 
 

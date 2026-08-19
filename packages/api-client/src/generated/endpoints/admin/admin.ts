@@ -804,7 +804,7 @@ export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl = (uuid: s
 }
 
 /**
- * 强制停止(原因必填,通知用户由 WP9 接入)。
+ * 强制停止(原因必填)。
  * @summary Admin Force Stop
  */
 export const adminForceStopApiAdminV1InstancesUuidForceStopPost = async (uuid: string,

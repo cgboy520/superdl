@@ -1,6 +1,6 @@
 /**
  * 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。
- * 不做轮播 —— 单产品无第二帧内容,空轮播反显模板气(ui-ux-spec §3.0)。
+ * 不做轮播(ui-ux-spec §3.0)。
  */
 
 import { brand, colorPrimary, formatHourlyPrice, marketing } from "@superdl/ui";

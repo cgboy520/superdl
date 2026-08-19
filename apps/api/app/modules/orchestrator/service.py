@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# 迁移监听器:billing 在 WP4 注册尾账/计费边处理,与状态迁移同事务
+# 迁移监听器:billing 注册尾账/计费边处理,与状态迁移同事务
 TransitionListener = Callable[[AsyncSession, Instance, InstanceEvent], Awaitable[None]]
 _transition_listeners: list[TransitionListener] = []
 

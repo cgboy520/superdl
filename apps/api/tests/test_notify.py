@@ -1,4 +1,4 @@
-"""WP9 通知:站内信/24h 去重/Alertmanager 接入。验收:阈值可配、预警可审计、告警幂等。"""
+"""通知:站内信/24h 去重/Alertmanager 接入。验收:阈值可配、预警可审计、告警幂等。"""
 
 import pytest
 from sqlalchemy import select

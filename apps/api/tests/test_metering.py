@@ -1,4 +1,4 @@
-"""WP6 用量:Prometheus 代理/聚合/对账。验收:Prometheus 停机不影响计费。"""
+"""用量:Prometheus 代理/聚合/对账。验收:Prometheus 停机不影响计费。"""
 
 import json
 from datetime import UTC, datetime, timedelta

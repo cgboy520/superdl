@@ -77,7 +77,7 @@ async def admin_list_instances(
 async def admin_force_stop(
     uuid: str, body: AdminForceStopRequest, session: DbSession, request: Request
 ) -> InstanceOut:
-    """强制停止(原因必填,通知用户由 WP9 接入)。"""
+    """强制停止(原因必填)。"""
     instance = await orchestrator_service.admin_force_stop(session, uuid, reason=body.reason)
     set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
     return InstanceOut.model_validate(instance)

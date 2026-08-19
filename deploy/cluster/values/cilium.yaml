@@ -3,7 +3,7 @@ kubeProxyReplacement: true
 k8sServiceHost: "<server-ip>"
 k8sServicePort: 6443
 gatewayAPI:
-  enabled: true            # *.app.<域名> 泛域名路由(WP7 通道)
+  enabled: true            # *.app.<域名> 泛域名路由
 l2announcements:
   enabled: true            # 裸金属 LB 通告(或按机房改 BGP)
 # 安全:不开 externalIPs(CVE-2020-8554 类 MITM 面;SSH 走 NodePort+LB 池即可)

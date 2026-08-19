@@ -48,8 +48,8 @@ async def send_sms_code(session: AsyncSession, phone: str, purpose: str) -> None
     await session.commit()
     if settings.sms_provider == "mock":
         logger.info("mock_sms_sent", phone=phone, purpose=purpose, code=code)
-    else:  # pragma: no cover - 真实渠道 WP9 接入
-        raise NotImplementedError("SMS provider not wired yet (WP9)")
+    else:  # pragma: no cover - 真实短信渠道(人工事项 #6)
+        raise NotImplementedError("SMS provider not wired yet")
 
 
 async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpose: str) -> None:

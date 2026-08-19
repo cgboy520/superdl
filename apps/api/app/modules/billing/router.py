@@ -221,7 +221,7 @@ async def bill_daily_summary(
     )
 
 
-# ---------- 充值(WP5) ----------
+# ---------- 充值 ----------
 
 
 @router.post("/wallet/recharges", status_code=201)

@@ -1,4 +1,4 @@
-"""WP5 支付:充值单/mock 渠道/回调幂等。验收:重放回调不重复入账。"""
+"""支付:充值单/mock 渠道/回调幂等。验收:重放回调不重复入账。"""
 
 from datetime import timedelta
 

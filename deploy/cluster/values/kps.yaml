@@ -1,7 +1,7 @@
 # kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
 prometheus:
   prometheusSpec:
-    retention: 15d                       # 原方案保留:避开 Thanos
+    retention: 15d                       # 不引 Thanos
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
@@ -45,7 +45,7 @@ additionalPrometheusRulesMap:
     groups:
       - name: superdl.gpu
         rules:
-          # 5 条核心告警(原方案 §人工事项 5)
+          # 5 条核心告警
           - alert: GPUXidCriticalError
             expr: increase(DCGM_FI_DEV_XID_ERRORS{xid=~"48|63|64|79|94|95"}[5m]) > 0
             labels: {severity: critical}

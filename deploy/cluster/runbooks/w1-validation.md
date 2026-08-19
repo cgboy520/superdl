@@ -7,7 +7,7 @@
 - [ ] userns GA 验证:`kubectl explain pod.spec.hostUsers` 存在;跑一个 `hostUsers: false` 测试 Pod,容器内 `readlink /proc/self/ns/user` 与宿主不同
 - [ ] 内核 ≥6.3(Ubuntu 26.04):`uname -r`
 
-## B. Kata 4.0 整卡直通实测(修正二 —— 上线前硬闸门)
+## B. Kata 4.0 整卡直通实测(上线前硬闸门)
 1. IOMMU 分组检查(每台多卡节点):
    ```bash
    for g in /sys/kernel/iommu_groups/*/devices/*; do echo "$g"; done | grep -i nvidia

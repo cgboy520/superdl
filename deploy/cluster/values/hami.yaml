@@ -1,10 +1,10 @@
-# HAMi v2.9(CNCF Incubating):仅共享池,libvgpu CUDA 层限额是超卖计费可信度根基
+# HAMi v2.9:仅共享池,libvgpu CUDA 层限额是超卖计费可信度根基
 scheduler:
   defaultSchedulerPolicy:
-    nodeSchedulerPolicy: binpack     # 原方案保留:binpack 调度
+    nodeSchedulerPolicy: binpack
     gpuSchedulerPolicy: binpack
 devicePlugin:
-  runtimeClassName: ""               # 共享池 runc(修正一:HAMi 与 Kata 互斥)
+  runtimeClassName: ""               # 共享池 runc(HAMi 与 Kata 互斥)
   nodeSelector:
     superdl.io/pool: hami            # 只接管 hami 池,与官方 device plugin 互斥
 devices:
