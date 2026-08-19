@@ -12,8 +12,8 @@ import {
 } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import EChartsReactCore from "echarts-for-react/lib/core";
-import type { EChartsReactProps } from "echarts-for-react/lib/types";
+import EChartsReactCore from "echarts-for-react/esm/core";
+import type { EChartsReactProps } from "echarts-for-react/esm/types";
 
 echarts.use([
   BarChart,
