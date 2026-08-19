@@ -19,24 +19,29 @@ from app.modules.account.schemas import (
 router = APIRouter(tags=["account"])
 
 
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
 @router.post("/auth/sms-code", status_code=status.HTTP_204_NO_CONTENT)
-async def send_sms_code(body: SmsCodeRequest, session: DbSession) -> Response:
-    await service.send_sms_code(session, body.phone, body.purpose)
+async def send_sms_code(body: SmsCodeRequest, session: DbSession, request: Request) -> Response:
+    await service.send_sms_code(session, body.phone, body.purpose, client_ip=_client_ip(request))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, session: DbSession, request: Request) -> TokenPair:
-    pair = await service.register(session, body.phone, body.sms_code, body.password)
+    pair = await service.register(
+        session, body.phone, body.sms_code, body.password, client_ip=_client_ip(request)
+    )
     set_audit_target(request, f"user:{pair.user.id}")
     return pair
 
 
 @router.post("/auth/login")
 async def login(body: LoginRequest, session: DbSession, request: Request) -> TokenPair:
-    client_ip = request.client.host if request.client else None
     pair = await service.login(
-        session, body.phone, body.sms_code, body.password, client_ip=client_ip
+        session, body.phone, body.sms_code, body.password, client_ip=_client_ip(request)
     )
     set_audit_target(request, f"user:{pair.user.id}")
     return pair

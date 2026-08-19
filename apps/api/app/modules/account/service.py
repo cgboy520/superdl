@@ -19,9 +19,17 @@ logger = get_logger(__name__)
 
 MOCK_SMS_CODE = "123456"
 
+# 单条验证码最多允许失败次数,达到即作废(防 TTL 窗口内穷举 6 位码)
+MAX_SMS_CODE_ATTEMPTS = 5
 
-async def send_sms_code(session: AsyncSession, phone: str, purpose: str) -> None:
+
+async def send_sms_code(
+    session: AsyncSession, phone: str, purpose: str, *, client_ip: str | None = None
+) -> None:
     settings = get_settings()
+    # IP 维度限流防轰炸/成本攻击;手机号维度限日发送量(60s 间隔由下方 DB 记录把关)
+    check_rate_limit(f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0)
+    check_rate_limit(f"sms-send-phone:{phone}", max_attempts=10, window_seconds=86400.0)
     interval = timedelta(seconds=settings.sms_send_interval_seconds)
     recent = (
         await session.execute(
@@ -53,7 +61,11 @@ async def send_sms_code(session: AsyncSession, phone: str, purpose: str) -> None
 
 
 async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpose: str) -> None:
-    """校验并一次性消费验证码。同事务内调用,失败抛 SMS_CODE_INVALID。"""
+    """校验并一次性消费验证码。同事务内调用,失败抛 SMS_CODE_INVALID。
+
+    失败计次持久化(commit 后再抛,调用方异常路径的 rollback 不会抹掉计次);
+    最新一条达到 MAX_SMS_CODE_ATTEMPTS 即作废,正确码也不再放行。
+    """
     row = (
         await session.execute(
             select(SmsCode)
@@ -68,7 +80,11 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
             .with_for_update()
         )
     ).scalar_one_or_none()
-    if row is None or not secrets.compare_digest(row.code, code):
+    if row is None:
+        raise AppError(ErrorCode.SMS_CODE_INVALID, "验证码错误或已过期")
+    if row.attempts >= MAX_SMS_CODE_ATTEMPTS or not secrets.compare_digest(row.code, code):
+        row.attempts += 1
+        await session.commit()
         raise AppError(ErrorCode.SMS_CODE_INVALID, "验证码错误或已过期")
     row.used_at = now_utc()
 
@@ -82,8 +98,16 @@ def _issue_tokens(user: User) -> TokenPair:
 
 
 async def register(
-    session: AsyncSession, phone: str, sms_code: str, password: str | None
+    session: AsyncSession,
+    phone: str,
+    sms_code: str,
+    password: str | None,
+    *,
+    client_ip: str | None = None,
 ) -> TokenPair:
+    check_rate_limit(
+        f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+    )
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
         raise AppError(ErrorCode.PHONE_TAKEN, "该手机号已注册,请直接登录")
@@ -104,10 +128,8 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    if password is not None:
-        check_rate_limit(
-            f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
-        )
+    # 密码与验证码两条路径同限流(验证码路径不限流 = 可穷举 6 位码)
+    check_rate_limit(f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0)
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if user is None:
         raise AppError(ErrorCode.LOGIN_FAILED, "手机号或凭证错误")

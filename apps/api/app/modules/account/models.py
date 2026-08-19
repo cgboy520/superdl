@@ -47,4 +47,5 @@ class SmsCode(Base):
     purpose: Mapped[str] = mapped_column(String(16))  # register / login
     expires_at: Mapped[datetime]
     used_at: Mapped[datetime | None]
+    attempts: Mapped[int] = mapped_column(default=0)  # 校验失败计次,达上限即作废
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
