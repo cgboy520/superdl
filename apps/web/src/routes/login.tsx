@@ -38,8 +38,8 @@ function BrandPane() {
     <div
       style={{
         width: "45%",
-        background: brand.heroBg,
-        backgroundImage: GRID_TEXTURE,
+        // 网格纹理叠渐变(渐变即 background-image)
+        backgroundImage: `${GRID_TEXTURE}, ${brand.heroBg}`,
         display: "flex",
         flexDirection: "column",
         padding: 40,

@@ -47,8 +47,8 @@ export function HeroSection() {
   return (
     <section
       style={{
-        background: brand.heroBg,
-        backgroundImage: GRID_TEXTURE,
+        // 多重背景:网格纹理叠在渐变上(渐变即 background-image,不能被单独的 backgroundImage 覆盖)
+        backgroundImage: `${GRID_TEXTURE}, ${brand.heroBg}`,
         padding: "88px 24px 96px",
       }}
     >

@@ -303,7 +303,7 @@ function StoragePage() {
         title={`扩容:${expandTarget?.name ?? ""}`}
         open={Boolean(expandTarget)}
         onClose={() => setExpandTarget(null)}
-        width={420}
+        size={420}
         footer={
           <Button
             type="primary"

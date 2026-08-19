@@ -203,7 +203,9 @@ function CreatePage() {
       render: (_: unknown, s: SkuMarketOut) =>
         s.tier.startsWith("shared")
           ? `${s.gpu_model} · ${s.vram_gb}G · ${s.gpu_cores_pct}% 算力(均值)`
-          : `${s.gpu_model} · ${s.vram_gb}G · 整卡`,
+          : s.tier === "mig"
+            ? `${s.gpu_model} · ${s.vram_gb}G · MIG ${s.mig_profile ?? "切分"}`
+            : `${s.gpu_model} · ${s.vram_gb}G · 整卡`,
     },
     {
       title: "实例配置",

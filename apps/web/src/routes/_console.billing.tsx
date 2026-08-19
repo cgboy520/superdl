@@ -129,7 +129,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             precision={2}
             value={amount}
             onChange={(v) => setAmount(v ?? 0)}
-            addonBefore="¥"
+            prefix="¥"
           />
           <Button
             type="primary"
