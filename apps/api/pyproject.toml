@@ -68,6 +68,9 @@ filterwarnings = ["ignore::DeprecationWarning:testcontainers"]
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/export_openapi.py"]
+# SQLAlchemy async 在 greenlet 里跑同步核心:不声明 greenlet 并发,
+# coverage 会丢失 await 之后的行,系统性低估覆盖率(曾误报 82.8%)
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 precision = 1

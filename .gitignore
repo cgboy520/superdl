@@ -8,6 +8,7 @@ __pycache__/
 htmlcov/
 .coverage
 coverage.xml
+coverage.json
 
 # Node
 node_modules/
