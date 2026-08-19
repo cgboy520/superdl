@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_console")({
 });
 
 const NAV = [
-  { key: "/", icon: <DashboardOutlined />, label: "概览" },
+  { key: "/dashboard", icon: <DashboardOutlined />, label: "概览" },
   { key: "/market", icon: <AppstoreOutlined />, label: "算力市场" },
   { key: "/instances", icon: <CloudServerOutlined />, label: "容器实例" },
   { key: "/storage", icon: <HddOutlined />, label: "存储" },
@@ -133,7 +133,7 @@ function ConsoleLayout() {
   const selected =
     NAV.slice()
       .sort((a, b) => b.key.length - a.key.length)
-      .find((n) => (n.key === "/" ? pathname === "/" : pathname.startsWith(n.key)))?.key ?? "/";
+      .find((n) => pathname.startsWith(n.key))?.key ?? "/dashboard";
 
   return (
     <Layout style={{ minHeight: "100vh" }}>

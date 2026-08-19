@@ -1,6 +1,6 @@
 import type { TokenPair } from "@superdl/api-client";
 import { colorPrimary } from "@superdl/ui";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { App, Button, Card, Form, Input, Segmented, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,6 +8,14 @@ import { useLogin, useRegister, useSendSmsCode } from "../api/mutations";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
+    // 仅接受站内路径(/ 开头且非 //),防 open redirect
+    const r = search.redirect;
+    if (typeof r === "string" && r.startsWith("/") && !r.startsWith("//")) {
+      return { redirect: r };
+    }
+    return {};
+  },
   component: LoginPage,
 });
 
@@ -15,6 +23,8 @@ type Mode = "sms" | "password" | "register";
 
 function LoginPage() {
   const navigate = useNavigate();
+  const router = useRouter();
+  const { redirect: redirectTo } = Route.useSearch();
   const { message } = App.useApp();
   const [mode, setMode] = useState<Mode>("sms");
   const [countdown, setCountdown] = useState(0);
@@ -32,7 +42,11 @@ function LoginPage() {
     const pair = data as TokenPair;
     authStore.getState().login(pair.access_token, pair.refresh_token);
     message.success("欢迎使用 SuperDL");
-    void navigate({ to: "/instances" });
+    if (redirectTo) {
+      router.history.push(redirectTo);
+    } else {
+      void navigate({ to: "/instances" });
+    }
   };
 
   const sendCode = useSendSmsCode({

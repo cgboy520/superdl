@@ -7,7 +7,7 @@ import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "ant
 import { useInstances, useNotifications, useWallet } from "../api/queries";
 import { requireAuth } from "../lib/guard";
 
-export const Route = createFileRoute("/_console/")({
+export const Route = createFileRoute("/_console/dashboard")({
   beforeLoad: requireAuth,
   component: Overview,
 });
