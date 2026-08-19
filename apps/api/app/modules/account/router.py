@@ -34,7 +34,10 @@ async def register(body: RegisterRequest, session: DbSession, request: Request) 
 
 @router.post("/auth/login")
 async def login(body: LoginRequest, session: DbSession, request: Request) -> TokenPair:
-    pair = await service.login(session, body.phone, body.sms_code, body.password)
+    client_ip = request.client.host if request.client else None
+    pair = await service.login(
+        session, body.phone, body.sms_code, body.password, client_ip=client_ip
+    )
     set_audit_target(request, f"user:{pair.user.id}")
     return pair
 

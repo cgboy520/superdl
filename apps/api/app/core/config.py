@@ -22,8 +22,9 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
-    # dev 启动引导管理员(prod 置空,用运维脚本创建)
-    bootstrap_admin_password: str | None = "admin123"
+    # 启动引导管理员:默认关闭。仅当显式设置 SUPERDL_BOOTSTRAP_ADMIN_PASSWORD
+    # 且 environment=dev 时,在无任何管理员的库里创建 admin 账号。生产用运维脚本创建。
+    bootstrap_admin_password: str | None = None
 
     # 短信:dev/test 用 mock(验证码固定 + 落日志)
     sms_provider: Literal["mock", "aliyun"] = "mock"

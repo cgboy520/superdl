@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
+from app.core.ratelimit import check_rate_limit
 from app.core.security import create_token, decode_token, hash_password, verify_password
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode, SshKey, User
@@ -96,8 +97,17 @@ async def register(
 
 
 async def login(
-    session: AsyncSession, phone: str, sms_code: str | None, password: str | None
+    session: AsyncSession,
+    phone: str,
+    sms_code: str | None,
+    password: str | None,
+    *,
+    client_ip: str | None = None,
 ) -> TokenPair:
+    if password is not None:
+        check_rate_limit(
+            f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+        )
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if user is None:
         raise AppError(ErrorCode.LOGIN_FAILED, "手机号或凭证错误")

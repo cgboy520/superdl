@@ -13,7 +13,8 @@ router = APIRouter(tags=["admin"])
 
 @router.post("/auth/login")
 async def admin_login(body: AdminLoginRequest, session: DbSession, request: Request) -> AdminToken:
-    token, admin = await service.login(session, body.username, body.password)
+    client_ip = request.client.host if request.client else None
+    token, admin = await service.login(session, body.username, body.password, client_ip=client_ip)
     set_audit_target(request, f"admin:{admin.id}")
     return AdminToken(access_token=token, admin=AdminOut.model_validate(admin))
 
