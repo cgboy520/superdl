@@ -122,3 +122,13 @@ class TestAlertmanagerWebhook:
         async with sm() as session:
             rows = (await session.execute(select(Notification))).scalars().all()
         assert any(r.type == "arrears" for r in rows)
+
+
+class TestAlertmanagerAuthHardening:
+    async def test_dev_without_token_rejected(self, client, sm, fake, monkeypatch):
+        """安全:除 test 外,未配置 token 一律拒绝接入。"""
+        from app.core.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "environment", "dev")
+        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        assert resp.status_code == 401

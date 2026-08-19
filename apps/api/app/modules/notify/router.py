@@ -44,13 +44,16 @@ async def alertmanager_webhook(
     session: DbSession,
     authorization: str | None = Header(default=None),
 ) -> dict[str, int]:
-    """Alertmanager 告警接入。配置了 token 则必须携带 Bearer;生产未配 token 拒绝。"""
+    """Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。"""
+    import secrets as _secrets
+
     settings = get_settings()
     if settings.alertmanager_token:
-        if authorization != f"Bearer {settings.alertmanager_token}":
+        expected = f"Bearer {settings.alertmanager_token}"
+        if authorization is None or not _secrets.compare_digest(authorization, expected):
             raise unauthorized("告警 token 无效")
-    elif settings.environment == "prod":
-        raise unauthorized("生产环境必须配置 SUPERDL_ALERTMANAGER_TOKEN")
+    elif settings.environment != "test":
+        raise unauthorized("必须配置 SUPERDL_ALERTMANAGER_TOKEN 后才能接入告警")
     payload = await request.json()
     written = await service.ingest_alertmanager(session, payload)
     return {"ingested": written}
