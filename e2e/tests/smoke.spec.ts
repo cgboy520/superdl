@@ -84,6 +84,16 @@ test("全生命周期冒烟", async ({ page }) => {
   await expect(row.getByRole("button", { name: "SSH" })).toBeVisible();
   await expect(row.getByText("JupyterLab")).toBeVisible();
 
+  // ── 实例详情:双击进入 → 直刷 URL 可达(WP13 路由修复回归)→ 事件即计费依据 ──
+  await row.dblclick();
+  await expect(page).toHaveURL(/instances\/[0-9a-f-]{8,}/, { timeout: 10_000 });
+  await page.reload();
+  await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("tab", { name: /事\s*件/ }).click();
+  await expect(page.getByText(/此事件记录即计费依据/)).toBeVisible({ timeout: 10_000 });
+  await page.goto("/instances");
+  await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 10_000 });
+
   // ── 关机(二次确认)→ 已关机;尾账落账单 ────────────────
   await row.getByRole("button", { name: /^关\s*机$/ }).click();
   await page.getByRole("button", { name: /^关\s*机$/ }).last().click();

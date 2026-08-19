@@ -38,7 +38,7 @@ import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
 import { InstanceActions, ReleaseModal } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
 
-export const Route = createFileRoute("/_console/instances/$uuid")({
+export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
     tab: typeof search["tab"] === "string" ? search["tab"] : undefined,
