@@ -1,3 +1,4 @@
+import { adminColors } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { App, Button, Card, Form, Input, Typography } from "antd";
 
@@ -30,7 +31,7 @@ function LoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#0B1220",
+        background: adminColors.bgBase,
       }}
     >
       <Card style={{ width: 380 }} title="SuperDL 管理控制台">

@@ -4,7 +4,7 @@
  * - 公告发布:announcement 站内信群发全体 active 租户
  */
 
-import { formatDateTime } from "@superdl/ui";
+import { adminColors, formatDateTime } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -104,7 +104,7 @@ function PoliciesTab() {
                 {r.label}
                 {r.overridden && <Tag style={{ marginLeft: 8 }}>已覆盖</Tag>}
                 {r.hint && (
-                  <div style={{ color: "#94A3B8", fontSize: 12 }}>{r.hint}</div>
+                  <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.hint}</div>
                 )}
               </>
             ),

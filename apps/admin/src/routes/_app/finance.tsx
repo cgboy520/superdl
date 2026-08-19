@@ -1,4 +1,4 @@
-import { formatDateTime, formatMoney } from "@superdl/ui";
+import { adminColors, formatDateTime, formatMoney } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -68,7 +68,7 @@ function ReconciliationCard() {
             title="diff%"
             value={report?.diff_pct ?? 0}
             suffix="%"
-            valueStyle={diffHigh ? { color: "#F87171" } : { color: "#4ADE80" }}
+            valueStyle={diffHigh ? { color: adminColors.negative } : { color: adminColors.positive }}
           />
         </Col>
       </Row>
@@ -197,7 +197,7 @@ function AdjustmentsTab() {
             title: "金额",
             dataIndex: "amount",
             render: (v: string) => (
-              <span style={{ color: v.startsWith("-") ? "#F87171" : "#4ADE80" }}>
+              <span style={{ color: v.startsWith("-") ? adminColors.negative : adminColors.positive }}>
                 {formatMoney(v)}
               </span>
             ),
@@ -218,7 +218,7 @@ function AdjustmentsTab() {
             render: (_, r) => {
               if (r.status !== "pending") {
                 return (
-                  <span style={{ color: "#64748B" }}>
+                  <span style={{ color: adminColors.textMuted }}>
                     {r.reviewed_by ? `#${r.reviewed_by} ${r.review_comment ?? ""}` : "-"}
                   </span>
                 );
@@ -338,7 +338,7 @@ function AnomaliesTab() {
             <span>渠道状态:{r.channel_status}</span>
             <span>渠道金额:{r.channel_amount ? formatMoney(r.channel_amount) : "—"}</span>
             <span>渠道单号:{r.channel_txn_id ?? "—"}</span>
-            <b style={{ color: r.matches ? "#4ADE80" : "#F87171" }}>
+            <b style={{ color: r.matches ? adminColors.positive : adminColors.negative }}>
               {r.matches ? "✓ 渠道已支付且金额一致,可补单" : "✗ 渠道未支付或金额不符,不可补单"}
             </b>
           </Space>
@@ -371,7 +371,7 @@ function AnomaliesTab() {
             render: (_, r) => (
               <>
                 {r.order_no ?? `租户 ${r.user_id}`}
-                <div style={{ color: "#94A3B8", fontSize: 12 }}>{r.detail}</div>
+                <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.detail}</div>
               </>
             ),
           },
@@ -382,7 +382,7 @@ function AnomaliesTab() {
             width: 200,
             render: (_, r) => {
               if (r.kind === "negative_balance") {
-                return <span style={{ color: "#94A3B8" }}>可在「调账」发起核销</span>;
+                return <span style={{ color: adminColors.textSecondary }}>可在「调账」发起核销</span>;
               }
               return (
                 <Space>
@@ -428,7 +428,7 @@ function AnomaliesTab() {
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <span style={{ color: "#94A3B8" }}>
+          <span style={{ color: adminColors.textSecondary }}>
             提交时服务端将实时向渠道核验:仅当渠道侧已支付且金额与订单一致才会入账。
           </span>
           <Form form={reasonForm} layout="vertical">

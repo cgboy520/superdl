@@ -29,6 +29,22 @@ export const adminColors = {
   bgElevated: "#111A2E",
   dataAccent: "#22D3EE",
   alertAccent: "#F59E0B",
+  /** 次要文本(表格副行/图表轴标) */
+  textSecondary: "#94A3B8",
+  /** 弱化文本(说明/占位) */
+  textMuted: "#64748B",
+  /** 网格线/空块底 */
+  gridLine: "#1E293B",
+  /** 图表中性条 */
+  chartNeutral: "#334155",
+  /** 分隔线 */
+  divider: "#1F2A44",
+  /** 深色下的涨/正向(浅绿,深底可读) */
+  positive: "#4ADE80",
+  /** 深色下的跌/负向与错误(浅红,深底可读) */
+  negative: "#F87171",
+  /** critical 徽标底(与 statusColors.red 同源) */
+  critical: "#DC2626",
 } as const;
 
 /** 状态语义色(两端同一套,管理端深色下由 antd 算法自动调亮) */

@@ -15,7 +15,6 @@ import {
   Table,
   Tag,
   Tooltip,
-  message,
 } from "antd";
 import { useState } from "react";
 
@@ -51,7 +50,8 @@ interface SkuFormValues {
 }
 
 function SkusPage() {
-  const { modal } = App.useApp();
+  // 深色主题下必须走 useApp 实例(静态 message 拿不到 ConfigProvider token,历史回归点)
+  const { message, modal } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();

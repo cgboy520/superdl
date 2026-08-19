@@ -1,11 +1,9 @@
-import {
-  formatDateTime,
+import { adminColors, formatDateTime,
   formatMoney,
   instanceStatusMap,
   skuTierMap,
   type InstanceStatus,
-  type SkuTier,
-} from "@superdl/ui";
+  type SkuTier } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
@@ -49,7 +47,7 @@ function TenantsTab() {
           title: "余额",
           dataIndex: "balance",
           render: (v: string) => (
-            <span style={{ color: Number(v) <= 0 ? "#F87171" : undefined }}>{formatMoney(v)}</span>
+            <span style={{ color: Number(v) <= 0 ? adminColors.negative : undefined }}>{formatMoney(v)}</span>
           ),
         },
         { title: "累计消费", dataIndex: "total_consumed", render: (v: string) => formatMoney(v) },

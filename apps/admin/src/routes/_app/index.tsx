@@ -16,7 +16,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import ReactECharts from "echarts-for-react";
+import EChart from "../../components/EChart";
 
 import {
   type AlertRow,
@@ -47,21 +47,21 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
   const option = {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis" },
-    legend: { textStyle: { color: "#94A3B8" } },
+    legend: { textStyle: { color: adminColors.textSecondary } },
     grid: { left: 48, right: 48, top: 40, bottom: 28 },
-    xAxis: { type: "category", data: pools, axisLabel: { color: "#94A3B8" } },
+    xAxis: { type: "category", data: pools, axisLabel: { color: adminColors.textSecondary } },
     yAxis: [
       {
         type: "value",
         name: "超卖率",
-        axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%`, color: "#94A3B8" },
-        splitLine: { lineStyle: { color: "#1E293B" } },
+        axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%`, color: adminColors.textSecondary },
+        splitLine: { lineStyle: { color: adminColors.gridLine } },
       },
       {
         type: "value",
         name: "利用率 %",
         max: 100,
-        axisLabel: { color: "#94A3B8" },
+        axisLabel: { color: adminColors.textSecondary },
         splitLine: { show: false },
       },
     ],
@@ -83,14 +83,14 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
           symbol: "none",
           lineStyle: { type: "dashed" },
           data: [
-            { yAxis: 60, label: { formatter: "上调阈值 60%", color: "#94A3B8" } },
-            { yAxis: 85, label: { formatter: "回调阈值 85%", color: "#94A3B8" } },
+            { yAxis: 60, label: { formatter: "上调阈值 60%", color: adminColors.textSecondary } },
+            { yAxis: 85, label: { formatter: "回调阈值 85%", color: adminColors.textSecondary } },
           ],
         },
       },
     ],
   };
-  return <ReactECharts option={option} style={{ height: 320 }} theme={undefined} />;
+  return <EChart option={option} style={{ height: 320 }} theme={undefined} />;
 }
 
 function PoolOccupancy({ nodes }: { nodes: NodeRow[] }) {
@@ -105,16 +105,16 @@ function PoolOccupancy({ nodes }: { nodes: NodeRow[] }) {
   const option = {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis" },
-    legend: { textStyle: { color: "#94A3B8" } },
+    legend: { textStyle: { color: adminColors.textSecondary } },
     grid: { left: 80, right: 24, top: 32, bottom: 28 },
-    xAxis: { type: "value", axisLabel: { color: "#94A3B8" }, splitLine: { lineStyle: { color: "#1E293B" } } },
-    yAxis: { type: "category", data: pools, axisLabel: { color: "#94A3B8" } },
+    xAxis: { type: "value", axisLabel: { color: adminColors.textSecondary }, splitLine: { lineStyle: { color: adminColors.gridLine } } },
+    yAxis: { type: "category", data: pools, axisLabel: { color: adminColors.textSecondary } },
     series: [
       { name: "已租", type: "bar", stack: "t", data: used, itemStyle: { color: statusColors.green } },
-      { name: "空闲", type: "bar", stack: "t", data: free, itemStyle: { color: "#334155" } },
+      { name: "空闲", type: "bar", stack: "t", data: free, itemStyle: { color: adminColors.chartNeutral } },
     ],
   };
-  return <ReactECharts option={option} style={{ height: 220 }} />;
+  return <EChart option={option} style={{ height: 220 }} />;
 }
 
 /** 值班首屏第二排:任务死信(重放交还幂等 handler;忽略需原因)。 */
@@ -160,7 +160,7 @@ function DeadTasksCard() {
             title: "最后错误",
             dataIndex: "last_error",
             render: (v: string | null) => (
-              <span style={{ color: "#F87171", fontSize: 12 }}>{v ?? "-"}</span>
+              <span style={{ color: adminColors.negative, fontSize: 12 }}>{v ?? "-"}</span>
             ),
           },
           { title: "时间", dataIndex: "updated_at", width: 150, render: formatDateTime },
@@ -242,7 +242,7 @@ function Overview() {
         <Card>
           <Statistic title="今日新注册" value={revenue ? revenue.today_signups : "—"} />
           <Typography.Text
-            style={{ fontSize: 12, color: signupDelta >= 0 ? "#4ADE80" : "#F87171" }}
+            style={{ fontSize: 12, color: signupDelta >= 0 ? adminColors.positive : adminColors.negative }}
           >
             {signupDelta >= 0 ? "▲" : "▼"} {Math.abs(signupDelta)} 较昨日
           </Typography.Text>
@@ -264,7 +264,7 @@ function Overview() {
           <Statistic
             title="告警(总)"
             value={alerts.length}
-            valueStyle={alerts.some((a) => a.severity === "critical") ? { color: "#F87171" } : undefined}
+            valueStyle={alerts.some((a) => a.severity === "critical") ? { color: adminColors.negative } : undefined}
           />
         </Card>
       </Col>
@@ -288,10 +288,10 @@ function Overview() {
           {alerts.map((a) => (
             <div key={a.id} style={{ marginBottom: 12 }}>
               <Badge
-                color={a.severity === "critical" ? "#DC2626" : adminColors.alertAccent}
+                color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
                 text={<b>{a.title}</b>}
               />
-              <div style={{ color: "#94A3B8", fontSize: 12, paddingLeft: 14 }}>
+              <div style={{ color: adminColors.textSecondary, fontSize: 12, paddingLeft: 14 }}>
                 {formatDateTime(a.created_at)} · {a.content}
               </div>
             </div>

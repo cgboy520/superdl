@@ -4,7 +4,7 @@
  * secret 类永不回显明文:只显示"已配置 + 尾 4 位",输入留空 = 保持不变。
  */
 
-import { formatDateTime } from "@superdl/ui";
+import { adminColors, formatDateTime } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -275,7 +275,7 @@ function SmsTestCard({ disabled }: { disabled: boolean }) {
           发送验证码短信
         </Button>
       </Space.Compact>
-      <div style={{ color: "#94A3B8", fontSize: 12, marginTop: 8 }}>
+      <div style={{ color: adminColors.textSecondary, fontSize: 12, marginTop: 8 }}>
         使用「验证码模板」发送随机 6 位码;先保存配置再测试。Provider 为 mock 时仅落日志。
       </div>
     </Card>

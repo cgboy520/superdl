@@ -23,6 +23,7 @@ import { Badge, Dropdown, Layout, Menu, Popover, Space, Tag, Typography, theme }
 import dayjs from "dayjs";
 
 import { type AlertRow, useAlerts } from "../api";
+import { canSeeMenu } from "../lib/menu";
 import { authStore, useAuth } from "../stores/auth";
 
 export const Route = createFileRoute("/_app")({
@@ -64,16 +65,21 @@ function AlertBell() {
         <div style={{ width: 360, maxHeight: 400, overflow: "auto" }}>
           {alerts.length === 0 && <Typography.Text type="secondary">暂无告警</Typography.Text>}
           {alerts.slice(0, 20).map((a) => (
-            <div key={a.id} style={{ padding: "6px 0", borderBottom: "1px solid #1f2a44" }}>
+            <div
+              key={a.id}
+              style={{ padding: "6px 0", borderBottom: `1px solid ${adminColors.divider}` }}
+            >
               <Badge
-                color={a.severity === "critical" ? "#DC2626" : adminColors.alertAccent}
+                color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
                 text={
                   <Typography.Text style={{ fontSize: 13 }}>
                     {a.title} · {dayjs(a.created_at).format("HH:mm")}
                   </Typography.Text>
                 }
               />
-              <div style={{ color: "#94A3B8", fontSize: 12, paddingLeft: 14 }}>{a.content}</div>
+              <div style={{ color: adminColors.textSecondary, fontSize: 12, paddingLeft: 14 }}>
+                {a.content}
+              </div>
             </div>
           ))}
         </div>
@@ -91,7 +97,10 @@ function AppLayout() {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const selected = MENU.map((m) => m.key)
+  // 菜单按角色过滤(与后端逐端点权限对齐),防跨角色误入假空态页
+  const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly"));
+  const selected = menuItems
+    .map((m) => m.key)
     .filter((k) => (k === "/" ? pathname === "/" : pathname.startsWith(k)))
     .slice(-1);
   const isProd = import.meta.env.MODE === "production";
@@ -112,7 +121,7 @@ function AppLayout() {
         >
           SuperDL · NOC
         </div>
-        <Menu mode="inline" selectedKeys={selected} items={MENU} style={{ borderRight: 0 }} />
+        <Menu mode="inline" selectedKeys={selected} items={menuItems} style={{ borderRight: 0 }} />
       </Layout.Sider>
       <Layout>
         <Layout.Header

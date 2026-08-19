@@ -28,8 +28,8 @@ function GpuGrid({ node }: { node: NodeRow }) {
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 12,
-                background: used ? adminColors.dataAccent : "#1E293B",
-                color: used ? "#0B1220" : "#64748B",
+                background: used ? adminColors.dataAccent : adminColors.gridLine,
+                color: used ? adminColors.bgBase : adminColors.textMuted,
                 fontWeight: 600,
               }}
             >
