@@ -10,6 +10,14 @@ grafana:
   grafana.ini:
     security:
       allow_embedding: true              # 管理端 iframe 嵌入(反代注入只读 Viewer)
+      # 防点击劫持:仅允许管理控制台域名内嵌(按环境替换域名)
+      content_security_policy: true
+      content_security_policy_template: >-
+        frame-ancestors 'self' https://admin.superdl.example.com;
+        default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline';
+        style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+      cookie_secure: true
+      cookie_samesite: none              # 跨站 iframe 内会话所需(Secure 已开)
     auth.anonymous:
       enabled: false
 alertmanager:
@@ -25,7 +33,13 @@ alertmanager:
             http_config:
               authorization:
                 type: Bearer
-                credentials: "<SUPERDL_ALERTMANAGER_TOKEN>"
+                # 凭据不落 values:经 Secret 挂载读取
+                # kubectl -n monitoring create secret generic superdl-alert-token \
+                #   --from-literal=token=<随机强 token>
+                credentials_file: /etc/alertmanager/secrets/superdl-alert-token/token
+  alertmanagerSpec:
+    secrets:
+      - superdl-alert-token
 additionalPrometheusRulesMap:
   superdl-gpu:
     groups:

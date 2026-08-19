@@ -6,8 +6,7 @@ gatewayAPI:
   enabled: true            # *.app.<域名> 泛域名路由(WP7 通道)
 l2announcements:
   enabled: true            # 裸金属 LB 通告(或按机房改 BGP)
-externalIPs:
-  enabled: true
+# 安全:不开 externalIPs(CVE-2020-8554 类 MITM 面;SSH 走 NodePort+LB 池即可)
 hubble:
   enabled: true
   relay:
