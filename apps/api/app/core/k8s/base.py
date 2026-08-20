@@ -38,6 +38,14 @@ class PodStatus:
     node_name: str | None = None
 
 
+@dataclass(frozen=True)
+class PrewarmJobStatus:
+    """镜像预热 Job 状态(WP22)。"""
+
+    state: str  # absent / running / succeeded / failed
+    message: str | None = None  # 失败原因(Job condition / Pod waiting reason)
+
+
 class K8sOrchestrator(Protocol):
     """全部操作必须幂等(outbox at-least-once 语义)。"""
 
@@ -70,6 +78,19 @@ class K8sOrchestrator(Protocol):
 
     async def list_nodes(self) -> list["NodeInfo"]:
         """管理端节点视图。"""
+        ...
+
+    async def prewarm_image(self, node_name: str, image_ref: str) -> None:
+        """在指定节点创建镜像预热 Job(nodeName 定点拉取)。创建后即返回不等待,
+        完成态由巡检经 get_prewarm_status 收敛;已存在同名 Job 则跳过(幂等)。"""
+        ...
+
+    async def get_prewarm_status(self, node_name: str, image_ref: str) -> "PrewarmJobStatus":
+        """查询该(节点,镜像)预热 Job 状态。"""
+        ...
+
+    async def delete_prewarm_job(self, node_name: str, image_ref: str) -> None:
+        """清理预热 Job(收敛后回收;不存在则跳过)。"""
         ...
 
 

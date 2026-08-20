@@ -6,7 +6,7 @@ kill_pod / inject_pod(reconciler 场景)。容量按 pool 配置,近似库存=�
 
 from dataclasses import dataclass, field
 
-from app.core.k8s.base import InstancePodSpec, PodStatus
+from app.core.k8s.base import InstancePodSpec, PodStatus, PrewarmJobStatus
 
 
 @dataclass
@@ -30,6 +30,11 @@ class FakeOrchestrator:
     create_calls: int = 0
     delete_calls: int = 0
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
+    # 预热(WP22):(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
+    prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
+    prewarm_calls: list[tuple[str, str]] = field(default_factory=list)
+    auto_prewarm: bool = True
+    fail_next_prewarm: bool = False
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -70,6 +75,32 @@ class FakeOrchestrator:
             if p.spec.node_selector.get("superdl.io/pool") == pool_label
         )
         return max(0, cap - used)
+
+    # ---------- 预热(WP22) ----------
+
+    async def prewarm_image(self, node_name: str, image_ref: str) -> None:
+        if self.fail_next_prewarm:
+            self.fail_next_prewarm = False
+            raise RuntimeError("fake: prewarm_image failed (injected)")
+        self.prewarm_calls.append((node_name, image_ref))
+        # setdefault = 幂等:已有 Job(任意状态)不重建
+        self.prewarm_jobs.setdefault(
+            (node_name, image_ref), "succeeded" if self.auto_prewarm else "running"
+        )
+
+    async def get_prewarm_status(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
+        state = self.prewarm_jobs.get((node_name, image_ref))
+        if state is None:
+            return PrewarmJobStatus(state="absent")
+        message = "fake: ErrImagePull" if state == "failed" else None
+        return PrewarmJobStatus(state=state, message=message)
+
+    async def delete_prewarm_job(self, node_name: str, image_ref: str) -> None:
+        self.prewarm_jobs.pop((node_name, image_ref), None)
+
+    def set_prewarm_state(self, node_name: str, image_ref: str, state: str) -> None:
+        """测试注入:直接改 Job 状态(running/succeeded/failed)。"""
+        self.prewarm_jobs[(node_name, image_ref)] = state
 
     # ---------- 测试注入 ----------
 

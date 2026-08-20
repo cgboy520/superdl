@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Numeric, String, func
+from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -43,5 +43,28 @@ class PlatformImage(Base):
     python_version: Mapped[str] = mapped_column(String(16))
     cuda_version: Mapped[str] = mapped_column(String(16))
     image_ref: Mapped[str] = mapped_column(String(256), unique=True)
-    is_prewarmed: Mapped[bool] = mapped_column(default=True)  # 预热镜像,秒级启动
+    prewarm_enabled: Mapped[bool] = mapped_column(default=True)  # 管理员意图:是否参与全节点预热
     sort: Mapped[int] = mapped_column(default=0)
+
+    @property
+    def is_prewarmed(self) -> bool:
+        """ImageOut(from_attributes) 兼容别名;覆盖率计算在 service 层(零 cache 行回落此值)。"""
+        return self.prewarm_enabled
+
+
+class ImageNodeCache(Base):
+    """每镜像×每节点的缓存状态(WP22)。由 prewarm_patrol 巡检铺行/收敛,
+    image.prewarm outbox handler 置 pulling;是 is_prewarmed 计算值的数据源。"""
+
+    __tablename__ = "image_node_cache"
+    __table_args__ = (UniqueConstraint("image_id", "node_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    image_id: Mapped[int] = mapped_column(ForeignKey("images.id", ondelete="CASCADE"), index=True)
+    node_name: Mapped[str] = mapped_column(String(255))
+    # pending(待预热)/ pulling(Job 进行中)/ cached(已缓存)/ failed(拉取失败)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime | None]  # 最近确认 cached 的时刻,复检窗口依据
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

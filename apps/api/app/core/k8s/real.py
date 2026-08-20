@@ -9,16 +9,19 @@
 # pragma: no cover - 本文件需真实集群,单测不覆盖;kind 集成测试见人工清单
 
 import asyncio
+import hashlib
 from typing import Any
 
 from kubernetes import client, config
 
 from app.core.config import get_settings
-from app.core.k8s.base import InstancePodSpec, NodeInfo, PodStatus
+from app.core.k8s.base import InstancePodSpec, NodeInfo, PodStatus, PrewarmJobStatus
 
 INSTANCE_LABEL = "superdl.io/instance"
 MANAGED_LABEL = "superdl.io/managed"
 POOL_NODE_LABEL = "superdl.io/pool"
+PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
+PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
 
 
 def _is_not_found(exc: client.ApiException) -> bool:
@@ -484,3 +487,119 @@ class RealOrchestrator:
                 )
             )
         return out
+
+    # ---------- 镜像预热(WP22) ----------
+
+    @staticmethod
+    def _prewarm_job_name(node_name: str, image_ref: str) -> str:
+        """确定性命名(≤63 字符):同(节点,镜像)天然幂等。"""
+        ref_hash = hashlib.sha1(image_ref.encode()).hexdigest()[:10]
+        node_hash = hashlib.sha1(node_name.encode()).hexdigest()[:8]
+        return f"prewarm-{ref_hash}-{node_hash}"
+
+    async def prewarm_image(self, node_name: str, image_ref: str) -> None:
+        await asyncio.to_thread(self._prewarm_image_sync, node_name, image_ref)
+
+    def _prewarm_image_sync(self, node_name: str, image_ref: str) -> None:
+        """nodeName 定点起拉取 Job,创建后即返回(不等待,大镜像拉取可达数十分钟,
+        完成态由 prewarm_patrol 巡检经 get_prewarm_status 收敛)。已存在同名 Job 则跳过。"""
+        job_name = self._prewarm_job_name(node_name, image_ref)
+        try:
+            self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE)
+            return  # 幂等:任意状态的既有 Job 都交巡检收敛
+        except client.ApiException as exc:
+            if not _is_not_found(exc):
+                raise
+        job = client.V1Job(
+            metadata=client.V1ObjectMeta(
+                name=job_name,
+                namespace=PLATFORM_NAMESPACE,
+                labels={PREWARM_LABEL: "true"},
+                annotations={"superdl.io/node": node_name, "superdl.io/image": image_ref},
+            ),
+            spec=client.V1JobSpec(
+                backoff_limit=0,  # 失败不原地重试,由巡检删 Job 后重建(带退避节流)
+                ttl_seconds_after_finished=600,
+                active_deadline_seconds=1800,  # 20GB 级镜像上限,实机核定
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(labels={PREWARM_LABEL: "true"}),
+                    spec=client.V1PodSpec(
+                        node_name=node_name,  # 绕过调度器定点拉取
+                        restart_policy="Never",
+                        automount_service_account_token=False,
+                        # 容忍一切污点:预热须覆盖 cordon/维护中的节点
+                        tolerations=[client.V1Toleration(operator="Exists")],
+                        containers=[
+                            client.V1Container(
+                                name="prewarm",
+                                image=image_ref,
+                                # 平台镜像均含 sh;镜像缺 sh 会 StartError → 巡检记 failed 可见
+                                command=["/bin/sh", "-c", "true"],
+                                image_pull_policy="IfNotPresent",
+                                resources=client.V1ResourceRequirements(
+                                    requests={"cpu": "10m", "memory": "16Mi"},
+                                    limits={"cpu": "100m", "memory": "64Mi"},
+                                ),
+                                security_context=client.V1SecurityContext(
+                                    allow_privilege_escalation=False,
+                                    capabilities=client.V1Capabilities(drop=["ALL"]),
+                                ),
+                            )
+                        ],
+                    ),
+                ),
+            ),
+        )
+        try:
+            self.batch.create_namespaced_job(PLATFORM_NAMESPACE, job)
+        except client.ApiException as exc:
+            if not _is_conflict(exc):
+                raise
+
+    async def get_prewarm_status(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
+        return await asyncio.to_thread(self._get_prewarm_status_sync, node_name, image_ref)
+
+    def _get_prewarm_status_sync(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
+        job_name = self._prewarm_job_name(node_name, image_ref)
+        try:
+            job: Any = self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE)
+        except client.ApiException as exc:
+            if _is_not_found(exc):
+                return PrewarmJobStatus(state="absent")
+            raise
+        if (job.status.succeeded or 0) >= 1:
+            return PrewarmJobStatus(state="succeeded")
+        if (job.status.failed or 0) >= 1:
+            return PrewarmJobStatus(state="failed", message=self._prewarm_failure_sync(job_name))
+        return PrewarmJobStatus(state="running")
+
+    def _prewarm_failure_sync(self, job_name: str) -> str:
+        """失败原因优先取 Pod 容器态(ErrImagePull 等),兜底 Job condition。"""
+        try:
+            pods: Any = self.core.list_namespaced_pod(
+                PLATFORM_NAMESPACE, label_selector=f"job-name={job_name}"
+            )
+            for pod in pods.items:
+                for cs in pod.status.container_statuses or []:
+                    waiting = cs.state and cs.state.waiting
+                    if waiting and waiting.reason:
+                        return f"{waiting.reason}: {waiting.message or ''}"[:500]
+                    terminated = cs.state and cs.state.terminated
+                    if terminated and terminated.reason and terminated.reason != "Completed":
+                        return f"{terminated.reason}: {terminated.message or ''}"[:500]
+        except client.ApiException:
+            pass
+        return "job failed (BackoffLimitExceeded/DeadlineExceeded)"
+
+    async def delete_prewarm_job(self, node_name: str, image_ref: str) -> None:
+        await asyncio.to_thread(self._delete_prewarm_job_sync, node_name, image_ref)
+
+    def _delete_prewarm_job_sync(self, node_name: str, image_ref: str) -> None:
+        job_name = self._prewarm_job_name(node_name, image_ref)
+        try:
+            self.batch.delete_namespaced_job(
+                job_name, PLATFORM_NAMESPACE, propagation_policy="Background"
+            )
+        except client.ApiException as exc:
+            if not _is_not_found(exc):
+                raise

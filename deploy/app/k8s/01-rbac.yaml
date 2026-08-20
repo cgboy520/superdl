@@ -24,7 +24,7 @@ rules:
     resources: ["ingresses", "networkpolicies"]
     verbs: ["get", "create", "delete"]
   - apiGroups: ["batch"]
-    resources: ["jobs"]  # disk.wipe 擦除任务
+    resources: ["jobs"]  # disk.wipe 擦除任务 + image.prewarm 预热任务(WP22,复用同组权限)
     verbs: ["get", "list", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
