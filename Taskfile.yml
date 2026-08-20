@@ -58,7 +58,7 @@ tasks:
       - pnpm build
 
   check:
-    desc: 全部质量闸门（CI 等价）
+    desc: 后端 + 前端质量闸门（CI 另跑 alembic check、openapi diff、脚本三件套、e2e）
     cmds:
       - task: check-api
       - task: check-fe

@@ -47,7 +47,7 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 
 1. **金额**：全链路 `Decimal`/`numeric`，禁止 float。单价 4 位小数，账单入账 2 位小数，舍入 `ROUND_HALF_EVEN`。统一走 `app/core/money.py`。
 2. **时间**：DB 一律 `timestamptz`，代码一律 aware-UTC（`app/core/timeutil.now_utc()`）；禁止 naive datetime。
-3. **改 DB + 动 K8s 必须走 outbox**：业务写入与 `outbox_tasks` 插入同一事务；任何直接在请求路径调 K8s 的代码不许合并。
+3. **改 DB + 动 K8s 必须走 outbox**：业务写入与 `outbox_tasks` 插入同一事务；任何直接在请求路径调 K8s 的代码不许提交。
 4. **钱包更新必须 `SELECT ... FOR UPDATE`** 且同事务写 `balance_ledger`（带 balance_after 快照）。
 5. **计费主依据是 `instance_events`**（running↔非 running 的边），Prometheus 指标只做展示与对账，不参与计费。
 6. **模块边界**：`app/modules/*` 之间只许 import 对方的 `service.py`（和 `schemas.py`），禁止跨模块 import `models.py`/`router.py` 或跨模块查表。CI 用 import-linter 强制。
@@ -66,9 +66,12 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 
 ## 提交约定
 
-- **所有工作直接在 `main` 分支提交，不新建分支、不发 PR**（2026-08 起的工作流约定）。
-- 每个 WP 小步提交，单次变更 ≤ ~500 行；commit message 前缀 `WPxx:`。
-- 合并前 CI 四个 job 必须全绿：
+- **所有工作直接在 `main` 分支提交，不新建分支、不发 PR**。
+- commit message 前缀 `WPxx:`（跨 WP 的整理用 `chore:` / `fix:`），一句话说清「改了什么 + 为什么」。
+- **一个提交一件事**：每个提交自身能过全部质量闸门、能被单独回滚。这是首要判据，行数上限只是兜底。
+- 体量上限：单个提交 **< 2000 手写行**（不含 orval 产物 / `openapi.json` / lockfile / alembic 自动生成的迁移）。超了就得在 commit message 里说明为什么不可再拆。
+- 以下情形本就不该硬拆：新模块首次落地（models+迁移+service+router+tests 一体才自洽）、契约再生成、整屏前端交付、纯机械的重命名/格式化。机械改动要**单独成提交**，不与逻辑改动混。
+- push 后 CI 四个 job 必须全绿；带红不许推下一个提交。本地先跑 `task check`（覆盖后端 + 前端两 job；alembic check、openapi 无 diff、脚本三件套、e2e 由 CI 兜底）：
   - 后端：ruff format/check → pyright → import-linter → pytest（billing 覆盖率 ≥90%）→ alembic check → openapi.json 无 diff
   - 前端：eslint → tsc → vitest → build
   - 脚本：bash -n → shellcheck → bats

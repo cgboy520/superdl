@@ -375,7 +375,7 @@ superdl/
    - 前端:eslint → tsc → vitest → build;orval 产物与 openapi.json 一致性校验;
    - E2E:Playwright 冒烟(注册→充值(mock)→开实例(fake 编排)→账单→释放)。
 3. **本地可自测环境**:docker compose(PG18 + mock 短信 + mock 支付回调);K8s 路径:`gpu_adapter`/K8s 客户端上接口抽象,单测全 mock;集成测试用 **kind + fake GPU 资源注入**(无真卡也能断言 Namespace/NetworkPolicy/Pod spec 正确性与 reconciler 行为)。**真实 GPU 行为(HAMi 限额/互扰、Kata 直通)只能实机验证,列入人工事项**。
-4. **小步合并**:每 WP 拆 PR ≤ ~500 行;AI 之间用 openapi.json + specs 对齐,避免口头协议。
+4. **小步提交**:直接提交 main(不发 PR);一个提交一件事、自身 CI 可绿可独立回滚,手写行(不含生成物/lock/自动迁移)< 2000;AI 之间用 openapi.json + specs 对齐,避免口头协议。
 
 ### 7.3 需人工执行的事项清单(AI 产出全部脚本/Runbook,人上手)
 
