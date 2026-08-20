@@ -488,6 +488,13 @@ class RealOrchestrator:
             )
         return out
 
+    async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
+        await asyncio.to_thread(self._set_node_unschedulable_sync, node_name, unschedulable)
+
+    def _set_node_unschedulable_sync(self, node_name: str, unschedulable: bool) -> None:
+        # RBAC:需 ClusterRole nodes patch(deploy/app/k8s/01-rbac.yaml,WP23 扩权)
+        self.core.patch_node(node_name, {"spec": {"unschedulable": unschedulable}})
+
     # ---------- 镜像预热(WP22) ----------
 
     @staticmethod

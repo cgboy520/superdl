@@ -37,6 +37,8 @@ class FakeOrchestrator:
     fail_next_prewarm: bool = False
     # 节点注入(WP23 加入对账测试):追加在合成节点之后
     extra_nodes: list = field(default_factory=list)
+    # cordon 状态(WP23):节点名集合,list_nodes 反映为 Cordoned
+    cordoned_nodes: set[str] = field(default_factory=set)
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -138,8 +140,24 @@ class FakeOrchestrator:
                 )
             )
         nodes.extend(self.extra_nodes)
-        return nodes
+        return [
+            NodeInfo(
+                name=n.name,
+                pool_label=n.pool_label,
+                gpu_model=n.gpu_model,
+                gpu_total=n.gpu_total,
+                gpu_used=n.gpu_used,
+                status="Cordoned" if n.name in self.cordoned_nodes else n.status,
+            )
+            for n in nodes
+        ]
 
     def inject_node(self, node) -> None:
         """模拟新 GPU 节点加入集群(WP23 对账测试)。传 NodeInfo。"""
         self.extra_nodes.append(node)
+
+    async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
+        if unschedulable:
+            self.cordoned_nodes.add(node_name)
+        else:
+            self.cordoned_nodes.discard(node_name)

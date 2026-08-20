@@ -205,6 +205,20 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
     return enrollment
 
 
+async def request_cordon(
+    session: AsyncSession, node_name: str, *, unschedulable: bool, reason: str
+) -> None:
+    """cordon/uncordon 只入队不直接动 K8s(硬规范 #3),handler 幂等执行。"""
+    from app.core.outbox import enqueue
+
+    enqueue(
+        session,
+        "node.cordon",
+        {"node_name": node_name, "unschedulable": unschedulable, "reason": reason},
+    )
+    await session.commit()
+
+
 # ---------- 匿名侧(令牌即鉴权;统一 404 防探测) ----------
 
 

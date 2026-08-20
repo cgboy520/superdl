@@ -23,6 +23,7 @@ import {
   revenueReportApiAdminV1ReportsRevenueGet,
   adminAuditLogApiAdminV1AuditGet,
   adminCreateAdjustmentApiAdminV1AdjustmentsPost,
+  adminCordonNodeApiAdminV1NodesNodeNameCordonPost,
   adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost,
   adminCreateImageApiAdminV1ImagesPost,
   adminCreateSkuApiAdminV1SkusPost,
@@ -33,6 +34,7 @@ import {
   adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost,
   adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost,
   adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost,
+  adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost,
   adminUpdateImageApiAdminV1ImagesImageIdPatch,
   adminForceStopApiAdminV1InstancesUuidForceStopPost,
   adminFreezeTenantApiAdminV1TenantsUserIdFreezePost,
@@ -59,6 +61,7 @@ import type {
   ImageCreate,
   ImageDeleteRequest,
   ImageUpdate,
+  NodeCordonRequest,
   PrewarmEnqueuedOut,
   OrderBackfillRequest,
   OutboxDiscardRequest,
@@ -283,6 +286,18 @@ export function useRevokeEnrollment(
   return useMutation({
     mutationFn: (v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
       adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(v.enrollmentId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useCordonNode(
+  opts?: MutOpts<unknown, { nodeName: string; on: boolean; data: NodeCordonRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { nodeName: string; on: boolean; data: NodeCordonRequest }) =>
+      v.on
+        ? adminCordonNodeApiAdminV1NodesNodeNameCordonPost(v.nodeName, v.data)
+        : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
     ...opts?.mutation,
   });
 }

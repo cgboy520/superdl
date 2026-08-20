@@ -1835,6 +1835,44 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "NodeCordonOut": {
+        "properties": {
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "queued": {
+            "default": true,
+            "title": "Queued",
+            "type": "boolean"
+          },
+          "unschedulable": {
+            "title": "Unschedulable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "node_name",
+          "unschedulable"
+        ],
+        "title": "NodeCordonOut",
+        "type": "object"
+      },
+      "NodeCordonRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "NodeCordonRequest",
+        "type": "object"
+      },
       "NodeEnrollmentOut": {
         "description": "列表/进度视图 —— 永不含 token。",
         "properties": {
@@ -5008,6 +5046,122 @@
           }
         ],
         "summary": "Admin List Nodes",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/nodes/{node_name}/cordon": {
+      "post": {
+        "description": "停止调度(reason 必填;经 outbox 执行,请求路径不动 K8s)。",
+        "operationId": "admin_cordon_node_api_admin_v1_nodes__node_name__cordon_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_name",
+            "required": true,
+            "schema": {
+              "title": "Node Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeCordonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeCordonOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Cordon Node",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/nodes/{node_name}/uncordon": {
+      "post": {
+        "description": "恢复调度(reason 必填)。",
+        "operationId": "admin_uncordon_node_api_admin_v1_nodes__node_name__uncordon_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_name",
+            "required": true,
+            "schema": {
+              "title": "Node Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeCordonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeCordonOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Uncordon Node",
         "tags": [
           "admin"
         ]

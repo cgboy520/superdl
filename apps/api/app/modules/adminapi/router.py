@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
+from app.core.errors import not_found
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
@@ -398,6 +399,45 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
         )
         for n in nodes
     ]
+
+
+class NodeCordonRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=256)
+
+
+class NodeCordonOut(BaseModel):
+    node_name: str
+    unschedulable: bool
+    queued: bool = True  # 经 outbox 异步执行,列表轮询看生效
+
+
+async def _cordon(
+    node_name: str, body: NodeCordonRequest, session: DbSession, request: Request, on: bool
+) -> NodeCordonOut:
+    names = {n.name for n in await orchestrator_service.cluster_nodes()}  # 只读校验,非副作用
+    if node_name not in names:
+        raise not_found("节点不存在或未打池标签")
+    await nodes_service.request_cordon(session, node_name, unschedulable=on, reason=body.reason)
+    set_audit_target(
+        request, f"node:{node_name}", detail={"unschedulable": on, "reason": body.reason}
+    )
+    return NodeCordonOut(node_name=node_name, unschedulable=on)
+
+
+@router.post("/nodes/{node_name}/cordon", dependencies=[require_roles("ops")])
+async def admin_cordon_node(
+    node_name: str, body: NodeCordonRequest, session: DbSession, request: Request
+) -> NodeCordonOut:
+    """停止调度(reason 必填;经 outbox 执行,请求路径不动 K8s)。"""
+    return await _cordon(node_name, body, session, request, on=True)
+
+
+@router.post("/nodes/{node_name}/uncordon", dependencies=[require_roles("ops")])
+async def admin_uncordon_node(
+    node_name: str, body: NodeCordonRequest, session: DbSession, request: Request
+) -> NodeCordonOut:
+    """恢复调度(reason 必填)。"""
+    return await _cordon(node_name, body, session, request, on=False)
 
 
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])

@@ -93,6 +93,10 @@ class K8sOrchestrator(Protocol):
         """清理预热 Job(收敛后回收;不存在则跳过)。"""
         ...
 
+    async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
+        """cordon(True)/uncordon(False)。幂等:重复设置同值无副作用。"""
+        ...
+
 
 @dataclass(frozen=True)
 class NodeInfo:

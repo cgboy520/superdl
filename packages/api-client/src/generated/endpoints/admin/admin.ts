@@ -50,6 +50,8 @@ import type {
   ImageNodeCacheOut,
   ImageUpdate,
   InstanceOut,
+  NodeCordonOut,
+  NodeCordonRequest,
   NodeEnrollmentOut,
   NodeOut,
   OrderBackfillOut,
@@ -2574,6 +2576,222 @@ export function useAdminListNodesApiAdminV1NodesGet<TData = Awaited<ReturnType<t
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListNodesApiAdminV1NodesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostUrl = (nodeName: string,) => {
+
+
+
+
+  return `/api/admin/v1/nodes/${nodeName}/cordon`
+}
+
+/**
+ * 停止调度(reason 必填;经 outbox 执行,请求路径不动 K8s)。
+ * @summary Admin Cordon Node
+ */
+export const adminCordonNodeApiAdminV1NodesNodeNameCordonPost = async (nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeCordonOut> => {
+
+  return customFetch<NodeCordonOut>(getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostUrl(nodeName),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeCordonRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryKey = (nodeName: string,
+    nodeCordonRequest?: NodeCordonRequest,) => {
+    return [
+    'POST', `/api/admin/v1/nodes/${nodeName}/cordon`, nodeCordonRequest
+    ] as const;
+    }
+
+
+export const getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError = HTTPValidationError>(nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryKey(nodeName,nodeCordonRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>> = ({ signal }) => adminCordonNodeApiAdminV1NodesNodeNameCordonPost(nodeName,nodeCordonRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: nodeName !== null && nodeName !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>>
+export type AdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryError = HTTPValidationError
+
+
+export function useAdminCordonNodeApiAdminV1NodesNodeNameCordonPost<TData = Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCordonNodeApiAdminV1NodesNodeNameCordonPost<TData = Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCordonNodeApiAdminV1NodesNodeNameCordonPost<TData = Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Cordon Node
+ */
+
+export function useAdminCordonNodeApiAdminV1NodesNodeNameCordonPost<TData = Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryOptions(nodeName,nodeCordonRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostUrl = (nodeName: string,) => {
+
+
+
+
+  return `/api/admin/v1/nodes/${nodeName}/uncordon`
+}
+
+/**
+ * 恢复调度(reason 必填)。
+ * @summary Admin Uncordon Node
+ */
+export const adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost = async (nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeCordonOut> => {
+
+  return customFetch<NodeCordonOut>(getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostUrl(nodeName),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeCordonRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostQueryKey = (nodeName: string,
+    nodeCordonRequest?: NodeCordonRequest,) => {
+    return [
+    'POST', `/api/admin/v1/nodes/${nodeName}/uncordon`, nodeCordonRequest
+    ] as const;
+    }
+
+
+export const getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostQueryOptions = <TData = Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError = HTTPValidationError>(nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostQueryKey(nodeName,nodeCordonRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>> = ({ signal }) => adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(nodeName,nodeCordonRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: nodeName !== null && nodeName !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>>
+export type AdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostQueryError = HTTPValidationError
+
+
+export function useAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPost<TData = Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPost<TData = Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPost<TData = Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Uncordon Node
+ */
+
+export function useAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPost<TData = Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError = HTTPValidationError>(
+ nodeName: string,
+    nodeCordonRequest: NodeCordonRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostQueryOptions(nodeName,nodeCordonRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

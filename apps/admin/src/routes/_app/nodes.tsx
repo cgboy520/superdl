@@ -26,6 +26,7 @@ import {
   type EnrollmentRow,
   type NodeRow,
   isApiError,
+  useCordonNode,
   useCreateEnrollment,
   useEnrollments,
   useNodes,
@@ -344,13 +345,27 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
 }
 
 function NodesPage() {
+  const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  const { data } = useNodes();
+  const qc = useQueryClient();
+  const { data, refetch } = useNodes();
   const nodes: NodeRow[] = data ?? [];
   const [selected, setSelected] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const node = nodes.find((n) => n.name === selected) ?? nodes[0];
+  const cordon = useCordonNode({
+    mutation: {
+      onSuccess: (_r, v) => {
+        message.success(
+          `${v.on ? "cordon" : "uncordon"} 已入队,数秒内生效(列表自动刷新)`,
+        );
+        void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
+        setTimeout(() => void refetch(), 3_000);
+      },
+      onError: (e) => message.error(isApiError(e) ? e.message : "操作失败"),
+    },
+  });
 
   return (
     <>
@@ -392,11 +407,36 @@ function NodesPage() {
             },
             {
               title: "操作",
-              render: () => (
-                <Tooltip title="cordon/drain 经集群运维通道执行(人工事项 Runbook),此处只读">
-                  <Typography.Text type="secondary">cordon · drain</Typography.Text>
-                </Tooltip>
-              ),
+              width: 170,
+              render: (_, r) => {
+                const cordoned = r.status === "Cordoned";
+                return (
+                  <Space>
+                    <ReasonAction
+                      label={cordoned ? "uncordon" : "cordon"}
+                      title={cordoned ? "恢复调度" : "停止调度"}
+                      confirmText={
+                        cordoned
+                          ? `恢复 ${r.name} 的调度,新实例可再落到该节点。`
+                          : `停止 ${r.name} 的调度:存量实例不受影响,新实例不再落到该节点(经 outbox 数秒内生效)。`
+                      }
+                      danger={!cordoned}
+                      disabled={!writable}
+                      disabledReason="只读角色不可操作"
+                      onSubmit={async (reason) => {
+                        await cordon.mutateAsync({
+                          nodeName: r.name,
+                          on: !cordoned,
+                          data: { reason },
+                        });
+                      }}
+                    />
+                    <Tooltip title="drain(驱逐)牵扯计费与迁移策略,后置;当前经集群 Runbook 执行">
+                      <Typography.Text type="secondary">drain</Typography.Text>
+                    </Tooltip>
+                  </Space>
+                );
+              },
             },
           ]}
         />

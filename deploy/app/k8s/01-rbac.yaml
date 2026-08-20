@@ -19,7 +19,7 @@ rules:
     verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "patch"]  # patch:管理端 cordon/uncordon(WP23,经 outbox)
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses", "networkpolicies"]
     verbs: ["get", "create", "delete"]

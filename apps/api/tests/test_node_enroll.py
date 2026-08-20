@@ -475,3 +475,69 @@ class TestEnrollReconciler:
             assert counts["expired"] == 1 and counts["failed"] == 1
         finally:
             set_orchestrator(None)
+
+
+class TestNodeCordon:
+    async def test_cordon_via_outbox_and_uncordon(self, client, sm) -> None:
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.core.outbox import drain
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            ah = await admin_headers(sm, client, role="ops")
+            # 未知节点 → 404;reason 必填 → 422
+            assert (
+                await client.post(
+                    "/api/admin/v1/nodes/no-such-node/cordon",
+                    json={"reason": "维护"},
+                    headers=ah,
+                )
+            ).status_code == 404
+            assert (
+                await client.post(
+                    "/api/admin/v1/nodes/fake-hami-node-1/cordon", json={}, headers=ah
+                )
+            ).status_code == 422
+
+            # cordon:请求只入队,drain 后 K8s 侧生效,列表可见 Cordoned
+            resp = await client.post(
+                "/api/admin/v1/nodes/fake-hami-node-1/cordon",
+                json={"reason": "巡检维护"},
+                headers=ah,
+            )
+            assert resp.status_code == 200 and resp.json()["queued"] is True
+            assert "fake-hami-node-1" not in fake.cordoned_nodes  # 请求路径零 K8s 调用
+            assert await drain(sm) == 1
+            assert "fake-hami-node-1" in fake.cordoned_nodes
+            nodes = (await client.get("/api/admin/v1/nodes", headers=ah)).json()
+            assert next(n for n in nodes if n["name"] == "fake-hami-node-1")["status"] == "Cordoned"
+
+            # 重复 cordon 幂等;uncordon 恢复
+            await client.post(
+                "/api/admin/v1/nodes/fake-hami-node-1/cordon",
+                json={"reason": "再次"},
+                headers=ah,
+            )
+            await drain(sm)
+            assert "fake-hami-node-1" in fake.cordoned_nodes
+            await client.post(
+                "/api/admin/v1/nodes/fake-hami-node-1/uncordon",
+                json={"reason": "维护完成"},
+                headers=ah,
+            )
+            await drain(sm)
+            assert "fake-hami-node-1" not in fake.cordoned_nodes
+
+            # readonly 不可写
+            ro = await admin_headers(sm, client, role="readonly")
+            assert (
+                await client.post(
+                    "/api/admin/v1/nodes/fake-hami-node-1/cordon",
+                    json={"reason": "越权"},
+                    headers=ro,
+                )
+            ).status_code == 403
+        finally:
+            set_orchestrator(None)
