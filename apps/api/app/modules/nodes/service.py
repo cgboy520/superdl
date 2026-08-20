@@ -107,7 +107,7 @@ async def create_enrollment(
     idempotency_key: str | None,
 ) -> tuple[NodeEnrollment, str]:
     """创建注册令牌。Idempotency-Key 重放:不建新行,轮换该行 token 后原样返回
-    (token 只存哈希无法复读,轮换是幂等重放下唯一能再给出可用命令的做法)。"""
+    (token 只存哈希,无法复读原值)。"""
     await require_cluster_config(session)
     if idempotency_key:
         existing = (
@@ -282,7 +282,7 @@ async def bootstrap(
             http_status=http_status.HTTP_409_CONFLICT,
         )
     if row.reported_ip and client_ip and row.reported_ip != client_ip:
-        # 换 IP 重跑常见(多网卡/NAT),不硬拒,但留审计信号
+        # 换 IP 重跑常见(多网卡/NAT):不硬拒,留审计信号
         logger.warning(
             "node_enrollment_ip_changed",
             enrollment_id=row.id,

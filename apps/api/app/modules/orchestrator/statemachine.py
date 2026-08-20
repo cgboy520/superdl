@@ -16,14 +16,12 @@ RELEASING = "releasing"
 RELEASED = "released"
 FAILED = "failed"
 
-# RELEASED 是唯一的最终终态;FAILED 是「故障停机」态,用户释放后仍走 releasing→released,
-# 否则失败实例永远留在列表里删不掉(状态机无出边 = 死局)。
+# RELEASED 是唯一终态;FAILED 为故障停机态,仍可走 releasing→released
 TERMINAL = frozenset({RELEASED})
 
-# (from → 允许的 to)。RUNNING→FAILED 仅系统使用(pod_lost:节点/Pod 故障)
-# CREATING→RELEASING:用户主动取消(调度长期不满足时不必干等超时);creating 未进入
-# 计费态,取消不产生 GPU 时费,冻结额度随 release 退回。
-# FAILED→RELEASING:用户清理失败实例(资源已停,释放只做残留清理与列表出清)。
+# from → 允许的 to。RUNNING→FAILED 仅系统使用(pod_lost);
+# CREATING→RELEASING 为用户取消(creating 非计费态,冻结额度随 release 退回);
+# FAILED→RELEASING 为用户清理失败实例。
 TRANSITIONS: dict[str, frozenset[str]] = {
     CREATING: frozenset({RUNNING, FAILED, RELEASING}),
     RUNNING: frozenset({STOPPING, FAILED}),

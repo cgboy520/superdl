@@ -43,7 +43,7 @@
 8. 存储:grace/frozen 行显示天级倒计时(由 policies 天数前端计算);计费列显示每盘快照价。
 9. Playwright 冒烟全流程绿(含新增详情页段);后端 ruff/pyright/pytest(billing≥90%)/lint-imports 绿;前端 eslint/tsc/vitest/build 绿。
 
-## 附录 A · ui-ux-spec.md 修订条目(本 WP 已执行)
+## 附录 A · ui-ux-spec.md 修订条目
 
 - §2 布局行:改「全宽品牌渐变顶栏+可折叠浅色侧栏」;补 fontFamily/全局 tabular-nums/components token 说明。
 - §3.1:顶部加 `首页 /(公开)` 与 `登录 /login(分屏)`;概览标注 `/dashboard`。

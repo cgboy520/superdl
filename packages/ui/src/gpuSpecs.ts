@@ -4,7 +4,6 @@
  * 半精峰值(FP32 累加,不含稀疏加速);H800/H100 取 PCIe/SXM 各自公开值。
  * 展示处必须带「理论峰值」脚注(marketing.ranking.footnote)。
  * key 与后端 `gpu_model` 串一致(无空格);查询用 getGpuSpec 做归一。
- * 后端 SKU 直供 TFLOPS 字段列入 P1,届时本表退役为兜底。
  */
 
 export interface GpuSpec {

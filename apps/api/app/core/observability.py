@@ -19,7 +19,7 @@ def _full_route_template(scope: Scope) -> str:
     """完整路由模板:include_router 下 route.path 不含前缀,用 path_params 反推。
 
     例:path=/api/v1/instances/abc + route.path=/instances/{uuid} + {"uuid": "abc"}
-    → /api/v1/instances/{uuid}。避免直方图 label 高基数,也避免用户端/管理端同名混淆。
+    → /api/v1/instances/{uuid}。
     """
     template = getattr(scope.get("route"), "path", None)
     if not template:

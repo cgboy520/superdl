@@ -35,7 +35,6 @@ alertmanager:
       repeat_interval: 4h
       routes:
         # critical 双通道:平台 webhook 之外必须有一条不依赖平台自身的路
-        # (API/DB 挂掉时恰好是 webhook 送不出去的时刻 —— 自引用死结)
         - matchers: ['severity="critical"']
           receiver: superdl-oncall-mail
           continue: true
@@ -52,8 +51,7 @@ alertmanager:
                 # kubectl -n monitoring create secret generic superdl-alert-token \
                 #   --from-literal=token=<随机强 token>
                 credentials_file: /etc/alertmanager/secrets/superdl-alert-token/token
-      # ⚠️ 上线前必填:独立第二通道(外部 SMTP,不经过平台任何组件)。
-      # 占位值不影响 webhook 通道工作,但等于没有第二通道 —— 属上线前人工事项。
+      # ⚠️ 上线前必填:独立第二通道(外部 SMTP,不经过平台任何组件)。占位值等于没有第二通道。
       - name: superdl-oncall-mail
         email_configs:
           - to: "oncall@superdl.example.com"          # CHANGE_ME
@@ -98,8 +96,7 @@ additionalPrometheusRulesMap:
             labels: {severity: critical}
             annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响"}
   # 平台自身业务指标。抓取接线:deploy/app/k8s/08-monitoring.yaml
-  # (API 走 ServiceMonitor + SUPERDL_METRICS_TOKEN Bearer;worker 走 PodMonitor:
-  # 结算/死信/泄漏回收指标都在 worker 进程内,漏抓 = 这组告警永不触发)
+  # (API 走 ServiceMonitor + SUPERDL_METRICS_TOKEN Bearer;worker 走 PodMonitor)
   superdl-platform:
     groups:
       - name: superdl.platform
@@ -129,8 +126,7 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_payment_closed_order_rescued_total[1h]) > 0
             labels: {severity: warning}
             annotations: {summary: "关单后回调自动入账发生:本地关单早于渠道过期,核对订单 TTL 与渠道 time_expire 是否同步"}
-          # 带 label 的 Counter 首次 inc 前无序列,absent(superdl_outbox_dead_total)
-          # 会在 worker 健康时常驻误报 —— 以心跳 Gauge 判定存活
+          # 以心跳 Gauge 判定存活:带 label 的 Counter 首次 inc 前无序列,不能用 absent
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)
             for: 5m

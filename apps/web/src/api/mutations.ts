@@ -1,6 +1,6 @@
 /**
  * 写操作统一封装:生成的 fetcher 函数 + useMutation。
- * 成功后广播失效全部查询 —— 应用规模下最稳的一致性策略。
+ * 成功后广播失效全部查询。
  */
 
 import type { ApiError,

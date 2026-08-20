@@ -1,7 +1,7 @@
 """GPU 资源申请抽象层。
 
-今天:device-plugin 语法(HAMi 软切分 / MIG / 整卡直通)。
-未来:DRA 成熟后仅改此层(见 development-plan §3.3)。
+当前用 device-plugin 语法(HAMi 软切分 / MIG / 整卡直通);DRA 迁移只需改此层
+(见 development-plan §3.3)。
 
 分池铁律:
 - dedicated → Kata 4.0(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
@@ -22,7 +22,7 @@ class GpuRequest:
     runtime_class: str | None  # RuntimeClass 名称
     host_users: bool  # False → pod.spec.hostUsers=false(userns)
     node_selector: dict[str, str]
-    # HAMi 池显式走 hami-scheduler(不依赖 mutating webhook —— 其 failurePolicy=Ignore 不可靠)
+    # HAMi 池显式走 hami-scheduler(不依赖 mutating webhook,其 failurePolicy=Ignore)
     scheduler_name: str | None = None
 
 
@@ -53,7 +53,7 @@ def build_gpu_request(
             node_selector=node_selector,
         )
     if tier in ("shared_std", "shared_eco"):
-        # HAMi:gpu 数 + 算力百分比 + 显存 MB;CUDA 层限额是超卖计费可信度的根基
+        # HAMi:gpu 数 + 算力百分比 + 显存 MB(CUDA 层限额)
         return GpuRequest(
             resources={
                 "nvidia.com/gpu": str(gpu_count),

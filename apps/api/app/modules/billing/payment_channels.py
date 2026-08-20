@@ -1,11 +1,11 @@
 """支付渠道抽象。
 
 - mock:dev/test 默认,POST /api/v1/webhooks/mock 直接标记支付成功
-- wechat:wechatpayv3(社区事实标准,平台证书自动更新/验签齐全)
-- alipay:alipay-sdk-python(官方 SDK)
+- wechat:wechatpayv3(平台证书自动更新 + 验签)
+- alipay:alipay-sdk-python
 
 微信/支付宝需要商户资质(人工事项 #6),真实回调联调为人工事项 #7(1 分钱)。
-未配置凭据时报 PAYMENT_CHANNEL_ERROR,不影响 mock 渠道与其余功能。
+未配置凭据时报 PAYMENT_CHANNEL_ERROR。
 """
 
 from collections.abc import Mapping
@@ -165,8 +165,7 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
     async def create_payment(self, order: "Order") -> str:
         import asyncio
 
-        # time_expire:渠道侧与本地 expires_at 同步过期,消灭「本地已关单、渠道仍可付」
-        # 的资金悬置窗口(RFC3339,aware-UTC 直接序列化)
+        # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339,aware-UTC 直接序列化)
         code, message = await asyncio.to_thread(
             self._wxpay.pay,
             description=f"SuperDL 充值 {order.order_no}",
@@ -220,8 +219,7 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
 class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7 联调(1 分钱)
     """支付宝当面付(precreate 扫码 + 异步通知 RSA2 验签 + 主动查单)。
 
-    凭据经 SUPERDL_ALIPAY_* 注入(应用私钥 + 支付宝公钥)。与微信渠道一样:
-    代码按官方 alipay-sdk-python 写全,真实商户参数就位后仅需联调验证,不需改码。
+    凭据经 SUPERDL_ALIPAY_* 注入(应用私钥 + 支付宝公钥)。
     """
 
     name = "alipay"
@@ -264,8 +262,7 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         model.out_trade_no = order.order_no
         model.total_amount = str(order.amount)
         model.subject = f"SuperDL 充值 {order.order_no}"
-        # 渠道侧与本地 expires_at 同步过期(相对分钟数,至少 1m),
-        # 消灭「本地已关单、渠道仍可付」的资金悬置窗口
+        # 渠道侧与本地 expires_at 同步过期(相对分钟数,至少 1m)
         remaining_min = int((order.expires_at - now_utc()).total_seconds() // 60)
         model.timeout_express = f"{max(1, remaining_min)}m"
         req = AlipayTradePrecreateRequest(biz_model=model)
@@ -342,15 +339,14 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         )
 
 
-# 真实渠道实例缓存:按配置指纹缓存(配置变更即重建,免重启生效;
-# 平台证书模式下避免每次回调都重新实例化 SDK 触发平台证书拉取)
+# 真实渠道实例缓存:按配置指纹缓存,配置变更即重建(免重启生效)
 _real_channel_cache: dict[str, tuple[tuple[str, ...], PaymentChannel]] = {}
 
 
 async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     settings = get_settings()
     if name == "mock":
-        # 双保险:生产环境无条件拒绝 mock(无验签渠道 = 无鉴权入账口)
+        # 生产环境无条件拒绝 mock(无验签渠道)
         if settings.environment == "prod" or not settings.payment_mock:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "mock 渠道仅限开发环境")
         return MockChannel()

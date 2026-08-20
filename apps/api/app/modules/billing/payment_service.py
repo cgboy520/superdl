@@ -98,8 +98,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         raise not_found("订单不存在")
     if order.status == "paid":
         return "ok"  # 重放:已入账,直接确认
-    # 关单后到达的有效成功回调(验签已过):用户真金白银已付,按人工补单同等校验
-    # (渠道一致 + 金额一致)自动入账,不再悬置到异常清单等人工兜底
+    # 关单后到达的有效成功回调(验签已过):按人工补单同等校验(渠道一致 + 金额一致)自动入账
     rescued = order.status == "closed" and result.success
     if order.status != "pending" and not rescued:
         logger.warning("callback_on_closed_order", order_no=order.order_no, status=order.status)
@@ -143,7 +142,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
 
 async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
     """查单收敛(定时任务,每 2 分钟):对 pending 超 60s 的订单主动向渠道查单,
-    渠道侧已支付则按回调同路径入账 —— 回调丢失不再等于用户钱丢。
+    渠道侧已支付则按回调同路径入账。
 
     advisory lock 防多副本重复;单轮 cap 50;渠道不可达跳过该单,下轮再试。
     """

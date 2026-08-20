@@ -1,8 +1,7 @@
 """敏感配置落库加密(AES-256-GCM)。
 
-主密钥只走 env(SUPERDL_CONFIG_ENCRYPTION_KEY,urlsafe-base64 编码的 32 字节),
-不落库、不进 DB 备份;dev/test 未配置时从 jwt_secret 派生,本地零配置可用,
-prod 由 Settings fail-fast 强制显式配置。密文格式 `enc:v1:<b64(nonce+ct)>`,
+主密钥只走 env(SUPERDL_CONFIG_ENCRYPTION_KEY,urlsafe-base64 的 32 字节),
+dev/test 未配置时从 jwt_secret 派生。密文格式 `enc:v1:<b64(nonce+ct)>`,
 AAD 绑定配置键名,防止密文在字段间搬运复用。
 """
 

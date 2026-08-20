@@ -1,7 +1,6 @@
 """节点加入对账器:enrollment 声称的进度 ↔ K8s 实际,每 30s 收敛。
 
-joined 的唯一判据是 K8s 侧真出现该节点、Ready、且池标签与登记一致 ——
-脚本自己说完成不算数(它没有 kubeconfig,也不该有)。
+joined 的唯一判据是 K8s 侧出现该节点、Ready、且池标签与登记一致(脚本自报不算数)。
 """
 
 from datetime import timedelta

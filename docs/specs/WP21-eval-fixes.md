@@ -1,9 +1,8 @@
-# WP21 — 评估修复(2026-08-19 全面评估销账)
+# WP21 · 评估修复
 
-依据 2026-08-19 六路评审 + 全链路实测的评估报告(综合 B+),对确认问题逐条修复。
-本 WP 无新功能;目标是把「可上预发」推进到「生产一轮加固完成」。
+依据六路评审 + 全链路实测的评估报告(综合 B+),对确认问题逐条修复。本 WP 无新功能。
 
-## P0(全部完成)
+## P0
 
 | # | 问题 | 修复 |
 |---|---|---|
@@ -12,7 +11,7 @@
 | 3 | 部署三断线 | ① 告警抓取:新增 `deploy/app/k8s/08-monitoring.yaml`(API ServiceMonitor 带 SUPERDL_METRICS_TOKEN Bearer + worker PodMonitor);worker 起 `/metrics`(默认 9000,`SUPERDL_WORKER_METRICS_PORT`)—— 结算失败/死信/泄漏回收指标都在 worker 进程内,此前即使抓 API 也是盲的。WorkerDown 告警改心跳 Gauge 判定(带 label 的 Counter 首次 inc 前无序列,`absent()` 常驻误报)。② `deploy/cluster/rke2/audit-policy.yaml` 落盘(此前 server-config 引用不存在的文件,apiserver 起不来),README 补拷贝步骤。③ CHANGE_ME Secret 模板(api + pg-backup)迁出整目录 apply 路径 → `deploy/app/secrets.example.yaml` |
 | 4 | 管理端镇店图利用率假象:全集群均值被画成每池曲线 | 按池加权聚合:metering 出 per-instance 小时聚合(sum, n),orchestrator 出实例→池映射,adminapi 组装(模块边界不破);无数据池返 `null` 不冒充。用例断言 hami=45.0 且 kata/mig=null |
 
-## P1(全部完成)
+## P1
 
 - **支付**:支付宝回调应答改纯文本 `success`(原 JSON 会被渠道判失败重试 8 次);关单后验签有效且金额一致的成功回调**自动入账**(与人工补单同等校验;failed 单、金额不符仍拒;新指标 `superdl_payment_closed_order_rescued_total` + 告警,非零说明本地 TTL 与渠道过期不同步);下单向渠道传过期时间(微信 `time_expire` RFC3339 / 支付宝 `timeout_express` 分钟)与本地关单同步 —— 资金悬置窗口关闭。
 - **契约**:adminapi 22 个裸 dict 端点补响应模型(kind/group/source 用 Literal 出联合类型),OpenAPI 重导出 + orval 再生成;admin `api.ts` 手写行类型与 14 处 `as unknown as` 全删,行类型改为生成契约再导出。
@@ -40,7 +39,7 @@
 - 查单 poller 不扫 closed 单:time_expire + 关单回调自动入账后,残余窗口仅「过期前最后 <2min 支付且回调丢失」,异常清单 + 人工补单兜底足够。
 - 节点屏 cordon/drain 实操、Grafana iframe URL 配置通道:依赖实机,归 W1 验证清单。
 
-## 验收基线(本 WP 完成时)
+## 验收基线
 
 - 后端 237 用例全绿(评估时 216,+21),billing 覆盖率 96.3%(闸 90%)。
 - ruff / pyright / import-linter(8 契约)/ alembic check 全绿;OpenAPI 与 orval 产物零 diff。

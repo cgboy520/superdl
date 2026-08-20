@@ -84,8 +84,8 @@ class Settings(BaseSettings):
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
     k8s_namespace_prefix: str = "tenant-"
-    # 租户 Jupyter Ingress 的 IngressClass。必须显式指定 —— IngressClass 未标 default 时
-    # 不写此字段会导致无控制器接管 Ingress,Jupyter 入口静默失效。
+    # 租户 Jupyter Ingress 的 IngressClass。必须显式指定:IngressClass 未标 default 时,
+    # 不写此字段则无控制器接管 Ingress。
     ingress_class_name: str = "nginx"
     ssh_host: str = "ssh1.superdl.example.com"
     ssh_port_range_start: int = 30000

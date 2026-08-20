@@ -10,7 +10,7 @@ from app.modules.adminapi.models import AdminUser
 
 logger = get_logger(__name__)
 
-# 不存在的用户名也走一次哈希校验,拉平时间侧信道(防用户名枚举)
+# 不存在的用户名也走一次哈希校验,拉平时间侧信道
 _DUMMY_HASH = hash_password("dummy-timing-equalizer")
 
 LOGIN_MAX_ATTEMPTS = 5
@@ -87,7 +87,7 @@ async def review_adjustment(
     from app.modules.adminapi.models import AdminAdjustment
     from app.modules.billing import service as billing_service
 
-    # 行锁:并发复核同一单时后到者等锁,醒来看到非 pending 即 409(防双入账)
+    # 行锁:并发复核时后到者等锁,看到非 pending 即 409
     adj = await session.get(AdminAdjustment, adjustment_id, with_for_update=True)
     if adj is None:
         raise not_found("调账单不存在")

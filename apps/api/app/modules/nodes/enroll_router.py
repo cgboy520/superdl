@@ -52,8 +52,7 @@ async def get_join_script(request: Request) -> PlainTextResponse:
     check_rate_limit(
         f"node-enroll-script:{_client_ip(request)}", max_attempts=30, window_seconds=60
     )
-    # 只替换第一次出现(赋值行);脚本内另有一处 __API_BASE__ 是"占位符未替换"护栏的
-    # 比较字面量,必须原样保留——否则护栏会拿真实 URL 自比,把正常下发误判为未替换。
+    # 只替换第一次出现(赋值行);脚本内另一处 __API_BASE__ 是护栏的比较字面量,须原样保留
     body = _script_body().replace("__API_BASE__", get_settings().public_base_url.rstrip("/"), 1)
     return PlainTextResponse(body, media_type="text/x-shellscript")
 

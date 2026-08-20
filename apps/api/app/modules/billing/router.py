@@ -173,11 +173,8 @@ async def bill_daily_summary(
     date: str,
     tz_offset_minutes: int = Query(default=480, ge=-720, le=840),
 ) -> DailySummaryOut:
-    """当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源)。
-
-    本地日界折算 UTC 窗口:BillHourly.hour_start 为 UTC 整点,offset 为整分时
-    窗口边界不会切开小时账单。
-    """
+    """当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源),本地日界经 tz_offset 折算。"""
+    # hour_start 为 UTC 整点,offset 为整分时窗口边界不会切开小时账单
     try:
         local_midnight = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:

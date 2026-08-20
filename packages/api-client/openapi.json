@@ -4277,7 +4277,7 @@
     },
     "/api/admin/v1/finance/orders/{order_no}/backfill": {
       "post": {
-        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账,操作者无法凭空造账。",
+        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。",
         "operationId": "admin_backfill_order_api_admin_v1_finance_orders__order_no__backfill_post",
         "parameters": [
           {
@@ -5633,7 +5633,7 @@
     },
     "/api/admin/v1/reports/oversell": {
       "get": {
-        "description": "镇店报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。",
+        "description": "超卖报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。",
         "operationId": "oversell_report_api_admin_v1_reports_oversell_get",
         "responses": {
           "200": {
@@ -6145,7 +6145,7 @@
     },
     "/api/v1/bills/daily-summary": {
       "get": {
-        "description": "当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源)。\n\n本地日界折算 UTC 窗口:BillHourly.hour_start 为 UTC 整点,offset 为整分时\n窗口边界不会切开小时账单。",
+        "description": "当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源),本地日界经 tz_offset 折算。",
         "operationId": "bill_daily_summary_api_v1_bills_daily_summary_get",
         "parameters": [
           {
@@ -6847,7 +6847,7 @@
     },
     "/api/v1/instances/{uuid}/events": {
       "get": {
-        "description": "状态时间线 = 计费依据,对用户透明。",
+        "description": "状态时间线(计费依据)。",
         "operationId": "list_instance_events_api_v1_instances__uuid__events_get",
         "parameters": [
           {
@@ -7266,7 +7266,7 @@
     },
     "/api/v1/metrics/instances": {
       "get": {
-        "description": "本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline)。\n\n路径前缀特意避开 /instances/*:orchestrator 的 GET /instances/{uuid} 先注册,\n会把子路径当 uuid 吞掉。断源降级为 available=false(200),详情端点维持 503 语义。",
+        "description": "本人 running 实例近 1h gpu_util 批量摘要(列表 sparkline)。\n\n断源降级为 available=false(200),详情端点维持 503 语义。",
         "operationId": "instances_metrics_summary_api_v1_metrics_instances_get",
         "responses": {
           "200": {

@@ -52,8 +52,7 @@ SUMMARY_CAP = 20  # 列表 sparkline 最多取前 N 台 running,防批量放大 
 async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetricsSummaryOut:
     """批量取各实例近 1h gpu_util 稀疏序列(targets: [(uuid, ns)])。
 
-    Prometheus 断源返回 available=false 而非抛错 —— 实例列表页不能因监控毁掉;
-    单实例查询失败仅跳过该台。
+    Prometheus 断源返回 available=false 而非抛错;单实例查询失败仅跳过该台。
     """
     end = now_utc().timestamp()
     start = end - RANGES["1h"]
@@ -77,7 +76,7 @@ async def aggregate_previous_hour(
 ) -> int:
     """每小时 :05 聚合上一小时用量入 usage_hourly。幂等(UNIQUE DO NOTHING)。
 
-    Prometheus 不可用时静默跳过 —— 计费完全不受影响。
+    Prometheus 不可用时静默跳过(指标不参与计费)。
     """
     from app.modules.orchestrator import service as orchestrator_service
 

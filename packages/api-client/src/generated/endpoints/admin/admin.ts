@@ -929,7 +929,7 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
 }
 
 /**
- * 人工补单:服务端实时向渠道核验已支付且金额一致才入账,操作者无法凭空造账。
+ * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
@@ -3842,7 +3842,7 @@ export const getOversellReportApiAdminV1ReportsOversellGetUrl = () => {
 }
 
 /**
- * 镇店报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。
+ * 超卖报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。
  * @summary Oversell Report
  */
 export const oversellReportApiAdminV1ReportsOversellGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OversellPoolOut[]> => {

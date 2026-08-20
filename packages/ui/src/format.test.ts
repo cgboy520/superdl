@@ -30,7 +30,7 @@ describe("compareAmounts", () => {
     expect(compareAmounts("0.30", "0.3000")).toBe(0);
     expect(compareAmounts("100.00", "99.9999")).toBe(1);
     expect(compareAmounts("1.6799", "1.68")).toBe(-1);
-    // 浮点会翻车的经典例:0.1+0.2 场景下字符串比较仍然精确
+    // 0.1+0.2 场景:字符串比较仍然精确
     expect(compareAmounts("0.3000", "0.2999")).toBe(1);
   });
   it("负数与空值", () => {

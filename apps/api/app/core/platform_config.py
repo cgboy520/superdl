@@ -1,9 +1,8 @@
 """平台配置中心:支付/短信/实名/合规配置,env 默认 + DB 覆盖,管理端在线配置免发版。
 
-与 policies.py 同构且同址(core):billing / account / notify / catalog 都要读,
-放任一业务模块都会造成跨模块查表。SETTING_SPECS 白名单是安全防线——未知键一律
-拒绝,管理端拿不到写任意配置(如 JWT 密钥)的口子。敏感项经 crypto.py AES-GCM
-加密落库,读取接口(adminapi)只回配置状态与尾 4 位预览,永不回明文。
+与 policies.py 同构且同址(core):billing / account / notify / catalog 都要读。
+SETTING_SPECS 是键白名单,未知键一律拒绝。敏感项经 crypto.py AES-GCM 加密落库,
+adminapi 只回配置状态与尾 4 位预览,永不回明文。
 """
 
 import re

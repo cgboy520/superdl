@@ -1,5 +1,5 @@
 /**
- * GPU 利用率迷你 sparkline(实例列表列,近 1h)。自绘 SVG —— 每行一个 ECharts 实例太重。
+ * GPU 利用率迷你 sparkline(实例列表列,近 1h),自绘 SVG。
  * 纵轴固定 0~100%;points 为 (unix_ts, util%) 稀疏序列。
  */
 

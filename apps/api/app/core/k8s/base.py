@@ -1,6 +1,6 @@
 """K8s 编排抽象:orchestrator 只面向本协议编程,dev/test 用 Fake,生产用 Real。
 
-任何直接 import kubernetes 客户端的业务代码都是违规 —— 必须经此层。
+业务代码禁止直接 import kubernetes 客户端。
 """
 
 from dataclasses import dataclass, field

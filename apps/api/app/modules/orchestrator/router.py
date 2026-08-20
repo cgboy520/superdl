@@ -101,7 +101,7 @@ async def release_instance(
 async def list_instance_events(
     uuid: str, user: CurrentUser, session: DbSession
 ) -> list[InstanceEventOut]:
-    """状态时间线 = 计费依据,对用户透明。"""
+    """状态时间线(计费依据)。"""
     instance = await service.get_instance(session, user.id, uuid)
     events = await service.list_events(session, instance.id)
     return [InstanceEventOut.model_validate(e) for e in events]

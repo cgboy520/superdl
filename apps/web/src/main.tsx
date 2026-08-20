@@ -21,7 +21,7 @@ configureApiClient({
   },
   onUnauthorized: () => {
     authStore.getState().logout();
-    // 会话真正失效时回登录页并带回跳,避免停留在一个数据全空的控制台
+    // 会话失效时回登录页并带回跳
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
     }

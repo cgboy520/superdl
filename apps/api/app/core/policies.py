@@ -1,8 +1,6 @@
 """运营策略参数:env 默认值 + DB 覆盖,管理端在线调整免重启发版。
 
-模型放 core(与 OutboxTask / AuditLog 同例):billing 与 orchestrator 都要读,
-放任一业务模块都会造成跨模块查表。读路径一次轻查询(全表 < 10 行);
-写路径仅管理端,带取值范围校验并过审计。
+模型放 core:billing 与 orchestrator 都要读,放业务模块会造成跨模块查表。
 """
 
 from dataclasses import dataclass

@@ -1,7 +1,6 @@
 /**
  * 侧栏菜单可见性(与后端 require_roles 逐端点对齐)。
- * 跨角色 403 的第一道防线:看不到入口就不会误入「空表 + ¥0.00」的假空态;
- * 直接输 URL 仍由后端 403 兜底。
+ * 无权角色不显示入口;直接输 URL 由后端 403 兜底。
  */
 
 export const ALL_ROLES = ["admin", "ops", "finance", "readonly"] as const;

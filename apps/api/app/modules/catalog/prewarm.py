@@ -5,9 +5,8 @@
   插行与 enqueue 同事务,硬规范 #3)、收敛 pulling(问 K8s Job 状态)、失败退避重试、
   cached 复检(防 kubelet 镜像 GC 后状态失真)、清理(节点消失/镜像禁用)。
 - handler image.prewarm:确保该(镜像,节点)的定点拉取 Job 存在,行置 pulling。
-  Job 创建即返回不等待 —— 大镜像拉取可达数十分钟,完成态由巡检收敛,
-  避免 outbox 5 次退避窗口内等不完进 dead。
-新节点 Ready 后由巡检自动纳入(≤60s),无需与节点加入流程显式联动。
+  Job 创建即返回不等待,完成态由巡检收敛(大镜像拉取可达数十分钟)。
+新节点 Ready 后由巡检自动纳入(≤60s)。
 """
 
 from datetime import timedelta
@@ -26,7 +25,7 @@ from app.modules.catalog.models import ImageNodeCache, PlatformImage
 
 logger = get_logger(__name__)
 
-# failed 行自动重试的节流窗口(防对坏镜像/坏节点风暴式重拉;管理员手动预热不受此限)
+# failed 行自动重试的节流窗口(管理员手动预热不受此限)
 FAILED_RETRY_INTERVAL = timedelta(minutes=30)
 # 预热覆盖的节点状态:Cordoned 会回役,继续维护缓存;NotReady 保留行但不派新任务
 TARGET_NODE_STATUSES = ("Ready", "Cordoned")

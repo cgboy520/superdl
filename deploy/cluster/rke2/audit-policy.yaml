@@ -22,8 +22,7 @@ rules:
     resources:
       - group: "coordination.k8s.io"
         resources: ["leases"]
-  # Secret/ConfigMap/Token:谁在什么时候动了凭据必须可追溯;
-  # 只记元数据,永不把 Secret 内容写进审计日志
+  # Secret/ConfigMap/Token:只记元数据,永不把内容写进审计日志
   - level: Metadata
     resources:
       - group: ""

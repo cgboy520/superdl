@@ -99,7 +99,7 @@ function AppLayout() {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // 菜单按角色过滤(与后端逐端点权限对齐),防跨角色误入假空态页
+  // 菜单按角色过滤(与后端逐端点权限对齐)
   const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly"));
   const selected = menuItems
     .map((m) => m.key)

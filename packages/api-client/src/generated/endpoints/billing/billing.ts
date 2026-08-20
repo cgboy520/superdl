@@ -73,10 +73,7 @@ export const getBillDailySummaryApiV1BillsDailySummaryGetUrl = (params: BillDail
 }
 
 /**
- * 当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源)。
- *
- * 本地日界折算 UTC 窗口:BillHourly.hour_start 为 UTC 整点,offset 为整分时
- * 窗口边界不会切开小时账单。
+ * 当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源),本地日界经 tz_offset 折算。
  * @summary Bill Daily Summary
  */
 export const billDailySummaryApiV1BillsDailySummaryGet = async (params: BillDailySummaryApiV1BillsDailySummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<DailySummaryOut> => {

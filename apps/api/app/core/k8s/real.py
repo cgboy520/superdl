@@ -33,7 +33,7 @@ def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
 
 
-# 租户命名空间兜底配额(应用层 create_instance 的每用户配额是主闸;这里防绕过与失控 Pod)
+# 租户命名空间兜底配额(每用户配额主闸在 create_instance)
 TENANT_QUOTA = {"pods": "64", "services": "64", "persistentvolumeclaims": "128"}
 # 租户容器禁访的内网/元数据网段(Egress 白名单公网,黑名单私网)
 PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
@@ -75,8 +75,8 @@ class RealOrchestrator:
         """入方向:默认拒东西向,仅放行 Ingress Controller 到 Jupyter 端口(北向入口);
         出方向放行公网 + DNS,禁访节点/Service/Pod 网段与云元数据(169.254.0.0/16)。
 
-        注意:SSH 走 NodePort(kube-proxy DNAT,不过 NetworkPolicy),Jupyter 走 Ingress
-        必须显式放行 —— 否则 ingress-nginx 连租户 Pod 被拒(502 Connection refused)。
+        SSH 走 NodePort(kube-proxy DNAT,不过 NetworkPolicy);Jupyter 走 Ingress,
+        不显式放行则 ingress-nginx 连租户 Pod 被拒。
         """
         policy = client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -281,11 +281,10 @@ class RealOrchestrator:
                 labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
             ),
             spec=client.V1IngressSpec(
-                # 显式 IngressClass:IngressClass 未标 default 时,不写这行则无控制器接管,
-                # Ingress 建出来但 Jupyter 入口静默不通(ADDRESS 恒为空)。
+                # 显式 IngressClass:IngressClass 未标 default 时,不写这行则无控制器接管
                 ingress_class_name=self.settings.ingress_class_name,
-                # TLS:不指定 secretName,由 ingress-nginx default-ssl-certificate
-                # 提供 *.app 泛域名证书(证书 Secret 无需复制进每个租户 ns)
+                # TLS 不指定 secretName,由 ingress-nginx default-ssl-certificate
+                # 提供 *.app 泛域名证书
                 tls=[client.V1IngressTLS(hosts=[spec.jupyter_host])],
                 rules=[
                     client.V1IngressRule(
@@ -603,7 +602,7 @@ class RealOrchestrator:
                             client.V1Container(
                                 name="prewarm",
                                 image=image_ref,
-                                # 平台镜像均含 sh;镜像缺 sh 会 StartError → 巡检记 failed 可见
+                                # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
                                 command=["/bin/sh", "-c", "true"],
                                 image_pull_policy="IfNotPresent",
                                 resources=client.V1ResourceRequirements(

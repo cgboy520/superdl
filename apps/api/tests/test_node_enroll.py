@@ -244,8 +244,7 @@ class TestEnrollRouterAnonymous:
         resp = await client.get("/api/v1/node-enroll/script")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/x-shellscript")
-        # 赋值行替换为真实地址;但护栏比较用的字面量必须原样保留(只替换第一次出现)——
-        # 否则护栏拿真实 URL 自比,把正常下发误判为"占位符未替换"而退出 2。
+        # 赋值行替换为真实地址;护栏比较用的字面量原样保留(只替换第一次出现)
         base = get_settings().public_base_url.rstrip("/")
         assert f'API_BASE="{base}"' in resp.text
         assert resp.text.count("__API_BASE__") == 1  # 仅剩护栏比较字面量

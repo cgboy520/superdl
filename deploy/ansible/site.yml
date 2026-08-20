@@ -45,7 +45,7 @@
       args: {executable: /bin/bash}
       when: nvme_devices is defined
 
-    - name: 分发 registries.yaml(Spegel P2P + 集群内 registry mirror,WP22)
+    - name: 分发 registries.yaml(Spegel P2P + 集群内 registry mirror)
       copy:
         src: ../cluster/rke2/registries.yaml
         dest: /etc/rancher/rke2/registries.yaml

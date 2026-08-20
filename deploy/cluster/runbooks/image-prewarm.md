@@ -1,4 +1,4 @@
-# 镜像缓存与预热 Runbook(WP22)
+# 镜像缓存与预热 Runbook
 
 架构三层:
 1. **Spegel P2P**(RKE2 `embedded-registry: true` + 全节点 `registries.yaml`)——任一节点已缓存的镜像,其余节点内网互拉,出口带宽 O(节点数)→O(1)。

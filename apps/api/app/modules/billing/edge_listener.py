@@ -1,7 +1,6 @@
 """计费边监听器:实例离开 running 的瞬间,与状态迁移同事务出尾账。
 
-由 wire_modules() 注册到 orchestrator 的 transition 监听器。
-同事务意味着:尾账与状态迁移原子提交 —— "停了机没记账"在架构上不可能。
+由 wire_modules() 注册到 orchestrator 的 transition 监听器,尾账与状态迁移原子提交。
 """
 
 from typing import TYPE_CHECKING

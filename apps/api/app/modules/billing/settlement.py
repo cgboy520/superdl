@@ -1,4 +1,4 @@
-"""结算引擎:事件驱动,幂等。Prometheus 全挂,计费不停。
+"""结算引擎:事件驱动,幂等。计费依据是 instance_events,不依赖 Prometheus。
 
 三条入口:
 1. settle_previous_hour(sm) —— 每小时 :02 定时任务(advisory lock)

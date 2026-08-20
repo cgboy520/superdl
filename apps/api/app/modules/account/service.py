@@ -30,7 +30,7 @@ async def send_sms_code(
     session: AsyncSession, phone: str, purpose: str, *, client_ip: str | None = None
 ) -> None:
     settings = get_settings()
-    # IP 维度限流防轰炸/成本攻击;手机号维度限日发送量(60s 间隔由下方 DB 记录把关)
+    # IP 维度限流 + 手机号维度限日发送量(60s 间隔由下方 DB 记录把关)
     check_rate_limit(f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0)
     check_rate_limit(f"sms-send-phone:{phone}", max_attempts=10, window_seconds=86400.0)
     interval = timedelta(seconds=settings.sms_send_interval_seconds)
@@ -61,7 +61,7 @@ async def send_sms_code(
         channel = await get_sms_channel(session)
         await channel.send(phone, cfg["sms_template_verify"] or "", {"code": code})
     except SmsError as exc:
-        # 渠道失败:作废刚落库的验证码,避免"码在库里但用户收不到"的脏数据
+        # 渠道失败:作废刚落库的验证码
         row.used_at = now_utc()
         await session.commit()
         logger.error("sms_send_failed", phone=phone, error=str(exc))
@@ -75,7 +75,7 @@ async def send_sms_code(
 async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpose: str) -> None:
     """校验并一次性消费验证码。同事务内调用,失败抛 SMS_CODE_INVALID。
 
-    失败计次持久化(commit 后再抛,调用方异常路径的 rollback 不会抹掉计次);
+    失败计次先 commit 再抛(调用方 rollback 不抹掉计次);
     最新一条达到 MAX_SMS_CODE_ATTEMPTS 即作废,正确码也不再放行。
     """
     row = (
@@ -144,7 +144,7 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    # 密码与验证码两条路径同限流(验证码路径不限流 = 可穷举 6 位码)
+    # 密码与验证码两条路径同限流
     check_rate_limit(f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0)
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if user is None:
@@ -222,7 +222,7 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     try:
         ok = await provider.verify(name, id_number, user.phone)
     except RealNameError as exc:
-        # 渠道故障 ≠ 核验不一致:502 上抛,不消耗用户的"不一致"心智
+        # 渠道故障 ≠ 核验不一致:502 上抛
         logger.error("real_name_channel_error", user_id=user.id, error=str(exc))
         raise AppError(
             ErrorCode.REAL_NAME_CHANNEL_ERROR,

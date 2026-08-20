@@ -50,7 +50,7 @@ class BillHourly(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     gpu_count: Mapped[int] = mapped_column(default=1)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    detail: Mapped[dict | None] = mapped_column(JSONB)  # 事件重建的时段明细,便于争议核查
+    detail: Mapped[dict | None] = mapped_column(JSONB)  # 事件重建的时段明细
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

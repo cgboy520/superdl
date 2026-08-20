@@ -667,7 +667,7 @@ export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string
 }
 
 /**
- * 状态时间线 = 计费依据,对用户透明。
+ * 状态时间线(计费依据)。
  * @summary List Instance Events
  */
 export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceEventOut[]> => {

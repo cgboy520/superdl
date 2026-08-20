@@ -125,7 +125,7 @@ class TestRecharge:
             await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
         ).json()
         assert detail["status"] == "closed"
-        # 关单后的有效成功回调(验签+金额一致):自动入账,资金不悬置
+        # 关单后的有效成功回调(验签 + 金额一致):自动入账
         resp = await pay_mock(client, order["order_no"], "20.00")
         assert resp.status_code == 200
         detail = (

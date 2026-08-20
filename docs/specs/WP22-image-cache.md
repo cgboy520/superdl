@@ -1,4 +1,4 @@
-# WP22 · Docker 镜像本地缓存与预热产品化(2026-08-20)
+# WP22 · Docker 镜像本地缓存与预热产品化
 
 方向决策经人工确认:
 1. 集群内 P2P 缓存用 RKE2 内置 embedded registry mirror(Spegel),零新增组件;dragonfly/nydus/stargz 对本规模过重,否决。

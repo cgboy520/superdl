@@ -5,7 +5,7 @@
 - running + Pod 消失/异常 → failed(停止计费)+ 告警
 - stopping + Pod 消失 → stopped(计费边,尾账监听器触发)
 - releasing + Pod 消失 → released(擦盘事件 + 端口回收)
-- K8s 存在但 DB 已终态的 Pod → 强制删除(泄漏 = 白送算力)
+- K8s 存在但 DB 已终态的 Pod → 强制删除(清理泄漏)
 """
 
 from datetime import timedelta

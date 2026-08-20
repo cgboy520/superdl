@@ -1,4 +1,4 @@
-/** CTA 横幅:实时空闲卡数(取不到退化为静态口号),不编造数字。 */
+/** CTA 横幅:实时空闲卡数,取不到则退化为静态口号。 */
 
 import { brand, colorPrimary, marketing } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
