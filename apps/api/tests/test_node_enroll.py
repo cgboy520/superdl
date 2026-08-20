@@ -236,3 +236,91 @@ class TestEnrollmentStateMachine:
                     session, token2, phase="driver", state="ok", message=None
                 )
             assert exc.value.http_status == 404
+
+
+class TestEnrollRouterAnonymous:
+    async def test_script_served_with_api_base(self, client, sm) -> None:
+        resp = await client.get("/api/v1/node-enroll/script")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/x-shellscript")
+        assert "__API_BASE__" not in resp.text
+        assert "/api/v1/node-enroll/bootstrap" in resp.text
+        assert "sdln_" not in resp.text.replace("--token sdln_xxx", "")  # 脚本零密钥
+
+    async def test_bootstrap_and_progress_http_flow(self, client, sm) -> None:
+        await set_cluster_config(sm)
+        ah = await admin_headers(sm, client, role="ops")
+        created = (
+            await client.post("/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah)
+        ).json()
+        token = created["token"]
+        bearer = {"Authorization": f"Bearer {token}"}
+
+        # 无鉴权头 → 401;伪造令牌 → 统一 404
+        assert (
+            await client.post("/api/v1/node-enroll/bootstrap", json={"hostname": "n1"})
+        ).status_code == 401
+        assert (
+            await client.post(
+                "/api/v1/node-enroll/bootstrap",
+                json={"hostname": "n1"},
+                headers={"Authorization": "Bearer sdln_forged"},
+            )
+        ).status_code == 404
+
+        resp = await client.post(
+            "/api/v1/node-enroll/bootstrap",
+            json={
+                "hostname": "gpu-a3-01",
+                "os_info": {"os_release": "Ubuntu 24.04", "kernel": "6.8", "arch": "x86_64"},
+                "gpus": ["NVIDIA RTX4090"],
+            },
+            headers=bearer,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["rke2_join_token"].endswith("secrettoken")
+        assert body["pool"] == "hami"
+        assert body["rke2_server_url"] == "https://10.0.0.10:9345"
+
+        # 进度推进:rke2_start ok → joining;管理端列表可见且无 token
+        for phase, state in [("driver", "ok"), ("rke2_install", "ok"), ("rke2_start", "ok")]:
+            resp = await client.post(
+                "/api/v1/node-enroll/progress",
+                json={"phase": phase, "state": state},
+                headers=bearer,
+            )
+            assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "joining"
+        rows = (await client.get("/api/admin/v1/node-enrollments?active=true", headers=ah)).json()
+        assert rows[0]["status"] == "joining" and rows[0]["node_name"] == "gpu-a3-01"
+        assert token not in str(rows)
+
+    async def test_revoked_token_uniform_404(self, client, sm) -> None:
+        await set_cluster_config(sm)
+        ah = await admin_headers(sm, client, role="ops")
+        created = (
+            await client.post("/api/admin/v1/node-enrollments", json={"pool": "mig"}, headers=ah)
+        ).json()
+        eid = created["enrollment"]["id"]
+        await client.post(
+            f"/api/admin/v1/node-enrollments/{eid}/revoke", json={"reason": "换机"}, headers=ah
+        )
+        resp = await client.post(
+            "/api/v1/node-enroll/bootstrap",
+            json={"hostname": "n2"},
+            headers={"Authorization": f"Bearer {created['token']}"},
+        )
+        assert resp.status_code == 404
+
+    async def test_bootstrap_rate_limited(self, client, sm) -> None:
+        statuses = []
+        for _ in range(31):
+            r = await client.post(
+                "/api/v1/node-enroll/bootstrap",
+                json={"hostname": "n3"},
+                headers={"Authorization": "Bearer sdln_bogus"},
+            )
+            statuses.append(r.status_code)
+        assert statuses[:30] == [404] * 30
+        assert statuses[30] == 429

@@ -97,6 +97,7 @@ def _register_module_routers(app: FastAPI) -> None:
     from app.modules.billing.webhooks_router import router as webhooks_router
     from app.modules.catalog.router import router as catalog_router
     from app.modules.metering.router import router as metering_router
+    from app.modules.nodes.enroll_router import router as node_enroll_router
     from app.modules.notify.router import router as notify_router
     from app.modules.orchestrator.disks_router import router as disks_router
     from app.modules.orchestrator.router import router as orchestrator_router
@@ -107,6 +108,7 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(disks_router, prefix="/api/v1")
     app.include_router(billing_router, prefix="/api/v1")
     app.include_router(webhooks_router, prefix="/api/v1")
+    app.include_router(node_enroll_router, prefix="/api/v1")
     app.include_router(metering_router, prefix="/api/v1")
     app.include_router(notify_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
