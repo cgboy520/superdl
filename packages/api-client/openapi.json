@@ -698,6 +698,94 @@
         "title": "BillSummaryOut",
         "type": "object"
       },
+      "BootstrapOut": {
+        "description": "装机参数下发 —— 含 join token 明文,仅经 Bearer POST 响应体,严禁入日志。",
+        "properties": {
+          "driver_version": {
+            "title": "Driver Version",
+            "type": "string"
+          },
+          "hostname_expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname Expected"
+          },
+          "nvme_devices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nvme Devices",
+            "type": "array"
+          },
+          "pool": {
+            "title": "Pool",
+            "type": "string"
+          },
+          "registries_yaml": {
+            "title": "Registries Yaml",
+            "type": "string"
+          },
+          "rke2_join_token": {
+            "title": "Rke2 Join Token",
+            "type": "string"
+          },
+          "rke2_server_url": {
+            "title": "Rke2 Server Url",
+            "type": "string"
+          },
+          "rke2_version": {
+            "title": "Rke2 Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pool",
+          "hostname_expected",
+          "rke2_version",
+          "rke2_server_url",
+          "rke2_join_token",
+          "driver_version",
+          "nvme_devices",
+          "registries_yaml"
+        ],
+        "title": "BootstrapOut",
+        "type": "object"
+      },
+      "BootstrapRequest": {
+        "properties": {
+          "gpus": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Gpus",
+            "type": "array"
+          },
+          "hostname": {
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+            "title": "Hostname",
+            "type": "string"
+          },
+          "os_info": {
+            "additionalProperties": true,
+            "title": "Os Info",
+            "type": "object"
+          }
+        },
+        "required": [
+          "hostname"
+        ],
+        "title": "BootstrapRequest",
+        "type": "object"
+      },
       "DailySummaryOut": {
         "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算)。",
         "properties": {
@@ -896,6 +984,127 @@
           "created_at"
         ],
         "title": "DiskOut",
+        "type": "object"
+      },
+      "EnrollmentCommandOut": {
+        "description": "创建/重生成响应:token 明文仅此一次出现。",
+        "properties": {
+          "curl_command": {
+            "title": "Curl Command",
+            "type": "string"
+          },
+          "enrollment": {
+            "$ref": "#/components/schemas/NodeEnrollmentOut"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "wget_command": {
+            "title": "Wget Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enrollment",
+          "token",
+          "curl_command",
+          "wget_command"
+        ],
+        "title": "EnrollmentCommandOut",
+        "type": "object"
+      },
+      "EnrollmentCreate": {
+        "properties": {
+          "hostname": {
+            "anyOf": [
+              {
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "nvme_devices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nvme Devices"
+          },
+          "pool": {
+            "enum": [
+              "kata",
+              "hami",
+              "mig"
+            ],
+            "title": "Pool",
+            "type": "string"
+          },
+          "ttl_hours": {
+            "default": 24,
+            "maximum": 168.0,
+            "minimum": 1.0,
+            "title": "Ttl Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pool"
+        ],
+        "title": "EnrollmentCreate",
+        "type": "object"
+      },
+      "EnrollmentRegenerateRequest": {
+        "properties": {
+          "ttl_hours": {
+            "default": 24,
+            "maximum": 168.0,
+            "minimum": 1.0,
+            "title": "Ttl Hours",
+            "type": "integer"
+          }
+        },
+        "title": "EnrollmentRegenerateRequest",
+        "type": "object"
+      },
+      "EnrollmentRevokeRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "EnrollmentRevokeRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1626,6 +1835,140 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "NodeEnrollmentOut": {
+        "description": "列表/进度视图 —— 永不含 token。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "joined_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Joined At"
+          },
+          "last_report_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Report At"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "pool": {
+            "title": "Pool",
+            "type": "string"
+          },
+          "reported_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Ip"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pool",
+          "hostname",
+          "note",
+          "status",
+          "phase",
+          "error",
+          "node_name",
+          "reported_ip",
+          "expires_at",
+          "last_report_at",
+          "joined_at",
+          "created_at"
+        ],
+        "title": "NodeEnrollmentOut",
+        "type": "object"
+      },
       "NodeOut": {
         "properties": {
           "gpu_model": {
@@ -2027,7 +2370,8 @@
               "payment_alipay",
               "sms",
               "real_name",
-              "compliance"
+              "compliance",
+              "cluster"
             ],
             "title": "Group",
             "type": "string"
@@ -2288,6 +2632,57 @@
           "enqueued"
         ],
         "title": "PrewarmEnqueuedOut",
+        "type": "object"
+      },
+      "ProgressAck": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ProgressAck",
+        "type": "object"
+      },
+      "ProgressRequest": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "phase": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Phase",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "ok",
+              "failed",
+              "rebooting"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase",
+          "state"
+        ],
+        "title": "ProgressRequest",
         "type": "object"
       },
       "RealNameRequest": {
@@ -4352,6 +4747,237 @@
           }
         ],
         "summary": "Admin Me",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/node-enrollments": {
+      "get": {
+        "description": "注册记录列表(永不含 token)。active=true 过滤陈旧终态行。",
+        "operationId": "admin_list_enrollments_api_admin_v1_node_enrollments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Active",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NodeEnrollmentOut"
+                  },
+                  "title": "Response Admin List Enrollments Api Admin V1 Node Enrollments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Enrollments",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "生成节点注册命令。token 明文仅本响应出现一次;审计不落 token。\nIdempotency-Key 重放不建新行(轮换该行 token 后返回)。",
+        "operationId": "admin_create_enrollment_api_admin_v1_node_enrollments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentCommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Create Enrollment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/node-enrollments/{enrollment_id}/regenerate": {
+      "post": {
+        "description": "换新令牌(仅 待执行/已过期/已失败),状态回 pending。",
+        "operationId": "admin_regenerate_enrollment_api_admin_v1_node_enrollments__enrollment_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "title": "Enrollment Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentRegenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentCommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Regenerate Enrollment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/node-enrollments/{enrollment_id}/revoke": {
+      "post": {
+        "operationId": "admin_revoke_enrollment_api_admin_v1_node_enrollments__enrollment_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "title": "Enrollment Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeEnrollmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Revoke Enrollment",
         "tags": [
           "admin"
         ]
@@ -6478,6 +7104,147 @@
         "summary": "Instances Metrics Summary",
         "tags": [
           "metering"
+        ]
+      }
+    },
+    "/api/v1/node-enroll/bootstrap": {
+      "post": {
+        "description": "令牌换装机参数(含 RKE2 join token,仅经本响应体下发)。支持脚本重跑/重启续跑。",
+        "operationId": "enroll_bootstrap_api_v1_node_enroll_bootstrap_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Bootstrap",
+        "tags": [
+          "node-enroll"
+        ]
+      }
+    },
+    "/api/v1/node-enroll/progress": {
+      "post": {
+        "operationId": "enroll_progress_api_v1_node_enroll_progress_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Progress",
+        "tags": [
+          "node-enroll"
+        ]
+      }
+    },
+    "/api/v1/node-enroll/script": {
+      "get": {
+        "description": "装机脚本下发(text/x-shellscript)。零密钥;占位符替换为本环境 API 地址。",
+        "operationId": "get_join_script_api_v1_node_enroll_script_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Join Script",
+        "tags": [
+          "node-enroll"
         ]
       }
     },

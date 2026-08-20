@@ -99,6 +99,10 @@ const GROUP_INTRO: Record<string, string> = {
   compliance:
     "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);" +
     "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。",
+  cluster:
+    "GPU 节点一键加入(WP23)的集群接入参数:Server 地址与 join token 来自 RKE2 server 节点" +
+    "(token 执行 cat /var/lib/rancher/rke2/server/node-token 获取,轮换用 rke2 token rotate 后在此更新)。" +
+    "配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令;registries.yaml 为镜像缓存 mirror(WP22),可留空。",
 };
 
 const SOURCE_TAG: Record<PlatformConfigItem["source"], { color?: string; text: string }> = {
@@ -413,6 +417,19 @@ function PlatformConfigPage() {
               <GroupPanel
                 group="compliance"
                 items={groupItems("compliance")}
+                draft={draft}
+                setDraft={setDraft}
+                disabled={disabled}
+              />
+            ),
+          },
+          {
+            key: "cluster",
+            label: "集群接入",
+            children: (
+              <GroupPanel
+                group="cluster"
+                items={groupItems("cluster")}
                 draft={draft}
                 setDraft={setDraft}
                 disabled={disabled}

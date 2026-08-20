@@ -29,6 +29,7 @@ import type {
   AdminForceStopRequest,
   AdminImageOut,
   AdminInstanceOut,
+  AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminLoginRequest,
@@ -39,12 +40,17 @@ import type {
   AnnouncementResultOut,
   AuditLogOut,
   DeadTaskOut,
+  EnrollmentCommandOut,
+  EnrollmentCreate,
+  EnrollmentRegenerateRequest,
+  EnrollmentRevokeRequest,
   HTTPValidationError,
   ImageCreate,
   ImageDeleteRequest,
   ImageNodeCacheOut,
   ImageUpdate,
   InstanceOut,
+  NodeEnrollmentOut,
   NodeOut,
   OrderBackfillOut,
   OrderBackfillRequest,
@@ -2043,6 +2049,431 @@ export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof admi
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminMeApiAdminV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListEnrollmentsApiAdminV1NodeEnrollmentsGetUrl = (params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/node-enrollments?${stringifiedParams}` : `/api/admin/v1/node-enrollments`
+}
+
+/**
+ * 注册记录列表(永不含 token)。active=true 过滤陈旧终态行。
+ * @summary Admin List Enrollments
+ */
+export const adminListEnrollmentsApiAdminV1NodeEnrollmentsGet = async (params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<NodeEnrollmentOut[]> => {
+
+  return customFetch<NodeEnrollmentOut[]>(getAdminListEnrollmentsApiAdminV1NodeEnrollmentsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListEnrollmentsApiAdminV1NodeEnrollmentsGetQueryKey = (params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,) => {
+    return [
+    `/api/admin/v1/node-enrollments`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListEnrollmentsApiAdminV1NodeEnrollmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError = HTTPValidationError>(params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListEnrollmentsApiAdminV1NodeEnrollmentsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>> = ({ signal }) => adminListEnrollmentsApiAdminV1NodeEnrollmentsGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>>
+export type AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetQueryError = HTTPValidationError
+
+
+export function useAdminListEnrollmentsApiAdminV1NodeEnrollmentsGet<TData = Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListEnrollmentsApiAdminV1NodeEnrollmentsGet<TData = Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError = HTTPValidationError>(
+ params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListEnrollmentsApiAdminV1NodeEnrollmentsGet<TData = Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError = HTTPValidationError>(
+ params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Enrollments
+ */
+
+export function useAdminListEnrollmentsApiAdminV1NodeEnrollmentsGet<TData = Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError = HTTPValidationError>(
+ params?: AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListEnrollmentsApiAdminV1NodeEnrollmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListEnrollmentsApiAdminV1NodeEnrollmentsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/node-enrollments`
+}
+
+/**
+ * 生成节点注册命令。token 明文仅本响应出现一次;审计不落 token。
+ * Idempotency-Key 重放不建新行(轮换该行 token 后返回)。
+ * @summary Admin Create Enrollment
+ */
+export const adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost = async (enrollmentCreate: EnrollmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<EnrollmentCommandOut> => {
+
+  return customFetch<EnrollmentCommandOut>(getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(enrollmentCreate)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryKey = (enrollmentCreate?: EnrollmentCreate,) => {
+    return [
+    'POST', `/api/admin/v1/node-enrollments`, enrollmentCreate
+    ] as const;
+    }
+
+
+export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryKey(enrollmentCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>> = ({ signal }) => adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(enrollmentCreate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>>
+export type AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryError = HTTPValidationError
+
+
+export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
+ enrollmentCreate: EnrollmentCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
+ enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
+ enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Create Enrollment
+ */
+
+export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
+ enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryOptions(enrollmentCreate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostUrl = (enrollmentId: number,) => {
+
+
+
+
+  return `/api/admin/v1/node-enrollments/${enrollmentId}/regenerate`
+}
+
+/**
+ * 换新令牌(仅 待执行/已过期/已失败),状态回 pending。
+ * @summary Admin Regenerate Enrollment
+ */
+export const adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost = async (enrollmentId: number,
+    enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options?: Parameters<typeof customFetch>[1]): Promise<EnrollmentCommandOut> => {
+
+  return customFetch<EnrollmentCommandOut>(getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostUrl(enrollmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(enrollmentRegenerateRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostQueryKey = (enrollmentId: number,
+    enrollmentRegenerateRequest?: EnrollmentRegenerateRequest,) => {
+    return [
+    'POST', `/api/admin/v1/node-enrollments/${enrollmentId}/regenerate`, enrollmentRegenerateRequest
+    ] as const;
+    }
+
+
+export const getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostQueryOptions = <TData = Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError = HTTPValidationError>(enrollmentId: number,
+    enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostQueryKey(enrollmentId,enrollmentRegenerateRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>> = ({ signal }) => adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost(enrollmentId,enrollmentRegenerateRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: enrollmentId !== null && enrollmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>>
+export type AdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostQueryError = HTTPValidationError
+
+
+export function useAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost<TData = Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost<TData = Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost<TData = Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Regenerate Enrollment
+ */
+
+export function useAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost<TData = Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostQueryOptions(enrollmentId,enrollmentRegenerateRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostUrl = (enrollmentId: number,) => {
+
+
+
+
+  return `/api/admin/v1/node-enrollments/${enrollmentId}/revoke`
+}
+
+/**
+ * @summary Admin Revoke Enrollment
+ */
+export const adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost = async (enrollmentId: number,
+    enrollmentRevokeRequest: EnrollmentRevokeRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeEnrollmentOut> => {
+
+  return customFetch<NodeEnrollmentOut>(getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostUrl(enrollmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(enrollmentRevokeRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostQueryKey = (enrollmentId: number,
+    enrollmentRevokeRequest?: EnrollmentRevokeRequest,) => {
+    return [
+    'POST', `/api/admin/v1/node-enrollments/${enrollmentId}/revoke`, enrollmentRevokeRequest
+    ] as const;
+    }
+
+
+export const getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostQueryOptions = <TData = Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError = HTTPValidationError>(enrollmentId: number,
+    enrollmentRevokeRequest: EnrollmentRevokeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostQueryKey(enrollmentId,enrollmentRevokeRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>> = ({ signal }) => adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(enrollmentId,enrollmentRevokeRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: enrollmentId !== null && enrollmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>>
+export type AdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostQueryError = HTTPValidationError
+
+
+export function useAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRevokeRequest: EnrollmentRevokeRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRevokeRequest: EnrollmentRevokeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRevokeRequest: EnrollmentRevokeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Revoke Enrollment
+ */
+
+export function useAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError = HTTPValidationError>(
+ enrollmentId: number,
+    enrollmentRevokeRequest: EnrollmentRevokeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostQueryOptions(enrollmentId,enrollmentRevokeRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

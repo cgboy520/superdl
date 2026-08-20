@@ -23,12 +23,16 @@ import {
   revenueReportApiAdminV1ReportsRevenueGet,
   adminAuditLogApiAdminV1AuditGet,
   adminCreateAdjustmentApiAdminV1AdjustmentsPost,
+  adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost,
   adminCreateImageApiAdminV1ImagesPost,
   adminCreateSkuApiAdminV1SkusPost,
   adminDeleteImageApiAdminV1ImagesImageIdDelete,
   adminImageNodesApiAdminV1ImagesImageIdNodesGet,
+  adminListEnrollmentsApiAdminV1NodeEnrollmentsGet,
   adminListImagesApiAdminV1ImagesGet,
   adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost,
+  adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost,
+  adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost,
   adminUpdateImageApiAdminV1ImagesImageIdPatch,
   adminForceStopApiAdminV1InstancesUuidForceStopPost,
   adminFreezeTenantApiAdminV1TenantsUserIdFreezePost,
@@ -48,6 +52,10 @@ import {
 import type {
   AdjustmentCreate,
   AnnouncementCreate,
+  EnrollmentCommandOut,
+  EnrollmentCreate,
+  EnrollmentRegenerateRequest,
+  EnrollmentRevokeRequest,
   ImageCreate,
   ImageDeleteRequest,
   ImageUpdate,
@@ -74,6 +82,8 @@ import {
 export { isApiError } from "@superdl/api-client";
 export type {
   ApiError,
+  EnrollmentCommandOut,
+  EnrollmentCreate,
   ImageCreate,
   ImageUpdate,
   InstanceOut,
@@ -89,6 +99,7 @@ export type {
   AdminAlertOut as AlertRow,
   AdminImageOut as ImageRow,
   ImageNodeCacheOut as ImageNodeRow,
+  NodeEnrollmentOut as EnrollmentRow,
   AdminOrderOut as OrderRow,
   AuditLogOut as AuditRow,
   DeadTaskOut as DeadTaskRow,
@@ -223,6 +234,55 @@ export function useUpdateSku(opts?: MutOpts<unknown, { skuId: number; data: SkuU
   return useMutation({
     mutationFn: (v: { skuId: number; data: SkuUpdate }) =>
       adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useEnrollments(options?: { active?: boolean; refetchInterval?: number }) {
+  const queryKey = ["admin", "node-enrollments", options?.active] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: () =>
+      adminListEnrollmentsApiAdminV1NodeEnrollmentsGet(
+        options?.active ? { active: true } : undefined,
+      ),
+    refetchInterval: options?.refetchInterval,
+  });
+  return { ...q, queryKey };
+}
+
+export function useCreateEnrollment(
+  opts?: MutOpts<EnrollmentCommandOut, { data: EnrollmentCreate; idempotencyKey?: string }>,
+) {
+  return useMutation({
+    mutationFn: (v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
+      adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(
+        v.data,
+        v.idempotencyKey ? { headers: { "Idempotency-Key": v.idempotencyKey } } : undefined,
+      ),
+    ...opts?.mutation,
+  });
+}
+
+export function useRegenerateEnrollment(
+  opts?: MutOpts<EnrollmentCommandOut, { enrollmentId: number; data: EnrollmentRegenerateRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { enrollmentId: number; data: EnrollmentRegenerateRequest }) =>
+      adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost(
+        v.enrollmentId,
+        v.data,
+      ),
+    ...opts?.mutation,
+  });
+}
+
+export function useRevokeEnrollment(
+  opts?: MutOpts<unknown, { enrollmentId: number; data: EnrollmentRevokeRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
+      adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(v.enrollmentId, v.data),
     ...opts?.mutation,
   });
 }

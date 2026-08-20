@@ -14,4 +14,5 @@ export const PlatformConfigItemOutGroup = {
   sms: 'sms',
   real_name: 'real_name',
   compliance: 'compliance',
+  cluster: 'cluster',
 } as const;

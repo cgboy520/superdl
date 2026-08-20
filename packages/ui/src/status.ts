@@ -58,6 +58,28 @@ export const imageCacheStatusMap: Record<ImageCacheStatus, StatusMeta> = {
   failed: { label: "拉取失败", color: statusColors.red, badge: "error" },
 };
 
+/** 节点注册/加入状态(WP23;与 node_enrollments.status 严格一致) */
+export type NodeEnrollStatus =
+  | "pending"
+  | "installing"
+  | "rebooting"
+  | "joining"
+  | "joined"
+  | "failed"
+  | "expired"
+  | "revoked";
+
+export const nodeEnrollStatusMap: Record<NodeEnrollStatus, StatusMeta> = {
+  pending: { label: "待执行", color: statusColors.gray, badge: "default" },
+  installing: { label: "安装中", color: statusColors.blue, badge: "processing", animated: true },
+  rebooting: { label: "重启中", color: statusColors.blue, badge: "processing", animated: true },
+  joining: { label: "加入中", color: statusColors.blue, badge: "processing", animated: true },
+  joined: { label: "已加入", color: statusColors.green, badge: "success" },
+  failed: { label: "已失败", color: statusColors.red, badge: "error" },
+  expired: { label: "已过期", color: statusColors.orange, badge: "warning" },
+  revoked: { label: "已吊销", color: statusColors.gray, badge: "default" },
+};
+
 export type DiskStatus = "active" | "grace" | "frozen" | "deleting" | "deleted";
 
 export const diskStatusMap: Record<DiskStatus, StatusMeta> = {

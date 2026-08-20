@@ -5,5 +5,6 @@ export * from "./catalog/catalog";
 export * from "./disks/disks";
 export * from "./instances/instances";
 export * from "./metering/metering";
+export * from "./node-enroll/node-enroll";
 export * from "./notify/notify";
 export * from "./webhooks/webhooks";
