@@ -35,6 +35,8 @@ class FakeOrchestrator:
     prewarm_calls: list[tuple[str, str]] = field(default_factory=list)
     auto_prewarm: bool = True
     fail_next_prewarm: bool = False
+    # 节点注入(WP23 加入对账测试):追加在合成节点之后
+    extra_nodes: list = field(default_factory=list)
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -135,4 +137,9 @@ class FakeOrchestrator:
                     status="Ready",
                 )
             )
+        nodes.extend(self.extra_nodes)
         return nodes
+
+    def inject_node(self, node) -> None:
+        """模拟新 GPU 节点加入集群(WP23 对账测试)。传 NodeInfo。"""
+        self.extra_nodes.append(node)

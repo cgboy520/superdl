@@ -324,3 +324,154 @@ class TestEnrollRouterAnonymous:
             statuses.append(r.status_code)
         assert statuses[:30] == [404] * 30
         assert statuses[30] == 429
+
+
+class TestEnrollReconciler:
+    async def test_joined_when_node_ready_and_pool_matches(self, client, sm) -> None:
+        from app.core.k8s import get_orchestrator, set_orchestrator
+        from app.core.k8s.base import NodeInfo
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            await set_cluster_config(sm)
+            ah = await admin_headers(sm, client, role="ops")
+            created = (
+                await client.post(
+                    "/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah
+                )
+            ).json()
+            token = created["token"]
+            bearer = {"Authorization": f"Bearer {token}"}
+            await client.post(
+                "/api/v1/node-enroll/bootstrap", json={"hostname": "gpu-b1-02"}, headers=bearer
+            )
+            await client.post(
+                "/api/v1/node-enroll/progress",
+                json={"phase": "rke2_start", "state": "ok"},
+                headers=bearer,
+            )
+
+            # 节点未出现 → 不推进
+            counts = await reconcile_enrollments_once(sm)
+            assert counts == {"joined": 0, "failed": 0, "expired": 0}
+
+            # K8s 出现 Ready 且池匹配 → joined,令牌即死;重复对账零动作
+            assert get_orchestrator() is fake
+            fake.inject_node(
+                NodeInfo(
+                    name="gpu-b1-02",
+                    pool_label="hami",
+                    gpu_model="RTX4090",
+                    gpu_total=8,
+                    gpu_used=0,
+                    status="Ready",
+                )
+            )
+            counts = await reconcile_enrollments_once(sm)
+            assert counts["joined"] == 1
+            rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
+            assert rows[0]["status"] == "joined" and rows[0]["joined_at"] is not None
+            assert (
+                await client.post(
+                    "/api/v1/node-enroll/progress",
+                    json={"phase": "x", "state": "ok"},
+                    headers=bearer,
+                )
+            ).status_code == 404
+            counts = await reconcile_enrollments_once(sm)
+            assert counts == {"joined": 0, "failed": 0, "expired": 0}
+        finally:
+            set_orchestrator(None)
+
+    async def test_pool_mismatch_fails(self, client, sm) -> None:
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.base import NodeInfo
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            await set_cluster_config(sm)
+            ah = await admin_headers(sm, client, role="ops")
+            created = (
+                await client.post(
+                    "/api/admin/v1/node-enrollments", json={"pool": "kata"}, headers=ah
+                )
+            ).json()
+            bearer = {"Authorization": f"Bearer {created['token']}"}
+            await client.post(
+                "/api/v1/node-enroll/bootstrap",
+                json={"hostname": "wrong-pool-node"},
+                headers=bearer,
+            )
+            fake.inject_node(
+                NodeInfo(
+                    name="wrong-pool-node",
+                    pool_label="hami",
+                    gpu_model="RTX4090",
+                    gpu_total=8,
+                    gpu_used=0,
+                    status="Ready",
+                )
+            )
+            counts = await reconcile_enrollments_once(sm)
+            assert counts["failed"] == 1
+            rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
+            assert rows[0]["status"] == "failed" and "池标签不符" in rows[0]["error"]
+        finally:
+            set_orchestrator(None)
+
+    async def test_expired_and_stale_heartbeat(self, client, sm) -> None:
+        from datetime import timedelta
+
+        from sqlalchemy import update
+
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.core.timeutil import now_utc
+        from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+        set_orchestrator(FakeOrchestrator())
+        try:
+            await set_cluster_config(sm)
+            ah = await admin_headers(sm, client, role="ops")
+            # pending 过期 → expired
+            e1 = (
+                await client.post(
+                    "/api/admin/v1/node-enrollments", json={"pool": "mig"}, headers=ah
+                )
+            ).json()
+            async with sm() as session:
+                await session.execute(
+                    update(NodeEnrollment)
+                    .where(NodeEnrollment.id == e1["enrollment"]["id"])
+                    .values(expires_at=now_utc() - timedelta(minutes=1))
+                )
+                await session.commit()
+            # installing 失联 → failed
+            e2 = (
+                await client.post(
+                    "/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah
+                )
+            ).json()
+            await client.post(
+                "/api/v1/node-enroll/bootstrap",
+                json={"hostname": "stale-node"},
+                headers={"Authorization": f"Bearer {e2['token']}"},
+            )
+            async with sm() as session:
+                await session.execute(
+                    update(NodeEnrollment)
+                    .where(NodeEnrollment.id == e2["enrollment"]["id"])
+                    .values(last_report_at=now_utc() - timedelta(hours=3))
+                )
+                await session.commit()
+
+            counts = await reconcile_enrollments_once(sm)
+            assert counts["expired"] == 1 and counts["failed"] == 1
+        finally:
+            set_orchestrator(None)

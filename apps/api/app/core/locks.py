@@ -17,6 +17,7 @@ class LockKey(IntEnum):
     USAGE_AGGREGATION = 1006
     PAYMENT_RECONCILE = 1007
     PREWARM_PATROL = 1008
+    NODE_ENROLL_RECONCILER = 1009
 
 
 @asynccontextmanager
