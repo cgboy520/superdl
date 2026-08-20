@@ -27,9 +27,7 @@ class AdminToken(BaseModel):
 
 
 # ---------- 管理端响应模型 ----------
-# 此前这批端点返回裸 dict,OpenAPI 无精确 schema,admin 前端被迫手写行类型
-# + as unknown as 断言(契约名存实亡)。金额一律 str(numeric 序列化),
-# 已 isoformat 的时间保持 str 以维持线上 JSON 形状不变。
+# 金额一律 str(numeric 序列化,禁 float);时间为 isoformat 字符串。
 
 
 class TenantOut(BaseModel):
@@ -63,7 +61,7 @@ class NodeOut(BaseModel):
 
 
 class ImageCoverageOut(BaseModel):
-    """预热覆盖(WP22):cached/total 节点数与百分比(total=巡检登记的目标节点数)。"""
+    """预热覆盖:cached/total 节点数与百分比(total=巡检登记的目标节点数)。"""
 
     cached: int
     total: int

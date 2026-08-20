@@ -50,7 +50,7 @@ interface SkuFormValues {
 }
 
 function SkusPage() {
-  // 深色主题下必须走 useApp 实例(静态 message 拿不到 ConfigProvider token,历史回归点)
+  // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message, modal } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);

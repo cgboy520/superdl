@@ -25,12 +25,13 @@ pnpm --filter admin dev                     # 管理控制台 http://localhost:5
 
 | 目录 | 说明 |
 |---|---|
-| `apps/api` | FastAPI 模块化单体（account / catalog / orchestrator / billing / metering / notify / adminapi） |
+| `apps/api` | FastAPI 模块化单体（account / catalog / orchestrator / billing / metering / notify / nodes / adminapi），同镜像双入口 serve / worker |
 | `apps/web` | 用户控制台（React 19 + antd 6，参照 AutoDL 交互范式） |
 | `apps/admin` | 管理控制台（深色 NOC 风，自设计） |
 | `packages/api-client` | orval 从 openapi.json 生成的 TanStack Query hooks |
 | `packages/ui` | 两端共享的主题 token / 状态映射 / 格式化工具 |
 | `deploy/` | ansible 装机基线、集群 helmfile、平台部署与本地 compose |
-| `docs/specs/` | 工作包 spec（WP0~WP12） |
+| `e2e/` | Playwright 浏览器冒烟（需 API 与 web dev server 在跑） |
+| `docs/specs/` | 工作包 spec（每个 WP 一份：目标 / 契约 / 数据变更 / 验收用例） |
 
 工程规范见 [CLAUDE.md](CLAUDE.md)。

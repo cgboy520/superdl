@@ -527,7 +527,7 @@ class RealOrchestrator:
 
     def _list_nodes_sync(self) -> list[NodeInfo]:
         nodes: Any = self.core.list_node(label_selector=POOL_NODE_LABEL)
-        used_by_node = self._used_gpus_by_node()  # 一次拉取,不再每节点全量扫 Pod
+        used_by_node = self._used_gpus_by_node()  # 一次拉取全量,避免逐节点扫 Pod
         out: list[NodeInfo] = []
         for node in nodes.items:
             labels = node.metadata.labels or {}
@@ -555,10 +555,10 @@ class RealOrchestrator:
         await asyncio.to_thread(self._set_node_unschedulable_sync, node_name, unschedulable)
 
     def _set_node_unschedulable_sync(self, node_name: str, unschedulable: bool) -> None:
-        # RBAC:需 ClusterRole nodes patch(deploy/app/k8s/01-rbac.yaml,WP23 扩权)
+        # RBAC:需 ClusterRole nodes patch(deploy/app/k8s/01-rbac.yaml)
         self.core.patch_node(node_name, {"spec": {"unschedulable": unschedulable}})
 
-    # ---------- 镜像预热(WP22) ----------
+    # ---------- 镜像预热 ----------
 
     @staticmethod
     def _prewarm_job_name(node_name: str, image_ref: str) -> str:

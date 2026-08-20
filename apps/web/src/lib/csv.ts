@@ -12,8 +12,8 @@ export function toCsv(
 ): string {
   const esc = (v: string | number | null | undefined): string => {
     let s = v == null ? "" : String(v);
-    // \u9632 CSV \u516c\u5f0f\u6ce8\u5165:\u7528\u6237\u53ef\u63a7\u5b57\u6bb5(\u5b9e\u4f8b\u540d/\u5907\u6ce8)\u4ee5 =/+/@ \u5f00\u5934,\u6216\u4ee5 - \u5f00\u5934\u4e14\u975e\u7eaf\u6570\u5b57\u65f6,
-    // \u524d\u7f6e\u5355\u5f15\u53f7\u8ba9\u7535\u5b50\u8868\u683c\u6309\u6587\u672c\u5904\u7406;\u8d1f\u6570\u91d1\u989d(\u7eaf\u6570\u5b57)\u4e0d\u53d7\u5f71\u54cd
+    // 防公式注入:危险前导字符(或以 - 开头且非纯数字)前置单引号,
+    // 让电子表格按文本处理;负数金额(纯数字)不受影响
     if (FORMULA_LEAD.test(s) || (s.startsWith("-") && !PLAIN_NUMBER.test(s))) {
       s = `'${s}`;
     }

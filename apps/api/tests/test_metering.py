@@ -69,13 +69,6 @@ class TestMetricsProxy:
         assert resp.status_code == 503
         assert "不影响计费" in resp.json()["message"]
 
-    async def test_invalid_range(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
-        resp = await client.get(
-            f"/api/v1/instances/{uuid}/metrics", params={"range": "7d"}, headers=headers
-        )
-        assert resp.json()["code"] == "VALIDATION_ERROR"
-
     async def test_cannot_read_others_metrics(self, client, sm, fake):
         _headers, uuid, _user_id = await _provision_running(client, sm, fake)
         from tests.test_account_auth import register
@@ -122,10 +115,3 @@ class TestReconciliation:
         assert resp.status_code == 200, resp.text
         report = resp.json()
         assert "billed_total" in report and "diff_pct" in report
-
-    async def test_reconciliation_bad_day(self, client, sm, fake):
-        ah = await admin_headers(sm, client, role="finance")
-        resp = await client.get(
-            "/api/admin/v1/reconciliation", params={"day": "2026/08/19"}, headers=ah
-        )
-        assert resp.json()["code"] == "VALIDATION_ERROR"

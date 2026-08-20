@@ -1,7 +1,7 @@
 """业务指标(prometheus_client)。/metrics 暴露,kps 侧配套告警规则。
 
-命名遵循 superdl_<domain>_<event>_total;这些事件此前只写日志 —— 结算失败、
-死信、泄漏 Pod、回调金额不符都是必须有人被叫醒的事。
+命名遵循 superdl_<domain>_<event>_total。结算失败、死信、泄漏 Pod、回调金额不符
+都是必须有人被叫醒的事,不能只写日志。
 """
 
 from prometheus_client import Counter, Gauge, Histogram

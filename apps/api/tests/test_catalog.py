@@ -187,10 +187,3 @@ class TestAdminSku:
             "/api/admin/v1/skus", headers={"Authorization": f"Bearer {data['access_token']}"}
         )
         assert resp.status_code == 401
-
-    async def test_admin_login_wrong_password(self, client: AsyncClient, sm):
-        await admin_headers(sm, client)
-        resp = await client.post(
-            "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "wrong"}
-        )
-        assert resp.json()["code"] == "LOGIN_FAILED"

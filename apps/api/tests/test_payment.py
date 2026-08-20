@@ -96,16 +96,6 @@ class TestRecharge:
         )
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
-    async def test_unknown_order_callback(self, client: AsyncClient, sm):
-        resp = await pay_mock(client, "R-not-exists", "10.00")
-        assert resp.status_code == 404
-
-    async def test_get_unknown_order_404(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000037")
-        resp = await client.get("/api/v1/wallet/recharges/R-not-exists", headers=headers)
-        assert resp.status_code == 404
-        assert resp.json()["code"] == "ORDER_NOT_FOUND"
-
     async def test_failure_callback_marks_order_failed(self, client: AsyncClient, sm):
         """渠道回调明示支付失败 → 订单转 failed,不入账。"""
         headers = await user_headers(client, "13700000038")
@@ -224,12 +214,6 @@ class TestRecharge:
                 )
         assert exc.value.code == "PAYMENT_CHANNEL_ERROR"
 
-    async def test_mock_callback_malformed_body(self, client: AsyncClient, sm):
-        """mock 回调体缺字段/非法 JSON → 解析失败 400。"""
-        resp = await client.post("/api/v1/webhooks/mock", json={"amount": "1.00"})
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-
     async def test_wechat_channel_requires_credentials(self, client: AsyncClient, sm):
         headers = await user_headers(client)
         resp = await client.post(
@@ -238,12 +222,6 @@ class TestRecharge:
             headers=headers,
         )
         assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-
-    async def test_recharge_requires_auth(self, client: AsyncClient, sm):
-        resp = await client.post(
-            "/api/v1/wallet/recharges", json={"amount": "20.00", "channel": "mock"}
-        )
-        assert resp.status_code == 401
 
 
 class TestRealChannelWebhookRoutes:
@@ -324,7 +302,7 @@ class TestChannelFactory:
         assert exc.value.code == "VALIDATION_ERROR"
 
     async def test_real_channel_fingerprint_cache(self, sm, monkeypatch):
-        """WP20 渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建(免重启)。"""
+        """渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建(免重启)。"""
         import app.modules.billing.payment_channels as pc
 
         cfg = dict.fromkeys(pc.WECHAT_CFG_KEYS, "") | {

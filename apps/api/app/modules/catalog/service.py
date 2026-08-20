@@ -64,12 +64,6 @@ async def list_images(session: AsyncSession) -> list[PlatformImage]:
     )
 
 
-async def get_image_by_ref(session: AsyncSession, image_ref: str) -> PlatformImage | None:
-    return (
-        await session.execute(select(PlatformImage).where(PlatformImage.image_ref == image_ref))
-    ).scalar_one_or_none()
-
-
 async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int]]:
     """预热覆盖聚合:image_id → (cached 节点数, 总行数, failed 节点数)。纯 DB,不调 K8s。"""
     rows = (
@@ -134,7 +128,7 @@ async def admin_update_sku(session: AsyncSession, sku_id: int, data: SkuUpdate) 
     return sku
 
 
-# ---------- 管理端:镜像与预热(WP22) ----------
+# ---------- 管理端:镜像与预热 ----------
 
 
 async def get_image(session: AsyncSession, image_id: int) -> PlatformImage:

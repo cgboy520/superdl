@@ -20,7 +20,6 @@ import {
   formatMoney,
   localToday,
   statusColors,
-  tabularNums,
 } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -263,7 +262,7 @@ function LedgerTable() {
             title: "金额",
             render: (_, r) => (
               <span
-                style={{ ...tabularNums, color: r.amount.startsWith("-") ? undefined : statusColors.green }}
+                style={{ color: r.amount.startsWith("-") ? undefined : statusColors.green }}
               >
                 {r.amount.startsWith("-") ? "" : "+"}
                 {formatMoney(r.amount)}
@@ -272,7 +271,7 @@ function LedgerTable() {
           },
           {
             title: "余额快照",
-            render: (_, r) => <span style={tabularNums}>{formatMoney(r.balance_after)}</span>,
+            render: (_, r) => <span>{formatMoney(r.balance_after)}</span>,
           },
           { title: "备注", dataIndex: "remark" },
         ]}
@@ -404,7 +403,7 @@ function BillingPage() {
               <Statistic
                 title="可用余额"
                 value={moneyOr(wallet?.balance, wallet != null)}
-                styles={{ content: { fontSize: 32, ...tabularNums } }}
+                styles={{ content: { fontSize: 32 } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>
                 充值
@@ -440,17 +439,16 @@ function BillingPage() {
                 <Statistic
                   title="GPU 时费"
                   value={formatMoney(summary?.gpu_total)}
-                  styles={{ content: tabularNums }}
                 />
                 <Statistic
                   title="日常费用(数据盘)"
                   value={formatMoney(summary?.disk_total)}
-                  styles={{ content: { fontSize: 16, ...tabularNums } }}
+                  styles={{ content: { fontSize: 16 } }}
                 />
                 <Statistic
                   title="今日消费"
                   value={formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null)}
-                  styles={{ content: { fontSize: 16, ...tabularNums } }}
+                  styles={{ content: { fontSize: 16 } }}
                 />
               </Col>
               <Col xs={24} md={14}>
@@ -505,7 +503,7 @@ function BillingPage() {
                     {
                       title: "单价",
                       render: (_, r) => (
-                        <span style={tabularNums}>
+                        <span>
                           {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
                         </span>
                       ),
@@ -513,7 +511,7 @@ function BillingPage() {
                     {
                       title: "金额",
                       render: (_, r) => (
-                        <span style={tabularNums}>{formatMoney(r.amount)}</span>
+                        <span>{formatMoney(r.amount)}</span>
                       ),
                     },
                   ]}

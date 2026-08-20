@@ -105,7 +105,7 @@ async def admin_update_sku(
     return SkuAdminOut.model_validate(sku)
 
 
-# ---------- 镜像与预热(WP22;读:ops/readonly,写:ops,admin 恒许) ----------
+# ---------- 镜像与预热(读:ops/readonly,写:ops,admin 恒许) ----------
 
 
 class ImageDeleteRequest(BaseModel):
@@ -304,7 +304,7 @@ async def admin_unfreeze_tenant(
     return TenantStatusOut(id=user.id, status=user.status)
 
 
-# ---------- 节点注册(WP23;读:ops/readonly,写:ops,admin 恒许) ----------
+# ---------- 节点注册(读:ops/readonly,写:ops,admin 恒许) ----------
 
 
 class EnrollmentRevokeRequest(BaseModel):

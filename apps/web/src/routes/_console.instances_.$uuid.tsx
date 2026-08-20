@@ -8,7 +8,6 @@ import {
   formatHourlyPrice,
   formatMoney,
   localToday,
-  tabularNums,
 } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -202,14 +201,14 @@ function BillsTab({ instanceId }: { instanceId: number }) {
         {
           title: "单价",
           render: (_, r) => (
-            <span style={tabularNums}>
+            <span>
               {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
             </span>
           ),
         },
         {
           title: "金额",
-          render: (_, r) => <span style={tabularNums}>{formatMoney(r.amount)}</span>,
+          render: (_, r) => <span>{formatMoney(r.amount)}</span>,
         },
       ]}
     />

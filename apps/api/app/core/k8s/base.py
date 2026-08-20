@@ -41,7 +41,7 @@ class PodStatus:
 
 @dataclass(frozen=True)
 class PrewarmJobStatus:
-    """镜像预热 Job 状态(WP22)。"""
+    """镜像预热 Job 状态。"""
 
     state: str  # absent / running / succeeded / failed
     message: str | None = None  # 失败原因(Job condition / Pod waiting reason)

@@ -1,4 +1,4 @@
-"""镜像预热(WP22):outbox handler + 巡检,让 is_prewarmed 成为真实状态。
+"""镜像预热:outbox handler + 巡检,让 is_prewarmed 成为真实状态。
 
 分工:
 - 巡检 prewarm_patrol(worker 60s):铺行(期望集 = enabled 镜像 × Ready/Cordoned 节点,
@@ -7,7 +7,7 @@
 - handler image.prewarm:确保该(镜像,节点)的定点拉取 Job 存在,行置 pulling。
   Job 创建即返回不等待 —— 大镜像拉取可达数十分钟,完成态由巡检收敛,
   避免 outbox 5 次退避窗口内等不完进 dead。
-新节点 Ready 后由巡检自动纳入(≤60s),无需与节点加入流程(WP23)显式联动。
+新节点 Ready 后由巡检自动纳入(≤60s),无需与节点加入流程显式联动。
 """
 
 from datetime import timedelta
@@ -159,7 +159,7 @@ async def _converge_pulling(
                     PREWARM_FAILED_TOTAL.labels(image_ref=ref).inc()
                     counts["failed"] += 1
                 elif status.state == "absent":
-                    # Job 被 TTL 清理/创建丢失(worker 曾崩溃):回 pending 重派
+                    # Job 被 TTL 清理或创建丢失:回 pending 重派
                     row.status = "pending"
                     enqueue(
                         session,

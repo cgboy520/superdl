@@ -19,7 +19,7 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:任何渲染异常兜底为可恢复页面,不再白屏。 */
+/** 全局错误边界:渲染异常兜底为可恢复页面,不白屏。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   return (
     <ConfigProvider locale={zhCN} theme={webTheme}>

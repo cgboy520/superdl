@@ -1,4 +1,4 @@
-"""节点加入对账器(WP23):enrollment 声称的进度 ↔ K8s 实际,每 30s 收敛。
+"""节点加入对账器:enrollment 声称的进度 ↔ K8s 实际,每 30s 收敛。
 
 joined 的唯一判据是 K8s 侧真出现该节点、Ready、且池标签与登记一致 ——
 脚本自己说完成不算数(它没有 kubeconfig,也不该有)。
@@ -51,7 +51,7 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                 node = nodes.get(row.node_name or "")
                 if node is not None and node.status == "Ready":
                     if node.pool_label == row.pool:
-                        # joined 即终态,令牌随之作废;预热由 WP22 巡检自动纳入新节点
+                        # joined 即终态,令牌随之作废;预热由巡检自动纳入新节点
                         transition_enrollment(row, "joined", phase="joined")
                         counts["joined"] += 1
                     else:

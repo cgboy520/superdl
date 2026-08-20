@@ -69,15 +69,15 @@ class Settings(BaseSettings):
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
 
-    # 镜像预热(WP22,可运营调整)
+    # 镜像预热(可运营调整)
     prewarm_min_coverage_pct: int = 90  # is_prewarmed=true 所需的节点覆盖率下限
     prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
 
-    # 集群接入(WP23 节点一键加入;env 为默认层,生产建议经管理端「平台配置·集群接入」录入)
+    # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
     k8s_distro: Literal["rke2", "k3s"] = "rke2"  # k3s 仅用于轻量/本地验证环境
     rke2_server_url: str = ""
     rke2_join_token: str = ""  # secret:平台配置中心 AES-GCM 加密存 DB 覆盖层
-    rke2_version: str = "v1.36.2+rke2r1"  # 装机脚本 INSTALL_RKE2_VERSION 钉死,实机核定后更新
+    rke2_version: str = "v1.36.2+rke2r1"  # 装机脚本的 INSTALL_RKE2_VERSION
     node_driver_version: str = "580"
     node_registries_yaml: str = ""
 
@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     wechat_cert_serial_no: str | None = None
     wechat_apiv3_key: str | None = None
     wechat_appid: str | None = None
-    wechat_public_key: str | None = None  # 微信支付公钥模式(2024-10 后新商户唯一模式)
+    wechat_public_key: str | None = None  # 公钥模式(新商户唯一可用模式)
     wechat_public_key_id: str | None = None  # PUB_KEY_ID_*
     alipay_app_id: str | None = None
     alipay_private_key: str | None = None

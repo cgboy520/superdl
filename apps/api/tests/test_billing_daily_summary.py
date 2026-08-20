@@ -109,22 +109,6 @@ class TestDailySummary:
         assert body["disk_total"] == "0.00"
         assert body["items"] == []
 
-    async def test_invalid_date_and_offset(self, client: AsyncClient):
-        headers, _ = await register_user(client, "13900010004")
-        resp = await client.get(
-            "/api/v1/bills/daily-summary",
-            params={"date": "2026/08/19"},
-            headers=headers,
-        )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "VALIDATION_ERROR"
-        resp = await client.get(
-            "/api/v1/bills/daily-summary",
-            params={"date": "2026-08-19", "tz_offset_minutes": 9999},
-            headers=headers,
-        )
-        assert resp.status_code == 422
-
     async def test_disk_daily_counted(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):

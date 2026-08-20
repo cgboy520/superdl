@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SuperDL GPU 节点一键加入脚本(WP23)。
+# SuperDL GPU 节点一键加入脚本。
 # 用法(命令由管理端生成,token 走参数不进 URL):
 #   curl -fsSL <API>/api/v1/node-enroll/script | sudo bash -s -- --token sdln_xxx
 #   wget -qO node-join.sh <API>/api/v1/node-enroll/script && sudo bash node-join.sh --token sdln_xxx
@@ -281,7 +281,7 @@ maybe_reboot() {
   chmod 600 "$STATE_DIR/token"
   cat > "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" <<EOF
 [Unit]
-Description=SuperDL node join resume (WP23)
+Description=SuperDL node join resume
 After=network-online.target
 Wants=network-online.target
 
@@ -303,7 +303,7 @@ EOF
 step_registries() {
   local content
   content="$(cfg_get registries_yaml)"
-  [[ -n "$content" ]] || { echo "-- registries_yaml 为空,跳过(WP22 镜像缓存未配置)"; return 0; }
+  [[ -n "$content" ]] || { echo "-- registries_yaml 为空,跳过(镜像缓存未配置)"; return 0; }
   mkdir -p "$RANCHER_DIR"
   printf '%s\n' "$content" > "$RANCHER_DIR"/registries.yaml
   chmod 644 "$RANCHER_DIR"/registries.yaml
@@ -329,8 +329,8 @@ step_rke2_install() {
   fi
   if [[ "$DISTRO" == "k3s" ]]; then
     # k3s 是轻量/本地验证路径(常落国内开发机),默认走 k3s 官方中国镜像。
-    # 注意:新版 get.k3s.io 已弃用 INSTALL_K3S_MIRROR(改 INSTALL_K3S_ARTIFACT_URL,默认 github),
-    # 必须用镜像自带的 k3s-install.sh —— 它认 INSTALL_K3S_MIRROR=cn,二进制走 rancher-mirror.rancher.cn。
+    # get.k3s.io 不认 INSTALL_K3S_MIRROR,必须用镜像自带的 k3s-install.sh:
+    # 只有它会按 INSTALL_K3S_MIRROR=cn 从 rancher-mirror.rancher.cn 取二进制。
     curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh \
       | INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh -
   else

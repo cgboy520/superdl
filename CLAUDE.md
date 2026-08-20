@@ -10,7 +10,8 @@ apps/web       用户控制台（Vite + React 19 + antd 6，浅色）
 apps/admin     管理控制台（同栈，深色 NOC 风）
 packages/api-client  orval 从 openapi.json 生成（禁止手改 src/generated）
 packages/ui    主题 token、状态徽标映射、金额/时长格式化共享件
-deploy/        ansible 装机基线 / cluster helmfile / app 部署与本地 compose
+deploy/        ansible 装机基线 / cluster helmfile / app 部署与本地 compose / node-join 脚本测试
+e2e/           Playwright 浏览器冒烟
 docs/specs     每个工作包一份 WPxx-*.md（目标/契约/数据变更/验收用例）
 ```
 
@@ -33,6 +34,10 @@ uv run python -m app.export_openapi      # 导出 openapi.json 到 packages/api-
 pnpm install
 pnpm dev / build / lint / typecheck / test
 pnpm api-client                          # orval 重新生成 TanStack Query hooks
+
+# 装机脚本（node-join.sh）
+shellcheck apps/api/app/modules/nodes/assets/node-join.sh
+bats deploy/node-join/tests              # PATH shim 伪造系统命令，不碰真实系统
 
 # 本地环境
 docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
@@ -63,4 +68,8 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 
 - **所有工作直接在 `main` 分支提交，不新建分支、不发 PR**（2026-08 起的工作流约定）。
 - 每个 WP 小步提交，单次变更 ≤ ~500 行；commit message 前缀 `WPxx:`。
-- 合并前 CI 必须全绿：ruff → pyright → pytest → alembic check → import-linter；eslint → tsc → vitest → build。
+- 合并前 CI 四个 job 必须全绿：
+  - 后端：ruff format/check → pyright → import-linter → pytest（billing 覆盖率 ≥90%）→ alembic check → openapi.json 无 diff
+  - 前端：eslint → tsc → vitest → build
+  - 脚本：bash -n → shellcheck → bats
+  - e2e：迁移+seed 起 API/worker → Playwright 冒烟

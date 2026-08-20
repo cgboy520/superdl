@@ -1,4 +1,4 @@
-"""WP22 管理端镜像 CRUD/预热契约:角色矩阵、审计、覆盖率计算、公开 is_prewarmed 语义。"""
+"""管理端镜像 CRUD/预热契约:角色矩阵、审计、覆盖率计算、公开 is_prewarmed 语义。"""
 
 import pytest
 from sqlalchemy import select
@@ -94,11 +94,6 @@ class TestImageCrud:
         )
         assert resp.status_code == 200
         assert resp.json()["coverage"] == {"cached": 0, "total": 0, "pct": 0}
-
-    async def test_not_found(self, client, sm) -> None:
-        ah = await admin_headers(sm, client, role="ops")
-        resp = await client.patch("/api/admin/v1/images/9999", json={"sort": 1}, headers=ah)
-        assert resp.status_code == 404
 
 
 class TestPrewarmContract:

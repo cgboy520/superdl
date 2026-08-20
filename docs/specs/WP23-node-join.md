@@ -1,15 +1,15 @@
-# WP23 · GPU 服务器一键加入集群（2026-08-20）
+# WP23 · GPU 服务器一键加入集群(2026-08-20)
 
-方向决策经人工确认：
-1. 主路线 = **管理端生成一次性注册命令**（Rancher/GitLab Runner 范式）：选池 → 生成 `curl … | sudo bash -s -- --token sdln_xxx` → 新服务器粘贴执行 → 管理端实时看进度。「纯一键」（平台 SSH 直连装机）后置：平台持全部服务器 root 凭据 = 被攻破即全节点 root，且未来补上时可完全复用本 WP 链路（远程替你粘贴同一条命令）。
-2. **静态脚本 + token 走命令行参数**：脚本本体入库受版本控制（可 shellcheck/bats），内容零密钥可公开缓存；token 不进 URL（不落 access log/代理日志）。RKE2 server URL/join token **不进脚本**——脚本凭 token `POST /bootstrap` 换取（王冠资产只走 Bearer POST 响应体）。
-3. RKE2 server URL / join token / 版本 / 驱动版本 / registries.yaml 内容 → platform-config 新增 `cluster` 组（token 用 `kind="secret"` AES-GCM），仅 admin 可读写；ops 生成注册命令时服务端代读，永不见明文。
+方向决策经人工确认:
+1. 主路线 = **管理端生成一次性注册命令**(Rancher/GitLab Runner 范式):选池 → 生成 `curl … | sudo bash -s -- --token sdln_xxx` → 新服务器粘贴执行 → 管理端实时看进度。「纯一键」(平台 SSH 直连装机)后置:平台持全部服务器 root 凭据 = 被攻破即全节点 root,且未来补上时可完全复用本 WP 链路(远程替你粘贴同一条命令)。
+2. **静态脚本 + token 走命令行参数**:脚本本体入库受版本控制(可 shellcheck/bats),内容零密钥可公开缓存;token 不进 URL(不落 access log/代理日志)。RKE2 server URL/join token **不进脚本**——脚本凭 token `POST /bootstrap` 换取(王冠资产只走 Bearer POST 响应体)。
+3. RKE2 server URL / join token / 版本 / 驱动版本 / registries.yaml 内容 → platform-config 新增 `cluster` 组(token 用 `kind="secret"` AES-GCM),仅 admin 可读写;ops 生成注册命令时服务端代读,永不见明文。
 
 ## 目标
 
-- 后端：新模块 `app/modules/nodes/`——`node_enrollments` 表 + 状态机（transition 集中，对齐铁律 #10 精神）+ 令牌（`sdln_` 前缀 256-bit，只存 sha256）+ 管理端 4 端点 + 匿名侧 3 端点（script/bootstrap/progress，token 即鉴权，先例 webhooks）+ 30s 对账器（K8s 真出现 Ready 且池标签匹配才判 joined，advisory lock 1009）。
-- 脚本：`deploy/node-join/node-join.sh` 把 ansible 基线 + agent-config + README 人工步骤产品化为幂等 bash（步骤 marker 可无限重跑；kata 池 IOMMU 等需重启场景用 systemd oneshot 断点续跑）；CI 加 shellcheck + bats。
-- 管理端：nodes.tsx 增「添加节点」Modal（命令只显示一次）+「待加入节点」进度卡（5s 轮询）；顺带补齐 cordon/uncordon（走 outbox，RBAC 扩 nodes patch）。
+- 后端:新模块 `app/modules/nodes/`——`node_enrollments` 表 + 状态机(transition 集中,对齐铁律 #10 精神)+ 令牌(`sdln_` 前缀 256-bit,只存 sha256)+ 管理端 4 端点 + 匿名侧 3 端点(script/bootstrap/progress,token 即鉴权,先例 webhooks)+ 30s 对账器(K8s 真出现 Ready 且池标签匹配才判 joined,advisory lock 1009)。
+- 脚本:`apps/api/app/modules/nodes/assets/node-join.sh`(随 API 镜像打包下发)把 ansible 基线 + agent-config + README 人工步骤产品化为幂等 bash(步骤 marker 可无限重跑;kata 池 IOMMU 等需重启场景用 systemd oneshot 断点续跑);CI 加 shellcheck + bats。
+- 管理端:nodes.tsx 增「添加节点」Modal(命令只显示一次)+「待加入节点」进度卡(5s 轮询);顺带补齐 cordon/uncordon(走 outbox,RBAC 扩 nodes patch)。
 
 ## 契约
 
@@ -24,11 +24,11 @@
 | `POST .../{id}/revoke` | ops | reason 必填,非终态 → revoked |
 | `POST /api/admin/v1/nodes/{name}/cordon` | ops | reason 必填,enqueue `node.cordon`(请求路径不动 K8s);uncordon 同 |
 
-platform-config 新增 `cluster` 组：`rke2_server_url`（pattern `https://…:9345`）、`rke2_join_token`（secret）、`rke2_version`、`node_driver_version`、`node_registries_yaml`（text，即 WP22 registries.yaml 内容——两 WP 唯一接缝）。
+platform-config 新增 `cluster` 组:`rke2_server_url`(pattern `https://…:9345`)、`rke2_join_token`(secret)、`rke2_version`、`node_driver_version`、`node_registries_yaml`(text,即 WP22 registries.yaml 内容——两 WP 唯一接缝)。
 
 ## 数据变更
 
-新表 `node_enrollments`（迁移 `wp23_node_enrollments`）：`token_hash(sha256 唯一) / pool / hostname? / note? / nvme_devices JSONB? / status(pending→installing→rebooting→joining→joined | failed | expired | revoked) / phase / error / node_name / reported_ip / os_info JSONB / gpu_info JSONB / expires_at(默认24h) / last_report_at / joined_at / created_by / idempotency_key(与 created_by 联合唯一) / 时间戳`。
+新表 `node_enrollments`(迁移 `wp23_node_enrollments`):`token_hash(sha256 唯一) / pool / hostname? / note? / nvme_devices JSONB? / status(pending→installing→rebooting→joining→joined | failed | expired | revoked) / phase / error / node_name / reported_ip / os_info JSONB / gpu_info JSONB / expires_at(默认24h) / last_report_at / joined_at / created_by / idempotency_key(与 created_by 联合唯一) / 时间戳`。
 
 ## 状态机与闭环
 

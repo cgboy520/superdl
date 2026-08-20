@@ -1,4 +1,4 @@
-"""nodes 模块 outbox 任务处理器(WP23)。K8s 副作用在这里发生,全部幂等。"""
+"""nodes 模块 outbox 任务处理器。K8s 副作用在这里发生,全部幂等。"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

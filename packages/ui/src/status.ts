@@ -48,7 +48,7 @@ export const skuTierMap: Record<SkuTier, { label: string; color: string; hint?: 
   shared_eco: { label: "共享·经济", color: "#EA580C", hint: "性能可能波动" },
 };
 
-/** 镜像节点缓存状态(WP22 预热产品化;与 image_node_cache.status 严格一致) */
+/** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */
 export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";
 
 export const imageCacheStatusMap: Record<ImageCacheStatus, StatusMeta> = {
@@ -58,7 +58,7 @@ export const imageCacheStatusMap: Record<ImageCacheStatus, StatusMeta> = {
   failed: { label: "拉取失败", color: statusColors.red, badge: "error" },
 };
 
-/** 节点注册/加入状态(WP23;与 node_enrollments.status 严格一致) */
+/** 节点注册/加入状态(与 node_enrollments.status 严格一致) */
 export type NodeEnrollStatus =
   | "pending"
   | "installing"

@@ -1,7 +1,7 @@
 # /etc/rancher/rke2/registries.yaml —— 分发到全部节点(server + agent),改动后重启 rke2 服务生效
 # 作用:①声明参与 Spegel P2P 共享的仓库(embedded-registry,见 server-config.yaml)
 #      ②把 registry.superdl.local 指到集群内 registry(deploy/cluster/registry/,NodePort 30500)
-# 分发途径:存量节点走 ansible(../../ansible/site.yml);新节点由管理端一键加入脚本落位(WP23)
+# 分发途径:存量节点走 ansible(../../ansible/site.yml);新节点由管理端一键加入脚本落位
 mirrors:
   "*": {}                    # 所有仓库参与 P2P:任一节点已缓存的镜像,其余节点内网互拉(latest tag 除外)
   registry.superdl.local:

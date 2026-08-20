@@ -133,7 +133,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "police_record_number": SettingSpec(
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
     ),
-    # ---- 集群接入(WP23 节点一键加入;仅 admin 可读写,ops 生成注册命令时服务端代读) ----
+    # ---- 集群接入(仅 admin 可读写;ops 生成注册命令时由服务端代读) ----
     "k8s_distro": SettingSpec(
         "cluster",
         "choice",
@@ -169,7 +169,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "cluster",
         "text",
         max_len=8192,
-        hint="节点 /etc/rancher/rke2/registries.yaml 内容(WP22 镜像缓存 mirror;留空则脚本跳过)",
+        hint="节点 /etc/rancher/rke2/registries.yaml 内容(镜像缓存 mirror;留空则脚本跳过)",
     ),
 }
 
@@ -217,7 +217,7 @@ async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]
     for row in (await session.execute(select(PlatformSetting))).scalars():
         spec = SETTING_SPECS.get(row.key)
         if spec is None:
-            continue  # 白名单收缩后遗留的旧键,忽略
+            continue  # 不在白名单内的键忽略
         eff[row.key] = (
             crypto.decrypt_str(row.value, aad=row.key) if spec.kind == "secret" else row.value
         )

@@ -18,7 +18,7 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          # 不在运行期 apt-get 装工具(供应链面 + 依赖外网源,曾是启动脆弱点):
+          # 不在运行期 apt-get 装工具(供应链面 + 依赖外网源):
           # 转储与上传各用官方镜像,经 emptyDir 交接
           initContainers:
             - name: dump

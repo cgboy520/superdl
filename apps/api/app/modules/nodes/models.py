@@ -9,7 +9,7 @@ from app.core.db import Base
 
 
 class NodeEnrollment(Base):
-    """GPU 服务器注册令牌与加入进度(WP23)。
+    """GPU 服务器注册令牌与加入进度。
 
     一节点一令牌;token 明文只在创建/重生成响应出现一次,库中仅存 sha256。
     状态机:pending → installing → rebooting ⇆ installing → joining → joined,

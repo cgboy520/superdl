@@ -1,4 +1,4 @@
-# 平台指标抓取接线(P0:此前 6 条 superdl_* 告警规则没有任何抓取配置,永不触发)。
+# 平台指标抓取接线:superdl_* 告警规则依赖此处的抓取配置才会触发。
 # CRD 由 kube-prometheus-stack 提供;kps values 已设 serviceMonitorSelectorNilUsesHelmValues:
 # false,全命名空间的 ServiceMonitor/PodMonitor 均会被发现。
 # API /metrics 有 Bearer 门禁(SUPERDL_METRICS_TOKEN),凭据直接引用同命名空间的

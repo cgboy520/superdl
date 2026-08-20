@@ -93,18 +93,7 @@ class AliyunRealNameProvider:
         raise RealNameError(f"realname unexpected BizCode: {biz_code}")
 
 
-_provider: RealNameProvider | None = None
-
-
-def set_realname_provider(provider: RealNameProvider | None) -> None:
-    """测试注入;None 恢复按配置构造。"""
-    global _provider
-    _provider = provider
-
-
 async def get_realname_provider(session: AsyncSession) -> RealNameProvider:
-    if _provider is not None:
-        return _provider
     from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)

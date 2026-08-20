@@ -1,6 +1,5 @@
 /**
- * 写操作统一封装:生成的纯函数 + TanStack useMutation。
- * (orval 配置将 POST 也生成了 query 形态 hook,故 mutation 走生成函数,仍是契约客户端。)
+ * 写操作统一封装:生成的 fetcher 函数 + useMutation。
  * 成功后广播失效全部查询 —— 应用规模下最稳的一致性策略。
  */
 

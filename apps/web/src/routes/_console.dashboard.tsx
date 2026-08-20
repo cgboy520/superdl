@@ -1,6 +1,6 @@
 /** 概览:轻量首屏 —— 实例数/余额/今日消费/未读通知 + 快捷入口。 */
 
-import { addAmounts, copy, formatMoney, localToday, tabularNums } from "@superdl/ui";
+import { addAmounts, copy, formatMoney, localToday } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
 
@@ -77,13 +77,12 @@ function Overview() {
             <Statistic
               title="可用余额"
               value={moneyOr(wallet?.balance, wallet != null)}
-              styles={{ content: tabularNums }}
             />
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="今日消费" value={todayTotal} styles={{ content: tabularNums }} />
+            <Statistic title="今日消费" value={todayTotal} />
           </Card>
         </Col>
         <Col xs={12} lg={6}>

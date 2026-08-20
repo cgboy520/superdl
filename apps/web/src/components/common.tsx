@@ -1,12 +1,10 @@
-/** 小件:状态徽标 / 档位标 / 金额文本 / 复制按钮。 */
+/** 小件:状态徽标 / 档位标 / 复制按钮。 */
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
 import type { DiskStatus, InstanceStatus } from "@superdl/ui";
 import {
   diskStatusMap,
   formatCountdown,
-  formatHourlyPrice,
-  formatMoney,
   instanceStatusMap,
   skuTierMap,
   statusColors,
@@ -57,19 +55,6 @@ export function TierTag({ tier }: { tier: string }) {
       {meta.hint ? `(${meta.hint})` : ""}
     </Tag>
   );
-}
-
-export function Money({ value, suffix }: { value: string | null | undefined; suffix?: string }) {
-  return (
-    <span>
-      {formatMoney(value)}
-      {suffix}
-    </span>
-  );
-}
-
-export function HourlyPrice({ value }: { value: string | null | undefined }) {
-  return <span>{formatHourlyPrice(value)}</span>;
 }
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {

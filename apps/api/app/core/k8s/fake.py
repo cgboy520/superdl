@@ -30,14 +30,14 @@ class FakeOrchestrator:
     create_calls: int = 0
     delete_calls: int = 0
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
-    # 预热(WP22):(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
+    # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
     prewarm_calls: list[tuple[str, str]] = field(default_factory=list)
     auto_prewarm: bool = True
     fail_next_prewarm: bool = False
-    # 节点注入(WP23 加入对账测试):追加在合成节点之后
+    # 注入节点:追加在合成节点之后
     extra_nodes: list = field(default_factory=list)
-    # cordon 状态(WP23):节点名集合,list_nodes 反映为 Cordoned
+    # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
 
     async def ensure_namespace(self, namespace: str) -> None:
@@ -80,7 +80,7 @@ class FakeOrchestrator:
         )
         return max(0, cap - used)
 
-    # ---------- 预热(WP22) ----------
+    # ---------- 预热 ----------
 
     async def prewarm_image(self, node_name: str, image_ref: str) -> None:
         if self.fail_next_prewarm:
@@ -159,7 +159,7 @@ class FakeOrchestrator:
         ]
 
     def inject_node(self, node) -> None:
-        """模拟新 GPU 节点加入集群(WP23 对账测试)。传 NodeInfo。"""
+        """模拟新 GPU 节点加入集群。传 NodeInfo。"""
         self.extra_nodes.append(node)
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:

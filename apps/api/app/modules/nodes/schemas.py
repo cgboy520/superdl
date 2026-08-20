@@ -65,7 +65,7 @@ class BootstrapOut(BaseModel):
     rke2_join_token: str
     driver_version: str
     nvme_devices: list[str]
-    registries_yaml: str  # WP22 镜像缓存 mirror 配置正文(可空串)
+    registries_yaml: str  # 镜像缓存 mirror 配置正文(可空串)
 
 
 class ProgressRequest(BaseModel):

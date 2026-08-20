@@ -48,7 +48,7 @@ class PlatformImage(Base):
 
 
 class ImageNodeCache(Base):
-    """每镜像×每节点的缓存状态(WP22)。由 prewarm_patrol 巡检铺行/收敛,
+    """每镜像×每节点的缓存状态。由 prewarm_patrol 巡检铺行/收敛,
     image.prewarm outbox handler 置 pulling;是 is_prewarmed 计算值的数据源。"""
 
     __tablename__ = "image_node_cache"

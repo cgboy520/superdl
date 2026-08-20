@@ -1,4 +1,4 @@
-"""WP23 节点注册(管理侧 + 状态机):令牌生命周期、角色矩阵、审计不落 token。"""
+"""节点注册(管理侧 + 状态机):令牌生命周期、角色矩阵、审计不落 token。"""
 
 import pytest
 from sqlalchemy import select
@@ -245,7 +245,7 @@ class TestEnrollRouterAnonymous:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/x-shellscript")
         # 赋值行替换为真实地址;但护栏比较用的字面量必须原样保留(只替换第一次出现)——
-        # 否则护栏拿真实 URL 自比,把正常下发误判为"占位符未替换"而退出 2(WP23 潜伏 bug 回归)。
+        # 否则护栏拿真实 URL 自比,把正常下发误判为"占位符未替换"而退出 2。
         base = get_settings().public_base_url.rstrip("/")
         assert f'API_BASE="{base}"' in resp.text
         assert resp.text.count("__API_BASE__") == 1  # 仅剩护栏比较字面量

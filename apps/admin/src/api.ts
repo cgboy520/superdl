@@ -1,9 +1,7 @@
 /**
- * 数据访问层:基于 @superdl/api-client 的生成 fetcher 自建 TanStack Query hooks。
- *
- * 说明:当前 orval 配置对 GET/POST 的 hook 变体生成有误(GET 出成 mutation),
- * 故此处直接消费生成的强类型 fetcher 函数(仍是生成 client,非手写 fetch),
- * hook 形状对齐 orval 惯例({ data } / { skuId, data } 变量、mutation options)。
+ * 数据访问层:消费 @superdl/api-client 的生成 fetcher,自建 TanStack Query hooks。
+ * orval 把 GET 也生成为 mutation 形态的 hook,不可直接当查询用,故只取其强类型
+ * fetcher 函数(仍是生成 client,非手写 fetch),hook 形状对齐 orval 惯例。
  */
 
 import {
@@ -95,7 +93,7 @@ export type {
   SkuUpdate,
 } from "@superdl/api-client";
 
-// ---------- 行类型:全部来自生成契约(WP21 后端补齐 response_model,不再手写) ----------
+// ---------- 行类型:全部取自生成契约,禁止手写 ----------
 
 export type {
   AdjustmentOut as AdjustmentRow,
@@ -375,7 +373,7 @@ export function useReviewAdjustment(
 }
 
 
-// ---------- WP16 运营刚需 ----------
+// ---------- 运营:死信重放 / 收入报表 / 公告 ----------
 
 export function useAnomalies() {
   const queryKey = ["admin", "anomalies"] as const;
@@ -454,7 +452,7 @@ export function useUpdatePolicies(opts?: MutOpts<unknown, { data: PolicyUpdateRe
   });
 }
 
-// ---------- WP20 平台配置(渠道凭据与合规;仅 admin 角色) ----------
+// ---------- 平台配置(渠道凭据与合规;仅 admin 角色) ----------
 
 export function usePlatformConfig() {
   const queryKey = ["admin", "platform-config"] as const;

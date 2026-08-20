@@ -6,7 +6,7 @@
  */
 
 /**
- * 预热覆盖(WP22):cached/total 节点数与百分比(total=巡检登记的目标节点数)。
+ * 预热覆盖:cached/total 节点数与百分比(total=巡检登记的目标节点数)。
  */
 export interface ImageCoverageOut {
   cached: number;

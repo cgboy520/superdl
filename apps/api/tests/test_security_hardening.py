@@ -174,7 +174,7 @@ class TestMetricsGuard:
 
 class TestAuditRoleAccess:
     async def test_ops_and_finance_can_read_audit(self, client: AsyncClient, sm):
-        """审计只读对全部管理角色开放(此前 ops/finance 反而 403)。"""
+        """审计只读对全部管理角色开放(含 ops/finance)。"""
         from tests.test_catalog import admin_headers
 
         for role in ("ops", "finance", "readonly"):

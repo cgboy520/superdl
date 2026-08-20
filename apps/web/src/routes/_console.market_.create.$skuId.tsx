@@ -32,7 +32,7 @@ import { useAddSshKey, useCreateDisk, useCreateInstance } from "../api/mutations
 import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
-import { TierTag } from "../components/common";
+import { BillingModeCard, skuColumns } from "../components/skuTable";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
@@ -195,38 +195,7 @@ function CreatePage() {
     (n) => [1, 2, 4, 8].includes(n) || n === sku.max_gpus_per_instance,
   );
 
-  const skuColumns = [
-    {
-      title: "规格",
-      render: (_: unknown, s: SkuMarketOut) => (
-        <Space>
-          <Typography.Text strong>{s.name}</Typography.Text>
-          <TierTag tier={s.tier} />
-        </Space>
-      ),
-    },
-    {
-      title: "GPU / 显存",
-      render: (_: unknown, s: SkuMarketOut) =>
-        s.tier.startsWith("shared")
-          ? `${s.gpu_model} · ${s.vram_gb}G · ${s.gpu_cores_pct}% 算力(均值)`
-          : s.tier === "mig"
-            ? `${s.gpu_model} · ${s.vram_gb}G · MIG ${s.mig_profile ?? "切分"}`
-            : `${s.gpu_model} · ${s.vram_gb}G · 整卡`,
-    },
-    {
-      title: "实例配置",
-      render: (_: unknown, s: SkuMarketOut) => `${s.vcpu} vCPU / ${s.mem_gb}G 内存`,
-    },
-    { title: "实例盘", render: (_: unknown, s: SkuMarketOut) => `${s.disk_gb}G(含 100G)` },
-    { title: "最高 CUDA", render: (_: unknown, s: SkuMarketOut) => s.cuda_max ?? "-" },
-    {
-      title: "价格(单卡)",
-      render: (_: unknown, s: SkuMarketOut) => (
-        <span style={{ fontWeight: 700 }}>{formatHourlyPrice(s.price_hourly)}</span>
-      ),
-    },
-  ];
+  const columns = skuColumns();
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -234,19 +203,7 @@ function CreatePage() {
         创建实例
       </Typography.Title>
 
-      <Card title="计费方式" styles={{ body: { paddingBlock: 16 } }}>
-        <ChipRow
-          label="计费方式"
-          value="hourly"
-          onChange={() => undefined}
-          options={[
-            { value: "hourly", label: "按量计费" },
-            { value: "daily", label: "包日", disabled: true, disabledReason: copy.billingModeComingSoon },
-            { value: "weekly", label: "包周", disabled: true, disabledReason: copy.billingModeComingSoon },
-            { value: "monthly", label: "包月", disabled: true, disabledReason: copy.billingModeComingSoon },
-          ]}
-        />
-      </Card>
+      <BillingModeCard />
 
       <Card title="已选规格" extra={<Link to="/market">更换规格</Link>}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -254,7 +211,7 @@ function CreatePage() {
             size="small"
             rowKey="id"
             dataSource={[sku]}
-            columns={skuColumns}
+            columns={columns}
             pagination={false}
           />
           <ChipRow

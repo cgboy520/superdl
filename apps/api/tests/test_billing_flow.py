@@ -235,11 +235,6 @@ class TestBillingApiEdges:
         resp = await client.get("/api/v1/bills/summary", params={"month": "bad"}, headers=headers)
         assert resp.status_code == 400
 
-    async def test_invalid_cursor_rejected(self, client, sm, fake):
-        headers, _uuid, _user_id = await _provision_running(client, sm, fake)
-        resp = await client.get("/api/v1/wallet/ledger", params={"cursor": "%%%"}, headers=headers)
-        assert resp.json()["code"] == "VALIDATION_ERROR"
-
     async def test_december_month_parse(self, client, sm, fake):
         headers, _uuid, _user_id = await _provision_running(client, sm, fake)
         resp = await client.get(

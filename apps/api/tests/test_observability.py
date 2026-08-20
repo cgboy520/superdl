@@ -1,4 +1,4 @@
-"""可观测性与运维健壮性:request-id 贯穿、业务指标、异常兜底、readyz、数据保洁。"""
+"""可观测性与运维健壮性:request-id 贯穿、业务指标、异常兜底、健康探针、数据保洁。"""
 
 from datetime import timedelta
 
@@ -18,7 +18,13 @@ class TestRequestId:
         assert resp.headers["x-request-id"] == "gw-abc123"
 
 
-class TestReadyz:
+class TestHealthEndpoints:
+    async def test_healthz(self, client: AsyncClient):
+        """K8s liveness 探针依据。"""
+        resp = await client.get("/healthz")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
     async def test_ready_when_db_up(self, client: AsyncClient):
         resp = await client.get("/readyz")
         assert resp.status_code == 200

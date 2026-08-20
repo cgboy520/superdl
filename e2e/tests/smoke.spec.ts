@@ -1,5 +1,5 @@
 /**
- * WP12 冒烟:注册 → 充值(mock) → 添加 SSH 公钥 → 市场开实例(fake 编排) →
+ * 冒烟主链路:注册 → 充值(mock) → 添加 SSH 公钥 → 市场开实例(fake 编排) →
  * 运行中(接入按钮) → 关机(尾账) → 账单可见 → 释放(多级防护) → 列表消失。
  *
  * 前置:API(8000,已迁移+seed_dev)与 worker(outbox+reconciler)在跑;web dev server 由
@@ -58,7 +58,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByRole("button", { name: "添加公钥" }).click();
   await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
 
-  // ── 市场:筛选链 + SKU 表格单选(WP13 AutoDL 化)→ 结算条下一步 ──
+  // ── 市场:筛选链 + SKU 表格单选 → 结算条下一步 ──
   await page.goto("/market");
   const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
   await expect(skuRow).toBeVisible({ timeout: 15_000 });
@@ -84,7 +84,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await expect(row.getByRole("button", { name: "SSH" })).toBeVisible();
   await expect(row.getByText("JupyterLab")).toBeVisible();
 
-  // ── 实例详情:双击进入 → 直刷 URL 可达(WP13 路由修复回归)→ 事件即计费依据 ──
+  // ── 实例详情:双击进入 → 直刷 URL 可达 → 事件即计费依据 ──
   await row.dblclick();
   await expect(page).toHaveURL(/instances\/[0-9a-f-]{8,}/, { timeout: 10_000 });
   await page.reload();

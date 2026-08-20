@@ -1,6 +1,6 @@
-"""节点注册匿名侧(WP23):脚本下发 + 令牌换参数 + 进度回报。
+"""节点注册匿名侧:脚本下发 + 令牌换参数 + 进度回报。
 
-鉴权模型(先例 billing/webhooks_router「验签即鉴权」):
+鉴权模型(同 billing/webhooks_router 的「凭证即鉴权」):
 - /script 无鉴权 —— 内容零密钥(静态脚本,仅替换 API 地址占位符),轻限流防刷;
 - /bootstrap /progress 走 Bearer 注册令牌(256-bit 只存哈希),
   无效/过期/吊销/终态一律统一 404(service 层保证,防探测),外加按 IP 限流。

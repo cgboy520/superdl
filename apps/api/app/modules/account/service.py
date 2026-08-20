@@ -283,11 +283,6 @@ async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> No
     await session.commit()
 
 
-async def get_authorized_keys(session: AsyncSession, user_id: int) -> list[str]:
-    """供 orchestrator 注入实例 authorized_keys。"""
-    return [k.public_key for k in await list_ssh_keys(session, user_id)]
-
-
 async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dict[int, int]:
     """余额巡检用:user_id → 预警阈值小时数。"""
     if not user_ids:

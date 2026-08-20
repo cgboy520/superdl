@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 /**
- * WP12 冒烟:需要 API(8000,已迁移+seed)与 web dev server(5173)在跑。
+ * 冒烟用例:需要 API(8000,已迁移+seed)与 web dev server(5173)在跑。
  *   cd apps/api && uv run uvicorn app.main:app --port 8000
  *   pnpm --filter web dev
  */

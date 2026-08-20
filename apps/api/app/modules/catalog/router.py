@@ -41,5 +41,5 @@ async def list_skus(
 @router.get("/images")
 async def list_images(session: DbSession) -> list[ImageOut]:
     """平台镜像目录(框架→版本→Python→CUDA 级联数据源)。
-    is_prewarmed 为真实计算值(WP22:节点覆盖率达标才标「预热镜像,秒级启动」)。"""
+    is_prewarmed 为真实计算值(节点覆盖率达标才标「预热镜像,秒级启动」)。"""
     return await service.list_images_out(session)

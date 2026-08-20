@@ -1,7 +1,6 @@
 /**
- * 读操作薄查询层:生成函数 + useQuery。
- * (当前 orval 配置把 GET 生成为 mutation 形态 hook,不可直接当查询用;
- *  在 api-client 修正 orval 配置前,由本层提供正确的 useQuery 语义。)
+ * 读操作薄查询层:生成的 fetcher 函数 + useQuery。
+ * orval 把 GET 生成为 mutation 形态 hook,不可直接当查询用,由本层提供 useQuery 语义。
  */
 
 import {

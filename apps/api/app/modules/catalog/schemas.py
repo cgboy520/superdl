@@ -109,7 +109,7 @@ class ImageOut(BaseModel):
     python_version: str
     cuda_version: str
     image_ref: str
-    # WP22 起为计算值:prewarm_enabled 且节点覆盖率达标(零 cache 行时回落 prewarm_enabled)
+    # 计算值:prewarm_enabled 且节点覆盖率达标(无缓存行时回落为 prewarm_enabled)
     is_prewarmed: bool
 
     model_config = {"from_attributes": True}

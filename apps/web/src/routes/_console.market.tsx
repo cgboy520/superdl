@@ -3,17 +3,17 @@
  * 铁律 #1 CTA 即库存 / #2 售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
  */
 
-import { copy, formatHourlyPrice, skuTierMap, statusColors } from "@superdl/ui";
+import { copy, formatHourlyPrice, mulPrice, skuTierMap } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Alert, Button, Card, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 
 import { TableErrorEmpty } from "../components/QueryState";
 import { useSkus } from "../api/queries";
 import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
-import { TierTag } from "../components/common";
+import { BillingModeCard, skuColumns } from "../components/skuTable";
 import { useIsLoggedIn } from "../stores/auth";
 
 export const Route = createFileRoute("/_console/market")({
@@ -81,56 +81,7 @@ function MarketPage() {
   const selected = skus.find((s) => s.id === selectedId);
   const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= gpuCount;
 
-  const columns = [
-    {
-      title: "规格",
-      render: (_: unknown, s: SkuMarketOut) => (
-        <Space>
-          <Typography.Text strong>{s.name}</Typography.Text>
-          <TierTag tier={s.tier} />
-        </Space>
-      ),
-    },
-    {
-      title: "GPU / 显存",
-      render: (_: unknown, s: SkuMarketOut) =>
-        s.tier.startsWith("shared")
-          ? `${s.gpu_model} · ${s.vram_gb}G · ${s.gpu_cores_pct}% 算力(均值)`
-          : s.tier === "mig"
-            ? `${s.gpu_model} · ${s.vram_gb}G · MIG ${s.mig_profile ?? "切分"}`
-            : `${s.gpu_model} · ${s.vram_gb}G · 整卡`,
-    },
-    {
-      title: "空闲 GPU",
-      render: (_: unknown, s: SkuMarketOut) => {
-        const n = s.available_count ?? 0;
-        return n > 0 ? (
-          <span style={{ color: statusColors.green, fontWeight: 600 }}>{n}</span>
-        ) : (
-          <Tag>{copy.outOfStock}</Tag>
-        );
-      },
-    },
-    {
-      title: "实例配置",
-      render: (_: unknown, s: SkuMarketOut) => `${s.vcpu} vCPU / ${s.mem_gb}G 内存`,
-    },
-    { title: "实例盘", render: (_: unknown, s: SkuMarketOut) => `${s.disk_gb}G(含 100G)` },
-    {
-      title: (
-        <Tooltip title="镜像可用的最高 CUDA 版本,取决于节点驱动">
-          <span>最高 CUDA</span>
-        </Tooltip>
-      ),
-      render: (_: unknown, s: SkuMarketOut) => s.cuda_max ?? "-",
-    },
-    {
-      title: "价格(单卡)",
-      render: (_: unknown, s: SkuMarketOut) => (
-        <span style={{ fontSize: 18, fontWeight: 700 }}>{formatHourlyPrice(s.price_hourly)}</span>
-      ),
-    },
-  ];
+  const columns = skuColumns({ availability: true, priceFontSize: 18 });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -139,20 +90,9 @@ function MarketPage() {
       </Typography.Title>
       <Alert type="warning" showIcon title={copy.antiMiningNotice} />
 
-      <Card title="计费方式" styles={{ body: { paddingBlock: 16 } }}>
-        <ChipRow
-          label="计费方式"
-          value="hourly"
-          onChange={() => undefined}
-          options={[
-            { value: "hourly", label: "按量计费" },
-            { value: "daily", label: "包日", disabled: true, disabledReason: copy.billingModeComingSoon },
-            { value: "weekly", label: "包周", disabled: true, disabledReason: copy.billingModeComingSoon },
-            { value: "monthly", label: "包月", disabled: true, disabledReason: copy.billingModeComingSoon },
-          ]}
-          extra={<Typography.Link onClick={() => setRulesOpen(true)}>计费规则</Typography.Link>}
-        />
-      </Card>
+      <BillingModeCard
+        extra={<Typography.Link onClick={() => setRulesOpen(true)}>计费规则</Typography.Link>}
+      />
 
       <Card title="选择规格" styles={{ body: { paddingBlock: 16 } }}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -207,7 +147,9 @@ function MarketPage() {
         items={[
           {
             label: "配置费用",
-            value: selected ? hourlyTotal(selected.price_hourly, gpuCount) : "--",
+            value: selected
+              ? formatHourlyPrice(mulPrice(selected.price_hourly, gpuCount))
+              : "--",
           },
         ]}
         detail={
@@ -267,13 +209,4 @@ function MarketPage() {
       </Modal>
     </Space>
   );
-}
-
-/** 单价 × 卡数:BigInt 精确乘法(禁浮点),仅结算条展示;后端才是计费权威。 */
-function hourlyTotal(price: string, count: number): string {
-  if (count === 1) return formatHourlyPrice(price);
-  const [int = "0", frac = ""] = price.split(".");
-  const scaled = BigInt(int + (frac + "0000").slice(0, 4)) * BigInt(count);
-  const s = scaled.toString().padStart(5, "0");
-  return formatHourlyPrice(`${s.slice(0, -4)}.${s.slice(-4)}`);
 }

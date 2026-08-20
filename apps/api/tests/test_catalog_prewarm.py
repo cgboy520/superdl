@@ -1,4 +1,4 @@
-"""WP22 镜像预热:巡检铺行/收敛/复检/清理 + handler 幂等(FakeOrchestrator 全链路)。"""
+"""镜像预热:巡检铺行/收敛/复检/清理 + handler 幂等(FakeOrchestrator 全链路)。"""
 
 from datetime import timedelta
 

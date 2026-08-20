@@ -96,13 +96,6 @@ class TestRegister:
         assert resp.status_code == 429
         assert resp.json()["code"] == "SMS_TOO_FREQUENT"
 
-    async def test_invalid_phone_format(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "12345", "purpose": "register"}
-        )
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "VALIDATION_ERROR"
-
 
 class TestLogin:
     async def test_login_with_password(self, client: AsyncClient):

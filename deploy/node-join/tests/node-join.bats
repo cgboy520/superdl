@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# node-join.sh 单测(WP23):PATH shim 伪造系统命令,不触碰真实系统。
+# node-join.sh 单测:PATH shim 伪造系统命令,不触碰真实系统。
 # 运行:bats deploy/node-join/tests(CI 已接;本地需 apt install bats)
 
 SCRIPT="$BATS_TEST_DIRNAME/../../../apps/api/app/modules/nodes/assets/node-join.sh"
@@ -163,7 +163,7 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/rke2/config.yaml"
   grep -q "K10fixture::server:secret" "$TMP/etc/rancher/rke2/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
-  # registries.yaml 落位(WP22 接缝)
+  # registries.yaml 落位
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
   # markers 齐全
   for m in precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries rke2_config rke2_install rke2_start; do
@@ -211,7 +211,7 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
 
 @test "k3s 模式:config/registries 落 /etc/rancher/k3s,走中国镜像 agent 安装并起 k3s-agent" {
   _write_fixture hami k3s
-  # k3s shim 报旧版本:覆盖宿主机可能存在的真 k3s,并兼测版本不符触发重装
+  # k3s shim 报低版本:覆盖宿主机可能存在的真 k3s,并兼测版本不符触发重装
   cat > "$TMP/bin/k3s" <<'EOF'
 #!/usr/bin/env bash
 echo "k3s version v0.0.0+k3s0"

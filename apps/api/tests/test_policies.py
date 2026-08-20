@@ -1,4 +1,4 @@
-"""策略参数在线调整:env 默认 + DB 覆盖即时生效,越界/未知键拒绝,盘价快照跟随。"""
+"""策略常量:公开出参口径 + 在线调整(env 默认 / DB 覆盖 / 越界拒绝 / 盘价快照跟随)。"""
 
 from httpx import AsyncClient
 
@@ -69,3 +69,17 @@ class TestPolicyOverrides:
             headers=fh,
         )
         assert resp.status_code == 403
+
+
+class TestPublicPolicies:
+    async def test_fields_and_decimal_fidelity(self, client: AsyncClient):
+        """公开端点免鉴权;盘价以 Decimal 字符串出参,保 scale 不失真(禁 float)。"""
+        body = (await client.get("/api/v1/policies")).json()
+        assert body["disk_price_gb_month"] == "0.0350"
+        assert isinstance(body["disk_price_gb_month"], str)
+        assert body["disk_min_gb"] == 10
+        assert body["disk_max_gb"] == 4096
+        assert body["disk_grace_days"] == 7
+        assert body["disk_frozen_days"] == 30
+        assert body["freeze_grace_hours"] == 72
+        assert body["low_balance_warn_hours_default"] == 24

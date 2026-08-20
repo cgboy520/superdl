@@ -1126,7 +1126,7 @@
         "type": "object"
       },
       "ImageCoverageOut": {
-        "description": "预热覆盖(WP22):cached/total 节点数与百分比(total=巡检登记的目标节点数)。",
+        "description": "预热覆盖:cached/total 节点数与百分比(total=巡检登记的目标节点数)。",
         "properties": {
           "cached": {
             "title": "Cached",
@@ -6534,7 +6534,7 @@
     },
     "/api/v1/images": {
       "get": {
-        "description": "平台镜像目录(框架→版本→Python→CUDA 级联数据源)。\nis_prewarmed 为真实计算值(WP22:节点覆盖率达标才标「预热镜像,秒级启动」)。",
+        "description": "平台镜像目录(框架→版本→Python→CUDA 级联数据源)。\nis_prewarmed 为真实计算值(节点覆盖率达标才标「预热镜像,秒级启动」)。",
         "operationId": "list_images_api_v1_images_get",
         "responses": {
           "200": {

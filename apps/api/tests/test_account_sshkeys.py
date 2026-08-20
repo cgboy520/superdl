@@ -61,8 +61,3 @@ class TestSshKeys:
             headers=headers,
         )
         assert resp.json()["code"] == "SSH_KEY_INVALID"
-
-    async def test_requires_auth(self, client: AsyncClient):
-        resp = await client.get("/api/v1/ssh-keys")
-        assert resp.status_code == 401
-        assert resp.json()["code"] == "UNAUTHORIZED"

@@ -23,7 +23,6 @@ export const brand = {
   /** 页面底色(= colorBgLayout) */
   pageBg: "#F5F6FA",
 } as const;
-
 export const adminColors = {
   bgBase: "#0B1220",
   bgElevated: "#111A2E",
@@ -94,11 +93,3 @@ export const adminThemeToken = {
   borderRadius: 6,
 } as const;
 
-/**
- * 数字列(金额/端口/利用率)统一 tabular-nums。
- * @deprecated apps/web 已在 body 级全局启用 tabular-nums(styles.css),新代码无需再 spread;
- * 保留导出仅为兼容存量调用点与 admin 端。
- */
-export const tabularNums: { fontVariantNumeric: "tabular-nums" } = {
-  fontVariantNumeric: "tabular-nums",
-};

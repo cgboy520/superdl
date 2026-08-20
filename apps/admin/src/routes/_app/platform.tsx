@@ -1,5 +1,5 @@
 /**
- * 平台配置(WP20):微信支付 / 支付宝 / 阿里云短信 / 实名认证 / 合规备案。
+ * 平台配置:微信支付 / 支付宝 / 阿里云短信 / 实名认证 / 合规备案 / 集群接入。
  * 仅超级管理员可读写;env 为默认值层,DB 覆盖即时生效(免重启发版)。
  * secret 类永不回显明文:只显示"已配置 + 尾 4 位",输入留空 = 保持不变。
  */
@@ -108,10 +108,10 @@ const GROUP_INTRO: Record<string, string> = {
     "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);" +
     "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。",
   cluster:
-    "GPU 节点一键加入(WP23)的集群接入参数:Server 地址与 join token 来自 server 节点" +
+    "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点" +
     "(token 执行 cat /var/lib/rancher/<rke2|k3s>/server/node-token 获取,轮换用 rke2 token rotate 后在此更新)。" +
     "生产一律 RKE2,k3s 仅供轻量/本地验证环境。" +
-    "配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令;registries.yaml 为镜像缓存 mirror(WP22),可留空。",
+    "配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令;registries.yaml 为镜像缓存 mirror,可留空。",
 };
 
 const SOURCE_TAG: Record<PlatformConfigItem["source"], { color?: string; text: string }> = {

@@ -106,7 +106,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
-        """未捕获异常兜底:结构化留痕 + 统一错误体(此前走框架默认 500,无上报)。"""
+        """未捕获异常兜底:结构化留痕 + 上报 + 统一错误体。"""
         from app.core.logging import get_logger
 
         get_logger("app.errors").exception(
