@@ -23,7 +23,13 @@ import {
   revenueReportApiAdminV1ReportsRevenueGet,
   adminAuditLogApiAdminV1AuditGet,
   adminCreateAdjustmentApiAdminV1AdjustmentsPost,
+  adminCreateImageApiAdminV1ImagesPost,
   adminCreateSkuApiAdminV1SkusPost,
+  adminDeleteImageApiAdminV1ImagesImageIdDelete,
+  adminImageNodesApiAdminV1ImagesImageIdNodesGet,
+  adminListImagesApiAdminV1ImagesGet,
+  adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost,
+  adminUpdateImageApiAdminV1ImagesImageIdPatch,
   adminForceStopApiAdminV1InstancesUuidForceStopPost,
   adminFreezeTenantApiAdminV1TenantsUserIdFreezePost,
   adminListAdjustmentsApiAdminV1AdjustmentsGet,
@@ -42,6 +48,10 @@ import {
 import type {
   AdjustmentCreate,
   AnnouncementCreate,
+  ImageCreate,
+  ImageDeleteRequest,
+  ImageUpdate,
+  PrewarmEnqueuedOut,
   OrderBackfillRequest,
   OutboxDiscardRequest,
   PlatformConfigUpdateRequest,
@@ -62,13 +72,23 @@ import {
 } from "@tanstack/react-query";
 
 export { isApiError } from "@superdl/api-client";
-export type { ApiError, InstanceOut, SkuAdminOut, SkuCreate, SkuUpdate } from "@superdl/api-client";
+export type {
+  ApiError,
+  ImageCreate,
+  ImageUpdate,
+  InstanceOut,
+  SkuAdminOut,
+  SkuCreate,
+  SkuUpdate,
+} from "@superdl/api-client";
 
 // ---------- 行类型:全部来自生成契约(WP21 后端补齐 response_model,不再手写) ----------
 
 export type {
   AdjustmentOut as AdjustmentRow,
   AdminAlertOut as AlertRow,
+  AdminImageOut as ImageRow,
+  ImageNodeCacheOut as ImageNodeRow,
   AdminOrderOut as OrderRow,
   AuditLogOut as AuditRow,
   DeadTaskOut as DeadTaskRow,
@@ -115,6 +135,24 @@ export function useNodes() {
   return useQuery({
     queryKey: ["admin", "nodes"],
     queryFn: () => adminListNodesApiAdminV1NodesGet(),
+  });
+}
+
+export function useAdminImages(options?: { refetchInterval?: number }) {
+  const queryKey = ["admin", "images"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: () => adminListImagesApiAdminV1ImagesGet(),
+    refetchInterval: options?.refetchInterval,
+  });
+  return { ...q, queryKey };
+}
+
+export function useImageNodes(imageId: number, options?: { refetchInterval?: number }) {
+  return useQuery({
+    queryKey: ["admin", "images", imageId, "nodes"],
+    queryFn: () => adminImageNodesApiAdminV1ImagesImageIdNodesGet(imageId),
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -185,6 +223,39 @@ export function useUpdateSku(opts?: MutOpts<unknown, { skuId: number; data: SkuU
   return useMutation({
     mutationFn: (v: { skuId: number; data: SkuUpdate }) =>
       adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useCreateImage(opts?: MutOpts<unknown, { data: ImageCreate }>) {
+  return useMutation({
+    mutationFn: (v: { data: ImageCreate }) => adminCreateImageApiAdminV1ImagesPost(v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useUpdateImage(opts?: MutOpts<unknown, { imageId: number; data: ImageUpdate }>) {
+  return useMutation({
+    mutationFn: (v: { imageId: number; data: ImageUpdate }) =>
+      adminUpdateImageApiAdminV1ImagesImageIdPatch(v.imageId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useDeleteImage(
+  opts?: MutOpts<unknown, { imageId: number; data: ImageDeleteRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { imageId: number; data: ImageDeleteRequest }) =>
+      adminDeleteImageApiAdminV1ImagesImageIdDelete(v.imageId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function usePrewarmImage(opts?: MutOpts<PrewarmEnqueuedOut, { imageId: number }>) {
+  return useMutation({
+    mutationFn: (v: { imageId: number }) =>
+      adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost(v.imageId),
     ...opts?.mutation,
   });
 }

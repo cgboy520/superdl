@@ -48,6 +48,16 @@ export const skuTierMap: Record<SkuTier, { label: string; color: string; hint?: 
   shared_eco: { label: "共享·经济", color: "#EA580C", hint: "性能可能波动" },
 };
 
+/** 镜像节点缓存状态(WP22 预热产品化;与 image_node_cache.status 严格一致) */
+export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";
+
+export const imageCacheStatusMap: Record<ImageCacheStatus, StatusMeta> = {
+  pending: { label: "待预热", color: statusColors.gray, badge: "default" },
+  pulling: { label: "拉取中", color: statusColors.blue, badge: "processing", animated: true },
+  cached: { label: "已缓存", color: statusColors.green, badge: "success" },
+  failed: { label: "拉取失败", color: statusColors.red, badge: "error" },
+};
+
 export type DiskStatus = "active" | "grace" | "frozen" | "deleting" | "deleted";
 
 export const diskStatusMap: Record<DiskStatus, StatusMeta> = {

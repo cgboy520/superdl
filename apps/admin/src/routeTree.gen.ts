@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppFinanceRouteImport } from './routes/_app/finance'
+import { Route as AppImagesRouteImport } from './routes/_app/images'
 import { Route as AppNodesRouteImport } from './routes/_app/nodes'
 import { Route as AppPlatformRouteImport } from './routes/_app/platform'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
@@ -42,6 +43,11 @@ const AppAuditRoute = AppAuditRouteImport.update({
 const AppFinanceRoute = AppFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppImagesRoute = AppImagesRouteImport.update({
+  id: '/images',
+  path: '/images',
   getParentRoute: () => AppRoute,
 } as any)
 const AppNodesRoute = AppNodesRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/audit': typeof AppAuditRoute
   '/finance': typeof AppFinanceRoute
+  '/images': typeof AppImagesRoute
   '/nodes': typeof AppNodesRoute
   '/platform': typeof AppPlatformRoute
   '/settings': typeof AppSettingsRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/audit': typeof AppAuditRoute
   '/finance': typeof AppFinanceRoute
+  '/images': typeof AppImagesRoute
   '/nodes': typeof AppNodesRoute
   '/platform': typeof AppPlatformRoute
   '/settings': typeof AppSettingsRoute
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/audit': typeof AppAuditRoute
   '/_app/finance': typeof AppFinanceRoute
+  '/_app/images': typeof AppImagesRoute
   '/_app/nodes': typeof AppNodesRoute
   '/_app/platform': typeof AppPlatformRoute
   '/_app/settings': typeof AppSettingsRoute
@@ -112,6 +121,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/audit'
     | '/finance'
+    | '/images'
     | '/nodes'
     | '/platform'
     | '/settings'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/audit'
     | '/finance'
+    | '/images'
     | '/nodes'
     | '/platform'
     | '/settings'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_app/audit'
     | '/_app/finance'
+    | '/_app/images'
     | '/_app/nodes'
     | '/_app/platform'
     | '/_app/settings'
@@ -184,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFinanceRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/images': {
+      id: '/_app/images'
+      path: '/images'
+      fullPath: '/images'
+      preLoaderRoute: typeof AppImagesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/nodes': {
       id: '/_app/nodes'
       path: '/nodes'
@@ -225,6 +244,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
   AppFinanceRoute: typeof AppFinanceRoute
+  AppImagesRoute: typeof AppImagesRoute
   AppNodesRoute: typeof AppNodesRoute
   AppPlatformRoute: typeof AppPlatformRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -236,6 +256,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
   AppFinanceRoute: AppFinanceRoute,
+  AppImagesRoute: AppImagesRoute,
   AppNodesRoute: AppNodesRoute,
   AppPlatformRoute: AppPlatformRoute,
   AppSettingsRoute: AppSettingsRoute,

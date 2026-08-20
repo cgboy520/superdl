@@ -10,6 +10,8 @@ export const MENU_ROLES: Record<string, readonly string[]> = {
   "/": ALL_ROLES,
   "/nodes": ["admin", "ops", "readonly"], // finance 无 /nodes 权限
   "/skus": ALL_ROLES,
+  "/images": ["admin", "ops", "readonly"], // 对齐后端 /images require_roles(finance 无)
+
   "/tenants": ALL_ROLES,
   "/finance": ["admin", "finance", "readonly"], // ops 无财务权限
   "/audit": ALL_ROLES,

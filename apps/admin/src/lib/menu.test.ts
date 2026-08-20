@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { ALL_ROLES, canSeeMenu } from "./menu";
+import { ALL_ROLES, MENU_ROLES, canSeeMenu } from "./menu";
 
 describe("canSeeMenu(菜单角色过滤,与后端 require_roles 对齐)", () => {
-  it("finance 看不到节点页与平台配置", () => {
+  it("finance 看不到节点页/镜像页与平台配置", () => {
     expect(canSeeMenu("/nodes", "finance")).toBe(false);
+    expect(canSeeMenu("/images", "finance")).toBe(false);
     expect(canSeeMenu("/platform", "finance")).toBe(false);
     expect(canSeeMenu("/finance", "finance")).toBe(true);
+  });
+  it("镜像与预热页角色对齐后端 /images require_roles", () => {
+    expect(MENU_ROLES["/images"]).toEqual(["admin", "ops", "readonly"]);
+    expect(canSeeMenu("/images", "ops")).toBe(true);
+    expect(canSeeMenu("/images", "readonly")).toBe(true);
   });
   it("ops 看不到财务页与平台配置", () => {
     expect(canSeeMenu("/finance", "ops")).toBe(false);
