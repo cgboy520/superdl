@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     prewarm_min_coverage_pct: int = 90  # is_prewarmed=true 所需的节点覆盖率下限
     prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
 
+    # 集群接入(WP23 节点一键加入;env 为默认层,生产建议经管理端「平台配置·集群接入」录入)
+    rke2_server_url: str = ""
+    rke2_join_token: str = ""  # secret:平台配置中心 AES-GCM 加密存 DB 覆盖层
+    rke2_version: str = "v1.36.2+rke2r1"  # 装机脚本 INSTALL_RKE2_VERSION 钉死,实机核定后更新
+    node_driver_version: str = "580"
+    node_registries_yaml: str = ""
+
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
     k8s_namespace_prefix: str = "tenant-"

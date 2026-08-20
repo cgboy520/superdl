@@ -30,7 +30,9 @@ class PlatformSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-SettingGroup = Literal["payment_wechat", "payment_alipay", "sms", "real_name", "compliance"]
+SettingGroup = Literal[
+    "payment_wechat", "payment_alipay", "sms", "real_name", "compliance", "cluster"
+]
 SettingKind = Literal["str", "text", "bool", "choice", "secret"]
 
 
@@ -130,6 +132,37 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     ),
     "police_record_number": SettingSpec(
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
+    ),
+    # ---- 集群接入(WP23 节点一键加入;仅 admin 可读写,ops 生成注册命令时服务端代读) ----
+    "rke2_server_url": SettingSpec(
+        "cluster",
+        "str",
+        pattern=r"https://[0-9A-Za-z.\-\[\]:]+:9345",
+        hint="RKE2 supervisor 地址,形如 https://<server-ip>:9345",
+    ),
+    "rke2_join_token": SettingSpec(
+        "cluster",
+        "secret",
+        max_len=512,
+        hint="server 节点 /var/lib/rancher/rke2/server/node-token 文件内容",
+    ),
+    "rke2_version": SettingSpec(
+        "cluster",
+        "str",
+        pattern=r"v\d+\.\d+\.\d+(\+rke2r\d+)?",
+        hint="装机脚本钉死的 RKE2 版本,形如 v1.36.2+rke2r1",
+    ),
+    "node_driver_version": SettingSpec(
+        "cluster",
+        "str",
+        pattern=r"\d{3}",
+        hint="NVIDIA 驱动主版本,如 580(与 GPU Operator 兼容矩阵核对)",
+    ),
+    "node_registries_yaml": SettingSpec(
+        "cluster",
+        "text",
+        max_len=8192,
+        hint="节点 /etc/rancher/rke2/registries.yaml 内容(WP22 镜像缓存 mirror;留空则脚本跳过)",
     ),
 }
 

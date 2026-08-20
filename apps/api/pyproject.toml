@@ -98,6 +98,7 @@ forbidden_modules = [
     "app.modules.metering.models", "app.modules.metering.router",
     "app.modules.notify.models", "app.modules.notify.router",
     "app.modules.adminapi.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
 ]
 
 [[tool.importlinter.contracts]]
@@ -112,6 +113,7 @@ forbidden_modules = [
     "app.modules.metering.models", "app.modules.metering.router",
     "app.modules.notify.models", "app.modules.notify.router",
     "app.modules.adminapi.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
 ]
 
 [[tool.importlinter.contracts]]
@@ -126,6 +128,7 @@ forbidden_modules = [
     "app.modules.metering.models", "app.modules.metering.router",
     "app.modules.notify.models", "app.modules.notify.router",
     "app.modules.adminapi.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
 ]
 
 [[tool.importlinter.contracts]]
@@ -140,6 +143,7 @@ forbidden_modules = [
     "app.modules.metering.models", "app.modules.metering.router",
     "app.modules.notify.models", "app.modules.notify.router",
     "app.modules.adminapi.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
 ]
 
 [[tool.importlinter.contracts]]
@@ -154,6 +158,7 @@ forbidden_modules = [
     "app.modules.billing.models", "app.modules.billing.router",
     "app.modules.notify.models", "app.modules.notify.router",
     "app.modules.adminapi.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
 ]
 
 [[tool.importlinter.contracts]]
@@ -168,6 +173,7 @@ forbidden_modules = [
     "app.modules.billing.models", "app.modules.billing.router",
     "app.modules.metering.models", "app.modules.metering.router",
     "app.modules.adminapi.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
 ]
 
 [[tool.importlinter.contracts]]
@@ -182,4 +188,20 @@ forbidden_modules = [
     "app.modules.billing.models", "app.modules.billing.router",
     "app.modules.metering.models", "app.modules.metering.router",
     "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.nodes.models", "app.modules.nodes.enroll_router",
+]
+
+[[tool.importlinter.contracts]]
+name = "nodes 不越界"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["app.modules.nodes"]
+forbidden_modules = [
+    "app.modules.account.models", "app.modules.account.router",
+    "app.modules.catalog.models", "app.modules.catalog.router",
+    "app.modules.orchestrator.models", "app.modules.orchestrator.router",
+    "app.modules.billing.models", "app.modules.billing.router",
+    "app.modules.metering.models", "app.modules.metering.router",
+    "app.modules.notify.models", "app.modules.notify.router",
+    "app.modules.adminapi.router",
 ]

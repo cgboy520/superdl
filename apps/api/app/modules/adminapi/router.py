@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Header, Request
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
@@ -46,6 +48,12 @@ from app.modules.catalog.schemas import (
     SkuUpdate,
 )
 from app.modules.metering import service as metering_service
+from app.modules.nodes import service as nodes_service
+from app.modules.nodes.schemas import (
+    EnrollmentCommandOut,
+    EnrollmentCreate,
+    NodeEnrollmentOut,
+)
 from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import (
     AdminForceStopRequest,
@@ -293,6 +301,84 @@ async def admin_unfreeze_tenant(
     user = await account_service.admin_set_user_status(session, user_id, "active")
     set_audit_target(request, f"user:{user_id}", detail={"reason": body.reason})
     return TenantStatusOut(id=user.id, status=user.status)
+
+
+# ---------- 节点注册(WP23;读:ops/readonly,写:ops,admin 恒许) ----------
+
+
+class EnrollmentRevokeRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=256)
+
+
+class EnrollmentRegenerateRequest(BaseModel):
+    ttl_hours: int = Field(default=24, ge=1, le=168)
+
+
+def _command_out(enrollment, token: str) -> EnrollmentCommandOut:
+    curl_command, wget_command = nodes_service.enrollment_commands(token)
+    return EnrollmentCommandOut(
+        enrollment=NodeEnrollmentOut.model_validate(enrollment),
+        token=token,
+        curl_command=curl_command,
+        wget_command=wget_command,
+    )
+
+
+@router.get("/node-enrollments", dependencies=[require_roles("ops", "readonly")])
+async def admin_list_enrollments(
+    session: DbSession, active: bool = False
+) -> list[NodeEnrollmentOut]:
+    """注册记录列表(永不含 token)。active=true 过滤陈旧终态行。"""
+    rows = await nodes_service.list_enrollments(session, active_only=active)
+    return [NodeEnrollmentOut.model_validate(r) for r in rows]
+
+
+@router.post("/node-enrollments", dependencies=[require_roles("ops")], status_code=201)
+async def admin_create_enrollment(
+    body: EnrollmentCreate,
+    session: DbSession,
+    request: Request,
+    admin: CurrentAdmin,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> EnrollmentCommandOut:
+    """生成节点注册命令。token 明文仅本响应出现一次;审计不落 token。
+    Idempotency-Key 重放不建新行(轮换该行 token 后返回)。"""
+    enrollment, token = await nodes_service.create_enrollment(
+        session, body, created_by=admin.id, idempotency_key=idempotency_key
+    )
+    set_audit_target(
+        request,
+        f"node_enrollment:{enrollment.id}",
+        detail={"pool": enrollment.pool, "hostname": enrollment.hostname},
+    )
+    return _command_out(enrollment, token)
+
+
+@router.post("/node-enrollments/{enrollment_id}/regenerate", dependencies=[require_roles("ops")])
+async def admin_regenerate_enrollment(
+    enrollment_id: int,
+    body: EnrollmentRegenerateRequest,
+    session: DbSession,
+    request: Request,
+) -> EnrollmentCommandOut:
+    """换新令牌(仅 待执行/已过期/已失败),状态回 pending。"""
+    enrollment, token = await nodes_service.regenerate_enrollment(
+        session, enrollment_id, ttl_hours=body.ttl_hours
+    )
+    set_audit_target(request, f"node_enrollment:{enrollment_id}", detail={"action": "regenerate"})
+    return _command_out(enrollment, token)
+
+
+@router.post("/node-enrollments/{enrollment_id}/revoke", dependencies=[require_roles("ops")])
+async def admin_revoke_enrollment(
+    enrollment_id: int,
+    body: EnrollmentRevokeRequest,
+    session: DbSession,
+    request: Request,
+) -> NodeEnrollmentOut:
+    enrollment = await nodes_service.revoke_enrollment(session, enrollment_id)
+    set_audit_target(request, f"node_enrollment:{enrollment_id}", detail={"reason": body.reason})
+    return NodeEnrollmentOut.model_validate(enrollment)
 
 
 # ---------- 节点与超卖报表(角色:admin / ops / readonly) ----------
