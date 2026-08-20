@@ -3,7 +3,7 @@
 | 目录 | 内容 | 状态 |
 |---|---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/Ingress-TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) | compose 可用;K8s 清单齐备待实机 |
-| `ansible/` | 装机基线:NVIDIA 驱动 / containerd / 内核参数(IOMMU、userns)/ 镜像预热 | 人工事项 #1 配套,随 W1 产出 |
+| `ansible/` | 装机基线(存量机器批量):NVIDIA 驱动 / 内核参数(IOMMU、userns)/ NVMe VG / registries.yaml 分发。镜像预热已产品化(WP22 平台侧);新节点首选管理端一键加入(WP23) | 人工事项 #1 配套,随 W1 产出 |
 | `cluster/` | RKE2 v1.36 + Cilium 1.20 + GPU Operator v26.3 + HAMi v2.9 + kube-prometheus-stack 88.x + JuiceFS CSI 1.4 + TopoLVM(helmfile) | 人工事项 #2~#5 配套,随 W1~W2 产出 |
 
 集群侧脚本按人工事项清单(development-plan §7.3)节奏产出;

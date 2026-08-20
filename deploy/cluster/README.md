@@ -11,8 +11,10 @@ HAMi v2.9 · kube-prometheus-stack 88.x · JuiceFS CSI(JuiceFS 1.4.x LTS)· Topo
    ```bash
    curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=latest sh -   # v1.36
    cp rke2/audit-policy.yaml /etc/rancher/rke2/audit-policy.yaml      # 先放审计策略(缺失则 apiserver 起不来)
+   cp rke2/registries.yaml /etc/rancher/rke2/registries.yaml          # Spegel P2P + registry mirror(替换 <server-ip>)
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml && systemctl enable --now rke2-server
    ```
+   集群起来后部署内部镜像仓库:`kubectl apply -f registry/registry.yaml`(WP22,SOP 见 `runbooks/image-prewarm.md`)
 3. **节点池标签**(分池铁律,Kata 与 HAMi 永不混布):
    ```bash
    kubectl label node <整卡节点> superdl.io/pool=kata

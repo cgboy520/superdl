@@ -1,12 +1,11 @@
-# 装机基线(人工事项 #1):ansible-playbook -i inventory.ini site.yml
-# 覆盖:内核参数(IOMMU/userns)、NVIDIA 驱动、NVMe VG(TopoLVM)、镜像预热
+# 装机基线(人工事项 #1,存量机器批量场景):ansible-playbook -i inventory.ini site.yml -e rke2_server_ip=<server-ip>
+# 覆盖:内核参数(IOMMU/userns)、NVIDIA 驱动、NVMe VG(TopoLVM)、registries.yaml 分发
+# 镜像预热已产品化(WP22):由平台 outbox/巡检驱动,不再在装机层 crictl pull
+# 新节点加入首选管理端「添加节点」一键命令(WP23),本 playbook 保留作存量批量基线
 - hosts: gpu_nodes
   become: true
   vars:
     nvidia_driver_version: "580"          # 与 GPU Operator v26.3 兼容矩阵核对后锁定
-    prewarm_images:
-      - registry.superdl.local/pytorch:2.9.0-cu128
-      - registry.superdl.local/tensorflow:2.20-cu128
   tasks:
     - name: 禁用 nouveau
       copy:
@@ -46,13 +45,27 @@
       args: {executable: /bin/bash}
       when: nvme_devices is defined
 
-    - name: 镜像预热(平台镜像秒级启动)
-      shell: "/var/lib/rancher/rke2/bin/crictl pull {{ item }}"
-      loop: "{{ prewarm_images }}"
-      ignore_errors: true          # 首装时 rke2 未起,由 cron 周期重试
+    - name: 分发 registries.yaml(Spegel P2P + 集群内 registry mirror,WP22)
+      copy:
+        src: ../cluster/rke2/registries.yaml
+        dest: /etc/rancher/rke2/registries.yaml
+        mode: "0644"
+      when: rke2_server_ip is defined
+      notify: restart-rke2
+
+    - name: registries.yaml 填入 server IP(替换 <server-ip> 占位符)
+      replace:
+        path: /etc/rancher/rke2/registries.yaml
+        regexp: '<server-ip>'
+        replace: "{{ rke2_server_ip }}"
+      when: rke2_server_ip is defined
+      notify: restart-rke2
 
   handlers:
     - name: update-grub
       command: update-grub
     - name: update-initramfs
       command: update-initramfs -u
+    - name: restart-rke2
+      # 首装时 rke2 尚未安装,try-restart 对未加载的 unit 静默跳过
+      shell: "systemctl try-restart rke2-agent.service rke2-server.service || true"

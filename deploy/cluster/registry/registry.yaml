@@ -1,0 +1,80 @@
+# 集群内私有镜像仓库(WP22):registry.superdl.local 的真实落点
+# 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维内网)与 pull(节点 registries.yaml mirror)
+# 不引第三方 chart:twuni/docker-registry 已多年停更,原生清单更可审计;Harbor 后置项落地时 skopeo copy 直迁
+# 应用:kubectl apply -f registry.yaml;节点侧配置见 ../rke2/registries.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  namespace: registry
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: topolvm-provisioner   # 节点本地 NVMe;仓库丢失可重 push,灾备见 runbooks/image-prewarm.md
+  resources:
+    requests:
+      storage: 500Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate               # RWO 本地卷,不允许双副本并存
+  selector:
+    matchLabels: {app: registry}
+  template:
+    metadata:
+      labels: {app: registry}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000            # PVC 数据目录写权限
+      containers:
+        - name: registry
+          image: registry:3.0.0  # distribution v3,钉版本(供应链规范同 helmfile)
+          ports:
+            - containerPort: 5000
+          env:
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: "true"      # 允许 DELETE manifest,配合周期 GC(见 runbook)
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+          readinessProbe:
+            httpGet: {path: /v2/, port: 5000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /v2/, port: 5000}
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: registry-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  type: NodePort               # 全节点 30500 开放;仅限集群内网,防火墙不得对外暴露
+  selector: {app: registry}
+  ports:
+    - port: 5000
+      targetPort: 5000
+      nodePort: 30500

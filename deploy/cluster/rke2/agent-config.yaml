@@ -1,4 +1,6 @@
 # /etc/rancher/rke2/config.yaml —— GPU agent 节点(装机后按池打标签)
+# 配套:registries.yaml 必须同步分发到本节点(Spegel P2P + registry mirror,WP22)
+# 新节点首选管理端「添加节点」一键命令(WP23),会自动生成本文件与 registries.yaml
 server: https://<server-ip>:9345
 token: <cluster-token>
 node-label:
