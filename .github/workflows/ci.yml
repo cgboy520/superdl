@@ -53,6 +53,16 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  node-join-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck + bats
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck bats
+      - run: bash -n apps/api/app/modules/nodes/assets/node-join.sh
+      - run: shellcheck apps/api/app/modules/nodes/assets/node-join.sh
+      - run: bats deploy/node-join/tests
+
   e2e:
     runs-on: ubuntu-latest
     steps:
