@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
 
     # 集群接入(WP23 节点一键加入;env 为默认层,生产建议经管理端「平台配置·集群接入」录入)
+    k8s_distro: Literal["rke2", "k3s"] = "rke2"  # k3s 仅用于轻量/本地验证环境
     rke2_server_url: str = ""
     rke2_join_token: str = ""  # secret:平台配置中心 AES-GCM 加密存 DB 覆盖层
     rke2_version: str = "v1.36.2+rke2r1"  # 装机脚本 INSTALL_RKE2_VERSION 钉死,实机核定后更新
@@ -83,6 +84,9 @@ class Settings(BaseSettings):
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
     k8s_namespace_prefix: str = "tenant-"
+    # 租户 Jupyter Ingress 的 IngressClass。必须显式指定 —— IngressClass 未标 default 时
+    # 不写此字段会导致无控制器接管 Ingress,Jupyter 入口静默失效。
+    ingress_class_name: str = "nginx"
     ssh_host: str = "ssh1.superdl.example.com"
     ssh_port_range_start: int = 30000
     ssh_port_range_end: int = 32767

@@ -154,11 +154,32 @@ async def list_enrollments(
     for r in rows:
         if r.status == "revoked":
             continue
-        if r.status == "joined" and r.joined_at and r.joined_at < now - timedelta(hours=24):
+        # joined 已毕业到正式「节点」列表,不再占用「待加入」视图(避免与节点表重复)
+        if r.status == "joined":
             continue
         if r.status == "expired" and r.updated_at < now - timedelta(days=7):
             continue
         out.append(r)
+    return out
+
+
+async def joined_node_specs(session: AsyncSession) -> dict[str, dict[str, str]]:
+    """已加入节点的登记规格(按 node_name 索引),供管理端节点卡补充展示:
+    型号(nvidia-smi 上报,取首卡)/驱动版本/CUDA 版本。K8s 侧不带这些标签时用它兜底。"""
+    rows = (
+        await session.execute(select(NodeEnrollment).where(NodeEnrollment.status == "joined"))
+    ).scalars()
+    out: dict[str, dict[str, str]] = {}
+    for r in rows:
+        if not r.node_name:
+            continue
+        os_info = r.os_info or {}
+        gpu_info = r.gpu_info or []
+        out[r.node_name] = {
+            "gpu_model": gpu_info[0] if gpu_info else "",
+            "driver_version": str(os_info.get("driver_version") or ""),
+            "cuda_version": str(os_info.get("cuda_version") or ""),
+        }
     return out
 
 

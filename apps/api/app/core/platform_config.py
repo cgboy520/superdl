@@ -134,23 +134,30 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
     ),
     # ---- 集群接入(WP23 节点一键加入;仅 admin 可读写,ops 生成注册命令时服务端代读) ----
+    "k8s_distro": SettingSpec(
+        "cluster",
+        "choice",
+        choices=("rke2", "k3s"),
+        prod_forbidden=("k3s",),
+        hint="生产一律 RKE2;k3s 仅供轻量/本地验证环境",
+    ),
     "rke2_server_url": SettingSpec(
         "cluster",
         "str",
-        pattern=r"https://[0-9A-Za-z.\-\[\]:]+:9345",
-        hint="RKE2 supervisor 地址,形如 https://<server-ip>:9345",
+        pattern=r"https://[0-9A-Za-z.\-\[\]:]+:\d{1,5}",
+        hint="RKE2 supervisor 形如 https://<server-ip>:9345;k3s 为 https://<server-ip>:6443",
     ),
     "rke2_join_token": SettingSpec(
         "cluster",
         "secret",
         max_len=512,
-        hint="server 节点 /var/lib/rancher/rke2/server/node-token 文件内容",
+        hint="server 节点 /var/lib/rancher/<rke2|k3s>/server/node-token 文件内容",
     ),
     "rke2_version": SettingSpec(
         "cluster",
         "str",
-        pattern=r"v\d+\.\d+\.\d+(\+rke2r\d+)?",
-        hint="装机脚本钉死的 RKE2 版本,形如 v1.36.2+rke2r1",
+        pattern=r"v\d+\.\d+\.\d+(\+(rke2r|k3s)\d+)?",
+        hint="装机脚本钉死的版本,形如 v1.36.2+rke2r1 / v1.36.3+k3s1",
     ),
     "node_driver_version": SettingSpec(
         "cluster",

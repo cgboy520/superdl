@@ -6,10 +6,15 @@
  */
 
 export interface NodeOut {
+  cuda_version?: string;
+  disk_gb: number;
+  driver_version?: string;
   gpu_model: string;
   gpu_total: number;
   gpu_used: number;
+  mem_gb: number;
   name: string;
   pool_label: string;
   status: string;
+  vcpu: number;
 }

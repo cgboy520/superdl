@@ -31,16 +31,17 @@ export function ReleaseModal({
 }) {
   const [checked, setChecked] = useState(false);
   const { message } = App.useApp();
+  const creating = instance.status === "creating";
   const release = useReleaseInstance({
     onSuccess: () => {
-      message.success("实例已开始释放");
+      message.success(creating ? "已取消创建" : "实例已开始释放");
       onClose();
       onReleased?.();
     },
   });
   return (
     <Modal
-      title="释放实例"
+      title={creating ? "取消创建" : "释放实例"}
       open={open}
       onCancel={() => {
         setChecked(false);
@@ -56,17 +57,18 @@ export function ReleaseModal({
             loading={release.isPending}
             onClick={() => release.mutate(instance.uuid)}
           >
-            确认释放
+            {creating ? "确认取消" : "确认释放"}
           </Button>
         </Space>
       }
     >
       <Typography.Paragraph>
-        即将释放实例{" "}
+        {creating ? "即将取消创建中的实例 " : "即将释放实例 "}
         <Typography.Text strong>
           {instance.name}({instance.uuid.slice(0, 8)})
         </Typography.Text>
         ,此操作不可恢复。
+        {creating ? "创建中未开始计费,取消不产生 GPU 时费。" : null}
       </Typography.Paragraph>
       <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
         {copy.releaseConfirmChecklist}
@@ -97,7 +99,9 @@ export function InstanceActions({
   const canStart = s === "stopped";
   const canStop = s === "running";
   const canRestart = s === "running";
-  const canRelease = s === "stopped" || s === "frozen" || s === "failed";
+  // creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消,不必干等超时
+  const canRelease =
+    s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
 
   const startTip = s === "frozen" ? copy.frozenNeedsRecharge : copy.startNeedsStopped;
 
@@ -158,7 +162,10 @@ export function InstanceActions({
             {
               key: "release",
               danger: true,
-              label: tipped("释放实例", canRelease ? undefined : copy.releaseNeedsStopped),
+              label: tipped(
+                s === "creating" ? "取消创建" : "释放实例",
+                canRelease ? undefined : copy.releaseNeedsStopped,
+              ),
               disabled: !canRelease,
             },
           ],

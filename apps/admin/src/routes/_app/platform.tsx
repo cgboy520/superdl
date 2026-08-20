@@ -63,6 +63,12 @@ const FIELD_LABELS: Record<string, string> = {
   real_name_access_key_secret: "AccessKey Secret",
   icp_number: "ICP 备案号",
   police_record_number: "公安联网备案号",
+  k8s_distro: "K8s 发行版",
+  rke2_server_url: "Server 地址",
+  rke2_join_token: "Join Token",
+  rke2_version: "版本(装机脚本钉死)",
+  node_driver_version: "NVIDIA 驱动主版本",
+  node_registries_yaml: "registries.yaml(镜像缓存 mirror)",
 };
 
 const FIELD_EXTRA: Record<string, string> = {
@@ -79,6 +85,8 @@ const FIELD_EXTRA: Record<string, string> = {
 const PROVIDER_LABELS: Record<string, string> = {
   mock: "mock(仅开发环境)",
   aliyun: "阿里云",
+  rke2: "RKE2(生产)",
+  k3s: "k3s(轻量/本地验证)",
 };
 
 const GROUP_INTRO: Record<string, string> = {
@@ -100,8 +108,9 @@ const GROUP_INTRO: Record<string, string> = {
     "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);" +
     "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。",
   cluster:
-    "GPU 节点一键加入(WP23)的集群接入参数:Server 地址与 join token 来自 RKE2 server 节点" +
-    "(token 执行 cat /var/lib/rancher/rke2/server/node-token 获取,轮换用 rke2 token rotate 后在此更新)。" +
+    "GPU 节点一键加入(WP23)的集群接入参数:Server 地址与 join token 来自 server 节点" +
+    "(token 执行 cat /var/lib/rancher/<rke2|k3s>/server/node-token 获取,轮换用 rke2 token rotate 后在此更新)。" +
+    "生产一律 RKE2,k3s 仅供轻量/本地验证环境。" +
     "配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令;registries.yaml 为镜像缓存 mirror(WP22),可留空。",
 };
 

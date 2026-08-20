@@ -716,6 +716,10 @@
             ],
             "title": "Hostname Expected"
           },
+          "k8s_distro": {
+            "title": "K8S Distro",
+            "type": "string"
+          },
           "nvme_devices": {
             "items": {
               "type": "string"
@@ -747,6 +751,7 @@
         "required": [
           "pool",
           "hostname_expected",
+          "k8s_distro",
           "rke2_version",
           "rke2_server_url",
           "rke2_join_token",
@@ -2009,6 +2014,20 @@
       },
       "NodeOut": {
         "properties": {
+          "cuda_version": {
+            "default": "",
+            "title": "Cuda Version",
+            "type": "string"
+          },
+          "disk_gb": {
+            "title": "Disk Gb",
+            "type": "integer"
+          },
+          "driver_version": {
+            "default": "",
+            "title": "Driver Version",
+            "type": "string"
+          },
           "gpu_model": {
             "title": "Gpu Model",
             "type": "string"
@@ -2019,6 +2038,10 @@
           },
           "gpu_used": {
             "title": "Gpu Used",
+            "type": "integer"
+          },
+          "mem_gb": {
+            "title": "Mem Gb",
             "type": "integer"
           },
           "name": {
@@ -2032,6 +2055,10 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "vcpu": {
+            "title": "Vcpu",
+            "type": "integer"
           }
         },
         "required": [
@@ -2040,7 +2067,10 @@
           "gpu_model",
           "gpu_total",
           "gpu_used",
-          "status"
+          "status",
+          "vcpu",
+          "mem_gb",
+          "disk_gb"
         ],
         "title": "NodeOut",
         "type": "object"

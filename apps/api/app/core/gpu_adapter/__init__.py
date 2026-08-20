@@ -22,6 +22,8 @@ class GpuRequest:
     runtime_class: str | None  # RuntimeClass 名称
     host_users: bool  # False → pod.spec.hostUsers=false(userns)
     node_selector: dict[str, str]
+    # HAMi 池显式走 hami-scheduler(不依赖 mutating webhook —— 其 failurePolicy=Ignore 不可靠)
+    scheduler_name: str | None = None
 
 
 def build_gpu_request(
@@ -61,6 +63,7 @@ def build_gpu_request(
             runtime_class=None,
             host_users=False,  # 共享池必须 userns 加固
             node_selector=node_selector,
+            scheduler_name="hami-scheduler",  # 显式指定,不赖 HAMi mutating webhook(fail-open)
         )
     raise ValueError(f"unknown tier: {tier}")
 

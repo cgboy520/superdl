@@ -317,13 +317,13 @@ async def release_instance(
     session: AsyncSession, user_id: int, uuid: str, *, actor: str = "user"
 ) -> Instance:
     instance = await get_instance(session, user_id, uuid)
-    if instance.status not in (sm_def.STOPPED, sm_def.FROZEN, sm_def.FAILED):
+    if instance.status not in (
+        sm_def.STOPPED,
+        sm_def.FROZEN,
+        sm_def.FAILED,  # 失败实例的清理:同走 releasing→released,否则永远留在列表
+        sm_def.CREATING,  # 调度长期不满足时用户可主动取消,不必干等 creating 超时
+    ):
         raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, "关机后才能释放实例")
-    if instance.status == sm_def.FAILED:
-        # failed 已是终态:仅做资源清理与端口回收
-        enqueue(session, "instance.release", {"instance_id": instance.id})
-        await session.commit()
-        return instance
     await transition(session, instance, sm_def.RELEASING, reason=f"{actor}_release", actor=actor)
     enqueue(session, "instance.release", {"instance_id": instance.id})
     await session.commit()
@@ -397,6 +397,7 @@ def build_pod_spec(instance: Instance) -> InstancePodSpec:
         authorized_keys=tuple(instance.authorized_keys),
         node_selector=gpu_req.node_selector,
         data_disk_subpath=f"disk-{instance.data_disk_id}" if instance.data_disk_id else None,
+        scheduler_name=gpu_req.scheduler_name,
     )
 
 

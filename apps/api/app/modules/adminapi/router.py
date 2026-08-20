@@ -388,17 +388,32 @@ async def admin_revoke_enrollment(
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
     nodes = await orchestrator_service.cluster_nodes()
-    return [
-        NodeOut(
-            name=n.name,
-            pool_label=n.pool_label,
-            gpu_model=n.gpu_model,
-            gpu_total=n.gpu_total,
-            gpu_used=n.gpu_used,
-            status=n.status,
+    # 驱动/CUDA/型号:K8s 侧无 GFD 标签时,用加入登记(nvidia-smi 上报)兜底展示
+    specs = await nodes_service.joined_node_specs(session)
+    out: list[NodeOut] = []
+    for n in nodes:
+        spec = specs.get(n.name, {})
+        model = (
+            n.gpu_model
+            if n.gpu_model and n.gpu_model != "GPU"
+            else (spec.get("gpu_model") or n.gpu_model)
         )
-        for n in nodes
-    ]
+        out.append(
+            NodeOut(
+                name=n.name,
+                pool_label=n.pool_label,
+                gpu_model=model,
+                gpu_total=n.gpu_total,
+                gpu_used=n.gpu_used,
+                status=n.status,
+                vcpu=n.vcpu,
+                mem_gb=n.mem_gb,
+                disk_gb=n.disk_gb,
+                driver_version=spec.get("driver_version", ""),
+                cuda_version=spec.get("cuda_version", ""),
+            )
+        )
+    return out
 
 
 class NodeCordonRequest(BaseModel):

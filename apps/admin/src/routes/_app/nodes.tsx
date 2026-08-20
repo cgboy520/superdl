@@ -202,8 +202,9 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
           <Form.Item
             name="nvme_devices"
             label="NVMe 设备(可选;填写后装机时创建 TopoLVM VG superdl-nvme)"
+            extra="无专用盘的测试节点可显式填 loop:80G,装机时用 loop 文件兜底实例盘(仅验证,非生产性能);留空则该节点无本地实例盘,不会自动兜底。"
           >
-            <Select mode="tags" placeholder="如 /dev/nvme0n1(回车分隔)" open={false} />
+            <Select mode="tags" placeholder="如 /dev/nvme0n1;或 loop:80G(回车分隔)" open={false} />
           </Form.Item>
           <Form.Item name="ttl_hours" label="令牌有效期(小时)" rules={[{ required: true }]}>
             <InputNumber min={1} max={168} style={{ width: "100%" }} />
@@ -398,6 +399,11 @@ function NodesPage() {
               render: (_, r) => `${r.gpu_model} × ${r.gpu_total}`,
             },
             { title: "已用", dataIndex: "gpu_used" },
+            { title: "驱动", render: (_, r) => r.driver_version || "—" },
+            { title: "CUDA", render: (_, r) => r.cuda_version || "—" },
+            { title: "CPU", render: (_, r) => `${r.vcpu} 核` },
+            { title: "内存", render: (_, r) => `${r.mem_gb} G` },
+            { title: "硬盘", render: (_, r) => `${r.disk_gb} G` },
             {
               title: "状态",
               dataIndex: "status",

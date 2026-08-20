@@ -20,6 +20,12 @@ def pg_url() -> Iterator[str]:
         url = pg.get_connection_url()
         os.environ["SUPERDL_DATABASE_URL"] = url
         os.environ["SUPERDL_ENVIRONMENT"] = "test"
+        os.environ["SUPERDL_K8S_BACKEND"] = (
+            "fake"  # 单测一律 FakeOrchestrator,隔离本地 .env 的 real 配置
+        )
+        os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = (
+            "300"  # 超时用例按默认 5 分钟断言,钉死不受 .env 影响
+        )
         # 环境变量就位后再清缓存,让所有 get_settings() 读到测试库
         from app.core.config import get_settings
 

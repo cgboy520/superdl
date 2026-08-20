@@ -21,6 +21,7 @@ INSTANCE_LABEL = "superdl.io/instance"
 MANAGED_LABEL = "superdl.io/managed"
 POOL_NODE_LABEL = "superdl.io/pool"
 PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
+INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPolicy 放行来源)
 PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
 
 
@@ -71,14 +72,30 @@ class RealOrchestrator:
         self._ensure_juicefs_pvc_sync(namespace)
 
     def _ensure_default_netpol_sync(self, namespace: str) -> None:
-        """入方向默认拒(北向经 LB/Ingress);出方向放行公网 + DNS,
-        禁访节点/Service/Pod 网段与云元数据(169.254.0.0/16)。"""
+        """入方向:默认拒东西向,仅放行 Ingress Controller 到 Jupyter 端口(北向入口);
+        出方向放行公网 + DNS,禁访节点/Service/Pod 网段与云元数据(169.254.0.0/16)。
+
+        注意:SSH 走 NodePort(kube-proxy DNAT,不过 NetworkPolicy),Jupyter 走 Ingress
+        必须显式放行 —— 否则 ingress-nginx 连租户 Pod 被拒(502 Connection refused)。
+        """
         policy = client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
             spec=client.V1NetworkPolicySpec(
                 pod_selector=client.V1LabelSelector(),
                 policy_types=["Ingress", "Egress"],
-                ingress=[],  # 拒全部东西向入方向
+                ingress=[
+                    # 北向:Ingress Controller → JupyterLab(8888)。其余东西向一律拒绝。
+                    client.V1NetworkPolicyIngressRule(
+                        _from=[
+                            client.V1NetworkPolicyPeer(
+                                namespace_selector=client.V1LabelSelector(
+                                    match_labels={"kubernetes.io/metadata.name": INGRESS_NAMESPACE}
+                                )
+                            )
+                        ],
+                        ports=[client.V1NetworkPolicyPort(protocol="TCP", port=8888)],
+                    )
+                ],
                 egress=[
                     # DNS(kube-system CoreDNS)
                     client.V1NetworkPolicyEgressRule(
@@ -194,6 +211,7 @@ class RealOrchestrator:
             ),
             spec=client.V1PodSpec(
                 runtime_class_name=spec.runtime_class,
+                scheduler_name=spec.scheduler_name,  # HAMi 池 = hami-scheduler(不赖 webhook)
                 # 仅共享池显式收紧(hostUsers: false 开 userns);独享 Kata 走默认
                 host_users=False if spec.host_users is False else None,
                 restart_policy="Never",
@@ -263,6 +281,9 @@ class RealOrchestrator:
                 labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
             ),
             spec=client.V1IngressSpec(
+                # 显式 IngressClass:IngressClass 未标 default 时,不写这行则无控制器接管,
+                # Ingress 建出来但 Jupyter 入口静默不通(ADDRESS 恒为空)。
+                ingress_class_name=self.settings.ingress_class_name,
                 # TLS:不指定 secretName,由 ingress-nginx default-ssl-certificate
                 # 提供 *.app 泛域名证书(证书 Secret 无需复制进每个租户 ns)
                 tls=[client.V1IngressTLS(hosts=[spec.jupyter_host])],
@@ -466,6 +487,44 @@ class RealOrchestrator:
     async def list_nodes(self) -> list[NodeInfo]:
         return await asyncio.to_thread(self._list_nodes_sync)
 
+    @staticmethod
+    def _qty_to_bytes(q: str | None) -> int:
+        """K8s 资源量(如 49192080Ki / 200Gi / 500M)转字节。无法解析返回 0。"""
+        if not q:
+            return 0
+        units = {
+            "Ki": 1024,
+            "Mi": 1024**2,
+            "Gi": 1024**3,
+            "Ti": 1024**4,
+            "Pi": 1024**5,
+            "K": 1000,
+            "M": 1000**2,
+            "G": 1000**3,
+            "T": 1000**4,
+            "P": 1000**5,
+        }
+        for suf, mult in units.items():
+            if q.endswith(suf):
+                try:
+                    return int(float(q[: -len(suf)]) * mult)
+                except ValueError:
+                    return 0
+        try:
+            return int(float(q))
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def _cpu_cores(q: str | None) -> int:
+        """CPU 量(核数 "4" 或毫核 "3920m")转整核。"""
+        if not q:
+            return 0
+        try:
+            return max(1, round(int(q[:-1]) / 1000)) if q.endswith("m") else int(float(q))
+        except ValueError:
+            return 0
+
     def _list_nodes_sync(self) -> list[NodeInfo]:
         nodes: Any = self.core.list_node(label_selector=POOL_NODE_LABEL)
         used_by_node = self._used_gpus_by_node()  # 一次拉取,不再每节点全量扫 Pod
@@ -476,6 +535,7 @@ class RealOrchestrator:
             ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
             cordoned = bool(node.spec.unschedulable)
             total = self._gpu_amount(node.status.allocatable)
+            cap = node.status.capacity or {}
             out.append(
                 NodeInfo(
                     name=node.metadata.name,
@@ -484,6 +544,9 @@ class RealOrchestrator:
                     gpu_total=total,
                     gpu_used=min(total, used_by_node.get(node.metadata.name, 0)),
                     status="Cordoned" if cordoned else ("Ready" if ready else "NotReady"),
+                    vcpu=self._cpu_cores(cap.get("cpu")),
+                    mem_gb=self._qty_to_bytes(cap.get("memory")) // 1024**3,
+                    disk_gb=self._qty_to_bytes(cap.get("ephemeral-storage")) // 1024**3,
                 )
             )
         return out

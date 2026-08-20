@@ -137,6 +137,9 @@ class FakeOrchestrator:
                     gpu_total=cap,
                     gpu_used=used,
                     status="Ready",
+                    vcpu=64,
+                    mem_gb=512,
+                    disk_gb=2048,
                 )
             )
         nodes.extend(self.extra_nodes)
@@ -148,6 +151,9 @@ class FakeOrchestrator:
                 gpu_total=n.gpu_total,
                 gpu_used=n.gpu_used,
                 status="Cordoned" if n.name in self.cordoned_nodes else n.status,
+                vcpu=n.vcpu,
+                mem_gb=n.mem_gb,
+                disk_gb=n.disk_gb,
             )
             for n in nodes
         ]

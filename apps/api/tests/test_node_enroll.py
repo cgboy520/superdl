@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit import AuditLog
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.platform_config import set_platform_settings
 from app.modules.nodes import service as nodes_service
@@ -243,7 +244,12 @@ class TestEnrollRouterAnonymous:
         resp = await client.get("/api/v1/node-enroll/script")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/x-shellscript")
-        assert "__API_BASE__" not in resp.text
+        # 赋值行替换为真实地址;但护栏比较用的字面量必须原样保留(只替换第一次出现)——
+        # 否则护栏拿真实 URL 自比,把正常下发误判为"占位符未替换"而退出 2(WP23 潜伏 bug 回归)。
+        base = get_settings().public_base_url.rstrip("/")
+        assert f'API_BASE="{base}"' in resp.text
+        assert resp.text.count("__API_BASE__") == 1  # 仅剩护栏比较字面量
+        assert '!= "__API_BASE__"' in resp.text
         assert "/api/v1/node-enroll/bootstrap" in resp.text
         assert "sdln_" not in resp.text.replace("--token sdln_xxx", "")  # 脚本零密钥
 

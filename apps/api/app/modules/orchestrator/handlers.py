@@ -9,7 +9,7 @@ from app.core.outbox import OutboxTask, outbox_handler
 from app.modules.billing import service as billing_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import Instance
-from app.modules.orchestrator.service import build_pod_spec, ensure_port, free_port, transition
+from app.modules.orchestrator.service import build_pod_spec, ensure_port, transition
 
 logger = get_logger(__name__)
 
@@ -102,14 +102,11 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
     instance = await _load(session, task)
     if instance is None:
         return
-    if instance.status not in (sm_def.RELEASING, sm_def.FAILED):
+    if instance.status != sm_def.RELEASING:
         return
     orch = get_orchestrator()
     assert instance.k8s_namespace is not None
     await orch.delete_instance(instance.k8s_namespace, instance.uuid)
-    if instance.status == sm_def.FAILED:
-        # failed 终态:清资源 + 回收端口,不再迁移状态
-        await free_port(session, instance.id)
     # releasing → released 由 reconciler 在确认 Pod 消失后完成(含擦盘事件与端口回收)
 
 

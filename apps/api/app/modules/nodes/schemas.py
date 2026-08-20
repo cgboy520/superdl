@@ -59,6 +59,7 @@ class BootstrapOut(BaseModel):
 
     pool: str
     hostname_expected: str | None
+    k8s_distro: str  # rke2 | k3s(k3s 仅轻量/本地验证环境)
     rke2_version: str
     rke2_server_url: str
     rke2_join_token: str

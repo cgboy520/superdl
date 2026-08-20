@@ -1,0 +1,58 @@
+# GPU 设备插件(k3s 轻量路径专用)
+#
+# 生产走 GPU Operator + HAMi(helmfile,人工事项 #2~#4);此清单是 k3s 轻量/本地
+# 验证环境的等价替身:把物理卡登记为可调度的 nvidia.com/gpu,让管理端「节点」看到 GPU。
+# 前置(node-join.sh 已在节点完成):NVIDIA 驱动 + nvidia-container-toolkit,
+# 且 k3s containerd 已自动探测出 nvidia runtime(RuntimeClass 名 nvidia)。
+#
+# 应用:kubectl apply -f deploy/cluster/gpu-device-plugin.yaml
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-device-plugin
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: nvidia-device-plugin
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nvidia-device-plugin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nvidia-device-plugin
+    spec:
+      # 只在 GPU 池节点跑(装机时打了 superdl.io/pool 标签)
+      nodeSelector:
+        superdl.io/pool: hami
+      runtimeClassName: nvidia
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: nvidia-device-plugin
+          image: nvcr.io/nvidia/k8s-device-plugin:v0.17.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FAIL_ON_INIT_ERROR
+              value: "false"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins

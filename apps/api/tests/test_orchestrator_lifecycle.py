@@ -295,6 +295,48 @@ class TestRelease:
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.json()["code"] == "INSTANCE_NOT_STOPPED"
 
+    async def test_release_failed_instance_leaves_list(self, client, sm, fake):
+        """失败实例可被释放并出清列表(failed 若无出边,用户永远删不掉它)。"""
+        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        fake.kill_pod(f"tenant-{user_id}", uuid)  # 故障 → failed
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "failed"
+
+        resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "releasing"
+        await drain(sm)
+        counts = await reconcile_once(sm)
+        assert counts["to_released"] == 1
+
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        assert uuid not in [i["uuid"] for i in instances]
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
+        assert [e["to_status"] for e in events][-3:] == ["failed", "releasing", "released"]
+
+    async def test_cancel_creating_instance(self, client, sm, fake):
+        """调度长期不满足时用户可主动取消 creating(不必干等超时);creating 未计费,零扣费。"""
+        headers, user_id, key_id = await create_user_with_key(client, "13900000041")
+        await fund_wallet(sm, user_id)
+        sku_id = await create_test_sku(sm)
+        data = await create_instance_api(client, headers, sku_id, key_id)
+        uuid = data["uuid"]
+        assert data["status"] == "creating"  # 未 mark_ready,停在 creating
+
+        resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "releasing"
+        await drain(sm)
+        counts = await reconcile_once(sm)
+        assert counts["to_released"] == 1
+
+        # 列表不再出现;事件链 creating → releasing → released,且从未进入 running(零 GPU 时费)
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        assert uuid not in [i["uuid"] for i in instances]
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
+        assert events[-1]["to_status"] == "released"
+        assert "running" not in [e["to_status"] for e in events]
+
 
 class TestPortPool:
     async def test_pool_exhaustion(self, client, sm, fake, monkeypatch):

@@ -28,6 +28,7 @@ class InstancePodSpec:
     authorized_keys: tuple[str, ...] = ()
     node_selector: dict[str, str] = field(default_factory=dict)  # 池标签
     data_disk_subpath: str | None = None  # JuiceFS 子路径(挂 /root/data)
+    scheduler_name: str | None = None  # 指定调度器(HAMi 池 = hami-scheduler)
 
 
 @dataclass(frozen=True)
@@ -108,3 +109,7 @@ class NodeInfo:
     gpu_total: int
     gpu_used: int
     status: str  # Ready / NotReady / Cordoned
+    # 节点物理规格(取自 K8s node.status.capacity;0 表示未知/未上报)
+    vcpu: int = 0
+    mem_gb: int = 0
+    disk_gb: int = 0

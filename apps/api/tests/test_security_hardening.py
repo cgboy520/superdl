@@ -43,7 +43,8 @@ class TestNoDefaultBootstrapAdmin:
         from app.core.config import Settings
 
         monkeypatch.delenv("SUPERDL_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
-        assert Settings().bootstrap_admin_password is None
+        # _env_file=None:只验代码默认值,不受本地 dev .env 影响
+        assert Settings(_env_file=None).bootstrap_admin_password is None  # type: ignore[call-arg]
 
 
 class TestProdConfigValidation:

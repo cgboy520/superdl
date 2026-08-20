@@ -55,6 +55,11 @@ class NodeOut(BaseModel):
     gpu_total: int
     gpu_used: int
     status: str
+    vcpu: int
+    mem_gb: int
+    disk_gb: int
+    driver_version: str = ""
+    cuda_version: str = ""
 
 
 class ImageCoverageOut(BaseModel):
