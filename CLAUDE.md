@@ -61,5 +61,6 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 
 ## 提交约定
 
+- **所有工作直接在 `main` 分支提交，不新建分支、不发 PR**（2026-08 起的工作流约定）。
 - 每个 WP 小步提交，单次变更 ≤ ~500 行；commit message 前缀 `WPxx:`。
 - 合并前 CI 必须全绿：ruff → pyright → pytest → alembic check → import-linter；eslint → tsc → vitest → build。
