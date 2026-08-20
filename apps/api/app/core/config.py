@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
 
+    # 镜像预热(WP22,可运营调整)
+    prewarm_min_coverage_pct: int = 90  # is_prewarmed=true 所需的节点覆盖率下限
+    prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
+
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
     k8s_namespace_prefix: str = "tenant-"

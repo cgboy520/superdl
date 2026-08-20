@@ -87,6 +87,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.settlement import settle_daily_disks, settle_previous_hour
+    from app.modules.catalog.prewarm import prewarm_patrol
     from app.modules.metering.service import aggregate_previous_hour
     from app.modules.orchestrator.reconciler import reconcile_once
 
@@ -165,6 +166,15 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         minutes=5,
         args=[sm],
         id="balance_patrol",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        prewarm_patrol,
+        "interval",
+        seconds=60,
+        args=[sm],
+        id="prewarm_patrol",
         max_instances=1,
         coalesce=True,
     )

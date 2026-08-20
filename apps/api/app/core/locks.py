@@ -16,6 +16,7 @@ class LockKey(IntEnum):
     OUTBOX_REAPER = 1005
     USAGE_AGGREGATION = 1006
     PAYMENT_RECONCILE = 1007
+    PREWARM_PATROL = 1008
 
 
 @asynccontextmanager

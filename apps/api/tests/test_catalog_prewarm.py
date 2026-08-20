@@ -1,0 +1,194 @@
+"""WP22 镜像预热:巡检铺行/收敛/复检/清理 + handler 幂等(FakeOrchestrator 全链路)。"""
+
+from datetime import timedelta
+
+import pytest
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.k8s import set_orchestrator
+from app.core.k8s.fake import FakeOrchestrator
+from app.core.outbox import OutboxTask, drain
+from app.core.timeutil import now_utc
+from app.modules.catalog.models import ImageNodeCache, PlatformImage
+from app.modules.catalog.prewarm import prewarm_patrol
+
+pytestmark = pytest.mark.usefixtures("fake")
+
+IMAGE_REF = "registry.superdl.local/pytorch:2.9.0-cu128"
+
+
+@pytest.fixture
+def fake():
+    orch = FakeOrchestrator(auto_ready=False)  # 默认三池 → 三节点 fake-{pool}-node-1
+    set_orchestrator(orch)
+    yield orch
+    set_orchestrator(None)
+
+
+async def make_image(
+    sm: async_sessionmaker[AsyncSession], *, ref: str = IMAGE_REF, enabled: bool = True
+) -> int:
+    async with sm() as session:
+        img = PlatformImage(
+            framework="PyTorch",
+            framework_version="2.9.0",
+            python_version="3.12",
+            cuda_version="12.8",
+            image_ref=ref,
+            prewarm_enabled=enabled,
+        )
+        session.add(img)
+        await session.commit()
+        return img.id
+
+
+async def cache_rows(sm: async_sessionmaker[AsyncSession]) -> list[ImageNodeCache]:
+    async with sm() as session:
+        return list(
+            (
+                await session.execute(select(ImageNodeCache).order_by(ImageNodeCache.node_name))
+            ).scalars()
+        )
+
+
+async def pending_tasks(sm: async_sessionmaker[AsyncSession]) -> int:
+    async with sm() as session:
+        rows = (
+            await session.execute(
+                select(OutboxTask).where(
+                    OutboxTask.type == "image.prewarm", OutboxTask.status == "pending"
+                )
+            )
+        ).scalars()
+        return len(list(rows))
+
+
+class TestPrewarmFullChain:
+    async def test_plan_pull_converge_to_cached(self, sm, fake: FakeOrchestrator) -> None:
+        """建镜像 → 巡检铺行(=节点数) → drain 置 pulling → 巡检收敛 cached。"""
+        await make_image(sm)
+        counts = await prewarm_patrol(sm)
+        assert counts["planned"] == 3  # kata/hami/mig 三节点
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["pending"] * 3
+        assert await pending_tasks(sm) == 3
+
+        assert await drain(sm) == 3  # handler:建 Job(auto_prewarm → succeeded)+ 行置 pulling
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["pulling"] * 3
+        assert len(fake.prewarm_jobs) == 3
+
+        counts = await prewarm_patrol(sm)
+        assert counts["cached"] == 3
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["cached"] * 3
+        assert all(r.checked_at is not None for r in rows)
+        assert fake.prewarm_jobs == {}  # 收敛后 Job 已清理
+
+    async def test_handler_idempotent_no_duplicate_job(self, sm, fake: FakeOrchestrator) -> None:
+        """同一(镜像,节点)任务重复执行:Job 唯一、行不重复。"""
+        image_id = await make_image(sm)
+        await prewarm_patrol(sm)
+        await drain(sm)
+        # 重复入队同一目标再 drain(at-least-once 重放)
+        async with sm() as session:
+            from app.core.outbox import enqueue
+
+            enqueue(
+                session, "image.prewarm", {"image_id": image_id, "node_name": "fake-kata-node-1"}
+            )
+            await session.commit()
+        await drain(sm)
+        assert len(fake.prewarm_jobs) == 3
+        assert len(await cache_rows(sm)) == 3
+
+
+class TestPrewarmFailure:
+    async def test_failed_records_error_and_throttled_retry(
+        self, sm, fake: FakeOrchestrator
+    ) -> None:
+        fake.auto_prewarm = False
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        await drain(sm)  # rows → pulling,jobs → running
+        fake.set_prewarm_state("fake-kata-node-1", IMAGE_REF, "failed")
+
+        counts = await prewarm_patrol(sm)
+        assert counts["failed"] == 1
+        rows = await cache_rows(sm)
+        failed = [r for r in rows if r.status == "failed"]
+        assert len(failed) == 1
+        assert "ErrImagePull" in (failed[0].last_error or "")
+
+        # 节流窗口内不自动重试
+        counts = await prewarm_patrol(sm)
+        assert counts["requeued"] == 0
+
+        # 回拨 updated_at 超过 30min → 自动回 pending 并重新入队
+        async with sm() as session:
+            await session.execute(
+                update(ImageNodeCache)
+                .where(ImageNodeCache.id == failed[0].id)
+                .values(updated_at=now_utc() - timedelta(minutes=31))
+            )
+            await session.commit()
+        counts = await prewarm_patrol(sm)
+        assert counts["requeued"] == 1
+        assert await pending_tasks(sm) == 1
+
+    async def test_absent_job_requeued(self, sm, fake: FakeOrchestrator) -> None:
+        """Job 被 TTL 清理(pulling 行悬置)→ 巡检回 pending 重派。"""
+        fake.auto_prewarm = False
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        await drain(sm)
+        fake.prewarm_jobs.clear()  # 模拟 TTL 清理
+        counts = await prewarm_patrol(sm)
+        assert counts["requeued"] == 3
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["pending"] * 3
+
+
+class TestPrewarmLifecycle:
+    async def test_disable_image_removes_rows(self, sm, fake: FakeOrchestrator) -> None:
+        image_id = await make_image(sm)
+        await prewarm_patrol(sm)
+        assert len(await cache_rows(sm)) == 3
+        async with sm() as session:
+            img = await session.get(PlatformImage, image_id)
+            assert img is not None
+            img.prewarm_enabled = False
+            await session.commit()
+        counts = await prewarm_patrol(sm)
+        assert counts["removed"] == 3
+        assert await cache_rows(sm) == []
+
+    async def test_node_scaling(self, sm, fake: FakeOrchestrator) -> None:
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        assert len(await cache_rows(sm)) == 3
+        # 新节点加入(新池)→ 补行;节点消失 → 行删除
+        fake.pool_capacity["kata2"] = 8
+        counts = await prewarm_patrol(sm)
+        assert counts["planned"] == 1
+        assert len(await cache_rows(sm)) == 4
+        del fake.pool_capacity["kata2"]
+        counts = await prewarm_patrol(sm)
+        assert counts["removed"] == 1
+        assert len(await cache_rows(sm)) == 3
+
+    async def test_recheck_window_requeues_cached(self, sm, fake: FakeOrchestrator) -> None:
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        await drain(sm)
+        await prewarm_patrol(sm)  # 全部 cached
+        async with sm() as session:
+            await session.execute(
+                update(ImageNodeCache).values(checked_at=now_utc() - timedelta(hours=25))
+            )
+            await session.commit()
+        counts = await prewarm_patrol(sm)  # 默认复检窗口 24h
+        assert counts["requeued"] == 3
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["pending"] * 3

@@ -13,6 +13,14 @@ SETTLEMENT_FAILED_TOTAL = Counter(
     "superdl_settlement_failed_total", "结算失败次数(小时结算/日结按 kind 区分)", ["kind"]
 )
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
+PREWARM_NODES = Gauge(
+    "superdl_prewarm_nodes",
+    "每镜像×状态的节点数(预热覆盖;巡检末尾全量刷新)",
+    ["image_ref", "status"],
+)
+PREWARM_FAILED_TOTAL = Counter(
+    "superdl_prewarm_failed_total", "镜像预热拉取失败次数", ["image_ref"]
+)
 PAYMENT_CALLBACK_MISMATCH_TOTAL = Counter(
     "superdl_payment_callback_mismatch_total", "支付回调金额与订单不符次数"
 )
