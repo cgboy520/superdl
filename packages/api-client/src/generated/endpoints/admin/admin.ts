@@ -27,6 +27,7 @@ import type {
   AdminAlertOut,
   AdminAuditLogApiAdminV1AuditGetParams,
   AdminForceStopRequest,
+  AdminImageOut,
   AdminInstanceOut,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
@@ -39,6 +40,10 @@ import type {
   AuditLogOut,
   DeadTaskOut,
   HTTPValidationError,
+  ImageCreate,
+  ImageDeleteRequest,
+  ImageNodeCacheOut,
+  ImageUpdate,
   InstanceOut,
   NodeOut,
   OrderBackfillOut,
@@ -52,6 +57,7 @@ import type {
   PlatformConfigUpdateRequest,
   PoliciesAdminOut,
   PolicyUpdateRequest,
+  PrewarmEnqueuedOut,
   ReconciliationApiAdminV1ReconciliationGetParams,
   ReconciliationOut,
   RevenueReportApiAdminV1ReportsRevenueGetParams,
@@ -1104,6 +1110,624 @@ export function useAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost<TDat
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryOptions(orderNo,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListImagesApiAdminV1ImagesGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/images`
+}
+
+/**
+ * 镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。
+ * @summary Admin List Images
+ */
+export const adminListImagesApiAdminV1ImagesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminImageOut[]> => {
+
+  return customFetch<AdminImageOut[]>(getAdminListImagesApiAdminV1ImagesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListImagesApiAdminV1ImagesGetQueryKey = () => {
+    return [
+    `/api/admin/v1/images`
+    ] as const;
+    }
+
+
+export const getAdminListImagesApiAdminV1ImagesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListImagesApiAdminV1ImagesGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>> = ({ signal }) => adminListImagesApiAdminV1ImagesGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListImagesApiAdminV1ImagesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>>
+export type AdminListImagesApiAdminV1ImagesGetQueryError = unknown
+
+
+export function useAdminListImagesApiAdminV1ImagesGet<TData = Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListImagesApiAdminV1ImagesGet<TData = Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListImagesApiAdminV1ImagesGet<TData = Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Images
+ */
+
+export function useAdminListImagesApiAdminV1ImagesGet<TData = Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListImagesApiAdminV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListImagesApiAdminV1ImagesGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCreateImageApiAdminV1ImagesPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/images`
+}
+
+/**
+ * @summary Admin Create Image
+ */
+export const adminCreateImageApiAdminV1ImagesPost = async (imageCreate: ImageCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdminImageOut> => {
+
+  return customFetch<AdminImageOut>(getAdminCreateImageApiAdminV1ImagesPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(imageCreate)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateImageApiAdminV1ImagesPostQueryKey = (imageCreate?: ImageCreate,) => {
+    return [
+    'POST', `/api/admin/v1/images`, imageCreate
+    ] as const;
+    }
+
+
+export const getAdminCreateImageApiAdminV1ImagesPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError = HTTPValidationError>(imageCreate: ImageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminCreateImageApiAdminV1ImagesPostQueryKey(imageCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>> = ({ signal }) => adminCreateImageApiAdminV1ImagesPost(imageCreate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminCreateImageApiAdminV1ImagesPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>>
+export type AdminCreateImageApiAdminV1ImagesPostQueryError = HTTPValidationError
+
+
+export function useAdminCreateImageApiAdminV1ImagesPost<TData = Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError = HTTPValidationError>(
+ imageCreate: ImageCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateImageApiAdminV1ImagesPost<TData = Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError = HTTPValidationError>(
+ imageCreate: ImageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateImageApiAdminV1ImagesPost<TData = Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError = HTTPValidationError>(
+ imageCreate: ImageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Create Image
+ */
+
+export function useAdminCreateImageApiAdminV1ImagesPost<TData = Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError = HTTPValidationError>(
+ imageCreate: ImageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateImageApiAdminV1ImagesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminCreateImageApiAdminV1ImagesPostQueryOptions(imageCreate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminDeleteImageApiAdminV1ImagesImageIdDeleteUrl = (imageId: number,) => {
+
+
+
+
+  return `/api/admin/v1/images/${imageId}`
+}
+
+/**
+ * 删除目录条目(cache 行 CASCADE;运行中实例存 image_ref 快照不受影响)。reason 必填。
+ * @summary Admin Delete Image
+ */
+export const adminDeleteImageApiAdminV1ImagesImageIdDelete = async (imageId: number,
+    imageDeleteRequest: ImageDeleteRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminDeleteImageApiAdminV1ImagesImageIdDeleteUrl(imageId),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(imageDeleteRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminDeleteImageApiAdminV1ImagesImageIdDeleteQueryKey = (imageId: number,
+    imageDeleteRequest?: ImageDeleteRequest,) => {
+    return [
+    'DELETE', `/api/admin/v1/images/${imageId}`, imageDeleteRequest
+    ] as const;
+    }
+
+
+export const getAdminDeleteImageApiAdminV1ImagesImageIdDeleteQueryOptions = <TData = Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError = HTTPValidationError>(imageId: number,
+    imageDeleteRequest: ImageDeleteRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminDeleteImageApiAdminV1ImagesImageIdDeleteQueryKey(imageId,imageDeleteRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>> = ({ signal }) => adminDeleteImageApiAdminV1ImagesImageIdDelete(imageId,imageDeleteRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: imageId !== null && imageId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminDeleteImageApiAdminV1ImagesImageIdDeleteQueryResult = NonNullable<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>>
+export type AdminDeleteImageApiAdminV1ImagesImageIdDeleteQueryError = HTTPValidationError
+
+
+export function useAdminDeleteImageApiAdminV1ImagesImageIdDelete<TData = Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageDeleteRequest: ImageDeleteRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>,
+          TError,
+          Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminDeleteImageApiAdminV1ImagesImageIdDelete<TData = Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageDeleteRequest: ImageDeleteRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>,
+          TError,
+          Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminDeleteImageApiAdminV1ImagesImageIdDelete<TData = Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageDeleteRequest: ImageDeleteRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Delete Image
+ */
+
+export function useAdminDeleteImageApiAdminV1ImagesImageIdDelete<TData = Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageDeleteRequest: ImageDeleteRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminDeleteImageApiAdminV1ImagesImageIdDelete>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminDeleteImageApiAdminV1ImagesImageIdDeleteQueryOptions(imageId,imageDeleteRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdateImageApiAdminV1ImagesImageIdPatchUrl = (imageId: number,) => {
+
+
+
+
+  return `/api/admin/v1/images/${imageId}`
+}
+
+/**
+ * @summary Admin Update Image
+ */
+export const adminUpdateImageApiAdminV1ImagesImageIdPatch = async (imageId: number,
+    imageUpdate: ImageUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminImageOut> => {
+
+  return customFetch<AdminImageOut>(getAdminUpdateImageApiAdminV1ImagesImageIdPatchUrl(imageId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(imageUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateImageApiAdminV1ImagesImageIdPatchQueryKey = (imageId: number,
+    imageUpdate?: ImageUpdate,) => {
+    return [
+    'PATCH', `/api/admin/v1/images/${imageId}`, imageUpdate
+    ] as const;
+    }
+
+
+export const getAdminUpdateImageApiAdminV1ImagesImageIdPatchQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError = HTTPValidationError>(imageId: number,
+    imageUpdate: ImageUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdateImageApiAdminV1ImagesImageIdPatchQueryKey(imageId,imageUpdate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>> = ({ signal }) => adminUpdateImageApiAdminV1ImagesImageIdPatch(imageId,imageUpdate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: imageId !== null && imageId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUpdateImageApiAdminV1ImagesImageIdPatchQueryResult = NonNullable<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>>
+export type AdminUpdateImageApiAdminV1ImagesImageIdPatchQueryError = HTTPValidationError
+
+
+export function useAdminUpdateImageApiAdminV1ImagesImageIdPatch<TData = Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageUpdate: ImageUpdate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateImageApiAdminV1ImagesImageIdPatch<TData = Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageUpdate: ImageUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateImageApiAdminV1ImagesImageIdPatch<TData = Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageUpdate: ImageUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Update Image
+ */
+
+export function useAdminUpdateImageApiAdminV1ImagesImageIdPatch<TData = Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError = HTTPValidationError>(
+ imageId: number,
+    imageUpdate: ImageUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateImageApiAdminV1ImagesImageIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUpdateImageApiAdminV1ImagesImageIdPatchQueryOptions(imageId,imageUpdate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminImageNodesApiAdminV1ImagesImageIdNodesGetUrl = (imageId: number,) => {
+
+
+
+
+  return `/api/admin/v1/images/${imageId}/nodes`
+}
+
+/**
+ * 每节点缓存明细(failed 行含 last_error)。
+ * @summary Admin Image Nodes
+ */
+export const adminImageNodesApiAdminV1ImagesImageIdNodesGet = async (imageId: number, options?: Parameters<typeof customFetch>[1]): Promise<ImageNodeCacheOut[]> => {
+
+  return customFetch<ImageNodeCacheOut[]>(getAdminImageNodesApiAdminV1ImagesImageIdNodesGetUrl(imageId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminImageNodesApiAdminV1ImagesImageIdNodesGetQueryKey = (imageId: number,) => {
+    return [
+    `/api/admin/v1/images/${imageId}/nodes`
+    ] as const;
+    }
+
+
+export const getAdminImageNodesApiAdminV1ImagesImageIdNodesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError = HTTPValidationError>(imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminImageNodesApiAdminV1ImagesImageIdNodesGetQueryKey(imageId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>> = ({ signal }) => adminImageNodesApiAdminV1ImagesImageIdNodesGet(imageId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: imageId !== null && imageId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminImageNodesApiAdminV1ImagesImageIdNodesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>>
+export type AdminImageNodesApiAdminV1ImagesImageIdNodesGetQueryError = HTTPValidationError
+
+
+export function useAdminImageNodesApiAdminV1ImagesImageIdNodesGet<TData = Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError = HTTPValidationError>(
+ imageId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminImageNodesApiAdminV1ImagesImageIdNodesGet<TData = Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError = HTTPValidationError>(
+ imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminImageNodesApiAdminV1ImagesImageIdNodesGet<TData = Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError = HTTPValidationError>(
+ imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Image Nodes
+ */
+
+export function useAdminImageNodesApiAdminV1ImagesImageIdNodesGet<TData = Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError = HTTPValidationError>(
+ imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminImageNodesApiAdminV1ImagesImageIdNodesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminImageNodesApiAdminV1ImagesImageIdNodesGetQueryOptions(imageId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostUrl = (imageId: number,) => {
+
+
+
+
+  return `/api/admin/v1/images/${imageId}/prewarm`
+}
+
+/**
+ * 立即预热:非 cached 行置 pending 并同事务入队(请求路径零 K8s 调用)。
+ * @summary Admin Prewarm Image
+ */
+export const adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost = async (imageId: number, options?: Parameters<typeof customFetch>[1]): Promise<PrewarmEnqueuedOut> => {
+
+  return customFetch<PrewarmEnqueuedOut>(getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostUrl(imageId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostQueryKey = (imageId: number,) => {
+    return [
+    'POST', `/api/admin/v1/images/${imageId}/prewarm`
+    ] as const;
+    }
+
+
+export const getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostQueryOptions = <TData = Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError = HTTPValidationError>(imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostQueryKey(imageId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>> = ({ signal }) => adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost(imageId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: imageId !== null && imageId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>>
+export type AdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostQueryError = HTTPValidationError
+
+
+export function useAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost<TData = Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError = HTTPValidationError>(
+ imageId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost<TData = Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError = HTTPValidationError>(
+ imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost<TData = Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError = HTTPValidationError>(
+ imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Prewarm Image
+ */
+
+export function useAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost<TData = Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError = HTTPValidationError>(
+ imageId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminPrewarmImageApiAdminV1ImagesImageIdPrewarmPostQueryOptions(imageId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

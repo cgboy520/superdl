@@ -59,6 +59,7 @@ export const getListImagesApiV1ImagesGetUrl = () => {
 
 /**
  * 平台镜像目录(框架→版本→Python→CUDA 级联数据源)。
+ * is_prewarmed 为真实计算值(WP22:节点覆盖率达标才标「预热镜像,秒级启动」)。
  * @summary List Images
  */
 export const listImagesApiV1ImagesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<ImageOut[]> => {

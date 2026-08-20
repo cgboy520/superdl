@@ -46,11 +46,6 @@ class PlatformImage(Base):
     prewarm_enabled: Mapped[bool] = mapped_column(default=True)  # 管理员意图:是否参与全节点预热
     sort: Mapped[int] = mapped_column(default=0)
 
-    @property
-    def is_prewarmed(self) -> bool:
-        """ImageOut(from_attributes) 兼容别名;覆盖率计算在 service 层(零 cache 行回落此值)。"""
-        return self.prewarm_enabled
-
 
 class ImageNodeCache(Base):
     """每镜像×每节点的缓存状态(WP22)。由 prewarm_patrol 巡检铺行/收敛,

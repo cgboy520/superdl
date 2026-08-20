@@ -109,6 +109,27 @@ class ImageOut(BaseModel):
     python_version: str
     cuda_version: str
     image_ref: str
+    # WP22 起为计算值:prewarm_enabled 且节点覆盖率达标(零 cache 行时回落 prewarm_enabled)
     is_prewarmed: bool
 
     model_config = {"from_attributes": True}
+
+
+class ImageCreate(BaseModel):
+    framework: str = Field(min_length=1, max_length=32)
+    framework_version: str = Field(min_length=1, max_length=32)
+    python_version: str = Field(min_length=1, max_length=16)
+    cuda_version: str = Field(min_length=1, max_length=16)
+    image_ref: str = Field(min_length=3, max_length=256)
+    prewarm_enabled: bool = True
+    sort: int = Field(default=0, ge=0, le=9999)
+
+
+class ImageUpdate(BaseModel):
+    framework: str | None = Field(default=None, min_length=1, max_length=32)
+    framework_version: str | None = Field(default=None, min_length=1, max_length=32)
+    python_version: str | None = Field(default=None, min_length=1, max_length=16)
+    cuda_version: str | None = Field(default=None, min_length=1, max_length=16)
+    image_ref: str | None = Field(default=None, min_length=3, max_length=256)
+    prewarm_enabled: bool | None = None
+    sort: int | None = Field(default=None, ge=0, le=9999)

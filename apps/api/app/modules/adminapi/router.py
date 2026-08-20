@@ -10,6 +10,7 @@ from app.modules.adminapi.schemas import (
     AdjustmentOut,
     AdjustmentStatusOut,
     AdminAlertOut,
+    AdminImageOut,
     AdminLoginRequest,
     AdminOrderOut,
     AdminOut,
@@ -17,6 +18,8 @@ from app.modules.adminapi.schemas import (
     AnnouncementResultOut,
     AuditLogOut,
     DeadTaskOut,
+    ImageCoverageOut,
+    ImageNodeCacheOut,
     NodeOut,
     OrderBackfillOut,
     OrderVerifyOut,
@@ -26,6 +29,7 @@ from app.modules.adminapi.schemas import (
     PlatformConfigItemOut,
     PlatformConfigOut,
     PoliciesAdminOut,
+    PrewarmEnqueuedOut,
     ReconciliationOut,
     RevenueReportOut,
     SmsTestOut,
@@ -34,7 +38,13 @@ from app.modules.adminapi.schemas import (
     UpdatedKeysOut,
 )
 from app.modules.catalog import service as catalog_service
-from app.modules.catalog.schemas import SkuAdminOut, SkuCreate, SkuUpdate
+from app.modules.catalog.schemas import (
+    ImageCreate,
+    ImageUpdate,
+    SkuAdminOut,
+    SkuCreate,
+    SkuUpdate,
+)
 from app.modules.metering import service as metering_service
 from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import (
@@ -84,6 +94,89 @@ async def admin_update_sku(
         request, f"sku:{sku.id}", detail=body.model_dump(exclude_unset=True, mode="json")
     )
     return SkuAdminOut.model_validate(sku)
+
+
+# ---------- 镜像与预热(WP22;读:ops/readonly,写:ops,admin 恒许) ----------
+
+
+class ImageDeleteRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=256)
+
+
+def _admin_image_out(img, coverage: dict[int, tuple[int, int, int]]) -> AdminImageOut:
+    cached, total, failed = coverage.get(img.id, (0, 0, 0))
+    return AdminImageOut(
+        id=img.id,
+        framework=img.framework,
+        framework_version=img.framework_version,
+        python_version=img.python_version,
+        cuda_version=img.cuda_version,
+        image_ref=img.image_ref,
+        prewarm_enabled=img.prewarm_enabled,
+        sort=img.sort,
+        coverage=ImageCoverageOut(
+            cached=cached, total=total, pct=(cached * 100 // total) if total else 0
+        ),
+        failed_nodes=failed,
+    )
+
+
+@router.get("/images", dependencies=[require_roles("ops", "readonly")])
+async def admin_list_images(session: DbSession) -> list[AdminImageOut]:
+    """镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。"""
+    images = await catalog_service.list_images(session)
+    coverage = await catalog_service.image_coverage(session)
+    return [_admin_image_out(img, coverage) for img in images]
+
+
+@router.post("/images", dependencies=[require_roles("ops")], status_code=201)
+async def admin_create_image(
+    body: ImageCreate, session: DbSession, request: Request
+) -> AdminImageOut:
+    img = await catalog_service.admin_create_image(session, body)
+    set_audit_target(request, f"image:{img.id}", detail={"image_ref": img.image_ref})
+    return _admin_image_out(img, {})
+
+
+@router.patch("/images/{image_id}", dependencies=[require_roles("ops")])
+async def admin_update_image(
+    image_id: int, body: ImageUpdate, session: DbSession, request: Request
+) -> AdminImageOut:
+    img = await catalog_service.admin_update_image(session, image_id, body)
+    set_audit_target(
+        request, f"image:{img.id}", detail=body.model_dump(exclude_unset=True, mode="json")
+    )
+    coverage = await catalog_service.image_coverage(session)
+    return _admin_image_out(img, coverage)
+
+
+@router.delete("/images/{image_id}", dependencies=[require_roles("ops")], status_code=204)
+async def admin_delete_image(
+    image_id: int, body: ImageDeleteRequest, session: DbSession, request: Request
+) -> None:
+    """删除目录条目(cache 行 CASCADE;运行中实例存 image_ref 快照不受影响)。reason 必填。"""
+    img = await catalog_service.get_image(session, image_id)
+    set_audit_target(
+        request, f"image:{image_id}", detail={"image_ref": img.image_ref, "reason": body.reason}
+    )
+    await catalog_service.admin_delete_image(session, image_id)
+
+
+@router.post("/images/{image_id}/prewarm", dependencies=[require_roles("ops")])
+async def admin_prewarm_image(
+    image_id: int, session: DbSession, request: Request
+) -> PrewarmEnqueuedOut:
+    """立即预热:非 cached 行置 pending 并同事务入队(请求路径零 K8s 调用)。"""
+    enqueued = await catalog_service.admin_prewarm_image(session, image_id)
+    set_audit_target(request, f"image:{image_id}", detail={"enqueued": enqueued})
+    return PrewarmEnqueuedOut(enqueued=enqueued)
+
+
+@router.get("/images/{image_id}/nodes", dependencies=[require_roles("ops", "readonly")])
+async def admin_image_nodes(image_id: int, session: DbSession) -> list[ImageNodeCacheOut]:
+    """每节点缓存明细(failed 行含 last_error)。"""
+    rows = await catalog_service.image_node_rows(session, image_id)
+    return [ImageNodeCacheOut.model_validate(r) for r in rows]
 
 
 # ---------- 全局实例(角色:admin / ops) ----------

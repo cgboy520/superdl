@@ -189,6 +189,63 @@
         "title": "AdminForceStopRequest",
         "type": "object"
       },
+      "AdminImageOut": {
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/ImageCoverageOut"
+          },
+          "cuda_version": {
+            "title": "Cuda Version",
+            "type": "string"
+          },
+          "failed_nodes": {
+            "title": "Failed Nodes",
+            "type": "integer"
+          },
+          "framework": {
+            "title": "Framework",
+            "type": "string"
+          },
+          "framework_version": {
+            "title": "Framework Version",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "image_ref": {
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "prewarm_enabled": {
+            "title": "Prewarm Enabled",
+            "type": "boolean"
+          },
+          "python_version": {
+            "title": "Python Version",
+            "type": "string"
+          },
+          "sort": {
+            "title": "Sort",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "framework",
+          "framework_version",
+          "python_version",
+          "cuda_version",
+          "image_ref",
+          "prewarm_enabled",
+          "sort",
+          "coverage",
+          "failed_nodes"
+        ],
+        "title": "AdminImageOut",
+        "type": "object"
+      },
       "AdminInstanceOut": {
         "description": "管理端全局实例视图:含租户与调度节点(不暴露给用户端)。",
         "properties": {
@@ -854,6 +911,149 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ImageCoverageOut": {
+        "description": "预热覆盖(WP22):cached/total 节点数与百分比(total=巡检登记的目标节点数)。",
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "integer"
+          },
+          "pct": {
+            "title": "Pct",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cached",
+          "total",
+          "pct"
+        ],
+        "title": "ImageCoverageOut",
+        "type": "object"
+      },
+      "ImageCreate": {
+        "properties": {
+          "cuda_version": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Cuda Version",
+            "type": "string"
+          },
+          "framework": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Framework",
+            "type": "string"
+          },
+          "framework_version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Framework Version",
+            "type": "string"
+          },
+          "image_ref": {
+            "maxLength": 256,
+            "minLength": 3,
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "prewarm_enabled": {
+            "default": true,
+            "title": "Prewarm Enabled",
+            "type": "boolean"
+          },
+          "python_version": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Python Version",
+            "type": "string"
+          },
+          "sort": {
+            "default": 0,
+            "maximum": 9999.0,
+            "minimum": 0.0,
+            "title": "Sort",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "framework",
+          "framework_version",
+          "python_version",
+          "cuda_version",
+          "image_ref"
+        ],
+        "title": "ImageCreate",
+        "type": "object"
+      },
+      "ImageDeleteRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ImageDeleteRequest",
+        "type": "object"
+      },
+      "ImageNodeCacheOut": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name",
+          "status",
+          "last_error",
+          "checked_at",
+          "updated_at"
+        ],
+        "title": "ImageNodeCacheOut",
+        "type": "object"
+      },
       "ImageOut": {
         "properties": {
           "cuda_version": {
@@ -895,6 +1095,101 @@
           "is_prewarmed"
         ],
         "title": "ImageOut",
+        "type": "object"
+      },
+      "ImageUpdate": {
+        "properties": {
+          "cuda_version": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Version"
+          },
+          "framework": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Framework"
+          },
+          "framework_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Framework Version"
+          },
+          "image_ref": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Ref"
+          },
+          "prewarm_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prewarm Enabled"
+          },
+          "python_version": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Version"
+          },
+          "sort": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort"
+          }
+        },
+        "title": "ImageUpdate",
         "type": "object"
       },
       "InstanceAccessOut": {
@@ -1980,6 +2275,19 @@
           "reason"
         ],
         "title": "PolicyUpdateRequest",
+        "type": "object"
+      },
+      "PrewarmEnqueuedOut": {
+        "properties": {
+          "enqueued": {
+            "title": "Enqueued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enqueued"
+        ],
+        "title": "PrewarmEnqueuedOut",
         "type": "object"
       },
       "RealNameRequest": {
@@ -3610,6 +3918,287 @@
         ]
       }
     },
+    "/api/admin/v1/images": {
+      "get": {
+        "description": "镜像目录 + 每镜像预热覆盖率(纯 DB 聚合,不调 K8s)。",
+        "operationId": "admin_list_images_api_admin_v1_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminImageOut"
+                  },
+                  "title": "Response Admin List Images Api Admin V1 Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Images",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "admin_create_image_api_admin_v1_images_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Create Image",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/images/{image_id}": {
+      "delete": {
+        "description": "删除目录条目(cache 行 CASCADE;运行中实例存 image_ref 快照不受影响)。reason 必填。",
+        "operationId": "admin_delete_image_api_admin_v1_images__image_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Delete Image",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "operationId": "admin_update_image_api_admin_v1_images__image_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Update Image",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/images/{image_id}/nodes": {
+      "get": {
+        "description": "每节点缓存明细(failed 行含 last_error)。",
+        "operationId": "admin_image_nodes_api_admin_v1_images__image_id__nodes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImageNodeCacheOut"
+                  },
+                  "title": "Response Admin Image Nodes Api Admin V1 Images  Image Id  Nodes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Image Nodes",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/images/{image_id}/prewarm": {
+      "post": {
+        "description": "立即预热:非 cached 行置 pending 并同事务入队(请求路径零 K8s 调用)。",
+        "operationId": "admin_prewarm_image_api_admin_v1_images__image_id__prewarm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrewarmEnqueuedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Prewarm Image",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/instances": {
       "get": {
         "operationId": "admin_list_instances_api_admin_v1_instances_get",
@@ -5135,7 +5724,7 @@
     },
     "/api/v1/images": {
       "get": {
-        "description": "平台镜像目录(框架→版本→Python→CUDA 级联数据源)。",
+        "description": "平台镜像目录(框架→版本→Python→CUDA 级联数据源)。\nis_prewarmed 为真实计算值(WP22:节点覆盖率达标才标「预热镜像,秒级启动」)。",
         "operationId": "list_images_api_v1_images_get",
         "responses": {
           "200": {

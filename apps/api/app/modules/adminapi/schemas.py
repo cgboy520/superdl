@@ -57,6 +57,41 @@ class NodeOut(BaseModel):
     status: str
 
 
+class ImageCoverageOut(BaseModel):
+    """预热覆盖(WP22):cached/total 节点数与百分比(total=巡检登记的目标节点数)。"""
+
+    cached: int
+    total: int
+    pct: int
+
+
+class AdminImageOut(BaseModel):
+    id: int
+    framework: str
+    framework_version: str
+    python_version: str
+    cuda_version: str
+    image_ref: str
+    prewarm_enabled: bool
+    sort: int
+    coverage: ImageCoverageOut
+    failed_nodes: int
+
+
+class ImageNodeCacheOut(BaseModel):
+    node_name: str
+    status: str  # pending / pulling / cached / failed
+    last_error: str | None
+    checked_at: datetime | None
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PrewarmEnqueuedOut(BaseModel):
+    enqueued: int
+
+
 class OversellPoolOut(BaseModel):
     pool: str
     physical_gpus: int
