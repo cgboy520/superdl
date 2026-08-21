@@ -83,7 +83,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
     if instance.status == sm_def.STOPPED:
         estimate = as_amount(instance.price_hourly * instance.gpu_count)
         await billing_service.require_balance_at_least(
-            session, instance.user_id, estimate, hint="重启需要至少 1 小时预估费用"
+            session, instance.user_id, estimate, hint_key="billing.insufficientForRestart"
         )
         await transition(
             session,

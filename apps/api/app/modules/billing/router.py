@@ -51,7 +51,7 @@ def _parse_month(month: str) -> tuple[datetime, datetime]:
     try:
         start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "月份格式应为 YYYY-MM") from exc
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badMonthFormat") from exc
     end = (
         start.replace(year=start.year + 1, month=1)
         if start.month == 12
@@ -178,7 +178,7 @@ async def bill_daily_summary(
     try:
         local_midnight = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "日期格式应为 YYYY-MM-DD") from exc
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badDateFormat") from exc
     start = local_midnight - timedelta(minutes=tz_offset_minutes)
     end = start + timedelta(days=1)
     gpu_rows = (
@@ -236,7 +236,7 @@ async def create_recharge(
     if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
         raise AppError(
             ErrorCode.REAL_NAME_REQUIRED,
-            "按监管要求,充值前需完成实名认证",
+            key="billing.realNameRequiredForRecharge",
             http_status=403,
         )
     order = await payment_service.create_recharge(

@@ -96,7 +96,9 @@ class MockChannel:
                 success=bool(data.get("success", True)),
             )
         except (ValueError, KeyError) as exc:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "mock 回调解析失败") from exc
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockCallbackParseFailed"
+            ) from exc
         if result.success:
             self.mark_paid(result.order_no, result.channel_txn_id, result.amount)
         return result
@@ -140,14 +142,12 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         )
         if not all(cfg[k] for k in required):
             raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, "微信支付商户凭据不完整(管理端·平台配置)"
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCredentialsIncomplete"
             )
         public_key = cfg["wechat_public_key"] or None
         public_key_id = cfg["wechat_public_key_id"] or None
         if bool(public_key) != bool(public_key_id):
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, "微信支付公钥模式需同时配置公钥与公钥 ID"
-            )
+            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatPublicKeyPair")
         from wechatpayv3 import WeChatPay, WeChatPayType  # type: ignore[import-untyped]
 
         self._wxpay = WeChatPay(
@@ -176,7 +176,11 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         import json
 
         if code != 200:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, f"微信下单失败:{message}")
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR,
+                key="billing.wechatCreateFailed",
+                params={"message": message},
+            )
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
@@ -185,7 +189,9 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
 
         result: Any = await asyncio.to_thread(self._wxpay.callback, headers, body)
         if not isinstance(result, dict) or result.get("event_type") != "TRANSACTION.SUCCESS":
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "微信回调验签失败")
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            )
         resource: dict[str, Any] = result["resource"]
         return CallbackResult(
             order_no=resource["out_trade_no"],
@@ -200,7 +206,11 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
 
         code, message = await asyncio.to_thread(self._wxpay.query, out_trade_no=order.order_no)
         if code != 200:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, f"微信查单失败:{message}")
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR,
+                key="billing.wechatQueryFailed",
+                params={"message": message},
+            )
         data = json.loads(message)
         state = data.get("trade_state")
         if state == "SUCCESS":
@@ -228,7 +238,9 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
 
     def __init__(self, cfg: Mapping[str, str]) -> None:
         if not (cfg["alipay_app_id"] and cfg["alipay_private_key"] and cfg["alipay_public_key"]):
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "支付宝商户凭据不完整(管理端·平台配置)")
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCredentialsIncomplete"
+            )
         from alipay.aop.api.AlipayClientConfig import (
             AlipayClientConfig,  # type: ignore[import-untyped]
         )
@@ -270,11 +282,16 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         try:
             resp = json.loads(await asyncio.to_thread(self._client.execute, req))
         except Exception as exc:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, f"支付宝下单失败:{exc}") from exc
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR,
+                key="billing.alipayCreateFailed",
+                params={"message": str(exc)},
+            ) from exc
         if resp.get("code") != "10000":
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR,
-                f"支付宝下单失败:{resp.get('sub_msg') or resp.get('msg')}",
+                key="billing.alipayCreateFailed",
+                params={"message": resp.get("sub_msg") or resp.get("msg")},
             )
         return resp["qr_code"]
 
@@ -292,9 +309,13 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         try:
             ok = verify_with_rsa(self._public_key, message.encode("utf-8"), sign)
         except Exception as exc:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "支付宝回调验签失败") from exc
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
+            ) from exc
         if not ok:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "支付宝回调验签失败")
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
+            )
         return CallbackResult(
             order_no=params.get("out_trade_no", ""),
             channel_txn_id=params.get("trade_no", ""),
@@ -319,7 +340,11 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         try:
             resp = json.loads(await asyncio.to_thread(self._client.execute, req))
         except Exception as exc:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, f"支付宝查单失败:{exc}") from exc
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR,
+                key="billing.alipayQueryFailed",
+                params={"message": str(exc)},
+            ) from exc
         if resp.get("code") == "10000":
             status = resp.get("trade_status")
             if status in ("TRADE_SUCCESS", "TRADE_FINISHED"):
@@ -335,7 +360,8 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
             return QueryResult("pending")  # 用户未扫码,渠道侧尚无单
         raise AppError(
             ErrorCode.PAYMENT_CHANNEL_ERROR,
-            f"支付宝查单失败:{resp.get('sub_msg') or resp.get('msg')}",
+            key="billing.alipayQueryFailed",
+            params={"message": resp.get("sub_msg") or resp.get("msg")},
         )
 
 
@@ -348,10 +374,12 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     if name == "mock":
         # 生产环境无条件拒绝 mock(无验签渠道)
         if settings.environment == "prod" or not settings.payment_mock:
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "mock 渠道仅限开发环境")
+            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockDevOnly")
         return MockChannel()
     if name not in ("wechat", "alipay"):
-        raise AppError(ErrorCode.VALIDATION_ERROR, f"未知支付渠道:{name}")
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR, key="billing.unknownChannel", params={"name": name}
+        )
     cfg = await get_effective_platform_config(session)
     keys = WECHAT_CFG_KEYS if name == "wechat" else ALIPAY_CFG_KEYS
     fingerprint = tuple(cfg[k] for k in keys)

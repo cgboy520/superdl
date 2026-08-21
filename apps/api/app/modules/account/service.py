@@ -44,7 +44,8 @@ async def send_sms_code(
     if recent is not None:
         raise AppError(
             ErrorCode.SMS_TOO_FREQUENT,
-            f"发送过于频繁,请 {settings.sms_send_interval_seconds} 秒后再试",
+            key="account.smsTooFrequent",
+            params={"seconds": settings.sms_send_interval_seconds},
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
     cfg = await get_effective_platform_config(session)
@@ -67,7 +68,7 @@ async def send_sms_code(
         logger.error("sms_send_failed", phone=phone, error=str(exc))
         raise AppError(
             ErrorCode.SMS_SEND_FAILED,
-            "短信发送失败,请稍后重试",
+            key="account.smsSendFailed",
             http_status=status.HTTP_502_BAD_GATEWAY,
         ) from exc
 
@@ -93,11 +94,11 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
         )
     ).scalar_one_or_none()
     if row is None:
-        raise AppError(ErrorCode.SMS_CODE_INVALID, "验证码错误或已过期")
+        raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
     if row.attempts >= MAX_SMS_CODE_ATTEMPTS or not secrets.compare_digest(row.code, code):
         row.attempts += 1
         await session.commit()
-        raise AppError(ErrorCode.SMS_CODE_INVALID, "验证码错误或已过期")
+        raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
     row.used_at = now_utc()
 
 
@@ -120,13 +121,13 @@ async def register(
     client_ip: str | None = None,
 ) -> TokenPair:
     if not accept_terms:
-        raise AppError(ErrorCode.TERMS_NOT_ACCEPTED, "请先阅读并同意《用户协议》与《隐私政策》")
+        raise AppError(ErrorCode.TERMS_NOT_ACCEPTED, key="account.termsNotAccepted")
     check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
-        raise AppError(ErrorCode.PHONE_TAKEN, "该手机号已注册,请直接登录")
+        raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
     await _consume_sms_code(session, phone, sms_code, "register")
     user = User(phone=phone, password_hash=hash_password(password) if password else None)
     session.add(user)
@@ -148,21 +149,21 @@ async def login(
     check_rate_limit(f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0)
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if user is None:
-        raise AppError(ErrorCode.LOGIN_FAILED, "手机号或凭证错误")
+        raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
     if sms_code is not None:
         try:
             await _consume_sms_code(session, phone, sms_code, "login")
         except AppError as exc:
-            raise AppError(ErrorCode.LOGIN_FAILED, "手机号或验证码错误") from exc
+            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailedSms") from exc
         await session.commit()
     elif password is not None:
         if user.password_hash is None or not verify_password(password, user.password_hash):
-            raise AppError(ErrorCode.LOGIN_FAILED, "手机号或密码错误")
+            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailedPassword")
     else:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "需提供验证码或密码")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
     if user.status == "frozen":
         raise AppError(
-            ErrorCode.USER_FROZEN, "账号已被冻结,请联系客服", http_status=status.HTTP_403_FORBIDDEN
+            ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
     return _issue_tokens(user)
 
@@ -216,7 +217,7 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     )
 
     if user.verification_status == "verified":
-        raise AppError(ErrorCode.CONFLICT, "已完成实名认证,无需重复提交")
+        raise AppError(ErrorCode.CONFLICT, key="account.realNameDone")
     check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
     provider = await get_realname_provider(session)
     try:
@@ -226,11 +227,11 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
         logger.error("real_name_channel_error", user_id=user.id, error=str(exc))
         raise AppError(
             ErrorCode.REAL_NAME_CHANNEL_ERROR,
-            "实名核验服务暂不可用,请稍后重试",
+            key="account.realNameChannelError",
             http_status=status.HTTP_502_BAD_GATEWAY,
         ) from exc
     if not ok:
-        raise AppError(ErrorCode.REAL_NAME_MISMATCH, "实名信息与运营商记录不一致,请核对后重试")
+        raise AppError(ErrorCode.REAL_NAME_MISMATCH, key="account.realNameMismatch")
     user.id_name = name
     user.id_number = mask_id_number(id_number)
     user.verification_status = "verified"
@@ -267,7 +268,7 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
         await session.execute(select(SshKey).where(SshKey.fingerprint == fingerprint))
     ).scalar_one_or_none()
     if dup is not None:
-        raise AppError(ErrorCode.SSH_KEY_DUPLICATE, "该公钥已添加过")
+        raise AppError(ErrorCode.SSH_KEY_DUPLICATE, key="account.sshKeyDuplicate")
     key = SshKey(user_id=user_id, name=name, public_key=normalized, fingerprint=fingerprint)
     session.add(key)
     await session.commit()

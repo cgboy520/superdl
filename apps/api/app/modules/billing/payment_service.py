@@ -43,7 +43,9 @@ async def create_recharge(
     amount = as_amount(amount)
     if not MIN_RECHARGE <= amount <= MAX_RECHARGE:
         raise AppError(
-            ErrorCode.VALIDATION_ERROR, f"充值金额须在 {MIN_RECHARGE}~{MAX_RECHARGE} 元之间"
+            ErrorCode.VALIDATION_ERROR,
+            key="billing.rechargeAmountRange",
+            params={"min": MIN_RECHARGE, "max": MAX_RECHARGE},
         )
     if idempotency_key:
         existing = (
@@ -58,7 +60,7 @@ async def create_recharge(
 
     cfg = await get_effective_platform_config(session)
     if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "该支付渠道暂未开通,请选择其他支付方式")
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")
     channel = await get_channel(channel_name, session)
     order = Order(
         order_no=_gen_order_no(),
@@ -83,7 +85,7 @@ async def get_order(session: AsyncSession, user_id: int, order_no: str) -> Order
         )
     ).scalar_one_or_none()
     if order is None:
-        raise AppError(ErrorCode.ORDER_NOT_FOUND, "订单不存在", http_status=404)
+        raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     return order
 
 
@@ -104,7 +106,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         logger.warning("callback_on_closed_order", order_no=order.order_no, status=order.status)
         return "ok"
     if order.channel != channel_name:
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "回调渠道与订单不符")
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.callbackChannelMismatch")
     if as_amount(result.amount) != order.amount:
         logger.error(
             "callback_amount_mismatch",
@@ -113,7 +115,7 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
             got=str(result.amount),
         )
         PAYMENT_CALLBACK_MISMATCH_TOTAL.inc()
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, "回调金额与订单不符")
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.callbackAmountMismatch")
     if not result.success:
         order.status = "failed"
         await session.commit()
@@ -196,7 +198,7 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
         await session.execute(select(Order).where(Order.order_no == order_no))
     ).scalar_one_or_none()
     if order is None:
-        raise AppError(ErrorCode.ORDER_NOT_FOUND, "订单不存在", http_status=404)
+        raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     channel = await get_channel(order.channel, session)
     result = await channel.query_order(order)
     matches = (
@@ -224,19 +226,28 @@ async def backfill_order(session: AsyncSession, order_no: str) -> Order:
         await session.execute(select(Order).where(Order.order_no == order_no).with_for_update())
     ).scalar_one_or_none()
     if order is None:
-        raise AppError(ErrorCode.ORDER_NOT_FOUND, "订单不存在", http_status=404)
+        raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     if order.status == "paid":
-        raise AppError(ErrorCode.CONFLICT, "订单已入账,无需补单")
+        raise AppError(ErrorCode.CONFLICT, key="billing.orderAlreadyPaid")
     if order.status not in ("pending", "closed"):
-        raise AppError(ErrorCode.CONFLICT, f"订单状态 {order.status} 不可补单")
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="billing.orderStateNotBackfillable",
+            params={"status": order.status},
+        )
     channel = await get_channel(order.channel, session)
     result = await channel.query_order(order)
     if result.status != "paid" or not result.channel_txn_id or result.amount is None:
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, f"渠道侧状态为 {result.status},不能补单")
+        raise AppError(
+            ErrorCode.PAYMENT_CHANNEL_ERROR,
+            key="billing.channelStateNotBackfillable",
+            params={"status": result.status},
+        )
     if as_amount(result.amount) != order.amount:
         raise AppError(
             ErrorCode.PAYMENT_CHANNEL_ERROR,
-            f"渠道金额 {result.amount} 与订单金额 {order.amount} 不符,请走调账",
+            key="billing.amountMismatchAdjust",
+            params={"channel": str(result.amount), "order": str(order.amount)},
         )
     order.status = "paid"
     order.channel_txn_id = result.channel_txn_id

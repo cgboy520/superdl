@@ -171,7 +171,11 @@ async def create_instance(
     # 计费护栏:开机前校验余额 ≥ 1 小时预估费用
     estimate = as_amount(sku.price_hourly * gpu_count)
     await billing_service.require_balance_at_least(
-        session, user_id, estimate, hint=f"开机需要至少 1 小时预估费用 ¥{estimate}"
+        session,
+        user_id,
+        estimate,
+        hint_key="billing.insufficientForStart",
+        hint_params={"amount": estimate},
     )
 
     keys = await account_service.list_ssh_keys(session, user_id)
@@ -291,7 +295,11 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
     await billing_service.require_balance_at_least(
-        session, user_id, estimate, hint=f"开机需要至少 1 小时预估费用 ¥{estimate}"
+        session,
+        user_id,
+        estimate,
+        hint_key="billing.insufficientForStart",
+        hint_params={"amount": estimate},
     )
     await transition(session, instance, sm_def.STARTING, reason="user_start", actor="user")
     enqueue(session, "instance.start", {"instance_id": instance.id})

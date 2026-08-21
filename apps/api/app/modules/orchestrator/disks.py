@@ -30,7 +30,11 @@ async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: i
     price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)
     await billing_service.require_balance_at_least(
-        session, user_id, daily, hint=f"新建数据盘需要至少 1 日费用 ¥{daily}"
+        session,
+        user_id,
+        daily,
+        hint_key="billing.insufficientForDisk",
+        hint_params={"amount": daily},
     )
     disk_uuid = uuid4().hex
     disk = DataDisk(

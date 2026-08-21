@@ -4,7 +4,9 @@
 本文件函数不 commit —— 由调用方把余额变动放进业务事务。
 """
 
+from collections.abc import Mapping
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,7 +96,7 @@ async def debit(
     wallet = await lock_wallet(session, user_id)
     new_balance = as_amount(wallet.balance - amount)
     if not allow_negative and new_balance < 0:
-        raise AppError(ErrorCode.INSUFFICIENT_BALANCE, "余额不足,请先充值")
+        raise AppError(ErrorCode.INSUFFICIENT_BALANCE, key="billing.insufficientBalance")
     wallet.balance = new_balance
     session.add(_ledger(wallet, type_, -amount, ref_type, ref_id, remark))
     return wallet
@@ -108,14 +110,20 @@ async def get_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 async def require_balance_at_least(
-    session: AsyncSession, user_id: int, amount: Decimal, *, hint: str
+    session: AsyncSession,
+    user_id: int,
+    amount: Decimal,
+    *,
+    hint_key: str,
+    hint_params: Mapping[str, Any] | None = None,
 ) -> None:
     """开机前校验:余额 ≥ 预估费用。只读校验,不预占。"""
     balance = await get_balance(session, user_id)
     if balance < as_amount(amount):
         raise AppError(
             ErrorCode.INSUFFICIENT_BALANCE,
-            f"余额不足:{hint}",
+            key=hint_key,
+            params=hint_params,
             detail={"balance": format(balance, "f"), "required": format(as_amount(amount), "f")},
         )
 
