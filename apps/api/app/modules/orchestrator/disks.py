@@ -119,8 +119,12 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
 
 
 async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int, instance_id: int):
-    """实例创建时挂载校验 + 占用。同事务调用,不 commit。"""
-    disk = await session.get(DataDisk, disk_id)
+    """实例创建时挂载校验 + 占用。同事务调用,不 commit。
+
+    FOR UPDATE 锁盘行:读-判-写之间无锁时,两个并发创建可把同一块盘挂到两台实例
+    (同 subPath 双挂,数据互踩)。
+    """
+    disk = await session.get(DataDisk, disk_id, with_for_update=True)
     if disk is None or disk.user_id != user_id or disk.status == "deleted":
         raise not_found("数据盘不存在")
     if disk.status != "active":
