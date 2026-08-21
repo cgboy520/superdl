@@ -9,13 +9,15 @@ from app.core.db import Base
 
 
 class Wallet(Base):
-    """余额与冻结额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。"""
+    """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。"""
 
     __tablename__ = "wallets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(unique=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    # 恒为 0.00:development-plan 的表设计留了这一列,但同文档 §5「创建时不做预占,
+    # 以 K8s 调度结果为准」——MVP 没有任何路径写它。留列不留幻觉:要做预占再启用
     frozen_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

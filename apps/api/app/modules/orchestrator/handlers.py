@@ -6,7 +6,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.k8s import get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
-from app.core.outbox import OutboxTask, outbox_handler
+from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
@@ -127,7 +127,9 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
     # releasing → released 由 reconciler 在确认 Pod 消失后完成(含擦盘事件与端口回收)
 
 
-@outbox_handler("disk.wipe")
+# 擦盘是「轮询集群 Job 完成」,不是一次性调用:默认 5 次 ≈ 5 分钟的预算会让
+# 大盘还没擦完就进死信、盘永久卡 deleting。放宽到约 1.5 小时。
+@outbox_handler("disk.wipe", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     """真实擦除 JuiceFS 子路径(集群侧 Job)后置 deleted。
     wipe_disk 幂等:Job 未完成抛错 → outbox 退避重试,完成后本 handler 收尾状态。"""

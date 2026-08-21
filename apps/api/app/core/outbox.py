@@ -9,6 +9,7 @@ PostgreSQL 事务提交;worker 异步领取执行,失败指数退避,超限进 d
 """
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -26,7 +27,29 @@ logger = get_logger(__name__)
 
 MAX_RETRIES = 5
 BACKOFF_BASE_SECONDS = 10
+BACKOFF_MAX_SECONDS = 600  # 退避上限,防指数爆到「下次重试在几天后」
 RUNNING_TIMEOUT = timedelta(minutes=10)  # reaper:running 超时打回 pending
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """按任务类型的重试预算。默认 5 次 × 10s 指数退避 ≈ 5 分钟。
+
+    「等外部作业完成」型任务(如 disk.wipe 轮询集群 Job)需要显式放宽:
+    默认预算下大盘擦除还没跑完就已进死信,数据盘会永久卡在 deleting。
+    """
+
+    max_retries: int = MAX_RETRIES
+    backoff_base_seconds: int = BACKOFF_BASE_SECONDS
+    backoff_max_seconds: int = BACKOFF_MAX_SECONDS
+
+
+DEFAULT_RETRY_POLICY = RetryPolicy()
+_retry_policies: dict[str, RetryPolicy] = {}
+
+
+def retry_policy_for(task_type: str) -> RetryPolicy:
+    return _retry_policies.get(task_type, DEFAULT_RETRY_POLICY)
 
 
 class OutboxTask(Base):
@@ -52,13 +75,20 @@ Handler = Callable[[AsyncSession, "OutboxTask"], Awaitable[None]]
 _registry: dict[str, Handler] = {}
 
 
-def outbox_handler(task_type: str) -> Callable[[Handler], Handler]:
-    """注册 outbox 任务处理器。handler 必须幂等(会被至少一次执行)。"""
+def outbox_handler(
+    task_type: str, *, retry: RetryPolicy | None = None
+) -> Callable[[Handler], Handler]:
+    """注册 outbox 任务处理器。handler 必须幂等(会被至少一次执行)。
+
+    retry 覆盖该类型的重试预算(默认见 DEFAULT_RETRY_POLICY)。
+    """
 
     def deco(fn: Handler) -> Handler:
         if task_type in _registry:
             raise RuntimeError(f"duplicate outbox handler: {task_type}")
         _registry[task_type] = fn
+        if retry is not None:
+            _retry_policies[task_type] = retry
         return fn
 
     return deco
@@ -115,8 +145,9 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
                 update(OutboxTask).where(OutboxTask.id == task.id).values(status="done")
             )
         else:
+            policy = retry_policy_for(task.type)
             retries = task.retries + 1
-            if retries > MAX_RETRIES:
+            if retries > policy.max_retries:
                 logger.error("outbox_task_dead", task_id=task.id, task_type=task.type, error=error)
                 OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
                 await session.execute(
@@ -125,7 +156,12 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
                     .values(status="dead", retries=retries, last_error=error)
                 )
             else:
-                backoff = timedelta(seconds=BACKOFF_BASE_SECONDS * 2 ** (retries - 1))
+                backoff = timedelta(
+                    seconds=min(
+                        policy.backoff_base_seconds * 2 ** (retries - 1),
+                        policy.backoff_max_seconds,
+                    )
+                )
                 await session.execute(
                     update(OutboxTask)
                     .where(OutboxTask.id == task.id)
