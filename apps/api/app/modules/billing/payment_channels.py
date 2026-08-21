@@ -119,10 +119,15 @@ WECHAT_CFG_KEYS = (
     "wechat_public_key",
     "wechat_public_key_id",
 )
-ALIPAY_CFG_KEYS = ("alipay_app_id", "alipay_private_key", "alipay_public_key")
+ALIPAY_CFG_KEYS = (
+    "alipay_app_id",
+    "alipay_private_key",
+    "alipay_public_key",
+    "alipay_seller_id",
+)
 
 
-class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
+class WechatChannel:
     """微信支付 Native(扫码),APIv3。
 
     验签双模式(wechatpayv3 原生支持):配置了微信支付公钥 + 公钥 ID(PUB_KEY_ID_*)
@@ -131,7 +136,7 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
 
     name = "wechat"
 
-    def __init__(self, cfg: Mapping[str, str]) -> None:
+    def __init__(self, cfg: Mapping[str, str]) -> None:  # pragma: no cover - 需真实商户凭据
         required = (
             "wechat_mchid",
             "wechat_appid",
@@ -160,8 +165,10 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
             public_key=public_key,
             public_key_id=public_key_id,
         )
+        self._mchid = cfg["wechat_mchid"]
+        self._appid = cfg["wechat_appid"]
 
-    async def create_payment(self, order: "Order") -> str:
+    async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
         import asyncio
 
         # time_expire:渠道侧与本地 expires_at 同步过期(RFC3339,aware-UTC 直接序列化)
@@ -183,15 +190,35 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
+        """验签 + AES-GCM 解密 + 核对商户身份。这是这条无鉴权加钱接口**唯一**的防线。
+
+        SDK 的失败路径不都是返回值:缺 Wechatpay-Signature-Type 这类「未签名的探测请求」
+        会直接抛裸 Exception,不归一化就会以 500 落到全局 handler 上,既噪音也难排查。
+        """
         import asyncio
         from typing import Any
 
-        result: Any = await asyncio.to_thread(self._wxpay.callback, headers, body)
+        try:
+            result: Any = await asyncio.to_thread(self._wxpay.callback, headers, body)
+        except AppError:
+            raise
+        except Exception as exc:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            ) from exc
         if not isinstance(result, dict) or result.get("event_type") != "TRANSACTION.SUCCESS":
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
         resource: dict[str, Any] = result["resource"]
+        # 官方要求:除验签外还要核对通知里的商户号/应用号确实是自己的
+        if resource.get("mchid") not in (None, self._mchid) or resource.get("appid") not in (
+            None,
+            self._appid,
+        ):
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
+            )
         return CallbackResult(
             order_no=resource["out_trade_no"],
             channel_txn_id=resource["transaction_id"],
@@ -199,7 +226,7 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
             success=resource["trade_state"] == "SUCCESS",
         )
 
-    async def query_order(self, order: "Order") -> QueryResult:
+    async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
         import asyncio
         import json
 
@@ -225,7 +252,7 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
         return QueryResult("unknown")
 
 
-class AlipayChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
+class AlipayChannel:
     """支付宝当面付(precreate 扫码 + 异步通知 RSA2 验签 + 主动查单)。
 
     凭据经 SUPERDL_ALIPAY_* 注入(应用私钥 + 支付宝公钥)。
@@ -235,7 +262,7 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
 
     GATEWAY = "https://openapi.alipay.com/gateway.do"
 
-    def __init__(self, cfg: Mapping[str, str]) -> None:
+    def __init__(self, cfg: Mapping[str, str]) -> None:  # pragma: no cover - 需真实商户凭据
         if not (cfg["alipay_app_id"] and cfg["alipay_private_key"] and cfg["alipay_public_key"]):
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCredentialsIncomplete"
@@ -254,9 +281,11 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
         client_cfg.alipay_public_key = cfg["alipay_public_key"]
         self._client = DefaultAlipayClient(alipay_client_config=client_cfg)
         self._public_key = cfg["alipay_public_key"]
+        self._app_id = cfg["alipay_app_id"]
+        self._seller_id = cfg.get("alipay_seller_id") or ""
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
-    async def create_payment(self, order: "Order") -> str:
+    async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
         import asyncio
         import json
 
@@ -315,6 +344,17 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
             )
+        # 官方通知校验清单的另外两条:app_id 必须是自己的应用,seller_id 必须是自己的收款
+        # 账号。密钥模式下第三方拿自己的应用签不出能过我方公钥验签的通知,所以这是纵深
+        # 防御而不是当前的活口子 —— 但清单上写着的项没有理由不做。
+        if params.get("app_id") != self._app_id:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
+            )
+        if self._seller_id and params.get("seller_id") not in (None, self._seller_id):
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
+            )
         return CallbackResult(
             order_no=params.get("out_trade_no", ""),
             channel_txn_id=params.get("trade_no", ""),
@@ -322,7 +362,7 @@ class AlipayChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
             success=params.get("trade_status") in ("TRADE_SUCCESS", "TRADE_FINISHED"),
         )
 
-    async def query_order(self, order: "Order") -> QueryResult:
+    async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
         import asyncio
         import json
 

@@ -39,6 +39,7 @@ MESSAGES: dict[str, str] = {
     "adminapi.taskStateNotReplayable": "任务状态 {status} 不可重放",
     "adminapi.userDisabled": "账号已停用",
     # 计费/支付
+    "billing.alipayCallbackMerchantMismatch": "支付宝回调的商户信息与本平台不符",
     "billing.alipayCallbackVerifyFailed": "支付宝回调验签失败",
     "billing.alipayCreateFailed": "支付宝下单失败:{message}",
     "billing.alipayCredentialsIncomplete": "支付宝商户凭据不完整(管理端·平台配置)",
@@ -62,6 +63,7 @@ MESSAGES: dict[str, str] = {
     "billing.realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
     "billing.rechargeAmountRange": "充值金额须在 {min}~{max} 元之间",
     "billing.unknownChannel": "未知支付渠道:{name}",
+    "billing.wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
     "billing.wechatCallbackVerifyFailed": "微信回调验签失败",
     "billing.wechatCreateFailed": "微信下单失败:{message}",
     "billing.wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",

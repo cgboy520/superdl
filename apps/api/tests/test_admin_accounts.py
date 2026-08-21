@@ -32,6 +32,12 @@ async def login(client: AsyncClient, username: str, password: str):
     )
 
 
+async def login_headers(client: AsyncClient, username: str, password: str) -> dict[str, str]:
+    resp = await login(client, username, password)
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
 class TestAdminAccounts:
     async def test_create_list_and_second_reviewer_unblocks_adjustment(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -104,9 +110,7 @@ class TestAdminAccounts:
             headers=h,
         )
         target_id = created.json()["id"]
-        h2 = {
-            "Authorization": f"Bearer {(await login(client, 'ops01', STRONG)).json()['access_token']}"
-        }
+        h2 = await login_headers(client, "ops01", STRONG)
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 200
 
         resp = await client.patch(
@@ -129,9 +133,7 @@ class TestAdminAccounts:
             headers=h,
         )
         tid = created.json()["id"]
-        h2 = {
-            "Authorization": f"Bearer {(await login(client, 'ops02', STRONG)).json()['access_token']}"
-        }
+        h2 = await login_headers(client, "ops02", STRONG)
 
         # 改角色 → 旧 token 失效(权限变了,旧 token 不能继续按旧角色用)
         await client.patch(
@@ -140,9 +142,7 @@ class TestAdminAccounts:
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 401
 
         # 重置密码 → 新密码可登录,旧密码不行
-        h3 = {
-            "Authorization": f"Bearer {(await login(client, 'ops02', STRONG)).json()['access_token']}"
-        }
+        h3 = await login_headers(client, "ops02", STRONG)
         assert (await client.get("/api/admin/v1/me", headers=h3)).status_code == 200
         resp = await client.post(
             f"/api/admin/v1/admins/{tid}/reset-password",
@@ -197,9 +197,7 @@ class TestAdminAccounts:
             json={"username": "root2", "password": STRONG, "role": "admin", "reason": "备用超管"},
             headers=h,
         )
-        h2 = {
-            "Authorization": f"Bearer {(await login(client, 'root2', STRONG)).json()['access_token']}"
-        }
+        h2 = await login_headers(client, "root2", STRONG)
         assert (
             await client.patch(
                 f"/api/admin/v1/admins/{me['id']}",

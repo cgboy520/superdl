@@ -106,6 +106,14 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         forbid_contains="-----",
         hint="粘贴纯 base64 支付宝公钥体(开放平台·接口加签方式·支付宝公钥)",
     ),
+    # 收款方 PID(2088 开头 16 位)。官方要求异步通知除验签外还要核对 app_id 与 seller_id;
+    # 留空则只核 app_id(密钥模式下第三方无法伪造出能过验签的通知,seller_id 是纵深防御)
+    "alipay_seller_id": SettingSpec(
+        "payment_alipay",
+        "str",
+        pattern=r"|2088\d{12}",
+        hint="收款账号 PID(2088 开头 16 位),开放平台·账户中心可查;留空则不校验",
+    ),
     # ---- 阿里云短信(dysmsapi) ----
     "sms_provider": SettingSpec(
         "sms",

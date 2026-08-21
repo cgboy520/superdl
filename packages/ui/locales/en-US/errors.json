@@ -28,6 +28,7 @@
     "userDisabled": "Account disabled"
   },
   "billing": {
+    "alipayCallbackMerchantMismatch": "The Alipay notification's merchant details do not match this platform",
     "alipayCallbackVerifyFailed": "Alipay callback signature verification failed",
     "alipayCreateFailed": "Alipay order creation failed: {{message}}",
     "alipayCredentialsIncomplete": "Alipay merchant credentials incomplete (Admin · Platform Config)",
@@ -51,6 +52,7 @@
     "realNameRequiredForRecharge": "Regulations require identity verification before topping up",
     "rechargeAmountRange": "Top-up amount must be between {{min}} and {{max}} CNY",
     "unknownChannel": "Unknown payment channel: {{name}}",
+    "wechatCallbackMerchantMismatch": "The WeChat Pay notification's merchant details do not match this platform",
     "wechatCallbackVerifyFailed": "WeChat Pay callback signature verification failed",
     "wechatCreateFailed": "WeChat Pay order creation failed: {{message}}",
     "wechatCredentialsIncomplete": "WeChat Pay merchant credentials incomplete (Admin · Platform Config)",

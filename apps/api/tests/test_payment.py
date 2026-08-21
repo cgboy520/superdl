@@ -309,6 +309,7 @@ class TestChannelFactory:
             "alipay_app_id": "app-1",
             "alipay_private_key": "key-1",
             "alipay_public_key": "pub-1",
+            "alipay_seller_id": "",
         }
 
         async def fake_cfg(session):
