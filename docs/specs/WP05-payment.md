@@ -1,9 +1,7 @@
 # WP5 · 支付
 
-> ✅ 已交付(mock 全功能+wechatpayv3 适配器;真实联调=人工事项 #7)。
-
 ## 目标
-充值单 + 微信/支付宝双渠道 + 回调幂等。dev 走 mock 渠道,真实联调为人工事项 #7。
+充值单 + 微信/支付宝双渠道 + 回调幂等。dev 走 mock 渠道,真实渠道联调为人工事项 #7。
 
 ## 数据
 - `orders`:order_no 唯一、user_id、type(recharge)、amount、channel(wechat/alipay/mock)、channel_txn_id 唯一?、status(pending/paid/closed/failed)、idempotency_key 唯一?、qr_url、paid_at、created_at;发票字段预留(invoice_*)
@@ -18,4 +16,4 @@
 - 重放回调不重复入账(channel_txn_id 唯一约束)
 - 相同 Idempotency-Key 重复下单返回同一订单
 - 金额不匹配的回调拒绝并告警
-- 渠道 SDK:wechatpayv3 2.0.x / alipay-sdk-python 3.7.x,验签失败 400
+- 渠道 SDK(wechatpayv3 / alipay-sdk-python)验签失败 400

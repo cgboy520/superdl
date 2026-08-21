@@ -1,7 +1,5 @@
 # WP9 · 通知
 
-> ✅ 已交付(tests/test_notify.py:去重/告警幂等/token 鉴权)。
-
 ## 目标
 站内信 + 短信(mock/aliyun)+ Alertmanager webhook + 余额预警。
 
@@ -12,7 +10,7 @@
 ## API
 - `GET /notifications?unread=`、`POST /notifications/{id}/read`
 - `POST /webhooks/alertmanager`(basic auth):GPU XID 致命告警 → 通知受影响租户 + 管理端告警流
-- 余额巡检(WP4 的 5min 任务)触发:预估<24h → 站内信+短信(去重:同类型 24h 一条)
+- 余额巡检(billing 的 5min 任务)触发:预估<24h → 站内信+短信(去重:同类型 24h 一条)
 
 ## 验收
 - 阈值可配;预警可审计(notifications + audit)

@@ -6,9 +6,10 @@
 
 ## 使用(运维视角)
 
-1. 超管在管理端「平台配置 · 集群接入」录入一次:RKE2 Server 地址(`https://<server-ip>:9345`)、
-   join token(server 节点 `cat /var/lib/rancher/rke2/server/node-token`)、RKE2 版本、驱动版本、
-   registries.yaml 内容(镜像缓存 mirror,可留空)。
+1. 超管在管理端「平台配置 · 集群接入」录入一次:server 地址(RKE2 `https://<server-ip>:9345`,
+   k3s `https://<server-ip>:6443`)、join token(server 节点 node-token 文件:RKE2 在
+   `/var/lib/rancher/rke2/server/node-token`,k3s 在 `/var/lib/rancher/k3s/server/node-token`)、
+   agent 版本、驱动版本;registries.yaml 留空则平台按 server 地址自动生成(高级覆盖可手填)。
 2. ops 在管理端「节点与 GPU · 添加节点」选池生成一次性命令(默认 24h 有效,只显示一次):
    ```bash
    curl -fsSL https://<api>/api/v1/node-enroll/script | sudo bash -s -- --token sdln_xxx
@@ -17,7 +18,7 @@
    (IOMMU/驱动生效,systemd oneshot 断点续跑)。失败可修复环境后重跑同一条命令(全幂等),
    或在管理端重新生成令牌。
 
-安全模型:脚本本体零密钥;RKE2 server/join token 凭注册令牌 `POST /bootstrap` 换取(Bearer,
+安全模型:脚本本体零密钥;server 地址/join token 凭注册令牌 `POST /bootstrap` 换取(Bearer,
 令牌 256-bit 只存哈希、过期/一次性、统一 404 防探测)。token 走命令行参数不进 URL。
 join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即可。
 

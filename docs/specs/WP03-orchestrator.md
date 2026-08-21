@@ -1,10 +1,7 @@
 # WP3 · 编排核心
 
-> ✅ 已交付并通过验收用例(tests/test_orchestrator_lifecycle.py:kill pod→failed 停费/泄漏回收/超时退款/端口池)。
-
 ## 目标
-实例状态机 + outbox 编排 + reconciler 对账 + 端口池。K8s 走接口抽象,单测全 mock,
-kind 集成测试断言对象结构与 reconciler 行为。
+实例状态机 + outbox 编排 + reconciler 对账 + 端口池。K8s 走接口抽象,单测全 mock(FakeOrchestrator 可注入故障)。
 
 ## 数据
 - `instances`:uuid、user_id、sku 快照(sku_id + spec_snapshot jsonb + price_hourly)、gpu_count、status、k8s(namespace/pod_name/node_name)、ssh_port?、jupyter_token、image_ref、data_disk_id?、idempotency_key 唯一?、version(乐观锁)、created_at/updated_at
@@ -18,16 +15,16 @@ running↔非 running 的边 = 计费边。
 
 ## K8s 抽象(core/k8s + gpu_adapter)
 - `InstanceOrchestrator` 协议:ensure_tenant_namespace / create_instance_pod / delete_instance_pod / get_pod_phase / list_tenant_pods
-- FakeOrchestrator(dev/test,内存态,可注入故障)与 RealOrchestrator(kubernetes 36.x)
+- FakeOrchestrator(dev/test,内存态,可注入故障)与 RealOrchestrator(kubernetes 官方客户端)
 - gpu_adapter:tier→资源请求语法(HAMi: nvidia.com/gpu+gpucores/gpumem;MIG profile;整卡),RuntimeClass 按池(kata-qemu / runc)
 
 ## 流程
 - 创建:校验余额≥1h(billing service)→ 事务{instances(creating)+event+outbox(create_instance)} → 202
 - worker:ensure ns/quota/netpol → create pod+svc+端口分配 → (reconciler 观察 Ready→running)
 - reconciler(30s,advisory lock):Pod Ready 而 DB creating/starting → running(计费开始);Pod 消失而 DB running → failed(停费+告警);Pod 存在而 DB released → 强删;creating 超 5min → failed+退款
-- stop/start/release 同构;release 后擦盘任务(blkdiscard 由节点 job,MVP 记事件)
+- stop/start/release 同构;release 后擦盘任务(blkdiscard 由节点 job)
 
-## 验收(AI+kind / FakeOrchestrator)
+## 验收(FakeOrchestrator)
 - kill pod 后 30s 内 DB 转 failed 并停止计费
 - 泄漏 pod(DB released)被回收
 - creating 超时自动失败退款;端口不泄漏(释放回池)

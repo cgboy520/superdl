@@ -1,6 +1,6 @@
 # SuperDL 文案风格规范(voice & tone)
 
-> WP24 落地。所有用户可见文案(两端 locales JSON、后端 core/messages.py)遵守本规范;
+> 所有用户可见文案(两端 locales JSON、后端 core/messages.py)遵守本规范;
 > 禁词由 `scripts/check-copy-banned.sh` 在 CI 强制。红线:原创措辞,不照抄竞品。
 
 ## 基调

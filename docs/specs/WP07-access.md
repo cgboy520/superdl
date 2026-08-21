@@ -1,16 +1,12 @@
 # WP7 · 接入
 
-> ✅ 已随 WP3 交付:端口池(port_allocations 分配/复用/耗尽处理)、Jupyter token 生成与重置、
-> `GET /instances/{uuid}/access`(SSH 指令 + Jupyter URL)、Real 编排器的 Service(NodePort)+Ingress。
-> 泛域名证书与 Cilium Gateway 实配属集群侧(deploy/cluster)。
-
 ## 目标
-SSH 端口池落地 + JupyterLab 泛域名 Ingress + token。
+SSH 端口池 + JupyterLab 泛域名 Ingress + token。
 
 ## 设计
 - SSH:`port_allocations` 池(30000~32767);实例创建时分配,释放回池;展示 `ssh root@ssh1.<域名> -p 3xxxx`;仅密钥登录(公钥注入 authorized_keys),禁密码
 - JupyterLab:实例 Pod 内跑 JupyterLab;`<instance-uuid>.app.<域名>` Ingress 按 host 路由到实例 Service;token 控制面生成注入(env);`GET /instances/{id}/access` 返回 SSH 指令 + Jupyter URL(含 token);token 重置接口
-- K8s 对象由 orchestrator 统一产出(FakeOrchestrator 断言 Ingress/Service spec)
+- K8s 对象(Service NodePort / Ingress)由 orchestrator 统一产出(FakeOrchestrator 断言 spec);泛域名证书等集群侧实配见 deploy/cluster/
 
 ## 验收
 - access 接口返回可用的 SSH 指令与 Jupyter URL;非 running 时报错并说明

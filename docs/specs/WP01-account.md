@@ -1,7 +1,5 @@
 # WP1 · 账户
 
-> ✅ 已交付并通过验收用例(tests/test_account_*.py)。
-
 ## 目标
 手机号+短信验证码注册/登录、JWT 会话、SSH 公钥管理、审计中间件生效。
 
@@ -15,7 +13,7 @@
 - `POST /auth/register` {phone, sms_code, password?} → {access_token, refresh_token, user}
 - `POST /auth/login` {phone, sms_code | password} → 同上;冻结用户报 USER_FROZEN
 - `POST /auth/refresh` {refresh_token} → 新 token 对
-- `GET /me` → 用户资料(含钱包余额挂靠点,WP4 接入)
+- `GET /me` → 用户资料
 - `GET/POST/DELETE /ssh-keys`;公钥格式校验(ssh-ed25519 / ssh-rsa / ecdsa-*),指纹去重
 
 ## 验收
