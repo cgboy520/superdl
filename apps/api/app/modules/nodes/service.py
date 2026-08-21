@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.k8s.base import ClusterProbe
+from app.core.k8s.base import ClusterProbe, derive_distro
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
@@ -325,7 +325,7 @@ async def report_progress(
     elif row.status == "rebooting" and state in ("running", "ok"):
         # oneshot 续跑后的第一条进度:回到 installing
         transition_enrollment(row, "installing", phase=phase)
-    if phase == "rke2_start" and state == "ok" and row.status == "installing":
+    if phase in ("agent_start", "rke2_start") and state == "ok" and row.status == "installing":
         transition_enrollment(row, "joining", phase=phase)
     await session.commit()
     await session.refresh(row)
@@ -420,6 +420,14 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
 
 async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
     return await session.get(ClusterStatus, 1)
+
+
+async def derive_node_distro(session: AsyncSession, cfg: dict[str, str]) -> str:
+    """装机发行版派生:探测缓存 > agent 版本后缀 > rke2(WP27 砍 k8s_distro 配置)。"""
+    row = await get_cluster_status(session)
+    if row and row.distro:
+        return row.distro
+    return derive_distro(cfg.get("cluster_agent_version")) or "rke2"
 
 
 HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为未知,拒绝下发

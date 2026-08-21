@@ -68,7 +68,6 @@ const FIELD_LABELS: Record<string, string> = {
   real_name_access_key_secret: "AccessKey Secret",
   icp_number: "ICP 备案号",
   police_record_number: "公安联网备案号",
-  k8s_distro: "K8s 发行版",
   cluster_server_url: "Server 地址",
   cluster_join_token: "Join Token",
   cluster_agent_version: "Agent 版本(装机脚本钉死)",
@@ -91,8 +90,6 @@ const FIELD_EXTRA: Record<string, string> = {
 const PROVIDER_LABELS: Record<string, string> = {
   mock: "mock(仅开发环境)",
   aliyun: "阿里云",
-  rke2: "RKE2(生产)",
-  k3s: "k3s(轻量/本地验证)",
   cn: "国内镜像(rancher-mirror.rancher.cn)",
   official: "官方源",
 };

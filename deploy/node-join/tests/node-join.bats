@@ -23,8 +23,8 @@ setup() {
 
 teardown() { rm -rf "$TMP"; }
 
-_write_fixture() { # _write_fixture <pool> [distro];rke2 fixture 不带 k8s_distro 键,兼测旧服务端缺省
-  python3 - "$1" "${2:-rke2}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
+_write_fixture() { # _write_fixture <pool> [distro] [mirror];不带 mirror 键兼测旧服务端缺省(脚本内落 cn)
+  python3 - "$1" "${2:-rke2}" "${3:-}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json, sys
 distro = sys.argv[2]
 data = {
@@ -39,6 +39,8 @@ data = {
 }
 if distro != "rke2":
     data["k8s_distro"] = distro
+if len(sys.argv) > 3 and sys.argv[3]:
+    data["install_mirror"] = sys.argv[3]
 print(json.dumps(data))
 PYEOF
 }
@@ -97,6 +99,7 @@ EOF
   cat > "$TMP/bin/sh" <<'EOF'
 #!/usr/bin/env bash
 [[ -n "${INSTALL_K3S_MIRROR:-}" ]] && echo "sh INSTALL_K3S_MIRROR=$INSTALL_K3S_MIRROR" >> "$SHIM_CALLS"
+[[ -n "${INSTALL_RKE2_MIRROR:-}" ]] && echo "sh INSTALL_RKE2_MIRROR=$INSTALL_RKE2_MIRROR" >> "$SHIM_CALLS"
 cat >/dev/null 2>&1 || true
 exit 0
 EOF
@@ -167,13 +170,13 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   # registries.yaml 落位
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
   # markers 齐全
-  for m in precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries rke2_config rke2_install rke2_start; do
+  for m in precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
   # NVIDIA Container Toolkit 步骤已过(此处 nvidia-ctk 已存在,走跳过分支)
   [[ "$output" == *"nvidia-container-toolkit 已安装"* ]]
   # 进度上报含关键阶段与收尾
-  grep -q '"phase":"rke2_start","state":"ok"' "$CURL_LOG"
+  grep -q '"phase":"agent_start","state":"ok"' "$CURL_LOG"
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
   # 非 kata 池不写 GRUB
   [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
@@ -187,7 +190,7 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   run_script
   [ "$status" -eq 0 ]
   [[ "$output" == *"precheck: 已完成,跳过"* ]]
-  [[ "$output" == *"rke2_start: 已完成,跳过"* ]]
+  [[ "$output" == *"agent_start: 已完成,跳过"* ]]
 }
 
 @test "驱动未就绪触发重启断点:装驱动+写 oneshot+token 0600+systemctl reboot,rke2 尚未配置" {
@@ -230,6 +233,31 @@ EOF
   grep -q "rancher-mirror.rancher.cn/k3s/k3s-install.sh" "$CURL_LOG"
   grep -q "INSTALL_K3S_MIRROR=cn" "$SHIM_CALLS"
   grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
+}
+
+@test "rke2 安装默认走中国镜像(install_mirror 缺省=cn)" {
+  cat > "$TMP/bin/rke2" <<'RKESHIM'
+#!/usr/bin/env bash
+echo "rke2 version v0.0.0+rke2r0"
+RKESHIM
+  chmod +x "$TMP/bin/rke2"
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "rancher-mirror.rancher.cn/rke2/install.sh" "$CURL_LOG"
+  grep -q "sh INSTALL_RKE2_MIRROR=cn" "$SHIM_CALLS"
+}
+
+@test "install_mirror=official 走 get.rke2.io 官方源" {
+  _write_fixture hami rke2 official
+  cat > "$TMP/bin/rke2" <<'RKESHIM'
+#!/usr/bin/env bash
+echo "rke2 version v0.0.0+rke2r0"
+RKESHIM
+  chmod +x "$TMP/bin/rke2"
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "get.rke2.io" "$CURL_LOG"
+  ! grep -q "sh INSTALL_RKE2_MIRROR" "$SHIM_CALLS"
 }
 
 @test "loop 兜底须显式登记(nvme_devices=loop:80G):建 loop VG + 写开机重建 unit" {

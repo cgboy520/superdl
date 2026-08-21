@@ -716,6 +716,11 @@
             ],
             "title": "Hostname Expected"
           },
+          "install_mirror": {
+            "default": "cn",
+            "title": "Install Mirror",
+            "type": "string"
+          },
           "k8s_distro": {
             "title": "K8S Distro",
             "type": "string"

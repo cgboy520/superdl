@@ -61,13 +61,14 @@ class BootstrapOut(BaseModel):
 
     pool: str
     hostname_expected: str | None
-    k8s_distro: str  # rke2 | k3s(k3s 仅轻量/本地验证环境)
+    k8s_distro: str  # rke2 | k3s,平台探测派生(WP27 砍配置,探测优于声明)
     rke2_version: str
     rke2_server_url: str
     rke2_join_token: str
     driver_version: str
     nvme_devices: list[str]
     registries_yaml: str  # 镜像缓存 mirror 配置正文(可空串)
+    install_mirror: str = "cn"  # 装机安装源:cn=rancher 国内镜像 / official
 
 
 class ProgressRequest(BaseModel):

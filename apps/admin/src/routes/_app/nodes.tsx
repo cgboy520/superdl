@@ -58,6 +58,9 @@ const PHASE_LABEL = {
   rke2_config: "nodes.phase.agentConfig",
   rke2_install: "nodes.phase.agentInstall",
   rke2_start: "nodes.phase.agentStart",
+  agent_config: "nodes.phase.agentConfig",
+  agent_install: "nodes.phase.agentInstall",
+  agent_start: "nodes.phase.agentStart",
   waiting_node: "nodes.phase.waitingNode",
   joined: "nodes.phase.joined",
 } as const;

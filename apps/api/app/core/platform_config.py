@@ -133,13 +133,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
     ),
     # ---- 集群接入(仅 admin 可读写;ops 生成注册命令时由服务端代读) ----
-    "k8s_distro": SettingSpec(
-        "cluster",
-        "choice",
-        choices=("rke2", "k3s"),
-        prod_forbidden=("k3s",),
-        hint="生产一律 RKE2;k3s 仅供轻量/本地验证环境",
-    ),
     "cluster_server_url": SettingSpec(
         "cluster",
         "str",

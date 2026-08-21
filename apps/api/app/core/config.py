@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
 
     # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
-    k8s_distro: Literal["rke2", "k3s"] = "rke2"  # k3s 仅用于轻量/本地验证环境
     # cluster 键 WP27 更名中性(rke2_* → cluster_*),AliasChoices 兼容旧 env
     cluster_server_url: str = Field(
         default="",

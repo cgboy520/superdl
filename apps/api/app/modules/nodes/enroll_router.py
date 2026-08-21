@@ -79,13 +79,14 @@ async def enroll_bootstrap(
     return BootstrapOut(
         pool=enrollment.pool,
         hostname_expected=enrollment.hostname,
-        k8s_distro=cfg["k8s_distro"] or "rke2",
+        k8s_distro=await service.derive_node_distro(session, cfg),
         rke2_version=cfg["cluster_agent_version"],
         rke2_server_url=cfg["cluster_server_url"],
         rke2_join_token=cfg["cluster_join_token"],
         driver_version=cfg["node_driver_version"],
         nvme_devices=enrollment.nvme_devices or [],
         registries_yaml=cfg["node_registries_yaml"],
+        install_mirror=cfg["node_install_mirror"] or "cn",
     )
 
 

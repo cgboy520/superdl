@@ -255,3 +255,31 @@ class TestGateWiring:
         async with sm() as session:
             pod = await build_pod_spec_with_cluster(session, instance)
         assert pod.runtime_class == "nvidia"
+
+
+async def test_derive_node_distro_chain(sm, fake):
+    """派生链:探测缓存 > agent 版本后缀 > rke2 兜底(WP27 砍 k8s_distro 配置)。"""
+    from app.core.k8s.base import ClusterProbe
+
+    # conftest 预置 rke2 探测
+    async with sm() as session:
+        assert await service.derive_node_distro(session, {}) == "rke2"
+    async with sm() as session:
+        await service.save_cluster_probe(
+            session, ClusterProbe(api_reachable=True, k8s_version="v1.33.4+k3s1", distro="k3s")
+        )
+        await session.commit()
+    async with sm() as session:
+        assert await service.derive_node_distro(session, {}) == "k3s"
+        # 缓存无 distro(未知发行版)→ 回落 agent 版本后缀
+        row = await service.get_cluster_status(session)
+        assert row is not None
+        row.distro = None
+        await session.commit()
+    async with sm() as session:
+        cfg = {"cluster_agent_version": "v1.36.3+k3s1"}
+        assert await service.derive_node_distro(session, cfg) == "k3s"
+        assert (
+            await service.derive_node_distro(session, {"cluster_agent_version": "v1.36.2"})
+            == "rke2"
+        )

@@ -6,12 +6,12 @@
 #
 # 设计:
 # - 脚本本体零密钥;RKE2 server/join token 凭注册令牌 POST /bootstrap 换取。
-# - k8s_distro=k3s 时装 k3s agent(轻量/本地验证环境),phase 名保持不变(契约稳定)。
+# - k8s_distro=k3s 时装 k3s agent(轻量档);取值由平台探测派生,节点侧无感。
 # - 全幂等:每步落 marker(/var/lib/superdl-node-join/done.d/),可无限次重跑。
 # - 需重启的步骤(nouveau/IOMMU/驱动)统一合并为一次重启,systemd oneshot 断点续跑;
 #   最多 2 次重启,仍未就绪则上报 failed。
 # - 各阶段回报进度(phase 与后端契约一致):precheck nouveau sysctl iommu driver
-#   nvme_vg reboot registries rke2_config rke2_install rke2_start waiting_node
+#   nvme_vg reboot registries agent_config agent_install agent_start waiting_node
 set -euo pipefail
 
 API_BASE="__API_BASE__" # 服务端下发时替换;可用 --api-base 覆盖(测试用)
@@ -322,7 +322,7 @@ step_registries() {
   chmod 644 "$RANCHER_DIR"/registries.yaml
 }
 
-step_rke2_config() {
+step_agent_config() {
   mkdir -p "$RANCHER_DIR"
   cat > "$RANCHER_DIR"/config.yaml <<EOF
 server: $(cfg_get rke2_server_url)
@@ -333,25 +333,35 @@ EOF
   chmod 600 "$RANCHER_DIR"/config.yaml
 }
 
-step_rke2_install() {
-  local want
+step_agent_install() {
+  local want mirror
   want="$(cfg_get rke2_version)"
+  mirror="$(cfg_get install_mirror)"
+  [[ -n "$mirror" ]] || mirror="cn"
   if command -v "$DISTRO" >/dev/null 2>&1 && "$DISTRO" --version | grep -q "$want"; then
     echo "-- $DISTRO $want 已安装,跳过"
     return 0
   fi
+  # 安装源受 node_install_mirror 控制(默认 cn):get.k3s.io/get.rke2.io 不认 *_MIRROR
+  # 环境变量,cn 必须用 rancher-mirror.rancher.cn 自带的 install 脚本取二进制。
   if [[ "$DISTRO" == "k3s" ]]; then
-    # k3s 是轻量/本地验证路径(常落国内开发机),默认走 k3s 官方中国镜像。
-    # get.k3s.io 不认 INSTALL_K3S_MIRROR,必须用镜像自带的 k3s-install.sh:
-    # 只有它会按 INSTALL_K3S_MIRROR=cn 从 rancher-mirror.rancher.cn 取二进制。
-    curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh \
-      | INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh -
+    if [[ "$mirror" == "official" ]]; then
+      curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh -
+    else
+      curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh \
+        | INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh -
+    fi
   else
-    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh -
+    if [[ "$mirror" == "official" ]]; then
+      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh -
+    else
+      curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh \
+        | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh -
+    fi
   fi
 }
 
-step_rke2_start() {
+step_agent_start() {
   systemctl enable --now "$AGENT_UNIT"
   local i
   for i in $(seq 1 60); do
@@ -370,7 +380,7 @@ finalize() {
     rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" "$STATE_DIR/token"
     systemctl daemon-reload
   fi
-  echo "==== 完成:节点已启动 rke2-agent,加入结果以管理端为准 ===="
+  echo "==== 完成:节点已启动 ${AGENT_UNIT%.service},加入结果以管理端为准 ===="
 }
 
 # ---------- 主流程 ----------
@@ -386,7 +396,7 @@ run_step nvidia_toolkit step_nvidia_toolkit
 run_step nvme_vg step_nvme_vg
 maybe_reboot
 run_step registries step_registries
-run_step rke2_config step_rke2_config
-run_step rke2_install step_rke2_install
-run_step rke2_start step_rke2_start
+run_step agent_config step_agent_config
+run_step agent_install step_agent_install
+run_step agent_start step_agent_start
 finalize
