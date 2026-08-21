@@ -234,3 +234,23 @@ class TestAuditRoleAccess:
             headers = await admin_headers(sm, client, role=role)
             resp = await client.get("/api/admin/v1/audit", headers=headers)
             assert resp.status_code == 200, (role, resp.text)
+
+
+class TestProdDocsClosed:
+    def test_prod_disables_docs_and_openapi_routes(self, monkeypatch):
+        """生产不对公网暴露 /docs 与 /openapi.json。
+
+        管理端 51 条路径、每个字段名与取值范围(调账、补单、平台配置)都在 schema 里,
+        免登录可读等于把侦察成本降到零。只关 docs_url 不够 —— openapi_url 仍会吐出整份
+        schema。export_openapi 走 app.openapi() 直取,不经这些路由,契约闸门不受影响。
+        """
+        from app.core.config import get_settings
+        from app.main import create_app
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "prod", raising=False)
+        app = create_app()
+        assert app.docs_url is None
+        assert app.redoc_url is None
+        assert app.openapi_url is None
+        assert app.openapi()["paths"]  # schema 本身照常可导出

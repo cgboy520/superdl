@@ -47,11 +47,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    is_prod = settings.environment == "prod"
     app = FastAPI(
         title="SuperDL API",
         version="0.1.0",
         lifespan=lifespan,
         # 用户端与管理端共用一份 OpenAPI(orval 按 tag 分组生成)
+        # 生产关掉三条文档路由:API host 在 Ingress 上是公网直出,任何人免登录即可从
+        # /docs 或 /openapi.json 拿到全部管理端路径、字段名与取值范围(调账、补单、
+        # 平台配置都在里面)。只关 docs_url 不够 —— openapi_url 仍会把整份 schema 吐出去。
+        # export_openapi 走的是 app.openapi() 直取 schema,不经这些路由,契约闸门不受影响;
+        # 顺带让 security_headers 里给 Swagger UI 开的那个 CSP 豁免在生产失效。
+        docs_url=None if is_prod else "/docs",
+        redoc_url=None if is_prod else "/redoc",
+        openapi_url=None if is_prod else "/openapi.json",
     )
     install_error_handlers(app)
     app.add_middleware(SecurityHeadersMiddleware)
