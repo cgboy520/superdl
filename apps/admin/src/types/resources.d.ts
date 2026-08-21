@@ -526,8 +526,6 @@ export default interface Resources {
     "account": {
       "credentialRequired": "需提供验证码或密码",
       "loginFailed": "手机号或凭证错误",
-      "loginFailedPassword": "手机号或密码错误",
-      "loginFailedSms": "手机号或验证码错误",
       "phoneTaken": "该手机号已注册,请直接登录",
       "realNameChannelError": "实名核验服务暂不可用,请稍后重试",
       "realNameDone": "已完成实名认证,无需重复提交",
@@ -619,7 +617,8 @@ export default interface Resources {
       "clusterProbeFailed": "集群连接失败:{{error}}",
       "enrollTransition": "注册状态不允许 {{from}} → {{to}}",
       "hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
-      "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)"
+      "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)",
+      "storageClassMissing": "集群存储未就绪(缺少 {{names}}),暂时无法开通;请联系平台运维"
     },
     "orchestrator": {
       "accessNeedsRunning": "实例运行中才能获取接入信息",

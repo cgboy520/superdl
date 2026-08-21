@@ -11,7 +11,13 @@ from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit
-from app.core.security import create_token, decode_token, hash_password, verify_password
+from app.core.security import (
+    create_token,
+    decode_token,
+    hash_password,
+    hash_password_sync,
+    verify_password,
+)
 from app.core.sms import SmsError, get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode, SshKey, UsedRefreshToken, User
@@ -21,6 +27,9 @@ from app.modules.account.sshkey_util import parse_public_key
 logger = get_logger(__name__)
 
 MOCK_SMS_CODE = "123456"
+
+# 未注册的手机号也走一次哈希校验,拉平时间侧信道(管理端登录同款)
+_DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 
 # 单条验证码最多允许失败次数,达到即作废(防 TTL 窗口内穷举 6 位码)
 MAX_SMS_CODE_ATTEMPTS = 5
@@ -149,22 +158,34 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
+    # 全局闸:限流键含手机号时,遍历号段等于每个号一个新桶,5 次/5 分钟永远碰不到。
+    # 必须再来一个只按 IP 切分的桶,才能真正拦住「拿号段来扫」。
+    # 60/小时是对 CGNAT/企业出口的妥协值 —— 拦不住分布式扫号,但把单 IP 从无限压到可计。
+    await check_rate_limit(
+        f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
+    )
     # 密码与验证码两条路径同限流
     await check_rate_limit(
         f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-    if user is None:
-        raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
+    # 「该号未注册」与「该号已注册但凭证错」必须完全不可区分 —— 注册与找回密码都留了注释
+    # 说明这个陷阱(先验码再判重),唯独登录这条路径漏了:未注册返回 loginFailed、已注册
+    # 密码错返回 loginFailedPassword,拿号段一扫就是一张「谁是这里的客户」的名单。
+    # 除了文案,时序也要拉平:提前返回不付 bcrypt 的 ~200ms,本身就是第二个 oracle。
     if sms_code is not None:
         try:
             await _consume_sms_code(session, phone, sms_code, "login")
         except AppError as exc:
-            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailedSms") from exc
+            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed") from exc
+        if user is None:
+            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
         await session.commit()
     elif password is not None:
-        if user.password_hash is None or not await verify_password(password, user.password_hash):
-            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailedPassword")
+        stored = user.password_hash if (user is not None and user.password_hash) else _DUMMY_HASH
+        password_ok = await verify_password(password, stored)
+        if user is None or user.password_hash is None or not password_ok:
+            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
     else:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
     if user.status == "frozen":

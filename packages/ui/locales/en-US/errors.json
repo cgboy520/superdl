@@ -2,8 +2,6 @@
   "account": {
     "credentialRequired": "Provide an SMS code or password",
     "loginFailed": "Wrong phone number or credentials",
-    "loginFailedPassword": "Wrong phone number or password",
-    "loginFailedSms": "Wrong phone number or SMS code",
     "phoneTaken": "This phone number is already registered — log in instead",
     "realNameChannelError": "Identity verification service is unavailable — try again later",
     "realNameDone": "Identity already verified — no need to resubmit",

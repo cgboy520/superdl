@@ -2,8 +2,6 @@
   "account": {
     "credentialRequired": "需提供验证码或密码",
     "loginFailed": "手机号或凭证错误",
-    "loginFailedPassword": "手机号或密码错误",
-    "loginFailedSms": "手机号或验证码错误",
     "phoneTaken": "该手机号已注册,请直接登录",
     "realNameChannelError": "实名核验服务暂不可用,请稍后重试",
     "realNameDone": "已完成实名认证,无需重复提交",

@@ -111,6 +111,31 @@ class TestLogin:
         resp = await client.post("/api/v1/auth/login", json={"phone": PHONE, "password": "nope-1"})
         assert resp.json()["code"] == "LOGIN_FAILED"
 
+    async def test_login_failure_is_indistinguishable(self, client: AsyncClient):
+        """未注册的号 与 已注册但密码错,响应必须逐字节相同。
+
+        否则这就是一个免登录、不限速的手机号枚举 oracle:遍历号段即可拿到一张
+        「谁是这里的客户」的名单(PII 泄露),并把撞库从盲打变成定向。
+        注册与找回密码都留了注释说明这个陷阱(先验码再判重),唯独登录这条路径漏了。
+        """
+        await register(client, password="secret123")
+        registered = await client.post(
+            "/api/v1/auth/login", json={"phone": PHONE, "password": "wrong-pass"}
+        )
+        unknown = await client.post(
+            "/api/v1/auth/login", json={"phone": "13800009999", "password": "wrong-pass"}
+        )
+        assert registered.status_code == unknown.status_code
+        assert registered.json() == unknown.json()
+        # 验证码路径同理
+        bad_code_registered = await client.post(
+            "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "000000"}
+        )
+        bad_code_unknown = await client.post(
+            "/api/v1/auth/login", json={"phone": "13800009998", "sms_code": "000000"}
+        )
+        assert bad_code_registered.json() == bad_code_unknown.json()
+
     async def test_login_with_sms(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
