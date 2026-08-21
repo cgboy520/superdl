@@ -54,8 +54,9 @@ kubectl -n monitoring create secret generic grafana-admin \
 3. **组件**:`./preflight.sh light && helmfile -e light apply`
    - light = HAMi(钉 k3s 版 scheduler 镜像 + devicePlugin runtimeClassName=nvidia,
      见 `values/light/hami-light.yaml`)+ kps 精简 + cert-manager + ingress-nginx;
-     Cilium/gpu-operator 不装;JuiceFS/TopoLVM 默认关(要数据盘时在
-     `environments/light.yaml` 打开)。
+     Cilium/gpu-operator 不装;**TopoLVM 必开**(实例盘的强制依赖,每个租户 Pod 都要挂,
+     关掉则一个实例都开不出来,需先由 ansible 基线建出 VG `superdl-nvme`);
+     JuiceFS 才是可选项(只有数据盘用),要数据盘时在 `environments/light.yaml` 打开。
 4. **GPU 节点**:同 full 第 6 步(单机时 server 本机跑 node-join 亦可)。
 5. 能力边界:仅共享档 SKU;dedicated/mig 上架会被硬校验拦下;管理端「集群」页
    常驻「轻量集群」黄条与组件体检(含修复命令)。

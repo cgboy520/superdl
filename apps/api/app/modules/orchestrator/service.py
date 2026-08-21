@@ -111,13 +111,18 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
 _SHARED_TIERS = ("shared_std", "shared_eco")
 
 
-async def _require_cluster_for_tier(session: AsyncSession, tier: str | None) -> None:
-    """shared 档下发门禁:HAMi 未就绪/缓存陈旧即时 409,而非等 Pending 超时。
+async def _require_cluster_for_tier(
+    session: AsyncSession, tier: str | None, *, with_data_disk: bool = False
+) -> None:
+    """下发门禁:能力缺位即时 409,而非等 Pending 超时。
 
-    dedicated/mig 不依赖 hami-scheduler,不受门禁影响。
+    - HAMi:只有 shared 档依赖 hami-scheduler,dedicated/mig 不受影响。
+    - StorageClass:实例盘那只人人要挂,数据盘那只按需 —— 名字对不上或档位没装,
+      Pod 会永久 Pending 到 300 秒判 failed,用户只看到「开不出来」。
     """
     if tier in _SHARED_TIERS:
         await nodes_service.require_hami_ready(session)
+    await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
 
 
 # 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串,
@@ -211,7 +216,7 @@ async def create_instance(
             return existing
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
-    await _require_cluster_for_tier(session, sku.tier)
+    await _require_cluster_for_tier(session, sku.tier, with_data_disk=data_disk_id is not None)
     if gpu_count < 1 or gpu_count > sku.max_gpus_per_instance:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -345,7 +350,9 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     if instance.status != sm_def.STOPPED:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
-    await _require_cluster_for_tier(session, instance.spec.get("tier"))
+    await _require_cluster_for_tier(
+        session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
+    )
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
     await billing_service.require_balance_at_least(
         session,
@@ -366,7 +373,9 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
         )
-    await _require_cluster_for_tier(session, instance.spec.get("tier"))
+    await _require_cluster_for_tier(
+        session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
+    )
     await transition(
         session,
         instance,

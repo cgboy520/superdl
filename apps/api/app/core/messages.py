@@ -79,6 +79,7 @@ MESSAGES: dict[str, str] = {
     "common.notFound": "资源不存在",
     "nodes.clusterProbeFailed": "集群连接失败:{error}",
     "nodes.clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
+    "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     "common.unauthorized": "未登录或凭证已过期",
     "common.badCursor": "无效的分页游标",
     "common.rateLimited": "尝试过于频繁,请稍后再试",

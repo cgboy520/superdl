@@ -17,12 +17,16 @@ from kubernetes import client, config
 from app.core.config import get_settings
 from app.core.k8s.base import (
     GPU_MODEL_NODE_LABEL,
+    INSTANCE_DISK_STORAGE_CLASS,
+    JUICEFS_PVC_NAME,
+    JUICEFS_STORAGE_CLASS,
     ClusterProbe,
     InstancePodSpec,
     NodeInfo,
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
+    instance_disk_pvc_name,
 )
 
 INSTANCE_LABEL = "superdl.io/instance"
@@ -45,16 +49,6 @@ def _is_conflict(exc: client.ApiException) -> bool:
 TENANT_QUOTA = {"pods": "64", "services": "64", "persistentvolumeclaims": "128"}
 # 租户容器禁访的内网/元数据网段(Egress 白名单公网,黑名单私网)
 PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
-JUICEFS_PVC_NAME = "juicefs-shared"
-JUICEFS_STORAGE_CLASS = "juicefs-sc"
-# 实例盘 = 节点本地 NVMe LV。必须是平台自管生命周期的具名 PVC,不能用 generic ephemeral
-# volume —— 后者的 PVC 由 Pod 拥有(ownerReference + blockOwnerDeletion),而「关机」
-# 的实现就是删 Pod,盘会随第一次关机被 TopoLVM blkdiscard 抹掉。
-INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"
-
-
-def instance_disk_pvc_name(instance_name: str) -> str:
-    return f"{instance_name}-root"
 
 
 class _TimeoutApi:
@@ -256,7 +250,7 @@ class RealOrchestrator:
                 client.V1Volume(
                     name="data-disk",
                     persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                        claim_name="juicefs-shared"
+                        claim_name=JUICEFS_PVC_NAME
                     ),
                 )
             )

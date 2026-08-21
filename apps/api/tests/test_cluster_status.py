@@ -185,6 +185,43 @@ class TestGateWiring:
         )
         assert resp2.status_code == 202, resp2.text
 
+    async def test_create_blocked_when_storage_class_missing(self, sm, fake, client):
+        """SC 名对不上/档位没装 → 即时 409,而不是让用户等 300 秒 Pending 超时判 failed。
+
+        探测数据一直都在库里,此前只被集群体检拿去做 `bool(scs)` —— 有任意一个 SC 就绿灯。
+        """
+        from app.modules.nodes.models import ClusterStatus
+        from tests.helpers import create_user_with_key, fund_wallet
+        from tests.test_catalog import seed_skus
+
+        await seed_skus(sm)
+        headers, user_id, key_id = await create_user_with_key(client, "13900000077")
+        await fund_wallet(sm, user_id)
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            assert row is not None
+            row.storage_classes = ["local-path"]  # 有 SC,但不是实例盘要的那只
+            await session.commit()
+        skus = (await client.get("/api/v1/skus")).json()
+        images = (await client.get("/api/v1/images")).json()
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": next(s for s in skus if s["tier"] == "dedicated")["id"],
+                "gpu_count": 1,
+                "image_ref": images[0]["image_ref"],
+                "ssh_key_ids": [key_id],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["detail"]["missing"] == ["topolvm-provisioner"]
+        # 数据盘同理:不能卖一块永远挂不上、却按日计费的盘
+        resp = await client.post(
+            "/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=headers
+        )
+        assert resp.status_code == 409, resp.text
+
     async def test_k3s_shared_pod_gets_nvidia_runtime(self, sm, fake):
         from app.core.gpu_adapter import build_gpu_request
 

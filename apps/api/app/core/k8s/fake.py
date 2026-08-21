@@ -7,6 +7,8 @@ kill_pod / inject_pod(reconciler 场景)。容量按 pool 配置,近似库存=�
 from dataclasses import dataclass, field
 
 from app.core.k8s.base import (
+    INSTANCE_DISK_STORAGE_CLASS,
+    JUICEFS_STORAGE_CLASS,
     ClusterProbe,
     InstancePodSpec,
     PodStatus,
@@ -79,7 +81,7 @@ class FakeOrchestrator:
             kps_present=True,
             gpu_operator_present=True,
             kata_runtimeclass=True,
-            storage_classes=("juicefs-sc", "topolvm-provisioner"),
+            storage_classes=(JUICEFS_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
             runtime_classes=("kata-qemu", "nvidia"),
             pools=pools,
         )

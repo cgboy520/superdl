@@ -13,6 +13,7 @@ from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
 from app.core.timeutil import now_utc
 from app.modules.billing import service as billing_service
+from app.modules.nodes import service as nodes_service
 from app.modules.orchestrator.models import DataDisk
 
 logger = get_logger(__name__)
@@ -21,6 +22,9 @@ BILLABLE_STATUSES = ("active", "grace")  # frozen 不再计费
 
 
 async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: int) -> DataDisk:
+    # JuiceFS SC 缺位时先拦下:否则用户买到一块永远挂不上(挂了实例就 Pending 到 failed)、
+    # 又按日计费的盘 —— 卖出一个注定不可用的付费商品比开不出实例更难看
+    await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_effective_policies(session)
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
         raise AppError(

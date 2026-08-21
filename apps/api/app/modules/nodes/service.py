@@ -21,7 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.k8s.base import ClusterProbe, derive_distro
+from app.core.k8s.base import (
+    INSTANCE_DISK_STORAGE_CLASS,
+    JUICEFS_STORAGE_CLASS,
+    ClusterProbe,
+    derive_distro,
+)
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
@@ -460,4 +465,35 @@ async def require_hami_ready(session: AsyncSession) -> None:
             key="nodes.clusterNotReady",
             http_status=http_status.HTTP_409_CONFLICT,
             detail={"reason": "hami_not_ready"},
+        )
+
+
+async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool) -> None:
+    """存储下发门禁:StorageClass 缺位即时 409,而非让用户等 300 秒 Pending 超时。
+
+    探测数据早就采集并落库了(ClusterStatus.storage_classes),此前只被集群体检拿去做
+    `bool(scs)` —— 集群里有任意一个 SC 就绿灯,既不看实例盘那只在不在,也不看数据盘那只
+    在不在。于是「代码申请 juicefs-sc 而部署只创建 juicefs-shared」「light 档关掉 topolvm
+    而实例盘 SC 是硬编码」这两类必然失败的下发,一条都拦不下。
+    """
+    row = await get_cluster_status(session)
+    if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:
+        raise AppError(
+            ErrorCode.CLUSTER_NOT_READY,
+            key="nodes.clusterNotReady",
+            http_status=http_status.HTTP_409_CONFLICT,
+            detail={"reason": "probe_stale" if row else "no_probe"},
+        )
+    present = set(row.storage_classes or ())
+    required = [INSTANCE_DISK_STORAGE_CLASS]
+    if with_data_disk:
+        required.append(JUICEFS_STORAGE_CLASS)
+    missing = [sc for sc in required if sc not in present]
+    if missing:
+        raise AppError(
+            ErrorCode.CLUSTER_NOT_READY,
+            key="nodes.storageClassMissing",
+            params={"names": "、".join(missing)},
+            http_status=http_status.HTTP_409_CONFLICT,
+            detail={"reason": "storage_class_missing", "missing": missing},
         )

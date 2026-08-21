@@ -6,6 +6,20 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+# 存储契约:这三个名字必须与 deploy/cluster/values/{topolvm,juicefs}.yaml 里真实创建的
+# StorageClass 对得上。K8s 创建 PVC 时不校验 SC 是否存在,名字错了不会报错 ——
+# PVC 永久 Pending,实例卡到 300 秒超时才 failed,用户只看到「开不出来」。
+# 下发门禁(nodes.require_storage_classes)按名核对已探测到的 SC,把这类错配变成即时 409。
+INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
+JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
+JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)
+
+
+def instance_disk_pvc_name(instance_name: str) -> str:
+    """实例盘 PVC 名。平台自管生命周期(只在释放/回收时删),不是 Pod 拥有的
+    ephemeral volume —— 后者会让「关机」把用户数据一起抹掉。"""
+    return f"{instance_name}-root"
+
 
 @dataclass(frozen=True)
 class InstancePodSpec:

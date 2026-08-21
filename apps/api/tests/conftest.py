@@ -55,14 +55,22 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
     smaker = get_sessionmaker()
     # 集群能力缓存预置健康态(等价"worker 已跑过一轮巡检"):shared 档下发门禁读它。
     # 门禁负例测试自行 UPDATE/DELETE 该行。
-    from app.core.k8s.base import ClusterProbe
+    from app.core.k8s.base import (
+        INSTANCE_DISK_STORAGE_CLASS,
+        JUICEFS_STORAGE_CLASS,
+        ClusterProbe,
+    )
     from app.modules.nodes.service import save_cluster_probe
 
     async with smaker() as session:
         await save_cluster_probe(
             session,
             ClusterProbe(
-                api_reachable=True, k8s_version="v1.36.2+rke2r1", distro="rke2", hami_ready=True
+                api_reachable=True,
+                k8s_version="v1.36.2+rke2r1",
+                distro="rke2",
+                hami_ready=True,
+                storage_classes=(INSTANCE_DISK_STORAGE_CLASS, JUICEFS_STORAGE_CLASS),
             ),
         )
         await session.commit()

@@ -95,7 +95,8 @@
     "clusterProbeFailed": "Cluster connection failed: {{error}}",
     "enrollTransition": "Enrollment status transition {{from}} → {{to}} is not allowed",
     "hostnameMismatch": "Hostname does not match the registration; the token is revoked — verify in the admin console and regenerate",
-    "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)"
+    "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)",
+    "storageClassMissing": "Cluster storage is not ready (missing {{names}}), so this cannot be provisioned right now — please contact platform operations"
   },
   "orchestrator": {
     "accessNeedsRunning": "Connection info is available while the instance is running",

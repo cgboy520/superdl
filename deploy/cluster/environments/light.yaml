@@ -1,11 +1,14 @@
 # light 档(k3s 单机/小规模):仅共享档(hami 池)SKU;dedicated/mig 需 full 集群。
 # CNI 用 k3s 内置 flannel(不装 Cilium);GPU 栈用 HAMi 直装(不装 gpu-operator);
-# 监控 kps 精简 values;存储两件默认关(需要数据盘/JuiceFS 时改 true 再 apply)。
+# 监控 kps 精简 values。
+# 存储:TopoLVM 是**实例盘**的强制依赖(每个租户 Pod 都要挂),不打开一个实例都开不出来,
+# 故 light 档也必须开 —— 前提是 ansible 基线已在该机建出 VG superdl-nvme。
+# JuiceFS 才是可选项(只有数据盘用),不需要数据盘可保持 false。
 cilium: {enabled: false}
 gpuOperator: {enabled: false}
 hami: {enabled: true}
 kps: {enabled: true}
 juicefs: {enabled: false}
-topolvm: {enabled: false}
+topolvm: {enabled: true}   # 实例盘必需,不是可选项
 certManager: {enabled: true}
 ingressNginx: {enabled: true}
