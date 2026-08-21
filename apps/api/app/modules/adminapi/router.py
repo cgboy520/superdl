@@ -21,6 +21,7 @@ from app.modules.adminapi.schemas import (
     AnnouncementResultOut,
     AuditLogOut,
     DeadTaskOut,
+    GpuModelAggregateOut,
     ImageCoverageOut,
     ImageNodeCacheOut,
     NodeOut,
@@ -404,8 +405,34 @@ async def admin_node_metrics(
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
+    """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。
+
+    台账为空(巡检未跑过/worker 停摆)时回落实时 K8s 查询,避免管理端开天窗。
+    """
+    rows = await nodes_service.list_node_specs(session)
+    if rows:
+        return [
+            NodeOut(
+                name=r.node_name,
+                pool_label=r.pool_label or "",
+                gpu_model=r.gpu_model or "GPU",
+                gpu_total=r.gpu_count,
+                gpu_used=r.gpu_used,
+                status=r.status,
+                vcpu=r.vcpu,
+                mem_gb=r.mem_gb,
+                disk_gb=r.disk_gb,
+                driver_version=r.driver_version or "",
+                cuda_version=r.cuda_version or "",
+                gpu_model_raw=r.gpu_model_raw or "",
+                vram_gb=r.vram_gb,
+                unlabeled=r.unlabeled,
+                label_synced=r.label_synced,
+                last_seen=r.last_seen.isoformat() if r.last_seen else "",
+            )
+            for r in rows
+        ]
     nodes = await orchestrator_service.cluster_nodes()
-    # 驱动/CUDA/型号:K8s 侧无 GFD 标签时,用加入登记(nvidia-smi 上报)兜底展示
     specs = await nodes_service.joined_node_specs(session)
     out: list[NodeOut] = []
     for n in nodes:
@@ -431,6 +458,13 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
             )
         )
     return out
+
+
+@router.get("/cluster/gpu-models", dependencies=[require_roles("ops", "readonly")])
+async def admin_gpu_model_aggregates(session: DbSession) -> list[GpuModelAggregateOut]:
+    """台账按 canonical×池聚合(SKU 表单「从集群资源创建」下拉;None 型号=未识别桶)。"""
+    aggs = await nodes_service.gpu_model_aggregates(session)
+    return [GpuModelAggregateOut(**vars(a)) for a in aggs]
 
 
 class NodeCordonRequest(BaseModel):

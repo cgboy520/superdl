@@ -46,6 +46,7 @@ import type {
   EnrollmentCreate,
   EnrollmentRegenerateRequest,
   EnrollmentRevokeRequest,
+  GpuModelAggregateOut,
   HTTPValidationError,
   ImageCreate,
   ImageDeleteRequest,
@@ -810,6 +811,107 @@ export function useAdminLoginApiAdminV1AuthLoginPost<TData = Awaited<ReturnType<
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminLoginApiAdminV1AuthLoginPostQueryOptions(adminLoginRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/cluster/gpu-models`
+}
+
+/**
+ * 台账按 canonical×池聚合(SKU 表单「从集群资源创建」下拉;None 型号=未识别桶)。
+ * @summary Admin Gpu Model Aggregates
+ */
+export const adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<GpuModelAggregateOut[]> => {
+
+  return customFetch<GpuModelAggregateOut[]>(getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/cluster/gpu-models`
+    ] as const;
+    }
+
+
+export const getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>> = ({ signal }) => adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>>
+export type AdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryError = unknown
+
+
+export function useAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet<TData = Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet<TData = Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet<TData = Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Gpu Model Aggregates
+ */
+
+export function useAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet<TData = Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -2498,6 +2600,9 @@ export const getAdminListNodesApiAdminV1NodesGetUrl = () => {
 }
 
 /**
+ * 节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。
+ *
+ * 台账为空(巡检未跑过/worker 停摆)时回落实时 K8s 查询,避免管理端开天窗。
  * @summary Admin List Nodes
  */
 export const adminListNodesApiAdminV1NodesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<NodeOut[]> => {

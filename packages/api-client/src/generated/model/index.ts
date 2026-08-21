@@ -51,6 +51,7 @@ export * from './enrollmentRevokeRequest';
 export * from './getInstanceMetricsApiV1InstancesUuidMetricsGet200';
 export * from './getInstanceMetricsApiV1InstancesUuidMetricsGetParams';
 export * from './getLedgerApiV1WalletLedgerGetParams';
+export * from './gpuModelAggregateOut';
 export * from './hTTPValidationError';
 export * from './imageCoverageOut';
 export * from './imageCreate';

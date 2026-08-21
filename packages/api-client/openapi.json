@@ -1128,6 +1128,76 @@
         "title": "EnrollmentRevokeRequest",
         "type": "object"
       },
+      "GpuModelAggregateOut": {
+        "description": "台账按 canonical×池聚合(SKU「从集群资源创建」下拉数据源)。gpu_model=None 为未识别桶。",
+        "properties": {
+          "gpu_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Model"
+          },
+          "gpu_model_raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Model Raw"
+          },
+          "gpu_total": {
+            "title": "Gpu Total",
+            "type": "integer"
+          },
+          "node_count": {
+            "title": "Node Count",
+            "type": "integer"
+          },
+          "pool_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool Label"
+          },
+          "ready_gpu_free": {
+            "title": "Ready Gpu Free",
+            "type": "integer"
+          },
+          "ready_gpu_total": {
+            "title": "Ready Gpu Total",
+            "type": "integer"
+          },
+          "vram_gb": {
+            "title": "Vram Gb",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gpu_model",
+          "gpu_model_raw",
+          "pool_label",
+          "node_count",
+          "gpu_total",
+          "ready_gpu_total",
+          "ready_gpu_free",
+          "vram_gb"
+        ],
+        "title": "GpuModelAggregateOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2048,6 +2118,11 @@
             "title": "Gpu Model",
             "type": "string"
           },
+          "gpu_model_raw": {
+            "default": "",
+            "title": "Gpu Model Raw",
+            "type": "string"
+          },
           "gpu_total": {
             "title": "Gpu Total",
             "type": "integer"
@@ -2055,6 +2130,16 @@
           "gpu_used": {
             "title": "Gpu Used",
             "type": "integer"
+          },
+          "label_synced": {
+            "default": false,
+            "title": "Label Synced",
+            "type": "boolean"
+          },
+          "last_seen": {
+            "default": "",
+            "title": "Last Seen",
+            "type": "string"
           },
           "mem_gb": {
             "title": "Mem Gb",
@@ -2072,8 +2157,18 @@
             "title": "Status",
             "type": "string"
           },
+          "unlabeled": {
+            "default": false,
+            "title": "Unlabeled",
+            "type": "boolean"
+          },
           "vcpu": {
             "title": "Vcpu",
+            "type": "integer"
+          },
+          "vram_gb": {
+            "default": 0,
+            "title": "Vram Gb",
             "type": "integer"
           }
         },
@@ -4261,6 +4356,37 @@
         ]
       }
     },
+    "/api/admin/v1/cluster/gpu-models": {
+      "get": {
+        "description": "台账按 canonical×池聚合(SKU 表单「从集群资源创建」下拉;None 型号=未识别桶)。",
+        "operationId": "admin_gpu_model_aggregates_api_admin_v1_cluster_gpu_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GpuModelAggregateOut"
+                  },
+                  "title": "Response Admin Gpu Model Aggregates Api Admin V1 Cluster Gpu Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Gpu Model Aggregates",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/finance/anomalies": {
       "get": {
         "description": "异常清单:疑似丢回调 / 近 48h 关单 / 负余额钱包。",
@@ -5070,6 +5196,7 @@
     },
     "/api/admin/v1/nodes": {
       "get": {
+        "description": "节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。\n\n台账为空(巡检未跑过/worker 停摆)时回落实时 K8s 查询,避免管理端开天窗。",
         "operationId": "admin_list_nodes_api_admin_v1_nodes_get",
         "responses": {
           "200": {

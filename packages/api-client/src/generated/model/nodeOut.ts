@@ -10,11 +10,16 @@ export interface NodeOut {
   disk_gb: number;
   driver_version?: string;
   gpu_model: string;
+  gpu_model_raw?: string;
   gpu_total: number;
   gpu_used: number;
+  label_synced?: boolean;
+  last_seen?: string;
   mem_gb: number;
   name: string;
   pool_label: string;
   status: string;
+  unlabeled?: boolean;
   vcpu: number;
+  vram_gb?: number;
 }
