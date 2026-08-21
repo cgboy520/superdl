@@ -11,6 +11,11 @@ OUTBOX_DEAD_TOTAL = Counter(
 SETTLEMENT_FAILED_TOTAL = Counter(
     "superdl_settlement_failed_total", "结算失败次数(小时结算/日结按 kind 区分)", ["kind"]
 )
+SETTLEMENT_LAG = Gauge(
+    "superdl_settlement_lag_windows",
+    "结算水位线落后当前的窗口数(hourly 计小时 / daily_disk 计日;>1 即有窗口未追平)",
+    ["kind"],
+)
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
 PREWARM_NODES = Gauge(
     "superdl_prewarm_nodes",

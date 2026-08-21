@@ -10,9 +10,10 @@ from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillHourly, Wallet
 from app.modules.billing.settlement import (
     bill_amount,
+    get_watermark,
     running_seconds_in_window,
+    settle_due_hours,
     settle_instance_window,
-    settle_previous_hour,
     upsert_hour_bill,
 )
 from app.modules.orchestrator.models import Instance, InstanceEvent
@@ -289,8 +290,8 @@ class TestHourlySettlementJob:
             sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
         )
         at = H_END + timedelta(minutes=2)
-        assert await settle_previous_hour(sm, at=at) == 1
-        assert await settle_previous_hour(sm, at=at) == 0  # 幂等:零重复扣款
+        assert await settle_due_hours(sm, at=at) == 1
+        assert await settle_due_hours(sm, at=at) == 0  # 幂等:零重复扣款
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
             w = (await session.execute(select(Wallet))).scalar_one()
@@ -300,7 +301,7 @@ class TestHourlySettlementJob:
     async def test_long_running_instance_without_window_events(self, sm):
         """跨小时持续 running(窗口内无事件)也必须被结算。"""
         await seed_instance(sm, events=[(H - timedelta(hours=5), "creating", "running")])
-        assert await settle_previous_hour(sm, at=H_END + timedelta(minutes=2)) == 1
+        assert await settle_due_hours(sm, at=H_END + timedelta(minutes=2)) == 1
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
         assert bill.seconds_used == 3600
@@ -313,14 +314,14 @@ class TestHourlySettlementJob:
             gpu_count=4,
             events=[(H - timedelta(hours=1), "creating", "running")],
         )
-        await settle_previous_hour(sm, at=H_END + timedelta(minutes=2))
+        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
         assert bill.amount == Decimal("12.00")  # 3.00 × 4 卡
 
     async def test_ledger_balance_chain_consistent(self, sm):
         await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
-        await settle_previous_hour(sm, at=H_END + timedelta(minutes=2))
+        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         async with sm() as session:
             entries = (
                 (await session.execute(select(BalanceLedger).order_by(BalanceLedger.id)))
@@ -396,3 +397,43 @@ class TestTinyDurationTail:
             )
             await session.commit()
         assert second == Decimal("0.84")
+
+
+class TestCatchUpSettlement:
+    """停机跨整点后的追平:漏掉的小时必须补上,金额与连续运行一致。"""
+
+    async def test_missed_hours_are_caught_up(self, sm):
+        # 持续 running 3 小时;worker 只在最后一个整点后跑了一轮
+        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        at = H + timedelta(hours=3, minutes=2)
+        assert await settle_due_hours(sm, at=at) == 1  # 首轮只结上一小时,水位线落 [12:00)
+        at2 = H + timedelta(hours=6, minutes=2)  # 停机 3 小时后恢复
+        assert await settle_due_hours(sm, at=at2) == 3
+        async with sm() as session:
+            bills = (
+                (await session.execute(select(BillHourly).order_by(BillHourly.hour_start)))
+                .scalars()
+                .all()
+            )
+            w = (await session.execute(select(Wallet))).scalar_one()
+        assert [b.hour_start.hour for b in bills] == [12, 13, 14, 15]
+        assert all(b.seconds_used == 3600 for b in bills)
+        # 4 个整点 × 1.68,与「连续运行、每小时准时结算」完全一致
+        assert w.balance == Decimal("100.00") - Decimal("1.68") * 4
+
+    async def test_watermark_advances_and_blocks_replay(self, sm):
+        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        at = H_END + timedelta(minutes=2)
+        await settle_due_hours(sm, at=at)
+        async with sm() as session:
+            assert await get_watermark(session, "hourly") == H
+        assert await settle_due_hours(sm, at=at) == 0  # 水位线已过,重跑不重复扣款
+
+    async def test_catchup_truncated_at_limit(self, sm):
+        """停机超出追平上限:只结最近 MAX_CATCHUP_HOURS 小时,不把 worker 拖死。"""
+        from app.modules.billing.settlement import MAX_CATCHUP_HOURS
+
+        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
+        at = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
+        assert await settle_due_hours(sm, at=at) == MAX_CATCHUP_HOURS

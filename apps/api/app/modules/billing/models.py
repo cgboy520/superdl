@@ -70,6 +70,19 @@ class BillDailyDisk(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class SettlementWatermark(Base):
+    """结算水位线:已结清的最后一个窗口起点(key='hourly' 存小时,'daily_disk' 存自然日)。
+
+    结算是「从水位线追平到当前」而非只结上一个窗口:worker 停机跨整点/跨日不再永久漏账。
+    """
+
+    __tablename__ = "settlement_watermarks"
+
+    key: Mapped[str] = mapped_column(String(16), primary_key=True)
+    settled_through: Mapped[datetime]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class Order(Base):
     """充值订单。支付回调幂等靠 channel_txn_id 唯一 + status 检查。"""
 

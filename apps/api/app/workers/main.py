@@ -86,7 +86,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     """各模块定时任务注册(结算/巡检/聚合)。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
-    from app.modules.billing.settlement import settle_daily_disks, settle_previous_hour
+    from app.modules.billing.settlement import settle_daily_disks, settle_due_hours
     from app.modules.catalog.prewarm import prewarm_patrol
     from app.modules.metering.service import aggregate_previous_hour
     from app.modules.nodes.patrol import node_spec_patrol
@@ -111,13 +111,16 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
+    # 定时任务的 misfire 宽限:APScheduler 默认只有 1 秒,事件循环稍有阻塞就整轮跳过。
+    # 结算类任务本身还有水位线追平兜底,宽限只是让「刚好错过」的那次直接补跑。
     scheduler.add_job(
-        settle_previous_hour,
+        settle_due_hours,
         "cron",
         minute=2,
         args=[sm],
         id="hourly_settlement",
         coalesce=True,
+        misfire_grace_time=1800,
     )
     scheduler.add_job(
         settle_daily_disks,
@@ -127,6 +130,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         args=[sm],
         id="daily_disk_settlement",
         coalesce=True,
+        misfire_grace_time=3600,
     )
     scheduler.add_job(
         aggregate_previous_hour,
@@ -135,6 +139,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         args=[sm],
         id="usage_aggregation",
         coalesce=True,
+        misfire_grace_time=1800,
     )
     scheduler.add_job(
         close_expired_orders,
@@ -161,6 +166,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         args=[sm],
         id="cleanup_expired_rows",
         coalesce=True,
+        misfire_grace_time=3600,
     )
     scheduler.add_job(
         balance_patrol,

@@ -5,6 +5,7 @@ from app.modules.billing.payment_service import (
     list_payment_anomalies,
     verify_order,
 )
+from app.modules.billing.settlement import settle_disk_pending_days
 from app.modules.billing.wallet import (
     admin_list_orders,
     balances_by_user,
@@ -33,5 +34,6 @@ __all__ = [
     "lock_wallet",
     "require_balance_at_least",
     "revenue_summary",
+    "settle_disk_pending_days",
     "verify_order",
 ]

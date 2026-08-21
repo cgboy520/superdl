@@ -138,6 +138,11 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_settlement_failed_total[1h]) > 0
             labels: {severity: critical}
             annotations: {summary: "结算失败({{ $labels.kind }}):检查 worker 日志,结算函数幂等可重跑"}
+          - alert: SettlementLagging
+            expr: superdl_settlement_lag_windows > 1
+            for: 15m
+            labels: {severity: critical}
+            annotations: {summary: "结算水位线落后 {{ $value }} 个窗口({{ $labels.kind }}):有账期未追平,worker 日志查失败实例"}
           - alert: PaymentCallbackMismatch
             expr: increase(superdl_payment_callback_mismatch_total[10m]) > 0
             labels: {severity: critical}

@@ -183,6 +183,47 @@ class TestDailyDiskBilling:
         await create_disk(client, headers)  # 今天建的盘
         assert await settle_daily_disks(sm) == 0
 
+    async def test_delete_same_day_pays_final_day(self, client, sm, fake):
+        """当日建、当日删:必须出末日账,否则可循环零费用占用存储。"""
+        headers, user_id, _key = await create_user_with_key(client, "13500000022")
+        await fund_wallet(sm, user_id)
+        disk = await create_disk(client, headers, size_gb=100)
+        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
+        assert resp.status_code in (200, 202, 204), resp.text
+        async with sm() as session:
+            bill = (await session.execute(select(BillDailyDisk))).scalar_one()
+        assert bill.amount == Decimal("0.12")
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "99.88"
+
+    async def test_expand_settles_old_size_first(self, client, sm, fake):
+        """扩容前按旧容量结清未出账日期:新容量不追溯到旧日期(多扣用户)。"""
+        headers, user_id, _key = await create_user_with_key(client, "13500000023")
+        await fund_wallet(sm, user_id)
+        disk = await create_disk(client, headers, size_gb=100)
+        resp = await client.patch(
+            f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 1000}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            bill = (await session.execute(select(BillDailyDisk))).scalar_one()
+        assert bill.size_gb == 100  # 当日按旧容量
+        assert bill.amount == Decimal("0.12")
+
+    async def test_frozen_disk_delete_not_billed(self, client, sm, fake):
+        """冻结态不计费:欠费回收删盘不补账(否则把有意不计费的日子补回来)。"""
+        headers, user_id, _key = await create_user_with_key(client, "13500000024")
+        await fund_wallet(sm, user_id)
+        disk = await create_disk(client, headers)
+        async with sm() as session:
+            await session.execute(
+                update(DataDisk).where(DataDisk.uuid == disk["uuid"]).values(status="frozen")
+            )
+            await session.commit()
+        await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
+        async with sm() as session:
+            assert (await session.execute(select(BillDailyDisk))).scalar_one_or_none() is None
+
 
 class TestDiskArrearsChain:
     async def test_grace_frozen_wipe_and_recovery(self, client, sm, fake):

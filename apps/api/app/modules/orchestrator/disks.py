@@ -75,6 +75,20 @@ async def list_disks(session: AsyncSession, user_id: int) -> list[DataDisk]:
     )
 
 
+async def _settle_pending_days(session: AsyncSession, disk: DataDisk) -> None:
+    """按变更前容量结清未出账的自然日(同事务)。非计费态的盘不补账。"""
+    if disk.status not in BILLABLE_STATUSES:
+        return
+    await billing_service.settle_disk_pending_days(
+        session,
+        disk_id=disk.id,
+        user_id=disk.user_id,
+        price_gb_month=disk.price_gb_month,
+        size_gb=disk.size_gb,
+        created_at=disk.created_at,
+    )
+
+
 async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_gb: int) -> DataDisk:
     disk = await get_disk(session, user_id, uuid)
     if disk.status != "active":
@@ -84,6 +98,7 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     max_gb = (await get_effective_policies(session)).disk_max_gb
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
+    await _settle_pending_days(session, disk)  # 先按旧容量结清,扩容不追溯涨价
     disk.size_gb = new_size_gb
     await session.commit()
     return disk
@@ -96,6 +111,7 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
         raise AppError(ErrorCode.DISK_IN_USE, key="disks.inUseDelete")
     if disk.status == "deleting":
         return disk
+    await _settle_pending_days(session, disk)  # 末日账:当日建当日删不能免单
     disk.status = "deleting"
     enqueue(session, "disk.wipe", {"disk_id": disk.id})
     await session.commit()
