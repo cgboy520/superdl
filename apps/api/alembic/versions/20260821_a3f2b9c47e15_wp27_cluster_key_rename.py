@@ -23,18 +23,14 @@ RENAMES = {"rke2_server_url": "cluster_server_url", "rke2_version": "cluster_age
 def upgrade() -> None:
     for old, new in RENAMES.items():
         op.execute(
-            "UPDATE platform_settings SET key = '{new}' WHERE key = '{old}' "
-            "AND NOT EXISTS (SELECT 1 FROM platform_settings ps WHERE ps.key = '{new}')".format(
-                new=new, old=old
-            )
+            f"UPDATE platform_settings SET key = '{new}' WHERE key = '{old}' "
+            f"AND NOT EXISTS (SELECT 1 FROM platform_settings ps WHERE ps.key = '{new}')"
         )
 
 
 def downgrade() -> None:
     for old, new in RENAMES.items():
         op.execute(
-            "UPDATE platform_settings SET key = '{old}' WHERE key = '{new}' "
-            "AND NOT EXISTS (SELECT 1 FROM platform_settings ps WHERE ps.key = '{old}')".format(
-                new=new, old=old
-            )
+            f"UPDATE platform_settings SET key = '{old}' WHERE key = '{new}' "
+            f"AND NOT EXISTS (SELECT 1 FROM platform_settings ps WHERE ps.key = '{old}')"
         )
