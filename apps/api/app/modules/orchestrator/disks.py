@@ -2,9 +2,10 @@
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
@@ -26,6 +27,19 @@ async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: i
             ErrorCode.VALIDATION_ERROR,
             key="disks.sizeRange",
             params={"min": policies.disk_min_gb, "max": policies.disk_max_gb},
+        )
+    # 数量配额:建盘只校验余额(日结才扣),不设上限的话一个账号能把 JuiceFS 铺满
+    max_disks = get_settings().max_disks_per_user
+    live = (
+        await session.execute(
+            select(func.count())
+            .select_from(DataDisk)
+            .where(DataDisk.user_id == user_id, DataDisk.status != "deleted")
+        )
+    ).scalar_one()
+    if live >= max_disks:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR, key="disks.countQuota", params={"max": max_disks}
         )
     price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)

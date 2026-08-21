@@ -73,6 +73,7 @@
     "validation": "Request validation failed"
   },
   "disks": {
+    "countQuota": "Data disk limit reached ({{max}}) — delete unused disks or contact support to raise it",
     "expandNeedsActive": "Only active data disks can be expanded",
     "inUseDelete": "The data disk is mounted — release the instance first",
     "mountedElsewhere": "The data disk is mounted on another instance",

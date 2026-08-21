@@ -83,6 +83,7 @@ MESSAGES: dict[str, str] = {
     "common.rateLimited": "尝试过于频繁,请稍后再试",
     "common.validation": "参数校验失败",
     # 数据盘
+    "disks.countQuota": "数据盘数量已达上限({max} 块),请删除不用的盘或联系客服提额",
     "disks.expandNeedsActive": "仅正常状态的数据盘可以扩容",
     "disks.inUseDelete": "数据盘挂载中,请先释放对应实例",
     "disks.mountedElsewhere": "数据盘已挂载到其他实例",

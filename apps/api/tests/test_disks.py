@@ -281,3 +281,19 @@ class TestDiskArrearsChain:
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["status"] == "active"
         assert d["grace_started_at"] is None
+
+
+class TestDiskQuota:
+    async def test_count_quota_blocks_creation(self, client, sm, fake, monkeypatch):
+        from app.core.config import get_settings
+
+        headers, user_id, _key = await create_user_with_key(client, "13500000040")
+        await fund_wallet(sm, user_id)
+        monkeypatch.setattr(get_settings(), "max_disks_per_user", 2, raising=False)
+        await create_disk(client, headers, name="d1")
+        await create_disk(client, headers, name="d2")
+        resp = await client.post(
+            "/api/v1/disks", json={"name": "d3", "size_gb": 100}, headers=headers
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "disks.countQuota"

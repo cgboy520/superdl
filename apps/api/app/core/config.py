@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     # 每用户配额(防单账号无限开机;K8s ResourceQuota 是集群侧兜底)
     max_instances_per_user: int = 10
     max_gpus_per_user: int = 8
+    max_disks_per_user: int = 20  # 数据盘数量上限(建盘只校验余额,不设上限即可无限建)
 
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
