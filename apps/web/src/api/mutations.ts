@@ -18,6 +18,7 @@ import {
   markReadApiV1NotificationsNotificationIdReadPost,
   mockWebhookApiV1WebhooksMockPost,
   registerApiV1AuthRegisterPost,
+  resetPasswordApiV1AuthPasswordResetPost,
   releaseInstanceApiV1InstancesUuidDelete,
   renameInstanceApiV1InstancesUuidPatch,
   resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost,
@@ -35,6 +36,7 @@ import type {
   LoginRequest,
   RealNameRequest,
   RechargeCreate,
+  PasswordResetRequest,
   RegisterRequest,
   SmsCodeRequest,
 } from "@superdl/api-client";
@@ -70,6 +72,9 @@ export const useRegister = (o?: Parameters<typeof useApiMutation>[1]) =>
   useApiMutation((body: RegisterRequest) => registerApiV1AuthRegisterPost(body), o);
 export const useLogin = (o?: Parameters<typeof useApiMutation>[1]) =>
   useApiMutation((body: LoginRequest) => loginApiV1AuthLoginPost(body), o);
+/** 设置/修改/找回密码(手机号 + 验证码);成功返回新 token 对,旧会话已被撤销。 */
+export const useResetPassword = (o?: Parameters<typeof useApiMutation>[1]) =>
+  useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), o);
 
 // ---------- instances ----------
 export const useCreateInstance = (o?: { onSuccess?: (d: unknown) => void }) =>

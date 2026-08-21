@@ -11,4 +11,5 @@ export type SmsCodeRequestPurpose = typeof SmsCodeRequestPurpose[keyof typeof Sm
 export const SmsCodeRequestPurpose = {
   register: 'register',
   login: 'login',
+  reset_password: 'reset_password',
 } as const;

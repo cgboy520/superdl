@@ -22,6 +22,7 @@ import type {
 import type {
   HTTPValidationError,
   LoginRequest,
+  PasswordResetRequest,
   RealNameRequest,
   RefreshRequest,
   RegisterRequest,
@@ -144,6 +145,107 @@ export function useLoginApiV1AuthLoginPost<TData = Awaited<ReturnType<typeof log
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getLoginApiV1AuthLoginPostQueryOptions(loginRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getResetPasswordApiV1AuthPasswordResetPostUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password/reset`
+}
+
+/**
+ * 设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。
+ * @summary Reset Password
+ */
+export const resetPasswordApiV1AuthPasswordResetPost = async (passwordResetRequest: PasswordResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
+
+  return customFetch<TokenPair>(getResetPasswordApiV1AuthPasswordResetPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(passwordResetRequest)
+  }
+);}
+
+
+
+
+
+export const getResetPasswordApiV1AuthPasswordResetPostQueryKey = (passwordResetRequest?: PasswordResetRequest,) => {
+    return [
+    'POST', `/api/v1/auth/password/reset`, passwordResetRequest
+    ] as const;
+    }
+
+
+export const getResetPasswordApiV1AuthPasswordResetPostQueryOptions = <TData = Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError = HTTPValidationError>(passwordResetRequest: PasswordResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getResetPasswordApiV1AuthPasswordResetPostQueryKey(passwordResetRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>> = ({ signal }) => resetPasswordApiV1AuthPasswordResetPost(passwordResetRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ResetPasswordApiV1AuthPasswordResetPostQueryResult = NonNullable<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>>
+export type ResetPasswordApiV1AuthPasswordResetPostQueryError = HTTPValidationError
+
+
+export function useResetPasswordApiV1AuthPasswordResetPost<TData = Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError = HTTPValidationError>(
+ passwordResetRequest: PasswordResetRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>,
+          TError,
+          Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useResetPasswordApiV1AuthPasswordResetPost<TData = Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError = HTTPValidationError>(
+ passwordResetRequest: PasswordResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>,
+          TError,
+          Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useResetPasswordApiV1AuthPasswordResetPost<TData = Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError = HTTPValidationError>(
+ passwordResetRequest: PasswordResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Reset Password
+ */
+
+export function useResetPasswordApiV1AuthPasswordResetPost<TData = Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError = HTTPValidationError>(
+ passwordResetRequest: PasswordResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof resetPasswordApiV1AuthPasswordResetPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getResetPasswordApiV1AuthPasswordResetPostQueryOptions(passwordResetRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

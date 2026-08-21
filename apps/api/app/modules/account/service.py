@@ -174,6 +174,39 @@ async def login(
     return _issue_tokens(user)
 
 
+async def reset_password(
+    session: AsyncSession,
+    phone: str,
+    sms_code: str,
+    new_password: str,
+    *,
+    client_ip: str | None = None,
+) -> TokenPair:
+    """凭手机号 + 验证码设置新密码(首次设置、修改、找回同一条路径)。
+
+    先验码再查账号:反过来是手机号枚举 oracle。
+    成功后 token_version+1 —— 改密即踢掉全部在外会话(含泄露的那个),
+    并给调用方发一对新 token,当前设备不必重新登录。
+    """
+    await check_rate_limit(
+        f"password-reset:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+    )
+    await _consume_sms_code(session, phone, sms_code, "reset_password")
+    user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+    if user is None:
+        raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
+    if user.status == "frozen":
+        raise AppError(
+            ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
+        )
+    user.password_hash = await hash_password(new_password)
+    user.token_version += 1
+    await session.commit()
+    await session.refresh(user)
+    logger.info("password_reset", user_id=user.id)
+    return _issue_tokens(user)
+
+
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
     """轮换式刷新:refresh 一次性消费(jti 落库),重放视为泄露 → 撤销全部在外 token。"""
     payload = decode_token(refresh_token, "user", expected_type="refresh")

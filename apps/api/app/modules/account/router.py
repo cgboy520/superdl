@@ -6,6 +6,7 @@ from app.modules.account import service
 from app.modules.account.deps import CurrentUser
 from app.modules.account.schemas import (
     LoginRequest,
+    PasswordResetRequest,
     RealNameRequest,
     RefreshRequest,
     RegisterRequest,
@@ -50,6 +51,18 @@ async def login(body: LoginRequest, session: DbSession, request: Request) -> Tok
         session, body.phone, body.sms_code, body.password, client_ip=_client_ip(request)
     )
     set_audit_target(request, f"user:{pair.user.id}")
+    return pair
+
+
+@router.post("/auth/password/reset")
+async def reset_password(
+    body: PasswordResetRequest, session: DbSession, request: Request
+) -> TokenPair:
+    """设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。"""
+    pair = await service.reset_password(
+        session, body.phone, body.sms_code, body.new_password, client_ip=_client_ip(request)
+    )
+    set_audit_target(request, f"user:{pair.user.id}", detail={"action": "password_reset"})
     return pair
 
 

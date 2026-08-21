@@ -171,3 +171,70 @@ class TestAudit:
         reg = next(r for r in rows if r.action == "POST /api/v1/auth/register")
         assert reg.result == 201
         assert reg.target and reg.target.startswith("user:")
+
+
+async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
+    """直接落一条验证码(绕开 60s 发送间隔;注册助手刚发过码时不能再发)。"""
+    from datetime import timedelta
+
+    from app.core.timeutil import now_utc
+    from app.modules.account.models import SmsCode
+
+    async with sm() as session:
+        session.add(
+            SmsCode(
+                phone=phone,
+                code=code,
+                purpose=purpose,
+                expires_at=now_utc() + timedelta(minutes=5),
+            )
+        )
+        await session.commit()
+
+
+class TestPasswordReset:
+    async def test_set_then_login_with_new_password(self, client: AsyncClient, sm):
+        """无密码账号也能凭验证码设密码,旧会话被撤销,新 token 立即可用。"""
+        pair = await register(client, "13800000090")
+        old_access = pair["access_token"]
+
+        await issue_code(sm, "13800000090", "reset_password")
+        resp = await client.post(
+            "/api/v1/auth/password/reset",
+            json={"phone": "13800000090", "sms_code": "123456", "new_password": "newpass123"},
+        )
+        assert resp.status_code == 200, resp.text
+        new_pair = resp.json()
+
+        # 旧 access token 因 token_version 变更立即失效
+        assert (
+            await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_access}"})
+        ).status_code == 401
+        assert (
+            await client.get(
+                "/api/v1/me", headers={"Authorization": f"Bearer {new_pair['access_token']}"}
+            )
+        ).status_code == 200
+        # 新密码可登录
+        resp = await client.post(
+            "/api/v1/auth/login", json={"phone": "13800000090", "password": "newpass123"}
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_wrong_code_rejected(self, client: AsyncClient, sm):
+        await register(client, "13800000091")
+        await issue_code(sm, "13800000091", "reset_password")
+        resp = await client.post(
+            "/api/v1/auth/password/reset",
+            json={"phone": "13800000091", "sms_code": "000000", "new_password": "newpass123"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "SMS_CODE_INVALID"
+
+    async def test_unknown_phone_needs_code_first(self, client: AsyncClient):
+        """未注册手机号:先要过验证码那关,不构成「这个号存不存在」的探测口。"""
+        resp = await client.post(
+            "/api/v1/auth/password/reset",
+            json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123"},
+        )
+        assert resp.json()["code"] == "SMS_CODE_INVALID"

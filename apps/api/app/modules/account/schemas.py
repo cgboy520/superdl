@@ -8,7 +8,7 @@ PhoneStr = Field(pattern=r"^1[3-9]\d{9}$", description="中国大陆手机号")
 
 class SmsCodeRequest(BaseModel):
     phone: str = PhoneStr
-    purpose: Literal["register", "login"]
+    purpose: Literal["register", "login", "reset_password"]
 
 
 class RegisterRequest(BaseModel):
@@ -26,6 +26,14 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class PasswordResetRequest(BaseModel):
+    """设置/修改/找回密码:一律凭手机号 + 验证码,不需要旧密码(旧密码可能就是忘了的那个)。"""
+
+    phone: str = PhoneStr
+    sms_code: str = Field(min_length=4, max_length=8)
+    new_password: str = Field(min_length=8, max_length=64)
 
 
 class UserOut(BaseModel):

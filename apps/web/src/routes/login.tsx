@@ -12,7 +12,7 @@ import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, Typography 
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
-import { useLogin, useRegister, useSendSmsCode } from "../api/mutations";
+import { useLogin, useRegister, useResetPassword, useSendSmsCode } from "../api/mutations";
 import { BrandLogo } from "../components/layout/BrandLogo";
 import { LangSwitcher } from "../components/layout/LangSwitcher";
 import { authStore } from "../stores/auth";
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-type Mode = "sms" | "password" | "register";
+type Mode = "sms" | "password" | "register" | "reset";
 
 const GRID_TEXTURE = `url("data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><path d='M40 0H0v40' fill='none' stroke='rgba(255,255,255,0.07)'/></svg>`,
@@ -116,6 +116,12 @@ function LoginPage() {
   });
   const login = useLogin({ onSuccess: onLoggedIn });
   const register = useRegister({ onSuccess: onLoggedIn });
+  const resetPassword = useResetPassword({
+    onSuccess: (data) => {
+      message.success(t("login.resetDone"));
+      onLoggedIn(data);
+    },
+  });
 
   const submit = (values: {
     phone: string;
@@ -123,7 +129,13 @@ function LoginPage() {
     password?: string;
     accept_terms?: boolean;
   }) => {
-    if (mode === "register") {
+    if (mode === "reset") {
+      resetPassword.mutate({
+        phone: values.phone,
+        sms_code: values.sms_code ?? "",
+        new_password: values.password ?? "",
+      });
+    } else if (mode === "register") {
       register.mutate({
         phone: values.phone,
         sms_code: values.sms_code ?? "",
@@ -165,19 +177,21 @@ function LoginPage() {
             </div>
           )}
           <Typography.Title level={3} style={{ marginTop: 0 }}>
-            {t("login.title")}
+            {mode === "reset" ? t("login.resetTitle") : t("login.title")}
           </Typography.Title>
-          <Segmented
-            block
-            value={mode}
-            onChange={(v) => setMode(v as Mode)}
-            options={[
-              { label: t("login.modeSms"), value: "sms" },
-              { label: t("login.modePassword"), value: "password" },
-              { label: t("login.modeRegister"), value: "register" },
-            ]}
-            style={{ marginBottom: 16 }}
-          />
+          {mode !== "reset" && (
+            <Segmented
+              block
+              value={mode}
+              onChange={(v) => setMode(v as Mode)}
+              options={[
+                { label: t("login.modeSms"), value: "sms" },
+                { label: t("login.modePassword"), value: "password" },
+                { label: t("login.modeRegister"), value: "register" },
+              ]}
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Form form={form} layout="vertical" onFinish={submit}>
             <Form.Item
               name="phone"
@@ -196,7 +210,12 @@ function LoginPage() {
                       void form.validateFields(["phone"]).then(({ phone }) =>
                         sendCode.mutate({
                           phone,
-                          purpose: mode === "register" ? "register" : "login",
+                          purpose:
+                            mode === "register"
+                              ? "register"
+                              : mode === "reset"
+                                ? "reset_password"
+                                : "login",
                         }),
                       );
                     }}
@@ -212,11 +231,19 @@ function LoginPage() {
                 rules={
                   mode === "password"
                     ? [{ required: true, message: t("login.passwordRequired") }]
-                    : [{ min: 8, message: t("login.passwordMin") }]
+                    : mode === "reset"
+                      ? [{ required: true, min: 8, message: t("login.passwordMin") }]
+                      : [{ min: 8, message: t("login.passwordMin") }]
                 }
               >
                 <Input.Password
-                  placeholder={mode === "register" ? t("login.passwordSetPlaceholder") : t("login.passwordPlaceholder")}
+                  placeholder={
+                    mode === "password"
+                      ? t("login.passwordPlaceholder")
+                      : mode === "reset"
+                        ? t("login.passwordResetPlaceholder")
+                        : t("login.passwordSetPlaceholder")
+                  }
                 />
               </Form.Item>
             )}
@@ -249,11 +276,27 @@ function LoginPage() {
               htmlType="submit"
               block
               size="large"
-              loading={login.isPending || register.isPending}
+              loading={login.isPending || register.isPending || resetPassword.isPending}
             >
-              {mode === "register" ? t("login.submitRegister") : t("login.submitLogin")}
+              {mode === "register"
+                ? t("login.submitRegister")
+                : mode === "reset"
+                  ? t("login.submitReset")
+                  : t("login.submitLogin")}
             </Button>
           </Form>
+          <div style={{ marginTop: 12, textAlign: "right" }}>
+            {mode === "password" && (
+              <Typography.Link onClick={() => setMode("reset")}>
+                {t("login.forgotPassword")}
+              </Typography.Link>
+            )}
+            {mode === "reset" && (
+              <Typography.Link onClick={() => setMode("password")}>
+                {t("login.backToLogin")}
+              </Typography.Link>
+            )}
+          </div>
         </div>
       </div>
     </div>

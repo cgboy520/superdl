@@ -1,6 +1,7 @@
-/** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名预留+登出)。 */
+/** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名、登录密码、登出)。 */
 
 import { TableErrorEmpty } from "../components/QueryState";
+import type { TokenPair } from "@superdl/api-client";
 import { formatDateTime } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -11,6 +12,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Space,
   Table,
@@ -22,6 +24,8 @@ import { useState } from "react";
 import {
   useAddSshKey,
   useDeleteSshKey,
+  useResetPassword,
+  useSendSmsCode,
   useSetWarnThreshold,
   useSubmitRealName,
 } from "../api/mutations";
@@ -42,6 +46,7 @@ function SettingsPage() {
   const { data: keys, isLoading, isError, refetch } = useSshKeys();
   const [form] = Form.useForm();
   const [warnHours, setWarnHours] = useState<number>();
+  const [pwdOpen, setPwdOpen] = useState(false);
 
   const addKey = useAddSshKey({
     onSuccess: () => {
@@ -166,6 +171,12 @@ function SettingsPage() {
       <Card title={t("settings.accountCard")}>
         <Space orientation="vertical" size={12}>
           <Typography.Text>{t("settings.phoneLine", { phone: me?.phone ?? "" })}</Typography.Text>
+          <Space>
+            <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {t("settings.changePasswordHint")}
+            </Typography.Text>
+          </Space>
           <Button
             danger
             onClick={() => {
@@ -177,7 +188,84 @@ function SettingsPage() {
           </Button>
         </Space>
       </Card>
+      <PasswordModal open={pwdOpen} phone={me?.phone ?? ""} onClose={() => setPwdOpen(false)} />
     </Space>
+  );
+}
+
+/** 设置/修改密码:凭手机号 + 验证码(不问旧密码 —— 忘了的正是它)。 */
+function PasswordModal({
+  open,
+  phone,
+  onClose,
+}: {
+  open: boolean;
+  phone: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const [form] = Form.useForm<{ sms_code: string; new_password: string }>();
+  const [countdown, setCountdown] = useState(0);
+  const sendCode = useSendSmsCode({
+    onSuccess: () => {
+      message.success(t("settings.codeSent"));
+      setCountdown(60);
+      const timer = setInterval(
+        () => setCountdown((c) => (c <= 1 ? (clearInterval(timer), 0) : c - 1)),
+        1000,
+      );
+    },
+  });
+  const reset = useResetPassword({
+    onSuccess: (data) => {
+      const pair = data as TokenPair;
+      // 改密会撤销全部在外会话,本设备用返回的新 token 继续
+      authStore.getState().login(pair.access_token, pair.refresh_token);
+      message.success(t("settings.passwordChanged"));
+      form.resetFields();
+      onClose();
+    },
+  });
+
+  return (
+    <Modal
+      title={t("settings.changePassword")}
+      open={open}
+      onCancel={onClose}
+      okText={t("settings.savePassword")}
+      confirmLoading={reset.isPending}
+      onOk={() => {
+        void form.validateFields().then((v) =>
+          reset.mutate({ phone, sms_code: v.sms_code, new_password: v.new_password }),
+        );
+      }}
+      destroyOnHidden
+    >
+      <Form form={form} layout="vertical">
+        <Typography.Paragraph type="secondary">
+          {t("settings.changePasswordDesc", { phone })}
+        </Typography.Paragraph>
+        <Form.Item name="sms_code" rules={[{ required: true, message: t("settings.codeRequired") }]}>
+          <Space.Compact style={{ width: "100%" }}>
+            <Input placeholder={t("settings.codePlaceholder")} maxLength={6} />
+            <Button
+              disabled={countdown > 0}
+              loading={sendCode.isPending}
+              onClick={() => sendCode.mutate({ phone, purpose: "reset_password" })}
+            >
+              {countdown > 0 ? `${countdown}s` : t("settings.getCode")}
+            </Button>
+          </Space.Compact>
+        </Form.Item>
+        <Form.Item
+          name="new_password"
+          rules={[{ required: true, min: 8, message: t("settings.passwordMin") }]}
+        >
+          <Input.Password placeholder={t("settings.newPasswordPlaceholder")} />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 

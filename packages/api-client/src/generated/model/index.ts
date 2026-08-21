@@ -97,6 +97,7 @@ export * from './outboxTaskStatusOut';
 export * from './oversellPoolOut';
 export * from './pageBillHourlyOut';
 export * from './pageLedgerEntryOut';
+export * from './passwordResetRequest';
 export * from './paymentAnomalyOut';
 export * from './paymentAnomalyOutKind';
 export * from './paymentChannelsOut';
