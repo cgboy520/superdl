@@ -148,6 +148,10 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_payment_callback_mismatch_total[10m]) > 0
             labels: {severity: critical}
             annotations: {summary: "支付回调金额与订单不符:疑似攻击或渠道异常,见财务异常清单"}
+          - alert: InstanceNodeLost
+            expr: increase(superdl_instance_node_lost_total[15m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "有租户实例因所在节点失联被判停:每一条都是一个付了钱却用不了机器的用户,需人工核对是否退费"}
           - alert: LeakedPodsReclaimed
             expr: increase(superdl_reconcile_leaked_total[30m]) > 3
             labels: {severity: warning}

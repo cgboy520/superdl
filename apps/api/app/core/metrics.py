@@ -17,6 +17,10 @@ SETTLEMENT_LAG = Gauge(
     ["kind"],
 )
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
+INSTANCE_NODE_LOST_TOTAL = Counter(
+    "superdl_instance_node_lost_total",
+    "因节点失联(Pod 持续 not-ready)被判定停止的实例数(每一条 = 一个付了钱但机器不可用的用户)",
+)
 PREWARM_NODES = Gauge(
     "superdl_prewarm_nodes",
     "每镜像×状态的节点数(预热覆盖;巡检末尾全量刷新)",

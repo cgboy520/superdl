@@ -105,9 +105,13 @@ class K8sOrchestrator(Protocol):
         """创建 Pod + Service(SSH NodePort)+ Ingress(Jupyter)。已存在则跳过。"""
         ...
 
-    async def delete_instance(self, namespace: str, name: str) -> None:
+    async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
         """删除该实例的 Pod/Service/Ingress。**不动实例盘** —— 关机就是删 Pod,
-        盘必须活过关机(见 delete_instance_disk)。不存在则跳过。"""
+        盘必须活过关机(见 delete_instance_disk)。不存在则跳过。
+
+        force=True 走强制删除(gracePeriodSeconds=0,不等 kubelet 确认):只在节点已经
+        失联时用 —— 那种 Pod 优雅删除永远完不成,实例会卡在 stopping/releasing。
+        """
         ...
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:

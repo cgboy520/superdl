@@ -378,12 +378,15 @@ class RealOrchestrator:
             if not _is_conflict(exc):
                 raise
 
-    async def delete_instance(self, namespace: str, name: str) -> None:
-        await asyncio.to_thread(self._delete_instance_sync, namespace, name)
+    async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
+        await asyncio.to_thread(self._delete_instance_sync, namespace, name, force)
 
-    def _delete_instance_sync(self, namespace: str, name: str) -> None:
+    def _delete_instance_sync(self, namespace: str, name: str, force: bool = False) -> None:
+        # 节点失联时 kubelet 确认不了删除,Pod 会无限期 Terminating —— 强删(grace 0)
+        # 直接从 etcd 摘掉对象,否则实例永远卡在 stopping/releasing 等一个不会到的确认。
+        pod_kwargs = {"grace_period_seconds": 0} if force else {}
         for deleter in (
-            lambda: self.core.delete_namespaced_pod(name, namespace),
+            lambda: self.core.delete_namespaced_pod(name, namespace, **pod_kwargs),
             lambda: self.core.delete_namespaced_service(name, namespace),
             lambda: self.net.delete_namespaced_ingress(name, namespace),
         ):

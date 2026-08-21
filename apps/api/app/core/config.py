@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     freeze_grace_hours: int = 72  # 欠费冻结时长
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
+    # running 实例的 Pod 持续 not-ready 多久判定节点失联 → 停止计费。
+    # 与 K8s 默认的 unreachable taint tolerationSeconds(300)对齐:短于它会在节点抖动时
+    # 误杀,长于它则用户为一台已经不可用的机器多付这段时间的钱。
+    running_unready_timeout_seconds: int = 300
 
     # 镜像预热(可运营调整)
     prewarm_min_coverage_pct: int = 90  # is_prewarmed=true 所需的节点覆盖率下限

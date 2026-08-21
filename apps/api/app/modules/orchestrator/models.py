@@ -34,6 +34,10 @@ class Instance(Base):
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     frozen_deadline: Mapped[datetime | None]  # 冻结回收倒计时(72h)
+    # running 实例 Pod 首次 not-ready 的时刻。节点失联时 kubelet 不可达,Pod 对象停在
+    # phase=Running 只有 Ready 转 False —— 只看 exists/phase 的话 reconciler 什么也不做,
+    # 实例永远显示「运行中」并持续计费。持续 not-ready 超过宽限即判失联(见 reconciler)。
+    unready_since: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

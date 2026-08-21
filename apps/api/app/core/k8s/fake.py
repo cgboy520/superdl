@@ -113,9 +113,9 @@ class FakeOrchestrator:
             spec=spec, ready=self.auto_ready, phase="Running" if self.auto_ready else "Pending"
         )
 
-    async def delete_instance(self, namespace: str, name: str) -> None:
+    async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
         self.delete_calls += 1
-        if self.graceful_delete:
+        if self.graceful_delete and not force:
             pod = self.pods.get((namespace, name))
             if pod is not None:
                 pod.deleting = True  # Terminating:对象仍在,exists 仍为 True
@@ -186,6 +186,12 @@ class FakeOrchestrator:
     def kill_pod(self, namespace: str, name: str) -> None:
         """模拟 Pod 意外消失(节点故障)。"""
         self.pods.pop((namespace, name), None)
+
+    def mark_unready(self, namespace: str, name: str) -> None:
+        """模拟节点失联:kubelet 不可达,Ready 转 False 而 phase 仍是 Running、对象仍在。"""
+        pod = self.pods[(namespace, name)]
+        pod.ready = False
+        pod.phase = "Running"
 
     def mark_ready(self, namespace: str, name: str) -> None:
         pod = self.pods[(namespace, name)]

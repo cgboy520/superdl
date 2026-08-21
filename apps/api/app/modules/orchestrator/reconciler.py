@@ -2,7 +2,7 @@
 
 - creating/starting + Pod Ready → running(计费开始)
 - creating/starting 超时未 Ready → failed(全额退=无账)+ 清理
-- running + Pod 消失/异常 → failed(停止计费)+ 告警
+- running + Pod 消失/异常/持续 not-ready → failed(停止计费)+ 告警 + 通知用户
 - stopping + Pod 消失 → stopped(计费边,尾账监听器触发)
 - releasing + Pod 消失 → released(擦盘事件 + 端口回收)
 - K8s 存在但 DB 已终态的 Pod → 强制删除(清理泄漏)
@@ -14,11 +14,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
-from app.core.k8s import get_orchestrator
+from app.core.k8s import PodStatus, get_orchestrator
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import RECONCILE_LEAKED_TOTAL
+from app.core.metrics import INSTANCE_NODE_LOST_TOTAL, RECONCILE_LEAKED_TOTAL
 from app.core.timeutil import ensure_utc, now_utc
+from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.disks import detach_for_instance
 from app.modules.orchestrator.models import Instance, InstanceEvent
@@ -63,12 +64,40 @@ async def _entered_status_at(session: AsyncSession, instance: Instance):
     return ensure_utc(entered) if entered is not None else ensure_utc(instance.created_at)
 
 
+async def _running_pod_lost_reason(
+    session: AsyncSession, instance: Instance, st: PodStatus, unready_timeout: timedelta
+) -> str | None:
+    """running 实例是否已经不可用了。返回迁移 reason,None = 还活着。
+
+    只看 `exists` 和 `phase` 是不够的:节点断电/失联时 kubelet 不可达,node-lifecycle
+    controller 把 Pod 的 Ready condition 置 False,但 **phase 仍是 Running**、对象仍在
+    etcd 里(read 仍 200)。两个条件都不命中 → reconciler 什么也不做 → 控制台显示
+    「运行中」、SSH 连不上、账单每小时照扣,直到余额烧光被欠费停机;而那次停机同样
+    删不掉一个删不掉的 Pod,实例最终卡在 stopping。
+    """
+    if not st.exists or st.phase in ("Failed", "Succeeded"):
+        return "pod_lost"
+    if st.deleting:
+        return "pod_lost"  # 被驱逐/被外部删除,不是我们发起的
+    if st.ready:
+        return None
+    # not-ready 给一段宽限:容器重启、镜像层重挂这类抖动不该误杀实例
+    if instance.unready_since is None:
+        instance.unready_since = now_utc()
+        await session.flush()
+        return None
+    if now_utc() - ensure_utc(instance.unready_since) > unready_timeout:
+        return "node_lost"
+    return None
+
+
 async def _reconcile_instances(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
     settings = get_settings()
     orch = get_orchestrator()
     timeout = timedelta(seconds=settings.creating_timeout_seconds)
+    unready_timeout = timedelta(seconds=settings.running_unready_timeout_seconds)
 
     async with sm() as session:
         ids = (
@@ -119,21 +148,53 @@ async def _reconcile_instances(
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)
 
                 elif instance.status == sm_def.RUNNING:
-                    if not st.exists or st.phase in ("Failed", "Succeeded"):
+                    lost = await _running_pod_lost_reason(session, instance, st, unready_timeout)
+                    if lost is None:
+                        if instance.unready_since is not None:
+                            instance.unready_since = None  # 抖动恢复,重新计时
+                    else:
                         await transition(
                             session,
                             instance,
                             sm_def.FAILED,
-                            reason="pod_lost",
+                            reason=lost,
                             actor="system",
-                            metadata={"phase": st.phase if st.exists else "Missing"},
+                            metadata={
+                                "phase": st.phase if st.exists else "Missing",
+                                "ready": st.ready,
+                            },
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
                         if st.exists:
-                            await orch.delete_instance(instance.k8s_namespace, instance.uuid)
+                            # 失联节点上的 Pod 只有强删才会从 etcd 消失(kubelet 确认不了),
+                            # 优雅删除会让实例永久卡在 stopping/releasing。
+                            await orch.delete_instance(
+                                instance.k8s_namespace, instance.uuid, force=lost == "node_lost"
+                            )
                         counts["to_failed"] += 1
-                        logger.error("instance_pod_lost", instance_id=instance.id)
+                        if lost == "node_lost":
+                            INSTANCE_NODE_LOST_TOTAL.inc()
+                            logger.error(
+                                "instance_node_lost",
+                                instance_id=instance.id,
+                                node=instance.node_name,
+                            )
+                            await notify_service.notify(
+                                session,
+                                instance.user_id,
+                                type_="instance",
+                                title="实例已停止:所在节点失联",
+                                content=(
+                                    f"实例「{instance.name}」所在节点与集群失去联系,"
+                                    "已停止计费并终止该实例。失联期间产生的费用如有异议请联系客服。"
+                                    "实例盘数据保留,释放实例前不会清除。"
+                                ),
+                                severity="error",
+                                dedup_key=f"node_lost:{instance.id}",
+                            )
+                        else:
+                            logger.error("instance_pod_lost", instance_id=instance.id)
 
                 elif instance.status == sm_def.STOPPING:
                     if not st.exists:

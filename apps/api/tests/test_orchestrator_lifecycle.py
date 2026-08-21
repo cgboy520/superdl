@@ -275,6 +275,53 @@ class TestFailureModes:
             ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
         assert all(p is None for p in ports)
 
+    async def test_node_lost_stops_billing_and_notifies(self, client, sm, fake):
+        """节点断电/失联:kubelet 不可达,Pod 停在 phase=Running 只有 Ready 转 False。
+
+        此前 RUNNING 分支只看 exists 与 phase,两个条件都不命中 → reconciler 什么也不做:
+        控制台显示「运行中」、SSH 连不上、账单每小时照扣,直到余额烧光被欠费停机;
+        而那次停机同样删不掉一个删不掉的 Pod,实例最终卡在 stopping。
+        """
+        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        ns = f"tenant-{user_id}"
+        fake.mark_unready(ns, uuid)
+
+        # 宽限期内不误杀(容器重启、镜像层重挂这类抖动)
+        assert (await reconcile_once(sm))["to_failed"] == 0
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+        # 恢复即清零计时
+        fake.mark_ready(ns, uuid)
+        await reconcile_once(sm)
+        async with sm() as session:
+            inst = (
+                await session.execute(select(Instance).where(Instance.uuid == uuid))
+            ).scalar_one()
+            assert inst.unready_since is None
+
+        # 持续 not-ready 超过宽限 → 判失联
+        fake.mark_unready(ns, uuid)
+        await reconcile_once(sm)
+        async with sm() as session:
+            await session.execute(
+                update(Instance)
+                .where(Instance.uuid == uuid)
+                .values(unready_since=now_utc() - timedelta(minutes=10))
+            )
+            await session.commit()
+        assert (await reconcile_once(sm))["to_failed"] == 1
+
+        data = await get_instance(client, headers, uuid)
+        assert data["status"] == "failed"
+        # 计费边闭合:running→failed 事件在案,结算据此停费
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
+        assert (events[-1]["from_status"], events[-1]["to_status"]) == ("running", "failed")
+        assert events[-1]["reason"] == "node_lost"
+        # 强删:失联节点上的 Pod 只有 grace=0 才会从 etcd 消失
+        assert (ns, uuid) not in fake.pods
+        # 用户拿到了通知,而不是自己发现 SSH 连不上
+        notes = (await client.get("/api/v1/notifications", headers=headers)).json()
+        assert any("节点失联" in n["title"] for n in notes)
+
     async def test_creating_timeout_fails_and_cleans(self, client, sm, fake):
         headers, user_id, key_id = await create_user_with_key(client, "13900000021")
         await fund_wallet(sm, user_id)
