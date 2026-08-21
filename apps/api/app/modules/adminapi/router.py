@@ -479,9 +479,19 @@ async def admin_freeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
 ) -> TenantStatusOut:
     from app.modules.account import service as account_service
+    from app.modules.orchestrator import service as orchestrator_service
 
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
-    set_audit_target(request, f"user:{user_id}", detail={"reason": body.reason})
+    # 封禁必须同时停机:此前只改 status + 撤 token,被封账号的 GPU 继续满载跑(封挖矿号
+    # 时处置完全失效,平台照付电费),而计费主链路不看用户状态 —— 被封用户继续每小时被扣,
+    # 扣到 0 之后走欠费链路把数据盘推向回收倒计时,他却连充值下单都做不了(deps 的 403
+    # 覆盖整个 CurrentUser),既阻止不了扣费也无法自救。误封即是直接的资金 + 数据损失。
+    # 与 status 变更同一事务提交,不在请求路径直接调 K8s(走 outbox)。
+    stopped = await orchestrator_service.stop_all_for_user(session, user_id, reason="tenant_frozen")
+    await session.commit()
+    set_audit_target(
+        request, f"user:{user_id}", detail={"reason": body.reason, "instances_stopped": stopped}
+    )
     return TenantStatusOut(id=user.id, status=user.status)
 
 
@@ -490,8 +500,20 @@ async def admin_unfreeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
 ) -> TenantStatusOut:
     from app.modules.account import service as account_service
+    from app.modules.notify import service as notify_service
 
     user = await account_service.admin_set_user_status(session, user_id, "active")
+    # 刻意不自动开机:解封瞬间批量拉起,余额不足的话立刻又欠费停机。用户自行开机。
+    await notify_service.notify(
+        session,
+        user_id,
+        type_="account",
+        title="账号已恢复正常",
+        content="您的账号已解除冻结。冻结期间被停止的实例需要您手动开机(实例盘数据保留)。",
+        severity="info",
+        dedup_key=f"unfrozen:{user_id}",
+    )
+    await session.commit()
     set_audit_target(request, f"user:{user_id}", detail={"reason": body.reason})
     return TenantStatusOut(id=user.id, status=user.status)
 

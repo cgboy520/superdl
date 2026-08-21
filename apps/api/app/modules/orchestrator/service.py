@@ -809,6 +809,36 @@ async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
     enqueue(session, "instance.release", {"instance_id": instance.id})
 
 
+async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str) -> int:
+    """停掉该用户全部 running 实例(封禁/风控处置用)。同事务落事件 + outbox,不 commit。
+
+    返回被停的台数。creating/starting 的实例这一轮停不了(状态机不允许 → stopping),
+    它们会先收敛到 running,再由巡检那一轮兜住(见 billing.patrol 的冻结用户处置)。
+    """
+    rows = list(
+        (
+            await session.execute(
+                select(Instance).where(
+                    Instance.user_id == user_id, Instance.status == sm_def.RUNNING
+                )
+            )
+        ).scalars()
+    )
+    for inst in rows:
+        await transition(
+            session,
+            inst,
+            sm_def.STOPPING,
+            reason=reason,
+            actor="admin",
+            metadata={"hint": "账号被冻结,实例已停机"},
+        )
+        enqueue(session, "instance.stop", {"instance_id": inst.id})
+    if rows:
+        logger.warning("tenant_frozen_instances_stopped", user_id=user_id, count=len(rows))
+    return len(rows)
+
+
 async def list_instances_by_status(session: AsyncSession, status: str) -> list[Instance]:
     return list(
         (await session.execute(select(Instance).where(Instance.status == status))).scalars()

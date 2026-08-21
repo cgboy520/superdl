@@ -393,10 +393,17 @@ async def admin_list_users(session: AsyncSession) -> list[User]:
     return list((await session.execute(select(User).order_by(User.id.desc()).limit(500))).scalars())
 
 
+async def frozen_user_ids(session: AsyncSession) -> list[int]:
+    """被冻结的租户 id(巡检据此停掉他们仍在跑的实例)。"""
+    return list((await session.execute(select(User.id).where(User.status == "frozen"))).scalars())
+
+
 async def admin_set_user_status(session: AsyncSession, user_id: int, status_: str) -> User:
+    """只管 users 表(账号模块的边界)。**不 commit** —— 调用方要把「停机」编排到同一个
+    事务里,否则会出现「账号已冻结但机器还在跑」的半成品状态。"""
     user = await get_user(session, user_id)
     user.status = status_
     if status_ == "frozen":
         user.token_version += 1  # 冻结即撤销全部在外 token(含 refresh)
-    await session.commit()
+    await session.flush()
     return user

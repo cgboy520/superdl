@@ -35,12 +35,40 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
     ):
         if not got:
             return counts
+        await _patrol_frozen_tenants(sm, counts)
         await _patrol_running(sm, counts)
         await _patrol_frozen_and_arrears_stopped(sm, counts)
         await _patrol_disks(sm, counts)
     if any(counts.values()):
         logger.info("balance_patrol_done", **counts)
     return counts
+
+
+async def _patrol_frozen_tenants(
+    sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
+) -> None:
+    """被冻结账号仍在跑的实例 → 停机。
+
+    冻结端点已经同步停过一轮,这里兜的是那一刻还在 creating/starting 的实例:状态机不允许
+    它们直接进 stopping,收敛到 running 之后必须有人再来停一次,否则一台在封禁瞬间刚好在
+    开机的实例会一直跑下去 —— 而计费主链路不看用户状态,它会一直扣钱。
+    """
+    from app.modules.orchestrator import service as orchestrator_service
+
+    async with sm() as session:
+        frozen_user_ids = await account_service.frozen_user_ids(session)
+    if not frozen_user_ids:
+        return
+    for user_id in frozen_user_ids:
+        try:
+            async with sm() as session:
+                stopped = await orchestrator_service.stop_all_for_user(
+                    session, user_id, reason="tenant_frozen"
+                )
+                await session.commit()
+                counts["stopped"] += stopped
+        except Exception:
+            logger.exception("patrol_frozen_tenant_failed", user_id=user_id)
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:

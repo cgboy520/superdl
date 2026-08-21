@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask
+from app.core.outbox import OutboxTask, drain
 from app.core.timeutil import now_utc
 from app.modules.adminapi import service as admin_service
 from app.modules.adminapi.service import create_admin
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
+from app.modules.orchestrator.reconciler import reconcile_once
 from tests.test_account_auth import register
 from tests.test_catalog import admin_headers
 from tests.test_orchestrator_lifecycle import _provision_running
@@ -387,3 +388,61 @@ class TestTenantBillingDrilldown:
         resp3 = await client.get("/api/admin/v1/tenants/4242/bills", headers=headers)
         assert resp3.status_code == 200
         assert resp3.json()["items"] == []
+
+
+class TestFreezeStopsInstances:
+    async def test_freeze_stops_running_instances(self, client, sm, fake):
+        """封禁必须同时停机、停计费。
+
+        此前 admin_set_user_status 只改 status + 撤 token:被封账号的 GPU 继续满载跑(封
+        挖矿号时处置完全失效),而计费主链路不看用户状态 —— 被封用户继续每小时被扣,扣到 0
+        之后走欠费链路把数据盘推向回收倒计时,他却连充值下单都做不了(deps 的 403 覆盖整个
+        CurrentUser),既阻止不了扣费也无法自救。
+        """
+        h = await admin_headers(sm, client)
+        _user_headers, uuid, user_id = await _provision_running(client, sm, fake, "13600000090")
+
+        resp = await client.post(
+            f"/api/admin/v1/tenants/{user_id}/freeze",
+            json={"reason": "疑似挖矿"},
+            headers=h,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "frozen"
+
+        async with sm() as session:
+            tasks = (
+                (
+                    await session.execute(
+                        select(OutboxTask).where(OutboxTask.type == "instance.stop")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(tasks) == 1
+
+        # 用户端此刻已经登不上,用管理端列表核对状态
+        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
+        assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopping"]
+        await drain(sm)
+        await reconcile_once(sm)
+        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
+        # 计费边(running→stopping→stopped)已闭合,后续小时不再产生账单
+        assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
+
+    async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
+        """解封不自动开机:解封瞬间批量拉起,余额不足的话立刻又欠费停机。"""
+        h = await admin_headers(sm, client)
+        _uh, uuid, user_id = await _provision_running(client, sm, fake, "13600000091")
+        await client.post(
+            f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "核查"}, headers=h
+        )
+        await drain(sm)
+        await reconcile_once(sm)
+        resp = await client.post(
+            f"/api/admin/v1/tenants/{user_id}/unfreeze", json={"reason": "核查完毕"}, headers=h
+        )
+        assert resp.status_code == 200
+        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
+        assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
