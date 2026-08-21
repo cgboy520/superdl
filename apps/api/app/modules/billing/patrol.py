@@ -144,21 +144,15 @@ async def _patrol_frozen_and_arrears_stopped(
 
 
 async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """数据盘欠费链路:欠费 → grace(7 天只读)→ frozen(30 天)→ 清除;回款即恢复。"""
-    from sqlalchemy import select as sa_select
+    """数据盘欠费链路:欠费 → grace(7 天只读)→ frozen(30 天)→ 清除;回款即恢复。
 
+    巡检集合直接取「名下有欠费链路上的盘」的用户,不拿计费态列表 + 余额≤0 去拼 ——
+    后者会漏掉「盘全部 frozen 且已充值」这类用户(两个集合都不在),他们的盘永远解冻不了。
+    """
     from app.modules.orchestrator import service as orchestrator_service
 
     async with sm() as session:
-        disks = await orchestrator_service.billable_disks(session)
-        # frozen 的盘也要巡检(可能恢复或到期清除)
-        user_ids = {d.user_id for d in disks}
-        from app.modules.billing.models import Wallet as _W
-
-        frozen_users = (
-            (await session.execute(sa_select(_W.user_id).where(_W.balance <= 0))).scalars().all()
-        )
-        user_ids |= set(frozen_users)
+        user_ids = await orchestrator_service.arrears_chain_disk_user_ids(session)
     for user_id in user_ids:
         try:
             async with sm() as session:

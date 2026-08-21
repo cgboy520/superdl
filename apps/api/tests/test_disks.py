@@ -286,6 +286,38 @@ class TestDiskArrearsChain:
         assert d["status"] == "active"
         assert d["grace_started_at"] is None
 
+    async def test_recharge_restores_frozen_disk(self, client, sm, fake):
+        """盘已经熬到 frozen 之后再充值,必须能解冻。
+
+        此前巡检集合是「有 active/grace 盘的用户 ∪ 余额≤0 的用户」,这类用户两边都不在:
+        盘不在计费态(frozen),余额又已经 > 0。于是他永远不被处理 —— 充了钱拿不回数据、
+        平台白占存储且永不计费、30 天到期清除也永不触发。现有用例只覆盖 grace→active
+        (grace 是计费态,用户在集合里),恰好绕开了这个分支。
+        """
+        headers, user_id, _key = await create_user_with_key(client, "13500000032")
+        await fund_wallet(sm, user_id)
+        await create_disk(client, headers)
+        async with sm() as session:
+            balance = await wallet.get_balance(session, user_id)
+            await wallet.debit(session, user_id, balance, type_="adjust", remark="drain")
+            await session.commit()
+        await balance_patrol(sm)
+        async with sm() as session:
+            await session.execute(
+                update(DataDisk).values(grace_started_at=now_utc() - timedelta(days=8))
+            )
+            await session.commit()
+        await balance_patrol(sm)
+        assert (await client.get("/api/v1/disks", headers=headers)).json()[0]["status"] == "frozen"
+
+        async with sm() as session:
+            await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
+            await session.commit()
+        await balance_patrol(sm)
+        d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
+        assert d["status"] == "active"
+        assert d["frozen_started_at"] is None and d["grace_started_at"] is None
+
 
 class TestDiskQuota:
     async def test_count_quota_blocks_creation(self, client, sm, fake, monkeypatch):

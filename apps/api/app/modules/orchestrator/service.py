@@ -824,6 +824,12 @@ async def billable_disks(session: AsyncSession) -> list[Any]:
     return await disks_service.list_billable_disks(session)
 
 
+async def arrears_chain_disk_user_ids(session: AsyncSession) -> list[int]:
+    from app.modules.orchestrator import disks as disks_service
+
+    return await disks_service.list_arrears_chain_user_ids(session)
+
+
 async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
     from app.modules.orchestrator import disks as disks_service
 
