@@ -134,8 +134,8 @@ function UtilCell({
 }
 
 /**
- * failed 状态闭环(铁律「给等待路径」):
- * 从未运行 = 创建失败 → 原因 + 已退款说明 + 重新创建;运行过 = 故障停机 → 按停机结算说明。
+ * failed 状态闭环:从未运行 = 创建失败 → 原因 + 未扣费说明 + 重新创建;
+ * 运行过 = 故障停机 → 按停机结算说明。
  */
 function FailedCell({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();

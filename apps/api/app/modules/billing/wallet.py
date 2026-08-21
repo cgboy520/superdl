@@ -1,6 +1,6 @@
 """钱包原语:所有余额变动的唯一入口。
 
-铁律:更新必须 `SELECT ... FOR UPDATE`,同事务写 balance_ledger(balance_after 快照)。
+更新必须 `SELECT ... FOR UPDATE`,同事务写 balance_ledger(balance_after 快照)。
 本文件函数不 commit —— 由调用方把余额变动放进业务事务。
 """
 

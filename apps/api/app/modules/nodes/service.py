@@ -5,7 +5,7 @@
   明文仅在创建/重生成响应出现一次。
 - 无效/过期/吊销/终态令牌一律统一 404(不区分原因,防探测);
   匿名端点的限流在 enroll_router 层。
-- 状态迁移集中于 transition_enrollment(对齐铁律 #10 精神),非法迁移 409。
+- 状态迁移集中于 transition_enrollment,非法迁移 409。
 """
 
 import hashlib
@@ -215,7 +215,7 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
 async def request_cordon(
     session: AsyncSession, node_name: str, *, unschedulable: bool, reason: str
 ) -> None:
-    """cordon/uncordon 只入队不直接动 K8s(硬规范 #3),handler 幂等执行。"""
+    """cordon/uncordon 只入队不直接动 K8s,handler 幂等执行。"""
     from app.core.outbox import enqueue
 
     enqueue(
@@ -311,7 +311,7 @@ async def report_progress(
     return row
 
 
-# ---------- 节点规格台账(巡检写入,业务只读;WP26) ----------
+# ---------- 节点规格台账(巡检写入,业务只读) ----------
 
 
 async def list_node_specs(session: AsyncSession) -> list[NodeSpec]:
@@ -405,7 +405,7 @@ REGISTRY_NODEPORT = 30500  # 集群内 registry 的 NodePort(deploy/cluster/regi
 
 
 def render_registries_yaml(cfg: dict[str, str]) -> str:
-    """平台生成节点 registries.yaml:server_url 解析 host + NodePort 常量(WP27)。
+    """平台生成节点 registries.yaml:server_url 解析 host + NodePort 常量。
 
     node_registries_yaml 有值 = 高级覆盖优先;server_url 未配置返回空串(脚本跳过)。
     与 deploy/cluster/rke2/registries.yaml 模板同源:mirrors "*" 声明 Spegel P2P,
@@ -431,7 +431,7 @@ def render_registries_yaml(cfg: dict[str, str]) -> str:
 
 
 async def derive_node_distro(session: AsyncSession, cfg: dict[str, str]) -> str:
-    """装机发行版派生:探测缓存 > agent 版本后缀 > rke2(WP27 砍 k8s_distro 配置)。"""
+    """装机发行版派生:探测缓存 > agent 版本后缀 > rke2。"""
     row = await get_cluster_status(session)
     if row and row.distro:
         return row.distro
@@ -442,7 +442,7 @@ HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为�
 
 
 async def require_hami_ready(session: AsyncSession) -> None:
-    """shared 档下发门禁:替代 300s Pending 超时,调度器缺位即时清晰报错(WP27)。
+    """shared 档下发门禁:调度器缺位即时清晰报错,而非等 Pending 超时。
 
     缓存缺失/陈旧一律拒绝:巡检 60s 一轮,陈旧说明 worker 停摆,下发也只会悬挂。
     """

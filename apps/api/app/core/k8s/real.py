@@ -1,12 +1,12 @@
 """生产 K8s 编排(kubernetes 官方客户端 36.x,已对齐 K8s 1.36)。
 
 官方客户端为同步实现,全部调用经 asyncio.to_thread 出让事件循环。
-真实 GPU 行为(HAMi 限额/Kata 直通)只能实机验证 —— 人工事项 #2~#4。
+真实 GPU 行为(HAMi 限额/Kata 直通)只能实机验证。
 
 对象命名:pod/svc/ingress 同名 = instance uuid;统一打标 superdl.io/instance。
 """
 
-# pragma: no cover - 本文件需真实集群,单测不覆盖;kind 集成测试见人工清单
+# pragma: no cover - 本文件需真实集群,单测不覆盖
 
 import asyncio
 import hashlib

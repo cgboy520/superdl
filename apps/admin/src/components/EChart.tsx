@@ -1,6 +1,5 @@
 /**
- * echarts 按需注册封装:只打包本端实际用到的图型/组件,
- * 替代 echarts-for-react 默认入口的全量 echarts。
+ * echarts 按需注册封装:只打包本端实际用到的图型/组件。
  * 新增图型时在此登记,勿在页面里直接 import echarts。
  */
 import { BarChart, LineChart } from "echarts/charts";

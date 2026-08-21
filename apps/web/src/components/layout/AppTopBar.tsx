@@ -1,7 +1,7 @@
 /**
- * 全宽品牌顶栏(56px,渐变靛蓝,AutoDL「顶栏压侧栏」结构的上半)。
- * public:主页/公开页 —— 中部锚点导航 + 右侧 登录/免费注册(已登录换「进入控制台」)。
- * console:控制台 —— 右区(余额/通知/用户)由壳经 right 注入。
+ * 全宽品牌顶栏(56px,渐变靛蓝)。
+ * public:中部锚点导航 + 右侧 登录/免费注册(已登录换「进入控制台」)。
+ * console:右区(余额/通知/用户)由壳经 right 注入。
  */
 
 import { brand, colorPrimary } from "@superdl/ui";
@@ -40,7 +40,7 @@ export function AppTopBar({
       <Link to="/" style={{ display: "inline-flex", textDecoration: "none" }}>
         <BrandLogo variant="light" />
       </Link>
-      {/* 布局收敛到 CSS 类:内联 display 会压过窄屏媒体查询的 display:none(390px 折行的根因) */}
+      {/* 内联 display 会压过窄屏媒体查询的 display:none,布局须走 CSS 类 */}
       <nav className="topbar-nav-center">
         <Link to="/market" className="topbar-link">
           {t("topbar.market")}

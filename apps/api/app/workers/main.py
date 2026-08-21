@@ -83,7 +83,7 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """各模块定时任务注册。随 WP 推进逐个接入(结算/巡检/聚合)。"""
+    """各模块定时任务注册(结算/巡检/聚合)。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.settlement import settle_daily_disks, settle_previous_hour

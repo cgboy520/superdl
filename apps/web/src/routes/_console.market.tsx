@@ -1,6 +1,6 @@
 /**
- * 算力市场:AutoDL 式「筛选链 chips + 表格 radio 单选 + 底部结算条」,数据行 = SKU。
- * 铁律 #1 CTA 即库存 / #2 售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
+ * 算力市场:筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。
+ * CTA 即库存,售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
  */
 
 import { mulPrice, skuTierMap } from "@superdl/ui";

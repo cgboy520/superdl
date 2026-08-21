@@ -1,7 +1,4 @@
-/**
- * 读操作薄查询层:生成的 fetcher 函数 + useQuery。
- * orval 把 GET 生成为 mutation 形态 hook,不可直接当查询用,由本层提供 useQuery 语义。
- */
+/** 读操作薄查询层:生成的 fetcher 函数 + useQuery,查询键与轮询选项集中在此。 */
 
 import {
   billDailySummaryApiV1BillsDailySummaryGet,

@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
 
     # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
-    # cluster 键 WP27 更名中性(rke2_* → cluster_*),AliasChoices 兼容旧 env
+    # AliasChoices 兼容旧 rke2_* 环境变量名
     cluster_server_url: str = Field(
         default="",
         validation_alias=AliasChoices("SUPERDL_CLUSTER_SERVER_URL", "SUPERDL_RKE2_SERVER_URL"),
@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"
 
-    # 支付(dev 用 mock 渠道;真实商户凭据经环境变量注入,人工事项 #6)
+    # 支付(dev 用 mock 渠道;真实商户凭据经环境变量注入)
     payment_mock: bool = True
     public_base_url: str = "https://api.superdl.example.com"
     recharge_order_ttl_seconds: int = 2 * 3600

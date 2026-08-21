@@ -4,8 +4,7 @@
 - wechat:wechatpayv3(平台证书自动更新 + 验签)
 - alipay:alipay-sdk-python
 
-微信/支付宝需要商户资质(人工事项 #6),真实回调联调为人工事项 #7(1 分钱)。
-未配置凭据时报 PAYMENT_CHANNEL_ERROR。
+微信/支付宝需真实商户资质,只能实机联调;未配置凭据时报 PAYMENT_CHANNEL_ERROR。
 """
 
 from collections.abc import Mapping
@@ -123,7 +122,7 @@ WECHAT_CFG_KEYS = (
 ALIPAY_CFG_KEYS = ("alipay_app_id", "alipay_private_key", "alipay_public_key")
 
 
-class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7 联调
+class WechatChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
     """微信支付 Native(扫码),APIv3。
 
     验签双模式(wechatpayv3 原生支持):配置了微信支付公钥 + 公钥 ID(PUB_KEY_ID_*)
@@ -226,7 +225,7 @@ class WechatChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7
         return QueryResult("unknown")
 
 
-class AlipayChannel:  # pragma: no cover - 需真实商户凭据,人工事项 #7 联调(1 分钱)
+class AlipayChannel:  # pragma: no cover - 需真实商户凭据,仅实机联调
     """支付宝当面付(precreate 扫码 + 异步通知 RSA2 验签 + 主动查单)。
 
     凭据经 SUPERDL_ALIPAY_* 注入(应用私钥 + 支付宝公钥)。

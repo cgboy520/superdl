@@ -1,13 +1,12 @@
 /**
  * 两端共享设计 token(ui-ux-spec §2)。
- * 用户端:浅色,主色靛蓝(避开 antd 默认蓝与 AutoDL 品牌蓝);布局对齐 AutoDL
- * 「顶栏压侧栏」结构,顶栏/Hero 用 brand 渐变常量。
- * 管理端:深色 NOC 风,亮青作数据强调、琥珀作告警
+ * 用户端:浅色,主色靛蓝,顶栏/Hero 用 brand 渐变常量。
+ * 管理端:深色 NOC 风,亮青作数据强调、琥珀作告警。
  */
 
 export const colorPrimary = "#4F46E5";
 
-/** 系统字体栈(中文优先苹方/雅黑;数字对齐靠全局 tabular-nums,见 apps/web/src/styles.css) */
+/** 系统字体栈;数字对齐靠全局 tabular-nums(见 apps/web/src/styles.css) */
 export const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", ' +
   '"Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';

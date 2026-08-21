@@ -234,7 +234,7 @@ function InstanceDetail() {
   if (instanceError && !instance) {
     return <DataErrorAlert onRetry={() => void refetchInstance()} />;
   }
-  if (!instance) return null; // 首载中(spinner 由路由级 pending 呈现)
+  if (!instance) return null; // 首载中
   const running = instance.status === "running";
   const canRelease = canReleaseStatus(instance.status);
 

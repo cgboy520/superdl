@@ -144,7 +144,7 @@ class TestAdminSku:
         sku_id = resp.json()["id"]
         assert resp.json()["status"] == "off"  # 默认不上架
 
-        # 台账无匹配节点:上架被硬校验拦下(WP26),force 放行
+        # 台账无匹配节点:上架被硬校验拦下,force 放行
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
             json={"status": "on", "price_hourly": "2.8000"},

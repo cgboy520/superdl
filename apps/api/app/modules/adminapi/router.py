@@ -478,8 +478,8 @@ async def admin_node_metrics(
 ) -> dict[str, Any]:
     """节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
 
-    节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询
-    自然返回空序列,无信息泄漏面(仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。
+    节点存在性不做强校验:对不存在节点的查询自然返回空序列,无信息泄漏面
+    (仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。
     """
 
     out = await metering_service.node_gpu_metrics(node_name, range)

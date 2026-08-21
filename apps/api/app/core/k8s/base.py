@@ -59,7 +59,7 @@ class ClusterProbe:
 
 
 def derive_distro(git_version: str | None) -> str | None:
-    """gitVersion 后缀派生发行版;识别不出返回 None(探测优于声明,WP27)。"""
+    """gitVersion 后缀派生发行版;识别不出返回 None。"""
     if not git_version:
         return None
     if "+rke2" in git_version:
@@ -109,7 +109,7 @@ class K8sOrchestrator(Protocol):
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
         """节点视图。include_unlabeled=True 时包含未打池标签的节点(台账巡检用);
-        默认仅带 superdl.io/pool 标签的节点(既有调用方语义不变)。"""
+        默认仅带 superdl.io/pool 标签的节点。"""
         ...
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:

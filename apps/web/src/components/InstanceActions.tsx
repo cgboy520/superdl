@@ -1,8 +1,7 @@
 /**
  * 实例操作组:开机/关机/更多(重启·事件·预留项·释放)。
- * 铁律 #2:条目永不隐藏,灰置用 antd Tooltip 说明前置条件;P1 预留项(无卡模式/保存镜像/
- * 转包年包月)可见但禁用,注「即将上线」。
- * 铁律 #4:释放多级防护(复述名称+ID、勾选确认才解锁红色按钮)。
+ * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/保存镜像/转包年包月)
+ * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、勾选确认才解锁)。
  */
 
 import { DownOutlined } from "@ant-design/icons";
@@ -19,7 +18,7 @@ import {
   useStopInstance,
 } from "../api/mutations";
 
-// creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消,不必干等超时
+// creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消
 export function canReleaseStatus(s: string): boolean {
   return s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
 }

@@ -281,7 +281,7 @@ class TestAliyunRealNameProvider:
 
 
 class TestClusterKeyRename:
-    """WP27 键改名:AES-GCM AAD=行 key → join_token 旧行走别名回落,写新删旧。"""
+    """键改名兼容:AES-GCM AAD=行 key → join_token 旧行走别名回落,写新删旧。"""
 
     async def test_legacy_join_token_alias_fallback(self, sm):
         from app.core import crypto

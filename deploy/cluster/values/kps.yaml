@@ -1,12 +1,12 @@
 # kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
 prometheus:
   prometheusSpec:
-    retention: 15d                       # 不引 Thanos
+    retention: 15d
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
-    # HAMi 自带指标(WP25):scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
+    # HAMi 自带指标:scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
     # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认,实机核定项)
     additionalScrapeConfigs:
       - job_name: hami-scheduler
@@ -96,7 +96,6 @@ additionalPrometheusRulesMap:
     groups:
       - name: superdl.gpu
         rules:
-          # 5 条核心告警
           - alert: GPUXidCriticalError
             expr: increase(DCGM_FI_DEV_XID_ERRORS{xid=~"48|63|64|79|94|95"}[5m]) > 0
             labels: {severity: critical}

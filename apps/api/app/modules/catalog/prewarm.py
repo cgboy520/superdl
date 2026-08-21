@@ -2,7 +2,7 @@
 
 分工:
 - 巡检 prewarm_patrol(worker 60s):铺行(期望集 = enabled 镜像 × Ready/Cordoned 节点,
-  插行与 enqueue 同事务,硬规范 #3)、收敛 pulling(问 K8s Job 状态)、失败退避重试、
+  插行与 enqueue 同事务)、收敛 pulling(问 K8s Job 状态)、失败退避重试、
   cached 复检(防 kubelet 镜像 GC 后状态失真)、清理(节点消失/镜像禁用)。
 - handler image.prewarm:确保该(镜像,节点)的定点拉取 Job 存在,行置 pulling。
   Job 创建即返回不等待,完成态由巡检收敛(大镜像拉取可达数十分钟)。

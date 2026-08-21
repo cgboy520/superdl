@@ -136,7 +136,7 @@ async def admin_update_sku(
 
 
 async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
-    """上架硬校验:台账须有「型号×池」匹配的 Ready 节点(WP26 推翻仅提示先例)。
+    """上架硬校验:台账须有「型号×池」匹配的 Ready 节点。
 
     未识别型号(canonical=None)恒不匹配 → 只能 force 上架。
     """
@@ -209,7 +209,7 @@ async def admin_delete_image(session: AsyncSession, image_id: int) -> None:
 
 
 async def admin_prewarm_image(session: AsyncSession, image_id: int) -> int:
-    """立即预热:非 cached 行置 pending 并同事务 enqueue(硬规范 #3)。
+    """立即预热:非 cached 行置 pending 并同事务 enqueue。
     不在请求路径调 K8s;新节点行由巡检铺(≤60s)。返回入队数。"""
     img = await get_image(session, image_id)
     if not img.prewarm_enabled:

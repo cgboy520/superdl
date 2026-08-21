@@ -93,7 +93,7 @@ class TestProdConfigValidation:
         assert s.environment == "prod"
 
     def test_prod_rejects_localhost_prometheus(self):
-        """WP25:prometheus_url 保持本地默认会静默失效(计费无恙但面板/对账全空),prod 必拒。"""
+        """prometheus_url 保持本地默认会静默失效(计费无恙但面板/对账全空),prod 必拒。"""
         import pytest as _pytest
 
         from app.core.config import Settings

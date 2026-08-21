@@ -52,13 +52,13 @@ class NodeOut(BaseModel):
     gpu_model: str  # canonical;未识别时为 "GPU"(展示兜底)
     gpu_total: int
     gpu_used: int
-    status: str  # Ready / NotReady / Cordoned / Missing(台账口径,WP26)
+    status: str  # Ready / NotReady / Cordoned / Missing(台账口径)
     vcpu: int
     mem_gb: int
     disk_gb: int
     driver_version: str = ""
     cuda_version: str = ""
-    # 台账扩展(WP26)
+    # 台账扩展
     gpu_model_raw: str = ""
     vram_gb: int = 0
     unlabeled: bool = False

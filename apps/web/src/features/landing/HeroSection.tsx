@@ -1,7 +1,4 @@
-/**
- * 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。
- * 不做轮播(ui-ux-spec §3.0)。
- */
+/** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。 */
 
 import { brand, colorPrimary } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";

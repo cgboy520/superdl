@@ -106,7 +106,7 @@ def create_app() -> FastAPI:
 
 
 def _register_module_routers(app: FastAPI) -> None:
-    """各业务模块的路由注册。随 WP 推进逐个接入。"""
+    """各业务模块的路由注册。"""
     from app.modules.account.router import router as account_router
     from app.modules.adminapi.router import router as admin_router
     from app.modules.billing.router import router as billing_router

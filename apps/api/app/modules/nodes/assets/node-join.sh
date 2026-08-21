@@ -197,7 +197,7 @@ step_driver() {
 step_nvidia_toolkit() {
   # k8s 认卡的前置:NVIDIA Container Toolkit(驱动之外的容器运行时依赖,由本脚本负责)。
   # 装好后 k3s/rke2 的 containerd 在下次启动时自动探测 nvidia-container-runtime 并生成 nvidia RuntimeClass;
-  # 集群侧再由 device plugin(deploy/cluster/gpu-device-plugin.yaml / 生产 GPU Operator)把卡登记为 nvidia.com/gpu。
+  # 集群侧再由 device plugin(GPU Operator / HAMi,见 deploy/cluster/)把卡登记为可调度资源。
   if command -v nvidia-ctk >/dev/null 2>&1; then
     echo "-- nvidia-container-toolkit 已安装($(nvidia-ctk --version 2>/dev/null | head -1))"
   else

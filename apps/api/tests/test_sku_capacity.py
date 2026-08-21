@@ -1,4 +1,4 @@
-"""WP26 批8:上架硬校验(SKU_NOT_SELLABLE/force)、容量预览、SKU 列表容量组装列。"""
+"""上架硬校验(SKU_NOT_SELLABLE/force)、容量预览、SKU 列表容量组装列。"""
 
 from decimal import Decimal
 

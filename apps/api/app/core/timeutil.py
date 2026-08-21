@@ -1,4 +1,4 @@
-"""时间铁律:DB 一律 timestamptz,代码一律 aware-UTC,禁止 naive datetime。"""
+"""aware-UTC 时间统一入口;拒绝 naive datetime。"""
 
 from datetime import UTC, datetime, timedelta
 

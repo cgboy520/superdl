@@ -1,7 +1,5 @@
-"""事务性 outbox:控制面正确性支柱一。
-
-规则:所有「改 DB + 动外部系统(K8s 等)」的操作,业务写入与 enqueue() 必须在同一个
-PostgreSQL 事务里提交;worker 异步领取执行,失败指数退避,超限进 dead 并告警。
+"""事务性 outbox:改 DB + 动外部系统(K8s 等)时,业务写入与 enqueue() 必须同一
+PostgreSQL 事务提交;worker 异步领取执行,失败指数退避,超限进 dead 并告警。
 
 领取协议(短事务三段式,免长锁):
   1. claim:FOR UPDATE SKIP LOCKED 选中 pending 且到期的任务 → status=running,commit

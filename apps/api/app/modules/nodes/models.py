@@ -46,7 +46,7 @@ class NodeEnrollment(Base):
 class NodeSpec(Base):
     """节点规格台账:巡检(nodes/patrol.py,60s)从 K8s 实况 + 装机登记收敛的单一事实源。
 
-    业务读它,不实时调 K8s:SKU 上架校验/容量预览/管理端节点页(WP26)。
+    业务读它,不实时调 K8s:SKU 上架校验/容量预览/管理端节点页。
     节点从 K8s 消失先置 status=Missing(管理端可见"失联"),last_seen 超 7 天才删行;
     上架校验只认 Ready。未打池标签节点也入账(unlabeled=True)并在管理端标异常。
     """

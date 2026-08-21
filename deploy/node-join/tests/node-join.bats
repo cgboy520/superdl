@@ -59,7 +59,7 @@ if [[ "$mode" == "bootstrap" && -n "$out" ]]; then cp "$BOOTSTRAP_FIXTURE" "$out
 if [[ "$mode" == "script" && -n "$out" ]]; then echo "#!/bin/bash" > "$out"; fi
 exit 0
 EOF
-  # id:伪装 root(root 检查已前置,测试须以任意用户可跑)
+  # id:伪装 root(脚本入口即查 root,测试须以任意用户可跑)
   cat > "$TMP/bin/id" <<'EOF'
 #!/usr/bin/env bash
 echo 0
@@ -183,7 +183,7 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
   # 非 kata 池不写 GRUB
   [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
-  # WP26:bootstrap 上报全卡清单(名称+显存 MiB)
+  # bootstrap 上报全卡清单(名称+显存 MiB)
   grep -q '"gpu_details": \[{"name": "NVIDIA GeForce RTX 4090", "memory_mib": 24564}\]' "$CURL_LOG"
 }
 

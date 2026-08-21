@@ -17,7 +17,7 @@ interface ClientConfig {
   baseUrl: string;
   getToken: () => string | null;
   onUnauthorized: (() => void) | null;
-  /** 401 时尝试静默续期(返回是否成功);未配置则维持旧行为直接 onUnauthorized。 */
+  /** 401 时尝试静默续期(返回是否成功);未配置则直接 onUnauthorized。 */
   refreshToken: (() => Promise<boolean>) | null;
 }
 
@@ -28,7 +28,7 @@ const config: ClientConfig = {
   refreshToken: null,
 };
 
-/** 并发 401 共享同一次续期(single-flight),避免刷新风暴与重放误判。 */
+/** 并发 401 共享同一次续期(single-flight)。 */
 let refreshInFlight: Promise<boolean> | null = null;
 
 export function configureApiClient(opts: Partial<ClientConfig>): void {

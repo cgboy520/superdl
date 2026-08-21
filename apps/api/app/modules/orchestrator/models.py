@@ -33,7 +33,7 @@ class Instance(Base):
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    frozen_deadline: Mapped[datetime | None]  # 冻结回收倒计时(72h),三处一等公民展示
+    frozen_deadline: Mapped[datetime | None]  # 冻结回收倒计时(72h)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

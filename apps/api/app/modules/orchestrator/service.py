@@ -111,7 +111,7 @@ _SHARED_TIERS = ("shared_std", "shared_eco")
 
 
 async def _require_cluster_for_tier(session: AsyncSession, tier: str | None) -> None:
-    """shared 档下发门禁:HAMi 未就绪/缓存陈旧即时 409,替代 300s Pending(WP27)。
+    """shared 档下发门禁:HAMi 未就绪/缓存陈旧即时 409,而非等 Pending 超时。
 
     dedicated/mig 不依赖 hami-scheduler,不受门禁影响。
     """

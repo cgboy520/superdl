@@ -7,7 +7,7 @@
 canonical 规则:RTX 消费卡 = RTX<数字><后缀>(4090 仅 24G,不带显存);
 数据中心同名多容量家族(A100/A800/H100/H800/H200/V100)带 -{显存}G 后缀;
 T4/L4/L40S/A10 等单容量卡取家族名。巡检将 canonical 写入节点 label
-`superdl.io/gpu-model`,gpu_adapter 以 nodeSelector 依赖它(WP26)。
+`superdl.io/gpu-model`,gpu_adapter 以 nodeSelector 依赖它。
 """
 
 import re

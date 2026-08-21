@@ -121,7 +121,7 @@ export function formatDaysLeft(
   return days === 0 ? t("shared:format.daysLeft.dueToday") : t("shared:format.daysLeft.count", { count: days });
 }
 
-/** 应用侧一次绑定 t/locale,调用点保持原表达式形状(各 app 的 useFormat() 是唯一消费方)。 */
+/** 应用侧经 useFormat() 一次绑定 t/locale 后使用的格式化件集合。 */
 export interface Formatters {
   formatMoney(amount: string | null | undefined): string;
   formatHourlyPrice(price: string | null | undefined): string;

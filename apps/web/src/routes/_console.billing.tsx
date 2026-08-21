@@ -75,7 +75,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [idem, setIdem] = useState(() => crypto.randomUUID());
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
 
-  // 渠道开关来自管理端·平台配置(site-config 公开端点),商户接入后即时开放
+  // 渠道开关来自管理端·平台配置(site-config 公开端点)
   const { data: site } = useSiteConfig();
   const enabled = {
     wechat: site?.payment_channels.wechat ?? false,

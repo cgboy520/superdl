@@ -1,5 +1,5 @@
 /**
- * 系统设置(ui-ux-spec §4.1 信息架构第 7 屏):
+ * 系统设置:
  * - 策略参数:env 默认 + DB 覆盖,保存需原因,即时生效并同步 GET /policies
  * - 公告发布:announcement 站内信群发全体 active 租户
  */

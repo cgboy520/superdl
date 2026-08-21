@@ -4,7 +4,7 @@
 - mock:落结构化日志(dev/test 默认);
 - aliyun:dysmsapi SendSms(RPC 签名 V1),凭据与模板码走平台配置中心
   (env SUPERDL_SMS_* 为默认值层,DB 覆盖免重启生效)。
-签名/模板报备是人工事项 #6;prod 下配置完整性由 Settings 校验把关。
+prod 下配置完整性由 Settings 校验把关。
 """
 
 import json

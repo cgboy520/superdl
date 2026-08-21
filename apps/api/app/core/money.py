@@ -1,8 +1,4 @@
-"""金额铁律:全链路 Decimal/numeric,禁止 float。
-
-- 单价 4 位小数(numeric(12,4))
-- 账单/流水入账 2 位小数(numeric(14,2)),舍入 ROUND_HALF_EVEN(半舍向偶)
-"""
+"""金额统一入口:单价 4 位小数(numeric(12,4)),入账 2 位小数(numeric(14,2)),舍入 ROUND_HALF_EVEN。"""
 
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated

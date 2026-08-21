@@ -1,7 +1,4 @@
-/**
- * 市场页与创建页共用的 SKU 表列与「计费方式」卡。
- * 两处展示同一份 SKU 数据,列定义与文案必须同源,避免口径漂移。
- */
+/** 市场页与创建页共用的 SKU 表列与「计费方式」卡,两处列定义与文案同源。 */
 
 import type { SkuMarketOut } from "@superdl/api-client";
 import { statusColors, type Formatters } from "@superdl/ui";
@@ -81,7 +78,7 @@ export function skuColumns(
   ];
 }
 
-/** 计费方式卡:仅按量可选,包日/包周/包月可见但禁用(铁律 #2)。 */
+/** 计费方式卡:仅按量可选,包日/包周/包月可见但禁用。 */
 export function BillingModeCard({ extra }: { extra?: ReactNode }) {
   const { t } = useTranslation(["web", "shared"]);
   return (

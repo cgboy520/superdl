@@ -28,7 +28,6 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
-      // 禁止手写 fetch:必须走 @superdl/api-client 生成的 hooks(mutator 内是唯一豁免)
       "no-restricted-globals": ["error", { name: "fetch", message: "使用 @superdl/api-client 生成的 hooks,禁止手写 fetch" }],
     },
   },

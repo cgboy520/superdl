@@ -11,7 +11,7 @@ embedded-registry: true      # Spegel P2P 镜像共享:节点间互拉已缓存�
                              # 需配套 registries.yaml 分发到全部节点;latest tag 不参与 P2P
 supervisor-metrics: true     # 暴露 spegel/supervisor 指标供 kps 抓取
 kube-apiserver-arg:
-  - audit-policy-file=/etc/rancher/rke2/audit-policy.yaml   # 审计开关
+  - audit-policy-file=/etc/rancher/rke2/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
   - audit-log-maxage=30
 node-taint:

@@ -1,8 +1,4 @@
-/**
- * 数据访问层:消费 @superdl/api-client 的生成 fetcher,自建 TanStack Query hooks。
- * orval 把 GET 也生成为 mutation 形态的 hook,不可直接当查询用,故只取其强类型
- * fetcher 函数(仍是生成 client,非手写 fetch),hook 形状对齐 orval 惯例。
- */
+/** 数据访问层:消费 @superdl/api-client 的生成 fetcher(非手写 fetch),自建 TanStack Query hooks。 */
 
 import {
   adminAlertsApiAdminV1AlertsGet,

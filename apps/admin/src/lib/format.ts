@@ -1,4 +1,4 @@
-/** 把 makeFormatters 绑定到当前语言(管理端当前恒中文,C12 接入切换后自动跟随)。 */
+/** 把 makeFormatters 绑定到当前语言。 */
 import { makeFormatters, type SharedT } from "@superdl/ui";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";

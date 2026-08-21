@@ -52,7 +52,7 @@ class BootstrapRequest(BaseModel):
     hostname: str = Field(min_length=1, max_length=253, pattern=HOSTNAME_PATTERN)
     os_info: dict[str, Any] = Field(default_factory=dict)  # {os_release, kernel, arch}
     gpus: list[str] = Field(default_factory=list, max_length=16)  # lspci/nvidia-smi 摘要
-    # 全卡清单(名称+显存 MiB;WP26 台账显存口径)。旧脚本不带此字段,服务端回落 gpus
+    # 全卡清单(名称+显存 MiB,台账显存口径)。旧脚本不带此字段,服务端回落 gpus
     gpu_details: list[dict[str, Any]] | None = Field(default=None, max_length=16)
 
 
@@ -61,7 +61,7 @@ class BootstrapOut(BaseModel):
 
     pool: str
     hostname_expected: str | None
-    k8s_distro: str  # rke2 | k3s,平台探测派生(WP27 砍配置,探测优于声明)
+    k8s_distro: str  # rke2 | k3s,平台探测派生
     rke2_version: str
     rke2_server_url: str
     rke2_join_token: str

@@ -1,6 +1,6 @@
 /**
  * 高危操作统一模式:原因必填 → 二次确认 → 执行 → message 反馈。
- * readonly 等无权角色:按钮可见但禁用 + tooltip 说明(条件操作可见原则)。
+ * readonly 等无权角色:按钮可见但禁用 + tooltip 说明。
  */
 
 import { App, Button, Form, Input, Modal, Tooltip } from "antd";

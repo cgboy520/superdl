@@ -1,4 +1,4 @@
-"""reconciler:控制面正确性支柱二。每 30s 全量比对「DB 期望 ↔ K8s 实际」。
+"""reconciler:每 30s 全量比对「DB 期望 ↔ K8s 实际」并收敛。
 
 - creating/starting + Pod Ready → running(计费开始)
 - creating/starting 超时未 Ready → failed(全额退=无账)+ 清理

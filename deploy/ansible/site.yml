@@ -1,7 +1,6 @@
-# 装机基线(人工事项 #1,存量机器批量场景):ansible-playbook -i inventory.ini site.yml -e rke2_server_ip=<server-ip>
+# 存量 GPU 机器批量装机基线:ansible-playbook -i inventory.ini site.yml -e rke2_server_ip=<server-ip>
 # 覆盖:内核参数(IOMMU/userns)、NVIDIA 驱动、NVMe VG(TopoLVM)、registries.yaml 分发
-# 镜像预热由平台 outbox/巡检驱动,不在装机层做
-# 新节点加入首选管理端「添加节点」一键命令,本 playbook 保留作存量批量基线
+# 新节点加入首选管理端「添加节点」一键命令;镜像预热由平台 outbox/巡检驱动,不在装机层做
 - hosts: gpu_nodes
   become: true
   vars:

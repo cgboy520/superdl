@@ -1,4 +1,4 @@
-"""WP27 批1:probe_cluster(fake)、distro 派生、cluster_status 单行 upsert。"""
+"""probe_cluster(fake)、distro 派生、cluster_status 单行 upsert。"""
 
 import pytest
 from sqlalchemy import func, select
@@ -258,7 +258,7 @@ class TestGateWiring:
 
 
 async def test_derive_node_distro_chain(sm, fake):
-    """派生链:探测缓存 > agent 版本后缀 > rke2 兜底(WP27 砍 k8s_distro 配置)。"""
+    """派生链:探测缓存 > agent 版本后缀 > rke2 兜底。"""
     from app.core.k8s.base import ClusterProbe
 
     # conftest 预置 rke2 探测
