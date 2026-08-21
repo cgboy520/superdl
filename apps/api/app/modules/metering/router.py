@@ -34,4 +34,5 @@ async def get_instance_metrics(
     """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
     instance = await orchestrator_service.get_instance(session, user.id, uuid)
     ns = instance.k8s_namespace or f"tenant-{user.id}"
-    return await service.instance_metrics(ns, instance.uuid, range)
+    tier = (instance.spec or {}).get("tier")
+    return await service.instance_metrics(ns, instance.uuid, range, tier=tier)

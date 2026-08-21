@@ -115,3 +115,78 @@ class TestReconciliation:
         assert resp.status_code == 200, resp.text
         report = resp.json()
         assert "billed_total" in report and "diff_pct" in report
+
+
+def prom_mock_routed(routes: dict[str, list[dict]], *, default: list[dict] | None = None):
+    """按 PromQL 子串路由的假 Prometheus:routes {子串: result 列表}。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params.get("query", "")
+        result = default if default is not None else []
+        for needle, res in routes.items():
+            if needle in query:
+                result = res
+                break
+        return httpx.Response(
+            200, text=json.dumps({"status": "success", "data": {"result": result}})
+        )
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://prom")
+
+
+class TestNodeMetrics:
+    async def test_node_gpu_metrics_multi_series(self):
+        from app.modules.metering.service import node_gpu_metrics
+
+        series = lambda gpu, v: {"metric": {"gpu": gpu}, "values": [[1.0, str(v)]]}  # noqa: E731
+        prom.set_client(
+            prom_mock_routed(
+                {
+                    "DCGM_FI_DEV_GPU_UTIL": [series("0", 78), series("1", 12)],
+                    "DCGM_FI_DEV_FB_USED": [series("0", 21000), series("1", 3000)],
+                    "DCGM_FI_DEV_GPU_TEMP": [series("0", 64), series("1", 41)],
+                    "DCGM_FI_DEV_XID_ERRORS": [{"metric": {}, "value": [1.0, "2"]}],
+                }
+            )
+        )
+        out = await node_gpu_metrics("gpu-a3-01", "1h")
+        assert out["available"] is True
+        assert [g["index"] for g in out["gpus"]] == ["0", "1"]
+        assert out["gpus"][0]["util"] == [(1.0, 78.0)]
+        assert out["xid_count_24h"] == 2
+
+    async def test_node_gpu_metrics_degrades(self):
+        from app.modules.metering.service import node_gpu_metrics
+
+        prom.set_client(prom_mock(fail=True))
+        out = await node_gpu_metrics("gpu-a3-01", "1h")
+        assert out == {"available": False, "range": "1h", "gpus": [], "xid_count_24h": 0}
+
+
+class TestTierSource:
+    async def test_shared_tier_prefers_hami_and_falls_back(self):
+        """shared 档 gpu_util 优先 HAMi 指标;HAMi 查空回落 DCGM;dedicated 恒 DCGM。"""
+        hami_point = [{"metric": {}, "values": [[1.0, "55"]]}]
+        dcgm_point = [{"metric": {}, "values": [[1.0, "70"]]}]
+        prom.set_client(
+            prom_mock_routed(
+                {
+                    "Device_utilization_desc_of_container": hami_point,
+                    "DCGM_FI_DEV_GPU_UTIL": dcgm_point,
+                }
+            )
+        )
+        shared = await prom.query_instance_metric(
+            "gpu_util", "tenant-1", "u1", tier="shared_std", start=0, end=1, step="60s"
+        )
+        assert shared == [(1.0, 55.0)]
+        dedicated = await prom.query_instance_metric(
+            "gpu_util", "tenant-1", "u1", tier="dedicated", start=0, end=1, step="60s"
+        )
+        assert dedicated == [(1.0, 70.0)]
+        # HAMi 查空 → 回落 DCGM
+        prom.set_client(prom_mock_routed({"DCGM_FI_DEV_GPU_UTIL": dcgm_point}))
+        fallback = await prom.query_instance_metric(
+            "gpu_util", "tenant-1", "u1", tier="shared_eco", start=0, end=1, step="60s"
+        )
+        assert fallback == [(1.0, 70.0)]

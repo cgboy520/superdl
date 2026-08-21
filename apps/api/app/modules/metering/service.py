@@ -24,8 +24,14 @@ logger = get_logger(__name__)
 RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600}
 
 
-async def instance_metrics(ns: str, pod: str, range_key: str) -> dict[str, Any]:
-    """代理查询实例监控曲线。断源报 503(前端提示"监控暂不可用,不影响计费")。"""
+async def instance_metrics(
+    ns: str, pod: str, range_key: str, *, tier: str | None = None
+) -> dict[str, Any]:
+    """代理查询实例监控曲线。断源报 503(前端提示"监控暂不可用,不影响计费")。
+
+    shared 档的 gpu_util/vram 走 HAMi 容器维指标(软切分下 DCGM per-pod 归属不可靠),
+    查空自动回落 DCGM;cpu/mem 恒 cAdvisor。
+    """
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     end = now_utc().timestamp()
@@ -34,8 +40,8 @@ async def instance_metrics(ns: str, pod: str, range_key: str) -> dict[str, Any]:
     series: dict[str, list[tuple[float, float]]] = {}
     try:
         for metric in prom.QUERIES:
-            series[metric] = await prom.query_range(
-                metric, ns, pod, start=start, end=end, step=step
+            series[metric] = await prom.query_instance_metric(
+                metric, ns, pod, tier=tier, start=start, end=end, step=step
             )
     except prom.PrometheusUnavailable as exc:
         raise AppError(
@@ -93,24 +99,37 @@ async def aggregate_previous_hour(
                 session, window_start, window_end
             )
             instances = await orchestrator_service.admin_list_instances(session)
-            loc = {i.id: (i.k8s_namespace, i.uuid) for i in instances}
+            loc = {i.id: (i.k8s_namespace, i.uuid, (i.spec or {}).get("tier")) for i in instances}
         for inst_id, _user_id, _price, _gpus in candidates:
             ns_pod = loc.get(inst_id)
-            if not ns_pod or not ns_pod[0]:
+            if not ns_pod:
+                continue
+            ns, pod, tier = ns_pod
+            if not ns:
                 continue
             try:
-                values = await prom.query_range(
+                values = await prom.query_instance_metric(
                     "gpu_util",
-                    ns_pod[0],
-                    ns_pod[1],
+                    ns,
+                    pod,
+                    tier=tier,
                     start=window_start.timestamp(),
                     end=window_end.timestamp(),
                     step="60s",
                 )
-                vram = await prom.query_range(
+                vram = await prom.query_instance_metric(
                     "vram_used_mb",
-                    ns_pod[0],
-                    ns_pod[1],
+                    ns,
+                    pod,
+                    tier=tier,
+                    start=window_start.timestamp(),
+                    end=window_end.timestamp(),
+                    step="60s",
+                )
+                cpu = await prom.query_range(
+                    "cpu_pct",
+                    ns,
+                    pod,
                     start=window_start.timestamp(),
                     end=window_end.timestamp(),
                     step="60s",
@@ -119,6 +138,7 @@ async def aggregate_previous_hour(
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
                 return written
             utils = [v for _, v in values]
+            cpus = [v for _, v in cpu]
             async with sm() as session:
                 await session.execute(
                     pg_insert(UsageHourly)
@@ -133,6 +153,7 @@ async def aggregate_previous_hour(
                             else None
                         ),
                         vram_max_mb=int(max((v for _, v in vram), default=0)) or None,
+                        cpu_avg_pct=(sum(cpus) / len(cpus)) if cpus else None,
                     )
                     .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
                 )
@@ -221,3 +242,35 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
         )
     ).all()
     return {int(iid): (float(total), int(n)) for iid, total, n in rows}
+
+
+NODE_METRIC_KEYS = ("util", "mem_used_mb", "temp")
+
+
+async def node_gpu_metrics(node_name: str, range_key: str) -> dict[str, Any]:
+    """管理端节点每卡曲线(DCGM per-GPU 多序列)+ 24h XID 计数。
+
+    断源降级为 available=False(200),对齐列表 sparkline 端点语义。
+    """
+    if range_key not in RANGES:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
+    end = now_utc().timestamp()
+    start = end - RANGES[range_key]
+    step = prom.RANGE_STEPS[range_key]
+    gpus: dict[str, dict[str, Any]] = {}
+    try:
+        for key in NODE_METRIC_KEYS:
+            promql = prom.NODE_QUERIES[key].format(node=node_name)
+            for gpu_index, points in await prom.query_range_multi(
+                promql, start=start, end=end, step=step
+            ):
+                gpus.setdefault(gpu_index, {"index": gpu_index})[key] = points
+        xid = await prom.query_instant(prom.NODE_XID_QUERY.format(node=node_name))
+    except prom.PrometheusUnavailable:
+        return {"available": False, "range": range_key, "gpus": [], "xid_count_24h": 0}
+    return {
+        "available": True,
+        "range": range_key,
+        "gpus": list(gpus.values()),
+        "xid_count_24h": int(xid or 0),
+    }
