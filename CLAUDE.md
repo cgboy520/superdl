@@ -1,6 +1,6 @@
 # SuperDL — AI 代理工程规范
 
-GPU 算力租赁平台。方案与规格见 `docs/development-plan.md`、`docs/ui-ux-spec.md`，工作包 spec 见 `docs/specs/`。
+GPU 算力租赁平台。方案与规格见 `docs/development-plan.md`、`docs/ui-ux-spec.md`，各工作包契约与验收见 `docs/specs/`。
 
 ## 仓库布局
 
@@ -12,7 +12,7 @@ packages/api-client  orval 从 openapi.json 生成（禁止手改 src/generated�
 packages/ui    主题 token、状态徽标映射、金额/时长格式化共享件
 deploy/        ansible 装机基线 / cluster helmfile / app 部署与本地 compose / node-join 脚本测试
 e2e/           Playwright 浏览器冒烟
-docs/specs     每个工作包一份 WPxx-*.md（目标/契约/数据变更/验收用例）
+docs/specs     已交付工作包的契约与验收记录（WPxx-*.md）
 ```
 
 ## 常用命令
@@ -57,6 +57,7 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 10. **状态机迁移**只能通过 `orchestrator/service.py` 的 transition 函数（同事务写 instance_events），禁止直接 UPDATE status。
 11. **前端**：antd 6 原生组件自封装，**不引 pro-components**；服务端状态全走 TanStack Query；文案/状态映射集中在 `packages/ui`。
 12. **测试**：计费模块（billing）覆盖率 ≥90%，金额/舍入/幂等/时区用例强制；结算函数必须有"重复执行零重复扣款"用例。
+13. **密钥/凭据不入 git**：只经环境变量或平台配置中心注入；deploy 模板一律 `CHANGE_ME` 占位（`deploy/app/secrets.example.yaml`）。
 
 ## 禁改清单
 
@@ -67,11 +68,11 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 ## 提交约定
 
 - **所有工作直接在 `main` 分支提交，不新建分支、不发 PR**。
-- commit message 前缀 `WPxx:`（跨 WP 的整理用 `chore:` / `fix:`），一句话说清「改了什么 + 为什么」。
+- commit message 前缀按性质：`fix:` / `feat:` / `chore:` / `docs:`，一句话说清「改了什么 + 为什么」。
 - **一个提交一件事**：每个提交自身能过全部质量闸门、能被单独回滚。这是首要判据，行数上限只是兜底。
 - 体量上限：单个提交 **< 2000 手写行**（不含 orval 产物 / `openapi.json` / lockfile / alembic 自动生成的迁移）。超了就得在 commit message 里说明为什么不可再拆。
 - 以下情形本就不该硬拆：新模块首次落地（models+迁移+service+router+tests 一体才自洽）、契约再生成、整屏前端交付、纯机械的重命名/格式化。机械改动要**单独成提交**，不与逻辑改动混。
-- push 后 CI 四个 job 必须全绿；带红不许推下一个提交。本地先跑 `task check`（覆盖后端 + 前端两 job；alembic check、openapi 无 diff、脚本三件套、e2e 由 CI 兜底）：
+- 每个提交前，下列四组闸门全绿；带红不许做下一个提交。闸门以本地执行为准（仓库无 remote，`.github/workflows` 为同套闸门的镜像）。`task check` 覆盖后端+前端两组（未装 task 则按 Taskfile 逐条跑）；脚本、e2e 两组在触碰对应区域时补跑：
   - 后端：ruff format/check → pyright → import-linter → pytest（billing 覆盖率 ≥90%）→ alembic check → openapi.json 无 diff
   - 前端：eslint → tsc → vitest → build
   - 脚本：bash -n → shellcheck → bats
