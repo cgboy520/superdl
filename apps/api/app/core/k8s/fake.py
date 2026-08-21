@@ -6,7 +6,13 @@ kill_pod / inject_pod(reconciler 场景)。容量按 pool 配置,近似库存=�
 
 from dataclasses import dataclass, field
 
-from app.core.k8s.base import InstancePodSpec, PodStatus, PrewarmJobStatus
+from app.core.k8s.base import (
+    ClusterProbe,
+    InstancePodSpec,
+    PodStatus,
+    PrewarmJobStatus,
+    derive_distro,
+)
 
 
 @dataclass
@@ -42,9 +48,37 @@ class FakeOrchestrator:
     node_gfd_labels: dict[str, str] = field(default_factory=dict)  # 模拟 GFD 标签
     # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
+    # 能力探测:默认健康 RKE2;fail_probe 模拟断连,probe_override 全量覆盖
+    probe_k8s_version: str = "v1.36.2+rke2r1"
+    probe_hami_ready: bool = True
+    fail_probe: bool = False
+    probe_override: ClusterProbe | None = None
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
+
+    async def probe_cluster(self) -> ClusterProbe:
+        if self.probe_override is not None:
+            return self.probe_override
+        if self.fail_probe:
+            return ClusterProbe(api_reachable=False, error="fake: connection refused")
+        pools: dict[str, int] = {}
+        for n in await self.list_nodes(include_unlabeled=True):
+            key = n.pool_label if n.pool_label not in ("", "unknown") else "unlabeled"
+            pools[key] = pools.get(key, 0) + 1
+        return ClusterProbe(
+            api_reachable=True,
+            k8s_version=self.probe_k8s_version,
+            distro=derive_distro(self.probe_k8s_version),
+            hami_ready=self.probe_hami_ready,
+            dcgm_present=True,
+            kps_present=True,
+            gpu_operator_present=True,
+            kata_runtimeclass=True,
+            storage_classes=("juicefs-sc", "topolvm-provisioner"),
+            runtime_classes=("kata-qemu", "nvidia"),
+            pools=pools,
+        )
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
         self.wiped_disks.append((namespace, subpath))

@@ -72,3 +72,27 @@ class NodeSpec(Base):
     last_seen: Mapped[datetime]  # 最近一次 K8s 可见
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ClusterStatus(Base):
+    """集群能力缓存(单行 id=1):巡检探测落库,门禁与管理端集群页只读表不实时探测。
+
+    probed_at 超过门禁陈旧窗(10min)视为未知 → shared 档下发拒绝并引导查 worker。
+    """
+
+    __tablename__ = "cluster_status"
+
+    id: Mapped[int] = mapped_column(primary_key=True)  # 恒为 1
+    api_reachable: Mapped[bool] = mapped_column(default=False)
+    k8s_version: Mapped[str | None] = mapped_column(String(64))
+    distro: Mapped[str | None] = mapped_column(String(16))  # rke2 / k3s / None=未知
+    hami_ready: Mapped[bool] = mapped_column(default=False)
+    dcgm_present: Mapped[bool] = mapped_column(default=False)
+    kps_present: Mapped[bool] = mapped_column(default=False)
+    gpu_operator_present: Mapped[bool] = mapped_column(default=False)
+    kata_runtimeclass: Mapped[bool] = mapped_column(default=False)
+    storage_classes: Mapped[list[str] | None] = mapped_column(JSONB)
+    pools: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 池→节点数
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 扩展位:runtime_classes 等
+    error: Mapped[str | None] = mapped_column(Text)
+    probed_at: Mapped[datetime]

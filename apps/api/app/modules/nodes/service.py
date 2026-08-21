@@ -20,10 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.k8s.base import ClusterProbe
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
-from app.modules.nodes.models import NodeEnrollment, NodeSpec
+from app.modules.nodes.models import ClusterStatus, NodeEnrollment, NodeSpec
 from app.modules.nodes.schemas import EnrollmentCreate
 
 logger = get_logger(__name__)
@@ -390,3 +391,32 @@ class GpuModelAggregate:
     vram_gb: int = 0
     vcpu_per_gpu: int = 0
     mem_gb_per_gpu: int = 0
+
+
+# ---------- 集群能力缓存 ----------
+
+
+async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> ClusterStatus:
+    """探测结果 upsert 单行(id=1),probed_at=当次时间。调用方负责 commit。"""
+    row = await session.get(ClusterStatus, 1)
+    if row is None:
+        row = ClusterStatus(id=1)
+        session.add(row)
+    row.api_reachable = probe.api_reachable
+    row.k8s_version = probe.k8s_version
+    row.distro = probe.distro
+    row.hami_ready = probe.hami_ready
+    row.dcgm_present = probe.dcgm_present
+    row.kps_present = probe.kps_present
+    row.gpu_operator_present = probe.gpu_operator_present
+    row.kata_runtimeclass = probe.kata_runtimeclass
+    row.storage_classes = list(probe.storage_classes)
+    row.pools = dict(probe.pools)
+    row.detail = {"runtime_classes": list(probe.runtime_classes)}
+    row.error = probe.error
+    row.probed_at = now_utc()
+    return row
+
+
+async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
+    return await session.get(ClusterStatus, 1)

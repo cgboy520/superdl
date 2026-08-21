@@ -41,6 +41,35 @@ class PodStatus:
 
 
 @dataclass(frozen=True)
+class ClusterProbe:
+    """集群能力探测快照(nodes 巡检落 cluster_status 表,门禁与集群页读表不实时探测)。"""
+
+    api_reachable: bool
+    k8s_version: str | None = None  # gitVersion 原文,如 v1.36.2+rke2r1
+    distro: str | None = None  # rke2 / k3s / None=未知(derive_distro)
+    hami_ready: bool = False  # hami-scheduler Deployment ready≥1
+    dcgm_present: bool = False
+    kps_present: bool = False
+    gpu_operator_present: bool = False
+    kata_runtimeclass: bool = False  # RuntimeClass kata-qemu 存在
+    storage_classes: tuple[str, ...] = ()
+    runtime_classes: tuple[str, ...] = ()
+    pools: dict[str, int] = field(default_factory=dict)  # 池→节点数,未打标计 unlabeled
+    error: str | None = None
+
+
+def derive_distro(git_version: str | None) -> str | None:
+    """gitVersion 后缀派生发行版;识别不出返回 None(探测优于声明,WP27)。"""
+    if not git_version:
+        return None
+    if "+rke2" in git_version:
+        return "rke2"
+    if "+k3s" in git_version:
+        return "k3s"
+    return None
+
+
+@dataclass(frozen=True)
 class PrewarmJobStatus:
     """镜像预热 Job 状态。"""
 
@@ -98,6 +127,10 @@ class K8sOrchestrator(Protocol):
 
     async def delete_prewarm_job(self, node_name: str, image_ref: str) -> None:
         """清理预热 Job(收敛后回收;不存在则跳过)。"""
+        ...
+
+    async def probe_cluster(self) -> "ClusterProbe":
+        """只读能力探测:版本/发行版/组件存在性/RuntimeClass/StorageClass/池分布。"""
         ...
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:

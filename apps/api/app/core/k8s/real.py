@@ -17,10 +17,12 @@ from kubernetes import client, config
 from app.core.config import get_settings
 from app.core.k8s.base import (
     GPU_MODEL_NODE_LABEL,
+    ClusterProbe,
     InstancePodSpec,
     NodeInfo,
     PodStatus,
     PrewarmJobStatus,
+    derive_distro,
 )
 
 INSTANCE_LABEL = "superdl.io/instance"
@@ -562,6 +564,74 @@ class RealOrchestrator:
                 )
             )
         return out
+
+    async def probe_cluster(self) -> ClusterProbe:
+        return await asyncio.to_thread(self._probe_cluster_sync)
+
+    def _probe_cluster_sync(self) -> ClusterProbe:
+        # 版本失败 = API 不可达,整体判不可用;组件清点逐项容错(RBAC 缺项不清零全局)
+        try:
+            version: Any = client.VersionApi().get_code()
+            git_version = getattr(version, "git_version", None)
+        except Exception as exc:
+            return ClusterProbe(api_reachable=False, error=str(exc))
+        errors: list[str] = []
+        apps = client.AppsV1Api()
+        hami_ready = dcgm = kps = gpu_operator = False
+        try:
+            deployments: Any = apps.list_deployment_for_all_namespaces()
+            for d in deployments.items:
+                name = d.metadata.name or ""
+                if name == "hami-scheduler":
+                    hami_ready = bool(d.status.ready_replicas)
+                if "gpu-operator" in name:
+                    gpu_operator = True
+                if "kube-prometheus-stack" in name:
+                    kps = True
+            daemonsets: Any = apps.list_daemon_set_for_all_namespaces()
+            for ds in daemonsets.items:
+                if "dcgm" in (ds.metadata.name or ""):
+                    dcgm = True
+            if not kps:
+                statefulsets: Any = apps.list_stateful_set_for_all_namespaces()
+                kps = any(
+                    (st.metadata.name or "").startswith("prometheus-") for st in statefulsets.items
+                )
+        except client.ApiException as exc:
+            errors.append(f"apps: {exc.status}")
+        runtime_classes: tuple[str, ...] = ()
+        try:
+            rcs: Any = client.NodeV1Api().list_runtime_class()
+            runtime_classes = tuple(rc.metadata.name for rc in rcs.items)
+        except client.ApiException as exc:
+            errors.append(f"runtimeclasses: {exc.status}")
+        storage_classes: tuple[str, ...] = ()
+        try:
+            scs: Any = client.StorageV1Api().list_storage_class()
+            storage_classes = tuple(sc.metadata.name for sc in scs.items)
+        except client.ApiException as exc:
+            errors.append(f"storageclasses: {exc.status}")
+        pools: dict[str, int] = {}
+        try:
+            for node in self._list_nodes_sync(True):
+                key = node.pool_label if node.pool_label != "unknown" else "unlabeled"
+                pools[key] = pools.get(key, 0) + 1
+        except client.ApiException as exc:
+            errors.append(f"nodes: {exc.status}")
+        return ClusterProbe(
+            api_reachable=True,
+            k8s_version=git_version,
+            distro=derive_distro(git_version),
+            hami_ready=hami_ready,
+            dcgm_present=dcgm,
+            kps_present=kps,
+            gpu_operator_present=gpu_operator,
+            kata_runtimeclass="kata-qemu" in runtime_classes,
+            storage_classes=storage_classes,
+            runtime_classes=runtime_classes,
+            pools=pools,
+            error="; ".join(errors) or None,
+        )
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
         await asyncio.to_thread(self._set_node_unschedulable_sync, node_name, unschedulable)
