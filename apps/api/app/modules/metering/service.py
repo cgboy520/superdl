@@ -1,6 +1,7 @@
 """用量服务:实例监控代理 + usage_hourly 聚合 + 事件计费 vs 指标估算对账。"""
 
 import math
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -240,6 +241,9 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
 
 NODE_METRIC_KEYS = ("util", "mem_used_mb", "temp")
 
+# K8s 节点名(RFC1123 子域)。node_name 是 format 进 PromQL 的,不校验则可注入标签选择器
+_NODE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
+
 
 async def node_gpu_metrics(node_name: str, range_key: str) -> dict[str, Any]:
     """管理端节点每卡曲线(DCGM per-GPU 多序列)+ 24h XID 计数。
@@ -248,6 +252,8 @@ async def node_gpu_metrics(node_name: str, range_key: str) -> dict[str, Any]:
     """
     if range_key not in RANGES:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
+    if not _NODE_NAME_RE.match(node_name):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badNodeName")
     end = now_utc().timestamp()
     start = end - RANGES[range_key]
     step = prom.RANGE_STEPS[range_key]

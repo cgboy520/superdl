@@ -82,6 +82,7 @@
     "sizeRange": "容量须在 {{min}}~{{max}} GB 之间"
   },
   "metering": {
+    "badNodeName": "节点名不合法",
     "badRange": "range 须为 1h/6h/24h",
     "unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)"
   },

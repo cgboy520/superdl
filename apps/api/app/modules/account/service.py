@@ -127,10 +127,12 @@ async def register(
     await check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
+    # 先验码再判重:反过来就是手机号枚举 oracle —— 无需持有该号码即可批量探测
+    # 「这个号注册过没有」(每个号一个限流桶,换号即换桶)
+    await _consume_sms_code(session, phone, sms_code, "register")
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
         raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
-    await _consume_sms_code(session, phone, sms_code, "register")
     user = User(phone=phone, password_hash=hash_password(password) if password else None)
     session.add(user)
     await session.commit()

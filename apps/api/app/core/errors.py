@@ -118,6 +118,11 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        # 只回位置/原因/类型:pydantic 的 errors() 带 input(提交原值),
+        # 回显等于把密码、身份证号原样写进响应体与前端日志
+        detail = [
+            {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
+        ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
@@ -125,7 +130,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message": "参数校验失败",
                 "message_key": "common.validation",
                 "params": None,
-                "detail": jsonable_encoder(exc.errors()),
+                "detail": jsonable_encoder(detail),
             },
         )
 

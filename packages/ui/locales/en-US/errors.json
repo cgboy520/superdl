@@ -82,6 +82,7 @@
     "sizeRange": "Size must be between {{min}} and {{max}} GB"
   },
   "metering": {
+    "badNodeName": "Invalid node name",
     "badRange": "range must be one of 1h/6h/24h",
     "unavailable": "Metrics are temporarily unavailable; billing is unaffected (it relies on the instance event log)"
   },

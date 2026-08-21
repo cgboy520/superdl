@@ -91,6 +91,7 @@ MESSAGES: dict[str, str] = {
     "disks.sizeMax": "容量上限 {max} GB",
     "disks.sizeRange": "容量须在 {min}~{max} GB 之间",
     # 计量/监控
+    "metering.badNodeName": "节点名不合法",
     "metering.badRange": "range 须为 1h/6h/24h",
     "metering.unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
     # 节点接入
