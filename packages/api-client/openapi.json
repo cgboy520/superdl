@@ -2439,7 +2439,8 @@
               "sms",
               "real_name",
               "compliance",
-              "cluster"
+              "cluster",
+              "observability"
             ],
             "title": "Group",
             "type": "string"
@@ -5134,6 +5135,66 @@
           }
         ],
         "summary": "Admin Cordon Node",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/nodes/{node_name}/metrics": {
+      "get": {
+        "description": "节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。\n\n节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询\n自然返回空序列,无信息泄漏面(仅管理端角色可达)。",
+        "operationId": "admin_node_metrics_api_admin_v1_nodes__node_name__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_name",
+            "required": true,
+            "schema": {
+              "title": "Node Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1h",
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Node Metrics Api Admin V1 Nodes  Node Name  Metrics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Node Metrics",
         "tags": [
           "admin"
         ]

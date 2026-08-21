@@ -30,7 +30,7 @@ class PlatformSetting(Base):
 
 
 SettingGroup = Literal[
-    "payment_wechat", "payment_alipay", "sms", "real_name", "compliance", "cluster"
+    "payment_wechat", "payment_alipay", "sms", "real_name", "compliance", "cluster", "observability"
 ]
 SettingKind = Literal["str", "text", "bool", "choice", "secret"]
 
@@ -169,6 +169,13 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "text",
         max_len=8192,
         hint="节点 /etc/rancher/rke2/registries.yaml 内容(镜像缓存 mirror;留空则脚本跳过)",
+    ),
+    # ---- 可观测性(管理端自绘为主;Grafana 仅作可选深挖外链,不做 iframe) ----
+    "grafana_url": SettingSpec(
+        "observability",
+        "str",
+        pattern=r"https?://\S+",
+        hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
     ),
 }
 

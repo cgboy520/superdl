@@ -33,6 +33,8 @@ import type {
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminLoginRequest,
+  AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200,
+  AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
   AdminOrderOut,
   AdminOut,
   AdminToken,
@@ -2684,6 +2686,125 @@ export function useAdminCordonNodeApiAdminV1NodesNodeNameCordonPost<TData = Awai
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostQueryOptions(nodeName,nodeCordonRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl = (nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/nodes/${nodeName}/metrics?${stringifiedParams}` : `/api/admin/v1/nodes/${nodeName}/metrics`
+}
+
+/**
+ * 节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
+ *
+ * 节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询
+ * 自然返回空序列,无信息泄漏面(仅管理端角色可达)。
+ * @summary Admin Node Metrics
+ */
+export const adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet = async (nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200> => {
+
+  return customFetch<AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200>(getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl(nodeName,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetQueryKey = (nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,) => {
+    return [
+    `/api/admin/v1/nodes/${nodeName}/metrics`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError = HTTPValidationError>(nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetQueryKey(nodeName,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>> = ({ signal }) => adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet(nodeName,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: nodeName !== null && nodeName !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>>
+export type AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetQueryError = HTTPValidationError
+
+
+export function useAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet<TData = Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError = HTTPValidationError>(
+ nodeName: string,
+    params: undefined |  AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet<TData = Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError = HTTPValidationError>(
+ nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet<TData = Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError = HTTPValidationError>(
+ nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Node Metrics
+ */
+
+export function useAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet<TData = Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError = HTTPValidationError>(
+ nodeName: string,
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetQueryOptions(nodeName,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

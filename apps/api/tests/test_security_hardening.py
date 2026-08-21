@@ -85,11 +85,41 @@ class TestProdConfigValidation:
             ssh_host="ssh1.superdl.cn",
             jupyter_domain_suffix="app.superdl.cn",
             public_base_url="https://api.superdl.cn",
+            prometheus_url="http://kube-prometheus-stack-prometheus.monitoring.svc:9090",
             alertmanager_token="token",
             metrics_token="mtoken",
             config_encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
         )
         assert s.environment == "prod"
+
+    def test_prod_rejects_localhost_prometheus(self):
+        """WP25:prometheus_url 保持本地默认会静默失效(计费无恙但面板/对账全空),prod 必拒。"""
+        import pytest as _pytest
+
+        from app.core.config import Settings
+
+        with _pytest.raises(ValueError, match="prometheus_url"):
+            Settings(
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                environment="prod",
+                jwt_secret="x" * 40,
+                sms_provider="aliyun",
+                sms_access_key_id="ak",
+                sms_access_key_secret="sk",
+                sms_sign_name="SuperDL",
+                sms_template_verify="SMS_1",
+                sms_template_notice="SMS_2",
+                k8s_backend="real",
+                payment_mock=False,
+                database_url="postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
+                cors_origins=["https://console.superdl.cn"],
+                ssh_host="ssh1.superdl.cn",
+                jupyter_domain_suffix="app.superdl.cn",
+                public_base_url="https://api.superdl.cn",
+                alertmanager_token="token",
+                metrics_token="mtoken",
+                config_encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
+            )
 
 
 class TestSmsCodeBruteForce:

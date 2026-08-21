@@ -153,6 +153,10 @@ class Settings(BaseSettings):
         for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url"):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
+        if "localhost" in self.prometheus_url or "127.0.0.1" in self.prometheus_url:
+            problems.append(
+                "prometheus_url 仍为本地默认(监控将静默失效,计费不受影响但对账/面板全空)"
+            )
         if not self.alertmanager_token:
             problems.append("alertmanager_token 未配置")
         if not self.metrics_token:

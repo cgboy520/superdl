@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Request
 from pydantic import BaseModel, Field
@@ -383,6 +383,16 @@ async def admin_revoke_enrollment(
 
 
 # ---------- 节点与超卖报表(角色:admin / ops / readonly) ----------
+
+
+@router.get("/nodes/{node_name}/metrics", dependencies=[require_roles("ops", "readonly")])
+async def admin_node_metrics(node_name: str, range: str = "1h") -> dict[str, Any]:
+    """节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
+
+    节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询
+    自然返回空序列,无信息泄漏面(仅管理端角色可达)。
+    """
+    return await metering_service.node_gpu_metrics(node_name, range)
 
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
