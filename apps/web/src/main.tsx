@@ -36,6 +36,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// 登录态消失(主动登出 / 401 / 别的标签页登出)即清查询缓存:
+// 不清的话换号登录会先渲染上一个账号的余额与实例
+authStore.subscribe((state, prev) => {
+  if (prev.accessToken && !state.accessToken) queryClient.clear();
+});
+
 const router = createRouter({ routeTree, defaultPreload: "intent" });
 
 declare module "@tanstack/react-router" {

@@ -52,8 +52,9 @@ export function useApiMutation<TVars, TData>(
   const errText = useApiErrorText();
   return useMutation<TData, ApiError, TVars>({
     mutationFn: fn,
-    onSuccess: async (data) => {
-      await queryClient.invalidateQueries();
+    onSuccess: (data) => {
+      // 不 await:失效是广播式的,await 会让「改名成功」这类回调等到全站 refetch 完
+      void queryClient.invalidateQueries();
       opts?.onSuccess?.(data);
     },
     onError: (err) => {

@@ -93,3 +93,35 @@ describe("customFetch 401 静默续期", () => {
     expect(request).toHaveBeenCalledWith("superdl:token-refresh", expect.any(Function));
   });
 });
+
+describe("错误体解析", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    configureApiClient({ baseUrl: "", getToken: () => null, refreshToken: null, onUnauthorized: null });
+  });
+
+  it("网关 502 返回 HTML 时抛 ApiError,而不是 SyntaxError", async () => {
+    mockFetch([
+      new Response("<html><body>502 Bad Gateway</body></html>", {
+        status: 502,
+        headers: { "Content-Type": "text/html" },
+      }),
+    ]);
+    await expect(customFetch("/api/v1/wallet", { method: "GET" })).rejects.toMatchObject({
+      code: "HTTP_ERROR",
+      status: 502,
+    });
+  });
+
+  it("结构化错误体照常透出 code / message_key", async () => {
+    mockFetch([
+      new Response(JSON.stringify({ code: "INSUFFICIENT_BALANCE", message_key: "billing.x" }), {
+        status: 400,
+      }),
+    ]);
+    await expect(customFetch("/api/v1/instances", { method: "POST" })).rejects.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      message_key: "billing.x",
+    });
+  });
+});

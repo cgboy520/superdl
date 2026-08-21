@@ -46,6 +46,18 @@ export const instanceStatusMap = {
 } as const satisfies Record<InstanceStatus, StatusMeta>;
 export type InstanceStatusMeta = (typeof instanceStatusMap)[InstanceStatus];
 
+/** 过渡态(有后台流程在推进):列表/详情页据此决定是否高频轮询。 */
+export const TRANSIENT_INSTANCE_STATUSES: readonly string[] = [
+  "creating",
+  "starting",
+  "stopping",
+  "releasing",
+];
+
+export function isTransientInstanceStatus(status: string): boolean {
+  return TRANSIENT_INSTANCE_STATUSES.includes(status);
+}
+
 export type SkuTier = "dedicated" | "mig" | "shared_std" | "shared_eco";
 
 export const skuTierMap = {

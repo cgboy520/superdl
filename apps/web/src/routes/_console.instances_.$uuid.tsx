@@ -1,7 +1,7 @@
 /** 实例详情:监控(降级文案)/连接/事件时间线(=计费依据)/账单 + 危险区释放。 */
 
 import { isApiError } from "@superdl/api-client";
-import { formatDateTime, localToday } from "@superdl/ui";
+import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -225,7 +225,11 @@ function InstanceDetail() {
     data: instance,
     isError: instanceError,
     refetch: refetchInstance,
-  } = useInstance(uuid, { refetchInterval: 5_000 });
+  } = useInstance(uuid, {
+    // 过渡态 5s 盯,稳态退到 30s(状态不会自己变的时候别空转)
+    refetchInterval: (q) =>
+      q.state.data && isTransientInstanceStatus(q.state.data.status) ? 5_000 : 30_000,
+  });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
   const todayAmount =

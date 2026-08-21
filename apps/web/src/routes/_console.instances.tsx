@@ -6,7 +6,7 @@
 
 import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
-import { formatDateTime, localToday } from "@superdl/ui";
+import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -235,7 +235,17 @@ function InstancesPage() {
   const { formatHourlyPrice, formatMoney } = useFormat();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
-  const { data: instances, isLoading, isError, refetch } = useInstances({ refetchInterval: 5_000 });
+  // 有实例在过渡态(creating/starting/stopping/releasing)才 5s 盯着,
+  // 否则退到 30s:全是稳态时没什么可等的,别空转打接口
+  const {
+    data: instances,
+    isLoading,
+    isError,
+    refetch,
+  } = useInstances({
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((i) => isTransientInstanceStatus(i.status)) ? 5_000 : 30_000,
+  });
   const { data: metrics } = useMetricsSummary({ refetchInterval: 45_000 });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });

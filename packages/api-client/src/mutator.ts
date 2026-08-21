@@ -108,7 +108,17 @@ export const customFetch = async <T>(url: string, options: RequestInit): Promise
   }
 
   const text = await response.text();
-  const body: unknown = text ? JSON.parse(text) : null;
+  // 网关 502/504 返回的是 HTML,不是错误体:直接 JSON.parse 会抛 SyntaxError,
+  // 用户看到的是 "Unexpected token '<'" 而不是「服务暂时不可用」
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      if (response.ok) throw new Error("响应不是合法 JSON");
+      body = null;
+    }
+  }
 
   if (!response.ok) {
     const err = (body ?? {}) as Partial<ApiError>;

@@ -26,6 +26,7 @@ import type {
   ApiError,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
   GetLedgerApiV1WalletLedgerGetParams,
+  InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   ListSkusApiV1SkusGetParams,
   RechargeOut,
@@ -61,9 +62,9 @@ export const useSkus = (params?: ListSkusApiV1SkusGetParams, opts?: QueryOpts) =
 export const useImages = () => useApiQuery(["images"], () => listImagesApiV1ImagesGet());
 export const useSshKeys = () => useApiQuery(["ssh-keys"], () => listSshKeysApiV1SshKeysGet());
 export const useDisks = (opts?: QueryOpts) => useApiQuery(["disks"], () => listDisksApiV1DisksGet(), opts);
-export const useInstances = (opts?: QueryOpts) =>
+export const useInstances = (opts?: QueryOpts<InstanceOut[]>) =>
   useApiQuery(["instances"], () => listInstancesApiV1InstancesGet(), opts);
-export const useInstance = (uuid: string, opts?: QueryOpts) =>
+export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
   useApiQuery(["instances", uuid], () => getInstanceApiV1InstancesUuidGet(uuid), opts);
 export const useInstanceEvents = (uuid: string) =>
   useApiQuery(["instances", uuid, "events"], () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid));
