@@ -11,6 +11,8 @@ import { colorPrimary, formatDateTime } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Badge, Button, Dropdown, List, Popover, Space, Typography } from "antd";
 
+import { useTranslation } from "react-i18next";
+
 import { useFormat } from "../../lib/format";
 import { useMarkNotificationRead } from "../../api/mutations";
 import { useMe, useNotifications, useWallet } from "../../api/queries";
@@ -19,6 +21,7 @@ import { authStore, useIsLoggedIn } from "../../stores/auth";
 const WHITE = { color: "#fff" } as const;
 
 function NotificationBell() {
+  const { t } = useTranslation();
   const { data: unread } = useNotifications({ unread: true }, { refetchInterval: 30_000 });
   const { data: all } = useNotifications({});
   const markRead = useMarkNotificationRead();
@@ -30,7 +33,7 @@ function NotificationBell() {
         <List
           style={{ width: 360, maxHeight: 420, overflow: "auto" }}
           dataSource={all ?? []}
-          locale={{ emptyText: "暂无通知" }}
+          locale={{ emptyText: t("topbar.noNotifications") }}
           renderItem={(n) => (
             <List.Item
               style={{ opacity: n.read_at ? 0.55 : 1, cursor: n.read_at ? undefined : "pointer" }}
@@ -55,13 +58,14 @@ function NotificationBell() {
       }
     >
       <Badge count={unread?.length ?? 0} size="small">
-        <Button type="text" aria-label="通知" icon={<BellOutlined style={WHITE} />} />
+        <Button type="text" aria-label={t("topbar.notifications")} icon={<BellOutlined style={WHITE} />} />
       </Badge>
     </Popover>
   );
 }
 
 export function TopBarUser() {
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
@@ -74,7 +78,7 @@ export function TopBarUser() {
         style={{ background: "#fff", color: colorPrimary, borderColor: "transparent", fontWeight: 600 }}
         onClick={() => navigate({ to: "/login" })}
       >
-        登录 / 注册
+        {t("topbar.loginRegister")}
       </Button>
     );
   }
@@ -90,8 +94,8 @@ export function TopBarUser() {
       <Dropdown
         menu={{
           items: [
-            { key: "settings", icon: <SettingOutlined />, label: "账户设置" },
-            { key: "logout", icon: <LogoutOutlined />, label: "退出登录" },
+            { key: "settings", icon: <SettingOutlined />, label: t("settings.title") },
+            { key: "logout", icon: <LogoutOutlined />, label: t("settings.logout") },
           ],
           onClick: ({ key }) => {
             if (key === "logout") {

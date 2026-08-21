@@ -2,6 +2,58 @@
   "app": {
     "title": "SuperDL · GPU 算力云"
   },
+  "billing": {
+    "alipay": "支付宝",
+    "availableBalance": "可用余额",
+    "colAmount": "金额",
+    "colBalanceAfter": "余额快照",
+    "colInstance": "实例",
+    "colRemark": "备注",
+    "colTime": "时间",
+    "colType": "类型",
+    "credited": "已到账 {{amount}}",
+    "csvAmount": "金额(元)",
+    "csvBalanceAfter": "余额快照(元)",
+    "csvExported": "已导出 CSV",
+    "csvExportFailed": "导出失败,请稍后重试",
+    "csvGpuCount": "卡数",
+    "csvInstanceId": "实例ID",
+    "csvRef": "关联",
+    "csvSeconds": "运行秒数",
+    "csvUnitPrice": "单价(元/时)",
+    "diskTotal": "日常费用(数据盘)",
+    "done": "完成",
+    "exportCsv": "导出 CSV",
+    "genQr": "生成支付二维码",
+    "goVerify": "去认证",
+    "gpuTotal": "GPU 时费",
+    "instanceRef": "实例 #{{id}}",
+    "ledgerType": {
+      "adjust": "调账",
+      "consume": "消费",
+      "recharge": "充值",
+      "refund": "退款"
+    },
+    "loadMore": "加载更多",
+    "mockChannel": "模拟支付(开发环境)",
+    "mockPayNow": "模拟支付成功(开发环境)",
+    "mockPaySent": "模拟支付已发送",
+    "monthSpend": "本月消费({{month}})",
+    "noSpendThisMonth": "本月暂无消费",
+    "orderWaiting": "订单 {{no}},请在 {{time}} 前完成支付",
+    "paySuccess": "支付成功",
+    "pollNote": "支付完成后本窗口会自动确认到账;超时未支付订单 2 小时后自动关闭",
+    "realNameRequired": "按监管要求,完成实名认证后方可充值",
+    "recharge": "充值",
+    "save": "保存",
+    "scanWithAlipay": "请使用支付宝「扫一扫」完成支付",
+    "scanWithWechat": "请使用微信「扫一扫」完成支付",
+    "tabBills": "小时账单",
+    "tabLedger": "收支明细",
+    "thresholdSaved": "阈值已更新",
+    "title": "费用中心",
+    "wechat": "微信支付"
+  },
   "common": {
     "backConsole": "回控制台",
     "backHome": "回首页",
@@ -10,7 +62,10 @@
     "gbMonthPrice": "¥{{price}}/GB·月",
     "goRent": "去租用",
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
-    "retry": "重试"
+    "jupyter": "JupyterLab",
+    "requestFailed": "请求失败",
+    "retry": "重试",
+    "ssh": "SSH"
   },
   "copy": {
     "antiMiningNotice": "严禁将实例用于挖矿等违规用途,违者封号并不予退款(见用户协议)",
@@ -96,6 +151,18 @@
     "tabMine": "我的镜像",
     "tabPlatform": "平台镜像",
     "title": "创建实例"
+  },
+  "dashboard": {
+    "announcementPrefix": "公告:{{title}}",
+    "balanceWarn": "有余额或欠费相关预警,请查看通知并及时充值",
+    "dataDisks": "数据盘",
+    "goRecharge": "去充值",
+    "manageInstances": "管理实例",
+    "quickEntries": "快捷入口",
+    "runningCount": "运行中 {{count}} 台",
+    "title": "概览",
+    "totalInstances": "实例总数",
+    "unread": "未读通知"
   },
   "errorPage": {
     "title": "页面出错了",
@@ -251,6 +318,7 @@
     },
     "ranking": {
       "footnote": "理论峰值算力,数据来自各厂商公开规格,实际性能因负载而异。",
+      "modelVram": "{{label}} / {{vram}}GB",
       "onSale": "在售",
       "subtitle": "横向对比常见加速卡的理论峰值算力",
       "tabFp16": "半精 FP16",
@@ -310,6 +378,41 @@
   "notFound": {
     "subtitle": "你访问的地址不存在或已被移除",
     "title": "页面不存在"
+  },
+  "query": {
+    "loadFailed": "数据加载失败,可能是网络异常或服务暂不可用",
+    "partialFailed": "部分数据加载失败",
+    "partialFailedDesc": "页面中的金额与列表可能不完整,请以重试后的结果为准。"
+  },
+  "settings": {
+    "accountCard": "账号",
+    "colAddedAt": "添加时间",
+    "colFingerprint": "指纹",
+    "deleteKeyConfirm": "删除该公钥?已创建实例内的 authorized_keys 不受影响",
+    "idNumberPlaceholder": "身份证号(18 位)",
+    "idNumberRule": "请输入 18 位身份证号",
+    "keyContentLabel": "公钥内容",
+    "keyContentRequired": "请粘贴公钥",
+    "keyFormatHint": "格式:ssh-ed25519 AAAA…(支持 ed25519/rsa/ecdsa)",
+    "keyNameHint": "如:办公电脑",
+    "logout": "退出登录",
+    "noKeys": "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)",
+    "notifyCard": "通知",
+    "phoneLine": "手机号:{{phone}}",
+    "realNameCard": "实名认证",
+    "realNameDone": "实名认证已完成",
+    "realNameDoneNote": "已完成实名认证,信息仅存脱敏形态。",
+    "realNameNameRule": "请输入与身份证一致的姓名",
+    "realNameNote": "按监管要求完成三要素核验(姓名 + 身份证号 + 账号手机号);信息仅用于核验,身份证号只保存脱敏形态。",
+    "realNamePlaceholder": "真实姓名",
+    "saved": "已保存",
+    "sshCard": "SSH 公钥",
+    "submitVerify": "提交核验",
+    "title": "账户设置",
+    "unverified": "未认证",
+    "verified": "已认证",
+    "warnThresholdHint": "预计可用时长低于该值时短信+站内信提醒",
+    "warnThresholdLabel": "低余额预警阈值(小时)"
   },
   "sku": {
     "billingModeTitle": "计费方式",
@@ -372,7 +475,10 @@
   },
   "topbar": {
     "login": "登录",
+    "loginRegister": "登录 / 注册",
     "market": "算力市场",
+    "noNotifications": "暂无通知",
+    "notifications": "通知",
     "pricing": "GPU 价格",
     "ranking": "算力排名",
     "register": "免费注册"

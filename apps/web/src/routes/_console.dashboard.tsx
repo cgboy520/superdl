@@ -2,6 +2,7 @@
 
 import { addAmounts, localToday } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
 
 import { useFormat } from "../lib/format";
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/_console/dashboard")({
 });
 
 function Overview() {
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const instancesQ = useInstances();
   const walletQ = useWallet();
@@ -34,7 +36,7 @@ function Overview() {
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
-        概览
+        {t("dashboard.title")}
       </Typography.Title>
       {hasError && (
         <DataErrorAlert
@@ -49,7 +51,7 @@ function Overview() {
         <Alert
           type="info"
           showIcon
-          title={`公告:${announcement.title}`}
+          title={t("dashboard.announcementPrefix", { title: announcement.title })}
           description={announcement.content}
         />
       )}
@@ -57,10 +59,10 @@ function Overview() {
         <Alert
           type="warning"
           showIcon
-          title="有余额或欠费相关预警,请查看通知并及时充值"
+          title={t("dashboard.balanceWarn")}
           action={
             <Link to="/billing">
-              <Button size="small">去充值</Button>
+              <Button size="small">{t("dashboard.goRecharge")}</Button>
             </Link>
           }
         />
@@ -68,44 +70,44 @@ function Overview() {
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="实例总数" value={instances ? instances.length : "—"} />
+            <Statistic title={t("dashboard.totalInstances")} value={instances ? instances.length : "—"} />
             <Typography.Text type="secondary">
-              {instances ? `运行中 ${running} 台` : " "}
+              {instances ? t("dashboard.runningCount", { count: running }) : " "}
             </Typography.Text>
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card>
             <Statistic
-              title="可用余额"
+              title={t("billing.availableBalance")}
               value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
             />
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="今日消费" value={todayTotal} />
+            <Statistic title={t("instances.labelToday")} value={todayTotal} />
           </Card>
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title="未读通知" value={unread ? unread.length : "—"} />
+            <Statistic title={t("dashboard.unread")} value={unread ? unread.length : "—"} />
           </Card>
         </Col>
       </Row>
-      <Card title="快捷入口">
+      <Card title={t("dashboard.quickEntries")}>
         <Space wrap>
           <Link to="/market">
-            <Button type="primary">租用新实例</Button>
+            <Button type="primary">{t("instances.rentNew")}</Button>
           </Link>
           <Link to="/instances">
-            <Button>管理实例</Button>
+            <Button>{t("dashboard.manageInstances")}</Button>
           </Link>
           <Link to="/storage">
-            <Button>数据盘</Button>
+            <Button>{t("dashboard.dataDisks")}</Button>
           </Link>
           <Link to="/billing">
-            <Button>充值</Button>
+            <Button>{t("billing.recharge")}</Button>
           </Link>
         </Space>
       </Card>

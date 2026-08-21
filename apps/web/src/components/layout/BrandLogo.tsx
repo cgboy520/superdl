@@ -8,6 +8,8 @@ const S_PATH =
   "5.9-1.8 5.9-4.5 0-2.2-1.5-3.4-4.7-4.1l-1.8-.4c-1.8-.4-2.6-1-2.6-1.9 0-1.1 1.1-1.9 " +
   "2.8-1.9 1.6 0 2.8.7 3.1 1.9h2.6z";
 
+const BRAND_NAME = "SuperDL"; // 品牌字标,任何语言不译
+
 export function BrandLogo({
   variant = "dark",
   size = 26,
@@ -41,7 +43,7 @@ export function BrandLogo({
           letterSpacing: 0.3,
         }}
       >
-        SuperDL
+        {BRAND_NAME}
       </span>
     </span>
   );

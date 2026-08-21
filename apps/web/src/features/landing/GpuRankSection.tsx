@@ -67,7 +67,7 @@ export function GpuRankSection() {
                 {i + 1}
               </span>
               <span style={{ width: 150, flexShrink: 0 }}>
-                {r.spec.label} / {r.spec.vramGb}GB
+                {t("landing.ranking.modelVram", { label: r.spec.label, vram: r.spec.vramGb })}
               </span>
               <div style={{ flex: 1, background: token.colorFillQuaternary, borderRadius: 4, height: 14 }}>
                 <div

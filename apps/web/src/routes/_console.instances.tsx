@@ -71,10 +71,10 @@ function QuickToolsCell({ instance }: { instance: InstanceOut }) {
         <Tooltip title={t("copy.jupyterNeedsRunning")}>
           <Space size={4}>
             <Button size="small" disabled icon={<CodeOutlined />}>
-              SSH
+              {t("common.ssh")}
             </Button>
             <Button size="small" disabled>
-              JupyterLab
+              {t("common.jupyter")}
             </Button>
           </Space>
         </Tooltip>
@@ -96,7 +96,7 @@ function QuickToolsCell({ instance }: { instance: InstanceOut }) {
                   window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
               }}
         >
-          JupyterLab
+          {t("common.jupyter")}
         </Button>
       </Space>
       {monitorLink}

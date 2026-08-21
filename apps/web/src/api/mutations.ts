@@ -40,6 +40,7 @@ import type {
 } from "@superdl/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
+import { useTranslation } from "react-i18next";
 
 export function useApiMutation<TVars, TData>(
   fn: (vars: TVars) => Promise<TData>,
@@ -47,6 +48,7 @@ export function useApiMutation<TVars, TData>(
 ) {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
+  const { t } = useTranslation();
   return useMutation<TData, ApiError, TVars>({
     mutationFn: fn,
     onSuccess: async (data) => {
@@ -54,7 +56,7 @@ export function useApiMutation<TVars, TData>(
       opts?.onSuccess?.(data);
     },
     onError: (err) => {
-      if (!opts?.silentError) message.error(err.message ?? "请求失败");
+      if (!opts?.silentError) message.error(err.message ?? t("common.requestFailed"));
     },
   });
 }

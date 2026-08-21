@@ -58,15 +58,16 @@ export const Route = createFileRoute("/_console/billing")({
   component: BillingPage,
 });
 
-const LEDGER_TYPE: Record<string, { label: string; color: string }> = {
-  recharge: { label: "充值", color: "green" },
-  consume: { label: "消费", color: "blue" },
-  refund: { label: "退款", color: "orange" },
-  adjust: { label: "调账", color: "purple" },
-};
+const LEDGER_TYPE = {
+  recharge: { labelKey: "billing.ledgerType.recharge", color: "green" },
+  consume: { labelKey: "billing.ledgerType.consume", color: "blue" },
+  refund: { labelKey: "billing.ledgerType.refund", color: "orange" },
+  adjust: { labelKey: "billing.ledgerType.adjust", color: "purple" },
+} as const;
+type LedgerTypeKey = keyof typeof LEDGER_TYPE;
 
 function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { formatCountdown, formatMoney } = useFormat();
+  const { formatMoney } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [amount, setAmount] = useState<number>(100);
@@ -88,7 +89,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const create = useCreateRecharge({
     onSuccess: (d) => setOrder(d as RechargeOut),
   });
-  const mockPay = useMockPay({ onSuccess: () => message.success("模拟支付已发送") });
+  const mockPay = useMockPay({ onSuccess: () => message.success(t("billing.mockPaySent")) });
   const { data: polled } = useRecharge(order?.order_no ?? "", {
     enabled: Boolean(order),
     // 到终态(paid/closed/failed)即停,不再空转打接口
@@ -106,7 +107,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   };
 
   return (
-    <Modal title="充值" open={open} onCancel={reset} footer={null}>
+    <Modal title={t("billing.recharge")} open={open} onCancel={reset} footer={null}>
       {!order ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Tabs
@@ -117,23 +118,23 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
               {
                 key: "wechat",
                 label: enabled.wechat ? (
-                  "微信支付"
+                  t("billing.wechat")
                 ) : (
-                  <Tooltip title={t("copy.channelComingSoon")}>微信支付</Tooltip>
+                  <Tooltip title={t("copy.channelComingSoon")}>{t("billing.wechat")}</Tooltip>
                 ),
                 disabled: !enabled.wechat,
               },
               {
                 key: "alipay",
                 label: enabled.alipay ? (
-                  "支付宝"
+                  t("billing.alipay")
                 ) : (
-                  <Tooltip title={t("copy.channelComingSoon")}>支付宝</Tooltip>
+                  <Tooltip title={t("copy.channelComingSoon")}>{t("billing.alipay")}</Tooltip>
                 ),
                 disabled: !enabled.alipay,
               },
               ...(enabled.mock
-                ? [{ key: "mock", label: "模拟支付(开发环境)" }]
+                ? [{ key: "mock", label: t("billing.mockChannel") }]
                 : []),
             ]}
           />
@@ -164,17 +165,17 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
               })
             }
           >
-            生成支付二维码
+            {t("billing.genQr")}
           </Button>
         </Space>
       ) : paid ? (
         <Space orientation="vertical" align="center" style={{ width: "100%" }}>
           <Typography.Title level={4} type="success">
-            支付成功
+            {t("billing.paySuccess")}
           </Typography.Title>
-          <Typography.Text>已到账 {formatMoney(order.amount)}</Typography.Text>
+          <Typography.Text>{t("billing.credited", { amount: formatMoney(order.amount) })}</Typography.Text>
           <Button type="primary" onClick={reset}>
-            完成
+            {t("billing.done")}
           </Button>
         </Space>
       ) : (
@@ -182,21 +183,22 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           <Alert
             type="info"
             showIcon
-            title={`订单 ${order.order_no} · 有效期${formatCountdown(
-              polled?.expires_at ?? order.expires_at,
-            ).replace("剩 ", " ")},等待支付…`}
+            title={t("billing.orderWaiting", {
+              no: order.order_no,
+              time: formatDateTime(polled?.expires_at ?? order.expires_at),
+            })}
           />
           <div style={{ display: "flex", justifyContent: "center" }}>
             <QRCode value={order.qr_url ?? order.order_no} size={168} />
           </div>
           {order.channel === "wechat" && (
             <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
-              请使用微信「扫一扫」完成支付
+              {t("billing.scanWithWechat")}
             </Typography.Text>
           )}
           {order.channel === "alipay" && (
             <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
-              请使用支付宝「扫一扫」完成支付
+              {t("billing.scanWithAlipay")}
             </Typography.Text>
           )}
           {order.channel === "mock" && (
@@ -207,11 +209,11 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
                 mockPay.mutate({ order_no: order.order_no, amount: order.amount })
               }
             >
-              模拟支付成功(开发环境)
+              {t("billing.mockPayNow")}
             </Button>
           )}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            支付完成后本窗口每 2 秒自动确认到账;超时未支付订单 2 小时后自动关闭
+            {t("billing.pollNote")}
           </Typography.Text>
         </Space>
       )}
@@ -220,6 +222,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
 }
 
 function LedgerTable() {
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const [cursor, setCursor] = useState<string>();
   const [rows, setRows] = useState<LedgerEntryOut[]>([]);
@@ -245,16 +248,16 @@ function LedgerTable() {
         scroll={{ x: 760 }}
         dataSource={merged}
         columns={[
-          { title: "时间", render: (_, r) => formatDateTime(r.created_at) },
+          { title: t("billing.colTime"), render: (_, r) => formatDateTime(r.created_at) },
           {
-            title: "类型",
+            title: t("billing.colType"),
             render: (_, r) => {
-              const meta = LEDGER_TYPE[r.type] ?? { label: r.type, color: "default" };
-              return <Tag color={meta.color}>{meta.label}</Tag>;
+              const meta = LEDGER_TYPE[r.type as LedgerTypeKey] as (typeof LEDGER_TYPE)[LedgerTypeKey] | undefined;
+              return <Tag color={meta?.color ?? "default"}>{meta ? t(meta.labelKey) : r.type}</Tag>;
             },
           },
           {
-            title: "金额",
+            title: t("billing.colAmount"),
             render: (_, r) => (
               <span
                 style={{ color: r.amount.startsWith("-") ? undefined : statusColors.green }}
@@ -265,10 +268,10 @@ function LedgerTable() {
             ),
           },
           {
-            title: "余额快照",
+            title: t("billing.colBalanceAfter"),
             render: (_, r) => <span>{formatMoney(r.balance_after)}</span>,
           },
-          { title: "备注", dataIndex: "remark" },
+          { title: t("billing.colRemark"), dataIndex: "remark" },
         ]}
       />
       {data?.next_cursor && (
@@ -280,7 +283,7 @@ function LedgerTable() {
             setCursor(data.next_cursor ?? undefined);
           }}
         >
-          加载更多
+          {t("billing.loadMore")}
         </Button>
       )}
     </Space>
@@ -306,7 +309,7 @@ function BillingPage() {
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes);
   const { data: bills } = useHourlyBills({ limit: 50 });
-  const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success("阈值已更新") });
+  const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("billing.thresholdSaved")) });
 
   const saveThreshold = (v: number | undefined) => {
     if (v != null && v >= 1 && v <= 168) setThreshold.mutate(v);
@@ -327,7 +330,7 @@ function BillingPage() {
         downloadCsv(
           `superdl-hourly-${month}.csv`,
           toCsv(
-            ["计费小时", "实例ID", "运行秒数", "单价(元/时)", "卡数", "金额(元)"],
+            [t("instances.colBillHour"), t("billing.csvInstanceId"), t("billing.csvSeconds"), t("billing.csvUnitPrice"), t("billing.csvGpuCount"), t("billing.csvAmount")],
             rows.map((r) => [
               formatDateTime(r.hour_start),
               r.instance_id,
@@ -350,10 +353,10 @@ function BillingPage() {
         downloadCsv(
           "superdl-ledger.csv",
           toCsv(
-            ["时间", "类型", "金额(元)", "余额快照(元)", "关联", "备注"],
+            [t("billing.colTime"), t("billing.colType"), t("billing.csvAmount"), t("billing.csvBalanceAfter"), t("billing.csvRef"), t("billing.colRemark")],
             rows.map((r) => [
               formatDateTime(r.created_at),
-              LEDGER_TYPE[r.type]?.label ?? r.type,
+              ((): string => { const m = LEDGER_TYPE[r.type as LedgerTypeKey] as (typeof LEDGER_TYPE)[LedgerTypeKey] | undefined; return m ? t(m.labelKey) : r.type; })(),
               r.amount,
               r.balance_after,
               r.ref_type ? `${r.ref_type}:${r.ref_id ?? ""}` : "",
@@ -362,33 +365,33 @@ function BillingPage() {
           ),
         );
       }
-      message.success("已导出 CSV");
+      message.success(t("billing.csvExported"));
     } catch {
-      message.error("导出失败,请稍后重试");
+      message.error(t("billing.csvExportFailed"));
     } finally {
       setExporting(false);
     }
   };
 
   const pieData = (summary?.items ?? []).map((i) => ({
-    name: `实例 #${i.instance_id}`,
+    name: t("billing.instanceRef", { id: i.instance_id }),
     value: parseFloat(i.total_amount),
   }));
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
-        费用中心
+        {t("billing.title")}
       </Typography.Title>
       {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
       {policies?.real_name_required_for_recharge && me?.verification_status !== "verified" && (
         <Alert
           type="warning"
           showIcon
-          title="按监管要求,完成实名认证后方可充值"
+          title={t("billing.realNameRequired")}
           action={
             <Link to="/settings">
-              <Button size="small">去认证</Button>
+              <Button size="small">{t("billing.goVerify")}</Button>
             </Link>
           }
         />
@@ -398,16 +401,16 @@ function BillingPage() {
           <Card>
             <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
               <Statistic
-                title="可用余额"
+                title={t("billing.availableBalance")}
                 value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
                 styles={{ content: { fontSize: 32 } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>
-                充值
+                {t("billing.recharge")}
               </Button>
             </Space>
             <Space style={{ marginTop: 12 }}>
-              <Typography.Text type="secondary">低余额预警阈值(小时)</Typography.Text>
+              <Typography.Text type="secondary">{t("settings.warnThresholdLabel")}</Typography.Text>
               <InputNumber
                 size="small"
                 min={1}
@@ -421,29 +424,29 @@ function BillingPage() {
                 loading={setThreshold.isPending}
                 onClick={() => saveThreshold(warnHours ?? me?.low_balance_warn_hours)}
               >
-                保存
+                {t("billing.save")}
               </Button>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                预计可用时长低于该值时短信+站内信提醒
+                {t("settings.warnThresholdHint")}
               </Typography.Text>
             </Space>
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title={`本月消费(${month})`}>
+          <Card title={t("billing.monthSpend", { month })}>
             <Row>
               <Col xs={24} md={10}>
                 <Statistic
-                  title="GPU 时费"
+                  title={t("billing.gpuTotal")}
                   value={formatMoney(summary?.gpu_total)}
                 />
                 <Statistic
-                  title="日常费用(数据盘)"
+                  title={t("billing.diskTotal")}
                   value={formatMoney(summary?.disk_total)}
                   styles={{ content: { fontSize: 16 } }}
                 />
                 <Statistic
-                  title="今日消费"
+                  title={t("instances.labelToday")}
                   value={formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null)}
                   styles={{ content: { fontSize: 16 } }}
                 />
@@ -465,7 +468,7 @@ function BillingPage() {
                     }}
                   />
                 ) : (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本月暂无消费" />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("billing.noSpendThisMonth")} />
                 )}
               </Col>
             </Row>
@@ -479,13 +482,13 @@ function BillingPage() {
           onChange={(k) => setActiveTab(k as "bills" | "ledger")}
           tabBarExtraContent={
             <Button size="small" loading={exporting} onClick={() => void exportCsv()}>
-              导出 CSV
+              {t("billing.exportCsv")}
             </Button>
           }
           items={[
             {
               key: "bills",
-              label: "小时账单",
+              label: t("billing.tabBills"),
               children: (
                 <Table
                   rowKey="id"
@@ -494,11 +497,11 @@ function BillingPage() {
                   scroll={{ x: 760 }}
                   dataSource={bills?.items ?? []}
                   columns={[
-                    { title: "计费小时", render: (_, r) => formatDateTime(r.hour_start) },
-                    { title: "实例", render: (_, r) => `#${r.instance_id}` },
-                    { title: "时长", render: (_, r) => formatDuration(r.seconds_used) },
+                    { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
+                    { title: t("billing.colInstance"), render: (_, r) => `#${r.instance_id}` },
+                    { title: t("instances.colBillDuration"), render: (_, r) => formatDuration(r.seconds_used) },
                     {
-                      title: "单价",
+                      title: t("instances.colBillUnit"),
                       render: (_, r) => (
                         <span>
                           {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
@@ -506,7 +509,7 @@ function BillingPage() {
                       ),
                     },
                     {
-                      title: "金额",
+                      title: t("instances.colBillAmount"),
                       render: (_, r) => (
                         <span>{formatMoney(r.amount)}</span>
                       ),
@@ -515,7 +518,7 @@ function BillingPage() {
                 />
               ),
             },
-            { key: "ledger", label: "收支明细", children: <LedgerTable /> },
+            { key: "ledger", label: t("billing.tabLedger"), children: <LedgerTable /> },
           ]}
         />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>

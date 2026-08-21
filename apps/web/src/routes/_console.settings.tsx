@@ -45,22 +45,22 @@ function SettingsPage() {
 
   const addKey = useAddSshKey({
     onSuccess: () => {
-      message.success("公钥已添加");
+      message.success(t("create.keyAdded"));
       form.resetFields();
     },
   });
   const delKey = useDeleteSshKey();
-  const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success("已保存") });
+  const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("settings.saved")) });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
-        账户设置
+        {t("settings.title")}
       </Typography.Title>
 
       <Card
         id="ssh"
-        title="SSH 公钥"
+        title={t("settings.sshCard")}
         extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}
       >
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -75,25 +75,25 @@ function SettingsPage() {
               emptyText: isError ? (
                 <TableErrorEmpty onRetry={() => void refetch()} />
               ) : (
-                "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)"
+                t("settings.noKeys")
               ),
             }}
             columns={[
-              { title: "名称", dataIndex: "name" },
+              { title: t("storage.nameLabel"), dataIndex: "name" },
               {
-                title: "指纹",
+                title: t("settings.colFingerprint"),
                 render: (_, r) => <Typography.Text code>{r.fingerprint}</Typography.Text>,
               },
-              { title: "添加时间", render: (_, r) => formatDateTime(r.created_at) },
+              { title: t("settings.colAddedAt"), render: (_, r) => formatDateTime(r.created_at) },
               {
-                title: "操作",
+                title: t("storage.colActions"),
                 render: (_, r) => (
                   <Popconfirm
-                    title="删除该公钥?已创建实例内的 authorized_keys 不受影响"
+                    title={t("settings.deleteKeyConfirm")}
                     onConfirm={() => delKey.mutate(r.id)}
                   >
                     <Button size="small" danger>
-                      删除
+                      {t("storage.delete")}
                     </Button>
                   </Popconfirm>
                 ),
@@ -107,19 +107,19 @@ function SettingsPage() {
           >
             <Form.Item
               name="name"
-              label="名称"
-              rules={[{ required: true, message: "如:办公电脑" }]}
+              label={t("storage.nameLabel")}
+              rules={[{ required: true, message: t("settings.keyNameHint") }]}
             >
               <Input style={{ width: 240 }} maxLength={64} />
             </Form.Item>
             <Form.Item
               name="public_key"
-              label="公钥内容"
+              label={t("settings.keyContentLabel")}
               rules={[
-                { required: true, message: "请粘贴公钥" },
+                { required: true, message: t("settings.keyContentRequired") },
                 {
                   pattern: /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))\s+\S+/,
-                  message: "格式:ssh-ed25519 AAAA…(支持 ed25519/rsa/ecdsa)",
+                  message: t("settings.keyFormatHint"),
                 },
               ]}
             >
@@ -129,15 +129,15 @@ function SettingsPage() {
               />
             </Form.Item>
             <Button type="primary" htmlType="submit" loading={addKey.isPending}>
-              添加公钥
+              {t("create.addKey")}
             </Button>
           </Form>
         </Space>
       </Card>
 
-      <Card title="通知">
+      <Card title={t("settings.notifyCard")}>
         <Space>
-          <Typography.Text>低余额预警阈值(小时)</Typography.Text>
+          <Typography.Text>{t("settings.warnThresholdLabel")}</Typography.Text>
           <InputNumber
             min={1}
             max={168}
@@ -155,17 +155,17 @@ function SettingsPage() {
               if (v != null) setThreshold.mutate(v);
             }}
           >
-            保存
+            {t("billing.save")}
           </Button>
-          <Typography.Text type="secondary">预计可用时长低于该值时提醒</Typography.Text>
+          <Typography.Text type="secondary">{t("settings.warnThresholdHint")}</Typography.Text>
         </Space>
       </Card>
 
       <RealNameCard verified={me?.verification_status === "verified"} />
 
-      <Card title="账号">
+      <Card title={t("settings.accountCard")}>
         <Space orientation="vertical" size={12}>
-          <Typography.Text>手机号:{me?.phone}</Typography.Text>
+          <Typography.Text>{t("settings.phoneLine", { phone: me?.phone ?? "" })}</Typography.Text>
           <Button
             danger
             onClick={() => {
@@ -173,7 +173,7 @@ function SettingsPage() {
               void navigate({ to: "/login" });
             }}
           >
-            退出登录
+            {t("settings.logout")}
           </Button>
         </Space>
       </Card>
@@ -182,26 +182,27 @@ function SettingsPage() {
 }
 
 function RealNameCard({ verified }: { verified: boolean }) {
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const [form] = Form.useForm<{ name: string; id_number: string }>();
   const submit = useSubmitRealName({
-    onSuccess: () => message.success("实名认证已完成"),
+    onSuccess: () => message.success(t("settings.realNameDone")),
   });
   return (
     <Card
       title={
         <Space size={8}>
-          实名认证
-          <Tag color={verified ? "green" : "orange"}>{verified ? "已认证" : "未认证"}</Tag>
+          {t("settings.realNameCard")}
+          <Tag color={verified ? "green" : "orange"}>{verified ? t("settings.verified") : t("settings.unverified")}</Tag>
         </Space>
       }
     >
       {verified ? (
-        <Typography.Text type="secondary">已完成实名认证,信息仅存脱敏形态。</Typography.Text>
+        <Typography.Text type="secondary">{t("settings.realNameDoneNote")}</Typography.Text>
       ) : (
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            按监管要求完成三要素核验(姓名 + 身份证号 + 账号手机号);信息仅用于核验,身份证号只保存脱敏形态。
+            {t("settings.realNameNote")}
           </Typography.Text>
           <Form
             form={form}
@@ -210,9 +211,9 @@ function RealNameCard({ verified }: { verified: boolean }) {
           >
             <Form.Item
               name="name"
-              rules={[{ required: true, min: 2, message: "请输入与身份证一致的姓名" }]}
+              rules={[{ required: true, min: 2, message: t("settings.realNameNameRule") }]}
             >
-              <Input placeholder="真实姓名" style={{ width: 160 }} />
+              <Input placeholder={t("settings.realNamePlaceholder")} style={{ width: 160 }} />
             </Form.Item>
             <Form.Item
               name="id_number"
@@ -220,14 +221,14 @@ function RealNameCard({ verified }: { verified: boolean }) {
                 {
                   required: true,
                   pattern: /^\d{17}[\dXx]$/,
-                  message: "请输入 18 位身份证号",
+                  message: t("settings.idNumberRule"),
                 },
               ]}
             >
-              <Input placeholder="身份证号(18 位)" style={{ width: 220 }} maxLength={18} />
+              <Input placeholder={t("settings.idNumberPlaceholder")} style={{ width: 220 }} maxLength={18} />
             </Form.Item>
             <Button type="primary" htmlType="submit" loading={submit.isPending}>
-              提交核验
+              {t("settings.submitVerify")}
             </Button>
           </Form>
         </Space>
