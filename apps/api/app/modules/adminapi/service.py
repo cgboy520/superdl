@@ -31,9 +31,13 @@ async def login(
     password_ok = verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
         logger.warning("admin_login_failed", username=username, ip=client_ip)
-        raise AppError(ErrorCode.LOGIN_FAILED, "用户名或密码错误")
+        raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
     if admin.status != "active":
-        raise AppError(ErrorCode.USER_FROZEN, "账号已停用", http_status=status.HTTP_403_FORBIDDEN)
+        raise AppError(
+            ErrorCode.USER_FROZEN,
+            key="adminapi.userDisabled",
+            http_status=status.HTTP_403_FORBIDDEN,
+        )
     token = create_token(str(admin.id), "admin", token_type="access")
     return token, admin
 
@@ -65,7 +69,7 @@ async def create_adjustment(
 
     amount = as_amount(Decimal(str(amount)))
     if amount == 0:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "调账金额不能为 0")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.adjustNotZero")
     adj = AdminAdjustment(user_id=user_id, amount=amount, reason=reason, created_by=created_by)
     session.add(adj)
     await session.commit()
@@ -92,10 +96,12 @@ async def review_adjustment(
     if adj is None:
         raise not_found("调账单不存在")
     if adj.status != "pending":
-        raise AppError(ErrorCode.CONFLICT, "调账单已处理", http_status=409)
+        raise AppError(ErrorCode.CONFLICT, key="adminapi.adjustAlreadyProcessed", http_status=409)
     if adj.created_by == reviewer_id:
         raise AppError(
-            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED, "调账必须由第二位管理员复核", http_status=403
+            ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
+            key="adminapi.adjustSecondReviewer",
+            http_status=403,
         )
     adj.reviewed_by = reviewer_id
     adj.review_comment = comment

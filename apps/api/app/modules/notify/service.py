@@ -79,10 +79,7 @@ async def send_low_balance_warning(
         user_id,
         type_="balance_warn",
         title="余额不足预警",
-        content=(
-            f"当前余额 ¥{balance},按现有实例预计仅可再运行约 {est_hours:.1f} 小时。"
-            "余额耗尽后实例将自动关机并进入冻结倒计时,请及时充值。"
-        ),
+        content=f"当前余额 ¥{balance},按现有实例预计仅可再运行约 {est_hours:.1f} 小时,请及时充值。",
         severity="warning",
         dedup_key=f"balance_warn:{user_id}:{_day_bucket(now_utc())}",
         sms=True,
@@ -208,8 +205,8 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 type_="gpu_fault",
                 title="GPU 硬件告警",
                 content=(
-                    "您的实例所在 GPU 触发硬件告警,平台已介入处理;"
-                    "若实例受影响将按停机结算并补偿代金券(见故障 SOP)。"
+                    "该实例所在 GPU 触发硬件故障告警,平台正在处理。"
+                    "若实例因此停机,将按停机瞬间结算,之后不再计费。"
                 ),
                 severity="critical",
                 dedup_key=f"{dedup}:tenant:{user_id}",

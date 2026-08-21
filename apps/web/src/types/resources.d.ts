@@ -17,6 +17,18 @@ export default interface Resources {
       "termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
       "userFrozen": "账号已被冻结,请联系客服"
     },
+    "adminapi": {
+      "adjustAlreadyProcessed": "调账单已处理",
+      "adjustNotZero": "调账金额不能为 0",
+      "adjustSecondReviewer": "调账必须由第二位管理员复核",
+      "badDayFormat": "day 格式应为 YYYY-MM-DD",
+      "loginFailed": "用户名或密码错误",
+      "smsTestFailed": "发送失败:{{message}}",
+      "taskNotFound": "任务不存在",
+      "taskStateNotIgnorable": "任务状态 {{status}} 不可忽略",
+      "taskStateNotReplayable": "任务状态 {{status}} 不可重放",
+      "userDisabled": "账号已停用"
+    },
     "billing": {
       "alipayCallbackVerifyFailed": "支付宝回调验签失败",
       "alipayCreateFailed": "支付宝下单失败:{{message}}",
@@ -53,9 +65,11 @@ export default interface Resources {
       "skuOffSale": "该规格已下架"
     },
     "common": {
+      "badCursor": "无效的分页游标",
       "forbidden": "无权访问",
       "internal": "服务器内部错误,请稍后重试",
       "notFound": "资源不存在",
+      "rateLimited": "尝试过于频繁,请稍后再试",
       "unauthorized": "未登录或凭证已过期",
       "validation": "参数校验失败"
     },
@@ -71,6 +85,13 @@ export default interface Resources {
     "metering": {
       "badRange": "range 须为 1h/6h/24h",
       "unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)"
+    },
+    "nodes": {
+      "alreadyTerminal": "状态 {{status}} 已是终态,无需吊销",
+      "clusterNotConfigured": "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token",
+      "enrollTransition": "注册状态不允许 {{from}} → {{to}}",
+      "hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+      "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)"
     },
     "orchestrator": {
       "accessNeedsRunning": "实例运行中才能获取接入信息",

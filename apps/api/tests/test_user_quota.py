@@ -62,7 +62,7 @@ class TestUserQuota:
         # 第二台超实例数上限
         second = await _create(client, headers, sku_id, key_id)
         assert second.status_code == 400
-        assert "上限" in second.json()["message"]
+        assert second.json()["message_key"] == "orchestrator.instanceQuota"
 
         # 跑到 running 再释放,额度归还
         await drain(sm)

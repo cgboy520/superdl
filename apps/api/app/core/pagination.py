@@ -27,7 +27,7 @@ def decode_cursor_int(cursor: str | None) -> int | None:
     try:
         return int(base64.urlsafe_b64decode(cursor.encode()).decode())
     except (ValueError, binascii.Error) as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "无效的分页游标") from exc
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="common.badCursor") from exc
 
 
 def clamp_limit(limit: int | None) -> int:

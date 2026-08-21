@@ -178,7 +178,7 @@ class TestChannelGate:
         )
         assert resp.status_code == 400
         assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-        assert "未开通" in resp.json()["message"]
+        assert resp.json()["message_key"] == "billing.channelNotEnabled"
 
         ah = await admin_headers(sm, client, role="admin")
         await client.put(
@@ -192,7 +192,7 @@ class TestChannelGate:
             headers=headers,
         )
         assert resp.status_code == 400
-        assert "凭据不完整" in resp.json()["message"]
+        assert resp.json()["message_key"] == "billing.wechatCredentialsIncomplete"
 
 
 class TestSmsTestSend:

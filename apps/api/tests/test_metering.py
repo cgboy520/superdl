@@ -67,7 +67,7 @@ class TestMetricsProxy:
         prom.set_client(prom_mock(fail=True))
         resp = await client.get(f"/api/v1/instances/{uuid}/metrics", headers=headers)
         assert resp.status_code == 503
-        assert "不影响计费" in resp.json()["message"]
+        assert resp.json()["message_key"] == "metering.unavailable"
 
     async def test_cannot_read_others_metrics(self, client, sm, fake):
         _headers, uuid, _user_id = await _provision_running(client, sm, fake)

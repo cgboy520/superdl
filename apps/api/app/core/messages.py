@@ -25,6 +25,17 @@ MESSAGES: dict[str, str] = {
     "account.sshKeyDuplicate": "该公钥已添加过",
     "account.termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
     "account.userFrozen": "账号已被冻结,请联系客服",
+    # 管理端
+    "adminapi.adjustAlreadyProcessed": "调账单已处理",
+    "adminapi.adjustNotZero": "调账金额不能为 0",
+    "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
+    "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
+    "adminapi.loginFailed": "用户名或密码错误",
+    "adminapi.smsTestFailed": "发送失败:{message}",
+    "adminapi.taskNotFound": "任务不存在",
+    "adminapi.taskStateNotIgnorable": "任务状态 {status} 不可忽略",
+    "adminapi.taskStateNotReplayable": "任务状态 {status} 不可重放",
+    "adminapi.userDisabled": "账号已停用",
     # 计费/支付
     "billing.alipayCallbackVerifyFailed": "支付宝回调验签失败",
     "billing.alipayCreateFailed": "支付宝下单失败:{message}",
@@ -63,6 +74,8 @@ MESSAGES: dict[str, str] = {
     "common.internal": "服务器内部错误,请稍后重试",
     "common.notFound": "资源不存在",
     "common.unauthorized": "未登录或凭证已过期",
+    "common.badCursor": "无效的分页游标",
+    "common.rateLimited": "尝试过于频繁,请稍后再试",
     "common.validation": "参数校验失败",
     # 数据盘
     "disks.expandNeedsActive": "仅正常状态的数据盘可以扩容",
@@ -75,6 +88,14 @@ MESSAGES: dict[str, str] = {
     # 计量/监控
     "metering.badRange": "range 须为 1h/6h/24h",
     "metering.unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
+    # 节点接入
+    "nodes.alreadyTerminal": "状态 {status} 已是终态,无需吊销",
+    "nodes.clusterNotConfigured": (
+        "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token"
+    ),
+    "nodes.enrollTransition": "注册状态不允许 {from} → {to}",
+    "nodes.hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+    "nodes.regenerateNotAllowed": "状态 {status} 不允许重新生成(仅 待执行/已过期/已失败)",
     # 实例编排
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
     "orchestrator.forceStopNeedsRunning": "仅运行中的实例可以强制停止",

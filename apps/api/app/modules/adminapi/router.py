@@ -224,7 +224,7 @@ async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     try:
         d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "day 格式应为 YYYY-MM-DD") from exc
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.badDayFormat") from exc
     report = await metering_service.reconciliation_report(session, d)
     return ReconciliationOut.model_validate(report)
 
@@ -743,7 +743,12 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     try:
         await channel.send(body.phone, cfg["sms_template_verify"] or "", {"code": code})
     except SmsError as exc:
-        raise AppError(ErrorCode.SMS_SEND_FAILED, f"发送失败:{exc}", http_status=502) from exc
+        raise AppError(
+            ErrorCode.SMS_SEND_FAILED,
+            key="adminapi.smsTestFailed",
+            params={"message": str(exc)},
+            http_status=502,
+        ) from exc
     set_audit_target(request, f"test-sms:{body.phone}")
     return SmsTestOut(ok=True, provider=cfg["sms_provider"])
 
@@ -821,9 +826,13 @@ async def admin_retry_dead_task(
 
     task = await session.get(OutboxTask, task_id)
     if task is None:
-        raise AppError(ErrorCode.NOT_FOUND, "任务不存在", http_status=404)
+        raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
     if task.status != "dead":
-        raise AppError(ErrorCode.CONFLICT, f"任务状态 {task.status} 不可重放")
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="adminapi.taskStateNotReplayable",
+            params={"status": task.status},
+        )
     task.status = "pending"
     task.retries = 0
     task.next_retry_at = now_utc()
@@ -844,9 +853,11 @@ async def admin_discard_dead_task(
 
     task = await session.get(OutboxTask, task_id)
     if task is None:
-        raise AppError(ErrorCode.NOT_FOUND, "任务不存在", http_status=404)
+        raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
     if task.status != "dead":
-        raise AppError(ErrorCode.CONFLICT, f"任务状态 {task.status} 不可忽略")
+        raise AppError(
+            ErrorCode.CONFLICT, key="adminapi.taskStateNotIgnorable", params={"status": task.status}
+        )
     task.status = "discarded"
     await session.commit()
     set_audit_target(request, f"outbox:{task_id}", detail={"reason": body.reason})

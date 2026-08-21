@@ -15,6 +15,18 @@
     "termsNotAccepted": "Please read and accept the Terms of Service and Privacy Policy first",
     "userFrozen": "Account frozen — contact support"
   },
+  "adminapi": {
+    "adjustAlreadyProcessed": "Adjustment already processed",
+    "adjustNotZero": "Adjustment amount cannot be 0",
+    "adjustSecondReviewer": "Adjustments must be reviewed by a second administrator",
+    "badDayFormat": "day must be YYYY-MM-DD",
+    "loginFailed": "Wrong username or password",
+    "smsTestFailed": "Send failed: {{message}}",
+    "taskNotFound": "Task not found",
+    "taskStateNotIgnorable": "Task status {{status}} cannot be ignored",
+    "taskStateNotReplayable": "Task status {{status}} cannot be replayed",
+    "userDisabled": "Account disabled"
+  },
   "billing": {
     "alipayCallbackVerifyFailed": "Alipay callback signature verification failed",
     "alipayCreateFailed": "Alipay order creation failed: {{message}}",
@@ -51,9 +63,11 @@
     "skuOffSale": "This spec has been delisted"
   },
   "common": {
+    "badCursor": "Invalid pagination cursor",
     "forbidden": "You do not have access",
     "internal": "Internal server error — try again later",
     "notFound": "Resource not found",
+    "rateLimited": "Too many attempts — try again later",
     "unauthorized": "Not signed in or session expired",
     "validation": "Request validation failed"
   },
@@ -69,6 +83,13 @@
   "metering": {
     "badRange": "range must be one of 1h/6h/24h",
     "unavailable": "Metrics are temporarily unavailable; billing is unaffected (it relies on the instance event log)"
+  },
+  "nodes": {
+    "alreadyTerminal": "Status {{status}} is already terminal — no need to revoke",
+    "clusterNotConfigured": "Cluster access not configured: a super admin must enter the RKE2 server address and join token under Platform Config · Cluster Access",
+    "enrollTransition": "Enrollment status transition {{from}} → {{to}} is not allowed",
+    "hostnameMismatch": "Hostname does not match the registration; the token is revoked — verify in the admin console and regenerate",
+    "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)"
   },
   "orchestrator": {
     "accessNeedsRunning": "Connection info is available while the instance is running",

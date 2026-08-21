@@ -39,7 +39,7 @@ class TestAdminEnrollments:
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.post("/api/admin/v1/node-enrollments", json=CREATE_BODY, headers=ah)
         assert resp.status_code == 409
-        assert "平台配置" in resp.json()["message"]
+        assert resp.json()["message_key"] == "nodes.clusterNotConfigured"
 
     async def test_create_returns_token_once_and_audits(self, client, sm) -> None:
         await set_cluster_config(sm)

@@ -55,7 +55,8 @@ def transition_enrollment(
     if new_status not in allowed:
         raise AppError(
             ErrorCode.CONFLICT,
-            f"注册状态不允许 {enrollment.status} → {new_status}",
+            key="nodes.enrollTransition",
+            params={"from": enrollment.status, "to": new_status},
             http_status=http_status.HTTP_409_CONFLICT,
         )
     enrollment.status = new_status
@@ -93,7 +94,7 @@ async def require_cluster_config(session: AsyncSession) -> dict[str, str]:
     if not cfg.get("rke2_server_url") or not cfg.get("rke2_join_token"):
         raise AppError(
             ErrorCode.CONFLICT,
-            "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token",
+            key="nodes.clusterNotConfigured",
             http_status=http_status.HTTP_409_CONFLICT,
         )
     return cfg
@@ -199,7 +200,8 @@ async def regenerate_enrollment(
     if enrollment.status not in REGENERATABLE_STATUSES:
         raise AppError(
             ErrorCode.CONFLICT,
-            f"状态 {enrollment.status} 不允许重新生成(仅 待执行/已过期/已失败)",
+            key="nodes.regenerateNotAllowed",
+            params={"status": enrollment.status},
             http_status=http_status.HTTP_409_CONFLICT,
         )
     token, enrollment.token_hash = _new_token()
@@ -217,7 +219,8 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
     if enrollment.status in TERMINAL_STATUSES:
         raise AppError(
             ErrorCode.CONFLICT,
-            f"状态 {enrollment.status} 已是终态,无需吊销",
+            key="nodes.alreadyTerminal",
+            params={"status": enrollment.status},
             http_status=http_status.HTTP_409_CONFLICT,
         )
     transition_enrollment(enrollment, "revoked")
@@ -278,7 +281,7 @@ async def bootstrap(
         await session.commit()
         raise AppError(
             ErrorCode.CONFLICT,
-            "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+            key="nodes.hostnameMismatch",
             http_status=http_status.HTTP_409_CONFLICT,
         )
     if row.reported_ip and client_ip and row.reported_ip != client_ip:

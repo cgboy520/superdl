@@ -19,7 +19,7 @@ def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float) -> N
     if len(bucket) >= max_attempts:
         raise AppError(
             ErrorCode.RATE_LIMITED,
-            "尝试过于频繁,请稍后再试",
+            key="common.rateLimited",
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
     bucket.append(now)
