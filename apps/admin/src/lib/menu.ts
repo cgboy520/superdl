@@ -1,13 +1,17 @@
 /**
  * 侧栏菜单可见性(与后端 require_roles 逐端点对齐)。
  * 无权角色不显示入口;直接输 URL 由后端 403 兜底。
+ * key 类型收窄到 MenuKey:_app.tsx 的 MENU 新增条目而此表漏登记时,编译期即报错。
  */
 
 export const ALL_ROLES = ["admin", "ops", "finance", "readonly"] as const;
 
-export const MENU_ROLES: Record<string, readonly string[]> = {
+export type Role = (typeof ALL_ROLES)[number];
+
+export const MENU_ROLES = {
   "/": ALL_ROLES,
   "/nodes": ["admin", "ops", "readonly"], // finance 无 /nodes 权限
+  "/cluster": ["admin", "ops", "readonly"], // 对齐后端 /cluster require_roles(finance 无)
   "/skus": ALL_ROLES,
   "/images": ["admin", "ops", "readonly"], // 对齐后端 /images require_roles(finance 无)
 
@@ -16,8 +20,10 @@ export const MENU_ROLES: Record<string, readonly string[]> = {
   "/audit": ALL_ROLES,
   "/platform": ["admin"], // 渠道凭据仅超管
   "/settings": ALL_ROLES,
-};
+} as const satisfies Record<string, readonly Role[]>;
 
-export function canSeeMenu(key: string, role: string): boolean {
-  return (MENU_ROLES[key] ?? []).includes(role);
+export type MenuKey = keyof typeof MENU_ROLES;
+
+export function canSeeMenu(key: MenuKey, role: string): boolean {
+  return (MENU_ROLES[key] as readonly string[]).includes(role);
 }

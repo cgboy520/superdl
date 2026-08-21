@@ -27,7 +27,7 @@ import { useTranslation } from "react-i18next";
 
 import { type AlertRow, useAlerts } from "../api";
 import { LangSwitcher } from "../components/LangSwitcher";
-import { canSeeMenu } from "../lib/menu";
+import { type MenuKey, canSeeMenu } from "../lib/menu";
 import { authStore, useAuth } from "../stores/auth";
 
 export const Route = createFileRoute("/_app")({
@@ -50,7 +50,7 @@ const MENU = [
   { key: "/audit", icon: <AuditOutlined />, labelKey: "menu.audit" },
   { key: "/platform", icon: <ApiOutlined />, labelKey: "menu.platform" },
   { key: "/settings", icon: <SettingOutlined />, labelKey: "menu.settings" },
-] as const;
+] as const satisfies readonly { key: MenuKey; icon: unknown; labelKey: string }[];
 
 const ROLE_LABEL = {
   admin: "roles.admin",
