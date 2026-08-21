@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   Alert,
   App,
+  Radio,
   Badge,
   Button,
   Card,
@@ -22,10 +23,13 @@ import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import EChart from "../../components/EChart";
 import {
   type EnrollmentCommandOut,
   type EnrollmentRow,
+  type NodeMetricsOut,
   type NodeRow,
+  useNodeMetrics,
   useCordonNode,
   useCreateEnrollment,
   useEnrollments,
@@ -58,37 +62,150 @@ const PHASE_LABEL = {
   joined: "nodes.phase.joined",
 } as const;
 
-function GpuGrid({ node }: { node: NodeRow }) {
+const HEAT_COLORS = { idle: adminColors.gridLine, low: "#16A34A", mid: "#F59E0B", high: "#DC2626" };
+
+function heatColor(util: number): string {
+  if (util < 10) return HEAT_COLORS.idle;
+  if (util < 60) return HEAT_COLORS.low;
+  if (util < 85) return HEAT_COLORS.mid;
+  return HEAT_COLORS.high;
+}
+
+function last(points?: [number, number][]): number | null {
+  const p = points?.[points.length - 1];
+  return p ? p[1] : null;
+}
+
+/** 每卡热力格:有指标时按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态。 */
+function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
+  const byIndex = new Map((metrics?.gpus ?? []).map((g) => [String(g.index), g]));
+  const live = Boolean(metrics?.available && byIndex.size > 0);
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
       {Array.from({ length: node.gpu_total }, (_, i) => {
+        const g = byIndex.get(String(i));
+        const util = live ? last(g?.util) : null;
         const used = i < node.gpu_used;
+        const title = live
+          ? t("nodes.gpuCellLive", {
+              index: i,
+              util: util == null ? "—" : Math.round(util),
+              mem: last(g?.mem_used_mb) == null ? "—" : Math.round((last(g?.mem_used_mb) ?? 0) / 1024),
+              temp: last(g?.temp) == null ? "—" : Math.round(last(g?.temp) ?? 0),
+            })
+          : used
+            ? t("nodes.gpuCellUsed", { index: i })
+            : t("nodes.gpuCellFree", { index: i });
+        const bg = live
+          ? heatColor(util ?? 0)
+          : used
+            ? adminColors.dataAccent
+            : adminColors.gridLine;
         return (
-          <Tooltip
-            key={i}
-            title={used ? t("nodes.gpuCellUsed", { index: i }) : t("nodes.gpuCellFree", { index: i })}
-          >
+          <Tooltip key={i} title={title}>
             <div
               style={{
-                width: 44,
+                width: 52,
                 height: 44,
                 borderRadius: 6,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 12,
-                background: used ? adminColors.dataAccent : adminColors.gridLine,
-                color: used ? adminColors.bgBase : adminColors.textMuted,
+                fontSize: 11,
+                lineHeight: 1.2,
+                background: bg,
+                color: live && (util ?? 0) >= 10 ? "#fff" : adminColors.textMuted,
                 fontWeight: 600,
               }}
             >
-              {i}
+              <span>{i}</span>
+              {live && <span>{util == null ? "—" : `${Math.round(util)}%`}</span>}
             </div>
           </Tooltip>
         );
       })}
     </div>
+  );
+}
+
+/** 节点级历史曲线(per-GPU util / 显存)+ XID 徽标 + 可选 Grafana 外链。 */
+function NodeMetricsPanel({
+  node,
+  metrics,
+  range,
+  onRangeChange,
+}: {
+  node: NodeRow;
+  metrics: NodeMetricsOut | undefined;
+  range: string;
+  onRangeChange: (r: string) => void;
+}) {
+  const { t } = useTranslation();
+  const gpus = metrics?.gpus ?? [];
+  const chart = (key: "util" | "mem_used_mb", title: string, unit: string) => (
+    <Card size="small" title={title}>
+      <EChart
+        style={{ height: 200 }}
+        option={{
+          grid: { left: 48, right: 16, top: 28, bottom: 24 },
+          legend: { top: 0, textStyle: { fontSize: 11 } },
+          xAxis: { type: "time" },
+          yAxis: { type: "value", axisLabel: { formatter: `{value}${unit}` } },
+          tooltip: { trigger: "axis" },
+          series: gpus.map((g) => ({
+            name: `GPU ${g.index}`,
+            type: "line",
+            showSymbol: false,
+            data: (g[key] ?? []).map(([ts, v]) => [ts * 1000, v]),
+          })),
+        }}
+      />
+    </Card>
+  );
+  return (
+    <Card
+      title={t("nodes.historyTitle")}
+      style={{ marginTop: 16 }}
+      extra={
+        <Space size={12}>
+          {(metrics?.xid_count_24h ?? 0) > 0 && (
+            <Tag color="red">{t("nodes.xidBadge", { count: metrics?.xid_count_24h ?? 0 })}</Tag>
+          )}
+          <Radio.Group
+            size="small"
+            value={range}
+            onChange={(e) => onRangeChange(e.target.value as string)}
+            optionType="button"
+            options={[
+              { value: "1h", label: t("nodes.range1h") },
+              { value: "6h", label: t("nodes.range6h") },
+              { value: "24h", label: t("nodes.range24h") },
+            ]}
+          />
+          {metrics?.grafana_url && (
+            <Button
+              size="small"
+              onClick={() => window.open(metrics.grafana_url ?? "", "_blank", "noopener,noreferrer")}
+            >
+              {t("nodes.openGrafana")}
+            </Button>
+          )}
+        </Space>
+      }
+    >
+      {metrics?.available && gpus.length > 0 ? (
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          {chart("util", t("nodes.utilChart"), "%")}
+          {chart("mem_used_mb", t("nodes.vramChart"), "MB")}
+        </Space>
+      ) : (
+        <Typography.Text type="secondary">
+          {t("nodes.historyPending")} · {node.name}
+        </Typography.Text>
+      )}
+    </Card>
   );
 }
 
@@ -364,8 +481,10 @@ function NodesPage() {
   const { data, refetch } = useNodes();
   const nodes: NodeRow[] = data ?? [];
   const [selected, setSelected] = useState<string | null>(null);
+  const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
   const node = nodes.find((n) => n.name === selected) ?? nodes[0];
+  const { data: nodeMetrics } = useNodeMetrics(node?.name ?? null, range);
   const cordon = useCordonNode({
     mutation: {
       onSuccess: (_r, v) => {
@@ -458,13 +577,18 @@ function NodesPage() {
       </Card>
       <AddNodeModal open={addOpen} onClose={() => setAddOpen(false)} />
       {node && (
-        <Card title={t("nodes.gpuGridTitle", { name: node.name })} style={{ marginTop: 16 }}>
-          <GpuGrid node={node} />
-        </Card>
+        <>
+          <Card title={t("nodes.gpuGridTitle", { name: node.name })} style={{ marginTop: 16 }}>
+            <GpuGrid node={node} metrics={nodeMetrics} />
+          </Card>
+          <NodeMetricsPanel
+            node={node}
+            metrics={nodeMetrics}
+            range={range}
+            onRangeChange={setRange}
+          />
+        </>
       )}
-      <Card title={t("nodes.historyTitle")} style={{ marginTop: 16 }}>
-        <Typography.Text type="secondary">{t("nodes.historyPending")}</Typography.Text>
-      </Card>
     </>
   );
 }

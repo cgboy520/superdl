@@ -192,6 +192,7 @@ export default interface Resources {
       "generateCmd": "生成注册命令",
       "generateFailed": "生成失败",
       "gpuCellFree": "GPU {{index}} · 空闲",
+      "gpuCellLive": "GPU {{index}} · {{util}}% · {{mem}}G · {{temp}}℃",
       "gpuCellUsed": "GPU {{index}} · 已租",
       "gpuGridTitle": "每卡视图 · {{name}}",
       "historyPending": "监控接入后,此处展示节点级历史曲线。",
@@ -205,6 +206,7 @@ export default interface Resources {
       "nvmeExtra": "无专用盘的测试节点可显式填 loop:80G,装机时用 loop 文件兜底实例盘(仅验证,非生产性能);留空则该节点无本地实例盘,不会自动兜底。",
       "nvmeLabel": "NVMe 设备(可选;填写后装机时创建 TopoLVM VG superdl-nvme)",
       "nvmePlaceholder": "如 /dev/nvme0n1;或 loop:80G(回车分隔)",
+      "openGrafana": "在 Grafana 打开",
       "pendingTitle": "待加入节点",
       "phase": {
         "agentConfig": "写入配置",
@@ -228,6 +230,9 @@ export default interface Resources {
       "poolMig": "mig(硬件切分)",
       "poolRule": "分池铁律:装机时定池,Kata 与 HAMi 永不混布",
       "poolRuleDesc": "kata=整卡直通(需 BIOS 开 VT-d,安装含一次自动重启);hami=共享软切分;mig=硬件切分。前置:超管需先在「平台配置 · 集群接入」录入 RKE2 Server 与 join token。",
+      "range1h": "1 小时",
+      "range24h": "24 小时",
+      "range6h": "6 小时",
       "readonlyNoAdd": "只读角色不可添加",
       "readonlyNoOp": "只读角色不可操作",
       "readonlyNoRevoke": "只读角色不可吊销",
@@ -243,7 +248,10 @@ export default interface Resources {
       "tokenOnceDesc": "有效期至 {{time}};关闭后无法找回,可随时「重新生成」。在新服务器上以 root 执行:",
       "ttlLabel": "令牌有效期(小时)",
       "uncordonConfirm": "恢复 {{name}} 的调度,新实例可再落到该节点。",
-      "uncordonTitle": "恢复调度"
+      "uncordonTitle": "恢复调度",
+      "utilChart": "GPU 利用率",
+      "vramChart": "显存占用",
+      "xidBadge": "24h XID {{count}}"
     },
     "notFound": {
       "title": "页面不存在"
@@ -308,6 +316,7 @@ export default interface Resources {
       "tabAlipay": "支付宝",
       "tabCluster": "集群接入",
       "tabCompliance": "合规备案",
+      "tabObservability": "可观测性",
       "tabRealName": "实名认证",
       "tabSms": "短信(阿里云)",
       "tabWechat": "微信支付",

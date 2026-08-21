@@ -193,6 +193,7 @@
     "generateCmd": "Generate command",
     "generateFailed": "Generation failed",
     "gpuCellFree": "GPU {{index}} · idle",
+    "gpuCellLive": "GPU {{index}} · {{util}}% · {{mem}}G · {{temp}}°C",
     "gpuCellUsed": "GPU {{index}} · rented",
     "gpuGridTitle": "Per-GPU view · {{name}}",
     "historyPending": "Node-level history charts appear here once monitoring is connected.",
@@ -206,6 +207,7 @@
     "nvmeExtra": "Test nodes without a dedicated disk may enter loop:80G to back the instance disk with a loop file (validation only, not production performance); leave empty for no local instance disk — nothing is auto-provisioned.",
     "nvmeLabel": "NVMe devices (optional; when set, installation creates TopoLVM VG superdl-nvme)",
     "nvmePlaceholder": "e.g. /dev/nvme0n1; or loop:80G (Enter to separate)",
+    "openGrafana": "Open in Grafana",
     "pendingTitle": "Pending nodes",
     "phase": {
       "agentConfig": "Write config",
@@ -229,6 +231,9 @@
     "poolMig": "mig (hardware slicing)",
     "poolRule": "Pool rule: the pool is fixed at install; Kata and HAMi never mix",
     "poolRuleDesc": "kata = full-card passthrough (BIOS VT-d required; install includes one automatic reboot); hami = shared soft-slicing; mig = hardware slicing. Prerequisite: a super admin must enter the RKE2 server and join token under Platform Config · Cluster Access.",
+    "range1h": "1 hour",
+    "range24h": "24 hours",
+    "range6h": "6 hours",
     "readonlyNoAdd": "Read-only role cannot add",
     "readonlyNoOp": "Read-only role cannot operate",
     "readonlyNoRevoke": "Read-only role cannot revoke",
@@ -244,7 +249,11 @@
     "tokenOnceDesc": "Valid until {{time}}; it cannot be recovered after closing — you can always Regenerate. Run as root on the new server:",
     "ttlLabel": "Token TTL (hours)",
     "uncordonConfirm": "Resume scheduling onto {{name}}; new instances may land here again.",
-    "uncordonTitle": "Resume scheduling"
+    "uncordonTitle": "Resume scheduling",
+    "utilChart": "GPU utilization",
+    "vramChart": "VRAM used",
+    "xidBadge_one": "24h XID {{count}}",
+    "xidBadge_other": "24h XID {{count}}"
   },
   "notFound": {
     "title": "Page not found"
@@ -312,6 +321,7 @@
     "tabAlipay": "Alipay",
     "tabCluster": "Cluster access",
     "tabCompliance": "Compliance",
+    "tabObservability": "Observability",
     "tabRealName": "Identity verification",
     "tabSms": "SMS (Aliyun)",
     "tabWechat": "WeChat Pay",

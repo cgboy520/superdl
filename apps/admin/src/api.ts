@@ -39,6 +39,7 @@ import {
   adminListAdjustmentsApiAdminV1AdjustmentsGet,
   adminListInstancesApiAdminV1InstancesGet,
   adminListNodesApiAdminV1NodesGet,
+  adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet,
   adminListOrdersApiAdminV1OrdersGet,
   adminListSkusApiAdminV1SkusGet,
   adminListTenantsApiAdminV1TenantsGet,
@@ -141,6 +142,33 @@ export function useTenants() {
     queryFn: () => adminListTenantsApiAdminV1TenantsGet(),
   });
   return { ...q, queryKey };
+}
+
+export interface NodeGpuSeriesOut {
+  index: string;
+  util?: [number, number][];
+  mem_used_mb?: [number, number][];
+  temp?: [number, number][];
+}
+export interface NodeMetricsOut {
+  available: boolean;
+  range: string;
+  gpus: NodeGpuSeriesOut[];
+  xid_count_24h: number;
+  grafana_url?: string | null;
+}
+
+export function useNodeMetrics(nodeName: string | null, range: string) {
+  return useQuery({
+    queryKey: ["admin", "node-metrics", nodeName, range],
+    queryFn: async () =>
+      (await adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet(nodeName ?? "", {
+        range,
+      })) as unknown as NodeMetricsOut,
+    enabled: Boolean(nodeName),
+    refetchInterval: 30_000,
+    retry: 0,
+  });
 }
 
 export function useNodes() {

@@ -386,13 +386,20 @@ async def admin_revoke_enrollment(
 
 
 @router.get("/nodes/{node_name}/metrics", dependencies=[require_roles("ops", "readonly")])
-async def admin_node_metrics(node_name: str, range: str = "1h") -> dict[str, Any]:
+async def admin_node_metrics(
+    node_name: str, session: DbSession, range: str = "1h"
+) -> dict[str, Any]:
     """节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
 
     节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询
-    自然返回空序列,无信息泄漏面(仅管理端角色可达)。
+    自然返回空序列,无信息泄漏面(仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。
     """
-    return await metering_service.node_gpu_metrics(node_name, range)
+    from app.core.platform_config import get_effective_platform_config
+
+    out = await metering_service.node_gpu_metrics(node_name, range)
+    cfg = await get_effective_platform_config(session)
+    out["grafana_url"] = cfg.get("grafana_url") or None
+    return out
 
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])

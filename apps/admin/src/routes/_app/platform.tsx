@@ -43,6 +43,7 @@ export const Route = createFileRoute("/_app/platform")({
 
 // i18n-exempt(至 GROUP_INTRO 为止):中国渠道(微信/支付宝/阿里云/工信部)字段名与操作指引,决策不译
 const FIELD_LABELS: Record<string, string> = {
+  grafana_url: "Grafana 地址(可选,外链)",
   payment_wechat_enabled: "启用微信支付渠道",
   wechat_mchid: "商户号(mchid)",
   wechat_appid: "应用 AppID",
@@ -94,6 +95,9 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const GROUP_INTRO: Record<string, string> = {
+  observability:
+    "管理端节点页自绘监控曲线,不依赖 Grafana。如需深挖(自定义面板/长程对比),可在此配置 " +
+    "Grafana 地址,节点页将出现「在 Grafana 打开」外链(不做 iframe 嵌入)。",
   payment_wechat:
     "微信支付 APIv3(Native 扫码):在商户平台(pay.weixin.qq.com)→ 账户中心 → API 安全中下载商户 API 证书/私钥并设置 APIv3 密钥。" +
     "推荐「微信支付公钥」验签模式:申请公钥后同时填入公钥 ID 与公钥;两者留空则回退平台证书模式(存量商户,SDK 自动拉取轮换)。" +
@@ -462,6 +466,19 @@ function PlatformConfigPage() {
               <GroupPanel
                 group="cluster"
                 items={groupItems("cluster")}
+                draft={draft}
+                setDraft={setDraft}
+                disabled={disabled}
+              />
+            ),
+          },
+          {
+            key: "observability",
+            label: t("platform.tabObservability"),
+            children: (
+              <GroupPanel
+                group="observability"
+                items={groupItems("observability")}
                 draft={draft}
                 setDraft={setDraft}
                 disabled={disabled}
