@@ -39,3 +39,34 @@ class NodeEnrollment(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class NodeSpec(Base):
+    """节点规格台账:巡检(nodes/patrol.py,60s)从 K8s 实况 + 装机登记收敛的单一事实源。
+
+    业务读它,不实时调 K8s:SKU 上架校验/容量预览/管理端节点页(WP26)。
+    节点从 K8s 消失先置 status=Missing(管理端可见"失联"),last_seen 超 7 天才删行;
+    上架校验只认 Ready。未打池标签节点也入账(unlabeled=True)并在管理端标异常。
+    """
+
+    __tablename__ = "node_specs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    node_name: Mapped[str] = mapped_column(String(253), unique=True)
+    pool_label: Mapped[str | None] = mapped_column(String(32), index=True)
+    unlabeled: Mapped[bool] = mapped_column(default=False)  # 无 superdl.io/pool 标签
+    gpu_model_raw: Mapped[str | None] = mapped_column(String(128))  # nvidia-smi/GFD 原文
+    gpu_model: Mapped[str | None] = mapped_column(String(32), index=True)  # canonical;None=未识别
+    label_synced: Mapped[bool] = mapped_column(default=False)  # superdl.io/gpu-model 已收敛
+    gpu_count: Mapped[int] = mapped_column(default=0)
+    gpu_used: Mapped[int] = mapped_column(default=0)  # 展示用,60s 粒度
+    vram_gb: Mapped[int] = mapped_column(default=0)  # 单卡显存;0=未知
+    vcpu: Mapped[int] = mapped_column(default=0)
+    mem_gb: Mapped[int] = mapped_column(default=0)
+    disk_gb: Mapped[int] = mapped_column(default=0)
+    driver_version: Mapped[str | None] = mapped_column(String(32))  # 装机登记兜底
+    cuda_version: Mapped[str | None] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
+    last_seen: Mapped[datetime]  # 最近一次 K8s 可见
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

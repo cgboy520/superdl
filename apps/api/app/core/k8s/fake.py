@@ -37,6 +37,9 @@ class FakeOrchestrator:
     fail_next_prewarm: bool = False
     # 注入节点:追加在合成节点之后
     extra_nodes: list = field(default_factory=list)
+    unlabeled_nodes: list = field(default_factory=list)  # include_unlabeled 时附加
+    node_labels: dict[str, dict[str, str]] = field(default_factory=dict)  # set_node_labels 落点
+    node_gfd_labels: dict[str, str] = field(default_factory=dict)  # 模拟 GFD 标签
     # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
 
@@ -121,17 +124,18 @@ class FakeOrchestrator:
         """模拟 DB 已 released 但 K8s 残留的泄漏 Pod。"""
         self.pods[(namespace, name)] = _FakePod(spec=spec, ready=True)
 
-    async def list_nodes(self):
-        """管理端节点视图(Fake:按池合成节点)。"""
+    async def list_nodes(self, include_unlabeled: bool = False):
+        """节点视图(Fake:按池合成节点;include_unlabeled 时附无标签节点)。"""
         from app.core.k8s.base import NodeInfo
 
         models = {"kata": "RTX4090", "hami": "RTX4090", "mig": "H100"}
         nodes = []
         for pool, cap in self.pool_capacity.items():
             used = cap - await self.available_gpus(pool)
+            name = f"fake-{pool}-node-1"
             nodes.append(
                 NodeInfo(
-                    name=f"fake-{pool}-node-1",
+                    name=name,
                     pool_label=pool,
                     gpu_model=models.get(pool, "GPU"),
                     gpu_total=cap,
@@ -140,8 +144,14 @@ class FakeOrchestrator:
                     vcpu=64,
                     mem_gb=512,
                     disk_gb=2048,
+                    gpu_model_label=self.node_gfd_labels.get(name, ""),
+                    model_label_current=self.node_labels.get(name, {}).get(
+                        "superdl.io/gpu-model", ""
+                    ),
                 )
             )
+        if include_unlabeled:
+            nodes.extend(self.unlabeled_nodes)
         nodes.extend(self.extra_nodes)
         return [
             NodeInfo(
@@ -161,6 +171,9 @@ class FakeOrchestrator:
     def inject_node(self, node) -> None:
         """模拟新 GPU 节点加入集群。传 NodeInfo。"""
         self.extra_nodes.append(node)
+
+    async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
+        self.node_labels.setdefault(node_name, {}).update(labels)
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
         if unschedulable:

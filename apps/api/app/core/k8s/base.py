@@ -77,8 +77,13 @@ class K8sOrchestrator(Protocol):
         """池内近似可租卡数(近似库存;创建以调度结果为准)。"""
         ...
 
-    async def list_nodes(self) -> list["NodeInfo"]:
-        """管理端节点视图。"""
+    async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
+        """节点视图。include_unlabeled=True 时包含未打池标签的节点(台账巡检用);
+        默认仅带 superdl.io/pool 标签的节点(既有调用方语义不变)。"""
+        ...
+
+    async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
+        """merge-patch 节点 labels(巡检收敛 superdl.io/gpu-model 用)。幂等。"""
         ...
 
     async def prewarm_image(self, node_name: str, image_ref: str) -> None:
@@ -99,6 +104,11 @@ class K8sOrchestrator(Protocol):
         ...
 
 
+GPU_MODEL_NODE_LABEL = (
+    "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
+)
+
+
 @dataclass(frozen=True)
 class NodeInfo:
     """管理端节点视图。"""
@@ -113,3 +123,6 @@ class NodeInfo:
     vcpu: int = 0
     mem_gb: int = 0
     disk_gb: int = 0
+    # 台账巡检用:GFD 原文标签与平台 canonical 标签当前值(空串=无)
+    gpu_model_label: str = ""
+    model_label_current: str = ""

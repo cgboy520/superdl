@@ -15,7 +15,13 @@ from typing import Any
 from kubernetes import client, config
 
 from app.core.config import get_settings
-from app.core.k8s.base import InstancePodSpec, NodeInfo, PodStatus, PrewarmJobStatus
+from app.core.k8s.base import (
+    GPU_MODEL_NODE_LABEL,
+    InstancePodSpec,
+    NodeInfo,
+    PodStatus,
+    PrewarmJobStatus,
+)
 
 INSTANCE_LABEL = "superdl.io/instance"
 MANAGED_LABEL = "superdl.io/managed"
@@ -483,8 +489,11 @@ class RealOrchestrator:
                 used[node] = used.get(node, 0) + self._gpu_amount(limits)
         return used
 
-    async def list_nodes(self) -> list[NodeInfo]:
-        return await asyncio.to_thread(self._list_nodes_sync)
+    async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
+        return await asyncio.to_thread(self._list_nodes_sync, include_unlabeled)
+
+    async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
+        await asyncio.to_thread(self.core.patch_node, node_name, {"metadata": {"labels": labels}})
 
     @staticmethod
     def _qty_to_bytes(q: str | None) -> int:
@@ -524,8 +533,9 @@ class RealOrchestrator:
         except ValueError:
             return 0
 
-    def _list_nodes_sync(self) -> list[NodeInfo]:
-        nodes: Any = self.core.list_node(label_selector=POOL_NODE_LABEL)
+    def _list_nodes_sync(self, include_unlabeled: bool = False) -> list[NodeInfo]:
+        selector = None if include_unlabeled else POOL_NODE_LABEL
+        nodes: Any = self.core.list_node(label_selector=selector)
         used_by_node = self._used_gpus_by_node()  # 一次拉取全量,避免逐节点扫 Pod
         out: list[NodeInfo] = []
         for node in nodes.items:
@@ -546,6 +556,8 @@ class RealOrchestrator:
                     vcpu=self._cpu_cores(cap.get("cpu")),
                     mem_gb=self._qty_to_bytes(cap.get("memory")) // 1024**3,
                     disk_gb=self._qty_to_bytes(cap.get("ephemeral-storage")) // 1024**3,
+                    gpu_model_label=labels.get("nvidia.com/gpu.product", ""),
+                    model_label_current=labels.get(GPU_MODEL_NODE_LABEL, ""),
                 )
             )
         return out

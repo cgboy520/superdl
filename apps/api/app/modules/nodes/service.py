@@ -10,6 +10,7 @@
 
 import hashlib
 import secrets
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -22,7 +23,7 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
-from app.modules.nodes.models import NodeEnrollment
+from app.modules.nodes.models import NodeEnrollment, NodeSpec
 from app.modules.nodes.schemas import EnrollmentCreate
 
 logger = get_logger(__name__)
@@ -325,3 +326,57 @@ async def report_progress(
     await session.commit()
     await session.refresh(row)
     return row
+
+
+# ---------- 节点规格台账(巡检写入,业务只读;WP26) ----------
+
+
+async def list_node_specs(session: AsyncSession) -> list[NodeSpec]:
+    """全量台账(含 Missing/未打标),管理端节点页数据源。"""
+    rows = (await session.execute(select(NodeSpec).order_by(NodeSpec.node_name))).scalars()
+    return list(rows)
+
+
+async def ready_specs(session: AsyncSession) -> list[NodeSpec]:
+    """Ready 节点(上架校验/容量预览口径)。"""
+    rows = (await session.execute(select(NodeSpec).where(NodeSpec.status == "Ready"))).scalars()
+    return list(rows)
+
+
+async def gpu_model_aggregates(session: AsyncSession) -> list["GpuModelAggregate"]:
+    """台账按 canonical×池聚合(SKU「从集群资源创建」下拉数据源)。
+
+    未识别型号归入 gpu_model=None 桶(前端标 unrecognized,不可被 SKU 选中)。
+    """
+    rows = await list_node_specs(session)
+    agg: dict[tuple[str | None, str | None], GpuModelAggregate] = {}
+    for r in rows:
+        key = (r.gpu_model, r.pool_label)
+        item = agg.get(key)
+        if item is None:
+            item = GpuModelAggregate(
+                gpu_model=r.gpu_model, gpu_model_raw=r.gpu_model_raw, pool_label=r.pool_label
+            )
+            agg[key] = item
+        item.node_count += 1
+        item.gpu_total += r.gpu_count
+        if r.status == "Ready":
+            item.ready_gpu_total += r.gpu_count
+            item.ready_gpu_free += max(0, r.gpu_count - r.gpu_used)
+        if r.vram_gb:
+            item.vram_gb = max(item.vram_gb, r.vram_gb)
+    return sorted(
+        agg.values(), key=lambda x: (x.gpu_model is None, str(x.gpu_model), str(x.pool_label))
+    )
+
+
+@dataclass
+class GpuModelAggregate:
+    gpu_model: str | None
+    gpu_model_raw: str | None
+    pool_label: str | None
+    node_count: int = 0
+    gpu_total: int = 0
+    ready_gpu_total: int = 0
+    ready_gpu_free: int = 0
+    vram_gb: int = 0
