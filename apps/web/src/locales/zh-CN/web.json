@@ -91,7 +91,7 @@
     },
     "eventsAreBilling": "此事件记录即计费依据:「运行中」时段按秒累计,精确到关机瞬间",
     "freezePolicy": "停止的实例欠费冻结 72 小时后将回收实例盘,数据盘不受影响",
-    "frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可操作",
+    "frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
     "jupyterNeedsRunning": "实例运行中才能打开 JupyterLab",
     "metricsUnavailableShort": "监控暂不可用",
     "monitoringDown": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",

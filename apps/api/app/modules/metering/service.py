@@ -27,7 +27,7 @@ RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600}
 async def instance_metrics(ns: str, pod: str, range_key: str) -> dict[str, Any]:
     """代理查询实例监控曲线。断源报 503(前端提示"监控暂不可用,不影响计费")。"""
     if range_key not in RANGES:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "range 须为 1h/6h/24h")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="metering.badRange")
     end = now_utc().timestamp()
     start = end - RANGES[range_key]
     step = prom.RANGE_STEPS[range_key]
@@ -40,7 +40,7 @@ async def instance_metrics(ns: str, pod: str, range_key: str) -> dict[str, Any]:
     except prom.PrometheusUnavailable as exc:
         raise AppError(
             ErrorCode.INTERNAL,
-            "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
+            key="metering.unavailable",
             http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
         ) from exc
     return {"range": range_key, "series": series}

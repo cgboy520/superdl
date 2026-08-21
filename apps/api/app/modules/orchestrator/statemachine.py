@@ -42,6 +42,7 @@ def validate_transition(from_status: str, to_status: str) -> None:
     if to_status not in allowed:
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION,
-            f"实例当前状态({from_status})不允许该操作",
+            key="orchestrator.invalidTransition",
+            params={"from": from_status},
             detail={"from": from_status, "to": to_status},
         )

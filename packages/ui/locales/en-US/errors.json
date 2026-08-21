@@ -1,9 +1,43 @@
 {
+  "catalog": {
+    "imageRefExists": "This image_ref already exists",
+    "prewarmDisabled": "Prewarming is disabled for this image — enable it first",
+    "skuOffSale": "This spec has been delisted"
+  },
   "common": {
     "forbidden": "You do not have access",
     "internal": "Internal server error — try again later",
     "notFound": "Resource not found",
     "unauthorized": "Not signed in or session expired",
     "validation": "Request validation failed"
+  },
+  "disks": {
+    "expandNeedsActive": "Only active data disks can be expanded",
+    "inUseDelete": "The data disk is mounted — release the instance first",
+    "mountedElsewhere": "The data disk is mounted on another instance",
+    "notMountable": "The data disk cannot be mounted in its current state",
+    "shrinkForbidden": "Data disks can only be expanded, not shrunk",
+    "sizeMax": "Maximum size is {{max}} GB",
+    "sizeRange": "Size must be between {{min}} and {{max}} GB"
+  },
+  "metering": {
+    "badRange": "range must be one of 1h/6h/24h",
+    "unavailable": "Metrics are temporarily unavailable; billing is unaffected (it relies on the instance event log)"
+  },
+  "orchestrator": {
+    "accessNeedsRunning": "Connection info is available while the instance is running",
+    "forceStopNeedsRunning": "Only running instances can be force-stopped",
+    "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze, then start",
+    "gpuCountRange": "GPU count must be between 1 and {{max}}",
+    "gpuQuota": "Total GPUs would exceed the limit ({{max}}) — release some or contact support to raise it",
+    "instanceQuota": "Instance limit reached ({{max}}) — release some or contact support to raise it",
+    "invalidTransition": "The instance's current state ({{from}}) does not allow this operation",
+    "releaseNeedsStopped": "Stop the instance before releasing it",
+    "restartNeedsRunning": "Only running instances can be restarted",
+    "sshKeyRequired": "Select at least one SSH public key (instances accept key login only)",
+    "sshPortsExhausted": "No SSH port available right now — try again later or contact support",
+    "startNeedsStopped": "Only stopped instances can be started",
+    "stateChangedRetry": "The instance state was changed by another operation — refresh and retry",
+    "stopNeedsRunning": "Only running instances can be stopped"
   }
 }

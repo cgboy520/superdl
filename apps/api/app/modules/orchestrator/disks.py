@@ -24,7 +24,8 @@ async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: i
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
-            f"容量须在 {policies.disk_min_gb}~{policies.disk_max_gb} GB 之间",
+            key="disks.sizeRange",
+            params={"min": policies.disk_min_gb, "max": policies.disk_max_gb},
         )
     price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)
@@ -73,12 +74,12 @@ async def list_disks(session: AsyncSession, user_id: int) -> list[DataDisk]:
 async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_gb: int) -> DataDisk:
     disk = await get_disk(session, user_id, uuid)
     if disk.status != "active":
-        raise AppError(ErrorCode.VALIDATION_ERROR, "仅正常状态的数据盘可以扩容")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.expandNeedsActive")
     if new_size_gb <= disk.size_gb:
-        raise AppError(ErrorCode.DISK_SHRINK_FORBIDDEN, "数据盘只支持扩容,不支持缩容")
+        raise AppError(ErrorCode.DISK_SHRINK_FORBIDDEN, key="disks.shrinkForbidden")
     max_gb = (await get_effective_policies(session)).disk_max_gb
     if new_size_gb > max_gb:
-        raise AppError(ErrorCode.VALIDATION_ERROR, f"容量上限 {max_gb} GB")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     disk.size_gb = new_size_gb
     await session.commit()
     return disk
@@ -88,7 +89,7 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
     """删除(前端多级防护后调用)。挂载中禁止;进入 deleting,由 outbox 擦除后置 deleted。"""
     disk = await get_disk(session, user_id, uuid)
     if disk.mounted_instance_id is not None:
-        raise AppError(ErrorCode.DISK_IN_USE, "数据盘挂载中,请先释放对应实例")
+        raise AppError(ErrorCode.DISK_IN_USE, key="disks.inUseDelete")
     if disk.status == "deleting":
         return disk
     disk.status = "deleting"
@@ -103,9 +104,9 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
     if disk is None or disk.user_id != user_id or disk.status == "deleted":
         raise not_found("数据盘不存在")
     if disk.status != "active":
-        raise AppError(ErrorCode.VALIDATION_ERROR, "数据盘当前状态不可挂载")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
     if disk.mounted_instance_id is not None and disk.mounted_instance_id != instance_id:
-        raise AppError(ErrorCode.DISK_IN_USE, "数据盘已挂载到其他实例")
+        raise AppError(ErrorCode.DISK_IN_USE, key="disks.mountedElsewhere")
     disk.mounted_instance_id = instance_id
     return disk
 

@@ -66,7 +66,7 @@ async def transition(
     if result.rowcount == 0:
         raise AppError(
             ErrorCode.CONFLICT,
-            "实例状态已被其他操作变更,请刷新后重试",
+            key="orchestrator.stateChangedRetry",
             http_status=http_status.HTTP_409_CONFLICT,
         )
     instance.status = to_status
@@ -126,12 +126,14 @@ async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) 
     if count >= settings.max_instances_per_user:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
-            f"实例数已达上限({settings.max_instances_per_user} 台),请释放后再创建或联系客服提额",
+            key="orchestrator.instanceQuota",
+            params={"max": settings.max_instances_per_user},
         )
     if gpus + new_gpus > settings.max_gpus_per_user:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
-            f"GPU 总数将超过上限({settings.max_gpus_per_user} 卡),请释放后再创建或联系客服提额",
+            key="orchestrator.gpuQuota",
+            params={"max": settings.max_gpus_per_user},
         )
 
 
@@ -162,7 +164,8 @@ async def create_instance(
     if gpu_count < 1 or gpu_count > sku.max_gpus_per_instance:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
-            f"GPU 数量须在 1~{sku.max_gpus_per_instance} 之间",
+            key="orchestrator.gpuCountRange",
+            params={"max": sku.max_gpus_per_instance},
         )
     await _check_user_quota(session, user_id, gpu_count)
     # 计费护栏:开机前校验余额 ≥ 1 小时预估费用
@@ -174,7 +177,7 @@ async def create_instance(
     keys = await account_service.list_ssh_keys(session, user_id)
     selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
     if not selected:
-        raise AppError(ErrorCode.SSH_KEY_INVALID, "请至少选择一个 SSH 公钥(实例仅支持密钥登录)")
+        raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
 
     disk_id_validated: int | None = None
     if data_disk_id is not None:
@@ -273,7 +276,7 @@ async def rename_instance(
 async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
     if instance.status != sm_def.RUNNING:
-        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, "仅运行中的实例可以关机")
+        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.stopNeedsRunning")
     await transition(session, instance, sm_def.STOPPING, reason="user_stop", actor="user")
     enqueue(session, "instance.stop", {"instance_id": instance.id})
     await session.commit()
@@ -283,9 +286,9 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
 async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
     if instance.status == sm_def.FROZEN:
-        raise AppError(ErrorCode.INSTANCE_FROZEN, "实例已因欠费冻结,充值解冻后可开机")
+        raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     if instance.status != sm_def.STOPPED:
-        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, "仅已关机的实例可以开机")
+        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
     await billing_service.require_balance_at_least(
         session, user_id, estimate, hint=f"开机需要至少 1 小时预估费用 ¥{estimate}"
@@ -299,7 +302,9 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
 async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
     if instance.status != sm_def.RUNNING:
-        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, "仅运行中的实例可以重启")
+        raise AppError(
+            ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
+        )
     await transition(
         session,
         instance,
@@ -323,7 +328,7 @@ async def release_instance(
         sm_def.FAILED,  # 失败实例的清理:同走 releasing→released,否则永远留在列表
         sm_def.CREATING,  # 调度长期不满足时用户可主动取消,不必干等 creating 超时
     ):
-        raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, "关机后才能释放实例")
+        raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, key="orchestrator.releaseNeedsStopped")
     await transition(session, instance, sm_def.RELEASING, reason=f"{actor}_release", actor=actor)
     enqueue(session, "instance.release", {"instance_id": instance.id})
     await session.commit()
@@ -358,7 +363,7 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     max_port = (await session.execute(select(func.max(PortAllocation.port)))).scalar_one()
     next_port = settings.ssh_port_range_start if max_port is None else max_port + 1
     if next_port > settings.ssh_port_range_end:
-        raise AppError(ErrorCode.NO_CAPACITY, "SSH 端口池已耗尽,请联系管理员")
+        raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
     alloc = PortAllocation(port=next_port, instance_id=instance.id)
     session.add(alloc)
     await session.flush()
@@ -407,7 +412,7 @@ def build_pod_spec(instance: Instance) -> InstancePodSpec:
 def build_access(instance: Instance) -> dict[str, Any]:
     settings = get_settings()
     if instance.status != sm_def.RUNNING:
-        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, "实例运行中才能获取接入信息")
+        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.accessNeedsRunning")
     return {
         "ssh_host": settings.ssh_host,
         "ssh_port": instance.ssh_port,
@@ -477,7 +482,9 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
     if instance is None:
         raise not_found("实例不存在")
     if instance.status != sm_def.RUNNING:
-        raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, "仅运行中的实例可以强制停止")
+        raise AppError(
+            ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.forceStopNeedsRunning"
+        )
     await transition(
         session,
         instance,

@@ -91,7 +91,7 @@
     },
     "eventsAreBilling": "This event log is the billing source of truth: running time accrues per second, up to the instant of shutdown",
     "freezePolicy": "Stopped instances frozen for arrears are reclaimed after 72 hours (instance disk only; data disks unaffected)",
-    "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze first",
+    "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze, then start",
     "jupyterNeedsRunning": "JupyterLab is available while the instance is running",
     "metricsUnavailableShort": "Metrics unavailable",
     "monitoringDown": "Metrics are temporarily unavailable; billing is unaffected (it relies on the instance event log)",

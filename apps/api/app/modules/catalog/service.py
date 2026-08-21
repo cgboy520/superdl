@@ -46,7 +46,7 @@ async def get_on_sale_sku(session: AsyncSession, sku_id: int) -> Sku:
     """下单入口:必须在架。"""
     sku = await get_sku(session, sku_id)
     if sku.status != "on":
-        raise AppError(ErrorCode.SKU_NOT_ON_SALE, "该规格已下架")
+        raise AppError(ErrorCode.SKU_NOT_ON_SALE, key="catalog.skuOffSale")
     return sku
 
 
@@ -146,7 +146,7 @@ async def admin_create_image(session: AsyncSession, data: ImageCreate) -> Platfo
     except IntegrityError as exc:
         raise AppError(
             ErrorCode.CONFLICT,
-            "镜像 image_ref 已存在",
+            key="catalog.imageRefExists",
             http_status=status.HTTP_409_CONFLICT,
         ) from exc
     await session.refresh(img)
@@ -168,7 +168,7 @@ async def admin_update_image(
     except IntegrityError as exc:
         raise AppError(
             ErrorCode.CONFLICT,
-            "镜像 image_ref 已存在",
+            key="catalog.imageRefExists",
             http_status=status.HTTP_409_CONFLICT,
         ) from exc
     await session.refresh(img)
@@ -187,7 +187,7 @@ async def admin_prewarm_image(session: AsyncSession, image_id: int) -> int:
     不在请求路径调 K8s;新节点行由巡检铺(≤60s)。返回入队数。"""
     img = await get_image(session, image_id)
     if not img.prewarm_enabled:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "该镜像已关闭预热,请先开启")
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.prewarmDisabled")
     rows = (
         await session.execute(
             select(ImageNodeCache).where(
