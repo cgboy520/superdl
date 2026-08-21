@@ -548,8 +548,6 @@ export default interface Resources {
       "colUnitPrice": "单价",
       "drawerTitle": "租户 #{{id}} · {{phone}}",
       "evict": "驱逐重调度",
-      "evictEcoOnly": "仅限经济档实例(SLA 已明示可重调度)",
-      "evictNeedsRunning": "仅运行中的实例可驱逐重调度",
       "evictP1": "驱逐重调度为 P1 功能,当前版本未开放",
       "forceStop": "强制停止",
       "forceStopConfirm": "确认强制停止实例 {{name}}({{id}})?将立即结算尾账并通知用户。",

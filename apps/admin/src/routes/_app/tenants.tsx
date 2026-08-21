@@ -9,7 +9,7 @@ import {
 } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { App, Badge, Button, Card, Drawer, Input, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
+import { Badge, Button, Card, Drawer, Input, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -40,7 +40,7 @@ function TenantsTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  // 客服接到电话报手机号 → 这里必须查得到。列表仍只回掩码:「查得到」≠「看得到」
+  // 手机号可检索,但列表仍只回掩码:可查不等于可见
   const [search, setSearch] = useState("");
   const { data, queryKey } = useTenants(search ? { q: search } : undefined);
   const tenants: TenantRow[] = data ?? [];
@@ -131,7 +131,7 @@ function TenantsTab() {
   );
 }
 
-/** 租户账单下钻:账单争议的第一现场(小时账单 + 资金流水,与用户端同源)。 */
+/** 租户账单下钻:小时账单 + 资金流水,与用户端同源。 */
 function TenantBillingDrawer({
   tenant,
   onClose,
@@ -262,7 +262,6 @@ function TenantBillingDrawer({
 
 function InstancesTab() {
   const { t } = useTranslation(["admin", "shared"]);
-  const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [status, setStatus] = useState<string | undefined>();
@@ -310,8 +309,6 @@ function InstancesTab() {
         dataSource={instances ?? []}
         columns={[
           { title: t("tenants.colInstance"), dataIndex: "name" },
-          // 「这个 Pod 在挖矿,是谁的、在哪台机器上」是强制停机的前置问题。
-          // 后端一直在返回这两个字段,前端一列都没画
           { title: t("tenants.colOwner"), dataIndex: "user_id", width: 90 },
           {
             title: t("tenants.colNode"),
@@ -346,7 +343,6 @@ function InstancesTab() {
           {
             title: t("tenants.colActions"),
             render: (_, r) => {
-              const isEco = r.spec.tier === "shared_eco";
               return (
                 <Space>
                   <ReasonAction
@@ -361,17 +357,8 @@ function InstancesTab() {
                       refresh();
                     }}
                   />
-                  <Tooltip
-                    title={
-                      !isEco
-                        ? t("tenants.evictEcoOnly")
-                        : r.status !== "running"
-                          ? t("tenants.evictNeedsRunning")
-                          : t("tenants.evictP1")
-                    }
-                  >
-                    <Button size="small" disabled={!isEco || r.status !== "running"}
-                      onClick={() => message.info(t("tenants.evictP1"))}>
+                  <Tooltip title={t("tenants.evictP1")}>
+                    <Button size="small" disabled>
                       {t("tenants.evict")}
                     </Button>
                   </Tooltip>
