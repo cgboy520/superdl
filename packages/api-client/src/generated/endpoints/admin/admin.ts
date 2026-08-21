@@ -37,6 +37,8 @@ import type {
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
   AdminOrderOut,
   AdminOut,
+  AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
+  AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminToken,
   AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,
   AnnouncementCreate,
@@ -66,6 +68,8 @@ import type {
   OutboxDiscardRequest,
   OutboxTaskStatusOut,
   OversellPoolOut,
+  PageBillHourlyOut,
+  PageLedgerEntryOut,
   PaymentAnomalyOut,
   PlatformConfigOut,
   PlatformConfigUpdateRequest,
@@ -5003,6 +5007,122 @@ export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnTy
 
 
 
+export const getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetUrl = (userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/tenants/${userId}/bills?${stringifiedParams}` : `/api/admin/v1/tenants/${userId}/bills`
+}
+
+/**
+ * 租户小时账单下钻(可按实例过滤;金额与用户端所见同源)。
+ * @summary Admin Tenant Bills
+ */
+export const adminTenantBillsApiAdminV1TenantsUserIdBillsGet = async (userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageBillHourlyOut> => {
+
+  return customFetch<PageBillHourlyOut>(getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetQueryKey = (userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,) => {
+    return [
+    `/api/admin/v1/tenants/${userId}/bills`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError = HTTPValidationError>(userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>> = ({ signal }) => adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminTenantBillsApiAdminV1TenantsUserIdBillsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>>
+export type AdminTenantBillsApiAdminV1TenantsUserIdBillsGetQueryError = HTTPValidationError
+
+
+export function useAdminTenantBillsApiAdminV1TenantsUserIdBillsGet<TData = Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params: undefined |  AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTenantBillsApiAdminV1TenantsUserIdBillsGet<TData = Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTenantBillsApiAdminV1TenantsUserIdBillsGet<TData = Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Tenant Bills
+ */
+
+export function useAdminTenantBillsApiAdminV1TenantsUserIdBillsGet<TData = Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantBillsApiAdminV1TenantsUserIdBillsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminTenantBillsApiAdminV1TenantsUserIdBillsGetQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl = (userId: number,) => {
 
 
@@ -5099,6 +5219,122 @@ export function useAdminFreezeTenantApiAdminV1TenantsUserIdFreezePost<TData = Aw
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostQueryOptions(userId,tenantFreezeRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetUrl = (userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/tenants/${userId}/ledger?${stringifiedParams}` : `/api/admin/v1/tenants/${userId}/ledger`
+}
+
+/**
+ * 租户资金流水下钻(账单争议处理的第一现场)。与用户端同一实现,同一游标语义。
+ * @summary Admin Tenant Ledger
+ */
+export const adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet = async (userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageLedgerEntryOut> => {
+
+  return customFetch<PageLedgerEntryOut>(getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetQueryKey = (userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,) => {
+    return [
+    `/api/admin/v1/tenants/${userId}/ledger`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetQueryOptions = <TData = Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError = HTTPValidationError>(userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>> = ({ signal }) => adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>>
+export type AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetQueryError = HTTPValidationError
+
+
+export function useAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGet<TData = Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params: undefined |  AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGet<TData = Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGet<TData = Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Tenant Ledger
+ */
+
+export function useAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGet<TData = Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetQueryOptions(userId,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

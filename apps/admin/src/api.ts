@@ -42,6 +42,8 @@ import {
   adminListOrdersApiAdminV1OrdersGet,
   adminListSkusApiAdminV1SkusGet,
   adminListTenantsApiAdminV1TenantsGet,
+  adminTenantBillsApiAdminV1TenantsUserIdBillsGet,
+  adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet,
   adminLoginApiAdminV1AuthLoginPost,
   adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost,
   adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost,
@@ -190,6 +192,27 @@ export function useTenants() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminListTenantsApiAdminV1TenantsGet(),
+  });
+  return { ...q, queryKey };
+}
+
+/** 租户账单下钻:资金流水与小时账单(游标分页,与用户端同源同实现)。 */
+export function useTenantLedger(userId: number | null) {
+  const queryKey = ["admin", "tenant-ledger", userId] as const;
+  const q = useQuery({
+    queryKey,
+    enabled: userId !== null,
+    queryFn: () => adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId as number, { limit: 50 }),
+  });
+  return { ...q, queryKey };
+}
+
+export function useTenantBills(userId: number | null) {
+  const queryKey = ["admin", "tenant-bills", userId] as const;
+  const q = useQuery({
+    queryKey,
+    enabled: userId !== null,
+    queryFn: () => adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId as number, { limit: 50 }),
   });
   return { ...q, queryKey };
 }

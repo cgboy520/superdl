@@ -9,12 +9,12 @@ from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount
-from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
 from app.modules.account.deps import CurrentUser
 from app.modules.billing import payment_service, wallet
-from app.modules.billing.models import BalanceLedger, BillDailyDisk, BillHourly
+from app.modules.billing.models import BillDailyDisk, BillHourly
 from app.modules.billing.schemas import (
     BillHourlyOut,
     BillSummaryItem,
@@ -74,21 +74,7 @@ async def get_ledger(
     cursor: str | None = None,
     limit: int | None = Query(default=None, le=100),
 ) -> Page[LedgerEntryOut]:
-    lim = clamp_limit(limit)
-    stmt = (
-        select(BalanceLedger)
-        .where(BalanceLedger.user_id == user.id)
-        .order_by(BalanceLedger.id.desc())
-        .limit(lim + 1)
-    )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(BalanceLedger.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
-    return Page(
-        items=[LedgerEntryOut.model_validate(r) for r in rows[:lim]], next_cursor=next_cursor
-    )
+    return await wallet.ledger_page(session, user.id, cursor=cursor, limit=limit)
 
 
 @router.get("/bills/hourly")
@@ -100,25 +86,13 @@ async def list_hourly_bills(
     cursor: str | None = None,
     limit: int | None = Query(default=None, le=100),
 ) -> Page[BillHourlyOut]:
-    lim = clamp_limit(limit)
-    stmt = (
-        select(BillHourly)
-        .where(BillHourly.user_id == user.id)
-        .order_by(BillHourly.id.desc())
-        .limit(lim + 1)
-    )
-    if instance_id is not None:
-        stmt = stmt.where(BillHourly.instance_id == instance_id)
-    if month is not None:
-        start, end = _parse_month(month)
-        stmt = stmt.where(BillHourly.hour_start >= start, BillHourly.hour_start < end)
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(BillHourly.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
-    return Page(
-        items=[BillHourlyOut.model_validate(r) for r in rows[:lim]], next_cursor=next_cursor
+    return await wallet.hourly_bills_page(
+        session,
+        user.id,
+        instance_id=instance_id,
+        month_range=_parse_month(month) if month is not None else None,
+        cursor=cursor,
+        limit=limit,
     )
 
 

@@ -1,7 +1,7 @@
 import { adminColors, formatDateTime, instanceStatusMap, metaOf, skuTierMap, type InstanceStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { App, Badge, Button, Card, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
+import { App, Badge, Button, Card, Drawer, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +11,8 @@ import {
   useAdminInstances,
   useForceStop,
   useFreezeTenant,
+  useTenantBills,
+  useTenantLedger,
   useTenants,
   useUnfreezeTenant,
 } from "../../api";
@@ -25,6 +27,7 @@ export const Route = createFileRoute("/_app/tenants")({
 function TenantsTab() {
   const { t: tt } = useTranslation();
   const { formatMoney } = useFormat();
+  const [drilldown, setDrilldown] = useState<TenantRow | null>(null);
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
@@ -35,10 +38,12 @@ function TenantsTab() {
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   return (
+    <>
     <Table<TenantRow>
       scroll={{ x: 1000 }}
       rowKey="id"
       dataSource={tenants}
+      onRow={(r) => ({ style: { cursor: "pointer" }, onClick: () => setDrilldown(r) })}
       columns={[
         { title: "ID", dataIndex: "id", width: 70 },
         { title: tt("tenants.colPhone"), dataIndex: "phone_masked" },
@@ -61,8 +66,18 @@ function TenantsTab() {
         { title: tt("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         {
           title: tt("tenants.colActions"),
-          render: (_, t) =>
-            t.status === "active" ? (
+          render: (_, t) => (
+            <Space>
+              <Button
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDrilldown(t);
+                }}
+              >
+                {tt("tenants.viewBilling")}
+              </Button>
+              {t.status === "active" ? (
               <ReasonAction
                 label={tt("tenants.freeze")}
                 danger
@@ -87,10 +102,135 @@ function TenantsTab() {
                   refresh();
                 }}
               />
-            ),
+              )}
+            </Space>
+          ),
         },
       ]}
     />
+    <TenantBillingDrawer tenant={drilldown} onClose={() => setDrilldown(null)} />
+    </>
+  );
+}
+
+/** 租户账单下钻:账单争议的第一现场(小时账单 + 资金流水,与用户端同源)。 */
+function TenantBillingDrawer({
+  tenant,
+  onClose,
+}: {
+  tenant: TenantRow | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
+  const { data: ledger, isLoading: ledgerLoading } = useTenantLedger(tenant?.id ?? null);
+  const { data: bills, isLoading: billsLoading } = useTenantBills(tenant?.id ?? null);
+
+  return (
+    <Drawer
+      width={880}
+      open={tenant !== null}
+      onClose={onClose}
+      title={
+        tenant
+          ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked })
+          : undefined
+      }
+    >
+      {tenant && (
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          <Space size={24}>
+            <span>
+              {t("tenants.colBalance")}:<b>{formatMoney(tenant.balance)}</b>
+            </span>
+            <span>
+              {t("tenants.colTotalConsumed")}:<b>{formatMoney(tenant.total_consumed)}</b>
+            </span>
+            <span>
+              {t("tenants.colInstances")}:<b>{tenant.instances}</b>
+            </span>
+          </Space>
+          <Tabs
+            items={[
+              {
+                key: "bills",
+                label: t("tenants.tabBills"),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey="id"
+                    loading={billsLoading}
+                    pagination={false}
+                    scroll={{ y: 420 }}
+                    dataSource={bills?.items ?? []}
+                    columns={[
+                      {
+                        title: t("tenants.colHour"),
+                        dataIndex: "hour_start",
+                        render: formatDateTime,
+                      },
+                      { title: t("tenants.colInstanceId"), dataIndex: "instance_id", width: 90 },
+                      {
+                        title: t("tenants.colSeconds"),
+                        dataIndex: "seconds_used",
+                        render: (v: number) => formatDuration(v),
+                      },
+                      {
+                        title: t("tenants.colUnitPrice"),
+                        dataIndex: "unit_price",
+                        render: (v: string) => formatHourlyPrice(v),
+                      },
+                      {
+                        title: t("tenants.colAmount"),
+                        dataIndex: "amount",
+                        render: (v: string) => formatMoney(v),
+                      },
+                    ]}
+                  />
+                ),
+              },
+              {
+                key: "ledger",
+                label: t("tenants.tabLedger"),
+                children: (
+                  <Table
+                    size="small"
+                    rowKey="id"
+                    loading={ledgerLoading}
+                    pagination={false}
+                    scroll={{ y: 420 }}
+                    dataSource={ledger?.items ?? []}
+                    columns={[
+                      {
+                        title: t("tenants.colTime"),
+                        dataIndex: "created_at",
+                        render: formatDateTime,
+                      },
+                      { title: t("tenants.colType"), dataIndex: "type", width: 90 },
+                      {
+                        title: t("tenants.colAmount"),
+                        dataIndex: "amount",
+                        render: (v: string) => (
+                          <span style={{ color: v.startsWith("-") ? undefined : adminColors.positive }}>
+                            {formatMoney(v)}
+                          </span>
+                        ),
+                      },
+                      {
+                        title: t("tenants.colBalanceAfter"),
+                        dataIndex: "balance_after",
+                        render: (v: string) => formatMoney(v),
+                      },
+                      { title: t("tenants.colRemark"), dataIndex: "remark" },
+                    ]}
+                  />
+                ),
+              },
+            ]}
+          />
+        </Space>
+      )}
+    </Drawer>
   );
 }
 

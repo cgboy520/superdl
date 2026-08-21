@@ -2,7 +2,7 @@ import asyncio
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Header, Query, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
@@ -12,6 +12,7 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.core.k8s import get_orchestrator
 from app.core.k8s.base import ClusterProbe
+from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
@@ -53,6 +54,7 @@ from app.modules.adminapi.schemas import (
     TenantStatusOut,
     UpdatedKeysOut,
 )
+from app.modules.billing.schemas import BillHourlyOut, LedgerEntryOut
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import (
     ImageCreate,
@@ -367,6 +369,35 @@ async def admin_list_tenants(session: DbSession) -> list[TenantOut]:
             )
         )
     return out
+
+
+@router.get("/tenants/{user_id}/ledger", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_tenant_ledger(
+    user_id: int,
+    session: DbSession,
+    cursor: str | None = None,
+    limit: int | None = Query(default=None, le=100),
+) -> Page[LedgerEntryOut]:
+    """租户资金流水下钻(账单争议处理的第一现场)。与用户端同一实现,同一游标语义。"""
+    from app.modules.billing import service as billing_service
+
+    return await billing_service.ledger_page(session, user_id, cursor=cursor, limit=limit)
+
+
+@router.get("/tenants/{user_id}/bills", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_tenant_bills(
+    user_id: int,
+    session: DbSession,
+    instance_id: int | None = None,
+    cursor: str | None = None,
+    limit: int | None = Query(default=None, le=100),
+) -> Page[BillHourlyOut]:
+    """租户小时账单下钻(可按实例过滤;金额与用户端所见同源)。"""
+    from app.modules.billing import service as billing_service
+
+    return await billing_service.hourly_bills_page(
+        session, user_id, instance_id=instance_id, cursor=cursor, limit=limit
+    )
 
 
 @router.post("/tenants/{user_id}/freeze", dependencies=[require_roles("ops")])

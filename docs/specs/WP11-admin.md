@@ -18,3 +18,11 @@
 ## 验收
 - 超卖率报表数据正确(与 seed 数据可对账)
 - readonly 角色全站只读;finance 仅财务区可写(发起调账)
+
+## 租户账单下钻(现状)
+
+- `GET /api/admin/v1/tenants/{user_id}/ledger`、`GET /api/admin/v1/tenants/{user_id}/bills`
+  (ops/finance/readonly 可读,游标分页)。实现与用户端同一函数(`billing.wallet.ledger_page` /
+  `hourly_bills_page`),管理端所见与用户所见同源,账单争议不会因两套查询而对不上。
+- 前端在 `/tenants` 的租户表点行(或「账单」按钮)开侧滑:余额/累计消费概览 + 小时账单 + 资金流水两个 Tab。
+  这同时兑现了 ui-ux-spec §4.5 的「租户详情侧滑」。

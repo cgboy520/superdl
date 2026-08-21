@@ -129,6 +129,67 @@ async def require_balance_at_least(
         )
 
 
+async def ledger_page(
+    session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
+):
+    """资金流水游标分页(用户端与管理端下钻共用同一实现)。"""
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.modules.billing.schemas import LedgerEntryOut
+
+    lim = clamp_limit(limit)
+    stmt = (
+        select(BalanceLedger)
+        .where(BalanceLedger.user_id == user_id)
+        .order_by(BalanceLedger.id.desc())
+        .limit(lim + 1)
+    )
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(BalanceLedger.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    return Page[LedgerEntryOut](
+        items=[LedgerEntryOut.model_validate(r) for r in rows[:lim]], next_cursor=next_cursor
+    )
+
+
+async def hourly_bills_page(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    instance_id: int | None = None,
+    month_range: tuple | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+):
+    """小时账单游标分页(用户端与管理端下钻共用同一实现)。"""
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.modules.billing.models import BillHourly
+    from app.modules.billing.schemas import BillHourlyOut
+
+    lim = clamp_limit(limit)
+    stmt = (
+        select(BillHourly)
+        .where(BillHourly.user_id == user_id)
+        .order_by(BillHourly.id.desc())
+        .limit(lim + 1)
+    )
+    if instance_id is not None:
+        stmt = stmt.where(BillHourly.instance_id == instance_id)
+    if month_range is not None:
+        stmt = stmt.where(
+            BillHourly.hour_start >= month_range[0], BillHourly.hour_start < month_range[1]
+        )
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(BillHourly.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    return Page[BillHourlyOut](
+        items=[BillHourlyOut.model_validate(r) for r in rows[:lim]], next_cursor=next_cursor
+    )
+
+
 async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Decimal]:
     """对账用:窗口内各实例的事件计费合计(bills_hourly)。"""
     from sqlalchemy import func

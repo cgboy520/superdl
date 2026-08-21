@@ -348,3 +348,42 @@ class TestAnnouncement:
         headers = {"Authorization": f"Bearer {u1['access_token']}"}
         notifications = (await client.get("/api/v1/notifications", headers=headers)).json()
         assert any(n["type"] == "announcement" for n in notifications)
+
+
+class TestTenantBillingDrilldown:
+    """账单争议处理:管理端必须能看到任一租户的账单明细与资金流水。"""
+
+    async def test_ledger_and_bills_pages(self, client, sm):
+        from decimal import Decimal
+
+        from app.modules.billing import wallet
+
+        headers = await admin_headers(sm, client)
+        async with sm() as session:
+            await wallet.credit(session, 4242, Decimal("100.00"), type_="recharge", remark="充值")
+            for i in range(3):
+                await wallet.debit(
+                    session,
+                    4242,
+                    Decimal("1.00"),
+                    type_="consume",
+                    ref_type="bill_hourly",
+                    ref_id=str(i),
+                )
+            await session.commit()
+
+        resp = await client.get("/api/admin/v1/tenants/4242/ledger?limit=2", headers=headers)
+        assert resp.status_code == 200, resp.text
+        page = resp.json()
+        assert len(page["items"]) == 2
+        assert page["next_cursor"]
+        resp2 = await client.get(
+            f"/api/admin/v1/tenants/4242/ledger?limit=2&cursor={page['next_cursor']}",
+            headers=headers,
+        )
+        assert len(resp2.json()["items"]) == 2  # 翻页拿到剩余两条
+
+        # 小时账单端点可达(该租户暂无账单 → 空页,不是 500)
+        resp3 = await client.get("/api/admin/v1/tenants/4242/bills", headers=headers)
+        assert resp3.status_code == 200
+        assert resp3.json()["items"] == []
