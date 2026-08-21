@@ -178,15 +178,58 @@
   "footer": {
     "complianceTitle": "Compliance",
     "copyright": "© 2026 SuperDL",
-    "linkDocs": "Docs (coming soon)",
+    "linkContact": "Contact support",
+    "linkHelp": "Help & support",
     "linkMarket": "Marketplace",
     "linkPricing": "GPU Pricing",
     "linkPrivacy": "Privacy Policy",
     "linkRanking": "Compute Ranking",
-    "linkStatus": "Status page (coming soon)",
     "linkTerms": "Terms of Service",
     "productTitle": "Product",
     "supportTitle": "Support"
+  },
+  "help": {
+    "contactEmail": "Support email",
+    "contactHint": "Answered during business hours. For billing disputes, include the order number or instance name so we can match the ledger.",
+    "contactMissing": "No support channel configured yet. An administrator can set an email or WeChat ID under Platform config · Support contact; it then shows here and in the footer.",
+    "contactTitle": "Contact us",
+    "contactWechat": "WeCom / WeChat support",
+    "faq": {
+      "arrears": {
+        "a": "Instances stop automatically and you get a notification. If the balance stays empty past the published grace period, instances and then data disks are frozen and reclaimed.\nThe exact windows are shown in Billing; topping up restores the ability to start instances.",
+        "q": "What happens when my balance runs out?"
+      },
+      "billingDisk": {
+        "a": "By size and calendar day; any part of a day counts as a full day. Resizing settles the current day at the previous size — a larger size is never applied retroactively.\nDeleting settles any unbilled days, so a disk created and deleted the same day still costs one day.",
+        "q": "How are data disks billed?"
+      },
+      "billingStart": {
+        "a": "GPU time is metered per second from the moment the instance reaches Running, and billed hourly. Failed creations cost nothing.\nBilling is derived from instance events (see the Events tab); monitoring charts are for display only.",
+        "q": "When does billing start?"
+      },
+      "billingStop": {
+        "a": "Stopping ends GPU charges. What continues is the daily cost: data disks are billed per day (your data stays, so the disk does too).\nRelease the instance when you no longer need it; data disks are deleted separately.",
+        "q": "Am I charged after stopping?"
+      },
+      "connectJupyter": {
+        "a": "The Connect tab link already carries a one-time token — open it directly.\nIf it says unauthorized, copy the link again from that page (the token can be reset there); resetting invalidates the old link immediately.\nCustom images must listen on 0.0.0.0:8888 and read the JUPYTER_TOKEN environment variable, otherwise the entry point will not work.",
+        "q": "JupyterLab will not open"
+      },
+      "connectSsh": {
+        "a": "The instance detail page (Connect tab) shows the full command, like ssh -p <port> root@<host>.\nInstances accept key auth only: add your public key under Account settings → SSH keys before creating, and select it at creation time.\nIf it fails, check the instance is Running, then confirm you are using the matching private key (ssh -i <path>).",
+        "q": "How do I connect over SSH?"
+      },
+      "createFailed": {
+        "a": "If the instance is not ready within 5 minutes it is failed automatically and resources are freed — at no cost. The usual cause is no free GPU for that spec.\nTry another tier or model; the Events tab shows the reason.",
+        "q": "Creation failed or is stuck"
+      },
+      "dataPersist": {
+        "a": "The instance disk (mounted at /) is reclaimed when the instance is released. A data disk (mounted at /root/data) is independent — releasing the instance keeps it.\nKeep your own copies of anything important: after the published grace period on arrears, data disks are reclaimed.",
+        "q": "What survives stop and release?"
+      }
+    },
+    "intro": "Questions are ordered the way you hit them: connecting, billing, data, failures. If yours is not here, contact us below.",
+    "title": "Help & support"
   },
   "instances": {
     "accessNotRunning": "Connection info is available while the instance is running",

@@ -13,4 +13,6 @@ export interface SiteConfigOut {
   icp_number: string | null;
   payment_channels: PaymentChannelsOut;
   police_record_number: string | null;
+  support_email: string | null;
+  support_wechat: string | null;
 }

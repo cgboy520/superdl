@@ -2825,6 +2825,7 @@
               "sms",
               "real_name",
               "compliance",
+              "support",
               "cluster",
               "observability"
             ],
@@ -3417,11 +3418,35 @@
               }
             ],
             "title": "Police Record Number"
+          },
+          "support_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Support Email"
+          },
+          "support_wechat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Support Wechat"
           }
         },
         "required": [
           "icp_number",
           "police_record_number",
+          "support_email",
+          "support_wechat",
           "payment_channels"
         ],
         "title": "SiteConfigOut",

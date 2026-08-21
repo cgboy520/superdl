@@ -68,6 +68,8 @@ const FIELD_LABELS: Record<string, string> = {
   real_name_access_key_secret: "AccessKey Secret",
   icp_number: "ICP 备案号",
   police_record_number: "公安联网备案号",
+  support_email: "客服邮箱",
+  support_wechat: "企业微信/微信客服号",
   cluster_server_url: "Server 地址",
   cluster_join_token: "Join Token",
   cluster_agent_version: "Agent 版本(装机脚本钉死)",
@@ -85,6 +87,8 @@ const FIELD_EXTRA: Record<string, string> = {
   sms_template_notice: "模板需含变量 ${title}",
   icp_number: "展示于用户端页脚,链接工信部备案系统(beian.miit.gov.cn)",
   police_record_number: "展示于用户端页脚,链接公安备案系统(beian.mps.gov.cn);未取得可留空",
+  support_email: "展示于用户端页脚与「帮助与支持」页;留空即不展示邮箱入口",
+  support_wechat: "同上,展示为可复制文本(用户自行搜索添加),留空即不展示",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -112,6 +116,9 @@ const GROUP_INTRO: Record<string, string> = {
   real_name:
     "阿里云实人认证 · 手机号三要素核验(简版,Mobile3MetaSimpleVerify):开通「要素核验」服务并授权 RAM 子账号。" +
     "核验通过即标记已实名;身份证号仅存脱敏串,原文即用即弃。",
+  support:
+    "客服联系方式展示于用户端页脚与「帮助与支持」页。留空即不展示对应入口 —— " +
+    "GPU 租赁的用户教育成本高,没有任何联系方式等于把问题都堵在工单之外。",
   compliance:
     "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);" +
     "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。",
@@ -453,6 +460,19 @@ function PlatformConfigPage() {
               <GroupPanel
                 group="compliance"
                 items={groupItems("compliance")}
+                draft={draft}
+                setDraft={setDraft}
+                disabled={disabled}
+              />
+            ),
+          },
+          {
+            key: "support",
+            label: t("platform.tabSupport"),
+            children: (
+              <GroupPanel
+                group="support"
+                items={groupItems("support")}
                 draft={draft}
                 setDraft={setDraft}
                 disabled={disabled}

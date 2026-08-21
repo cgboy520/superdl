@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     icp_number: str | None = None
     police_record_number: str | None = None
 
+    # 客服联系方式(页脚与帮助页展示;可被平台配置中心覆盖)。留空即不展示该入口
+    support_email: str | None = None
+    support_wechat: str | None = None  # 企微/微信客服号或群二维码说明
+
     # 创建实例可用的镜像来源白名单(仓库前缀列表)。空 = 不限制:
     # 「自定义镜像自由输入」是产品能力(ui-ux-spec §3.3),收紧与否由运营决定。
     # 配置后只放行平台镜像目录内的引用与这些前缀,如 ["registry.superdl.internal/"]

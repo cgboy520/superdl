@@ -48,9 +48,12 @@ export function SiteFooter() {
     { label: t("footer.linkPricing"), to: "/#pricing" },
     { label: t("footer.linkRanking"), to: "/#ranking" },
   ];
+  // 只列真实存在的入口:此前「帮助文档/服务状态」是两条 to="" 的死链
   const supportLinks = [
-    { label: t("footer.linkDocs"), to: "" },
-    { label: t("footer.linkStatus"), to: "" },
+    { label: t("footer.linkHelp"), to: "/help" },
+    ...(site?.support_email
+      ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` }]
+      : []),
   ];
   const complianceLinks = [
     { label: t("footer.linkTerms"), to: "/legal/terms" },

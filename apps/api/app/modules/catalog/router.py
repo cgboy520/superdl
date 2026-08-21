@@ -22,6 +22,8 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
     return SiteConfigOut(
         icp_number=cfg["icp_number"] or None,
         police_record_number=cfg["police_record_number"] or None,
+        support_email=cfg["support_email"] or None,
+        support_wechat=cfg["support_wechat"] or None,
         payment_channels=PaymentChannelsOut(
             wechat=cfg["payment_wechat_enabled"] == "true",
             alipay=cfg["payment_alipay_enabled"] == "true",

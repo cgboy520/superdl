@@ -30,7 +30,14 @@ class PlatformSetting(Base):
 
 
 SettingGroup = Literal[
-    "payment_wechat", "payment_alipay", "sms", "real_name", "compliance", "cluster", "observability"
+    "payment_wechat",
+    "payment_alipay",
+    "sms",
+    "real_name",
+    "compliance",
+    "support",
+    "cluster",
+    "observability",
 ]
 SettingKind = Literal["str", "text", "bool", "choice", "secret"]
 
@@ -131,6 +138,17 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     ),
     "police_record_number": SettingSpec(
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
+    ),
+    # ---- 客服联系方式(页脚与帮助页;留空即不展示对应入口) ----
+    "support_email": SettingSpec(
+        "support",
+        "str",
+        pattern=r"[^@\s]+@[^@\s]+\.[^@\s]+",
+        max_len=128,
+        hint="客服邮箱,如 support@example.com",
+    ),
+    "support_wechat": SettingSpec(
+        "support", "str", max_len=64, hint="企业微信/微信客服号(展示为文本,用户自行搜索添加)"
     ),
     # ---- 集群接入(仅 admin 可读写;ops 生成注册命令时由服务端代读) ----
     "cluster_server_url": SettingSpec(

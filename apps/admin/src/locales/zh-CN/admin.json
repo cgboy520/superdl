@@ -357,6 +357,7 @@
     "tabObservability": "可观测性",
     "tabRealName": "实名认证",
     "tabSms": "短信(阿里云)",
+    "tabSupport": "客服联系方式",
     "tabWechat": "微信支付",
     "testSmsNote": "使用「验证码模板」发送随机 6 位码;先保存配置再测试。Provider 为 mock 时仅落日志。",
     "testSmsPhone": "接收手机号",

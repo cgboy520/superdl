@@ -365,6 +365,7 @@
     "tabObservability": "Observability",
     "tabRealName": "Identity verification",
     "tabSms": "SMS (Aliyun)",
+    "tabSupport": "Support contact",
     "tabWechat": "WeChat Pay",
     "testSmsNote": "Sends a random 6-digit code via the verification template; save the config before testing. With the mock provider it only logs.",
     "testSmsPhone": "Recipient phone",

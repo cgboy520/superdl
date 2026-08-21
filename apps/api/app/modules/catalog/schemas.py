@@ -19,6 +19,8 @@ class SiteConfigOut(BaseModel):
 
     icp_number: str | None
     police_record_number: str | None
+    support_email: str | None
+    support_wechat: str | None
     payment_channels: PaymentChannelsOut
 
 
