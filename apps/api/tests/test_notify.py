@@ -44,7 +44,9 @@ class TestBalanceWarnNotification:
 
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance - Decimal("5.00"), type_="adjust")
+            await wallet.debit(
+                session, user_id, balance - Decimal("5.00"), type_="adjust", allow_negative=True
+            )
             await session.commit()
 
         await balance_patrol(sm)
@@ -61,7 +63,9 @@ class TestBalanceWarnNotification:
 
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance - Decimal("5.00"), type_="adjust")
+            await wallet.debit(
+                session, user_id, balance - Decimal("5.00"), type_="adjust", allow_negative=True
+            )
             await session.commit()
         await balance_patrol(sm)
 
@@ -116,7 +120,7 @@ class TestAlertmanagerWebhook:
         _headers, _uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance, type_="adjust")
+            await wallet.debit(session, user_id, balance, type_="adjust", allow_negative=True)
             await session.commit()
         await balance_patrol(sm)  # 停机 + 欠费通知
         async with sm() as session:

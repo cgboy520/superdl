@@ -133,7 +133,14 @@ class TestMoneyTableConstraints:
     async def test_overdraft_is_still_allowed(self, sm):
         """刻意不加 balance >= 0:透支是设计内的(服务已消费完才结算)。"""
         async with sm() as session:
-            await wallet.debit(session, 1, Decimal("5.00"), type_="consume", ref_type="bill_hourly")
+            await wallet.debit(
+                session,
+                1,
+                Decimal("5.00"),
+                type_="consume",
+                ref_type="bill_hourly",
+                allow_negative=True,
+            )
             await session.commit()
         async with sm() as session:
             w = (await session.execute(select(Wallet))).scalar_one()

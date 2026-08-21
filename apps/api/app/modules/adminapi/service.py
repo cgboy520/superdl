@@ -226,6 +226,8 @@ async def review_adjustment(
             ref_type="adjustment",
             ref_id=str(adj.id),
             remark=f"调账:{adj.reason}",
+            # 纠正一笔错误入账不能被当前余额卡住(否则冲正金额被当前余额封顶)
+            allow_negative=True,
         )
     await session.commit()
     return adj

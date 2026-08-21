@@ -75,10 +75,20 @@ class TestBillAmount:
         assert bill_amount(Decimal("1.6800"), 2, 1800) == Decimal("1.68")
 
     def test_half_even(self):
-        # 3.0000 × 1 × 3 / 3600 = 0.0025 → HALF_EVEN → 0.00
-        assert bill_amount(Decimal("3.0000"), 1, 3) == Decimal("0.00")
-        # 0.0075 → 0.01(7.5 → 8,向偶)
-        assert bill_amount(Decimal("9.0000"), 1, 3) == Decimal("0.01")
+        """真正的分位 tie(第三位小数恰好是 5),才分得开三种 half 模式。
+
+        原用例用的 0.0025 / 0.0075 第三位是 2 和 7,在 HALF_EVEN / HALF_UP / HALF_DOWN 下
+        结果完全相同 —— 一个名叫 test_half_even 的用例,换任何一种舍入模式它都照过
+        (注释里「7.5 → 8,向偶」的推理本身也是错的:0.0075 距 0.01 更近,任何 half 模式
+        都进位,跟向偶无关)。舍入被误改成 HALF_UP 意味着每笔系统性多收。
+        """
+        # 0.5000 × 1 × 900 / 3600 = 0.1250 → 向偶 → 0.12(HALF_UP 会给 0.13)
+        assert bill_amount(Decimal("0.5000"), 1, 900) == Decimal("0.12")
+        # 0.5400 × 1 × 900 / 3600 = 0.1350 → 向偶 → 0.14(HALF_DOWN 会给 0.13)
+        assert bill_amount(Decimal("0.5400"), 1, 900) == Decimal("0.14")
+        # 非 tie 的两侧仍要覆盖,排除 ROUND_UP / ROUND_DOWN
+        assert bill_amount(Decimal("3.0000"), 1, 3) == Decimal("0.00")  # 0.0025
+        assert bill_amount(Decimal("9.0000"), 1, 3) == Decimal("0.01")  # 0.0075
 
     def test_zero(self):
         assert bill_amount(Decimal("9.9900"), 1, 0) == Decimal("0.00")
@@ -499,3 +509,100 @@ class TestCatchUpSettlement:
         await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         at = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
         assert await settle_due_hours(sm, at=at) == MAX_CATCHUP_HOURS
+
+
+@pytest.mark.parametrize(
+    "anchor",
+    [
+        pytest.param(datetime(2026, 8, 19, 23, 0, tzinfo=UTC), id="cross-day"),
+        pytest.param(datetime(2026, 8, 31, 23, 0, tzinfo=UTC), id="cross-month"),
+        pytest.param(datetime(2026, 12, 31, 23, 0, tzinfo=UTC), id="cross-year"),
+        pytest.param(datetime(2028, 2, 29, 23, 0, tzinfo=UTC), id="leap-day"),
+    ],
+)
+class TestWindowBoundaries:
+    """结算窗口跨日/跨月/跨年/闰日。
+
+    全部既有结算用例锚在同一个小时(2026-08-19 10:00 UTC),追平用例最远只到 15 点。
+    结算按 aware-UTC 做 timedelta 递推,理论上这些边界不是分支 —— 但「理论上没有分支」
+    正是没人去测的原因,而一旦有人把 timedelta 换成 replace(day=...) 之类的写法,
+    错的账会先落到用户身上才被发现。跨月归属错误还会直接影响开票。
+    """
+
+    async def test_tail_then_hourly_across_boundary(self, sm, anchor):
+        start, end = anchor, anchor + timedelta(hours=1)
+        inst_id = await seed_instance(
+            sm,
+            events=[
+                (start - timedelta(minutes=30), "creating", "running"),
+                (start + timedelta(minutes=30), "running", "stopping"),
+            ],
+        )
+        async with sm() as session:
+            charged = await settle_instance_window(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("3.6000"),
+                gpu_count=1,
+                window_start=start,
+                window_end=end,
+                source="hourly",
+            )
+            await session.commit()
+        assert charged == Decimal("1.80")  # 半小时 × 3.60
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+        assert bill.hour_start.replace(tzinfo=UTC) == start
+        assert bill.seconds_used == 1800
+
+    async def test_catchup_walks_over_boundary(self, sm, anchor):
+        """水位线追平必须能连续跨过午夜/月末,而不是停在边界上。"""
+        inst_id = await seed_instance(
+            sm, events=[(anchor - timedelta(hours=2), "creating", "running")], status="running"
+        )
+        assert inst_id
+        # 水位线停在 anchor 前两小时 → 追平应结出 anchor-1h、anchor 两个窗口
+        from app.modules.billing.settlement import _advance_watermark
+
+        await _advance_watermark(sm, "hourly", anchor - timedelta(hours=2))
+        await settle_due_hours(sm, at=anchor + timedelta(hours=1, minutes=2))
+        async with sm() as session:
+            hours = sorted(
+                b.hour_start.replace(tzinfo=UTC)
+                for b in (await session.execute(select(BillHourly))).scalars()
+            )
+            wm = await get_watermark(session, "hourly")
+        assert hours == [anchor - timedelta(hours=1), anchor]
+        assert wm == anchor
+
+
+class TestOverdraftRefusal:
+    """allow_negative=False 这一支此前是死代码(全仓无人传 False),也就从未被测过。
+
+    结算扣款必须允许透支(服务已消费完),但拒绝路径本身要能工作 —— 将来任何一条
+    「先付后用」的同步扣款都要靠它。
+    """
+
+    async def test_refusal_leaves_wallet_and_ledger_untouched(self, sm):
+        from app.core.errors import AppError, ErrorCode
+
+        async with sm() as session:
+            await wallet.credit(session, 7, Decimal("1.00"), type_="recharge")
+            await session.commit()
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await wallet.debit(
+                    session, 7, Decimal("5.00"), type_="consume", allow_negative=False
+                )
+            assert exc.value.code is ErrorCode.INSUFFICIENT_BALANCE
+            await session.rollback()
+        async with sm() as session:
+            w = (await session.execute(select(Wallet).where(Wallet.user_id == 7))).scalar_one()
+            entries = (
+                (await session.execute(select(BalanceLedger).where(BalanceLedger.user_id == 7)))
+                .scalars()
+                .all()
+            )
+        assert w.balance == Decimal("1.00")
+        assert len(entries) == 1  # 只有那笔充值,没有半截扣款

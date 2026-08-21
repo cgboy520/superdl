@@ -153,6 +153,7 @@ async def upsert_hour_bill(
         ref_type="bill_hourly",
         ref_id=str(row.id),
         remark=f"实例 GPU 时费({source})",
+        allow_negative=True,  # 服务已消费完:拒绝扣款只会静默丢掉收入
     )
     return charged
 
@@ -341,6 +342,7 @@ async def charge_disk_day(
             ref_type="bill_daily_disk",
             ref_id=str(inserted),
             remark="数据盘日常费用",
+            allow_negative=True,  # 同上:存储已经占用了一整天
         )
     return amount
 

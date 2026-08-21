@@ -370,6 +370,7 @@ class TestTenantBillingDrilldown:
                     type_="consume",
                     ref_type="bill_hourly",
                     ref_id=str(i),
+                    allow_negative=True,
                 )
             await session.commit()
 

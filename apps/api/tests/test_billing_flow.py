@@ -90,7 +90,9 @@ class TestArrearsChain:
         # 清空余额
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance, type_="adjust", remark="test-drain")
+            await wallet.debit(
+                session, user_id, balance, type_="adjust", remark="test-drain", allow_negative=True
+            )
             await session.commit()
 
         # 巡检 → 自动停机
@@ -134,7 +136,9 @@ class TestArrearsChain:
         headers, uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance, type_="adjust", remark="drain")
+            await wallet.debit(
+                session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
+            )
             await session.commit()
         await balance_patrol(sm)  # 停机
         await drain(sm)
@@ -158,7 +162,12 @@ class TestArrearsChain:
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(
-                session, user_id, balance - Decimal("10.00"), type_="adjust", remark="t"
+                session,
+                user_id,
+                balance - Decimal("10.00"),
+                type_="adjust",
+                remark="t",
+                allow_negative=True,
             )
             await session.commit()
         counts = await balance_patrol(sm)

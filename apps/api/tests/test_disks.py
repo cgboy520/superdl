@@ -241,7 +241,9 @@ class TestDiskArrearsChain:
         # 清空余额 → grace
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance, type_="adjust", remark="drain")
+            await wallet.debit(
+                session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
+            )
             await session.commit()
         counts = await balance_patrol(sm)
         assert counts["disks"] == 1
@@ -276,7 +278,9 @@ class TestDiskArrearsChain:
         await create_disk(client, headers)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance, type_="adjust", remark="drain")
+            await wallet.debit(
+                session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
+            )
             await session.commit()
         await balance_patrol(sm)
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
@@ -303,7 +307,9 @@ class TestDiskArrearsChain:
         await create_disk(client, headers)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(session, user_id, balance, type_="adjust", remark="drain")
+            await wallet.debit(
+                session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
+            )
             await session.commit()
         await balance_patrol(sm)
         async with sm() as session:
