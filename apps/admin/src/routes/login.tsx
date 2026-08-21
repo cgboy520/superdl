@@ -1,8 +1,10 @@
 import { adminColors } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { App, Button, Card, Form, Input, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 
-import { isApiError, useAdminLogin } from "../api";
+import { useAdminLogin } from "../api";
+import { useApiErrorText } from "../lib/apiError";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
@@ -10,6 +12,8 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const navigate = useNavigate();
   const login = useAdminLogin({
@@ -19,7 +23,7 @@ function LoginPage() {
         void navigate({ to: "/" });
       },
       onError: (e) => {
-        message.error(isApiError(e) ? e.message : "登录失败");
+        message.error(errText(e, t("login.failed")));
       },
     },
   });
@@ -34,24 +38,24 @@ function LoginPage() {
         background: adminColors.bgBase,
       }}
     >
-      <Card style={{ width: 380 }} title="SuperDL 管理控制台">
+      <Card style={{ width: 380 }} title={t("app.title")}>
         <Form
           layout="vertical"
           onFinish={(values: { username: string; password: string }) =>
             login.mutate({ data: values })
           }
         >
-          <Form.Item name="username" label="用户名" rules={[{ required: true }]}>
+          <Form.Item name="username" label={t("login.username")} rules={[{ required: true }]}>
             <Input autoComplete="username" />
           </Form.Item>
-          <Form.Item name="password" label="密码" rules={[{ required: true }]}>
+          <Form.Item name="password" label={t("login.password")} rules={[{ required: true }]}>
             <Input.Password autoComplete="current-password" />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={login.isPending}>
-            登录
+            {t("login.submit")}
           </Button>
           <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-            管理端账号体系与用户端完全隔离,由平台管理员分配。
+            {t("login.isolatedNote")}
           </Typography.Paragraph>
         </Form>
       </Card>

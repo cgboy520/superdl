@@ -5,8 +5,9 @@
 
 import { App, Button, Form, Input, Modal, Tooltip } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
-import { isApiError } from "../api";
+import { useApiErrorText } from "../lib/apiError";
 
 interface Props {
   label: string;
@@ -31,6 +32,8 @@ export function ReasonAction({
   disabledReason,
   onSubmit,
 }: Props) {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -48,12 +51,12 @@ export function ReasonAction({
     setLoading(true);
     try {
       await onSubmit(reason);
-      message.success(`${title}已执行`);
+      message.success(t("common.actionDone", { action: title }));
       setOpen(false);
       setConfirming(false);
       form.resetFields();
     } catch (e) {
-      message.error(isApiError(e) ? e.message : `${title}失败`);
+      message.error(errText(e, t("common.actionFailed", { action: title })));
     } finally {
       setLoading(false);
     }
@@ -77,25 +80,25 @@ export function ReasonAction({
           }
           setConfirming(true);
         }}
-        okText="下一步"
+        okText={t("common.next")}
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item
             name="reason"
-            label="操作原因(必填,入审计)"
-            rules={[{ required: true, min: 2, message: "请填写至少 2 个字的原因" }]}
+            label={t("common.reasonLabel")}
+            rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
           >
-            <Input.TextArea rows={3} placeholder="原因将写入审计日志" />
+            <Input.TextArea rows={3} placeholder={t("common.reasonPlaceholder")} />
           </Form.Item>
         </Form>
       </Modal>
       <Modal
-        title="二次确认"
+        title={t("common.secondConfirm")}
         open={confirming}
         onCancel={() => setConfirming(false)}
         onOk={run}
-        okText="确认执行"
+        okText={t("common.confirmExecute")}
         okButtonProps={{ danger, loading }}
       >
         {confirmText}

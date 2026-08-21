@@ -53,7 +53,7 @@ interface ImageFormValues {
 
 /** 行展开:该镜像的每节点缓存明细(展开期间 10s 轮询看拉取进度) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { data } = useImageNodes(imageId, { refetchInterval: 10_000 });
   return (
     <Table<ImageNodeRow>

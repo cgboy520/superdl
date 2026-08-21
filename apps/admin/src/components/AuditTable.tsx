@@ -1,10 +1,12 @@
 import { formatDateTime } from "@superdl/ui";
 import { Select, Table, Tag } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { type AuditRow, useAuditLog } from "../api";
 
 export function AuditTable() {
+  const { t } = useTranslation();
   const [actorType, setActorType] = useState<string | undefined>();
   const { data } = useAuditLog(actorType ? { actor_type: actorType } : undefined);
   const rows: AuditRow[] = data ?? [];
@@ -13,14 +15,14 @@ export function AuditTable() {
     <>
       <Select
         allowClear
-        placeholder="操作者类型"
+        placeholder={t("audit.actorTypePlaceholder")}
         style={{ width: 160, marginBottom: 12 }}
         value={actorType}
         onChange={setActorType}
         options={[
-          { value: "user", label: "用户" },
-          { value: "admin", label: "管理员" },
-          { value: "anonymous", label: "匿名" },
+          { value: "user", label: t("audit.actorUser") },
+          { value: "admin", label: t("audit.actorAdmin") },
+          { value: "anonymous", label: t("audit.actorAnonymous") },
         ]}
       />
       <Table<AuditRow>
@@ -31,7 +33,7 @@ export function AuditTable() {
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },
           {
-            title: "操作者",
+            title: t("audit.colActor"),
             render: (_, r) => (
               <>
                 <Tag color={r.actor_type === "admin" ? "purple" : "blue"}>{r.actor_type}</Tag>
@@ -39,16 +41,16 @@ export function AuditTable() {
               </>
             ),
           },
-          { title: "动作", dataIndex: "action" },
-          { title: "目标", dataIndex: "target" },
+          { title: t("audit.colAction"), dataIndex: "action" },
+          { title: t("audit.colTarget"), dataIndex: "target" },
           { title: "IP", dataIndex: "ip" },
           {
-            title: "结果",
+            title: t("audit.colResult"),
             dataIndex: "result",
             width: 80,
             render: (v: number) => <Tag color={v < 400 ? "green" : "red"}>{v}</Tag>,
           },
-          { title: "时间", dataIndex: "created_at", render: formatDateTime },
+          { title: t("audit.colTime"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
     </>

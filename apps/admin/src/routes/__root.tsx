@@ -1,8 +1,10 @@
 import { adminThemeToken } from "@superdl/ui";
 import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, Button, ConfigProvider, Result, theme } from "antd";
-import zhCN from "antd/locale/zh_CN";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+
+import { useAppLocale } from "../lib/locale";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -11,9 +13,10 @@ export const Route = createRootRoute({
 });
 
 function DarkShell({ children }: { children: ReactNode }) {
+  const antdLocale = useAppLocale();
   return (
     <ConfigProvider
-      locale={zhCN}
+      locale={antdLocale}
       theme={{ algorithm: theme.darkAlgorithm, token: adminThemeToken }}
     >
       {children}
@@ -33,18 +36,19 @@ function RootLayout() {
 
 /** 全局错误边界:渲染异常兜底,不白屏。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
+  const { t } = useTranslation();
   return (
     <DarkShell>
       <Result
         status="500"
-        title="页面出错了"
-        subTitle={error instanceof Error ? error.message : "发生未知错误"}
+        title={t("errorPage.title")}
+        subTitle={error instanceof Error ? error.message : t("errorPage.unknown")}
         extra={
           <>
             <Button type="primary" onClick={() => reset()}>
-              重 试
+              {t("common.retry")}
             </Button>
-            <Button onClick={() => (window.location.href = "/")}>回总览</Button>
+            <Button onClick={() => (window.location.href = "/")}>{t("common.backOverview")}</Button>
           </>
         }
       />
@@ -53,14 +57,15 @@ function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
 }
 
 function NotFoundPage() {
+  const { t } = useTranslation();
   return (
     <DarkShell>
       <Result
         status="404"
-        title="页面不存在"
+        title={t("notFound.title")}
         extra={
           <Link to="/">
-            <Button type="primary">回总览</Button>
+            <Button type="primary">{t("common.backOverview")}</Button>
           </Link>
         }
       />

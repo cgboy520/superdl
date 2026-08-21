@@ -1,0 +1,71 @@
+{
+  "app": {
+    "title": "SuperDL Admin Console"
+  },
+  "audit": {
+    "actorAdmin": "Admin",
+    "actorAnonymous": "Anonymous",
+    "actorTypePlaceholder": "Actor type",
+    "actorUser": "User",
+    "colAction": "Action",
+    "colActor": "Actor",
+    "colResult": "Result",
+    "colTarget": "Target",
+    "colTime": "Time"
+  },
+  "common": {
+    "actionDone": "{{action}} executed",
+    "actionFailed": "{{action}} failed",
+    "backOverview": "Back to overview",
+    "confirmExecute": "Execute",
+    "next": "Next",
+    "reasonLabel": "Reason (required, audited)",
+    "reasonPlaceholder": "The reason is written to the audit log",
+    "reasonRule": "Enter a reason of at least 2 characters",
+    "requestFailed": "Request failed",
+    "retry": "Retry",
+    "secondConfirm": "Confirm again"
+  },
+  "errorPage": {
+    "title": "Something went wrong",
+    "unknown": "An unexpected error occurred"
+  },
+  "lang": {
+    "en": "English",
+    "zh": "中文"
+  },
+  "login": {
+    "failed": "Login failed",
+    "isolatedNote": "Admin accounts are fully isolated from user accounts and assigned by platform administrators.",
+    "password": "Password",
+    "submit": "Log in",
+    "username": "Username"
+  },
+  "menu": {
+    "audit": "Audit log",
+    "finance": "Finance",
+    "images": "Images & prewarm",
+    "nodes": "Nodes & GPUs",
+    "overview": "Overview",
+    "platform": "Platform config",
+    "settings": "System settings",
+    "skus": "SKUs & pricing",
+    "tenants": "Tenants & instances"
+  },
+  "notFound": {
+    "title": "Page not found"
+  },
+  "roles": {
+    "admin": "Super admin",
+    "finance": "Finance",
+    "ops": "Ops",
+    "readonly": "Read-only"
+  },
+  "shell": {
+    "alertsTitle": "Alerts",
+    "envDev": "Staging/dev",
+    "envProd": "Production",
+    "logout": "Log out",
+    "noAlerts": "No alerts"
+  }
+}

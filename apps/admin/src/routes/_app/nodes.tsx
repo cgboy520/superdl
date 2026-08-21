@@ -217,7 +217,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 function EnrollmentsCard({ writable }: { writable: boolean }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
   const qc = useQueryClient();
   const { data, queryKey } = useEnrollments({ active: true, refetchInterval: 5_000 });

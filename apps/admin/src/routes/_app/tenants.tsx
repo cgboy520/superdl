@@ -94,7 +94,7 @@ function TenantsTab() {
 }
 
 function InstancesTab() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);

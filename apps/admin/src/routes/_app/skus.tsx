@@ -52,7 +52,7 @@ interface SkuFormValues {
 }
 
 function SkusPage() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { formatHourlyPrice } = useFormat();
   // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message, modal } = App.useApp();

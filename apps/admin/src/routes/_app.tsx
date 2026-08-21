@@ -11,7 +11,7 @@ import {
   TeamOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { adminColors } from "@superdl/ui";
+import { adminColors, metaOf } from "@superdl/ui";
 import {
   Link,
   Outlet,
@@ -22,8 +22,10 @@ import {
 } from "@tanstack/react-router";
 import { Badge, Dropdown, Layout, Menu, Popover, Space, Tag, Typography, theme } from "antd";
 import dayjs from "dayjs";
+import { useTranslation } from "react-i18next";
 
 import { type AlertRow, useAlerts } from "../api";
+import { LangSwitcher } from "../components/LangSwitcher";
 import { canSeeMenu } from "../lib/menu";
 import { authStore, useAuth } from "../stores/auth";
 
@@ -37,35 +39,36 @@ export const Route = createFileRoute("/_app")({
 });
 
 const MENU = [
-  { key: "/", icon: <DashboardOutlined />, label: <Link to="/">运营总览</Link> },
-  { key: "/nodes", icon: <ClusterOutlined />, label: <Link to="/nodes">节点与 GPU</Link> },
-  { key: "/skus", icon: <TagsOutlined />, label: <Link to="/skus">SKU 与定价</Link> },
-  { key: "/images", icon: <CloudDownloadOutlined />, label: <Link to="/images">镜像与预热</Link> },
-  { key: "/tenants", icon: <TeamOutlined />, label: <Link to="/tenants">租户与实例</Link> },
-  { key: "/finance", icon: <PayCircleOutlined />, label: <Link to="/finance">财务对账</Link> },
-  { key: "/audit", icon: <AuditOutlined />, label: <Link to="/audit">审计日志</Link> },
-  { key: "/platform", icon: <ApiOutlined />, label: <Link to="/platform">平台配置</Link> },
-  { key: "/settings", icon: <SettingOutlined />, label: <Link to="/settings">系统设置</Link> },
-];
+  { key: "/", icon: <DashboardOutlined />, labelKey: "menu.overview" },
+  { key: "/nodes", icon: <ClusterOutlined />, labelKey: "menu.nodes" },
+  { key: "/skus", icon: <TagsOutlined />, labelKey: "menu.skus" },
+  { key: "/images", icon: <CloudDownloadOutlined />, labelKey: "menu.images" },
+  { key: "/tenants", icon: <TeamOutlined />, labelKey: "menu.tenants" },
+  { key: "/finance", icon: <PayCircleOutlined />, labelKey: "menu.finance" },
+  { key: "/audit", icon: <AuditOutlined />, labelKey: "menu.audit" },
+  { key: "/platform", icon: <ApiOutlined />, labelKey: "menu.platform" },
+  { key: "/settings", icon: <SettingOutlined />, labelKey: "menu.settings" },
+] as const;
 
-const ROLE_LABEL: Record<string, string> = {
-  admin: "超级管理员",
-  ops: "运维",
-  finance: "财务",
-  readonly: "只读",
-};
+const ROLE_LABEL = {
+  admin: "roles.admin",
+  ops: "roles.ops",
+  finance: "roles.finance",
+  readonly: "roles.readonly",
+} as const;
 
 function AlertBell() {
+  const { t } = useTranslation();
   const { data } = useAlerts({ refetchInterval: 30_000 });
   const alerts: AlertRow[] = data ?? [];
   const today = alerts.filter((a) => dayjs(a.created_at).isSame(dayjs(), "day"));
   return (
     <Popover
       placement="bottomRight"
-      title="告警流"
+      title={t("shell.alertsTitle")}
       content={
         <div style={{ width: 360, maxHeight: 400, overflow: "auto" }}>
-          {alerts.length === 0 && <Typography.Text type="secondary">暂无告警</Typography.Text>}
+          {alerts.length === 0 && <Typography.Text type="secondary">{t("shell.noAlerts")}</Typography.Text>}
           {alerts.slice(0, 20).map((a) => (
             <div
               key={a.id}
@@ -95,12 +98,17 @@ function AlertBell() {
 }
 
 function AppLayout() {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // 菜单按角色过滤(与后端逐端点权限对齐)
-  const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly"));
+  const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly")).map((m) => ({
+    key: m.key,
+    icon: m.icon,
+    label: <Link to={m.key}>{t(m.labelKey)}</Link>,
+  }));
   const selected = menuItems
     .map((m) => m.key)
     .filter((k) => (k === "/" ? pathname === "/" : pathname.startsWith(k)))
@@ -137,8 +145,9 @@ function AppLayout() {
             lineHeight: "56px",
           }}
         >
-          <Tag color={isProd ? "red" : "cyan"}>{isProd ? "生产环境" : "预发/开发"}</Tag>
+          <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
           <Space size={24}>
+            <LangSwitcher />
             <AlertBell />
             <Dropdown
               menu={{
@@ -146,7 +155,7 @@ function AppLayout() {
                   {
                     key: "logout",
                     icon: <LogoutOutlined />,
-                    label: "退出登录",
+                    label: t("shell.logout"),
                     onClick: () => {
                       authStore.getState().logout();
                       void navigate({ to: "/login" });
@@ -157,7 +166,12 @@ function AppLayout() {
             >
               <Space style={{ cursor: "pointer" }}>
                 <Typography.Text>{admin?.username ?? "-"}</Typography.Text>
-                <Tag>{ROLE_LABEL[admin?.role ?? ""] ?? admin?.role}</Tag>
+                <Tag>
+                  {(() => {
+                    const roleKey = metaOf(ROLE_LABEL, admin?.role ?? "");
+                    return roleKey ? t(roleKey) : admin?.role;
+                  })()}
+                </Tag>
               </Space>
             </Dropdown>
           </Space>

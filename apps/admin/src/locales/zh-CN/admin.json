@@ -1,0 +1,71 @@
+{
+  "app": {
+    "title": "SuperDL 管理控制台"
+  },
+  "audit": {
+    "actorAdmin": "管理员",
+    "actorAnonymous": "匿名",
+    "actorTypePlaceholder": "操作者类型",
+    "actorUser": "用户",
+    "colAction": "动作",
+    "colActor": "操作者",
+    "colResult": "结果",
+    "colTarget": "目标",
+    "colTime": "时间"
+  },
+  "common": {
+    "actionDone": "{{action}}已执行",
+    "actionFailed": "{{action}}失败",
+    "backOverview": "回总览",
+    "confirmExecute": "确认执行",
+    "next": "下一步",
+    "reasonLabel": "操作原因(必填,入审计)",
+    "reasonPlaceholder": "原因将写入审计日志",
+    "reasonRule": "请填写至少 2 个字的原因",
+    "requestFailed": "请求失败",
+    "retry": "重试",
+    "secondConfirm": "二次确认"
+  },
+  "errorPage": {
+    "title": "页面出错了",
+    "unknown": "发生未知错误"
+  },
+  "lang": {
+    "en": "English",
+    "zh": "中文"
+  },
+  "login": {
+    "failed": "登录失败",
+    "isolatedNote": "管理端账号体系与用户端完全隔离,由平台管理员分配。",
+    "password": "密码",
+    "submit": "登录",
+    "username": "用户名"
+  },
+  "menu": {
+    "audit": "审计日志",
+    "finance": "财务对账",
+    "images": "镜像与预热",
+    "nodes": "节点与 GPU",
+    "overview": "运营总览",
+    "platform": "平台配置",
+    "settings": "系统设置",
+    "skus": "SKU 与定价",
+    "tenants": "租户与实例"
+  },
+  "notFound": {
+    "title": "页面不存在"
+  },
+  "roles": {
+    "admin": "超级管理员",
+    "finance": "财务",
+    "ops": "运维",
+    "readonly": "只读"
+  },
+  "shell": {
+    "alertsTitle": "告警流",
+    "envDev": "预发/开发",
+    "envProd": "生产环境",
+    "logout": "退出登录",
+    "noAlerts": "暂无告警"
+  }
+}
