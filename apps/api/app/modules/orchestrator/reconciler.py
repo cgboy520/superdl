@@ -98,6 +98,7 @@ async def _reconcile_instances(
                         )
                         counts["to_running"] += 1
                     elif now_utc() - await _entered_status_at(session, instance) > timeout:
+                        first_boot = instance.status == sm_def.CREATING
                         await transition(
                             session,
                             instance,
@@ -109,6 +110,11 @@ async def _reconcile_instances(
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
                         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
+                        if first_boot:
+                            # creating 超时 = 这只盘从未承载过数据(且很可能正是它绑不上
+                            # 才超时的),回收掉不留孤儿 LV。starting 超时不能删 —— 那是
+                            # 一台停过机的实例,盘里有用户上一轮的数据。
+                            await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
                         counts["to_failed"] += 1
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)
 
@@ -151,6 +157,9 @@ async def _reconcile_instances(
                     )
                     await free_port(session, instance.id)
                     await detach_for_instance(session, instance.id)
+                    # 释放是实例盘唯一的销毁时点(用户复述实例名 + 勾选确认过)。
+                    # Pod 已确认消失,PVC 不会被 pvc-protection 挂住。
+                    await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
                     counts["to_released"] += 1
 
                 await session.commit()

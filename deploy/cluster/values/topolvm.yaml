@@ -1,9 +1,13 @@
-# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁时 blkdiscard(擦盘)
+# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁时 blkdiscard(擦盘)。
+# 实例盘 PVC 由平台自管生命周期(<instance-uuid>-root,只在释放/回收时删),
+# 不是 Pod 拥有的 ephemeral volume —— 否则关机删 Pod 会连盘一起抹掉。
+# reclaimPolicy 显式写死:依赖 chart 默认值意味着「用户数据会不会被擦」取决于上游默认值。
 storageClasses:
   - name: topolvm-provisioner
     storageClass:
       fsType: ext4
       isDefaultClass: false
+      reclaimPolicy: Delete
       volumeBindingMode: WaitForFirstConsumer
       allowVolumeExpansion: true
 lvmd:

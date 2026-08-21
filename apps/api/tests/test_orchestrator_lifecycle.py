@@ -171,6 +171,11 @@ class TestStopStartRestart:
         # 端口保留(关机不释放端口)
         port_before = (await get_instance(client, headers, uuid))["ssh_port"]
 
+        # 实例盘活过关机:关机=删 Pod,盘是平台自管生命周期的具名 PVC,不随 Pod 走。
+        # 曾经这里用的是 generic ephemeral volume(PVC 属主是 Pod),用户每点一次关机
+        # 盘就被 TopoLVM blkdiscard 抹掉一次
+        disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]
+
         resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
         assert resp.json()["status"] == "starting"
         await drain(sm)
@@ -179,6 +184,14 @@ class TestStopStartRestart:
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "running"
         assert data["ssh_port"] == port_before
+        assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
+
+    async def test_restart_keeps_instance_disk(self, client, sm, fake):
+        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]
+        await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        await drain(sm)
+        assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
 
     async def test_stop_requires_running(self, client, sm, fake):
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
@@ -217,6 +230,8 @@ class TestFailureModes:
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
         assert events[-1]["from_status"] == "running"
         assert events[-1]["to_status"] == "failed"
+        # 盘不动:pod_lost 是故障不是终结,用户释放前数据必须还在
+        assert (f"tenant-{user_id}", uuid) in fake.instance_disks
         # 端口已回收
         async with sm() as session:
             ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
@@ -250,6 +265,8 @@ class TestFailureModes:
         assert counts["to_failed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
         assert (f"tenant-{user_id}", uuid) not in fake.pods  # 已清理
+        # 首开就没起来 = 盘从未承载数据(且很可能正是它绑不上才超时),一并回收不留孤儿 LV
+        assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
         """验收:DB 无主的泄漏 Pod 被回收(泄漏=白送算力)。"""
@@ -266,11 +283,12 @@ class TestFailureModes:
 
 class TestRelease:
     async def test_release_flow_and_port_reuse(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await _provision_running(client, sm, fake)
         # 关机
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
+        assert (f"tenant-{user_id}", uuid) in fake.instance_disks  # 关机后盘还在
         port = (await get_instance(client, headers, uuid))["ssh_port"]
 
         # 释放
@@ -284,10 +302,11 @@ class TestRelease:
         instances = (await client.get("/api/v1/instances", headers=headers)).json()
         assert uuid not in [i["uuid"] for i in instances]
 
-        # 事件含擦盘标记
+        # 事件含擦盘标记,且盘真的被销毁了(释放是实例盘唯一的销毁时点)
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
         assert events[-1]["to_status"] == "released"
         assert events[-1]["event_metadata"]["disk_wipe"] == "blkdiscard"
+        assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
 
         # 端口回池并被下一实例复用
         _, _, _key2 = await create_user_with_key(client, "13900000031")

@@ -89,7 +89,15 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def delete_instance(self, namespace: str, name: str) -> None:
-        """删除该实例的全部对象。不存在则跳过。"""
+        """删除该实例的 Pod/Service/Ingress。**不动实例盘** —— 关机就是删 Pod,
+        盘必须活过关机(见 delete_instance_disk)。不存在则跳过。"""
+        ...
+
+    async def delete_instance_disk(self, namespace: str, name: str) -> None:
+        """删除该实例的实例盘 PVC。只允许在实例真正终结时调用(释放/回收,
+        以及从未跑起来过的 creating 超时);关机、重启、pod_lost 都不许调。
+        不存在则跳过;Pod 还在时 K8s 的 pvc-protection 会让删除挂起,
+        故调用点必须先确认 Pod 已消失。"""
         ...
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...

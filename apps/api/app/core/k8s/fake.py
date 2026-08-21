@@ -32,9 +32,13 @@ class FakeOrchestrator:
     )
     pods: dict[tuple[str, str], _FakePod] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
+    # 实例盘 PVC:(ns, name) -> 写入内容标记。独立于 Pod 生命周期 ——
+    # 关机删 Pod 不该动它,只有释放/回收才删。disk_token 用于断言「还是原来那块盘」。
+    instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
     # 统计(测试断言用)
     create_calls: int = 0
     delete_calls: int = 0
+    disk_delete_calls: int = 0
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
@@ -89,6 +93,8 @@ class FakeOrchestrator:
             raise RuntimeError("fake: create_instance failed (injected)")
         self.create_calls += 1
         key = (spec.namespace, spec.name)
+        # 实例盘已存在即复用(重新开机不重建盘);首次创建才落一个新 token
+        self.instance_disks.setdefault(key, f"lv-{spec.name}")
         if key in self.pods:
             return  # 幂等
         self.pods[key] = _FakePod(
@@ -97,7 +103,11 @@ class FakeOrchestrator:
 
     async def delete_instance(self, namespace: str, name: str) -> None:
         self.delete_calls += 1
-        self.pods.pop((namespace, name), None)
+        self.pods.pop((namespace, name), None)  # 注意:不碰 instance_disks
+
+    async def delete_instance_disk(self, namespace: str, name: str) -> None:
+        self.disk_delete_calls += 1
+        self.instance_disks.pop((namespace, name), None)
 
     async def get_status(self, namespace: str, name: str) -> PodStatus:
         pod = self.pods.get((namespace, name))

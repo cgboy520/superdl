@@ -47,6 +47,14 @@ TENANT_QUOTA = {"pods": "64", "services": "64", "persistentvolumeclaims": "128"}
 PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
 JUICEFS_PVC_NAME = "juicefs-shared"
 JUICEFS_STORAGE_CLASS = "juicefs-sc"
+# 实例盘 = 节点本地 NVMe LV。必须是平台自管生命周期的具名 PVC,不能用 generic ephemeral
+# volume —— 后者的 PVC 由 Pod 拥有(ownerReference + blockOwnerDeletion),而「关机」
+# 的实现就是删 Pod,盘会随第一次关机被 TopoLVM blkdiscard 抹掉。
+INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"
+
+
+def instance_disk_pvc_name(instance_name: str) -> str:
+    return f"{instance_name}-root"
 
 
 class _TimeoutApi:
@@ -201,9 +209,34 @@ class RealOrchestrator:
         await asyncio.to_thread(self._create_instance_sync, spec)
 
     def _create_instance_sync(self, spec: InstancePodSpec) -> None:
+        self._ensure_instance_disk_sync(spec)
         self._create_pod_sync(spec)
         self._create_service_sync(spec)
         self._create_ingress_sync(spec)
+
+    def _ensure_instance_disk_sync(self, spec: InstancePodSpec) -> None:
+        """实例盘 PVC。已存在即跳过 —— 重新开机必须复用同一只盘(用户的 conda 环境、
+        代码、checkpoint 都在里面),绝不按新容量重建。TopoLVM 是节点本地卷,
+        PV 带 node affinity,首次绑定后调度器会自动把后续 Pod 拉回原节点。"""
+        pvc = client.V1PersistentVolumeClaim(
+            metadata=client.V1ObjectMeta(
+                name=instance_disk_pvc_name(spec.name),
+                namespace=spec.namespace,
+                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            ),
+            spec=client.V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteOnce"],
+                storage_class_name=INSTANCE_DISK_STORAGE_CLASS,
+                resources=client.V1VolumeResourceRequirements(
+                    requests={"storage": f"{spec.disk_gb}Gi"}
+                ),
+            ),
+        )
+        try:
+            self.core.create_namespaced_persistent_volume_claim(spec.namespace, pvc)
+        except client.ApiException as exc:
+            if not _is_conflict(exc):
+                raise
 
     def _create_pod_sync(self, spec: InstancePodSpec) -> None:
         resources = {"cpu": str(spec.vcpu), "memory": f"{spec.mem_gb}Gi", **spec.gpu_resources}
@@ -212,16 +245,8 @@ class RealOrchestrator:
         volumes: list[client.V1Volume] = [
             client.V1Volume(
                 name="instance-disk",
-                ephemeral=client.V1EphemeralVolumeSource(
-                    volume_claim_template=client.V1PersistentVolumeClaimTemplate(
-                        spec=client.V1PersistentVolumeClaimSpec(
-                            access_modes=["ReadWriteOnce"],
-                            storage_class_name="topolvm-provisioner",
-                            resources=client.V1VolumeResourceRequirements(
-                                requests={"storage": f"{spec.disk_gb}Gi"}
-                            ),
-                        )
-                    )
+                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=instance_disk_pvc_name(spec.name)
                 ),
             )
         ]
@@ -365,6 +390,18 @@ class RealOrchestrator:
             except client.ApiException as exc:
                 if not _is_not_found(exc):
                     raise
+
+    async def delete_instance_disk(self, namespace: str, name: str) -> None:
+        await asyncio.to_thread(self._delete_instance_disk_sync, namespace, name)
+
+    def _delete_instance_disk_sync(self, namespace: str, name: str) -> None:
+        try:
+            self.core.delete_namespaced_persistent_volume_claim(
+                instance_disk_pvc_name(name), namespace
+            )
+        except client.ApiException as exc:
+            if not _is_not_found(exc):
+                raise
 
     async def get_status(self, namespace: str, name: str) -> PodStatus:
         return await asyncio.to_thread(self._get_status_sync, namespace, name)
