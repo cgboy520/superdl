@@ -283,3 +283,19 @@ async def test_derive_node_distro_chain(sm, fake):
             await service.derive_node_distro(session, {"cluster_agent_version": "v1.36.2"})
             == "rke2"
         )
+
+
+def test_render_registries_yaml():
+    """验收:server_url → 含 NodePort endpoint;覆盖值优先;未配置返回空。"""
+    from app.modules.nodes.service import render_registries_yaml
+
+    out = render_registries_yaml({"cluster_server_url": "https://10.0.0.1:9345"})
+    assert "http://10.0.0.1:30500" in out and '"*": {}' in out
+    assert "registry.superdl.local" in out
+    override = render_registries_yaml(
+        {"cluster_server_url": "https://10.0.0.1:9345", "node_registries_yaml": "mirrors: {}"}
+    )
+    assert override == "mirrors: {}"
+    assert render_registries_yaml({}) == ""
+    v6 = render_registries_yaml({"cluster_server_url": "https://[fd00::1]:9345"})
+    assert "http://[fd00::1]:30500" in v6

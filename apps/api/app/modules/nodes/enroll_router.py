@@ -85,7 +85,7 @@ async def enroll_bootstrap(
         rke2_join_token=cfg["cluster_join_token"],
         driver_version=cfg["node_driver_version"],
         nvme_devices=enrollment.nvme_devices or [],
-        registries_yaml=cfg["node_registries_yaml"],
+        registries_yaml=service.render_registries_yaml(cfg),
         install_mirror=cfg["node_install_mirror"] or "cn",
     )
 

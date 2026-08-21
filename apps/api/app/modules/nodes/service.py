@@ -13,6 +13,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import status as http_status
 from sqlalchemy import select
@@ -420,6 +421,35 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
 
 async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
     return await session.get(ClusterStatus, 1)
+
+
+REGISTRY_NODEPORT = 30500  # 集群内 registry 的 NodePort(deploy/cluster/registry/)
+
+
+def render_registries_yaml(cfg: dict[str, str]) -> str:
+    """平台生成节点 registries.yaml:server_url 解析 host + NodePort 常量(WP27)。
+
+    node_registries_yaml 有值 = 高级覆盖优先;server_url 未配置返回空串(脚本跳过)。
+    与 deploy/cluster/rke2/registries.yaml 模板同源:mirrors "*" 声明 Spegel P2P,
+    registry.superdl.local 指到集群内 registry。
+    """
+    override = (cfg.get("node_registries_yaml") or "").strip()
+    if override:
+        return override
+    server_url = (cfg.get("cluster_server_url") or "").strip()
+    if not server_url:
+        return ""
+    host = urlsplit(server_url).hostname or ""
+    if not host:
+        return ""
+    endpoint_host = f"[{host}]" if ":" in host else host  # IPv6 字面量需括号
+    return (
+        "mirrors:\n"
+        '  "*": {}\n'
+        "  registry.superdl.local:\n"
+        "    endpoint:\n"
+        f'      - "http://{endpoint_host}:{REGISTRY_NODEPORT}"\n'
+    )
 
 
 async def derive_node_distro(session: AsyncSession, cfg: dict[str, str]) -> str:

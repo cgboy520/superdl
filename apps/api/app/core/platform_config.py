@@ -161,7 +161,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "cluster",
         "text",
         max_len=8192,
-        hint="节点 /etc/rancher/rke2/registries.yaml 内容(镜像缓存 mirror;留空则脚本跳过)",
+        hint="高级覆盖:留空=平台按 server 地址自动生成(Spegel P2P + 内网 registry mirror)",
     ),
     "node_install_mirror": SettingSpec(
         "cluster",
