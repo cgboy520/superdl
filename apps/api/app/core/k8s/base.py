@@ -29,6 +29,7 @@ class InstancePodSpec:
     node_selector: dict[str, str] = field(default_factory=dict)  # 池标签
     data_disk_subpath: str | None = None  # JuiceFS 子路径(挂 /root/data)
     scheduler_name: str | None = None  # 指定调度器(HAMi 池 = hami-scheduler)
+    annotations: dict[str, str] = field(default_factory=dict)  # 如 HAMi use-gputype
 
 
 @dataclass(frozen=True)

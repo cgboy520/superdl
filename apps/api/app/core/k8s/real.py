@@ -214,6 +214,7 @@ class RealOrchestrator:
                 name=spec.name,
                 namespace=spec.namespace,
                 labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+                annotations=spec.annotations or None,
             ),
             spec=client.V1PodSpec(
                 runtime_class_name=spec.runtime_class,

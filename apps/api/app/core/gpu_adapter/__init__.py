@@ -10,10 +10,14 @@
 Kata 与 HAMi 永不混布同一节点池。
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.k8s.base import GPU_MODEL_NODE_LABEL
+
 POOL_NODE_LABEL = "superdl.io/pool"
+# HAMi 型号白名单 annotation,值须为 HAMi 登记的原文串(nvidia-smi 名),canonical 不同构
+HAMI_USE_GPUTYPE_ANNOTATION = "nvidia.com/use-gputype"
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,7 @@ class GpuRequest:
     node_selector: dict[str, str]
     # HAMi 池显式走 hami-scheduler(不依赖 mutating webhook,其 failurePolicy=Ignore)
     scheduler_name: str | None = None
+    annotations: dict[str, str] = field(default_factory=dict)  # pod metadata.annotations 增量
 
 
 def build_gpu_request(
@@ -34,8 +39,14 @@ def build_gpu_request(
     vram_gb: int,
     mig_profile: str | None,
     pool_label: str,
+    gpu_model: str | None = None,
+    hami_gputype: str | None = None,
 ) -> GpuRequest:
+    """gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全档位钉型号;
+    hami_gputype 为原文串,仅共享档注 use-gputype annotation(混卡节点兜底,默认关)。"""
     node_selector = {POOL_NODE_LABEL: pool_label}
+    if gpu_model:
+        node_selector[GPU_MODEL_NODE_LABEL] = gpu_model
     if tier == "dedicated":
         return GpuRequest(
             resources={"nvidia.com/gpu": str(gpu_count)},
@@ -64,12 +75,15 @@ def build_gpu_request(
             host_users=False,  # 共享池必须 userns 加固
             node_selector=node_selector,
             scheduler_name="hami-scheduler",  # 显式指定,不赖 HAMi mutating webhook(fail-open)
+            annotations={HAMI_USE_GPUTYPE_ANNOTATION: hami_gputype} if hami_gputype else {},
         )
     raise ValueError(f"unknown tier: {tier}")
 
 
-def spec_to_gpu_request(spec: dict[str, Any], gpu_count: int) -> GpuRequest:
-    """从实例的 SKU 快照构造。"""
+def spec_to_gpu_request(
+    spec: dict[str, Any], gpu_count: int, *, hami_use_gputype: bool = False
+) -> GpuRequest:
+    """从实例的 SKU 快照构造。存量快照无 gpu_model_selector 键 → 天然不加型号约束。"""
     return build_gpu_request(
         tier=spec["tier"],
         gpu_count=gpu_count,
@@ -77,4 +91,6 @@ def spec_to_gpu_request(spec: dict[str, Any], gpu_count: int) -> GpuRequest:
         vram_gb=spec["vram_gb"],
         mig_profile=spec.get("mig_profile"),
         pool_label=spec["pool_label"],
+        gpu_model=spec.get("gpu_model_selector"),
+        hami_gputype=spec.get("gpu_model") if hami_use_gputype else None,
     )

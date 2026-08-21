@@ -83,6 +83,9 @@ class Settings(BaseSettings):
 
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
+    # 共享档 Pod 注 HAMi use-gputype annotation(注 SKU 原文串)。默认关:
+    # 单一型号节点池用 nodeSelector 已足够;混卡节点才需要,且值语义待实机核定
+    hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
     # 租户 Jupyter Ingress 的 IngressClass。必须显式指定:IngressClass 未标 default 时,
     # 不写此字段则无控制器接管 Ingress。

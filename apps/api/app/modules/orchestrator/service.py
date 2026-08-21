@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import spec_to_gpu_request
+from app.core.gpu_models import canonical_gpu_model
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
@@ -100,6 +101,8 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
         "disk_gb": sku.disk_gb,
         "pool_label": sku.pool_label,
         "cuda_max": sku.cuda_max,
+        # canonical 型号 → Pod nodeSelector(未识别型号存 None = 不钉);存量快照无此键
+        "gpu_model_selector": canonical_gpu_model(sku.gpu_model),
     }
 
 
@@ -391,7 +394,9 @@ async def free_port(session: AsyncSession, instance_id: int) -> None:
 
 def build_pod_spec(instance: Instance) -> InstancePodSpec:
     settings = get_settings()
-    gpu_req = spec_to_gpu_request(instance.spec, instance.gpu_count)
+    gpu_req = spec_to_gpu_request(
+        instance.spec, instance.gpu_count, hami_use_gputype=settings.hami_use_gputype
+    )
     if instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
     return InstancePodSpec(
@@ -411,6 +416,7 @@ def build_pod_spec(instance: Instance) -> InstancePodSpec:
         node_selector=gpu_req.node_selector,
         data_disk_subpath=f"disk-{instance.data_disk_id}" if instance.data_disk_id else None,
         scheduler_name=gpu_req.scheduler_name,
+        annotations=gpu_req.annotations,
     )
 
 
