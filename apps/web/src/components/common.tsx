@@ -50,6 +50,7 @@ export function TierTag({ tier }: { tier: string }) {
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {
   const { message } = App.useApp();
+  const { t } = useTranslation(["web", "shared"]);
   const [copied, setCopied] = useState(false);
   return (
     <Button
@@ -58,7 +59,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
       onClick={async () => {
         await navigator.clipboard.writeText(text);
         setCopied(true);
-        message.success("已复制");
+        message.success(t("common.copied"));
         setTimeout(() => setCopied(false), 1500);
       }}
     >

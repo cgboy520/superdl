@@ -578,6 +578,7 @@ export default interface Resources {
       "validation": "参数校验失败"
     },
     "disks": {
+      "countQuota": "数据盘数量已达上限({{max}} 块),请删除不用的盘或联系客服提额",
       "expandNeedsActive": "仅正常状态的数据盘可以扩容",
       "inUseDelete": "数据盘挂载中,请先释放对应实例",
       "mountedElsewhere": "数据盘已挂载到其他实例",
@@ -587,6 +588,7 @@ export default interface Resources {
       "sizeRange": "容量须在 {{min}}~{{max}} GB 之间"
     },
     "metering": {
+      "badNodeName": "节点名不合法",
       "badRange": "range 须为 1h/6h/24h",
       "unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)"
     },
@@ -605,6 +607,8 @@ export default interface Resources {
       "frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
       "gpuCountRange": "GPU 数量须在 1~{{max}} 之间",
       "gpuQuota": "GPU 总数将超过上限({{max}} 卡),请释放后再创建或联系客服提额",
+      "imageRefInvalid": "镜像地址格式不正确,示例:registry.example.com/pytorch:2.9",
+      "imageRefNotAllowed": "该镜像仓库未被允许,请使用平台镜像或以下仓库:{{registries}}",
       "instanceQuota": "实例数已达上限({{max}} 台),请释放后再创建或联系客服提额",
       "invalidTransition": "实例当前状态({{from}})不允许该操作",
       "releaseNeedsStopped": "关机后才能释放实例",

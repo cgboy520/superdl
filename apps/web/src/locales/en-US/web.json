@@ -57,6 +57,9 @@
   "common": {
     "backConsole": "Back to console",
     "backHome": "Back to home",
+    "balance": "Balance",
+    "copied": "Copied",
+    "costDetail": "Cost breakdown",
     "dailyApprox": "≈CN¥{{amount}}/day",
     "enterConsole": "Open console",
     "gbMonthPrice": "CN¥{{price}}/GB·mo",

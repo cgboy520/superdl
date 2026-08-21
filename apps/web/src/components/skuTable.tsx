@@ -69,6 +69,10 @@ export function skuColumns(
     },
     {
       title: t("sku.colPrice"),
+      // 钉右:窄屏(≤1024)下表格横滚,价格是选规格的第一决策依据,不能被滚出视口
+      fixed: "right" as const,
+      align: "right" as const,
+      width: 150,
       render: (_: unknown, s: SkuMarketOut) => (
         <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
           {opts.fmt.formatHourlyPrice(s.price_hourly)}

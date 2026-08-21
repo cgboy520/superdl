@@ -23,14 +23,15 @@ export const Route = createFileRoute("/_console")({
   component: ConsoleLayout,
 });
 
+// label 走各页自己的 title 键(同一份文案两处用,英文模式主导航不会混语言)
 const NAV = [
-  { key: "/dashboard", icon: <DashboardOutlined />, label: "概览" },
-  { key: "/market", icon: <AppstoreOutlined />, label: "算力市场" },
-  { key: "/instances", icon: <CloudServerOutlined />, label: "容器实例" },
-  { key: "/storage", icon: <HddOutlined />, label: "存储" },
-  { key: "/billing", icon: <WalletOutlined />, label: "费用中心" },
-  { key: "/settings", icon: <SettingOutlined />, label: "账户设置" },
-];
+  { key: "/dashboard", icon: <DashboardOutlined />, labelKey: "dashboard.title" },
+  { key: "/market", icon: <AppstoreOutlined />, labelKey: "market.title" },
+  { key: "/instances", icon: <CloudServerOutlined />, labelKey: "instances.title" },
+  { key: "/storage", icon: <HddOutlined />, labelKey: "storage.title" },
+  { key: "/billing", icon: <WalletOutlined />, labelKey: "billing.title" },
+  { key: "/settings", icon: <SettingOutlined />, labelKey: "settings.title" },
+] as const;
 
 function ConsoleLayout() {
   const { t } = useTranslation();
@@ -57,7 +58,7 @@ function ConsoleLayout() {
           <Menu
             mode="inline"
             selectedKeys={[selected]}
-            items={NAV}
+            items={NAV.map((n) => ({ key: n.key, icon: n.icon, label: t(n.labelKey) }))}
             onClick={({ key }) => void navigate({ to: key })}
             style={{ borderInlineEnd: "none", paddingTop: 8 }}
           />

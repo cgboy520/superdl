@@ -7,6 +7,8 @@ import { brand, colorPrimary } from "@superdl/ui";
 import { Popover, Space, theme, Typography } from "antd";
 import type { ReactNode } from "react";
 
+import { useTranslation } from "react-i18next";
+
 import { useFormat } from "../lib/format";
 
 export interface CheckoutItem {
@@ -34,6 +36,7 @@ export function CheckoutBar({
   actions: ReactNode;
 }) {
   const { token } = theme.useToken();
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   return (
     <div
@@ -78,13 +81,13 @@ export function CheckoutBar({
           </div>
         ))}
         {detail && (
-          <Popover content={detail} title="费用明细" placement="topLeft">
-            <Typography.Link>费用明细</Typography.Link>
+          <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
+            <Typography.Link>{t("common.costDetail")}</Typography.Link>
           </Popover>
         )}
         {balance !== undefined && (
           <Typography.Text type="secondary">
-            余额 <span style={{ fontWeight: 600 }}>{formatMoney(balance)}</span>
+            {t("common.balance")} <span style={{ fontWeight: 600 }}>{formatMoney(balance)}</span>
           </Typography.Text>
         )}
       </Space>
