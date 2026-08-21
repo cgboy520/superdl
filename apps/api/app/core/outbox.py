@@ -8,6 +8,7 @@ PostgreSQL 事务提交;worker 异步领取执行,失败指数退避,超限进 d
 崩溃遗留的 running 行由 reaper 按 locked_at 超时打回 pending。
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -20,7 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 from app.core.logging import get_logger
-from app.core.metrics import OUTBOX_DEAD_TOTAL
+from app.core.metrics import OUTBOX_DEAD_TOTAL, OUTBOX_TASK_TIMEOUT_TOTAL
 from app.core.timeutil import now_utc
 
 logger = get_logger(__name__)
@@ -29,6 +30,10 @@ MAX_RETRIES = 5
 BACKOFF_BASE_SECONDS = 10
 BACKOFF_MAX_SECONDS = 600  # 退避上限,防指数爆到「下次重试在几天后」
 RUNNING_TIMEOUT = timedelta(minutes=10)  # reaper:running 超时打回 pending
+# 单个 handler 的执行上限。队列是全局串行 FIFO 且单副本:一个挂死的调用会把所有人的
+# 关机/释放请求一起排在后面,而 reaper 要等 RUNNING_TIMEOUT 才敢打回。取同一个数量级,
+# 让「队头卡死」变成一次可重试的失败,而不是无限期占住队头。
+TASK_TIMEOUT_SECONDS = RUNNING_TIMEOUT.total_seconds()
 
 
 @dataclass(frozen=True)
@@ -133,8 +138,12 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
         if handler is None:
             raise RuntimeError(f"no handler for outbox task type: {task.type}")
         async with sm() as session:
-            await handler(session, task)
+            await asyncio.wait_for(handler(session, task), timeout=TASK_TIMEOUT_SECONDS)
             await session.commit()
+    except TimeoutError as exc:
+        error = f"TimeoutError: handler exceeded {TASK_TIMEOUT_SECONDS:.0f}s"
+        OUTBOX_TASK_TIMEOUT_TOTAL.labels(task_type=task.type).inc()
+        logger.error("outbox_task_timeout", task_id=task.id, task_type=task.type, error=str(exc))
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         logger.exception("outbox_task_failed", task_id=task.id, task_type=task.type)

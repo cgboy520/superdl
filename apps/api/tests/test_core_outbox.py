@@ -4,7 +4,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import outbox
-from app.core.outbox import OutboxTask, drain, enqueue, process_one, reap_stuck_running
+from app.core.outbox import (
+    OutboxTask,
+    drain,
+    enqueue,
+    outbox_handler,
+    process_one,
+    reap_stuck_running,
+)
 from app.core.timeutil import now_utc
 
 
@@ -130,3 +137,32 @@ class TestRetryPolicy:
             for i in range(wipe.max_retries)
         )
         assert total > 1800
+
+
+class TestTaskTimeout:
+    async def test_hung_handler_is_timed_out_and_retried(self, sm, monkeypatch):
+        """队列是全局串行 FIFO 且单副本:一个挂死的调用会把所有人的关机请求排在后面。
+
+        超时把「队头卡死」变成一次可重试的失败,而不是无限期占住队头等 reaper 兜底。
+        """
+        import asyncio
+
+        from app.core import outbox as outbox_mod
+
+        monkeypatch.setattr(outbox_mod, "TASK_TIMEOUT_SECONDS", 0.05)
+
+        @outbox_handler("test.hang")
+        async def _hang(session, task):
+            await asyncio.sleep(5)
+
+        async with sm() as session:
+            enqueue(session, "test.hang", {})
+            await session.commit()
+        assert await process_one(sm) is True
+        async with sm() as session:
+            row = (
+                await session.execute(select(OutboxTask).where(OutboxTask.type == "test.hang"))
+            ).scalar_one()
+        assert row.status == "pending"  # 退避重试,不是 done
+        assert row.retries == 1
+        assert "TimeoutError" in (row.last_error or "")

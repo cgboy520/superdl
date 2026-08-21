@@ -21,8 +21,16 @@ from app.core.timeutil import now_utc
 logger = get_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 1.0
+HEARTBEAT_INTERVAL_SECONDS = 10.0
 
-# K8s liveness:exec 探针检查该文件 mtime(循环每轮触碰)
+# K8s liveness:exec 探针检查该文件 mtime。心跳由**独立协程**触碰,不挂在 outbox 循环上 ——
+# 挂在循环开头意味着「探活」实际探的是「当前任务已经跑完了没有」:handle_create 一次要打
+# 7 个 K8s 请求,API server 处于黑洞态(TCP 连得上但不回包)时每次吃满 35s 读超时,
+# 一轮就能超过探针的 120s + 3×30s 阈值 —— worker 被 SIGKILL,而它其实活得好好的,
+# 只是在等一个不会回来的响应。反复重启还会进 CrashLoopBackOff,把结算、巡检、查单这些
+# 定时任务一起停掉;同一份心跳还喂着 WorkerDown 告警,于是长任务期间必然误报。
+# K8s 调用都在 asyncio.to_thread 里,事件循环本身不会被阻塞,心跳协程照常跑得动;
+# 真正的进程僵死(事件循环卡住)仍然探得出来 —— 那才是这个探针该探的东西。
 HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
 
 # /metrics 端口(结算/死信/reconciler 指标都在 worker 进程内,必须单独暴露被抓取;
@@ -38,11 +46,18 @@ def _touch_heartbeat() -> None:
         HEARTBEAT_FILE.write_text(now_utc().isoformat())
 
 
+async def heartbeat_loop() -> None:
+    """独立心跳:只证明事件循环还活着,与当前任务耗时无关。"""
+    while not _stop.is_set():
+        _touch_heartbeat()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(_stop.wait(), timeout=HEARTBEAT_INTERVAL_SECONDS)
+
+
 async def outbox_loop(worker_id: str) -> None:
     sm = get_sessionmaker()
     logger.info("outbox_worker_started", worker_id=worker_id)
     while not _stop.is_set():
-        _touch_heartbeat()
         try:
             processed = await process_one(sm, worker_id)
         except Exception:
@@ -247,9 +262,15 @@ async def main() -> None:
     scheduler = AsyncIOScheduler(timezone="UTC")
     register_scheduled_jobs(scheduler)
     scheduler.start()
+    _touch_heartbeat()  # 起步先落一次,免得探针在首个 interval 之前就判死
+    heartbeat = asyncio.create_task(heartbeat_loop())
     try:
         await outbox_loop(worker_id)
     finally:
+        _stop.set()
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
         scheduler.shutdown(wait=False)
         logger.info("worker_shutdown_complete", worker_id=worker_id)
 

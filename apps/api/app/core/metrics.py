@@ -16,6 +16,11 @@ SETTLEMENT_LAG = Gauge(
     "结算水位线落后当前的窗口数(hourly 计小时 / daily_disk 计日;>1 即有窗口未追平)",
     ["kind"],
 )
+OUTBOX_TASK_TIMEOUT_TOTAL = Counter(
+    "superdl_outbox_task_timeout_total",
+    "超过执行上限被中断的 outbox 任务数(队头卡死;心跳与任务解耦后这是唯一的卡死信号)",
+    ["task_type"],
+)
 FUND_RECONCILE_MISMATCH_TOTAL = Counter(
     "superdl_fund_reconcile_mismatch_total",
     "资金账实核对发现的差异数(wallet_ledger:余额≠流水累计;bill_consume:出账≠消费流水)",

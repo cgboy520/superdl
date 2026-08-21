@@ -165,6 +165,10 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_payment_closed_order_rescued_total[1h]) > 0
             labels: {severity: warning}
             annotations: {summary: "关单后回调自动入账发生:本地关单早于渠道过期,核对订单 TTL 与渠道 time_expire 是否同步"}
+          - alert: OutboxTaskTimeout
+            expr: increase(superdl_outbox_task_timeout_total[30m]) > 0
+            labels: {severity: warning}
+            annotations: {summary: "outbox 有任务被执行超时中断:队列是全局串行的,队头卡死会让所有人的关机/释放请求一起排队"}
           # 以心跳 Gauge 判定存活:带 label 的 Counter 首次 inc 前无序列,不能用 absent
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)
