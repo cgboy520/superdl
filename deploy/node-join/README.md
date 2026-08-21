@@ -29,5 +29,4 @@ shellcheck apps/api/app/modules/nodes/assets/node-join.sh
 bats deploy/node-join/tests          # PATH shim 伪造系统命令,不碰真实系统
 ```
 覆盖:参数错误 / 全流程免重启 / 幂等重跑 / 重启断点(oneshot+token 0600) / kata GRUB / 重启循环保护。
-
-实机验证(CI 不可覆盖,见 `docs/specs/WP23-node-join.md`):三池全流程、kata 重启续跑、真实 join。
+实机验证项见 `deploy/cluster/runbooks/cluster-validation.md`;节点域说明见 `docs/reference/nodes.md`。

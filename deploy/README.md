@@ -6,7 +6,7 @@
 | `ansible/` | 装机基线(存量机器批量):NVIDIA 驱动 / 内核参数(IOMMU、userns)/ NVMe VG / registries.yaml 分发。新节点首选管理端「添加节点」一键加入,本目录用于存量机器批量处理 |
 | `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM),full/light 双档与版本锁定见 `cluster/README.md` |
 
-实机侧事项见 development-plan §7.3 人工事项清单;平台代码不依赖真实集群 —— K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
+平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
 
 ## 生产发布流程(deploy/app/k8s)
 

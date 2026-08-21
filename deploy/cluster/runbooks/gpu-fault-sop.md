@@ -1,6 +1,4 @@
-# GPU 故障 SOP(development-plan §1.3-4;演练=人工事项 #9)
-
-目标:分钟级止损 + 客户补偿透明。
+# GPU 故障 SOP
 
 ## 触发
 Alertmanager `GPUXidCriticalError`(Xid 48/63/64/79/94/95)→ 平台告警流 + 值班短信。
@@ -16,6 +14,6 @@ Alertmanager `GPUXidCriticalError`(Xid 48/63/64/79/94/95)→ 平台告警流 + �
    第二管理员复核后生效,ledger 备注「GPU 故障补偿」
 6. **修复回归**:硬件处理后 `kubectl uncordon <node>`;观察 24h 无复发关闭事件
 
-## 演练(上线前必做)
+## 演练
 - 模拟:`nvidia-smi drain`/拔卡 或 amtool 注入 GPUXidCriticalError
 - 验收:cordon→通知→停费→补偿全链路 ≤15 分钟,事件与审计完整可回放

@@ -1,14 +1,14 @@
 # PostgreSQL 备份与恢复 Runbook
 
-**备份是上线硬闸门**(钱包余额与 `balance_ledger` 都在此库),恢复演练每季度一次。
+钱包余额与 `balance_ledger` 都在此库,恢复演练每季度一次。
 
-## 现状分层
+## 备份分层
 
-| 层 | 手段 | RPO | 状态 |
-|---|---|---|---|
-| 最低保障 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → 对象存储 | 24h | 清单已备,配 Secret 即用 |
-| 生产目标 | pgBackRest / WAL-G 连续归档(PITR)或云 RDS 自动备份 | 分钟级 | 上线前二选一落地 |
-| 集群元数据 | RKE2 etcd 快照(每 6h,留 12 份,`rke2/server-config.yaml`) | 6h | 已配置 |
+| 层 | 手段 | RPO |
+|---|---|---|
+| 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → 对象存储 | 24h |
+| 连续归档 | pgBackRest / WAL-G(PITR)或云 RDS 自动备份 | 分钟级 |
+| 集群元数据 | RKE2 etcd 快照(每 6h,留 12 份,`rke2/server-config.yaml`) | 6h |
 
 对账兜底:`balance_ledger` 是追加式流水且每行带 `balance_after` 快照,恢复后可用
 `GET /api/admin/v1/reconciliation` 与流水链校验资金一致性。

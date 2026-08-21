@@ -1,6 +1,6 @@
 # 集群部署:full / light 两条路径
 
-版本锁定(development-plan §3.3):RKE2/k3s **v1.36** · Cilium 1.20 · GPU Operator v26.3 ·
+版本锁定:RKE2/k3s **v1.36** · Cilium 1.20 · GPU Operator v26.3 ·
 HAMi v2.9 · kube-prometheus-stack 88.x · JuiceFS CSI(1.4.x LTS)· TopoLVM 17.x · Kata 4.0。
 所有 chart 钉版本,升级走变更评审。
 
@@ -39,7 +39,7 @@ kubectl -n monitoring create secret generic grafana-admin \
    `kubectl apply -f kata/kata-runtimeclass.yaml`
 6. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入
    (池标签/驱动/registries 全自动;无需再 SSH 回 server)。
-7. 验证:`runbooks/w1-validation.md`;监控核对:`runbooks/wp25-observability-verification.md`。
+7. 验证:`runbooks/cluster-validation.md`。
 
 ## 路径 B:light(k3s 单机/小规模)
 
@@ -61,7 +61,3 @@ kubectl -n monitoring create secret generic grafana-admin \
 5. 能力边界:仅共享档 SKU;dedicated/mig 上架会被硬校验拦下;管理端「集群」页
    常驻「轻量集群」黄条与组件体检(含修复命令)。
 
-## 回退预案
-
-RKE2 v1.36 兼容验证不过 → 退 1.35(stable),kubelet 开
-`UserNamespacesSupport=true` feature-gate(beta)保留 userns 加固。
