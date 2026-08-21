@@ -23,6 +23,7 @@ import {
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   type AdjustmentRow,
@@ -39,6 +40,7 @@ import {
   useReviewAdjustment,
   useVerifyOrder,
 } from "../../api";
+import { useApiErrorText } from "../../lib/apiError";
 import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
@@ -48,6 +50,7 @@ export const Route = createFileRoute("/_app/finance")({
 });
 
 function ReconciliationCard() {
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report } = useReconciliation(day.format("YYYY-MM-DD"));
@@ -55,15 +58,15 @@ function ReconciliationCard() {
 
   return (
     <Card
-      title="日对账 · 事件计费 vs 指标估算"
+      title={t("finance.reconTitle")}
       extra={<DatePicker value={day} onChange={(d) => d && setDay(d)} allowClear={false} />}
     >
       <Row gutter={16}>
         <Col span={6}>
-          <Statistic title="事件计费合计(计费主依据)" value={formatMoney(report?.billed_total)} />
+          <Statistic title={t("finance.billedTotal")} value={formatMoney(report?.billed_total)} />
         </Col>
         <Col span={6}>
-          <Statistic title="指标估算合计(对账参考)" value={formatMoney(report?.estimated_total)} />
+          <Statistic title={t("finance.estimatedTotal")} value={formatMoney(report?.estimated_total)} />
         </Col>
         <Col span={6}>
           <Statistic
@@ -82,9 +85,9 @@ function ReconciliationCard() {
           dataSource={report.outliers}
           pagination={false}
           columns={[
-            { title: "实例 ID", dataIndex: "instance_id" },
-            { title: "事件计费", dataIndex: "billed", render: (v: string) => formatMoney(v) },
-            { title: "指标估算", dataIndex: "estimated", render: (v: string) => formatMoney(v) },
+            { title: t("finance.colInstanceId"), dataIndex: "instance_id" },
+            { title: t("finance.colBilled"), dataIndex: "billed", render: (v: string) => formatMoney(v) },
+            { title: t("finance.colEstimated"), dataIndex: "estimated", render: (v: string) => formatMoney(v) },
             {
               title: "diff%",
               dataIndex: "diff_pct",
@@ -98,6 +101,7 @@ function ReconciliationCard() {
 }
 
 function OrdersTab() {
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const [status, setStatus] = useState<string | undefined>();
   const { data } = useOrders(status ? { status } : undefined);
@@ -106,7 +110,7 @@ function OrdersTab() {
     <>
       <Select
         allowClear
-        placeholder="状态过滤"
+        placeholder={t("tenants.statusFilter")}
         style={{ width: 160, marginBottom: 12 }}
         value={status}
         onChange={setStatus}
@@ -117,12 +121,12 @@ function OrdersTab() {
         rowKey="order_no"
         dataSource={orders}
         columns={[
-          { title: "订单号", dataIndex: "order_no" },
-          { title: "租户", dataIndex: "user_id", width: 80 },
-          { title: "金额", dataIndex: "amount", render: (v: string) => formatMoney(v) },
-          { title: "渠道", dataIndex: "channel" },
+          { title: t("finance.colOrderNo"), dataIndex: "order_no" },
+          { title: t("finance.colTenant"), dataIndex: "user_id", width: 80 },
+          { title: t("finance.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
+          { title: t("finance.colChannel"), dataIndex: "channel" },
           {
-            title: "状态",
+            title: t("finance.colStatus"),
             dataIndex: "status",
             render: (v: string) => (
               <Tag color={{ paid: "green", pending: "blue", closed: "default", failed: "red" }[v]}>
@@ -130,7 +134,7 @@ function OrdersTab() {
               </Tag>
             ),
           },
-          { title: "创建时间", dataIndex: "created_at", render: formatDateTime },
+          { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
     </>
@@ -138,6 +142,8 @@ function OrdersTab() {
 }
 
 function AdjustmentsTab() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { formatMoney } = useFormat();
   const { message } = App.useApp();
   const role = useAdminRole();
@@ -153,41 +159,41 @@ function AdjustmentsTab() {
   const create = useCreateAdjustment({
     mutation: {
       onSuccess: () => {
-        message.success("调账单已发起,等待第二位管理员复核");
+        message.success(t("finance.adjustCreated"));
         setCreating(false);
         form.resetFields();
         refresh();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "发起失败"),
+      onError: (e) => message.error(errText(e, t("finance.createFailed"))),
     },
   });
   const review = useReviewAdjustment({
     mutation: {
       onSuccess: () => {
-        message.success("复核完成");
+        message.success(t("finance.reviewed"));
         refresh();
       },
       onError: (e) =>
         message.error(
           isApiError(e) && e.code === "ADMIN_SECOND_REVIEW_REQUIRED"
-            ? "调账必须由第二位管理员复核(不能自审)"
+            ? t("finance.noSelfReview")
             : isApiError(e)
               ? e.message
-              : "复核失败",
+              : t("finance.reviewFailed"),
         ),
     },
   });
 
   return (
     <>
-      <Tooltip title={writable ? "" : "仅财务/超管可发起调账"}>
+      <Tooltip title={writable ? "" : t("finance.financeOnlyCreate")}>
         <Button
           type="primary"
           disabled={!writable}
           style={{ marginBottom: 12 }}
           onClick={() => setCreating(true)}
         >
-          发起调账
+          {t("finance.createAdjust")}
         </Button>
       </Tooltip>
       <Table<AdjustmentRow>
@@ -195,10 +201,10 @@ function AdjustmentsTab() {
         rowKey="id"
         dataSource={rows}
         columns={[
-          { title: "单号", dataIndex: "id", width: 70 },
-          { title: "租户", dataIndex: "user_id", width: 80 },
+          { title: t("finance.colAdjustId"), dataIndex: "id", width: 70 },
+          { title: t("finance.colTenant"), dataIndex: "user_id", width: 80 },
           {
-            title: "金额",
+            title: t("finance.colAmount"),
             dataIndex: "amount",
             render: (v: string) => (
               <span style={{ color: v.startsWith("-") ? adminColors.negative : adminColors.positive }}>
@@ -206,19 +212,25 @@ function AdjustmentsTab() {
               </span>
             ),
           },
-          { title: "原因", dataIndex: "reason" },
+          { title: t("finance.colReason"), dataIndex: "reason" },
           {
-            title: "状态",
+            title: t("finance.colStatus"),
             dataIndex: "status",
             render: (v: string) => (
               <Tag color={{ pending: "blue", approved: "green", rejected: "red" }[v]}>
-                {{ pending: "待复核", approved: "已生效", rejected: "已驳回" }[v] ?? v}
+                {(
+                  {
+                    pending: t("finance.adjustPending"),
+                    approved: t("finance.adjustApproved"),
+                    rejected: t("finance.adjustRejected"),
+                  } as Record<string, string>
+                )[v] ?? v}
               </Tag>
             ),
           },
-          { title: "发起人", dataIndex: "created_by", width: 80 },
+          { title: t("finance.colCreatedBy"), dataIndex: "created_by", width: 80 },
           {
-            title: "复核",
+            title: t("finance.colReview"),
             render: (_, r) => {
               if (r.status !== "pending") {
                 return (
@@ -232,36 +244,36 @@ function AdjustmentsTab() {
                 <Tooltip
                   title={
                     !writable
-                      ? "仅财务/超管可复核"
+                      ? t("finance.financeOnlyReview")
                       : isCreator
-                        ? "发起人不能复核自己的调账单(双人复核)"
+                        ? t("finance.noSelfReviewShort")
                         : ""
                   }
                 >
                   <Space>
                     <Popconfirm
-                      title={`确认通过并生效 ${formatMoney(r.amount)} 调账?`}
+                      title={t("finance.approveConfirm", { amount: formatMoney(r.amount) })}
                       onConfirm={() =>
                         review.mutate({ adjustmentId: r.id, data: { approve: true } })
                       }
                       disabled={!writable || isCreator}
                     >
                       <Button size="small" type="primary" disabled={!writable || isCreator}>
-                        通过
+                        {t("finance.approve")}
                       </Button>
                     </Popconfirm>
                     <Popconfirm
-                      title="确认驳回?"
+                      title={t("finance.rejectConfirm")}
                       onConfirm={() =>
                         review.mutate({
                           adjustmentId: r.id,
-                          data: { approve: false, comment: "复核驳回" },
+                          data: { approve: false, comment: t("finance.rejectComment") },
                         })
                       }
                       disabled={!writable || isCreator}
                     >
                       <Button size="small" danger disabled={!writable || isCreator}>
-                        驳回
+                        {t("finance.reject")}
                       </Button>
                     </Popconfirm>
                   </Space>
@@ -269,11 +281,11 @@ function AdjustmentsTab() {
               );
             },
           },
-          { title: "发起时间", dataIndex: "created_at", render: formatDateTime },
+          { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
       <Modal
-        title="发起调账(需第二位管理员复核后生效)"
+        title={t("finance.createAdjustTitle")}
         open={creating}
         onCancel={() => setCreating(false)}
         onOk={async () => {
@@ -289,19 +301,19 @@ function AdjustmentsTab() {
         okButtonProps={{ loading: create.isPending }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="user_id" label="租户 ID" rules={[{ required: true }]}>
+          <Form.Item name="user_id" label={t("finance.tenantIdLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
             name="amount"
-            label="金额(正=补偿入账,负=扣减)"
+            label={t("finance.amountLabel")}
             rules={[{ required: true }]}
           >
-            <InputNumber step={0.01} style={{ width: "100%" }} placeholder="如 25.50 或 -10.00" />
+            <InputNumber step={0.01} style={{ width: "100%" }} placeholder={t("finance.amountPlaceholder")} />
           </Form.Item>
           <Form.Item
             name="reason"
-            label="原因(必填,入审计)"
+            label={t("common.reasonLabel")}
             rules={[{ required: true, min: 2 }]}
           >
             <Input.TextArea rows={3} />
@@ -312,13 +324,15 @@ function AdjustmentsTab() {
   );
 }
 
-const ANOMALY_META: Record<AnomalyRow["kind"], { label: string; color: string }> = {
-  lost_callback: { label: "回调丢失", color: "orange" },
-  closed_order: { label: "超时关单", color: "default" },
-  negative_balance: { label: "负余额", color: "red" },
-};
+const ANOMALY_META = {
+  lost_callback: { labelKey: "finance.anomalyLostCallback", color: "orange" },
+  closed_order: { labelKey: "finance.anomalyClosedOrder", color: "default" },
+  negative_balance: { labelKey: "finance.anomalyNegativeBalance", color: "red" },
+} as const;
 
 function AnomaliesTab() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { formatMoney } = useFormat();
   const { message, modal } = App.useApp();
   const role = useAdminRole();
@@ -336,21 +350,21 @@ function AnomaliesTab() {
     try {
       const r = await verify.mutateAsync({ orderNo });
       modal.info({
-        title: `渠道核验 · ${orderNo}`,
+        title: t("finance.verifyTitle", { no: orderNo }),
         content: (
           <Space orientation="vertical" size={4}>
-            <span>订单状态:{r.order_status} · 订单金额 {formatMoney(r.order_amount)}</span>
-            <span>渠道状态:{r.channel_status}</span>
-            <span>渠道金额:{r.channel_amount ? formatMoney(r.channel_amount) : "—"}</span>
-            <span>渠道单号:{r.channel_txn_id ?? "—"}</span>
+            <span>{t("finance.verifyOrderLine", { status: r.order_status, amount: formatMoney(r.order_amount) })}</span>
+            <span>{t("finance.verifyChannelStatus", { status: r.channel_status })}</span>
+            <span>{t("finance.verifyChannelAmount", { amount: r.channel_amount ? formatMoney(r.channel_amount) : "—" })}</span>
+            <span>{t("finance.verifyChannelTxn", { id: r.channel_txn_id ?? "—" })}</span>
             <b style={{ color: r.matches ? adminColors.positive : adminColors.negative }}>
-              {r.matches ? "✓ 渠道已支付且金额一致,可补单" : "✗ 渠道未支付或金额不符,不可补单"}
+              {r.matches ? t("finance.verifyMatch") : t("finance.verifyMismatch")}
             </b>
           </Space>
         ),
       });
     } catch (e) {
-      message.error(isApiError(e) ? e.message : "核验失败");
+      message.error(errText(e, t("finance.verifyFailed")));
     }
   };
 
@@ -361,47 +375,47 @@ function AnomaliesTab() {
         rowKey={(r) => `${r.kind}:${r.order_no ?? r.user_id}`}
         loading={isLoading}
         dataSource={rows}
-        locale={{ emptyText: "当前无异常,查单 poller 每 2 分钟自动收敛丢回调" }}
+        locale={{ emptyText: t("finance.noAnomalies") }}
         columns={[
           {
-            title: "类型",
+            title: t("finance.colKind"),
             dataIndex: "kind",
             width: 110,
             render: (v: AnomalyRow["kind"]) => (
-              <Tag color={ANOMALY_META[v].color}>{ANOMALY_META[v].label}</Tag>
+              <Tag color={ANOMALY_META[v].color}>{t(ANOMALY_META[v].labelKey)}</Tag>
             ),
           },
           {
-            title: "订单 / 主体",
+            title: t("finance.colSubject"),
             render: (_, r) => (
               <>
-                {r.order_no ?? `租户 ${r.user_id}`}
+                {r.order_no ?? t("finance.tenantRef", { id: r.user_id })}
                 <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.detail}</div>
               </>
             ),
           },
-          { title: "金额", dataIndex: "amount", width: 110, render: (v: string) => formatMoney(v) },
-          { title: "发现于", dataIndex: "created_at", width: 150, render: formatDateTime },
+          { title: t("finance.colAmount"), dataIndex: "amount", width: 110, render: (v: string) => formatMoney(v) },
+          { title: t("finance.colFoundAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
           {
-            title: "动作",
+            title: t("finance.colAction"),
             width: 200,
             render: (_, r) => {
               if (r.kind === "negative_balance") {
-                return <span style={{ color: adminColors.textSecondary }}>可在「调账」发起核销</span>;
+                return <span style={{ color: adminColors.textSecondary }}>{t("finance.negativeBalanceHint")}</span>;
               }
               return (
                 <Space>
                   <Button size="small" onClick={() => void doVerify(r.order_no!)}>
-                    查渠道单
+                    {t("finance.verifyChannel")}
                   </Button>
-                  <Tooltip title={writable ? "" : "仅财务/超管可补单"}>
+                  <Tooltip title={writable ? "" : t("finance.financeOnlyBackfill")}>
                     <Button
                       size="small"
                       type="primary"
                       disabled={!writable}
                       onClick={() => setBackfillTarget(r)}
                     >
-                      补单
+                      {t("finance.backfill")}
                     </Button>
                   </Tooltip>
                 </Space>
@@ -411,10 +425,10 @@ function AnomaliesTab() {
         ]}
       />
       <Modal
-        title={`手动补单 · ${backfillTarget?.order_no ?? ""}`}
+        title={t("finance.backfillTitle", { no: backfillTarget?.order_no ?? "" })}
         open={Boolean(backfillTarget)}
         onCancel={() => setBackfillTarget(null)}
-        okText="核验并入账"
+        okText={t("finance.backfillOk")}
         okButtonProps={{ loading: backfill.isPending }}
         onOk={async () => {
           const { reason } = await reasonForm.validateFields();
@@ -423,26 +437,26 @@ function AnomaliesTab() {
               orderNo: backfillTarget!.order_no!,
               data: { reason },
             });
-            message.success("补单成功,已入账");
+            message.success(t("finance.backfilled"));
             setBackfillTarget(null);
             reasonForm.resetFields();
             refresh();
           } catch (e) {
-            message.error(isApiError(e) ? e.message : "补单失败");
+            message.error(errText(e, t("finance.backfillFailed")));
           }
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <span style={{ color: adminColors.textSecondary }}>
-            提交时服务端将实时向渠道核验:仅当渠道侧已支付且金额与订单一致才会入账。
+            {t("finance.backfillNote")}
           </span>
           <Form form={reasonForm} layout="vertical">
             <Form.Item
               name="reason"
-              label="原因(必填,入审计)"
-              rules={[{ required: true, min: 2, message: "请填写补单原因(至少 2 字)" }]}
+              label={t("common.reasonLabel")}
+              rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
             >
-              <Input.TextArea rows={2} placeholder="如:回调丢失,查单确认后补入账" />
+              <Input.TextArea rows={2} placeholder={t("finance.backfillReasonPlaceholder")} />
             </Form.Item>
           </Form>
         </Space>
@@ -452,6 +466,7 @@ function AnomaliesTab() {
 }
 
 function FinancePage() {
+  const { t } = useTranslation();
   const { data: anomalies } = useAnomalies();
   const anomalyCount = anomalies?.length ?? 0;
   return (
@@ -460,19 +475,19 @@ function FinancePage() {
       <Card style={{ marginTop: 16 }}>
         <Tabs
           items={[
-            { key: "orders", label: "充值流水", children: <OrdersTab /> },
-            { key: "adjustments", label: "调账(双人复核)", children: <AdjustmentsTab /> },
+            { key: "orders", label: t("finance.tabOrders"), children: <OrdersTab /> },
+            { key: "adjustments", label: t("finance.tabAdjustments"), children: <AdjustmentsTab /> },
             {
               key: "anomalies",
               label: (
                 <Space size={6}>
-                  异常清单
+                  {t("finance.tabAnomalies")}
                   {anomalyCount > 0 && <Tag color="red">{anomalyCount}</Tag>}
                 </Space>
               ),
               children: <AnomaliesTab />,
             },
-            { key: "audit", label: "审计日志", children: <AuditTable /> },
+            { key: "audit", label: t("menu.audit"), children: <AuditTable /> },
           ]}
         />
       </Card>

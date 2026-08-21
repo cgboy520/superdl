@@ -24,19 +24,21 @@ import {
   Tooltip,
 } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
-  isApiError,
   useAdminPolicies,
   usePublishAnnouncement,
   useUpdatePolicies,
 } from "../../api";
+import { useApiErrorText } from "../../lib/apiError";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
 });
 
+// i18n-exempt: 策略参数名与单位为运营域术语,随渠道字段表一并豁免(admin CJK 闸门白名单)
 const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string }> = {
   disk_price_gb_month: { label: "数据盘单价", unit: "元/GB·月", hint: "建盘时快照,调价只影响新盘" },
   disk_min_gb: { label: "数据盘最小容量", unit: "GB" },
@@ -48,6 +50,8 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
 };
 
 function PoliciesTab() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -60,13 +64,13 @@ function PoliciesTab() {
   const update = useUpdatePolicies({
     mutation: {
       onSuccess: () => {
-        message.success("策略已更新,即时生效");
+        message.success(t("settings.policySaved"));
         setDraft({});
         setReasonOpen(false);
         reasonForm.resetFields();
         void qc.invalidateQueries({ queryKey });
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "保存失败"),
+      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
     },
   });
 
@@ -87,7 +91,7 @@ function PoliciesTab() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        title="参数保存后即时生效(免重启):用户端价格/倒计时与巡检回收同步跟随。"
+        title={t("settings.instantEffect")}
       />
       <Table
         rowKey="key"
@@ -98,26 +102,26 @@ function PoliciesTab() {
         dataSource={rows}
         columns={[
           {
-            title: "参数",
+            title: t("settings.colParam"),
             render: (_, r) => (
               <>
                 {r.label}
-                {r.overridden && <Tag style={{ marginLeft: 8 }}>已覆盖</Tag>}
+                {r.overridden && <Tag style={{ marginLeft: 8 }}>{t("settings.overridden")}</Tag>}
                 {r.hint && (
                   <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.hint}</div>
                 )}
               </>
             ),
           },
-          { title: "当前生效值", dataIndex: "effective", width: 130 },
-          { title: "单位", dataIndex: "unit", width: 110 },
+          { title: t("settings.colEffective"), dataIndex: "effective", width: 130 },
+          { title: t("settings.colUnit"), dataIndex: "unit", width: 110 },
           {
-            title: "取值范围",
+            title: t("settings.colRange"),
             width: 140,
             render: (_, r) => (r.spec ? `${r.spec.min} ~ ${r.spec.max}` : "-"),
           },
           {
-            title: "新值",
+            title: t("settings.colNewValue"),
             width: 160,
             render: (_, r) => (
               <InputNumber
@@ -135,18 +139,18 @@ function PoliciesTab() {
           },
         ]}
       />
-      <Tooltip title={writable ? "" : "仅运维/超管可调整策略"}>
+      <Tooltip title={writable ? "" : t("settings.opsOnlyPolicies")}>
         <Button
           type="primary"
           style={{ marginTop: 12 }}
           disabled={!writable || changed.length === 0}
           onClick={() => setReasonOpen(true)}
         >
-          保存 {changed.length > 0 ? `${changed.length} 项变更` : ""}(需原因)
+          {t("settings.saveChanges", { count: changed.length })}
         </Button>
       </Tooltip>
       <Modal
-        title="确认调整策略参数"
+        title={t("settings.confirmPolicyTitle")}
         open={reasonOpen}
         onCancel={() => setReasonOpen(false)}
         okButtonProps={{ loading: update.isPending }}
@@ -164,10 +168,10 @@ function PoliciesTab() {
           <Form form={reasonForm} layout="vertical">
             <Form.Item
               name="reason"
-              label="原因(必填,入审计)"
-              rules={[{ required: true, min: 2, message: "请填写调整原因(至少 2 字)" }]}
+              label={t("common.reasonLabel")}
+              rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
             >
-              <Input.TextArea rows={2} placeholder="如:季度调价 / 回收周期运营调整" />
+              <Input.TextArea rows={2} placeholder={t("settings.policyReasonPlaceholder")} />
             </Form.Item>
           </Form>
         </Space>
@@ -177,6 +181,8 @@ function PoliciesTab() {
 }
 
 function AnnouncementTab() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -187,7 +193,7 @@ function AnnouncementTab() {
     mutation: {
       onSuccess: (d) => {
         const reached = (d as { reached: number }).reached;
-        message.success(`公告已发布,触达 ${reached} 位租户`);
+        message.success(t("settings.announcementPublished", { count: reached }));
         setLastPublished({
           title: form.getFieldValue("title") as string,
           at: new Date().toISOString(),
@@ -195,7 +201,7 @@ function AnnouncementTab() {
         });
         form.resetFields();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "发布失败"),
+      onError: (e) => message.error(errText(e, t("settings.publishFailed"))),
     },
   });
 
@@ -204,35 +210,35 @@ function AnnouncementTab() {
       <Alert
         type="info"
         showIcon
-        title="发布后以站内信(公告类型)触达全部正常状态租户,用户端铃铛与概览页展示。"
+        title={t("settings.announceScope")}
       />
       <Form form={form} layout="vertical" disabled={!writable}>
         <Form.Item
           name="title"
-          label="标题"
-          rules={[{ required: true, min: 2, max: 128, message: "标题 2~128 字" }]}
+          label={t("settings.announceTitleLabel")}
+          rules={[{ required: true, min: 2, max: 128, message: t("settings.titleLenRule") }]}
         >
-          <Input placeholder="如:8 月 24 日 02:00–04:00 存储集群维护" />
+          <Input placeholder={t("settings.announceTitlePlaceholder")} />
         </Form.Item>
         <Form.Item
           name="content"
-          label="内容"
-          rules={[{ required: true, min: 2, max: 2000, message: "内容 2~2000 字" }]}
+          label={t("settings.announceContentLabel")}
+          rules={[{ required: true, min: 2, max: 2000, message: t("settings.contentLenRule") }]}
         >
-          <Input.TextArea rows={4} placeholder="说明影响范围、时间窗口与用户需要做什么" />
+          <Input.TextArea rows={4} placeholder={t("settings.announceContentPlaceholder")} />
         </Form.Item>
       </Form>
       <Popconfirm
-        title="确认向全部租户发布该公告?"
+        title={t("settings.confirmAnnounce")}
         onConfirm={async () => {
           const values = await form.validateFields();
           publish.mutate({ data: values });
         }}
         disabled={!writable}
       >
-        <Tooltip title={writable ? "" : "仅运维/超管可发布公告"}>
+        <Tooltip title={writable ? "" : t("settings.opsOnlyAnnounce")}>
           <Button type="primary" loading={publish.isPending} disabled={!writable}>
-            发布公告
+            {t("settings.publish")}
           </Button>
         </Tooltip>
       </Popconfirm>
@@ -240,7 +246,7 @@ function AnnouncementTab() {
         <Alert
           type="success"
           showIcon
-          title={`「${lastPublished.title}」已于 ${formatDateTime(lastPublished.at)} 发布,触达 ${lastPublished.reached} 位租户`}
+          title={t("settings.lastPublished", { title: lastPublished.title, time: formatDateTime(lastPublished.at), count: lastPublished.reached })}
         />
       )}
     </Space>
@@ -248,12 +254,13 @@ function AnnouncementTab() {
 }
 
 function SettingsPage() {
+  const { t } = useTranslation();
   return (
     <Card>
       <Tabs
         items={[
-          { key: "policies", label: "计费与回收策略", children: <PoliciesTab /> },
-          { key: "announcement", label: "公告发布", children: <AnnouncementTab /> },
+          { key: "policies", label: t("settings.tabPolicies"), children: <PoliciesTab /> },
+          { key: "announcement", label: t("settings.tabAnnouncement"), children: <AnnouncementTab /> },
         ]}
       />
     </Card>

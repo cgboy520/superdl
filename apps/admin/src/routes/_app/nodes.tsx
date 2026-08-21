@@ -198,7 +198,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
             name="hostname"
             label={t("nodes.hostnameLabel")}
           >
-            <Input placeholder="如 gpu-a3-01" />
+            <Input placeholder={t("nodes.hostnamePlaceholder")} />
           </Form.Item>
           <Form.Item name="note" label={t("nodes.noteLabel")}>
             <Input placeholder={t("nodes.notePlaceholder")} maxLength={128} />

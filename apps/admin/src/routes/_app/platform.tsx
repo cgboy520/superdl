@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Alert,
+  Collapse,
   App,
   Button,
   Card,
@@ -24,6 +25,7 @@ import {
   Typography,
 } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   isApiError,
@@ -32,12 +34,14 @@ import {
   useTestSms,
   useUpdatePlatformConfig,
 } from "../../api";
+import { useApiErrorText } from "../../lib/apiError";
 import { useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/platform")({
   component: PlatformConfigPage,
 });
 
+// i18n-exempt(至 GROUP_INTRO 为止):中国渠道(微信/支付宝/阿里云/工信部)字段名与操作指引,决策不译
 const FIELD_LABELS: Record<string, string> = {
   payment_wechat_enabled: "启用微信支付渠道",
   wechat_mchid: "商户号(mchid)",
@@ -114,11 +118,11 @@ const GROUP_INTRO: Record<string, string> = {
     "配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令;registries.yaml 为镜像缓存 mirror,可留空。",
 };
 
-const SOURCE_TAG: Record<PlatformConfigItem["source"], { color?: string; text: string }> = {
-  override: { color: "cyan", text: "DB 覆盖" },
-  env: { text: "env 默认" },
-  unset: { color: "warning", text: "未配置" },
-};
+const SOURCE_TAG = {
+  override: { color: "cyan", textKey: "platform.sourceDb" },
+  env: { color: undefined, textKey: "platform.sourceEnv" },
+  unset: { color: "warning", textKey: "platform.sourceUnset" },
+} as const satisfies Record<PlatformConfigItem["source"], { color?: string; textKey: string }>;
 
 function FieldControl({
   item,
@@ -131,6 +135,7 @@ function FieldControl({
   disabled: boolean;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   if (item.kind === "bool") {
     const effective = (draft ?? item.value ?? "false") === "true";
     return (
@@ -160,8 +165,8 @@ function FieldControl({
         value={draft ?? ""}
         placeholder={
           item.configured
-            ? `已配置${item.preview ? `(${item.preview})` : ""},留空保持不变`
-            : "未配置"
+            ? t("platform.secretConfigured", { preview: item.preview ? `(${item.preview})` : "" })
+            : t("platform.sourceUnset")
         }
         autoComplete="new-password"
         onChange={(e) => onChange(e.target.value)}
@@ -204,9 +209,23 @@ function GroupPanel({
   disabled: boolean;
   extraContent?: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%", maxWidth: 760 }}>
-      <Alert type="info" showIcon title={GROUP_INTRO[group]} />
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: "guide",
+            label: t("platform.configGuide"),
+            children: (
+              <Typography.Paragraph style={{ marginBottom: 0 }}>
+                {GROUP_INTRO[group]}
+              </Typography.Paragraph>
+            ),
+          },
+        ]}
+      />
       <Form layout="vertical">
         {items.map((item) => (
           <Form.Item
@@ -214,10 +233,10 @@ function GroupPanel({
             label={
               <Space size={8}>
                 {FIELD_LABELS[item.key] ?? item.key}
-                <Tag color={SOURCE_TAG[item.source].color}>{SOURCE_TAG[item.source].text}</Tag>
+                <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
                 {item.updated_at && (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    更新于 {formatDateTime(item.updated_at)}
+                    {t("platform.updatedAt", { time: formatDateTime(item.updated_at) })}
                   </Typography.Text>
                 )}
               </Space>
@@ -242,11 +261,11 @@ function GroupPanel({
                   disabled={disabled}
                   onClick={() => setDraft((d) => ({ ...d, [item.key]: "" }))}
                 >
-                  清除覆盖
+                  {t("platform.clearOverride")}
                 </Button>
               )}
               {draft[item.key] === "" && item.source === "override" && (
-                <Tag color="orange">保存后清除覆盖,回退 env 默认</Tag>
+                <Tag color="orange">{t("platform.clearOverrideTag")}</Tag>
               )}
             </Space>
           </Form.Item>
@@ -258,22 +277,24 @@ function GroupPanel({
 }
 
 function SmsTestCard({ disabled }: { disabled: boolean }) {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const [phone, setPhone] = useState("");
   const testSms = useTestSms({
     mutation: {
       onSuccess: (d) => {
         const provider = (d as { provider: string }).provider;
-        message.success(`测试短信已提交(渠道:${PROVIDER_LABELS[provider] ?? provider})`);
+        message.success(t("platform.testSmsSent", { provider: PROVIDER_LABELS[provider] ?? provider }));
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "发送失败"),
+      onError: (e) => message.error(errText(e, t("platform.sendFailed"))),
     },
   });
   return (
-    <Card size="small" title="测试发送(走当前生效配置,真实计费)">
+    <Card size="small" title={t("platform.testSmsTitle")}>
       <Space.Compact style={{ width: 360 }}>
         <Input
-          placeholder="接收手机号"
+          placeholder={t("platform.testSmsPhone")}
           value={phone}
           maxLength={11}
           disabled={disabled}
@@ -285,17 +306,19 @@ function SmsTestCard({ disabled }: { disabled: boolean }) {
           loading={testSms.isPending}
           onClick={() => testSms.mutate({ data: { phone } })}
         >
-          发送验证码短信
+          {t("platform.testSmsSend")}
         </Button>
       </Space.Compact>
       <div style={{ color: adminColors.textSecondary, fontSize: 12, marginTop: 8 }}>
-        使用「验证码模板」发送随机 6 位码;先保存配置再测试。Provider 为 mock 时仅落日志。
+        {t("platform.testSmsNote")}
       </div>
     </Card>
   );
 }
 
 function PlatformConfigPage() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
   const isAdmin = role === "admin";
@@ -309,13 +332,13 @@ function PlatformConfigPage() {
     mutation: {
       onSuccess: (d) => {
         const updated = (d as { updated: string[] }).updated;
-        message.success(`已保存 ${updated.length} 项,即时生效`);
+        message.success(t("platform.savedCount", { count: updated.length }));
         setDraft({});
         setReasonOpen(false);
         reasonForm.resetFields();
         void qc.invalidateQueries({ queryKey });
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "保存失败"),
+      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
     },
   });
 
@@ -337,8 +360,8 @@ function PlatformConfigPage() {
           showIcon
           title={
             isApiError(error) && error.status === 403
-              ? "平台配置涉及支付/短信凭据,仅超级管理员可访问。"
-              : `加载失败:${isApiError(error) ? error.message : "网络错误"}`
+              ? t("platform.adminOnly")
+              : t("platform.loadFailed", { message: errText(error, t("platform.networkError")) })
           }
         />
       </Card>
@@ -351,15 +374,15 @@ function PlatformConfigPage() {
   return (
     <Card
       loading={isLoading}
-      title="平台配置(渠道凭据与合规)"
+      title={t("menu.platform")}
       extra={
-        <Tooltip title={isAdmin ? "" : "仅超级管理员可修改"}>
+        <Tooltip title={isAdmin ? "" : t("platform.adminOnlyEdit")}>
           <Button
             type="primary"
             disabled={disabled || changed.length === 0}
             onClick={() => setReasonOpen(true)}
           >
-            保存 {changed.length > 0 ? `${changed.length} 项变更` : ""}(需原因)
+            {t("settings.saveChanges", { count: changed.length })}
           </Button>
         </Tooltip>
       }
@@ -368,7 +391,7 @@ function PlatformConfigPage() {
         items={[
           {
             key: "payment_wechat",
-            label: "微信支付",
+            label: t("platform.tabWechat"),
             children: (
               <GroupPanel
                 group="payment_wechat"
@@ -381,7 +404,7 @@ function PlatformConfigPage() {
           },
           {
             key: "payment_alipay",
-            label: "支付宝",
+            label: t("platform.tabAlipay"),
             children: (
               <GroupPanel
                 group="payment_alipay"
@@ -394,7 +417,7 @@ function PlatformConfigPage() {
           },
           {
             key: "sms",
-            label: "短信(阿里云)",
+            label: t("platform.tabSms"),
             children: (
               <GroupPanel
                 group="sms"
@@ -408,7 +431,7 @@ function PlatformConfigPage() {
           },
           {
             key: "real_name",
-            label: "实名认证",
+            label: t("platform.tabRealName"),
             children: (
               <GroupPanel
                 group="real_name"
@@ -421,7 +444,7 @@ function PlatformConfigPage() {
           },
           {
             key: "compliance",
-            label: "合规备案",
+            label: t("platform.tabCompliance"),
             children: (
               <GroupPanel
                 group="compliance"
@@ -434,7 +457,7 @@ function PlatformConfigPage() {
           },
           {
             key: "cluster",
-            label: "集群接入",
+            label: t("platform.tabCluster"),
             children: (
               <GroupPanel
                 group="cluster"
@@ -448,7 +471,7 @@ function PlatformConfigPage() {
         ]}
       />
       <Modal
-        title="确认变更平台配置"
+        title={t("platform.confirmTitle")}
         open={reasonOpen}
         onCancel={() => setReasonOpen(false)}
         okButtonProps={{ loading: update.isPending }}
@@ -461,25 +484,25 @@ function PlatformConfigPage() {
           {changed.map(([k, v]) => {
             const item = byKey.get(k);
             const shown =
-              item?.kind === "secret" ? "••••••(新值不回显)" : v === "" ? "清除覆盖" : v;
+              item?.kind === "secret" ? t("platform.secretMasked") : v === "" ? t("platform.clearOverride") : v;
             return (
               <div key={k}>
-                {FIELD_LABELS[k] ?? k} → <b>{shown}</b>
+                {FIELD_LABELS[k] ?? k} → <b>{String(shown)}</b>
               </div>
             );
           })}
           <Alert
             type="warning"
             showIcon
-            title="保存后即时生效:支付下单、短信发送、实名核验与用户端页脚将直接使用新配置。"
+            title={t("platform.instantEffect")}
           />
           <Form form={reasonForm} layout="vertical">
             <Form.Item
               name="reason"
-              label="原因(必填,入审计;审计只记录键名不记录值)"
-              rules={[{ required: true, min: 2, message: "请填写变更原因(至少 2 字)" }]}
+              label={t("platform.reasonLabel")}
+              rules={[{ required: true, min: 2, message: t("common.reasonRule") }]}
             >
-              <Input.TextArea rows={2} placeholder="如:商户资质下发,录入生产凭据" />
+              <Input.TextArea rows={2} placeholder={t("platform.reasonPlaceholder")} />
             </Form.Item>
           </Form>
         </Space>

@@ -306,16 +306,16 @@ function ImagesPage() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="framework" label={t("images.colFramework")} rules={[{ required: true }]}>
-            <Input placeholder="如 PyTorch / TensorFlow / Miniconda" />
+            <Input placeholder={t("images.frameworkPlaceholder")} />
           </Form.Item>
           <Form.Item name="framework_version" label={t("images.frameworkVersionLabel")} rules={[{ required: true }]}>
-            <Input placeholder="如 2.9.0" />
+            <Input placeholder={t("images.versionPlaceholder")} />
           </Form.Item>
           <Form.Item name="python_version" label={t("images.pythonVersionLabel")} rules={[{ required: true }]}>
-            <Input placeholder="如 3.12" />
+            <Input placeholder={t("images.pythonPlaceholder")} />
           </Form.Item>
           <Form.Item name="cuda_version" label={t("images.cudaVersionLabel")} rules={[{ required: true }]}>
-            <Input placeholder="如 12.8" />
+            <Input placeholder={t("images.cudaPlaceholder")} />
           </Form.Item>
           {editing !== "new" && (
             <Alert

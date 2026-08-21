@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "antd";
 
+import { useTranslation } from "react-i18next";
+
 import { AuditTable } from "../../components/AuditTable";
 
 export const Route = createFileRoute("/_app/audit")({
@@ -8,8 +10,9 @@ export const Route = createFileRoute("/_app/audit")({
 });
 
 function AuditPage() {
+  const { t } = useTranslation();
   return (
-    <Card title="审计日志(谁在什么时候对什么做了什么)">
+    <Card title={t("menu.audit")}>
       <AuditTable />
     </Card>
   );

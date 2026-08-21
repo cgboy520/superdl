@@ -233,7 +233,7 @@ function SkusPage() {
                 />
               </Form.Item>
               <Form.Item name="mig_profile" label={t("skus.migProfileLabel")}>
-                <Input placeholder="如 1g.10gb" />
+                <Input placeholder={t("skus.migProfilePlaceholder")} />
               </Form.Item>
             </>
           )}
@@ -281,7 +281,7 @@ function SkusPage() {
             <InputNumber min={1} max={8} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
-            <Input placeholder="如 12.8" />
+            <Input placeholder={t("images.cudaPlaceholder")} />
           </Form.Item>
         </Form>
       </Drawer>
