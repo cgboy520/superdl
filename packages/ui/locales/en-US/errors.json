@@ -1,0 +1,9 @@
+{
+  "common": {
+    "forbidden": "You do not have access",
+    "internal": "Internal server error — try again later",
+    "notFound": "Resource not found",
+    "unauthorized": "Not signed in or session expired",
+    "validation": "Request validation failed"
+  }
+}

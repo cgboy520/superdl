@@ -1,5 +1,9 @@
-"""统一错误体 {code, message, detail}。业务错误码集中于 ErrorCode,前端据此分支。"""
+"""统一错误体 {code, message, message_key, params, detail}。
 
+message 恒为渲染后的中文(旧客户端兜底);message_key/params 供前端查多语言目录
+(core/messages.py 为单一事实源)。ErrorCode 仍是程序化分支依据。"""
+
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
@@ -57,28 +61,43 @@ class AppError(Exception):
     def __init__(
         self,
         code: ErrorCode,
-        message: str,
+        message: str | None = None,
         *,
+        key: str | None = None,
+        params: Mapping[str, Any] | None = None,
         http_status: int = status.HTTP_400_BAD_REQUEST,
         detail: Any = None,
     ) -> None:
+        if key is not None:
+            from app.core.messages import render_message
+
+            message = render_message(key, params)
+        elif message is None:
+            raise ValueError("AppError 需要 message 或 key 之一")
         super().__init__(message)
         self.code = code
         self.message = message
+        self.message_key = key
+        self.params = dict(params) if params else None
         self.http_status = http_status
         self.detail = detail
 
 
-def not_found(message: str = "资源不存在") -> AppError:
-    return AppError(ErrorCode.NOT_FOUND, message, http_status=status.HTTP_404_NOT_FOUND)
+def not_found(message: str | None = None, *, key: str | None = None) -> AppError:
+    key = None if message is not None else (key or "common.notFound")
+    return AppError(ErrorCode.NOT_FOUND, message, key=key, http_status=status.HTTP_404_NOT_FOUND)
 
 
-def unauthorized(message: str = "未登录或凭证已过期") -> AppError:
-    return AppError(ErrorCode.UNAUTHORIZED, message, http_status=status.HTTP_401_UNAUTHORIZED)
+def unauthorized(message: str | None = None, *, key: str | None = None) -> AppError:
+    key = None if message is not None else (key or "common.unauthorized")
+    return AppError(
+        ErrorCode.UNAUTHORIZED, message, key=key, http_status=status.HTTP_401_UNAUTHORIZED
+    )
 
 
-def forbidden(message: str = "无权访问") -> AppError:
-    return AppError(ErrorCode.FORBIDDEN, message, http_status=status.HTTP_403_FORBIDDEN)
+def forbidden(message: str | None = None, *, key: str | None = None) -> AppError:
+    key = None if message is not None else (key or "common.forbidden")
+    return AppError(ErrorCode.FORBIDDEN, message, key=key, http_status=status.HTTP_403_FORBIDDEN)
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -89,6 +108,8 @@ def install_error_handlers(app: FastAPI) -> None:
             content={
                 "code": exc.code.value,
                 "message": exc.message,
+                "message_key": exc.message_key,
+                "params": jsonable_encoder(exc.params),
                 "detail": jsonable_encoder(exc.detail),
             },
         )
@@ -100,6 +121,8 @@ def install_error_handlers(app: FastAPI) -> None:
             content={
                 "code": ErrorCode.VALIDATION_ERROR.value,
                 "message": "参数校验失败",
+                "message_key": "common.validation",
+                "params": None,
                 "detail": jsonable_encoder(exc.errors()),
             },
         )
@@ -118,6 +141,8 @@ def install_error_handlers(app: FastAPI) -> None:
             content={
                 "code": ErrorCode.INTERNAL.value,
                 "message": "服务器内部错误,请稍后重试",
+                "message_key": "common.internal",
+                "params": None,
                 "detail": None,
             },
         )

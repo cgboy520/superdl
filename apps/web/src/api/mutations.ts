@@ -40,7 +40,8 @@ import type {
 } from "@superdl/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
-import { useTranslation } from "react-i18next";
+
+import { useApiErrorText } from "../lib/apiError";
 
 export function useApiMutation<TVars, TData>(
   fn: (vars: TVars) => Promise<TData>,
@@ -48,7 +49,7 @@ export function useApiMutation<TVars, TData>(
 ) {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
-  const { t } = useTranslation();
+  const errText = useApiErrorText();
   return useMutation<TData, ApiError, TVars>({
     mutationFn: fn,
     onSuccess: async (data) => {
@@ -56,7 +57,7 @@ export function useApiMutation<TVars, TData>(
       opts?.onSuccess?.(data);
     },
     onError: (err) => {
-      if (!opts?.silentError) message.error(err.message ?? t("common.requestFailed"));
+      if (!opts?.silentError) message.error(errText(err));
     },
   });
 }

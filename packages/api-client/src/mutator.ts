@@ -8,6 +8,9 @@ export interface ApiError {
   message: string;
   detail?: unknown;
   status: number;
+  /** 多语言目录键(errors ns);缺失时前端回落 message(服务端渲染的中文) */
+  message_key?: string | null;
+  params?: Record<string, unknown> | null;
 }
 
 interface ClientConfig {
@@ -90,6 +93,8 @@ export const customFetch = async <T>(url: string, options: RequestInit): Promise
     const apiError: ApiError = {
       code: err.code ?? "HTTP_ERROR",
       message: err.message ?? `请求失败(${response.status})`,
+      message_key: err.message_key ?? null,
+      params: err.params ?? null,
       detail: err.detail,
       status: response.status,
     };

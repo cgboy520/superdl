@@ -1,7 +1,9 @@
 /** locale 守护:五张状态表的每个 labelKey/hintKey 必须在 zh/en shared.json 同时存在且非空。 */
 import { describe, expect, it } from "vitest";
 
+import errorsEn from "../locales/en-US/errors.json";
 import enUS from "../locales/en-US/shared.json";
+import errorsZh from "../locales/zh-CN/errors.json";
 import zhCN from "../locales/zh-CN/shared.json";
 import type { SharedFormatKey } from "./format";
 import {
@@ -83,6 +85,25 @@ describe("packages/ui shared locale", () => {
       const bare = key.slice("shared:".length);
       expect(zhBase.has(bare), `zh 缺 ${bare}`).toBe(true);
       expect(enBase.has(bare), `en 缺 ${bare}`).toBe(true);
+    }
+  });
+});
+
+describe("errors namespace(后端 MESSAGES 生成链)", () => {
+  const zhE = flatten(errorsZh);
+  const enE = flatten(errorsEn);
+  const ph = (v: string) => [...v.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]!).sort();
+
+  it("zh/en 键集相等", () => {
+    expect([...enE.keys()].sort()).toEqual([...zhE.keys()].sort());
+  });
+
+  it("值非空且占位符逐键一致", () => {
+    for (const [key, zhV] of zhE) {
+      const enV = enE.get(key);
+      expect(zhV.trim(), `zh 空值 ${key}`).not.toBe("");
+      expect(enV?.trim(), `en 空值 ${key}`).toBeTruthy();
+      if (enV) expect(ph(enV), key).toEqual(ph(zhV));
     }
   });
 });
