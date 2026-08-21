@@ -10,7 +10,7 @@
 
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
@@ -18,10 +18,10 @@ from app.core.k8s import get_orchestrator
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import RECONCILE_LEAKED_TOTAL
-from app.core.timeutil import now_utc
+from app.core.timeutil import ensure_utc, now_utc
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.disks import detach_for_instance
-from app.modules.orchestrator.models import Instance
+from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.service import free_port, transition
 
 logger = get_logger(__name__)
@@ -44,6 +44,23 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         await _reconcile_instances(sm, counts)
         await _reclaim_leaked_pods(sm, counts)
     return counts
+
+
+async def _entered_status_at(session: AsyncSession, instance: Instance):
+    """实例进入当前状态的时刻(取该状态最后一条事件)。
+
+    不能用 updated_at 判超时:它带 onupdate,handler 回填 ssh_port/pod_name 等任何字段
+    都会把计时重置,creating 超时可能永远不触发。
+    """
+    entered = (
+        await session.execute(
+            select(func.max(InstanceEvent.created_at)).where(
+                InstanceEvent.instance_id == instance.id,
+                InstanceEvent.to_status == instance.status,
+            )
+        )
+    ).scalar_one_or_none()
+    return ensure_utc(entered) if entered is not None else ensure_utc(instance.created_at)
 
 
 async def _reconcile_instances(
@@ -80,7 +97,7 @@ async def _reconcile_instances(
                             actor="system",
                         )
                         counts["to_running"] += 1
-                    elif now_utc() - instance.updated_at > timeout:
+                    elif now_utc() - await _entered_status_at(session, instance) > timeout:
                         await transition(
                             session,
                             instance,

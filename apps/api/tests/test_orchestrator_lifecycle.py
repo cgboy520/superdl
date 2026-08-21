@@ -10,7 +10,7 @@ from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import drain
 from app.core.timeutil import now_utc
-from app.modules.orchestrator.models import Instance, PortAllocation
+from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import create_test_sku, create_user_with_key, fund_wallet
 
@@ -230,12 +230,19 @@ class TestFailureModes:
         uuid = data["uuid"]
         await drain(sm)  # Pod 已建但永不 Ready(auto_ready=False)
 
-        # 回拨 updated_at 超过 5 分钟超时线
+        # 回拨「进入 creating」的事件时刻超过 5 分钟超时线
+        # (超时基准是事件时刻而非 updated_at:后者被 handler 回填字段重置)
         async with sm() as session:
+            inst_id = (
+                await session.execute(select(Instance.id).where(Instance.uuid == uuid))
+            ).scalar_one()
             await session.execute(
-                update(Instance)
-                .where(Instance.uuid == uuid)
-                .values(updated_at=now_utc() - timedelta(minutes=6))
+                update(InstanceEvent)
+                .where(InstanceEvent.instance_id == inst_id)
+                .values(created_at=now_utc() - timedelta(minutes=6))
+            )
+            await session.execute(
+                update(Instance).where(Instance.uuid == uuid).values(updated_at=now_utc())
             )
             await session.commit()
 

@@ -68,6 +68,7 @@ MESSAGES: dict[str, str] = {
     # 商品/镜像
     "catalog.imageRefExists": "镜像 image_ref 已存在",
     "catalog.prewarmDisabled": "该镜像已关闭预热,请先开启",
+    "catalog.priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
     "catalog.skuNotSellable": (
         "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
     ),

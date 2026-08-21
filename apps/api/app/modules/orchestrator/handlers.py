@@ -2,11 +2,13 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import AppError, ErrorCode
 from app.core.k8s import get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.outbox import OutboxTask, outbox_handler
 from app.modules.billing import service as billing_service
+from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.service import build_pod_spec_with_cluster, ensure_port, transition
@@ -78,9 +80,29 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         )
     if instance.status == sm_def.STOPPED:
         estimate = as_amount(instance.price_hourly * instance.gpu_count)
-        await billing_service.require_balance_at_least(
-            session, instance.user_id, estimate, hint_key="billing.insufficientForRestart"
-        )
+        try:
+            await billing_service.require_balance_at_least(
+                session, instance.user_id, estimate, hint_key="billing.insufficientForRestart"
+            )
+        except AppError as exc:
+            if exc.code is not ErrorCode.INSUFFICIENT_BALANCE:
+                raise
+            # 余额不足不是基础设施故障:重试 5 次只会制造死信噪音。
+            # 实例停在 stopped(用户可见),充值后自行开机;同时发通知说明原因。
+            logger.warning("restart_aborted_insufficient_balance", instance_id=instance.id)
+            await notify_service.notify(
+                session,
+                instance.user_id,
+                type_="instance",
+                title="重启未完成:余额不足",
+                content=(
+                    f"实例「{instance.name}」已关机;余额不足以支付 1 小时预估费用,"
+                    "充值后可自行开机。"
+                ),
+                severity="warning",
+                dedup_key=f"restart_no_balance:{instance.id}",
+            )
+            return
         await transition(
             session,
             instance,

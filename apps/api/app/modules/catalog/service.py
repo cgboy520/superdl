@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
@@ -5,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import canonical_gpu_model, model_matches
+from app.core.money import as_price
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
 from app.modules.catalog import inventory
@@ -118,8 +121,21 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
     return list((await session.execute(select(Sku).order_by(Sku.id))).scalars())
 
 
+def _checked_price(value: Decimal) -> Decimal:
+    """单价统一走 money.as_price(4 位)。量化后为 0 直接拒绝:
+
+    numeric(12,4) 会把 0.00004 静默舍成 0.0000,SKU 变成免费卡。
+    """
+    price = as_price(value)
+    if price <= 0:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
+    return price
+
+
 async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
-    sku = Sku(**data.model_dump())
+    values = data.model_dump()
+    values["price_hourly"] = _checked_price(values["price_hourly"])
+    sku = Sku(**values)
     session.add(sku)
     await session.commit()
     await session.refresh(sku)
@@ -131,6 +147,8 @@ async def admin_update_sku(
 ) -> Sku:
     sku = await get_sku(session, sku_id)
     updates = data.model_dump(exclude_unset=True)
+    if updates.get("price_hourly") is not None:
+        updates["price_hourly"] = _checked_price(updates["price_hourly"])
     turning_on = updates.get("status") == "on" and sku.status != "on"
     for field, value in updates.items():
         setattr(sku, field, value)
