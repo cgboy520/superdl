@@ -12,7 +12,7 @@
 
 ## 生产发布流程(deploy/app/k8s)
 
-1. `helmfile apply`(cluster/:含 cert-manager 与 ingress-nginx)→ 建 `superdl-api-secrets` 等 Secret(值不入库)
+1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库)
 2. 打 tag 触发 `.github/workflows/release.yml`:构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr
 3. `kubectl create -f k8s/10-migrate-job.yaml`(镜像与 name 替换为本次 tag)→ `kubectl wait --for=condition=complete`
 4. 更新三个 Deployment 镜像 tag 滚动发布;`/readyz` 就绪即接流量

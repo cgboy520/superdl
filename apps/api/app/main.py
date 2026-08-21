@@ -25,6 +25,22 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
         async with get_sessionmaker()() as session:
             await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
+    if settings.environment == "prod":
+        # cluster 键不做启动 fail-fast(推荐经管理端 DB 覆盖层维护,启动查 env 会误报)
+        # → DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 门禁兜底
+        from app.core.db import get_sessionmaker
+        from app.core.logging import get_logger
+        from app.core.platform_config import get_effective_platform_config
+
+        async with get_sessionmaker()() as session:
+            cfg = await get_effective_platform_config(session)
+        missing = [k for k in ("cluster_server_url", "cluster_join_token") if not cfg.get(k)]
+        if missing:
+            get_logger("app.lifespan").error(
+                "cluster_config_missing",
+                keys=missing,
+                hint="管理端「平台配置 · 集群接入」录入;加节点将被 409 拦截",
+            )
     yield
     await dispose_engine()
 

@@ -117,9 +117,9 @@ const GROUP_INTRO: Record<string, string> = {
     "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。",
   cluster:
     "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点" +
-    "(token 执行 cat /var/lib/rancher/<rke2|k3s>/server/node-token 获取,轮换用 rke2 token rotate 后在此更新)。" +
-    "生产一律 RKE2,k3s 仅供轻量/本地验证环境。" +
-    "配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令;registries.yaml 为镜像缓存 mirror,可留空。",
+    "(token 执行 cat /var/lib/rancher/<rke2|k3s>/server/node-token 获取,轮换后在此更新)。" +
+    "发行版由平台探测(见「集群」页),无需声明;registries.yaml 平台按 Server 地址自动生成," +
+    "该键仅作高级覆盖,建议留空。配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令。",
 };
 
 const SOURCE_TAG = {

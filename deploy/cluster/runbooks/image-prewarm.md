@@ -23,7 +23,7 @@ skopeo copy --dest-tls-verify=false \
 
 ```bash
 kubectl apply -f ../registry/registry.yaml
-# 节点侧:确认 /etc/rancher/rke2/registries.yaml 已分发(存量走 ansible -e rke2_server_ip=...,新节点由一键加入脚本落位)
+# 节点侧:确认 /etc/rancher/<rke2|k3s>/registries.yaml 已分发(平台按 Server 地址生成;存量机器走 ansible -e rke2_server_ip=…,新节点由一键加入脚本落位)
 # 验证 P2P:node-A crictl pull 某钉版本镜像 → node-B 拉同镜像应秒级(走内网 5001/9345)
 curl http://<server-ip>:30500/v2/_catalog     # 仓库存活与内容
 ```
