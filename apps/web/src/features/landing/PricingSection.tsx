@@ -3,7 +3,7 @@
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
-import { copy, getGpuSpec, marketing, metaOf, skuTierMap } from "@superdl/ui";
+import { copy, getGpuSpec, metaOf, skuTierMap } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Col, Row, Skeleton, Tabs, Typography } from "antd";
 import { useState } from "react";
@@ -38,16 +38,16 @@ export function PricingSection() {
   return (
     <section id="pricing" style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
       <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 4 }}>
-        {marketing.pricing.title}
+        {t("landing.pricing.title")}
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 24 }}>
-        {marketing.pricing.subtitle}
+        {t("landing.pricing.subtitle")}
       </Typography.Paragraph>
       {isError ? (
         <div style={{ textAlign: "center", padding: 32 }}>
           <Link to="/market">
             <Button type="primary" size="large">
-              {marketing.pricing.fallbackCta}
+              {t("landing.pricing.fallbackCta")}
             </Button>
           </Link>
         </div>
@@ -58,8 +58,8 @@ export function PricingSection() {
             activeKey={tab}
             onChange={(k) => setTab(k as "dedicated" | "shared")}
             items={[
-              { key: "dedicated", label: marketing.pricing.tabDedicated },
-              { key: "shared", label: marketing.pricing.tabShared },
+              { key: "dedicated", label: t("landing.pricing.tabDedicated") },
+              { key: "shared", label: t("landing.pricing.tabShared") },
             ]}
           />
           <Row gutter={[16, 16]}>
@@ -91,16 +91,16 @@ export function PricingSection() {
                   >
                     <Typography.Text strong>
                       {shared
-                        ? `${sku.gpu_cores_pct}% 算力(均值) · ${sku.vram_gb}G 显存`
-                        : `整卡 · ${sku.vram_gb}G 显存`}
+                        ? t("landing.pricing.sharedSpec", { pct: sku.gpu_cores_pct, vram: sku.vram_gb })
+                        : t("landing.pricing.dedicatedSpec", { vram: sku.vram_gb })}
                     </Typography.Text>
                     {spec && (
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        单精 {spec.fp32Tflops} TFLOPS / 半精 {spec.fp16Tflops} Tensor TFLOPS
+                        {t("landing.pricing.tflops", { fp32: spec.fp32Tflops, fp16: spec.fp16Tflops })}
                       </Typography.Text>
                     )}
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {sku.vcpu} vCPU / {sku.mem_gb}G 内存 / 实例盘 {sku.disk_gb}G
+                      {t("landing.pricing.hostSpec", { vcpu: sku.vcpu, mem: sku.mem_gb, disk: sku.disk_gb })}
                     </Typography.Text>
                     <div style={{ margin: "8px 0", fontSize: 26, fontWeight: 700 }}>
                       {formatHourlyPrice(sku.price_hourly)}
@@ -119,7 +119,7 @@ export function PricingSection() {
             })}
           </Row>
           <div style={{ textAlign: "center", marginTop: 24 }}>
-            <Link to="/market">{marketing.pricing.moreLink} →</Link>
+            <Link to="/market">{t("landing.pricing.moreLink")} →</Link>
           </div>
         </>
       )}

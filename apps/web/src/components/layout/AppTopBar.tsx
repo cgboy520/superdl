@@ -7,6 +7,7 @@
 import { brand, colorPrimary } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Space } from "antd";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 
 import { useIsLoggedIn } from "../../stores/auth";
@@ -20,6 +21,7 @@ export function AppTopBar({
   variant: "public" | "console";
   right?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
   return (
     <header
@@ -41,15 +43,15 @@ export function AppTopBar({
       {/* 布局收敛到 CSS 类:内联 display 会压过窄屏媒体查询的 display:none(390px 折行的根因) */}
       <nav className="topbar-nav-center">
         <Link to="/market" className="topbar-link">
-          算力市场
+          {t("topbar.market")}
         </Link>
         {variant === "public" && (
           <>
             <a href="/#pricing" className="topbar-link">
-              GPU 价格
+              {t("topbar.pricing")}
             </a>
             <a href="/#ranking" className="topbar-link">
-              算力排名
+              {t("topbar.ranking")}
             </a>
           </>
         )}
@@ -59,12 +61,12 @@ export function AppTopBar({
         {variant === "public" ? (
           loggedIn ? (
             <Link to="/instances">
-              <Button ghost>进入控制台</Button>
+              <Button ghost>{t("common.enterConsole")}</Button>
             </Link>
           ) : (
             <Space size={8}>
               <Link to="/login" className="topbar-link">
-                登录
+                {t("topbar.login")}
               </Link>
               <Link to="/login">
                 <Button
@@ -75,7 +77,7 @@ export function AppTopBar({
                     fontWeight: 600,
                   }}
                 >
-                  免费注册
+                  {t("topbar.register")}
                 </Button>
               </Link>
             </Space>

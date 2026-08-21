@@ -6,10 +6,11 @@
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { TokenPair } from "@superdl/api-client";
-import { brand, marketing } from "@superdl/ui";
+import { brand } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { useLogin, useRegister, useSendSmsCode } from "../api/mutations";
 import { BrandLogo } from "../components/layout/BrandLogo";
@@ -34,6 +35,7 @@ const GRID_TEXTURE = `url("data:image/svg+xml,${encodeURIComponent(
 )}")`;
 
 function BrandPane() {
+  const { t } = useTranslation();
   return (
     <div
       style={{
@@ -50,15 +52,15 @@ function BrandPane() {
           <BrandLogo variant="light" />
         </Link>
         <Link to="/" className="topbar-link">
-          返回首页
+          {t("login.backHome")}
         </Link>
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <Typography.Title style={{ color: "#fff", fontSize: 36, marginBottom: 32 }}>
-          {marketing.loginSlogan}
+          {t("login.slogan")}
         </Typography.Title>
         <Space orientation="vertical" size={16}>
-          {marketing.loginBullets.map((b) => (
+          {[t("login.bullets.b1"), t("login.bullets.b2"), t("login.bullets.b3")].map((b) => (
             <Space key={b} size={10}>
               <CheckCircleOutlined style={{ color: "rgba(255,255,255,0.9)", fontSize: 16 }} />
               <span style={{ color: "rgba(255,255,255,0.9)", fontSize: 16 }}>{b}</span>
@@ -71,6 +73,7 @@ function BrandPane() {
 }
 
 function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const router = useRouter();
   const { redirect: redirectTo } = Route.useSearch();
@@ -91,7 +94,6 @@ function LoginPage() {
   const onLoggedIn = (data: unknown) => {
     const pair = data as TokenPair;
     authStore.getState().login(pair.access_token, pair.refresh_token);
-    message.success("欢迎使用 SuperDL");
     if (redirectTo) {
       router.history.push(redirectTo);
     } else {
@@ -101,7 +103,7 @@ function LoginPage() {
 
   const sendCode = useSendSmsCode({
     onSuccess: () => {
-      message.success("验证码已发送(开发环境固定为 123456)");
+      message.success(t("login.codeSent"));
       setCountdown(60);
       timer.current = setInterval(() => {
         setCountdown((c) => {
@@ -158,30 +160,30 @@ function LoginPage() {
             </div>
           )}
           <Typography.Title level={3} style={{ marginTop: 0 }}>
-            登录 SuperDL
+            {t("login.title")}
           </Typography.Title>
           <Segmented
             block
             value={mode}
             onChange={(v) => setMode(v as Mode)}
             options={[
-              { label: "验证码登录", value: "sms" },
-              { label: "密码登录", value: "password" },
-              { label: "注册", value: "register" },
+              { label: t("login.modeSms"), value: "sms" },
+              { label: t("login.modePassword"), value: "password" },
+              { label: t("login.modeRegister"), value: "register" },
             ]}
             style={{ marginBottom: 16 }}
           />
           <Form form={form} layout="vertical" onFinish={submit}>
             <Form.Item
               name="phone"
-              rules={[{ required: true, pattern: /^1[3-9]\d{9}$/, message: "请输入正确的手机号" }]}
+              rules={[{ required: true, pattern: /^1[3-9]\d{9}$/, message: t("login.phoneInvalid") }]}
             >
-              <Input prefix={<span style={{ color: "rgba(0,0,0,0.45)" }}>+86</span>} placeholder="手机号" maxLength={11} />
+              <Input prefix={<span style={{ color: "rgba(0,0,0,0.45)" }}>+86</span>} placeholder={t("login.phonePlaceholder")} maxLength={11} />
             </Form.Item>
             {needsSms && (
-              <Form.Item name="sms_code" rules={[{ required: true, message: "请输入验证码" }]}>
+              <Form.Item name="sms_code" rules={[{ required: true, message: t("login.smsRequired") }]}>
                 <Space.Compact style={{ width: "100%" }}>
-                  <Input placeholder="短信验证码" maxLength={6} />
+                  <Input placeholder={t("login.smsPlaceholder")} maxLength={6} />
                   <Button
                     disabled={countdown > 0}
                     loading={sendCode.isPending}
@@ -194,7 +196,7 @@ function LoginPage() {
                       );
                     }}
                   >
-                    {countdown > 0 ? `${countdown}s` : "获取验证码"}
+                    {countdown > 0 ? `${countdown}s` : t("login.getCode")}
                   </Button>
                 </Space.Compact>
               </Form.Item>
@@ -204,12 +206,12 @@ function LoginPage() {
                 name="password"
                 rules={
                   mode === "password"
-                    ? [{ required: true, message: "请输入密码" }]
-                    : [{ min: 8, message: "至少 8 位" }]
+                    ? [{ required: true, message: t("login.passwordRequired") }]
+                    : [{ min: 8, message: t("login.passwordMin") }]
                 }
               >
                 <Input.Password
-                  placeholder={mode === "register" ? "设置密码(可选,至少 8 位)" : "密码"}
+                  placeholder={mode === "register" ? t("login.passwordSetPlaceholder") : t("login.passwordPlaceholder")}
                 />
               </Form.Item>
             )}
@@ -222,19 +224,18 @@ function LoginPage() {
                     validator: (_, v) =>
                       v === true
                         ? Promise.resolve()
-                        : Promise.reject(new Error("请先阅读并同意用户协议与隐私政策")),
+                        : Promise.reject(new Error(t("login.termsRequired"))),
                   },
                 ]}
               >
                 <Checkbox>
-                  我已阅读并同意{" "}
-                  <a href="/legal/terms" target="_blank" rel="noreferrer">
-                    《用户协议》
-                  </a>
-                  <a href="/legal/privacy" target="_blank" rel="noreferrer">
-                    《隐私政策》
-                  </a>
-                  ,并知悉平台禁止挖矿等使用限制
+                  <Trans
+                    i18nKey="login.terms"
+                    components={{
+                      terms: <a href="/legal/terms" target="_blank" rel="noreferrer" />,
+                      privacy: <a href="/legal/privacy" target="_blank" rel="noreferrer" />,
+                    }}
+                  />
                 </Checkbox>
               </Form.Item>
             )}
@@ -245,7 +246,7 @@ function LoginPage() {
               size="large"
               loading={login.isPending || register.isPending}
             >
-              {mode === "register" ? "注册并登录" : "登录"}
+              {mode === "register" ? t("login.submitRegister") : t("login.submitLogin")}
             </Button>
           </Form>
         </div>

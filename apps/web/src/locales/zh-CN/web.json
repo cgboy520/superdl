@@ -5,18 +5,121 @@
   "common": {
     "backConsole": "回控制台",
     "backHome": "回首页",
+    "enterConsole": "进入控制台",
+    "goRent": "去租用",
     "retry": "重试"
   },
   "errorPage": {
     "title": "页面出错了",
     "unknown": "发生未知错误,请重试或返回首页"
   },
+  "footer": {
+    "complianceTitle": "合规",
+    "copyright": "© 2026 SuperDL",
+    "linkDocs": "帮助文档(即将上线)",
+    "linkMarket": "算力市场",
+    "linkPricing": "GPU 价格",
+    "linkPrivacy": "隐私政策",
+    "linkRanking": "算力排名",
+    "linkStatus": "服务状态(即将上线)",
+    "linkTerms": "用户协议",
+    "productTitle": "产品",
+    "supportTitle": "支持"
+  },
+  "landing": {
+    "cta": {
+      "button": "免费注册",
+      "fallback": "弹性 GPU 算力,注册即开",
+      "withStock": "当前 {{count}} 卡空闲可租,注册即开"
+    },
+    "hero": {
+      "ctaPrimary": "免费注册",
+      "ctaSecondary": "查看算力市场",
+      "freeCards": "{{count}} 卡",
+      "freeLabel": "当前空闲可租",
+      "minPriceLabel": "GPU 时价低至",
+      "subtitle": "按秒开机、按量计费的 GPU 租用平台",
+      "title": "SuperDL GPU 算力云"
+    },
+    "pricing": {
+      "dedicatedSpec": "整卡 · {{vram}}G 显存",
+      "fallbackCta": "前往算力市场",
+      "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
+      "moreLink": "查看全部规格与筛选",
+      "sharedSpec": "{{pct}}% 算力(均值) · {{vram}}G 显存",
+      "subtitle": "价格即库存:按钮上的可租卡数与控制台实时一致",
+      "tabDedicated": "整卡独享",
+      "tabShared": "切分与共享",
+      "tflops": "单精 {{fp32}} TFLOPS / 半精 {{fp16}} Tensor TFLOPS",
+      "title": "GPU 租用价格"
+    },
+    "quickEntries": {
+      "billing": {
+        "desc": "费用逐项摊开,计费依据可自查",
+        "title": "透明计费"
+      },
+      "data": {
+        "desc": "数据盘独立于实例,释放实例不丢数据",
+        "title": "数据无忧"
+      },
+      "gpu": {
+        "desc": "按算力与显存对比在售卡型",
+        "title": "GPU 选型"
+      },
+      "start": {
+        "desc": "注册并开出第一台 GPU 实例",
+        "title": "快速开始"
+      }
+    },
+    "ranking": {
+      "footnote": "理论峰值算力,数据来自各厂商公开规格,实际性能因负载而异。",
+      "onSale": "在售",
+      "subtitle": "横向对比常见加速卡的理论峰值算力",
+      "tabFp16": "半精 FP16",
+      "tabFp32": "单精 FP32",
+      "title": "GPU 算力排名"
+    }
+  },
   "lang": {
     "en": "English",
     "zh": "中文"
   },
+  "login": {
+    "backHome": "返回首页",
+    "bullets": {
+      "b1": "开机才计费,账单按事件流水可查",
+      "b2": "数据盘独立于实例,释放实例不丢数据",
+      "b3": "价格公开,按钮上的库存就是真库存"
+    },
+    "codeSent": "验证码已发送",
+    "getCode": "获取验证码",
+    "modePassword": "密码登录",
+    "modeRegister": "注册",
+    "modeSms": "验证码登录",
+    "passwordMin": "至少 8 位",
+    "passwordPlaceholder": "密码",
+    "passwordRequired": "请输入密码",
+    "passwordSetPlaceholder": "设置密码(可选,至少 8 位)",
+    "phoneInvalid": "请输入正确的手机号",
+    "phonePlaceholder": "手机号",
+    "slogan": "开机计费,关机停表",
+    "smsPlaceholder": "短信验证码",
+    "smsRequired": "请输入验证码",
+    "submitLogin": "登录",
+    "submitRegister": "注册并登录",
+    "terms": "我已阅读并同意 <terms>《用户协议》</terms><privacy>《隐私政策》</privacy>,并知悉平台禁止挖矿等使用限制",
+    "termsRequired": "请先阅读并同意用户协议与隐私政策",
+    "title": "登录 SuperDL"
+  },
   "notFound": {
     "subtitle": "你访问的地址不存在或已被移除",
     "title": "页面不存在"
+  },
+  "topbar": {
+    "login": "登录",
+    "market": "算力市场",
+    "pricing": "GPU 价格",
+    "ranking": "算力排名",
+    "register": "免费注册"
   }
 }

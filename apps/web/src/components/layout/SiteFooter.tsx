@@ -3,8 +3,9 @@
 
 const ICP_FALLBACK = import.meta.env.VITE_ICP_NUMBER as string | undefined;
 
-import { copy, marketing } from "@superdl/ui";
+import { copy } from "@superdl/ui";
 import { theme, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { useSiteConfig } from "../../api/queries";
 
@@ -37,11 +38,24 @@ function FooterCol({
 }
 
 export function SiteFooter() {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
-  const f = marketing.footer;
   const { data: site } = useSiteConfig();
   const icp = site?.icp_number ?? ICP_FALLBACK;
   const police = site?.police_record_number;
+  const productLinks = [
+    { label: t("footer.linkMarket"), to: "/market" },
+    { label: t("footer.linkPricing"), to: "/#pricing" },
+    { label: t("footer.linkRanking"), to: "/#ranking" },
+  ];
+  const supportLinks = [
+    { label: t("footer.linkDocs"), to: "" },
+    { label: t("footer.linkStatus"), to: "" },
+  ];
+  const complianceLinks = [
+    { label: t("footer.linkTerms"), to: "/legal/terms" },
+    { label: t("footer.linkPrivacy"), to: "/legal/privacy" },
+  ];
   return (
     <footer style={{ background: token.colorBgContainer, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
       <div
@@ -52,9 +66,9 @@ export function SiteFooter() {
         }}
       >
         <div style={{ display: "flex", flexWrap: "wrap", gap: 32, justifyContent: "space-between" }}>
-          <FooterCol title={f.product.title} links={f.product.links} />
-          <FooterCol title={f.support.title} links={f.support.links} />
-          <FooterCol title={f.compliance.title} links={f.compliance.links} />
+          <FooterCol title={t("footer.productTitle")} links={productLinks} />
+          <FooterCol title={t("footer.supportTitle")} links={supportLinks} />
+          <FooterCol title={t("footer.complianceTitle")} links={complianceLinks} />
           <div style={{ maxWidth: 320 }}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {copy.antiMiningNotice}
@@ -70,7 +84,7 @@ export function SiteFooter() {
           }}
         >
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {f.copyright}
+            {t("footer.copyright")}
             {icp && (
               <>
                 {" · "}

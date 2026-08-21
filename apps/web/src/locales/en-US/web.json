@@ -5,18 +5,123 @@
   "common": {
     "backConsole": "Back to console",
     "backHome": "Back to home",
+    "enterConsole": "Open console",
+    "goRent": "Rent now",
     "retry": "Retry"
   },
   "errorPage": {
     "title": "Something went wrong",
     "unknown": "An unexpected error occurred. Retry or go back home."
   },
+  "footer": {
+    "complianceTitle": "Compliance",
+    "copyright": "© 2026 SuperDL",
+    "linkDocs": "Docs (coming soon)",
+    "linkMarket": "Marketplace",
+    "linkPricing": "GPU Pricing",
+    "linkPrivacy": "Privacy Policy",
+    "linkRanking": "Compute Ranking",
+    "linkStatus": "Status page (coming soon)",
+    "linkTerms": "Terms of Service",
+    "productTitle": "Product",
+    "supportTitle": "Support"
+  },
+  "landing": {
+    "cta": {
+      "button": "Sign up free",
+      "fallback": "Elastic GPU compute, ready at signup",
+      "withStock_one": "{{count}} GPU idle right now — register to launch",
+      "withStock_other": "{{count}} GPUs idle right now — register to launch"
+    },
+    "hero": {
+      "ctaPrimary": "Sign up free",
+      "ctaSecondary": "Browse marketplace",
+      "freeCards_one": "{{count}} GPU",
+      "freeCards_other": "{{count}} GPUs",
+      "freeLabel": "Idle GPUs now",
+      "minPriceLabel": "GPU rates from",
+      "subtitle": "GPU rental with per-second startup and pay-as-you-go billing",
+      "title": "SuperDL GPU Cloud"
+    },
+    "pricing": {
+      "dedicatedSpec": "Full card · {{vram}}G VRAM",
+      "fallbackCta": "Go to marketplace",
+      "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
+      "moreLink": "All specs and filters",
+      "sharedSpec": "{{pct}}% compute (avg) · {{vram}}G VRAM",
+      "subtitle": "Prices are inventory: the count on the button matches the console in real time",
+      "tabDedicated": "Dedicated",
+      "tabShared": "Sliced & shared",
+      "tflops": "FP32 {{fp32}} TFLOPS / FP16 {{fp16}} Tensor TFLOPS",
+      "title": "GPU Rental Pricing"
+    },
+    "quickEntries": {
+      "billing": {
+        "desc": "Itemized costs with auditable billing events",
+        "title": "Transparent billing"
+      },
+      "data": {
+        "desc": "Data disks outlive instances — release without losing data",
+        "title": "Data safety"
+      },
+      "gpu": {
+        "desc": "Compare cards on sale by compute and VRAM",
+        "title": "GPU picker"
+      },
+      "start": {
+        "desc": "Register and launch your first GPU instance",
+        "title": "Quick start"
+      }
+    },
+    "ranking": {
+      "footnote": "Theoretical peak figures from vendor public specs; real-world performance varies by workload.",
+      "onSale": "On sale",
+      "subtitle": "Theoretical peak compute of common accelerators",
+      "tabFp16": "FP16 (half)",
+      "tabFp32": "FP32 (single)",
+      "title": "GPU Compute Ranking"
+    }
+  },
   "lang": {
     "en": "English",
     "zh": "中文"
   },
+  "login": {
+    "backHome": "Back to home",
+    "bullets": {
+      "b1": "Billing starts at boot — every charge traces to an event log",
+      "b2": "Data disks outlive instances — release without losing data",
+      "b3": "Public pricing — the stock on the button is the real stock"
+    },
+    "codeSent": "Code sent",
+    "getCode": "Send code",
+    "modePassword": "Password",
+    "modeRegister": "Sign up",
+    "modeSms": "SMS code",
+    "passwordMin": "At least 8 characters",
+    "passwordPlaceholder": "Password",
+    "passwordRequired": "Enter your password",
+    "passwordSetPlaceholder": "Set password (optional, 8+ chars)",
+    "phoneInvalid": "Enter a valid phone number",
+    "phonePlaceholder": "Phone number",
+    "slogan": "Pay only while it runs",
+    "smsPlaceholder": "SMS code",
+    "smsRequired": "Enter the SMS code",
+    "submitLogin": "Log in",
+    "submitRegister": "Sign up & log in",
+    "terms": "I have read and agree to the <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>, and understand that crypto mining is prohibited",
+    "termsRequired": "Please read and accept the Terms and Privacy Policy first",
+    "title": "Log in to SuperDL"
+  },
   "notFound": {
     "subtitle": "The page you are looking for does not exist or has been removed.",
     "title": "Page not found"
+  },
+  "topbar": {
+    "login": "Log in",
+    "market": "Marketplace",
+    "pricing": "GPU Pricing",
+    "ranking": "Compute Ranking",
+    "register": "Sign up free"
   }
 }

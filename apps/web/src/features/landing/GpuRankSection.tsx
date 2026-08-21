@@ -1,14 +1,16 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径,脚注声明);在售型号标记联动价格墙。 */
 
-import { colorPrimary, gpuSpecs, marketing } from "@superdl/ui";
+import { colorPrimary, gpuSpecs } from "@superdl/ui";
 import { Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useSkus } from "../../api/queries";
 
 const MEDALS = ["#D97706", "#9CA3AF", "#B45309"];
 
 export function GpuRankSection() {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
   const [metric, setMetric] = useState<"fp16" | "fp32">("fp16");
   const { data: skus } = useSkus();
@@ -30,18 +32,18 @@ export function GpuRankSection() {
     <section id="ranking" style={{ background: token.colorBgContainer }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
         <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 4 }}>
-          {marketing.ranking.title}
+          {t("landing.ranking.title")}
         </Typography.Title>
         <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 24 }}>
-          {marketing.ranking.subtitle}
+          {t("landing.ranking.subtitle")}
         </Typography.Paragraph>
         <Tabs
           centered
           activeKey={metric}
           onChange={(k) => setMetric(k as "fp16" | "fp32")}
           items={[
-            { key: "fp16", label: marketing.ranking.tabFp16 },
-            { key: "fp32", label: marketing.ranking.tabFp32 },
+            { key: "fp16", label: t("landing.ranking.tabFp16") },
+            { key: "fp32", label: t("landing.ranking.tabFp32") },
           ]}
         />
         <div style={{ maxWidth: 860, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -84,7 +86,7 @@ export function GpuRankSection() {
                 {onSale.has(r.model) && (
                   <a href="/#pricing">
                     <Tag color={colorPrimary} style={{ marginInlineEnd: 0 }}>
-                      {marketing.ranking.onSaleTag}
+                      {t("landing.ranking.onSale")}
                     </Tag>
                   </a>
                 )}
@@ -93,7 +95,7 @@ export function GpuRankSection() {
           ))}
         </div>
         <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginTop: 24, fontSize: 12 }}>
-          {marketing.ranking.footnote}
+          {t("landing.ranking.footnote")}
         </Typography.Paragraph>
       </div>
     </section>

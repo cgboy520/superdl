@@ -1,4 +1,4 @@
-/** 快捷入口四宫格:注册礼包 / GPU 选型 / 开具发票 / 新手入门。 */
+/** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。 */
 
 import {
   AccountBookOutlined,
@@ -6,21 +6,23 @@ import {
   DatabaseOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { colorPrimary, marketing } from "@superdl/ui";
+import { colorPrimary } from "@superdl/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { Card, Col, Row, Typography } from "antd";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useIsLoggedIn } from "../../stores/auth";
 
-const ICONS: Record<string, ReactNode> = {
-  start: <ThunderboltOutlined />,
-  gpu: <AimOutlined />,
-  billing: <AccountBookOutlined />,
-  data: <DatabaseOutlined />,
-};
+const ENTRIES: Array<{ key: "start" | "gpu" | "billing" | "data"; icon: ReactNode }> = [
+  { key: "start", icon: <ThunderboltOutlined /> },
+  { key: "gpu", icon: <AimOutlined /> },
+  { key: "billing", icon: <AccountBookOutlined /> },
+  { key: "data", icon: <DatabaseOutlined /> },
+];
 
 export function QuickEntrySection() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
 
@@ -36,10 +38,23 @@ export function QuickEntrySection() {
     }
   };
 
+  const TITLE = {
+    start: t("landing.quickEntries.start.title"),
+    gpu: t("landing.quickEntries.gpu.title"),
+    billing: t("landing.quickEntries.billing.title"),
+    data: t("landing.quickEntries.data.title"),
+  } as const;
+  const DESC = {
+    start: t("landing.quickEntries.start.desc"),
+    gpu: t("landing.quickEntries.gpu.desc"),
+    billing: t("landing.quickEntries.billing.desc"),
+    data: t("landing.quickEntries.data.desc"),
+  } as const;
+
   return (
     <section style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px 16px" }}>
       <Row gutter={[16, 16]}>
-        {marketing.quickEntries.map((e) => (
+        {ENTRIES.map((e) => (
           <Col key={e.key} xs={12} md={6}>
             <Card
               hoverable
@@ -47,14 +62,12 @@ export function QuickEntrySection() {
               styles={{ body: { padding: 20 } }}
               style={{ height: "100%" }}
             >
-              <div style={{ fontSize: 22, color: colorPrimary, marginBottom: 8 }}>
-                {ICONS[e.key]}
-              </div>
+              <div style={{ fontSize: 22, color: colorPrimary, marginBottom: 8 }}>{e.icon}</div>
               <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
-                {e.title}
+                {TITLE[e.key]}
               </Typography.Text>
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-                {e.desc}
+                {DESC[e.key]}
               </Typography.Text>
             </Card>
           </Col>

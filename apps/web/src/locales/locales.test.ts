@@ -20,15 +20,25 @@ function placeholders(value: string): string[] {
   return [...value.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]!).sort();
 }
 
+/** en 用 _one/_other 复数后缀而 zh 用基键;比较键集与占位符前先归一。 */
+function baseKey(key: string): string {
+  return key.replace(/_(one|other|zero|two|few|many)$/, "");
+}
+function normalize(flat: Map<string, string>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [k, v] of flat) out.set(baseKey(k), v);
+  return out;
+}
+
 const CATALOGS: Array<[string, Record<string, unknown>, Record<string, unknown>]> = [
   ["web", zhCN, enUS],
 ];
 
 describe.each(CATALOGS)("locales/%s", (_ns, zh, en) => {
-  const zhFlat = flatten(zh);
-  const enFlat = flatten(en);
+  const zhFlat = normalize(flatten(zh));
+  const enFlat = normalize(flatten(en));
 
-  it("zh/en 键集相等", () => {
+  it("zh/en 键集相等(复数后缀归一)", () => {
     expect([...enFlat.keys()].sort()).toEqual([...zhFlat.keys()].sort());
   });
 

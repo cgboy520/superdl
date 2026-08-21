@@ -3,9 +3,10 @@
  * 不做轮播(ui-ux-spec §3.0)。
  */
 
-import { brand, colorPrimary, marketing } from "@superdl/ui";
+import { brand, colorPrimary } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Grid, Space, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
 import { useSkus } from "../../api/queries";
@@ -35,6 +36,7 @@ function GlassCard({ label, value }: { label: string; value: string }) {
 }
 
 export function HeroSection() {
+  const { t } = useTranslation();
   const { formatHourlyPrice } = useFormat();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
@@ -68,12 +70,12 @@ export function HeroSection() {
           <Typography.Title
             style={{ color: "#fff", fontSize: 44, marginBottom: 12, marginTop: 0 }}
           >
-            {marketing.hero.title}
+            {t("landing.hero.title")}
           </Typography.Title>
           <Typography.Paragraph
             style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, marginBottom: 32 }}
           >
-            {marketing.hero.subtitle}
+            {t("landing.hero.subtitle")}
           </Typography.Paragraph>
           <Space size={16}>
             <Link to={loggedIn ? "/instances" : "/login"}>
@@ -87,20 +89,20 @@ export function HeroSection() {
                   paddingInline: 32,
                 }}
               >
-                {loggedIn ? "进入控制台" : marketing.hero.ctaPrimary}
+                {loggedIn ? t("common.enterConsole") : t("landing.hero.ctaPrimary")}
               </Button>
             </Link>
             <Link to="/market">
               <Button size="large" ghost style={{ paddingInline: 24 }}>
-                {marketing.hero.ctaSecondary}
+                {t("landing.hero.ctaSecondary")}
               </Button>
             </Link>
           </Space>
         </div>
         {screens.lg && (
           <Space orientation="vertical" size={16}>
-            {minPrice && <GlassCard label="GPU 时价低至" value={formatHourlyPrice(minPrice)} />}
-            <GlassCard label="当前空闲可租" value={`${freeCards} 卡`} />
+            {minPrice && <GlassCard label={t("landing.hero.minPriceLabel")} value={formatHourlyPrice(minPrice)} />}
+            <GlassCard label={t("landing.hero.freeLabel")} value={t("landing.hero.freeCards", { count: freeCards })} />
           </Space>
         )}
       </div>

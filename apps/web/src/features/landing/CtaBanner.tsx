@@ -1,17 +1,19 @@
 /** CTA 横幅:实时空闲卡数,取不到则退化为静态口号。 */
 
-import { brand, colorPrimary, marketing } from "@superdl/ui";
+import { brand, colorPrimary } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Typography } from "antd";
+import { useTranslation } from "react-i18next";
 
 import { useSkus } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
 
 export function CtaBanner() {
+  const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
   const { data: skus } = useSkus();
   const freeCards = (skus ?? []).reduce((sum, s) => sum + (s.available_count ?? 0), 0);
-  const text = freeCards > 0 ? marketing.ctaBanner.withStock(freeCards) : marketing.ctaBanner.fallback;
+  const text = freeCards > 0 ? t("landing.cta.withStock", { count: freeCards }) : t("landing.cta.fallback");
 
   return (
     <section style={{ background: brand.heroBg, padding: "48px 24px", textAlign: "center" }}>
@@ -29,7 +31,7 @@ export function CtaBanner() {
             paddingInline: 40,
           }}
         >
-          {loggedIn ? "去租用" : marketing.ctaBanner.button}
+          {loggedIn ? t("common.goRent") : t("landing.cta.button")}
         </Button>
       </Link>
     </section>
