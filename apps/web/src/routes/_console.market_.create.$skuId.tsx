@@ -83,8 +83,9 @@ function CreatePage() {
   const [ecoOpen, setEcoOpen] = useState(false);
   const [ecoChecked, setEcoChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
+  // 参数快照 → 幂等键。放 state 而不是 ref:只在提交(事件处理)里读写,不参与渲染。
+  const [idemKeys] = useState(() => new Map<string, string>());
 
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
@@ -150,14 +151,41 @@ function CreatePage() {
 
   const doCreate = async () => {
     setSubmitting(true);
+    // 幂等键绑到「本次提交的参数」上,而不是在失败时轮换。
+    //
+    // 后端只在实例行 commit 成功的那一刻才落下幂等键 —— 网络超时 / 502 时,后端很可能已经
+    // 建好实例、只是响应丢了,而前端此刻换了新键:用户按第二下就会开出第二台 GPU 并开始
+    // 按秒计费。原来的轮换是为了解决另一件事(改了参数重提时不该命中旧实例),而一个
+    // UUID 同时承担「这次提交」和「重来一次」两种语义,catch 里的取舍恰好偏向了要钱那侧。
+    // 参数派生的键两件事一起满足:参数不变 → 键不变 → 重试自动去重;参数变了 → 键变 →
+    // 不会被旧结果遮住。
+    const seed = JSON.stringify([
+      sku.id,
+      gpuCount,
+      imageRef ?? "",
+      [...keyIds].sort((a, b) => a - b),
+      name || null,
+      diskMode,
+      existingDiskId ?? null,
+      diskMode === "new" ? [newDiskName.trim(), newDiskGb] : null,
+    ]);
+    let idempotencyKey = idemKeys.get(seed);
+    if (idempotencyKey === undefined) {
+      idempotencyKey = crypto.randomUUID(); // 后端列是 varchar(64),保持 UUID 形态
+      idemKeys.set(seed, idempotencyKey);
+    }
     try {
       let diskId: number | null = diskMode === "existing" ? (existingDiskId ?? null) : null;
       if (diskMode === "new") {
         let disk: DiskOut;
         try {
           disk = (await createDisk.mutateAsync({
-            name: newDiskName.trim() || defaultDiskName(),
-            size_gb: newDiskGb,
+            body: {
+              name: newDiskName.trim() || defaultDiskName(),
+              size_gb: newDiskGb,
+            },
+            // 与实例同一个参数快照派生:建盘成功但建实例失败时重提,不会再多一块盘
+            idempotencyKey,
           })) as DiskOut;
         } catch {
           return; // 建盘失败:useApiMutation 已弹错误,直接终止
@@ -177,8 +205,7 @@ function CreatePage() {
           idempotencyKey,
         });
       } catch (err) {
-        // 本次提交已被后端记账到该幂等键:换新键,避免改参重提命中旧结果
-        setIdempotencyKey(crypto.randomUUID());
+        // 刻意不换键:失败可能只是响应丢了而实例已经建好,换键会让重试开出第二台机器
         if (isApiError(err) && err.code === "NO_CAPACITY") {
           message.warning(t("copy.noCapacityGuide"), 6);
         }

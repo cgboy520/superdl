@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Header, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
@@ -38,9 +39,13 @@ class DiskOut(BaseModel):
 
 @router.post("/disks", status_code=status.HTTP_201_CREATED)
 async def create_disk(
-    body: DiskCreate, user: CurrentUser, session: DbSession, request: Request
+    body: DiskCreate,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> DiskOut:
-    disk = await service.create_disk(session, user.id, body.name, body.size_gb)
+    disk = await service.create_disk(session, user.id, body.name, body.size_gb, idempotency_key)
     set_audit_target(request, f"disk:{disk.uuid}")
     return DiskOut.model_validate(disk)
 

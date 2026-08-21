@@ -25,7 +25,24 @@ BILLABLE_STATUSES = ("active", "grace")  # frozen 不再计费
 ARREARS_CHAIN_STATUSES = ("active", "grace", "frozen")
 
 
-async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: int) -> DataDisk:
+async def create_disk(
+    session: AsyncSession,
+    user_id: int,
+    name: str,
+    size_gb: int,
+    idempotency_key: str | None = None,
+) -> DataDisk:
+    if idempotency_key:
+        # 与实例创建同款:响应丢失时用户按第二下不会开出第二块按日计费的盘
+        existing = (
+            await session.execute(
+                select(DataDisk).where(
+                    DataDisk.user_id == user_id, DataDisk.idempotency_key == idempotency_key
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
     # JuiceFS SC 缺位时先拦下:否则用户买到一块永远挂不上(挂了实例就 Pending 到 failed)、
     # 又按日计费的盘 —— 卖出一个注定不可用的付费商品比开不出实例更难看
     await nodes_service.require_storage_classes(session, with_data_disk=True)
@@ -66,6 +83,7 @@ async def create_disk(session: AsyncSession, user_id: int, name: str, size_gb: i
         size_gb=size_gb,
         juicefs_subpath=f"disk-{disk_uuid}",
         price_gb_month=price,
+        idempotency_key=idempotency_key,
     )
     session.add(disk)
     await session.commit()

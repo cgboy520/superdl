@@ -169,13 +169,26 @@ function StoragePage() {
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
 
+  const [diskKeys] = useState(() => new Map<string, string>());
   const createDisk = useCreateDisk({
     onSuccess: () => {
       message.success(t("storage.created"));
       setCreateOpen(false);
       form.resetFields();
+      diskKeys.clear(); // 建成了才作废这批键,下一块盘重新分配
     },
   });
+  // 幂等键按「盘名 + 容量」派生:响应丢失后用户按第二下不会多出一块按日计费的孤儿盘;
+  // 改了参数就是另一块盘,键随之改变,不会被上一次的结果遮住
+  const diskIdempotencyKey = (name: string, sizeGb: number): string => {
+    const seed = `${name}|${sizeGb}`;
+    let k = diskKeys.get(seed);
+    if (k === undefined) {
+      k = crypto.randomUUID();
+      diskKeys.set(seed, k);
+    }
+    return k;
+  };
   const expand = useExpandDisk({
     onSuccess: () => {
       message.success(t("storage.expanded"));
@@ -285,7 +298,12 @@ function StoragePage() {
           form={form}
           layout="vertical"
           initialValues={{ name: "", size_gb: 100 }}
-          onFinish={(v: { name: string; size_gb: number }) => createDisk.mutate(v)}
+          onFinish={(v: { name: string; size_gb: number }) =>
+            createDisk.mutate({
+              body: v,
+              idempotencyKey: diskIdempotencyKey(v.name, v.size_gb),
+            })
+          }
         >
           <Form.Item name="name" label={t("storage.nameLabel")} rules={[{ required: true, message: t("storage.nameRequired") }]}>
             <Input maxLength={64} />

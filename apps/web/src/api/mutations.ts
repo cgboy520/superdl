@@ -127,8 +127,15 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
   );
 
 // ---------- disks ----------
+/** 建盘同样要幂等键:响应丢失时用户按第二下,否则会多出一块按日计费的孤儿盘。 */
 export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
-  useApiMutation((body: DiskCreate) => createDiskApiV1DisksPost(body), o);
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: DiskCreate; idempotencyKey: string }) =>
+      createDiskApiV1DisksPost(body, {
+        headers: { "Idempotency-Key": idempotencyKey },
+      }),
+    o,
+  );
 export const useExpandDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ uuid, body }: { uuid: string; body: DiskExpand }) => expandDiskApiV1DisksUuidPatch(uuid, body),

@@ -337,3 +337,31 @@ class TestDiskQuota:
         )
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "disks.countQuota"
+
+
+class TestDiskIdempotency:
+    async def test_repeated_create_with_same_key_returns_same_disk(self, client, sm, fake):
+        """响应丢失时用户按第二下,不能多出一块按日计费的孤儿盘。
+
+        建盘此前完全没有幂等保护,而它和建实例是同一次提交里的两步。
+        """
+        headers, user_id, _key = await create_user_with_key(client, "13500000050")
+        await fund_wallet(sm, user_id)
+        h = {**headers, "Idempotency-Key": "disk-idem-1"}
+        a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
+        b = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
+        assert a.status_code == 201 and b.status_code == 201
+        assert a.json()["uuid"] == b.json()["uuid"]
+        assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1
+
+    async def test_different_key_creates_second_disk(self, client, sm, fake):
+        headers, user_id, _key = await create_user_with_key(client, "13500000051")
+        await fund_wallet(sm, user_id)
+        for key in ("k1", "k2"):
+            resp = await client.post(
+                "/api/v1/disks",
+                json={"name": "d", "size_gb": 100},
+                headers={**headers, "Idempotency-Key": key},
+            )
+            assert resp.status_code == 201
+        assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 2
