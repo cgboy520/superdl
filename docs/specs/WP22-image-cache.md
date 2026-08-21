@@ -31,7 +31,9 @@
 
 ## 安全边界 / 明确不做
 
-- 不做 create_instance 目录白名单校验(ui-ux-spec §3.3 支持「自定义镜像」自由输入)。
+- create_instance 校验镜像引用**形态**(域名/路径/tag 合法),但**来源白名单默认关**:
+  ui-ux-spec §3.3 的「自定义镜像」是产品能力。需要收紧时配 `SUPERDL_IMAGE_ALLOWED_REGISTRIES`
+  (仓库前缀列表),配置后只放行平台镜像目录内的引用与这些前缀。
 - registry 为集群内网明文 HTTP(NodePort 30500),防火墙不得对外暴露;无认证(匿名 pull,push 走内网运维通道)——TLS/认证随 Harbor 后置项评估。
 - Spegel 限制:`latest` tag 不参与 P2P(平台镜像一律钉版本 tag)。
 

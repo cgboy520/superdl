@@ -410,3 +410,54 @@ class TestInventoryProvider:
         sku_id = await create_test_sku(sm, price_hourly=Decimal("1.6800"))
         data = await create_instance_api(client, headers, sku_id, key_id)
         assert data["price_hourly"] == "1.6800"
+
+
+class TestImageRefValidation:
+    async def test_malformed_image_ref_rejected(self, client, sm):
+        headers, user_id, key_id = await create_user_with_key(client, "13500000090")
+        await fund_wallet(sm, user_id)
+        sku_id = await create_test_sku(sm)
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "not a valid ref!",
+                "ssh_key_ids": [key_id],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "orchestrator.imageRefInvalid"
+
+    async def test_registry_allowlist_blocks_foreign_registry(self, client, sm, monkeypatch):
+        from app.core.config import get_settings
+
+        headers, user_id, key_id = await create_user_with_key(client, "13500000091")
+        await fund_wallet(sm, user_id)
+        sku_id = await create_test_sku(sm)
+        settings = get_settings()
+        monkeypatch.setattr(
+            settings, "image_allowed_registries", ["registry.superdl.local/"], raising=False
+        )
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "evil.example.com/miner:latest",
+                "ssh_key_ids": [key_id],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "orchestrator.imageRefNotAllowed"
+        # 白名单前缀内的镜像照常放行
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "ssh_key_ids": [key_id],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text

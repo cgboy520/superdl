@@ -117,3 +117,20 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
 def test_build_pod_spec_default_flag_off_no_annotations():
     pod = build_pod_spec(_instance(_spec("shared_std", "hami", gpu_model_selector="RTX4090")))
     assert pod.annotations == {}
+
+
+@pytest.mark.parametrize(
+    ("tier", "host_users"),
+    [("dedicated", True), ("mig", False), ("shared_std", False), ("shared_eco", False)],
+)
+def test_userns_hardening_by_tier(tier: str, host_users: bool):
+    """runc 档(mig / shared_*)一律 hostUsers=false;dedicated 走 Kata 的 VM 级隔离。"""
+    req = build_gpu_request(
+        tier=tier,
+        gpu_count=1,
+        gpu_cores_pct=50,
+        vram_gb=24,
+        mig_profile="1g.10gb" if tier == "mig" else None,
+        pool_label=tier,
+    )
+    assert req.host_users is host_users

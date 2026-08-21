@@ -107,6 +107,8 @@ MESSAGES: dict[str, str] = {
     "orchestrator.frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
     "orchestrator.gpuCountRange": "GPU 数量须在 1~{max} 之间",
     "orchestrator.gpuQuota": "GPU 总数将超过上限({max} 卡),请释放后再创建或联系客服提额",
+    "orchestrator.imageRefInvalid": "镜像地址格式不正确,示例:registry.example.com/pytorch:2.9",
+    "orchestrator.imageRefNotAllowed": "该镜像仓库未被允许,请使用平台镜像或以下仓库:{registries}",
     "orchestrator.instanceQuota": "实例数已达上限({max} 台),请释放后再创建或联系客服提额",
     "orchestrator.invalidTransition": "实例当前状态({from})不允许该操作",
     "orchestrator.releaseNeedsStopped": "关机后才能释放实例",

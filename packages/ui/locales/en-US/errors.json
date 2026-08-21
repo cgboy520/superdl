@@ -100,6 +100,8 @@
     "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze, then start",
     "gpuCountRange": "GPU count must be between 1 and {{max}}",
     "gpuQuota": "Total GPUs would exceed the limit ({{max}}) — release some or contact support to raise it",
+    "imageRefInvalid": "Invalid image reference. Example: registry.example.com/pytorch:2.9",
+    "imageRefNotAllowed": "This image registry is not allowed. Use a platform image or one of: {{registries}}",
     "instanceQuota": "Instance limit reached ({{max}}) — release some or contact support to raise it",
     "invalidTransition": "The instance's current state ({{from}}) does not allow this operation",
     "releaseNeedsStopped": "Stop the instance before releasing it",

@@ -5,7 +5,7 @@
 
 分池铁律:
 - dedicated → Kata 4.0(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
-- mig       → runc + MIG device plugin,mig 池
+- mig       → runc + MIG device plugin + userns 加固(hostUsers=false),mig 池
 - shared_*  → runc + HAMi 软切分 + userns 加固(hostUsers=false),hami 池
 Kata 与 HAMi 永不混布同一节点池。
 """
@@ -63,7 +63,7 @@ def build_gpu_request(
         return GpuRequest(
             resources={f"nvidia.com/mig-{mig_profile}": str(gpu_count)},
             runtime_class=None,
-            host_users=True,
+            host_users=False,  # 与共享池同为 runc,同样要 userns 加固(缩小逃逸落点)
             node_selector=node_selector,
         )
     if tier in ("shared_std", "shared_eco"):

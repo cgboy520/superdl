@@ -5,6 +5,7 @@
 - 「改 DB + 动 K8s」一律 outbox;请求路径绝不直接调 K8s
 """
 
+import re
 import secrets
 from collections.abc import Awaitable, Callable, Iterable
 from typing import TYPE_CHECKING, Any, cast
@@ -119,6 +120,39 @@ async def _require_cluster_for_tier(session: AsyncSession, tier: str | None) -> 
         await nodes_service.require_hami_ready(session)
 
 
+# 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串,
+# 免得垃圾值一路走到 K8s 才变成 creating 超时 + 退款
+_IMAGE_REF_RE = re.compile(
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
+    r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
+    r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?"
+    r"(?:@sha256:[0-9a-f]{64})?$"
+)
+
+
+async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
+    """镜像引用校验:先形态,再来源。
+
+    来源白名单默认关 —— 「自定义镜像自由输入」是 ui-ux-spec §3.3 的产品能力。
+    配置 SUPERDL_IMAGE_ALLOWED_REGISTRIES 后只放行平台镜像目录内的引用与白名单前缀,
+    上线前按运营口径决定是否收紧(这是唯一的镜像来源闸门)。
+    """
+    if not _IMAGE_REF_RE.match(image_ref):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
+    allowed = get_settings().image_allowed_registries
+    if not allowed:
+        return
+    if any(image_ref.startswith(prefix) for prefix in allowed):
+        return
+    if await catalog_service.is_catalog_image(session, image_ref):
+        return
+    raise AppError(
+        ErrorCode.VALIDATION_ERROR,
+        key="orchestrator.imageRefNotAllowed",
+        params={"registries": "、".join(allowed)},
+    )
+
+
 async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) -> None:
     """每用户配额(实例数 / GPU 总数):防单账号无限开机(K8s 侧 ResourceQuota 是兜底)。"""
     from sqlalchemy import func
@@ -184,6 +218,7 @@ async def create_instance(
             key="orchestrator.gpuCountRange",
             params={"max": sku.max_gpus_per_instance},
         )
+    await _validate_image_ref(session, image_ref)
     await _check_user_quota(session, user_id, gpu_count)
     # 计费护栏:开机前校验余额 ≥ 1 小时预估费用
     estimate = as_amount(sku.price_hourly * gpu_count)

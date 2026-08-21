@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     icp_number: str | None = None
     police_record_number: str | None = None
 
+    # 创建实例可用的镜像来源白名单(仓库前缀列表)。空 = 不限制:
+    # 「自定义镜像自由输入」是产品能力(ui-ux-spec §3.3),收紧与否由运营决定。
+    # 配置后只放行平台镜像目录内的引用与这些前缀,如 ["registry.superdl.internal/"]
+    image_allowed_registries: list[str] = []
+
     # 每用户配额(防单账号无限开机;K8s ResourceQuota 是集群侧兜底)
     max_instances_per_user: int = 10
     max_gpus_per_user: int = 8

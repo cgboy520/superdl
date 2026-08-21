@@ -65,6 +65,13 @@ async def list_images(session: AsyncSession) -> list[PlatformImage]:
     )
 
 
+async def is_catalog_image(session: AsyncSession, image_ref: str) -> bool:
+    """该镜像引用是否属于平台镜像目录(创建实例的来源白名单判定之一)。"""
+    return (
+        await session.execute(select(PlatformImage.id).where(PlatformImage.image_ref == image_ref))
+    ).scalar_one_or_none() is not None
+
+
 async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int]]:
     """预热覆盖聚合:image_id → (cached 节点数, 总行数, failed 节点数)。纯 DB,不调 K8s。"""
     rows = (
