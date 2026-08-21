@@ -23,3 +23,7 @@ data:
   SUPERDL_SSH_HOST: "ssh1.superdl.example.com"
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
+  # uvicorn 信任的前置代理来源(--proxy-headers 的白名单,不在名单内则忽略 X-Forwarded-For)。
+  # 默认值是 RKE2/k3s 的 Pod CIDR:请求经 ingress-nginx / 前端 nginx 转发进来,
+  # 源地址就是它们的 Pod IP。集群 Pod CIDR 不同请按实际改;禁止写 "*"(等于允许伪造源 IP)。
+  FORWARDED_ALLOW_IPS: "10.42.0.0/16"
