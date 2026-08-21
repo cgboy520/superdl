@@ -1,0 +1,22 @@
+{
+  "app": {
+    "title": "SuperDL · GPU 算力云"
+  },
+  "common": {
+    "backConsole": "回控制台",
+    "backHome": "回首页",
+    "retry": "重试"
+  },
+  "errorPage": {
+    "title": "页面出错了",
+    "unknown": "发生未知错误,请重试或返回首页"
+  },
+  "lang": {
+    "en": "English",
+    "zh": "中文"
+  },
+  "notFound": {
+    "subtitle": "你访问的地址不存在或已被移除",
+    "title": "页面不存在"
+  }
+}

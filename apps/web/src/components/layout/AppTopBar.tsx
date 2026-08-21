@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 
 import { useIsLoggedIn } from "../../stores/auth";
 import { BrandLogo } from "./BrandLogo";
+import { LangSwitcher } from "./LangSwitcher";
 
 export function AppTopBar({
   variant,
@@ -54,6 +55,7 @@ export function AppTopBar({
         )}
       </nav>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        <LangSwitcher />
         {variant === "public" ? (
           loggedIn ? (
             <Link to="/instances">

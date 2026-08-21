@@ -1,7 +1,10 @@
 import { webTheme } from "@superdl/ui";
 import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, Button, ConfigProvider, Result } from "antd";
-import zhCN from "antd/locale/zh_CN";
+import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+
+import { useAppLocale } from "../lib/locale";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -9,50 +12,60 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
+/** locale 联动的唯一 Provider:主树/错误边界/404 共用(后两者渲染在主树之外,须自带)。 */
+function AppProviders({ children }: { children: ReactNode }) {
+  const antdLocale = useAppLocale();
+  return (
+    <ConfigProvider locale={antdLocale} theme={webTheme}>
+      <AntApp>{children}</AntApp>
+    </ConfigProvider>
+  );
+}
+
 function RootLayout() {
   return (
-    <ConfigProvider locale={zhCN} theme={webTheme}>
-      <AntApp>
-        <Outlet />
-      </AntApp>
-    </ConfigProvider>
+    <AppProviders>
+      <Outlet />
+    </AppProviders>
   );
 }
 
 /** 全局错误边界:渲染异常兜底为可恢复页面,不白屏。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
+  const { t } = useTranslation();
   return (
-    <ConfigProvider locale={zhCN} theme={webTheme}>
+    <AppProviders>
       <Result
         status="500"
-        title="页面出错了"
-        subTitle={error instanceof Error ? error.message : "发生未知错误,请重试或返回首页"}
+        title={t("errorPage.title")}
+        subTitle={error instanceof Error ? error.message : t("errorPage.unknown")}
         extra={
           <>
             <Button type="primary" onClick={() => reset()}>
-              重 试
+              {t("common.retry")}
             </Button>
-            <Button onClick={() => (window.location.href = "/")}>回首页</Button>
+            <Button onClick={() => (window.location.href = "/")}>{t("common.backHome")}</Button>
           </>
         }
       />
-    </ConfigProvider>
+    </AppProviders>
   );
 }
 
 function NotFoundPage() {
+  const { t } = useTranslation();
   return (
-    <ConfigProvider locale={zhCN} theme={webTheme}>
+    <AppProviders>
       <Result
         status="404"
-        title="页面不存在"
-        subTitle="你访问的地址不存在或已被移除"
+        title={t("notFound.title")}
+        subTitle={t("notFound.subtitle")}
         extra={
           <Link to="/dashboard">
-            <Button type="primary">回控制台</Button>
+            <Button type="primary">{t("common.backConsole")}</Button>
           </Link>
         }
       />
-    </ConfigProvider>
+    </AppProviders>
   );
 }

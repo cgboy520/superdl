@@ -11,6 +11,7 @@ export default defineConfig({
   retries: 0,
   use: {
     baseURL: "http://localhost:5173",
+    locale: "zh-CN", // CI chromium 默认英文环境;钉死避免语言探测翻转致中文定位器失配
     trace: "retain-on-failure",
   },
   webServer: {

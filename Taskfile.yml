@@ -54,6 +54,7 @@ tasks:
     cmds:
       - pnpm lint
       - pnpm typecheck
+      - pnpm i18n
       - pnpm test
       - pnpm build
 
