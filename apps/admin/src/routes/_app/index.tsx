@@ -2,6 +2,7 @@ import { adminColors, formatDateTime, statusColors } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  Alert,
   App,
   Badge,
   Button,
@@ -246,11 +247,28 @@ function DeadTasksCard() {
   );
 }
 
+/** 取数失败要显式说:渲染成「暂无数据」等于把集群不可达伪装成没数据。 */
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Alert
+      type="error"
+      showIcon
+      message={t("overview.loadFailed")}
+      action={
+        <Button size="small" onClick={onRetry}>
+          {t("overview.retry")}
+        </Button>
+      }
+    />
+  );
+}
+
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const { data: oversell } = useOversellReport();
-  const { data: nodesData } = useNodes();
+  const { data: oversell, isError: oversellError, refetch: refetchOversell } = useOversellReport();
+  const { data: nodesData, isError: nodesError, refetch: refetchNodes } = useNodes();
   const { data: instances } = useAdminInstances();
   const { data: tenants } = useTenants();
   const { data: alertsData } = useAlerts();
@@ -304,7 +322,11 @@ function Overview() {
           <Statistic
             title={t("overview.alertsTotal")}
             value={alerts.length}
-            valueStyle={alerts.some((a) => a.severity === "critical") ? { color: adminColors.negative } : undefined}
+            styles={{
+              content: alerts.some((a) => a.severity === "critical")
+                ? { color: adminColors.negative }
+                : undefined,
+            }}
           />
         </Card>
       </Col>
@@ -316,10 +338,22 @@ function Overview() {
           title={t("overview.oversellChartTitle")}
           extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
         >
-          {oversellRows.length ? <OversellChart rows={oversellRows} /> : <Empty />}
+          {oversellError ? (
+            <LoadFailed onRetry={() => void refetchOversell()} />
+          ) : oversellRows.length ? (
+            <OversellChart rows={oversellRows} />
+          ) : (
+            <Empty />
+          )}
         </Card>
         <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
-          {nodes.length ? <PoolOccupancy nodes={nodes} /> : <Empty />}
+          {nodesError ? (
+            <LoadFailed onRetry={() => void refetchNodes()} />
+          ) : nodes.length ? (
+            <PoolOccupancy nodes={nodes} />
+          ) : (
+            <Empty />
+          )}
         </Card>
       </Col>
       <Col span={7}>

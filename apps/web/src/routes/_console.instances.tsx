@@ -255,9 +255,11 @@ function InstancesPage() {
     [daily],
   );
 
-  const rows = (instances ?? []).filter(
-    (i) => !q || i.name.includes(q) || i.uuid.includes(q.toLowerCase()),
-  );
+  // 名称与 uuid 都按小写比对:此前名称大小写敏感、uuid 强制小写,同一个搜索框两套口径
+  const rows = (instances ?? []).filter((i) => {
+    const needle = q.trim().toLowerCase();
+    return !needle || i.name.toLowerCase().includes(needle) || i.uuid.includes(needle);
+  });
 
   const openDetail = (uuid: string, tab?: string) =>
     navigate({

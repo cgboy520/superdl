@@ -341,7 +341,8 @@ function SkusPage() {
                 <Switch
                   checked={v === "on"}
                   disabled={!writable}
-                  loading={toggleSale.isPending}
+                  // 按行隔离:mutation 级 isPending 会让全表开关一起转,看着像批量生效
+                  loading={toggleSale.isPending && toggleSale.variables?.skuId === r.id}
                   onChange={(on) =>
                     toggleSale.mutate({ skuId: r.id, data: { status: on ? "on" : "off" } })
                   }

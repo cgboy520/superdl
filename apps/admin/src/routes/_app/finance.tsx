@@ -73,7 +73,11 @@ function ReconciliationCard() {
             title="diff%"
             value={report ? report.diff_pct : "—"}
             suffix={report ? "%" : undefined}
-            valueStyle={diffHigh ? { color: adminColors.negative } : { color: adminColors.positive }}
+            styles={{
+              content: diffHigh
+                ? { color: adminColors.negative }
+                : { color: adminColors.positive },
+            }}
           />
         </Col>
       </Row>

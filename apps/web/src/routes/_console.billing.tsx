@@ -35,7 +35,7 @@ import {
 } from "antd";
 import { useFormat } from "../lib/format";
 import EChart from "../components/EChart";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useCreateRecharge, useMockPay, useSetWarnThreshold } from "../api/mutations";
 import { DataErrorAlert, moneyOr } from "../components/QueryState";
@@ -67,6 +67,28 @@ const LEDGER_TYPE = {
 type LedgerTypeKey = keyof typeof LEDGER_TYPE;
 
 const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
+
+/** 支付倒计时:只给一个到期时刻,用户还得自己算还剩多久。 */
+function PayCountdown({ expiresAt }: { expiresAt: string }) {
+  const { t } = useTranslation();
+  const [left, setLeft] = useState(() => Math.max(0, new Date(expiresAt).getTime() - Date.now()));
+  useEffect(() => {
+    const timer = setInterval(
+      () => setLeft(Math.max(0, new Date(expiresAt).getTime() - Date.now())),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+  if (left <= 0) return <span>{t("billing.orderExpired")}</span>;
+  const total = Math.floor(left / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // 订单 TTL 是 2 小时:超过一小时要显示时段,否则 "119:58" 这种读起来像 119 分钟
+  const time = h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  return <span>{t("billing.payCountdown", { time })}</span>;
+}
 
 function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { formatMoney } = useFormat();
@@ -192,6 +214,9 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
               no: order.order_no,
               time: formatDateTime(polled?.expires_at ?? order.expires_at),
             })}
+            description={
+              <PayCountdown expiresAt={polled?.expires_at ?? order.expires_at} />
+            }
           />
           <div style={{ display: "flex", justifyContent: "center" }}>
             <QRCode value={order.qr_url ?? order.order_no} size={168} />

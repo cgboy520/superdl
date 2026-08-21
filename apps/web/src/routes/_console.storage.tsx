@@ -162,6 +162,8 @@ function StoragePage() {
   const [deleteTarget, setDeleteTarget] = useState<DiskOut | null>(null);
   const [newSize, setNewSize] = useState(100);
   const [form] = Form.useForm();
+  const sizeWatch = Form.useWatch<number>("size_gb", form);
+  const { formatMoney } = useFormat();
 
   const priceText = policies ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month }) : t("storage.priceFallback");
   const graceDays = policies?.disk_grace_days;
@@ -298,6 +300,13 @@ function StoragePage() {
           </Form.Item>
           <Typography.Text type="secondary">
             {t("storage.createNote", { price: priceText })};{t("copy.dailyCostNote")}
+          </Typography.Text>
+          {/* 容量对应的日费实时折算:光给「元/GB·月」用户还要自己换算 */}
+          <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
+            {t("storage.dailyEstimate", {
+              size: sizeWatch ?? 0,
+              amount: formatMoney(diskDailyEstimate(policies?.disk_price_gb_month, sizeWatch ?? 0)),
+            })}
           </Typography.Text>
         </Form>
       </Modal>

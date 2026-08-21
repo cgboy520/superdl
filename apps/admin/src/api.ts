@@ -270,10 +270,9 @@ export function useImageNodes(imageId: number, options?: { refetchInterval?: num
 }
 
 export function useOversellReport() {
-  return useQuery({
-    queryKey: ["admin", "oversell"],
-    queryFn: () => oversellReportApiAdminV1ReportsOversellGet(),
-  });
+  const queryKey = ["admin", "oversell"] as const;
+  const q = useQuery({ queryKey, queryFn: () => oversellReportApiAdminV1ReportsOversellGet() });
+  return { ...q, queryKey };
 }
 
 export function useReconciliation(day: string) {
