@@ -28,6 +28,7 @@ from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
 from app.modules.nodes import service as nodes_service
+from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.statemachine import validate_transition
@@ -117,8 +118,8 @@ async def _require_cluster_for_tier(
     """下发门禁:能力缺位即时 409,而非等 Pending 超时。
 
     - HAMi:只有 shared 档依赖 hami-scheduler,dedicated/mig 不受影响。
-    - StorageClass:实例盘那只人人要挂,数据盘那只按需 —— 名字对不上或档位没装,
-      Pod 会永久 Pending 到 300 秒判 failed,用户只看到「开不出来」。
+    - StorageClass:实例盘人人要挂,数据盘按需;名字对不上或档位没装,
+      Pod 会永久 Pending 到 300 秒判 failed。
     """
     if tier in _SHARED_TIERS:
         await nodes_service.require_hami_ready(session)
@@ -138,9 +139,8 @@ _IMAGE_REF_RE = re.compile(
 async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
     """镜像引用校验:先形态,再来源。
 
-    来源白名单默认关 —— 「自定义镜像自由输入」是 ui-ux-spec §3.3 的产品能力。
-    配置 SUPERDL_IMAGE_ALLOWED_REGISTRIES 后只放行平台镜像目录内的引用与白名单前缀,
-    上线前按运营口径决定是否收紧(这是唯一的镜像来源闸门)。
+    来源白名单默认关(自定义镜像自由输入是产品能力)。配置 SUPERDL_IMAGE_ALLOWED_REGISTRIES
+    后只放行平台镜像目录内的引用与白名单前缀;这是唯一的镜像来源闸门。
     """
     if not _IMAGE_REF_RE.match(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
@@ -410,6 +410,13 @@ async def release_instance(
 
 
 async def ensure_port(session: AsyncSession, instance: Instance) -> int:
+    """分配一个 SSH NodePort。已分配则原样返回(幂等)。
+
+    端口池 30000–32767 与 K8s NodePort 同段,集群内其它对象会硬占其中某些端口。两道防护:
+    - `ssh_port_excluded`:已知被占端口一开始就跳过;
+    - `blocked` 标记:运行期真撞上时由 handle_create 落一行 blocked(独立事务),分配器此后
+      绕开它。少了它,高水位线会永远停在被占端口前面,此后所有触顶的新建实例全部失败。
+    """
     settings = get_settings()
     mine = (
         await session.execute(
@@ -421,7 +428,7 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     free = (
         await session.execute(
             select(PortAllocation)
-            .where(PortAllocation.instance_id.is_(None))
+            .where(PortAllocation.instance_id.is_(None), PortAllocation.blocked.is_(False))
             .order_by(PortAllocation.port)
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -433,12 +440,34 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
         return free.port
     max_port = (await session.execute(select(func.max(PortAllocation.port)))).scalar_one()
     next_port = settings.ssh_port_range_start if max_port is None else max_port + 1
+    while next_port in settings.ssh_port_excluded:
+        next_port += 1
     if next_port > settings.ssh_port_range_end:
         raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
     alloc = PortAllocation(port=next_port, instance_id=instance.id)
     session.add(alloc)
     await session.flush()
     return next_port
+
+
+async def block_port(sm: Any, port: int, *, reason: str) -> None:
+    """把一个被集群其它对象占用的端口标记为不可分配。**独立事务**提交。
+
+    必须独立:调用方那笔事务马上要整体回滚,标记跟着回滚就等于没标。
+    调用方须先 rollback 再调本函数,否则未提交的同端口 PortAllocation 会把这笔独立事务锁死。
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    async with sm() as session:
+        await session.execute(
+            pg_insert(PortAllocation)
+            .values(port=port, instance_id=None, blocked=True)
+            .on_conflict_do_update(
+                index_elements=["port"], set_={"blocked": True, "instance_id": None}
+            )
+        )
+        await session.commit()
+    logger.error("ssh_port_blocked", port=port, reason=reason)
 
 
 async def free_port(session: AsyncSession, instance_id: int) -> None:
@@ -577,10 +606,7 @@ async def admin_list_instances(
     q: str | None = None,
     node_name: str | None = None,
 ) -> list[Instance]:
-    """管理端实例列表。q 按实例名或 uuid 前缀匹配,node_name 精确。
-
-    「这个 Pod 在挖矿,是谁的、在哪台机器上」是强制停机(force-stop)的前置问题。
-    """
+    """管理端实例列表。q 按实例名或 uuid 前缀匹配,node_name 精确。"""
     # 固定截断:超出即在管理端表底给出「已达上限」提示(admin/components/ListCapNote.tsx),
     # 改这里的数字要同步改那里 —— 静默截断看上去和「一共就这些」一模一样
     stmt = select(Instance).order_by(Instance.id.desc()).limit(200)
@@ -616,6 +642,14 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
         metadata={"admin_reason": reason},
     )
     enqueue(session, "instance.stop", {"instance_id": instance.id})
+    await notify_service.notify(
+        session,
+        instance.user_id,
+        type_="instance",
+        title="实例已被管理员强制停止",
+        content=f"实例「{instance.name}」已被强制停止并结算尾账。原因:{reason}",
+        severity="warning",
+    )
     await session.commit()
     return instance
 
@@ -626,18 +660,13 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
     """结算前先拿实例行锁,再读事件。同事务内重复加锁是 no-op。
 
-    transition() 的第一步就是 `UPDATE instances ...`(乐观锁那条),它持有该行的写锁直到
-    提交;事件的 created_at 是在拿到锁之后才生成的。结算不先拿这把锁的话,就会出现:
-    用户 10:59:30 关机的事务尚未提交 → 11:02 的整点结算读不到那条 stopping 事件 →
-    判定「整点仍在 running」算 3600 秒 → 随后被账单行的唯一索引挡住并阻塞 → 尾账提交后
-    结算拿到 charged=True 的行,走补差价分支再补 30 秒 → 用户被按满 3600 秒计费。
-    而 upsert_hour_bill 是单调只增的(「只补不重扣」是它的显式契约),先入账的高估值
-    **永远无法回退**:账单页显示 3600 秒,instance_events 显示 10:59:30 停机,两者自相
-    矛盾且没有任何自动纠正路径。
+    transition() 的第一步是 `UPDATE instances`(乐观锁那条),持该行写锁直到提交,而事件的
+    created_at 在拿到锁之后才生成。结算不先拿这把锁,就会读到「少了最后那条 stopping」的
+    事件流并把窗口算满;而 upsert_hour_bill 单调只增,先入账的高估值永远无法回退。
 
-    拿了锁之后两个方向都安全:在飞的迁移会先提交完(结算随后读得到它);或者结算先拿到
-    锁、迁移被挡住,而它的事件时间戳必然 ≥ 结算开始时刻,从而落进下一个小时窗口。
-    锁序统一为 instance → bill_hourly → wallet,与 transition 自身一致,无新增死锁面。
+    拿了锁之后两个方向都安全:在飞的迁移先提交完(结算随后读得到);或结算先拿到锁、迁移被
+    挡住,其事件时间戳必然落进下一个小时窗口。
+    锁序统一为 instance → bill_hourly → wallet,与 transition 一致,无新增死锁面。
     """
     await session.execute(
         select(Instance.id)
@@ -727,8 +756,7 @@ async def instance_locations(
 ) -> dict[int, tuple[str, str, str | None]]:
     """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。
 
-    按 id 精确取。曾复用管理端 admin_list_instances(硬编码 LIMIT 200):
-    实例数过 200 后老实例查不到,聚合整轮 KeyError 作废。
+    按 id 精确取:不能复用带 LIMIT 的管理端列表,否则实例数超上限后聚合整轮作废。
     """
     ids = list(instance_ids)
     if not ids:

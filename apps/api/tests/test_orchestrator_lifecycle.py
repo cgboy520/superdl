@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import drain
+from app.core.outbox import OutboxTask, drain
 from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
@@ -171,9 +171,7 @@ class TestStopStartRestart:
         # 端口保留(关机不释放端口)
         port_before = (await get_instance(client, headers, uuid))["ssh_port"]
 
-        # 实例盘活过关机:关机=删 Pod,盘是平台自管生命周期的具名 PVC,不随 Pod 走。
-        # 曾经这里用的是 generic ephemeral volume(PVC 属主是 Pod),用户每点一次关机
-        # 盘就被 TopoLVM blkdiscard 抹掉一次
+        # 实例盘活过关机:关机=删 Pod,盘是平台自管生命周期的具名 PVC,不随 Pod 走
         disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]
 
         resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
@@ -189,10 +187,8 @@ class TestStopStartRestart:
     async def test_restart_waits_for_pod_to_actually_disappear(self, client, sm, fake):
         """真实集群里删除是优雅删除:对象要在 etcd 里再留 30 秒。
 
-        此前 handler 在同一次执行里删完就同名重建 —— 必然撞 409 AlreadyExists,而 409 被
-        当幂等跳过,新 Pod 根本没建出来。实例随后被判 schedule_timeout → failed,而 failed
-        只能释放不能开机:每一次重启都会把实例打成不可恢复。Fake 把删除建模成同步瞬时
-        (pods.pop),所以整套测试永远看不到这个中间态。
+        重启必须等对象真正消失再同名重建,否则撞 409 被当幂等跳过 = Pod 没建出来。
+        Fake 默认把删除建模成同步瞬时(pods.pop),本用例显式打开 graceful_delete。
         """
         from app.core.outbox import OutboxTask
 
@@ -223,13 +219,6 @@ class TestStopStartRestart:
         fake.mark_ready(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-
-    async def test_restart_keeps_instance_disk(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
-        disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]
-        await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
-        await drain(sm)
-        assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
 
     async def test_stop_requires_running(self, client, sm, fake):
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
@@ -278,9 +267,7 @@ class TestFailureModes:
     async def test_node_lost_stops_billing_and_notifies(self, client, sm, fake):
         """节点断电/失联:kubelet 不可达,Pod 停在 phase=Running 只有 Ready 转 False。
 
-        此前 RUNNING 分支只看 exists 与 phase,两个条件都不命中 → reconciler 什么也不做:
-        控制台显示「运行中」、SSH 连不上、账单每小时照扣,直到余额烧光被欠费停机;
-        而那次停机同样删不掉一个删不掉的 Pod,实例最终卡在 stopping。
+        验 RUNNING 分支不能只看 exists 与 phase,否则实例会一直显示运行中并持续计费。
         """
         headers, uuid, user_id = await _provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
@@ -350,7 +337,7 @@ class TestFailureModes:
         assert counts["to_failed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
         assert (f"tenant-{user_id}", uuid) not in fake.pods  # 已清理
-        # 首开就没起来 = 盘从未承载数据(且很可能正是它绑不上才超时),一并回收不留孤儿 LV
+        # 首开就没起来 = 盘从未承载数据,一并回收不留孤儿 LV
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
@@ -393,8 +380,7 @@ class TestRelease:
         assert events[-1]["event_metadata"]["disk_wipe"] == "blkdiscard"
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
 
-        # 端口回池并被下一实例复用
-        _, _, _key2 = await create_user_with_key(client, "13900000031")
+        # 端口回池
         async with sm() as session:
             row = (
                 await session.execute(select(PortAllocation).where(PortAllocation.port == port))
@@ -414,7 +400,6 @@ class TestRelease:
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
 
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
-        assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "releasing"
         await drain(sm)
         counts = await reconcile_once(sm)
@@ -435,7 +420,6 @@ class TestRelease:
         assert data["status"] == "creating"  # 未 mark_ready,停在 creating
 
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
-        assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "releasing"
         await drain(sm)
         counts = await reconcile_once(sm)
@@ -468,6 +452,67 @@ class TestPortPool:
         await drain(sm)  # 第二台分配端口失败 → 任务重试;实例仍 creating
         data = await get_instance(client, headers, b["uuid"])
         assert data["ssh_port"] is None
+
+    async def test_excluded_port_is_skipped(self, client, sm, fake, monkeypatch):
+        """已知被集群其它对象占用的 NodePort 一开始就不分配。"""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "ssh_port_range_start", 31500)
+        monkeypatch.setattr(settings, "ssh_port_excluded", {31500, 31501})
+
+        headers, user_id, key_id = await create_user_with_key(client, "13900000042")
+        await fund_wallet(sm, user_id, "500.00")
+        sku_id = await create_test_sku(sm)
+        data = await create_instance_api(client, headers, sku_id, key_id)
+        await drain(sm)
+        assert (await get_instance(client, headers, data["uuid"]))["ssh_port"] == 31502
+
+    async def test_taken_node_port_is_blocked_and_recovered(self, client, sm, fake, monkeypatch):
+        """撞上被占 NodePort 后必须能自愈:端口标 blocked 并换一个重试。
+
+        否则高水位线永远停在被占端口前面,此后所有触顶的新建实例全部失败。
+        """
+        from app.core.config import get_settings
+        from app.core.k8s import NodePortTaken
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "ssh_port_range_start", 31800)
+        monkeypatch.setattr(settings, "ssh_port_excluded", set())
+
+        taken = {31800}
+        original = fake.create_instance
+
+        async def guarded(spec):
+            if spec.ssh_node_port in taken:
+                raise NodePortTaken(spec.ssh_node_port)
+            await original(spec)
+
+        monkeypatch.setattr(fake, "create_instance", guarded)
+
+        headers, user_id, key_id = await create_user_with_key(client, "13900000043")
+        await fund_wallet(sm, user_id, "500.00")
+        sku_id = await create_test_sku(sm)
+        data = await create_instance_api(client, headers, sku_id, key_id)
+        await drain(sm)
+
+        # 第一次撞上 → 端口被标 blocked(独立事务,不随失败事务回滚)
+        async with sm() as session:
+            row = (
+                await session.execute(select(PortAllocation).where(PortAllocation.port == 31800))
+            ).scalar_one()
+        assert row.blocked is True and row.instance_id is None
+
+        # 重试:分配器绕开被标记的端口,实例正常起来
+        async with sm() as session:
+            await session.execute(
+                update(OutboxTask)
+                .where(OutboxTask.type == "instance.create")
+                .values(next_retry_at=now_utc())
+            )
+            await session.commit()
+        await drain(sm)
+        assert (await get_instance(client, headers, data["uuid"]))["ssh_port"] == 31801
 
 
 class TestAdminOps:

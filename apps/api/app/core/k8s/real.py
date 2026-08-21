@@ -1,7 +1,6 @@
 """生产 K8s 编排(kubernetes 官方客户端 36.x,已对齐 K8s 1.36)。
 
 官方客户端为同步实现,全部调用经 asyncio.to_thread 出让事件循环。
-真实 GPU 行为(HAMi 限额/Kata 直通)只能实机验证。
 
 对象命名:pod/svc/ingress 同名 = instance uuid;统一打标 superdl.io/instance。
 """
@@ -23,10 +22,12 @@ from app.core.k8s.base import (
     ClusterProbe,
     InstancePodSpec,
     NodeInfo,
+    NodePortTaken,
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
     instance_disk_pvc_name,
+    jupyter_service_name,
 )
 
 INSTANCE_LABEL = "superdl.io/instance"
@@ -40,25 +41,15 @@ PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-co
 def tenant_security_context() -> "client.V1SecurityContext":
     """租户容器的加固基线。**无条件下发,不看 runtimeClass、不看发行版、不看档位。**
 
-    此前是 `V1SecurityContext(...) if spec.runtime_class is None else None` —— 把
-    runtime_class 当成了「这是不是 Kata,有 VM 边界所以容器级加固可省」的代理判据。
-    WP27 给 k3s 共享档加上 runtimeClassName=nvidia 之后这个代理判据就失效了:k3s light 档
-    的租户容器(runc + HAMi 软切分,与其他租户共享同一内核和同一张物理 GPU,是全站最不
-    可信的负载)整段 securityContext 被置 None,drop ALL 与禁提权双双失效,只剩 userns
-    一层。同一份代码在 RKE2 上是加固的、换个发行版就静默掉防护 —— 最坏的一种形态。
-
-    Kata 那侧也没有豁免的技术依据:RuntimeClass 只是 CRI runtime handler 的选择,
-    capabilities / allowPrivilegeEscalation / seccompProfile 都是标准 OCI 字段,
-    kata-qemu 会在 guest 内照常施加,K8s 侧也没有任何互斥校验。
-
-    userns(hostUsers=false)挡的是「逃逸后在宿主的权限」,挡不住「容器内用
-    CAP_SYS_ADMIN / CAP_NET_RAW 打内核或打 GPU 驱动」,不能替代这一层。
+    禁止拿 runtime_class 当「有 VM 边界所以容器级加固可省」的代理判据:共享档在 k3s 上也带
+    runtimeClassName(nvidia),而它是全站最不可信的负载(runc + 软切分 + 共享内核/物理卡)。
+    Kata 同样不豁免:capabilities / allowPrivilegeEscalation / seccompProfile 是标准 OCI
+    字段,kata-qemu 会在 guest 内照常施加。userns(hostUsers=false)只挡逃逸后在宿主的权限,
+    挡不住容器内用 CAP_SYS_ADMIN / CAP_NET_RAW 打内核或打 GPU 驱动,不能替代这一层。
     """
     return client.V1SecurityContext(
         allow_privilege_escalation=False,
         capabilities=client.V1Capabilities(drop=["ALL"]),
-        # 平台自己的 Pod 早就配了 RuntimeDefault,而不可信的付费陌生人跑的是 unconfined,
-        # 防护强度倒挂
         seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
     )
 
@@ -80,9 +71,8 @@ PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/1
 class _TimeoutApi:
     """给官方同步客户端的每次调用注入 `_request_timeout`(客户端无全局超时配置项)。
 
-    不注入则 API server 挂起时 to_thread 的线程永久悬挂:outbox 单队列会被一个卡死的
-    调用整队拖停,市场页库存查询在缓存过期后同样被挂住。包一层比在 40 余处调用点各写
-    一遍可靠 —— 新增调用不会漏。
+    不注入则 API server 挂起时 to_thread 的线程永久悬挂,outbox 单队列被整队拖停。
+    包一层而不在各调用点手写,新增调用才不会漏。
     """
 
     def __init__(self, api: Any, timeout: tuple[float, float]) -> None:
@@ -235,9 +225,8 @@ class RealOrchestrator:
         self._create_ingress_sync(spec)
 
     def _ensure_instance_disk_sync(self, spec: InstancePodSpec) -> None:
-        """实例盘 PVC。已存在即跳过 —— 重新开机必须复用同一只盘(用户的 conda 环境、
-        代码、checkpoint 都在里面),绝不按新容量重建。TopoLVM 是节点本地卷,
-        PV 带 node affinity,首次绑定后调度器会自动把后续 Pod 拉回原节点。"""
+        """实例盘 PVC。已存在即跳过:重新开机必须复用同一只盘,绝不按新容量重建。
+        TopoLVM 是节点本地卷,PV 带 node affinity,首次绑定后调度器会把后续 Pod 拉回原节点。"""
         pvc = client.V1PersistentVolumeClaim(
             metadata=client.V1ObjectMeta(
                 name=instance_disk_pvc_name(spec.name),
@@ -326,9 +315,7 @@ class RealOrchestrator:
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
-            # 409 不一定是幂等命中。同名对象正在优雅删除(Terminating)时也是 409,
-            # 把它当「已存在,跳过」意味着新 Pod 根本没被创建,而 handler 正常返回、
-            # 任务标 done —— 没有重试、没有死信、没有告警,实例静默地再也起不来。
+            # 409 不能当幂等成功:同名对象 Terminating 时也是 409,新 Pod 并未创建,必须重试
             existing: Any = self.core.read_namespaced_pod(spec.name, spec.namespace)
             if existing.metadata.deletion_timestamp is not None:
                 raise RuntimeError(
@@ -336,6 +323,11 @@ class RealOrchestrator:
                 ) from exc
 
     def _create_service_sync(self, spec: InstancePodSpec) -> None:
+        """SSH 走 NodePort(显式端口),Jupyter 走 ClusterIP(Ingress 回源)。
+
+        必须拆成两个 Service:type=NodePort 会给每一个 port 都分配 NodePort,Jupyter 那条会从
+        同一段 30000–32767 随机取,与顺序递增的 SSH 端口必然互撞。Jupyter 只经 Ingress 暴露。
+        """
         svc = client.V1Service(
             metadata=client.V1ObjectMeta(
                 name=spec.name,
@@ -348,13 +340,33 @@ class RealOrchestrator:
                 ports=[
                     client.V1ServicePort(
                         name="ssh", port=22, target_port=22, node_port=spec.ssh_node_port
-                    ),
-                    client.V1ServicePort(name="jupyter", port=8888, target_port=8888),
+                    )
                 ],
+            ),
+        )
+        jupyter_svc = client.V1Service(
+            metadata=client.V1ObjectMeta(
+                name=jupyter_service_name(spec.name),
+                namespace=spec.namespace,
+                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            ),
+            spec=client.V1ServiceSpec(
+                type="ClusterIP",
+                selector={INSTANCE_LABEL: spec.name},
+                ports=[client.V1ServicePort(name="jupyter", port=8888, target_port=8888)],
             ),
         )
         try:
             self.core.create_namespaced_service(spec.namespace, svc)
+        except client.ApiException as exc:
+            # 422 + "provided port is already allocated":该 NodePort 被集群里别的对象占了。
+            # 必须归一化成专用异常,让编排层把端口标 blocked 并换一个,否则每次都算出同一个被占端口。
+            if exc.status == 422 and "already allocated" in str(exc.body or ""):
+                raise NodePortTaken(spec.ssh_node_port) from exc
+            if not _is_conflict(exc):
+                raise
+        try:
+            self.core.create_namespaced_service(spec.namespace, jupyter_svc)
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
@@ -382,7 +394,7 @@ class RealOrchestrator:
                                     path_type="Prefix",
                                     backend=client.V1IngressBackend(
                                         service=client.V1IngressServiceBackend(
-                                            name=spec.name,
+                                            name=jupyter_service_name(spec.name),
                                             port=client.V1ServiceBackendPort(number=8888),
                                         )
                                     ),
@@ -403,12 +415,13 @@ class RealOrchestrator:
         await asyncio.to_thread(self._delete_instance_sync, namespace, name, force)
 
     def _delete_instance_sync(self, namespace: str, name: str, force: bool = False) -> None:
-        # 节点失联时 kubelet 确认不了删除,Pod 会无限期 Terminating —— 强删(grace 0)
-        # 直接从 etcd 摘掉对象,否则实例永远卡在 stopping/releasing 等一个不会到的确认。
+        # 节点失联时 kubelet 确认不了删除,Pod 会无限期 Terminating;强删(grace 0)直接从
+        # etcd 摘掉对象,否则实例永远卡在 stopping/releasing。
         pod_kwargs = {"grace_period_seconds": 0} if force else {}
         for deleter in (
             lambda: self.core.delete_namespaced_pod(name, namespace, **pod_kwargs),
             lambda: self.core.delete_namespaced_service(name, namespace),
+            lambda: self.core.delete_namespaced_service(jupyter_service_name(name), namespace),
             lambda: self.net.delete_namespaced_ingress(name, namespace),
         ):
             try:
@@ -766,7 +779,7 @@ class RealOrchestrator:
             spec=client.V1JobSpec(
                 backoff_limit=0,  # 失败不原地重试,由巡检删 Job 后重建(带退避节流)
                 ttl_seconds_after_finished=600,
-                active_deadline_seconds=1800,  # 20GB 级镜像上限,实机核定
+                active_deadline_seconds=1800,  # 20GB 级镜像上限
                 template=client.V1PodTemplateSpec(
                     metadata=client.V1ObjectMeta(labels={PREWARM_LABEL: "true"}),
                     spec=client.V1PodSpec(

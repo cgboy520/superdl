@@ -34,9 +34,8 @@ class Instance(Base):
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     frozen_deadline: Mapped[datetime | None]  # 冻结回收倒计时(72h)
-    # running 实例 Pod 首次 not-ready 的时刻。节点失联时 kubelet 不可达,Pod 对象停在
-    # phase=Running 只有 Ready 转 False —— 只看 exists/phase 的话 reconciler 什么也不做,
-    # 实例永远显示「运行中」并持续计费。持续 not-ready 超过宽限即判失联(见 reconciler)。
+    # running 实例 Pod 首次 not-ready 的时刻。节点失联时 Pod 停在 phase=Running 而 Ready 转
+    # False,判失联必须看这个字段;持续 not-ready 超过宽限即判失联(见 reconciler)。
     unready_since: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -58,13 +57,19 @@ class InstanceEvent(Base):
 
 
 class PortAllocation(Base):
-    """SSH 端口池。instance_id 为空即空闲。"""
+    """SSH 端口池。instance_id 为空即空闲;blocked=True 表示该端口被集群里的其它对象占用。
+
+    端口池 30000–32767 与 K8s NodePort 同段,集群内其它对象会硬占其中某些端口。
+    没有 blocked 这一列,分配器在「最小空闲」耗尽后一路取 max+1,每次都算出同一个被占端口、
+    每次 Service 创建 422、事务整体回滚,此后所有触顶的新建实例全部失败。
+    """
 
     __tablename__ = "port_allocations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     port: Mapped[int] = mapped_column(unique=True)
     instance_id: Mapped[int | None] = mapped_column(index=True)
+    blocked: Mapped[bool] = mapped_column(default=False, server_default="false")
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 

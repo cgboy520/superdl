@@ -1,13 +1,14 @@
 from functools import lru_cache
 
 from app.core.config import get_settings
-from app.core.k8s.base import InstancePodSpec, K8sOrchestrator, PodStatus
+from app.core.k8s.base import InstancePodSpec, K8sOrchestrator, NodePortTaken, PodStatus
 from app.core.k8s.fake import FakeOrchestrator
 
 __all__ = [
     "FakeOrchestrator",
     "InstancePodSpec",
     "K8sOrchestrator",
+    "NodePortTaken",
     "PodStatus",
     "get_orchestrator",
     "set_orchestrator",

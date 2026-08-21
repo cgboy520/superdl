@@ -6,18 +6,26 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
-# 存储契约:这三个名字必须与 deploy/cluster/values/{topolvm,juicefs}.yaml 里真实创建的
-# StorageClass 对得上。K8s 创建 PVC 时不校验 SC 是否存在,名字错了不会报错 ——
-# PVC 永久 Pending,实例卡到 300 秒超时才 failed,用户只看到「开不出来」。
-# 下发门禁(nodes.require_storage_classes)按名核对已探测到的 SC,把这类错配变成即时 409。
+# 存储契约:这三个名字必须与 deploy/cluster/values/{topolvm,juicefs}.yaml 里创建的
+# StorageClass 一致。K8s 创建 PVC 时不校验 SC 是否存在,名字错了只会让 PVC 永久 Pending。
+# 下发门禁(nodes.require_storage_classes)按名核对已探测到的 SC。
 INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
 JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
 JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)
 
 
+def jupyter_service_name(instance_name: str) -> str:
+    """Jupyter 的 ClusterIP Service 名,必须与 SSH 的 NodePort Service 分开。
+
+    合成一个 type=NodePort Service 时 K8s 会给 Jupyter 也从 30000–32767 随机分配端口,
+    与顺序递增的 SSH 端口池必然相撞。
+    """
+    return f"{instance_name}-jupyter"
+
+
 def instance_disk_pvc_name(instance_name: str) -> str:
-    """实例盘 PVC 名。平台自管生命周期(只在释放/回收时删),不是 Pod 拥有的
-    ephemeral volume —— 后者会让「关机」把用户数据一起抹掉。"""
+    """实例盘 PVC 名。平台自管生命周期(只在释放/回收时删);禁止改成 Pod 拥有的
+    ephemeral volume,那会让关机连用户数据一起抹掉。"""
     return f"{instance_name}-root"
 
 
@@ -46,14 +54,24 @@ class InstancePodSpec:
     annotations: dict[str, str] = field(default_factory=dict)  # 如 HAMi use-gputype
 
 
+class NodePortTaken(Exception):
+    """请求的 NodePort 已被集群里的其它对象占用(apiserver 422)。
+
+    端口池 30000–32767 与 NodePort 同段,调用方必须能把该端口标 blocked 并换一个重试。
+    """
+
+    def __init__(self, port: int) -> None:
+        super().__init__(f"node port {port} already allocated")
+        self.port = port
+
+
 @dataclass(frozen=True)
 class PodStatus:
     exists: bool
     ready: bool = False
     phase: str = "Unknown"  # Pending / Running / Succeeded / Failed / Unknown
     node_name: str | None = None
-    # deletionTimestamp 已设 = 正在优雅删除(Terminating)。对象仍在 etcd 里、
-    # read 仍 200、phase 仍是 Running —— 只看 exists/phase 的代码会把它当活着的 Pod。
+    # deletionTimestamp 已设 = Terminating:read 仍 200、phase 仍 Running,判活必须看这个字段
     deleting: bool = False
 
 
@@ -106,19 +124,18 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        """删除该实例的 Pod/Service/Ingress。**不动实例盘** —— 关机就是删 Pod,
-        盘必须活过关机(见 delete_instance_disk)。不存在则跳过。
+        """删除该实例的 Pod/Service/Ingress。**不动实例盘**,盘必须活过关机
+        (见 delete_instance_disk)。不存在则跳过。
 
-        force=True 走强制删除(gracePeriodSeconds=0,不等 kubelet 确认):只在节点已经
-        失联时用 —— 那种 Pod 优雅删除永远完不成,实例会卡在 stopping/releasing。
+        force=True 走强制删除(gracePeriodSeconds=0,不等 kubelet 确认),只在节点已失联时用:
+        节点失联时优雅删除永远完不成,实例会卡在 stopping/releasing。
         """
         ...
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        """删除该实例的实例盘 PVC。只允许在实例真正终结时调用(释放/回收,
-        以及从未跑起来过的 creating 超时);关机、重启、pod_lost 都不许调。
-        不存在则跳过;Pod 还在时 K8s 的 pvc-protection 会让删除挂起,
-        故调用点必须先确认 Pod 已消失。"""
+        """删除该实例的实例盘 PVC。只允许在实例真正终结时调用(释放/回收,以及从未跑起来过的
+        creating 超时);关机、重启、pod_lost 都不许调。不存在则跳过;调用点必须先确认 Pod 已消失,
+        否则 K8s 的 pvc-protection 会让删除挂起。"""
         ...
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...

@@ -25,8 +25,7 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
-    # 启动引导管理员:默认关闭。仅当显式设置 SUPERDL_BOOTSTRAP_ADMIN_PASSWORD
-    # 且 environment=dev 时,在无任何管理员的库里创建 admin 账号。生产用运维脚本创建。
+    # 启动引导管理员:仅当显式设置本项且 environment=dev 时,在无任何管理员的库里创建 admin 账号
     bootstrap_admin_password: str | None = None
 
     # 短信:dev/test 用 mock(验证码固定 + 落日志);aliyun 凭据与模板码经环境变量注入
@@ -46,7 +45,7 @@ class Settings(BaseSettings):
     disk_grace_days: int = 7
     disk_frozen_days: int = 30
 
-    # 实名认证:资质就绪后打开(充值前强制;《网络安全法》要求)。
+    # 实名认证:充值前强制校验的开关。
     # provider/凭据与开关均可被平台配置中心(platform_settings)在线覆盖
     real_name_required_for_recharge: bool = False
     real_name_provider: Literal["mock", "aliyun"] = "mock"
@@ -64,23 +63,21 @@ class Settings(BaseSettings):
     support_email: str | None = None
     support_wechat: str | None = None  # 企微/微信客服号或群二维码说明
 
-    # 创建实例可用的镜像来源白名单(仓库前缀列表)。空 = 不限制:
-    # 「自定义镜像自由输入」是产品能力(ui-ux-spec §3.3),收紧与否由运营决定。
+    # 创建实例可用的镜像来源白名单(仓库前缀列表)。空 = 不限制;
     # 配置后只放行平台镜像目录内的引用与这些前缀,如 ["registry.superdl.internal/"]
     image_allowed_registries: list[str] = []
 
-    # 每用户配额(防单账号无限开机;K8s ResourceQuota 是集群侧兜底)
+    # 每用户配额;K8s ResourceQuota 是集群侧兜底
     max_instances_per_user: int = 10
     max_gpus_per_user: int = 8
-    max_disks_per_user: int = 20  # 数据盘数量上限(建盘只校验余额,不设上限即可无限建)
+    max_disks_per_user: int = 20  # 数据盘数量上限
 
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
     # running 实例的 Pod 持续 not-ready 多久判定节点失联 → 停止计费。
-    # 与 K8s 默认的 unreachable taint tolerationSeconds(300)对齐:短于它会在节点抖动时
-    # 误杀,长于它则用户为一台已经不可用的机器多付这段时间的钱。
+    # 必须与 K8s unreachable taint 的 tolerationSeconds(默认 300)对齐。
     running_unready_timeout_seconds: int = 300
 
     # 镜像预热(可运营调整)
@@ -88,7 +85,6 @@ class Settings(BaseSettings):
     prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
 
     # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
-    # AliasChoices 兼容旧 rke2_* 环境变量名
     cluster_server_url: str = Field(
         default="",
         validation_alias=AliasChoices("SUPERDL_CLUSTER_SERVER_URL", "SUPERDL_RKE2_SERVER_URL"),
@@ -108,20 +104,21 @@ class Settings(BaseSettings):
 
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
-    # 共享档 Pod 注 HAMi use-gputype annotation(注 SKU 原文串)。默认关:
-    # 单一型号节点池用 nodeSelector 已足够;混卡节点才需要,且值语义待实机核定
+    # 共享档 Pod 注 HAMi use-gputype annotation(SKU 原文串);仅混卡节点池需要,默认关
     hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
-    # 每次 K8s 请求的超时(连接, 读)。官方客户端无全局超时:不设则 API server 挂起时
-    # to_thread 线程永久悬挂,outbox 单队列会被一个卡死的调用整队拖停
+    # 每次 K8s 请求的超时(连接, 读)。官方客户端无全局超时,必须显式设置:
+    # 否则 API server 挂起时 to_thread 线程永久悬挂,outbox 单队列被整队拖停
     k8s_connect_timeout_seconds: float = 5.0
     k8s_read_timeout_seconds: float = 30.0
-    # 租户 Jupyter Ingress 的 IngressClass。必须显式指定:IngressClass 未标 default 时,
-    # 不写此字段则无控制器接管 Ingress。
+    # 租户 Jupyter Ingress 的 IngressClass。必须显式指定:未标 default 的 IngressClass 不会自动接管。
     ingress_class_name: str = "nginx"
     ssh_host: str = "ssh1.superdl.example.com"
     ssh_port_range_start: int = 30000
     ssh_port_range_end: int = 32767
+    # 已知被集群其它对象占用的 NodePort(端口池与 NodePort 同段),分配器跳过;
+    # 运行期撞到的其它占用由 PortAllocation 标 blocked。
+    ssh_port_excluded: set[int] = {30500}  # registry(deploy/cluster/registry/)
     jupyter_domain_suffix: str = "app.superdl.example.com"
 
     # 告警接入
@@ -134,7 +131,7 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
 
     # 数据保洁保留期
-    audit_retention_days: int = 365  # 等保要求日志留存 ≥6 个月,默认留 1 年
+    audit_retention_days: int = 365  # 等保要求日志留存 ≥6 个月
 
     # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"
@@ -143,7 +140,7 @@ class Settings(BaseSettings):
     payment_mock: bool = True
     public_base_url: str = "https://api.superdl.example.com"
     recharge_order_ttl_seconds: int = 2 * 3600
-    payment_wechat_enabled: bool = False  # 渠道开关(凭据配置完成后在管理端开启)
+    payment_wechat_enabled: bool = False  # 渠道开关
     payment_alipay_enabled: bool = False
     wechat_mchid: str | None = None
     wechat_private_key: str | None = None
@@ -158,7 +155,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
-        """生产配置 fail-fast:任何开发默认值漏改都在启动时拒绝,而非静默事故。"""
+        """生产配置 fail-fast:开发默认值未改则拒绝启动。"""
         if self.environment != "prod":
             return self
         problems: list[str] = []
