@@ -4,6 +4,7 @@ import {
   AuditOutlined,
   CloudDownloadOutlined,
   ClusterOutlined,
+  DeploymentUnitOutlined,
   DashboardOutlined,
   LogoutOutlined,
   PayCircleOutlined,
@@ -41,6 +42,7 @@ export const Route = createFileRoute("/_app")({
 const MENU = [
   { key: "/", icon: <DashboardOutlined />, labelKey: "menu.overview" },
   { key: "/nodes", icon: <ClusterOutlined />, labelKey: "menu.nodes" },
+  { key: "/cluster", icon: <DeploymentUnitOutlined />, labelKey: "menu.cluster" },
   { key: "/skus", icon: <TagsOutlined />, labelKey: "menu.skus" },
   { key: "/images", icon: <CloudDownloadOutlined />, labelKey: "menu.images" },
   { key: "/tenants", icon: <TeamOutlined />, labelKey: "menu.tenants" },

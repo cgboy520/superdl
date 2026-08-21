@@ -9,6 +9,8 @@ import {
   adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
   adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost,
   adminGetPlatformConfigApiAdminV1PlatformConfigGet,
+  adminClusterStatusApiAdminV1ClusterStatusGet,
+  adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost,
   adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet,
   adminGetPoliciesApiAdminV1PoliciesGet,
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost,
@@ -118,6 +120,8 @@ export type {
   RevenueReportOut as RevenueReport,
   TenantOut as TenantRow,
   GpuModelAggregateOut as GpuModelAggregate,
+  ClusterStatusOut as ClusterStatus,
+  ClusterComponentOut as ClusterComponent,
   CapacityWarningOut as CapacityWarning,
   CapacityPreviewOut as CapacityPreview,
 } from "@superdl/api-client";
@@ -130,6 +134,23 @@ export function useAdminSkus() {
   const queryKey = ["admin", "skus"] as const;
   const q = useQuery({ queryKey, queryFn: () => adminListSkusApiAdminV1SkusGet() });
   return { ...q, queryKey };
+}
+
+export function useClusterStatus() {
+  const queryKey = ["admin", "cluster-status"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: () => adminClusterStatusApiAdminV1ClusterStatusGet(),
+    refetchInterval: 30_000,
+  });
+  return { ...q, queryKey };
+}
+
+export function useTestClusterConnection(opts?: MutOpts<unknown, void>) {
+  return useMutation({
+    mutationFn: () => adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
+    ...opts?.mutation,
+  });
 }
 
 export function useGpuModelAggregates() {

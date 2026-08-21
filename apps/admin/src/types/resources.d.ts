@@ -15,6 +15,41 @@ export default interface Resources {
       "colTarget": "目标",
       "colTime": "时间"
     },
+    "cluster": {
+      "cfgProm": "Prometheus 地址",
+      "cfgServer": "Server 地址",
+      "cfgSet": "已配置",
+      "cfgToken": "Join Token",
+      "cfgUnset": "未配置",
+      "comp": {
+        "dcgm": "GPU 指标(DCGM)",
+        "gpuOperator": "GPU Operator",
+        "hami": "HAMi 调度",
+        "kataRuntimeclass": "Kata 运行时",
+        "monitoring": "监控栈",
+        "storage": "存储类"
+      },
+      "configCard": "配置就绪",
+      "connCard": "连接状态",
+      "connected": "已连接",
+      "fixHint": "修复命令",
+      "goPlatform": "去平台配置",
+      "grafanaLink": "在 Grafana 打开",
+      "healthCard": "组件体检",
+      "lightBadge": "轻量集群",
+      "lightWarning": "k3s 轻量集群仅支持共享档(hami 池)规格;独享/MIG 档需要 RKE2 完整集群",
+      "neverProbed": "尚未探测,worker 启动后一分钟内自动巡检",
+      "poolCard": "池分布",
+      "probedAt": "探测时间 {{time}}",
+      "promHint": "监控未接入:实例与节点监控曲线将降级显示。请配置 Prometheus 地址并安装监控栈(组件体检含安装命令)",
+      "readonlyNoTest": "只读角色不可执行",
+      "testBtn": "测试连接",
+      "testFailed": "测试连接失败",
+      "testOk": "连接正常,能力缓存已刷新",
+      "unlabeledWarn": "{{count}} 个节点未打池标签,不会被调度",
+      "unreachable": "集群不可达",
+      "viewNodes": "查看节点"
+    },
     "common": {
       "actionDone": "{{action}}已执行",
       "actionFailed": "{{action}}失败",
@@ -154,6 +189,7 @@ export default interface Resources {
     },
     "menu": {
       "audit": "审计日志",
+      "cluster": "集群",
       "finance": "财务对账",
       "images": "镜像与预热",
       "nodes": "节点与 GPU",
@@ -558,6 +594,7 @@ export default interface Resources {
       "alreadyTerminal": "状态 {{status}} 已是终态,无需吊销",
       "clusterNotConfigured": "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token",
       "clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
+      "clusterProbeFailed": "集群连接失败:{{error}}",
       "enrollTransition": "注册状态不允许 {{from}} → {{to}}",
       "hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
       "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)"
