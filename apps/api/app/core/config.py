@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # 单一型号节点池用 nodeSelector 已足够;混卡节点才需要,且值语义待实机核定
     hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
+    # 每次 K8s 请求的超时(连接, 读)。官方客户端无全局超时:不设则 API server 挂起时
+    # to_thread 线程永久悬挂,outbox 单队列会被一个卡死的调用整队拖停
+    k8s_connect_timeout_seconds: float = 5.0
+    k8s_read_timeout_seconds: float = 30.0
     # 租户 Jupyter Ingress 的 IngressClass。必须显式指定:IngressClass 未标 default 时,
     # 不写此字段则无控制器接管 Ingress。
     ingress_class_name: str = "nginx"

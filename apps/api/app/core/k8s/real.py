@@ -10,7 +10,7 @@
 
 import asyncio
 import hashlib
-from typing import Any
+from typing import Any, cast
 
 from kubernetes import client, config
 
@@ -49,16 +49,45 @@ JUICEFS_PVC_NAME = "juicefs-shared"
 JUICEFS_STORAGE_CLASS = "juicefs-sc"
 
 
+class _TimeoutApi:
+    """给官方同步客户端的每次调用注入 `_request_timeout`(客户端无全局超时配置项)。
+
+    不注入则 API server 挂起时 to_thread 的线程永久悬挂:outbox 单队列会被一个卡死的
+    调用整队拖停,市场页库存查询在缓存过期后同样被挂住。包一层比在 40 余处调用点各写
+    一遍可靠 —— 新增调用不会漏。
+    """
+
+    def __init__(self, api: Any, timeout: tuple[float, float]) -> None:
+        self._api = api
+        self._timeout = timeout
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._api, name)
+        if not callable(attr):
+            return attr
+
+        def call(*args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("_request_timeout", self._timeout)
+            return attr(*args, **kwargs)
+
+        return call
+
+
 class RealOrchestrator:
     def __init__(self) -> None:
         try:
             config.load_incluster_config()
         except config.ConfigException:
             config.load_kube_config()
-        self.core = client.CoreV1Api()
-        self.net = client.NetworkingV1Api()
-        self.batch = client.BatchV1Api()
         self.settings = get_settings()
+        timeout = (
+            self.settings.k8s_connect_timeout_seconds,
+            self.settings.k8s_read_timeout_seconds,
+        )
+        # cast 保留静态签名检查,运行时是注超时的代理(见 _TimeoutApi)
+        self.core = cast(client.CoreV1Api, _TimeoutApi(client.CoreV1Api(), timeout))
+        self.net = cast(client.NetworkingV1Api, _TimeoutApi(client.NetworkingV1Api(), timeout))
+        self.batch = cast(client.BatchV1Api, _TimeoutApi(client.BatchV1Api(), timeout))
 
     # ---------- namespace ----------
 
