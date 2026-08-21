@@ -22,6 +22,7 @@ import {
   Typography,
 } from "antd";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../lib/format";
 import { useRenameInstance } from "../api/mutations";
@@ -44,6 +45,7 @@ export const Route = createFileRoute("/_console/instances")({
 });
 
 function QuickToolsCell({ instance }: { instance: InstanceOut }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const running = instance.status === "running";
   const { data: access } = useInstanceAccess(instance.uuid, { enabled: running });
@@ -60,7 +62,7 @@ function QuickToolsCell({ instance }: { instance: InstanceOut }) {
         })
       }
     >
-      实例监控
+      {t("instances.monitorLink")}
     </Button>
   );
   if (!running) {
@@ -136,6 +138,7 @@ function UtilCell({
  * 从未运行 = 创建失败 → 原因 + 已退款说明 + 重新创建;运行过 = 故障停机 → 按停机结算说明。
  */
 function FailedCell({ instance }: { instance: InstanceOut }) {
+  const { t } = useTranslation();
   const { data: events } = useInstanceEvents(instance.uuid);
   const failedEvents = (events ?? []).filter((e) => e.to_status === "failed");
   const reason = failedEvents[failedEvents.length - 1]?.reason;
@@ -154,18 +157,18 @@ function FailedCell({ instance }: { instance: InstanceOut }) {
       ) : null}
       {everRan ? (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          运行中故障已停止计费,费用按实际运行结算
+          {t("instances.failedRanNote")}
         </Typography.Text>
       ) : (
         <Space size={6}>
           <Tooltip title={copy.createFailedNoCharge}>
             <Tag color="green" style={{ marginInlineEnd: 0 }}>
-              未扣费
+              {t("instances.notCharged")}
             </Tag>
           </Tooltip>
           <Link to="/market/create/$skuId" params={{ skuId: String(instance.sku_id) }}>
             <Button size="small" type="primary">
-              重新创建
+              {t("instances.recreate")}
             </Button>
           </Link>
         </Space>
@@ -175,6 +178,7 @@ function FailedCell({ instance }: { instance: InstanceOut }) {
 }
 
 function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () => void }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(instance.name);
   const rename = useRenameInstance();
@@ -190,7 +194,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
         onPressEnter={async () => {
           await rename.mutateAsync({ uuid: instance.uuid, name: value });
           setEditing(false);
-          message.success("已改名");
+          message.success(t("instances.renamed"));
         }}
         style={{ width: 160 }}
       />
@@ -198,30 +202,28 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   }
   return (
     <Space orientation="vertical" size={0}>
-      <Tooltip title="点击改名">
-        <Typography.Text
-          strong
-          style={{ cursor: "pointer" }}
-          role="button"
-          tabIndex={0}
-          aria-label={`改名:${instance.name}`}
-          onClick={() => setEditing(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setEditing(true);
-            }
-          }}
-        >
-          {instance.name}
-        </Typography.Text>
-      </Tooltip>
+      <Typography.Text
+        strong
+        style={{ cursor: "pointer" }}
+        role="button"
+        tabIndex={0}
+        aria-label={t("instances.renameAria", { name: instance.name })}
+        onClick={() => setEditing(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setEditing(true);
+          }
+        }}
+      >
+        {instance.name}
+      </Typography.Text>
       <Space size={8}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {instance.uuid.slice(0, 12)}
         </Typography.Text>
         <Button size="small" type="link" style={{ paddingInline: 0, height: 20, fontSize: 12 }} onClick={onDetail}>
-          详情
+          {t("instances.detail")}
         </Button>
       </Space>
     </Space>
@@ -229,6 +231,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
 }
 
 function InstancesPage() {
+  const { t } = useTranslation();
   const { formatHourlyPrice, formatMoney } = useFormat();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
@@ -256,26 +259,28 @@ function InstancesPage() {
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
-        容器实例
+        {t("instances.title")}
       </Typography.Title>
       <Alert type="info" showIcon title={copy.freezePolicy} />
       <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
         <Space size={8}>
           <Link to="/market">
-            <Button type="primary">租用新实例</Button>
+            <Button type="primary">{t("instances.rentNew")}</Button>
           </Link>
-          <Tooltip title="刷新列表">
-            <Button aria-label="刷新列表" icon={<ReloadOutlined />} onClick={() => void refetch()} />
-          </Tooltip>
+          <Button
+            aria-label={t("instances.refreshList")}
+            icon={<ReloadOutlined />}
+            onClick={() => void refetch()}
+          />
         </Space>
         <Space size={12}>
           <Link to="/settings" hash="ssh">
-            密钥登录设置
+            {t("instances.keySettings")}
           </Link>
           <Input
             allowClear
             prefix={<SearchOutlined />}
-            placeholder="搜索名称 / ID"
+            placeholder={t("instances.searchPlaceholder")}
             style={{ width: 220 }}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -292,32 +297,32 @@ function InstancesPage() {
           emptyText: isError ? (
             <TableErrorEmpty onRetry={() => void refetch()} />
           ) : q ? (
-            "没有匹配的实例"
+            t("instances.noMatch")
           ) : (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <Space orientation="vertical" size={4}>
-                  <Typography.Text strong>还没有实例</Typography.Text>
+                  <Typography.Text strong>{t("instances.emptyTitle")}</Typography.Text>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    按量计费,关机不收 GPU 费用;数据盘独立保留
+                    {t("instances.emptyHint")}
                   </Typography.Text>
                 </Space>
               }
             >
               <Link to="/market">
-                <Button type="primary">去算力市场</Button>
+                <Button type="primary">{t("instances.goMarket")}</Button>
               </Link>
             </Empty>
           ),
         }}
         columns={[
           {
-            title: "名称 / ID",
+            title: t("instances.colName"),
             render: (_, r) => <NameCell instance={r} onDetail={() => void openDetail(r.uuid)} />,
           },
           {
-            title: "状态",
+            title: t("instances.colStatus"),
             render: (_, r) =>
               r.status === "failed" ? (
                 <FailedCell instance={r} />
@@ -330,18 +335,21 @@ function InstancesPage() {
               ),
           },
           {
-            title: "规格详情",
+            title: t("instances.colSpec"),
             render: (_, r) => (
               <Popover
                 content={
                   <Space orientation="vertical" size={2}>
                     <span>{r.spec["sku_name"] as string}</span>
                     <span>
-                      {r.spec["vcpu"] as number} vCPU / {r.spec["mem_gb"] as number}G 内存 /
-                      实例盘 {r.spec["disk_gb"] as number}G
+                      {t("common.hostSpec", {
+                        vcpu: r.spec["vcpu"] as number,
+                        mem: r.spec["mem_gb"] as number,
+                        disk: r.spec["disk_gb"] as number,
+                      })}
                     </span>
-                    <span>镜像:{r.image_ref}</span>
-                    <span>创建于 {formatDateTime(r.created_at)}</span>
+                    <span>{t("instances.imageLine", { ref: r.image_ref })}</span>
+                    <span>{t("instances.createdAtLine", { time: formatDateTime(r.created_at) })}</span>
                   </Space>
                 }
               >
@@ -355,28 +363,28 @@ function InstancesPage() {
             ),
           },
           {
-            title: "GPU 利用率",
+            title: t("instances.colUtil"),
             render: (_, r) => <UtilCell instance={r} summary={metrics} />,
           },
           {
-            title: "计费",
+            title: t("instances.colBilling"),
             render: (_, r) => (
               <Space orientation="vertical" size={0}>
                 <Space size={6}>
-                  <Tag style={{ marginInlineEnd: 0 }}>按量</Tag>
+                  <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
                   <span>
-                    {formatHourlyPrice(r.price_hourly)} × {r.gpu_count} 卡
+                    {t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}
                   </span>
                 </Space>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  今日 {formatMoney(todayByInstance.get(r.id) ?? null)}
+                  {t("instances.todayCost", { amount: formatMoney(todayByInstance.get(r.id) ?? null) })}
                 </Typography.Text>
               </Space>
             ),
           },
-          { title: "快捷工具", render: (_, r) => <QuickToolsCell instance={r} /> },
+          { title: t("instances.colTools"), render: (_, r) => <QuickToolsCell instance={r} /> },
           {
-            title: "操作",
+            title: t("instances.colActions"),
             fixed: "right",
             render: (_, r) => (
               <InstanceActions

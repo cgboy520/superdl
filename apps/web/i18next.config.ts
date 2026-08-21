@@ -12,6 +12,8 @@ export default defineConfig({
     sort: true,
     indentation: 2,
     removeUnusedKeys: true,
+    // 经映射表动态取键(t(meta.nameKey))的组,extract 识别不到用点,显式保护
+    preservePatterns: ["instances.series*"],
     ignoreNamespaces: ["shared"], // shared ns 属 packages/ui,由其 locales.test 守护,不归本 app extract 管
     primaryLanguage: "zh-CN",
   },

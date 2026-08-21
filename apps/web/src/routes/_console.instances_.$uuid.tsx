@@ -19,6 +19,7 @@ import {
 import { useFormat } from "../lib/format";
 import EChart from "../components/EChart";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useResetJupyterToken } from "../api/mutations";
 import {
@@ -42,14 +43,15 @@ export const Route = createFileRoute("/_console/instances_/$uuid")({
   component: InstanceDetail,
 });
 
-const SERIES_META: Record<string, { name: string; unit: string }> = {
-  gpu_util: { name: "GPU 利用率", unit: "%" },
-  vram_used_mb: { name: "显存占用", unit: "MB" },
-  cpu_pct: { name: "CPU", unit: "%" },
-  mem_used_mb: { name: "内存", unit: "MB" },
-};
+const SERIES_META = {
+  gpu_util: { nameKey: "instances.seriesGpu", unit: "%" },
+  vram_used_mb: { nameKey: "instances.seriesVram", unit: "MB" },
+  cpu_pct: { nameKey: "instances.seriesCpu", unit: "%" },
+  mem_used_mb: { nameKey: "instances.seriesMem", unit: "MB" },
+} as const;
 
 function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
+  const { t } = useTranslation();
   const [range, setRange] = useState<"1h" | "6h" | "24h">("1h");
   const { data, error, isLoading } = useInstanceMetrics(
     uuid,
@@ -58,7 +60,7 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   );
 
   if (!running) {
-    return <Alert type="info" showIcon title="实例未运行,暂无实时监控" />;
+    return <Alert type="info" showIcon title={t("instances.metricsNotRunning")} />;
   }
   if (error && isApiError(error) && error.status === 503) {
     return <Alert type="warning" showIcon title={copy.monitoringDown} />;
@@ -71,13 +73,13 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
         onChange={(e) => setRange(e.target.value as typeof range)}
         optionType="button"
         options={[
-          { value: "1h", label: "1 小时" },
-          { value: "6h", label: "6 小时" },
-          { value: "24h", label: "24 小时" },
+          { value: "1h", label: t("instances.range1h") },
+          { value: "6h", label: t("instances.range6h") },
+          { value: "24h", label: t("instances.range24h") },
         ]}
       />
       {Object.entries(SERIES_META).map(([key, meta]) => (
-        <Card key={key} size="small" title={meta.name} loading={isLoading}>
+        <Card key={key} size="small" title={t(meta.nameKey)} loading={isLoading}>
           <EChart
             style={{ height: 180 }}
             option={{
@@ -102,18 +104,19 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
 }
 
 function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
+  const { t } = useTranslation();
   const { message, modal } = App.useApp();
   const { data: access } = useInstanceAccess(uuid, { enabled: running });
   const reset = useResetJupyterToken();
   if (!running) {
-    return <Alert type="info" showIcon title="实例运行中才能获取接入信息" />;
+    return <Alert type="info" showIcon title={t("instances.accessNotRunning")} />;
   }
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Card size="small" title="SSH">
         <Space orientation="vertical">
           <Typography.Text code>{access?.ssh_command}</Typography.Text>
-          {access && <CopyButton text={access.ssh_command} label="复制指令" />}
+          {access && <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />}
           <Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>
         </Space>
       </Card>
@@ -126,21 +129,21 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
               if (access?.jupyter_url) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
             }}
           >
-            打开 JupyterLab
+            {t("instances.openJupyter")}
           </Button>
           <Button
             onClick={() =>
               modal.confirm({
-                title: "重置 JupyterLab Token?",
-                content: "旧链接将失效;运行中的实例会自动重启以生效。",
+                title: t("instances.resetTokenConfirmTitle"),
+                content: t("instances.resetTokenConfirmBody"),
                 onOk: async () => {
                   await reset.mutateAsync(uuid);
-                  message.success("Token 已重置");
+                  message.success(t("instances.tokenReset"));
                 },
               })
             }
           >
-            重置 Token
+            {t("instances.resetToken")}
           </Button>
         </Space>
       </Card>
@@ -149,6 +152,7 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
 }
 
 function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
+  const { t } = useTranslation();
   void instanceId;
   const { data: events, isError, refetch } = useInstanceEvents(uuid);
   return (
@@ -164,11 +168,11 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
               <Typography.Text strong>
                 {e.from_status ?? "—"} → {e.to_status}
                 {(e.from_status === "running" || e.to_status === "running") && (
-                  <Typography.Text type="secondary">(计费边界)</Typography.Text>
+                  <Typography.Text type="secondary">{t("instances.billingBoundary")}</Typography.Text>
                 )}
               </Typography.Text>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {formatDateTime(e.created_at)} · {e.reason} · 操作者 {e.actor}
+                {t("instances.eventMetaLine", { time: formatDateTime(e.created_at), reason: e.reason, actor: e.actor })}
               </Typography.Text>
             </Space>
           ),
@@ -179,6 +183,7 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
 }
 
 function BillsTab({ instanceId }: { instanceId: number }) {
+  const { t } = useTranslation();
   const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
   const { data, isError, refetch } = useHourlyBills({ instance_id: instanceId, limit: 100 });
   return (
@@ -191,10 +196,10 @@ function BillsTab({ instanceId }: { instanceId: number }) {
       }}
       dataSource={data?.items ?? []}
       columns={[
-        { title: "计费小时", render: (_, r) => formatDateTime(r.hour_start) },
-        { title: "运行时长", render: (_, r) => formatDuration(r.seconds_used) },
+        { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
+        { title: t("instances.colBillDuration"), render: (_, r) => formatDuration(r.seconds_used) },
         {
-          title: "单价",
+          title: t("instances.colBillUnit"),
           render: (_, r) => (
             <span>
               {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
@@ -202,7 +207,7 @@ function BillsTab({ instanceId }: { instanceId: number }) {
           ),
         },
         {
-          title: "金额",
+          title: t("instances.colBillAmount"),
           render: (_, r) => <span>{formatMoney(r.amount)}</span>,
         },
       ]}
@@ -211,6 +216,7 @@ function BillsTab({ instanceId }: { instanceId: number }) {
 }
 
 function InstanceDetail() {
+  const { t } = useTranslation();
   const { formatHourlyPrice, formatMoney } = useFormat();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
@@ -252,17 +258,17 @@ function InstanceDetail() {
               size="small"
               column={4}
               items={[
-                { label: "ID", children: instance.uuid.slice(0, 12) },
+                { label: t("instances.labelId"), children: instance.uuid.slice(0, 12) },
                 {
-                  label: "规格",
-                  children: `${instance.spec["gpu_model"] as string} × ${instance.gpu_count}`,
+                  label: t("instances.labelSpec"),
+                  children: t("instances.specLine", { model: instance.spec["gpu_model"] as string, count: instance.gpu_count }),
                 },
                 {
-                  label: "计费",
-                  children: `${formatHourlyPrice(instance.price_hourly)} × ${instance.gpu_count} 卡`,
+                  label: t("instances.labelBilling"),
+                  children: t("instances.pricePerCard", { price: formatHourlyPrice(instance.price_hourly), count: instance.gpu_count }),
                 },
-                { label: "今日消费", children: formatMoney(todayAmount) },
-                { label: "创建于", children: formatDateTime(instance.created_at) },
+                { label: t("instances.labelToday"), children: formatMoney(todayAmount) },
+                { label: t("instances.createdAt"), children: formatDateTime(instance.created_at) },
               ]}
             />
           </Space>
@@ -278,27 +284,27 @@ function InstanceDetail() {
         items={[
           {
             key: "metrics",
-            label: "监控",
+            label: t("instances.tabMetrics"),
             children: <MetricsTab uuid={uuid} running={running} />,
           },
           {
             key: "access",
-            label: "连接",
+            label: t("instances.tabAccess"),
             children: <AccessTab uuid={uuid} running={running} />,
           },
           {
             key: "events",
-            label: "事件",
+            label: t("instances.tabEvents"),
             children: <EventsTab uuid={uuid} instanceId={instance.id} />,
           },
-          { key: "bills", label: "账单", children: <BillsTab instanceId={instance.id} /> },
+          { key: "bills", label: t("instances.tabBills"), children: <BillsTab instanceId={instance.id} /> },
         ]}
       />
 
-      <Card title="危险区" style={{ borderColor: "#ffccc7" }}>
+      <Card title={t("instances.dangerZone")} style={{ borderColor: "#ffccc7" }}>
         <Space orientation="vertical">
           <Typography.Text type="secondary">
-            释放实例将清除实例盘全部数据(数据盘不受影响),不可恢复。
+            {t("instances.dangerNote")}
           </Typography.Text>
           <Button
             danger
@@ -306,7 +312,7 @@ function InstanceDetail() {
             title={canRelease ? undefined : copy.releaseNeedsStopped}
             onClick={() => setReleaseOpen(true)}
           >
-            释放实例
+            {t("instances.release")}
           </Button>
         </Space>
       </Card>

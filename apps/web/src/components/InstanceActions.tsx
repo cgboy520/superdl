@@ -10,6 +10,7 @@ import type { InstanceOut } from "@superdl/api-client";
 import { copy } from "@superdl/ui";
 import { App, Button, Checkbox, Dropdown, Modal, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import {
   useReleaseInstance,
@@ -29,19 +30,20 @@ export function ReleaseModal({
   onClose: () => void;
   onReleased?: () => void;
 }) {
+  const { t } = useTranslation();
   const [checked, setChecked] = useState(false);
   const { message } = App.useApp();
   const creating = instance.status === "creating";
   const release = useReleaseInstance({
     onSuccess: () => {
-      message.success(creating ? "已取消创建" : "实例已开始释放");
+      message.success(creating ? t("instances.actions.createCanceled") : t("instances.actions.releaseStarted"));
       onClose();
       onReleased?.();
     },
   });
   return (
     <Modal
-      title={creating ? "取消创建" : "释放实例"}
+      title={creating ? t("instances.actions.cancelModalTitle") : t("instances.actions.releaseModalTitle")}
       open={open}
       onCancel={() => {
         setChecked(false);
@@ -49,7 +51,7 @@ export function ReleaseModal({
       }}
       footer={
         <Space>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose}>{t("instances.actions.cancel")}</Button>
           <Button
             danger
             type="primary"
@@ -57,18 +59,25 @@ export function ReleaseModal({
             loading={release.isPending}
             onClick={() => release.mutate(instance.uuid)}
           >
-            {creating ? "确认取消" : "确认释放"}
+            {creating ? t("instances.actions.confirmCancel") : t("instances.actions.confirmRelease")}
           </Button>
         </Space>
       }
     >
       <Typography.Paragraph>
-        {creating ? "即将取消创建中的实例 " : "即将释放实例 "}
-        <Typography.Text strong>
-          {instance.name}({instance.uuid.slice(0, 8)})
-        </Typography.Text>
-        ,此操作不可恢复。
-        {creating ? "创建中未开始计费,取消不产生 GPU 时费。" : null}
+        {creating ? (
+          <Trans
+            i18nKey="instances.actions.cancelBody"
+            values={{ name: instance.name, id: instance.uuid.slice(0, 8) }}
+            components={{ b: <Typography.Text strong /> }}
+          />
+        ) : (
+          <Trans
+            i18nKey="instances.actions.releaseBody"
+            values={{ name: instance.name, id: instance.uuid.slice(0, 8) }}
+            components={{ b: <Typography.Text strong /> }}
+          />
+        )}
       </Typography.Paragraph>
       <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
         {copy.releaseConfirmChecklist}
@@ -89,6 +98,7 @@ export function InstanceActions({
   instance: InstanceOut;
   onShowEvents?: () => void;
 }) {
+  const { t } = useTranslation();
   const { modal, message } = App.useApp();
   const [releaseOpen, setReleaseOpen] = useState(false);
   const start = useStartInstance();
@@ -107,12 +117,12 @@ export function InstanceActions({
 
   const confirmStop = () =>
     modal.confirm({
-      title: "确认关机?",
+      title: t("instances.actions.stopConfirmTitle"),
       content: copy.stopConfirm,
-      okText: "关机",
+      okText: t("instances.actions.stopOk"),
       onOk: async () => {
         await stop.mutateAsync(instance.uuid);
-        message.success("已下发关机");
+        message.success(t("instances.actions.stopped"));
       },
     });
 
@@ -125,12 +135,12 @@ export function InstanceActions({
           loading={start.isPending}
           onClick={() => start.mutate(instance.uuid)}
         >
-          开机
+          {t("instances.actions.start")}
         </Button>
       </Tooltip>
       <Tooltip title={canStop ? undefined : copy.stopNeedsRunning}>
         <Button size="small" disabled={!canStop} onClick={confirmStop}>
-          关机
+          {t("instances.actions.stop")}
         </Button>
       </Tooltip>
       <Dropdown
@@ -138,24 +148,24 @@ export function InstanceActions({
           items: [
             {
               key: "restart",
-              label: tipped("重启", canRestart ? undefined : copy.stopNeedsRunning),
+              label: tipped(t("instances.actions.restart"), canRestart ? undefined : copy.stopNeedsRunning),
               disabled: !canRestart,
             },
-            { key: "events", label: "事件记录" },
+            { key: "events", label: t("instances.actions.eventsLog") },
             { type: "divider" },
             {
               key: "cardless",
-              label: tipped("无卡模式开机", copy.comingSoon),
+              label: tipped(t("instances.actions.cardless"), copy.comingSoon),
               disabled: true,
             },
             {
               key: "save-image",
-              label: tipped("保存镜像", copy.comingSoon),
+              label: tipped(t("instances.actions.saveImage"), copy.comingSoon),
               disabled: true,
             },
             {
               key: "to-period",
-              label: tipped("转包年包月", copy.comingSoon),
+              label: tipped(t("instances.actions.toPeriod"), copy.comingSoon),
               disabled: true,
             },
             { type: "divider" },
@@ -163,7 +173,7 @@ export function InstanceActions({
               key: "release",
               danger: true,
               label: tipped(
-                s === "creating" ? "取消创建" : "释放实例",
+                s === "creating" ? t("instances.actions.cancelCreate") : t("instances.actions.releaseMenu"),
                 canRelease ? undefined : copy.releaseNeedsStopped,
               ),
               disabled: !canRelease,
@@ -172,8 +182,8 @@ export function InstanceActions({
           onClick: ({ key }) => {
             if (key === "restart") {
               modal.confirm({
-                title: "确认重启?",
-                content: "重启期间实例短暂不可用,计费在关机瞬间出尾账、开机后重新计时。",
+                title: t("instances.actions.restartConfirmTitle"),
+                content: t("instances.actions.restartConfirmBody"),
                 onOk: () => restart.mutateAsync(instance.uuid),
               });
             } else if (key === "events") {
@@ -185,7 +195,7 @@ export function InstanceActions({
         }}
       >
         <Button size="small">
-          更多 <DownOutlined />
+          {t("instances.actions.more")} <DownOutlined />
         </Button>
       </Dropdown>
       <ReleaseModal instance={instance} open={releaseOpen} onClose={() => setReleaseOpen(false)} />
