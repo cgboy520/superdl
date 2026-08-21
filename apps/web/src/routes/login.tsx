@@ -14,6 +14,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 import { useLogin, useRegister, useSendSmsCode } from "../api/mutations";
 import { BrandLogo } from "../components/layout/BrandLogo";
+import { LangSwitcher } from "../components/layout/LangSwitcher";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
@@ -149,8 +150,12 @@ function LoginPage() {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
+          position: "relative",
         }}
       >
+        <div style={{ position: "absolute", top: 16, right: 16 }}>
+          <LangSwitcher variant="light" />
+        </div>
         <div style={{ width: 400 }}>
           {!screens.lg && (
             <div style={{ marginBottom: 24 }}>

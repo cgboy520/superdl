@@ -28,5 +28,11 @@ test("语言切换器可将界面切回中文", async ({ page }) => {
     window.localStorage.setItem("superdl.lang", "en-US");
   });
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: "Sign up & log in" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Log in to SuperDL" }),
+  ).toBeVisible();
+  await page.getByLabel("language").click();
+  // antd Select 的 role=option 是隐藏的 a11y 节点,点可见下拉项
+  await page.locator(".ant-select-item-option").filter({ hasText: "中文" }).click();
+  await expect(page.getByRole("heading", { name: "登录 SuperDL" })).toBeVisible();
 });
