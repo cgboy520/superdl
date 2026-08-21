@@ -6,7 +6,7 @@
 
 import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
-import { copy, formatDateTime, formatHourlyPrice, formatMoney, localToday } from "@superdl/ui";
+import { copy, formatDateTime, localToday } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { useMemo, useState } from "react";
 
+import { useFormat } from "../lib/format";
 import { useRenameInstance } from "../api/mutations";
 import {
   useDailySummary,
@@ -228,6 +229,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
 }
 
 function InstancesPage() {
+  const { formatHourlyPrice, formatMoney } = useFormat();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const { data: instances, isLoading, isError, refetch } = useInstances({ refetchInterval: 5_000 });

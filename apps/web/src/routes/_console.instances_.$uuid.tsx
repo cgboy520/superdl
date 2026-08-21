@@ -1,14 +1,7 @@
 /** 实例详情:监控(降级文案)/连接/事件时间线(=计费依据)/账单 + 危险区释放。 */
 
 import { isApiError } from "@superdl/api-client";
-import {
-  copy,
-  formatDateTime,
-  formatDuration,
-  formatHourlyPrice,
-  formatMoney,
-  localToday,
-} from "@superdl/ui";
+import { copy, formatDateTime, localToday } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -23,6 +16,7 @@ import {
   Timeline,
   Typography,
 } from "antd";
+import { useFormat } from "../lib/format";
 import EChart from "../components/EChart";
 import { useState } from "react";
 
@@ -185,6 +179,7 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
 }
 
 function BillsTab({ instanceId }: { instanceId: number }) {
+  const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
   const { data, isError, refetch } = useHourlyBills({ instance_id: instanceId, limit: 100 });
   return (
     <Table
@@ -216,6 +211,7 @@ function BillsTab({ instanceId }: { instanceId: number }) {
 }
 
 function InstanceDetail() {
+  const { formatHourlyPrice, formatMoney } = useFormat();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();

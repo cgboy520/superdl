@@ -5,11 +5,10 @@
  * - DataErrorAlert:页面级"部分数据加载失败"横幅
  */
 
-import { formatMoney } from "@superdl/ui";
 import { Alert, Button, Space, Typography } from "antd";
 
-export function moneyOr(value: string | null | undefined, ready: boolean): string {
-  return ready ? formatMoney(value) : "—";
+export function moneyOr(formatted: string, ready: boolean): string {
+  return ready ? formatted : "—";
 }
 
 export function TableErrorEmpty({ onRetry }: { onRetry: () => void }) {

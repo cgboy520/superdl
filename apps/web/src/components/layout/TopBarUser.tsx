@@ -7,10 +7,11 @@ import {
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { colorPrimary, formatDateTime, formatMoney } from "@superdl/ui";
+import { colorPrimary, formatDateTime } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Badge, Button, Dropdown, List, Popover, Space, Typography } from "antd";
 
+import { useFormat } from "../../lib/format";
 import { useMarkNotificationRead } from "../../api/mutations";
 import { useMe, useNotifications, useWallet } from "../../api/queries";
 import { authStore, useIsLoggedIn } from "../../stores/auth";
@@ -61,6 +62,7 @@ function NotificationBell() {
 }
 
 export function TopBarUser() {
+  const { formatMoney } = useFormat();
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const { data: me } = useMe({ enabled: loggedIn });

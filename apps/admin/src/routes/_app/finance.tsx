@@ -1,4 +1,4 @@
-import { adminColors, formatDateTime, formatMoney } from "@superdl/ui";
+import { adminColors, formatDateTime } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -39,6 +39,7 @@ import {
   useReviewAdjustment,
   useVerifyOrder,
 } from "../../api";
+import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 
@@ -47,6 +48,7 @@ export const Route = createFileRoute("/_app/finance")({
 });
 
 function ReconciliationCard() {
+  const { formatMoney } = useFormat();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report } = useReconciliation(day.format("YYYY-MM-DD"));
   const diffHigh = (report?.diff_pct ?? 0) > 2;
@@ -96,6 +98,7 @@ function ReconciliationCard() {
 }
 
 function OrdersTab() {
+  const { formatMoney } = useFormat();
   const [status, setStatus] = useState<string | undefined>();
   const { data } = useOrders(status ? { status } : undefined);
   const orders: OrderRow[] = data ?? [];
@@ -135,6 +138,7 @@ function OrdersTab() {
 }
 
 function AdjustmentsTab() {
+  const { formatMoney } = useFormat();
   const { message } = App.useApp();
   const role = useAdminRole();
   const { admin } = useAuth();
@@ -315,6 +319,7 @@ const ANOMALY_META: Record<AnomalyRow["kind"], { label: string; color: string }>
 };
 
 function AnomaliesTab() {
+  const { formatMoney } = useFormat();
   const { message, modal } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteFinance(role);

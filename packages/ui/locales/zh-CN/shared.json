@@ -1,4 +1,27 @@
 {
+  "format": {
+    "countdown": {
+      "expired": "已到期",
+      "hours": "剩 {{count}}h",
+      "minutes": "剩 {{count}}m",
+      "reclaimHours": "剩 {{count}}h后回收",
+      "reclaimMinutes": "剩 {{count}}m后回收",
+      "reclaimNow": "即将回收"
+    },
+    "daysLeft": {
+      "count": "剩 {{count}} 天",
+      "dueToday": "今日到期",
+      "expired": "已到期"
+    },
+    "duration": {
+      "h": "{{h}} 小时",
+      "hm": "{{h}} 小时 {{m}} 分",
+      "lessThanMinute": "不足 1 分钟",
+      "m": "{{m}} 分钟",
+      "zero": "0 分钟"
+    },
+    "perHour": "{{price}}/时"
+  },
   "status": {
     "disk": {
       "active": "正常",
@@ -17,8 +40,8 @@
       "creating": "创建中",
       "failed": "已失败",
       "frozen": "已冻结",
-      "releasing": "释放中",
       "released": "已释放",
+      "releasing": "释放中",
       "running": "运行中",
       "starting": "启动中",
       "stopped": "已关机",

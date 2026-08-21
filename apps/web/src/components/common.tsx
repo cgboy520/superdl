@@ -1,10 +1,12 @@
 /** 小件:状态徽标 / 档位标 / 复制按钮。 */
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
-import { diskStatusMap, formatCountdown, instanceStatusMap, metaOf, skuTierMap } from "@superdl/ui";
+import { diskStatusMap, instanceStatusMap, metaOf, skuTierMap } from "@superdl/ui";
 import { App, Badge, Button, Tag } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { useFormat } from "../lib/format";
 
 export function InstanceStatusBadge({
   status,
@@ -14,13 +16,14 @@ export function InstanceStatusBadge({
   frozenDeadline?: string | null;
 }) {
   const { t } = useTranslation(["web", "shared"]);
+  const { formatReclaimCountdown } = useFormat();
   const meta = metaOf(instanceStatusMap, status);
   return (
     <span>
       <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />
       {status === "frozen" && frozenDeadline && (
         <Tag color="red" style={{ marginLeft: 8 }}>
-          {formatCountdown(frozenDeadline)}后回收
+          {formatReclaimCountdown(frozenDeadline)}
         </Tag>
       )}
     </span>

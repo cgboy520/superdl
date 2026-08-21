@@ -1,9 +1,10 @@
 /** 概览:轻量首屏 —— 实例数/余额/今日消费/未读通知 + 快捷入口。 */
 
-import { addAmounts, copy, formatMoney, localToday } from "@superdl/ui";
+import { addAmounts, copy, localToday } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
 
+import { useFormat } from "../lib/format";
 import { useDailySummary, useInstances, useNotifications, useWallet } from "../api/queries";
 import { DataErrorAlert, moneyOr } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/_console/dashboard")({
 });
 
 function Overview() {
+  const { formatMoney } = useFormat();
   const instancesQ = useInstances();
   const walletQ = useWallet();
   const { data: instances } = instancesQ;
@@ -76,7 +78,7 @@ function Overview() {
           <Card>
             <Statistic
               title="可用余额"
-              value={moneyOr(wallet?.balance, wallet != null)}
+              value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
             />
           </Card>
         </Col>

@@ -1,4 +1,4 @@
-import { formatHourlyPrice, metaOf, skuTierMap, type SkuTier } from "@superdl/ui";
+import { metaOf, skuTierMap, type SkuTier } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -26,6 +26,7 @@ import {
   useCreateSku,
   useUpdateSku,
 } from "../../api";
+import { useFormat } from "../../lib/format";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/skus")({
@@ -52,6 +53,7 @@ interface SkuFormValues {
 
 function SkusPage() {
   const { t } = useTranslation();
+  const { formatHourlyPrice } = useFormat();
   // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message, modal } = App.useApp();
   const role = useAdminRole();
@@ -173,7 +175,7 @@ function SkusPage() {
             render: (v: string) =>
               Number(v) > 1.2 ? <Tag color="orange">{v}×</Tag> : `${v}×`,
           },
-          { title: "单价", dataIndex: "price_hourly", render: formatHourlyPrice },
+          { title: "单价", dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
           {
             title: "上架",
             dataIndex: "status",

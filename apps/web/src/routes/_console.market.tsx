@@ -3,13 +3,14 @@
  * 铁律 #1 CTA 即库存 / #2 售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
  */
 
-import { copy, formatHourlyPrice, mulPrice, skuTierMap } from "@superdl/ui";
+import { copy, mulPrice, skuTierMap } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useFormat } from "../lib/format";
 import { TableErrorEmpty } from "../components/QueryState";
 import { useSkus } from "../api/queries";
 import { ChipRow, type ChipOption } from "../components/ChipRow";
@@ -26,6 +27,8 @@ const GPU_COUNTS = [1, 2, 4, 8];
 
 function MarketPage() {
   const { t } = useTranslation(["web", "shared"]);
+  const fmt = useFormat();
+  const { formatHourlyPrice } = fmt;
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -83,7 +86,7 @@ function MarketPage() {
   const selected = skus.find((s) => s.id === selectedId);
   const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= gpuCount;
 
-  const columns = skuColumns({ availability: true, priceFontSize: 18 });
+  const columns = skuColumns({ fmt, availability: true, priceFontSize: 18 });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>

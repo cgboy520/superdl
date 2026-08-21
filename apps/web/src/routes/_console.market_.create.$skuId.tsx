@@ -5,7 +5,7 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, copy, diskDailyEstimate, formatHourlyPrice, formatSizeGb, mulPrice } from "@superdl/ui";
+import { compareAmounts, copy, diskDailyEstimate, formatSizeGb, mulPrice } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -28,6 +28,7 @@ import {
 } from "antd";
 import { useMemo, useState } from "react";
 
+import { useFormat } from "../lib/format";
 import { useAddSshKey, useCreateDisk, useCreateInstance } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
@@ -52,6 +53,8 @@ function defaultDiskName(): string {
 }
 
 function CreatePage() {
+  const fmt = useFormat();
+  const { formatHourlyPrice } = fmt;
   const { skuId } = Route.useParams();
   const { gpus: gpusFromMarket } = Route.useSearch();
   const navigate = useNavigate();
@@ -195,7 +198,7 @@ function CreatePage() {
     (n) => [1, 2, 4, 8].includes(n) || n === sku.max_gpus_per_instance,
   );
 
-  const columns = skuColumns();
+  const columns = skuColumns({ fmt });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>

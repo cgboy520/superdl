@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import enUS from "../locales/en-US/shared.json";
 import zhCN from "../locales/zh-CN/shared.json";
+import type { SharedFormatKey } from "./format";
 import {
   diskStatusMap,
   imageCacheStatusMap,
@@ -22,6 +23,24 @@ function flatten(obj: Record<string, unknown>, prefix = ""): Map<string, string>
   }
   return out;
 }
+
+const FORMAT_KEYS: readonly SharedFormatKey[] = [
+  "shared:format.perHour",
+  "shared:format.duration.zero",
+  "shared:format.duration.lessThanMinute",
+  "shared:format.duration.h",
+  "shared:format.duration.m",
+  "shared:format.duration.hm",
+  "shared:format.countdown.expired",
+  "shared:format.countdown.hours",
+  "shared:format.countdown.minutes",
+  "shared:format.countdown.reclaimHours",
+  "shared:format.countdown.reclaimMinutes",
+  "shared:format.countdown.reclaimNow",
+  "shared:format.daysLeft.expired",
+  "shared:format.daysLeft.dueToday",
+  "shared:format.daysLeft.count",
+] satisfies SharedFormatKey[];
 
 const zhFlat = flatten(zhCN);
 const enFlat = flatten(enUS);
@@ -49,7 +68,21 @@ describe("packages/ui shared locale", () => {
     }
   });
 
-  it("zh/en 键集相等(shared.json 不留孤儿键)", () => {
-    expect([...enFlat.keys()].sort()).toEqual([...zhFlat.keys()].sort());
+  it("zh/en 键集相等(复数后缀归一后;shared.json 不留孤儿键)", () => {
+    const base = (k: string) => k.replace(/_(one|other|zero|two|few|many)$/, "");
+    const zhBase = new Set([...zhFlat.keys()].map(base));
+    const enBase = new Set([...enFlat.keys()].map(base));
+    expect([...enBase].sort()).toEqual([...zhBase].sort());
+  });
+
+  it("format 量词 key 全集在 zh/en 均可解析(复数后缀归一)", () => {
+    const base = (k: string) => k.replace(/_(one|other|zero|two|few|many)$/, "");
+    const zhBase = new Set([...zhFlat.keys()].map(base));
+    const enBase = new Set([...enFlat.keys()].map(base));
+    for (const key of FORMAT_KEYS) {
+      const bare = key.slice("shared:".length);
+      expect(zhBase.has(bare), `zh 缺 ${bare}`).toBe(true);
+      expect(enBase.has(bare), `en 缺 ${bare}`).toBe(true);
+    }
   });
 });

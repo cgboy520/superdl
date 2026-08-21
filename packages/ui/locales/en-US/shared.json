@@ -1,4 +1,28 @@
 {
+  "format": {
+    "countdown": {
+      "expired": "Expired",
+      "hours": "{{count}}h left",
+      "minutes": "{{count}}m left",
+      "reclaimHours": "reclaimed in {{count}}h",
+      "reclaimMinutes": "reclaimed in {{count}}m",
+      "reclaimNow": "reclaiming soon"
+    },
+    "daysLeft": {
+      "count_one": "{{count}} day left",
+      "count_other": "{{count}} days left",
+      "dueToday": "Due today",
+      "expired": "Expired"
+    },
+    "duration": {
+      "h": "{{h}} hr",
+      "hm": "{{h}} hr {{m}} min",
+      "lessThanMinute": "less than a minute",
+      "m": "{{m}} min",
+      "zero": "0 min"
+    },
+    "perHour": "{{price}}/hr"
+  },
   "status": {
     "disk": {
       "active": "Active",
@@ -17,8 +41,8 @@
       "creating": "Creating",
       "failed": "Failed",
       "frozen": "Frozen",
-      "releasing": "Releasing",
       "released": "Released",
+      "releasing": "Releasing",
       "running": "Running",
       "starting": "Starting",
       "stopped": "Stopped",

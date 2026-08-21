@@ -10,17 +10,7 @@ import {
   type LedgerEntryOut,
   type RechargeOut,
 } from "@superdl/api-client";
-import {
-  addAmounts,
-  copy,
-  formatCountdown,
-  formatDateTime,
-  formatDuration,
-  formatHourlyPrice,
-  formatMoney,
-  localToday,
-  statusColors,
-} from "@superdl/ui";
+import { addAmounts, copy, formatDateTime, localToday, statusColors } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Alert,
@@ -42,6 +32,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
+import { useFormat } from "../lib/format";
 import EChart from "../components/EChart";
 import { useMemo, useState } from "react";
 
@@ -74,6 +65,7 @@ const LEDGER_TYPE: Record<string, { label: string; color: string }> = {
 };
 
 function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { formatCountdown, formatMoney } = useFormat();
   const { message } = App.useApp();
   const [amount, setAmount] = useState<number>(100);
   const [order, setOrder] = useState<RechargeOut | null>(null);
@@ -226,6 +218,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
 }
 
 function LedgerTable() {
+  const { formatMoney } = useFormat();
   const [cursor, setCursor] = useState<string>();
   const [rows, setRows] = useState<LedgerEntryOut[]>([]);
   const { data, isFetching } = useLedger({ cursor, limit: 20 });
@@ -293,6 +286,7 @@ function LedgerTable() {
 }
 
 function BillingPage() {
+  const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
   const { message } = App.useApp();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [warnHours, setWarnHours] = useState<number>();
@@ -402,7 +396,7 @@ function BillingPage() {
             <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
               <Statistic
                 title="可用余额"
-                value={moneyOr(wallet?.balance, wallet != null)}
+                value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
                 styles={{ content: { fontSize: 32 } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>

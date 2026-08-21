@@ -15,6 +15,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
+    "i18next": "^26.4.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.0"
   }

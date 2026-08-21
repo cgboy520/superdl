@@ -1,10 +1,37 @@
 /**
  * 金额/时长/倒计时统一格式化(ui-ux-spec §3.8)。
- * 金额入参为后端 numeric 序列化出的字符串,禁止在前端做浮点运算。
+ * 金额入参为后端 numeric 序列化出的字符串,禁止在前端做浮点运算;locale 只决定符号与量词。
+ * 本模块保持零运行时依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts)。
  */
 
-/** "1234.5" → "¥1,234.50";负数 → "-¥12.30" */
-export function formatMoney(amount: string | null | undefined, currency = "¥"): string {
+/** 本包量词/单位文案用到的 key 全集(值在 locales 下两语言的 shared.json,由 locales.test 守护)。 */
+export type SharedFormatKey =
+  | "shared:format.perHour"
+  | "shared:format.duration.zero"
+  | "shared:format.duration.lessThanMinute"
+  | "shared:format.duration.h"
+  | "shared:format.duration.m"
+  | "shared:format.duration.hm"
+  | "shared:format.countdown.expired"
+  | "shared:format.countdown.hours"
+  | "shared:format.countdown.minutes"
+  | "shared:format.countdown.reclaimHours"
+  | "shared:format.countdown.reclaimMinutes"
+  | "shared:format.countdown.reclaimNow"
+  | "shared:format.daysLeft.expired"
+  | "shared:format.daysLeft.dueToday"
+  | "shared:format.daysLeft.count";
+
+export type SharedT = (key: SharedFormatKey, opts?: Record<string, unknown>) => string;
+
+/** 业务货币恒为人民币;en 语境用 CN¥ 避免被读作日元。 */
+function currencySymbol(locale: string): string {
+  return locale.startsWith("zh") ? "¥" : "CN¥";
+}
+
+/** "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en);负数符号在最前。 */
+export function formatMoney(amount: string | null | undefined, locale: string): string {
+  const currency = currencySymbol(locale);
   if (amount == null || amount === "") return `${currency}0.00`;
   const neg = amount.startsWith("-");
   const abs = neg ? amount.slice(1) : amount;
@@ -14,13 +41,12 @@ export function formatMoney(amount: string | null | undefined, currency = "¥"):
   return `${neg ? "-" : ""}${currency}${int}.${frac}`;
 }
 
-/** 每小时单价:"1.68" → "¥1.68/时"(单价最多展示 4 位小数,去尾零但至少 2 位) */
-export function formatHourlyPrice(price: string | null | undefined): string {
-  if (price == null || price === "") return "¥0.00/时";
-  const [int = "0", fracRaw = ""] = price.split(".");
+/** 每小时单价:"1.68" → "¥1.68/时" / "CN¥1.68/hr"(最多 4 位小数,去尾零但至少 2 位)。 */
+export function formatHourlyPrice(price: string | null | undefined, t: SharedT, locale: string): string {
+  const [int = "0", fracRaw = ""] = (price ?? "0").split(".");
   let frac = (fracRaw + "00").slice(0, 4).replace(/0+$/, "");
   if (frac.length < 2) frac = (frac + "00").slice(0, 2);
-  return `¥${int}.${frac}/时`;
+  return t("shared:format.perHour", { price: `${currencySymbol(locale)}${int}.${frac}` });
 }
 
 /** 十进制字符串 × 整数(BigInt 精确到 4 位小数,禁浮点)。展示层用;计费权威在后端。 */
@@ -45,24 +71,36 @@ export function diskDailyEstimate(priceGbMonth: string | null | undefined, gb: n
   return `${s.slice(0, -2)}.${s.slice(-2)}`;
 }
 
-/** 秒 → "X 小时 Y 分"(不足 1 分钟显示"不足 1 分钟") */
-export function formatDuration(seconds: number): string {
-  if (seconds < 60) return seconds <= 0 ? "0 分钟" : "不足 1 分钟";
+/** 秒 → "X 小时 Y 分"(en 用缩写单位规避复数形态)。 */
+export function formatDuration(seconds: number, t: SharedT): string {
+  if (seconds < 60) {
+    return seconds <= 0 ? t("shared:format.duration.zero") : t("shared:format.duration.lessThanMinute");
+  }
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h === 0) return `${m} 分钟`;
-  if (m === 0) return `${h} 小时`;
-  return `${h} 小时 ${m} 分`;
+  if (h === 0) return t("shared:format.duration.m", { m });
+  if (m === 0) return t("shared:format.duration.h", { h });
+  return t("shared:format.duration.hm", { h, m });
 }
 
-/** 截止时间 → "剩 47h" / "剩 30m" / "已到期"。冻结回收倒计时统一格式 */
-export function formatCountdown(deadline: string | Date, now: Date = new Date()): string {
+/** 截止时间 → "剩 47h" / "剩 30m" / "已到期"。冻结回收倒计时统一格式。 */
+export function formatCountdown(deadline: string | Date, t: SharedT, now: Date = new Date()): string {
   const end = typeof deadline === "string" ? new Date(deadline) : deadline;
   const ms = end.getTime() - now.getTime();
-  if (ms <= 0) return "已到期";
+  if (ms <= 0) return t("shared:format.countdown.expired");
   const hours = Math.floor(ms / 3_600_000);
-  if (hours >= 1) return `剩 ${hours}h`;
-  return `剩 ${Math.max(1, Math.floor(ms / 60_000))}m`;
+  if (hours >= 1) return t("shared:format.countdown.hours", { count: hours });
+  return t("shared:format.countdown.minutes", { count: Math.max(1, Math.floor(ms / 60_000)) });
+}
+
+/** 冻结行内标签整句:"剩 47h后回收"(中文零形态拼接无法直译,单独成键)。 */
+export function formatReclaimCountdown(deadline: string | Date, t: SharedT, now: Date = new Date()): string {
+  const end = typeof deadline === "string" ? new Date(deadline) : deadline;
+  const ms = end.getTime() - now.getTime();
+  if (ms <= 0) return t("shared:format.countdown.reclaimNow");
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours >= 1) return t("shared:format.countdown.reclaimHours", { count: hours });
+  return t("shared:format.countdown.reclaimMinutes", { count: Math.max(1, Math.floor(ms / 60_000)) });
 }
 
 /**
@@ -72,14 +110,36 @@ export function formatCountdown(deadline: string | Date, now: Date = new Date())
 export function formatDaysLeft(
   startedAt: string | null | undefined,
   totalDays: number,
+  t: SharedT,
   now: Date = new Date(),
 ): string | null {
   if (!startedAt) return null;
   const deadline = new Date(startedAt).getTime() + totalDays * 86_400_000;
   const ms = deadline - now.getTime();
-  if (ms <= 0) return "已到期";
+  if (ms <= 0) return t("shared:format.daysLeft.expired");
   const days = Math.floor(ms / 86_400_000);
-  return days === 0 ? "今日到期" : `剩 ${days} 天`;
+  return days === 0 ? t("shared:format.daysLeft.dueToday") : t("shared:format.daysLeft.count", { count: days });
+}
+
+/** 应用侧一次绑定 t/locale,调用点保持原表达式形状(各 app 的 useFormat() 是唯一消费方)。 */
+export interface Formatters {
+  formatMoney(amount: string | null | undefined): string;
+  formatHourlyPrice(price: string | null | undefined): string;
+  formatDuration(seconds: number): string;
+  formatCountdown(deadline: string | Date, now?: Date): string;
+  formatReclaimCountdown(deadline: string | Date, now?: Date): string;
+  formatDaysLeft(startedAt: string | null | undefined, totalDays: number, now?: Date): string | null;
+}
+
+export function makeFormatters(t: SharedT, locale: string): Formatters {
+  return {
+    formatMoney: (amount) => formatMoney(amount, locale),
+    formatHourlyPrice: (price) => formatHourlyPrice(price, t, locale),
+    formatDuration: (seconds) => formatDuration(seconds, t),
+    formatCountdown: (deadline, now) => formatCountdown(deadline, t, now),
+    formatReclaimCountdown: (deadline, now) => formatReclaimCountdown(deadline, t, now),
+    formatDaysLeft: (startedAt, totalDays, now) => formatDaysLeft(startedAt, totalDays, t, now),
+  };
 }
 
 /** 金额字符串比较(BigInt 万分位精度,禁浮点):a<b → -1,a==b → 0,a>b → 1。 */

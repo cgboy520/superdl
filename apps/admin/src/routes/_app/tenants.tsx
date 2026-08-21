@@ -1,9 +1,4 @@
-import { adminColors, formatDateTime,
-  formatMoney,
-  instanceStatusMap,
-  metaOf,
-  skuTierMap,
-  type InstanceStatus } from "@superdl/ui";
+import { adminColors, formatDateTime, instanceStatusMap, metaOf, skuTierMap, type InstanceStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
@@ -19,6 +14,7 @@ import {
   useTenants,
   useUnfreezeTenant,
 } from "../../api";
+import { useFormat } from "../../lib/format";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -27,6 +23,7 @@ export const Route = createFileRoute("/_app/tenants")({
 });
 
 function TenantsTab() {
+  const { formatMoney } = useFormat();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();

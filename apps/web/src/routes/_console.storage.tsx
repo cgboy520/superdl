@@ -4,15 +4,7 @@
  */
 
 import { type DiskOut } from "@superdl/api-client";
-import {
-  colorPrimary,
-  copy,
-  diskDailyEstimate,
-  formatDateTime,
-  formatDaysLeft,
-  formatSizeGb,
-  statusColors,
-} from "@superdl/ui";
+import { colorPrimary, copy, diskDailyEstimate, formatDateTime, formatSizeGb, statusColors } from "@superdl/ui";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Alert,
@@ -35,6 +27,7 @@ import {
 } from "antd";
 import { useState } from "react";
 
+import { useFormat } from "../lib/format";
 import { useCreateDisk, useDeleteDisk, useExpandDisk } from "../api/mutations";
 import { useDisks, useInstances, usePolicies } from "../api/queries";
 import { DiskStatusBadge } from "../components/common";
@@ -128,6 +121,7 @@ function ExpiryCell({
   graceDays: number;
   frozenDays: number;
 }) {
+  const { formatDaysLeft } = useFormat();
   if (disk.status === "active") {
     return <Typography.Text type="secondary">按日扣费中</Typography.Text>;
   }

@@ -1,4 +1,4 @@
-import { adminColors, formatDateTime, formatMoney, statusColors } from "@superdl/ui";
+import { adminColors, formatDateTime, statusColors } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -16,6 +16,7 @@ import {
   Tag,
   Typography,
 } from "antd";
+import { useFormat } from "../../lib/format";
 import EChart from "../../components/EChart";
 
 import {
@@ -209,6 +210,7 @@ function DeadTasksCard() {
 }
 
 function Overview() {
+  const { formatMoney } = useFormat();
   const { data: oversell } = useOversellReport();
   const { data: nodesData } = useNodes();
   const { data: instances } = useAdminInstances();

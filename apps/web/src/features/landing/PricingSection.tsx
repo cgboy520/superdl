@@ -3,25 +3,20 @@
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
-import {
-  copy,
-  formatHourlyPrice,
-  getGpuSpec,
-  marketing,
-  metaOf,
-  skuTierMap,
-} from "@superdl/ui";
+import { copy, getGpuSpec, marketing, metaOf, skuTierMap } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Col, Row, Skeleton, Tabs, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useFormat } from "../../lib/format";
 import { useSkus } from "../../api/queries";
 import { TierTag } from "../../components/common";
 import { useIsLoggedIn } from "../../stores/auth";
 
 export function PricingSection() {
   const { t } = useTranslation(["web", "shared"]);
+  const { formatHourlyPrice } = useFormat();
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [tab, setTab] = useState<"dedicated" | "shared">("dedicated");

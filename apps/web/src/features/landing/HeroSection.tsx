@@ -3,10 +3,11 @@
  * 不做轮播(ui-ux-spec §3.0)。
  */
 
-import { brand, colorPrimary, formatHourlyPrice, marketing } from "@superdl/ui";
+import { brand, colorPrimary, marketing } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Grid, Space, Typography } from "antd";
 
+import { useFormat } from "../../lib/format";
 import { useSkus } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
 
@@ -34,6 +35,7 @@ function GlassCard({ label, value }: { label: string; value: string }) {
 }
 
 export function HeroSection() {
+  const { formatHourlyPrice } = useFormat();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
   const { data: skus } = useSkus({}, { refetchInterval: 60_000 });

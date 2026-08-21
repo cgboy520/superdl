@@ -3,9 +3,11 @@
  * 铁律 #3:费用项逐项摊开,「日常费用(关机也产生)」与「配置费用」分栏。
  */
 
-import { brand, colorPrimary, formatMoney } from "@superdl/ui";
+import { brand, colorPrimary } from "@superdl/ui";
 import { Popover, Space, theme, Typography } from "antd";
 import type { ReactNode } from "react";
+
+import { useFormat } from "../lib/format";
 
 export interface CheckoutItem {
   label: string;
@@ -32,6 +34,7 @@ export function CheckoutBar({
   actions: ReactNode;
 }) {
   const { token } = theme.useToken();
+  const { formatMoney } = useFormat();
   return (
     <div
       style={{

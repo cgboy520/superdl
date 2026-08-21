@@ -4,7 +4,7 @@
  */
 
 import type { SkuMarketOut } from "@superdl/api-client";
-import { copy, formatHourlyPrice, statusColors } from "@superdl/ui";
+import { copy, statusColors, type Formatters } from "@superdl/ui";
 import { Card, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ComponentProps, ReactNode } from "react";
 
@@ -27,7 +27,7 @@ function formatSkuGpu(s: SkuMarketOut): string {
  * priceFontSize 控制价格字号(市场页放大到 18)。
  */
 export function skuColumns(
-  opts: { availability?: boolean; priceFontSize?: number } = {},
+  opts: { fmt: Formatters; availability?: boolean; priceFontSize?: number },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const availability = [
     {
@@ -71,7 +71,7 @@ export function skuColumns(
       title: "价格(单卡)",
       render: (_: unknown, s: SkuMarketOut) => (
         <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
-          {formatHourlyPrice(s.price_hourly)}
+          {opts.fmt.formatHourlyPrice(s.price_hourly)}
         </span>
       ),
     },
