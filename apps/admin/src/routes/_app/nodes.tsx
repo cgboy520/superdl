@@ -89,13 +89,15 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
       {Array.from({ length: node.gpu_total }, (_, i) => {
         const g = byIndex.get(String(i));
         const util = live ? last(g?.util) : null;
+        const mem = last(g?.mem_used_mb);
+        const temp = last(g?.temp);
         const used = i < node.gpu_used;
         const title = live
           ? t("nodes.gpuCellLive", {
               index: i,
               util: util == null ? "—" : Math.round(util),
-              mem: last(g?.mem_used_mb) == null ? "—" : Math.round((last(g?.mem_used_mb) ?? 0) / 1024),
-              temp: last(g?.temp) == null ? "—" : Math.round(last(g?.temp) ?? 0),
+              mem: mem == null ? "—" : Math.round(mem / 1024),
+              temp: temp == null ? "—" : Math.round(temp),
             })
           : used
             ? t("nodes.gpuCellUsed", { index: i })
@@ -167,15 +169,15 @@ function NodeMetricsPanel({
       />
     </Card>
   );
+  const xid = metrics?.xid_count_24h ?? 0;
+  const grafanaUrl = metrics?.grafana_url;
   return (
     <Card
       title={t("nodes.historyTitle")}
       style={{ marginTop: 16 }}
       extra={
         <Space size={12}>
-          {(metrics?.xid_count_24h ?? 0) > 0 && (
-            <Tag color="red">{t("nodes.xidBadge", { count: metrics?.xid_count_24h ?? 0 })}</Tag>
-          )}
+          {xid > 0 && <Tag color="red">{t("nodes.xidBadge", { count: xid })}</Tag>}
           <Radio.Group
             size="small"
             value={range}
@@ -187,10 +189,10 @@ function NodeMetricsPanel({
               { value: "24h", label: t("nodes.range24h") },
             ]}
           />
-          {metrics?.grafana_url && (
+          {grafanaUrl && (
             <Button
               size="small"
-              onClick={() => window.open(metrics.grafana_url ?? "", "_blank", "noopener,noreferrer")}
+              onClick={() => window.open(grafanaUrl, "_blank", "noopener,noreferrer")}
             >
               {t("nodes.openGrafana")}
             </Button>

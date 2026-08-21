@@ -504,7 +504,7 @@ function PlatformConfigPage() {
               item?.kind === "secret" ? t("platform.secretMasked") : v === "" ? t("platform.clearOverride") : v;
             return (
               <div key={k}>
-                {FIELD_LABELS[k] ?? k} → <b>{String(shown)}</b>
+                {FIELD_LABELS[k] ?? k} → <b>{shown}</b>
               </div>
             );
           })}

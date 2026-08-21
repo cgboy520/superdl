@@ -185,7 +185,7 @@ function SkusPage() {
       gpu_model: agg.gpu_model ?? "",
       pool_label: agg.pool_label ?? "",
       gpu_cores_pct: shared ? pct : 100,
-      vram_gb: Math.max(1, Math.floor(agg.vram_gb * factor) || 1),
+      vram_gb: Math.max(1, Math.floor(agg.vram_gb * factor)),
       ...(agg.vcpu_per_gpu ? { vcpu: Math.max(1, Math.round(agg.vcpu_per_gpu * factor)) } : {}),
       ...(agg.mem_gb_per_gpu
         ? { mem_gb: Math.max(1, Math.round(agg.mem_gb_per_gpu * factor)) }

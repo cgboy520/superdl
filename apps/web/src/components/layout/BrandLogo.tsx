@@ -10,17 +10,11 @@ const S_PATH =
 
 const BRAND_NAME = "SuperDL"; // 品牌字标,任何语言不译
 
-export function BrandLogo({
-  variant = "dark",
-  size = 26,
-}: {
-  variant?: "light" | "dark";
-  size?: number;
-}) {
+export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) {
   const light = variant === "light";
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+      <svg width={26} height={26} viewBox="0 0 32 32" aria-hidden>
         <defs>
           <linearGradient id="sdl-mark" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="#4338CA" />

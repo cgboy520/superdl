@@ -15,7 +15,6 @@ interface Props {
   /** 二次确认文案 */
   confirmText: string;
   danger?: boolean;
-  size?: "small" | "middle";
   disabled?: boolean;
   /** 禁用原因(tooltip)。无权限/状态不符时必填 */
   disabledReason?: string;
@@ -27,7 +26,6 @@ export function ReasonAction({
   title,
   confirmText,
   danger,
-  size = "small",
   disabled,
   disabledReason,
   onSubmit,
@@ -41,7 +39,7 @@ export function ReasonAction({
   const [form] = Form.useForm<{ reason: string }>();
 
   const button = (
-    <Button danger={danger} size={size} disabled={disabled} onClick={() => setOpen(true)}>
+    <Button danger={danger} size="small" disabled={disabled} onClick={() => setOpen(true)}>
       {label}
     </Button>
   );

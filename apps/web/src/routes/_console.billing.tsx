@@ -312,7 +312,7 @@ function BillingPage() {
   const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("billing.thresholdSaved")) });
 
   const saveThreshold = (v: number | undefined) => {
-    if (v != null && v >= 1 && v <= 168) setThreshold.mutate(v);
+    if (v != null) setThreshold.mutate(v); // 范围校验在 InputNumber min/max 与后端 ge/le
   };
 
   const exportCsv = async () => {

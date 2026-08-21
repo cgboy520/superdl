@@ -31,7 +31,7 @@ import {
   useInstanceMetrics,
 } from "../api/queries";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
-import { InstanceActions, ReleaseModal } from "../components/InstanceActions";
+import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
@@ -126,7 +126,7 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
             type="primary"
             disabled={!access}
             onClick={() => {
-              if (access?.jupyter_url) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+              if (access) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
             }}
           >
             {t("instances.openJupyter")}
@@ -151,9 +151,8 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
   );
 }
 
-function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
+function EventsTab({ uuid }: { uuid: string }) {
   const { t } = useTranslation();
-  void instanceId;
   const { data: events, isError, refetch } = useInstanceEvents(uuid);
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -237,7 +236,7 @@ function InstanceDetail() {
   }
   if (!instance) return null; // 首载中(spinner 由路由级 pending 呈现)
   const running = instance.status === "running";
-  const canRelease = ["stopped", "frozen", "failed"].includes(instance.status);
+  const canRelease = canReleaseStatus(instance.status);
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -295,7 +294,7 @@ function InstanceDetail() {
           {
             key: "events",
             label: t("instances.tabEvents"),
-            children: <EventsTab uuid={uuid} instanceId={instance.id} />,
+            children: <EventsTab uuid={uuid} />,
           },
           { key: "bills", label: t("instances.tabBills"), children: <BillsTab instanceId={instance.id} /> },
         ]}

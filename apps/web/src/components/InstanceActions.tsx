@@ -19,6 +19,11 @@ import {
   useStopInstance,
 } from "../api/mutations";
 
+// creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消,不必干等超时
+export function canReleaseStatus(s: string): boolean {
+  return s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
+}
+
 export function ReleaseModal({
   instance,
   open,
@@ -109,9 +114,7 @@ export function InstanceActions({
   const canStart = s === "stopped";
   const canStop = s === "running";
   const canRestart = s === "running";
-  // creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消,不必干等超时
-  const canRelease =
-    s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
+  const canRelease = canReleaseStatus(s);
 
   const startTip = s === "frozen" ? t("copy.frozenNeedsRecharge") : t("copy.startNeedsStopped");
 

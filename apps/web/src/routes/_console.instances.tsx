@@ -92,8 +92,7 @@ function QuickToolsCell({ instance }: { instance: InstanceOut }) {
           disabled={!access}
           style={{ paddingInline: 4 }}
           onClick={() => {
-                if (access?.jupyter_url)
-                  window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+                if (access) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
               }}
         >
           {t("common.jupyter")}
@@ -378,7 +377,7 @@ function InstancesPage() {
                   </span>
                 </Space>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t("instances.todayCost", { amount: formatMoney(todayByInstance.get(r.id) ?? null) })}
+                  {t("instances.todayCost", { amount: formatMoney(todayByInstance.get(r.id)) })}
                 </Typography.Text>
               </Space>
             ),

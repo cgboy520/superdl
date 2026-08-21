@@ -54,7 +54,7 @@ function ReconciliationCard() {
   const { formatMoney } = useFormat();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report } = useReconciliation(day.format("YYYY-MM-DD"));
-  const diffHigh = (report?.diff_pct ?? 0) > 2;
+  const diffHigh = report != null && report.diff_pct > 2;
 
   return (
     <Card
@@ -63,16 +63,16 @@ function ReconciliationCard() {
     >
       <Row gutter={16}>
         <Col span={6}>
-          <Statistic title={t("finance.billedTotal")} value={formatMoney(report?.billed_total)} />
+          <Statistic title={t("finance.billedTotal")} value={report ? formatMoney(report.billed_total) : "—"} />
         </Col>
         <Col span={6}>
-          <Statistic title={t("finance.estimatedTotal")} value={formatMoney(report?.estimated_total)} />
+          <Statistic title={t("finance.estimatedTotal")} value={report ? formatMoney(report.estimated_total) : "—"} />
         </Col>
         <Col span={6}>
           <Statistic
             title="diff%"
-            value={report?.diff_pct ?? 0}
-            suffix="%"
+            value={report ? report.diff_pct : "—"}
+            suffix={report ? "%" : undefined}
             valueStyle={diffHigh ? { color: adminColors.negative } : { color: adminColors.positive }}
           />
         </Col>

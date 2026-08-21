@@ -140,7 +140,7 @@ function CreatePage() {
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
   const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
   // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)
-  const enough = compareAmounts(wallet?.balance ?? "0", hourlyTotal) >= 0;
+  const enough = compareAmounts(wallet?.balance, hourlyTotal) >= 0;
 
   const imageRef = imageTab === "platform" ? platformImage?.[3] : customImage.trim();
   const canSubmit = Boolean(imageRef) && keyIds.length > 0;
@@ -298,8 +298,8 @@ function CreatePage() {
                 />
               </Space>
               <Slider
-                min={policies?.disk_min_gb ?? 10}
-                max={policies?.disk_max_gb ?? 1024}
+                min={policies?.disk_min_gb}
+                max={policies?.disk_max_gb}
                 step={10}
                 value={newDiskGb}
                 onChange={setNewDiskGb}

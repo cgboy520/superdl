@@ -120,8 +120,8 @@ function ExpiryCell({
   frozenDays,
 }: {
   disk: DiskOut;
-  graceDays: number;
-  frozenDays: number;
+  graceDays: number | undefined;
+  frozenDays: number | undefined;
 }) {
   const { formatDaysLeft } = useFormat();
   const { t } = useTranslation();
@@ -129,7 +129,7 @@ function ExpiryCell({
     return <Typography.Text type="secondary">{t("storage.activeBilling")}</Typography.Text>;
   }
   if (disk.status === "grace") {
-    const left = formatDaysLeft(disk.grace_started_at, graceDays);
+    const left = graceDays == null ? null : formatDaysLeft(disk.grace_started_at, graceDays);
     return (
       <Tooltip title={t("copy.diskExpirePolicy")}>
         <Typography.Text type="warning">{t("storage.graceLine", { left: left ?? "—" })}</Typography.Text>
@@ -137,7 +137,7 @@ function ExpiryCell({
     );
   }
   if (disk.status === "frozen") {
-    const left = formatDaysLeft(disk.frozen_started_at, frozenDays);
+    const left = frozenDays == null ? null : formatDaysLeft(disk.frozen_started_at, frozenDays);
     return (
       <Tooltip title={t("copy.diskExpirePolicy")}>
         <Typography.Text type="danger">{t("storage.frozenLine", { left: left ?? "—" })}</Typography.Text>
@@ -163,9 +163,8 @@ function StoragePage() {
   const [form] = Form.useForm();
 
   const priceText = policies ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month }) : t("storage.priceFallback");
-  const graceDays = policies?.disk_grace_days ?? 7;
-  const frozenDays = policies?.disk_frozen_days ?? 30;
-  const maxGb = policies?.disk_max_gb ?? 4096;
+  const graceDays = policies?.disk_grace_days;
+  const frozenDays = policies?.disk_frozen_days;
 
   const createDisk = useCreateDisk({
     onSuccess: () => {
@@ -290,8 +289,8 @@ function StoragePage() {
           </Form.Item>
           <Form.Item name="size_gb" label={t("storage.sizeLabel")} rules={[{ required: true }]}>
             <InputNumber
-              min={policies?.disk_min_gb ?? 10}
-              max={maxGb}
+              min={policies?.disk_min_gb}
+              max={policies?.disk_max_gb}
               step={10}
               style={{ width: 200 }}
             />
@@ -321,11 +320,11 @@ function StoragePage() {
           </Button>
         }
       >
-        {expandTarget && (
+        {expandTarget && policies && (
           <Space orientation="vertical" size={16} style={{ width: "100%" }}>
             <Slider
               min={expandTarget.size_gb}
-              max={maxGb}
+              max={policies.disk_max_gb}
               step={10}
               value={newSize}
               onChange={setNewSize}

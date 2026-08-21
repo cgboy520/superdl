@@ -1,34 +1,31 @@
 /**
  * GPU 利用率迷你 sparkline(实例列表列,近 1h),自绘 SVG。
- * 纵轴固定 0~100%;points 为 (unix_ts, util%) 稀疏序列。
+ * 纵轴固定 0~100%;points 为 (unix_ts, util%) 稀疏序列,空序列由调用方过滤。
  */
 
 import { colorPrimary } from "@superdl/ui";
 
-export function GpuSparkline({
-  points,
-  width = 110,
-  height = 28,
-}: {
-  points: readonly (readonly number[])[];
-  width?: number;
-  height?: number;
-}) {
-  if (points.length === 0) return null;
-  const t0 = points[0]?.[0] ?? 0;
-  const t1 = points[points.length - 1]?.[0] ?? t0;
+const WIDTH = 110;
+const HEIGHT = 28;
+
+export function GpuSparkline({ points }: { points: readonly (readonly [number, number])[] }) {
+  const first = points[0];
+  if (!first) return null; // noUncheckedIndexedAccess 收窄用,调用方保证非空
+  const t0 = first[0];
+  const t1 = (points[points.length - 1] ?? first)[0];
   const span = Math.max(t1 - t0, 1);
-  const xy = points.map((p) => {
-    const x = points.length === 1 ? width / 2 : (((p[0] ?? t0) - t0) / span) * (width - 2) + 1;
-    const v = Math.min(Math.max(p[1] ?? 0, 0), 100);
-    const y = height - 2 - (v / 100) * (height - 4);
+  const xy = points.map(([ts, util]) => {
+    const x = points.length === 1 ? WIDTH / 2 : ((ts - t0) / span) * (WIDTH - 2) + 1;
+    const v = Math.min(Math.max(util, 0), 100); // 越界数据仅出现在源指标异常时,钉住画布
+    const y = HEIGHT - 2 - (v / 100) * (HEIGHT - 4);
     return [x, y] as const;
   });
   const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const area = `1,${height - 2} ${line} ${(xy[xy.length - 1]?.[0] ?? width - 1).toFixed(1)},${height - 2}`;
+  const lastX = (xy[xy.length - 1] ?? [WIDTH - 1, 0])[0];
+  const area = `1,${HEIGHT - 2} ${line} ${lastX.toFixed(1)},${HEIGHT - 2}`;
 
   return (
-    <svg width={width} height={height} aria-hidden style={{ display: "block" }}>
+    <svg width={WIDTH} height={HEIGHT} aria-hidden style={{ display: "block" }}>
       <polygon points={area} fill={colorPrimary} opacity={0.1} />
       <polyline points={line} fill="none" stroke={colorPrimary} strokeWidth={1.5} />
     </svg>

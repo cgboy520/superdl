@@ -50,10 +50,6 @@ export function useAuth(): AuthState {
   return useStore(authStore);
 }
 
-export function useIsLoggedIn(): boolean {
-  return useStore(authStore, (s) => s.accessToken !== null);
-}
-
 export function useAdminRole(): string {
   return useStore(authStore, (s) => s.admin?.role ?? "readonly");
 }

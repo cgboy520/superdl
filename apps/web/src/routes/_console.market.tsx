@@ -7,7 +7,7 @@ import { mulPrice, skuTierMap } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../lib/format";
@@ -45,13 +45,10 @@ function MarketPage() {
     refetch,
   } = useSkus({}, { refetchInterval: 30_000 });
 
-  const freeByModel = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of allSkus ?? []) {
-      m.set(s.gpu_model, (m.get(s.gpu_model) ?? 0) + (s.available_count ?? 0));
-    }
-    return m;
-  }, [allSkus]);
+  const freeByModel = new Map<string, number>();
+  for (const s of allSkus ?? []) {
+    freeByModel.set(s.gpu_model, (freeByModel.get(s.gpu_model) ?? 0) + (s.available_count ?? 0));
+  }
 
   const modelOptions: ChipOption<string>[] = [
     { value: ALL, label: t("market.all") },

@@ -30,10 +30,6 @@ export const authStore = createStore<AuthState>()((set) => ({
   },
 }));
 
-export function useAuth(): AuthState {
-  return useStore(authStore);
-}
-
 export function useIsLoggedIn(): boolean {
   return useStore(authStore, (s) => s.accessToken !== null);
 }
