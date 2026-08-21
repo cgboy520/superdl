@@ -29,7 +29,7 @@ from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
 from app.modules.nodes import service as nodes_service
 from app.modules.orchestrator import statemachine as sm_def
-from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.statemachine import validate_transition
 
 if TYPE_CHECKING:
@@ -455,7 +455,12 @@ async def active_gpu_counts_by_sku(session: AsyncSession) -> dict[int, int]:
 # ---------- K8s spec 构造 ----------
 
 
-def build_pod_spec(instance: Instance, *, distro: str | None = None) -> InstancePodSpec:
+def build_pod_spec(
+    instance: Instance, *, distro: str | None = None, data_disk_subpath: str | None = None
+) -> InstancePodSpec:
+    """构造 Pod spec。data_disk_subpath 必须由调用方从盘记录读出后传入 ——
+    subPath 只有 `data_disks.juicefs_subpath` 一个事实源:在这里就地重算过一次
+    `disk-{data_disk_id}`,与擦除路径永不相等,删盘会擦空目录而真实数据永久留存。"""
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
         instance.spec,
@@ -484,16 +489,23 @@ def build_pod_spec(instance: Instance, *, distro: str | None = None) -> Instance
         },
         authorized_keys=tuple(instance.authorized_keys),
         node_selector=gpu_req.node_selector,
-        data_disk_subpath=f"disk-{instance.data_disk_id}" if instance.data_disk_id else None,
+        data_disk_subpath=data_disk_subpath,
         scheduler_name=gpu_req.scheduler_name,
         annotations=gpu_req.annotations,
     )
 
 
 async def build_pod_spec_with_cluster(session: AsyncSession, instance: Instance) -> InstancePodSpec:
-    """outbox handler 用:带集群发行版上下文(k3s → shared 档显式 runtimeClassName)。"""
+    """outbox handler 用:带集群发行版上下文(k3s → shared 档显式 runtimeClassName)
+    与数据盘 subPath(从盘记录读,不就地重算)。"""
     row = await nodes_service.get_cluster_status(session)
-    return build_pod_spec(instance, distro=row.distro if row else None)
+    subpath: str | None = None
+    if instance.data_disk_id is not None:
+        disk = await session.get(DataDisk, instance.data_disk_id)
+        if disk is None:
+            raise RuntimeError(f"data disk {instance.data_disk_id} missing for {instance.uuid}")
+        subpath = disk.juicefs_subpath
+    return build_pod_spec(instance, distro=row.distro if row else None, data_disk_subpath=subpath)
 
 
 # ---------- 接入信息 ----------
@@ -799,8 +811,6 @@ async def instance_disk_stats_by_user(session: AsyncSession) -> dict[int, dict[s
         .tuples()
         .all()
     )
-    from app.modules.orchestrator.models import DataDisk
-
     disk_rows = (
         (
             await session.execute(

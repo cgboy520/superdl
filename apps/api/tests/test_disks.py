@@ -63,6 +63,9 @@ class TestDiskCrud:
         await drain(sm)
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
+        # 擦除打在盘记录登记的那条子路径上 —— 曾经这里擦的是一条从未被挂载过的路径,
+        # rm -rf 静默成功、盘置 deleted,而 JuiceFS 上的真实数据一字节未动
+        assert fake.wiped_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
 
     async def test_create_requires_balance(self, client, sm, fake):
         headers, _user_id, _key = await create_user_with_key(client, "13500000001")
@@ -102,9 +105,10 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
         a_uuid = resp.json()["uuid"]
         await drain(sm)
-        # Pod spec 带 JuiceFS 子路径(挂 /root/data)
+        # Pod spec 带 JuiceFS 子路径(挂 /root/data)。子路径的唯一事实源是
+        # data_disks.juicefs_subpath(= disk-<uuid>),不是自增主键
         pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
-        assert pod.spec.data_disk_subpath == f"disk-{disk['id']}"
+        assert pod.spec.data_disk_subpath == f"disk-{disk['uuid']}"
 
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["mounted_instance_id"] is not None

@@ -102,7 +102,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert pod_spec.gpu_resources["nvidia.com/gpucores"] == "50"
     assert pod_spec.host_users is False
-    assert pod_spec.data_disk_subpath == f"disk-{disk['id']}"
+    assert pod_spec.data_disk_subpath == f"disk-{disk['uuid']}"
 
     # ── 6. 跑 30 分钟后停机 → 尾账 ─────────────────────────
     from tests.test_billing_flow import backdate_running_event
