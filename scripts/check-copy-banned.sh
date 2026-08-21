@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# 禁词闸门:扫描 zh 文案目录(locales JSON 值 + 后端 MESSAGES),命中营销套话即失败。
+# 白名单:一键加入/一键(节点注册产品名词语境)。
+set -euo pipefail
+cd "$(dirname "$0")/.."
+python3 - <<'PY'
+import json, pathlib, re, sys
+
+BANNED = ["智能", "强大", "轻松", "全方位", "高效", "极速", "助力", "赋能", "颠覆", "极致"]
+ALLOW = re.compile(r"一键(加入|添加)?")  # 产品名词语境豁免
+
+targets = [
+    "apps/web/src/locales/zh-CN/web.json",
+    "apps/admin/src/locales/zh-CN/admin.json",
+    "packages/ui/locales/zh-CN/shared.json",
+    "packages/ui/locales/zh-CN/errors.json",
+]
+fail = []
+def walk(o, path, file):
+    for k, v in o.items():
+        p = f"{path}.{k}" if path else k
+        if isinstance(v, dict):
+            walk(v, p, file)
+        elif isinstance(v, str):
+            for w in BANNED:
+                if w in v:
+                    fail.append((file, p, w))
+
+for f in targets:
+    walk(json.loads(pathlib.Path(f).read_text()), "", f)
+
+msgs = pathlib.Path("apps/api/app/core/messages.py").read_text()
+for w in BANNED:
+    for m in re.finditer(rf'"[^"]*{w}[^"]*"', msgs):
+        fail.append(("apps/api/app/core/messages.py", m.group(0)[:40], w))
+
+if fail:
+    for file, where, w in fail:
+        print(f"禁词「{w}」: {file} :: {where}")
+    sys.exit(1)
+print("banned-words check: clean")
+PY
