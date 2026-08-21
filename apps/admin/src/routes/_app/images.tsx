@@ -26,7 +26,6 @@ import { useTranslation } from "react-i18next";
 import {
   type ImageNodeRow,
   type ImageRow,
-  isApiError,
   useAdminImages,
   useCreateImage,
   useDeleteImage,
@@ -34,6 +33,7 @@ import {
   usePrewarmImage,
   useUpdateImage,
 } from "../../api";
+import { useApiErrorText } from "../../lib/apiError";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -61,11 +61,11 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
       rowKey="node_name"
       dataSource={data ?? []}
       pagination={false}
-      locale={{ emptyText: "暂无节点记录(巡检每 60s 铺行,或该镜像已关闭预热)" }}
+      locale={{ emptyText: t("images.nodesEmpty") }}
       columns={[
-        { title: "节点", dataIndex: "node_name" },
+        { title: t("nodes.colNode"), dataIndex: "node_name" },
         {
-          title: "缓存状态",
+          title: t("images.colCacheStatus"),
           dataIndex: "status",
           render: (v: ImageCacheStatus) => {
             const meta = metaOf(imageCacheStatusMap, v);
@@ -73,7 +73,7 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
           },
         },
         {
-          title: "失败原因",
+          title: t("nodes.colError"),
           dataIndex: "last_error",
           width: 320,
           render: (v: string | null) =>
@@ -88,12 +88,12 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
             ),
         },
         {
-          title: "最近确认",
+          title: t("images.colCheckedAt"),
           dataIndex: "checked_at",
           render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm") : "-"),
         },
         {
-          title: "更新时间",
+          title: t("images.colUpdatedAt"),
           dataIndex: "updated_at",
           render: (v: string) => dayjs(v).format("MM-DD HH:mm"),
         },
@@ -103,6 +103,8 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
 }
 
 function ImagesPage() {
+  const { t } = useTranslation(["admin", "shared"]);
+  const errText = useApiErrorText();
   // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message } = App.useApp();
   const role = useAdminRole();
@@ -119,21 +121,21 @@ function ImagesPage() {
   const create = useCreateImage({
     mutation: {
       onSuccess: () => {
-        message.success("镜像已创建,巡检将在 1 分钟内开始各节点预热");
+        message.success(t("images.created"));
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "创建失败"),
+      onError: (e) => message.error(errText(e, t("skus.createFailed"))),
     },
   });
   const update = useUpdateImage({
     mutation: {
       onSuccess: () => {
-        message.success("已保存");
+        message.success(t("images.saved"));
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "保存失败"),
+      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
     },
   });
   const del = useDeleteImage({
@@ -142,10 +144,10 @@ function ImagesPage() {
   const prewarm = usePrewarmImage({
     mutation: {
       onSuccess: (r) => {
-        message.success(`已触发预热,入队 ${r.enqueued} 个节点任务`);
+        message.success(t("images.prewarmTriggered", { count: r.enqueued }));
         refresh();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "触发失败"),
+      onError: (e) => message.error(errText(e, t("images.triggerFailed"))),
     },
   });
 
@@ -174,11 +176,11 @@ function ImagesPage() {
 
   return (
     <Card
-      title="镜像与预热"
+      title={t("menu.images")}
       extra={
-        <Tooltip title={writable ? "" : "只读角色不可创建"}>
+        <Tooltip title={writable ? "" : t("skus.readonlyNoCreate")}>
           <Button type="primary" disabled={!writable} onClick={() => openEdit("new")}>
-            新建镜像
+            {t("images.newImage")}
           </Button>
         </Tooltip>
       }
@@ -187,8 +189,8 @@ function ImagesPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="预热机制"
-        description="开启预热的镜像会被巡检自动分发到全部就绪节点(每节点定点拉取);覆盖率达标后用户创建页展示「预热镜像,秒级启动」。新节点加入后 1 分钟内自动纳入。镜像一律钉版本 tag,发布 SOP 见 deploy/cluster/runbooks/image-prewarm.md。"
+        message={t("images.prewarmInfo")}
+        description={t("images.prewarmInfoDesc")}
       />
       <Table<ImageRow>
         scroll={{ x: 1100 }}
@@ -200,13 +202,13 @@ function ImagesPage() {
         }}
         columns={[
           {
-            title: "框架",
+            title: t("images.colFramework"),
             render: (_, r) => `${r.framework} ${r.framework_version}`,
           },
           { title: "Python", dataIndex: "python_version" },
           { title: "CUDA", dataIndex: "cuda_version" },
           {
-            title: "镜像地址",
+            title: t("images.colImageRef"),
             dataIndex: "image_ref",
             width: 320,
             render: (v: string) => (
@@ -216,10 +218,10 @@ function ImagesPage() {
             ),
           },
           {
-            title: "预热",
+            title: t("images.colPrewarm"),
             dataIndex: "prewarm_enabled",
             render: (v: boolean, r) => (
-              <Tooltip title={writable ? "" : "只读角色不可操作"}>
+              <Tooltip title={writable ? "" : t("nodes.readonlyNoOp")}>
                 <Switch
                   checked={v}
                   disabled={!writable}
@@ -231,10 +233,10 @@ function ImagesPage() {
             ),
           },
           {
-            title: "节点覆盖",
+            title: t("images.colCoverage"),
             render: (_, r) => {
-              if (!r.prewarm_enabled) return <Tag>已关闭</Tag>;
-              if (r.coverage.total === 0) return <Tag color="default">待巡检</Tag>;
+              if (!r.prewarm_enabled) return <Tag>{t("images.disabled")}</Tag>;
+              if (r.coverage.total === 0) return <Tag color="default">{t("images.awaitingPatrol")}</Tag>;
               return (
                 <Space>
                   <Progress
@@ -246,38 +248,38 @@ function ImagesPage() {
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {r.coverage.cached}/{r.coverage.total}
                   </Typography.Text>
-                  {r.failed_nodes > 0 && <Tag color="red">失败 {r.failed_nodes}</Tag>}
+                  {r.failed_nodes > 0 && <Tag color="red">{t("images.failedCount", { count: r.failed_nodes })}</Tag>}
                 </Space>
               );
             },
           },
           {
-            title: "操作",
+            title: t("skus.colActions"),
             width: 240,
             render: (_, r) => (
               <Space>
-                <Tooltip title={writable ? "重派全部未缓存节点" : "只读角色不可操作"}>
+                <Tooltip title={writable ? t("images.prewarmTip") : t("nodes.readonlyNoOp")}>
                   <Button
                     size="small"
                     disabled={!writable || !r.prewarm_enabled}
                     loading={prewarm.isPending && prewarm.variables?.imageId === r.id}
                     onClick={() => prewarm.mutate({ imageId: r.id })}
                   >
-                    立即预热
+                    {t("images.prewarmNow")}
                   </Button>
                 </Tooltip>
-                <Tooltip title={writable ? "" : "只读角色不可编辑"}>
+                <Tooltip title={writable ? "" : t("skus.readonlyNoEdit")}>
                   <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
-                    编辑
+                    {t("skus.edit")}
                   </Button>
                 </Tooltip>
                 <ReasonAction
-                  label="删除"
-                  title="删除镜像"
-                  confirmText={`删除「${r.framework} ${r.framework_version}」目录条目并清空各节点缓存记录;运行中实例不受影响。`}
+                  label={t("images.delete")}
+                  title={t("images.deleteTitle")}
+                  confirmText={t("images.deleteConfirm", { name: `${r.framework} ${r.framework_version}` })}
                   danger
                   disabled={!writable}
-                  disabledReason="只读角色不可删除"
+                  disabledReason={t("images.readonlyNoDelete")}
                   onSubmit={async (reason) => {
                     await del.mutateAsync({ imageId: r.id, data: { reason } });
                   }}
@@ -290,29 +292,29 @@ function ImagesPage() {
       <Drawer
         title={
           editing === "new"
-            ? "新建镜像"
-            : `编辑镜像 · ${typeof editing === "object" && editing ? editing.framework : ""}`
+            ? t("images.newImage")
+            : t("images.editTitle", { name: typeof editing === "object" && editing ? editing.framework : "" })
         }
         open={editing !== null}
         onClose={() => setEditing(null)}
         width={480}
         extra={
           <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
-            提交
+            {t("skus.submit")}
           </Button>
         }
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="framework" label="框架" rules={[{ required: true }]}>
+          <Form.Item name="framework" label={t("images.colFramework")} rules={[{ required: true }]}>
             <Input placeholder="如 PyTorch / TensorFlow / Miniconda" />
           </Form.Item>
-          <Form.Item name="framework_version" label="框架版本" rules={[{ required: true }]}>
+          <Form.Item name="framework_version" label={t("images.frameworkVersionLabel")} rules={[{ required: true }]}>
             <Input placeholder="如 2.9.0" />
           </Form.Item>
-          <Form.Item name="python_version" label="Python 版本" rules={[{ required: true }]}>
+          <Form.Item name="python_version" label={t("images.pythonVersionLabel")} rules={[{ required: true }]}>
             <Input placeholder="如 3.12" />
           </Form.Item>
-          <Form.Item name="cuda_version" label="CUDA 版本" rules={[{ required: true }]}>
+          <Form.Item name="cuda_version" label={t("images.cudaVersionLabel")} rules={[{ required: true }]}>
             <Input placeholder="如 12.8" />
           </Form.Item>
           {editing !== "new" && (
@@ -320,28 +322,28 @@ function ImagesPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message="变更镜像地址将清空全部节点缓存记录并按新地址重新预热"
+              message={t("images.refChangeWarn")}
             />
           )}
           <Form.Item
             name="image_ref"
-            label="镜像地址(钉版本 tag,禁止 latest)"
+            label={t("images.imageRefLabel")}
             rules={[
               { required: true, min: 3 },
               {
                 validator: (_, v: string) =>
                   v?.endsWith(":latest") || (v && !v.includes(":"))
-                    ? Promise.reject(new Error("必须钉具体版本 tag(latest 不参与 P2P 缓存)"))
+                    ? Promise.reject(new Error(t("images.tagRule")))
                     : Promise.resolve(),
               },
             ]}
           >
             <Input placeholder="registry.superdl.local/pytorch:2.9.0-cu128" />
           </Form.Item>
-          <Form.Item name="sort" label="排序(同框架内)">
+          <Form.Item name="sort" label={t("images.sortLabel")}>
             <InputNumber min={0} max={9999} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="prewarm_enabled" label="参与预热" valuePropName="checked">
+          <Form.Item name="prewarm_enabled" label={t("images.prewarmEnabledLabel")} valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

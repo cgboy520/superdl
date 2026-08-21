@@ -23,6 +23,7 @@ export const Route = createFileRoute("/_app/tenants")({
 });
 
 function TenantsTab() {
+  const { t: tt } = useTranslation();
   const { formatMoney } = useFormat();
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -40,35 +41,35 @@ function TenantsTab() {
       dataSource={tenants}
       columns={[
         { title: "ID", dataIndex: "id", width: 70 },
-        { title: "手机", dataIndex: "phone_masked" },
+        { title: tt("tenants.colPhone"), dataIndex: "phone_masked" },
         {
-          title: "余额",
+          title: tt("tenants.colBalance"),
           dataIndex: "balance",
           render: (v: string) => (
             <span style={{ color: Number(v) <= 0 ? adminColors.negative : undefined }}>{formatMoney(v)}</span>
           ),
         },
-        { title: "累计消费", dataIndex: "total_consumed", render: (v: string) => formatMoney(v) },
-        { title: "实例", dataIndex: "instances", width: 70 },
-        { title: "数据盘", dataIndex: "disk_gb", render: (v: number) => `${v} GB`, width: 90 },
+        { title: tt("tenants.colTotalConsumed"), dataIndex: "total_consumed", render: (v: string) => formatMoney(v) },
+        { title: tt("tenants.colInstances"), dataIndex: "instances", width: 70 },
+        { title: tt("tenants.colDisk"), dataIndex: "disk_gb", render: (v: number) => `${v} GB`, width: 90 },
         {
-          title: "状态",
+          title: tt("tenants.colStatus"),
           dataIndex: "status",
           render: (v: string) =>
-            v === "active" ? <Tag color="green">正常</Tag> : <Tag color="red">已冻结</Tag>,
+            v === "active" ? <Tag color="green">{tt("tenants.active")}</Tag> : <Tag color="red">{tt("tenants.frozen")}</Tag>,
         },
-        { title: "注册时间", dataIndex: "created_at", render: formatDateTime },
+        { title: tt("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         {
-          title: "操作",
+          title: tt("tenants.colActions"),
           render: (_, t) =>
             t.status === "active" ? (
               <ReasonAction
-                label="冻结"
+                label={tt("tenants.freeze")}
                 danger
-                title="冻结租户"
-                confirmText={`确认冻结租户 ${t.id}(${t.phone_masked})?冻结后其所有请求将被拒绝。`}
+                title={tt("tenants.freezeTitle")}
+                confirmText={tt("tenants.freezeConfirm", { id: t.id, phone: t.phone_masked })}
                 disabled={!writable}
-                disabledReason="当前角色无权操作"
+                disabledReason={tt("tenants.noPermission")}
                 onSubmit={async (reason) => {
                   await freeze.mutateAsync({ userId: t.id, data: { reason } });
                   refresh();
@@ -76,11 +77,11 @@ function TenantsTab() {
               />
             ) : (
               <ReasonAction
-                label="解冻"
-                title="解冻租户"
-                confirmText={`确认解冻租户 ${t.id}?`}
+                label={tt("tenants.unfreeze")}
+                title={tt("tenants.unfreezeTitle")}
+                confirmText={tt("tenants.unfreezeConfirm", { id: t.id })}
                 disabled={!writable}
-                disabledReason="当前角色无权操作"
+                disabledReason={tt("tenants.noPermission")}
                 onSubmit={async (reason) => {
                   await unfreeze.mutateAsync({ userId: t.id, data: { reason } });
                   refresh();
@@ -109,7 +110,7 @@ function InstancesTab() {
       <Space style={{ marginBottom: 12 }}>
         <Select
           allowClear
-          placeholder="状态过滤"
+          placeholder={t("tenants.statusFilter")}
           style={{ width: 160 }}
           value={status}
           onChange={setStatus}
@@ -124,9 +125,9 @@ function InstancesTab() {
         rowKey="uuid"
         dataSource={instances ?? []}
         columns={[
-          { title: "实例", dataIndex: "name" },
+          { title: t("tenants.colInstance"), dataIndex: "name" },
           {
-            title: "状态",
+            title: t("tenants.colStatus"),
             dataIndex: "status",
             render: (v: InstanceStatus) => {
               const m = metaOf(instanceStatusMap, v);
@@ -134,7 +135,7 @@ function InstancesTab() {
             },
           },
           {
-            title: "规格",
+            title: t("tenants.colSpec"),
             render: (_, r) => {
               const tm = metaOf(skuTierMap, r.spec.tier as string);
               return (
@@ -147,30 +148,30 @@ function InstancesTab() {
               );
             },
           },
-          { title: "SSH 端口", dataIndex: "ssh_port", width: 100 },
-          { title: "创建时间", dataIndex: "created_at", render: formatDateTime },
+          { title: t("tenants.colSshPort"), dataIndex: "ssh_port", width: 100 },
+          { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
           {
-            title: "操作",
+            title: t("tenants.colActions"),
             render: (_, r) => {
               const isEco = r.spec.tier === "shared_eco";
               return (
                 <Space>
                   <ReasonAction
-                    label="强制停止"
+                    label={t("tenants.forceStop")}
                     danger
-                    title="强制停止实例"
-                    confirmText={`确认强制停止实例 ${r.name}(${r.uuid.slice(0, 8)})?将立即结算尾账并通知用户。`}
+                    title={t("tenants.forceStopTitle")}
+                    confirmText={t("tenants.forceStopConfirm", { name: r.name, id: r.uuid.slice(0, 8) })}
                     disabled={!writable || r.status !== "running"}
-                    disabledReason={!writable ? "当前角色无权操作" : "仅运行中的实例可强制停止"}
+                    disabledReason={!writable ? t("tenants.noPermission") : t("tenants.forceStopNeedsRunning")}
                     onSubmit={async (reason) => {
                       await forceStop.mutateAsync({ uuid: r.uuid, data: { reason } });
                       refresh();
                     }}
                   />
-                  <Tooltip title={isEco ? "P1 功能,MVP 未开放" : "仅限经济档实例(SLA 已明示可重调度)"}>
+                  <Tooltip title={isEco ? t("tenants.evictP1") : t("tenants.evictEcoOnly")}>
                     <Button size="small" disabled={!isEco}
-                      onClick={() => message.info("驱逐重调度为 P1 功能,当前版本未开放")}>
-                      驱逐重调度
+                      onClick={() => message.info(t("tenants.evictP1"))}>
+                      {t("tenants.evict")}
                     </Button>
                   </Tooltip>
                 </Space>
@@ -184,12 +185,13 @@ function InstancesTab() {
 }
 
 function TenantsPage() {
+  const { t } = useTranslation();
   return (
-    <Card title="租户与实例">
+    <Card title={t("menu.tenants")}>
       <Tabs
         items={[
-          { key: "tenants", label: "租户", children: <TenantsTab /> },
-          { key: "instances", label: "全局实例", children: <InstancesTab /> },
+          { key: "tenants", label: t("tenants.tabTenants"), children: <TenantsTab /> },
+          { key: "instances", label: t("tenants.tabInstances"), children: <InstancesTab /> },
         ]}
       />
     </Card>

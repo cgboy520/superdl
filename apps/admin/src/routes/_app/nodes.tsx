@@ -26,7 +26,6 @@ import {
   type EnrollmentCommandOut,
   type EnrollmentRow,
   type NodeRow,
-  isApiError,
   useCordonNode,
   useCreateEnrollment,
   useEnrollments,
@@ -34,6 +33,7 @@ import {
   useRegenerateEnrollment,
   useRevokeEnrollment,
 } from "../../api";
+import { useApiErrorText } from "../../lib/apiError";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -41,24 +41,25 @@ export const Route = createFileRoute("/_app/nodes")({
   component: NodesPage,
 });
 
-const PHASE_LABEL: Record<string, string> = {
-  bootstrap: "获取参数",
-  precheck: "环境检查",
-  nouveau: "禁用 nouveau",
-  sysctl: "内核参数",
-  iommu: "IOMMU",
-  driver: "安装驱动",
-  nvme_vg: "NVMe VG",
-  reboot: "重启生效",
-  registries: "镜像 mirror",
-  rke2_config: "写入配置",
-  rke2_install: "安装 RKE2",
-  rke2_start: "启动 agent",
-  waiting_node: "等待对账",
-  joined: "已加入",
-};
+const PHASE_LABEL = {
+  bootstrap: "nodes.phase.bootstrap",
+  precheck: "nodes.phase.precheck",
+  nouveau: "nodes.phase.nouveau",
+  sysctl: "nodes.phase.sysctl",
+  iommu: "nodes.phase.iommu",
+  driver: "nodes.phase.driver",
+  nvme_vg: "nodes.phase.nvmeVg",
+  reboot: "nodes.phase.reboot",
+  registries: "nodes.phase.registries",
+  rke2_config: "nodes.phase.agentConfig",
+  rke2_install: "nodes.phase.agentInstall",
+  rke2_start: "nodes.phase.agentStart",
+  waiting_node: "nodes.phase.waitingNode",
+  joined: "nodes.phase.joined",
+} as const;
 
 function GpuGrid({ node }: { node: NodeRow }) {
+  const { t } = useTranslation();
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
       {Array.from({ length: node.gpu_total }, (_, i) => {
@@ -66,7 +67,7 @@ function GpuGrid({ node }: { node: NodeRow }) {
         return (
           <Tooltip
             key={i}
-            title={`GPU ${i} · ${used ? "已租" : "空闲"}(util/显存/温度经 Grafana 查看)`}
+            title={used ? t("nodes.gpuCellUsed", { index: i }) : t("nodes.gpuCellFree", { index: i })}
           >
             <div
               style={{
@@ -93,27 +94,27 @@ function GpuGrid({ node }: { node: NodeRow }) {
 
 /** 命令展示(创建/重新生成共用):令牌只显示这一次 */
 function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
+  const { t } = useTranslation();
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       <Alert
         type="warning"
         showIcon
-        message="注册令牌只显示这一次"
-        description={`有效期至 ${dayjs(result.enrollment.expires_at).format("MM-DD HH:mm")};关闭后无法找回,可随时「重新生成」。在新服务器上以 root 执行:`}
+        message={t("nodes.tokenOnce")}
+        description={t("nodes.tokenOnceDesc", { time: dayjs(result.enrollment.expires_at).format("MM-DD HH:mm") })}
       />
       <div>
-        <Typography.Text type="secondary">推荐(管道式):</Typography.Text>
+        <Typography.Text type="secondary">{t("nodes.cmdPiped")}</Typography.Text>
         <Typography.Paragraph copyable code style={{ marginBottom: 8 }}>
           {result.curl_command}
         </Typography.Paragraph>
-        <Typography.Text type="secondary">谨慎式(先下载可审阅):</Typography.Text>
+        <Typography.Text type="secondary">{t("nodes.cmdCautious")}</Typography.Text>
         <Typography.Paragraph copyable code style={{ marginBottom: 0 }}>
           {result.wget_command}
         </Typography.Paragraph>
       </div>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        kata 池含一次自动重启(IOMMU/驱动生效,断点续跑);执行失败可修复后重跑同一条命令(全幂等)。
-        进度实时显示在下方「待加入节点」。
+        {t("nodes.cmdFootnote")}
       </Typography.Text>
     </Space>
   );
@@ -128,6 +129,8 @@ interface EnrollFormValues {
 }
 
 function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const [form] = Form.useForm<EnrollFormValues>();
   const [result, setResult] = useState<EnrollmentCommandOut | null>(null);
@@ -135,7 +138,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const create = useCreateEnrollment({
     mutation: {
       onSuccess: (r) => setResult(r),
-      onError: (e) => message.error(isApiError(e) ? e.message : "生成失败"),
+      onError: (e) => message.error(errText(e, t("nodes.generateFailed"))),
     },
   });
 
@@ -147,13 +150,13 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
 
   return (
     <Modal
-      title={result ? "节点注册命令" : "添加节点"}
+      title={result ? t("nodes.cmdModalTitle") : t("nodes.addNode")}
       open={open}
       onCancel={close}
       footer={
         result ? (
           <Button type="primary" onClick={close}>
-            完成
+            {t("nodes.done")}
           </Button>
         ) : (
           <Button
@@ -164,7 +167,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
               create.mutate({ data: values, idempotencyKey: idemKey });
             }}
           >
-            生成注册命令
+            {t("nodes.generateCmd")}
           </Button>
         )
       }
@@ -179,35 +182,35 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="分池铁律:装机时定池,Kata 与 HAMi 永不混布"
-            description="kata=整卡直通(需 BIOS 开 VT-d,安装含一次自动重启);hami=共享软切分;mig=硬件切分。前置:超管需先在「平台配置 · 集群接入」录入 RKE2 Server 与 join token。"
+            message={t("nodes.poolRule")}
+            description={t("nodes.poolRuleDesc")}
           />
-          <Form.Item name="pool" label="节点池" rules={[{ required: true }]}>
+          <Form.Item name="pool" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: "kata", label: "kata(整卡直通)" },
-                { value: "hami", label: "hami(共享软切分)" },
-                { value: "mig", label: "mig(硬件切分)" },
+                { value: "kata", label: t("nodes.poolKata") },
+                { value: "hami", label: t("nodes.poolHami") },
+                { value: "mig", label: t("nodes.poolMig") },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="hostname"
-            label="期望主机名(可选;填写后上报不符将拒绝加入,防令牌串用)"
+            label={t("nodes.hostnameLabel")}
           >
             <Input placeholder="如 gpu-a3-01" />
           </Form.Item>
-          <Form.Item name="note" label="备注(可选)">
-            <Input placeholder="如 机柜 A3 · 8×4090" maxLength={128} />
+          <Form.Item name="note" label={t("nodes.noteLabel")}>
+            <Input placeholder={t("nodes.notePlaceholder")} maxLength={128} />
           </Form.Item>
           <Form.Item
             name="nvme_devices"
-            label="NVMe 设备(可选;填写后装机时创建 TopoLVM VG superdl-nvme)"
-            extra="无专用盘的测试节点可显式填 loop:80G,装机时用 loop 文件兜底实例盘(仅验证,非生产性能);留空则该节点无本地实例盘,不会自动兜底。"
+            label={t("nodes.nvmeLabel")}
+            extra={t("nodes.nvmeExtra")}
           >
-            <Select mode="tags" placeholder="如 /dev/nvme0n1;或 loop:80G(回车分隔)" open={false} />
+            <Select mode="tags" placeholder={t("nodes.nvmePlaceholder")} open={false} />
           </Form.Item>
-          <Form.Item name="ttl_hours" label="令牌有效期(小时)" rules={[{ required: true }]}>
+          <Form.Item name="ttl_hours" label={t("nodes.ttlLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} max={168} style={{ width: "100%" }} />
           </Form.Item>
         </Form>
@@ -218,6 +221,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
 
 function EnrollmentsCard({ writable }: { writable: boolean }) {
   const { t } = useTranslation(["admin", "shared"]);
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const qc = useQueryClient();
   const { data, queryKey } = useEnrollments({ active: true, refetchInterval: 5_000 });
@@ -229,7 +233,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
         setRegenResult(r);
         void qc.invalidateQueries({ queryKey });
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "重新生成失败"),
+      onError: (e) => message.error(errText(e, t("nodes.regenerateFailed"))),
     },
   });
   const revoke = useRevokeEnrollment({
@@ -238,7 +242,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
 
   if (rows.length === 0) return null;
   return (
-    <Card title="待加入节点" style={{ marginBottom: 16 }}>
+    <Card title={t("nodes.pendingTitle")} style={{ marginBottom: 16 }}>
       <Table<EnrollmentRow>
         size="small"
         rowKey="id"
@@ -247,17 +251,17 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
         pagination={false}
         columns={[
           {
-            title: "池",
+            title: t("nodes.colPool"),
             dataIndex: "pool",
             render: (v: string) => <Tag color="cyan">{v}</Tag>,
           },
           {
-            title: "主机名",
+            title: t("nodes.colHostname"),
             render: (_, r) => r.node_name ?? r.hostname ?? "-",
           },
-          { title: "备注", dataIndex: "note", render: (v: string | null) => v ?? "-" },
+          { title: t("nodes.noteCol"), dataIndex: "note", render: (v: string | null) => v ?? "-" },
           {
-            title: "状态",
+            title: t("nodes.colStatus"),
             dataIndex: "status",
             render: (v: NodeEnrollStatus) => {
               const meta = metaOf(nodeEnrollStatusMap, v);
@@ -265,17 +269,20 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             },
           },
           {
-            title: "阶段",
+            title: t("nodes.colPhase"),
             dataIndex: "phase",
-            render: (v: string | null) => (v ? (PHASE_LABEL[v] ?? v) : "-"),
+            render: (v: string | null) => {
+              const key = v ? metaOf(PHASE_LABEL, v) : undefined;
+              return key ? t(key) : (v ?? "-");
+            },
           },
           {
-            title: "最后心跳",
+            title: t("nodes.colHeartbeat"),
             dataIndex: "last_report_at",
             render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm:ss") : "-"),
           },
           {
-            title: "失败原因",
+            title: t("nodes.colError"),
             dataIndex: "error",
             width: 240,
             render: (v: string | null) =>
@@ -290,17 +297,17 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
               ),
           },
           {
-            title: "操作",
+            title: t("nodes.colActions"),
             width: 190,
             render: (_, r) => (
               <Space>
                 <Tooltip
                   title={
                     !writable
-                      ? "只读角色不可操作"
+                      ? t("nodes.readonlyNoOp")
                       : ["pending", "expired", "failed"].includes(r.status)
-                        ? "换新令牌并展示命令"
-                        : "仅 待执行/已过期/已失败 可重新生成"
+                        ? t("nodes.regenerateTip")
+                        : t("nodes.regenerateOnly")
                   }
                 >
                   <Button
@@ -309,17 +316,17 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
                     loading={regenerate.isPending && regenerate.variables?.enrollmentId === r.id}
                     onClick={() => regenerate.mutate({ enrollmentId: r.id, data: {} })}
                   >
-                    重新生成
+                    {t("nodes.regenerate")}
                   </Button>
                 </Tooltip>
                 {!["joined", "failed", "expired", "revoked"].includes(r.status) && (
                   <ReasonAction
-                    label="吊销"
-                    title="吊销注册令牌"
-                    confirmText="吊销后该令牌立即失效,进行中的安装将无法继续上报。"
+                    label={t("nodes.revoke")}
+                    title={t("nodes.revokeTitle")}
+                    confirmText={t("nodes.revokeConfirm")}
                     danger
                     disabled={!writable}
-                    disabledReason="只读角色不可吊销"
+                    disabledReason={t("nodes.readonlyNoRevoke")}
                     onSubmit={async (reason) => {
                       await revoke.mutateAsync({ enrollmentId: r.id, data: { reason } });
                     }}
@@ -331,12 +338,12 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
         ]}
       />
       <Modal
-        title="新注册命令"
+        title={t("nodes.newCmdTitle")}
         open={regenResult !== null}
         onCancel={() => setRegenResult(null)}
         footer={
           <Button type="primary" onClick={() => setRegenResult(null)}>
-            完成
+            {t("nodes.done")}
           </Button>
         }
         width={640}
@@ -348,6 +355,8 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
 }
 
 function NodesPage() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -360,13 +369,11 @@ function NodesPage() {
   const cordon = useCordonNode({
     mutation: {
       onSuccess: (_r, v) => {
-        message.success(
-          `${v.on ? "cordon" : "uncordon"} 已入队,数秒内生效(列表自动刷新)`,
-        );
+        message.success(t("nodes.cordonSubmitted", { action: v.on ? "cordon" : "uncordon" }));
         void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
         setTimeout(() => void refetch(), 3_000);
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "操作失败"),
+      onError: (e) => message.error(errText(e, t("common.actionFailed", { action: "" }))),
     },
   });
 
@@ -374,11 +381,11 @@ function NodesPage() {
     <>
       <EnrollmentsCard writable={writable} />
       <Card
-        title="节点"
+        title={t("nodes.title")}
         extra={
-          <Tooltip title={writable ? "" : "只读角色不可添加"}>
+          <Tooltip title={writable ? "" : t("nodes.readonlyNoAdd")}>
             <Button type="primary" disabled={!writable} onClick={() => setAddOpen(true)}>
-              添加节点
+              {t("nodes.addNode")}
             </Button>
           </Tooltip>
         }
@@ -390,31 +397,31 @@ function NodesPage() {
           pagination={false}
           onRow={(r) => ({ onClick: () => setSelected(r.name), style: { cursor: "pointer" } })}
           columns={[
-            { title: "节点", dataIndex: "name" },
+            { title: t("nodes.colNode"), dataIndex: "name" },
             {
-              title: "池",
+              title: t("nodes.colPool"),
               dataIndex: "pool_label",
               render: (v: string) => <Tag color="cyan">{v}</Tag>,
             },
             {
-              title: "GPU",
+              title: t("nodes.colGpu"),
               render: (_, r) => `${r.gpu_model} × ${r.gpu_total}`,
             },
-            { title: "已用", dataIndex: "gpu_used" },
-            { title: "驱动", render: (_, r) => r.driver_version || "—" },
+            { title: t("nodes.colUsed"), dataIndex: "gpu_used" },
+            { title: t("nodes.colDriver"), render: (_, r) => r.driver_version || "—" },
             { title: "CUDA", render: (_, r) => r.cuda_version || "—" },
-            { title: "CPU", render: (_, r) => `${r.vcpu} 核` },
-            { title: "内存", render: (_, r) => `${r.mem_gb} G` },
-            { title: "硬盘", render: (_, r) => `${r.disk_gb} G` },
+            { title: t("nodes.colCpu"), render: (_, r) => t("nodes.coreCount", { count: r.vcpu }) },
+            { title: t("nodes.colMem"), render: (_, r) => `${r.mem_gb} G` },
+            { title: t("nodes.colDisk"), render: (_, r) => `${r.disk_gb} G` },
             {
-              title: "状态",
+              title: t("nodes.colStatus"),
               dataIndex: "status",
               render: (v: string) => (
                 <Tag color={v === "Ready" ? "green" : v === "Cordoned" ? "orange" : "red"}>{v}</Tag>
               ),
             },
             {
-              title: "操作",
+              title: t("nodes.colActions"),
               width: 170,
               render: (_, r) => {
                 const cordoned = r.status === "Cordoned";
@@ -422,15 +429,15 @@ function NodesPage() {
                   <Space>
                     <ReasonAction
                       label={cordoned ? "uncordon" : "cordon"}
-                      title={cordoned ? "恢复调度" : "停止调度"}
+                      title={cordoned ? t("nodes.uncordonTitle") : t("nodes.cordonTitle")}
                       confirmText={
                         cordoned
-                          ? `恢复 ${r.name} 的调度,新实例可再落到该节点。`
-                          : `停止 ${r.name} 的调度:存量实例不受影响,新实例不再落到该节点(经 outbox 数秒内生效)。`
+                          ? t("nodes.uncordonConfirm", { name: r.name })
+                          : t("nodes.cordonConfirm", { name: r.name })
                       }
                       danger={!cordoned}
                       disabled={!writable}
-                      disabledReason="只读角色不可操作"
+                      disabledReason={t("nodes.readonlyNoOp")}
                       onSubmit={async (reason) => {
                         await cordon.mutateAsync({
                           nodeName: r.name,
@@ -439,7 +446,7 @@ function NodesPage() {
                         });
                       }}
                     />
-                    <Tooltip title="drain(驱逐)牵扯计费与迁移策略,后置;当前经集群 Runbook 执行">
+                    <Tooltip title={t("nodes.drainDeferred")}>
                       <Typography.Text type="secondary">drain</Typography.Text>
                     </Tooltip>
                   </Space>
@@ -451,17 +458,12 @@ function NodesPage() {
       </Card>
       <AddNodeModal open={addOpen} onClose={() => setAddOpen(false)} />
       {node && (
-        <Card title={`每卡视图 · ${node.name}`} style={{ marginTop: 16 }}>
+        <Card title={t("nodes.gpuGridTitle", { name: node.name })} style={{ marginTop: 16 }}>
           <GpuGrid node={node} />
         </Card>
       )}
-      <Card title="节点历史曲线(Grafana)" style={{ marginTop: 16 }}>
-        <Alert
-          type="info"
-          showIcon
-          message="生产环境此处嵌入 Grafana DCGM 大盘(iframe)"
-          description="部署要求:Grafana 13 开启 allow_embedding=true,经反向代理注入只读 Viewer 身份;面板以社区 24450 为底改造。本地开发环境无 Grafana,显示此占位。"
-        />
+      <Card title={t("nodes.historyTitle")} style={{ marginTop: 16 }}>
+        <Typography.Text type="secondary">{t("nodes.historyPending")}</Typography.Text>
       </Card>
     </>
   );

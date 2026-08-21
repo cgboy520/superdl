@@ -21,12 +21,12 @@ import { useTranslation } from "react-i18next";
 
 import {
   type SkuAdminOut,
-  isApiError,
   useAdminSkus,
   useCreateSku,
   useUpdateSku,
 } from "../../api";
 import { useFormat } from "../../lib/format";
+import { useApiErrorText } from "../../lib/apiError";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/skus")({
@@ -53,6 +53,7 @@ interface SkuFormValues {
 
 function SkusPage() {
   const { t } = useTranslation(["admin", "shared"]);
+  const errText = useApiErrorText();
   const { formatHourlyPrice } = useFormat();
   // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message, modal } = App.useApp();
@@ -70,21 +71,21 @@ function SkusPage() {
   const create = useCreateSku({
     mutation: {
       onSuccess: () => {
-        message.success("SKU 已创建(默认下架)");
+        message.success(t("skus.created"));
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "创建失败"),
+      onError: (e) => message.error(errText(e, t("skus.createFailed"))),
     },
   });
   const update = useUpdateSku({
     mutation: {
       onSuccess: () => {
-        message.success("已保存(变更仅影响新实例)");
+        message.success(t("skus.saved"));
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(isApiError(e) ? e.message : "保存失败"),
+      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
     },
   });
 
@@ -123,9 +124,9 @@ function SkusPage() {
     };
     if (values.oversell_vram > 1.2) {
       modal.confirm({
-        title: "显存超卖超过 1.2,确认提交?",
-        content: "显存超卖过高会显著增加共享池 OOM 互扰风险,请确认已有压测数据支撑。",
-        okText: "确认提交",
+        title: t("skus.vramOversellConfirmTitle"),
+        content: t("skus.vramOversellConfirmBody"),
+        okText: t("skus.confirmSubmit"),
         okButtonProps: { danger: true },
         onOk: doSubmit,
       });
@@ -136,11 +137,11 @@ function SkusPage() {
 
   return (
     <Card
-      title="SKU 与定价"
+      title={t("menu.skus")}
       extra={
-        <Tooltip title={writable ? "" : "只读角色不可创建"}>
+        <Tooltip title={writable ? "" : t("skus.readonlyNoCreate")}>
           <Button type="primary" disabled={!writable} onClick={() => openEdit("new")}>
-            新建 SKU
+            {t("skus.newSku")}
           </Button>
         </Tooltip>
       }
@@ -151,10 +152,10 @@ function SkusPage() {
         dataSource={skus ?? []}
         pagination={false}
         columns={[
-          { title: "名称", dataIndex: "name" },
-          { title: "卡型", dataIndex: "gpu_model" },
+          { title: t("skus.colName"), dataIndex: "name" },
+          { title: t("skus.colGpuModel"), dataIndex: "gpu_model" },
           {
-            title: "档位",
+            title: t("skus.colTier"),
             dataIndex: "tier",
             render: (v: SkuTier) => {
               const m = metaOf(skuTierMap, v);
@@ -162,25 +163,25 @@ function SkusPage() {
             },
           },
           {
-            title: "切分",
+            title: t("skus.colSlice"),
             render: (_, r) =>
               r.tier === "mig"
                 ? r.mig_profile
-                : `${r.gpu_cores_pct}% 算力 · ${r.vram_gb}G 显存`,
+                : t("skus.sliceShared", { pct: r.gpu_cores_pct, vram: r.vram_gb }),
           },
-          { title: "算力超卖", dataIndex: "oversell_cores", render: (v: string) => `${v}×` },
+          { title: t("skus.colOversellCores"), dataIndex: "oversell_cores", render: (v: string) => `${v}×` },
           {
-            title: "显存超卖",
+            title: t("skus.colOversellVram"),
             dataIndex: "oversell_vram",
             render: (v: string) =>
               Number(v) > 1.2 ? <Tag color="orange">{v}×</Tag> : `${v}×`,
           },
-          { title: "单价", dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
+          { title: t("skus.colPrice"), dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
           {
-            title: "上架",
+            title: t("skus.colOnSale"),
             dataIndex: "status",
             render: (v: string, r) => (
-              <Tooltip title={writable ? "" : "只读角色不可操作"}>
+              <Tooltip title={writable ? "" : t("nodes.readonlyNoOp")}>
                 <Switch
                   checked={v === "on"}
                   disabled={!writable}
@@ -192,11 +193,11 @@ function SkusPage() {
             ),
           },
           {
-            title: "操作",
+            title: t("skus.colActions"),
             render: (_, r) => (
-              <Tooltip title={writable ? "" : "只读角色不可编辑"}>
+              <Tooltip title={writable ? "" : t("skus.readonlyNoEdit")}>
                 <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
-                  编辑
+                  {t("skus.edit")}
                 </Button>
               </Tooltip>
             ),
@@ -204,26 +205,26 @@ function SkusPage() {
         ]}
       />
       <Drawer
-        title={editing === "new" ? "新建 SKU" : `编辑 SKU · ${editing?.name ?? ""}`}
+        title={editing === "new" ? t("skus.newSku") : t("skus.editTitle", { name: editing?.name ?? "" })}
         open={editing !== null}
         onClose={() => setEditing(null)}
         width={480}
         extra={
           <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
-            提交
+            {t("skus.submit")}
           </Button>
         }
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           {editing === "new" && (
             <>
-              <Form.Item name="gpu_model" label="GPU 型号" rules={[{ required: true }]}>
-                <Input placeholder="如 RTX4090 / A100 / H100" />
+              <Form.Item name="gpu_model" label={t("skus.gpuModelLabel")} rules={[{ required: true }]}>
+                <Input placeholder={t("skus.gpuModelPlaceholder")} />
               </Form.Item>
-              <Form.Item name="tier" label="档位" rules={[{ required: true }]}>
+              <Form.Item name="tier" label={t("skus.colTier")} rules={[{ required: true }]}>
                 <Select
                   options={Object.entries(skuTierMap).map(([v, m]) => ({
                     value: v,
@@ -231,55 +232,55 @@ function SkusPage() {
                   }))}
                 />
               </Form.Item>
-              <Form.Item name="mig_profile" label="MIG profile(仅 MIG 档)">
+              <Form.Item name="mig_profile" label={t("skus.migProfileLabel")}>
                 <Input placeholder="如 1g.10gb" />
               </Form.Item>
             </>
           )}
-          <Form.Item name="pool_label" label="节点池" rules={[{ required: true }]}>
+          <Form.Item name="pool_label" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: "kata", label: "kata(整卡直通)" },
-                { value: "hami", label: "hami(共享软切分)" },
-                { value: "mig", label: "mig(硬件切分)" },
+                { value: "kata", label: t("nodes.poolKata") },
+                { value: "hami", label: t("nodes.poolHami") },
+                { value: "mig", label: t("nodes.poolMig") },
               ]}
             />
           </Form.Item>
-          <Form.Item name="gpu_cores_pct" label="算力份额 %" rules={[{ required: true }]}>
+          <Form.Item name="gpu_cores_pct" label={t("skus.coresPctLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} max={100} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="vram_gb" label="显存配额 GB" rules={[{ required: true }]}>
+          <Form.Item name="vram_gb" label={t("skus.vramLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} style={{ width: "100%" }} />
           </Form.Item>
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
-            message="超卖参数为高风险配置"
-            description="变更仅影响新实例;显存超卖 >1.2 需二次确认。上调前须有同卡互扰压测数据(P95 利用率 <60%)。"
+            message={t("skus.oversellRisk")}
+            description={t("skus.oversellRiskDesc")}
           />
-          <Form.Item name="oversell_cores" label="算力超卖 ×" rules={[{ required: true }]}>
+          <Form.Item name="oversell_cores" label={t("skus.oversellCoresLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} max={9.99} step={0.1} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="oversell_vram" label="显存超卖 ×" rules={[{ required: true }]}>
+          <Form.Item name="oversell_vram" label={t("skus.oversellVramLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} max={9.99} step={0.05} style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item name="vcpu" label="vCPU" rules={[{ required: true }]}>
             <InputNumber min={1} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="mem_gb" label="内存 GB" rules={[{ required: true }]}>
+          <Form.Item name="mem_gb" label={t("skus.memLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="disk_gb" label="实例盘 GB" rules={[{ required: true }]}>
+          <Form.Item name="disk_gb" label={t("skus.diskLabel")} rules={[{ required: true }]}>
             <InputNumber min={10} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="price_hourly" label="单价(元/时)" rules={[{ required: true }]}>
+          <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
             <InputNumber min={0.0001} step={0.01} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="max_gpus_per_instance" label="单实例最大 GPU 数">
+          <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
             <InputNumber min={1} max={8} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="cuda_max" label="最高 CUDA 版本">
+          <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
             <Input placeholder="如 12.8" />
           </Form.Item>
         </Form>

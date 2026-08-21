@@ -14,7 +14,7 @@ export default defineConfig({
     removeUnusedKeys: true,
     // shared/errors 属 packages/ui;menu/roles 等经映射表动态取键,显式保护
     ignoreNamespaces: ["shared", "errors"],
-    preservePatterns: ["menu.*", "roles.*"],
+    preservePatterns: ["menu.*", "roles.*", "nodes.phase*"],
     primaryLanguage: "zh-CN",
   },
   types: {

@@ -16,6 +16,9 @@ import {
   Tag,
   Typography,
 } from "antd";
+import { useTranslation } from "react-i18next";
+
+import { useApiErrorText } from "../../lib/apiError";
 import { useFormat } from "../../lib/format";
 import EChart from "../../components/EChart";
 
@@ -25,7 +28,6 @@ import {
   type NodeRow,
   type OversellRow,
   type TenantRow,
-  isApiError,
   useAdminInstances,
   useAlerts,
   useDeadTasks,
@@ -44,6 +46,7 @@ export const Route = createFileRoute("/_app/")({
 });
 
 function OversellChart({ rows }: { rows: OversellRow[] }) {
+  const { t } = useTranslation();
   const pools = rows.map((r) => r.pool);
   const option = {
     backgroundColor: "transparent",
@@ -54,13 +57,13 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
     yAxis: [
       {
         type: "value",
-        name: "超卖率",
+        name: t("overview.axisOversell"),
         axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%`, color: adminColors.textSecondary },
         splitLine: { lineStyle: { color: adminColors.gridLine } },
       },
       {
         type: "value",
-        name: "利用率 %",
+        name: t("overview.axisUtil"),
         max: 100,
         axisLabel: { color: adminColors.textSecondary },
         splitLine: { show: false },
@@ -68,14 +71,14 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
     ],
     series: [
       {
-        name: "实际超卖率",
+        name: t("overview.seriesOversell"),
         type: "bar",
         data: rows.map((r) => r.oversell_ratio),
         itemStyle: { color: adminColors.dataAccent },
         barWidth: 36,
       },
       {
-        name: "真实利用率(24h)",
+        name: t("overview.seriesUtil"),
         type: "line",
         yAxisIndex: 1,
         data: rows.map((r) => r.util_avg_24h),
@@ -84,8 +87,8 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
           symbol: "none",
           lineStyle: { type: "dashed" },
           data: [
-            { yAxis: 60, label: { formatter: "上调阈值 60%", color: adminColors.textSecondary } },
-            { yAxis: 85, label: { formatter: "回调阈值 85%", color: adminColors.textSecondary } },
+            { yAxis: 60, label: { formatter: t("overview.raiseThreshold"), color: adminColors.textSecondary } },
+            { yAxis: 85, label: { formatter: t("overview.lowerThreshold"), color: adminColors.textSecondary } },
           ],
         },
       },
@@ -95,6 +98,7 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
 }
 
 function PoolOccupancy({ nodes }: { nodes: NodeRow[] }) {
+  const { t } = useTranslation();
   const pools = [...new Set(nodes.map((n) => n.pool_label))];
   const used = pools.map((p) =>
     nodes.filter((n) => n.pool_label === p).reduce((s, n) => s + n.gpu_used, 0),
@@ -111,8 +115,8 @@ function PoolOccupancy({ nodes }: { nodes: NodeRow[] }) {
     xAxis: { type: "value", axisLabel: { color: adminColors.textSecondary }, splitLine: { lineStyle: { color: adminColors.gridLine } } },
     yAxis: { type: "category", data: pools, axisLabel: { color: adminColors.textSecondary } },
     series: [
-      { name: "已租", type: "bar", stack: "t", data: used, itemStyle: { color: statusColors.green } },
-      { name: "空闲", type: "bar", stack: "t", data: free, itemStyle: { color: adminColors.chartNeutral } },
+      { name: t("overview.rented"), type: "bar", stack: "t", data: used, itemStyle: { color: statusColors.green } },
+      { name: t("overview.idle"), type: "bar", stack: "t", data: free, itemStyle: { color: adminColors.chartNeutral } },
     ],
   };
   return <EChart option={option} style={{ height: 220 }} />;
@@ -120,6 +124,8 @@ function PoolOccupancy({ nodes }: { nodes: NodeRow[] }) {
 
 /** 值班首屏第二排:任务死信(重放交还幂等 handler;忽略需原因)。 */
 function DeadTasksCard() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
   const { message } = App.useApp();
   const qc = useQueryClient();
   const role = useAdminRole();
@@ -136,8 +142,8 @@ function DeadTasksCard() {
     <Card
       title={
         <Space size={8}>
-          任务死信
-          <Tag color="red">{rows.length} 条待处理</Tag>
+          {t("overview.deadTasks")}
+          <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
         </Space>
       }
     >
@@ -148,52 +154,52 @@ function DeadTasksCard() {
         scroll={{ x: 860 }}
         dataSource={rows}
         columns={[
-          { title: "任务", dataIndex: "type", width: 150 },
+          { title: t("overview.colTask"), dataIndex: "type", width: 150 },
           {
-            title: "载荷",
+            title: t("overview.colPayload"),
             dataIndex: "payload",
             render: (v: Record<string, unknown>) => (
               <code style={{ fontSize: 12 }}>{JSON.stringify(v)}</code>
             ),
           },
-          { title: "重试", dataIndex: "retries", width: 70 },
+          { title: t("overview.colRetries"), dataIndex: "retries", width: 70 },
           {
-            title: "最后错误",
+            title: t("overview.colLastError"),
             dataIndex: "last_error",
             render: (v: string | null) => (
               <span style={{ color: adminColors.negative, fontSize: 12 }}>{v ?? "-"}</span>
             ),
           },
-          { title: "时间", dataIndex: "updated_at", width: 150, render: formatDateTime },
+          { title: t("overview.colTime"), dataIndex: "updated_at", width: 150, render: formatDateTime },
           {
-            title: "操作",
+            title: t("overview.colActions"),
             width: 170,
             render: (_, r) => (
               <Space>
                 <Popconfirm
-                  title="重放该任务?(handler 幂等,置回队列重新执行)"
+                  title={t("overview.replayConfirm")}
                   disabled={!writable}
                   onConfirm={async () => {
                     try {
                       await retry.mutateAsync({ taskId: r.id });
-                      message.success("已置回队列");
+                      message.success(t("overview.requeued"));
                       refresh();
                     } catch (e) {
-                      message.error(isApiError(e) ? e.message : "重放失败");
+                      message.error(errText(e, t("overview.replayFailed")));
                     }
                   }}
                 >
                   <Button size="small" type="primary" disabled={!writable}>
-                    重放
+                    {t("overview.replay")}
                   </Button>
                 </Popconfirm>
                 <ReasonAction
-                  label="忽略"
-                  title="忽略死信"
-                  confirmText={`确认不再执行任务 #${r.id}(${r.type})?`}
+                  label={t("overview.ignore")}
+                  title={t("overview.ignoreTitle")}
+                  confirmText={t("overview.ignoreConfirm", { id: r.id, type: r.type })}
                   danger
                   disabled={!writable}
-                  disabledReason="仅运维/超管可操作"
+                  disabledReason={t("overview.opsOnly")}
                   onSubmit={async (reason) => {
                     await discard.mutateAsync({ taskId: r.id, data: { reason } });
                     refresh();
@@ -210,6 +216,7 @@ function DeadTasksCard() {
 }
 
 function Overview() {
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const { data: oversell } = useOversellReport();
   const { data: nodesData } = useNodes();
@@ -229,34 +236,34 @@ function Overview() {
     <Row gutter={[16, 16]}>
       <Col xs={12} xl={4}>
         <Card>
-          <Statistic title="今日收入" value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
+          <Statistic title={t("overview.todayRevenue")} value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            昨日 {revenue ? formatMoney(revenue.yesterday_revenue) : "—"}
+            {t("overview.yesterdayPrefix", { amount: revenue ? formatMoney(revenue.yesterday_revenue) : "—" })}
           </Typography.Text>
         </Card>
       </Col>
       <Col xs={12} xl={4}>
         <Card>
-          <Statistic title="本月收入" value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
+          <Statistic title={t("overview.monthRevenue")} value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
         </Card>
       </Col>
       <Col xs={12} xl={4}>
         <Card>
-          <Statistic title="今日新注册" value={revenue ? revenue.today_signups : "—"} />
+          <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
           <Typography.Text
             style={{ fontSize: 12, color: signupDelta >= 0 ? adminColors.positive : adminColors.negative }}
           >
-            {signupDelta >= 0 ? "▲" : "▼"} {Math.abs(signupDelta)} 较昨日
+            {signupDelta >= 0 ? "▲" : "▼"} {t("overview.vsYesterday", { count: Math.abs(signupDelta) })}
           </Typography.Text>
         </Card>
       </Col>
       <Col xs={12} xl={4}>
-        <Card><Statistic title="活跃实例" value={running} /></Card>
+        <Card><Statistic title={t("overview.activeInstances")} value={running} /></Card>
       </Col>
       <Col xs={12} xl={4}>
         <Card>
           <Statistic
-            title="付费租户"
+            title={t("overview.payingTenants")}
             value={`${tenantRows.filter((t) => Number(t.total_consumed) > 0).length} / ${tenantRows.length}`}
           />
         </Card>
@@ -264,7 +271,7 @@ function Overview() {
       <Col xs={12} xl={4}>
         <Card>
           <Statistic
-            title="告警(总)"
+            title={t("overview.alertsTotal")}
             value={alerts.length}
             valueStyle={alerts.some((a) => a.severity === "critical") ? { color: adminColors.negative } : undefined}
           />
@@ -275,18 +282,18 @@ function Overview() {
 
       <Col span={17}>
         <Card
-          title="实际超卖率 vs 真实利用率(共享池定价的数据闭环)"
-          extra={<Typography.Text type="secondary">P95&lt;60% 才上调超卖</Typography.Text>}
+          title={t("overview.oversellChartTitle")}
+          extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
         >
           {oversellRows.length ? <OversellChart rows={oversellRows} /> : <Empty />}
         </Card>
-        <Card title="GPU 池占用" style={{ marginTop: 16 }}>
+        <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
           {nodes.length ? <PoolOccupancy nodes={nodes} /> : <Empty />}
         </Card>
       </Col>
       <Col span={7}>
-        <Card title="实时告警流" styles={{ body: { maxHeight: 560, overflow: "auto" } }}>
-          {alerts.length === 0 && <Empty description="暂无告警" />}
+        <Card title={t("overview.alertStream")} styles={{ body: { maxHeight: 560, overflow: "auto" } }}>
+          {alerts.length === 0 && <Empty description={t("shell.noAlerts")} />}
           {alerts.map((a) => (
             <div key={a.id} style={{ marginBottom: 12 }}>
               <Badge
