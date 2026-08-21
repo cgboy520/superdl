@@ -420,3 +420,28 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
 
 async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
     return await session.get(ClusterStatus, 1)
+
+
+HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为未知,拒绝下发
+
+
+async def require_hami_ready(session: AsyncSession) -> None:
+    """shared 档下发门禁:替代 300s Pending 超时,调度器缺位即时清晰报错(WP27)。
+
+    缓存缺失/陈旧一律拒绝:巡检 60s 一轮,陈旧说明 worker 停摆,下发也只会悬挂。
+    """
+    row = await get_cluster_status(session)
+    if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:
+        raise AppError(
+            ErrorCode.CLUSTER_NOT_READY,
+            key="nodes.clusterNotReady",
+            http_status=http_status.HTTP_409_CONFLICT,
+            detail={"reason": "probe_stale" if row else "no_probe"},
+        )
+    if not row.hami_ready:
+        raise AppError(
+            ErrorCode.CLUSTER_NOT_READY,
+            key="nodes.clusterNotReady",
+            http_status=http_status.HTTP_409_CONFLICT,
+            detail={"reason": "hami_not_ready"},
+        )

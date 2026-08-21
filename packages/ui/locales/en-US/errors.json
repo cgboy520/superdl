@@ -88,6 +88,7 @@
   "nodes": {
     "alreadyTerminal": "Status {{status}} is already terminal — no need to revoke",
     "clusterNotConfigured": "Cluster access not configured: a super admin must enter the RKE2 server address and join token under Platform Config · Cluster Access",
+    "clusterNotReady": "The cluster scheduler is not ready, so instances cannot start right now. The platform is checking automatically — please retry shortly",
     "enrollTransition": "Enrollment status transition {{from}} → {{to}} is not allowed",
     "hostnameMismatch": "Hostname does not match the registration; the token is revoked — verify in the admin console and regenerate",
     "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)"

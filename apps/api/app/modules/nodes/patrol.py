@@ -20,6 +20,7 @@ from app.core.k8s import get_orchestrator
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
+from app.modules.nodes import service
 from app.modules.nodes.models import NodeEnrollment, NodeSpec
 
 logger = get_logger(__name__)
@@ -64,7 +65,14 @@ async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
 
 async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
     """单轮巡检。返回动作计数(测试/日志用)。"""
-    counts = {"upserted": 0, "missing": 0, "removed": 0, "labeled": 0, "label_failed": 0}
+    counts = {
+        "upserted": 0,
+        "missing": 0,
+        "removed": 0,
+        "labeled": 0,
+        "label_failed": 0,
+        "probe_ok": 0,
+    }
     async with (
         sm() as lock_session,
         try_advisory_lock(lock_session, LockKey.NODE_SPEC_PATROL) as got,
@@ -73,13 +81,23 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
             return counts
         orch = get_orchestrator()
 
-        # ---- A:纯 K8s 读(锁内、事务外) ----
+        # ---- A:纯 K8s 读(锁内、事务外):能力探测 + 节点清单 ----
+        probe = await orch.probe_cluster()
+        if not probe.api_reachable:
+            # API 不可达也要落缓存(集群页红牌/门禁据此拒绝),节点收敛本轮跳过
+            async with sm() as session:
+                await service.save_cluster_probe(session, probe)
+                await session.commit()
+            logger.warning("cluster_probe_unreachable", error=probe.error)
+            return counts
+        counts["probe_ok"] = 1
         nodes = await orch.list_nodes(include_unlabeled=True)
 
         desired_labels: list[tuple[str, str]] = []
         now = now_utc()
         # ---- B:单事务 DB 收敛 ----
         async with sm() as session:
+            await service.save_cluster_probe(session, probe)
             enroll = await _enrollment_specs(session)
             rows = {r.node_name: r for r in (await session.execute(select(NodeSpec))).scalars()}
             seen: set[str] = set()

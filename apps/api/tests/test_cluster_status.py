@@ -70,3 +70,71 @@ async def test_save_probe_upserts_single_row(sm, fake):
 async def test_get_status_empty(sm):
     async with sm() as session:
         assert await service.get_cluster_status(session) is None
+
+
+async def test_patrol_saves_probe(sm, fake):
+    from app.modules.nodes.patrol import node_spec_patrol
+
+    counts = await node_spec_patrol(sm)
+    assert counts["probe_ok"] == 1 and counts["upserted"] == 3
+    async with sm() as session:
+        row = await service.get_cluster_status(session)
+    assert row is not None and row.hami_ready and row.distro == "rke2"
+    assert row.pools == {"kata": 1, "hami": 1, "mig": 1}
+
+
+async def test_patrol_unreachable_saves_error_skips_nodes(sm, fake):
+    from sqlalchemy import func
+    from sqlalchemy import select as sa_select
+
+    from app.modules.nodes.models import NodeSpec
+    from app.modules.nodes.patrol import node_spec_patrol
+
+    fake.fail_probe = True
+    counts = await node_spec_patrol(sm)
+    assert counts["probe_ok"] == 0 and counts["upserted"] == 0
+    async with sm() as session:
+        row = await service.get_cluster_status(session)
+        specs = (await session.execute(sa_select(func.count()).select_from(NodeSpec))).scalar()
+    assert row is not None and row.api_reachable is False and row.error
+    assert specs == 0
+
+
+async def test_require_hami_ready_gate(sm, fake):
+    from datetime import timedelta
+
+    from app.core.errors import AppError, ErrorCode
+
+    # 无缓存 → 拒
+    async with sm() as session:
+        with pytest.raises(AppError) as exc:
+            await service.require_hami_ready(session)
+        assert exc.value.code == ErrorCode.CLUSTER_NOT_READY
+    # 新鲜且就绪 → 放行
+    async with sm() as session:
+        await service.save_cluster_probe(session, await fake.probe_cluster())
+        await session.commit()
+    async with sm() as session:
+        await service.require_hami_ready(session)
+    # HAMi 未就绪 → 拒
+    fake.probe_hami_ready = False
+    async with sm() as session:
+        await service.save_cluster_probe(session, await fake.probe_cluster())
+        await session.commit()
+    async with sm() as session:
+        with pytest.raises(AppError):
+            await service.require_hami_ready(session)
+    # 陈旧 → 拒(即使 hami_ready=True)
+    fake.probe_hami_ready = True
+    async with sm() as session:
+        row = await service.save_cluster_probe(session, await fake.probe_cluster())
+        await session.commit()
+    async with sm() as session:
+        row = await service.get_cluster_status(session)
+        assert row is not None
+        row.probed_at = row.probed_at - timedelta(minutes=11)
+        await session.commit()
+    async with sm() as session:
+        with pytest.raises(AppError) as exc:
+            await service.require_hami_ready(session)
+        assert exc.value.detail == {"reason": "probe_stale"}
