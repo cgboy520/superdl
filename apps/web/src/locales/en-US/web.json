@@ -482,7 +482,6 @@
     "nameRequired": "Enter a name",
     "priceFallback": "billed daily",
     "segData": "Data disk · {{price}} · kept independently",
-    "segModels": "Public model cache · read-only · free",
     "segRoot": "Instance disk · 100G included · reclaimed with instance · free",
     "sizeLabel": "Size (GB)",
     "title": "Storage"

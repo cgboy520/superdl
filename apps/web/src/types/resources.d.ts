@@ -660,7 +660,6 @@ export default interface Resources {
       "nameRequired": "请输入名称",
       "priceFallback": "按日折算计费",
       "segData": "数据盘 · {{price}} · 独立保留",
-      "segModels": "公共模型缓存 · 只读 · 免费",
       "segRoot": "实例盘 · 含 100G · 随实例回收 · 免费",
       "sizeLabel": "容量(GB)",
       "title": "存储"

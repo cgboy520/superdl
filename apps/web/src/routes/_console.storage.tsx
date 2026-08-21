@@ -60,10 +60,11 @@ function MountOverview({ priceText }: { priceText: string }) {
   );
   return (
     <Card size="small" title={t("storage.mountOverviewTitle")}>
+      {/* 只列真实挂载点:后端 Pod 只挂实例盘与数据盘。
+          公共模型缓存(/public/models)未实现,宣传不存在的挂载点比缺功能更伤信任。 */}
       <div style={{ display: "flex", gap: 8 }}>
         {seg("/", t("storage.segRoot"), statusColors.blue)}
         {seg("/root/data", t("storage.segData", { price: priceText }), colorPrimary)}
-        {seg("/public/models", t("storage.segModels"), statusColors.green)}
       </div>
     </Card>
   );
