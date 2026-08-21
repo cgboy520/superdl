@@ -202,6 +202,7 @@ async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None
     """直接落一条验证码(绕开 60s 发送间隔;注册助手刚发过码时不能再发)。"""
     from datetime import timedelta
 
+    from app.core.crypto import hash_sms_code
     from app.core.timeutil import now_utc
     from app.modules.account.models import SmsCode
 
@@ -209,7 +210,7 @@ async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None
         session.add(
             SmsCode(
                 phone=phone,
-                code=code,
+                code_hash=hash_sms_code(phone, purpose, code),
                 purpose=purpose,
                 expires_at=now_utc() + timedelta(minutes=5),
             )

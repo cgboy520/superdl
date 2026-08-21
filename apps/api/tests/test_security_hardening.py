@@ -288,3 +288,51 @@ class TestTenantContainerHardening:
         )
         assert req.runtime_class == "nvidia"
         assert req.host_users is False
+
+
+class TestSmsCodeAtRest:
+    async def test_code_is_not_stored_in_clear(self, client, sm):
+        """库里不能有验证码明文。
+
+        密码走了 bcrypt,验证码此前是明文:一次只读数据库访问(备份 dump、只读副本、
+        DBA 账号、一个注入落点)就能 SELECT phone, code 拿到全部活跃验证码,直接登入任意
+        账号或走改密路径把本人踢下线 —— 从「读到库」一步升级成「成为任何人」。
+        """
+        from sqlalchemy import select
+
+        from app.modules.account.models import SmsCode
+
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000777", "purpose": "register"}
+        )
+        assert resp.status_code == 204, resp.text
+        async with sm() as session:
+            row = (
+                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000777"))
+            ).scalar_one()
+        # mock 渠道固定发 123456
+        assert "123456" not in row.code_hash
+        assert len(row.code_hash) == 64
+        # 域分离:同一个码换个手机号/用途摘要必须不同,否则可以跨账号搬运
+        from app.core.crypto import hash_sms_code
+
+        assert row.code_hash == hash_sms_code("13800000777", "register", "123456")
+        assert hash_sms_code("13800000778", "register", "123456") != row.code_hash
+        assert hash_sms_code("13800000777", "login", "123456") != row.code_hash
+
+    async def test_hashed_code_still_verifies(self, client, sm):
+        """改成摘要之后,注册这条正常路径必须照常走通。"""
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000778", "purpose": "register"}
+        )
+        assert resp.status_code == 204
+        ok = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "phone": "13800000778",
+                "sms_code": "123456",
+                "password": "secret123",
+                "accept_terms": True,
+            },
+        )
+        assert ok.status_code == 201, ok.text

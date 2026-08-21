@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.crypto import hash_sms_code
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
@@ -63,7 +64,7 @@ async def send_sms_code(
     code = MOCK_SMS_CODE if cfg["sms_provider"] == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
         phone=phone,
-        code=code,
+        code_hash=hash_sms_code(phone, purpose, code),  # 明文只活在这个局部变量里
         purpose=purpose,
         expires_at=now_utc() + timedelta(seconds=settings.sms_code_ttl_seconds),
     )
@@ -106,7 +107,8 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     ).scalar_one_or_none()
     if row is None:
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    if row.attempts >= MAX_SMS_CODE_ATTEMPTS or not secrets.compare_digest(row.code, code):
+    expected = hash_sms_code(phone, purpose, code)
+    if row.attempts >= MAX_SMS_CODE_ATTEMPTS or not secrets.compare_digest(row.code_hash, expected):
         row.attempts += 1
         await session.commit()
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")

@@ -56,7 +56,9 @@ class SmsCode(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     phone: Mapped[str] = mapped_column(String(20), index=True)
-    code: Mapped[str] = mapped_column(String(8))
+    # 带密钥摘要,不是明文:一次只读 DB 访问就能把「读到库」升级成「成为任何人」
+    # (见 core.crypto.hash_sms_code)
+    code_hash: Mapped[str] = mapped_column(String(64))
     purpose: Mapped[str] = mapped_column(String(16))  # register / login
     expires_at: Mapped[datetime]
     used_at: Mapped[datetime | None]

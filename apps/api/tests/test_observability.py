@@ -77,7 +77,7 @@ class TestCleanup:
             session.add(
                 SmsCode(
                     phone="13800000150",
-                    code="123456",
+                    code_hash="0" * 64,
                     purpose="register",
                     expires_at=now_utc() - timedelta(days=8),
                 )
