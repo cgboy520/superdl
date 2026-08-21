@@ -1,0 +1,20 @@
+# kps 轻量档(WP25/WP27):k3s 单机/小规模验证。与 full 同 chart,只砍占用:
+#   短 retention / 关 Grafana(管理端已自绘,深挖用外部 Grafana)/ 资源限额收紧。
+# Alertmanager 保留:webhook 告警链路是业务功能(告警流/铃铛)。
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    resources:
+      requests: {cpu: 100m, memory: 512Mi}
+      limits: {memory: 1Gi}
+grafana:
+  enabled: false
+prometheusOperator:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+kube-state-metrics:
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}

@@ -6,6 +6,31 @@ prometheus:
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
+    # HAMi 自带指标(WP25):scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
+    # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认,实机核定项)
+    additionalScrapeConfigs:
+      - job_name: hami-scheduler
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces: {names: [kube-system]}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            regex: hami-scheduler
+            action: keep
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            regex: monitor
+            action: keep
+      - job_name: hami-device-plugin
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces: {names: [kube-system]}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+            regex: hami-device-plugin
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            regex: "9394"
+            action: keep
 grafana:
   # 管理员口令不落 values,经 Secret 注入(默认 prom-operator 口令必须废弃):
   #   kubectl -n monitoring create secret generic grafana-admin \
@@ -95,6 +120,11 @@ additionalPrometheusRulesMap:
             expr: increase(juicefs_mount_errors_total[10m]) > 0
             labels: {severity: critical}
             annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响"}
+          - alert: HamiSchedulerDown
+            expr: absent(up{job="hami-scheduler"} == 1)
+            for: 5m
+            labels: {severity: warning}
+            annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝"}
   # 平台自身业务指标。抓取接线:deploy/app/k8s/08-monitoring.yaml
   # (API 走 ServiceMonitor + SUPERDL_METRICS_TOKEN Bearer;worker 走 PodMonitor)
   superdl-platform:
