@@ -764,6 +764,22 @@
       },
       "BootstrapRequest": {
         "properties": {
+          "gpu_details": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 16,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Details"
+          },
           "gpus": {
             "items": {
               "type": "string"
@@ -5142,7 +5158,7 @@
     },
     "/api/admin/v1/nodes/{node_name}/metrics": {
       "get": {
-        "description": "节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。\n\n节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询\n自然返回空序列,无信息泄漏面(仅管理端角色可达)。",
+        "description": "节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。\n\n节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询\n自然返回空序列,无信息泄漏面(仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。",
         "operationId": "admin_node_metrics_api_admin_v1_nodes__node_name__metrics_get",
         "parameters": [
           {

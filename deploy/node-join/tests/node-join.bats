@@ -63,6 +63,7 @@ EOF
   cat > "$TMP/bin/nvidia-smi" <<'EOF'
 #!/usr/bin/env bash
 [[ "$NVIDIA_OK" == "1" ]] || exit 1
+if [[ "$*" == *"name,memory.total"* ]]; then echo "NVIDIA GeForce RTX 4090, 24564"; exit 0; fi
 echo "580.65.06"
 EOF
   cat > "$TMP/bin/dpkg" <<'EOF'
@@ -176,6 +177,8 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
   # 非 kata 池不写 GRUB
   [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
+  # WP26:bootstrap 上报全卡清单(名称+显存 MiB)
+  grep -q '"gpu_details": \[{"name": "NVIDIA GeForce RTX 4090", "memory_mib": 24564}\]' "$CURL_LOG"
 }
 
 @test "重跑幂等:第二次运行全部步骤跳过" {

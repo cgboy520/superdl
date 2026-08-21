@@ -91,7 +91,7 @@ load_distro() {
 
 # ---------- 步骤实现 ----------
 step_bootstrap() {
-  local hostname kernel arch os_release gpus driver cuda payload
+  local hostname kernel arch os_release gpus gpu_details driver cuda payload
   hostname="$(hostname)"
   kernel="$(uname -r)"
   arch="$(uname -m)"
@@ -101,6 +101,19 @@ step_bootstrap() {
   # nvidia-smi 无驱动时返回非零,{ ... || true; } 兜住,避免 pipefail 拖垮采集。
   gpus="$({ nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true; } | head -8 | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
   [[ "$gpus" == "[]" ]] && gpus="$(lspci 2>/dev/null | grep -i 'nvidia' | sed 's/.*: //' | head -8 | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
+  # 全卡清单(名称+显存 MiB):台账显存口径;nvidia-smi 不可用时为 [](服务端回落默认表)
+  gpu_details="$({ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true; } | head -8 | python3 -c '
+import json, sys
+out = []
+for line in sys.stdin:
+    parts = [p.strip() for p in line.strip().split(",")]
+    if not parts or not parts[0]:
+        continue
+    entry = {"name": parts[0]}
+    if len(parts) > 1 and parts[1].isdigit():
+        entry["memory_mib"] = int(parts[1])
+    out.append(entry)
+print(json.dumps(out))')"
   driver="$({ nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true; } | head -1)"
   # 兼容 "CUDA Version: 12.8" 与新驱动的 "CUDA UMD Version: 13.3"
   cuda="$({ nvidia-smi 2>/dev/null || true; } | sed -n 's/.*CUDA[^:]*Version: \([0-9.]*\).*/\1/p' | head -1)"
@@ -112,7 +125,7 @@ print(json.dumps({"hostname": sys.argv[1],
                   "gpus": []}))
 PYEOF
 )"
-  payload="$(python3 -c "import json,sys; p=json.loads(sys.argv[1]); p['gpus']=json.loads(sys.argv[2]); print(json.dumps(p))" "$payload" "$gpus")"
+  payload="$(python3 -c "import json,sys; p=json.loads(sys.argv[1]); p['gpus']=json.loads(sys.argv[2]); p['gpu_details']=json.loads(sys.argv[3]); print(json.dumps(p))" "$payload" "$gpus" "$gpu_details")"
   curl -fsS -m 15 --retry 2 -X POST \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
     -d "$payload" "$API_BASE/api/v1/node-enroll/bootstrap" -o "$STATE_DIR/bootstrap.json"

@@ -177,8 +177,10 @@ async def joined_node_specs(session: AsyncSession) -> dict[str, dict[str, str]]:
             continue
         os_info = r.os_info or {}
         gpu_info = r.gpu_info or []
+        first = gpu_info[0] if gpu_info else None
+        first_name = first.get("name", "") if isinstance(first, dict) else (first or "")
         out[r.node_name] = {
-            "gpu_model": gpu_info[0] if gpu_info else "",
+            "gpu_model": str(first_name),
             "driver_version": str(os_info.get("driver_version") or ""),
             "cuda_version": str(os_info.get("cuda_version") or ""),
         }
@@ -270,6 +272,7 @@ async def bootstrap(
     os_info: dict[str, Any],
     gpus: list[str],
     client_ip: str | None,
+    gpu_details: list[dict[str, Any]] | None = None,
 ) -> tuple[NodeEnrollment, dict[str, str]]:
     """令牌换装机参数。支持重复调用(脚本重跑/重启续跑);返回 (enrollment, cluster 配置)。"""
     row = await _resolve_token(session, token)
@@ -296,7 +299,7 @@ async def bootstrap(
     row.node_name = hostname
     row.reported_ip = client_ip
     row.os_info = os_info
-    row.gpu_info = gpus
+    row.gpu_info = gpu_details if gpu_details else gpus  # 新脚本全卡清单优先,旧脚本回落名称列表
     row.last_report_at = now_utc()
     if row.status == "pending":
         transition_enrollment(row, "installing", phase="bootstrap")

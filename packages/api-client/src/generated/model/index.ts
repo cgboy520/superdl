@@ -35,6 +35,7 @@ export * from './billSummaryItem';
 export * from './billSummaryOut';
 export * from './bootstrapOut';
 export * from './bootstrapRequest';
+export * from './bootstrapRequestGpuDetails';
 export * from './bootstrapRequestOsInfo';
 export * from './dailySummaryOut';
 export * from './deadTaskOut';
