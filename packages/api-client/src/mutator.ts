@@ -28,8 +28,31 @@ const config: ClientConfig = {
   refreshToken: null,
 };
 
-/** 并发 401 共享同一次续期(single-flight)。 */
+/** 同标签页内并发 401 共享同一次续期(无 Web Locks 时的兜底 single-flight)。 */
 let refreshInFlight: Promise<boolean> | null = null;
+
+/** 跨标签页续期互斥锁名。后端 refresh 是一次性消费,重放即被判定泄露并撤销全部会话。 */
+const REFRESH_LOCK = "superdl:token-refresh";
+
+/**
+ * 续期一次。staleToken 是发起该请求时用的 access token:
+ * 进入临界区后 token 已变,说明别的标签页/并发请求刚续期成功,直接重放即可 ——
+ * 否则第二个标签页会拿已被消费的 refresh token 重放,把用户的全部会话(含刚续期的
+ * 那个)一起撤销。
+ */
+async function refreshOnce(staleToken: string | null): Promise<boolean> {
+  const run = async (): Promise<boolean> => {
+    if (config.getToken() !== staleToken) return true;
+    return (await config.refreshToken?.()) ?? false;
+  };
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(REFRESH_LOCK, run);
+  }
+  refreshInFlight ??= run().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
 
 export function configureApiClient(opts: Partial<ClientConfig>): void {
   Object.assign(config, opts);
@@ -57,9 +80,11 @@ export async function requestTokenRefresh(
 }
 
 export const customFetch = async <T>(url: string, options: RequestInit): Promise<T> => {
+  let usedToken: string | null = null;
   const doFetch = (): Promise<Response> => {
     const headers = new Headers(options.headers);
     const token = config.getToken();
+    usedToken = token;
     if (token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);
     }
@@ -73,10 +98,7 @@ export const customFetch = async <T>(url: string, options: RequestInit): Promise
 
   // 401 先静默续期重放一次(登录/刷新接口本身除外),失败才交给 onUnauthorized
   if (response.status === 401 && config.refreshToken && !url.includes("/auth/")) {
-    refreshInFlight ??= config.refreshToken().finally(() => {
-      refreshInFlight = null;
-    });
-    if (await refreshInFlight) {
+    if (await refreshOnce(usedToken)) {
       response = await doFetch();
     }
   }

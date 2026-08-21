@@ -5,15 +5,16 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { routeTree } from "./routeTree.gen";
-import { authStore } from "./stores/auth";
+import { authStore, readTokens } from "./stores/auth";
 import "./i18n";
 import "./styles.css";
 
 configureApiClient({
   baseUrl: "",
-  getToken: () => authStore.getState().accessToken,
+  // 请求路径读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
+  getToken: () => readTokens().accessToken,
   refreshToken: async () => {
-    const rt = authStore.getState().refreshToken;
+    const rt = readTokens().refreshToken;
     if (!rt) return false;
     const pair = await requestTokenRefresh(rt);
     if (!pair) return false;
