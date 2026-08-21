@@ -43,7 +43,7 @@ import {
   useBillSummary,
   useDailySummary,
   useHourlyBills,
-  useLedger,
+  useLedgerPages,
   useMe,
   usePolicies,
   useRecharge,
@@ -66,11 +66,15 @@ const LEDGER_TYPE = {
 } as const;
 type LedgerTypeKey = keyof typeof LEDGER_TYPE;
 
+const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
+
 function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { formatMoney } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const [amount, setAmount] = useState<number>(100);
+  // 金额按字符串走(InputNumber stringMode):走 number 要经二进制浮点,
+  // 与「全链路 Decimal」的口径不一致
+  const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
   const [idem, setIdem] = useState(() => crypto.randomUUID());
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
@@ -140,17 +144,18 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           />
           <Radio.Group
             optionType="button"
-            value={[50, 100, 500].includes(amount) ? amount : undefined}
-            onChange={(e) => setAmount(e.target.value as number)}
-            options={[50, 100, 500].map((v) => ({ value: v, label: `¥${v}` }))}
+            value={PRESET_AMOUNTS.find((v) => Number(v) === Number(amount))}
+            onChange={(e) => setAmount(e.target.value as string)}
+            options={PRESET_AMOUNTS.map((v) => ({ value: v, label: `¥${Number(v)}` }))}
           />
           <InputNumber
             style={{ width: 200 }}
-            min={1}
-            max={50000}
+            min="1"
+            max="50000"
             precision={2}
+            stringMode
             value={amount}
-            onChange={(v) => setAmount(v ?? 0)}
+            onChange={(v) => setAmount(v ?? "0")}
             prefix="¥"
           />
           <Button
@@ -160,7 +165,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             loading={create.isPending}
             onClick={() =>
               create.mutate({
-                body: { amount: amount.toFixed(2), channel },
+                body: { amount, channel },
                 idempotencyKey: idem,
               })
             }
@@ -224,20 +229,11 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
 function LedgerTable() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const [cursor, setCursor] = useState<string>();
-  const [rows, setRows] = useState<LedgerEntryOut[]>([]);
-  const { data, isFetching } = useLedger({ cursor, limit: 20 });
-  const merged = useMemo(() => {
-    const seen = new Set<number>();
-    const out: LedgerEntryOut[] = [];
-    for (const r of [...rows, ...(data?.items ?? [])]) {
-      if (!seen.has(r.id)) {
-        seen.add(r.id);
-        out.push(r);
-      }
-    }
-    return out;
-  }, [rows, data]);
+  const { data, isFetchingNextPage, hasNextPage, fetchNextPage } = useLedgerPages(20);
+  const merged = useMemo<LedgerEntryOut[]>(
+    () => (data?.pages ?? []).flatMap((p) => p.items),
+    [data],
+  );
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
@@ -274,15 +270,8 @@ function LedgerTable() {
           { title: t("billing.colRemark"), dataIndex: "remark" },
         ]}
       />
-      {data?.next_cursor && (
-        <Button
-          block
-          loading={isFetching}
-          onClick={() => {
-            setRows(merged);
-            setCursor(data.next_cursor ?? undefined);
-          }}
-        >
+      {hasNextPage && (
+        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
           {t("billing.loadMore")}
         </Button>
       )}

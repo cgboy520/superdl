@@ -52,7 +52,7 @@ interface SkuFormValues {
   vcpu: number;
   mem_gb: number;
   disk_gb: number;
-  price_hourly: number;
+  price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
   max_gpus_per_instance: number;
   cuda_max?: string | null;
 }
@@ -234,7 +234,7 @@ function SkusPage() {
         tier: sku.tier as SkuTier,
         oversell_cores: Number(sku.oversell_cores),
         oversell_vram: Number(sku.oversell_vram),
-        price_hourly: Number(sku.price_hourly),
+        price_hourly: sku.price_hourly,
       });
     }
   };
@@ -246,7 +246,7 @@ function SkusPage() {
         ...values,
         oversell_cores: String(values.oversell_cores),
         oversell_vram: String(values.oversell_vram),
-        price_hourly: String(values.price_hourly),
+        price_hourly: values.price_hourly,
       };
       if (editing === "new") {
         create.mutate({ data: payload as never });
@@ -516,7 +516,7 @@ function SkusPage() {
               <InputNumber min={10} style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
-              <InputNumber min={0.0001} step={0.01} style={{ width: "100%" }} />
+              <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
             <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
               <InputNumber min={1} max={8} style={{ width: "100%" }} />

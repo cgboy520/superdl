@@ -25,13 +25,14 @@ import {
 import type {
   ApiError,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
-  GetLedgerApiV1WalletLedgerGetParams,
   InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   ListSkusApiV1SkusGetParams,
+  PageLedgerEntryOut,
   RechargeOut,
 } from "@superdl/api-client";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 
 interface QueryOpts<T = unknown> {
   enabled?: boolean;
@@ -43,9 +44,26 @@ interface QueryOpts<T = unknown> {
   retry?: number | boolean;
 }
 
+/**
+ * queryKey 归一化:undefined 与 {} 是同一个查询,值为 undefined 的参数不该进键,
+ * 键序也不该影响缓存身份。不归一会出现「同一页两份缓存、两次请求」。
+ */
+function normalizeKey(key: unknown[]): unknown[] {
+  return key.map((part) => {
+    if (part === undefined) return null;
+    if (part !== null && typeof part === "object" && !Array.isArray(part)) {
+      const entries = Object.entries(part as Record<string, unknown>)
+        .filter(([, v]) => v !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b));
+      return entries.length ? Object.fromEntries(entries) : null;
+    }
+    return part;
+  });
+}
+
 function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts<NoInfer<T>>) {
   return useQuery<T, ApiError>({
-    queryKey: key,
+    queryKey: normalizeKey(key),
     queryFn: fn,
     ...opts,
   });
@@ -82,8 +100,17 @@ export const useInstanceMetrics = (
   );
 export const useHourlyBills = (params?: ListHourlyBillsApiV1BillsHourlyGetParams) =>
   useApiQuery(["bills", params], () => listHourlyBillsApiV1BillsHourlyGet(params));
-export const useLedger = (params?: GetLedgerApiV1WalletLedgerGetParams) =>
-  useApiQuery(["ledger", params], () => getLedgerApiV1WalletLedgerGet(params));
+/**
+ * 资金流水游标分页。用 useInfiniteQuery 而不是把已加载页累积进 useState:
+ * 后者失效后不会刷新(充值到账、调账都看不到),且换筛选条件要手动清。
+ */
+export const useLedgerPages = (limit = 20) =>
+  useInfiniteQuery<PageLedgerEntryOut, ApiError, InfiniteData<PageLedgerEntryOut>, unknown[], string | undefined>({
+    queryKey: ["ledger", limit],
+    queryFn: ({ pageParam }) => getLedgerApiV1WalletLedgerGet({ cursor: pageParam, limit }),
+    initialPageParam: undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
 export const useBillSummary = (month: string) =>
   useApiQuery(["bill-summary", month], () => billSummaryApiV1BillsSummaryGet({ month }));
 /** 策略常量(盘价/回收天数等):公开端点,常量性质给长缓存。 */

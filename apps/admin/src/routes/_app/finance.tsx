@@ -153,7 +153,7 @@ function AdjustmentsTab() {
   const { data, queryKey } = useAdjustments();
   const rows: AdjustmentRow[] = data ?? [];
   const [creating, setCreating] = useState(false);
-  const [form] = Form.useForm<{ user_id: number; amount: number; reason: string }>();
+  const [form] = Form.useForm<{ user_id: number; amount: string; reason: string }>();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   const create = useCreateAdjustment({
@@ -293,7 +293,7 @@ function AdjustmentsTab() {
           create.mutate({
             data: {
               user_id: values.user_id,
-              amount: values.amount.toFixed(2),
+              amount: values.amount,
               reason: values.reason,
             },
           });
@@ -309,7 +309,14 @@ function AdjustmentsTab() {
             label={t("finance.amountLabel")}
             rules={[{ required: true }]}
           >
-            <InputNumber step={0.01} style={{ width: "100%" }} placeholder={t("finance.amountPlaceholder")} />
+            {/* stringMode:调账金额直接以字符串提交,不经二进制浮点 */}
+            <InputNumber
+              step="0.01"
+              precision={2}
+              stringMode
+              style={{ width: "100%" }}
+              placeholder={t("finance.amountPlaceholder")}
+            />
           </Form.Item>
           <Form.Item
             name="reason"
