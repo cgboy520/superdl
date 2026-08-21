@@ -34,6 +34,7 @@ import type {
   AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
+  AdminListTenantsApiAdminV1TenantsGetParams,
   AdminLoginRequest,
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200,
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
@@ -2499,6 +2500,7 @@ export const getAdminListInstancesApiAdminV1InstancesGetUrl = (params?: AdminLis
 }
 
 /**
+ * q:实例名或 uuid 前缀。node_name:精确。
  * @summary Admin List Instances
  */
 export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminInstanceOut[]> => {
@@ -3776,6 +3778,8 @@ export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrder
 }
 
 /**
+ * 充值订单列表。order_no 精确 —— /finance/orders/{order_no}/verify 与 /backfill
+ * 这两个补救端点都以它为入参,没有检索入口的话它们事实上无法被使用。
  * @summary Admin List Orders
  */
 export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrderOut[]> => {
@@ -5430,20 +5434,32 @@ export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<Return
 
 
 
-export const getAdminListTenantsApiAdminV1TenantsGetUrl = () => {
+export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTenantsApiAdminV1TenantsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/v1/tenants`
+  return stringifiedParams.length > 0 ? `/api/admin/v1/tenants?${stringifiedParams}` : `/api/admin/v1/tenants`
 }
 
 /**
+ * 租户列表。q = 手机号(完整号码精确,短串按后缀)。
+ *
+ * 列表仍只回掩码 —— 「查得到」不等于「看得到」,精确查询不放大 PII 展示面。
+ * 但按号码检索本身是敏感读:显式落一条审计(默认只审计写操作),否则
+ * 「谁按手机号查过哪个租户」不可追溯,而这条端点 readonly 角色也能调。
  * @summary Admin List Tenants
  */
-export const adminListTenantsApiAdminV1TenantsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {
+export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {
 
-  return customFetch<TenantOut[]>(getAdminListTenantsApiAdminV1TenantsGetUrl(),
+  return customFetch<TenantOut[]>(getAdminListTenantsApiAdminV1TenantsGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -5456,23 +5472,23 @@ export const adminListTenantsApiAdminV1TenantsGet = async ( options?: Parameters
 
 
 
-export const getAdminListTenantsApiAdminV1TenantsGetQueryKey = () => {
+export const getAdminListTenantsApiAdminV1TenantsGetQueryKey = (params?: AdminListTenantsApiAdminV1TenantsGetParams,) => {
     return [
-    `/api/admin/v1/tenants`
+    `/api/admin/v1/tenants`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getAdminListTenantsApiAdminV1TenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminListTenantsApiAdminV1TenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = HTTPValidationError>(params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminListTenantsApiAdminV1TenantsGetQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getAdminListTenantsApiAdminV1TenantsGetQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>> = ({ signal }) => adminListTenantsApiAdminV1TenantsGet({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>> = ({ signal }) => adminListTenantsApiAdminV1TenantsGet(params, { signal, ...requestOptions });
 
 
 
@@ -5482,11 +5498,11 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type AdminListTenantsApiAdminV1TenantsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>>
-export type AdminListTenantsApiAdminV1TenantsGetQueryError = unknown
+export type AdminListTenantsApiAdminV1TenantsGetQueryError = HTTPValidationError
 
 
-export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>> & Pick<
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListTenantsApiAdminV1TenantsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>,
           TError,
@@ -5495,8 +5511,8 @@ export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnTy
       >, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>> & Pick<
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = HTTPValidationError>(
+ params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>,
           TError,
@@ -5505,20 +5521,20 @@ export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnTy
       >, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = HTTPValidationError>(
+ params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Admin List Tenants
  */
 
-export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError = HTTPValidationError>(
+ params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTenantsApiAdminV1TenantsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminListTenantsApiAdminV1TenantsGetQueryOptions(options)
+  const queryOptions = getAdminListTenantsApiAdminV1TenantsGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

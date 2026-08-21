@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from app.core.audit import set_audit_target
+from app.core.audit import mark_audited_read, set_audit_target
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, not_found
@@ -368,10 +368,15 @@ async def admin_image_nodes(image_id: int, session: DbSession) -> list[ImageNode
 
 @router.get("/instances", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_instances(
-    session: DbSession, status: str | None = None, user_id: int | None = None
+    session: DbSession,
+    status: str | None = None,
+    user_id: int | None = None,
+    q: str | None = None,
+    node_name: str | None = None,
 ) -> list[AdminInstanceOut]:
+    """q:实例名或 uuid 前缀。node_name:精确。"""
     instances = await orchestrator_service.admin_list_instances(
-        session, status_filter=status, user_id=user_id
+        session, status_filter=status, user_id=user_id, q=q, node_name=node_name
     )
     return [AdminInstanceOut.model_validate(i) for i in instances]
 
@@ -431,11 +436,25 @@ class TenantFreezeRequest(BaseModel):
 
 
 @router.get("/tenants", dependencies=[require_roles("ops", "finance", "readonly")])
-async def admin_list_tenants(session: DbSession) -> list[TenantOut]:
+async def admin_list_tenants(
+    session: DbSession,
+    request: Request,
+    q: str | None = None,
+    status: str | None = None,
+) -> list[TenantOut]:
+    """租户列表。q = 手机号(完整号码精确,短串按后缀)。
+
+    列表仍只回掩码 —— 「查得到」不等于「看得到」,精确查询不放大 PII 展示面。
+    但按号码检索本身是敏感读:显式落一条审计(默认只审计写操作),否则
+    「谁按手机号查过哪个租户」不可追溯,而这条端点 readonly 角色也能调。
+    """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
-    users = await account_service.admin_list_users(session)
+    if q:
+        masked = q[:3] + "****" + q[-4:] if len(q) >= 7 else "***"
+        mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
+    users = await account_service.admin_list_users(session, q=q, status=status)
     balances = await billing_service.balances_by_user(session)
     consumed = await billing_service.consumed_by_user(session)
     stats = await orchestrator_service.instance_disk_stats_by_user(session)
@@ -958,10 +977,19 @@ async def admin_audit_log(
 
 
 @router.get("/orders", dependencies=[require_roles("finance", "readonly")])
-async def admin_list_orders(session: DbSession, status: str | None = None) -> list[AdminOrderOut]:
+async def admin_list_orders(
+    session: DbSession,
+    status: str | None = None,
+    order_no: str | None = None,
+    user_id: int | None = None,
+) -> list[AdminOrderOut]:
+    """充值订单列表。order_no 精确 —— /finance/orders/{order_no}/verify 与 /backfill
+    这两个补救端点都以它为入参,没有检索入口的话它们事实上无法被使用。"""
     from app.modules.billing import service as billing_service
 
-    rows = await billing_service.admin_list_orders(session, status)
+    rows = await billing_service.admin_list_orders(
+        session, status, order_no=order_no, user_id=user_id
+    )
     return [AdminOrderOut.model_validate(r) for r in rows]
 
 

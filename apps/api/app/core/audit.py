@@ -51,7 +51,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         response = await call_next(request)
-        if request.method not in AUDIT_METHODS:
+        # 默认只审计写操作(全量审计 GET 会写放大 + 表膨胀)。个别敏感读端点显式调
+        # mark_audited_read 后也落一行 —— 「谁按手机号查过哪个租户」必须留痕,否则
+        # 精确查询就成了一个无痕的 PII 检索面。
+        if request.method not in AUDIT_METHODS and not getattr(request.state, "audit_force", False):
             return response
         path = request.url.path
         if path.startswith(AUDIT_EXCLUDE_PREFIXES):
@@ -81,7 +84,16 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
 
 def set_audit_target(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:
-    """业务代码在写操作里标注审计目标(如 instance:uuid)。"""
+    """业务代码在写操作里标注审计目标(如 instance:uuid)。
+
+    detail 禁止落凭据明文 —— 它现在会透出到管理端审计页(平台配置一直是只落键名不落值)。
+    """
     request.state.audit_target = target
     if detail is not None:
         request.state.audit_detail = detail
+
+
+def mark_audited_read(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:
+    """把一次**读**也记进审计(敏感检索用)。"""
+    request.state.audit_force = True
+    set_audit_target(request, target, detail)

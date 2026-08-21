@@ -262,11 +262,27 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
     }
 
 
-async def admin_list_orders(session: AsyncSession, status: str | None = None) -> list:
+async def admin_list_orders(
+    session: AsyncSession,
+    status: str | None = None,
+    *,
+    order_no: str | None = None,
+    user_id: int | None = None,
+) -> list:
+    """充值订单列表。order_no 精确(unique 索引)。
+
+    「客户报订单号说充值没到账」是财务的第一个日常动作,而 /finance/orders/{order_no}/verify
+    与 /backfill 这两个补救端点都以 order_no 为入参 —— 没有检索入口的话,端点存在但事实上
+    无法被使用:只能靠翻最近 200 单碰运气。
+    """
     from app.modules.billing.models import Order
 
     # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.orders 对齐
     stmt = select(Order).order_by(Order.id.desc()).limit(200)
     if status:
         stmt = stmt.where(Order.status == status)
+    if order_no:
+        stmt = stmt.where(Order.order_no == order_no.strip())
+    if user_id:
+        stmt = stmt.where(Order.user_id == user_id)
     return list((await session.execute(stmt)).scalars())

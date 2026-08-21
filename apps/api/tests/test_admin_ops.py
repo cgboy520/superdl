@@ -446,3 +446,101 @@ class TestFreezeStopsInstances:
         assert resp.status_code == 200
         listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
+
+
+class TestAdminSearch:
+    """客服与财务的第一个日常动作:按手机号找人、按订单号找单、按节点找实例。"""
+
+    async def test_tenant_lookup_by_phone(self, client, sm, fake):
+        h = await admin_headers(sm, client)
+        await register(client, "13611110001")
+        await register(client, "13622220002")
+
+        exact = (
+            await client.get("/api/admin/v1/tenants", params={"q": "13611110001"}, headers=h)
+        ).json()
+        assert [t["phone_masked"] for t in exact] == ["136****0001"]
+        # 只记得后几位也能找到(客服常见情形)
+        suffix = (await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)).json()
+        assert [t["phone_masked"] for t in suffix] == ["136****0002"]
+        # 列表仍只回掩码:「查得到」不等于「看得到」
+        assert all("phone" not in t or t.get("phone") is None for t in exact)
+
+    async def test_tenant_search_is_audited(self, client, sm, fake):
+        """按号码检索是敏感读:默认只审计写操作,这里必须显式留痕。"""
+        from app.core.audit import AuditLog
+
+        h = await admin_headers(sm, client)
+        await register(client, "13611110003")
+        await client.get("/api/admin/v1/tenants", params={"q": "13611110003"}, headers=h)
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(AuditLog.action.like("%GET /api/admin/v1/tenants%"))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1
+        assert rows[0].target == "tenant-search:136****0003"  # 审计里也只留掩码
+
+    async def test_plain_tenant_list_is_not_audited(self, client, sm, fake):
+        """不带查询的普通列表不落审计,避免写放大 + 表膨胀。"""
+        from app.core.audit import AuditLog
+
+        h = await admin_headers(sm, client)
+        await client.get("/api/admin/v1/tenants", headers=h)
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(AuditLog.action.like("%GET /api/admin/v1/tenants%"))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert rows == []
+
+    async def test_instance_lookup_by_node_and_name(self, client, sm, fake):
+        h = await admin_headers(sm, client)
+        _uh, uuid, user_id = await _provision_running(client, sm, fake, "13611110004")
+        by_node = (
+            await client.get(
+                "/api/admin/v1/instances", params={"node_name": "fake-node-1"}, headers=h
+            )
+        ).json()
+        assert [i["uuid"] for i in by_node] == [uuid]
+        # 「这台 GPU 是谁的」:后端一直在返回,现在前端也拿得到
+        assert by_node[0]["user_id"] == user_id
+        assert by_node[0]["node_name"] == "fake-node-1"
+        by_uuid = (
+            await client.get("/api/admin/v1/instances", params={"q": uuid[:8]}, headers=h)
+        ).json()
+        assert [i["uuid"] for i in by_uuid] == [uuid]
+        assert (
+            await client.get("/api/admin/v1/instances", params={"node_name": "nope"}, headers=h)
+        ).json() == []
+
+    async def test_order_lookup_by_order_no(self, client, sm, fake):
+        from app.modules.billing.models import Order
+
+        h = await admin_headers(sm, client)
+        async with sm() as session:
+            for no in ("SDL-A", "SDL-B"):
+                session.add(
+                    Order(
+                        order_no=no,
+                        user_id=1,
+                        amount=Decimal("10.00"),
+                        channel="mock",
+                        expires_at=now_utc() + timedelta(minutes=30),
+                    )
+                )
+            await session.commit()
+        found = (
+            await client.get("/api/admin/v1/orders", params={"order_no": "SDL-B"}, headers=h)
+        ).json()
+        assert [o["order_no"] for o in found] == ["SDL-B"]

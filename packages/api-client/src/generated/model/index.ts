@@ -21,6 +21,7 @@ export * from './adminInstanceOutSpec';
 export * from './adminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams';
 export * from './adminListInstancesApiAdminV1InstancesGetParams';
 export * from './adminListOrdersApiAdminV1OrdersGetParams';
+export * from './adminListTenantsApiAdminV1TenantsGetParams';
 export * from './adminLoginRequest';
 export * from './adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200';
 export * from './adminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams';

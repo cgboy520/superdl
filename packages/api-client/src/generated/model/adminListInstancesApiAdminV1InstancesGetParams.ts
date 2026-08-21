@@ -8,4 +8,6 @@
 export type AdminListInstancesApiAdminV1InstancesGetParams = {
 status?: string | null;
 user_id?: number | null;
+q?: string | null;
+node_name?: string | null;
 };

@@ -9,12 +9,12 @@ import {
 } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { App, Badge, Button, Card, Drawer, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
+import { App, Badge, Button, Card, Drawer, Input, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  type InstanceOut,
+  type AdminInstanceOut,
   type TenantRow,
   useAdminInstances,
   useForceStop,
@@ -40,7 +40,9 @@ function TenantsTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data, queryKey } = useTenants();
+  // 客服接到电话报手机号 → 这里必须查得到。列表仍只回掩码:「查得到」≠「看得到」
+  const [search, setSearch] = useState("");
+  const { data, queryKey } = useTenants(search ? { q: search } : undefined);
   const tenants: TenantRow[] = data ?? [];
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
@@ -48,6 +50,12 @@ function TenantsTab() {
 
   return (
     <>
+    <Input.Search
+      allowClear
+      placeholder={tt("tenants.searchPhonePlaceholder")}
+      style={{ width: 260, marginBottom: 12 }}
+      onSearch={setSearch}
+    />
     <Table<TenantRow>
       scroll={{ x: 1000 }}
       rowKey="id"
@@ -258,8 +266,14 @@ function InstancesTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [status, setStatus] = useState<string | undefined>();
+  const [search, setSearch] = useState("");
+  const [nodeName, setNodeName] = useState("");
   const qc = useQueryClient();
-  const { data: instances, queryKey } = useAdminInstances(status ? { status } : undefined);
+  const { data: instances, queryKey } = useAdminInstances({
+    ...(status ? { status } : {}),
+    ...(search ? { q: search } : {}),
+    ...(nodeName ? { node_name: nodeName } : {}),
+  });
   const forceStop = useForceStop();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
@@ -277,13 +291,34 @@ function InstancesTab() {
             label: t(m.labelKey),
           }))}
         />
+        <Input.Search
+          allowClear
+          placeholder={t("tenants.searchInstancePlaceholder")}
+          style={{ width: 220 }}
+          onSearch={setSearch}
+        />
+        <Input.Search
+          allowClear
+          placeholder={t("tenants.searchNodePlaceholder")}
+          style={{ width: 200 }}
+          onSearch={setNodeName}
+        />
       </Space>
-      <Table<InstanceOut>
+      <Table<AdminInstanceOut>
         scroll={{ x: 1000 }}
         rowKey="uuid"
         dataSource={instances ?? []}
         columns={[
           { title: t("tenants.colInstance"), dataIndex: "name" },
+          // 「这个 Pod 在挖矿,是谁的、在哪台机器上」是强制停机的前置问题。
+          // 后端一直在返回这两个字段,前端一列都没画
+          { title: t("tenants.colOwner"), dataIndex: "user_id", width: 90 },
+          {
+            title: t("tenants.colNode"),
+            dataIndex: "node_name",
+            width: 160,
+            render: (v: string | null) => v ?? "—",
+          },
           {
             title: t("tenants.colStatus"),
             dataIndex: "status",

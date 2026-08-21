@@ -570,8 +570,17 @@ async def estimate_available(sku: "Sku") -> int:
 
 
 async def admin_list_instances(
-    session: AsyncSession, *, status_filter: str | None = None, user_id: int | None = None
+    session: AsyncSession,
+    *,
+    status_filter: str | None = None,
+    user_id: int | None = None,
+    q: str | None = None,
+    node_name: str | None = None,
 ) -> list[Instance]:
+    """管理端实例列表。q 按实例名或 uuid 前缀匹配,node_name 精确。
+
+    「这个 Pod 在挖矿,是谁的、在哪台机器上」是强制停机(force-stop)的前置问题。
+    """
     # 固定截断:超出即在管理端表底给出「已达上限」提示(admin/components/ListCapNote.tsx),
     # 改这里的数字要同步改那里 —— 静默截断看上去和「一共就这些」一模一样
     stmt = select(Instance).order_by(Instance.id.desc()).limit(200)
@@ -579,6 +588,12 @@ async def admin_list_instances(
         stmt = stmt.where(Instance.status == status_filter)
     if user_id:
         stmt = stmt.where(Instance.user_id == user_id)
+    if node_name:
+        stmt = stmt.where(Instance.node_name == node_name)
+    q = (q or "").strip()
+    if q:
+        # uuid 前缀可走索引;实例名是短串,量级由 limit 兜住
+        stmt = stmt.where(Instance.uuid.like(f"{q}%") | Instance.name.ilike(f"%{q}%"))
     return list((await session.execute(stmt)).scalars())
 
 

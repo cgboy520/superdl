@@ -60,6 +60,9 @@ import {
 import type {
   AdjustmentCreate,
   AdminAuditLogApiAdminV1AuditGetParams,
+  AdminListInstancesApiAdminV1InstancesGetParams,
+  AdminListOrdersApiAdminV1OrdersGetParams,
+  AdminListTenantsApiAdminV1TenantsGetParams,
   AdminAccountOut,
   AdminCreateRequest,
   AdminResetPasswordRequest,
@@ -102,6 +105,7 @@ export type {
   EnrollmentCreate,
   ImageCreate,
   ImageUpdate,
+  AdminInstanceOut,
   InstanceOut,
   SkuAdminOut,
   SkuCreate,
@@ -189,7 +193,7 @@ export function useSkuCapacityPreview(
   });
 }
 
-export function useAdminInstances(params?: { status?: string; user_id?: number }) {
+export function useAdminInstances(params?: AdminListInstancesApiAdminV1InstancesGetParams) {
   const queryKey = ["admin", "instances", params] as const;
   const q = useQuery({
     queryKey,
@@ -198,11 +202,12 @@ export function useAdminInstances(params?: { status?: string; user_id?: number }
   return { ...q, queryKey };
 }
 
-export function useTenants() {
-  const queryKey = ["admin", "tenants"] as const;
+/** 租户列表。q = 手机号(完整号码精确,短串按后缀)—— 客服接到电话后的第一个动作。 */
+export function useTenants(params?: AdminListTenantsApiAdminV1TenantsGetParams) {
+  const queryKey = ["admin", "tenants", params] as const;
   const q = useQuery({
     queryKey,
-    queryFn: () => adminListTenantsApiAdminV1TenantsGet(),
+    queryFn: () => adminListTenantsApiAdminV1TenantsGet(params),
   });
   return { ...q, queryKey };
 }
@@ -301,7 +306,8 @@ export function useAlerts(options?: { refetchInterval?: number }) {
   });
 }
 
-export function useOrders(params?: { status?: string }) {
+/** 充值订单。order_no 精确 —— 核验/补单两个端点都以它为入参。 */
+export function useOrders(params?: AdminListOrdersApiAdminV1OrdersGetParams) {
   const queryKey = ["admin", "orders", params] as const;
   const q = useQuery({
     queryKey,

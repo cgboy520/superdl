@@ -388,9 +388,23 @@ async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) ->
     }
 
 
-async def admin_list_users(session: AsyncSession) -> list[User]:
+async def admin_list_users(
+    session: AsyncSession, *, q: str | None = None, status: str | None = None
+) -> list[User]:
+    """租户列表。q = 手机号(完整号码精确匹配走唯一索引;短串按后缀匹配)。
+
+    没有这一条时客服台是瘫的:客户来电报手机号,列表只回 138****1234 掩码,浏览器
+    Ctrl+F 搜完整号码必然落空;超过截断上限之后老用户干脆不在返回集里,连碰运气都没有。
+    """
     # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.tenants 对齐
-    return list((await session.execute(select(User).order_by(User.id.desc()).limit(500))).scalars())
+    stmt = select(User).order_by(User.id.desc()).limit(500)
+    if status:
+        stmt = stmt.where(User.status == status)
+    q = (q or "").strip()
+    if q:
+        # 完整 11 位手机号走 unique 索引;更短的串按后缀匹配(客服常只记得后几位)
+        stmt = stmt.where(User.phone == q if len(q) >= 11 else User.phone.like(f"%{q}"))
+    return list((await session.execute(stmt)).scalars())
 
 
 async def frozen_user_ids(session: AsyncSession) -> list[int]:

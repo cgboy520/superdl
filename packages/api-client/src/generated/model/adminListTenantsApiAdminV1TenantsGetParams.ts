@@ -5,8 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminListOrdersApiAdminV1OrdersGetParams = {
+export type AdminListTenantsApiAdminV1TenantsGetParams = {
+q?: string | null;
 status?: string | null;
-order_no?: string | null;
-user_id?: number | null;
 };
