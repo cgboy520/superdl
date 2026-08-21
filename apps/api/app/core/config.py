@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
@@ -75,11 +75,23 @@ class Settings(BaseSettings):
 
     # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
     k8s_distro: Literal["rke2", "k3s"] = "rke2"  # k3s 仅用于轻量/本地验证环境
-    rke2_server_url: str = ""
-    rke2_join_token: str = ""  # secret:平台配置中心 AES-GCM 加密存 DB 覆盖层
-    rke2_version: str = "v1.36.2+rke2r1"  # 装机脚本的 INSTALL_RKE2_VERSION
+    # cluster 键 WP27 更名中性(rke2_* → cluster_*),AliasChoices 兼容旧 env
+    cluster_server_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPERDL_CLUSTER_SERVER_URL", "SUPERDL_RKE2_SERVER_URL"),
+    )
+    # secret:平台配置中心 AES-GCM 加密存 DB 覆盖层
+    cluster_join_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPERDL_CLUSTER_JOIN_TOKEN", "SUPERDL_RKE2_JOIN_TOKEN"),
+    )
+    cluster_agent_version: str = Field(  # 装机脚本钉死的 K8s agent 版本
+        default="v1.36.2+rke2r1",
+        validation_alias=AliasChoices("SUPERDL_CLUSTER_AGENT_VERSION", "SUPERDL_RKE2_VERSION"),
+    )
     node_driver_version: str = "580"
     node_registries_yaml: str = ""
+    node_install_mirror: Literal["cn", "official"] = "cn"  # 装机安装源(国内默认走镜像)
 
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"

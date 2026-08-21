@@ -93,7 +93,7 @@ def enrollment_commands(token: str) -> tuple[str, str]:
 async def require_cluster_config(session: AsyncSession) -> dict[str, str]:
     """创建注册令牌的前置:cluster 组必须已配置,否则 409 引导去平台配置页。"""
     cfg = await get_effective_platform_config(session)
-    if not cfg.get("rke2_server_url") or not cfg.get("rke2_join_token"):
+    if not cfg.get("cluster_server_url") or not cfg.get("cluster_join_token"):
         raise AppError(
             ErrorCode.CONFLICT,
             key="nodes.clusterNotConfigured",

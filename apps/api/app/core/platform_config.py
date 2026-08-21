@@ -140,19 +140,19 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         prod_forbidden=("k3s",),
         hint="生产一律 RKE2;k3s 仅供轻量/本地验证环境",
     ),
-    "rke2_server_url": SettingSpec(
+    "cluster_server_url": SettingSpec(
         "cluster",
         "str",
         pattern=r"https://[0-9A-Za-z.\-\[\]:]+:\d{1,5}",
         hint="RKE2 supervisor 形如 https://<server-ip>:9345;k3s 为 https://<server-ip>:6443",
     ),
-    "rke2_join_token": SettingSpec(
+    "cluster_join_token": SettingSpec(
         "cluster",
         "secret",
         max_len=512,
         hint="server 节点 /var/lib/rancher/<rke2|k3s>/server/node-token 文件内容",
     ),
-    "rke2_version": SettingSpec(
+    "cluster_agent_version": SettingSpec(
         "cluster",
         "str",
         pattern=r"v\d+\.\d+\.\d+(\+(rke2r|k3s)\d+)?",
@@ -170,6 +170,12 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         max_len=8192,
         hint="节点 /etc/rancher/rke2/registries.yaml 内容(镜像缓存 mirror;留空则脚本跳过)",
     ),
+    "node_install_mirror": SettingSpec(
+        "cluster",
+        "choice",
+        choices=("cn", "official"),
+        hint="装机安装源:cn=国内镜像(rancher-mirror.rancher.cn),official=官方源",
+    ),
     # ---- 可观测性(管理端自绘为主;Grafana 仅作可选深挖外链,不做 iframe) ----
     "grafana_url": SettingSpec(
         "observability",
@@ -177,6 +183,15 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         pattern=r"https?://\S+",
         hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
     ),
+}
+
+
+# 键改名的读回落:cluster_join_token 为 AES-GCM 且 AAD=行 key,直接 UPDATE 键名会静默毁掉
+# 密文 → 旧行原键解密;管理端写新键成功后同事务删旧行(见 set_platform_settings)。
+LEGACY_KEY_ALIASES: dict[str, str] = {
+    "cluster_join_token": "rke2_join_token",
+    "cluster_server_url": "rke2_server_url",  # 明文行由迁移直改,别名兜未跑迁移的窗口
+    "cluster_agent_version": "rke2_version",
 }
 
 
@@ -220,13 +235,20 @@ def _env_default(key: str) -> str:
 async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]:
     """生效配置全量映射(secret 已解密,仅进程内使用,严禁整体入日志/响应)。"""
     eff = {key: _env_default(key) for key in SETTING_SPECS}
-    for row in (await session.execute(select(PlatformSetting))).scalars():
-        spec = SETTING_SPECS.get(row.key)
+    rows = {r.key: r for r in (await session.execute(select(PlatformSetting))).scalars()}
+    for key, row in rows.items():
+        spec = SETTING_SPECS.get(key)
         if spec is None:
-            continue  # 不在白名单内的键忽略
-        eff[row.key] = (
-            crypto.decrypt_str(row.value, aad=row.key) if spec.kind == "secret" else row.value
-        )
+            continue  # 不在白名单内的键忽略(含改名后的遗留行,由别名回落处理)
+        eff[key] = crypto.decrypt_str(row.value, aad=key) if spec.kind == "secret" else row.value
+    for new_key, old_key in LEGACY_KEY_ALIASES.items():
+        if new_key not in rows and old_key in rows:
+            spec = SETTING_SPECS[new_key]
+            eff[new_key] = (
+                crypto.decrypt_str(rows[old_key].value, aad=old_key)
+                if spec.kind == "secret"
+                else rows[old_key].value
+            )
     return eff
 
 
@@ -239,6 +261,10 @@ async def set_platform_settings(
             raise ValueError(f"未知配置键:{key}")
         if raw.strip() == "":
             await session.execute(delete(PlatformSetting).where(PlatformSetting.key == key))
+            if key in LEGACY_KEY_ALIASES:  # 清除时连旧行一起删,防遗留行借别名复活
+                await session.execute(
+                    delete(PlatformSetting).where(PlatformSetting.key == LEGACY_KEY_ALIASES[key])
+                )
             continue
         value = validate_setting_value(key, raw)
         if SETTING_SPECS[key].kind == "secret":
@@ -250,6 +276,10 @@ async def set_platform_settings(
                 index_elements=["key"], set_={"value": value, "updated_by": updated_by}
             )
         )
+        if key in LEGACY_KEY_ALIASES:  # 写新删旧:此后不再走别名回落
+            await session.execute(
+                delete(PlatformSetting).where(PlatformSetting.key == LEGACY_KEY_ALIASES[key])
+            )
 
 
 async def list_platform_overrides(session: AsyncSession) -> dict[str, PlatformSetting]:

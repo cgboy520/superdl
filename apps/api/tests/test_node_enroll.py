@@ -21,8 +21,8 @@ async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
         await set_platform_settings(
             session,
             {
-                "rke2_server_url": "https://10.0.0.10:9345",
-                "rke2_join_token": "K10abcdef0123456789::server:secrettoken",
+                "cluster_server_url": "https://10.0.0.10:9345",
+                "cluster_join_token": "K10abcdef0123456789::server:secrettoken",
             },
             updated_by=None,
         )
@@ -161,7 +161,7 @@ class TestEnrollmentStateMachine:
                 client_ip="10.0.0.77",
             )
             assert row.status == "installing"
-            assert cfg["rke2_join_token"].endswith("secrettoken")
+            assert cfg["cluster_join_token"].endswith("secrettoken")
         # 重复 bootstrap(脚本重跑)仍放行
         async with sm() as session:
             row, _ = await nodes_service.bootstrap(

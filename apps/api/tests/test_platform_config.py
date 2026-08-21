@@ -278,3 +278,92 @@ class TestAliyunRealNameProvider:
         async with sm() as session:
             provider = await get_realname_provider(session)
         assert isinstance(provider, AliyunRealNameProvider)
+
+
+class TestClusterKeyRename:
+    """WP27 键改名:AES-GCM AAD=行 key → join_token 旧行走别名回落,写新删旧。"""
+
+    async def test_legacy_join_token_alias_fallback(self, sm):
+        from app.core import crypto
+        from app.core.platform_config import PlatformSetting, get_effective_platform_config
+
+        async with sm() as session:
+            # 模拟改名前落库的旧行:密文以旧键为 AAD
+            session.add(
+                PlatformSetting(
+                    key="rke2_join_token",
+                    value=crypto.encrypt_str("K10legacy::server:tok", aad="rke2_join_token"),
+                    updated_by=None,
+                )
+            )
+            await session.commit()
+        async with sm() as session:
+            cfg = await get_effective_platform_config(session)
+        assert cfg["cluster_join_token"] == "K10legacy::server:tok"
+
+    async def test_write_new_deletes_legacy_row(self, sm):
+        from sqlalchemy import select
+
+        from app.core import crypto
+        from app.core.platform_config import (
+            PlatformSetting,
+            get_effective_platform_config,
+            set_platform_settings,
+        )
+
+        async with sm() as session:
+            session.add(
+                PlatformSetting(
+                    key="rke2_join_token",
+                    value=crypto.encrypt_str("old-token", aad="rke2_join_token"),
+                    updated_by=None,
+                )
+            )
+            await session.commit()
+        async with sm() as session:
+            await set_platform_settings(session, {"cluster_join_token": "new-token"}, updated_by=1)
+            await session.commit()
+        async with sm() as session:
+            keys = {
+                r.key
+                for r in (await session.execute(select(PlatformSetting))).scalars()
+                if "token" in r.key
+            }
+            cfg = await get_effective_platform_config(session)
+        assert keys == {"cluster_join_token"}
+        assert cfg["cluster_join_token"] == "new-token"
+
+    async def test_clear_also_deletes_legacy_row(self, sm):
+        from sqlalchemy import select
+
+        from app.core.platform_config import PlatformSetting, set_platform_settings
+
+        async with sm() as session:
+            session.add(PlatformSetting(key="rke2_server_url", value="https://1.2.3.4:9345"))
+            await session.commit()
+        async with sm() as session:
+            await set_platform_settings(session, {"cluster_server_url": ""}, updated_by=1)
+            await session.commit()
+        async with sm() as session:
+            rows = [
+                r.key
+                for r in (await session.execute(select(PlatformSetting))).scalars()
+                if "server_url" in r.key
+            ]
+        assert rows == []
+
+    def test_env_alias_still_works(self, monkeypatch):
+        from app.core.config import Settings
+
+        monkeypatch.setenv("SUPERDL_RKE2_SERVER_URL", "https://9.9.9.9:9345")
+        monkeypatch.setenv("SUPERDL_RKE2_JOIN_TOKEN", "envtok")
+        monkeypatch.setenv("SUPERDL_RKE2_VERSION", "v1.33.4+k3s1")
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert s.cluster_server_url == "https://9.9.9.9:9345"
+        assert s.cluster_join_token == "envtok"
+        assert s.cluster_agent_version == "v1.33.4+k3s1"
+        monkeypatch.setenv("SUPERDL_CLUSTER_SERVER_URL", "https://8.8.8.8:9345")
+        assert (
+            Settings(_env_file=None).cluster_server_url  # type: ignore[call-arg]
+            == "https://8.8.8.8:9345"
+        )
