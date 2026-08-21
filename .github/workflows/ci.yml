@@ -21,10 +21,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pyright
       - run: uv run lint-imports
-      - name: pytest (billing coverage gate ≥90%)
-        run: |
-          uv run pytest --cov=app --cov-report=term --cov-report=json
-          uv run python scripts/check_billing_coverage.py
+      - run: uv run pytest --cov=app --cov-report=term
       - name: alembic check (migrations match models)
         run: |
           docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18

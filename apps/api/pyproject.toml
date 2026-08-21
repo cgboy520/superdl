@@ -68,8 +68,7 @@ filterwarnings = ["ignore::DeprecationWarning:testcontainers"]
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/export_openapi.py"]
-# SQLAlchemy async 在 greenlet 里跑同步核心:不声明 greenlet 并发,
-# coverage 会丢失 await 之后的行,系统性低估覆盖率(曾误报 82.8%)
+# SQLAlchemy async 在 greenlet 里跑同步核心:不声明 greenlet 并发会丢失 await 之后的行
 concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
@@ -87,324 +86,121 @@ source_modules = ["app.core"]
 forbidden_modules = ["app.modules", "app.workers"]
 
 [[tool.importlinter.contracts]]
-name = "account 不越界"
+name = "account 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.account"]
 forbidden_modules = [
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.account.** -> app.modules.*.service",
+    "app.modules.account.** -> app.modules.*.schemas",
+    "app.modules.account.** -> app.modules.account.deps",
 ]
 
 [[tool.importlinter.contracts]]
-name = "catalog 不越界"
+name = "catalog 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.catalog"]
 forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.account", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.catalog.** -> app.modules.*.service",
+    "app.modules.catalog.** -> app.modules.*.schemas",
+    "app.modules.catalog.** -> app.modules.account.deps",
 ]
 
 [[tool.importlinter.contracts]]
-name = "orchestrator 不越界"
+name = "orchestrator 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.orchestrator"]
 forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.account", "app.modules.catalog", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.orchestrator.** -> app.modules.*.service",
+    "app.modules.orchestrator.** -> app.modules.*.schemas",
+    "app.modules.orchestrator.** -> app.modules.account.deps",
 ]
 
 [[tool.importlinter.contracts]]
-name = "billing 不越界"
+name = "billing 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.billing"]
 forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.billing.** -> app.modules.*.service",
+    "app.modules.billing.** -> app.modules.*.schemas",
+    "app.modules.billing.** -> app.modules.account.deps",
 ]
 
 [[tool.importlinter.contracts]]
-name = "metering 不越界"
+name = "metering 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.metering"]
 forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.metering.** -> app.modules.*.service",
+    "app.modules.metering.** -> app.modules.*.schemas",
+    "app.modules.metering.** -> app.modules.account.deps",
 ]
 
 [[tool.importlinter.contracts]]
-name = "notify 不越界"
+name = "notify 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.notify"]
 forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.nodes", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.notify.** -> app.modules.*.service",
+    "app.modules.notify.** -> app.modules.*.schemas",
+    "app.modules.notify.** -> app.modules.account.deps",
 ]
 
 [[tool.importlinter.contracts]]
-name = "adminapi 不越界"
+name = "nodes 只经 service/schemas 访问其他模块"
 type = "forbidden"
 allow_indirect_imports = true
-source_modules = ["app.modules.adminapi"]
-forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.nodes.enroll_router",
-    "app.modules.nodes.handlers",
-    "app.modules.nodes.models",
-    "app.modules.nodes.patrol",
-    "app.modules.nodes.reconciler",
-]
-
-[[tool.importlinter.contracts]]
-name = "nodes 不越界"
-type = "forbidden"
-allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
 source_modules = ["app.modules.nodes"]
 forbidden_modules = [
-    "app.modules.account.models",
-    "app.modules.account.realname",
-    "app.modules.account.router",
-    "app.modules.account.sshkey_util",
-    "app.modules.catalog.inventory",
-    "app.modules.catalog.models",
-    "app.modules.catalog.prewarm",
-    "app.modules.catalog.router",
-    "app.modules.orchestrator.disks",
-    "app.modules.orchestrator.disks_router",
-    "app.modules.orchestrator.handlers",
-    "app.modules.orchestrator.models",
-    "app.modules.orchestrator.reconciler",
-    "app.modules.orchestrator.router",
-    "app.modules.orchestrator.statemachine",
-    "app.modules.billing.edge_listener",
-    "app.modules.billing.models",
-    "app.modules.billing.patrol",
-    "app.modules.billing.payment_channels",
-    "app.modules.billing.payment_service",
-    "app.modules.billing.router",
-    "app.modules.billing.settlement",
-    "app.modules.billing.wallet",
-    "app.modules.billing.webhooks_router",
-    "app.modules.metering.models",
-    "app.modules.metering.prom",
-    "app.modules.metering.router",
-    "app.modules.notify.models",
-    "app.modules.notify.router",
-    "app.modules.adminapi.deps",
-    "app.modules.adminapi.models",
-    "app.modules.adminapi.router",
+    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.adminapi",
+]
+ignore_imports = [
+    "app.modules.nodes.** -> app.modules.*.service",
+    "app.modules.nodes.** -> app.modules.*.schemas",
+    "app.modules.nodes.** -> app.modules.account.deps",
+]
+
+[[tool.importlinter.contracts]]
+name = "adminapi 只经 service/schemas 访问其他模块"
+type = "forbidden"
+allow_indirect_imports = true
+unmatched_ignore_imports_alerting = "warn"
+source_modules = ["app.modules.adminapi"]
+forbidden_modules = [
+    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes",
+]
+ignore_imports = [
+    "app.modules.adminapi.** -> app.modules.*.service",
+    "app.modules.adminapi.** -> app.modules.*.schemas",
+    "app.modules.adminapi.** -> app.modules.account.deps",
 ]
