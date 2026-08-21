@@ -95,10 +95,12 @@ async def aggregate_previous_hour(
             candidates = await orchestrator_service.billing_candidates(
                 session, window_start, window_end
             )
-            instances = await orchestrator_service.admin_list_instances(session)
-            loc = {i.id: (i.k8s_namespace, i.uuid, i.spec.get("tier")) for i in instances}
+            loc = await orchestrator_service.instance_locations(session, [c[0] for c in candidates])
         for inst_id, _user_id, _price, _gpus in candidates:
-            ns, pod, tier = loc[inst_id]
+            located = loc.get(inst_id)
+            if located is None:  # 实例在候选查询与定位查询之间被删:跳过该台,不作废整轮
+                continue
+            ns, pod, tier = located
             try:
                 values = await prom.query_instance_metric(
                     "gpu_util",
@@ -178,13 +180,13 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
         .all()
     )
     usage_by_instance = dict(usage_hours)
-    instances = await orchestrator_service.admin_list_instances(session)
-    price_by_id = {i.id: as_amount(i.price_hourly * i.gpu_count) for i in instances}
 
     billed_total = sum((amount for _, amount in billed.items()), Decimal("0.00"))
     est_total = Decimal("0.00")
     diffs: list[dict[str, Any]] = []
     all_ids = set(billed) | set(usage_by_instance)
+    # 按 id 精确取价:复用管理端 LIMIT 200 列表会把老实例按单价 0 估算,凭空造出差异
+    price_by_id = await orchestrator_service.instance_hourly_prices(session, all_ids)
     for iid in all_ids:
         est = as_amount(price_by_id.get(iid, Decimal("0")) * usage_by_instance.get(iid, 0))
         est_total += est

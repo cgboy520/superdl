@@ -622,6 +622,52 @@ async def billing_candidates(
     )
 
 
+async def instance_locations(
+    session: AsyncSession, instance_ids: Iterable[int]
+) -> dict[int, tuple[str, str, str | None]]:
+    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。
+
+    按 id 精确取。曾复用管理端 admin_list_instances(硬编码 LIMIT 200):
+    实例数过 200 后老实例查不到,聚合整轮 KeyError 作废。
+    """
+    ids = list(instance_ids)
+    if not ids:
+        return {}
+    rows = (
+        (
+            await session.execute(
+                select(Instance.id, Instance.k8s_namespace, Instance.uuid, Instance.spec).where(
+                    Instance.id.in_(ids)
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return {iid: (ns, uuid, (spec or {}).get("tier")) for iid, ns, uuid, spec in rows}
+
+
+async def instance_hourly_prices(
+    session: AsyncSession, instance_ids: Iterable[int]
+) -> dict[int, Any]:
+    """对账用:instance_id → 单价 × 卡数(元/时)。按 id 精确取,不受列表截断影响。"""
+    ids = list(instance_ids)
+    if not ids:
+        return {}
+    rows = (
+        (
+            await session.execute(
+                select(Instance.id, Instance.price_hourly, Instance.gpu_count).where(
+                    Instance.id.in_(ids)
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return {iid: as_amount(price * count) for iid, price, count in rows}
+
+
 async def list_running_instances_by_user(session: AsyncSession) -> dict[int, list[Instance]]:
     """欠费巡检用:user_id → running 实例列表。"""
     rows = (
