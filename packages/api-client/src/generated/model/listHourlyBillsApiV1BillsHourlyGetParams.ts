@@ -8,6 +8,11 @@
 export type ListHourlyBillsApiV1BillsHourlyGetParams = {
 instance_id?: number | null;
 month?: string | null;
+/**
+ * @minimum -720
+ * @maximum 840
+ */
+tz_offset_minutes?: number;
 cursor?: string | null;
 limit?: number | null;
 };

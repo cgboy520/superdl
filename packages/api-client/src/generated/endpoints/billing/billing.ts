@@ -288,7 +288,7 @@ export const getBillSummaryApiV1BillsSummaryGetUrl = (params: BillSummaryApiV1Bi
 }
 
 /**
- * 月度汇总 + 按实例成本归因(消费概览环图数据源)。
+ * 月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。
  * @summary Bill Summary
  */
 export const billSummaryApiV1BillsSummaryGet = async (params: BillSummaryApiV1BillsSummaryGetParams, options?: Parameters<typeof customFetch>[1]): Promise<BillSummaryOut> => {

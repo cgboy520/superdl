@@ -319,10 +319,14 @@ function BillingPage() {
   // 本地时区取当月(toISOString 是 UTC 切片,+08:00 月初凌晨会切到上个月)
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const { data: summary } = useBillSummary(month);
   const { date, tzOffsetMinutes } = localToday();
+  // 三个查询共用同一个本地时区口径:月账单与「今日消费」并排渲染在同一张卡里,
+  // 月窗口按 UTC 切、日窗口按本地切时,把 31 天日账单加起来 ≠ 月账单
+  const { data: summary } = useBillSummary(month, tzOffsetMinutes);
   const { data: daily } = useDailySummary(date, tzOffsetMinutes);
-  const { data: bills } = useHourlyBills({ limit: 50 });
+  // 账单表与右上角的 CSV 导出必须同口径(都按当月),否则同一个 Tab 里屏幕上和导出的
+  // 是两批不同范围的数据
+  const { data: bills } = useHourlyBills({ month, tz_offset_minutes: tzOffsetMinutes, limit: 50 });
   const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("billing.thresholdSaved")) });
 
   const saveThreshold = (v: number | undefined) => {
@@ -336,7 +340,12 @@ function BillingPage() {
         const rows: BillHourlyOut[] = [];
         let cursor: string | undefined;
         for (let i = 0; i < 200; i++) {
-          const page = await listHourlyBillsApiV1BillsHourlyGet({ month, limit: 100, cursor });
+          const page = await listHourlyBillsApiV1BillsHourlyGet({
+            month,
+            tz_offset_minutes: tzOffsetMinutes,
+            limit: 100,
+            cursor,
+          });
           rows.push(...page.items);
           if (!page.next_cursor) break;
           cursor = page.next_cursor;

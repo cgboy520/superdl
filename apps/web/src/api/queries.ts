@@ -116,8 +116,12 @@ export const useLedgerPages = (limit = 20) =>
     initialPageParam: undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-export const useBillSummary = (month: string) =>
-  useApiQuery(["bill-summary", month], () => billSummaryApiV1BillsSummaryGet({ month }));
+/** 月度汇总:窗口按**本地**月界切,offset 必须与「今日消费」用同一个来源,否则同一页面上
+ * 的两个数字永远对不上(月账单按 UTC 切时,北京的「8 月」实际是 7/31 08:00 起算)。 */
+export const useBillSummary = (month: string, tzOffsetMinutes: number) =>
+  useApiQuery(["bill-summary", month, tzOffsetMinutes], () =>
+    billSummaryApiV1BillsSummaryGet({ month, tz_offset_minutes: tzOffsetMinutes }),
+  );
 /** 策略常量(盘价/回收天数等):公开端点,常量性质给长缓存。 */
 export const usePolicies = () =>
   useApiQuery(["policies"], () => getPoliciesApiV1PoliciesGet(), { retry: 1 });

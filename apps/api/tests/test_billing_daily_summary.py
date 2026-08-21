@@ -144,3 +144,36 @@ class TestDailySummary:
         assert body_a["gpu_total"] == "9.00"
         assert body_b["gpu_total"] == "1.00"
         assert {i["instance_id"] for i in body_a["items"]} == {301}
+
+
+class TestMonthMatchesDays:
+    async def test_daily_summaries_sum_to_month_summary(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """把整月的日账单加起来必须等于月账单 —— 两个接口的日界口径必须一致。
+
+        月账单曾经按 UTC 月初硬切、日账单按 tz_offset 折算,于是北京时间的「8 月账单」
+        实际统计的是 7/31 08:00 ~ 8/31 08:00:用户 8 月 31 日白天跑的机器不计入 8 月账单,
+        却出现在当天的「今日消费」里。两个数字并排渲染在费用中心同一张卡上。
+        """
+        headers, uid = await register_user(client, "13900010009")
+        # 边界四点(东八区):本地 7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
+        await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 14, 0, tzinfo=UTC), "100.00")
+        await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 16, 0, tzinfo=UTC), "1.00")
+        await seed_hourly(sm, uid, 401, datetime(2026, 8, 31, 15, 0, tzinfo=UTC), "2.00")
+        await seed_hourly(sm, uid, 401, datetime(2026, 8, 31, 16, 0, tzinfo=UTC), "200.00")
+
+        resp = await client.get(
+            "/api/v1/bills/summary",
+            params={"month": "2026-08", "tz_offset_minutes": 480},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["gpu_total"] == "3.00"
+
+        # 逐日相加 == 月合计
+        total = Decimal("0.00")
+        for day in range(1, 32):
+            body = await get_summary(client, headers, f"2026-08-{day:02d}")
+            total += Decimal(body["gpu_total"])
+        assert total == Decimal("3.00")

@@ -47,17 +47,31 @@ async def get_policies(session: DbSession) -> PoliciesOut:
     )
 
 
-def _parse_month(month: str) -> tuple[datetime, datetime]:
+# 本地日界的偏移量(分)。与 /bills/daily-summary 同款:默认 480 = 东八区,
+# 前端一律传浏览器真实 offset。
+TzOffset = Query(default=480, ge=-720, le=840)
+
+
+def _parse_month(month: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
+    """月窗口按**本地**月初/次月初切,不是 UTC。
+
+    月账单按 UTC 切、日账单按本地切时,同一个费用中心页面上的两个数字永远对不上:
+    北京时间的「8 月账单」实际统计的是 7/31 08:00 ~ 8/31 08:00,用户 8 月 31 日白天跑的
+    机器不计入 8 月账单、却出现在当天的「今日消费」里,把 31 天日账单加起来 ≠ 月账单。
+    小时账单列表与 CSV 导出走同一个窗口,而每行时间按本地渲染 —— 筛「2026-08」拿到的
+    表格第一行标注是「2026-07-31 08:00」,口径不一致直接暴露在屏幕上。
+    """
     try:
-        start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+        local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badMonthFormat") from exc
-    end = (
-        start.replace(year=start.year + 1, month=1)
-        if start.month == 12
-        else start.replace(month=start.month + 1)
+    local_end = (
+        local_start.replace(year=local_start.year + 1, month=1)
+        if local_start.month == 12
+        else local_start.replace(month=local_start.month + 1)
     )
-    return start, end
+    offset = timedelta(minutes=tz_offset_minutes)
+    return local_start - offset, local_end - offset
 
 
 @router.get("/wallet")
@@ -83,6 +97,7 @@ async def list_hourly_bills(
     session: DbSession,
     instance_id: int | None = None,
     month: str | None = None,
+    tz_offset_minutes: int = TzOffset,
     cursor: str | None = None,
     limit: int | None = Query(default=None, le=100),
 ) -> Page[BillHourlyOut]:
@@ -90,16 +105,18 @@ async def list_hourly_bills(
         session,
         user.id,
         instance_id=instance_id,
-        month_range=_parse_month(month) if month is not None else None,
+        month_range=_parse_month(month, tz_offset_minutes) if month is not None else None,
         cursor=cursor,
         limit=limit,
     )
 
 
 @router.get("/bills/summary")
-async def bill_summary(user: CurrentUser, session: DbSession, month: str) -> BillSummaryOut:
-    """月度汇总 + 按实例成本归因(消费概览环图数据源)。"""
-    start, end = _parse_month(month)
+async def bill_summary(
+    user: CurrentUser, session: DbSession, month: str, tz_offset_minutes: int = TzOffset
+) -> BillSummaryOut:
+    """月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。"""
+    start, end = _parse_month(month, tz_offset_minutes)
     gpu_rows = (
         (
             await session.execute(

@@ -7168,6 +7168,18 @@
           },
           {
             "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 480,
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -7235,7 +7247,7 @@
     },
     "/api/v1/bills/summary": {
       "get": {
-        "description": "月度汇总 + 按实例成本归因(消费概览环图数据源)。",
+        "description": "月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。",
         "operationId": "bill_summary_api_v1_bills_summary_get",
         "parameters": [
           {
@@ -7245,6 +7257,18 @@
             "schema": {
               "title": "Month",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 480,
+              "maximum": 840,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
             }
           }
         ],
