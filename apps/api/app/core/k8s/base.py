@@ -52,6 +52,9 @@ class PodStatus:
     ready: bool = False
     phase: str = "Unknown"  # Pending / Running / Succeeded / Failed / Unknown
     node_name: str | None = None
+    # deletionTimestamp 已设 = 正在优雅删除(Terminating)。对象仍在 etcd 里、
+    # read 仍 200、phase 仍是 Running —— 只看 exists/phase 的代码会把它当活着的 Pod。
+    deleting: bool = False
 
 
 @dataclass(frozen=True)

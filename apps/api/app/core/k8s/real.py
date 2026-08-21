@@ -305,6 +305,14 @@ class RealOrchestrator:
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
+            # 409 不一定是幂等命中。同名对象正在优雅删除(Terminating)时也是 409,
+            # 把它当「已存在,跳过」意味着新 Pod 根本没被创建,而 handler 正常返回、
+            # 任务标 done —— 没有重试、没有死信、没有告警,实例静默地再也起不来。
+            existing: Any = self.core.read_namespaced_pod(spec.name, spec.namespace)
+            if existing.metadata.deletion_timestamp is not None:
+                raise RuntimeError(
+                    f"pod {spec.name} is terminating; create must wait for it to disappear"
+                ) from exc
 
     def _create_service_sync(self, spec: InstancePodSpec) -> None:
         svc = client.V1Service(
@@ -414,6 +422,7 @@ class RealOrchestrator:
             ready=ready,
             phase=pod.status.phase or "Unknown",
             node_name=pod.spec.node_name,
+            deleting=pod.metadata.deletion_timestamp is not None,
         )
 
     async def list_instance_pods(self) -> list[tuple[str, str]]:

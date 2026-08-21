@@ -58,9 +58,12 @@ async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
     # reconciler 观察到 Pod 消失 → stopped(尾账在计费边监听器触发)
 
 
-@outbox_handler("instance.restart")
+# 重启要跨过 Pod 的优雅删除期(terminationGracePeriodSeconds=30),期间任务靠抛错退避重试。
+# 默认 5 次 ≈ 5 分钟够用,但节点繁忙时终止会更久;放宽到 8 次 ≈ 40 分钟,
+# 免得实例因为「盘还没卸干净」这种正常等待就卡在 stopping 进死信。
+@outbox_handler("instance.restart", retry=RetryPolicy(max_retries=8))
 async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
-    """重启:stopping → 删 Pod → stopped(尾账) → 余额校验 → starting → 建 Pod。
+    """重启:stopping → 删 Pod → 等对象真正消失 → stopped(尾账) → 余额校验 → starting → 建 Pod。
 
     单事务内推进多个边,每个边都留事件;崩溃重试按当前状态续跑。
     """
@@ -70,6 +73,15 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
     orch = get_orchestrator()
     if instance.status == sm_def.STOPPING:
         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
+        st = await orch.get_status(instance.k8s_namespace, instance.uuid)
+        if st.exists:
+            # K8s 的删除是优雅删除:对象要在 etcd 里再留 terminationGracePeriodSeconds。
+            # 这里若直接同名重建,必然撞 409 AlreadyExists —— 而 409 被当幂等跳过,
+            # 新 Pod 根本没建出来、handler 却正常返回并把任务标 done。实例随后被
+            # reconciler 判 schedule_timeout → failed,而 failed 只能释放不能开机:
+            # 每一次重启(以及对 running 实例重置 Jupyter token)都会把实例打成不可恢复。
+            # 抛错回滚:实例留在 stopping,由 outbox 退避重试续跑。
+            raise RuntimeError(f"pod {instance.uuid} still terminating; restart resumes on retry")
         await transition(
             session,
             instance,

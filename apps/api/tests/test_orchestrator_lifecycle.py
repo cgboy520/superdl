@@ -186,6 +186,44 @@ class TestStopStartRestart:
         assert data["ssh_port"] == port_before
         assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
 
+    async def test_restart_waits_for_pod_to_actually_disappear(self, client, sm, fake):
+        """真实集群里删除是优雅删除:对象要在 etcd 里再留 30 秒。
+
+        此前 handler 在同一次执行里删完就同名重建 —— 必然撞 409 AlreadyExists,而 409 被
+        当幂等跳过,新 Pod 根本没建出来。实例随后被判 schedule_timeout → failed,而 failed
+        只能释放不能开机:每一次重启都会把实例打成不可恢复。Fake 把删除建模成同步瞬时
+        (pods.pop),所以整套测试永远看不到这个中间态。
+        """
+        from app.core.outbox import OutboxTask
+
+        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        ns = f"tenant-{user_id}"
+        fake.graceful_delete = True
+
+        await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        await drain(sm)
+        # 优雅期内不许推进:实例留在 stopping,任务退避重试(不是 done、也不是 dead)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopping"
+        async with sm() as session:
+            task = (
+                await session.execute(
+                    select(OutboxTask).where(OutboxTask.type == "instance.restart")
+                )
+            ).scalar_one()
+            assert task.status == "pending" and task.retries == 1
+            task.next_retry_at = now_utc()  # 快进退避
+            await session.commit()
+
+        # 优雅期结束、对象真正消失 → 下一次重试续跑完整条链
+        fake.finish_delete(ns, uuid)
+        fake.graceful_delete = False
+        await drain(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "starting"
+        assert (ns, uuid) in fake.pods  # 新 Pod 真的建出来了
+        fake.mark_ready(ns, uuid)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+
     async def test_restart_keeps_instance_disk(self, client, sm, fake):
         headers, uuid, user_id = await _provision_running(client, sm, fake)
         disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]

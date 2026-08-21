@@ -23,12 +23,17 @@ class _FakePod:
     ready: bool
     phase: str = "Running"
     node_name: str = "fake-node-1"
+    deleting: bool = False  # Terminating:deletionTimestamp 已设,对象仍在
 
 
 @dataclass
 class FakeOrchestrator:
     auto_ready: bool = True
     fail_next_create: bool = False
+    # 真实 K8s 的删除是优雅删除:对象要在 etcd 里再留 terminationGracePeriodSeconds(30s),
+    # 期间 read 仍 200、phase 仍 Running,只是 deletionTimestamp 已设。默认关(多数用例
+    # 只关心收敛结果),需要复现「删了又立刻同名重建」这类时序问题时打开。
+    graceful_delete: bool = False
     pool_capacity: dict[str, int] = field(
         default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16}
     )
@@ -97,7 +102,12 @@ class FakeOrchestrator:
         key = (spec.namespace, spec.name)
         # 实例盘已存在即复用(重新开机不重建盘);首次创建才落一个新 token
         self.instance_disks.setdefault(key, f"lv-{spec.name}")
-        if key in self.pods:
+        existing = self.pods.get(key)
+        if existing is not None:
+            if existing.deleting:
+                # 真实集群:同名对象 Terminating 中,create 返回 409 AlreadyExists。
+                # 把它当幂等跳过 = 新 Pod 根本没建出来,而调用方以为成功了。
+                raise RuntimeError(f"fake: pod {spec.name} is terminating, create must wait")
             return  # 幂等
         self.pods[key] = _FakePod(
             spec=spec, ready=self.auto_ready, phase="Running" if self.auto_ready else "Pending"
@@ -105,7 +115,17 @@ class FakeOrchestrator:
 
     async def delete_instance(self, namespace: str, name: str) -> None:
         self.delete_calls += 1
+        if self.graceful_delete:
+            pod = self.pods.get((namespace, name))
+            if pod is not None:
+                pod.deleting = True  # Terminating:对象仍在,exists 仍为 True
+                pod.ready = False
+            return
         self.pods.pop((namespace, name), None)  # 注意:不碰 instance_disks
+
+    def finish_delete(self, namespace: str, name: str) -> None:
+        """测试注入:优雅期结束,对象真正从 etcd 消失。"""
+        self.pods.pop((namespace, name), None)
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
         self.disk_delete_calls += 1
@@ -115,7 +135,13 @@ class FakeOrchestrator:
         pod = self.pods.get((namespace, name))
         if pod is None:
             return PodStatus(exists=False)
-        return PodStatus(exists=True, ready=pod.ready, phase=pod.phase, node_name=pod.node_name)
+        return PodStatus(
+            exists=True,
+            ready=pod.ready,
+            phase=pod.phase,
+            node_name=pod.node_name,
+            deleting=pod.deleting,
+        )
 
     async def list_instance_pods(self) -> list[tuple[str, str]]:
         return list(self.pods)
