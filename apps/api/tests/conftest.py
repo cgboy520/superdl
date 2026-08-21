@@ -80,15 +80,6 @@ async def db(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession
         yield session
 
 
-@pytest.fixture(autouse=True)
-def _reset_ratelimit() -> Iterator[None]:
-    from app.core import ratelimit
-
-    ratelimit.reset()
-    yield
-    ratelimit.reset()
-
-
 @pytest.fixture
 async def client(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncClient]:
     from app.main import create_app

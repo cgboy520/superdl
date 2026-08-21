@@ -49,7 +49,7 @@ def _bearer_token(authorization: str | None) -> str:
 @router.get("/node-enroll/script", response_class=PlainTextResponse)
 async def get_join_script(request: Request) -> PlainTextResponse:
     """装机脚本下发(text/x-shellscript)。零密钥;占位符替换为本环境 API 地址。"""
-    check_rate_limit(
+    await check_rate_limit(
         f"node-enroll-script:{_client_ip(request)}", max_attempts=30, window_seconds=60
     )
     # 只替换第一次出现(赋值行);脚本内另一处 __API_BASE__ 是护栏的比较字面量,须原样保留
@@ -65,7 +65,7 @@ async def enroll_bootstrap(
     authorization: Annotated[str | None, Header()] = None,
 ) -> BootstrapOut:
     """令牌换装机参数(含 RKE2 join token,仅经本响应体下发)。支持脚本重跑/重启续跑。"""
-    check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=30, window_seconds=60)
+    await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=30, window_seconds=60)
     token = _bearer_token(authorization)
     enrollment, cfg = await service.bootstrap(
         session,
@@ -97,7 +97,7 @@ async def enroll_progress(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> ProgressAck:
-    check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=60, window_seconds=60)
+    await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=60, window_seconds=60)
     token = _bearer_token(authorization)
     enrollment = await service.report_progress(
         session, token, phase=body.phase, state=body.state, message=body.message

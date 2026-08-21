@@ -31,8 +31,10 @@ async def send_sms_code(
 ) -> None:
     settings = get_settings()
     # IP 维度限流 + 手机号维度限日发送量(60s 间隔由下方 DB 记录把关)
-    check_rate_limit(f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0)
-    check_rate_limit(f"sms-send-phone:{phone}", max_attempts=10, window_seconds=86400.0)
+    await check_rate_limit(
+        f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
+    )
+    await check_rate_limit(f"sms-send-phone:{phone}", max_attempts=10, window_seconds=86400.0)
     interval = timedelta(seconds=settings.sms_send_interval_seconds)
     recent = (
         await session.execute(
@@ -122,7 +124,7 @@ async def register(
 ) -> TokenPair:
     if not accept_terms:
         raise AppError(ErrorCode.TERMS_NOT_ACCEPTED, key="account.termsNotAccepted")
-    check_rate_limit(
+    await check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
@@ -146,7 +148,9 @@ async def login(
     client_ip: str | None = None,
 ) -> TokenPair:
     # 密码与验证码两条路径同限流
-    check_rate_limit(f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0)
+    await check_rate_limit(
+        f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+    )
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if user is None:
         raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
@@ -218,7 +222,7 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
 
     if user.verification_status == "verified":
         raise AppError(ErrorCode.CONFLICT, key="account.realNameDone")
-    check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
+    await check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
     provider = await get_realname_provider(session)
     try:
         ok = await provider.verify(name, id_number, user.phone)

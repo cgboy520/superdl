@@ -943,7 +943,7 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     from app.core.ratelimit import check_rate_limit
     from app.core.sms import SmsError, get_sms_channel
 
-    check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
+    await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
     cfg = await get_effective_platform_config(session)
     channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"

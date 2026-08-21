@@ -37,6 +37,29 @@ class TestLoginRateLimit:
         )
         assert resp.status_code == 429
 
+    async def test_counter_survives_business_rollback(self, client: AsyncClient, sm):
+        """限流计数走独立事务:业务事务回滚不能把这次尝试抹掉(否则可无限重试)。"""
+        from sqlalchemy import select
+
+        from app.core.ratelimit import RateLimitCounter
+
+        for _ in range(3):
+            # 手机号不存在 → LOGIN_FAILED,业务 session 全程未 commit
+            await client.post("/api/v1/auth/login", json={"phone": "13800000078", "password": "x"})
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(RateLimitCounter).where(
+                            RateLimitCounter.key.like("user-login:%13800000078")
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert [r.hits for r in rows] == [3]
+
 
 class TestNoDefaultBootstrapAdmin:
     def test_bootstrap_password_defaults_to_none(self, monkeypatch):

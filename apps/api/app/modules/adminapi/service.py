@@ -20,7 +20,7 @@ LOGIN_WINDOW_SECONDS = 300.0
 async def login(
     session: AsyncSession, username: str, password: str, *, client_ip: str | None = None
 ) -> tuple[str, AdminUser]:
-    check_rate_limit(
+    await check_rate_limit(
         f"admin-login:{client_ip or '-'}:{username}",
         max_attempts=LOGIN_MAX_ATTEMPTS,
         window_seconds=LOGIN_WINDOW_SECONDS,

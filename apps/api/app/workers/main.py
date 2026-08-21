@@ -70,6 +70,10 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
         "audit_log": (
             f"DELETE FROM audit_log WHERE created_at < now() - interval '{retention} days'"
         ),
+        # 限流计数:窗口最长 24h(发码日限),留 2 天余量后即为死行
+        "rate_limit_counters": (
+            "DELETE FROM rate_limit_counters WHERE updated_at < now() - interval '2 days'"
+        ),
     }
     counts: dict[str, int] = {}
     async with sm() as session:
