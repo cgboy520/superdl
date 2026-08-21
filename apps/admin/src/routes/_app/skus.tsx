@@ -1,4 +1,4 @@
-import { formatHourlyPrice, skuTierMap, type SkuTier } from "@superdl/ui";
+import { formatHourlyPrice, metaOf, skuTierMap, type SkuTier } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -17,6 +17,7 @@ import {
   Tooltip,
 } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   type SkuAdminOut,
@@ -50,6 +51,7 @@ interface SkuFormValues {
 }
 
 function SkusPage() {
+  const { t } = useTranslation();
   // 深色主题下必须走 useApp 实例:静态 message 拿不到 ConfigProvider token
   const { message, modal } = App.useApp();
   const role = useAdminRole();
@@ -152,9 +154,10 @@ function SkusPage() {
           {
             title: "档位",
             dataIndex: "tier",
-            render: (v: SkuTier) => (
-              <Tag color={skuTierMap[v]?.color}>{skuTierMap[v]?.label ?? v}</Tag>
-            ),
+            render: (v: SkuTier) => {
+              const m = metaOf(skuTierMap, v);
+              return <Tag color={m?.color}>{m ? t(m.labelKey) : v}</Tag>;
+            },
           },
           {
             title: "切分",
@@ -222,7 +225,7 @@ function SkusPage() {
                 <Select
                   options={Object.entries(skuTierMap).map(([v, m]) => ({
                     value: v,
-                    label: m.label,
+                    label: t(m.labelKey),
                   }))}
                 />
               </Form.Item>

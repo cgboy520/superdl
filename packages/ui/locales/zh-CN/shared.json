@@ -1,0 +1,47 @@
+{
+  "status": {
+    "disk": {
+      "active": "正常",
+      "deleted": "已清除",
+      "deleting": "清除中",
+      "frozen": "已冻结",
+      "grace": "宽限期"
+    },
+    "imageCache": {
+      "cached": "已缓存",
+      "failed": "拉取失败",
+      "pending": "待预热",
+      "pulling": "拉取中"
+    },
+    "instance": {
+      "creating": "创建中",
+      "failed": "已失败",
+      "frozen": "已冻结",
+      "releasing": "释放中",
+      "released": "已释放",
+      "running": "运行中",
+      "starting": "启动中",
+      "stopped": "已关机",
+      "stopping": "关机中"
+    },
+    "nodeEnroll": {
+      "expired": "已过期",
+      "failed": "已失败",
+      "installing": "安装中",
+      "joined": "已加入",
+      "joining": "加入中",
+      "pending": "待执行",
+      "rebooting": "重启中",
+      "revoked": "已吊销"
+    },
+    "tier": {
+      "dedicated": "独享整卡",
+      "mig": "MIG 切分",
+      "shared_eco": "共享·经济",
+      "shared_std": "共享·标准"
+    },
+    "tierHint": {
+      "shared_eco": "性能可能波动"
+    }
+  }
+}

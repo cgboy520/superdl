@@ -12,10 +12,11 @@ export default defineConfig({
     sort: true,
     indentation: 2,
     removeUnusedKeys: true,
+    ignoreNamespaces: ["shared"], // shared ns 属 packages/ui,由其 locales.test 守护,不归本 app extract 管
     primaryLanguage: "zh-CN",
   },
   types: {
-    input: ["src/locales/zh-CN/*.json"],
+    input: ["src/locales/zh-CN/*.json", "../../packages/ui/locales/zh-CN/*.json"],
     output: "src/types/i18next.d.ts",
   },
   lint: {

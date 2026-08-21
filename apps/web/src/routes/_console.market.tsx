@@ -8,6 +8,7 @@ import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { TableErrorEmpty } from "../components/QueryState";
 import { useSkus } from "../api/queries";
@@ -24,6 +25,7 @@ const ALL = "";
 const GPU_COUNTS = [1, 2, 4, 8];
 
 function MarketPage() {
+  const { t } = useTranslation(["web", "shared"]);
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -61,7 +63,7 @@ function MarketPage() {
   ];
   const tierOptions: ChipOption<string>[] = [
     { value: ALL, label: "全部" },
-    ...Object.entries(skuTierMap).map(([value, meta]) => ({ value, label: meta.label })),
+    ...Object.entries(skuTierMap).map(([value, meta]) => ({ value, label: t(meta.labelKey) })),
   ];
   const vramOptions: ChipOption<number>[] = [
     { value: 0, label: "全部" },

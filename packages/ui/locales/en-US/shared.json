@@ -1,0 +1,47 @@
+{
+  "status": {
+    "disk": {
+      "active": "Active",
+      "deleted": "Deleted",
+      "deleting": "Deleting",
+      "frozen": "Frozen",
+      "grace": "Grace period"
+    },
+    "imageCache": {
+      "cached": "Cached",
+      "failed": "Pull failed",
+      "pending": "Queued",
+      "pulling": "Pulling"
+    },
+    "instance": {
+      "creating": "Creating",
+      "failed": "Failed",
+      "frozen": "Frozen",
+      "releasing": "Releasing",
+      "released": "Released",
+      "running": "Running",
+      "starting": "Starting",
+      "stopped": "Stopped",
+      "stopping": "Stopping"
+    },
+    "nodeEnroll": {
+      "expired": "Expired",
+      "failed": "Failed",
+      "installing": "Installing",
+      "joined": "Joined",
+      "joining": "Joining",
+      "pending": "Pending",
+      "rebooting": "Rebooting",
+      "revoked": "Revoked"
+    },
+    "tier": {
+      "dedicated": "Dedicated GPU",
+      "mig": "MIG slice",
+      "shared_eco": "Shared · Economy",
+      "shared_std": "Shared · Standard"
+    },
+    "tierHint": {
+      "shared_eco": "Performance may fluctuate"
+    }
+  }
+}

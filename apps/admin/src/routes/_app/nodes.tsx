@@ -1,4 +1,4 @@
-import { adminColors, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
+import { adminColors, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -20,6 +20,7 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   type EnrollmentCommandOut,
@@ -216,6 +217,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
 }
 
 function EnrollmentsCard({ writable }: { writable: boolean }) {
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const qc = useQueryClient();
   const { data, queryKey } = useEnrollments({ active: true, refetchInterval: 5_000 });
@@ -258,8 +260,8 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             title: "状态",
             dataIndex: "status",
             render: (v: NodeEnrollStatus) => {
-              const meta = nodeEnrollStatusMap[v];
-              return meta ? <Badge status={meta.badge} text={meta.label} /> : v;
+              const meta = metaOf(nodeEnrollStatusMap, v);
+              return meta ? <Badge status={meta.badge} text={t(meta.labelKey)} /> : v;
             },
           },
           {

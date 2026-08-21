@@ -1,13 +1,14 @@
 import { adminColors, formatDateTime,
   formatMoney,
   instanceStatusMap,
+  metaOf,
   skuTierMap,
-  type InstanceStatus,
-  type SkuTier } from "@superdl/ui";
+  type InstanceStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   type InstanceOut,
@@ -96,6 +97,7 @@ function TenantsTab() {
 }
 
 function InstancesTab() {
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -116,7 +118,7 @@ function InstancesTab() {
           onChange={setStatus}
           options={Object.entries(instanceStatusMap).map(([v, m]) => ({
             value: v,
-            label: m.label,
+            label: t(m.labelKey),
           }))}
         />
       </Space>
@@ -129,23 +131,21 @@ function InstancesTab() {
           {
             title: "状态",
             dataIndex: "status",
-            render: (v: InstanceStatus) => (
-              <Badge
-                color={instanceStatusMap[v]?.color}
-                text={instanceStatusMap[v]?.label ?? v}
-              />
-            ),
+            render: (v: InstanceStatus) => {
+              const m = metaOf(instanceStatusMap, v);
+              return <Badge color={m?.color} text={m ? t(m.labelKey) : v} />;
+            },
           },
           {
             title: "规格",
             render: (_, r) => {
-              const tier = r.spec.tier as SkuTier;
+              const tm = metaOf(skuTierMap, r.spec.tier as string);
               return (
                 <Space>
                   <span>
                     {String(r.spec.gpu_model)} × {r.gpu_count}
                   </span>
-                  <Tag color={skuTierMap[tier]?.color}>{skuTierMap[tier]?.label ?? tier}</Tag>
+                  <Tag color={tm?.color}>{tm ? t(tm.labelKey) : String(r.spec.tier)}</Tag>
                 </Space>
               );
             },

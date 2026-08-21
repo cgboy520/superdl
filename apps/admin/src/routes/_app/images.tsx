@@ -1,4 +1,4 @@
-import { imageCacheStatusMap, type ImageCacheStatus } from "@superdl/ui";
+import { imageCacheStatusMap, metaOf, type ImageCacheStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -21,6 +21,7 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   type ImageNodeRow,
@@ -52,6 +53,7 @@ interface ImageFormValues {
 
 /** 行展开:该镜像的每节点缓存明细(展开期间 10s 轮询看拉取进度) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
+  const { t } = useTranslation();
   const { data } = useImageNodes(imageId, { refetchInterval: 10_000 });
   return (
     <Table<ImageNodeRow>
@@ -66,8 +68,8 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
           title: "缓存状态",
           dataIndex: "status",
           render: (v: ImageCacheStatus) => {
-            const meta = imageCacheStatusMap[v];
-            return meta ? <Badge status={meta.badge} text={meta.label} /> : v;
+            const meta = metaOf(imageCacheStatusMap, v);
+            return meta ? <Badge status={meta.badge} text={t(meta.labelKey)} /> : v;
           },
         },
         {
