@@ -23,6 +23,11 @@
     "perHour": "{{price}}/时"
   },
   "status": {
+    "channel": {
+      "wechat": "微信支付",
+      "alipay": "支付宝",
+      "mock": "模拟支付(开发)"
+    },
     "disk": {
       "active": "正常",
       "deleted": "已清除",
@@ -47,6 +52,12 @@
       "stopped": "已关机",
       "stopping": "关机中"
     },
+    "ledger": {
+      "recharge": "充值",
+      "consume": "消费",
+      "refund": "退款",
+      "adjust": "调账"
+    },
     "nodeEnroll": {
       "expired": "已过期",
       "failed": "已失败",
@@ -56,6 +67,12 @@
       "pending": "待执行",
       "rebooting": "重启中",
       "revoked": "已吊销"
+    },
+    "order": {
+      "pending": "待支付",
+      "paid": "已支付",
+      "closed": "已关闭",
+      "failed": "已失败"
     },
     "tier": {
       "dedicated": "独享整卡",

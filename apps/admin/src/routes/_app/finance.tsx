@@ -1,4 +1,4 @@
-import { adminColors, formatDateTime } from "@superdl/ui";
+import { adminColors, formatDateTime, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -101,7 +101,7 @@ function ReconciliationCard() {
 }
 
 function OrdersTab() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
   const [status, setStatus] = useState<string | undefined>();
   const { data } = useOrders(status ? { status } : undefined);
@@ -114,7 +114,7 @@ function OrdersTab() {
         style={{ width: 160, marginBottom: 12 }}
         value={status}
         onChange={setStatus}
-        options={["pending", "paid", "closed", "failed"].map((v) => ({ value: v, label: v }))}
+        options={Object.entries(orderStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
       />
       <Table<OrderRow>
         scroll={{ x: 900 }}
@@ -124,15 +124,21 @@ function OrdersTab() {
           { title: t("finance.colOrderNo"), dataIndex: "order_no" },
           { title: t("finance.colTenant"), dataIndex: "user_id", width: 80 },
           { title: t("finance.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
-          { title: t("finance.colChannel"), dataIndex: "channel" },
+          {
+            title: t("finance.colChannel"),
+            dataIndex: "channel",
+            render: (v: string) => {
+              const m = metaOf(paymentChannelMap, v);
+              return m ? t(m.labelKey) : v;
+            },
+          },
           {
             title: t("finance.colStatus"),
             dataIndex: "status",
-            render: (v: string) => (
-              <Tag color={{ paid: "green", pending: "blue", closed: "default", failed: "red" }[v]}>
-                {v}
-              </Tag>
-            ),
+            render: (v: string) => {
+              const m = metaOf(orderStatusMap, v);
+              return <Tag color={m?.color}>{m ? t(m.labelKey) : v}</Tag>;
+            },
           },
           { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         ]}

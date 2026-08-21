@@ -309,6 +309,7 @@ export default interface Resources {
       "colTask": "任务",
       "colTime": "时间",
       "deadTasks": "任务死信",
+      "deadTasksSummary": "类型:{{types}}",
       "idle": "空闲",
       "ignore": "忽略",
       "ignoreConfirm": "确认不再执行任务 #{{id}}({{type}})?",
@@ -496,6 +497,7 @@ export default interface Resources {
       "drawerTitle": "租户 #{{id}} · {{phone}}",
       "evict": "驱逐重调度",
       "evictEcoOnly": "仅限经济档实例(SLA 已明示可重调度)",
+      "evictNeedsRunning": "仅运行中的实例可驱逐重调度",
       "evictP1": "驱逐重调度为 P1 功能,当前版本未开放",
       "forceStop": "强制停止",
       "forceStopConfirm": "确认强制停止实例 {{name}}({{id}})?将立即结算尾账并通知用户。",
@@ -660,6 +662,11 @@ export default interface Resources {
       "perHour": "{{price}}/时"
     },
     "status": {
+      "channel": {
+        "alipay": "支付宝",
+        "mock": "模拟支付(开发)",
+        "wechat": "微信支付"
+      },
       "disk": {
         "active": "正常",
         "deleted": "已清除",
@@ -684,6 +691,12 @@ export default interface Resources {
         "stopped": "已关机",
         "stopping": "关机中"
       },
+      "ledger": {
+        "adjust": "调账",
+        "consume": "消费",
+        "recharge": "充值",
+        "refund": "退款"
+      },
       "nodeEnroll": {
         "expired": "已过期",
         "failed": "已失败",
@@ -693,6 +706,12 @@ export default interface Resources {
         "pending": "待执行",
         "rebooting": "重启中",
         "revoked": "已吊销"
+      },
+      "order": {
+        "closed": "已关闭",
+        "failed": "已失败",
+        "paid": "已支付",
+        "pending": "待支付"
       },
       "tier": {
         "dedicated": "独享整卡",

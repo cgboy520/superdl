@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   Empty,
   Popconfirm,
   Row,
@@ -14,6 +15,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { useTranslation } from "react-i18next";
@@ -137,16 +139,27 @@ function DeadTasksCard() {
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   if (rows.length === 0) return null;
+  // 默认折叠:死信原始堆栈每条约 270px,展开摆在首屏会把镇店图表(超卖率 vs 利用率)
+  // 挤到第二屏。一行摘要 + 展开详情,既不漏报也不占 C 位。
   return (
     <Col span={24}>
-    <Card
-      title={
-        <Space size={8}>
-          {t("overview.deadTasks")}
-          <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
-        </Space>
-      }
-    >
+    <Collapse
+      items={[
+        {
+          key: "dead",
+          label: (
+            <Space size={8}>
+              <Badge status="error" />
+              <b>{t("overview.deadTasks")}</b>
+              <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t("overview.deadTasksSummary", {
+                  types: [...new Set(rows.map((r) => r.type))].join("、"),
+                })}
+              </Typography.Text>
+            </Space>
+          ),
+          children: (
       <Table<DeadTaskRow>
         size="small"
         rowKey="id"
@@ -166,8 +179,23 @@ function DeadTasksCard() {
           {
             title: t("overview.colLastError"),
             dataIndex: "last_error",
+            // 原始堆栈可能上千字符:一行截断 + 悬浮看全文,不让它把整张表撑开
             render: (v: string | null) => (
-              <span style={{ color: adminColors.negative, fontSize: 12 }}>{v ?? "-"}</span>
+              <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>}>
+                <span
+                  style={{
+                    color: adminColors.negative,
+                    fontSize: 12,
+                    display: "block",
+                    maxWidth: 360,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {v ?? "-"}
+                </span>
+              </Tooltip>
             ),
           },
           { title: t("overview.colTime"), dataIndex: "updated_at", width: 150, render: formatDateTime },
@@ -210,7 +238,10 @@ function DeadTasksCard() {
           },
         ]}
       />
-    </Card>
+          ),
+        },
+      ]}
+    />
     </Col>
   );
 }

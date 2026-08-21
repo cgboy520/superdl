@@ -151,9 +151,12 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
   );
 }
 
-function EventsTab({ uuid }: { uuid: string }) {
+function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   const { t } = useTranslation();
-  const { data: events, isError, refetch } = useInstanceEvents(uuid);
+  // 这条时间线被明示为「计费依据」:过渡态里必须跟着状态一起刷新,陈旧即信任损耗
+  const { data: events, isError, refetch } = useInstanceEvents(uuid, {
+    refetchInterval: status && isTransientInstanceStatus(status) ? 5_000 : 30_000,
+  });
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
@@ -298,7 +301,7 @@ function InstanceDetail() {
           {
             key: "events",
             label: t("instances.tabEvents"),
-            children: <EventsTab uuid={uuid} />,
+            children: <EventsTab uuid={uuid} status={instance?.status} />,
           },
           { key: "bills", label: t("instances.tabBills"), children: <BillsTab instanceId={instance.id} /> },
         ]}

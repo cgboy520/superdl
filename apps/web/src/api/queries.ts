@@ -25,6 +25,7 @@ import {
 import type {
   ApiError,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
+  InstanceEventOut,
   InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   ListSkusApiV1SkusGetParams,
@@ -84,8 +85,12 @@ export const useInstances = (opts?: QueryOpts<InstanceOut[]>) =>
   useApiQuery(["instances"], () => listInstancesApiV1InstancesGet(), opts);
 export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
   useApiQuery(["instances", uuid], () => getInstanceApiV1InstancesUuidGet(uuid), opts);
-export const useInstanceEvents = (uuid: string) =>
-  useApiQuery(["instances", uuid, "events"], () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid));
+export const useInstanceEvents = (uuid: string, opts?: QueryOpts<InstanceEventOut[]>) =>
+  useApiQuery(
+    ["instances", uuid, "events"],
+    () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid),
+    opts,
+  );
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
   useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
 export const useInstanceMetrics = (

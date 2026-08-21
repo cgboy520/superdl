@@ -102,6 +102,32 @@ export const nodeEnrollStatusMap = {
 } as const satisfies Record<NodeEnrollStatus, StatusMeta>;
 export type NodeEnrollStatusMeta = (typeof nodeEnrollStatusMap)[NodeEnrollStatus];
 
+export type LedgerType = "recharge" | "consume" | "refund" | "adjust";
+
+export const ledgerTypeMap = {
+  recharge: { labelKey: "shared:status.ledger.recharge", color: statusColors.green },
+  consume: { labelKey: "shared:status.ledger.consume", color: statusColors.blue },
+  refund: { labelKey: "shared:status.ledger.refund", color: statusColors.orange },
+  adjust: { labelKey: "shared:status.ledger.adjust", color: "purple" },
+} as const satisfies Record<LedgerType, { labelKey: string; color: string }>;
+
+export type OrderStatus = "pending" | "paid" | "closed" | "failed";
+
+export const orderStatusMap = {
+  pending: { labelKey: "shared:status.order.pending", color: statusColors.blue },
+  paid: { labelKey: "shared:status.order.paid", color: statusColors.green },
+  closed: { labelKey: "shared:status.order.closed", color: statusColors.gray },
+  failed: { labelKey: "shared:status.order.failed", color: statusColors.red },
+} as const satisfies Record<OrderStatus, { labelKey: string; color: string }>;
+
+export type PaymentChannel = "wechat" | "alipay" | "mock";
+
+export const paymentChannelMap = {
+  wechat: { labelKey: "shared:status.channel.wechat" },
+  alipay: { labelKey: "shared:status.channel.alipay" },
+  mock: { labelKey: "shared:status.channel.mock" },
+} as const satisfies Record<PaymentChannel, { labelKey: string }>;
+
 export type DiskStatus = "active" | "grace" | "frozen" | "deleting" | "deleted";
 
 export const diskStatusMap = {

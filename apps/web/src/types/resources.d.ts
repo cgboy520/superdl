@@ -143,6 +143,11 @@ export default interface Resources {
       "perHour": "{{price}}/时"
     },
     "status": {
+      "channel": {
+        "alipay": "支付宝",
+        "mock": "模拟支付(开发)",
+        "wechat": "微信支付"
+      },
       "disk": {
         "active": "正常",
         "deleted": "已清除",
@@ -167,6 +172,12 @@ export default interface Resources {
         "stopped": "已关机",
         "stopping": "关机中"
       },
+      "ledger": {
+        "adjust": "调账",
+        "consume": "消费",
+        "recharge": "充值",
+        "refund": "退款"
+      },
       "nodeEnroll": {
         "expired": "已过期",
         "failed": "已失败",
@@ -176,6 +187,12 @@ export default interface Resources {
         "pending": "待执行",
         "rebooting": "重启中",
         "revoked": "已吊销"
+      },
+      "order": {
+        "closed": "已关闭",
+        "failed": "已失败",
+        "paid": "已支付",
+        "pending": "待支付"
       },
       "tier": {
         "dedicated": "独享整卡",

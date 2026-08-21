@@ -24,6 +24,11 @@
     "perHour": "{{price}}/hr"
   },
   "status": {
+    "channel": {
+      "wechat": "WeChat Pay",
+      "alipay": "Alipay",
+      "mock": "Mock (dev)"
+    },
     "disk": {
       "active": "Active",
       "deleted": "Deleted",
@@ -48,6 +53,12 @@
       "stopped": "Stopped",
       "stopping": "Stopping"
     },
+    "ledger": {
+      "recharge": "Top-up",
+      "consume": "Usage",
+      "refund": "Refund",
+      "adjust": "Adjustment"
+    },
     "nodeEnroll": {
       "expired": "Expired",
       "failed": "Failed",
@@ -57,6 +68,12 @@
       "pending": "Pending",
       "rebooting": "Rebooting",
       "revoked": "Revoked"
+    },
+    "order": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "closed": "Closed",
+      "failed": "Failed"
     },
     "tier": {
       "dedicated": "Dedicated GPU",

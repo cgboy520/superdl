@@ -1,4 +1,12 @@
-import { adminColors, formatDateTime, instanceStatusMap, metaOf, skuTierMap, type InstanceStatus } from "@superdl/ui";
+import {
+  adminColors,
+  formatDateTime,
+  instanceStatusMap,
+  ledgerTypeMap,
+  metaOf,
+  skuTierMap,
+  type InstanceStatus,
+} from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Drawer, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
@@ -121,7 +129,7 @@ function TenantBillingDrawer({
   tenant: TenantRow | null;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
   const { data: ledger, isLoading: ledgerLoading } = useTenantLedger(tenant?.id ?? null);
   const { data: bills, isLoading: billsLoading } = useTenantBills(tenant?.id ?? null);
@@ -206,7 +214,15 @@ function TenantBillingDrawer({
                         dataIndex: "created_at",
                         render: formatDateTime,
                       },
-                      { title: t("tenants.colType"), dataIndex: "type", width: 90 },
+                      {
+                        title: t("tenants.colType"),
+                        dataIndex: "type",
+                        width: 90,
+                        render: (v: string) => {
+                          const m = metaOf(ledgerTypeMap, v);
+                          return <Tag color={m?.color}>{m ? t(m.labelKey) : v}</Tag>;
+                        },
+                      },
                       {
                         title: t("tenants.colAmount"),
                         dataIndex: "amount",
@@ -308,8 +324,16 @@ function InstancesTab() {
                       refresh();
                     }}
                   />
-                  <Tooltip title={isEco ? t("tenants.evictP1") : t("tenants.evictEcoOnly")}>
-                    <Button size="small" disabled={!isEco}
+                  <Tooltip
+                    title={
+                      !isEco
+                        ? t("tenants.evictEcoOnly")
+                        : r.status !== "running"
+                          ? t("tenants.evictNeedsRunning")
+                          : t("tenants.evictP1")
+                    }
+                  >
+                    <Button size="small" disabled={!isEco || r.status !== "running"}
                       onClick={() => message.info(t("tenants.evictP1"))}>
                       {t("tenants.evict")}
                     </Button>
