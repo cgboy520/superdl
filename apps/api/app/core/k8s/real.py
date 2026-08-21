@@ -37,6 +37,32 @@ INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPoli
 PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
 
 
+def tenant_security_context() -> "client.V1SecurityContext":
+    """租户容器的加固基线。**无条件下发,不看 runtimeClass、不看发行版、不看档位。**
+
+    此前是 `V1SecurityContext(...) if spec.runtime_class is None else None` —— 把
+    runtime_class 当成了「这是不是 Kata,有 VM 边界所以容器级加固可省」的代理判据。
+    WP27 给 k3s 共享档加上 runtimeClassName=nvidia 之后这个代理判据就失效了:k3s light 档
+    的租户容器(runc + HAMi 软切分,与其他租户共享同一内核和同一张物理 GPU,是全站最不
+    可信的负载)整段 securityContext 被置 None,drop ALL 与禁提权双双失效,只剩 userns
+    一层。同一份代码在 RKE2 上是加固的、换个发行版就静默掉防护 —— 最坏的一种形态。
+
+    Kata 那侧也没有豁免的技术依据:RuntimeClass 只是 CRI runtime handler 的选择,
+    capabilities / allowPrivilegeEscalation / seccompProfile 都是标准 OCI 字段,
+    kata-qemu 会在 guest 内照常施加,K8s 侧也没有任何互斥校验。
+
+    userns(hostUsers=false)挡的是「逃逸后在宿主的权限」,挡不住「容器内用
+    CAP_SYS_ADMIN / CAP_NET_RAW 打内核或打 GPU 驱动」,不能替代这一层。
+    """
+    return client.V1SecurityContext(
+        allow_privilege_escalation=False,
+        capabilities=client.V1Capabilities(drop=["ALL"]),
+        # 平台自己的 Pod 早就配了 RuntimeDefault,而不可信的付费陌生人跑的是 unconfined,
+        # 防护强度倒挂
+        seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
+    )
+
+
 def _is_not_found(exc: client.ApiException) -> bool:
     return exc.status == 404
 
@@ -289,12 +315,7 @@ class RealOrchestrator:
                             client.V1ContainerPort(container_port=8888, name="jupyter"),
                         ],
                         volume_mounts=mounts,
-                        security_context=client.V1SecurityContext(
-                            allow_privilege_escalation=False,
-                            capabilities=client.V1Capabilities(drop=["ALL"]),
-                        )
-                        if spec.runtime_class is None
-                        else None,
+                        security_context=tenant_security_context(),
                     )
                 ],
                 volumes=volumes,
@@ -491,6 +512,7 @@ class RealOrchestrator:
                                 security_context=client.V1SecurityContext(
                                     allow_privilege_escalation=False,
                                     capabilities=client.V1Capabilities(drop=["ALL"]),
+                                    seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
                                 ),
                             )
                         ],
@@ -767,6 +789,7 @@ class RealOrchestrator:
                                 security_context=client.V1SecurityContext(
                                     allow_privilege_escalation=False,
                                     capabilities=client.V1Capabilities(drop=["ALL"]),
+                                    seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
                                 ),
                             )
                         ],

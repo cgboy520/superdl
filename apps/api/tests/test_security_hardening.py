@@ -254,3 +254,37 @@ class TestProdDocsClosed:
         assert app.redoc_url is None
         assert app.openapi_url is None
         assert app.openapi()["paths"]  # schema 本身照常可导出
+
+
+class TestTenantContainerHardening:
+    def test_security_context_is_unconditional(self):
+        """租户容器加固不看 runtimeClass、不看发行版、不看档位。
+
+        此前是 `V1SecurityContext(...) if spec.runtime_class is None else None`,
+        把 runtime_class 当成「是不是 Kata」的代理判据;k3s 共享档为了拿 nvidia 运行时
+        把它设成了 "nvidia",于是全站最不可信的负载(runc + HAMi 软切分,与其他租户共享
+        同一内核和同一张物理 GPU)整段 securityContext 被跳过,只剩 userns 一层。
+        现有 test_cluster_status 只断言了 runtime_class,正是漏网处。
+        """
+        from app.core.k8s.real import tenant_security_context
+
+        ctx = tenant_security_context()
+        assert ctx.allow_privilege_escalation is False
+        assert ctx.capabilities.drop == ["ALL"]
+        assert ctx.seccomp_profile.type == "RuntimeDefault"
+
+    def test_k3s_shared_still_gets_userns_and_hardening(self):
+        """k3s 共享档:runtimeClassName=nvidia,但 userns 与容器加固都不能因此消失。"""
+        from app.core.gpu_adapter import build_gpu_request
+
+        req = build_gpu_request(
+            tier="shared_std",
+            gpu_count=1,
+            gpu_cores_pct=50,
+            vram_gb=8,
+            mig_profile=None,
+            pool_label="hami",
+            distro="k3s",
+        )
+        assert req.runtime_class == "nvidia"
+        assert req.host_users is False
