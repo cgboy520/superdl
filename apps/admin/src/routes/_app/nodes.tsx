@@ -256,7 +256,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const { message } = App.useApp();
   const [form] = Form.useForm<EnrollFormValues>();
   const [result, setResult] = useState<EnrollmentCommandOut | null>(null);
-  const [idemKey] = useState(() => crypto.randomUUID());
+  const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
   const create = useCreateEnrollment({
     mutation: {
       onSuccess: (r) => setResult(r),
@@ -267,6 +267,9 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const close = () => {
     setResult(null);
     form.resetFields();
+    // 幂等键必须随「下一次注册」轮换:同键重放后端返回原单,
+    // 不换会让同一页面会话里注册的第二个节点静默拿到第一个节点的加入命令
+    setIdemKey(crypto.randomUUID());
     onClose();
   };
 
