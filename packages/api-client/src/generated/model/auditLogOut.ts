@@ -4,12 +4,14 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AuditLogOutDetail } from './auditLogOutDetail';
 
 export interface AuditLogOut {
   action: string;
   actor_id: string | null;
   actor_type: string;
   created_at: string;
+  detail?: AuditLogOutDetail;
   id: number;
   ip: string | null;
   result: number;

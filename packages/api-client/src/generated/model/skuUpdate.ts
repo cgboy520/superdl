@@ -16,6 +16,11 @@ export interface SkuUpdate {
   oversell_vram?: number | string | null;
   pool_label?: string | null;
   price_hourly?: number | string | null;
+  /**
+     * @minLength 2
+     * @maxLength 200
+     */
+  reason: string;
   status?: string | null;
   vcpu?: number | null;
   vram_gb?: number | null;

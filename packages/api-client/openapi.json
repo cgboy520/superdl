@@ -712,6 +712,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -4129,6 +4141,12 @@
             ],
             "title": "Price Hourly"
           },
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
           "status": {
             "anyOf": [
               {
@@ -4166,6 +4184,9 @@
             "title": "Vram Gb"
           }
         },
+        "required": [
+          "reason"
+        ],
         "title": "SkuUpdate",
         "type": "object"
       },
@@ -4933,6 +4954,7 @@
     },
     "/api/admin/v1/audit": {
       "get": {
+        "description": "审计检索。actor_id / 动作前缀 / 时间区间 —— 「查某个管理员上周干了什么」是复盘的\n第一个动作,只按 actor_type 筛做不到。",
         "operationId": "admin_audit_log_api_admin_v1_audit_get",
         "parameters": [
           {
@@ -4949,6 +4971,72 @@
                 }
               ],
               "title": "Actor Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
             }
           },
           {

@@ -1059,6 +1059,8 @@ export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiA
 }
 
 /**
+ * 审计检索。actor_id / 动作前缀 / 时间区间 —— 「查某个管理员上周干了什么」是复盘的
+ * 第一个动作,只按 actor_type 筛做不到。
  * @summary Admin Audit Log
  */
 export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiAdminV1AuditGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditLogOut[]> => {

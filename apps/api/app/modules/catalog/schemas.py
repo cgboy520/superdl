@@ -106,6 +106,11 @@ class SkuUpdate(BaseModel):
     max_gpus_per_instance: int | None = Field(default=None, ge=1, le=8)
     cuda_max: str | None = None
     status: str | None = Field(default=None, pattern="^(on|off)$")
+    # 必填原因。改价是单人一步生效、且会被新实例**永久快照**下来的动作(改回来只影响
+    # 之后新建的实例,已经开出去的那批带着错价跑一辈子),而 ±50 元的调账要两个人复核 ——
+    # 控制强度倒挂。这里不上双人复核(定价频次高、时效敏感,双人会把流程做死并诱导绕过),
+    # 但「必填原因 + 记录旧值 + 幅度超阈告警」三件必须有。同 router 里的策略参数 PUT。
+    reason: str = Field(min_length=2, max_length=200)
 
 
 class ImageOut(BaseModel):

@@ -59,6 +59,7 @@ import {
 } from "@superdl/api-client";
 import type {
   AdjustmentCreate,
+  AdminAuditLogApiAdminV1AuditGetParams,
   AdminAccountOut,
   AdminCreateRequest,
   AdminResetPasswordRequest,
@@ -318,7 +319,7 @@ export function useAdjustments() {
   return { ...q, queryKey };
 }
 
-export function useAuditLog(params?: { actor_type?: string }) {
+export function useAuditLog(params?: AdminAuditLogApiAdminV1AuditGetParams) {
   return useQuery({
     queryKey: ["admin", "audit", params],
     queryFn: () => adminAuditLogApiAdminV1AuditGet(params),

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from fastapi import status
 from sqlalchemy import delete, func, select
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import canonical_gpu_model, model_matches
+from app.core.logging import get_logger
 from app.core.money import as_price
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
@@ -20,6 +22,8 @@ from app.modules.catalog.schemas import (
     SkuMarketOut,
     SkuUpdate,
 )
+
+logger = get_logger(__name__)
 
 
 async def list_market_skus(
@@ -142,22 +146,65 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     return sku
 
 
+# 单次改价幅度超过这个比例即告警(不阻断:大促确实可能整档腰斩)
+PRICE_CHANGE_ALERT_RATIO = Decimal("0.5")
+
+
 async def admin_update_sku(
     session: AsyncSession, sku_id: int, data: SkuUpdate, *, force: bool = False
-) -> Sku:
+) -> tuple[Sku, dict[str, Any]]:
+    """更新 SKU。返回 (sku, 本次实际变更字段的**旧值**快照)。
+
+    旧值必须返回给调用方落审计:审计只记新值就答不出「从多少改到多少」,而 Sku 表没有
+    历史表也没有价格快照,一旦改过一次原价就永久丢失(只能靠账单里旧实例的 unit_price
+    反推,而那只在该 SKU 曾被购买过时才成立)。
+    """
     sku = await get_sku(session, sku_id)
-    updates = data.model_dump(exclude_unset=True)
+    updates = data.model_dump(exclude_unset=True, exclude={"reason"})
     if updates.get("price_hourly") is not None:
         updates["price_hourly"] = _checked_price(updates["price_hourly"])
     turning_on = updates.get("status") == "on" and sku.status != "on"
+    before: dict[str, Any] = {}
     for field, value in updates.items():
+        old = getattr(sku, field)
+        if old != value:
+            before[field] = str(old) if isinstance(old, Decimal) else old
         setattr(sku, field, value)
     if turning_on and not force:
         await _ensure_sellable(session, sku)
+    if "price_hourly" in before:
+        await _alert_large_price_change(
+            session, sku, Decimal(before["price_hourly"]), updates["price_hourly"], data.reason
+        )
     await session.commit()
     await session.refresh(sku)
     inventory.clear_cache()
-    return sku
+    return sku, before
+
+
+async def _alert_large_price_change(
+    session: AsyncSession, sku: Sku, old: Decimal, new: Decimal, reason: str
+) -> None:
+    """大幅改价落一条管理端告警。不阻断 —— 手滑打错一位小数点没有任何东西会提醒人。"""
+    if old <= 0:
+        return
+    ratio = abs(new - old) / old
+    if ratio < PRICE_CHANGE_ALERT_RATIO:
+        return
+    from app.modules.notify import service as notify_service
+
+    logger.warning(
+        "sku_price_large_change", sku_id=sku.id, old=str(old), new=str(new), reason=reason
+    )
+    await notify_service.notify(
+        session,
+        None,  # user_id=None → 平台告警流(管理端总览右栏)
+        type_="admin_alert",
+        title=f"SKU 单价大幅调整:{sku.name}",
+        content=f"{old} → {new} 元/时(幅度 {ratio:.0%});原因:{reason}",
+        severity="warning",
+        dedup_key=f"sku_price:{sku.id}:{new}",
+    )
 
 
 async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:

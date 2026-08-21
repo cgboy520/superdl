@@ -39,6 +39,7 @@ export * from './alertmanagerWebhookApiV1WebhooksAlertmanagerPost200';
 export * from './announcementCreate';
 export * from './announcementResultOut';
 export * from './auditLogOut';
+export * from './auditLogOutDetail';
 export * from './billDailySummaryApiV1BillsDailySummaryGetParams';
 export * from './billHourlyOut';
 export * from './billSummaryApiV1BillsSummaryGetParams';

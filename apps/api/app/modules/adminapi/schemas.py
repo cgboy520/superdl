@@ -212,6 +212,11 @@ class AuditLogOut(BaseModel):
     target: str | None
     ip: str | None
     result: int
+    # 原因、变更前后值、金额都在这里。此前一个字段都不透出,审计页只能看到
+    # 「admin.POST /tenants/5/freeze → user:5 → 200」,看不到为什么冻结、从多少改到多少 ——
+    # 全站那些「原因必填」的弹窗等于白填,复盘必须连库查 JSONB。
+    # 约束:set_audit_target 的 detail 禁止落凭据明文(平台配置只落键名不落值)。
+    detail: dict[str, Any] | None = None
     created_at: str
 
 

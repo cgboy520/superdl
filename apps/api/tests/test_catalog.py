@@ -147,13 +147,13 @@ class TestAdminSku:
         # 台账无匹配节点:上架被硬校验拦下,force 放行
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
-            json={"status": "on", "price_hourly": "2.8000"},
+            json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
             headers=headers,
         )
         assert resp.status_code == 409 and resp.json()["code"] == "SKU_NOT_SELLABLE"
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}?force=true",
-            json={"status": "on", "price_hourly": "2.8000"},
+            json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
             headers=headers,
         )
         assert resp.json()["price_hourly"] == "2.8000"
@@ -183,7 +183,9 @@ class TestAdminSku:
 
     async def test_finance_cannot_write_sku(self, client: AsyncClient, sm):
         headers = await admin_headers(sm, client, role="finance")
-        resp = await client.patch("/api/admin/v1/skus/1", json={"status": "on"}, headers=headers)
+        resp = await client.patch(
+            "/api/admin/v1/skus/1", json={"status": "on", "reason": "用例"}, headers=headers
+        )
         assert resp.status_code == 403
 
     async def test_user_token_rejected(self, client: AsyncClient, sm):

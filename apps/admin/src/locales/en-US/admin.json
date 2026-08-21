@@ -43,13 +43,16 @@
   "audit": {
     "actorAdmin": "Admin",
     "actorAnonymous": "Anonymous",
+    "actorIdPlaceholder": "Actor ID",
     "actorTypePlaceholder": "Actor type",
     "actorUser": "User",
     "colAction": "Action",
     "colActor": "Actor",
+    "colDetail": "Details / reason",
     "colResult": "Result",
     "colTarget": "Target",
-    "colTime": "Time"
+    "colTime": "Time",
+    "keywordPlaceholder": "Action or target keyword"
   },
   "cluster": {
     "cfgProm": "Prometheus URL",
@@ -511,6 +514,10 @@
     "ratioHint": "Suggested from the whole-node ratio of {{model}}",
     "readonlyNoCreate": "Read-only role cannot create",
     "readonlyNoEdit": "Read-only role cannot edit",
+    "reasonLabel": "Reason for change",
+    "reasonPlaceholder": "e.g. quarterly repricing / cost change / promotion",
+    "reasonRequired": "Enter a reason (2-200 characters)",
+    "reasonToggle": "Listing toggle",
     "saved": "Saved (changes affect new instances only)",
     "saveFailed": "Save failed",
     "sliceShared": "{{pct}}% compute · {{vram}}G VRAM",

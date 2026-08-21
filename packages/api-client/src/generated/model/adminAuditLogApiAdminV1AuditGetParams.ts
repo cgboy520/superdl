@@ -7,5 +7,9 @@
 
 export type AdminAuditLogApiAdminV1AuditGetParams = {
 actor_type?: string | null;
+actor_id?: string | null;
+q?: string | null;
+since?: string | null;
+until?: string | null;
 limit?: number;
 };

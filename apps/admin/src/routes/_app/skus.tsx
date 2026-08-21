@@ -249,7 +249,10 @@ function SkusPage() {
         price_hourly: values.price_hourly,
       };
       if (editing === "new") {
-        create.mutate({ data: payload as never });
+        // 新建表单没有 reason 字段;这里显式剥掉,免得将来加了别的共用字段又漏
+        const createPayload = { ...(payload as Record<string, unknown>) };
+        delete createPayload.reason;
+        create.mutate({ data: createPayload as never });
       } else if (editing) {
         update.mutate({ skuId: editing.id, data: payload as never });
       }
@@ -344,7 +347,10 @@ function SkusPage() {
                   // 按行隔离:mutation 级 isPending 会让全表开关一起转,看着像批量生效
                   loading={toggleSale.isPending && toggleSale.variables?.skuId === r.id}
                   onChange={(on) =>
-                    toggleSale.mutate({ skuId: r.id, data: { status: on ? "on" : "off" } })
+                    toggleSale.mutate({
+                      skuId: r.id,
+                      data: { status: on ? "on" : "off", reason: t("skus.reasonToggle") },
+                    })
                   }
                 />
               </Tooltip>
@@ -519,6 +525,17 @@ function SkusPage() {
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
+            {/* 编辑必填原因:改价单人一步生效,而新实例会把当时的单价永久快照下来
+                (改回来只影响之后新建的),审计只记新值就答不出「从多少改到多少」 */}
+            {editing !== "new" && (
+              <Form.Item
+                name="reason"
+                label={t("skus.reasonLabel")}
+                rules={[{ required: true, min: 2, max: 200, message: t("skus.reasonRequired") }]}
+              >
+                <Input.TextArea rows={2} placeholder={t("skus.reasonPlaceholder")} />
+              </Form.Item>
+            )}
             <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
               <InputNumber min={1} max={8} style={{ width: "100%" }} />
             </Form.Item>

@@ -45,13 +45,16 @@ export default interface Resources {
     "audit": {
       "actorAdmin": "管理员",
       "actorAnonymous": "匿名",
+      "actorIdPlaceholder": "操作者 ID",
       "actorTypePlaceholder": "操作者类型",
       "actorUser": "用户",
       "colAction": "动作",
       "colActor": "操作者",
+      "colDetail": "详情/原因",
       "colResult": "结果",
       "colTarget": "目标",
-      "colTime": "时间"
+      "colTime": "时间",
+      "keywordPlaceholder": "动作或对象关键字"
     },
     "cluster": {
       "cfgProm": "Prometheus 地址",
@@ -502,6 +505,10 @@ export default interface Resources {
       "ratioHint": "已按 {{model}} 节点整机配比推荐",
       "readonlyNoCreate": "只读角色不可创建",
       "readonlyNoEdit": "只读角色不可编辑",
+      "reasonLabel": "变更原因",
+      "reasonPlaceholder": "如:季度调价 / 成本变动 / 大促活动",
+      "reasonRequired": "请填写变更原因(2~200 字)",
+      "reasonToggle": "上下架切换",
       "saveFailed": "保存失败",
       "saved": "已保存(变更仅影响新实例)",
       "sliceShared": "{{pct}}% 算力 · {{vram}}G 显存",
@@ -591,6 +598,7 @@ export default interface Resources {
       "userDisabled": "账号已停用"
     },
     "billing": {
+      "alipayCallbackMerchantMismatch": "支付宝回调的商户信息与本平台不符",
       "alipayCallbackVerifyFailed": "支付宝回调验签失败",
       "alipayCreateFailed": "支付宝下单失败:{{message}}",
       "alipayCredentialsIncomplete": "支付宝商户凭据不完整(管理端·平台配置)",
@@ -614,6 +622,7 @@ export default interface Resources {
       "realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
       "rechargeAmountRange": "充值金额须在 {{min}}~{{max}} 元之间",
       "unknownChannel": "未知支付渠道:{{name}}",
+      "wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
       "wechatCallbackVerifyFailed": "微信回调验签失败",
       "wechatCreateFailed": "微信下单失败:{{message}}",
       "wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",

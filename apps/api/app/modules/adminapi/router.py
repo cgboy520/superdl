@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
@@ -253,7 +254,12 @@ async def sku_capacity_preview(
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
 async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request) -> SkuAdminOut:
     sku = await catalog_service.admin_create_sku(session, body)
-    set_audit_target(request, f"sku:{sku.id}", detail={"name": sku.name})
+    # 记完整初始值(尤其单价):只记 name 的话,第一次改价就无从对照原价
+    set_audit_target(
+        request,
+        f"sku:{sku.id}",
+        detail={"created": SkuAdminOut.model_validate(sku).model_dump(mode="json")},
+    )
     return SkuAdminOut.model_validate(sku)
 
 
@@ -261,9 +267,15 @@ async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request
 async def admin_update_sku(
     sku_id: int, body: SkuUpdate, session: DbSession, request: Request, force: bool = False
 ) -> SkuAdminOut:
-    sku = await catalog_service.admin_update_sku(session, sku_id, body, force=force)
+    sku, before = await catalog_service.admin_update_sku(session, sku_id, body, force=force)
     set_audit_target(
-        request, f"sku:{sku.id}", detail=body.model_dump(exclude_unset=True, mode="json")
+        request,
+        f"sku:{sku.id}",
+        detail={
+            "before": before,  # 只记本次实际变更字段的旧值
+            "after": body.model_dump(exclude_unset=True, exclude={"reason"}, mode="json"),
+            "reason": body.reason,
+        },
     )
     return SkuAdminOut.model_validate(sku)
 
@@ -380,7 +392,7 @@ async def admin_force_stop(
 @router.get("/reconciliation", dependencies=[require_roles("finance", "readonly")])
 async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
-    from datetime import UTC, datetime
+    from datetime import UTC
 
     from app.core.errors import AppError, ErrorCode
 
@@ -898,8 +910,16 @@ async def admin_review_adjustment(
 
 @router.get("/audit", dependencies=[require_roles("readonly", "ops", "finance")])
 async def admin_audit_log(
-    session: DbSession, actor_type: str | None = None, limit: int = 100
+    session: DbSession,
+    actor_type: str | None = None,
+    actor_id: str | None = None,
+    q: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    limit: int = 100,
 ) -> list[AuditLogOut]:
+    """审计检索。actor_id / 动作前缀 / 时间区间 —— 「查某个管理员上周干了什么」是复盘的
+    第一个动作,只按 actor_type 筛做不到。"""
     from sqlalchemy import select as sa_select
 
     from app.core.audit import AuditLog
@@ -907,6 +927,16 @@ async def admin_audit_log(
     stmt = sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(min(limit, 500))
     if actor_type:
         stmt = stmt.where(AuditLog.actor_type == actor_type)
+    if actor_id:
+        stmt = stmt.where(AuditLog.actor_id == actor_id)
+    if q:
+        # 动作/目标关键字。两列都是短串,量级由 limit 兜住
+        pattern = f"%{q}%"
+        stmt = stmt.where(AuditLog.action.ilike(pattern) | AuditLog.target.ilike(pattern))
+    if since:
+        stmt = stmt.where(AuditLog.created_at >= since)
+    if until:
+        stmt = stmt.where(AuditLog.created_at < until)
     rows = (await session.execute(stmt)).scalars().all()
     return [
         AuditLogOut(
@@ -917,6 +947,7 @@ async def admin_audit_log(
             target=r.target,
             ip=str(r.ip) if r.ip else None,
             result=r.result,
+            detail=r.detail,
             created_at=r.created_at.isoformat(),
         )
         for r in rows

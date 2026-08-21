@@ -46,7 +46,7 @@ class TestSellableGate:
         sku_id = await seed_one_sku(sm, status="off", gpu_model="H100", pool_label="hami")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
         )
         assert resp.status_code == 409, resp.text
         body = resp.json()
@@ -58,7 +58,9 @@ class TestSellableGate:
         sku_id = await seed_one_sku(sm, status="off", gpu_model="H100", pool_label="hami")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}?force=true", json={"status": "on"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}?force=true",
+            json={"status": "on", "reason": "用例"},
+            headers=headers,
         )
         assert resp.status_code == 200 and resp.json()["status"] == "on"
 
@@ -67,7 +69,7 @@ class TestSellableGate:
         sku_id = await seed_one_sku(sm, status="off")  # RTX4090 × hami
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
         )
         assert resp.status_code == 200
 
@@ -84,7 +86,7 @@ class TestSellableGate:
         )
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
         )
         assert resp.status_code == 200
 
@@ -93,7 +95,7 @@ class TestSellableGate:
         sku_id = await seed_one_sku(sm, status="off")
         headers = await admin_headers(sm, client)
         resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
         )
         assert resp.status_code == 409
 
@@ -101,9 +103,13 @@ class TestSellableGate:
         """下架与已上架编辑不触发校验(仅 off→on 的边)。"""
         sku_id = await seed_one_sku(sm, status="on", gpu_model="H100")
         headers = await admin_headers(sm, client)
-        r1 = await client.patch(f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 16}, headers=headers)
+        r1 = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}", json={"vcpu": 16, "reason": "用例"}, headers=headers
+        )
         r2 = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "off"}, headers=headers
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "off", "reason": "用例"},
+            headers=headers,
         )
         assert r1.status_code == 200 and r2.status_code == 200
 
