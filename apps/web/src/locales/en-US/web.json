@@ -10,6 +10,46 @@
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
     "retry": "Retry"
   },
+  "copy": {
+    "antiMiningNotice": "Crypto mining is strictly prohibited; violators are banned without refund (see Terms)",
+    "billingModeComingSoon": "Daily/weekly/monthly billing is coming soon; only pay-as-you-go is available now",
+    "billingRules": {
+      "r1": "Pay-as-you-go: running time accrues per second up to the instant of shutdown — unit price × GPUs × duration",
+      "r2": "Stopping ends GPU charges; data disks bill per day (daily costs) even while stopped",
+      "r3": "Billing derives from the instance event log — self-audit under the instance Events tab",
+      "r4": "On insufficient balance the instance stops; after 72 h frozen the instance disk is reclaimed (data disks unaffected)"
+    },
+    "channelComingSoon": "Opens after merchant onboarding; use mock payment (dev) for now",
+    "comingSoon": "Coming soon",
+    "createFailedNoCharge": "Billing starts only when the instance runs; this failed creation cost nothing",
+    "dailyCostNote": "Daily costs: charges that accrue even while stopped (data disks bill per day)",
+    "diskCreatedButInstanceFailed": "The data disk was created and bills per day; the instance was not created — manage or delete the disk under Storage",
+    "diskExpirePolicy": "Expired data disks get a 7-day read-only grace period, then 30 days frozen before deletion",
+    "diskRetention": "Data disks outlive instances — release without losing data",
+    "ecoTierConsent": {
+      "c1": "Shared·Economy is software-isolated shared compute; the compute share is a mean guarantee",
+      "c2": "Performance may fluctuate at peak load on the same card",
+      "c3": "The platform may reschedule Economy instances under resource pressure (with prior notice)",
+      "c4": "Priced well below Standard — suited to fault-tolerant workloads"
+    },
+    "eventsAreBilling": "This event log is the billing source of truth: running time accrues per second, up to the instant of shutdown",
+    "freezePolicy": "Stopped instances frozen for arrears are reclaimed after 72 hours (instance disk only; data disks unaffected)",
+    "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze first",
+    "jupyterNeedsRunning": "JupyterLab is available while the instance is running",
+    "metricsUnavailableShort": "Metrics unavailable",
+    "monitoringDown": "Metrics are temporarily unavailable; billing is unaffected (it relies on the instance event log)",
+    "myImagesComingSoon": "Once image saving ships, your saved images appear here",
+    "noCapacityGuide": "Not enough idle GPUs for this spec — try another tier or come back later",
+    "outOfStock": "Sold out",
+    "releaseConfirmChecklist": "I confirm wiping all data on the instance disk (data disks unaffected)",
+    "releaseNeedsStopped": "Stop the instance before releasing it",
+    "sshKeyOnly": "Instances accept SSH key login only; passwords are not supported",
+    "startNeedsStopped": "Only stopped instances can be started",
+    "stockAvailable_one": "{{count}} GPU available",
+    "stockAvailable_other": "{{count}} GPUs available",
+    "stopConfirm": "Stopping releases the GPU; restarting later may require waiting or switching specs if this one sells out",
+    "stopNeedsRunning": "Only running instances can be stopped"
+  },
   "errorPage": {
     "title": "Something went wrong",
     "unknown": "An unexpected error occurred. Retry or go back home."

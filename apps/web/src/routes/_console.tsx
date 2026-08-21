@@ -11,8 +11,9 @@ import {
   SettingOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { copy } from "@superdl/ui";
+
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { Layout, Menu, theme, Typography } from "antd";
 
 import { AppTopBar } from "../components/layout/AppTopBar";
@@ -32,6 +33,7 @@ const NAV = [
 ];
 
 function ConsoleLayout() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { token } = theme.useToken();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -68,7 +70,7 @@ function ConsoleLayout() {
           </Layout.Content>
           <Layout.Footer style={{ textAlign: "center", paddingBlock: 16 }}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {copy.antiMiningNotice}
+              {t("copy.antiMiningNotice")}
             </Typography.Text>
           </Layout.Footer>
         </Layout>

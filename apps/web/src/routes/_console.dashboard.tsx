@@ -1,6 +1,6 @@
 /** 概览:轻量首屏 —— 实例数/余额/今日消费/未读通知 + 快捷入口。 */
 
-import { addAmounts, copy, localToday } from "@superdl/ui";
+import { addAmounts, localToday } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
 
@@ -108,9 +108,6 @@ function Overview() {
             <Button>充值</Button>
           </Link>
         </Space>
-        <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-          {copy.diskRetention}
-        </Typography.Paragraph>
       </Card>
     </Space>
   );

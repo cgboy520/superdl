@@ -6,7 +6,7 @@
 
 import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
-import { copy, formatDateTime, localToday } from "@superdl/ui";
+import { formatDateTime, localToday } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -68,7 +68,7 @@ function QuickToolsCell({ instance }: { instance: InstanceOut }) {
   if (!running) {
     return (
       <Space orientation="vertical" size={0}>
-        <Tooltip title={copy.jupyterNeedsRunning}>
+        <Tooltip title={t("copy.jupyterNeedsRunning")}>
           <Space size={4}>
             <Button size="small" disabled icon={<CodeOutlined />}>
               SSH
@@ -111,13 +111,14 @@ function UtilCell({
   instance: InstanceOut;
   summary: InstanceMetricsSummaryOut | undefined;
 }) {
+  const { t } = useTranslation();
   if (instance.status !== "running") {
     return <Typography.Text type="secondary">-</Typography.Text>;
   }
   if (summary && !summary.available) {
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {copy.metricsUnavailableShort}
+        {t("copy.metricsUnavailableShort")}
       </Typography.Text>
     );
   }
@@ -161,7 +162,7 @@ function FailedCell({ instance }: { instance: InstanceOut }) {
         </Typography.Text>
       ) : (
         <Space size={6}>
-          <Tooltip title={copy.createFailedNoCharge}>
+          <Tooltip title={t("copy.createFailedNoCharge")}>
             <Tag color="green" style={{ marginInlineEnd: 0 }}>
               {t("instances.notCharged")}
             </Tag>
@@ -261,7 +262,7 @@ function InstancesPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("instances.title")}
       </Typography.Title>
-      <Alert type="info" showIcon title={copy.freezePolicy} />
+      <Alert type="info" showIcon title={t("copy.freezePolicy")} />
       <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
         <Space size={8}>
           <Link to="/market">
@@ -327,7 +328,7 @@ function InstancesPage() {
               r.status === "failed" ? (
                 <FailedCell instance={r} />
               ) : (
-                <Tooltip title={r.status === "stopped" ? copy.freezePolicy : undefined}>
+                <Tooltip title={r.status === "stopped" ? t("copy.freezePolicy") : undefined}>
                   <span>
                     <InstanceStatusBadge status={r.status} frozenDeadline={r.frozen_deadline} />
                   </span>

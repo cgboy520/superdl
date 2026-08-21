@@ -5,8 +5,9 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, copy, diskDailyEstimate, formatSizeGb, mulPrice } from "@superdl/ui";
+import { compareAmounts, diskDailyEstimate, formatSizeGb, mulPrice } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   App,
@@ -53,6 +54,7 @@ function defaultDiskName(): string {
 }
 
 function CreatePage() {
+  const { t } = useTranslation(["web", "shared"]);
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
   const { skuId } = Route.useParams();
@@ -175,10 +177,10 @@ function CreatePage() {
         // 本次提交已被后端记账到该幂等键:换新键,避免改参重提命中旧结果
         setIdempotencyKey(crypto.randomUUID());
         if (isApiError(err) && err.code === "NO_CAPACITY") {
-          message.warning(copy.noCapacityGuide, 6);
+          message.warning(t("copy.noCapacityGuide"), 6);
         }
         if (diskMode === "new" && diskId != null) {
-          message.warning(copy.diskCreatedButInstanceFailed, 6);
+          message.warning(t("copy.diskCreatedButInstanceFailed"), 6);
         }
       }
     } finally {
@@ -198,7 +200,7 @@ function CreatePage() {
     (n) => [1, 2, 4, 8].includes(n) || n === sku.max_gpus_per_instance,
   );
 
-  const columns = skuColumns({ fmt });
+  const columns = skuColumns({ fmt, t });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -265,7 +267,7 @@ function CreatePage() {
             },
             {
               key: "mine",
-              label: <Tooltip title={copy.myImagesComingSoon}>我的镜像</Tooltip>,
+              label: <Tooltip title={t("copy.myImagesComingSoon")}>我的镜像</Tooltip>,
               disabled: true,
               children: null,
             },
@@ -327,7 +329,7 @@ function CreatePage() {
             />
           )}
           <Typography.Text type="secondary">
-            数据盘独立于实例:关机与释放均保留;{copy.dailyCostNote}
+            数据盘独立于实例:关机与释放均保留;{t("copy.dailyCostNote")}
           </Typography.Text>
         </Space>
       </Card>
@@ -335,7 +337,7 @@ function CreatePage() {
       <Card title="SSH 密钥">
         {(keys ?? []).length === 0 ? (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-            <Alert type="warning" showIcon title={copy.sshKeyOnly} />
+            <Alert type="warning" showIcon title={t("copy.sshKeyOnly")} />
             <Form
               form={keyForm}
               layout="inline"
@@ -404,7 +406,7 @@ function CreatePage() {
                 : "无"}
             </span>
             <Typography.Text type="secondary">
-              开机前需余额 ≥ 1 小时预估费用;{copy.eventsAreBilling}
+              开机前需余额 ≥ 1 小时预估费用;{t("copy.eventsAreBilling")}
             </Typography.Text>
           </Space>
         }
@@ -459,7 +461,7 @@ function CreatePage() {
         }
       >
         <ul style={{ paddingLeft: 20 }}>
-          {copy.ecoTierConsent.map((line) => (
+          {[t("copy.ecoTierConsent.c1"), t("copy.ecoTierConsent.c2"), t("copy.ecoTierConsent.c3"), t("copy.ecoTierConsent.c4")].map((line) => (
             <li key={line} style={{ marginBottom: 8 }}>
               {line}
             </li>

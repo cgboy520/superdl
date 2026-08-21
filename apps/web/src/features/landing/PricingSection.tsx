@@ -3,7 +3,7 @@
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
-import { copy, getGpuSpec, metaOf, skuTierMap } from "@superdl/ui";
+import { getGpuSpec, metaOf, skuTierMap } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Col, Row, Skeleton, Tabs, Typography } from "antd";
 import { useState } from "react";
@@ -106,7 +106,7 @@ export function PricingSection() {
                       {formatHourlyPrice(sku.price_hourly)}
                     </div>
                     <Button type="primary" block disabled={available <= 0} onClick={() => rent(sku.id)}>
-                      {available > 0 ? copy.stockAvailable(available) : copy.outOfStock}
+                      {available > 0 ? t("copy.stockAvailable", { count: available }) : t("copy.outOfStock")}
                     </Button>
                     {meta && "hintKey" in meta && (
                       <Typography.Text type="warning" style={{ fontSize: 12 }}>

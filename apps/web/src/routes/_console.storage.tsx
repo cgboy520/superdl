@@ -4,8 +4,9 @@
  */
 
 import { type DiskOut } from "@superdl/api-client";
-import { colorPrimary, copy, diskDailyEstimate, formatDateTime, formatSizeGb, statusColors } from "@superdl/ui";
+import { colorPrimary, diskDailyEstimate, formatDateTime, formatSizeGb, statusColors } from "@superdl/ui";
 import { createFileRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   App,
@@ -122,13 +123,14 @@ function ExpiryCell({
   frozenDays: number;
 }) {
   const { formatDaysLeft } = useFormat();
+  const { t } = useTranslation();
   if (disk.status === "active") {
     return <Typography.Text type="secondary">按日扣费中</Typography.Text>;
   }
   if (disk.status === "grace") {
     const left = formatDaysLeft(disk.grace_started_at, graceDays);
     return (
-      <Tooltip title={copy.diskExpirePolicy}>
+      <Tooltip title={t("copy.diskExpirePolicy")}>
         <Typography.Text type="warning">宽限期(只读) · {left ?? "—"}</Typography.Text>
       </Tooltip>
     );
@@ -136,7 +138,7 @@ function ExpiryCell({
   if (disk.status === "frozen") {
     const left = formatDaysLeft(disk.frozen_started_at, frozenDays);
     return (
-      <Tooltip title={copy.diskExpirePolicy}>
+      <Tooltip title={t("copy.diskExpirePolicy")}>
         <Typography.Text type="danger">冻结 · {left ?? "—"}(到期清除)</Typography.Text>
       </Tooltip>
     );
@@ -148,6 +150,7 @@ function ExpiryCell({
 }
 
 function StoragePage() {
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: 10_000 });
   const { data: instances } = useInstances();
@@ -195,7 +198,7 @@ function StoragePage() {
         {isError ? (
           <TableErrorEmpty onRetry={() => void refetch()} />
         ) : (disks ?? []).length === 0 && !isLoading ? (
-          <Empty description={copy.diskRetention}>
+          <Empty description={t("copy.diskRetention")}>
             <Button type="primary" onClick={() => setCreateOpen(true)}>
               创建第一块数据盘
             </Button>
@@ -293,7 +296,7 @@ function StoragePage() {
             />
           </Form.Item>
           <Typography.Text type="secondary">
-            {priceText},按日折算扣费;{copy.dailyCostNote}
+            {priceText},按日折算扣费;{t("copy.dailyCostNote")}
           </Typography.Text>
         </Form>
       </Modal>

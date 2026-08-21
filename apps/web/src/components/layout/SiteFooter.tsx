@@ -3,7 +3,7 @@
 
 const ICP_FALLBACK = import.meta.env.VITE_ICP_NUMBER as string | undefined;
 
-import { copy } from "@superdl/ui";
+
 import { theme, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -71,7 +71,7 @@ export function SiteFooter() {
           <FooterCol title={t("footer.complianceTitle")} links={complianceLinks} />
           <div style={{ maxWidth: 320 }}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {copy.antiMiningNotice}
+              {t("copy.antiMiningNotice")}
             </Typography.Text>
           </div>
         </div>

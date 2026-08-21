@@ -10,8 +10,9 @@ import {
   type LedgerEntryOut,
   type RechargeOut,
 } from "@superdl/api-client";
-import { addAmounts, copy, formatDateTime, localToday, statusColors } from "@superdl/ui";
+import { addAmounts, formatDateTime, localToday, statusColors } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   App,
@@ -66,6 +67,7 @@ const LEDGER_TYPE: Record<string, { label: string; color: string }> = {
 
 function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { formatCountdown, formatMoney } = useFormat();
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const [amount, setAmount] = useState<number>(100);
   const [order, setOrder] = useState<RechargeOut | null>(null);
@@ -117,7 +119,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
                 label: enabled.wechat ? (
                   "微信支付"
                 ) : (
-                  <Tooltip title={copy.channelComingSoon}>微信支付</Tooltip>
+                  <Tooltip title={t("copy.channelComingSoon")}>微信支付</Tooltip>
                 ),
                 disabled: !enabled.wechat,
               },
@@ -126,7 +128,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
                 label: enabled.alipay ? (
                   "支付宝"
                 ) : (
-                  <Tooltip title={copy.channelComingSoon}>支付宝</Tooltip>
+                  <Tooltip title={t("copy.channelComingSoon")}>支付宝</Tooltip>
                 ),
                 disabled: !enabled.alipay,
               },
@@ -287,6 +289,7 @@ function LedgerTable() {
 
 function BillingPage() {
   const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [warnHours, setWarnHours] = useState<number>();
@@ -516,7 +519,7 @@ function BillingPage() {
           ]}
         />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {copy.dailyCostNote}
+          {t("copy.dailyCostNote")}
         </Typography.Text>
       </Card>
       <RechargeModal open={rechargeOpen} onClose={() => setRechargeOpen(false)} />

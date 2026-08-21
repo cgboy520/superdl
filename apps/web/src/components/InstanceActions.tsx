@@ -7,7 +7,7 @@
 
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
-import { copy } from "@superdl/ui";
+
 import { App, Button, Checkbox, Dropdown, Modal, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -80,7 +80,7 @@ export function ReleaseModal({
         )}
       </Typography.Paragraph>
       <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
-        {copy.releaseConfirmChecklist}
+        {t("copy.releaseConfirmChecklist")}
       </Checkbox>
     </Modal>
   );
@@ -113,12 +113,12 @@ export function InstanceActions({
   const canRelease =
     s === "stopped" || s === "frozen" || s === "failed" || s === "creating";
 
-  const startTip = s === "frozen" ? copy.frozenNeedsRecharge : copy.startNeedsStopped;
+  const startTip = s === "frozen" ? t("copy.frozenNeedsRecharge") : t("copy.startNeedsStopped");
 
   const confirmStop = () =>
     modal.confirm({
       title: t("instances.actions.stopConfirmTitle"),
-      content: copy.stopConfirm,
+      content: t("copy.stopConfirm"),
       okText: t("instances.actions.stopOk"),
       onOk: async () => {
         await stop.mutateAsync(instance.uuid);
@@ -138,7 +138,7 @@ export function InstanceActions({
           {t("instances.actions.start")}
         </Button>
       </Tooltip>
-      <Tooltip title={canStop ? undefined : copy.stopNeedsRunning}>
+      <Tooltip title={canStop ? undefined : t("copy.stopNeedsRunning")}>
         <Button size="small" disabled={!canStop} onClick={confirmStop}>
           {t("instances.actions.stop")}
         </Button>
@@ -148,24 +148,24 @@ export function InstanceActions({
           items: [
             {
               key: "restart",
-              label: tipped(t("instances.actions.restart"), canRestart ? undefined : copy.stopNeedsRunning),
+              label: tipped(t("instances.actions.restart"), canRestart ? undefined : t("copy.stopNeedsRunning")),
               disabled: !canRestart,
             },
             { key: "events", label: t("instances.actions.eventsLog") },
             { type: "divider" },
             {
               key: "cardless",
-              label: tipped(t("instances.actions.cardless"), copy.comingSoon),
+              label: tipped(t("instances.actions.cardless"), t("copy.comingSoon")),
               disabled: true,
             },
             {
               key: "save-image",
-              label: tipped(t("instances.actions.saveImage"), copy.comingSoon),
+              label: tipped(t("instances.actions.saveImage"), t("copy.comingSoon")),
               disabled: true,
             },
             {
               key: "to-period",
-              label: tipped(t("instances.actions.toPeriod"), copy.comingSoon),
+              label: tipped(t("instances.actions.toPeriod"), t("copy.comingSoon")),
               disabled: true,
             },
             { type: "divider" },
@@ -174,7 +174,7 @@ export function InstanceActions({
               danger: true,
               label: tipped(
                 s === "creating" ? t("instances.actions.cancelCreate") : t("instances.actions.releaseMenu"),
-                canRelease ? undefined : copy.releaseNeedsStopped,
+                canRelease ? undefined : t("copy.releaseNeedsStopped"),
               ),
               disabled: !canRelease,
             },

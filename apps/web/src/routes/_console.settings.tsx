@@ -1,8 +1,9 @@
 /** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名预留+登出)。 */
 
 import { TableErrorEmpty } from "../components/QueryState";
-import { copy, formatDateTime } from "@superdl/ui";
+import { formatDateTime } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import {
   App,
   Button,
@@ -34,6 +35,7 @@ export const Route = createFileRoute("/_console/settings")({
 });
 
 function SettingsPage() {
+  const { t } = useTranslation();
   const { message } = App.useApp();
   const navigate = useNavigate();
   const { data: me } = useMe();
@@ -59,7 +61,7 @@ function SettingsPage() {
       <Card
         id="ssh"
         title="SSH 公钥"
-        extra={<Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>}
+        extra={<Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>}
       >
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Table

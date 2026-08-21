@@ -1,7 +1,7 @@
 /** 实例详情:监控(降级文案)/连接/事件时间线(=计费依据)/账单 + 危险区释放。 */
 
 import { isApiError } from "@superdl/api-client";
-import { copy, formatDateTime, localToday } from "@superdl/ui";
+import { formatDateTime, localToday } from "@superdl/ui";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -63,7 +63,7 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
     return <Alert type="info" showIcon title={t("instances.metricsNotRunning")} />;
   }
   if (error && isApiError(error) && error.status === 503) {
-    return <Alert type="warning" showIcon title={copy.monitoringDown} />;
+    return <Alert type="warning" showIcon title={t("copy.monitoringDown")} />;
   }
   const series = (data?.series ?? {}) as Record<string, [number, number][]>;
   return (
@@ -117,7 +117,7 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
         <Space orientation="vertical">
           <Typography.Text code>{access?.ssh_command}</Typography.Text>
           {access && <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />}
-          <Typography.Text type="secondary">{copy.sshKeyOnly}</Typography.Text>
+          <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
         </Space>
       </Card>
       <Card size="small" title="JupyterLab">
@@ -157,7 +157,7 @@ function EventsTab({ uuid, instanceId }: { uuid: string; instanceId: number }) {
   const { data: events, isError, refetch } = useInstanceEvents(uuid);
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Alert type="info" showIcon title={copy.eventsAreBilling} />
+      <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
       {isError && <DataErrorAlert onRetry={() => void refetch()} />}
       <Timeline
         items={(events ?? []).map((e) => ({
@@ -309,7 +309,7 @@ function InstanceDetail() {
           <Button
             danger
             disabled={!canRelease}
-            title={canRelease ? undefined : copy.releaseNeedsStopped}
+            title={canRelease ? undefined : t("copy.releaseNeedsStopped")}
             onClick={() => setReleaseOpen(true)}
           >
             {t("instances.release")}

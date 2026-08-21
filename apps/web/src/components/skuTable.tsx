@@ -4,9 +4,11 @@
  */
 
 import type { SkuMarketOut } from "@superdl/api-client";
-import { copy, statusColors, type Formatters } from "@superdl/ui";
+import { statusColors, type Formatters } from "@superdl/ui";
+import type { TFunction } from "i18next";
 import { Card, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ComponentProps, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ChipRow } from "./ChipRow";
 import { TierTag } from "./common";
@@ -27,7 +29,7 @@ function formatSkuGpu(s: SkuMarketOut): string {
  * priceFontSize 控制价格字号(市场页放大到 18)。
  */
 export function skuColumns(
-  opts: { fmt: Formatters; availability?: boolean; priceFontSize?: number },
+  opts: { fmt: Formatters; t: TFunction<readonly ["web", "shared"]>; availability?: boolean; priceFontSize?: number },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const availability = [
     {
@@ -37,7 +39,7 @@ export function skuColumns(
         return n > 0 ? (
           <span style={{ color: statusColors.green, fontWeight: 600 }}>{n}</span>
         ) : (
-          <Tag>{copy.outOfStock}</Tag>
+          <Tag>{opts.t("copy.outOfStock")}</Tag>
         );
       },
     },
@@ -80,6 +82,7 @@ export function skuColumns(
 
 /** 计费方式卡:仅按量可选,包日/包周/包月可见但禁用(铁律 #2)。 */
 export function BillingModeCard({ extra }: { extra?: ReactNode }) {
+  const { t } = useTranslation(["web", "shared"]);
   return (
     <Card title="计费方式" styles={{ body: { paddingBlock: 16 } }}>
       <ChipRow
@@ -88,13 +91,13 @@ export function BillingModeCard({ extra }: { extra?: ReactNode }) {
         onChange={() => undefined}
         options={[
           { value: "hourly", label: "按量计费" },
-          { value: "daily", label: "包日", disabled: true, disabledReason: copy.billingModeComingSoon },
-          { value: "weekly", label: "包周", disabled: true, disabledReason: copy.billingModeComingSoon },
+          { value: "daily", label: "包日", disabled: true, disabledReason: t("copy.billingModeComingSoon") },
+          { value: "weekly", label: "包周", disabled: true, disabledReason: t("copy.billingModeComingSoon") },
           {
             value: "monthly",
             label: "包月",
             disabled: true,
-            disabledReason: copy.billingModeComingSoon,
+            disabledReason: t("copy.billingModeComingSoon"),
           },
         ]}
         extra={extra}

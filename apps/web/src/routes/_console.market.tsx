@@ -3,7 +3,7 @@
  * 铁律 #1 CTA 即库存 / #2 售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
  */
 
-import { copy, mulPrice, skuTierMap } from "@superdl/ui";
+import { mulPrice, skuTierMap } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
@@ -86,14 +86,14 @@ function MarketPage() {
   const selected = skus.find((s) => s.id === selectedId);
   const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= gpuCount;
 
-  const columns = skuColumns({ fmt, availability: true, priceFontSize: 18 });
+  const columns = skuColumns({ fmt, t, availability: true, priceFontSize: 18 });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         算力市场
       </Typography.Title>
-      <Alert type="warning" showIcon title={copy.antiMiningNotice} />
+      <Alert type="warning" showIcon title={t("copy.antiMiningNotice")} />
 
       <BillingModeCard
         extra={<Typography.Link onClick={() => setRulesOpen(true)}>计费规则</Typography.Link>}
@@ -163,7 +163,7 @@ function MarketPage() {
               <span>
                 {formatHourlyPrice(selected.price_hourly)} × {gpuCount} 卡
               </span>
-              <Typography.Text type="secondary">{copy.eventsAreBilling}</Typography.Text>
+              <Typography.Text type="secondary">{t("copy.eventsAreBilling")}</Typography.Text>
             </Space>
           ) : undefined
         }
@@ -205,7 +205,7 @@ function MarketPage() {
         title="计费规则"
       >
         <ul style={{ paddingInlineStart: 20, margin: 0 }}>
-          {copy.billingRules.map((r) => (
+          {[t("copy.billingRules.r1"), t("copy.billingRules.r2"), t("copy.billingRules.r3"), t("copy.billingRules.r4")].map((r) => (
             <li key={r} style={{ marginBottom: 8 }}>
               {r}
             </li>
