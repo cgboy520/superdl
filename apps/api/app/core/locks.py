@@ -18,6 +18,7 @@ class LockKey(IntEnum):
     PAYMENT_RECONCILE = 1007
     PREWARM_PATROL = 1008
     NODE_ENROLL_RECONCILER = 1009
+    NODE_SPEC_PATROL = 1010
 
 
 @asynccontextmanager

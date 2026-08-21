@@ -164,6 +164,9 @@ class FakeOrchestrator:
                 vcpu=n.vcpu,
                 mem_gb=n.mem_gb,
                 disk_gb=n.disk_gb,
+                gpu_model_label=n.gpu_model_label or self.node_gfd_labels.get(n.name, ""),
+                model_label_current=n.model_label_current
+                or self.node_labels.get(n.name, {}).get("superdl.io/gpu-model", ""),
             )
             for n in nodes
         ]
