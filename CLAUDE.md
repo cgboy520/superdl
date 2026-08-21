@@ -50,7 +50,7 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 3. **改 DB + 动 K8s 必须走 outbox**：业务写入与 `outbox_tasks` 插入同一事务；任何直接在请求路径调 K8s 的代码不许提交。
 4. **钱包更新必须 `SELECT ... FOR UPDATE`** 且同事务写 `balance_ledger`（带 balance_after 快照）。
 5. **计费主依据是 `instance_events`**（running↔非 running 的边），Prometheus 指标只做展示与对账，不参与计费。
-6. **模块边界**：`app/modules/*` 之间只许 import 对方的 `service.py`（和 `schemas.py`），禁止跨模块 import `models.py`/`router.py` 或跨模块查表。CI 用 import-linter 强制。
+6. **模块边界**：`app/modules/*` 之间只许 import 对方的 `service.py`（和 `schemas.py`），禁止跨模块 import 任何其他文件（`models.py`/`router.py`/`wallet.py`/`settlement.py`…）或跨模块查表；唯一例外是 `account/deps.py`（`CurrentUser` 是全站鉴权依赖）。import-linter 契约逐文件列举强制。
 7. **API 契约**：OpenAPI-first。改了路由/schema 必须重新导出 openapi.json 并跑 `pnpm api-client`；前端禁止手写 fetch，一律用生成的 hooks。
 8. **统一错误体** `{code, message, detail}`（`app/core/errors.py` 的 AppError）；创建类 POST 支持 `Idempotency-Key`。
 9. **所有写操作过审计中间件**；管理端 API 与用户端 API 物理分离（独立 JWT audience：`user` / `admin`）。
