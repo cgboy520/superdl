@@ -9,11 +9,8 @@ const KEY_LEAK = /\b(?:web|shared|errors):[a-zA-Z0-9_.]+\b|\b(?:landing|login|to
 
 test.use({ locale: "en-US" });
 
+// 语言钉在 test.use 的 locale:detection 顺序 localStorage→navigator,无 localStorage 时必落 navigator
 test("英文环境公开页无中文残留与键泄漏", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("superdl.lang", "en-US");
-  });
-
   for (const path of ["/", "/login"]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
@@ -24,9 +21,6 @@ test("英文环境公开页无中文残留与键泄漏", async ({ page }) => {
 });
 
 test("语言切换器可将界面切回中文", async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("superdl.lang", "en-US");
-  });
   await page.goto("/login");
   await expect(
     page.getByRole("heading", { name: "Log in to SuperDL" }),

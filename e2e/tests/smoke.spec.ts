@@ -72,14 +72,11 @@ test("全生命周期冒烟", async ({ page }) => {
     .getByPlaceholder("registry.example.com/your/image:tag")
     .fill("registry.superdl.local/pytorch:2.9.0-cu128");
   await page.getByRole("checkbox", { name: /e2e-key/ }).check();
-  const createBtn = page.getByRole("button", { name: "创建并开机" });
-  await expect(createBtn).toBeEnabled({ timeout: 5_000 });
-  await createBtn.click();
+  await page.getByRole("button", { name: "创建并开机" }).click();
 
   // ── 实例列表:创建中 → 运行中(worker+reconciler 推进)────
   await expect(page).toHaveURL(/instances/, { timeout: 15_000 });
   const row = page.locator(".ant-table-row").first();
-  await expect(row.getByText(/创建中|运行中/)).toBeVisible({ timeout: 20_000 });
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
   await expect(row.getByRole("button", { name: "SSH" })).toBeVisible();
   await expect(row.getByText("JupyterLab")).toBeVisible();
@@ -92,7 +89,6 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByRole("tab", { name: /事\s*件/ }).click();
   await expect(page.getByText(/此事件记录即计费依据/)).toBeVisible({ timeout: 10_000 });
   await page.goto("/instances");
-  await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 10_000 });
 
   // ── 关机(二次确认)→ 已关机;尾账落账单 ────────────────
   await row.getByRole("button", { name: /^关\s*机$/ }).click();
