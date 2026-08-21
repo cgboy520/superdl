@@ -264,6 +264,68 @@ class TestUpsertIdempotency:
         assert len(bills) == 1
         assert w.balance == Decimal("98.00")  # 100 - 2.00,并发只扣一次
 
+    async def test_settlement_waits_for_inflight_transition(self, sm):
+        """在飞的尾账事务对无锁读不可见 → 结算会把「已经停了的那半小时」算成满小时。
+
+        而 upsert_hour_bill 是单调只增的(只补不重扣),先入账的高估值永远回不去:
+        账单页显示 3600 秒、instance_events 显示 10:59:30 停机,两者自相矛盾且无自动纠正。
+        结算读事件前必须先拿实例行锁 —— transition() 第一步就持有它。
+        """
+        inst_id = await seed_instance(sm, events=[ev(-30, "creating", "running")])
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def inflight_stop() -> None:
+            """模拟用户 10:59:30 关机的事务:先拿实例行锁,再写 stopping 事件,迟迟不提交。"""
+            async with sm() as session:
+                await session.execute(
+                    select(Instance.id)
+                    .where(Instance.id == inst_id)
+                    .with_for_update(read=False, key_share=True)
+                )
+                session.add(
+                    InstanceEvent(
+                        instance_id=inst_id,
+                        from_status="running",
+                        to_status="stopping",
+                        reason="user_stop",
+                        actor="user",
+                        created_at=H + timedelta(minutes=59.5),
+                    )
+                )
+                await session.flush()
+                started.set()
+                await release.wait()
+                await session.commit()
+
+        async def settle() -> Decimal:
+            await started.wait()
+            # 让结算真的先撞上锁,再放行关机事务
+            asyncio.get_running_loop().call_later(0.2, release.set)
+            async with sm() as session:
+                charged = await settle_instance_window(
+                    session,
+                    instance_id=inst_id,
+                    user_id=1,
+                    unit_price=Decimal("3.6000"),
+                    gpu_count=1,
+                    window_start=H,
+                    window_end=H_END,
+                    source="hourly",
+                )
+                await session.commit()
+                return charged
+
+        stop_task = asyncio.create_task(inflight_stop())
+        charged = await asyncio.wait_for(settle(), timeout=20)
+        await stop_task
+
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+        # 3570 秒 × 3.60/时 = 3.57,而不是按满 3600 秒的 3.60
+        assert bill.seconds_used == 3570
+        assert charged == Decimal("3.57")
+
     async def test_zero_seconds_no_bill(self, sm):
         inst_id = await seed_instance(sm, events=[ev(5, None, "creating")])
         async with sm() as session:

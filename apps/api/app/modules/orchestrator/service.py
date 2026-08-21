@@ -608,6 +608,29 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 # ---------- billing 只读接口(事件是计费主依据,经 service 层暴露) ----------
 
 
+async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
+    """结算前先拿实例行锁,再读事件。同事务内重复加锁是 no-op。
+
+    transition() 的第一步就是 `UPDATE instances ...`(乐观锁那条),它持有该行的写锁直到
+    提交;事件的 created_at 是在拿到锁之后才生成的。结算不先拿这把锁的话,就会出现:
+    用户 10:59:30 关机的事务尚未提交 → 11:02 的整点结算读不到那条 stopping 事件 →
+    判定「整点仍在 running」算 3600 秒 → 随后被账单行的唯一索引挡住并阻塞 → 尾账提交后
+    结算拿到 charged=True 的行,走补差价分支再补 30 秒 → 用户被按满 3600 秒计费。
+    而 upsert_hour_bill 是单调只增的(「只补不重扣」是它的显式契约),先入账的高估值
+    **永远无法回退**:账单页显示 3600 秒,instance_events 显示 10:59:30 停机,两者自相
+    矛盾且没有任何自动纠正路径。
+
+    拿了锁之后两个方向都安全:在飞的迁移会先提交完(结算随后读得到它);或者结算先拿到
+    锁、迁移被挡住,而它的事件时间戳必然 ≥ 结算开始时刻,从而落进下一个小时窗口。
+    锁序统一为 instance → bill_hourly → wallet,与 transition 自身一致,无新增死锁面。
+    """
+    await session.execute(
+        select(Instance.id)
+        .where(Instance.id == instance_id)
+        .with_for_update(read=False, key_share=True)
+    )
+
+
 async def billing_events_before(
     session: AsyncSession, instance_id: int, before: Any
 ) -> list[tuple[Any, str | None, str]]:
