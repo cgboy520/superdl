@@ -442,7 +442,11 @@ def build_pod_spec(instance: Instance, *, distro: str | None = None) -> Instance
         disk_gb=instance.spec["disk_gb"],
         ssh_node_port=instance.ssh_port,
         jupyter_host=f"{instance.uuid}.{settings.jupyter_domain_suffix}",
-        env={"JUPYTER_TOKEN": instance.jupyter_token},
+        env={
+            "JUPYTER_TOKEN": instance.jupyter_token,
+            # 实例自己的域名:镜像据此收敛 Jupyter 的 Origin 校验(防跨站 WebSocket)
+            "JUPYTER_ALLOW_ORIGIN": (f"https://{instance.uuid}.{settings.jupyter_domain_suffix}"),
+        },
         authorized_keys=tuple(instance.authorized_keys),
         node_selector=gpu_req.node_selector,
         data_disk_subpath=f"disk-{instance.data_disk_id}" if instance.data_disk_id else None,

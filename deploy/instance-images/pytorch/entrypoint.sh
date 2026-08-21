@@ -24,7 +24,15 @@ fi
 ssh-keygen -A >/dev/null 2>&1 || true
 /usr/sbin/sshd
 
-# JupyterLab:0.0.0.0:8888,token 由平台注入
+# JupyterLab:0.0.0.0:8888,token 由平台注入。
+# Origin 校验必须留着:token 登录后会话落 cookie,allow_origin='*' 等于允许任意恶意网页
+# 发起带 cookie 的跨站 WebSocket,在用户实例内执行代码。平台注入本实例自己的
+# 域名(JUPYTER_ALLOW_ORIGIN);未注入则用 Jupyter 默认的同源校验。
+origin_args=()
+if [[ -n "${JUPYTER_ALLOW_ORIGIN:-}" ]]; then
+  origin_args+=(--ServerApp.allow_origin="$JUPYTER_ALLOW_ORIGIN")
+fi
+
 exec jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
@@ -32,5 +40,5 @@ exec jupyter lab \
   --allow-root \
   --ServerApp.root_dir=/root \
   --ServerApp.token="${JUPYTER_TOKEN:-}" \
-  --ServerApp.allow_origin='*' \
+  "${origin_args[@]}" \
   --ServerApp.trust_xheaders=True
