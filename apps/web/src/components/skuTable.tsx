@@ -14,14 +14,14 @@ import { ChipRow } from "./ChipRow";
 import { TierTag } from "./common";
 
 /** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余为整卡。 */
-function formatSkuGpu(s: SkuMarketOut): string {
+function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
   if (s.tier.startsWith("shared")) {
-    return `${s.gpu_model} · ${s.vram_gb}G · ${s.gpu_cores_pct}% 算力(均值)`;
+    return t("sku.gpuShared", { model: s.gpu_model, vram: s.vram_gb, pct: s.gpu_cores_pct });
   }
   if (s.tier === "mig") {
-    return `${s.gpu_model} · ${s.vram_gb}G · MIG ${s.mig_profile ?? "切分"}`;
+    return t("sku.gpuMig", { model: s.gpu_model, vram: s.vram_gb, profile: s.mig_profile ?? t("sku.sliceFallback") });
   }
-  return `${s.gpu_model} · ${s.vram_gb}G · 整卡`;
+  return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
 }
 
 /**
@@ -31,9 +31,10 @@ function formatSkuGpu(s: SkuMarketOut): string {
 export function skuColumns(
   opts: { fmt: Formatters; t: TFunction<readonly ["web", "shared"]>; availability?: boolean; priceFontSize?: number },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
+  const { t } = opts;
   const availability = [
     {
-      title: "空闲 GPU",
+      title: t("sku.colFree"),
       render: (_: unknown, s: SkuMarketOut) => {
         const n = s.available_count ?? 0;
         return n > 0 ? (
@@ -46,7 +47,7 @@ export function skuColumns(
   ];
   return [
     {
-      title: "规格",
+      title: t("sku.colSpec"),
       render: (_: unknown, s: SkuMarketOut) => (
         <Space>
           <Typography.Text strong>{s.name}</Typography.Text>
@@ -54,23 +55,23 @@ export function skuColumns(
         </Space>
       ),
     },
-    { title: "GPU / 显存", render: (_: unknown, s: SkuMarketOut) => formatSkuGpu(s) },
+    { title: t("sku.colGpu"), render: (_: unknown, s: SkuMarketOut) => formatSkuGpu(s, t) },
     ...(opts.availability ? availability : []),
     {
-      title: "实例配置",
-      render: (_: unknown, s: SkuMarketOut) => `${s.vcpu} vCPU / ${s.mem_gb}G 内存`,
+      title: t("sku.colHost"),
+      render: (_: unknown, s: SkuMarketOut) => t("sku.hostShort", { vcpu: s.vcpu, mem: s.mem_gb }),
     },
-    { title: "实例盘", render: (_: unknown, s: SkuMarketOut) => `${s.disk_gb}G(含 100G)` },
+    { title: t("sku.colDisk"), render: (_: unknown, s: SkuMarketOut) => t("sku.diskWithBase", { disk: s.disk_gb }) },
     {
       title: (
-        <Tooltip title="镜像可用的最高 CUDA 版本,取决于节点驱动">
-          <span>最高 CUDA</span>
+        <Tooltip title={t("sku.cudaTooltip")}>
+          <span>{t("sku.colCuda")}</span>
         </Tooltip>
       ),
       render: (_: unknown, s: SkuMarketOut) => s.cuda_max ?? "-",
     },
     {
-      title: "价格(单卡)",
+      title: t("sku.colPrice"),
       render: (_: unknown, s: SkuMarketOut) => (
         <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
           {opts.fmt.formatHourlyPrice(s.price_hourly)}
@@ -84,18 +85,18 @@ export function skuColumns(
 export function BillingModeCard({ extra }: { extra?: ReactNode }) {
   const { t } = useTranslation(["web", "shared"]);
   return (
-    <Card title="计费方式" styles={{ body: { paddingBlock: 16 } }}>
+    <Card title={t("sku.billingModeTitle")} styles={{ body: { paddingBlock: 16 } }}>
       <ChipRow
-        label="计费方式"
+        label={t("sku.billingModeTitle")}
         value="hourly"
         onChange={() => undefined}
         options={[
-          { value: "hourly", label: "按量计费" },
-          { value: "daily", label: "包日", disabled: true, disabledReason: t("copy.billingModeComingSoon") },
-          { value: "weekly", label: "包周", disabled: true, disabledReason: t("copy.billingModeComingSoon") },
+          { value: "hourly", label: t("sku.modeHourly") },
+          { value: "daily", label: t("sku.modeDaily"), disabled: true, disabledReason: t("copy.billingModeComingSoon") },
+          { value: "weekly", label: t("sku.modeWeekly"), disabled: true, disabledReason: t("copy.billingModeComingSoon") },
           {
             value: "monthly",
-            label: "包月",
+            label: t("sku.modeMonthly"),
             disabled: true,
             disabledReason: t("copy.billingModeComingSoon"),
           },

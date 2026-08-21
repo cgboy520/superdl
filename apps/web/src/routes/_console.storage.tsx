@@ -6,9 +6,8 @@
 import { type DiskOut } from "@superdl/api-client";
 import { colorPrimary, diskDailyEstimate, formatDateTime, formatSizeGb, statusColors } from "@superdl/ui";
 import { createFileRoute } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -41,6 +40,7 @@ export const Route = createFileRoute("/_console/storage")({
 });
 
 function MountOverview({ priceText }: { priceText: string }) {
+  const { t } = useTranslation();
   const { token } = theme.useToken();
   const seg = (title: string, desc: string, color: string) => (
     <div
@@ -59,28 +59,29 @@ function MountOverview({ priceText }: { priceText: string }) {
     </div>
   );
   return (
-    <Card size="small" title="挂载全景图(每台实例的目录布局)">
+    <Card size="small" title={t("storage.mountOverviewTitle")}>
       <div style={{ display: "flex", gap: 8 }}>
-        {seg("/", "实例盘 · 含 100G · 随实例回收 · 免费", statusColors.blue)}
-        {seg("/root/data", `数据盘 · ${priceText} · 独立保留`, colorPrimary)}
-        {seg("/public/models", "公共模型缓存 · 只读 · 免费", statusColors.green)}
+        {seg("/", t("storage.segRoot"), statusColors.blue)}
+        {seg("/root/data", t("storage.segData", { price: priceText }), colorPrimary)}
+        {seg("/public/models", t("storage.segModels"), statusColors.green)}
       </div>
     </Card>
   );
 }
 
 function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () => void }) {
+  const { t } = useTranslation();
   const [checked, setChecked] = useState(false);
   const { message } = App.useApp();
   const del = useDeleteDisk({
     onSuccess: () => {
-      message.success("数据盘已开始清除");
+      message.success(t("storage.deleteStarted"));
       onClose();
     },
   });
   return (
     <Modal
-      title="删除数据盘"
+      title={t("storage.deleteModalTitle")}
       open={Boolean(disk)}
       onCancel={() => {
         setChecked(false);
@@ -94,19 +95,19 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
           loading={del.isPending}
           onClick={() => disk && del.mutate(disk.uuid)}
         >
-          确认删除
+          {t("storage.confirmDelete")}
         </Button>
       }
     >
       <Typography.Paragraph>
-        即将删除数据盘{" "}
-        <Typography.Text strong>
-          {disk?.name}({formatSizeGb(disk?.size_gb ?? 0)})
-        </Typography.Text>
-        ,盘内全部数据将被清除且不可恢复。
+        <Trans
+          i18nKey="storage.deleteBody"
+          values={{ name: disk?.name ?? "", size: formatSizeGb(disk?.size_gb ?? 0) }}
+          components={{ b: <Typography.Text strong /> }}
+        />
       </Typography.Paragraph>
       <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
-        我确认清除该数据盘的全部数据
+        {t("storage.deleteChecklist")}
       </Checkbox>
     </Modal>
   );
@@ -125,13 +126,13 @@ function ExpiryCell({
   const { formatDaysLeft } = useFormat();
   const { t } = useTranslation();
   if (disk.status === "active") {
-    return <Typography.Text type="secondary">按日扣费中</Typography.Text>;
+    return <Typography.Text type="secondary">{t("storage.activeBilling")}</Typography.Text>;
   }
   if (disk.status === "grace") {
     const left = formatDaysLeft(disk.grace_started_at, graceDays);
     return (
       <Tooltip title={t("copy.diskExpirePolicy")}>
-        <Typography.Text type="warning">宽限期(只读) · {left ?? "—"}</Typography.Text>
+        <Typography.Text type="warning">{t("storage.graceLine", { left: left ?? "—" })}</Typography.Text>
       </Tooltip>
     );
   }
@@ -139,12 +140,12 @@ function ExpiryCell({
     const left = formatDaysLeft(disk.frozen_started_at, frozenDays);
     return (
       <Tooltip title={t("copy.diskExpirePolicy")}>
-        <Typography.Text type="danger">冻结 · {left ?? "—"}(到期清除)</Typography.Text>
+        <Typography.Text type="danger">{t("storage.frozenLine", { left: left ?? "—" })}</Typography.Text>
       </Tooltip>
     );
   }
   if (disk.status === "deleting") {
-    return <Typography.Text type="secondary">清除中</Typography.Text>;
+    return <Typography.Text type="secondary">{t("storage.deletingLabel")}</Typography.Text>;
   }
   return <span>—</span>;
 }
@@ -161,21 +162,21 @@ function StoragePage() {
   const [newSize, setNewSize] = useState(100);
   const [form] = Form.useForm();
 
-  const priceText = policies ? `¥${policies.disk_price_gb_month}/GB·月` : "按日折算计费";
+  const priceText = policies ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month }) : t("storage.priceFallback");
   const graceDays = policies?.disk_grace_days ?? 7;
   const frozenDays = policies?.disk_frozen_days ?? 30;
   const maxGb = policies?.disk_max_gb ?? 4096;
 
   const createDisk = useCreateDisk({
     onSuccess: () => {
-      message.success("数据盘已创建");
+      message.success(t("storage.created"));
       setCreateOpen(false);
       form.resetFields();
     },
   });
   const expand = useExpandDisk({
     onSuccess: () => {
-      message.success("扩容完成");
+      message.success(t("storage.expanded"));
       setExpandTarget(null);
     },
   });
@@ -187,10 +188,10 @@ function StoragePage() {
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Space style={{ width: "100%", justifyContent: "space-between" }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          存储
+          {t("storage.title")}
         </Typography.Title>
         <Button type="primary" onClick={() => setCreateOpen(true)}>
-          新建数据盘
+          {t("create.diskNew")}
         </Button>
       </Space>
       <MountOverview priceText={priceText} />
@@ -200,7 +201,7 @@ function StoragePage() {
         ) : (disks ?? []).length === 0 && !isLoading ? (
           <Empty description={t("copy.diskRetention")}>
             <Button type="primary" onClick={() => setCreateOpen(true)}>
-              创建第一块数据盘
+              {t("storage.createFirst")}
             </Button>
           </Empty>
         ) : (
@@ -211,36 +212,36 @@ function StoragePage() {
             scroll={{ x: 920 }}
             dataSource={disks ?? []}
             columns={[
-              { title: "名称", dataIndex: "name" },
-              { title: "容量", render: (_, r) => formatSizeGb(r.size_gb) },
+              { title: t("storage.nameLabel"), dataIndex: "name" },
+              { title: t("storage.colSize"), render: (_, r) => formatSizeGb(r.size_gb) },
               {
-                title: "计费",
+                title: t("storage.colBilling"),
                 render: (_, r) => (
                   <Space orientation="vertical" size={0}>
-                    <span>¥{r.price_gb_month}/GB·月</span>
+                    <span>{t("common.gbMonthPrice", { price: r.price_gb_month })}</span>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      约 ¥{diskDailyEstimate(r.price_gb_month, r.size_gb)}/日
+                      {t("common.dailyApprox", { amount: diskDailyEstimate(r.price_gb_month, r.size_gb) })}
                     </Typography.Text>
                   </Space>
                 ),
               },
-              { title: "状态", render: (_, r) => <DiskStatusBadge status={r.status} /> },
+              { title: t("storage.colStatus"), render: (_, r) => <DiskStatusBadge status={r.status} /> },
               {
-                title: "到期 / 回收",
+                title: t("storage.colExpiry"),
                 render: (_, r) => (
                   <ExpiryCell disk={r} graceDays={graceDays} frozenDays={frozenDays} />
                 ),
               },
-              { title: "挂载实例", render: (_, r) => instanceName(r.mounted_instance_id) },
-              { title: "创建时间", render: (_, r) => formatDateTime(r.created_at) },
+              { title: t("storage.colMounted"), render: (_, r) => instanceName(r.mounted_instance_id) },
+              { title: t("storage.colCreated"), render: (_, r) => formatDateTime(r.created_at) },
               {
-                title: "操作",
+                title: t("storage.colActions"),
                 render: (_, r) => {
                   const canExpand = r.status === "active";
                   const canDelete = r.mounted_instance_id == null && r.status !== "deleting";
                   return (
                     <Space>
-                      <Tooltip title={canExpand ? undefined : "仅正常状态的数据盘可扩容"}>
+                      <Tooltip title={canExpand ? undefined : t("storage.expandNeedsActive")}>
                         <Button
                           size="small"
                           disabled={!canExpand}
@@ -249,17 +250,17 @@ function StoragePage() {
                             setExpandTarget(r);
                           }}
                         >
-                          扩容
+                          {t("storage.expand")}
                         </Button>
                       </Tooltip>
-                      <Tooltip title={canDelete ? undefined : "挂载中的数据盘不能删除"}>
+                      <Tooltip title={canDelete ? undefined : t("storage.deleteNeedsUnmounted")}>
                         <Button
                           size="small"
                           danger
                           disabled={!canDelete}
                           onClick={() => setDeleteTarget(r)}
                         >
-                          删除
+                          {t("storage.delete")}
                         </Button>
                       </Tooltip>
                     </Space>
@@ -272,7 +273,7 @@ function StoragePage() {
       </Card>
 
       <Modal
-        title="新建数据盘"
+        title={t("create.diskNew")}
         open={createOpen}
         onCancel={() => setCreateOpen(false)}
         onOk={() => form.submit()}
@@ -284,10 +285,10 @@ function StoragePage() {
           initialValues={{ name: "", size_gb: 100 }}
           onFinish={(v: { name: string; size_gb: number }) => createDisk.mutate(v)}
         >
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+          <Form.Item name="name" label={t("storage.nameLabel")} rules={[{ required: true, message: t("storage.nameRequired") }]}>
             <Input maxLength={64} />
           </Form.Item>
-          <Form.Item name="size_gb" label="容量(GB)" rules={[{ required: true }]}>
+          <Form.Item name="size_gb" label={t("storage.sizeLabel")} rules={[{ required: true }]}>
             <InputNumber
               min={policies?.disk_min_gb ?? 10}
               max={maxGb}
@@ -296,13 +297,13 @@ function StoragePage() {
             />
           </Form.Item>
           <Typography.Text type="secondary">
-            {priceText},按日折算扣费;{t("copy.dailyCostNote")}
+            {t("storage.createNote", { price: priceText })};{t("copy.dailyCostNote")}
           </Typography.Text>
         </Form>
       </Modal>
 
       <Drawer
-        title={`扩容:${expandTarget?.name ?? ""}`}
+        title={t("storage.expandDrawerTitle", { name: expandTarget?.name ?? "" })}
         open={Boolean(expandTarget)}
         onClose={() => setExpandTarget(null)}
         width={420}
@@ -316,17 +317,12 @@ function StoragePage() {
               expandTarget && expand.mutate({ uuid: expandTarget.uuid, body: { size_gb: newSize } })
             }
           >
-            确认扩容到 {formatSizeGb(newSize)}
+            {t("storage.confirmExpandTo", { size: formatSizeGb(newSize) })}
           </Button>
         }
       >
         {expandTarget && (
           <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-            <Alert
-              type="info"
-              showIcon
-              title={`当前 ${formatSizeGb(expandTarget.size_gb)},只支持扩容不支持缩容`}
-            />
             <Slider
               min={expandTarget.size_gb}
               max={maxGb}
@@ -335,9 +331,11 @@ function StoragePage() {
               onChange={setNewSize}
             />
             <Typography.Text type="secondary">
-              扩容后每日费用增加约 ¥
-              {diskDailyEstimate(expandTarget.price_gb_month, newSize - expandTarget.size_gb)}
-              (按本盘快照价)
+              {t("storage.expandCostNote", {
+                daily: t("common.dailyApprox", {
+                  amount: diskDailyEstimate(expandTarget.price_gb_month, newSize - expandTarget.size_gb),
+                }),
+              })}
             </Typography.Text>
           </Space>
         )}

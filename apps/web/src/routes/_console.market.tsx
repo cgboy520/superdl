@@ -54,22 +54,22 @@ function MarketPage() {
   }, [allSkus]);
 
   const modelOptions: ChipOption<string>[] = [
-    { value: ALL, label: "全部" },
+    { value: ALL, label: t("market.all") },
     ...Array.from(freeByModel.entries()).map(([m, free]) => ({
       value: m,
       label: (
         <span>
-          {m} <Typography.Text type="secondary">空闲 {free}</Typography.Text>
+          {m} <Typography.Text type="secondary">{t("market.freeSuffix", { count: free })}</Typography.Text>
         </span>
       ),
     })),
   ];
   const tierOptions: ChipOption<string>[] = [
-    { value: ALL, label: "全部" },
+    { value: ALL, label: t("market.all") },
     ...Object.entries(skuTierMap).map(([value, meta]) => ({ value, label: t(meta.labelKey) })),
   ];
   const vramOptions: ChipOption<number>[] = [
-    { value: 0, label: "全部" },
+    { value: 0, label: t("market.all") },
     ...Array.from(new Set((allSkus ?? []).map((s) => s.vram_gb)))
       .sort((a, b) => a - b)
       .map((v) => ({ value: v, label: `${v} GB` })),
@@ -91,21 +91,21 @@ function MarketPage() {
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
-        算力市场
+        {t("market.title")}
       </Typography.Title>
       <Alert type="warning" showIcon title={t("copy.antiMiningNotice")} />
 
       <BillingModeCard
-        extra={<Typography.Link onClick={() => setRulesOpen(true)}>计费规则</Typography.Link>}
+        extra={<Typography.Link onClick={() => setRulesOpen(true)}>{t("market.billingRulesLink")}</Typography.Link>}
       />
 
-      <Card title="选择规格" styles={{ body: { paddingBlock: 16 } }}>
+      <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <ChipRow label="GPU 型号" value={gpuModel} onChange={setGpuModel} options={modelOptions} />
-          <ChipRow label="档位" value={tier} onChange={setTier} options={tierOptions} />
-          <ChipRow label="显存" value={vram} onChange={setVram} options={vramOptions} />
+          <ChipRow label={t("market.chipGpuModel")} value={gpuModel} onChange={setGpuModel} options={modelOptions} />
+          <ChipRow label={t("market.chipTier")} value={tier} onChange={setTier} options={tierOptions} />
+          <ChipRow label={t("market.chipVram")} value={vram} onChange={setVram} options={vramOptions} />
           <ChipRow
-            label="GPU 数量"
+            label={t("market.chipGpuCount")}
             value={gpuCount}
             onChange={setGpuCount}
             options={GPU_COUNTS.map((n) => ({ value: n, label: String(n) }))}
@@ -122,7 +122,7 @@ function MarketPage() {
               emptyText: isError ? (
                 <TableErrorEmpty onRetry={() => void refetch()} />
               ) : (
-                "没有符合条件的规格,试试放宽筛选"
+                t("market.noMatch")
               ),
             }}
             rowSelection={{
@@ -144,14 +144,18 @@ function MarketPage() {
       <CheckoutBar
         summary={
           selected
-            ? `${selected.gpu_model} × ${gpuCount} · ${selected.vcpu * gpuCount} vCPU · ${
-                selected.mem_gb * gpuCount
-              }G 内存 · 实例盘 ${selected.disk_gb}G`
-            : "选择规格后可下一步配置实例"
+            ? t("market.summary", {
+                model: selected.gpu_model,
+                count: gpuCount,
+                vcpu: selected.vcpu * gpuCount,
+                mem: selected.mem_gb * gpuCount,
+                disk: selected.disk_gb,
+              })
+            : t("market.selectHint")
         }
         items={[
           {
-            label: "配置费用",
+            label: t("create.configCostLabel"),
             value: selected
               ? formatHourlyPrice(mulPrice(selected.price_hourly, gpuCount))
               : "--",
@@ -161,7 +165,7 @@ function MarketPage() {
           selected ? (
             <Space orientation="vertical" size={4}>
               <span>
-                {formatHourlyPrice(selected.price_hourly)} × {gpuCount} 卡
+                {t("instances.pricePerCard", { price: formatHourlyPrice(selected.price_hourly), count: gpuCount })}
               </span>
               <Typography.Text type="secondary">{t("copy.eventsAreBilling")}</Typography.Text>
             </Space>
@@ -169,7 +173,7 @@ function MarketPage() {
         }
         actions={
           loggedIn ? (
-            <Tooltip title={selected ? undefined : "请先在上方选择一个规格"}>
+            <Tooltip title={selected ? undefined : t("market.selectFirst")}>
               <Button
                 type="primary"
                 size="large"
@@ -183,7 +187,7 @@ function MarketPage() {
                   });
                 }}
               >
-                下一步:配置实例
+                {t("market.next")}
               </Button>
             </Tooltip>
           ) : (
@@ -192,7 +196,7 @@ function MarketPage() {
               size="large"
               onClick={() => void navigate({ to: "/login", search: { redirect: "/market" } })}
             >
-              登录后租用
+              {t("market.loginToRent")}
             </Button>
           )
         }
@@ -202,7 +206,7 @@ function MarketPage() {
         open={rulesOpen}
         onCancel={() => setRulesOpen(false)}
         footer={null}
-        title="计费规则"
+        title={t("market.billingRulesLink")}
       >
         <ul style={{ paddingInlineStart: 20, margin: 0 }}>
           {[t("copy.billingRules.r1"), t("copy.billingRules.r2"), t("copy.billingRules.r3"), t("copy.billingRules.r4")].map((r) => (

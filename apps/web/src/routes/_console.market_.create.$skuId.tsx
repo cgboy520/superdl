@@ -112,21 +112,21 @@ function CreatePage() {
   const create = useCreateInstance({
     onSuccess: (data) => {
       const inst = data as InstanceOut;
-      message.success(`实例 ${inst.name} 创建中`);
+      message.success(t("create.creating", { name: inst.name }));
       void navigate({ to: "/instances" });
     },
   });
   const createDisk = useCreateDisk();
   const addKey = useAddSshKey({
     onSuccess: (key) => {
-      message.success("公钥已添加");
+      message.success(t("create.keyAdded"));
       keyForm.resetFields();
       setKeyIds((ids) => (ids.includes(key.id) ? ids : [...ids, key.id])); // 添加即勾选
     },
   });
 
   if (!sku) {
-    return <Alert type="warning" showIcon title="规格不存在或已下架" />;
+    return <Alert type="warning" showIcon title={t("create.skuMissing")} />;
   }
 
   const diskPriceGbMonth = policies?.disk_price_gb_month;
@@ -205,12 +205,12 @@ function CreatePage() {
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
-        创建实例
+        {t("create.title")}
       </Typography.Title>
 
       <BillingModeCard />
 
-      <Card title="已选规格" extra={<Link to="/market">更换规格</Link>}>
+      <Card title={t("create.selectedSpec")} extra={<Link to="/market">{t("create.changeSpec")}</Link>}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Table<SkuMarketOut>
             size="small"
@@ -220,22 +220,22 @@ function CreatePage() {
             pagination={false}
           />
           <ChipRow
-            label="GPU 数量"
+            label={t("market.chipGpuCount")}
             value={gpuCount}
             onChange={setGpuCount}
-            options={gpuOptions.map((n) => ({ value: n, label: `${n} 卡` }))}
+            options={gpuOptions.map((n) => ({ value: n, label: t("market.cardsUnit", { count: n }) }))}
           />
         </Space>
       </Card>
 
-      <Card title="镜像">
+      <Card title={t("create.imageCard")}>
         <Tabs
           activeKey={imageTab}
           onChange={(k) => setImageTab(k as "platform" | "custom")}
           items={[
             {
               key: "platform",
-              label: "平台镜像",
+              label: t("create.tabPlatform"),
               children: (
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <Cascader
@@ -243,15 +243,15 @@ function CreatePage() {
                     options={cascade}
                     value={platformImage}
                     onChange={(v) => setPlatformImage(v as string[])}
-                    placeholder="框架 / 版本 / Python / CUDA"
+                    placeholder={t("create.cascadePlaceholder")}
                   />
-                  <Typography.Text type="secondary">平台镜像已在节点预热,秒级启动</Typography.Text>
+                  <Typography.Text type="secondary">{t("create.prewarmed")}</Typography.Text>
                 </Space>
               ),
             },
             {
               key: "custom",
-              label: "自定义镜像",
+              label: t("create.tabCustom"),
               children: (
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <Input
@@ -260,14 +260,14 @@ function CreatePage() {
                     onChange={(e) => setCustomImage(e.target.value)}
                   />
                   <Typography.Text type="secondary">
-                    镜像需内置 SSH(22)与 JupyterLab(8888);私有仓库拉取凭据请联系客服配置
+                    {t("create.customImageHint")}
                   </Typography.Text>
                 </Space>
               ),
             },
             {
               key: "mine",
-              label: <Tooltip title={t("copy.myImagesComingSoon")}>我的镜像</Tooltip>,
+              label: <Tooltip title={t("copy.myImagesComingSoon")}>{t("create.tabMine")}</Tooltip>,
               disabled: true,
               children: null,
             },
@@ -275,21 +275,21 @@ function CreatePage() {
         />
       </Card>
 
-      <Card title="数据盘(可选)">
+      <Card title={t("create.diskCard")}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Radio.Group
             value={diskMode}
             onChange={(e) => setDiskMode(e.target.value as typeof diskMode)}
             options={[
-              { value: "none", label: "不需要" },
-              { value: "new", label: "新建数据盘" },
-              { value: "existing", label: "挂载已有盘" },
+              { value: "none", label: t("create.diskNone") },
+              { value: "new", label: t("create.diskNew") },
+              { value: "existing", label: t("create.diskExisting") },
             ]}
           />
           {diskMode === "new" && (
             <>
               <Space size={12}>
-                <Typography.Text type="secondary">名称</Typography.Text>
+                <Typography.Text type="secondary">{t("storage.nameLabel")}</Typography.Text>
                 <Input
                   style={{ width: 260 }}
                   maxLength={64}
@@ -307,16 +307,16 @@ function CreatePage() {
               <Typography.Text type="secondary">
                 {formatSizeGb(newDiskGb)}
                 {diskPriceGbMonth
-                  ? ` · ¥${diskPriceGbMonth}/GB·月,约 ¥${diskDaily}/日`
+                  ? ` · ${t("common.gbMonthPrice", { price: diskPriceGbMonth })},${t("common.dailyApprox", { amount: diskDaily })}`
                   : ""}
-                ;提交时将自动创建并随实例挂载
+                ;{t("create.diskAutoCreateNote")}
               </Typography.Text>
             </>
           )}
           {diskMode === "existing" && (
             <Select
               style={{ width: 320 }}
-              placeholder="选择数据盘"
+              placeholder={t("create.selectDiskPlaceholder")}
               value={existingDiskId}
               onChange={setExistingDiskId}
               options={(disks ?? [])
@@ -325,16 +325,16 @@ function CreatePage() {
                   value: d.id,
                   label: `${d.name}(${formatSizeGb(d.size_gb)})`,
                 }))}
-              notFoundContent="暂无可挂载的数据盘"
+              notFoundContent={t("create.noMountableDisks")}
             />
           )}
           <Typography.Text type="secondary">
-            数据盘独立于实例:关机与释放均保留;{t("copy.dailyCostNote")}
+            {t("create.diskIndependentNote")};{t("copy.dailyCostNote")}
           </Typography.Text>
         </Space>
       </Card>
 
-      <Card title="SSH 密钥">
+      <Card title={t("create.sshCard")}>
         {(keys ?? []).length === 0 ? (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert type="warning" showIcon title={t("copy.sshKeyOnly")} />
@@ -343,19 +343,19 @@ function CreatePage() {
               layout="inline"
               onFinish={(v) => addKey.mutate({ name: v.name, public_key: v.public_key })}
             >
-              <Form.Item name="name" rules={[{ required: true, message: "名称必填" }]}>
-                <Input placeholder="密钥名称" style={{ width: 160 }} />
+              <Form.Item name="name" rules={[{ required: true, message: t("create.keyNameRequired") }]}>
+                <Input placeholder={t("create.keyNamePlaceholder")} style={{ width: 160 }} />
               </Form.Item>
               <Form.Item
                 name="public_key"
-                rules={[{ required: true, message: "公钥内容必填" }]}
+                rules={[{ required: true, message: t("create.keyContentRequired") }]}
                 style={{ flex: 1 }}
               >
-                <Input placeholder="ssh-ed25519 AAAA… 或 ssh-rsa AAAA…" />
+                <Input placeholder={t("create.keyPlaceholder")} />
               </Form.Item>
               <Form.Item>
                 <Button type="primary" htmlType="submit" loading={addKey.isPending}>
-                  添加公钥
+                  {t("create.addKey")}
                 </Button>
               </Form.Item>
             </Form>
@@ -372,9 +372,9 @@ function CreatePage() {
         )}
       </Card>
 
-      <Card title="实例名称(可选)">
+      <Card title={t("create.nameCard")}>
         <Input
-          placeholder="不填则自动生成"
+          placeholder={t("create.namePlaceholder")}
           maxLength={64}
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -383,30 +383,31 @@ function CreatePage() {
       </Card>
 
       <CheckoutBar
-        summary={`${sku.gpu_model} × ${gpuCount} · ${sku.vcpu * gpuCount} vCPU · ${sku.mem_gb * gpuCount}G 内存`}
+        summary={t("create.summary", { model: sku.gpu_model, count: gpuCount, vcpu: sku.vcpu * gpuCount, mem: sku.mem_gb * gpuCount })}
         items={[
           {
-            label: "日常费用",
-            hint: "关机也会产生",
-            value:
-              diskGb > 0 && diskPriceGbMonth ? `约 ¥${diskDaily}/日` : "¥0.00/日",
+            label: t("create.dailyCostLabel"),
+            hint: t("create.dailyCostHint"),
+            value: t("common.dailyApprox", { amount: diskGb > 0 && diskPriceGbMonth ? diskDaily : "0.00" }),
           },
-          { label: "配置费用", value: formatHourlyPrice(hourlyTotal) },
+          { label: t("create.configCostLabel"), value: formatHourlyPrice(hourlyTotal) },
         ]}
         detail={
           <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
             <span>
-              实例:{formatHourlyPrice(sku.price_hourly)} × {gpuCount} 卡 ={" "}
-              {formatHourlyPrice(hourlyTotal)}
+              {t("create.detailInstanceLine", {
+                unit: formatHourlyPrice(sku.price_hourly),
+                count: gpuCount,
+                total: formatHourlyPrice(hourlyTotal),
+              })}
             </span>
             <span>
-              数据盘:
               {diskGb > 0 && diskPriceGbMonth
-                ? `${diskGb}G × ¥${diskPriceGbMonth}/GB·月(按日折算,关机也计费)`
-                : "无"}
+                ? t("create.detailDiskLine", { size: diskGb, price: t("common.gbMonthPrice", { price: diskPriceGbMonth }) })
+                : t("create.detailDiskNone")}
             </span>
             <Typography.Text type="secondary">
-              开机前需余额 ≥ 1 小时预估费用;{t("copy.eventsAreBilling")}
+              {t("create.balanceNeedNote")};{t("copy.eventsAreBilling")}
             </Typography.Text>
           </Space>
         }
@@ -414,10 +415,10 @@ function CreatePage() {
         actions={
           <>
             <Button size="large" onClick={() => void navigate({ to: "/market" })}>
-              取消
+              {t("create.cancel")}
             </Button>
             {enough ? (
-              <Tooltip title={canSubmit ? undefined : "请先选择镜像与至少一个 SSH 公钥"}>
+              <Tooltip title={canSubmit ? undefined : t("create.selectImageAndKey")}>
                 <Button
                   type="primary"
                   size="large"
@@ -425,13 +426,13 @@ function CreatePage() {
                   loading={submitting || create.isPending}
                   onClick={submit}
                 >
-                  创建并开机
+                  {t("create.createAndStart")}
                 </Button>
               </Tooltip>
             ) : (
               <Link to="/billing">
                 <Button type="primary" danger size="large">
-                  余额不足,去充值
+                  {t("create.notEnoughGoRecharge")}
                 </Button>
               </Link>
             )}
@@ -440,7 +441,7 @@ function CreatePage() {
       />
 
       <Modal
-        title="共享·经济档服务说明"
+        title={t("create.ecoModalTitle")}
         open={ecoOpen}
         onCancel={() => {
           setEcoOpen(false);
@@ -456,7 +457,7 @@ function CreatePage() {
               void doCreate();
             }}
           >
-            我已知悉,继续创建
+            {t("create.ecoConfirm")}
           </Button>
         }
       >
@@ -468,7 +469,7 @@ function CreatePage() {
           ))}
         </ul>
         <Checkbox checked={ecoChecked} onChange={(e) => setEcoChecked(e.target.checked)}>
-          我已阅读并同意上述服务说明
+          {t("create.ecoAgree")}
         </Checkbox>
       </Modal>
     </Space>
