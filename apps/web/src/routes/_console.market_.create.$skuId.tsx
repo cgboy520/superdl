@@ -138,8 +138,12 @@ function CreatePage() {
   // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
   const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
-  // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)
-  const enough = compareAmounts(wallet?.balance, hourlyTotal) >= 0;
+  // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)。
+  // 三态:未就绪 ≠ 余额为 0 —— 把 undefined 当 0 会让主 CTA 在首屏先闪一次红色
+  // 「余额不足,去充值」,而钱包查询失败时(重试耗尽后 data 恒为 undefined)会**永久**
+  // 停在那个状态,把一个余额充足的用户彻底挡在创建入口外,页面上还没有任何错误提示。
+  const balanceReady = wallet != null;
+  const enough = balanceReady && compareAmounts(wallet.balance, hourlyTotal) >= 0;
 
   const imageRef = imageTab === "platform" ? platformImage?.[3] : customImage.trim();
   const canSubmit = Boolean(imageRef) && keyIds.length > 0;
@@ -413,12 +417,18 @@ function CreatePage() {
           </Space>
         }
         balance={wallet?.balance ?? null}
+        balanceReady={balanceReady}
         actions={
           <>
             <Button size="large" onClick={() => void navigate({ to: "/market" })}>
               {t("create.cancel")}
             </Button>
-            {enough ? (
+            {!balanceReady ? (
+              // 余额未就绪:主 CTA 保持 primary + loading,不出现红色文案
+              <Button type="primary" size="large" loading disabled>
+                {t("create.createAndStart")}
+              </Button>
+            ) : enough ? (
               <Tooltip title={canSubmit ? undefined : t("create.selectImageAndKey")}>
                 <Button
                   type="primary"

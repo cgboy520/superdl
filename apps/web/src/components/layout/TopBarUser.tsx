@@ -14,6 +14,7 @@ import { Badge, Button, Dropdown, List, Popover, Space, Typography } from "antd"
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
+import { moneyOr } from "../QueryState";
 import { useMarkNotificationRead } from "../../api/mutations";
 import { useMe, useNotifications, useWallet } from "../../api/queries";
 import { authStore, useIsLoggedIn } from "../../stores/auth";
@@ -87,7 +88,9 @@ export function TopBarUser() {
       <Link to="/billing" className="topbar-link">
         <Space size={4}>
           <WalletOutlined />
-          <span>{formatMoney(wallet?.balance)}</span>
+          {/* 未就绪必须显示 —,不能渲染假 ¥0.00:钱包查询失败时 data 恒为 undefined,
+              顶栏会永久显示「余额 ¥0.00」,而页面上没有任何错误提示 */}
+          <span>{moneyOr(formatMoney(wallet?.balance), wallet != null)}</span>
         </Space>
       </Link>
       <NotificationBell />

@@ -32,7 +32,7 @@ import {
 } from "../api/queries";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
-import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
+import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
@@ -273,7 +273,10 @@ function InstanceDetail() {
                   label: t("instances.labelBilling"),
                   children: t("instances.pricePerCard", { price: formatHourlyPrice(instance.price_hourly), count: instance.gpu_count }),
                 },
-                { label: t("instances.labelToday"), children: formatMoney(todayAmount) },
+                {
+                  label: t("instances.labelToday"),
+                  children: moneyOr(formatMoney(todayAmount), daily != null),
+                },
                 { label: t("instances.createdAt"), children: formatDateTime(instance.created_at) },
               ]}
             />

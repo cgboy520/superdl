@@ -461,16 +461,19 @@ function BillingPage() {
               <Col xs={24} md={10}>
                 <Statistic
                   title={t("billing.gpuTotal")}
-                  value={formatMoney(summary?.gpu_total)}
+                  value={moneyOr(formatMoney(summary?.gpu_total), summary != null)}
                 />
                 <Statistic
                   title={t("billing.diskTotal")}
-                  value={formatMoney(summary?.disk_total)}
+                  value={moneyOr(formatMoney(summary?.disk_total), summary != null)}
                   styles={{ content: { fontSize: 16 } }}
                 />
                 <Statistic
                   title={t("instances.labelToday")}
-                  value={formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null)}
+                  value={moneyOr(
+                    formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null),
+                    daily != null,
+                  )}
                   styles={{ content: { fontSize: 16 } }}
                 />
               </Col>

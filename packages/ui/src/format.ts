@@ -29,7 +29,13 @@ function currencySymbol(locale: string): string {
   return locale.startsWith("zh") ? "¥" : "CN¥";
 }
 
-/** "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en);负数符号在最前。 */
+/**
+ * "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en);负数符号在最前。
+ *
+ * null/undefined 在这里的语义是**真的是零**(如「本月还没有消费」)。「数据未就绪」是另一
+ * 回事,必须由调用方套 moneyOr 显示 "—" —— 查询失败时 TanStack 的 data 恒为 undefined,
+ * 不区分就会渲染出一个假的 ¥0.00,而页面上没有任何错误提示。
+ */
 export function formatMoney(amount: string | null | undefined, locale: string): string {
   const currency = currencySymbol(locale);
   if (amount == null || amount === "") return `${currency}0.00`;

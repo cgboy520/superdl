@@ -19,7 +19,9 @@ export default interface Resources {
       "adjustAlreadyProcessed": "调账单已处理",
       "adjustNotZero": "调账金额不能为 0",
       "adjustSecondReviewer": "调账必须由第二位管理员复核",
+      "adminUsernameTaken": "该用户名已存在",
       "badDayFormat": "day 格式应为 YYYY-MM-DD",
+      "cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
       "loginFailed": "用户名或密码错误",
       "smsTestFailed": "发送失败:{{message}}",
       "taskNotFound": "任务不存在",
@@ -28,6 +30,7 @@ export default interface Resources {
       "userDisabled": "账号已停用"
     },
     "billing": {
+      "alipayCallbackMerchantMismatch": "支付宝回调的商户信息与本平台不符",
       "alipayCallbackVerifyFailed": "支付宝回调验签失败",
       "alipayCreateFailed": "支付宝下单失败:{{message}}",
       "alipayCredentialsIncomplete": "支付宝商户凭据不完整(管理端·平台配置)",
@@ -51,6 +54,7 @@ export default interface Resources {
       "realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
       "rechargeAmountRange": "充值金额须在 {{min}}~{{max}} 元之间",
       "unknownChannel": "未知支付渠道:{{name}}",
+      "wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
       "wechatCallbackVerifyFailed": "微信回调验签失败",
       "wechatCreateFailed": "微信下单失败:{{message}}",
       "wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",

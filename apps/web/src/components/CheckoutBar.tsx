@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../lib/format";
+import { moneyOr } from "./QueryState";
 
 export interface CheckoutItem {
   label: string;
@@ -22,6 +23,7 @@ export function CheckoutBar({
   items,
   detail,
   balance,
+  balanceReady = true,
   actions,
 }: {
   /** 左侧规格汇总(靛蓝底块) */
@@ -32,6 +34,9 @@ export function CheckoutBar({
   detail?: ReactNode;
   /** 余额(未登录不传) */
   balance?: string | null;
+  /** 余额是否已就绪。false 时渲染 "—" 而不是假 ¥0.00 —— 钱包查询失败时 data 恒为
+   *  undefined,不区分就会在结算条上永久显示「余额 ¥0.00」 */
+  balanceReady?: boolean;
   /** 右侧按钮组 */
   actions: ReactNode;
 }) {
@@ -87,7 +92,8 @@ export function CheckoutBar({
         )}
         {balance !== undefined && (
           <Typography.Text type="secondary">
-            {t("common.balance")} <span style={{ fontWeight: 600 }}>{formatMoney(balance)}</span>
+            {t("common.balance")}{" "}
+            <span style={{ fontWeight: 600 }}>{moneyOr(formatMoney(balance), balanceReady)}</span>
           </Typography.Text>
         )}
       </Space>
