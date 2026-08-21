@@ -9,7 +9,7 @@ from app.core.outbox import OutboxTask, outbox_handler
 from app.modules.billing import service as billing_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import Instance
-from app.modules.orchestrator.service import build_pod_spec, ensure_port, transition
+from app.modules.orchestrator.service import build_pod_spec_with_cluster, ensure_port, transition
 
 logger = get_logger(__name__)
 
@@ -30,7 +30,7 @@ async def handle_create(session: AsyncSession, task: OutboxTask) -> None:
     instance.ssh_port = await ensure_port(session, instance)
     assert instance.k8s_namespace is not None
     await orch.ensure_namespace(instance.k8s_namespace)
-    await orch.create_instance(build_pod_spec(instance))
+    await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
     instance.pod_name = instance.uuid
     # 状态推进交给 reconciler(Pod Ready → running / 超时 → failed)
 
@@ -44,7 +44,7 @@ async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
     instance.ssh_port = await ensure_port(session, instance)
     assert instance.k8s_namespace is not None
     await orch.ensure_namespace(instance.k8s_namespace)
-    await orch.create_instance(build_pod_spec(instance))
+    await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
     instance.pod_name = instance.uuid
 
 
@@ -94,7 +94,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
             metadata={"restart": True},
         )
         instance.ssh_port = await ensure_port(session, instance)
-        await orch.create_instance(build_pod_spec(instance))
+        await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
 
 
 @outbox_handler("instance.release")

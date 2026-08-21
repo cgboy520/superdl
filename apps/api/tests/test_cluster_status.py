@@ -69,6 +69,11 @@ async def test_save_probe_upserts_single_row(sm, fake):
 
 async def test_get_status_empty(sm):
     async with sm() as session:
+        row = await service.get_cluster_status(session)
+        assert row is not None  # conftest 预置健康态
+        await session.delete(row)
+        await session.commit()
+    async with sm() as session:
         assert await service.get_cluster_status(session) is None
 
 
@@ -105,7 +110,12 @@ async def test_require_hami_ready_gate(sm, fake):
 
     from app.core.errors import AppError, ErrorCode
 
-    # 无缓存 → 拒
+    # 无缓存 → 拒(先清掉 conftest 预置行)
+    async with sm() as session:
+        row = await service.get_cluster_status(session)
+        if row is not None:
+            await session.delete(row)
+            await session.commit()
     async with sm() as session:
         with pytest.raises(AppError) as exc:
             await service.require_hami_ready(session)
@@ -138,3 +148,110 @@ async def test_require_hami_ready_gate(sm, fake):
         with pytest.raises(AppError) as exc:
             await service.require_hami_ready(session)
         assert exc.value.detail == {"reason": "probe_stale"}
+
+
+class TestGateWiring:
+    """三入口门禁与 k3s runtimeClassName 下发。"""
+
+    async def test_shared_create_blocked_when_hami_down(self, sm, fake, client):
+        from app.modules.nodes.models import ClusterStatus
+        from tests.helpers import create_user_with_key, fund_wallet
+        from tests.test_catalog import seed_skus
+
+        await seed_skus(sm)
+        headers, user_id, key_id = await create_user_with_key(client)
+        await fund_wallet(sm, user_id)
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            assert row is not None
+            row.hami_ready = False
+            await session.commit()
+        skus = (await client.get("/api/v1/skus")).json()
+        shared = next(s for s in skus if s["tier"] == "shared_std")
+        dedicated = next(s for s in skus if s["tier"] == "dedicated")
+        images = (await client.get("/api/v1/images")).json()
+        body = {
+            "sku_id": shared["id"],
+            "gpu_count": 1,
+            "image_ref": images[0]["image_ref"],
+            "ssh_key_ids": [key_id],
+        }
+        resp = await client.post("/api/v1/instances", json=body, headers=headers)
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["code"] == "CLUSTER_NOT_READY"
+        # dedicated 不受门禁影响:直接创建成功
+        resp2 = await client.post(
+            "/api/v1/instances", json={**body, "sku_id": dedicated["id"]}, headers=headers
+        )
+        assert resp2.status_code == 202, resp2.text
+
+    async def test_k3s_shared_pod_gets_nvidia_runtime(self, sm, fake):
+        from app.core.gpu_adapter import build_gpu_request
+
+        k3s = build_gpu_request(
+            tier="shared_std",
+            gpu_count=1,
+            gpu_cores_pct=50,
+            vram_gb=8,
+            mig_profile=None,
+            pool_label="hami",
+            distro="k3s",
+        )
+        assert k3s.runtime_class == "nvidia"
+        rke2 = build_gpu_request(
+            tier="shared_std",
+            gpu_count=1,
+            gpu_cores_pct=50,
+            vram_gb=8,
+            mig_profile=None,
+            pool_label="hami",
+            distro="rke2",
+        )
+        assert rke2.runtime_class is None
+        kata = build_gpu_request(
+            tier="dedicated",
+            gpu_count=1,
+            gpu_cores_pct=100,
+            vram_gb=24,
+            mig_profile=None,
+            pool_label="kata",
+            distro="k3s",
+        )
+        assert kata.runtime_class == "kata-qemu"
+
+    async def test_build_pod_spec_with_cluster_reads_distro(self, sm, fake):
+        from app.core.k8s.base import ClusterProbe
+        from app.modules.orchestrator.models import Instance
+        from app.modules.orchestrator.service import build_pod_spec_with_cluster
+
+        async with sm() as session:
+            await service.save_cluster_probe(
+                session, ClusterProbe(api_reachable=True, k8s_version="v1.33.4+k3s1", distro="k3s")
+            )
+            await session.commit()
+        instance = Instance(
+            user_id=1,
+            uuid="i-rt",
+            name="rt",
+            status="creating",
+            sku_id=1,
+            gpu_count=1,
+            image_ref="img:x",
+            jupyter_token="t",
+            ssh_port=30022,
+            authorized_keys=[],
+            k8s_namespace="tenant-1",
+            spec={
+                "tier": "shared_std",
+                "pool_label": "hami",
+                "vram_gb": 8,
+                "gpu_cores_pct": 50,
+                "vcpu": 8,
+                "mem_gb": 32,
+                "disk_gb": 100,
+                "mig_profile": None,
+            },
+        )
+        async with sm() as session:
+            pod = await build_pod_spec_with_cluster(session, instance)
+        assert pod.runtime_class == "nvidia"

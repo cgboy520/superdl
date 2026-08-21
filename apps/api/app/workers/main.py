@@ -188,6 +188,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         id="node_spec_patrol",
         max_instances=1,
         coalesce=True,
+        next_run_time=now_utc(),  # 立即首跑:shared 档门禁读能力缓存,不能等首个周期
     )
     scheduler.add_job(
         reconcile_enrollments_once,

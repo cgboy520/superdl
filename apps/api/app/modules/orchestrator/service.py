@@ -26,6 +26,7 @@ from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
+from app.modules.nodes import service as nodes_service
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.statemachine import validate_transition
@@ -106,6 +107,18 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     }
 
 
+_SHARED_TIERS = ("shared_std", "shared_eco")
+
+
+async def _require_cluster_for_tier(session: AsyncSession, tier: str | None) -> None:
+    """shared 档下发门禁:HAMi 未就绪/缓存陈旧即时 409,替代 300s Pending(WP27)。
+
+    dedicated/mig 不依赖 hami-scheduler,不受门禁影响。
+    """
+    if tier in _SHARED_TIERS:
+        await nodes_service.require_hami_ready(session)
+
+
 async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) -> None:
     """每用户配额(实例数 / GPU 总数):防单账号无限开机(K8s 侧 ResourceQuota 是兜底)。"""
     from sqlalchemy import func
@@ -164,6 +177,7 @@ async def create_instance(
             return existing
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
+    await _require_cluster_for_tier(session, sku.tier)
     if gpu_count < 1 or gpu_count > sku.max_gpus_per_instance:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -296,6 +310,7 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     if instance.status != sm_def.STOPPED:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
+    await _require_cluster_for_tier(session, (instance.spec or {}).get("tier"))
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
     await billing_service.require_balance_at_least(
         session,
@@ -316,6 +331,7 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
         )
+    await _require_cluster_for_tier(session, (instance.spec or {}).get("tier"))
     await transition(
         session,
         instance,
@@ -404,10 +420,13 @@ async def active_gpu_counts_by_sku(session: AsyncSession) -> dict[int, int]:
 # ---------- K8s spec 构造 ----------
 
 
-def build_pod_spec(instance: Instance) -> InstancePodSpec:
+def build_pod_spec(instance: Instance, *, distro: str | None = None) -> InstancePodSpec:
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
-        instance.spec, instance.gpu_count, hami_use_gputype=settings.hami_use_gputype
+        instance.spec,
+        instance.gpu_count,
+        hami_use_gputype=settings.hami_use_gputype,
+        distro=distro,
     )
     if instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
@@ -430,6 +449,12 @@ def build_pod_spec(instance: Instance) -> InstancePodSpec:
         scheduler_name=gpu_req.scheduler_name,
         annotations=gpu_req.annotations,
     )
+
+
+async def build_pod_spec_with_cluster(session: AsyncSession, instance: Instance) -> InstancePodSpec:
+    """outbox handler 用:带集群发行版上下文(k3s → shared 档显式 runtimeClassName)。"""
+    row = await nodes_service.get_cluster_status(session)
+    return build_pod_spec(instance, distro=row.distro if row else None)
 
 
 # ---------- 接入信息 ----------

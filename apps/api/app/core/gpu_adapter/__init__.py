@@ -41,9 +41,12 @@ def build_gpu_request(
     pool_label: str,
     gpu_model: str | None = None,
     hami_gputype: str | None = None,
+    distro: str | None = None,
 ) -> GpuRequest:
     """gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全档位钉型号;
-    hami_gputype 为原文串,仅共享档注 use-gputype annotation(混卡节点兜底,默认关)。"""
+    hami_gputype 为原文串,仅共享档注 use-gputype annotation(混卡节点兜底,默认关);
+    distro=k3s 时共享档显式 runtimeClassName=nvidia(k3s 只探测 nvidia 运行时不设默认,
+    RKE2+gpu-operator 默认运行时已是 nvidia 故保持 None)。"""
     node_selector = {POOL_NODE_LABEL: pool_label}
     if gpu_model:
         node_selector[GPU_MODEL_NODE_LABEL] = gpu_model
@@ -71,7 +74,7 @@ def build_gpu_request(
                 "nvidia.com/gpucores": str(gpu_cores_pct),
                 "nvidia.com/gpumem": str(vram_gb * 1024),
             },
-            runtime_class=None,
+            runtime_class="nvidia" if distro == "k3s" else None,
             host_users=False,  # 共享池必须 userns 加固
             node_selector=node_selector,
             scheduler_name="hami-scheduler",  # 显式指定,不赖 HAMi mutating webhook(fail-open)
@@ -81,7 +84,11 @@ def build_gpu_request(
 
 
 def spec_to_gpu_request(
-    spec: dict[str, Any], gpu_count: int, *, hami_use_gputype: bool = False
+    spec: dict[str, Any],
+    gpu_count: int,
+    *,
+    hami_use_gputype: bool = False,
+    distro: str | None = None,
 ) -> GpuRequest:
     """从实例的 SKU 快照构造。存量快照无 gpu_model_selector 键 → 天然不加型号约束。"""
     return build_gpu_request(
@@ -93,4 +100,5 @@ def spec_to_gpu_request(
         pool_label=spec["pool_label"],
         gpu_model=spec.get("gpu_model_selector"),
         hami_gputype=spec.get("gpu_model") if hami_use_gputype else None,
+        distro=distro,
     )
