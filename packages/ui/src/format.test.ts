@@ -189,11 +189,19 @@ describe("formatSizeGb", () => {
 });
 
 describe("diskDailyEstimate", () => {
-  it("月价折日价 HALF_UP 到分", () => {
+  it("月价折日价 HALF_EVEN 到分", () => {
     expect(diskDailyEstimate("0.5000", 100)).toBe("1.67"); // 50/30=1.666…→1.67
     expect(diskDailyEstimate("0.5000", 60)).toBe("1.00"); // 30/30=1.00
     expect(diskDailyEstimate("0.1000", 10)).toBe("0.03"); // 1/30=0.0333→0.03
     expect(diskDailyEstimate("1.2345", 30)).toBe("1.23"); // 37.035/30=1.2345→1.23
+  });
+  it("分位 tie 向偶,与后端 as_amount 同语义", () => {
+    // 0.0350 × 30 / 30 = 0.035 恰为分位 tie:HALF_UP 会给 0.04,HALF_EVEN 给 0.04(4 是偶)
+    expect(diskDailyEstimate("0.0350", 30)).toBe("0.04");
+    // 0.0350 × 90 / 30 = 0.105 恰为分位 tie:HALF_UP 给 0.11,HALF_EVEN 给 0.10
+    expect(diskDailyEstimate("0.0350", 90)).toBe("0.10");
+    // 0.0500 × 15 / 30 = 0.025 → 向偶 → 0.02(HALF_UP 会给 0.03)
+    expect(diskDailyEstimate("0.0500", 15)).toBe("0.02");
   });
   it("边界:空价/0GB/非整数 GB 返回 0.00", () => {
     expect(diskDailyEstimate(null, 100)).toBe("0.00");

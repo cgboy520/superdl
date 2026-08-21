@@ -313,14 +313,15 @@ async def charge_disk_day(
     """
     from app.modules.billing.models import BillDailyDisk
 
-    amount = disk_daily_charge(price_gb_month, size_gb)
+    day = day_floor(day)
+    amount = disk_daily_charge(price_gb_month, size_gb, day)
     inserted = (
         await session.execute(
             pg_insert(BillDailyDisk)
             .values(
                 disk_id=disk_id,
                 user_id=user_id,
-                day=day_floor(day),
+                day=day,
                 size_gb=size_gb,
                 unit_price=as_price(price_gb_month),
                 amount=amount,

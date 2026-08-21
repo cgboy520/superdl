@@ -97,7 +97,8 @@ export default interface Resources {
       "clusterProbeFailed": "集群连接失败:{{error}}",
       "enrollTransition": "注册状态不允许 {{from}} → {{to}}",
       "hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
-      "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)"
+      "regenerateNotAllowed": "状态 {{status}} 不允许重新生成(仅 待执行/已过期/已失败)",
+      "storageClassMissing": "集群存储未就绪(缺少 {{names}}),暂时无法开通;请联系平台运维"
     },
     "orchestrator": {
       "accessNeedsRunning": "实例运行中才能获取接入信息",
@@ -720,7 +721,7 @@ export default interface Resources {
       "confirmDelete": "确认删除",
       "confirmExpandTo": "确认扩容到 {{size}}",
       "createFirst": "创建第一块数据盘",
-      "createNote": "{{price}},按日折算扣费",
+      "createNote": "{{price}},按月单价 ÷ 30 折算到日扣费",
       "created": "数据盘已创建",
       "dailyEstimate": "{{size}} GB 约 {{amount}}/日",
       "delete": "删除",
@@ -740,7 +741,7 @@ export default interface Resources {
       "mountOverviewTitle": "挂载全景图",
       "nameLabel": "名称",
       "nameRequired": "请输入名称",
-      "priceFallback": "按日折算计费",
+      "priceFallback": "按月单价 ÷ 30 折算到日计费",
       "segData": "数据盘 · {{price}} · 独立保留",
       "segRoot": "实例盘 · 含 100G · 关机保留 · 释放时清除 · 免费",
       "sizeLabel": "容量(GB)",

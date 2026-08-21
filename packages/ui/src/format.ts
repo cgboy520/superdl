@@ -59,16 +59,30 @@ export function mulPrice(price: string | null | undefined, count: number): strin
 }
 
 /**
- * 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_UP 到分)。
- * 展示层估算;入账以后端日结(HALF_EVEN)为准。返回 "1.67" 形式的两位小数串。
+ * 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_EVEN 到分)。
+ *
+ * 展示层估算;入账以后端日结为准 —— 后端按「前 k 天累计 − 前 k−1 天累计」出账,
+ * 所以单日实扣会在这个均值上下各差一分,整月累计才精确等于月单价 × 当月天数 ÷ 30。
+ * 舍入模式必须与后端的 as_amount 一致(HALF_EVEN):否则默认单价下有几十个合法容量
+ * 的预估与实扣差一分,用户会拿着两个数字来问。
  */
 export function diskDailyEstimate(priceGbMonth: string | null | undefined, gb: number): string {
   if (!priceGbMonth || gb <= 0 || !Number.isInteger(gb)) return "0.00";
   const [int = "0", frac = ""] = priceGbMonth.split(".");
   const monthlyScaled = BigInt(int + (frac + "0000").slice(0, 4)) * BigInt(gb); // 万分位
-  const cents = (monthlyScaled + 1500n) / 3000n; // ÷30(天)÷100(万分位→分),HALF_UP
+  // ÷30(天)÷100(万分位→分):先取整商与余数,再按 HALF_EVEN 决定进位
+  const cents = halfEvenDiv(monthlyScaled, 3000n);
   const s = cents.toString().padStart(3, "0");
   return `${s.slice(0, -2)}.${s.slice(-2)}`;
+}
+
+/** 非负整数除法,余数恰为一半时向偶数进位(与后端 ROUND_HALF_EVEN 同语义)。 */
+function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
+  const q = numerator / denominator;
+  const twice = (numerator - q * denominator) * 2n;
+  if (twice > denominator) return q + 1n;
+  if (twice < denominator) return q;
+  return q % 2n === 0n ? q : q + 1n; // 恰好一半:向偶
 }
 
 /** 秒 → "X 小时 Y 分"(en 用缩写单位规避复数形态)。 */

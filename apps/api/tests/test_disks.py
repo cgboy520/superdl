@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
+from app.core.money import disk_daily_charge
 from app.core.outbox import drain
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
@@ -174,12 +175,15 @@ class TestDailyDiskBilling:
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
-        # 0.035 × 100 / 30 = 0.11666 → 0.12
-        assert bill.amount == Decimal("0.12")
+        # 日费按「前 k 天累计 − 前 k−1 天累计」出账(整月累计才精确等于月单价 × 天数 / 30),
+        # 所以单日金额随当月第几天在 0.11/0.12 之间摆动 —— 不能写死某一个值
+        yesterday = (now_utc() - timedelta(days=1)).date()
+        expected = disk_daily_charge(Decimal("0.0350"), 100, yesterday)
+        assert bill.amount == expected
         assert len([e for e in entries if e.type == "consume"]) == 1
 
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "99.88"
+        assert w["balance"] == str(Decimal("100.00") - expected)
 
     async def test_new_disk_not_billed_for_yesterday(self, client, sm, fake):
         headers, user_id, _key = await create_user_with_key(client, "13500000021")
@@ -196,7 +200,7 @@ class TestDailyDiskBilling:
         assert resp.status_code in (200, 202, 204), resp.text
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
-        assert bill.amount == Decimal("0.12")
+        assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, now_utc().date())
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "99.88"
 
