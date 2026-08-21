@@ -19,7 +19,7 @@ from app.core.platform_config import get_effective_platform_config
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import Order
-from app.modules.billing.payment_channels import CallbackResult, get_channel
+from app.modules.billing.payment_channels import CallbackResult, PaymentChannel, get_channel
 
 logger = get_logger(__name__)
 
@@ -47,6 +47,11 @@ async def create_recharge(
             key="billing.rechargeAmountRange",
             params={"min": MIN_RECHARGE, "max": MAX_RECHARGE},
         )
+    cfg = await get_effective_platform_config(session)
+    if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")
+    channel = await get_channel(channel_name, session)
+
     if idempotency_key:
         existing = (
             await session.execute(
@@ -56,12 +61,10 @@ async def create_recharge(
             )
         ).scalar_one_or_none()
         if existing is not None:
+            if existing.status == "pending" and not existing.qr_url:
+                return await _attach_payment(session, existing, channel)  # 上次下单没拿到码,补拉
             return existing
 
-    cfg = await get_effective_platform_config(session)
-    if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
-        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")
-    channel = await get_channel(channel_name, session)
     order = Order(
         order_no=_gen_order_no(),
         user_id=user_id,
@@ -71,10 +74,26 @@ async def create_recharge(
         expires_at=now_utc() + timedelta(seconds=get_settings().recharge_order_ttl_seconds),
     )
     session.add(order)
-    await session.flush()
-    order.qr_url = await channel.create_payment(order)
-    await session.commit()
+    await session.commit()  # 先落单再调渠道,渠道抖动不占着 DB 连接
     logger.info("recharge_order_created", order_no=order.order_no, user_id=user_id)
+    return await _attach_payment(session, order, channel)
+
+
+async def _attach_payment(session: AsyncSession, order: Order, channel: PaymentChannel) -> Order:
+    """向渠道下单并回填二维码。
+
+    刻意不在事务里调渠道:池只有 10 条连接,渠道一抖动就会被下单请求占满,
+    整个 API 陪着一起挂。失败的订单让出幂等键,用户按原键重试即可开新单。
+    """
+    try:
+        qr_url = await channel.create_payment(order)
+    except Exception:
+        order.status = "failed"
+        order.idempotency_key = None
+        await session.commit()
+        raise
+    order.qr_url = qr_url
+    await session.commit()
     return order
 
 
