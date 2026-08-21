@@ -1,0 +1,9 @@
+# full 档(RKE2 生产):全组件。用法:helmfile -e full apply
+cilium: {enabled: true}
+gpuOperator: {enabled: true}
+hami: {enabled: true}
+kps: {enabled: true}
+juicefs: {enabled: true}
+topolvm: {enabled: true}
+certManager: {enabled: true}
+ingressNginx: {enabled: true}

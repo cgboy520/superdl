@@ -1,0 +1,11 @@
+# light 档(k3s 单机/小规模):仅共享档(hami 池)SKU;dedicated/mig 需 full 集群。
+# CNI 用 k3s 内置 flannel(不装 Cilium);GPU 栈用 HAMi 直装(不装 gpu-operator);
+# 监控 kps 精简 values;存储两件默认关(需要数据盘/JuiceFS 时改 true 再 apply)。
+cilium: {enabled: false}
+gpuOperator: {enabled: false}
+hami: {enabled: true}
+kps: {enabled: true}
+juicefs: {enabled: false}
+topolvm: {enabled: false}
+certManager: {enabled: true}
+ingressNginx: {enabled: true}

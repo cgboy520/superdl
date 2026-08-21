@@ -545,7 +545,7 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
     return out
 
 
-HELMFILE = "helmfile -f deploy/cluster/helmfile.yaml -e <full|light>"
+HELMFILE = "helmfile -f deploy/cluster/helmfile.yaml.gotmpl -e <full|light>"
 
 
 def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.ClusterStatus 行或 None

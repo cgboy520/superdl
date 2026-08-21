@@ -1,4 +1,4 @@
-# cert-manager ClusterIssuer(cert-manager 本体经 helm 安装,见 deploy/cluster/helmfile.yaml)。
+# cert-manager ClusterIssuer(cert-manager 本体经 helm 安装,见 deploy/cluster/helmfile.yaml.gotmpl)。
 # Jupyter 泛域名(*.app.superdl.example.com)必须 DNS-01;示例用阿里云 DNS webhook,
 # 也可换 cloudflare 等 —— solver 配置按 DNS 服务商文档替换。
 apiVersion: cert-manager.io/v1

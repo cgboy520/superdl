@@ -1,4 +1,13 @@
-# helmfile apply —— 平台组件(版本锁定,升级须走变更评审)
+# 平台组件(版本锁定,升级须走变更评审)。双档:
+#   helmfile -e full apply    # RKE2 生产全组件
+#   helmfile -e light apply   # k3s 单机/小规模(仅共享档,见 environments/light.yaml)
+# 必须显式 -e;前置检查:./preflight.sh <full|light>
+environments:
+  full:
+    values: [environments/full.yaml]
+  light:
+    values: [environments/light.yaml]
+---
 repositories:
   - name: cilium
     url: https://helm.cilium.io
@@ -19,42 +28,57 @@ repositories:
 
 releases:
   - name: cilium
+    condition: cilium.enabled
     namespace: kube-system
     chart: cilium/cilium
     version: "1.20.0"
     values: [values/cilium.yaml]
 
   - name: gpu-operator
+    condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
     version: "v26.3.0"
     values: [values/gpu-operator.yaml]
 
   - name: hami
+    condition: hami.enabled
     namespace: kube-system
     chart: hami/hami
     version: "2.9.0"
-    values: [values/hami.yaml]
+    values:
+      - values/hami.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/hami-light.yaml
+      {{- end }}
 
   - name: kube-prometheus-stack
+    condition: kps.enabled
     namespace: monitoring
     chart: prometheus-community/kube-prometheus-stack
     version: "88.0.0"
-    values: [values/kps.yaml]
+    values:
+      - values/kps.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/kps-light.yaml
+      {{- end }}
 
   - name: juicefs-csi-driver
+    condition: juicefs.enabled
     namespace: kube-system
     chart: juicefs/juicefs-csi-driver
     version: "0.32.3"          # 供应链:所有 chart 一律钉版本,升级走变更评审
     values: [values/juicefs.yaml]
 
   - name: topolvm
+    condition: topolvm.enabled
     namespace: topolvm-system
     chart: topolvm/topolvm
     version: "17.0.0"
     values: [values/topolvm.yaml]
 
   - name: cert-manager
+    condition: certManager.enabled
     namespace: cert-manager
     chart: jetstack/cert-manager
     version: "1.19.1"
@@ -63,6 +87,7 @@ releases:
         value: "true"
 
   - name: ingress-nginx
+    condition: ingressNginx.enabled
     namespace: ingress-nginx
     chart: ingress-nginx/ingress-nginx
     version: "4.13.0"
