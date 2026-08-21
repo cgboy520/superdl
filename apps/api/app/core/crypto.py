@@ -22,7 +22,7 @@ def _master_key() -> bytes:
         return hashlib.sha256(f"{settings.jwt_secret}:platform-config".encode()).digest()
     try:
         key = base64.urlsafe_b64decode(raw)
-    except Exception as exc:
+    except ValueError as exc:
         raise ValueError("SUPERDL_CONFIG_ENCRYPTION_KEY 不是合法 urlsafe-base64") from exc
     if len(key) != 32:
         raise ValueError("SUPERDL_CONFIG_ENCRYPTION_KEY 解码后须为 32 字节")

@@ -14,12 +14,8 @@ MoneyOut = Annotated[
     Decimal, PlainSerializer(lambda v: format(v, "f"), return_type=str, when_used="json")
 ]
 
-ZERO = Decimal("0.00")
-CENT = Decimal("0.01")
 PRICE_QUANT = Decimal("0.0001")
 AMOUNT_QUANT = Decimal("0.01")
-
-SECONDS_PER_HOUR = Decimal(3600)
 
 
 def as_price(value: Decimal | str | int) -> Decimal:
@@ -34,17 +30,6 @@ def as_amount(value: Decimal | str | int) -> Decimal:
     if isinstance(value, float):
         raise TypeError("float is forbidden for money")
     return Decimal(value).quantize(AMOUNT_QUANT, rounding=ROUND_HALF_EVEN)
-
-
-def hourly_charge(unit_price_hourly: Decimal, seconds_used: int) -> Decimal:
-    """按秒折算的小时费用:unit_price × seconds/3600,入账 2 位小数。
-
-    seconds_used ∈ [0, 3600];整小时恰好等于单价的 2 位入账值。
-    """
-    if not 0 <= seconds_used <= 3600:
-        raise ValueError(f"seconds_used out of range: {seconds_used}")
-    raw = as_price(unit_price_hourly) * Decimal(seconds_used) / SECONDS_PER_HOUR
-    return as_amount(raw)
 
 
 def disk_daily_charge(price_gb_month: Decimal, size_gb: int) -> Decimal:

@@ -25,7 +25,7 @@ class Instance(Base):
     image_ref: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(16), index=True)
     version: Mapped[int] = mapped_column(default=0)  # 乐观锁
-    k8s_namespace: Mapped[str | None] = mapped_column(String(64))
+    k8s_namespace: Mapped[str] = mapped_column(String(64))
     pod_name: Mapped[str | None] = mapped_column(String(64))
     node_name: Mapped[str | None] = mapped_column(String(64))
     ssh_port: Mapped[int | None]

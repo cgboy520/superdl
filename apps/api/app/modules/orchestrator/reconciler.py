@@ -67,7 +67,6 @@ async def _reconcile_instances(
                 instance = await session.get(Instance, instance_id)
                 if instance is None or instance.status not in ACTIVE_STATUSES:
                     continue
-                assert instance.k8s_namespace is not None
                 st = await orch.get_status(instance.k8s_namespace, instance.uuid)
 
                 if instance.status in (sm_def.CREATING, sm_def.STARTING):

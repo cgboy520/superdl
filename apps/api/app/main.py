@@ -134,11 +134,12 @@ def wire_modules() -> None:
     """跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听。双入口共用。"""
     from app.modules.billing.edge_listener import register_billing_edge_listener
     from app.modules.catalog import prewarm as _prewarm  # noqa: F401 注册 image.prewarm handler
+    from app.modules.catalog.inventory import register_inventory_provider
     from app.modules.nodes import handlers as _node_handlers  # noqa: F401 注册 node.cordon handler
     from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
-    from app.modules.orchestrator.service import register_inventory_provider
+    from app.modules.orchestrator.service import estimate_available
 
-    register_inventory_provider()
+    register_inventory_provider(estimate_available)
     register_billing_edge_listener()
 
 

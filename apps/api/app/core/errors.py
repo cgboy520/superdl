@@ -150,18 +150,18 @@ def install_error_handlers(app: FastAPI) -> None:
         )
 
 
+try:  # pragma: no cover - 可选依赖,缺失即降级为 no-op
+    import sentry_sdk  # type: ignore[import-not-found]
+except ImportError:
+    sentry_sdk = None
+
+
 def _capture_exception(exc: Exception) -> None:
     """Sentry seam:配置 SUPERDL_SENTRY_DSN 且安装 sentry-sdk 才生效,否则静默跳过。"""
     from app.core.config import get_settings
 
-    if not get_settings().sentry_dsn:
-        return
-    try:  # pragma: no cover - 可选依赖
-        import sentry_sdk  # type: ignore[import-not-found]
-
+    if sentry_sdk is not None and get_settings().sentry_dsn:
         sentry_sdk.capture_exception(exc)
-    except ImportError:
-        pass
 
 
 def init_sentry() -> None:
@@ -172,9 +172,7 @@ def init_sentry() -> None:
     dsn = get_settings().sentry_dsn
     if not dsn:
         return
-    try:  # pragma: no cover - 可选依赖
-        import sentry_sdk  # type: ignore[import-not-found]
-
-        sentry_sdk.init(dsn=dsn, environment=get_settings().environment)
-    except ImportError:
+    if sentry_sdk is None:
         get_logger("app.errors").warning("sentry_dsn_set_but_sdk_missing")
+        return
+    sentry_sdk.init(dsn=dsn, environment=get_settings().environment)

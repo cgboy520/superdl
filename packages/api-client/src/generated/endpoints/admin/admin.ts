@@ -2806,9 +2806,7 @@ export const getAdminListNodesApiAdminV1NodesGetUrl = () => {
 }
 
 /**
- * 节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。
- *
- * 台账为空(巡检未跑过/worker 停摆)时回落实时 K8s 查询,避免管理端开天窗。
+ * 节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。首轮巡检前为空列表。
  * @summary Admin List Nodes
  */
 export const adminListNodesApiAdminV1NodesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<NodeOut[]> => {

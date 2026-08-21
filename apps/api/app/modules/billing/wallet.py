@@ -33,7 +33,8 @@ async def lock_wallet(session: AsyncSession, user_id: int) -> Wallet:
         await session.execute(select(Wallet).where(Wallet.user_id == user_id).with_for_update())
     ).scalar_one_or_none()
     if wallet is None:
-        await get_or_create_wallet(session, user_id)
+        session.add(Wallet(user_id=user_id))
+        await session.flush()
         wallet = (
             await session.execute(select(Wallet).where(Wallet.user_id == user_id).with_for_update())
         ).scalar_one()

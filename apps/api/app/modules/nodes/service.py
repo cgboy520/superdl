@@ -167,28 +167,6 @@ async def list_enrollments(
     return out
 
 
-async def joined_node_specs(session: AsyncSession) -> dict[str, dict[str, str]]:
-    """已加入节点的登记规格(按 node_name 索引),供管理端节点卡补充展示:
-    型号(nvidia-smi 上报,取首卡)/驱动版本/CUDA 版本。K8s 侧不带这些标签时用它兜底。"""
-    rows = (
-        await session.execute(select(NodeEnrollment).where(NodeEnrollment.status == "joined"))
-    ).scalars()
-    out: dict[str, dict[str, str]] = {}
-    for r in rows:
-        if not r.node_name:
-            continue
-        os_info = r.os_info or {}
-        gpu_info = r.gpu_info or []
-        first = gpu_info[0] if gpu_info else None
-        first_name = first.get("name", "") if isinstance(first, dict) else (first or "")
-        out[r.node_name] = {
-            "gpu_model": str(first_name),
-            "driver_version": str(os_info.get("driver_version") or ""),
-            "cuda_version": str(os_info.get("cuda_version") or ""),
-        }
-    return out
-
-
 async def get_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEnrollment:
     row = await session.get(NodeEnrollment, enrollment_id)
     if row is None:

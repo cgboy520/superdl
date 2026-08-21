@@ -2,6 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -80,6 +81,13 @@ class TestBillAmount:
 
     def test_zero(self):
         assert bill_amount(Decimal("9.9900"), 1, 0) == Decimal("0.00")
+
+    def test_out_of_range_raises(self):
+        # 窗口计算 bug 必须炸出来,不允许静默截断少扣/多扣
+        with pytest.raises(ValueError):
+            bill_amount(Decimal("1.0000"), 1, 3601)
+        with pytest.raises(ValueError):
+            bill_amount(Decimal("1.0000"), 1, -1)
 
 
 async def seed_instance(

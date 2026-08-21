@@ -183,7 +183,7 @@ class Settings(BaseSettings):
             try:
                 if len(base64.urlsafe_b64decode(self.config_encryption_key)) != 32:
                     problems.append("config_encryption_key 解码后须为 32 字节")
-            except Exception:
+            except ValueError:
                 problems.append("config_encryption_key 不是合法 urlsafe-base64")
         if problems:
             raise ValueError("生产配置校验失败:" + ";".join(problems))

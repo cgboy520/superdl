@@ -1,25 +1,21 @@
 """近似库存:市场页只展示近似值(30s 进程内缓存),创建以 K8s 调度结果为准。
 
-真实容量估算由 orchestrator 在启动时注册 provider;未注册时用 stub。
+真实容量估算由 orchestrator 在 wire_modules() 时注册 provider;未接线即查询是装配 bug,直接报错。
 """
 
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
-InventoryProvider = Callable[[Any], Awaitable[int]]  # (sku) -> 可租卡数
+if TYPE_CHECKING:
+    from app.modules.catalog.models import Sku
+
+InventoryProvider = Callable[["Sku"], Awaitable[int]]  # (sku) -> 可租卡数
 
 CACHE_TTL_SECONDS = 30.0
 
 _cache: dict[int, tuple[int, float]] = {}
-
-
-async def _stub_provider(_sku: Any) -> int:
-    """占位 provider:固定可租数。"""
-    return 8
-
-
-_provider: InventoryProvider = _stub_provider
+_provider: InventoryProvider | None = None
 
 
 def register_inventory_provider(provider: InventoryProvider) -> None:
@@ -31,7 +27,9 @@ def clear_cache() -> None:
     _cache.clear()
 
 
-async def get_available_count(sku: Any) -> int:
+async def get_available_count(sku: "Sku") -> int:
+    if _provider is None:
+        raise RuntimeError("inventory provider 未注册:入口必须先执行 wire_modules()")
     now = time.monotonic()
     hit = _cache.get(sku.id)
     if hit is not None and now - hit[1] < CACHE_TTL_SECONDS:

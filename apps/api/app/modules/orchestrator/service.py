@@ -310,7 +310,7 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     if instance.status != sm_def.STOPPED:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
-    await _require_cluster_for_tier(session, (instance.spec or {}).get("tier"))
+    await _require_cluster_for_tier(session, instance.spec.get("tier"))
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
     await billing_service.require_balance_at_least(
         session,
@@ -331,7 +331,7 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
         )
-    await _require_cluster_for_tier(session, (instance.spec or {}).get("tier"))
+    await _require_cluster_for_tier(session, instance.spec.get("tier"))
     await transition(
         session,
         instance,
@@ -431,7 +431,7 @@ def build_pod_spec(instance: Instance, *, distro: str | None = None) -> Instance
     if instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
     return InstancePodSpec(
-        namespace=instance.k8s_namespace or f"{settings.k8s_namespace_prefix}{instance.user_id}",
+        namespace=instance.k8s_namespace,
         name=instance.uuid,
         image=instance.image_ref,
         gpu_resources=gpu_req.resources,
@@ -504,12 +504,6 @@ async def estimate_available(sku: "Sku") -> int:
         per_gpu = max(1, int(100 * float(sku.oversell_cores)) // max(1, sku.gpu_cores_pct))
         return free_gpus * per_gpu
     return free_gpus
-
-
-def register_inventory_provider() -> None:
-    from app.modules.catalog.inventory import register_inventory_provider as reg
-
-    reg(estimate_available)  # type: ignore[arg-type]
 
 
 # ---------- 管理端 ----------
@@ -754,8 +748,8 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
     )
     by_pool: dict[str, float] = {}
     for inst in rows:
-        pool = inst.spec.get("pool_label", "unknown")
-        share = inst.gpu_count * (inst.spec.get("gpu_cores_pct", 100) / 100.0)
+        pool = inst.spec["pool_label"]
+        share = inst.gpu_count * (inst.spec["gpu_cores_pct"] / 100.0)
         by_pool[pool] = by_pool.get(pool, 0.0) + share
     return by_pool
 
@@ -766,7 +760,7 @@ async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -
     if not ids:
         return {}
     rows = (await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars()
-    return {inst.id: inst.spec.get("pool_label", "unknown") for inst in rows}
+    return {inst.id: inst.spec["pool_label"] for inst in rows}
 
 
 async def cluster_nodes() -> list[Any]:

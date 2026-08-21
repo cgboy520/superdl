@@ -5522,7 +5522,7 @@
     },
     "/api/admin/v1/nodes": {
       "get": {
-        "description": "节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。\n\n台账为空(巡检未跑过/worker 停摆)时回落实时 K8s 查询,避免管理端开天窗。",
+        "description": "节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。首轮巡检前为空列表。",
         "operationId": "admin_list_nodes_api_admin_v1_nodes_get",
         "responses": {
           "200": {

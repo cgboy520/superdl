@@ -21,9 +21,7 @@ async def instances_metrics_summary(
     断源降级为 available=false(200),详情端点维持 503 语义。
     """
     instances = await orchestrator_service.list_instances(session, user.id)
-    targets = [
-        (i.uuid, i.k8s_namespace or f"tenant-{user.id}") for i in instances if i.status == "running"
-    ]
+    targets = [(i.uuid, i.k8s_namespace) for i in instances if i.status == "running"]
     return await service.instances_gpu_summary(targets)
 
 
@@ -33,6 +31,5 @@ async def get_instance_metrics(
 ) -> dict[str, Any]:
     """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
     instance = await orchestrator_service.get_instance(session, user.id, uuid)
-    ns = instance.k8s_namespace or f"tenant-{user.id}"
-    tier = (instance.spec or {}).get("tier")
-    return await service.instance_metrics(ns, instance.uuid, range, tier=tier)
+    tier = instance.spec.get("tier")
+    return await service.instance_metrics(instance.k8s_namespace, instance.uuid, range, tier=tier)

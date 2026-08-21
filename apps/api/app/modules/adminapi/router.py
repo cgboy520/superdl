@@ -490,59 +490,29 @@ async def admin_node_metrics(
 
 @router.get("/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
-    """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。
-
-    台账为空(巡检未跑过/worker 停摆)时回落实时 K8s 查询,避免管理端开天窗。
-    """
+    """节点视图(台账口径,60s 巡检刷新):含 Missing/未打池标签节点。首轮巡检前为空列表。"""
     rows = await nodes_service.list_node_specs(session)
-    if rows:
-        return [
-            NodeOut(
-                name=r.node_name,
-                pool_label=r.pool_label or "",
-                gpu_model=r.gpu_model or "GPU",
-                gpu_total=r.gpu_count,
-                gpu_used=r.gpu_used,
-                status=r.status,
-                vcpu=r.vcpu,
-                mem_gb=r.mem_gb,
-                disk_gb=r.disk_gb,
-                driver_version=r.driver_version or "",
-                cuda_version=r.cuda_version or "",
-                gpu_model_raw=r.gpu_model_raw or "",
-                vram_gb=r.vram_gb,
-                unlabeled=r.unlabeled,
-                label_synced=r.label_synced,
-                last_seen=r.last_seen.isoformat() if r.last_seen else "",
-            )
-            for r in rows
-        ]
-    nodes = await orchestrator_service.cluster_nodes()
-    specs = await nodes_service.joined_node_specs(session)
-    out: list[NodeOut] = []
-    for n in nodes:
-        spec = specs.get(n.name, {})
-        model = (
-            n.gpu_model
-            if n.gpu_model and n.gpu_model != "GPU"
-            else (spec.get("gpu_model") or n.gpu_model)
+    return [
+        NodeOut(
+            name=r.node_name,
+            pool_label=r.pool_label or "",
+            gpu_model=r.gpu_model or "GPU",
+            gpu_total=r.gpu_count,
+            gpu_used=r.gpu_used,
+            status=r.status,
+            vcpu=r.vcpu,
+            mem_gb=r.mem_gb,
+            disk_gb=r.disk_gb,
+            driver_version=r.driver_version or "",
+            cuda_version=r.cuda_version or "",
+            gpu_model_raw=r.gpu_model_raw or "",
+            vram_gb=r.vram_gb,
+            unlabeled=r.unlabeled,
+            label_synced=r.label_synced,
+            last_seen=r.last_seen.isoformat() if r.last_seen else "",
         )
-        out.append(
-            NodeOut(
-                name=n.name,
-                pool_label=n.pool_label,
-                gpu_model=model,
-                gpu_total=n.gpu_total,
-                gpu_used=n.gpu_used,
-                status=n.status,
-                vcpu=n.vcpu,
-                mem_gb=n.mem_gb,
-                disk_gb=n.disk_gb,
-                driver_version=spec.get("driver_version", ""),
-                cuda_version=spec.get("cuda_version", ""),
-            )
-        )
-    return out
+        for r in rows
+    ]
 
 
 HELMFILE = "helmfile -f deploy/cluster/helmfile.yaml.gotmpl -e <full|light>"

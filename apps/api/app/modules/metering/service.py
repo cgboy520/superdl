@@ -68,9 +68,6 @@ async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetri
             points = await prom.query_range("gpu_util", ns, uuid, start=start, end=end, step="300s")
         except prom.PrometheusUnavailable:
             return InstanceMetricsSummaryOut(available=False, items=[])
-        except Exception:  # 单台异常不拖垮整批
-            logger.warning("metrics_summary_instance_failed", uuid=uuid)
-            continue
         items.append(
             InstanceGpuSeries(uuid=uuid, points=points, last=points[-1][1] if points else None)
         )
@@ -99,14 +96,9 @@ async def aggregate_previous_hour(
                 session, window_start, window_end
             )
             instances = await orchestrator_service.admin_list_instances(session)
-            loc = {i.id: (i.k8s_namespace, i.uuid, (i.spec or {}).get("tier")) for i in instances}
+            loc = {i.id: (i.k8s_namespace, i.uuid, i.spec.get("tier")) for i in instances}
         for inst_id, _user_id, _price, _gpus in candidates:
-            ns_pod = loc.get(inst_id)
-            if not ns_pod:
-                continue
-            ns, pod, tier = ns_pod
-            if not ns:
-                continue
+            ns, pod, tier = loc[inst_id]
             try:
                 values = await prom.query_instance_metric(
                     "gpu_util",

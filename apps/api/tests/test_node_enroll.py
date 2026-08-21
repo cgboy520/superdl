@@ -516,6 +516,9 @@ class TestNodeCordon:
             assert "fake-hami-node-1" not in fake.cordoned_nodes  # 请求路径零 K8s 调用
             assert await drain(sm) == 1
             assert "fake-hami-node-1" in fake.cordoned_nodes
+            from app.modules.nodes.patrol import node_spec_patrol
+
+            await node_spec_patrol(sm)  # 节点视图只认巡检台账
             nodes = (await client.get("/api/admin/v1/nodes", headers=ah)).json()
             assert next(n for n in nodes if n["name"] == "fake-hami-node-1")["status"] == "Cordoned"
 

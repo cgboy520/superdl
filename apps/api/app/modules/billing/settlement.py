@@ -66,8 +66,9 @@ def running_seconds_in_window(
 
 
 def bill_amount(unit_price: Decimal, gpu_count: int, seconds: int) -> Decimal:
-    """入账 2 位 HALF_EVEN。seconds clamp 到 [0, 3600] 防御。"""
-    seconds = max(0, min(seconds, 3600))
+    """入账 2 位 HALF_EVEN。seconds ∈ [0, 3600](单整点小时窗口);越界即窗口计算有 bug,报错不截断。"""
+    if not 0 <= seconds <= 3600:
+        raise ValueError(f"seconds out of range: {seconds}")
     raw = as_price(unit_price) * Decimal(gpu_count) * Decimal(seconds) / Decimal(3600)
     return as_amount(raw)
 

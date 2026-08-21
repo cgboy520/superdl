@@ -196,6 +196,9 @@ class TestAdjustments:
 
 class TestNodesAndReports:
     async def test_nodes_view(self, client, sm, fake):
+        from app.modules.nodes.patrol import node_spec_patrol
+
+        await node_spec_patrol(sm)  # 节点视图只认巡检台账
         ah = await admin_headers(sm, client, role="ops")
         nodes = (await client.get("/api/admin/v1/nodes", headers=ah)).json()
         pools = {n["pool_label"] for n in nodes}

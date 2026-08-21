@@ -16,10 +16,7 @@ RELEASING = "releasing"
 RELEASED = "released"
 FAILED = "failed"
 
-# RELEASED 是唯一终态;FAILED 为故障停机态,仍可走 releasing→released
-TERMINAL = frozenset({RELEASED})
-
-# from → 允许的 to。RUNNING→FAILED 仅系统使用(pod_lost);
+# from → 允许的 to。RELEASED 是唯一终态(无出边);RUNNING→FAILED 仅系统使用(pod_lost);
 # CREATING→RELEASING 为用户取消(creating 非计费态,冻结额度随 release 退回);
 # FAILED→RELEASING 为用户清理失败实例。
 TRANSITIONS: dict[str, frozenset[str]] = {
@@ -32,9 +29,6 @@ TRANSITIONS: dict[str, frozenset[str]] = {
     FAILED: frozenset({RELEASING}),
     RELEASING: frozenset({RELEASED}),
 }
-
-# 计费态:处于该状态即产生 GPU 时费
-BILLABLE = frozenset({RUNNING})
 
 
 def validate_transition(from_status: str, to_status: str) -> None:

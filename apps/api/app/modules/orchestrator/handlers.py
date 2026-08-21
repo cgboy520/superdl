@@ -28,7 +28,6 @@ async def handle_create(session: AsyncSession, task: OutboxTask) -> None:
         return  # 已失败/已推进,幂等跳过
     orch = get_orchestrator()
     instance.ssh_port = await ensure_port(session, instance)
-    assert instance.k8s_namespace is not None
     await orch.ensure_namespace(instance.k8s_namespace)
     await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
     instance.pod_name = instance.uuid
@@ -42,7 +41,6 @@ async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
         return
     orch = get_orchestrator()
     instance.ssh_port = await ensure_port(session, instance)
-    assert instance.k8s_namespace is not None
     await orch.ensure_namespace(instance.k8s_namespace)
     await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
     instance.pod_name = instance.uuid
@@ -54,7 +52,6 @@ async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
     if instance is None or instance.status != sm_def.STOPPING:
         return
     orch = get_orchestrator()
-    assert instance.k8s_namespace is not None
     await orch.delete_instance(instance.k8s_namespace, instance.uuid)
     # reconciler 观察到 Pod 消失 → stopped(尾账在计费边监听器触发)
 
@@ -69,7 +66,6 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
     if instance is None:
         return
     orch = get_orchestrator()
-    assert instance.k8s_namespace is not None
     if instance.status == sm_def.STOPPING:
         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
         await transition(
@@ -105,7 +101,6 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
     if instance.status != sm_def.RELEASING:
         return
     orch = get_orchestrator()
-    assert instance.k8s_namespace is not None
     await orch.delete_instance(instance.k8s_namespace, instance.uuid)
     # releasing → released 由 reconciler 在确认 Pod 消失后完成(含擦盘事件与端口回收)
 

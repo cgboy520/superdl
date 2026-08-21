@@ -177,6 +177,7 @@ class TestSkuListAssembly:
                 Instance(
                     user_id=1,
                     sku_id=sku_id,
+                    k8s_namespace="tenant-1",
                     uuid="i-cap-test",
                     name="cap-test",
                     status="running",

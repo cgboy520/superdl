@@ -44,17 +44,14 @@ async def on_instance_transition(
         )
 
 
-def _register() -> None:
-    from app.modules.orchestrator.service import register_transition_listener
-
-    register_transition_listener(on_instance_transition)
-
-
 _registered = False
 
 
 def register_billing_edge_listener() -> None:
     global _registered
-    if not _registered:
-        _register()
-        _registered = True
+    if _registered:
+        return
+    from app.modules.orchestrator.service import register_transition_listener
+
+    register_transition_listener(on_instance_transition)
+    _registered = True
