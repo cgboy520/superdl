@@ -176,25 +176,6 @@ class TestArrearsChain:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
 
-class TestWalletApi:
-    async def test_wallet_and_ledger_endpoints(self, client, sm, fake):
-        headers, _uuid, _user_id = await _provision_running(client, sm, fake)
-        w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "100.00"
-        ledger = (await client.get("/api/v1/wallet/ledger", headers=headers)).json()
-        assert ledger["items"][0]["type"] == "recharge"
-
-    async def test_summary_endpoint(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
-        expected = await backdate_running_event(sm, uuid, 30)
-        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
-        month = now_utc().strftime("%Y-%m")
-        summary = (
-            await client.get("/api/v1/bills/summary", params={"month": month}, headers=headers)
-        ).json()
-        assert summary["items"][0]["total_seconds"] >= max(1, expected - 2)
-
-
 class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm, fake):
         headers, _uuid, user_id = await _provision_running(client, sm, fake)

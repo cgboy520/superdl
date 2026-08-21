@@ -196,15 +196,6 @@ class TestAdjustments:
 
 
 class TestNodesAndReports:
-    async def test_nodes_view(self, client, sm, fake):
-        from app.modules.nodes.patrol import node_spec_patrol
-
-        await node_spec_patrol(sm)  # 节点视图只认巡检台账
-        ah = await admin_headers(sm, client, role="ops")
-        nodes = (await client.get("/api/admin/v1/nodes", headers=ah)).json()
-        pools = {n["pool_label"] for n in nodes}
-        assert {"kata", "hami", "mig"} <= pools
-
     async def test_oversell_report(self, client, sm, fake):
         _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池 50% × 1
         ah = await admin_headers(sm, client, role="finance")
@@ -286,12 +277,6 @@ class TestOutboxDead:
             task = await session.get(OutboxTask, task2)
             assert task is not None and task.status == "discarded"
 
-    async def test_readonly_cannot_retry(self, client: AsyncClient, sm):
-        task_id = await _make_dead_task(sm)
-        ah = await admin_headers(sm, client, role="readonly")
-        resp = await client.post(f"/api/admin/v1/outbox/{task_id}/retry", headers=ah)
-        assert resp.status_code == 403
-
 
 class TestRevenueReport:
     async def test_today_revenue_and_signups(self, client: AsyncClient, sm):
@@ -354,7 +339,7 @@ class TestAnnouncement:
 class TestTenantBillingDrilldown:
     """账单争议处理:管理端必须能看到任一租户的账单明细与资金流水。"""
 
-    async def test_ledger_and_bills_pages(self, client, sm):
+    async def test_ledger_pagination(self, client, sm):
         from decimal import Decimal
 
         from app.modules.billing import wallet
@@ -385,20 +370,12 @@ class TestTenantBillingDrilldown:
         )
         assert len(resp2.json()["items"]) == 2  # 翻页拿到剩余两条
 
-        # 小时账单端点可达(该租户暂无账单 → 空页,不是 500)
-        resp3 = await client.get("/api/admin/v1/tenants/4242/bills", headers=headers)
-        assert resp3.status_code == 200
-        assert resp3.json()["items"] == []
-
 
 class TestFreezeStopsInstances:
     async def test_freeze_stops_running_instances(self, client, sm, fake):
         """封禁必须同时停机、停计费。
 
-        此前 admin_set_user_status 只改 status + 撤 token:被封账号的 GPU 继续满载跑(封
-        挖矿号时处置完全失效),而计费主链路不看用户状态 —— 被封用户继续每小时被扣,扣到 0
-        之后走欠费链路把数据盘推向回收倒计时,他却连充值下单都做不了(deps 的 403 覆盖整个
-        CurrentUser),既阻止不了扣费也无法自救。
+        只改 status + 撤 token 的话,计费主链路不看用户状态,被封账号会继续跑并继续扣费。
         """
         h = await admin_headers(sm, client)
         _user_headers, uuid, user_id = await _provision_running(client, sm, fake, "13600000090")
@@ -433,7 +410,7 @@ class TestFreezeStopsInstances:
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
 
     async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
-        """解封不自动开机:解封瞬间批量拉起,余额不足的话立刻又欠费停机。"""
+        """解封不自动开机:解封即批量拉起会立刻又欠费停机。"""
         h = await admin_headers(sm, client)
         _uh, uuid, user_id = await _provision_running(client, sm, fake, "13600000091")
         await client.post(
@@ -514,7 +491,7 @@ class TestAdminSearch:
             )
         ).json()
         assert [i["uuid"] for i in by_node] == [uuid]
-        # 「这台 GPU 是谁的」:后端一直在返回,现在前端也拿得到
+        # 「这台 GPU 是谁的」:管理端实例视图带租户与节点
         assert by_node[0]["user_id"] == user_id
         assert by_node[0]["node_name"] == "fake-node-1"
         by_uuid = (

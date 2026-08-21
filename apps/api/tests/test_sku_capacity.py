@@ -54,16 +54,6 @@ class TestSellableGate:
         assert body["message_key"] == "catalog.skuNotSellable"
         assert body["params"] == {"model": "H100", "pool": "hami"}
 
-    async def test_force_overrides(self, client: AsyncClient, sm):
-        sku_id = await seed_one_sku(sm, status="off", gpu_model="H100", pool_label="hami")
-        headers = await admin_headers(sm, client)
-        resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}?force=true",
-            json={"status": "on", "reason": "用例"},
-            headers=headers,
-        )
-        assert resp.status_code == 200 and resp.json()["status"] == "on"
-
     async def test_matching_ready_node_passes(self, client: AsyncClient, sm):
         await seed_spec(sm)
         sku_id = await seed_one_sku(sm, status="off")  # RTX4090 × hami

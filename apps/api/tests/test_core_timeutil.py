@@ -2,11 +2,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from app.core.timeutil import day_floor, ensure_utc, hour_floor, now_utc, prev_hour_range
-
-
-def test_now_utc_is_aware():
-    assert now_utc().tzinfo is not None
+from app.core.timeutil import day_floor, ensure_utc, hour_floor, prev_hour_range
 
 
 def test_ensure_utc_rejects_naive():

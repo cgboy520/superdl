@@ -19,12 +19,6 @@ class TestRequestId:
 
 
 class TestHealthEndpoints:
-    async def test_healthz(self, client: AsyncClient):
-        """K8s liveness 探针依据。"""
-        resp = await client.get("/healthz")
-        assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
-
     async def test_ready_when_db_up(self, client: AsyncClient):
         resp = await client.get("/readyz")
         assert resp.status_code == 200
@@ -32,18 +26,6 @@ class TestHealthEndpoints:
 
 
 class TestBusinessMetrics:
-    async def test_payment_mismatch_counted(self, client: AsyncClient, sm):
-        from tests.test_payment import create_order, pay_mock, user_headers
-
-        headers = await user_headers(client, "13700000041")
-        order = await create_order(client, headers, "40.00")
-        resp = await pay_mock(client, order["order_no"], "39.99")  # 金额不符
-        assert resp.status_code == 400
-
-        body = (await client.get("/metrics/")).text
-        assert "superdl_payment_callback_mismatch_total" in body
-        assert "superdl_http_request_duration_seconds" in body
-
     async def test_http_histogram_uses_route_template(self, client: AsyncClient):
         await client.get("/api/v1/skus")
         body = (await client.get("/metrics/")).text

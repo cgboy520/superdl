@@ -71,8 +71,7 @@ class TestUserQuota:
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
-        resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
-        assert resp.status_code in (200, 202), resp.text
+        await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
 

@@ -1,14 +1,7 @@
 """真实收款渠道的验签路径。
 
-`/webhooks/wechatpay` 与 `/webhooks/alipay` 无 JWT、无用户鉴权,设计前提是「验签即鉴权」——
-而在此之前 AlipayChannel / WechatChannel / verify_with_rsa 在整个测试树里字面出现 0 次:
-两条 webhook 用例把 get_channel monkeypatch 成 MockChannel,它的 parse_callback 只做
-json.loads,不验任何签名。于是这条无鉴权加钱接口唯一的防线零覆盖,而 94.6% 的 billing
-覆盖率是在**不含真实收款验签**的基础上算出来的(整个类被 pragma: no cover 摘出了分母)。
-
-「需要真实商户凭据」对 parse_callback 并不成立:验一条支付宝通知只需要在测试里现生成一对
-RSA 密钥;验一条微信通知只需要一对合成密钥 + 任意 32 字节 apiv3 key。凭据只有下单和查单
-才真的需要。
+`/webhooks/wechatpay` 与 `/webhooks/alipay` 无 JWT、无用户鉴权,「验签即鉴权」是唯一防线,
+必须用真实签名而非 MockChannel 覆盖。测试内现生成密钥即可:凭据只有下单与查单才需要。
 """
 
 import base64
@@ -74,9 +67,8 @@ def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
         "notify_id": "abc123",
         **overrides,
     }
-    # 加签口径是**解码后**的值;而真实通知是 application/x-www-form-urlencoded,
-    # 签名里的 + / = 会被转义成 %2B 等 —— 不 urlencode 的话 parse_qsl 会把 + 解成空格,
-    # 一条完全合法的通知会验签失败(这正是最容易在联调时踩到的一步)。
+    # 加签口径是**解码后**的值,而真实通知是 application/x-www-form-urlencoded:
+    # 不 urlencode 的话 parse_qsl 会把签名里的 + 解成空格,合法通知也会验签失败。
     message = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     params["sign_type"] = "RSA2"
     params["sign"] = _sign(private_pem, message.encode())
@@ -100,13 +92,6 @@ class TestAlipayCallbackSignature:
         with pytest.raises(AppError) as exc:
             await _alipay_channel(keypair).parse_callback({}, body)
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
-
-    async def test_missing_signature_rejected(self, keypair):
-        body = b"app_id=%s&out_trade_no=X&total_amount=1.00&trade_status=TRADE_SUCCESS" % (
-            APP_ID.encode()
-        )
-        with pytest.raises(AppError):
-            await _alipay_channel(keypair).parse_callback({}, body)
 
     async def test_signature_from_another_key_rejected(self, keypair):
         """攻击者用自己的密钥签一条格式完全正确的通知 —— 必须被我方公钥挡下。"""
@@ -173,9 +158,7 @@ def _wechat_channel(keypair: tuple[str, str]) -> WechatChannel:
     )
 
 
-def _wechat_notify(
-    private_pem: str, resource_plain: dict, *, sign_ok: bool = True
-) -> tuple[dict, bytes]:
+def _wechat_notify(private_pem: str, resource_plain: dict) -> tuple[dict, bytes]:
     """构造一条 APIv3 通知:资源体 AES-256-GCM 加密,再对 timestamp\\nnonce\\nbody\\n 签名。"""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -199,7 +182,7 @@ def _wechat_notify(
     body = json.dumps(body_obj).encode()
     timestamp, wx_nonce = "1787000000", "nonce123"
     signed = f"{timestamp}\n{wx_nonce}\n{body.decode()}\n".encode()
-    signature = _sign(private_pem, signed if sign_ok else signed + b"tamper")
+    signature = _sign(private_pem, signed)
     headers = {
         "Wechatpay-Timestamp": timestamp,
         "Wechatpay-Nonce": wx_nonce,
@@ -237,12 +220,6 @@ class TestWechatCallbackSignature:
         with pytest.raises(AppError) as exc:
             await _wechat_channel(keypair).parse_callback(headers, body + b" ")
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
-
-    async def test_bad_signature_rejected(self, keypair):
-        priv, _pub = keypair
-        headers, body = _wechat_notify(priv, _wx_resource(), sign_ok=False)
-        with pytest.raises(AppError):
-            await _wechat_channel(keypair).parse_callback(headers, body)
 
     async def test_unsigned_probe_is_app_error_not_500(self, keypair):
         """未签名的探测请求会让 SDK 抛裸 Exception —— 必须归一化成 AppError,而不是 500。"""

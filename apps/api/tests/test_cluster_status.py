@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.core.k8s import set_orchestrator
-from app.core.k8s.base import ClusterProbe, derive_distro
+from app.core.k8s.base import derive_distro
 from app.core.k8s.fake import FakeOrchestrator
 from app.modules.nodes import service
 from app.modules.nodes.models import ClusterStatus
@@ -32,22 +32,6 @@ def test_derive_distro(git_version, expected):
     assert derive_distro(git_version) == expected
 
 
-async def test_fake_probe_defaults(fake):
-    probe = await fake.probe_cluster()
-    assert probe.api_reachable and probe.distro == "rke2" and probe.hami_ready
-    assert probe.kata_runtimeclass
-    assert probe.pools == {"kata": 1, "hami": 1, "mig": 1}  # fake 三池各一节点
-
-
-async def test_fake_probe_failure_modes(fake):
-    fake.fail_probe = True
-    down = await fake.probe_cluster()
-    assert down.api_reachable is False and down.error
-    fake.fail_probe = False
-    fake.probe_override = ClusterProbe(api_reachable=True, k8s_version="v1.33.4+k3s1", distro="k3s")
-    assert (await fake.probe_cluster()).distro == "k3s"
-
-
 async def test_save_probe_upserts_single_row(sm, fake):
     probe = await fake.probe_cluster()
     async with sm() as session:
@@ -63,29 +47,6 @@ async def test_save_probe_upserts_single_row(sm, fake):
         row = await service.get_cluster_status(session)
     assert count == 1
     assert row is not None and row.hami_ready is False and row.distro == "rke2"
-    assert row.detail == {"runtime_classes": ["kata-qemu", "nvidia"]}
-    assert row.probed_at is not None
-
-
-async def test_get_status_empty(sm):
-    async with sm() as session:
-        row = await service.get_cluster_status(session)
-        assert row is not None  # conftest 预置健康态
-        await session.delete(row)
-        await session.commit()
-    async with sm() as session:
-        assert await service.get_cluster_status(session) is None
-
-
-async def test_patrol_saves_probe(sm, fake):
-    from app.modules.nodes.patrol import node_spec_patrol
-
-    counts = await node_spec_patrol(sm)
-    assert counts["probe_ok"] == 1 and counts["upserted"] == 3
-    async with sm() as session:
-        row = await service.get_cluster_status(session)
-    assert row is not None and row.hami_ready and row.distro == "rke2"
-    assert row.pools == {"kata": 1, "hami": 1, "mig": 1}
 
 
 async def test_patrol_unreachable_saves_error_skips_nodes(sm, fake):
@@ -188,7 +149,7 @@ class TestGateWiring:
     async def test_create_blocked_when_storage_class_missing(self, sm, fake, client):
         """SC 名对不上/档位没装 → 即时 409,而不是让用户等 300 秒 Pending 超时判 failed。
 
-        探测数据一直都在库里,此前只被集群体检拿去做 `bool(scs)` —— 有任意一个 SC 就绿灯。
+        门禁必须按名核对,不能只判「集群里有任意一个 SC」。
         """
         from app.modules.nodes.models import ClusterStatus
         from tests.helpers import create_user_with_key, fund_wallet

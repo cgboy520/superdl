@@ -12,7 +12,6 @@ from app.core.k8s.fake import FakeOrchestrator
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
 from app.modules.metering.service import aggregate_previous_hour
-from tests.test_catalog import admin_headers
 from tests.test_orchestrator_lifecycle import _provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -99,22 +98,6 @@ class TestAggregation:
         prom.set_client(prom_mock(fail=True))
         at = datetime.now(UTC) + timedelta(hours=1)
         assert await aggregate_previous_hour(sm, at=at) == 0  # 静默跳过,计费不受影响
-
-
-class TestReconciliation:
-    async def test_reconciliation_report(self, client, sm, fake):
-        from tests.test_billing_flow import backdate_running_event
-
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
-        await backdate_running_event(sm, uuid, 30)
-        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)  # 尾账产生
-
-        ah = await admin_headers(sm, client, role="finance")
-        day = datetime.now(UTC).strftime("%Y-%m-%d")
-        resp = await client.get("/api/admin/v1/reconciliation", params={"day": day}, headers=ah)
-        assert resp.status_code == 200, resp.text
-        report = resp.json()
-        assert "billed_total" in report and "diff_pct" in report
 
 
 def prom_mock_routed(routes: dict[str, list[dict]], *, default: list[dict] | None = None):

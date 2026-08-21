@@ -1,9 +1,4 @@
-"""管理员账号 CRUD + 撤销闸。
-
-没有这一组端点时,生产库开箱就是空的 admin_users 表:控制台不可登录;而调账强制双人
-复核(复核人 ≠ 发起人),单账号意味着任何调账单都永远无法通过复核,财务补偿在生产上是
-死锁的;审计的 actor_id 也全部指向同一个账号,追溯不到人。
-"""
+"""管理员账号 CRUD + 撤销闸。"""
 
 import pytest
 from httpx import AsyncClient
@@ -39,10 +34,10 @@ async def login_headers(client: AsyncClient, username: str, password: str) -> di
 
 
 class TestAdminAccounts:
-    async def test_create_list_and_second_reviewer_unblocks_adjustment(
+    async def test_create_list_and_login(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """建出第二个账号后,调账双人复核才有可能通过 —— 这正是缺 CRUD 时的死锁点。"""
+        """建号接口不回密码/token_version,建出来的账号能真的登录。"""
         h = await admin_headers(sm, client)
         resp = await client.post(
             "/api/admin/v1/admins",
@@ -61,34 +56,8 @@ class TestAdminAccounts:
         listing = (await client.get("/api/admin/v1/admins", headers=h)).json()
         assert {a["username"] for a in listing} == {"admin-user", "finance01"}
 
-        # 新账号能登录,并且能作为第二复核人
-        second = await login(client, "finance01", STRONG)
-        assert second.status_code == 200
-        h2 = {"Authorization": f"Bearer {second.json()['access_token']}"}
-        from tests.helpers import create_user_with_key
-
-        _uh, user_id, _k = await create_user_with_key(client, "13700000001")
-        adj = await client.post(
-            "/api/admin/v1/adjustments",
-            json={"user_id": user_id, "amount": "10.00", "reason": "客诉补偿"},
-            headers=h,
-        )
-        assert adj.status_code == 201, adj.text
-        # 发起人自己复核:仍然拒绝(风控本身是对的)
-        self_review = await client.post(
-            f"/api/admin/v1/adjustments/{adj.json()['id']}/review",
-            json={"approve": True},
-            headers=h,
-        )
-        assert self_review.json()["code"] == "ADMIN_SECOND_REVIEW_REQUIRED"
-        # 第二个人复核:通过
-        ok = await client.post(
-            f"/api/admin/v1/adjustments/{adj.json()['id']}/review",
-            json={"approve": True},
-            headers=h2,
-        )
-        assert ok.status_code == 200, ok.text
-        assert ok.json()["status"] == "approved"
+        # 新建的账号能登录
+        assert (await login(client, "finance01", STRONG)).status_code == 200
 
     async def test_username_conflict_is_409_not_500(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

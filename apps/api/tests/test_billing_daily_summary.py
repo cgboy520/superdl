@@ -1,6 +1,6 @@
 """GET /api/v1/bills/daily-summary:本地日界折 UTC 窗口的当日消费聚合。
 
-覆盖:跨日界归属 / Decimal 精度 / 空数据 / 参数校验 / 盘费计入 / 多实例分组 / 租户隔离。
+覆盖:跨日界归属 / Decimal 精度 / 空数据 / 盘费计入 / 多实例分组 / 租户隔离 / 日月口径一致。
 """
 
 from datetime import UTC, datetime
@@ -150,12 +150,7 @@ class TestMonthMatchesDays:
     async def test_daily_summaries_sum_to_month_summary(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """把整月的日账单加起来必须等于月账单 —— 两个接口的日界口径必须一致。
-
-        月账单曾经按 UTC 月初硬切、日账单按 tz_offset 折算,于是北京时间的「8 月账单」
-        实际统计的是 7/31 08:00 ~ 8/31 08:00:用户 8 月 31 日白天跑的机器不计入 8 月账单,
-        却出现在当天的「今日消费」里。两个数字并排渲染在费用中心同一张卡上。
-        """
+        """把整月的日账单加起来必须等于月账单:两个接口的日界口径必须一致。"""
         headers, uid = await register_user(client, "13900010009")
         # 边界四点(东八区):本地 7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
         await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 14, 0, tzinfo=UTC), "100.00")

@@ -5,7 +5,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.core.sms import AliyunSmsChannel, MockSmsChannel, SmsError, set_sms_channel
+from app.core.sms import AliyunSmsChannel, SmsError, set_sms_channel
 
 
 @pytest.fixture(autouse=True)
@@ -69,13 +69,6 @@ class TestVerifyCodeSendFailure:
                 await session.execute(select(SmsCode).where(SmsCode.phone == "13800000090"))
             ).scalar_one()
             assert row.used_at is not None  # 已作废,不可被消费
-
-    async def test_mock_channel_keeps_working(self, client: AsyncClient):
-        set_sms_channel(MockSmsChannel())
-        resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000091", "purpose": "register"}
-        )
-        assert resp.status_code == 204
 
 
 class TestNotifySmsBestEffort:

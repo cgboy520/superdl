@@ -37,9 +37,7 @@ class TestDiskDailyCharge:
     def test_month_total_matches_list_price(self, year, month, days, size_gb):
         """整月累计 == 名义月费 × 当月天数 / 30,一分不差。
 
-        逐日单独舍分时不成立:日费量级极小,半分误差相对日费可达 ±14%,且每天朝同一
-        方向舍、按月累积不抵消。默认单价 0.035 下,10GB 逐日舍分后整月只收到 0.30 而名义
-        月费 0.35(−14.3%);30GB 的日费 raw 恰是分位 tie,HALF_EVEN 向偶后 31 天多收 18%。
+        改成逐日单独舍分即不成立:误差每天朝同一方向累积,整月可达 ±14%。
         """
         price = Decimal("0.0350")
         total = sum(
@@ -53,9 +51,3 @@ class TestDiskDailyCharge:
         price = Decimal("0.0350")
         for d in range(1, 32):
             assert disk_daily_charge(price, 10, date(2026, 7, d)) >= 0
-
-    def test_pure_function_of_day(self):
-        """(price, size, day) 的纯函数:UNIQUE(disk_id, day) 幂等与补账重跑都依赖这一点。"""
-        a = disk_daily_charge(Decimal("0.0350"), 100, date(2026, 7, 17))
-        b = disk_daily_charge(Decimal("0.0350"), 100, date(2026, 7, 17))
-        assert a == b

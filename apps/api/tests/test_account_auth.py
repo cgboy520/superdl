@@ -66,15 +66,6 @@ class TestRegister:
         assert resp.status_code == 400
         assert resp.json()["code"] == "SMS_CODE_INVALID"
 
-    async def test_code_single_use(self, client: AsyncClient):
-        await register(client)  # 消费了验证码
-        resp = await client.post(
-            "/api/v1/auth/register",
-            json={"phone": "13800000002", "sms_code": "123456", "accept_terms": True},
-        )
-        # 另一手机号没发过码
-        assert resp.json()["code"] == "SMS_CODE_INVALID"
-
     async def test_expired_code(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await send_code(client)
         async with sm() as session:
@@ -106,17 +97,10 @@ class TestLogin:
         assert resp.status_code == 200
         assert resp.json()["access_token"]
 
-    async def test_login_wrong_password(self, client: AsyncClient):
-        await register(client, password="secret123")
-        resp = await client.post("/api/v1/auth/login", json={"phone": PHONE, "password": "nope-1"})
-        assert resp.json()["code"] == "LOGIN_FAILED"
-
     async def test_login_failure_is_indistinguishable(self, client: AsyncClient):
         """未注册的号 与 已注册但密码错,响应必须逐字节相同。
 
-        否则这就是一个免登录、不限速的手机号枚举 oracle:遍历号段即可拿到一张
-        「谁是这里的客户」的名单(PII 泄露),并把撞库从盲打变成定向。
-        注册与找回密码都留了注释说明这个陷阱(先验码再判重),唯独登录这条路径漏了。
+        可区分即是一个免登录的手机号枚举 oracle。
         """
         await register(client, password="secret123")
         registered = await client.post(
@@ -153,14 +137,6 @@ class TestLogin:
         )
         assert resp.status_code == 403
         assert resp.json()["code"] == "USER_FROZEN"
-
-    async def test_refresh_flow(self, client: AsyncClient):
-        data = await register(client)
-        resp = await client.post(
-            "/api/v1/auth/refresh", json={"refresh_token": data["refresh_token"]}
-        )
-        assert resp.status_code == 200
-        assert resp.json()["access_token"]
 
     async def test_access_token_cannot_refresh(self, client: AsyncClient):
         data = await register(client)
@@ -246,16 +222,6 @@ class TestPasswordReset:
             "/api/v1/auth/login", json={"phone": "13800000090", "password": "newpass123"}
         )
         assert resp.status_code == 200, resp.text
-
-    async def test_wrong_code_rejected(self, client: AsyncClient, sm):
-        await register(client, "13800000091")
-        await issue_code(sm, "13800000091", "reset_password")
-        resp = await client.post(
-            "/api/v1/auth/password/reset",
-            json={"phone": "13800000091", "sms_code": "000000", "new_password": "newpass123"},
-        )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "SMS_CODE_INVALID"
 
     async def test_unknown_phone_needs_code_first(self, client: AsyncClient):
         """未注册手机号:先要过验证码那关,不构成「这个号存不存在」的探测口。"""

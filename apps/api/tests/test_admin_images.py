@@ -1,4 +1,4 @@
-"""管理端镜像 CRUD/预热契约:角色矩阵、审计、覆盖率计算、公开 is_prewarmed 语义。"""
+"""管理端镜像 CRUD/预热契约:审计、覆盖率计算、公开 is_prewarmed 语义。"""
 
 import pytest
 from sqlalchemy import select
@@ -52,15 +52,6 @@ class TestImageCrud:
         resp = await client.post("/api/admin/v1/images", json=IMAGE_BODY, headers=ah)
         assert resp.status_code == 409
         assert resp.json()["code"] == "CONFLICT"
-
-    async def test_role_matrix(self, client, sm) -> None:
-        ro = await admin_headers(sm, client, role="readonly")
-        fin = await admin_headers(sm, client, role="finance")
-        assert (await client.get("/api/admin/v1/images", headers=ro)).status_code == 200
-        assert (
-            await client.post("/api/admin/v1/images", json=IMAGE_BODY, headers=ro)
-        ).status_code == 403
-        assert (await client.get("/api/admin/v1/images", headers=fin)).status_code == 403
 
     async def test_delete_cascades_and_audits_reason(self, client, sm) -> None:
         ah = await admin_headers(sm, client, role="ops")

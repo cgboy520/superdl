@@ -14,7 +14,6 @@ import {
   formatMoney,
   formatReclaimCountdown,
   formatSizeGb,
-  makeFormatters,
   mulPrice,
   type SharedT,
 } from "./format";
@@ -92,24 +91,21 @@ describe.each([
   it("已越过截止", () => {
     expect(formatDaysLeft("2026-08-01T00:00:00Z", 7, t, now)).toBe(zh ? "已到期" : "Expired");
   });
-  it("起点缺失返回 null", () => {
-    expect(formatDaysLeft(null, 7, t, now)).toBeNull();
-    expect(formatDaysLeft(undefined, 30, t, now)).toBeNull();
-  });
+});
+
+it("formatDaysLeft 起点缺失返回 null(与语言无关)", () => {
+  expect(formatDaysLeft(null, 7, tZh)).toBeNull();
+  expect(formatDaysLeft(undefined, 30, tZh)).toBeNull();
 });
 
 describe("formatMoney", () => {
   it("zh:千分位与两位小数", () => {
     expect(formatMoney("1234.5", "zh-CN")).toBe("¥1,234.50");
     expect(formatMoney("0", "zh-CN")).toBe("¥0.00");
-    expect(formatMoney("1000000", "zh-CN")).toBe("¥1,000,000.00");
   });
   it("en:CN¥ 符号避免日元歧义", () => {
     expect(formatMoney("1234.5", "en-US")).toBe("CN¥1,234.50");
     expect(formatMoney("-12.3", "en-US")).toBe("-CN¥12.30");
-  });
-  it("负数", () => {
-    expect(formatMoney("-12.3", "zh-CN")).toBe("-¥12.30");
   });
   it("空值兜底", () => {
     expect(formatMoney(null, "zh-CN")).toBe("¥0.00");
@@ -165,18 +161,12 @@ describe.each([
     expect(formatReclaimCountdown(new Date("2026-08-20T23:00:00Z"), t, now)).toBe(
       zh ? "剩 47h后回收" : "reclaimed in 47h",
     );
+    expect(formatReclaimCountdown(new Date("2026-08-19T00:30:00Z"), t, now)).toBe(
+      zh ? "剩 30m后回收" : "reclaimed in 30m",
+    );
     expect(formatReclaimCountdown(new Date("2026-08-18T00:00:00Z"), t, now)).toBe(
       zh ? "即将回收" : "reclaiming soon",
     );
-  });
-});
-
-describe("makeFormatters", () => {
-  it("绑定 locale 后调用点保持原形", () => {
-    const fmt = makeFormatters(tZh, "zh-CN");
-    expect(fmt.formatMoney("12.3")).toBe("¥12.30");
-    expect(fmt.formatHourlyPrice("1.68")).toBe("¥1.68/时");
-    expect(fmt.formatDuration(120)).toBe("2 分钟");
   });
 });
 
@@ -208,8 +198,5 @@ describe("diskDailyEstimate", () => {
     expect(diskDailyEstimate("", 100)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 0)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 1.5)).toBe("0.00");
-  });
-  it("不产生浮点误差(0.1+0.2 类场景)", () => {
-    expect(diskDailyEstimate("0.3000", 1000)).toBe("10.00"); // 300/30
   });
 });

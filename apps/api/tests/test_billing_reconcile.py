@@ -1,10 +1,4 @@
-"""资金账实核对(只报不改)+ money 表 DB 兜底约束。
-
-平台的预防控制是扎实的(wallet.py 单一写入口、行锁、同事务 ledger、balance_after 快照),
-但预防控制背后没有任何检测控制:不变式一旦被破坏,没有任务、没有指标、没有 DB 约束会发现,
-损失会一直复利到有人恰好去看为止。balance_ledger 在方案文档里被定义为「对账基准」,
-而这份基准此前从来没有被对过。
-"""
+"""资金账实核对(只报不改)+ money 表 DB 兜底约束。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -52,7 +46,7 @@ class TestWalletLedgerInvariant:
         assert any("账实核对" in a.title for a in alerts)
 
     async def test_missing_ledger_row_is_detected(self, sm):
-        """流水行被删掉(或压根没写)同样被发现 —— 这正是「钱变了但没留痕」的形状。"""
+        """流水行被删掉(或压根没写)同样被发现。"""
         await _fund(sm, 1)
         async with sm() as session:
             await session.execute(text("DELETE FROM balance_ledger"))
@@ -97,7 +91,7 @@ class TestBillsVsConsume:
 
 class TestMoneyTableConstraints:
     async def test_zero_amount_ledger_row_rejected(self, sm):
-        """金额为 0 的流水没有任何业务含义,出现即代码有 bug —— 写入那一刻就要失败。"""
+        """金额为 0 的流水没有业务含义,写入那一刻就要失败。"""
         from sqlalchemy.exc import IntegrityError
 
         with pytest.raises(IntegrityError):

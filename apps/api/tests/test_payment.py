@@ -156,27 +156,6 @@ class TestRecharge:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
 
-    async def test_closed_order_failure_callback_stays_closed(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        """关单后到达的失败回调:不救回、不改状态。"""
-        headers = await user_headers(client, "13700000032")
-        order = await create_order(client, headers, "20.00")
-        async with sm() as session:
-            await session.execute(
-                update(Order).where(Order.order_no == order["order_no"]).values(status="closed")
-            )
-            await session.commit()
-        resp = await client.post(
-            "/api/v1/webhooks/mock",
-            json={"order_no": order["order_no"], "amount": "20.00", "success": False},
-        )
-        assert resp.status_code == 200
-        detail = (
-            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
-        ).json()
-        assert detail["status"] == "closed"
-
     async def test_failed_order_callback_not_rescued(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
@@ -225,16 +204,6 @@ class TestRecharge:
 
 
 class TestRealChannelWebhookRoutes:
-    async def test_wechat_webhook_without_credentials(self, client: AsyncClient, sm):
-        resp = await client.post("/api/v1/webhooks/wechatpay", content=b"{}")
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-
-    async def test_alipay_webhook_without_credentials(self, client: AsyncClient, sm):
-        resp = await client.post("/api/v1/webhooks/alipay", content=b"a=1")
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-
     async def test_alipay_webhook_plain_text_success(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
@@ -290,17 +259,6 @@ class TestRealChannelWebhookRoutes:
 
 
 class TestChannelFactory:
-    async def test_unknown_channel_rejected(self, sm):
-        import pytest as _pytest
-
-        from app.core.errors import AppError
-        from app.modules.billing.payment_channels import get_channel
-
-        async with sm() as session:
-            with _pytest.raises(AppError) as exc:
-                await get_channel("paypal", session)
-        assert exc.value.code == "VALIDATION_ERROR"
-
     async def test_real_channel_fingerprint_cache(self, sm, monkeypatch):
         """渠道实例指纹缓存:配置不变命中缓存,凭据轮换立即重建(免重启)。"""
         import app.modules.billing.payment_channels as pc

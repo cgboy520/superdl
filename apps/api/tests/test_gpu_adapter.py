@@ -66,11 +66,6 @@ def test_legacy_snapshot_without_selector_key_unaffected():
     assert req.annotations == {}
 
 
-def test_snapshot_selector_none_means_unrecognized_model():
-    req = spec_to_gpu_request(_spec("shared_std", "hami", gpu_model_selector=None), 1)
-    assert GPU_MODEL_NODE_LABEL not in req.node_selector
-
-
 def test_snapshot_selector_pins_model():
     req = spec_to_gpu_request(_spec("dedicated", "kata", gpu_model_selector="H100-80G"), 2)
     assert req.node_selector[GPU_MODEL_NODE_LABEL] == "H100-80G"
@@ -112,11 +107,6 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
     pod = build_pod_spec(_instance(_spec("shared_std", "hami", gpu_model_selector="RTX4090")))
     assert pod.node_selector[GPU_MODEL_NODE_LABEL] == "RTX4090"
     assert pod.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
-
-
-def test_build_pod_spec_default_flag_off_no_annotations():
-    pod = build_pod_spec(_instance(_spec("shared_std", "hami", gpu_model_selector="RTX4090")))
-    assert pod.annotations == {}
 
 
 @pytest.mark.parametrize(

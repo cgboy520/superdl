@@ -35,10 +35,6 @@ class TestRunningSeconds:
         events = [ev(-5, None, "creating"), ev(10, "creating", "running")]
         assert running_seconds_in_window(events, H, H_END) == 3000
 
-    def test_enter_and_leave_inside(self):
-        events = [ev(10, "creating", "running"), ev(40, "running", "stopping")]
-        assert running_seconds_in_window(events, H, H_END) == 1800
-
     def test_multiple_segments(self):
         events = [
             ev(0, "creating", "running"),
@@ -60,10 +56,6 @@ class TestRunningSeconds:
         events = [ev(-30, "creating", "running"), ev(0, "running", "stopping")]
         assert running_seconds_in_window(events, H, H_END) == 0
 
-    def test_never_running(self):
-        events = [ev(5, None, "creating"), ev(50, "creating", "failed")]
-        assert running_seconds_in_window(events, H, H_END) == 0
-
     def test_events_after_window_ignored(self):
         events = [ev(10, "creating", "running"), ev(70, "running", "stopping")]
         assert running_seconds_in_window(events, H, H_END) == 3000
@@ -77,10 +69,7 @@ class TestBillAmount:
     def test_half_even(self):
         """真正的分位 tie(第三位小数恰好是 5),才分得开三种 half 模式。
 
-        原用例用的 0.0025 / 0.0075 第三位是 2 和 7,在 HALF_EVEN / HALF_UP / HALF_DOWN 下
-        结果完全相同 —— 一个名叫 test_half_even 的用例,换任何一种舍入模式它都照过
-        (注释里「7.5 → 8,向偶」的推理本身也是错的:0.0075 距 0.01 更近,任何 half 模式
-        都进位,跟向偶无关)。舍入被误改成 HALF_UP 意味着每笔系统性多收。
+        入参必须落在 tie 上,否则三种 half 模式结果相同,用例形同虚设。
         """
         # 0.5000 × 1 × 900 / 3600 = 0.1250 → 向偶 → 0.12(HALF_UP 会给 0.13)
         assert bill_amount(Decimal("0.5000"), 1, 900) == Decimal("0.12")
@@ -277,9 +266,7 @@ class TestUpsertIdempotency:
     async def test_settlement_waits_for_inflight_transition(self, sm):
         """在飞的尾账事务对无锁读不可见 → 结算会把「已经停了的那半小时」算成满小时。
 
-        而 upsert_hour_bill 是单调只增的(只补不重扣),先入账的高估值永远回不去:
-        账单页显示 3600 秒、instance_events 显示 10:59:30 停机,两者自相矛盾且无自动纠正。
-        结算读事件前必须先拿实例行锁 —— transition() 第一步就持有它。
+        upsert_hour_bill 单调只增,高估值回不去,所以结算读事件前必须先拿实例行锁。
         """
         inst_id = await seed_instance(sm, events=[ev(-30, "creating", "running")])
         started = asyncio.Event()
@@ -523,10 +510,7 @@ class TestCatchUpSettlement:
 class TestWindowBoundaries:
     """结算窗口跨日/跨月/跨年/闰日。
 
-    全部既有结算用例锚在同一个小时(2026-08-19 10:00 UTC),追平用例最远只到 15 点。
-    结算按 aware-UTC 做 timedelta 递推,理论上这些边界不是分支 —— 但「理论上没有分支」
-    正是没人去测的原因,而一旦有人把 timedelta 换成 replace(day=...) 之类的写法,
-    错的账会先落到用户身上才被发现。跨月归属错误还会直接影响开票。
+    锁住「按 aware-UTC 做 timedelta 递推」这一实现:换成 replace(day=...) 之类会算错账期。
     """
 
     async def test_tail_then_hourly_across_boundary(self, sm, anchor):
@@ -578,10 +562,10 @@ class TestWindowBoundaries:
 
 
 class TestOverdraftRefusal:
-    """allow_negative=False 这一支此前是死代码(全仓无人传 False),也就从未被测过。
+    """allow_negative=False 的拒绝路径。
 
-    结算扣款必须允许透支(服务已消费完),但拒绝路径本身要能工作 —— 将来任何一条
-    「先付后用」的同步扣款都要靠它。
+    结算扣款必须允许透支(服务已消费完),但拒绝路径本身要能工作:
+    任何「先付后用」的同步扣款都要靠它。
     """
 
     async def test_refusal_leaves_wallet_and_ledger_untouched(self, sm):

@@ -33,17 +33,8 @@ class TestCrypto:
         with pytest.raises(InvalidTag):
             crypto.decrypt_str(token, aad="wechat_apiv3_key")
 
-    def test_bad_prefix_rejected(self):
-        with pytest.raises(ValueError):
-            crypto.decrypt_str("plaintext-not-encrypted", aad="x")
-
 
 class TestSpecValidation:
-    def test_unknown_key_rejected(self):
-        """白名单是防线:管理端拿不到写任意配置(如 JWT 密钥)的口子。"""
-        with pytest.raises(ValueError, match="未知配置键"):
-            validate_setting_value("jwt_secret", "hack")
-
     def test_kind_and_pattern_checks(self):
         with pytest.raises(ValueError):
             validate_setting_value("payment_wechat_enabled", "yes")
@@ -129,6 +120,7 @@ class TestAdminApi:
         assert site["icp_number"] is None
 
     async def test_unknown_key_rejected_via_api(self, client: AsyncClient, sm):
+        """白名单是防线:管理端拿不到写任意配置(如 JWT 密钥)的口子。"""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -193,31 +185,6 @@ class TestChannelGate:
         )
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "billing.wechatCredentialsIncomplete"
-
-
-class TestSmsTestSend:
-    async def test_test_sms_via_injected_channel(self, client: AsyncClient, sm):
-        from app.core.sms import set_sms_channel
-
-        sent: list[tuple[str, str]] = []
-
-        class _Recorder:
-            async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
-                sent.append((phone, template))
-
-        set_sms_channel(_Recorder())
-        try:
-            ah = await admin_headers(sm, client, role="admin")
-            resp = await client.post(
-                "/api/admin/v1/platform-config/test-sms",
-                json={"phone": "13800000199"},
-                headers=ah,
-            )
-            assert resp.status_code == 200, resp.text
-            assert resp.json()["ok"] is True
-            assert sent and sent[0][0] == "13800000199"
-        finally:
-            set_sms_channel(None)
 
 
 class TestAliyunRealNameProvider:

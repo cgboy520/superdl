@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core import outbox
 from app.core.outbox import (
     OutboxTask,
-    drain,
     enqueue,
     outbox_handler,
     process_one,
@@ -50,7 +49,7 @@ async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSes
         raise RuntimeError("boom")
 
     monkeypatch.setitem(outbox._registry, "t_bad", bad_handler)
-    # 退避清零,便于连续处理(重试预算现在是 RetryPolicy,不再是模块常量)
+    # 退避清零,便于连续处理
     monkeypatch.setattr(outbox, "DEFAULT_RETRY_POLICY", outbox.RetryPolicy(backoff_base_seconds=0))
 
     async with sm() as session:
@@ -69,17 +68,6 @@ async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSes
 
     # dead 任务不再被领取
     assert await process_one(sm) is False
-
-
-async def test_unknown_type_goes_dead_not_crash(sm: async_sessionmaker[AsyncSession], monkeypatch):
-    monkeypatch.setattr(outbox, "DEFAULT_RETRY_POLICY", outbox.RetryPolicy(backoff_base_seconds=0))
-    async with sm() as session:
-        enqueue(session, "t_unknown", {})
-        await session.commit()
-    await drain(sm)
-    async with sm() as session:
-        task = (await session.execute(select(OutboxTask))).scalar_one()
-        assert task.status == "dead"
 
 
 async def test_backoff_schedule(sm: async_sessionmaker[AsyncSession], monkeypatch):

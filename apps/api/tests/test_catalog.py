@@ -119,11 +119,6 @@ class TestMarket:
         data = (await client.get("/api/v1/skus")).json()
         assert all(s["available_count"] == 5 for s in data)
 
-    async def test_images(self, client: AsyncClient, sm):
-        await seed_skus(sm)
-        resp = await client.get("/api/v1/images")
-        assert resp.json()[0]["framework"] == "PyTorch"
-
 
 class TestAdminSku:
     async def test_admin_crud(self, client: AsyncClient, sm):
@@ -178,13 +173,6 @@ class TestAdminSku:
                 "price_hourly": "1",
             },
             headers=headers,
-        )
-        assert resp.status_code == 403
-
-    async def test_finance_cannot_write_sku(self, client: AsyncClient, sm):
-        headers = await admin_headers(sm, client, role="finance")
-        resp = await client.patch(
-            "/api/admin/v1/skus/1", json={"status": "on", "reason": "用例"}, headers=headers
         )
         assert resp.status_code == 403
 

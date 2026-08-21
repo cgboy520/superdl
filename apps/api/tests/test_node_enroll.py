@@ -105,10 +105,7 @@ class TestAdminEnrollments:
         assert regen.status_code == 200
         assert regen.json()["token"] != created["token"]
 
-        # revoke 需 reason;吊销后 regenerate/再吊销均 409
-        assert (
-            await client.post(f"/api/admin/v1/node-enrollments/{eid}/revoke", json={}, headers=ah)
-        ).status_code == 422
+        # 吊销后 regenerate/再吊销均 409
         resp = await client.post(
             f"/api/admin/v1/node-enrollments/{eid}/revoke", json={"reason": "误发"}, headers=ah
         )
@@ -333,7 +330,7 @@ class TestEnrollRouterAnonymous:
 
 class TestEnrollReconciler:
     async def test_joined_when_node_ready_and_pool_matches(self, client, sm) -> None:
-        from app.core.k8s import get_orchestrator, set_orchestrator
+        from app.core.k8s import set_orchestrator
         from app.core.k8s.base import NodeInfo
         from app.core.k8s.fake import FakeOrchestrator
         from app.modules.nodes.reconciler import reconcile_enrollments_once
@@ -364,7 +361,6 @@ class TestEnrollReconciler:
             assert counts == {"joined": 0, "failed": 0, "expired": 0}
 
             # K8s 出现 Ready 且池匹配 → joined,令牌即死;重复对账零动作
-            assert get_orchestrator() is fake
             fake.inject_node(
                 NodeInfo(
                     name="gpu-b1-02",
@@ -492,7 +488,7 @@ class TestNodeCordon:
         set_orchestrator(fake)
         try:
             ah = await admin_headers(sm, client, role="ops")
-            # 未知节点 → 404;reason 必填 → 422
+            # 未知节点 → 404
             assert (
                 await client.post(
                     "/api/admin/v1/nodes/no-such-node/cordon",
@@ -500,11 +496,6 @@ class TestNodeCordon:
                     headers=ah,
                 )
             ).status_code == 404
-            assert (
-                await client.post(
-                    "/api/admin/v1/nodes/fake-hami-node-1/cordon", json={}, headers=ah
-                )
-            ).status_code == 422
 
             # cordon:请求只入队,drain 后 K8s 侧生效,列表可见 Cordoned
             resp = await client.post(

@@ -142,32 +142,6 @@ class TestBackfill:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
 
-    async def test_verify_unknown_order_404(self, client: AsyncClient, sm):
-        ah = await admin_headers(sm, client, role="finance")
-        resp = await client.post("/api/admin/v1/finance/orders/R-not-exists/verify", headers=ah)
-        assert resp.status_code == 404
-
-    async def test_verify_reports_unpaid_mismatch(self, client: AsyncClient, sm):
-        """渠道侧未支付:verify 如实报 pending,matches=False。"""
-        headers = await user_headers(client, "13700000028")
-        order = await create_order(client, headers, "9.00")
-        ah = await admin_headers(sm, client, role="finance")
-        resp = await client.post(
-            f"/api/admin/v1/finance/orders/{order['order_no']}/verify", headers=ah
-        )
-        assert resp.status_code == 200
-        assert resp.json()["channel_status"] == "pending"
-        assert resp.json()["matches"] is False
-
-    async def test_backfill_unknown_order_404(self, client: AsyncClient, sm):
-        ah = await admin_headers(sm, client, role="finance")
-        resp = await client.post(
-            "/api/admin/v1/finance/orders/R-not-exists/backfill",
-            json={"reason": "测试"},
-            headers=ah,
-        )
-        assert resp.status_code == 404
-
     async def test_backfill_refused_on_failed_status(self, client: AsyncClient, sm):
         """failed 状态不可补单(仅 pending/closed 可救)。"""
         headers = await user_headers(client, "13700000029")

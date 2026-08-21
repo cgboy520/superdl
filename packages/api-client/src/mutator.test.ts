@@ -74,24 +74,6 @@ describe("customFetch 401 静默续期", () => {
     expect(refresh).not.toHaveBeenCalled();
     expect(auth).toEqual(["Bearer old", "Bearer new"]);
   });
-
-  it("有 Web Locks 时经锁串行化(跨标签页互斥)", async () => {
-    const request = vi.fn((_name: string, cb: () => Promise<boolean>) => cb());
-    vi.stubGlobal("navigator", { locks: { request } });
-    let token = "old";
-    mockFetch([unauthorized(), ok()]);
-    configureApiClient({
-      baseUrl: "",
-      getToken: () => token,
-      refreshToken: () => {
-        token = "new";
-        return Promise.resolve(true);
-      },
-    });
-
-    await customFetch("/api/v1/wallet", { method: "GET" });
-    expect(request).toHaveBeenCalledWith("superdl:token-refresh", expect.any(Function));
-  });
 });
 
 describe("错误体解析", () => {

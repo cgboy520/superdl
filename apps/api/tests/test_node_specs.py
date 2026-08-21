@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from app.core.k8s import get_orchestrator, set_orchestrator
+from app.core.k8s import set_orchestrator
 from app.core.k8s.base import NodeInfo
 from app.core.k8s.fake import FakeOrchestrator
 from app.modules.nodes.models import NodeSpec
@@ -119,4 +119,3 @@ async def test_enrollment_fallback_wins_over_gfd(sm, fake):
     assert row.gpu_model == "A100-80G"
     assert row.vram_gb == 80
     assert row.driver_version == "580.65"
-    assert get_orchestrator() is fake

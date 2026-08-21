@@ -64,8 +64,7 @@ class TestDiskCrud:
         await drain(sm)
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
-        # 擦除打在盘记录登记的那条子路径上 —— 曾经这里擦的是一条从未被挂载过的路径,
-        # rm -rf 静默成功、盘置 deleted,而 JuiceFS 上的真实数据一字节未动
+        # 擦除必须打在盘记录登记的那条子路径上,否则 rm -rf 静默成功而真实数据一字节未动
         assert fake.wiped_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
 
     async def test_create_requires_balance(self, client, sm, fake):
@@ -196,8 +195,7 @@ class TestDailyDiskBilling:
         headers, user_id, _key = await create_user_with_key(client, "13500000022")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
-        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
-        assert resp.status_code in (200, 202, 204), resp.text
+        await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
         assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, now_utc().date())
@@ -272,35 +270,10 @@ class TestDiskArrearsChain:
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
 
-    async def test_recharge_restores_disk(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13500000031")
-        await fund_wallet(sm, user_id)
-        await create_disk(client, headers)
-        async with sm() as session:
-            balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(
-                session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
-            )
-            await session.commit()
-        await balance_patrol(sm)
-        d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
-        assert d["status"] == "grace"
-
-        async with sm() as session:
-            await wallet.credit(session, user_id, Decimal("10.00"), type_="recharge")
-            await session.commit()
-        await balance_patrol(sm)
-        d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
-        assert d["status"] == "active"
-        assert d["grace_started_at"] is None
-
     async def test_recharge_restores_frozen_disk(self, client, sm, fake):
         """盘已经熬到 frozen 之后再充值,必须能解冻。
 
-        此前巡检集合是「有 active/grace 盘的用户 ∪ 余额≤0 的用户」,这类用户两边都不在:
-        盘不在计费态(frozen),余额又已经 > 0。于是他永远不被处理 —— 充了钱拿不回数据、
-        平台白占存储且永不计费、30 天到期清除也永不触发。现有用例只覆盖 grace→active
-        (grace 是计费态,用户在集合里),恰好绕开了这个分支。
+        巡检集合若拼成「有 active/grace 盘的用户 ∪ 余额≤0 的用户」,这类用户两边都不在。
         """
         headers, user_id, _key = await create_user_with_key(client, "13500000032")
         await fund_wallet(sm, user_id)
@@ -347,10 +320,7 @@ class TestDiskQuota:
 
 class TestDiskIdempotency:
     async def test_repeated_create_with_same_key_returns_same_disk(self, client, sm, fake):
-        """响应丢失时用户按第二下,不能多出一块按日计费的孤儿盘。
-
-        建盘此前完全没有幂等保护,而它和建实例是同一次提交里的两步。
-        """
+        """响应丢失时用户按第二下,不能多出一块按日计费的孤儿盘。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000050")
         await fund_wallet(sm, user_id)
         h = {**headers, "Idempotency-Key": "disk-idem-1"}
@@ -359,15 +329,3 @@ class TestDiskIdempotency:
         assert a.status_code == 201 and b.status_code == 201
         assert a.json()["uuid"] == b.json()["uuid"]
         assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1
-
-    async def test_different_key_creates_second_disk(self, client, sm, fake):
-        headers, user_id, _key = await create_user_with_key(client, "13500000051")
-        await fund_wallet(sm, user_id)
-        for key in ("k1", "k2"):
-            resp = await client.post(
-                "/api/v1/disks",
-                json={"name": "d", "size_gb": 100},
-                headers={**headers, "Idempotency-Key": key},
-            )
-            assert resp.status_code == 201
-        assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 2

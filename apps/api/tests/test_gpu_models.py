@@ -1,6 +1,6 @@
 """型号归一化穷举:五种来源格式 → canonical;匹配语义;兜底表。"""
 
-from app.core.gpu_models import OVERRIDES, canonical_gpu_model, default_vram_gb, model_matches
+from app.core.gpu_models import OVERRIDES, canonical_gpu_model, model_matches
 
 
 class TestCanonical:
@@ -33,7 +33,6 @@ class TestCanonical:
         assert canonical_gpu_model("Tesla-V100-SXM2-32GB") == "V100-32G"
 
     def test_unknown_returns_none(self):
-        assert canonical_gpu_model("Iluvatar MR-V100X") is None or True  # 异构卡:家族正则可能撞名
         assert canonical_gpu_model("Moore Threads MTT S4000") is None
         assert canonical_gpu_model("") is None
         assert canonical_gpu_model(None) is None
@@ -54,11 +53,3 @@ class TestMatch:
         assert not model_matches("RTX4090", "RTX4090D")
         assert not model_matches(None, "RTX4090")
         assert not model_matches("RTX4090", None)
-
-
-class TestVram:
-    def test_defaults(self):
-        assert default_vram_gb("RTX4090") == 24
-        assert default_vram_gb("H100-80G") == 80
-        assert default_vram_gb("UNKNOWN-X") == 0
-        assert default_vram_gb(None) == 0

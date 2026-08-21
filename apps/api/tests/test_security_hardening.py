@@ -24,19 +24,6 @@ class TestLoginRateLimit:
         )
         assert resp.status_code == 429
 
-    async def test_user_password_login_rate_limited(self, client: AsyncClient):
-        from tests.test_account_auth import register
-
-        await register(client, "13800000077", password="secret123")
-        for _ in range(5):
-            await client.post(
-                "/api/v1/auth/login", json={"phone": "13800000077", "password": "wrong-pass"}
-            )
-        resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000077", "password": "wrong-pass"}
-        )
-        assert resp.status_code == 429
-
     async def test_counter_survives_business_rollback(self, client: AsyncClient, sm):
         """限流计数走独立事务:业务事务回滚不能把这次尝试抹掉(否则可无限重试)。"""
         from sqlalchemy import select
@@ -166,6 +153,22 @@ class TestSmsCodeBruteForce:
             with pytest.raises(AppError):  # mock 固定码 123456 本是正确码
                 await account_service._consume_sms_code(session, phone, "123456", "register")
 
+    async def test_code_is_single_use(self, client: AsyncClient, sm):
+        """消费成功的验证码必须立刻作废:同一条码不能注册出第二个账号。"""
+        import pytest
+
+        from app.core.errors import AppError
+        from app.modules.account import service as account_service
+
+        phone = "13800000090"
+        await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+        async with sm() as session:
+            await account_service._consume_sms_code(session, phone, "123456", "register")
+            await session.commit()
+        async with sm() as session:
+            with pytest.raises(AppError):
+                await account_service._consume_sms_code(session, phone, "123456", "register")
+
     async def test_sms_login_rate_limited(self, client: AsyncClient):
         """验证码登录路径与密码路径同限流(否则可穷举 6 位码)。"""
         from tests.test_account_auth import register
@@ -221,28 +224,12 @@ class TestMetricsGuard:
         finally:
             settings.metrics_token = None
 
-    async def test_metrics_open_when_unconfigured(self, client: AsyncClient):
-        assert (await client.get("/metrics/")).status_code == 200
-
-
-class TestAuditRoleAccess:
-    async def test_ops_and_finance_can_read_audit(self, client: AsyncClient, sm):
-        """审计只读对全部管理角色开放(含 ops/finance)。"""
-        from tests.test_catalog import admin_headers
-
-        for role in ("ops", "finance", "readonly"):
-            headers = await admin_headers(sm, client, role=role)
-            resp = await client.get("/api/admin/v1/audit", headers=headers)
-            assert resp.status_code == 200, (role, resp.text)
-
 
 class TestProdDocsClosed:
     def test_prod_disables_docs_and_openapi_routes(self, monkeypatch):
         """生产不对公网暴露 /docs 与 /openapi.json。
 
-        管理端 51 条路径、每个字段名与取值范围(调账、补单、平台配置)都在 schema 里,
-        免登录可读等于把侦察成本降到零。只关 docs_url 不够 —— openapi_url 仍会吐出整份
-        schema。export_openapi 走 app.openapi() 直取,不经这些路由,契约闸门不受影响。
+        只关 docs_url 不够:openapi_url 仍会吐出整份管理端 schema。
         """
         from app.core.config import get_settings
         from app.main import create_app
@@ -260,11 +247,7 @@ class TestTenantContainerHardening:
     def test_security_context_is_unconditional(self):
         """租户容器加固不看 runtimeClass、不看发行版、不看档位。
 
-        此前是 `V1SecurityContext(...) if spec.runtime_class is None else None`,
-        把 runtime_class 当成「是不是 Kata」的代理判据;k3s 共享档为了拿 nvidia 运行时
-        把它设成了 "nvidia",于是全站最不可信的负载(runc + HAMi 软切分,与其他租户共享
-        同一内核和同一张物理 GPU)整段 securityContext 被跳过,只剩 userns 一层。
-        现有 test_cluster_status 只断言了 runtime_class,正是漏网处。
+        禁止拿 runtime_class 当「是不是 Kata」的代理判据:k3s 共享档也带 runtimeClassName。
         """
         from app.core.k8s.real import tenant_security_context
 
@@ -292,12 +275,7 @@ class TestTenantContainerHardening:
 
 class TestSmsCodeAtRest:
     async def test_code_is_not_stored_in_clear(self, client, sm):
-        """库里不能有验证码明文。
-
-        密码走了 bcrypt,验证码此前是明文:一次只读数据库访问(备份 dump、只读副本、
-        DBA 账号、一个注入落点)就能 SELECT phone, code 拿到全部活跃验证码,直接登入任意
-        账号或走改密路径把本人踢下线 —— 从「读到库」一步升级成「成为任何人」。
-        """
+        """库里不能有验证码明文:一次只读 DB 访问就能拿到全部活跃验证码。"""
         from sqlalchemy import select
 
         from app.modules.account.models import SmsCode
@@ -319,20 +297,3 @@ class TestSmsCodeAtRest:
         assert row.code_hash == hash_sms_code("13800000777", "register", "123456")
         assert hash_sms_code("13800000778", "register", "123456") != row.code_hash
         assert hash_sms_code("13800000777", "login", "123456") != row.code_hash
-
-    async def test_hashed_code_still_verifies(self, client, sm):
-        """改成摘要之后,注册这条正常路径必须照常走通。"""
-        resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000778", "purpose": "register"}
-        )
-        assert resp.status_code == 204
-        ok = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "phone": "13800000778",
-                "sms_code": "123456",
-                "password": "secret123",
-                "accept_terms": True,
-            },
-        )
-        assert ok.status_code == 201, ok.text

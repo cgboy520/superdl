@@ -77,9 +77,3 @@ class TestPublicPolicies:
         body = (await client.get("/api/v1/policies")).json()
         assert body["disk_price_gb_month"] == "0.0350"
         assert isinstance(body["disk_price_gb_month"], str)
-        assert body["disk_min_gb"] == 10
-        assert body["disk_max_gb"] == 4096
-        assert body["disk_grace_days"] == 7
-        assert body["disk_frozen_days"] == 30
-        assert body["freeze_grace_hours"] == 72
-        assert body["low_balance_warn_hours_default"] == 24

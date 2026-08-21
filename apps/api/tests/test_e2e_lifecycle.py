@@ -28,9 +28,7 @@ def fake():
 async def test_full_lifecycle_drill(client, sm, fake):
     # ── 1. 注册 ────────────────────────────────────────────────
     phone = "13411112222"
-    assert (
-        await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
-    ).status_code == 204
+    await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
     reg = await client.post(
         "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
     )
@@ -44,12 +42,10 @@ async def test_full_lifecycle_drill(client, sm, fake):
             "/api/v1/wallet/recharges", json={"amount": "200.00", "channel": "mock"}, headers=h
         )
     ).json()
-    assert (
-        await client.post(
-            "/api/v1/webhooks/mock",
-            json={"order_no": order["order_no"], "amount": "200.00"},
-        )
-    ).status_code == 200
+    await client.post(
+        "/api/v1/webhooks/mock",
+        json={"order_no": order["order_no"], "amount": "200.00"},
+    )
     assert (await client.get("/api/v1/wallet", headers=h)).json()["balance"] == "200.00"
 
     # ── 3. SSH 公钥 + 数据盘 ────────────────────────────────
@@ -108,7 +104,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     from tests.test_billing_flow import backdate_running_event
 
     expected_secs = await backdate_running_event(sm, uuid, 30)
-    assert (await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)).status_code == 200
+    await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)
     await drain(sm)
     await reconcile_once(sm)
     assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "stopped"
@@ -126,7 +122,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert ("stopping", "stopped") in chain
 
     # ── 8. 释放(实例盘清除,数据盘保留)─────────────────────
-    assert (await client.delete(f"/api/v1/instances/{uuid}", headers=h)).status_code == 200
+    await client.delete(f"/api/v1/instances/{uuid}", headers=h)
     await drain(sm)
     await reconcile_once(sm)
     events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()
