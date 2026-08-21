@@ -2,6 +2,11 @@
 
 import {
   adminAlertsApiAdminV1AlertsGet,
+  adminChangeOwnPasswordApiAdminV1MePasswordPost,
+  adminCreateAdminApiAdminV1AdminsPost,
+  adminListAdminsApiAdminV1AdminsGet,
+  adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost,
+  adminUpdateAdminApiAdminV1AdminsAdminIdPatch,
   adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
   adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost,
   adminGetPlatformConfigApiAdminV1PlatformConfigGet,
@@ -54,6 +59,11 @@ import {
 } from "@superdl/api-client";
 import type {
   AdjustmentCreate,
+  AdminAccountOut,
+  AdminCreateRequest,
+  AdminResetPasswordRequest,
+  AdminSelfPasswordRequest,
+  AdminUpdateRequest,
   AnnouncementCreate,
   CapacityPreviewOut,
   EnrollmentCommandOut,
@@ -583,6 +593,51 @@ export function useTestSms(opts?: MutOpts<unknown, { data: SmsTestRequest }>) {
   return useMutation({
     mutationFn: (v: { data: SmsTestRequest }) =>
       adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
+    ...opts?.mutation,
+  });
+}
+
+// ---------- 管理员账号 ----------
+// 没有这一组,生产库开箱就是空的 admin_users 表:控制台不可登录;而调账强制双人复核
+// (复核人 ≠ 发起人),单账号意味着任何调账单都永远无法通过复核。
+
+export function useAdminAccounts() {
+  const queryKey = ["admin", "admins"] as const;
+  const q = useQuery({ queryKey, queryFn: () => adminListAdminsApiAdminV1AdminsGet() });
+  return { ...q, queryKey };
+}
+
+export function useCreateAdminAccount(opts?: MutOpts<AdminAccountOut, { data: AdminCreateRequest }>) {
+  return useMutation({
+    mutationFn: (v: { data: AdminCreateRequest }) => adminCreateAdminApiAdminV1AdminsPost(v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useUpdateAdminAccount(
+  opts?: MutOpts<AdminAccountOut, { id: number; data: AdminUpdateRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { id: number; data: AdminUpdateRequest }) =>
+      adminUpdateAdminApiAdminV1AdminsAdminIdPatch(v.id, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useResetAdminPassword(
+  opts?: MutOpts<AdminAccountOut, { id: number; data: AdminResetPasswordRequest }>,
+) {
+  return useMutation({
+    mutationFn: (v: { id: number; data: AdminResetPasswordRequest }) =>
+      adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost(v.id, v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useChangeOwnPassword(opts?: MutOpts<void, { data: AdminSelfPasswordRequest }>) {
+  return useMutation({
+    mutationFn: (v: { data: AdminSelfPasswordRequest }) =>
+      adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
     ...opts?.mutation,
   });
 }

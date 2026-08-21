@@ -270,8 +270,8 @@ class TestTenantContainerHardening:
 
         ctx = tenant_security_context()
         assert ctx.allow_privilege_escalation is False
-        assert ctx.capabilities.drop == ["ALL"]
-        assert ctx.seccomp_profile.type == "RuntimeDefault"
+        assert ctx.capabilities is not None and ctx.capabilities.drop == ["ALL"]
+        assert ctx.seccomp_profile is not None and ctx.seccomp_profile.type == "RuntimeDefault"
 
     def test_k3s_shared_still_gets_userns_and_hardening(self):
         """k3s 共享档:runtimeClassName=nvidia,但 userns 与容器加固都不能因此消失。"""

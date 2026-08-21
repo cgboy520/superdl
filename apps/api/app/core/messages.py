@@ -30,6 +30,8 @@ MESSAGES: dict[str, str] = {
     "adminapi.adjustNotZero": "调账金额不能为 0",
     "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
     "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
+    "adminapi.adminUsernameTaken": "该用户名已存在",
+    "adminapi.cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
     "adminapi.loginFailed": "用户名或密码错误",
     "adminapi.smsTestFailed": "发送失败:{message}",
     "adminapi.taskNotFound": "任务不存在",

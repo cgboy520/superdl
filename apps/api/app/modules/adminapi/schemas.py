@@ -20,6 +20,45 @@ class AdminOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+ADMIN_ROLES = ("admin", "ops", "finance", "readonly")
+AdminRole = Literal["admin", "ops", "finance", "readonly"]
+
+
+class AdminAccountOut(BaseModel):
+    """管理员账号(账号管理列表)。不透出 password_hash / token_version。"""
+
+    id: int
+    username: str
+    role: str
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminCreateRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$")
+    password: str = Field(min_length=12, max_length=128)
+    role: AdminRole
+    reason: str = Field(min_length=2, max_length=200)
+
+
+class AdminUpdateRequest(BaseModel):
+    role: AdminRole | None = None
+    status: Literal["active", "disabled"] | None = None
+    reason: str = Field(min_length=2, max_length=200)
+
+
+class AdminResetPasswordRequest(BaseModel):
+    password: str = Field(min_length=12, max_length=128)
+    reason: str = Field(min_length=2, max_length=200)
+
+
+class AdminSelfPasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
 class AdminToken(BaseModel):
     access_token: str
     token_type: str = "bearer"

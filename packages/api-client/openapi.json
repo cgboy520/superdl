@@ -136,6 +136,41 @@
         "title": "AdjustmentStatusOut",
         "type": "object"
       },
+      "AdminAccountOut": {
+        "description": "管理员账号(账号管理列表)。不透出 password_hash / token_version。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "role",
+          "status",
+          "created_at"
+        ],
+        "title": "AdminAccountOut",
+        "type": "object"
+      },
       "AdminAlertOut": {
         "properties": {
           "content": {
@@ -172,6 +207,47 @@
           "created_at"
         ],
         "title": "AdminAlertOut",
+        "type": "object"
+      },
+      "AdminCreateRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "ops",
+              "finance",
+              "readonly"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9._-]+$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password",
+          "role",
+          "reason"
+        ],
+        "title": "AdminCreateRequest",
         "type": "object"
       },
       "AdminForceStopRequest": {
@@ -463,6 +539,50 @@
         "title": "AdminOut",
         "type": "object"
       },
+      "AdminResetPasswordRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "reason"
+        ],
+        "title": "AdminResetPasswordRequest",
+        "type": "object"
+      },
+      "AdminSelfPasswordRequest": {
+        "properties": {
+          "current_password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "AdminSelfPasswordRequest",
+        "type": "object"
+      },
       "AdminToken": {
         "properties": {
           "access_token": {
@@ -483,6 +603,53 @@
           "admin"
         ],
         "title": "AdminToken",
+        "type": "object"
+      },
+      "AdminUpdateRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "ops",
+                  "finance",
+                  "readonly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AdminUpdateRequest",
         "type": "object"
       },
       "AnnouncementCreate": {
@@ -4497,6 +4664,195 @@
         ]
       }
     },
+    "/api/admin/v1/admins": {
+      "get": {
+        "operationId": "admin_list_admins_api_admin_v1_admins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAccountOut"
+                  },
+                  "title": "Response Admin List Admins Api Admin V1 Admins Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Admins",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "admin_create_admin_api_admin_v1_admins_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Create Admin",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/admins/{admin_id}": {
+      "patch": {
+        "description": "改角色 / 停用。停用即刻生效(deps 每请求实时查库 + 比对 token_version)。",
+        "operationId": "admin_update_admin_api_admin_v1_admins__admin_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "admin_id",
+            "required": true,
+            "schema": {
+              "title": "Admin Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Update Admin",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/admins/{admin_id}/reset-password": {
+      "post": {
+        "operationId": "admin_reset_password_api_admin_v1_admins__admin_id__reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "admin_id",
+            "required": true,
+            "schema": {
+              "title": "Admin Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Reset Password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/alerts": {
       "get": {
         "description": "管理端告警流(总览右栏数据源)。",
@@ -5340,6 +5696,46 @@
           }
         ],
         "summary": "Admin Me",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/me/password": {
+      "post": {
+        "description": "自助改密。成功即 token_version+1 —— 改密就该踢掉全部在外会话(含泄露的那个)。",
+        "operationId": "admin_change_own_password_api_admin_v1_me_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSelfPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Change Own Password",
         "tags": [
           "admin"
         ]

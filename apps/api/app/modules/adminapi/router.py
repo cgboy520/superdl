@@ -2,7 +2,7 @@ import asyncio
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, Query, Request, status
+from fastapi import APIRouter, Header, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
@@ -20,12 +20,17 @@ from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.schemas import (
     AdjustmentOut,
     AdjustmentStatusOut,
+    AdminAccountOut,
     AdminAlertOut,
+    AdminCreateRequest,
     AdminImageOut,
     AdminLoginRequest,
     AdminOrderOut,
     AdminOut,
+    AdminResetPasswordRequest,
+    AdminSelfPasswordRequest,
     AdminToken,
+    AdminUpdateRequest,
     AnnouncementResultOut,
     AuditLogOut,
     CapacityPreviewOut,
@@ -91,6 +96,75 @@ async def admin_login(body: AdminLoginRequest, session: DbSession, request: Requ
 @router.get("/me")
 async def admin_me(admin: CurrentAdmin) -> AdminOut:
     return AdminOut.model_validate(admin)
+
+
+@router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_change_own_password(
+    body: AdminSelfPasswordRequest, admin: CurrentAdmin, session: DbSession, request: Request
+) -> Response:
+    """自助改密。成功即 token_version+1 —— 改密就该踢掉全部在外会话(含泄露的那个)。"""
+    await service.change_own_password(session, admin.id, body.current_password, body.new_password)
+    set_audit_target(request, f"admin:{admin.id}", detail={"action": "self_password_change"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- 管理员账号(角色:仅 admin) ----------
+# 没有这一组端点时,生产库开箱就是空的 admin_users 表:控制台不可登录,唯一办法是人工
+# 连库 INSERT;而调账强制双人复核(复核人 ≠ 发起人),单账号意味着任何调账单都永远无法
+# 通过复核,财务补偿在生产上是死锁的;审计的 actor_id 也全部指向同一个账号,追溯不到人。
+
+
+@router.get("/admins", dependencies=[require_roles()])
+async def admin_list_admins(session: DbSession) -> list[AdminAccountOut]:
+    return [AdminAccountOut.model_validate(a) for a in await service.list_admins(session)]
+
+
+@router.post("/admins", dependencies=[require_roles()], status_code=201)
+async def admin_create_admin(
+    body: AdminCreateRequest, session: DbSession, request: Request
+) -> AdminAccountOut:
+    created = await service.create_admin(session, body.username, body.password, body.role)
+    set_audit_target(
+        request,
+        f"admin:{created.id}",
+        detail={"username": created.username, "role": created.role, "reason": body.reason},
+    )
+    return AdminAccountOut.model_validate(created)
+
+
+@router.patch("/admins/{admin_id}", dependencies=[require_roles()])
+async def admin_update_admin(
+    admin_id: int,
+    body: AdminUpdateRequest,
+    admin: CurrentAdmin,
+    session: DbSession,
+    request: Request,
+) -> AdminAccountOut:
+    """改角色 / 停用。停用即刻生效(deps 每请求实时查库 + 比对 token_version)。"""
+    updated, before = await service.update_admin(
+        session, admin_id, role=body.role, new_status=body.status, actor_id=admin.id
+    )
+    set_audit_target(
+        request,
+        f"admin:{admin_id}",
+        detail={
+            "before": before,
+            "after": body.model_dump(exclude_unset=True, exclude={"reason"}, mode="json"),
+            "reason": body.reason,
+        },
+    )
+    return AdminAccountOut.model_validate(updated)
+
+
+@router.post("/admins/{admin_id}/reset-password", dependencies=[require_roles()])
+async def admin_reset_password(
+    admin_id: int, body: AdminResetPasswordRequest, session: DbSession, request: Request
+) -> AdminAccountOut:
+    updated = await service.reset_admin_password(session, admin_id, body.password)
+    set_audit_target(
+        request, f"admin:{admin_id}", detail={"action": "reset_password", "reason": body.reason}
+    )
+    return AdminAccountOut.model_validate(updated)
 
 
 # ---------- SKU 管理(角色:admin / ops) ----------

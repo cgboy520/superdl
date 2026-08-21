@@ -2,6 +2,7 @@
  * 系统设置:
  * - 策略参数:env 默认 + DB 覆盖,保存需原因,即时生效并同步 GET /policies
  * - 公告发布:announcement 站内信群发全体 active 租户
+ * - 管理员账号:建号/改角色/停用/重置密码 + 自助改密(缺这一屏时生产控制台开箱不可登录)
  */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
@@ -31,6 +32,7 @@ import {
   usePublishAnnouncement,
   useUpdatePolicies,
 } from "../../api";
+import { AdminsTab } from "./-AdminsTab";
 import { useApiErrorText } from "../../lib/apiError";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -261,6 +263,7 @@ function SettingsPage() {
         items={[
           { key: "policies", label: t("settings.tabPolicies"), children: <PoliciesTab /> },
           { key: "announcement", label: t("settings.tabAnnouncement"), children: <AnnouncementTab /> },
+          { key: "admins", label: t("settings.tabAdmins"), children: <AdminsTab /> },
         ]}
       />
     </Card>

@@ -19,7 +19,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     init_sentry()
     settings = get_settings()
-    if settings.environment == "dev" and settings.bootstrap_admin_password:
+    # 一次性引导:配置了口令且 admin_users 为空时创建首个超管,建出来之后自动失效
+    # (ensure_bootstrap_admin 内部判空表)。此前被 environment == "dev" 硬门挡着,
+    # 而全站没有任何端点能管理 admin_users —— 生产库开箱即不可登录。
+    if settings.bootstrap_admin_password:
         from app.core.db import get_sessionmaker
         from app.modules.adminapi.service import ensure_bootstrap_admin
 

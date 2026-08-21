@@ -17,6 +17,10 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16))  # admin / ops / finance / readonly
     status: Mapped[str] = mapped_column(String(16), default="active")
+    # 撤销闸:停用、改角色、改密都 +1,已签发的 token 立即失效。
+    # 与用户端 users.token_version 同形 —— 管理端能改价、封号、改支付凭据,
+    # 泄露一个 token 却只能等 TTL 到期是不可接受的。
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

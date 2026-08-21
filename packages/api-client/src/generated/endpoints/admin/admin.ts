@@ -24,8 +24,10 @@ import type {
   AdjustmentOut,
   AdjustmentReview,
   AdjustmentStatusOut,
+  AdminAccountOut,
   AdminAlertOut,
   AdminAuditLogApiAdminV1AuditGetParams,
+  AdminCreateRequest,
   AdminForceStopRequest,
   AdminImageOut,
   AdminInstanceOut,
@@ -37,9 +39,12 @@ import type {
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
   AdminOrderOut,
   AdminOut,
+  AdminResetPasswordRequest,
+  AdminSelfPasswordRequest,
   AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
   AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminToken,
+  AdminUpdateRequest,
   AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,
   AnnouncementCreate,
   AnnouncementResultOut,
@@ -410,6 +415,421 @@ export function useAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewP
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPostQueryOptions(adjustmentId,adjustmentReview,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListAdminsApiAdminV1AdminsGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/admins`
+}
+
+/**
+ * @summary Admin List Admins
+ */
+export const adminListAdminsApiAdminV1AdminsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut[]> => {
+
+  return customFetch<AdminAccountOut[]>(getAdminListAdminsApiAdminV1AdminsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListAdminsApiAdminV1AdminsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/admins`
+    ] as const;
+    }
+
+
+export const getAdminListAdminsApiAdminV1AdminsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListAdminsApiAdminV1AdminsGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>> = ({ signal }) => adminListAdminsApiAdminV1AdminsGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListAdminsApiAdminV1AdminsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>>
+export type AdminListAdminsApiAdminV1AdminsGetQueryError = unknown
+
+
+export function useAdminListAdminsApiAdminV1AdminsGet<TData = Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListAdminsApiAdminV1AdminsGet<TData = Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListAdminsApiAdminV1AdminsGet<TData = Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Admins
+ */
+
+export function useAdminListAdminsApiAdminV1AdminsGet<TData = Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdminsApiAdminV1AdminsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListAdminsApiAdminV1AdminsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCreateAdminApiAdminV1AdminsPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/admins`
+}
+
+/**
+ * @summary Admin Create Admin
+ */
+export const adminCreateAdminApiAdminV1AdminsPost = async (adminCreateRequest: AdminCreateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
+
+  return customFetch<AdminAccountOut>(getAdminCreateAdminApiAdminV1AdminsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminCreateRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateAdminApiAdminV1AdminsPostQueryKey = (adminCreateRequest?: AdminCreateRequest,) => {
+    return [
+    'POST', `/api/admin/v1/admins`, adminCreateRequest
+    ] as const;
+    }
+
+
+export const getAdminCreateAdminApiAdminV1AdminsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError = HTTPValidationError>(adminCreateRequest: AdminCreateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminCreateAdminApiAdminV1AdminsPostQueryKey(adminCreateRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>> = ({ signal }) => adminCreateAdminApiAdminV1AdminsPost(adminCreateRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminCreateAdminApiAdminV1AdminsPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>>
+export type AdminCreateAdminApiAdminV1AdminsPostQueryError = HTTPValidationError
+
+
+export function useAdminCreateAdminApiAdminV1AdminsPost<TData = Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError = HTTPValidationError>(
+ adminCreateRequest: AdminCreateRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateAdminApiAdminV1AdminsPost<TData = Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError = HTTPValidationError>(
+ adminCreateRequest: AdminCreateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateAdminApiAdminV1AdminsPost<TData = Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError = HTTPValidationError>(
+ adminCreateRequest: AdminCreateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Create Admin
+ */
+
+export function useAdminCreateAdminApiAdminV1AdminsPost<TData = Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError = HTTPValidationError>(
+ adminCreateRequest: AdminCreateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdminApiAdminV1AdminsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminCreateAdminApiAdminV1AdminsPostQueryOptions(adminCreateRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchUrl = (adminId: number,) => {
+
+
+
+
+  return `/api/admin/v1/admins/${adminId}`
+}
+
+/**
+ * 改角色 / 停用。停用即刻生效(deps 每请求实时查库 + 比对 token_version)。
+ * @summary Admin Update Admin
+ */
+export const adminUpdateAdminApiAdminV1AdminsAdminIdPatch = async (adminId: number,
+    adminUpdateRequest: AdminUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
+
+  return customFetch<AdminAccountOut>(getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchUrl(adminId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminUpdateRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchQueryKey = (adminId: number,
+    adminUpdateRequest?: AdminUpdateRequest,) => {
+    return [
+    'PATCH', `/api/admin/v1/admins/${adminId}`, adminUpdateRequest
+    ] as const;
+    }
+
+
+export const getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError = HTTPValidationError>(adminId: number,
+    adminUpdateRequest: AdminUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchQueryKey(adminId,adminUpdateRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>> = ({ signal }) => adminUpdateAdminApiAdminV1AdminsAdminIdPatch(adminId,adminUpdateRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: adminId !== null && adminId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUpdateAdminApiAdminV1AdminsAdminIdPatchQueryResult = NonNullable<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>>
+export type AdminUpdateAdminApiAdminV1AdminsAdminIdPatchQueryError = HTTPValidationError
+
+
+export function useAdminUpdateAdminApiAdminV1AdminsAdminIdPatch<TData = Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminUpdateRequest: AdminUpdateRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateAdminApiAdminV1AdminsAdminIdPatch<TData = Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminUpdateRequest: AdminUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateAdminApiAdminV1AdminsAdminIdPatch<TData = Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminUpdateRequest: AdminUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Update Admin
+ */
+
+export function useAdminUpdateAdminApiAdminV1AdminsAdminIdPatch<TData = Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminUpdateRequest: AdminUpdateRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateAdminApiAdminV1AdminsAdminIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchQueryOptions(adminId,adminUpdateRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostUrl = (adminId: number,) => {
+
+
+
+
+  return `/api/admin/v1/admins/${adminId}/reset-password`
+}
+
+/**
+ * @summary Admin Reset Password
+ */
+export const adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost = async (adminId: number,
+    adminResetPasswordRequest: AdminResetPasswordRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
+
+  return customFetch<AdminAccountOut>(getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostUrl(adminId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminResetPasswordRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostQueryKey = (adminId: number,
+    adminResetPasswordRequest?: AdminResetPasswordRequest,) => {
+    return [
+    'POST', `/api/admin/v1/admins/${adminId}/reset-password`, adminResetPasswordRequest
+    ] as const;
+    }
+
+
+export const getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostQueryOptions = <TData = Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError = HTTPValidationError>(adminId: number,
+    adminResetPasswordRequest: AdminResetPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostQueryKey(adminId,adminResetPasswordRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>> = ({ signal }) => adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost(adminId,adminResetPasswordRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: adminId !== null && adminId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>>
+export type AdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostQueryError = HTTPValidationError
+
+
+export function useAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost<TData = Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminResetPasswordRequest: AdminResetPasswordRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost<TData = Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminResetPasswordRequest: AdminResetPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost<TData = Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminResetPasswordRequest: AdminResetPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Reset Password
+ */
+
+export function useAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost<TData = Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    adminResetPasswordRequest: AdminResetPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostQueryOptions(adminId,adminResetPasswordRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -2365,6 +2785,107 @@ export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof admi
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminMeApiAdminV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminChangeOwnPasswordApiAdminV1MePasswordPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/me/password`
+}
+
+/**
+ * 自助改密。成功即 token_version+1 —— 改密就该踢掉全部在外会话(含泄露的那个)。
+ * @summary Admin Change Own Password
+ */
+export const adminChangeOwnPasswordApiAdminV1MePasswordPost = async (adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminChangeOwnPasswordApiAdminV1MePasswordPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminSelfPasswordRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminChangeOwnPasswordApiAdminV1MePasswordPostQueryKey = (adminSelfPasswordRequest?: AdminSelfPasswordRequest,) => {
+    return [
+    'POST', `/api/admin/v1/me/password`, adminSelfPasswordRequest
+    ] as const;
+    }
+
+
+export const getAdminChangeOwnPasswordApiAdminV1MePasswordPostQueryOptions = <TData = Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError = HTTPValidationError>(adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminChangeOwnPasswordApiAdminV1MePasswordPostQueryKey(adminSelfPasswordRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>> = ({ signal }) => adminChangeOwnPasswordApiAdminV1MePasswordPost(adminSelfPasswordRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminChangeOwnPasswordApiAdminV1MePasswordPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>>
+export type AdminChangeOwnPasswordApiAdminV1MePasswordPostQueryError = HTTPValidationError
+
+
+export function useAdminChangeOwnPasswordApiAdminV1MePasswordPost<TData = Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError = HTTPValidationError>(
+ adminSelfPasswordRequest: AdminSelfPasswordRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminChangeOwnPasswordApiAdminV1MePasswordPost<TData = Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError = HTTPValidationError>(
+ adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminChangeOwnPasswordApiAdminV1MePasswordPost<TData = Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError = HTTPValidationError>(
+ adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Change Own Password
+ */
+
+export function useAdminChangeOwnPasswordApiAdminV1MePasswordPost<TData = Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError = HTTPValidationError>(
+ adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminChangeOwnPasswordApiAdminV1MePasswordPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminChangeOwnPasswordApiAdminV1MePasswordPostQueryOptions(adminSelfPasswordRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
