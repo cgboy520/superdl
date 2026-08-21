@@ -144,8 +144,15 @@ class TestAdminSku:
         sku_id = resp.json()["id"]
         assert resp.json()["status"] == "off"  # 默认不上架
 
+        # 台账无匹配节点:上架被硬校验拦下(WP26),force 放行
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "price_hourly": "2.8000"},
+            headers=headers,
+        )
+        assert resp.status_code == 409 and resp.json()["code"] == "SKU_NOT_SELLABLE"
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}?force=true",
             json={"status": "on", "price_hourly": "2.8000"},
             headers=headers,
         )

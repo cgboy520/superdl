@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
 from app.modules.catalog import inventory
@@ -118,14 +119,39 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     return sku
 
 
-async def admin_update_sku(session: AsyncSession, sku_id: int, data: SkuUpdate) -> Sku:
+async def admin_update_sku(
+    session: AsyncSession, sku_id: int, data: SkuUpdate, *, force: bool = False
+) -> Sku:
     sku = await get_sku(session, sku_id)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    turning_on = updates.get("status") == "on" and sku.status != "on"
+    for field, value in updates.items():
         setattr(sku, field, value)
+    if turning_on and not force:
+        await _ensure_sellable(session, sku)
     await session.commit()
     await session.refresh(sku)
     inventory.clear_cache()
     return sku
+
+
+async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
+    """上架硬校验:台账须有「型号×池」匹配的 Ready 节点(WP26 推翻仅提示先例)。
+
+    未识别型号(canonical=None)恒不匹配 → 只能 force 上架。
+    """
+    from app.modules.nodes import service as nodes_service
+
+    wanted = canonical_gpu_model(sku.gpu_model)
+    specs = await nodes_service.ready_specs(session)
+    if any(s.pool_label == sku.pool_label and model_matches(wanted, s.gpu_model) for s in specs):
+        return
+    raise AppError(
+        ErrorCode.SKU_NOT_SELLABLE,
+        key="catalog.skuNotSellable",
+        params={"model": wanted or sku.gpu_model, "pool": sku.pool_label},
+        http_status=status.HTTP_409_CONFLICT,
+    )
 
 
 # ---------- 管理端:镜像与预热 ----------

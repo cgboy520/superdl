@@ -38,9 +38,11 @@ import type {
   AdminOrderOut,
   AdminOut,
   AdminToken,
+  AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,
   AnnouncementCreate,
   AnnouncementResultOut,
   AuditLogOut,
+  CapacityPreviewOut,
   DeadTaskOut,
   EnrollmentCommandOut,
   EnrollmentCreate,
@@ -74,6 +76,7 @@ import type {
   RevenueReportApiAdminV1ReportsRevenueGetParams,
   RevenueReportOut,
   SkuAdminOut,
+  SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
   SkuCreate,
   SkuUpdate,
   SmsTestOut,
@@ -4277,6 +4280,7 @@ export const getAdminListSkusApiAdminV1SkusGetUrl = () => {
 }
 
 /**
+ * SKU 列表,组装台账容量与占用列(catalog+nodes+orchestrator 三 service 汇合点)。
  * @summary Admin List Skus
  */
 export const adminListSkusApiAdminV1SkusGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut[]> => {
@@ -4468,21 +4472,138 @@ export function useAdminCreateSkuApiAdminV1SkusPost<TData = Awaited<ReturnType<t
 
 
 
-export const getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl = (skuId: number,) => {
+export const getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetUrl = (params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/skus/capacity-preview?${stringifiedParams}` : `/api/admin/v1/skus/capacity-preview`
+}
+
+/**
+ * SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。
+ * @summary Sku Capacity Preview
+ */
+export const skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet = async (params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: Parameters<typeof customFetch>[1]): Promise<CapacityPreviewOut> => {
+
+  return customFetch<CapacityPreviewOut>(getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
 
 
 
 
-  return `/api/admin/v1/skus/${skuId}`
+
+export const getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetQueryKey = (params?: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,) => {
+    return [
+    `/api/admin/v1/skus/capacity-preview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetQueryOptions = <TData = Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError = HTTPValidationError>(params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>> = ({ signal }) => skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetQueryResult = NonNullable<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>>
+export type SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetQueryError = HTTPValidationError
+
+
+export function useSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGet<TData = Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError = HTTPValidationError>(
+ params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>,
+          TError,
+          Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGet<TData = Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError = HTTPValidationError>(
+ params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>,
+          TError,
+          Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGet<TData = Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError = HTTPValidationError>(
+ params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Sku Capacity Preview
+ */
+
+export function useSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGet<TData = Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError = HTTPValidationError>(
+ params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getSkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl = (skuId: number,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/skus/${skuId}?${stringifiedParams}` : `/api/admin/v1/skus/${skuId}`
 }
 
 /**
  * @summary Admin Update Sku
  */
 export const adminUpdateSkuApiAdminV1SkusSkuIdPatch = async (skuId: number,
-    skuUpdate: SkuUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut> => {
+    skuUpdate: SkuUpdate,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut> => {
 
-  return customFetch<SkuAdminOut>(getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl(skuId),
+  return customFetch<SkuAdminOut>(getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl(skuId,params),
   {
     ...options,
     method: 'PATCH',
@@ -4496,24 +4617,26 @@ export const adminUpdateSkuApiAdminV1SkusSkuIdPatch = async (skuId: number,
 
 
 export const getAdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryKey = (skuId: number,
-    skuUpdate?: SkuUpdate,) => {
+    skuUpdate?: SkuUpdate,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,) => {
     return [
-    'PATCH', `/api/admin/v1/skus/${skuId}`, skuUpdate
+    'PATCH', `/api/admin/v1/skus/${skuId}`, ...(params ? [params] : []), skuUpdate
     ] as const;
     }
 
 
 export const getAdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError = HTTPValidationError>(skuId: number,
-    skuUpdate: SkuUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+    skuUpdate: SkuUpdate,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryKey(skuId,skuUpdate);
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryKey(skuId,skuUpdate,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>> = ({ signal }) => adminUpdateSkuApiAdminV1SkusSkuIdPatch(skuId,skuUpdate, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>> = ({ signal }) => adminUpdateSkuApiAdminV1SkusSkuIdPatch(skuId,skuUpdate,params, { signal, ...requestOptions });
 
 
 
@@ -4528,7 +4651,8 @@ export type AdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryError = HTTPValidationErr
 
 export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError = HTTPValidationError>(
  skuId: number,
-    skuUpdate: SkuUpdate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>> & Pick<
+    skuUpdate: SkuUpdate,
+    params: undefined |  AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>,
           TError,
@@ -4539,7 +4663,8 @@ export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<Return
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError = HTTPValidationError>(
  skuId: number,
-    skuUpdate: SkuUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>> & Pick<
+    skuUpdate: SkuUpdate,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>,
           TError,
@@ -4550,7 +4675,8 @@ export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<Return
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError = HTTPValidationError>(
  skuId: number,
-    skuUpdate: SkuUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+    skuUpdate: SkuUpdate,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -4559,11 +4685,12 @@ export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<Return
 
 export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError = HTTPValidationError>(
  skuId: number,
-    skuUpdate: SkuUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+    skuUpdate: SkuUpdate,
+    params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryOptions(skuId,skuUpdate,options)
+  const queryOptions = getAdminUpdateSkuApiAdminV1SkusSkuIdPatchQueryOptions(skuId,skuUpdate,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

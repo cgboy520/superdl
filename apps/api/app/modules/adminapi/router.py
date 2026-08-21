@@ -1,3 +1,4 @@
+from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Request
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.errors import not_found
+from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
@@ -20,6 +22,8 @@ from app.modules.adminapi.schemas import (
     AdminToken,
     AnnouncementResultOut,
     AuditLogOut,
+    CapacityPreviewOut,
+    CapacityWarningOut,
     DeadTaskOut,
     GpuModelAggregateOut,
     ImageCoverageOut,
@@ -84,8 +88,82 @@ async def admin_me(admin: CurrentAdmin) -> AdminOut:
 
 @router.get("/skus", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
+    """SKU 列表,组装台账容量与占用列(catalog+nodes+orchestrator 三 service 汇合点)。"""
     skus = await catalog_service.admin_list_skus(session)
-    return [SkuAdminOut.model_validate(s) for s in skus]
+    specs = await nodes_service.ready_specs(session)
+    sold = await orchestrator_service.active_gpu_counts_by_sku(session)
+    out: list[SkuAdminOut] = []
+    for sku in skus:
+        item = SkuAdminOut.model_validate(sku)
+        wanted = canonical_gpu_model(sku.gpu_model)
+        item.capacity_gpus = sum(
+            sp.gpu_count
+            for sp in specs
+            if sp.pool_label == sku.pool_label and model_matches(wanted, sp.gpu_model)
+        )
+        if item.capacity_gpus:
+            # 已售名义算力(卡×pct/100)对物理与对可售(×超卖)的两个比值,2 位小数
+            nominal = Decimal(sold.get(sku.id, 0)) * Decimal(sku.gpu_cores_pct) / Decimal(100)
+            cap = Decimal(item.capacity_gpus)
+            item.actual_oversell = str(
+                (nominal / cap).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
+            )
+            item.sold_share = str(
+                (nominal / (cap * sku.oversell_cores)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_EVEN
+                )
+            )
+        out.append(item)
+    return out
+
+
+@router.get("/skus/capacity-preview", dependencies=[require_roles("ops", "readonly")])
+async def sku_capacity_preview(
+    session: DbSession,
+    gpu_model: str,
+    pool_label: str,
+    tier: str,
+    gpu_cores_pct: int = 100,
+    oversell_cores: Decimal = Decimal("1.00"),
+    vram_gb: int | None = None,
+) -> CapacityPreviewOut:
+    """SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。"""
+    warnings: list[CapacityWarningOut] = []
+    wanted = canonical_gpu_model(gpu_model)
+    if wanted is None:
+        warnings.append(CapacityWarningOut(code="unrecognized_model", params={"model": gpu_model}))
+    specs = [
+        sp
+        for sp in await nodes_service.list_node_specs(session)
+        if sp.pool_label == pool_label and model_matches(wanted, sp.gpu_model)
+    ]
+    ready = [sp for sp in specs if sp.status == "Ready"]
+    ready_gpus = sum(sp.gpu_count for sp in ready)
+    if not ready:
+        warnings.append(
+            CapacityWarningOut(
+                code="no_ready_node", params={"model": wanted or gpu_model, "pool": pool_label}
+            )
+        )
+    max_vram = max((sp.vram_gb for sp in ready), default=0)
+    if vram_gb is not None and ready and vram_gb > max_vram:
+        warnings.append(
+            CapacityWarningOut(
+                code="vram_exceeds_node", params={"vram_gb": vram_gb, "node_vram_gb": max_vram}
+            )
+        )
+    if tier in ("shared_std", "shared_eco") and gpu_cores_pct > 0:
+        per_gpu = int(Decimal(100) * oversell_cores // Decimal(gpu_cores_pct))
+        est = ready_gpus * per_gpu
+    else:
+        est = ready_gpus
+    return CapacityPreviewOut(
+        matching_nodes=len(specs),
+        ready_gpus=ready_gpus,
+        total_gpus=sum(sp.gpu_count for sp in specs),
+        est_instances=est,
+        warnings=warnings,
+    )
 
 
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
@@ -97,9 +175,9 @@ async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request
 
 @router.patch("/skus/{sku_id}", dependencies=[require_roles("ops")])
 async def admin_update_sku(
-    sku_id: int, body: SkuUpdate, session: DbSession, request: Request
+    sku_id: int, body: SkuUpdate, session: DbSession, request: Request, force: bool = False
 ) -> SkuAdminOut:
-    sku = await catalog_service.admin_update_sku(session, sku_id, body)
+    sku = await catalog_service.admin_update_sku(session, sku_id, body, force=force)
     set_audit_target(
         request, f"sku:{sku.id}", detail=body.model_dump(exclude_unset=True, mode="json")
     )

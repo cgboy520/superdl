@@ -9,6 +9,8 @@
  * 管理端全量视图(含超卖参数与池标签)。
  */
 export interface SkuAdminOut {
+  actual_oversell?: string | null;
+  capacity_gpus?: number;
   created_at: string;
   cuda_max: string | null;
   disk_gb: number;
@@ -23,6 +25,7 @@ export interface SkuAdminOut {
   oversell_vram: string;
   pool_label: string;
   price_hourly: string;
+  sold_share?: string | null;
   status: string;
   tier: string;
   vcpu: number;

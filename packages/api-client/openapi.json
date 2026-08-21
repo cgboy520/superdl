@@ -807,6 +807,68 @@
         "title": "BootstrapRequest",
         "type": "object"
       },
+      "CapacityPreviewOut": {
+        "description": "SKU 表单容量预览(纯台账推算,不做库存预占)。",
+        "properties": {
+          "est_instances": {
+            "title": "Est Instances",
+            "type": "integer"
+          },
+          "matching_nodes": {
+            "title": "Matching Nodes",
+            "type": "integer"
+          },
+          "ready_gpus": {
+            "title": "Ready Gpus",
+            "type": "integer"
+          },
+          "total_gpus": {
+            "title": "Total Gpus",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityWarningOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matching_nodes",
+          "ready_gpus",
+          "total_gpus",
+          "est_instances",
+          "warnings"
+        ],
+        "title": "CapacityPreviewOut",
+        "type": "object"
+      },
+      "CapacityWarningOut": {
+        "description": "结构化警示(前端按 code 映射文案,params 供插值)。",
+        "properties": {
+          "code": {
+            "enum": [
+              "unrecognized_model",
+              "no_ready_node",
+              "vram_exceeds_node"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "CapacityWarningOut",
+        "type": "object"
+      },
       "DailySummaryOut": {
         "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算)。",
         "properties": {
@@ -3155,6 +3217,22 @@
       "SkuAdminOut": {
         "description": "管理端全量视图(含超卖参数与池标签)。",
         "properties": {
+          "actual_oversell": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Oversell"
+          },
+          "capacity_gpus": {
+            "default": 0,
+            "title": "Capacity Gpus",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3225,6 +3303,17 @@
           "price_hourly": {
             "title": "Price Hourly",
             "type": "string"
+          },
+          "sold_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sold Share"
           },
           "status": {
             "title": "Status",
@@ -5917,6 +6006,7 @@
     },
     "/api/admin/v1/skus": {
       "get": {
+        "description": "SKU 列表,组装台账容量与占用列(catalog+nodes+orchestrator 三 service 汇合点)。",
         "operationId": "admin_list_skus_api_admin_v1_skus_get",
         "responses": {
           "200": {
@@ -5989,6 +6079,116 @@
         ]
       }
     },
+    "/api/admin/v1/skus/capacity-preview": {
+      "get": {
+        "description": "SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。",
+        "operationId": "sku_capacity_preview_api_admin_v1_skus_capacity_preview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "gpu_model",
+            "required": true,
+            "schema": {
+              "title": "Gpu Model",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pool_label",
+            "required": true,
+            "schema": {
+              "title": "Pool Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tier",
+            "required": true,
+            "schema": {
+              "title": "Tier",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gpu_cores_pct",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Gpu Cores Pct",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "oversell_cores",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                }
+              ],
+              "default": "1.00",
+              "title": "Oversell Cores"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vram_gb",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vram Gb"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sku Capacity Preview",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/skus/{sku_id}": {
       "patch": {
         "operationId": "admin_update_sku_api_admin_v1_skus__sku_id__patch",
@@ -6000,6 +6200,16 @@
             "schema": {
               "title": "Sku Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
             }
           }
         ],

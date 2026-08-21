@@ -60,6 +60,7 @@
   "catalog": {
     "imageRefExists": "This image_ref already exists",
     "prewarmDisabled": "Prewarming is disabled for this image — enable it first",
+    "skuNotSellable": "No Ready node of “{{model}} × {{pool}} pool” exists in the cluster; instances of this spec would never start. Confirm to force-list it",
     "skuOffSale": "This spec has been delisted"
   },
   "common": {

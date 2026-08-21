@@ -64,6 +64,10 @@ class SkuAdminOut(BaseModel):
     cuda_max: str | None
     status: str
     created_at: datetime
+    # 台账/占用组装列(仅列表端点填充;写操作响应保持默认,前端保存后 refetch)
+    capacity_gpus: int = 0  # 匹配「型号×池」的 Ready 物理卡数
+    sold_share: str | None = None  # 已售算力 ÷ 可售总算力(含超卖),台账空为 None
+    actual_oversell: str | None = None  # 已售算力 ÷ 物理算力,对照 oversell_cores 看余量
 
     model_config = {"from_attributes": True}
 

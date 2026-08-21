@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -265,3 +265,20 @@ class OrderBackfillOut(BaseModel):
 
 class AdminOrderOut(RechargeOut):
     user_id: int
+
+
+class CapacityWarningOut(BaseModel):
+    """结构化警示(前端按 code 映射文案,params 供插值)。"""
+
+    code: Literal["unrecognized_model", "no_ready_node", "vram_exceeds_node"]
+    params: dict[str, Any] = {}
+
+
+class CapacityPreviewOut(BaseModel):
+    """SKU 表单容量预览(纯台账推算,不做库存预占)。"""
+
+    matching_nodes: int
+    ready_gpus: int
+    total_gpus: int
+    est_instances: int  # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;其余 = ready_gpus
+    warnings: list[CapacityWarningOut]

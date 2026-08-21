@@ -68,6 +68,9 @@ MESSAGES: dict[str, str] = {
     # 商品/镜像
     "catalog.imageRefExists": "镜像 image_ref 已存在",
     "catalog.prewarmDisabled": "该镜像已关闭预热,请先开启",
+    "catalog.skuNotSellable": (
+        "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
+    ),
     "catalog.skuOffSale": "该规格已下架",
     # 通用兜底(errors.py 三个 helper 与 422/500 handler 使用)
     "common.forbidden": "无权访问",

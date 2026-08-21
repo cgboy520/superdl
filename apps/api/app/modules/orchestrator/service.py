@@ -389,6 +389,18 @@ async def free_port(session: AsyncSession, instance_id: int) -> None:
     )
 
 
+async def active_gpu_counts_by_sku(session: AsyncSession) -> dict[int, int]:
+    """活跃实例按 SKU 的 GPU 张数合计(口径与用户配额一致:creating/starting/running)。"""
+    from sqlalchemy import func
+
+    rows = await session.execute(
+        select(Instance.sku_id, func.coalesce(func.sum(Instance.gpu_count), 0))
+        .where(Instance.status.in_((sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING)))
+        .group_by(Instance.sku_id)
+    )
+    return {sku_id: int(total) for sku_id, total in rows.all()}
+
+
 # ---------- K8s spec 构造 ----------
 
 
