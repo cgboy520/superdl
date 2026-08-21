@@ -90,6 +90,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     """各模块定时任务注册(结算/巡检/聚合)。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
+    from app.modules.billing.reconcile import reconcile_funds
     from app.modules.billing.settlement import settle_daily_disks, settle_due_hours
     from app.modules.catalog.prewarm import prewarm_patrol
     from app.modules.metering.service import aggregate_previous_hour
@@ -133,6 +134,18 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         minute=10,
         args=[sm],
         id="daily_disk_settlement",
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    # 日结之后再跑资金核对:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」。
+    # 只报不改 —— 自动纠正会把一个可查的差异变成一个不可查的差异。
+    scheduler.add_job(
+        reconcile_funds,
+        "cron",
+        hour=0,
+        minute=30,
+        args=[sm],
+        id="fund_reconcile",
         coalesce=True,
         misfire_grace_time=3600,
     )

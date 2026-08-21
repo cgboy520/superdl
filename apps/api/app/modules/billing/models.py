@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Numeric, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, CheckConstraint, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,6 +12,7 @@ class Wallet(Base):
     """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。"""
 
     __tablename__ = "wallets"
+    __table_args__ = (CheckConstraint("frozen_amount >= 0", name="frozen_nonneg"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(unique=True)
@@ -26,6 +27,11 @@ class BalanceLedger(Base):
     """追加式资金流水,对账基准。amount 带符号;balance_after 为扣/入账后的快照。"""
 
     __tablename__ = "balance_ledger"
+    # 金额为 0 的流水行没有任何业务含义,只会污染对账口径 —— 出现即代码有 bug,
+    # 让它在写入那一刻响亮地失败,而不是变成一行谁也解释不了的记录。
+    # 刻意**不**加 wallets.balance >= 0:透支是设计内的(服务已消费完才结算),
+    # 加了会让合法的结算扣款整批失败。
+    __table_args__ = (CheckConstraint("amount <> 0", name="amount_nonzero"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(index=True)
@@ -42,7 +48,13 @@ class BillHourly(Base):
     """实例小时账单。UNIQUE(instance_id, hour_start) 即结算幂等键。"""
 
     __tablename__ = "bills_hourly"
-    __table_args__ = (UniqueConstraint("instance_id", "hour_start"),)
+    __table_args__ = (
+        UniqueConstraint("instance_id", "hour_start"),
+        # 单个自然小时窗口最多 3600 秒;越界即窗口计算有 bug(bill_amount 已在应用层拦,
+        # 这里是兜底:手工 SQL / 未来的新写入路径不会绕过)
+        CheckConstraint("seconds_used >= 0 AND seconds_used <= 3600", name="seconds_range"),
+        CheckConstraint("amount >= 0", name="amount_nonneg"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     instance_id: Mapped[int] = mapped_column(index=True)
@@ -60,7 +72,11 @@ class BillDailyDisk(Base):
     """数据盘日结。UNIQUE(disk_id, day) 幂等;关机也扣(「日常费用」)。"""
 
     __tablename__ = "bills_daily_disk"
-    __table_args__ = (UniqueConstraint("disk_id", "day"),)
+    __table_args__ = (
+        UniqueConstraint("disk_id", "day"),
+        CheckConstraint("amount >= 0", name="amount_nonneg"),
+        CheckConstraint("size_gb >= 0", name="size_nonneg"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     disk_id: Mapped[int] = mapped_column(index=True)
@@ -89,7 +105,10 @@ class Order(Base):
     """充值订单。支付回调幂等靠 channel_txn_id 唯一 + status 检查。"""
 
     __tablename__ = "orders"
-    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        CheckConstraint("amount > 0", name="amount_positive"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_no: Mapped[str] = mapped_column(String(40), unique=True)

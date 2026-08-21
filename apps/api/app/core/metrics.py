@@ -16,6 +16,11 @@ SETTLEMENT_LAG = Gauge(
     "结算水位线落后当前的窗口数(hourly 计小时 / daily_disk 计日;>1 即有窗口未追平)",
     ["kind"],
 )
+FUND_RECONCILE_MISMATCH_TOTAL = Counter(
+    "superdl_fund_reconcile_mismatch_total",
+    "资金账实核对发现的差异数(wallet_ledger:余额≠流水累计;bill_consume:出账≠消费流水)",
+    ["kind"],
+)
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
 INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",
