@@ -1,5 +1,6 @@
 """密码哈希(bcrypt)与 JWT。用户端与管理端 audience 隔离,token 不可互用。"""
 
+import asyncio
 from datetime import timedelta
 from typing import Any, Literal
 from uuid import uuid4
@@ -14,15 +15,26 @@ from app.core.timeutil import now_utc
 TokenScope = Literal["user", "admin"]
 
 
-def hash_password(plain: str) -> str:
+def hash_password_sync(plain: str) -> str:
+    """同步版本:只给模块级常量(如时序拉平用的假哈希)用,请求路径一律用异步版。"""
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
-def verify_password(plain: str, hashed: str) -> bool:
+def verify_password_sync(plain: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(plain.encode(), hashed.encode())
     except ValueError:
         return False
+
+
+# bcrypt 是刻意设计的慢函数(单次 ~200ms):在事件循环里同步跑,
+# 登录/注册期间整个进程的其他请求全被挂住 —— 一律出让到线程池。
+async def hash_password(plain: str) -> str:
+    return await asyncio.to_thread(hash_password_sync, plain)
+
+
+async def verify_password(plain: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_password_sync, plain, hashed)
 
 
 def _audience(scope: TokenScope) -> str:

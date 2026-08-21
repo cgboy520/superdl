@@ -5,13 +5,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
 from app.core.ratelimit import check_rate_limit
-from app.core.security import create_token, hash_password, verify_password
+from app.core.security import (
+    create_token,
+    hash_password,
+    hash_password_sync,
+    verify_password,
+)
 from app.modules.adminapi.models import AdminUser
 
 logger = get_logger(__name__)
 
 # 不存在的用户名也走一次哈希校验,拉平时间侧信道
-_DUMMY_HASH = hash_password("dummy-timing-equalizer")
+_DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 300.0
@@ -28,7 +33,7 @@ async def login(
     admin = (
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
-    password_ok = verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
+    password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
         logger.warning("admin_login_failed", username=username, ip=client_ip)
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
@@ -43,7 +48,7 @@ async def login(
 
 
 async def create_admin(session: AsyncSession, username: str, password: str, role: str) -> AdminUser:
-    admin = AdminUser(username=username, password_hash=hash_password(password), role=role)
+    admin = AdminUser(username=username, password_hash=await hash_password(password), role=role)
     session.add(admin)
     await session.commit()
     await session.refresh(admin)

@@ -133,7 +133,7 @@ async def register(
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
         raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
-    user = User(phone=phone, password_hash=hash_password(password) if password else None)
+    user = User(phone=phone, password_hash=await hash_password(password) if password else None)
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -163,7 +163,7 @@ async def login(
             raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailedSms") from exc
         await session.commit()
     elif password is not None:
-        if user.password_hash is None or not verify_password(password, user.password_hash):
+        if user.password_hash is None or not await verify_password(password, user.password_hash):
             raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailedPassword")
     else:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
