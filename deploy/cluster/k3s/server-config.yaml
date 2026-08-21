@@ -6,5 +6,5 @@ disable:
   - traefik                  # Ingress 统一走 helmfile 的 ingress-nginx(与 full 档一致)
 embedded-registry: true      # Spegel P2P 镜像共享;配套 registries.yaml 由平台生成下发
                              # (管理端·平台配置·集群接入,node-join.sh 自动落位)
-# 单机验证时 server 同时跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);
-# 多机 light 集群建议给 server 补 taint 并让 GPU 节点经管理端一键加入。
+# 单机时 server 兼跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);
+# 多机 light 集群给 server 补 taint,GPU 节点经管理端一键加入。

@@ -21,7 +21,6 @@ configureApiClient({
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    // NOC 值班场景:全局 60s 轮询 + 切回标签页即刷新
     queries: { retry: 1, refetchOnWindowFocus: true, refetchInterval: 60_000, staleTime: 10_000 },
   },
 });

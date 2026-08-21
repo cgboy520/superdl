@@ -27,8 +27,7 @@ def verify_password_sync(plain: str, hashed: str) -> bool:
         return False
 
 
-# bcrypt 是刻意设计的慢函数(单次 ~200ms):在事件循环里同步跑,
-# 登录/注册期间整个进程的其他请求全被挂住 —— 一律出让到线程池。
+# bcrypt 单次 ~200ms,禁止在事件循环里同步跑,一律出让到线程池
 async def hash_password(plain: str) -> str:
     return await asyncio.to_thread(hash_password_sync, plain)
 

@@ -23,7 +23,6 @@ configureApiClient({
   },
   onUnauthorized: () => {
     authStore.getState().logout();
-    // 会话失效时回登录页并带回跳
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
     }
@@ -36,8 +35,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// 登录态消失(主动登出 / 401 / 别的标签页登出)即清查询缓存:
-// 不清的话换号登录会先渲染上一个账号的余额与实例
+// 登录态消失即清查询缓存,否则换号登录会先渲染上一个账号的余额与实例
 authStore.subscribe((state, prev) => {
   if (prev.accessToken && !state.accessToken) queryClient.clear();
 });

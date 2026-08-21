@@ -12,7 +12,6 @@ import { useApiErrorText } from "../lib/apiError";
 interface Props {
   label: string;
   title: string;
-  /** 二次确认文案 */
   confirmText: string;
   danger?: boolean;
   disabled?: boolean;

@@ -1,7 +1,4 @@
-"""GPU 资源申请抽象层。
-
-当前用 device-plugin 语法(HAMi 软切分 / MIG / 整卡直通);DRA 迁移只需改此层
-(见 development-plan §3.3)。
+"""GPU 资源申请抽象层:device-plugin 语法(HAMi 软切分 / MIG / 整卡直通)。
 
 分池铁律:
 - dedicated → Kata 4.0(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
@@ -26,7 +23,7 @@ class GpuRequest:
     runtime_class: str | None  # RuntimeClass 名称
     host_users: bool  # False → pod.spec.hostUsers=false(userns)
     node_selector: dict[str, str]
-    # HAMi 池显式走 hami-scheduler(不依赖 mutating webhook,其 failurePolicy=Ignore)
+    # HAMi 池必须显式走 hami-scheduler:其 mutating webhook failurePolicy=Ignore,不可依赖
     scheduler_name: str | None = None
     annotations: dict[str, str] = field(default_factory=dict)  # pod metadata.annotations 增量
 
@@ -44,9 +41,9 @@ def build_gpu_request(
     distro: str | None = None,
 ) -> GpuRequest:
     """gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全档位钉型号;
-    hami_gputype 为原文串,仅共享档注 use-gputype annotation(混卡节点兜底,默认关);
-    distro=k3s 时共享档显式 runtimeClassName=nvidia(k3s 只探测 nvidia 运行时不设默认,
-    RKE2+gpu-operator 默认运行时已是 nvidia 故保持 None)。"""
+    hami_gputype 为原文串,仅共享档注 use-gputype annotation;
+    distro=k3s 时共享档必须显式 runtimeClassName=nvidia(k3s 不设默认运行时;
+    RKE2+gpu-operator 默认已是 nvidia,故为 None)。"""
     node_selector = {POOL_NODE_LABEL: pool_label}
     if gpu_model:
         node_selector[GPU_MODEL_NODE_LABEL] = gpu_model
@@ -63,7 +60,7 @@ def build_gpu_request(
         return GpuRequest(
             resources={f"nvidia.com/mig-{mig_profile}": str(gpu_count)},
             runtime_class=None,
-            host_users=False,  # 与共享池同为 runc,同样要 userns 加固(缩小逃逸落点)
+            host_users=False,  # runc 池必须 userns 加固
             node_selector=node_selector,
         )
     if tier in ("shared_std", "shared_eco"):
@@ -77,7 +74,7 @@ def build_gpu_request(
             runtime_class="nvidia" if distro == "k3s" else None,
             host_users=False,  # 共享池必须 userns 加固
             node_selector=node_selector,
-            scheduler_name="hami-scheduler",  # 显式指定,不赖 HAMi mutating webhook(fail-open)
+            scheduler_name="hami-scheduler",
             annotations={HAMI_USE_GPUTYPE_ANNOTATION: hami_gputype} if hami_gputype else {},
         )
     raise ValueError(f"unknown tier: {tier}")

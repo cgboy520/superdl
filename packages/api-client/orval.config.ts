@@ -21,7 +21,7 @@ export default defineConfig({
         fetch: {
           includeHttpResponseReturnType: false,
         },
-        // 注意:不开 query.useMutation —— 否则无参 GET 会被生成为 useMutation 变体
+        // 不开 query.useMutation:否则无参 GET 会被生成为 useMutation 变体
         query: {
           useQuery: true,
           signal: true,

@@ -1,7 +1,7 @@
 # 平台指标抓取接线:superdl_* 告警规则依赖此处的抓取配置才会触发。
 # CRD 由 kube-prometheus-stack 提供;kps values 已设 serviceMonitorSelectorNilUsesHelmValues:
 # false,全命名空间的 ServiceMonitor/PodMonitor 均会被发现。
-# API /metrics 有 Bearer 门禁(SUPERDL_METRICS_TOKEN),凭据直接引用同命名空间的
+# API /metrics 有 Bearer 门禁(SUPERDL_METRICS_TOKEN),凭据引用同命名空间的
 # superdl-api-secrets(prometheus-operator 从 Monitor 所在命名空间解析 Secret)。
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -22,7 +22,7 @@ spec:
           name: superdl-api-secrets
           key: SUPERDL_METRICS_TOKEN
 ---
-# worker 无 Service(不接流量),用 PodMonitor 直抓 Pod 的 metrics 端口。
+# worker 无 Service(不接流量),用 PodMonitor 直抓 Pod 的 metrics 端口;
 # 结算失败/outbox 死信/泄漏 Pod 回收等指标都在 worker 进程内。
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

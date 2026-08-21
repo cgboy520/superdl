@@ -34,8 +34,7 @@ export function CheckoutBar({
   detail?: ReactNode;
   /** 余额(未登录不传) */
   balance?: string | null;
-  /** 余额是否已就绪。false 时渲染 "—" 而不是假 ¥0.00 —— 钱包查询失败时 data 恒为
-   *  undefined,不区分就会在结算条上永久显示「余额 ¥0.00」 */
+  /** 余额是否已就绪。false 时必须渲染 "—" 而不是假 ¥0.00(查询失败时 data 恒为 undefined)。 */
   balanceReady?: boolean;
   /** 右侧按钮组 */
   actions: ReactNode;

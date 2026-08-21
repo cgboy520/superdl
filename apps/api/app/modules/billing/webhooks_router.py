@@ -11,10 +11,9 @@ from app.modules.billing.payment_channels import get_channel
 
 router = APIRouter(tags=["webhooks"])
 
-# 两条端点无鉴权、无配额,每次调用都要做 RSA 验签、对订单行取 FOR UPDATE;微信侧遇到未知
-# 的 Wechatpay-Serial 还会触发 SDK 向外拉取平台证书 —— 廉价的 DoS / 出站放大杠杆。
-# 阈值取在渠道正常重试节奏之上:微信最多重试 15 次、支付宝 8 次,单 IP 每分钟 120 次
-# 对真实渠道绰绰有余,对扫描器则是硬顶。
+# 两条端点无鉴权,每次调用都要做 RSA 验签并对订单行取 FOR UPDATE;微信侧遇到未知的
+# Wechatpay-Serial 还会触发 SDK 向外拉取平台证书,故必须限流。阈值取在渠道正常重试
+# 节奏之上(微信最多重试 15 次、支付宝 8 次)。
 CALLBACK_RATE_LIMIT = 120
 CALLBACK_RATE_WINDOW = 60.0
 

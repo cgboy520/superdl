@@ -17,8 +17,7 @@ class Wallet(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(unique=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
-    # 恒为 0.00:development-plan 的表设计留了这一列,但同文档 §5「创建时不做预占,
-    # 以 K8s 调度结果为准」——MVP 没有任何路径写它。留列不留幻觉:要做预占再启用
+    # 恒为 0.00:创建时不做预占(以 K8s 调度结果为准),当前没有任何路径写它
     frozen_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -27,8 +26,7 @@ class BalanceLedger(Base):
     """追加式资金流水,对账基准。amount 带符号;balance_after 为扣/入账后的快照。"""
 
     __tablename__ = "balance_ledger"
-    # 金额为 0 的流水行没有任何业务含义,只会污染对账口径 —— 出现即代码有 bug,
-    # 让它在写入那一刻响亮地失败,而不是变成一行谁也解释不了的记录。
+    # amount <> 0:金额为 0 的流水没有业务含义,出现即 bug,写入那一刻就失败。
     # 刻意**不**加 wallets.balance >= 0:透支是设计内的(服务已消费完才结算),
     # 加了会让合法的结算扣款整批失败。
     __table_args__ = (CheckConstraint("amount <> 0", name="amount_nonzero"),)
@@ -50,8 +48,7 @@ class BillHourly(Base):
     __tablename__ = "bills_hourly"
     __table_args__ = (
         UniqueConstraint("instance_id", "hour_start"),
-        # 单个自然小时窗口最多 3600 秒;越界即窗口计算有 bug(bill_amount 已在应用层拦,
-        # 这里是兜底:手工 SQL / 未来的新写入路径不会绕过)
+        # 单个自然小时窗口最多 3600 秒;应用层已拦,这里兜住手工 SQL 等旁路写入
         CheckConstraint("seconds_used >= 0 AND seconds_used <= 3600", name="seconds_range"),
         CheckConstraint("amount >= 0", name="amount_nonneg"),
     )
@@ -123,7 +120,7 @@ class Order(Base):
     qr_url: Mapped[str | None] = mapped_column(String(512))
     paid_at: Mapped[datetime | None]
     expires_at: Mapped[datetime]
-    # 发票字段预留(MVP 不做开票流程)
+    # 发票字段预留
     invoice_title: Mapped[str | None] = mapped_column(String(128))
     invoice_tax_id: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

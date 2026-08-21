@@ -19,9 +19,8 @@ from app.modules.orchestrator.models import DataDisk
 logger = get_logger(__name__)
 
 BILLABLE_STATUSES = ("active", "grace")  # frozen 不再计费
-# 欠费链路上的全部状态。巡检口径必须用这一组,不能用 BILLABLE_STATUSES ——
-# 「盘全部 frozen 且已经充了钱」的用户既不在计费盘集合里、余额也不 ≤0,
-# 拿计费态当巡检口径会让他永远不被处理(见 list_arrears_chain_user_ids)。
+# 欠费链路上的全部状态。巡检口径必须用这一组:用 BILLABLE_STATUSES 会漏掉「盘全部 frozen
+# 且已充值」的用户,他们永远不被处理(见 list_arrears_chain_user_ids)。
 ARREARS_CHAIN_STATUSES = ("active", "grace", "frozen")
 
 
@@ -43,8 +42,7 @@ async def create_disk(
         ).scalar_one_or_none()
         if existing is not None:
             return existing
-    # JuiceFS SC 缺位时先拦下:否则用户买到一块永远挂不上(挂了实例就 Pending 到 failed)、
-    # 又按日计费的盘 —— 卖出一个注定不可用的付费商品比开不出实例更难看
+    # JuiceFS SC 缺位时先拦下:否则用户买到一块永远挂不上、却按日计费的盘
     await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_effective_policies(session)
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
@@ -187,12 +185,8 @@ async def detach_for_instance(session: AsyncSession, instance_id: int) -> None:
 async def list_arrears_chain_user_ids(session: AsyncSession) -> list[int]:
     """欠费巡检的用户集合:名下有任何一块处于欠费链路上的盘。
 
-    此前巡检把集合拼成「有 active/grace 盘的用户 ∪ 余额≤0 的用户」,于是有一类用户
-    两边都不在:盘已经从 grace 熬到 frozen(不在计费盘里),而他刚刚充了钱(余额 > 0)。
-    结果是三输 —— 用户充了钱拿不回数据(挂载要求 status == "active"),平台白占 JuiceFS
-    空间且永不计费,disk_frozen_days 到期清除也永不触发,存储泄漏无上限。而
-    「欠费 → 宽限 → 冻结 → 回头充值」正是留存漏斗上最主流的一条路径,30 天冻结窗口
-    本来就是为了等这次充值。
+    禁止拼成「有 active/grace 盘的用户 ∪ 余额≤0 的用户」:盘已熬到 frozen 而用户刚充了钱时
+    两个集合都不命中,他的盘永远解冻不了、也永远不会到期清除。
     """
     return list(
         (

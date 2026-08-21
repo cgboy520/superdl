@@ -12,8 +12,7 @@ from typing import Any
 MESSAGES: dict[str, str] = {
     # 账户
     "account.credentialRequired": "需提供验证码或密码",
-    # 登录失败一律用这一条:密码错、验证码错、该号根本没注册,三种情况必须不可区分,
-    # 否则拿号段一扫就是一张「谁是这里的客户」的名单
+    # 登录失败一律用这一条:密码错、验证码错、未注册三种情况必须不可区分
     "account.loginFailed": "手机号或凭证错误",
     "account.phoneTaken": "该手机号已注册,请直接登录",
     "account.realNameChannelError": "实名核验服务暂不可用,请稍后重试",

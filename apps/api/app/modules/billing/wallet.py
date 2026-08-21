@@ -90,18 +90,11 @@ async def debit(
     remark: str | None = None,
     allow_negative: bool,
 ) -> Wallet:
-    """扣款。**allow_negative 是必填关键字**,不给默认值。
+    """扣款。**allow_negative 是必填关键字**,不给默认值:每个调用点都必须显式表态。
 
-    透支该不该允许取决于「钱是什么时候花掉的」,两种情况都真实存在:
-    - 结算扣款(小时账单、盘日费)**必须**允许透支 —— 服务已经消费完了,拒绝扣款只会
-      把收入静默丢掉,还会让 bills_hourly.detail.charged=true 与流水互相矛盾;
-    - 管理员调账扣减也必须允许 —— 纠正一笔错误的入账不能被当前余额卡住;
-    - 而任何「先付后用」的同步消费都不该允许(目前没有这样的路径:开机/建盘走的是
-      require_balance_at_least 预校验,不在这里扣款)。
-
-    此前默认值是 True(危险的那一侧)且全仓无人传 False —— 将来有人加一条同步扣款路径、
-    照着签名不写这个参数,就会拿到一个静默透支,而编译期和评审都不会有任何信号。
-    改成必填关键字之后,每个调用点都必须在写代码时想一次这个问题。
+    - 结算扣款(小时账单、盘日费)必须允许透支:服务已消费完,拒绝扣款等于静默丢收入;
+    - 管理员调账扣减也必须允许:纠正一笔错误入账不能被当前余额卡住;
+    - 「先付后用」的同步消费不允许透支(开机/建盘走 require_balance_at_least 预校验)。
     """
     amount = as_amount(amount)
     if amount <= 0:
@@ -281,12 +274,7 @@ async def admin_list_orders(
     order_no: str | None = None,
     user_id: int | None = None,
 ) -> list:
-    """充值订单列表。order_no 精确(unique 索引)。
-
-    「客户报订单号说充值没到账」是财务的第一个日常动作,而 /finance/orders/{order_no}/verify
-    与 /backfill 这两个补救端点都以 order_no 为入参 —— 没有检索入口的话,端点存在但事实上
-    无法被使用:只能靠翻最近 200 单碰运气。
-    """
+    """充值订单列表。order_no 精确匹配(unique 索引)。"""
     from app.modules.billing.models import Order
 
     # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.orders 对齐

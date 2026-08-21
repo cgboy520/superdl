@@ -1,5 +1,5 @@
 /**
- * 金额/时长/倒计时统一格式化(ui-ux-spec §3.8)。
+ * 金额/时长/倒计时统一格式化。
  * 金额入参为后端 numeric 序列化出的字符串,禁止在前端做浮点运算;locale 只决定符号与量词。
  * 本模块保持零运行时依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts)。
  */
@@ -31,10 +31,8 @@ function currencySymbol(locale: string): string {
 
 /**
  * "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en);负数符号在最前。
- *
- * null/undefined 在这里的语义是**真的是零**(如「本月还没有消费」)。「数据未就绪」是另一
- * 回事,必须由调用方套 moneyOr 显示 "—" —— 查询失败时 TanStack 的 data 恒为 undefined,
- * 不区分就会渲染出一个假的 ¥0.00,而页面上没有任何错误提示。
+ * null/undefined 的语义是**真的是零**;「数据未就绪」必须由调用方套 moneyOr 显示 "—",
+ * 否则查询失败(data 恒为 undefined)时会渲染出一个假的 ¥0.00。
  */
 export function formatMoney(amount: string | null | undefined, locale: string): string {
   const currency = currencySymbol(locale);
@@ -66,11 +64,8 @@ export function mulPrice(price: string | null | undefined, count: number): strin
 
 /**
  * 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_EVEN 到分)。
- *
- * 展示层估算;入账以后端日结为准 —— 后端按「前 k 天累计 − 前 k−1 天累计」出账,
- * 所以单日实扣会在这个均值上下各差一分,整月累计才精确等于月单价 × 当月天数 ÷ 30。
- * 舍入模式必须与后端的 as_amount 一致(HALF_EVEN):否则默认单价下有几十个合法容量
- * 的预估与实扣差一分,用户会拿着两个数字来问。
+ * 展示层估算,入账以后端日结为准;舍入模式必须与后端 as_amount 一致(HALF_EVEN),
+ * 否则预估与实扣会差一分。
  */
 export function diskDailyEstimate(priceGbMonth: string | null | undefined, gb: number): string {
   if (!priceGbMonth || gb <= 0 || !Number.isInteger(gb)) return "0.00";

@@ -46,8 +46,8 @@
       args: {executable: /bin/bash}
       when: nvme_devices is defined
 
-    # 一次渲染到位:先 copy 占位符文件、再 replace 的写法非幂等 —— replace 每轮都判定
-    # changed(源文件里占位符还在),于是每次重跑都 bounce 一遍 rke2-agent。
+    # 必须一次渲染到位:先 copy 占位符文件再 replace 的写法非幂等(replace 每轮都判定
+    # changed),会导致每次重跑都 bounce 一遍 rke2-agent。
     - name: 分发 registries.yaml(Spegel P2P + 集群内 registry mirror)
       copy:
         dest: /etc/rancher/rke2/registries.yaml

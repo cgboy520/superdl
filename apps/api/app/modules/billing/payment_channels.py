@@ -4,7 +4,7 @@
 - wechat:wechatpayv3(平台证书自动更新 + 验签)
 - alipay:alipay-sdk-python
 
-微信/支付宝需真实商户资质,只能实机联调;未配置凭据时报 PAYMENT_CHANNEL_ERROR。
+微信/支付宝需真实商户凭据;未配置时报 PAYMENT_CHANNEL_ERROR。
 """
 
 from collections.abc import Mapping
@@ -192,8 +192,8 @@ class WechatChannel:
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
         """验签 + AES-GCM 解密 + 核对商户身份。这是这条无鉴权加钱接口**唯一**的防线。
 
-        SDK 的失败路径不都是返回值:缺 Wechatpay-Signature-Type 这类「未签名的探测请求」
-        会直接抛裸 Exception,不归一化就会以 500 落到全局 handler 上,既噪音也难排查。
+        SDK 的失败路径不都是返回值:缺 Wechatpay-Signature-Type 这类未签名探测请求会直接抛裸
+        Exception,必须在此归一化,否则以 500 落到全局 handler。
         """
         import asyncio
         from typing import Any
@@ -344,9 +344,7 @@ class AlipayChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
             )
-        # 官方通知校验清单的另外两条:app_id 必须是自己的应用,seller_id 必须是自己的收款
-        # 账号。密钥模式下第三方拿自己的应用签不出能过我方公钥验签的通知,所以这是纵深
-        # 防御而不是当前的活口子 —— 但清单上写着的项没有理由不做。
+        # 官方通知校验清单的另外两条:app_id 必须是自己的应用,seller_id 必须是自己的收款账号
         if params.get("app_id") != self._app_id:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"

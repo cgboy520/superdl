@@ -84,7 +84,7 @@ function CreatePage() {
   const [ecoChecked, setEcoChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
-  // 参数快照 → 幂等键。放 state 而不是 ref:只在提交(事件处理)里读写,不参与渲染。
+  // 参数快照 → 幂等键;只在提交时读写,不参与渲染。
   const [idemKeys] = useState(() => new Map<string, string>());
 
   const cascade = useMemo(() => {
@@ -121,7 +121,7 @@ function CreatePage() {
     onSuccess: (key) => {
       message.success(t("create.keyAdded"));
       keyForm.resetFields();
-      setKeyIds((ids) => (ids.includes(key.id) ? ids : [...ids, key.id])); // 添加即勾选
+      setKeyIds((ids) => (ids.includes(key.id) ? ids : [...ids, key.id]));
     },
   });
 
@@ -140,9 +140,7 @@ function CreatePage() {
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
   const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
   // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)。
-  // 三态:未就绪 ≠ 余额为 0 —— 把 undefined 当 0 会让主 CTA 在首屏先闪一次红色
-  // 「余额不足,去充值」,而钱包查询失败时(重试耗尽后 data 恒为 undefined)会**永久**
-  // 停在那个状态,把一个余额充足的用户彻底挡在创建入口外,页面上还没有任何错误提示。
+  // 必须按三态处理:未就绪 ≠ 余额为 0 —— 把 undefined 当 0 会把余额充足的用户挡在创建入口外。
   const balanceReady = wallet != null;
   const enough = balanceReady && compareAmounts(wallet.balance, hourlyTotal) >= 0;
 
@@ -151,14 +149,9 @@ function CreatePage() {
 
   const doCreate = async () => {
     setSubmitting(true);
-    // 幂等键绑到「本次提交的参数」上,而不是在失败时轮换。
-    //
-    // 后端只在实例行 commit 成功的那一刻才落下幂等键 —— 网络超时 / 502 时,后端很可能已经
-    // 建好实例、只是响应丢了,而前端此刻换了新键:用户按第二下就会开出第二台 GPU 并开始
-    // 按秒计费。原来的轮换是为了解决另一件事(改了参数重提时不该命中旧实例),而一个
-    // UUID 同时承担「这次提交」和「重来一次」两种语义,catch 里的取舍恰好偏向了要钱那侧。
-    // 参数派生的键两件事一起满足:参数不变 → 键不变 → 重试自动去重;参数变了 → 键变 →
-    // 不会被旧结果遮住。
+    // 幂等键必须由「本次提交的参数」派生,不能在失败时轮换:后端只在实例行 commit 成功时
+    // 才落下幂等键,响应丢失时换新键会让用户按第二下开出第二台 GPU;参数变了则键随之变,
+    // 不会被上一次的结果遮住。
     const seed = JSON.stringify([
       sku.id,
       gpuCount,
@@ -233,8 +226,8 @@ function CreatePage() {
   const columns = skuColumns({ fmt, t });
 
   return (
-    // 刻意不用 Space:Space 会给每个子项包一层等高的 ant-space-item,
-    // 底部 sticky 结算条的包含块只有自身高度 → 粘滞行程为 0(等于没粘)
+    // 禁止用 Space:它给每个子项包一层等高的 ant-space-item,底部 sticky 结算条的
+    // 包含块只剩自身高度,粘滞行程为 0
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("create.title")}

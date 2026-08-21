@@ -68,7 +68,7 @@ type LedgerTypeKey = keyof typeof LEDGER_TYPE;
 
 const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
 
-/** 支付倒计时:只给一个到期时刻,用户还得自己算还剩多久。 */
+/** 支付倒计时:把到期时刻渲染成剩余时长。 */
 function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const { t } = useTranslation();
   const [left, setLeft] = useState(() => Math.max(0, new Date(expiresAt).getTime() - Date.now()));
@@ -85,7 +85,7 @@ function PayCountdown({ expiresAt }: { expiresAt: string }) {
   const m = Math.floor((total % 3600) / 60);
   const sec = total % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
-  // 订单 TTL 是 2 小时:超过一小时要显示时段,否则 "119:58" 这种读起来像 119 分钟
+  // 订单 TTL 2 小时:超过一小时必须显示时段,否则 "119:58" 会被读成 119 分钟
   const time = h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
   return <span>{t("billing.payCountdown", { time })}</span>;
 }
@@ -94,8 +94,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const { formatMoney } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
-  // 金额按字符串走(InputNumber stringMode):走 number 要经二进制浮点,
-  // 与「全链路 Decimal」的口径不一致
+  // 金额必须按字符串走(InputNumber stringMode),禁止经二进制浮点
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
   const [idem, setIdem] = useState(() => crypto.randomUUID());
@@ -320,12 +319,10 @@ function BillingPage() {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const { date, tzOffsetMinutes } = localToday();
-  // 三个查询共用同一个本地时区口径:月账单与「今日消费」并排渲染在同一张卡里,
-  // 月窗口按 UTC 切、日窗口按本地切时,把 31 天日账单加起来 ≠ 月账单
+  // 三个查询必须共用同一个本地时区口径,否则 31 天日账单之和 ≠ 月账单
   const { data: summary } = useBillSummary(month, tzOffsetMinutes);
   const { data: daily } = useDailySummary(date, tzOffsetMinutes);
-  // 账单表与右上角的 CSV 导出必须同口径(都按当月),否则同一个 Tab 里屏幕上和导出的
-  // 是两批不同范围的数据
+  // 账单表与 CSV 导出必须同口径(都按当月)
   const { data: bills } = useHourlyBills({ month, tz_offset_minutes: tzOffsetMinutes, limit: 50 });
   const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("billing.thresholdSaved")) });
 

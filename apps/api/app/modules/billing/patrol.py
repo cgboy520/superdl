@@ -49,9 +49,8 @@ async def _patrol_frozen_tenants(
 ) -> None:
     """被冻结账号仍在跑的实例 → 停机。
 
-    冻结端点已经同步停过一轮,这里兜的是那一刻还在 creating/starting 的实例:状态机不允许
-    它们直接进 stopping,收敛到 running 之后必须有人再来停一次,否则一台在封禁瞬间刚好在
-    开机的实例会一直跑下去 —— 而计费主链路不看用户状态,它会一直扣钱。
+    兜的是冻结那一刻还在 creating/starting 的实例:状态机不允许它们直接进 stopping,
+    收敛到 running 后必须再停一次,否则会一直跑并一直扣费(计费主链路不看用户状态)。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -174,8 +173,8 @@ async def _patrol_frozen_and_arrears_stopped(
 async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
     """数据盘欠费链路:欠费 → grace(7 天只读)→ frozen(30 天)→ 清除;回款即恢复。
 
-    巡检集合直接取「名下有欠费链路上的盘」的用户,不拿计费态列表 + 余额≤0 去拼 ——
-    后者会漏掉「盘全部 frozen 且已充值」这类用户(两个集合都不在),他们的盘永远解冻不了。
+    巡检集合必须直接取「名下有欠费链路上的盘」的用户:用「计费态列表 + 余额≤0」拼会漏掉
+    盘全部 frozen 且已充值的用户,他们的盘永远解冻不了。
     """
     from app.modules.orchestrator import service as orchestrator_service
 

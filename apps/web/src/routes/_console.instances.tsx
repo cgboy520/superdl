@@ -235,8 +235,6 @@ function InstancesPage() {
   const { formatHourlyPrice, formatMoney } = useFormat();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
-  // 有实例在过渡态(creating/starting/stopping/releasing)才 5s 盯着,
-  // 否则退到 30s:全是稳态时没什么可等的,别空转打接口
   const {
     data: instances,
     isLoading,
@@ -255,7 +253,7 @@ function InstancesPage() {
     [daily],
   );
 
-  // 名称与 uuid 都按小写比对:此前名称大小写敏感、uuid 强制小写,同一个搜索框两套口径
+  // 名称与 uuid 统一按小写比对,同一个搜索框不能有两套大小写口径
   const rows = (instances ?? []).filter((i) => {
     const needle = q.trim().toLowerCase();
     return !needle || i.name.toLowerCase().includes(needle) || i.uuid.includes(needle);

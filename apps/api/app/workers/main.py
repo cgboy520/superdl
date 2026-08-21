@@ -23,14 +23,10 @@ logger = get_logger(__name__)
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
 
-# K8s liveness:exec 探针检查该文件 mtime。心跳由**独立协程**触碰,不挂在 outbox 循环上 ——
-# 挂在循环开头意味着「探活」实际探的是「当前任务已经跑完了没有」:handle_create 一次要打
-# 7 个 K8s 请求,API server 处于黑洞态(TCP 连得上但不回包)时每次吃满 35s 读超时,
-# 一轮就能超过探针的 120s + 3×30s 阈值 —— worker 被 SIGKILL,而它其实活得好好的,
-# 只是在等一个不会回来的响应。反复重启还会进 CrashLoopBackOff,把结算、巡检、查单这些
-# 定时任务一起停掉;同一份心跳还喂着 WorkerDown 告警,于是长任务期间必然误报。
-# K8s 调用都在 asyncio.to_thread 里,事件循环本身不会被阻塞,心跳协程照常跑得动;
-# 真正的进程僵死(事件循环卡住)仍然探得出来 —— 那才是这个探针该探的东西。
+# K8s liveness:exec 探针检查该文件 mtime。心跳必须由独立协程触碰,禁止挂在 outbox 循环上:
+# 挂在循环里探的就成了「当前任务跑完没有」,一个长任务就能让活着的 worker 被 SIGKILL,
+# 连带停掉全部定时任务并误报 WorkerDown。K8s 调用都在 asyncio.to_thread 里,事件循环不被
+# 阻塞,真正的进程僵死仍然探得出来。
 HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
 
 # /metrics 端口(结算/死信/reconciler 指标都在 worker 进程内,必须单独暴露被抓取;
@@ -131,8 +127,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    # 定时任务的 misfire 宽限:APScheduler 默认只有 1 秒,事件循环稍有阻塞就整轮跳过。
-    # 结算类任务本身还有水位线追平兜底,宽限只是让「刚好错过」的那次直接补跑。
+    # misfire 宽限:APScheduler 默认只有 1 秒,事件循环稍有阻塞就整轮跳过
     scheduler.add_job(
         settle_due_hours,
         "cron",
@@ -153,7 +148,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         misfire_grace_time=3600,
     )
     # 日结之后再跑资金核对:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」。
-    # 只报不改 —— 自动纠正会把一个可查的差异变成一个不可查的差异。
+    # 只报不改:自动纠正会把可查的差异变成不可查的差异。
     scheduler.add_job(
         reconcile_funds,
         "cron",

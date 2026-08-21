@@ -1,10 +1,4 @@
-/**
- * 审计检索。
- *
- * detail(JSONB)里装着全站那些「原因必填」弹窗收上来的原因、变更前后值、金额 ——
- * 此前一个字段都不透出,页面上只能看到「admin.POST /tenants/5/freeze → user:5 → 200」,
- * 看不到为什么冻结、单价从多少改到多少,复盘必须连库查 JSONB。
- */
+/** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
 import { DatePicker, Input, Select, Space, Table, Tag, Typography } from "antd";
@@ -112,7 +106,6 @@ export function AuditTable() {
           { title: t("audit.colTime"), dataIndex: "created_at", render: formatDateTime },
         ]}
         expandable={{
-          // 摘要之外的完整 detail:调账金额、变更键清单、平台配置改了哪些键
           rowExpandable: (r) => r.detail != null && Object.keys(r.detail).length > 0,
           expandedRowRender: (r) => (
             <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>

@@ -1,5 +1,5 @@
 /**
- * 状态枚举 → 徽标色 / 文案 key 的单一映射表(ui-ux-spec §3.8)。
+ * 状态枚举 → 徽标色 / 文案 key 的单一映射表。
  * 枚举值与后端 status 严格一致,新增状态先改后端再同步这里与 locales 下两语言的 shared.json。
  * labelKey 内嵌 "shared:" 前缀,任意默认 ns 的 t() 均可直接解析;
  * 文案值在 packages/ui/locales/{zh-CN,en-US}/shared.json,键集由 src/locales.test.ts 守护。

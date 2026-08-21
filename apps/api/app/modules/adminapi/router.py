@@ -110,9 +110,6 @@ async def admin_change_own_password(
 
 
 # ---------- 管理员账号(角色:仅 admin) ----------
-# 没有这一组端点时,生产库开箱就是空的 admin_users 表:控制台不可登录,唯一办法是人工
-# 连库 INSERT;而调账强制双人复核(复核人 ≠ 发起人),单账号意味着任何调账单都永远无法
-# 通过复核,财务补偿在生产上是死锁的;审计的 actor_id 也全部指向同一个账号,追溯不到人。
 
 
 @router.get("/admins", dependencies=[require_roles()])
@@ -444,9 +441,7 @@ async def admin_list_tenants(
 ) -> list[TenantOut]:
     """租户列表。q = 手机号(完整号码精确,短串按后缀)。
 
-    列表仍只回掩码 —— 「查得到」不等于「看得到」,精确查询不放大 PII 展示面。
-    但按号码检索本身是敏感读:显式落一条审计(默认只审计写操作),否则
-    「谁按手机号查过哪个租户」不可追溯,而这条端点 readonly 角色也能调。
+    列表只回掩码。按号码检索是敏感读,必须显式落一条审计(默认只审计写操作)。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
@@ -513,10 +508,8 @@ async def admin_freeze_tenant(
     from app.modules.orchestrator import service as orchestrator_service
 
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
-    # 封禁必须同时停机:此前只改 status + 撤 token,被封账号的 GPU 继续满载跑(封挖矿号
-    # 时处置完全失效,平台照付电费),而计费主链路不看用户状态 —— 被封用户继续每小时被扣,
-    # 扣到 0 之后走欠费链路把数据盘推向回收倒计时,他却连充值下单都做不了(deps 的 403
-    # 覆盖整个 CurrentUser),既阻止不了扣费也无法自救。误封即是直接的资金 + 数据损失。
+    # 封禁必须同时停机:计费主链路不看用户状态,只改 status 的话被封账号的 GPU 继续跑、
+    # 继续扣费,而 deps 的 403 让他既停不了机也充不了值。
     # 与 status 变更同一事务提交,不在请求路径直接调 K8s(走 outbox)。
     stopped = await orchestrator_service.stop_all_for_user(session, user_id, reason="tenant_frozen")
     await session.commit()
@@ -534,7 +527,7 @@ async def admin_unfreeze_tenant(
     from app.modules.notify import service as notify_service
 
     user = await account_service.admin_set_user_status(session, user_id, "active")
-    # 刻意不自动开机:解封瞬间批量拉起,余额不足的话立刻又欠费停机。用户自行开机。
+    # 刻意不自动开机:解封即批量拉起会立刻又欠费停机,由用户自行开机
     await notify_service.notify(
         session,
         user_id,
@@ -636,8 +629,7 @@ async def admin_node_metrics(
 ) -> dict[str, Any]:
     """节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
 
-    节点存在性不做强校验:对不存在节点的查询自然返回空序列,无信息泄漏面
-    (仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。
+    节点存在性不做强校验,不存在的节点返回空序列。响应附 grafana_url(可选深挖外链)。
     """
 
     out = await metering_service.node_gpu_metrics(node_name, range)
@@ -937,8 +929,7 @@ async def admin_audit_log(
     until: datetime | None = None,
     limit: int = 100,
 ) -> list[AuditLogOut]:
-    """审计检索。actor_id / 动作前缀 / 时间区间 —— 「查某个管理员上周干了什么」是复盘的
-    第一个动作,只按 actor_type 筛做不到。"""
+    """审计检索:actor_id / 动作前缀 / 时间区间。"""
     from sqlalchemy import select as sa_select
 
     from app.core.audit import AuditLog
@@ -983,8 +974,7 @@ async def admin_list_orders(
     order_no: str | None = None,
     user_id: int | None = None,
 ) -> list[AdminOrderOut]:
-    """充值订单列表。order_no 精确 —— /finance/orders/{order_no}/verify 与 /backfill
-    这两个补救端点都以它为入参,没有检索入口的话它们事实上无法被使用。"""
+    """充值订单列表。order_no 精确匹配,是 verify / backfill 两个补救端点的入参来源。"""
     from app.modules.billing import service as billing_service
 
     rows = await billing_service.admin_list_orders(
@@ -1121,7 +1111,7 @@ class SmsTestRequest(BaseModel):
 
 @router.post("/platform-config/test-sms", dependencies=[require_roles()])
 async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Request) -> SmsTestOut:
-    """按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。"""
+    """按当前生效短信配置实发一条验证码短信(有限流,过审计)。"""
     import secrets
 
     from app.core.errors import AppError, ErrorCode

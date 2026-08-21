@@ -105,10 +105,7 @@ export const useInstanceMetrics = (
   );
 export const useHourlyBills = (params?: ListHourlyBillsApiV1BillsHourlyGetParams) =>
   useApiQuery(["bills", params], () => listHourlyBillsApiV1BillsHourlyGet(params));
-/**
- * 资金流水游标分页。用 useInfiniteQuery 而不是把已加载页累积进 useState:
- * 后者失效后不会刷新(充值到账、调账都看不到),且换筛选条件要手动清。
- */
+/** 资金流水游标分页。必须走 useInfiniteQuery:自行把页累积进 useState 后,缓存失效不会刷新。 */
 export const useLedgerPages = (limit = 20) =>
   useInfiniteQuery<PageLedgerEntryOut, ApiError, InfiniteData<PageLedgerEntryOut>, unknown[], string | undefined>({
     queryKey: ["ledger", limit],

@@ -4,13 +4,13 @@
 #   curl -fsSL <API>/api/v1/node-enroll/script | sudo bash -s -- --token sdln_xxx
 #   wget -qO node-join.sh <API>/api/v1/node-enroll/script && sudo bash node-join.sh --token sdln_xxx
 #
-# 设计:
-# - 脚本本体零密钥;RKE2 server/join token 凭注册令牌 POST /bootstrap 换取。
-# - k8s_distro=k3s 时装 k3s agent(轻量档);取值由平台探测派生,节点侧无感。
+# 约束:
+# - 脚本本体零密钥;server 地址与 join token 凭注册令牌 POST /bootstrap 换取。
+# - k8s_distro=k3s 时装 k3s agent,取值由服务端下发。
 # - 全幂等:每步落 marker(/var/lib/superdl-node-join/done.d/),可无限次重跑。
-# - 需重启的步骤(nouveau/IOMMU/驱动)统一合并为一次重启,systemd oneshot 断点续跑;
+# - 需重启的步骤(nouveau/IOMMU/驱动)合并为一次重启,systemd oneshot 断点续跑;
 #   最多 2 次重启,仍未就绪则上报 failed。
-# - 各阶段回报进度(phase 与后端契约一致):precheck nouveau sysctl iommu driver
+# - phase 取值与后端契约一致:precheck nouveau sysctl iommu driver
 #   nvme_vg reboot registries agent_config agent_install agent_start waiting_node
 set -euo pipefail
 
@@ -79,7 +79,7 @@ run_step() { # run_step <phase> <fn>
 
 cfg_get() { python3 -c "import json,sys; v=json.load(open('$STATE_DIR/bootstrap.json')).get('$1',''); print(v if not isinstance(v,list) else ' '.join(v))"; }
 
-# bootstrap 后装载发行版参数(k8s_distro 由服务端必发:rke2 / k3s)
+# 装载发行版参数(k8s_distro 由服务端必发:rke2 / k3s)
 load_distro() {
   DISTRO="$(cfg_get k8s_distro)"
   RANCHER_DIR="$ETC_DIR/rancher/$DISTRO"
@@ -94,11 +94,11 @@ step_bootstrap() {
   arch="$(uname -m)"
   # shellcheck disable=SC1091  # 运行期 source 目标机文件
   os_release="$(. /etc/os-release && echo "$PRETTY_NAME")"
-  # 优先用 nvidia-smi 的型号(比 lspci 干净);拿不到再退回 lspci。
-  # nvidia-smi 无驱动时返回非零,{ ... || true; } 兜住,避免 pipefail 拖垮采集。
+  # 型号优先取 nvidia-smi,取不到退回 lspci。nvidia-smi 无驱动时返回非零,
+  # 必须由 { ... || true; } 兜住,否则 pipefail 会中断整段采集。
   gpus="$({ nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true; } | head -8 | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
   [[ "$gpus" == "[]" ]] && gpus="$(lspci 2>/dev/null | grep -i 'nvidia' | sed 's/.*: //' | head -8 | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
-  # 全卡清单(名称+显存 MiB):台账显存口径;nvidia-smi 不可用时为 [](服务端回落默认表)
+  # 全卡清单(名称+显存 MiB):台账显存口径;nvidia-smi 不可用时为 [],服务端回落默认表
   gpu_details="$({ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true; } | head -8 | python3 -c '
 import json, sys
 out = []
@@ -195,9 +195,8 @@ step_driver() {
 }
 
 step_nvidia_toolkit() {
-  # k8s 认卡的前置:NVIDIA Container Toolkit(驱动之外的容器运行时依赖,由本脚本负责)。
-  # 装好后 k3s/rke2 的 containerd 在下次启动时自动探测 nvidia-container-runtime 并生成 nvidia RuntimeClass;
-  # 集群侧再由 device plugin(GPU Operator / HAMi,见 deploy/cluster/)把卡登记为可调度资源。
+  # NVIDIA Container Toolkit:k8s 认卡的前置(驱动之外的容器运行时依赖)。装好后
+  # k3s/rke2 的 containerd 下次启动会探测 nvidia-container-runtime 并生成 nvidia RuntimeClass。
   if command -v nvidia-ctk >/dev/null 2>&1; then
     echo "-- nvidia-container-toolkit 已安装($(nvidia-ctk --version 2>/dev/null | head -1))"
   else
@@ -222,8 +221,8 @@ step_nvidia_toolkit() {
 step_nvme_vg() {
   local devices
   devices="$(cfg_get nvme_devices)"
-  # 无专用 NVMe:显式告警并上报管理端,绝不自动用文件兜底(降级须运维显式确认)。
-  # 该节点可正常加入,但没有 TopoLVM 本地实例盘能力,直到登记真实 NVMe 后重跑。
+  # 未登记 NVMe 时禁止自动用文件兜底:降级须运维在管理端显式登记。该节点仍可加入,
+  # 但没有 TopoLVM 本地实例盘能力,直到登记真实 NVMe 后重跑。
   if [[ -z "$devices" ]]; then
     echo "!! 未登记 NVMe 设备:不创建 superdl-nvme VG,也不自动兜底。" \
          "该节点无本地实例盘能力;如需请在管理端为本节点登记 NVMe 设备后重跑同一命令。"
@@ -232,7 +231,7 @@ step_nvme_vg() {
     return 0
   fi
   if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG 已存在,跳过"; return 0; fi
-  # 逐项解析:真实块设备原样用;loop:<GB> 是运维在登记时的显式选择(无专用盘的测试兜底)
+  # 真实块设备原样用;loop:<GB> 是登记时的显式选择(无专用盘的测试兜底)
   local dev size pvs=()
   for dev in $devices; do
     if [[ "$dev" == loop:* ]]; then
@@ -357,7 +356,7 @@ step_agent_install() {
 }
 
 step_agent_start() {
-  # rke2-agent / k3s-agent 均为 Type=notify:enable --now 阻塞到就绪,失败即非零由 ERR trap 上报
+  # rke2-agent / k3s-agent 均为 Type=notify:enable --now 阻塞到就绪,失败非零由 ERR trap 上报
   systemctl enable --now "$AGENT_UNIT"
   echo "-- ${AGENT_UNIT%.service} 已运行"
 }
@@ -375,7 +374,7 @@ finalize() {
 
 # ---------- 主流程 ----------
 CURRENT_PHASE="bootstrap"
-step_bootstrap # 每次执行都重新 bootstrap(幂等,服务端支持重跑;拿最新配置)
+step_bootstrap # 每次执行都重新 bootstrap,拿最新配置(服务端幂等)
 load_distro
 run_step precheck step_precheck
 run_step nouveau step_nouveau

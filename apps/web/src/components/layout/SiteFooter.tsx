@@ -48,7 +48,7 @@ export function SiteFooter() {
     { label: t("footer.linkPricing"), to: "/#pricing" },
     { label: t("footer.linkRanking"), to: "/#ranking" },
   ];
-  // 只列真实存在的入口:此前「帮助文档/服务状态」是两条 to="" 的死链
+  // 只列真实存在的入口,不放 to="" 的占位链接
   const supportLinks = [
     { label: t("footer.linkHelp"), to: "/help" },
     ...(site?.support_email

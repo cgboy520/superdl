@@ -1,7 +1,7 @@
 """统一错误体 {code, message, message_key, params, detail}。
 
-message 恒为渲染后的中文(旧客户端兜底);message_key/params 供前端查多语言目录
-(core/messages.py 为单一事实源)。ErrorCode 仍是程序化分支依据。"""
+message 恒为渲染后的中文;message_key/params 供前端查多语言目录
+(core/messages.py 为单一事实源)。ErrorCode 是程序化分支依据。"""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -118,8 +118,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        # 只回位置/原因/类型:pydantic 的 errors() 带 input(提交原值),
-        # 回显等于把密码、身份证号原样写进响应体与前端日志
+        # 只回位置/原因/类型:pydantic errors() 的 input 是提交原值,回显即泄露密码/身份证号
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]

@@ -20,7 +20,7 @@ spec:
               accessKeySecretRef: {name: alidns-credentials, key: access-key}
               secretKeySecretRef: {name: alidns-credentials, key: secret-key}
 ---
-# 泛域名证书:Jupyter per-instance 子域共用一张(development-plan §2.4)
+# 泛域名证书:Jupyter per-instance 子域共用一张
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

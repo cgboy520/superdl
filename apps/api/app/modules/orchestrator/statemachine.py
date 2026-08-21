@@ -1,4 +1,4 @@
-"""实例状态机(development-plan §5.1)。
+"""实例状态机。
 
 running↔非 running 的边就是计费边。任何状态变更必须经 service.transition()
 (同事务写 instance_events),禁止直接 UPDATE status。

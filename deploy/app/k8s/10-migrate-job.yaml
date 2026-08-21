@@ -1,6 +1,5 @@
-# 迁移 Job:每次发布前 apply(generateName 不支持 apply,用带版本号的 name)。
-# CI 发布流程:kubectl create -f 10-migrate-job.yaml(name 后缀替换为镜像 tag)
-#            → kubectl wait --for=condition=complete → 再滚动 api/worker。
+# 迁移 Job:每次发布前跑(generateName 不支持 apply,用带 tag 后缀的 name)。
+# 顺序不可颠倒:create 本 Job → kubectl wait --for=condition=complete → 再滚动 api/worker。
 apiVersion: batch/v1
 kind: Job
 metadata:

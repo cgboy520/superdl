@@ -16,7 +16,7 @@ class User(Base):
     low_balance_warn_hours: Mapped[int] = mapped_column(default=24)  # 余额预警阈值(用户可设)
     token_version: Mapped[int] = mapped_column(default=0)  # 撤销闸:+1 即失效全部在外 token
     verification_status: Mapped[str] = mapped_column(String(16), default="unverified")
-    # 实名/企业字段预留(MVP 不做流程,避免日后迁移)
+    # 实名与企业/开票字段
     id_name: Mapped[str | None] = mapped_column(String(64))
     id_number: Mapped[str | None] = mapped_column(String(32))
     company_name: Mapped[str | None] = mapped_column(String(128))
@@ -56,8 +56,7 @@ class SmsCode(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     phone: Mapped[str] = mapped_column(String(20), index=True)
-    # 带密钥摘要,不是明文:一次只读 DB 访问就能把「读到库」升级成「成为任何人」
-    # (见 core.crypto.hash_sms_code)
+    # 带密钥摘要,禁止明文入库(见 core.crypto.hash_sms_code)
     code_hash: Mapped[str] = mapped_column(String(64))
     purpose: Mapped[str] = mapped_column(String(16))  # register / login
     expires_at: Mapped[datetime]

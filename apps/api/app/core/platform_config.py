@@ -1,6 +1,5 @@
 """平台配置中心:支付/短信/实名/合规配置,env 默认 + DB 覆盖,管理端在线配置免发版。
 
-与 policies.py 同构且同址(core):billing / account / notify / catalog 都要读。
 SETTING_SPECS 是键白名单,未知键一律拒绝。敏感项经 crypto.py AES-GCM 加密落库,
 adminapi 只回配置状态与尾 4 位预览,永不回明文。
 """
@@ -106,8 +105,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         forbid_contains="-----",
         hint="粘贴纯 base64 支付宝公钥体(开放平台·接口加签方式·支付宝公钥)",
     ),
-    # 收款方 PID(2088 开头 16 位)。官方要求异步通知除验签外还要核对 app_id 与 seller_id;
-    # 留空则只核 app_id(密钥模式下第三方无法伪造出能过验签的通知,seller_id 是纵深防御)
+    # 收款方 PID(2088 开头 16 位)。异步通知除验签外还要核对 app_id 与 seller_id;留空则只核 app_id
     "alipay_seller_id": SettingSpec(
         "payment_alipay",
         "str",
@@ -205,11 +203,11 @@ SETTING_SPECS: dict[str, SettingSpec] = {
 }
 
 
-# 键改名的读回落:cluster_join_token 为 AES-GCM 且 AAD=行 key,直接 UPDATE 键名会静默毁掉
-# 密文 → 旧行原键解密;管理端写新键成功后同事务删旧行(见 set_platform_settings)。
+# 旧键读回落:secret 走 AES-GCM 且 AAD=行 key,禁止直接 UPDATE 键名(会静默毁掉密文),
+# 只能按旧行的原键解密;写新键成功后同事务删旧行(见 set_platform_settings)。
 LEGACY_KEY_ALIASES: dict[str, str] = {
     "cluster_join_token": "rke2_join_token",
-    "cluster_server_url": "rke2_server_url",  # 明文行由迁移直改,别名兜未跑迁移的窗口
+    "cluster_server_url": "rke2_server_url",  # 明文行,别名兜未跑迁移的窗口
     "cluster_agent_version": "rke2_version",
 }
 

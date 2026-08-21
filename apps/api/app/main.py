@@ -20,8 +20,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_sentry()
     settings = get_settings()
     # 一次性引导:配置了口令且 admin_users 为空时创建首个超管,建出来之后自动失效
-    # (ensure_bootstrap_admin 内部判空表)。此前被 environment == "dev" 硬门挡着,
-    # 而全站没有任何端点能管理 admin_users —— 生产库开箱即不可登录。
+    # (ensure_bootstrap_admin 内部判空表)
     if settings.bootstrap_admin_password:
         from app.core.db import get_sessionmaker
         from app.modules.adminapi.service import ensure_bootstrap_admin
@@ -29,8 +28,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         async with get_sessionmaker()() as session:
             await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
     if settings.environment == "prod":
-        # cluster 键不做启动 fail-fast(推荐经管理端 DB 覆盖层维护,启动查 env 会误报)
-        # → DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 门禁兜底
+        # cluster 键不做启动 fail-fast(经管理端 DB 覆盖层维护,查 env 会误报):
+        # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 门禁兜底
         from app.core.db import get_sessionmaker
         from app.core.logging import get_logger
         from app.core.platform_config import get_effective_platform_config
@@ -56,11 +55,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
         # 用户端与管理端共用一份 OpenAPI(orval 按 tag 分组生成)
-        # 生产关掉三条文档路由:API host 在 Ingress 上是公网直出,任何人免登录即可从
-        # /docs 或 /openapi.json 拿到全部管理端路径、字段名与取值范围(调账、补单、
-        # 平台配置都在里面)。只关 docs_url 不够 —— openapi_url 仍会把整份 schema 吐出去。
-        # export_openapi 走的是 app.openapi() 直取 schema,不经这些路由,契约闸门不受影响;
-        # 顺带让 security_headers 里给 Swagger UI 开的那个 CSP 豁免在生产失效。
+        # 生产必须同时关掉 docs/redoc/openapi 三条路由:API host 公网直出,只关 docs_url
+        # 时 openapi_url 仍会把整份管理端 schema 吐出去。export_openapi 直取 app.openapi(),
+        # 不经这些路由,契约闸门不受影响。
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",

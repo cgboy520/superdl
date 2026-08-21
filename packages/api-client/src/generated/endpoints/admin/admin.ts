@@ -1060,8 +1060,7 @@ export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiA
 }
 
 /**
- * 审计检索。actor_id / 动作前缀 / 时间区间 —— 「查某个管理员上周干了什么」是复盘的
- * 第一个动作,只按 actor_type 筛做不到。
+ * 审计检索:actor_id / 动作前缀 / 时间区间。
  * @summary Admin Audit Log
  */
 export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiAdminV1AuditGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditLogOut[]> => {
@@ -3554,8 +3553,7 @@ export const getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl = (nodeName
 /**
  * 节点每卡曲线(DCGM per-GPU)+ 24h XID 计数;断源 available=false(200)。
  *
- * 节点存在性不做强校验:对不存在节点的查询自然返回空序列,无信息泄漏面
- * (仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。
+ * 节点存在性不做强校验,不存在的节点返回空序列。响应附 grafana_url(可选深挖外链)。
  * @summary Admin Node Metrics
  */
 export const adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet = async (nodeName: string,
@@ -3778,8 +3776,7 @@ export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrder
 }
 
 /**
- * 充值订单列表。order_no 精确 —— /finance/orders/{order_no}/verify 与 /backfill
- * 这两个补救端点都以它为入参,没有检索入口的话它们事实上无法被使用。
+ * 充值订单列表。order_no 精确匹配,是 verify / backfill 两个补救端点的入参来源。
  * @summary Admin List Orders
  */
 export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrderOut[]> => {
@@ -4392,7 +4389,7 @@ export const getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl = () => {
 }
 
 /**
- * 按当前生效短信配置实发一条验证码短信(上线前联调用;有限流,过审计)。
+ * 按当前生效短信配置实发一条验证码短信(有限流,过审计)。
  * @summary Admin Test Sms
  */
 export const adminTestSmsApiAdminV1PlatformConfigTestSmsPost = async (smsTestRequest: SmsTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<SmsTestOut> => {
@@ -5452,9 +5449,7 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 /**
  * 租户列表。q = 手机号(完整号码精确,短串按后缀)。
  *
- * 列表仍只回掩码 —— 「查得到」不等于「看得到」,精确查询不放大 PII 展示面。
- * 但按号码检索本身是敏感读:显式落一条审计(默认只审计写操作),否则
- * 「谁按手机号查过哪个租户」不可追溯,而这条端点 readonly 角色也能调。
+ * 列表只回掩码。按号码检索是敏感读,必须显式落一条审计(默认只审计写操作)。
  * @summary Admin List Tenants
  */
 export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {

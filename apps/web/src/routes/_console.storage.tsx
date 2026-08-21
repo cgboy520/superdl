@@ -60,8 +60,7 @@ function MountOverview({ priceText }: { priceText: string }) {
   );
   return (
     <Card size="small" title={t("storage.mountOverviewTitle")}>
-      {/* 只列真实挂载点:后端 Pod 只挂实例盘与数据盘。
-          公共模型缓存(/public/models)未实现,宣传不存在的挂载点比缺功能更伤信任。 */}
+      {/* 只列真实存在的挂载点:后端 Pod 只挂实例盘与数据盘 */}
       <div style={{ display: "flex", gap: 8 }}>
         {seg("/", t("storage.segRoot"), statusColors.blue)}
         {seg("/root/data", t("storage.segData", { price: priceText }), colorPrimary)}
@@ -178,8 +177,8 @@ function StoragePage() {
       diskKeys.clear(); // 建成了才作废这批键,下一块盘重新分配
     },
   });
-  // 幂等键按「盘名 + 容量」派生:响应丢失后用户按第二下不会多出一块按日计费的孤儿盘;
-  // 改了参数就是另一块盘,键随之改变,不会被上一次的结果遮住
+  // 幂等键按「盘名 + 容量」派生:响应丢失后重提不会多出一块按日计费的孤儿盘;
+  // 改了参数即另一块盘,键随之改变,不会被上一次的结果遮住
   const diskIdempotencyKey = (name: string, sizeGb: number): string => {
     const seed = `${name}|${sizeGb}`;
     let k = diskKeys.get(seed);
@@ -319,7 +318,7 @@ function StoragePage() {
           <Typography.Text type="secondary">
             {t("storage.createNote", { price: priceText })};{t("copy.dailyCostNote")}
           </Typography.Text>
-          {/* 容量对应的日费实时折算:光给「元/GB·月」用户还要自己换算 */}
+          {/* 容量对应的日费实时折算 */}
           <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
             {t("storage.dailyEstimate", {
               size: sizeWatch ?? 0,

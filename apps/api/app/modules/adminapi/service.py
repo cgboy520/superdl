@@ -70,14 +70,7 @@ async def create_admin(session: AsyncSession, username: str, password: str, role
 
 
 async def ensure_bootstrap_admin(session: AsyncSession, password: str) -> None:
-    """启动引导:**表为空时**创建首个 admin 账号,之后自动失效。
-
-    此前这条路径被 environment == "dev" 硬门挡着,而全站 51 个管理端点里没有任何一个能
-    管理 admin_users:生产库一启动就是空表,管理控制台开箱不可登录,唯一办法是人工连库
-    INSERT 一行 bcrypt hash。更糟的是调账强制双人复核(复核人不得是发起人)——
-    生产只能有一个共用账号 → 任何调账单都永远无法通过复核,财务补偿功能在生产上是死的;
-    审计的 actor_id 也全部指向同一个账号,追溯不到人。
-    """
+    """启动引导:**表为空时**创建首个 admin 账号,之后自动失效。"""
     existing = (await session.execute(select(AdminUser).limit(1))).scalar_one_or_none()
     if existing is not None:
         return
@@ -111,9 +104,7 @@ async def update_admin(
     """改角色/停用。返回 (账号, 旧值快照) —— 审计只记新值答不出「从什么改成什么」。"""
     admin = await _get_admin(session, admin_id)
     if admin.id == actor_id and (new_status == "disabled" or (role and role != admin.role)):
-        # 自己停用自己 / 自己降权是最常见的一键锁死操作。挡住这一条就够了:调用方必然是
-        # 一个 active 的 admin(require_roles() 只放行 admin),他动别人时自己仍在,
-        # 所以「最后一个超管被拿掉」在这组端点上不可能发生 —— 不需要再加一道计数守卫。
+        # 禁止自停用/自降权;调用方必然是仍在位的 active admin,故无需再加计数守卫
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="adminapi.cannotChangeSelf",

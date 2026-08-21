@@ -1,11 +1,4 @@
-/**
- * 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。
- *
- * 没有这一屏时,生产库开箱就是空的 admin_users 表:控制台不可登录,唯一办法是人工连库
- * INSERT 一行 bcrypt hash;而调账强制双人复核(复核人 ≠ 发起人),单账号意味着任何调账单
- * 都永远无法通过复核,财务补偿在生产上是死锁的;审计的 actor_id 也全部指向同一个账号,
- * 追溯不到人。
- */
+/** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
@@ -100,7 +93,7 @@ export function AdminsTab() {
               disabled={!isSuperAdmin || isSelf}
               options={ROLES.map((r) => ({ value: r, label: t(`admins.role_${r}` as never) }))}
               onChange={(role: AdminRole) => {
-                // 改角色也要原因:审计只记新值就答不出「从什么改成什么」
+                // 改角色必须带 reason:审计只记新值,不带原因就答不出「从什么改成什么」
                 Modal.confirm({
                   title: t("admins.confirmRoleTitle", { name: row.username, role: t(`admins.role_${role}` as never) }),
                   content: t("admins.roleTakesEffectNow"),
@@ -269,7 +262,7 @@ export function AdminsTab() {
             await changeOwn.mutateAsync({ data: v });
             message.success(t("admins.ownPasswordChanged"));
             setSelfOpen(false);
-            // 改密即撤销全部在外会话(含当前这个),重新登录
+            // 改密会撤销全部在外会话(含当前这个),因此必须登出重登
             logout();
           } catch (e) {
             message.error(errText(e));

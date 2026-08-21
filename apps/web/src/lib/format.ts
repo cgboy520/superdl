@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 export function useFormat() {
   const { t, i18n } = useTranslation(["web", "shared"]);
   const locale = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";
-  // i18next v26 对插值参数做 per-key 严格 typing,宽松签名的 SharedT 无法直接承接;
-  // 此处为约定的唯一 cast 点:key 存在性由 ui 的 FORMAT_KEYS 守护测试 + 双语真渲染测试锁定。
+  // 约定的唯一 t cast 点:i18next v26 对插值参数按 key 严格 typing,宽松签名的 SharedT 无法直接承接。
   return useMemo(() => makeFormatters(t as unknown as SharedT, locale), [t, locale]);
 }

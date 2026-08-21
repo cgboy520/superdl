@@ -7,6 +7,6 @@ mirrors:
   registry.superdl.local:
     endpoint:
       - "http://<server-ip>:30500"   # NodePort 全节点开放;server IP 是节点必达的稳定地址(与 agent-config.yaml 同占位符)
-# 传输安全说明:endpoint 显式 http(集群内网明文),不涉 TLS 校验,无需 configs.tls 块。
+# endpoint 显式 http(集群内网明文),不涉 TLS 校验,无需 configs.tls 块。
 # 租户 Pod 的 Egress NetworkPolicy 已禁全部私网段(app/core/k8s/real.py PRIVATE_CIDRS),
-# 租户实例无法触达 30500;TLS/认证随 Harbor 后置项评估。
+# 租户实例无法触达 30500。

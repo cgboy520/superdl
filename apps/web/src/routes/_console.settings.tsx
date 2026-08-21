@@ -193,7 +193,7 @@ function SettingsPage() {
   );
 }
 
-/** 设置/修改密码:凭手机号 + 验证码(不问旧密码 —— 忘了的正是它)。 */
+/** 设置/修改密码:凭手机号 + 验证码,不要求旧密码。 */
 function PasswordModal({
   open,
   phone,

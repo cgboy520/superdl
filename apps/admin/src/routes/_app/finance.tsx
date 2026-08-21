@@ -109,8 +109,6 @@ function OrdersTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
   const [status, setStatus] = useState<string | undefined>();
-  // 「客户报订单号说充值没到账」是财务的第一个日常动作,而核验/补单两个端点都以
-  // order_no 为入参 —— 没有检索入口的话它们事实上无法被使用
   const [orderNo, setOrderNo] = useState("");
   const { data } = useOrders({
     ...(status ? { status } : {}),

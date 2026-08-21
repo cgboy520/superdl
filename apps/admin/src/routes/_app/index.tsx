@@ -140,8 +140,6 @@ function DeadTasksCard() {
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   if (rows.length === 0) return null;
-  // 默认折叠:死信原始堆栈每条约 270px,展开摆在首屏会把镇店图表(超卖率 vs 利用率)
-  // 挤到第二屏。一行摘要 + 展开详情,既不漏报也不占 C 位。
   return (
     <Col span={24}>
     <Collapse
@@ -180,7 +178,7 @@ function DeadTasksCard() {
           {
             title: t("overview.colLastError"),
             dataIndex: "last_error",
-            // 原始堆栈可能上千字符:一行截断 + 悬浮看全文,不让它把整张表撑开
+            // 原始堆栈可能上千字符,必须一行截断 + 悬浮看全文,否则会撑开整张表
             render: (v: string | null) => (
               <Tooltip title={<span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>}>
                 <span

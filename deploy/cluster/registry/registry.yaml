@@ -1,12 +1,8 @@
-# 集群内私有镜像仓库:registry.superdl.local 的真实落点
-# 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维内网)与 pull(节点 registries.yaml mirror)
-# 用原生清单,不引第三方 chart;Harbor 后置项落地时 skopeo copy 直迁
+# 集群内私有镜像仓库:registry.superdl.local 的真实落点。
+# 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维内网)与 pull(节点 registries.yaml mirror)。
 # 应用:kubectl apply -f registry.yaml;节点侧配置见 ../rke2/registries.yaml
-#
-# 威胁模型(无认证是记录在案的接受风险):
-# - 租户实例(唯一的集群内不可信负载)Egress NetworkPolicy 禁全部私网段 → 触达不了 NodePort 30500
-# - 机房防火墙不对外暴露 30500 → push 面仅剩内网运维机
-# - 认证/TLS/扫描随 Harbor 后置项一并落地,届时本仓库退役
+# 无认证无 TLS,安全边界靠两条:租户实例的 Egress NetworkPolicy 禁全部私网段(触达不了
+# NodePort 30500),机房防火墙不对外暴露 30500(push 面仅剩内网运维机)。两条都不可省。
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -46,7 +42,7 @@ spec:
         fsGroup: 1000            # PVC 数据目录写权限
       containers:
         - name: registry
-          image: registry:3.0.0  # distribution v3,钉版本(供应链规范同 helmfile)
+          image: registry:3.0.0  # distribution v3,钉版本
           ports:
             - containerPort: 5000
           env:

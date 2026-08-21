@@ -202,7 +202,7 @@ export function useAdminInstances(params?: AdminListInstancesApiAdminV1Instances
   return { ...q, queryKey };
 }
 
-/** 租户列表。q = 手机号(完整号码精确,短串按后缀)—— 客服接到电话后的第一个动作。 */
+/** 租户列表。q = 手机号(完整号码精确,短串按后缀)。 */
 export function useTenants(params?: AdminListTenantsApiAdminV1TenantsGetParams) {
   const queryKey = ["admin", "tenants", params] as const;
   const q = useQuery({
@@ -306,7 +306,7 @@ export function useAlerts(options?: { refetchInterval?: number }) {
   });
 }
 
-/** 充值订单。order_no 精确 —— 核验/补单两个端点都以它为入参。 */
+/** 充值订单。order_no 为精确匹配。 */
 export function useOrders(params?: AdminListOrdersApiAdminV1OrdersGetParams) {
   const queryKey = ["admin", "orders", params] as const;
   const q = useQuery({
@@ -578,7 +578,7 @@ export function usePlatformConfig() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
-    // 表单页:禁用全局 60s 轮询,避免编辑中被刷新
+    // 表单页必须禁用全局 60s 轮询,否则编辑中的表单会被刷新覆盖
     refetchInterval: false,
     refetchOnWindowFocus: false,
     retry: false,
@@ -605,8 +605,6 @@ export function useTestSms(opts?: MutOpts<unknown, { data: SmsTestRequest }>) {
 }
 
 // ---------- 管理员账号 ----------
-// 没有这一组,生产库开箱就是空的 admin_users 表:控制台不可登录;而调账强制双人复核
-// (复核人 ≠ 发起人),单账号意味着任何调账单都永远无法通过复核。
 
 export function useAdminAccounts() {
   const queryKey = ["admin", "admins"] as const;

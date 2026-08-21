@@ -49,7 +49,7 @@ PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
     "superdl_payment_closed_order_rescued_total",
     "关单后有效成功回调自动入账数(非零说明本地关单早于渠道侧过期,需核对 TTL)",
 )
-# WorkerDown 告警依据(带 label 的 Counter 在首次 inc 前无序列,不能用 absent 判活)
+# WorkerDown 告警依据:带 label 的 Counter 在首次 inc 前无序列,不能用 absent 判活
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",

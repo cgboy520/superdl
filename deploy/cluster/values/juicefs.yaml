@@ -1,5 +1,5 @@
 # JuiceFS CSI(JuiceFS 1.4.x LTS)。
-# 后端首选云 OSS(MinIO 已归档禁选);自建选 SeaweedFS 4.4x。
+# 后端用云 OSS 或自建 SeaweedFS 4.4x。
 # 凭据零明文:预建 Secret,values 只引用。
 #   kubectl -n kube-system create secret generic superdl-juicefs-secret \
 #     --from-literal=name=superdl-data \
@@ -7,9 +7,8 @@
 #     --from-literal=storage=oss \
 #     --from-literal=bucket='https://<bucket>.<oss-endpoint>' \
 #     --from-literal=access-key=<ak> --from-literal=secret-key=<sk>
-# SC 名与 apps/api/app/core/k8s/base.py 的 JUICEFS_STORAGE_CLASS 必须一致。
-# 刻意不叫 juicefs-shared —— 那是每租户 ns 里那只 PVC 的名字,两者同名极易读混
-# (代码里一度就是 SC 写成 juicefs-sc、PVC 叫 juicefs-shared,整条数据盘产品线不可用)。
+# SC 名与 apps/api/app/core/k8s/base.py 的 JUICEFS_STORAGE_CLASS 必须一致,
+# 且不得叫 juicefs-shared —— 那是每租户 ns 里 PVC 的名字,同名极易读混。
 storageClasses:
   - name: superdl-juicefs
     enabled: true

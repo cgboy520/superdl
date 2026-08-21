@@ -25,8 +25,7 @@ async def get_current_admin(
     admin = await session.get(AdminUser, int(payload["sub"]))
     if admin is None or admin.status != "active":
         raise unauthorized()
-    # 撤销闸:停用、改角色、改密都会 +1。没有这一条,泄露的 token 只能等 2 小时 TTL
-    # 或轮换全站 JWT 密钥 —— 而这个控制台能改价、封号、改支付凭据。
+    # 撤销闸:停用、改角色、改密都会 +1,已签发的 token 立即失效
     if payload.get("ver", 0) != admin.token_version:
         raise unauthorized()
     request.state.audit_actor = AuditActor("admin", str(admin.id))

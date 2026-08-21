@@ -171,9 +171,8 @@ async def settle_instance_window(
 ) -> Decimal:
     """按事件重建窗口秒数并入账。窗口必须落在单一自然小时内。
 
-    读事件之前必须先拿实例行锁 —— 事件流是计费主依据,而在飞的状态迁移事务对无锁读
-    是不可见的;读到一个「少了最后那条 stopping」的事件流会算出偏高的秒数,而入账是
-    单调只增的,高估值再也回不去。详见 lock_instance_for_billing 的注释。
+    读事件前必须先拿实例行锁:在飞的状态迁移事务对无锁读不可见,漏掉最后一条 stopping
+    会算出偏高的秒数,而入账单调只增,高估值再也回不去。
     """
     from app.modules.orchestrator import service as orchestrator_service
 

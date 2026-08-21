@@ -55,11 +55,7 @@ TzOffset = Query(default=480, ge=-720, le=840)
 def _parse_month(month: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
     """月窗口按**本地**月初/次月初切,不是 UTC。
 
-    月账单按 UTC 切、日账单按本地切时,同一个费用中心页面上的两个数字永远对不上:
-    北京时间的「8 月账单」实际统计的是 7/31 08:00 ~ 8/31 08:00,用户 8 月 31 日白天跑的
-    机器不计入 8 月账单、却出现在当天的「今日消费」里,把 31 天日账单加起来 ≠ 月账单。
-    小时账单列表与 CSV 导出走同一个窗口,而每行时间按本地渲染 —— 筛「2026-08」拿到的
-    表格第一行标注是「2026-07-31 08:00」,口径不一致直接暴露在屏幕上。
+    月账单按 UTC 切而日账单按本地切时,两个口径对不上:31 天日账单加起来 ≠ 月账单。
     """
     try:
         local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)

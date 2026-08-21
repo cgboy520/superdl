@@ -88,8 +88,7 @@ export function TopBarUser() {
       <Link to="/billing" className="topbar-link">
         <Space size={4}>
           <WalletOutlined />
-          {/* 未就绪必须显示 —,不能渲染假 ¥0.00:钱包查询失败时 data 恒为 undefined,
-              顶栏会永久显示「余额 ¥0.00」,而页面上没有任何错误提示 */}
+          {/* 未就绪必须显示 —,不能渲染假 ¥0.00:查询失败时 data 恒为 undefined */}
           <span>{moneyOr(formatMoney(wallet?.balance), wallet != null)}</span>
         </Space>
       </Link>

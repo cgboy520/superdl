@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_console")({
   component: ConsoleLayout,
 });
 
-// label 走各页自己的 title 键(同一份文案两处用,英文模式主导航不会混语言)
+// label 复用各页自己的 title 键,避免主导航与页面标题各持一套文案
 const NAV = [
   { key: "/dashboard", icon: <DashboardOutlined />, labelKey: "dashboard.title" },
   { key: "/market", icon: <AppstoreOutlined />, labelKey: "market.title" },

@@ -69,11 +69,8 @@ async def _running_pod_lost_reason(
 ) -> str | None:
     """running 实例是否已经不可用了。返回迁移 reason,None = 还活着。
 
-    只看 `exists` 和 `phase` 是不够的:节点断电/失联时 kubelet 不可达,node-lifecycle
-    controller 把 Pod 的 Ready condition 置 False,但 **phase 仍是 Running**、对象仍在
-    etcd 里(read 仍 200)。两个条件都不命中 → reconciler 什么也不做 → 控制台显示
-    「运行中」、SSH 连不上、账单每小时照扣,直到余额烧光被欠费停机;而那次停机同样
-    删不掉一个删不掉的 Pod,实例最终卡在 stopping。
+    只看 exists 和 phase 不够:节点失联时 kubelet 不可达,Ready condition 被置 False,
+    但 phase 仍是 Running、对象仍在 etcd 里。漏掉这一条则控制台显示「运行中」而账单照扣。
     """
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
@@ -140,9 +137,8 @@ async def _reconcile_instances(
                         await detach_for_instance(session, instance.id)
                         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
                         if first_boot:
-                            # creating 超时 = 这只盘从未承载过数据(且很可能正是它绑不上
-                            # 才超时的),回收掉不留孤儿 LV。starting 超时不能删 —— 那是
-                            # 一台停过机的实例,盘里有用户上一轮的数据。
+                            # creating 超时 = 这只盘从未承载过数据,回收掉不留孤儿 LV;
+                            # starting 超时禁止删盘:那是停过机的实例,盘里有上一轮数据。
                             await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
                         counts["to_failed"] += 1
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)

@@ -1,7 +1,4 @@
-/**
- * 列表截断提示。管理端几张表在服务端按固定条数截断(见各 service 的 .limit(...)):
- * 不说出来的话,「只显示最近 N 条」看上去和「一共就这些」一模一样 —— 排查时会据此下错结论。
- */
+/** 列表截断提示:管理端几张表在服务端按固定条数截断,页面须显式说明「只显示最近 N 条」。 */
 
 import { Typography } from "antd";
 import { useTranslation } from "react-i18next";

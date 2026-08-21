@@ -155,9 +155,7 @@ async def admin_update_sku(
 ) -> tuple[Sku, dict[str, Any]]:
     """更新 SKU。返回 (sku, 本次实际变更字段的**旧值**快照)。
 
-    旧值必须返回给调用方落审计:审计只记新值就答不出「从多少改到多少」,而 Sku 表没有
-    历史表也没有价格快照,一旦改过一次原价就永久丢失(只能靠账单里旧实例的 unit_price
-    反推,而那只在该 SKU 曾被购买过时才成立)。
+    旧值必须返回给调用方落审计:Sku 表无历史表也无价格快照,不记旧值则原价永久丢失。
     """
     sku = await get_sku(session, sku_id)
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})

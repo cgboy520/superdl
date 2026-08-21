@@ -30,17 +30,16 @@ class _FakePod:
 class FakeOrchestrator:
     auto_ready: bool = True
     fail_next_create: bool = False
-    # 真实 K8s 的删除是优雅删除:对象要在 etcd 里再留 terminationGracePeriodSeconds(30s),
-    # 期间 read 仍 200、phase 仍 Running,只是 deletionTimestamp 已设。默认关(多数用例
-    # 只关心收敛结果),需要复现「删了又立刻同名重建」这类时序问题时打开。
+    # 模拟真实 K8s 的优雅删除:对象在 etcd 里再留 terminationGracePeriodSeconds,期间
+    # read 仍 200、phase 仍 Running。默认关,复现「删了又立刻同名重建」的时序问题时打开。
     graceful_delete: bool = False
     pool_capacity: dict[str, int] = field(
         default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16}
     )
     pods: dict[tuple[str, str], _FakePod] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
-    # 实例盘 PVC:(ns, name) -> 写入内容标记。独立于 Pod 生命周期 ——
-    # 关机删 Pod 不该动它,只有释放/回收才删。disk_token 用于断言「还是原来那块盘」。
+    # 实例盘 PVC:(ns, name) -> 盘标记。独立于 Pod 生命周期,只有释放/回收才删;
+    # 标记值用于断言「还是原来那块盘」。
     instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
     # 统计(测试断言用)
     create_calls: int = 0
@@ -105,8 +104,8 @@ class FakeOrchestrator:
         existing = self.pods.get(key)
         if existing is not None:
             if existing.deleting:
-                # 真实集群:同名对象 Terminating 中,create 返回 409 AlreadyExists。
-                # 把它当幂等跳过 = 新 Pod 根本没建出来,而调用方以为成功了。
+                # 真实集群里同名对象 Terminating 时 create 返回 409;
+                # 当幂等跳过 = Pod 没建出来却报成功
                 raise RuntimeError(f"fake: pod {spec.name} is terminating, create must wait")
             return  # 幂等
         self.pods[key] = _FakePod(

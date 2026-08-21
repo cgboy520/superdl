@@ -1,6 +1,5 @@
 # PostgreSQL 逻辑备份(每日 02:30 北京 = 18:30 UTC,保留由对象存储生命周期策略管)。
-# ⚠️ 这是最低保障(RPO=24h)。钱包/账本库正式生产应上 pgBackRest/WAL-G 做 PITR
-#    (RPO≈分钟级),或直接用云 RDS 自动备份 —— 见 runbooks/pg-backup-restore.md。
+# 这是 RPO=24h 的最低保障;钱包/账本库的 PITR 方案见 runbooks/pg-backup-restore.md。
 # 凭据 Secret(superdl-pg-backup)模板见 ../secrets.example.yaml,不在整目录 apply 路径内。
 apiVersion: batch/v1
 kind: CronJob
@@ -18,16 +17,15 @@ spec:
       template:
         spec:
           restartPolicy: Never
-          # 与同目录加固基线一致:非 root 运行(pg_dump / aws s3 cp 都不需要 root),
-          # fsGroup 让两个容器都能读写交接用的 emptyDir
+          # 非 root 运行(pg_dump / aws s3 cp 都不需要 root);fsGroup 让两个容器
+          # 都能读写交接用的 emptyDir
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
             runAsGroup: 999
             fsGroup: 999
             seccompProfile: {type: RuntimeDefault}
-          # 不在运行期 apt-get 装工具(供应链面 + 依赖外网源):
-          # 转储与上传各用官方镜像,经 emptyDir 交接
+          # 转储与上传各用官方镜像、经 emptyDir 交接;禁止在运行期 apt-get 装工具
           initContainers:
             - name: dump
               image: postgres:18

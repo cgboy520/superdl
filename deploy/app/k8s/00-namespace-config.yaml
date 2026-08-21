@@ -1,6 +1,6 @@
 # 平台自身部署清单(kubectl apply -f deploy/app/k8s/ 按序应用)。
-# Secret 不在本目录:模板见 ../secrets.example.yaml(故意放在整目录 apply 路径之外,
-# 防止日常 apply 把生产凭据覆盖成占位值);真实值经外部 Secret 管理注入,禁止提交明文。
+# Secret 不放在本目录:模板见 ../secrets.example.yaml,必须留在整目录 apply 路径之外,
+# 否则日常 apply 会把生产凭据覆盖成占位值。真实值经外部 Secret 管理注入,禁止提交明文。
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -23,7 +23,7 @@ data:
   SUPERDL_SSH_HOST: "ssh1.superdl.example.com"
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
-  # uvicorn 信任的前置代理来源(--proxy-headers 的白名单,不在名单内则忽略 X-Forwarded-For)。
-  # 默认值是 RKE2/k3s 的 Pod CIDR:请求经 ingress-nginx / 前端 nginx 转发进来,
-  # 源地址就是它们的 Pod IP。集群 Pod CIDR 不同请按实际改;禁止写 "*"(等于允许伪造源 IP)。
+  # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。
+  # 默认值是 RKE2/k3s 的 Pod CIDR(请求经 ingress-nginx / 前端 nginx 转发,源地址是其 Pod IP)。
+  # 集群 Pod CIDR 不同按实际改;禁止写 "*",等于允许伪造源 IP。
   FORWARDED_ALLOW_IPS: "10.42.0.0/16"

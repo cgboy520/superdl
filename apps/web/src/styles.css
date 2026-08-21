@@ -7,7 +7,7 @@ body,
   margin: 0;
 }
 
-/* 数字密集型产品:金额/端口/利用率全局等宽对齐(tokens.tabularNums 因此弃用) */
+/* 金额/端口/利用率全局等宽对齐 */
 body {
   font-variant-numeric: tabular-nums;
 }

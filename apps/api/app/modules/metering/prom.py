@@ -12,7 +12,7 @@ from app.core.config import get_settings
 # ---- 标签常量:与 dcgm-exporter / HAMi vGPUmonitor 实机形态对齐,如有出入只改这里 ----
 DCGM_NODE_LABEL = "Hostname"  # dcgm-exporter 的节点标签
 DCGM_GPU_LABEL = "gpu"  # dcgm-exporter 的卡序号标签
-HAMI_NS_LABEL = "podnamespace"  # HAMi vGPUmonitor 容器维标签(实机核定项)
+HAMI_NS_LABEL = "podnamespace"  # HAMi vGPUmonitor 容器维标签
 HAMI_POD_LABEL = "podname"
 
 # 查询模板:{ns}=租户 namespace,{pod}=实例 uuid
@@ -30,7 +30,7 @@ QUERIES = {
 }
 
 # 共享档实例级(HAMi 软切分下 DCGM 的 per-pod 归属不可靠,改用 vGPUmonitor 容器维指标;
-# 指标名为 HAMi v2.9 默认,实机核定后如有出入只改这里)。查空时调用方回落 DCGM 模板。
+# 指标名为 HAMi v2.9 默认)。查空时调用方回落 DCGM 模板。
 HAMI_QUERIES = {
     "gpu_util": (
         'sum(Device_utilization_desc_of_container{{podnamespace="{ns}",podname="{pod}"}})'

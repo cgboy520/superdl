@@ -138,8 +138,7 @@ async def register(
     await check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
-    # 先验码再判重:反过来就是手机号枚举 oracle —— 无需持有该号码即可批量探测
-    # 「这个号注册过没有」(每个号一个限流桶,换号即换桶)
+    # 先验码再判重:反过来就是手机号枚举 oracle
     await _consume_sms_code(session, phone, sms_code, "register")
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
@@ -160,9 +159,7 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    # 全局闸:限流键含手机号时,遍历号段等于每个号一个新桶,5 次/5 分钟永远碰不到。
-    # 必须再来一个只按 IP 切分的桶,才能真正拦住「拿号段来扫」。
-    # 60/小时是对 CGNAT/企业出口的妥协值 —— 拦不住分布式扫号,但把单 IP 从无限压到可计。
+    # 全局闸:含手机号的限流键遍历号段即换桶,必须再加一个只按 IP 切分的桶
     await check_rate_limit(
         f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
     )
@@ -171,10 +168,8 @@ async def login(
         f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-    # 「该号未注册」与「该号已注册但凭证错」必须完全不可区分 —— 注册与找回密码都留了注释
-    # 说明这个陷阱(先验码再判重),唯独登录这条路径漏了:未注册返回 loginFailed、已注册
-    # 密码错返回 loginFailedPassword,拿号段一扫就是一张「谁是这里的客户」的名单。
-    # 除了文案,时序也要拉平:提前返回不付 bcrypt 的 ~200ms,本身就是第二个 oracle。
+    # 「该号未注册」与「该号已注册但凭证错」必须完全不可区分:文案统一 loginFailed,
+    # 时序也要拉平 —— 提前返回不付 bcrypt 的 ~200ms 本身就是一个 oracle。
     if sms_code is not None:
         try:
             await _consume_sms_code(session, phone, sms_code, "login")
@@ -391,11 +386,7 @@ async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) ->
 async def admin_list_users(
     session: AsyncSession, *, q: str | None = None, status: str | None = None
 ) -> list[User]:
-    """租户列表。q = 手机号(完整号码精确匹配走唯一索引;短串按后缀匹配)。
-
-    没有这一条时客服台是瘫的:客户来电报手机号,列表只回 138****1234 掩码,浏览器
-    Ctrl+F 搜完整号码必然落空;超过截断上限之后老用户干脆不在返回集里,连碰运气都没有。
-    """
+    """租户列表。q = 手机号(完整号码精确匹配走唯一索引;短串按后缀匹配)。"""
     # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.tenants 对齐
     stmt = select(User).order_by(User.id.desc()).limit(500)
     if status:

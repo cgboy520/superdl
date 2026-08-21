@@ -1,7 +1,7 @@
 name: Release
 
-# 交付流水线:构建三镜像 → Trivy 扫描(HIGH/CRITICAL 阻断)→ 推 ghcr。
-# 触发:打 v* tag(生产发布)或手动。部署侧按 tag 更新 deploy/app/k8s 镜像并跑迁移 Job。
+# 构建三镜像 → Trivy 扫描(HIGH/CRITICAL 阻断)→ 推 ghcr。
+# 部署侧按 tag 更新 deploy/app/k8s 镜像并跑迁移 Job。
 on:
   push:
     tags: ["v*"]

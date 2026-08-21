@@ -82,8 +82,8 @@ async def create_recharge(
 async def _attach_payment(session: AsyncSession, order: Order, channel: PaymentChannel) -> Order:
     """向渠道下单并回填二维码。
 
-    刻意不在事务里调渠道:池只有 10 条连接,渠道一抖动就会被下单请求占满,
-    整个 API 陪着一起挂。失败的订单让出幂等键,用户按原键重试即可开新单。
+    刻意不在事务里调渠道:连接池只有 10 条,渠道一抖动就会被下单请求占满。
+    失败的订单让出幂等键,用户按原键重试即可开新单。
     """
     try:
         qr_url = await channel.create_payment(order)

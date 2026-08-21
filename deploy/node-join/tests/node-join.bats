@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # node-join.sh 单测:PATH shim 伪造系统命令,不触碰真实系统。
-# 运行:bats deploy/node-join/tests(CI 已接;本地需 apt install bats)
+# 运行:bats deploy/node-join/tests(需 apt install bats)
 
 SCRIPT="$BATS_TEST_DIRNAME/../../../apps/api/app/modules/nodes/assets/node-join.sh"
 
@@ -59,7 +59,7 @@ if [[ "$mode" == "bootstrap" && -n "$out" ]]; then cp "$BOOTSTRAP_FIXTURE" "$out
 if [[ "$mode" == "script" && -n "$out" ]]; then echo "#!/bin/bash" > "$out"; fi
 exit 0
 EOF
-  # id:伪装 root(脚本入口即查 root,测试须以任意用户可跑)
+  # id:伪装 root(脚本入口即查 root,测试须能以任意用户跑)
   cat > "$TMP/bin/id" <<'EOF'
 #!/usr/bin/env bash
 echo 0
@@ -115,7 +115,7 @@ cat >/dev/null 2>&1 || true
 [[ -n "$out" ]] && echo "dummy-keyring" > "$out"
 exit 0
 EOF
-  # nvidia-ctk:固定"已安装"(与宿主机状态解耦;缺失时的安装分支由节点实跑验证)
+  # nvidia-ctk:固定"已安装"(与宿主机状态解耦)
   cat > "$TMP/bin/nvidia-ctk" <<'EOF'
 #!/usr/bin/env bash
 echo "NVIDIA Container Toolkit CLI version 1.20.0"
@@ -176,7 +176,7 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   for m in precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
-  # NVIDIA Container Toolkit 步骤已过(此处 nvidia-ctk 已存在,走跳过分支)
+  # NVIDIA Container Toolkit:此处 nvidia-ctk 已存在,走跳过分支
   [[ "$output" == *"nvidia-container-toolkit 已安装"* ]]
   # 进度上报含关键阶段与收尾
   grep -q '"phase":"agent_start","state":"ok"' "$CURL_LOG"
@@ -232,7 +232,7 @@ EOF
   [ "$(stat -c %a "$TMP/etc/rancher/k3s/config.yaml")" = "600" ]
   grep -q 'mirrors:' "$TMP/etc/rancher/k3s/registries.yaml"
   [ ! -e "$TMP/etc/rancher/rke2" ]
-  # 默认走 k3s 官方中国镜像的安装脚本(认 INSTALL_K3S_MIRROR=cn),规避 github 下载卡死
+  # 默认走 k3s 官方中国镜像的安装脚本(认 INSTALL_K3S_MIRROR=cn)
   grep -q "rancher-mirror.rancher.cn/k3s/k3s-install.sh" "$CURL_LOG"
   grep -q "INSTALL_K3S_MIRROR=cn" "$SHIM_CALLS"
   grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"

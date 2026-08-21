@@ -1,7 +1,7 @@
 """审计:所有写操作(POST/PUT/PATCH/DELETE)由中间件统一落 audit_log。
 
 actor 由鉴权依赖写入 request.state.audit_actor;管理端动作带 "admin." 前缀。
-审计写入独立于业务事务(业务失败也要留痕),用独立 session。
+审计必须用独立 session 写入,不得并入业务事务:业务失败也要留痕。
 """
 
 from collections.abc import Awaitable, Callable
@@ -51,9 +51,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         response = await call_next(request)
-        # 默认只审计写操作(全量审计 GET 会写放大 + 表膨胀)。个别敏感读端点显式调
-        # mark_audited_read 后也落一行 —— 「谁按手机号查过哪个租户」必须留痕,否则
-        # 精确查询就成了一个无痕的 PII 检索面。
+        # 默认只审计写操作;敏感读端点显式调 mark_audited_read 后也落一行
         if request.method not in AUDIT_METHODS and not getattr(request.state, "audit_force", False):
             return response
         path = request.url.path
@@ -78,16 +76,13 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 )
                 await session.commit()
         except Exception:
-            # 审计失败不影响业务响应,但必须告警日志
+            # 审计失败不得影响业务响应
             logger.exception("audit_write_failed", path=path)
         return response
 
 
 def set_audit_target(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:
-    """业务代码在写操作里标注审计目标(如 instance:uuid)。
-
-    detail 禁止落凭据明文 —— 它现在会透出到管理端审计页(平台配置一直是只落键名不落值)。
-    """
+    """业务代码在写操作里标注审计目标(如 instance:uuid)。detail 禁止落凭据明文,只落键名。"""
     request.state.audit_target = target
     if detail is not None:
         request.state.audit_detail = detail

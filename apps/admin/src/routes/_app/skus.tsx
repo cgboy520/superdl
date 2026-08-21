@@ -249,7 +249,7 @@ function SkusPage() {
         price_hourly: values.price_hourly,
       };
       if (editing === "new") {
-        // 新建表单没有 reason 字段;这里显式剥掉,免得将来加了别的共用字段又漏
+        // 新建端点不接受 reason,提交前必须显式剥掉
         const createPayload = { ...(payload as Record<string, unknown>) };
         delete createPayload.reason;
         create.mutate({ data: createPayload as never });
@@ -525,8 +525,7 @@ function SkusPage() {
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
-            {/* 编辑必填原因:改价单人一步生效,而新实例会把当时的单价永久快照下来
-                (改回来只影响之后新建的),审计只记新值就答不出「从多少改到多少」 */}
+            {/* 编辑必填原因:新实例会永久快照当时单价,审计只记新值就答不出「从多少改到多少」 */}
             {editing !== "new" && (
               <Form.Item
                 name="reason"

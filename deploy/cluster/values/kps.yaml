@@ -7,7 +7,7 @@ prometheus:
     resources:
       requests: {cpu: 500m, memory: 2Gi}
     # HAMi 自带指标:scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
-    # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认,实机核定项)
+    # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认值)
     additionalScrapeConfigs:
       - job_name: hami-scheduler
         kubernetes_sd_configs:
@@ -41,8 +41,8 @@ grafana:
     passwordKey: admin-password
   grafana.ini:
     security:
-      # 管理端节点页是自绘曲线 + 「在 Grafana 打开」外链,不做 iframe 嵌入:
-      # 因此不放开内嵌,cookie 也不需要跨站。要改回 iframe 方案时,这三项一起改。
+      # 管理端节点页是自绘曲线 + 「在 Grafana 打开」外链,不做 iframe 嵌入,
+      # 故不放开内嵌、cookie 不跨站;改用 iframe 方案时这三项须一起改。
       allow_embedding: false
       content_security_policy: true
       content_security_policy_template: >-
@@ -77,7 +77,7 @@ alertmanager:
                 # kubectl -n monitoring create secret generic superdl-alert-token \
                 #   --from-literal=token=<随机强 token>
                 credentials_file: /etc/alertmanager/secrets/superdl-alert-token/token
-      # ⚠️ 上线前必填:独立第二通道(外部 SMTP,不经过平台任何组件)。占位值等于没有第二通道。
+      # 第二通道必填:外部 SMTP,不经过平台任何组件;留占位值等于没有第二通道。
       - name: superdl-oncall-mail
         email_configs:
           - to: "oncall@superdl.example.com"          # CHANGE_ME

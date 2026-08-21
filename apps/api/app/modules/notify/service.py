@@ -109,10 +109,7 @@ async def send_arrears_notice(
 
 
 async def publish_announcement(session: AsyncSession, *, title: str, content: str) -> int:
-    """公告群发:对全部 active 用户写 announcement 站内信。返回触达人数。
-
-    逐用户落行(MVP 规模)。
-    """
+    """公告群发:对全部 active 用户写 announcement 站内信。返回触达人数。"""
     from app.modules.account.service import list_active_user_ids
 
     user_ids = await list_active_user_ids(session)

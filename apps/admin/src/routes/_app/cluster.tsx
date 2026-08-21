@@ -50,7 +50,7 @@ function ClusterPage() {
       },
       onError: (e) => {
         message.error(errText(e, t("cluster.testFailed")));
-        void qc.invalidateQueries({ queryKey }); // 失败也刷新:error 已落缓存,红牌可见
+        void qc.invalidateQueries({ queryKey }); // 失败也要刷新:error 已落缓存,刷新后红牌才可见
       },
     },
   });

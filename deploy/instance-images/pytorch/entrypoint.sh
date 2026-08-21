@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 平台镜像 entrypoint(契约见 ../README.md):注入公钥 → 起 sshd → 起 JupyterLab。
-# 关键:Jupyter 必须绑 0.0.0.0,否则 Service/Ingress 打不通(只绑 localhost 是典型故障)。
+# Jupyter 必须绑 0.0.0.0,否则 Service/Ingress 打不通。
 set -euo pipefail
 
-# 平台约定工作目录 /root(实例盘挂载点)。基础镜像默认 HOME=/home/jovyan,
-# 共享池 Pod 又开了 userns(hostUsers:false),jovyan 目录不可写 → Jupyter 启动即 PermissionError。
-# 统一把 HOME 与 Jupyter 的运行/配置目录指到 /root。
+# 工作目录是 /root(实例盘挂载点)。HOME 与 Jupyter 的运行/配置目录必须都指到 /root:
+# 基础镜像默认 HOME=/home/jovyan,共享池 Pod 开了 userns(hostUsers:false)后该目录不可写,
+# Jupyter 启动即 PermissionError。
 export HOME=/root
 export JUPYTER_RUNTIME_DIR="${JUPYTER_RUNTIME_DIR:-/root/.local/share/jupyter/runtime}"
 export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
@@ -25,9 +25,9 @@ ssh-keygen -A >/dev/null 2>&1 || true
 /usr/sbin/sshd
 
 # JupyterLab:0.0.0.0:8888,token 由平台注入。
-# Origin 校验必须留着:token 登录后会话落 cookie,allow_origin='*' 等于允许任意恶意网页
-# 发起带 cookie 的跨站 WebSocket,在用户实例内执行代码。平台注入本实例自己的
-# 域名(JUPYTER_ALLOW_ORIGIN);未注入则用 Jupyter 默认的同源校验。
+# Origin 校验必须留着,禁止 allow_origin='*':token 登录后会话落 cookie,放开 Origin
+# 等于允许任意网页发起带 cookie 的跨站 WebSocket,在用户实例内执行代码。
+# 平台注入本实例自己的域名(JUPYTER_ALLOW_ORIGIN);未注入则用 Jupyter 默认同源校验。
 origin_args=()
 if [[ -n "${JUPYTER_ALLOW_ORIGIN:-}" ]]; then
   origin_args+=(--ServerApp.allow_origin="$JUPYTER_ALLOW_ORIGIN")

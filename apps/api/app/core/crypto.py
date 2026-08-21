@@ -53,14 +53,8 @@ def decrypt_str(token: str, *, aad: str) -> str:
 def hash_sms_code(phone: str, purpose: str, code: str) -> str:
     """短信验证码的**带密钥**摘要(HMAC-SHA256,hex)。
 
-    验证码此前是明文入库,而密码走了 bcrypt:一次只读数据库访问(备份 dump、只读副本、
-    DBA 账号、一个 SQL 注入落点)就能 `SELECT phone, code` 拿到当前全部活跃验证码,
-    直接登入任意账号,或走改密路径把本人踢下线 —— 从「读到库」一步升级成「成为任何人」。
-
-    必须是**带密钥**的摘要:验证码只有 6 位数字,不加密钥的 sha256 对同一个拿到 dump 的
-    攻击者来说是 10^6 次哈希,微秒级就穷举完了,加不加等价;每行加盐也一样(仍是每行
-    10^6)。密钥取平台配置主密钥(只走 env、prod 强制配置,不在库里),phone 与 purpose
-    混进消息做域分离。
+    必须带密钥:验证码只有 6 位数字,无密钥的 sha256(每行加盐同理)对拿到库 dump 的
+    攻击者等同明文。密钥取平台配置主密钥(只走 env、不落库),phone 与 purpose 混进消息做域分离。
     """
     import hmac
 

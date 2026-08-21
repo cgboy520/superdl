@@ -2,7 +2,7 @@
 scheduler:
   kubeScheduler:
     # k3s 的 kube-scheduler 不作为独立镜像存在,HAMi 需显式钉与集群同版本的上游
-    # scheduler 镜像 tag(去掉 +k3s 后缀);升级 k3s 时同步改这里(实机验证项)
+    # scheduler 镜像 tag(去掉 +k3s 后缀);升级 k3s 时必须同步改这里
     imageTag: "v1.36.3"
 devicePlugin:
   # k3s 只探测出 nvidia containerd runtime、不设默认 → device plugin 与租户 Pod

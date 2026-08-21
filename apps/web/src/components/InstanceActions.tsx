@@ -90,7 +90,7 @@ export function ReleaseModal({
   );
 }
 
-/** 灰置项 label 统一包 antd Tooltip(替代原生 title,反馈即时且样式可控) */
+/** 灰置项 label 统一包 antd Tooltip。 */
 function tipped(label: string, tip?: string) {
   return tip ? <Tooltip title={tip}>{label}</Tooltip> : label;
 }

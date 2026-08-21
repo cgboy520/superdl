@@ -1,7 +1,4 @@
-"""运营策略参数:env 默认值 + DB 覆盖,管理端在线调整免重启发版。
-
-模型放 core:billing 与 orchestrator 都要读,放业务模块会造成跨模块查表。
-"""
+"""运营策略参数:env 默认值 + DB 覆盖,管理端在线调整免重启发版。"""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,7 +22,7 @@ class PolicyOverride(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-# key → (类型, 下限, 上限)。默认值取 Settings 同名字段,防手滑输错单位
+# key → (类型, 下限, 上限);默认值取 Settings 同名字段
 POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "disk_price_gb_month": ("decimal", Decimal("0.0010"), Decimal("1.0000")),
     "disk_min_gb": ("int", Decimal(1), Decimal(1024)),

@@ -153,7 +153,7 @@ function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
 
 function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   const { t } = useTranslation();
-  // 这条时间线被明示为「计费依据」:过渡态里必须跟着状态一起刷新,陈旧即信任损耗
+  // 时间线即计费依据:过渡态必须跟着状态一起刷新
   const { data: events, isError, refetch } = useInstanceEvents(uuid, {
     refetchInterval: status && isTransientInstanceStatus(status) ? 5_000 : 30_000,
   });
@@ -229,7 +229,6 @@ function InstanceDetail() {
     isError: instanceError,
     refetch: refetchInstance,
   } = useInstance(uuid, {
-    // 过渡态 5s 盯,稳态退到 30s(状态不会自己变的时候别空转)
     refetchInterval: (q) =>
       q.state.data && isTransientInstanceStatus(q.state.data.status) ? 5_000 : 30_000,
   });

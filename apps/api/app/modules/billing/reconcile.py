@@ -1,15 +1,9 @@
 """资金账实核对(只读探针)。
 
-平台的预防控制是扎实的:`wallet.py` 是唯一的钱包写入口,credit/debit 都是
-`lock_wallet` → 改 balance → 同事务 add(_ledger),而 `_ledger` 在赋值**之后**才快照
-balance_after,所以「余额变动」与「流水行」在构造上就是原子配对的。
+核对两个不变式:每个用户 wallets.balance == balance_ledger 累计;
+窗口内 bills_* 出账合计 == ledger consume 合计。
 
-但预防控制背后没有任何检测控制:一旦某次改动破坏了这个不变式(改错代码、手工 SQL、
-半提交的事务),没有任何东西会发现 —— 没有任务、没有指标、没有管理端视图、没有 DB 约束。
-`balance_ledger` 在方案文档里被定义为「对账基准」,而这份基准从来没有被对过。
-损失会一直复利到有人恰好去看为止,这在一个准备收公众钱的平台上是典型的致命形态。
-
-本模块只报不改:发现差异就打 error 日志 + 指标 + 管理端告警,绝不自动「纠正」——
+只报不改:发现差异打 error 日志 + 指标 + 管理端告警,绝不自动「纠正」——
 自动改账会把一个可查的差异变成一个不可查的差异。
 """
 
@@ -27,7 +21,7 @@ from app.modules.billing.models import BalanceLedger, BillDailyDisk, BillHourly,
 
 logger = get_logger(__name__)
 
-# 出账与流水的比对窗口:向前多看一天,覆盖跨日结算与尾账的边界
+# 参与「出账 vs 消费流水」比对的 ledger ref_type
 CONSUME_REF_TYPES = ("bill_hourly", "bill_daily_disk")
 
 
@@ -36,7 +30,7 @@ async def wallet_ledger_mismatches(
 ) -> list[tuple[int, Decimal, Decimal]]:
     """余额 ≠ 流水累计的用户。返回 (user_id, wallet_balance, ledger_sum)。
 
-    一条分组 SQL,不按用户循环 —— 这是每日全量核对,不能是 N+1。
+    必须是一条分组 SQL:每日全量核对,不能 N+1。
     """
     ledger = (
         select(
@@ -63,11 +57,7 @@ async def wallet_ledger_mismatches(
 async def bills_vs_consume(
     session: AsyncSession, since: datetime, until: datetime
 ) -> tuple[Decimal, Decimal]:
-    """窗口内 (出账合计, 消费流水合计的绝对值)。两者必须相等。
-
-    出账走的是 bills_*,扣款走的是 ledger,中间隔着 wallet.debit —— 任何一侧写成功而另一侧
-    没写(或写了两次),这个等式就会破。
-    """
+    """窗口内 (出账合计, 消费流水合计的绝对值)。两者必须相等。"""
     hourly = (
         await session.execute(
             select(func.coalesce(func.sum(BillHourly.amount), 0)).where(

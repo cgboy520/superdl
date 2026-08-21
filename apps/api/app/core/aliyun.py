@@ -1,7 +1,4 @@
-"""阿里云 RPC 风格 OpenAPI 签名(HMAC-SHA1)。dysmsapi(短信)与 cloudauth(实名)共用。
-
-只实现服务端 POST 调用所需最小面。
-"""
+"""阿里云 RPC 风格 OpenAPI 签名(HMAC-SHA1)。dysmsapi(短信)与 cloudauth(实名)共用。"""
 
 import base64
 import hashlib

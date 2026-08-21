@@ -1,7 +1,6 @@
 """节点规格台账巡检(60s):K8s 实况 + 装机登记 → node_specs 单一事实源。
 
-三阶段(worker 收敛环,不走 outbox:outbox 管请求路径业务事务原子性,
-巡检以幂等重试为原子性):
+三阶段(worker 收敛环,不走 outbox):
   A 纯 K8s 读:list_nodes(全量含未打标);
   B 单事务 DB 收敛:upsert 全字段;消失节点置 Missing,超保留期删行;
   C label 收敛:canonical 写 superdl.io/gpu-model(逐节点独立 try,失败下轮自愈)。
