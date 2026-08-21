@@ -23,7 +23,7 @@ setup() {
 
 teardown() { rm -rf "$TMP"; }
 
-_write_fixture() { # _write_fixture <pool> [distro] [mirror];不带 mirror 键兼测旧服务端缺省(脚本内落 cn)
+_write_fixture() { # _write_fixture <pool> [distro] [mirror=cn];字段与 BootstrapOut 契约一致,必发
   python3 - "$1" "${2:-rke2}" "${3:-}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json, sys
 distro = sys.argv[2]
@@ -37,10 +37,8 @@ data = {
     "nvme_devices": [],
     "registries_yaml": 'mirrors:\n  "*": {}\n',
 }
-if distro != "rke2":
-    data["k8s_distro"] = distro
-if len(sys.argv) > 3 and sys.argv[3]:
-    data["install_mirror"] = sys.argv[3]
+data["k8s_distro"] = distro
+data["install_mirror"] = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "cn"
 print(json.dumps(data))
 PYEOF
 }
@@ -60,6 +58,11 @@ done
 if [[ "$mode" == "bootstrap" && -n "$out" ]]; then cp "$BOOTSTRAP_FIXTURE" "$out"; fi
 if [[ "$mode" == "script" && -n "$out" ]]; then echo "#!/bin/bash" > "$out"; fi
 exit 0
+EOF
+  # id:伪装 root(root 检查已前置,测试须以任意用户可跑)
+  cat > "$TMP/bin/id" <<'EOF'
+#!/usr/bin/env bash
+echo 0
 EOF
   # nvidia-smi:NVIDIA_OK 控制;dpkg:DPKG_INSTALLED 控制
   cat > "$TMP/bin/nvidia-smi" <<'EOF'
@@ -235,7 +238,7 @@ EOF
   grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
 }
 
-@test "rke2 安装默认走中国镜像(install_mirror 缺省=cn)" {
+@test "rke2 安装默认走中国镜像(install_mirror=cn)" {
   cat > "$TMP/bin/rke2" <<'RKESHIM'
 #!/usr/bin/env bash
 echo "rke2 version v0.0.0+rke2r0"
@@ -263,8 +266,8 @@ RKESHIM
 @test "loop 兜底须显式登记(nvme_devices=loop:80G):建 loop VG + 写开机重建 unit" {
   python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json
-print(json.dumps({"pool":"hami","hostname_expected":None,"rke2_version":"v1.36.2+rke2r1",
-  "rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
+print(json.dumps({"pool":"hami","hostname_expected":None,"k8s_distro":"rke2","install_mirror":"cn",
+  "rke2_version":"v1.36.2+rke2r1","rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
   "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":""}))
 PYEOF
   run_script

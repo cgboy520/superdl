@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$TOKEN" ]] || { echo "缺少 --token(在管理端「添加节点」生成)" >&2; exit 2; }
 [[ "$API_BASE" != "__API_BASE__" ]] || { echo "脚本须经 API 下发(占位符未替换),或用 --api-base 指定" >&2; exit 2; }
+[[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
 
 mkdir -p "$STATE_DIR/done.d"
 chmod 700 "$STATE_DIR"
@@ -78,13 +79,9 @@ run_step() { # run_step <phase> <fn>
 
 cfg_get() { python3 -c "import json,sys; v=json.load(open('$STATE_DIR/bootstrap.json')).get('$1',''); print(v if not isinstance(v,list) else ' '.join(v))"; }
 
-# bootstrap 后装载发行版参数(k8s_distro 缺省 rke2,兼容旧服务端)
-DISTRO="rke2"
-RANCHER_DIR=""
-AGENT_UNIT=""
+# bootstrap 后装载发行版参数(k8s_distro 由服务端必发:rke2 / k3s)
 load_distro() {
   DISTRO="$(cfg_get k8s_distro)"
-  [[ -n "$DISTRO" ]] || DISTRO="rke2"
   RANCHER_DIR="$ETC_DIR/rancher/$DISTRO"
   AGENT_UNIT="${DISTRO}-agent.service"
 }
@@ -117,15 +114,15 @@ print(json.dumps(out))')"
   driver="$({ nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true; } | head -1)"
   # 兼容 "CUDA Version: 12.8" 与新驱动的 "CUDA UMD Version: 13.3"
   cuda="$({ nvidia-smi 2>/dev/null || true; } | sed -n 's/.*CUDA[^:]*Version: \([0-9.]*\).*/\1/p' | head -1)"
-  payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$driver" "$cuda" <<'PYEOF'
+  payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$driver" "$cuda" "$gpus" "$gpu_details" <<'PYEOF'
 import json, sys
 print(json.dumps({"hostname": sys.argv[1],
                   "os_info": {"os_release": sys.argv[2], "kernel": sys.argv[3], "arch": sys.argv[4],
                               "driver_version": sys.argv[5], "cuda_version": sys.argv[6]},
-                  "gpus": []}))
+                  "gpus": json.loads(sys.argv[7]),
+                  "gpu_details": json.loads(sys.argv[8])}))
 PYEOF
 )"
-  payload="$(python3 -c "import json,sys; p=json.loads(sys.argv[1]); p['gpus']=json.loads(sys.argv[2]); p['gpu_details']=json.loads(sys.argv[3]); print(json.dumps(p))" "$payload" "$gpus" "$gpu_details")"
   curl -fsS -m 15 --retry 2 -X POST \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
     -d "$payload" "$API_BASE/api/v1/node-enroll/bootstrap" -o "$STATE_DIR/bootstrap.json"
@@ -134,7 +131,6 @@ PYEOF
 }
 
 step_precheck() {
-  [[ "$(id -u)" == "0" ]] || { echo "必须 root 执行"; return 1; }
   [[ "$(uname -m)" == "x86_64" ]] || { echo "仅支持 x86_64"; return 1; }
   command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
   command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
@@ -217,7 +213,7 @@ step_nvidia_toolkit() {
     apt-get install -y -qq nvidia-container-toolkit
   fi
   # 若 agent 已在跑(重跑/补装场景),重启一次让 containerd 重新探测 nvidia runtime
-  if [[ -n "$AGENT_UNIT" ]] && systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
+  if systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
     echo "-- $AGENT_UNIT 已运行,重启以探测 nvidia runtime"
     systemctl restart "$AGENT_UNIT"
   fi
@@ -337,7 +333,6 @@ step_agent_install() {
   local want mirror
   want="$(cfg_get rke2_version)"
   mirror="$(cfg_get install_mirror)"
-  [[ -n "$mirror" ]] || mirror="cn"
   if command -v "$DISTRO" >/dev/null 2>&1 && "$DISTRO" --version | grep -q "$want"; then
     echo "-- $DISTRO $want 已安装,跳过"
     return 0
@@ -362,14 +357,9 @@ step_agent_install() {
 }
 
 step_agent_start() {
+  # rke2-agent / k3s-agent 均为 Type=notify:enable --now 阻塞到就绪,失败即非零由 ERR trap 上报
   systemctl enable --now "$AGENT_UNIT"
-  local i
-  for i in $(seq 1 60); do
-    systemctl is-active --quiet "$AGENT_UNIT" && { echo "-- ${AGENT_UNIT%.service} 已运行(第 ${i} 次探测)"; return 0; }
-    sleep 5
-  done
-  echo "${AGENT_UNIT%.service} 300s 未进入 active,journalctl -u ${AGENT_UNIT%.service} 查因"
-  return 1
+  echo "-- ${AGENT_UNIT%.service} 已运行"
 }
 
 finalize() {
