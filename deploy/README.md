@@ -12,7 +12,7 @@
 
 1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库)
 2. 打 tag 触发 `.github/workflows/release.yml`:构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr
-3. `kubectl create -f k8s/10-migrate-job.yaml`(镜像与 name 替换为本次 tag)→ `kubectl wait --for=condition=complete`
-4. 更新三个 Deployment 镜像 tag 滚动发布;`/readyz` 就绪即接流量
+3. `kubectl create -f k8s/10-migrate-job.yaml`(把 `CHANGE_TAG` 占位符替换为本次 tag,name 与镜像各一处)→ `kubectl wait --for=condition=complete`
+4. 更新三个 Deployment 镜像 tag 滚动发布(清单里同样是 `CHANGE_TAG` 占位符,未替换直接 apply 会拉不到镜像而不是静默跑旧版);`/readyz` 就绪即接流量
 5. 回滚:Deployment 回退上一 tag(迁移只增不删,向后兼容窗口内可直接回滚)
 6. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`

@@ -41,6 +41,19 @@ if [[ "$env_name" == "full" ]]; then
   check_secret monitoring grafana-admin "Grafana 管理员口令(light 档关 Grafana,不需要)"
 fi
 
+# 只查 helmfile apply 直接消费的 values/(rke2/*.yaml 是分发模板,占位符由 ansible /
+# 一键加入脚本在落盘时替换,仓库里保留占位符是对的)
+say "== values/ 占位符残留(未替换直接 apply 会让组件起不来)=="
+placeholder_files=(values/cilium.yaml values/kps.yaml)
+for f in "${placeholder_files[@]}"; do
+  [[ -f "$f" ]] || continue
+  if grep -qE '<server-ip>|CHANGE_ME' "$f"; then
+    miss "$f 仍有 <server-ip>/CHANGE_ME 占位符未替换"
+  else
+    ok "$f"
+  fi
+done
+
 if [[ "$env_name" == "light" ]]; then
   say "== light(k3s)专项 =="
   if kubectl get runtimeclass nvidia >/dev/null 2>&1; then

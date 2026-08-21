@@ -20,7 +20,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
-          image: ghcr.io/OWNER/superdl-api:latest  # CI 按 tag 覆盖
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG  # 发布时替换为本次 tag
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef: {name: superdl-api-config}

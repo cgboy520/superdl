@@ -41,15 +41,16 @@ grafana:
     passwordKey: admin-password
   grafana.ini:
     security:
-      allow_embedding: true              # 管理端 iframe 嵌入(反代注入只读 Viewer)
-      # 防点击劫持:仅允许管理控制台域名内嵌(按环境替换域名)
+      # 管理端节点页是自绘曲线 + 「在 Grafana 打开」外链,不做 iframe 嵌入:
+      # 因此不放开内嵌,cookie 也不需要跨站。要改回 iframe 方案时,这三项一起改。
+      allow_embedding: false
       content_security_policy: true
       content_security_policy_template: >-
-        frame-ancestors 'self' https://admin.superdl.example.com;
+        frame-ancestors 'self';
         default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline';
         style-src 'self' 'unsafe-inline'; img-src 'self' data:;
       cookie_secure: true
-      cookie_samesite: none              # 跨站 iframe 内会话所需(Secure 已开)
+      cookie_samesite: lax
     auth.anonymous:
       enabled: false
 alertmanager:

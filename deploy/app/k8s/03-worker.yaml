@@ -23,7 +23,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: worker
-          image: ghcr.io/OWNER/superdl-api:latest
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "app.workers.main"]
           envFrom:

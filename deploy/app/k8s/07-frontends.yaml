@@ -19,7 +19,8 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: web
-          image: ghcr.io/OWNER/superdl-web:latest
+          image: ghcr.io/OWNER/superdl-web:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
           ports:
             - {containerPort: 8080, name: http}
           readinessProbe:
@@ -66,7 +67,8 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: admin
-          image: ghcr.io/OWNER/superdl-admin:latest
+          image: ghcr.io/OWNER/superdl-admin:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
           ports:
             - {containerPort: 8080, name: http}
           readinessProbe:

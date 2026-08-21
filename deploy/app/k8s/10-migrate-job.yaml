@@ -17,7 +17,8 @@ spec:
         runAsUser: 10001
       containers:
         - name: migrate
-          image: ghcr.io/OWNER/superdl-api:latest
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef: {name: superdl-api-config}

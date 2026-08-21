@@ -18,11 +18,24 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          # 与同目录加固基线一致:非 root 运行(pg_dump / aws s3 cp 都不需要 root),
+          # fsGroup 让两个容器都能读写交接用的 emptyDir
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile: {type: RuntimeDefault}
           # 不在运行期 apt-get 装工具(供应链面 + 依赖外网源):
           # 转储与上传各用官方镜像,经 emptyDir 交接
           initContainers:
             - name: dump
               image: postgres:18
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
               envFrom:
                 - secretRef: {name: superdl-pg-backup}
               command:
@@ -40,6 +53,12 @@ spec:
           containers:
             - name: upload
               image: amazon/aws-cli:2.32.0
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: ["ALL"]}
+              env:
+                - {name: HOME, value: /tmp}   # 非 root 运行,aws cli 的家目录须可写
               envFrom:
                 - secretRef: {name: superdl-pg-backup}
               command:
@@ -51,8 +70,10 @@ spec:
                   echo "upload done"
               volumeMounts:
                 - {name: backup, mountPath: /backup, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 512Mi}
           volumes:
             - {name: backup, emptyDir: {}}
+            - {name: tmp, emptyDir: {}}

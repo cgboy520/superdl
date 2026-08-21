@@ -3,6 +3,8 @@
 # 新节点加入首选管理端「添加节点」一键命令;镜像预热由平台 outbox/巡检驱动,不在装机层做
 - hosts: gpu_nodes
   become: true
+  # 分批滚动:registries.yaml 变更会 try-restart rke2-agent,整机房同时 bounce 等于全站抖动
+  serial: "25%"
   vars:
     nvidia_driver_version: "580"          # 与 GPU Operator v26.3 兼容矩阵核对后锁定
   tasks:
@@ -44,19 +46,13 @@
       args: {executable: /bin/bash}
       when: nvme_devices is defined
 
+    # 一次渲染到位:先 copy 占位符文件、再 replace 的写法非幂等 —— replace 每轮都判定
+    # changed(源文件里占位符还在),于是每次重跑都 bounce 一遍 rke2-agent。
     - name: 分发 registries.yaml(Spegel P2P + 集群内 registry mirror)
       copy:
-        src: ../cluster/rke2/registries.yaml
         dest: /etc/rancher/rke2/registries.yaml
+        content: "{{ lookup('file', '../cluster/rke2/registries.yaml') | replace('<server-ip>', rke2_server_ip) }}"
         mode: "0644"
-      when: rke2_server_ip is defined
-      notify: restart-rke2
-
-    - name: registries.yaml 填入 server IP(替换 <server-ip> 占位符)
-      replace:
-        path: /etc/rancher/rke2/registries.yaml
-        regexp: '<server-ip>'
-        replace: "{{ rke2_server_ip }}"
       when: rke2_server_ip is defined
       notify: restart-rke2
 

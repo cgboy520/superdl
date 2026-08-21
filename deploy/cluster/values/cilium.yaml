@@ -1,9 +1,12 @@
-# Cilium 1.20:CNI + LB(SSH 端口池)+ Gateway API(JupyterLab 泛域名)
+# Cilium 1.20:CNI + LB(SSH 端口池)。北向 Ingress(含 JupyterLab 泛域名)走 ingress-nginx
 kubeProxyReplacement: true
 k8sServiceHost: "<server-ip>"
 k8sServicePort: 6443
 gatewayAPI:
-  enabled: true            # *.app.<域名> 泛域名路由
+  # 关闭:helmfile 不装 Gateway API CRD,开了 cilium-operator 会因缺 CRD 报错;
+  # 且实际数据路径是 ingress-nginx(deploy/app/k8s/04-ingress.yaml 的 ingressClassName: nginx)。
+  # 将来要迁 Gateway API:先装 CRD,再改本项与应用清单,两者必须同步。
+  enabled: false
 l2announcements:
   enabled: true            # 裸金属 LB 通告(或按机房改 BGP)
 # 安全:不开 externalIPs(CVE-2020-8554 类 MITM 面;SSH 走 NodePort+LB 池即可)
