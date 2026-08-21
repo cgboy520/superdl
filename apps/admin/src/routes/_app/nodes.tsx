@@ -520,11 +520,33 @@ function NodesPage() {
             {
               title: t("nodes.colPool"),
               dataIndex: "pool_label",
-              render: (v: string) => <Tag color="cyan">{v}</Tag>,
+              render: (v: string, r) =>
+                r.unlabeled || !v ? (
+                  <Tag color="red">{t("nodes.unlabeledTag")}</Tag>
+                ) : (
+                  <Tag color="cyan">{v}</Tag>
+                ),
             },
             {
               title: t("nodes.colGpu"),
-              render: (_, r) => `${r.gpu_model} × ${r.gpu_total}`,
+              render: (_, r) => {
+                const unrecognized = r.gpu_model === "GPU" && !!r.gpu_model_raw;
+                return (
+                  <Space size={4}>
+                    <span>{`${unrecognized ? r.gpu_model_raw : r.gpu_model} × ${r.gpu_total}`}</span>
+                    {unrecognized && <Tag color="gold">{t("nodes.unrecognizedTag")}</Tag>}
+                    {!unrecognized && r.gpu_model !== "GPU" && r.label_synced === false && (
+                      <Tooltip title={t("nodes.labelUnsynced")}>
+                        <Tag color="orange">!</Tag>
+                      </Tooltip>
+                    )}
+                  </Space>
+                );
+              },
+            },
+            {
+              title: t("nodes.colVram"),
+              render: (_, r) => (r.vram_gb ? `${r.vram_gb} G` : "—"),
             },
             { title: t("nodes.colUsed"), dataIndex: "gpu_used" },
             { title: t("nodes.colDriver"), render: (_, r) => r.driver_version || "—" },
@@ -536,7 +558,19 @@ function NodesPage() {
               title: t("nodes.colStatus"),
               dataIndex: "status",
               render: (v: string) => (
-                <Tag color={v === "Ready" ? "green" : v === "Cordoned" ? "orange" : "red"}>{v}</Tag>
+                <Tag
+                  color={
+                    v === "Ready"
+                      ? "green"
+                      : v === "Cordoned"
+                        ? "orange"
+                        : v === "Missing"
+                          ? "default"
+                          : "red"
+                  }
+                >
+                  {v}
+                </Tag>
               ),
             },
             {

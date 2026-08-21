@@ -20,7 +20,7 @@ from app.modules.catalog.models import PlatformImage, Sku
 
 SKUS = [
     {
-        "name": "RTX 4090 · 独享整卡",
+        "name": "RTX4090-FULL",
         "gpu_model": "RTX4090",
         "tier": "dedicated",
         "gpu_cores_pct": 100,
@@ -34,7 +34,7 @@ SKUS = [
         "status": "on",
     },
     {
-        "name": "H100 · MIG 1g.10gb",
+        "name": "H100-MIG-1g.10gb",
         "gpu_model": "H100",
         "tier": "mig",
         "mig_profile": "1g.10gb",
@@ -49,7 +49,7 @@ SKUS = [
         "status": "on",
     },
     {
-        "name": "RTX 4090 · 共享标准",
+        "name": "RTX4090-STD50",
         "gpu_model": "RTX4090",
         "tier": "shared_std",
         "gpu_cores_pct": 50,
@@ -65,7 +65,7 @@ SKUS = [
         "status": "on",
     },
     {
-        "name": "RTX 4090 · 共享经济",
+        "name": "RTX4090-ECO30",
         "gpu_model": "RTX4090",
         "tier": "shared_eco",
         "gpu_cores_pct": 30,

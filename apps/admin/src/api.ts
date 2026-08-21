@@ -9,6 +9,7 @@ import {
   adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
   adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost,
   adminGetPlatformConfigApiAdminV1PlatformConfigGet,
+  adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet,
   adminGetPoliciesApiAdminV1PoliciesGet,
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost,
   adminUpdatePlatformConfigApiAdminV1PlatformConfigPut,
@@ -49,10 +50,12 @@ import {
   adminUpdateSkuApiAdminV1SkusSkuIdPatch,
   oversellReportApiAdminV1ReportsOversellGet,
   reconciliationApiAdminV1ReconciliationGet,
+  skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet,
 } from "@superdl/api-client";
 import type {
   AdjustmentCreate,
   AnnouncementCreate,
+  CapacityPreviewOut,
   EnrollmentCommandOut,
   EnrollmentCreate,
   EnrollmentRegenerateRequest,
@@ -114,6 +117,9 @@ export type {
   ReconciliationOut as ReconciliationReport,
   RevenueReportOut as RevenueReport,
   TenantOut as TenantRow,
+  GpuModelAggregateOut as GpuModelAggregate,
+  CapacityWarningOut as CapacityWarning,
+  CapacityPreviewOut as CapacityPreview,
 } from "@superdl/api-client";
 
 // ---------- 查询 hooks ----------
@@ -124,6 +130,33 @@ export function useAdminSkus() {
   const queryKey = ["admin", "skus"] as const;
   const q = useQuery({ queryKey, queryFn: () => adminListSkusApiAdminV1SkusGet() });
   return { ...q, queryKey };
+}
+
+export function useGpuModelAggregates() {
+  const queryKey = ["admin", "gpu-models"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: () => adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet(),
+  });
+  return { ...q, queryKey };
+}
+
+export function useSkuCapacityPreview(
+  params: {
+    gpu_model: string;
+    pool_label: string;
+    tier: string;
+    gpu_cores_pct?: number;
+    oversell_cores?: string;
+    vram_gb?: number;
+  } | null,
+) {
+  return useQuery<CapacityPreviewOut>({
+    queryKey: ["admin", "sku-capacity-preview", params],
+    queryFn: () => skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet(params!),
+    enabled: params !== null,
+    placeholderData: (prev) => prev,
+  });
 }
 
 export function useAdminInstances(params?: { status?: string; user_id?: number }) {
@@ -259,10 +292,12 @@ export function useCreateSku(opts?: MutOpts<unknown, { data: SkuCreate }>) {
   });
 }
 
-export function useUpdateSku(opts?: MutOpts<unknown, { skuId: number; data: SkuUpdate }>) {
+export function useUpdateSku(
+  opts?: MutOpts<unknown, { skuId: number; data: SkuUpdate; force?: boolean }>,
+) {
   return useMutation({
-    mutationFn: (v: { skuId: number; data: SkuUpdate }) =>
-      adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data),
+    mutationFn: (v: { skuId: number; data: SkuUpdate; force?: boolean }) =>
+      adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data, v.force ? { force: true } : undefined),
     ...opts?.mutation,
   });
 }

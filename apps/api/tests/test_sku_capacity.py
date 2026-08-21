@@ -203,3 +203,14 @@ class TestSkuListAssembly:
         row = next(r for r in resp.json() if r["id"] == sku_id)
         assert row["capacity_gpus"] == 0
         assert row["sold_share"] is None and row["actual_oversell"] is None
+
+
+class TestGpuModelAggregates:
+    async def test_per_gpu_ratio_min_across_nodes(self, client: AsyncClient, sm):
+        await seed_spec(sm)  # 4 卡 64c/256G → 16c/64G 每卡
+        await seed_spec(sm, node_name="gpu-node-2", gpu_count=8, vcpu=64, mem_gb=256)  # 8c/32G
+        headers = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/cluster/gpu-models", headers=headers)
+        row = next(r for r in resp.json() if r["gpu_model"] == "RTX4090")
+        assert row["vcpu_per_gpu"] == 8 and row["mem_gb_per_gpu"] == 32
+        assert row["ready_gpu_total"] == 12

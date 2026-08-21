@@ -77,6 +77,8 @@ class GpuModelAggregateOut(BaseModel):
     ready_gpu_total: int
     ready_gpu_free: int
     vram_gb: int
+    vcpu_per_gpu: int  # Ready 节点整机配比最小值(vCPU÷卡数),0=未知
+    mem_gb_per_gpu: int
 
 
 class ImageCoverageOut(BaseModel):

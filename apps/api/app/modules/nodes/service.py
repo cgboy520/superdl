@@ -366,6 +366,11 @@ async def gpu_model_aggregates(session: AsyncSession) -> list["GpuModelAggregate
         if r.status == "Ready":
             item.ready_gpu_total += r.gpu_count
             item.ready_gpu_free += max(0, r.gpu_count - r.gpu_used)
+            if r.gpu_count > 0:
+                # 整机配比(vCPU/内存 ÷ 卡数),取各节点最小值 = 保守推荐;0 = 未知
+                per_vcpu, per_mem = r.vcpu // r.gpu_count, r.mem_gb // r.gpu_count
+                item.vcpu_per_gpu = min(item.vcpu_per_gpu or per_vcpu, per_vcpu)
+                item.mem_gb_per_gpu = min(item.mem_gb_per_gpu or per_mem, per_mem)
         if r.vram_gb:
             item.vram_gb = max(item.vram_gb, r.vram_gb)
     return sorted(
@@ -383,3 +388,5 @@ class GpuModelAggregate:
     ready_gpu_total: int = 0
     ready_gpu_free: int = 0
     vram_gb: int = 0
+    vcpu_per_gpu: int = 0
+    mem_gb_per_gpu: int = 0

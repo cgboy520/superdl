@@ -1219,6 +1219,10 @@
             "title": "Gpu Total",
             "type": "integer"
           },
+          "mem_gb_per_gpu": {
+            "title": "Mem Gb Per Gpu",
+            "type": "integer"
+          },
           "node_count": {
             "title": "Node Count",
             "type": "integer"
@@ -1242,6 +1246,10 @@
             "title": "Ready Gpu Total",
             "type": "integer"
           },
+          "vcpu_per_gpu": {
+            "title": "Vcpu Per Gpu",
+            "type": "integer"
+          },
           "vram_gb": {
             "title": "Vram Gb",
             "type": "integer"
@@ -1255,7 +1263,9 @@
           "gpu_total",
           "ready_gpu_total",
           "ready_gpu_free",
-          "vram_gb"
+          "vram_gb",
+          "vcpu_per_gpu",
+          "mem_gb_per_gpu"
         ],
         "title": "GpuModelAggregateOut",
         "type": "object"

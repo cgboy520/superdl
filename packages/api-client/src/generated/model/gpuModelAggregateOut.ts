@@ -12,9 +12,11 @@ export interface GpuModelAggregateOut {
   gpu_model: string | null;
   gpu_model_raw: string | null;
   gpu_total: number;
+  mem_gb_per_gpu: number;
   node_count: number;
   pool_label: string | null;
   ready_gpu_free: number;
   ready_gpu_total: number;
+  vcpu_per_gpu: number;
   vram_gb: number;
 }
