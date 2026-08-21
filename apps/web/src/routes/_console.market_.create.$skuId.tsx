@@ -408,7 +408,7 @@ function CreatePage() {
                 : t("create.detailDiskNone")}
             </span>
             <Typography.Text type="secondary">
-              {t("create.balanceNeedNote")};{t("copy.eventsAreBilling")}
+              {t("create.balanceNeedNote")};{t("copy.billingBasis")}
             </Typography.Text>
           </Space>
         }

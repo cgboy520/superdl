@@ -551,6 +551,8 @@ async def estimate_available(sku: "Sku") -> int:
 async def admin_list_instances(
     session: AsyncSession, *, status_filter: str | None = None, user_id: int | None = None
 ) -> list[Instance]:
+    # 固定截断:超出即在管理端表底给出「已达上限」提示(admin/components/ListCapNote.tsx),
+    # 改这里的数字要同步改那里 —— 静默截断看上去和「一共就这些」一模一样
     stmt = select(Instance).order_by(Instance.id.desc()).limit(200)
     if status_filter:
         stmt = stmt.where(Instance.status == status_filter)

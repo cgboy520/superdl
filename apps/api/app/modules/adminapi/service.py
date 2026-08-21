@@ -146,6 +146,7 @@ async def list_adjustments(session: AsyncSession):
     return list(
         (
             await session.execute(
+                # 固定截断,与 admin 的 LIST_CAPS.adjustments 对齐
                 select(AdminAdjustment).order_by(AdminAdjustment.id.desc()).limit(200)
             )
         ).scalars()

@@ -166,7 +166,7 @@ function MarketPage() {
               <span>
                 {t("instances.pricePerCard", { price: formatHourlyPrice(selected.price_hourly), count: gpuCount })}
               </span>
-              <Typography.Text type="secondary">{t("copy.eventsAreBilling")}</Typography.Text>
+              <Typography.Text type="secondary">{t("copy.billingBasis")}</Typography.Text>
             </Space>
           ) : undefined
         }

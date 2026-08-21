@@ -40,6 +40,7 @@ import {
   useReviewAdjustment,
   useVerifyOrder,
 } from "../../api";
+import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
@@ -147,6 +148,7 @@ function OrdersTab() {
           { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
+      <ListCapNote rows={orders.length} cap={LIST_CAPS.orders} />
     </>
   );
 }
@@ -294,6 +296,7 @@ function AdjustmentsTab() {
           { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
+      <ListCapNote rows={rows.length} cap={LIST_CAPS.adjustments} />
       <Modal
         title={t("finance.createAdjustTitle")}
         open={creating}

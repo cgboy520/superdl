@@ -54,6 +54,8 @@
     "actionFailed": "{{action}} failed",
     "backOverview": "Back to overview",
     "confirmExecute": "Execute",
+    "listCapped_one": "common.listCapped",
+    "listCapped_other": "common.listCapped",
     "next": "Next",
     "reasonLabel": "Reason (required, audited)",
     "reasonPlaceholder": "The reason is written to the audit log",

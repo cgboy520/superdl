@@ -265,6 +265,7 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
 async def admin_list_orders(session: AsyncSession, status: str | None = None) -> list:
     from app.modules.billing.models import Order
 
+    # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.orders 对齐
     stmt = select(Order).order_by(Order.id.desc()).limit(200)
     if status:
         stmt = stmt.where(Order.status == status)

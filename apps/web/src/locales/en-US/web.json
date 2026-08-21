@@ -74,6 +74,7 @@
   },
   "copy": {
     "antiMiningNotice": "Crypto mining is strictly prohibited; violators are banned without refund (see Terms)",
+    "billingBasis": "Pay as you go: metered per second while Running, down to the moment you stop; stopping ends GPU charges",
     "billingModeComingSoon": "Daily/weekly/monthly billing is coming soon; only pay-as-you-go is available now",
     "billingRules": {
       "r1": "Pay-as-you-go: running time accrues per second up to the instant of shutdown — unit price × GPUs × duration",

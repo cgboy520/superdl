@@ -366,6 +366,7 @@ async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) ->
 
 
 async def admin_list_users(session: AsyncSession) -> list[User]:
+    # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.tenants 对齐
     return list((await session.execute(select(User).order_by(User.id.desc()).limit(500))).scalars())
 
 

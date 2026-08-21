@@ -25,6 +25,7 @@ import {
   useUnfreezeTenant,
 } from "../../api";
 import { useFormat } from "../../lib/format";
+import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -116,6 +117,7 @@ function TenantsTab() {
         },
       ]}
     />
+    <ListCapNote rows={tenants.length} cap={LIST_CAPS.tenants} />
     <TenantBillingDrawer tenant={drilldown} onClose={() => setDrilldown(null)} />
     </>
   );
@@ -344,6 +346,7 @@ function InstancesTab() {
           },
         ]}
       />
+      <ListCapNote rows={(instances ?? []).length} cap={LIST_CAPS.instances} />
     </>
   );
 }
