@@ -299,3 +299,70 @@ def test_render_registries_yaml():
     assert render_registries_yaml({}) == ""
     v6 = render_registries_yaml({"cluster_server_url": "https://[fd00::1]:9345"})
     assert "http://[fd00::1]:30500" in v6
+
+
+class TestClusterEndpoints:
+    async def test_status_endpoint_reads_cache(self, sm, fake, client):
+        from app.modules.nodes.patrol import node_spec_patrol
+        from tests.test_catalog import admin_headers
+
+        await node_spec_patrol(sm)
+        headers = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/cluster/status", headers=headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["api_reachable"] is True and body["distro"] == "rke2"
+        assert body["pools"] == {"kata": 1, "hami": 1, "mig": 1}
+        comp = {c["key"]: c for c in body["components"]}
+        assert comp["hami"]["ok"] and comp["monitoring"]["ok"] and comp["storage"]["ok"]
+        assert comp["hami"]["fix_hint"] is None
+        assert body["config"]["server_url_set"] is False  # 测试未配置 cluster 键
+        assert body["config"]["prometheus_url_set"] is False  # 默认 localhost
+
+    async def test_status_empty_cache_shows_checklist(self, sm, client):
+        from app.modules.nodes.models import ClusterStatus
+        from tests.test_catalog import admin_headers
+
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            if row:
+                await session.delete(row)
+                await session.commit()
+        headers = await admin_headers(sm, client)
+        body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
+        assert body["api_reachable"] is False and body["probed_at"] is None
+        comp = {c["key"]: c for c in body["components"]}
+        assert not comp["hami"]["ok"] and comp["hami"]["fix_hint"]
+        assert "helmfile" in comp["monitoring"]["fix_hint"]
+
+    async def test_test_connection_upserts_and_returns(self, sm, fake, client):
+        from tests.test_catalog import admin_headers
+
+        headers = await admin_headers(sm, client)
+        resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["api_reachable"] is True
+        async with sm() as session:
+            row = await service.get_cluster_status(session)
+        assert row is not None and row.hami_ready
+
+    async def test_test_connection_unreachable_502(self, sm, fake, client):
+        from tests.test_catalog import admin_headers
+
+        fake.fail_probe = True
+        headers = await admin_headers(sm, client)
+        resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
+        assert resp.status_code == 502, resp.text
+        body = resp.json()
+        assert body["code"] == "CLUSTER_NOT_READY"
+        assert "fake: connection refused" in body["message"]
+        async with sm() as session:
+            row = await service.get_cluster_status(session)
+        assert row is not None and row.api_reachable is False and row.error
+
+    async def test_readonly_cannot_test_connection(self, sm, fake, client):
+        from tests.test_catalog import admin_headers
+
+        headers = await admin_headers(sm, client, role="readonly")
+        resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
+        assert resp.status_code == 403

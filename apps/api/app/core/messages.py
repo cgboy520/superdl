@@ -76,6 +76,7 @@ MESSAGES: dict[str, str] = {
     "common.forbidden": "无权访问",
     "common.internal": "服务器内部错误,请稍后重试",
     "common.notFound": "资源不存在",
+    "nodes.clusterProbeFailed": "集群连接失败:{error}",
     "nodes.clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
     "common.unauthorized": "未登录或凭证已过期",
     "common.badCursor": "无效的分页游标",

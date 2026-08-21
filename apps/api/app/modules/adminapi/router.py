@@ -1,13 +1,18 @@
+import asyncio
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
+from app.core.config import get_settings
 from app.core.db import DbSession
-from app.core.errors import not_found
+from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import canonical_gpu_model, model_matches
+from app.core.k8s import get_orchestrator
+from app.core.k8s.base import ClusterProbe
+from app.core.platform_config import get_effective_platform_config
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
@@ -24,6 +29,9 @@ from app.modules.adminapi.schemas import (
     AuditLogOut,
     CapacityPreviewOut,
     CapacityWarningOut,
+    ClusterComponentOut,
+    ClusterConfigStateOut,
+    ClusterStatusOut,
     DeadTaskOut,
     GpuModelAggregateOut,
     ImageCoverageOut,
@@ -473,7 +481,6 @@ async def admin_node_metrics(
     节点存在性不做强校验(台账在 WP26 落地后切换为 404 门禁):对不存在节点的查询
     自然返回空序列,无信息泄漏面(仅管理端角色可达)。响应附 grafana_url(可选深挖外链)。
     """
-    from app.core.platform_config import get_effective_platform_config
 
     out = await metering_service.node_gpu_metrics(node_name, range)
     cfg = await get_effective_platform_config(session)
@@ -536,6 +543,107 @@ async def admin_list_nodes(session: DbSession) -> list[NodeOut]:
             )
         )
     return out
+
+
+HELMFILE = "helmfile -f deploy/cluster/helmfile.yaml -e <full|light>"
+
+
+def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.ClusterStatus 行或 None
+    hami_ok = bool(row and row.hami_ready)
+    kps_ok = bool(row and row.kps_present)
+    dcgm_ok = bool(row and row.dcgm_present)
+    gpu_op_ok = bool(row and row.gpu_operator_present)
+    kata_ok = bool(row and row.kata_runtimeclass)
+    scs = list(row.storage_classes or []) if row else []
+    return [
+        ClusterComponentOut(
+            key="hami",
+            ok=hami_ok,
+            detail=None if hami_ok else "hami-scheduler Deployment 未就绪",
+            fix_hint=None if hami_ok else f"{HELMFILE} -l name=hami apply",
+        ),
+        ClusterComponentOut(
+            key="monitoring",
+            ok=kps_ok,
+            fix_hint=None if kps_ok else f"{HELMFILE} -l name=kube-prometheus-stack apply",
+        ),
+        ClusterComponentOut(
+            key="dcgm",
+            ok=dcgm_ok,
+            detail=None if dcgm_ok else "dcgm-exporter DaemonSet 未发现(GPU 指标不可用)",
+            fix_hint=None if dcgm_ok else f"{HELMFILE} -l name=gpu-operator apply",
+        ),
+        ClusterComponentOut(
+            key="gpu_operator",
+            ok=gpu_op_ok,
+            detail=None if gpu_op_ok else "gpu-operator 未发现(light/k3s 集群预期如此)",
+            fix_hint=None if gpu_op_ok else f"{HELMFILE} -l name=gpu-operator apply",
+        ),
+        ClusterComponentOut(
+            key="kata_runtimeclass",
+            ok=kata_ok,
+            detail=None if kata_ok else "RuntimeClass kata-qemu 不存在(dedicated 档不可用)",
+            fix_hint=(
+                None if kata_ok else "kubectl apply -f deploy/cluster/kata/kata-runtimeclass.yaml"
+            ),
+        ),
+        ClusterComponentOut(
+            key="storage",
+            ok=bool(scs),
+            detail=", ".join(scs) if scs else "无 StorageClass(数据盘/JuiceFS 不可用)",
+            fix_hint=None if scs else f"{HELMFILE} -l name=juicefs-csi-driver apply",
+        ),
+    ]
+
+
+async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
+    row = await nodes_service.get_cluster_status(session)
+    cfg = await get_effective_platform_config(session)
+    settings = get_settings()
+    prom_set = not (
+        "localhost" in settings.prometheus_url or "127.0.0.1" in settings.prometheus_url
+    )
+    return ClusterStatusOut(
+        api_reachable=bool(row and row.api_reachable),
+        k8s_version=row.k8s_version if row else None,
+        distro=row.distro if row else None,
+        probed_at=row.probed_at if row else None,
+        pools=dict(row.pools or {}) if row else {},
+        components=_cluster_components(row),
+        config=ClusterConfigStateOut(
+            server_url_set=bool(cfg.get("cluster_server_url")),
+            join_token_set=bool(cfg.get("cluster_join_token")),
+            prometheus_url_set=prom_set,
+            grafana_url=cfg.get("grafana_url") or None,
+        ),
+        error=row.error if row else None,
+    )
+
+
+@router.get("/cluster/status", dependencies=[require_roles("ops", "readonly")])
+async def admin_cluster_status(session: DbSession) -> ClusterStatusOut:
+    """集群页数据:纯读能力缓存(worker 巡检 60s 刷新),不实时探测。"""
+    return await _cluster_status_out(session)
+
+
+@router.post("/cluster/test-connection", dependencies=[require_roles("ops")])
+async def admin_cluster_test_connection(session: DbSession, request: Request) -> ClusterStatusOut:
+    """同步只读探测并落缓存(对齐 SmsTestCard 先例);不可达/超时 → 502。"""
+    set_audit_target(request, "cluster:test-connection")
+    try:
+        probe = await asyncio.wait_for(get_orchestrator().probe_cluster(), timeout=5.0)
+    except TimeoutError:
+        probe = ClusterProbe(api_reachable=False, error="探测超时(5s)")
+    await nodes_service.save_cluster_probe(session, probe)
+    await session.commit()
+    if not probe.api_reachable:
+        raise AppError(
+            ErrorCode.CLUSTER_NOT_READY,
+            key="nodes.clusterProbeFailed",
+            params={"error": probe.error or "unknown"},
+            http_status=status.HTTP_502_BAD_GATEWAY,
+        )
+    return await _cluster_status_out(session)
 
 
 @router.get("/cluster/gpu-models", dependencies=[require_roles("ops", "readonly")])

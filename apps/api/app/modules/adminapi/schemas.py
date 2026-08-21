@@ -284,3 +284,34 @@ class CapacityPreviewOut(BaseModel):
     total_gpus: int
     est_instances: int  # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;其余 = ready_gpus
     warnings: list[CapacityWarningOut]
+
+
+class ClusterComponentOut(BaseModel):
+    """组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。"""
+
+    key: Literal["hami", "monitoring", "dcgm", "gpu_operator", "kata_runtimeclass", "storage"]
+    ok: bool
+    detail: str | None = None
+    fix_hint: str | None = None
+
+
+class ClusterConfigStateOut(BaseModel):
+    """配置就绪位(不回明文):集群页据此指引去平台配置页补键。"""
+
+    server_url_set: bool
+    join_token_set: bool
+    prometheus_url_set: bool
+    grafana_url: str | None
+
+
+class ClusterStatusOut(BaseModel):
+    """集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。"""
+
+    api_reachable: bool
+    k8s_version: str | None
+    distro: str | None
+    probed_at: datetime | None
+    pools: dict[str, int]
+    components: list[ClusterComponentOut]
+    config: ClusterConfigStateOut
+    error: str | None

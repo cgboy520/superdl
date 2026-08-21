@@ -43,6 +43,7 @@ import type {
   AnnouncementResultOut,
   AuditLogOut,
   CapacityPreviewOut,
+  ClusterStatusOut,
   DeadTaskOut,
   EnrollmentCommandOut,
   EnrollmentCreate,
@@ -915,6 +916,208 @@ export function useAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet<TData = 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminGpuModelAggregatesApiAdminV1ClusterGpuModelsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminClusterStatusApiAdminV1ClusterStatusGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/cluster/status`
+}
+
+/**
+ * 集群页数据:纯读能力缓存(worker 巡检 60s 刷新),不实时探测。
+ * @summary Admin Cluster Status
+ */
+export const adminClusterStatusApiAdminV1ClusterStatusGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<ClusterStatusOut> => {
+
+  return customFetch<ClusterStatusOut>(getAdminClusterStatusApiAdminV1ClusterStatusGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminClusterStatusApiAdminV1ClusterStatusGetQueryKey = () => {
+    return [
+    `/api/admin/v1/cluster/status`
+    ] as const;
+    }
+
+
+export const getAdminClusterStatusApiAdminV1ClusterStatusGetQueryOptions = <TData = Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminClusterStatusApiAdminV1ClusterStatusGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>> = ({ signal }) => adminClusterStatusApiAdminV1ClusterStatusGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminClusterStatusApiAdminV1ClusterStatusGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>>
+export type AdminClusterStatusApiAdminV1ClusterStatusGetQueryError = unknown
+
+
+export function useAdminClusterStatusApiAdminV1ClusterStatusGet<TData = Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminClusterStatusApiAdminV1ClusterStatusGet<TData = Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminClusterStatusApiAdminV1ClusterStatusGet<TData = Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Cluster Status
+ */
+
+export function useAdminClusterStatusApiAdminV1ClusterStatusGet<TData = Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterStatusApiAdminV1ClusterStatusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminClusterStatusApiAdminV1ClusterStatusGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/cluster/test-connection`
+}
+
+/**
+ * 同步只读探测并落缓存(对齐 SmsTestCard 先例);不可达/超时 → 502。
+ * @summary Admin Cluster Test Connection
+ */
+export const adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<ClusterStatusOut> => {
+
+  return customFetch<ClusterStatusOut>(getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostQueryKey = () => {
+    return [
+    'POST', `/api/admin/v1/cluster/test-connection`
+    ] as const;
+    }
+
+
+export const getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostQueryOptions = <TData = Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>> = ({ signal }) => adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>>
+export type AdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostQueryError = unknown
+
+
+export function useAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPost<TData = Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPost<TData = Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPost<TData = Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Cluster Test Connection
+ */
+
+export function useAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPost<TData = Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPostQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

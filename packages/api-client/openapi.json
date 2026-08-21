@@ -874,6 +874,174 @@
         "title": "CapacityWarningOut",
         "type": "object"
       },
+      "ClusterComponentOut": {
+        "description": "组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "fix_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Hint"
+          },
+          "key": {
+            "enum": [
+              "hami",
+              "monitoring",
+              "dcgm",
+              "gpu_operator",
+              "kata_runtimeclass",
+              "storage"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "ok"
+        ],
+        "title": "ClusterComponentOut",
+        "type": "object"
+      },
+      "ClusterConfigStateOut": {
+        "description": "配置就绪位(不回明文):集群页据此指引去平台配置页补键。",
+        "properties": {
+          "grafana_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grafana Url"
+          },
+          "join_token_set": {
+            "title": "Join Token Set",
+            "type": "boolean"
+          },
+          "prometheus_url_set": {
+            "title": "Prometheus Url Set",
+            "type": "boolean"
+          },
+          "server_url_set": {
+            "title": "Server Url Set",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "server_url_set",
+          "join_token_set",
+          "prometheus_url_set",
+          "grafana_url"
+        ],
+        "title": "ClusterConfigStateOut",
+        "type": "object"
+      },
+      "ClusterStatusOut": {
+        "description": "集群页数据(纯 DB 读能力缓存;「测试连接」同步探测后返回同形)。",
+        "properties": {
+          "api_reachable": {
+            "title": "Api Reachable",
+            "type": "boolean"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ClusterComponentOut"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "config": {
+            "$ref": "#/components/schemas/ClusterConfigStateOut"
+          },
+          "distro": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distro"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "k8s_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "K8S Version"
+          },
+          "pools": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pools",
+            "type": "object"
+          },
+          "probed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probed At"
+          }
+        },
+        "required": [
+          "api_reachable",
+          "k8s_version",
+          "distro",
+          "probed_at",
+          "pools",
+          "components",
+          "config",
+          "error"
+        ],
+        "title": "ClusterStatusOut",
+        "type": "object"
+      },
       "DailySummaryOut": {
         "description": "当日消费汇总(本地日界由 tz_offset_minutes 折算)。",
         "properties": {
@@ -4486,6 +4654,60 @@
           }
         ],
         "summary": "Admin Gpu Model Aggregates",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/cluster/status": {
+      "get": {
+        "description": "集群页数据:纯读能力缓存(worker 巡检 60s 刷新),不实时探测。",
+        "operationId": "admin_cluster_status_api_admin_v1_cluster_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Cluster Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/cluster/test-connection": {
+      "post": {
+        "description": "同步只读探测并落缓存(对齐 SmsTestCard 先例);不可达/超时 → 502。",
+        "operationId": "admin_cluster_test_connection_api_admin_v1_cluster_test_connection_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Cluster Test Connection",
         "tags": [
           "admin"
         ]
