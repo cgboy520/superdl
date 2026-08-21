@@ -19,7 +19,7 @@ export function ListCapNote({ rows, cap }: { rows: number; cap: number }) {
   if (rows < cap) return null;
   return (
     <Typography.Text type="warning" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-      {t("common.listCapped", { count: cap })}
+      {t("common.listCapped", { max: cap })}
     </Typography.Text>
   );
 }

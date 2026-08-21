@@ -55,7 +55,7 @@ export default interface Resources {
       "actionFailed": "{{action}}失败",
       "backOverview": "回总览",
       "confirmExecute": "确认执行",
-      "listCapped": "已达单次返回上限({{count}} 条):更早的记录未列出,请用上方筛选缩小范围",
+      "listCapped": "已达单次返回上限({{max}} 条):更早的记录未列出,请用上方筛选缩小范围",
       "next": "下一步",
       "reasonLabel": "操作原因(必填,入审计)",
       "reasonPlaceholder": "原因将写入审计日志",
