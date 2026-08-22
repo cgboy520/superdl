@@ -12,8 +12,8 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
       - run: uv sync --frozen
@@ -38,9 +38,9 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
@@ -49,27 +49,127 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm i18n
       - run: pnpm test
+      # orval 生成物必须与入库的 openapi.json 一致(契约漂移即 fail)。
+      # openapi.json 本身的新鲜度由 api job 的导出 diff 把关,两个 job 相互印证。
+      - run: pnpm api-client
+      - name: orval 生成物无 diff
+        run: git diff --exit-code packages/api-client
       - run: pnpm build
 
   node-join-script:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install shellcheck + bats
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck bats
       - run: bash -n apps/api/app/modules/nodes/assets/node-join.sh
       - run: shellcheck apps/api/app/modules/nodes/assets/node-join.sh
       - run: bats deploy/node-join/tests
 
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      # gitleaks 全历史扫描与迁移 diff 基线都需要完整历史
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          python-version: "3.13"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: pip-audit(API 生产依赖漏洞)
+        working-directory: apps/api
+        run: |
+          uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
+          set +e
+          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
+          code=$?
+          set -e
+          # pip-audit 约定:0=无漏洞,1=发现漏洞;其余非零=工具自身失败(网络/OSV 不可达等)
+          if [ "$code" -eq 1 ]; then
+            echo "::error::pip-audit 发现生产依赖漏洞"
+            exit 1
+          elif [ "$code" -ne 0 ]; then
+            echo "::warning::pip-audit 工具执行失败(多为网络问题),按可用性约束本次放行"
+          fi
+      - name: pnpm audit(前端生产依赖,HIGH+ 阻断)
+        run: |
+          set +e
+          pnpm audit --prod --audit-level=high --json > /tmp/pnpm-audit.json
+          code=$?
+          set -e
+          # 区分「真发现」与「工具失败」:registry 不可达时 pnpm 也非零退出,但产不出合法 JSON
+          if [ "$code" -ne 0 ]; then
+            if jq -e '.metadata.vulnerabilities | (.high + .critical) > 0' /tmp/pnpm-audit.json > /dev/null 2>&1; then
+              jq -r '.advisories | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "::error::\(.value.module_name) (\(.value.severity)): \(.value.title)"' /tmp/pnpm-audit.json
+              echo "::error::pnpm audit 发现 HIGH/CRITICAL 生产依赖漏洞"
+              exit 1
+            fi
+            echo "::warning::pnpm audit 工具执行失败(多为 registry 不可达),按可用性约束本次放行"
+          fi
+      - name: gitleaks(secret 泄漏扫描,全历史)
+        run: |
+          # 仓库历史短,直接全量扫;历史变重后改 --log-opts 限定 PR diff。
+          # 镜像按 digest 钉死;拉取失败(网络)只告警跳过,扫到泄漏才 fail。
+          img="zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a"
+          if ! docker pull -q "$img" > /dev/null; then
+            echo "::warning::gitleaks 镜像拉取失败(网络问题),本次跳过 secret 扫描"
+            exit 0
+          fi
+          # 容器内 root 与挂载目录属主不同,需先声明 safe.directory 才能跑 git 扫描;
+          # 两条已复核误报的放行见 .github/gitleaks.toml
+          docker run --rm -v "$PWD:/repo" --entrypoint sh "$img" \
+            -c "git config --global --add safe.directory /repo && gitleaks git /repo --config /repo/.github/gitleaks.toml --verbose"
+      - name: 迁移危险 DDL 检查(alembic)
+        run: |
+          # 只查本次变更新增/修改的迁移;downgrade 里的 drop 是正常回滚,脚本只看 upgrade()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "::notice::无对比基线(首个 push),跳过迁移 DDL 检查"
+            exit 0
+          fi
+          git diff --name-only --diff-filter=AM "$BASE"...HEAD -- apps/api/alembic/versions/ > /tmp/migrations.txt
+          if ! grep -q '\.py$' /tmp/migrations.txt; then
+            echo "无迁移变更"
+            exit 0
+          fi
+          mapfile -t files < <(grep '\.py$' /tmp/migrations.txt)
+          python3 scripts/check-migration-ddl.py "${files[@]}"
+
+  k8s-real-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # kind 起一次性集群;kind-action 不导出 KUBECONFIG 环境变量,kind 默认写 ~/.kube/config,
+      # 下方 SUPERDL_TEST_KUBECONFIG 的 fallback 即指向它
+      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          python-version: "3.13"
+      - name: RealOrchestrator 冒烟(kind)
+        working-directory: apps/api
+        env:
+          SUPERDL_TEST_KUBECONFIG: ${{ env.KUBECONFIG || '$HOME/.kube/config' }}
+        run: |
+          uv sync --frozen
+          uv run pytest tests/test_k8s_real_smoke.py -v
+
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
@@ -87,7 +187,7 @@ jobs:
           uv run python scripts/seed_dev.py
           nohup uv run uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
           nohup uv run python -m app.workers.main > /tmp/worker.log 2>&1 &
-          for i in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
+          for _ in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
       - name: Playwright smoke
         run: |
           pnpm install --frozen-lockfile

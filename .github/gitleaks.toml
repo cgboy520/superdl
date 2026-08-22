@@ -1,0 +1,16 @@
+# SuperDL gitleaks 配置:默认规则集 + 两条已复核误报的路径级放行。
+# 复核记录(2026-08,全历史扫描):
+# - apps/api/tests/test_payment_signature.py:APIV3_KEY 为 32 位十六进制测试假密钥,
+#   测试文件内的密钥均为构造的假数据
+# - apps/api/app/core/platform_config.py:命中内容是 hint 文案里的 PEM 头字样
+#   ("含 -----BEGIN PRIVATE KEY-----"),该文件只定义配置项校验规格,不含真实密钥
+# 注意:按路径放行后,这两个文件后续混入真 secret 也不会告警,改动它们时需人工留意。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "已复核误报(见文件头注释)"
+paths = [
+  '''apps/api/tests/test_payment_signature\.py''',
+  '''apps/api/app/core/platform_config\.py''',
+]
