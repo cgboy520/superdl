@@ -16,6 +16,7 @@ RUN apt-get update \
     && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 
 COPY entrypoint.sh /usr/local/bin/superdl-entrypoint.sh
+COPY superdl_jupyter_auth.py /opt/superdl/superdl_jupyter_auth.py
 RUN chmod +x /usr/local/bin/superdl-entrypoint.sh
 
 WORKDIR /root

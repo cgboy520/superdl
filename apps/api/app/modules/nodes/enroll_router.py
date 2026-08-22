@@ -2,11 +2,13 @@
 
 鉴权模型(同 billing/webhooks_router 的「凭证即鉴权」):
 - /script 无鉴权 —— 内容零密钥(静态脚本,仅替换 API 地址占位符),轻限流防刷;
-- /bootstrap /progress 走 Bearer 注册令牌(256-bit 只存哈希),
-  无效/过期/吊销/终态一律统一 404(service 层保证,防探测),外加按 IP 限流。
+- /bootstrap 走 Bearer 注册令牌(256-bit 只存哈希),一次性:首跑即消费并换发
+  窄权限 progress 令牌(仅可 /progress);无效/过期/吊销/终态一律统一 404
+  (service 层保证,防探测),外加按 IP 限流。
 join token 明文只出现在 bootstrap 响应体,严禁入日志(本文件不打印响应)。
 """
 
+import hashlib
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -36,6 +38,12 @@ def _script_body() -> str:
     return _SCRIPT_PATH.read_text(encoding="utf-8")
 
 
+def _served_script() -> str:
+    """实际下发的脚本正文:只替换第一次出现(赋值行);
+    脚本内另一处 __API_BASE__ 是护栏的比较字面量,须原样保留。"""
+    return _script_body().replace("__API_BASE__", get_settings().public_base_url.rstrip("/"), 1)
+
+
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
@@ -52,9 +60,7 @@ async def get_join_script(request: Request) -> PlainTextResponse:
     await check_rate_limit(
         f"node-enroll-script:{_client_ip(request)}", max_attempts=30, window_seconds=60
     )
-    # 只替换第一次出现(赋值行);脚本内另一处 __API_BASE__ 是护栏的比较字面量,须原样保留
-    body = _script_body().replace("__API_BASE__", get_settings().public_base_url.rstrip("/"), 1)
-    return PlainTextResponse(body, media_type="text/x-shellscript")
+    return PlainTextResponse(_served_script(), media_type="text/x-shellscript")
 
 
 @router.post("/node-enroll/bootstrap")
@@ -67,7 +73,7 @@ async def enroll_bootstrap(
     """令牌换装机参数(含 RKE2 join token,仅经本响应体下发)。支持脚本重跑/重启续跑。"""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=30, window_seconds=60)
     token = _bearer_token(authorization)
-    enrollment, cfg = await service.bootstrap(
+    enrollment, cfg, progress_token = await service.bootstrap(
         session,
         token,
         hostname=body.hostname,
@@ -87,6 +93,8 @@ async def enroll_bootstrap(
         nvme_devices=enrollment.nvme_devices or [],
         registries_yaml=service.render_registries_yaml(cfg),
         install_mirror=cfg["node_install_mirror"] or "cn",
+        progress_token=progress_token,
+        script_sha256=hashlib.sha256(_served_script().encode()).hexdigest(),
     )
 
 

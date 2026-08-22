@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # SuperDL GPU 节点一键加入脚本。
-# 用法(命令由管理端生成,token 走参数不进 URL):
-#   curl -fsSL <API>/api/v1/node-enroll/script | sudo bash -s -- --token sdln_xxx
-#   wget -qO node-join.sh <API>/api/v1/node-enroll/script && sudo bash node-join.sh --token sdln_xxx
+# 用法(命令由管理端生成;token 经 stdin 落 0600 文件,不进 URL 也不进任何进程 argv):
+#   echo 'sdln_xxx' | sudo sh -c 'umask 077; cat > /run/superdl-join.token; curl -fsSL <API>/api/v1/node-enroll/script | bash -s -- --token-file /run/superdl-join.token; s=$?; rm -f /run/superdl-join.token; exit $s'
+#   wget -qO node-join.sh <API>/api/v1/node-enroll/script && echo 'sdln_xxx' | sudo sh -c 'umask 077; cat > /run/superdl-join.token; bash node-join.sh --token-file /run/superdl-join.token; s=$?; rm -f /run/superdl-join.token; exit $s'
 #
 # 约束:
 # - 脚本本体零密钥;server 地址与 join token 凭注册令牌 POST /bootstrap 换取。
+# - 注册令牌一次性:首次 bootstrap 即被服务端消费,换发窄权限 progress 令牌
+#   (仅可上报进度),落 $STATE_DIR/token(0600);重跑/重启续跑只用它。
 # - k8s_distro=k3s 时装 k3s agent,取值由服务端下发。
-# - 全幂等:每步落 marker(/var/lib/superdl-node-join/done.d/),可无限次重跑。
+# - 全幂等:每步落 marker($STATE_DIR/done.d/);已完成的节点重跑直接退出,
+#   从头重装须 --force + 管理端新签发的令牌。
 # - 需重启的步骤(nouveau/IOMMU/驱动)合并为一次重启,systemd oneshot 断点续跑;
-#   最多 2 次重启,仍未就绪则上报 failed。
+#   最多 2 次重启,仍未就绪则上报 failed。管道执行时重启前从 API 重拉自身,
+#   并校验 bootstrap 下发的脚本指纹(script_sha256),防中途被替换。
+# - k3s/rke2 安装器不裸 curl|sh:先落临时文件,校验脚本内置 sha256 pin 再执行。
 # - phase 取值与后端契约一致:bootstrap precheck nouveau sysctl iommu driver
 #   nvidia_toolkit nvme_vg reboot registries agent_config agent_install agent_start waiting_node
-set -euo pipefail
+set -eEuo pipefail
 
 API_BASE="__API_BASE__" # 服务端下发时替换;可用 --api-base 覆盖(测试用)
 # 路径可经 env 覆盖仅为 bats 测试隔离;生产一律默认值
@@ -22,19 +27,30 @@ ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
 LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"  # loop 兜底镜像目录(仅显式选择时用)
 RESUME_UNIT="superdl-node-join-resume"
 TOKEN=""
+TOKEN_FILE=""
+FORCE=0
 CURRENT_PHASE="init"
 NEED_REBOOT=0
+
+# k3s/rke2 安装器 sha256 pin(固定 URL + 校验后执行,替代裸 curl|sh;与 NVIDIA 源 GPG
+# 验证同一信任模型)。上游安装器更新会校验失败并按 failed 上报,需核对上游后更新 pin。
+# SUPERDL_JOIN_PIN_* 仅为 bats 测试与应急处置留的覆盖口(需本机 root,不削弱威胁模型)。
+PIN_K3S_OFFICIAL="${SUPERDL_JOIN_PIN_K3S_OFFICIAL:-ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b}"
+PIN_K3S_CN="${SUPERDL_JOIN_PIN_K3S_CN:-3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863}"
+PIN_RKE2_OFFICIAL="${SUPERDL_JOIN_PIN_RKE2_OFFICIAL:-42983c86d1da64a92061d83afb57630cedd69241989f1b0673f3db6c3d92ee6b}"
+PIN_RKE2_CN="${SUPERDL_JOIN_PIN_RKE2_CN:-5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1}"
 
 # ---------- 参数 ----------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --token) TOKEN="$2"; shift 2 ;;
-    --token-file) TOKEN="$(cat "$2")"; shift 2 ;;
+    --token-file) TOKEN_FILE="$2"; shift 2 ;;
     --api-base) API_BASE="$2"; shift 2 ;;
+    --force) FORCE=1; shift ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$TOKEN" ]] || { echo "缺少 --token(在管理端「添加节点」生成)" >&2; exit 2; }
+[[ -n "$TOKEN_FILE" ]] || { echo "缺少 --token-file(在管理端「添加节点」生成命令,token 不落命令行)" >&2; exit 2; }
+[[ -f "$TOKEN_FILE" ]] || { echo "token 文件不存在: $TOKEN_FILE" >&2; exit 2; }
 [[ "$API_BASE" != "__API_BASE__" ]] || { echo "脚本须经 API 下发(占位符未替换),或用 --api-base 指定" >&2; exit 2; }
 [[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
 
@@ -46,12 +62,20 @@ echo "==== $(date -Is) node-join 启动 (api=$API_BASE) ===="
 # ---------- 基础函数 ----------
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
 
+# 令牌经 curl --config 注入 Authorization 头:不进 curl 进程 argv(节点本地用户 ps 不可见)
+use_token_file() { # use_token_file <path>
+  TOKEN="$(cat "$1")"
+  printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$STATE_DIR/curl.conf"
+  chmod 600 "$STATE_DIR/curl.conf"
+}
+
 report() { # report <phase> <state> [message]
   local phase="$1" state="$2" message="${3:-}"
   local msg_json
-  msg_json="$(printf '%s' "$message" | json_escape)"
-  curl -fsS -m 10 --retry 2 -X POST \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  # json_escape 失败(python3 缺失等)不得让 ERR trap 在 on_error 里递归
+  msg_json="$(printf '%s' "$message" | json_escape || true)"
+  curl -fsS -m 10 --retry 2 --config "$STATE_DIR/curl.conf" \
+    -H "Content-Type: application/json" \
     -d "{\"phase\":\"$phase\",\"state\":\"$state\",\"message\":$msg_json}" \
     "$API_BASE/api/v1/node-enroll/progress" >/dev/null || true
 }
@@ -123,10 +147,19 @@ print(json.dumps({"hostname": sys.argv[1],
                   "gpu_details": json.loads(sys.argv[8])}))
 PYEOF
 )"
-  curl -fsS -m 15 --retry 2 -X POST \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  curl -fsS -m 15 --retry 2 --config "$STATE_DIR/curl.conf" \
+    -H "Content-Type: application/json" \
     -d "$payload" "$API_BASE/api/v1/node-enroll/bootstrap" -o "$STATE_DIR/bootstrap.json"
   chmod 600 "$STATE_DIR/bootstrap.json"
+  # 注册令牌一次性:服务端已消费并换发 progress 令牌,此后上报/续跑只用它
+  # (旧服务端不下发该字段时回落注册令牌,行为同升级前)
+  local progress
+  progress="$(cfg_get progress_token)"
+  if [[ -n "$progress" ]]; then
+    printf '%s' "$progress" > "$STATE_DIR/token"
+    chmod 600 "$STATE_DIR/token"
+    use_token_file "$STATE_DIR/token"
+  fi
   echo "-- bootstrap 完成: pool=$(cfg_get pool) rke2=$(cfg_get rke2_version)"
 }
 
@@ -224,9 +257,10 @@ step_nvme_vg() {
   # 未登记 NVMe 时不自动用文件兜底:节点仍可加入,但无 TopoLVM 本地实例盘能力
   if [[ -z "$devices" ]]; then
     echo "!! 未登记 NVMe 设备:不创建 superdl-nvme VG,也不自动兜底。" \
-         "该节点无本地实例盘能力;如需请在管理端为本节点登记 NVMe 设备后重跑同一命令。"
+         "该节点无本地实例盘能力;如需 TopoLVM 本地盘,请在管理端为本节点新建" \
+         "带 NVMe 登记的注册令牌,并用 --force 重跑。"
     report nvme_vg running \
-      "未登记 NVMe 设备:跳过实例盘 VG(superdl-nvme),不自动兜底。该节点暂无 TopoLVM 本地实例盘;登记真实 NVMe 后重跑即可补齐。"
+      "未登记 NVMe 设备:跳过实例盘 VG(superdl-nvme),不自动兜底。该节点暂无 TopoLVM 本地实例盘;新建带 NVMe 登记的注册令牌并 --force 重跑即可补齐。"
     return 0
   fi
   if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG 已存在,跳过"; return 0; fi
@@ -277,13 +311,22 @@ maybe_reboot() {
     exit 1
   fi
   echo $((count + 1)) > "$STATE_DIR/reboot_count"
-  # 自持久化(管道执行时 $0 不是文件,从 API 重新拉取自身)
+  # 自持久化(管道执行时 $0 不是文件,从 API 重拉自身并校验 bootstrap 下发的指纹)
   if [[ -f "${BASH_SOURCE[0]:-/nonexistent}" ]]; then
     cp "${BASH_SOURCE[0]}" "$STATE_DIR/node-join.sh"
   else
     curl -fsSL "$API_BASE/api/v1/node-enroll/script" -o "$STATE_DIR/node-join.sh"
+    local want actual
+    want="$(cfg_get script_sha256)"
+    actual="$(sha256sum "$STATE_DIR/node-join.sh" | awk '{print $1}')"
+    if [[ -n "$want" && "$actual" != "$want" ]]; then
+      report reboot failed "重拉脚本指纹不符(期望 $want,实际 $actual),请检查 API 链路"
+      echo "!! 重拉脚本指纹不符,已中止(期望 $want,实际 $actual)" >&2
+      exit 1
+    fi
   fi
   chmod 700 "$STATE_DIR/node-join.sh"
+  # 断点续跑用令牌:新流程下已是窄权限 progress 令牌(旧流程为注册令牌,服务端兼容)
   printf '%s' "$TOKEN" > "$STATE_DIR/token"
   chmod 600 "$STATE_DIR/token"
   cat > "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" <<EOF
@@ -328,7 +371,7 @@ EOF
 }
 
 step_agent_install() {
-  local want mirror
+  local want mirror url pin
   want="$(cfg_get rke2_version)"
   mirror="$(cfg_get install_mirror)"
   if command -v "$DISTRO" >/dev/null 2>&1 && "$DISTRO" --version | grep -q "$want"; then
@@ -339,19 +382,42 @@ step_agent_install() {
   # 环境变量,cn 必须用 rancher-mirror.rancher.cn 自带的 install 脚本取二进制。
   if [[ "$DISTRO" == "k3s" ]]; then
     if [[ "$mirror" == "official" ]]; then
-      curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh -
+      url="https://get.k3s.io"; pin="$PIN_K3S_OFFICIAL"
     else
-      curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh \
-        | INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh -
+      url="https://rancher-mirror.rancher.cn/k3s/k3s-install.sh"; pin="$PIN_K3S_CN"
     fi
   else
     if [[ "$mirror" == "official" ]]; then
-      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh -
+      url="https://get.rke2.io"; pin="$PIN_RKE2_OFFICIAL"
     else
-      curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh \
-        | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh -
+      url="https://rancher-mirror.rancher.cn/rke2/install.sh"; pin="$PIN_RKE2_CN"
     fi
   fi
+  # 不裸 curl|sh:先落临时文件,校验内置 sha256 pin 后再执行
+  local installer
+  installer="$(mktemp "$STATE_DIR/installer.XXXXXX")"
+  curl -fsSL "$url" -o "$installer"
+  chmod 700 "$installer"
+  if ! echo "$pin  $installer" | sha256sum -c - >/dev/null 2>&1; then
+    echo "!! $DISTRO 安装脚本校验和不符($url):上游已更新或链路被篡改;" \
+         "请核对上游后更新本平台脚本内置 pin 再重跑" >&2
+    rm -f "$installer"
+    return 1
+  fi
+  if [[ "$DISTRO" == "k3s" ]]; then
+    if [[ "$mirror" == "official" ]]; then
+      INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh "$installer"
+    else
+      INSTALL_K3S_MIRROR=cn INSTALL_K3S_EXEC=agent INSTALL_K3S_VERSION="$want" sh "$installer"
+    fi
+  else
+    if [[ "$mirror" == "official" ]]; then
+      INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh "$installer"
+    else
+      INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_TYPE=agent INSTALL_RKE2_VERSION="$want" sh "$installer"
+    fi
+  fi
+  rm -f "$installer"
 }
 
 step_agent_start() {
@@ -365,15 +431,41 @@ finalize() {
   report waiting_node ok "${AGENT_UNIT%.service} 已启动,等待平台对账确认节点 Ready(管理端「待加入节点」可见进度)"
   if systemctl is-enabled --quiet "${RESUME_UNIT}.service" 2>/dev/null; then
     systemctl disable "${RESUME_UNIT}.service" || true
-    rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" "$STATE_DIR/token"
-    systemctl daemon-reload
   fi
+  rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
+  systemctl daemon-reload
+  # 装机完成即清敏感落盘:bootstrap.json(含集群 join token)与令牌文件不再有用
+  rm -f "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" "$STATE_DIR/curl.conf"
+  mark_done completed
   echo "==== 完成:节点已启动 ${AGENT_UNIT%.service},加入结果以管理端为准 ===="
 }
 
+# ---------- 幂等入口与令牌装载 ----------
+if [[ "$FORCE" == "1" ]]; then
+  echo "-- --force:清除本地断点/已下发配置/旧令牌,从头装机(须用管理端新签发的令牌)"
+  rm -rf "$STATE_DIR/done.d" "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" \
+    "$STATE_DIR/curl.conf" "$STATE_DIR/reboot_count"
+  mkdir -p "$STATE_DIR/done.d"
+elif marker completed; then
+  echo "本节点已完成加入,无需操作;如需从头重装:--force 并使用管理端新签发的令牌"
+  exit 0
+fi
+if marker bootstrap && [[ -f "$STATE_DIR/token" ]]; then
+  # 断点续跑:注册令牌已被消费(再 bootstrap 也是 404),只用 progress 令牌上报
+  use_token_file "$STATE_DIR/token"
+else
+  use_token_file "$TOKEN_FILE"
+fi
+
 # ---------- 主流程 ----------
-CURRENT_PHASE="bootstrap"
-step_bootstrap # 每次执行都重新 bootstrap,拿最新配置(服务端幂等)
+if marker bootstrap; then
+  echo "-- bootstrap: 已完成,跳过(沿用已下发配置;注册令牌一次性,不重复 bootstrap)"
+else
+  CURRENT_PHASE="bootstrap"
+  step_bootstrap
+  mark_done bootstrap
+  report bootstrap ok
+fi
 load_distro
 run_step precheck step_precheck
 run_step nouveau step_nouveau

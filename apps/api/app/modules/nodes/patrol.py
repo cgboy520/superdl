@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.gpu_models import canonical_gpu_model, default_vram_gb
 from app.core.k8s import get_orchestrator
+from app.core.k8s.base import GPU_MODEL_NODE_LABEL
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
@@ -141,6 +142,9 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                     desired_labels.append((n.name, canonical))
                 elif canonical:
                     row.label_synced = True
+                else:
+                    # 型号未知无法确认标签收敛,不沿用上一轮的真值
+                    row.label_synced = False
             for name, row in list(rows.items()):
                 if name in seen:
                     continue
@@ -155,7 +159,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         # ---- C:label 收敛(K8s 写,逐节点独立 try;失败下轮自愈) ----
         for name, canonical in desired_labels:
             try:
-                await orch.set_node_labels(name, {"superdl.io/gpu-model": canonical})
+                await orch.set_node_labels(name, {GPU_MODEL_NODE_LABEL: canonical})
             except Exception:
                 counts["label_failed"] += 1
                 logger.warning("node_label_sync_failed", node=name, model=canonical)

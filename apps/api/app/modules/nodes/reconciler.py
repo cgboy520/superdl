@@ -34,18 +34,24 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
         nodes = {n.name: n for n in await get_orchestrator().list_nodes()}
         now = now_utc()
         async with sm() as session:
+            # FOR UPDATE + skip_locked:与请求路径的 revoke/report 并发时,
+            # 被锁行本轮跳过(下轮自愈),避免无条件 UPDATE 覆盖刚提交的吊销
             rows = list(
                 (
                     await session.execute(
-                        select(NodeEnrollment).where(NodeEnrollment.status.in_(ACTIVE_STATUSES))
+                        select(NodeEnrollment)
+                        .where(NodeEnrollment.status.in_(ACTIVE_STATUSES))
+                        .with_for_update(skip_locked=True)
                     )
                 ).scalars()
             )
             for row in rows:
+                # 绝对过期:心跳只刷新 last_report_at,不延长 expires_at
+                if row.expires_at < now:
+                    transition_enrollment(row, "expired")
+                    counts["expired"] += 1
+                    continue
                 if row.status == "pending":
-                    if row.expires_at < now:
-                        transition_enrollment(row, "expired")
-                        counts["expired"] += 1
                     continue
                 node = nodes.get(row.node_name or "")
                 if node is not None and node.status == "Ready":

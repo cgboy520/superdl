@@ -1,8 +1,10 @@
 """节点注册:令牌生命周期 + 加入状态机。
 
 安全要点:
-- 令牌 `sdln_` + token_urlsafe(32)(256-bit 熵),库中只存 sha256;
-  明文仅在创建/重生成响应出现一次。
+- 注册令牌 `sdln_` + token_urlsafe(32)(256-bit 熵),库中只存 sha256;
+  明文仅在创建/重生成响应出现一次。首次 bootstrap 即消费:换发窄权限
+  progress 令牌 `sdlp_`(仅可上报进度,不能再换装机参数)。
+- 令牌绝对过期:progress 上报只刷新心跳(last_report_at),不延长 expires_at。
 - 无效/过期/吊销/终态令牌一律统一 404(不区分原因,防探测);
   匿名端点的限流在 enroll_router 层。
 - 状态迁移集中于 transition_enrollment,非法迁移 409。
@@ -36,16 +38,18 @@ from app.modules.nodes.schemas import EnrollmentCreate
 logger = get_logger(__name__)
 
 TOKEN_PREFIX = "sdln_"
+PROGRESS_TOKEN_PREFIX = "sdlp_"
 TERMINAL_STATUSES = frozenset({"joined", "failed", "expired", "revoked"})
-# 允许 bootstrap 的状态:pending 首跑;installing/rebooting 支持脚本重跑与重启续跑
+# 允许 bootstrap 的状态:pending 首跑;installing/rebooting 仅限升级前创建的旧行
+# (未签发过 progress 令牌)重跑/重启续跑;新行首次 bootstrap 后注册令牌即被消费
 BOOTSTRAP_STATUSES = frozenset({"pending", "installing", "rebooting"})
 REGENERATABLE_STATUSES = frozenset({"pending", "expired", "failed"})
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "pending": frozenset({"installing", "expired", "revoked", "failed"}),
-    "installing": frozenset({"rebooting", "joining", "failed", "revoked", "joined"}),
-    "rebooting": frozenset({"installing", "joining", "failed", "revoked", "joined"}),
-    "joining": frozenset({"joined", "failed", "revoked"}),
+    "installing": frozenset({"rebooting", "joining", "failed", "revoked", "joined", "expired"}),
+    "rebooting": frozenset({"installing", "joining", "failed", "revoked", "joined", "expired"}),
+    "joining": frozenset({"joined", "failed", "revoked", "expired"}),
 }
 
 
@@ -82,18 +86,45 @@ def transition_enrollment(
     )
 
 
-def _new_token() -> tuple[str, str]:
-    token = TOKEN_PREFIX + secrets.token_urlsafe(32)
+def _new_token(prefix: str = TOKEN_PREFIX) -> tuple[str, str]:
+    token = prefix + secrets.token_urlsafe(32)
     return token, hashlib.sha256(token.encode()).hexdigest()
 
 
 def enrollment_commands(token: str) -> tuple[str, str]:
-    """注册命令两种形态:管道式 / 先下载可审阅式。token 走参数,不进 URL。"""
+    """注册命令两种形态:管道式 / 先下载可审阅式。
+
+    token 经 stdin 落入 0600 文件(/run 为 tmpfs,重启即消),脚本从文件读取:
+    全程不出现在节点任何进程的 argv 里(本地用户 ps 不可见);命令执行完即删。
+    """
     base = get_settings().public_base_url.rstrip("/")
     script_url = f"{base}/api/v1/node-enroll/script"
-    curl_cmd = f"curl -fsSL {script_url} | sudo bash -s -- --token {token}"
-    wget_cmd = f"wget -qO node-join.sh {script_url} && sudo bash node-join.sh --token {token}"
+    token_file = "/run/superdl-join.token"
+    # echo 是 shell 内建命令,不产生含 token 的进程 argv
+    load = f"echo '{token}' | sudo sh -c 'umask 077; cat > {token_file}; "
+    cleanup = f"; s=$?; rm -f {token_file}; exit $s'"
+    curl_cmd = f"{load}curl -fsSL {script_url} | bash -s -- --token-file {token_file}{cleanup}"
+    wget_cmd = (
+        f"wget -qO node-join.sh {script_url} && "
+        f"{load}bash node-join.sh --token-file {token_file}{cleanup}"
+    )
     return curl_cmd, wget_cmd
+
+
+# bootstrap 下发所需的最小键面。全量生效配置含支付私钥等解密敏感项,
+# 注册链路只允许这 6 个键出 service 层(防整体漏进响应/日志)。
+_CLUSTER_CONFIG_KEYS = (
+    "cluster_server_url",
+    "cluster_join_token",
+    "cluster_agent_version",
+    "node_driver_version",
+    "node_install_mirror",
+    "node_registries_yaml",
+)
+
+
+def _narrow_cluster_config(cfg: dict[str, str]) -> dict[str, str]:
+    return {k: cfg.get(k, "") for k in _CLUSTER_CONFIG_KEYS}
 
 
 async def require_cluster_config(session: AsyncSession) -> dict[str, str]:
@@ -105,7 +136,7 @@ async def require_cluster_config(session: AsyncSession) -> dict[str, str]:
             key="nodes.clusterNotConfigured",
             http_status=http_status.HTTP_409_CONFLICT,
         )
-    return cfg
+    return _narrow_cluster_config(cfg)
 
 
 async def create_enrollment(
@@ -128,7 +159,16 @@ async def create_enrollment(
             )
         ).scalar_one_or_none()
         if existing is not None:
+            # 与 regenerate 同守卫:进行中的令牌被重放轮换会掐断正在装机的脚本
+            if existing.status not in REGENERATABLE_STATUSES:
+                raise AppError(
+                    ErrorCode.CONFLICT,
+                    key="nodes.regenerateNotAllowed",
+                    params={"status": existing.status},
+                    http_status=http_status.HTTP_409_CONFLICT,
+                )
             token, existing.token_hash = _new_token()
+            existing.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
             await session.commit()
             await session.refresh(existing)
             return existing, token
@@ -193,6 +233,7 @@ async def regenerate_enrollment(
             http_status=http_status.HTTP_409_CONFLICT,
         )
     token, enrollment.token_hash = _new_token()
+    enrollment.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
     enrollment.status = "pending"
     enrollment.phase = None
     enrollment.error = None
@@ -234,19 +275,45 @@ async def request_cordon(
 # ---------- 匿名侧(令牌即鉴权;统一 404 防探测) ----------
 
 
-async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
-    """按哈希取行;无效/终态/过期一律 404。pending 过期顺带落 expired。"""
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        await session.execute(select(NodeEnrollment).where(NodeEnrollment.token_hash == token_hash))
-    ).scalar_one_or_none()
+async def _check_usable(session: AsyncSession, row: NodeEnrollment | None) -> NodeEnrollment:
+    """公共闸门:无效/终态/过期一律 404。过期为绝对截止(不随心跳续命),顺带落 expired。"""
     if row is None or row.status in TERMINAL_STATUSES:
         raise not_found()
-    if row.status == "pending" and row.expires_at < now_utc():
+    if row.expires_at < now_utc():
         transition_enrollment(row, "expired")
         await session.commit()
         raise not_found()
     return row
+
+
+async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
+    """注册令牌(bootstrap 用):按哈希取行。"""
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        await session.execute(select(NodeEnrollment).where(NodeEnrollment.token_hash == token_hash))
+    ).scalar_one_or_none()
+    return await _check_usable(session, row)
+
+
+async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnrollment:
+    """progress 令牌(进度上报用)。兼容存量:未签发过 progress 令牌的行仍认注册令牌
+    (升级前已在装机的节点,盘上只有注册令牌)。"""
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        await session.execute(
+            select(NodeEnrollment).where(NodeEnrollment.progress_token_hash == token_hash)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = (
+            await session.execute(
+                select(NodeEnrollment).where(
+                    NodeEnrollment.token_hash == token_hash,
+                    NodeEnrollment.progress_token_hash.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+    return await _check_usable(session, row)
 
 
 async def bootstrap(
@@ -258,12 +325,20 @@ async def bootstrap(
     gpus: list[str],
     client_ip: str | None,
     gpu_details: list[dict[str, Any]] | None = None,
-) -> tuple[NodeEnrollment, dict[str, str]]:
-    """令牌换装机参数。支持重复调用(脚本重跑/重启续跑);返回 (enrollment, cluster 配置)。"""
+) -> tuple[NodeEnrollment, dict[str, str], str | None]:
+    """令牌换装机参数。返回 (enrollment, cluster 最小配置, progress 令牌|None)。
+
+    注册令牌一次性:pending 首跑即消费(换发仅可上报进度的 progress 令牌),
+    此后任何令牌都不能再 bootstrap;旧行(progress_token_hash 为空,升级前
+    创建)保持可重复 bootstrap 以兼容重启续跑。
+    """
     row = await _resolve_token(session, token)
-    if row.status not in BOOTSTRAP_STATUSES:
+    if row.status not in BOOTSTRAP_STATUSES or row.progress_token_hash is not None:
         raise not_found()
-    if row.hostname and row.hostname != hostname:
+    if row.hostname is None:
+        # 新签发默认绑定:首次 bootstrap 把上报主机名锁进登记,后续不符即 failed
+        row.hostname = hostname
+    elif row.hostname != hostname:
         transition_enrollment(
             row, "failed", error=f"主机名不符:期望 {row.hostname},实际上报 {hostname}(防令牌串用)"
         )
@@ -286,18 +361,20 @@ async def bootstrap(
     row.os_info = os_info
     row.gpu_info = gpu_details if gpu_details else gpus  # 新脚本全卡清单优先,旧脚本回落名称列表
     row.last_report_at = now_utc()
+    progress_token: str | None = None
     if row.status == "pending":
+        progress_token, row.progress_token_hash = _new_token(PROGRESS_TOKEN_PREFIX)
         transition_enrollment(row, "installing", phase="bootstrap")
-    cfg = await get_effective_platform_config(session)
+    cfg = _narrow_cluster_config(await get_effective_platform_config(session))
     await session.commit()
     await session.refresh(row)
-    return row, cfg
+    return row, cfg, progress_token
 
 
 async def report_progress(
     session: AsyncSession, token: str, *, phase: str, state: str, message: str | None
 ) -> NodeEnrollment:
-    row = await _resolve_token(session, token)
+    row = await _resolve_progress_token(session, token)
     if row.status == "pending":
         raise not_found()  # 未 bootstrap 就上报进度:非法序列,按无效令牌处理
     row.phase = phase

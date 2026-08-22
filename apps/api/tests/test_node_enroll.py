@@ -1,13 +1,17 @@
 """节点注册(管理侧 + 状态机):令牌生命周期、角色矩阵、审计不落 token。"""
 
+import hashlib
+from datetime import timedelta
+
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit import AuditLog
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.platform_config import set_platform_settings
+from app.core.timeutil import now_utc
 from app.modules.nodes import service as nodes_service
 from app.modules.nodes.models import NodeEnrollment
 from app.modules.nodes.schemas import EnrollmentCreate
@@ -80,6 +84,25 @@ class TestAdminEnrollments:
         # 重放已轮换 token:旧 token 失效,新 token 有效
         assert r1.json()["token"] != r2.json()["token"]
 
+    async def test_idempotency_replay_guarded_when_inflight(self, client, sm) -> None:
+        """重放轮换令牌与 regenerate 同守卫:bootstrap 后(installing)重放 → 409,
+        否则重放会掐断正在装机的脚本。"""
+        await set_cluster_config(sm)
+        ah = await admin_headers(sm, client, role="ops")
+        headers = {**ah, "Idempotency-Key": "idem-node-2"}
+        r1 = await client.post("/api/admin/v1/node-enrollments", json=CREATE_BODY, headers=headers)
+        assert r1.status_code == 201
+        token = r1.json()["token"]
+        resp = await client.post(
+            "/api/v1/node-enroll/bootstrap",
+            json={"hostname": "gpu-node-7"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        r2 = await client.post("/api/admin/v1/node-enrollments", json=CREATE_BODY, headers=headers)
+        assert r2.status_code == 409
+        assert r2.json()["message_key"] == "nodes.regenerateNotAllowed"
+
     async def test_role_matrix(self, client, sm) -> None:
         await set_cluster_config(sm)
         ro = await admin_headers(sm, client, role="readonly")
@@ -147,9 +170,9 @@ class TestEnrollmentStateMachine:
                 created_by=1,
                 idempotency_key=None,
             )
-        # 正常 bootstrap:pending→installing,拿到 join 参数
+        # 正常 bootstrap:pending→installing,拿到 join 参数与换发的 progress 令牌
         async with sm() as session:
-            row, cfg = await nodes_service.bootstrap(
+            row, cfg, progress = await nodes_service.bootstrap(
                 session,
                 token,
                 hostname="gpu-node-7",
@@ -159,12 +182,41 @@ class TestEnrollmentStateMachine:
             )
             assert row.status == "installing"
             assert cfg["cluster_join_token"].endswith("secrettoken")
-        # 重复 bootstrap(脚本重跑)仍放行
+            # 窄化键面:支付/短信等敏感键绝不出注册链路
+            assert "wechat_private_key" not in cfg and "sms_access_key_secret" not in cfg
+            assert progress is not None and progress.startswith("sdlp_")
+        # 注册令牌一次性:首跑已消费,重复 bootstrap 统一 404(防反复拉取 join token)
         async with sm() as session:
-            row, _ = await nodes_service.bootstrap(
-                session, token, hostname="gpu-node-7", os_info={}, gpus=[], client_ip=None
+            with pytest.raises(AppError) as exc:
+                await nodes_service.bootstrap(
+                    session, token, hostname="gpu-node-7", os_info={}, gpus=[], client_ip=None
+                )
+            assert exc.value.http_status == 404
+
+        # 存量兼容:升级前创建的旧行(progress_token_hash 为空)仍可重复 bootstrap(重启续跑)
+        async with sm() as session:
+            _e3, token3 = await nodes_service.create_enrollment(
+                session,
+                EnrollmentCreate(pool="hami", hostname="legacy-node"),
+                created_by=1,
+                idempotency_key=None,
             )
-            assert row.status == "installing"
+        async with sm() as session:
+            await nodes_service.bootstrap(
+                session, token3, hostname="legacy-node", os_info={}, gpus=[], client_ip=None
+            )
+            await session.execute(
+                update(NodeEnrollment)
+                .where(NodeEnrollment.token_hash == hashlib.sha256(token3.encode()).hexdigest())
+                .values(progress_token_hash=None)  # 模拟升级前旧行
+            )
+            await session.commit()
+        async with sm() as session:
+            row3, _cfg3, progress3 = await nodes_service.bootstrap(
+                session, token3, hostname="legacy-node", os_info={}, gpus=[], client_ip=None
+            )
+            assert row3.status == "installing"
+            assert progress3 is None  # 旧行重复 bootstrap 不再换发,行为同升级前
 
         # 主机名不符 → failed + 409,令牌随即作废(后续统一 404)
         async with sm() as session:
@@ -187,6 +239,53 @@ class TestEnrollmentStateMachine:
                 )
             assert exc.value.http_status == 404
 
+    async def test_bootstrap_binds_hostname_on_first_use(self, sm) -> None:
+        """新签发默认绑定:未预填 hostname 的令牌,首次 bootstrap 把上报主机名锁进登记。"""
+        await set_cluster_config(sm)
+        async with sm() as session:
+            _e, token = await nodes_service.create_enrollment(
+                session, EnrollmentCreate(pool="hami"), created_by=1, idempotency_key=None
+            )
+        async with sm() as session:
+            row, _cfg, _p = await nodes_service.bootstrap(
+                session, token, hostname="gpu-auto-1", os_info={}, gpus=[], client_ip=None
+            )
+            assert row.hostname == "gpu-auto-1"
+
+    async def test_absolute_expiry_kills_inflight_token(self, sm) -> None:
+        """令牌绝对过期:installing 也受 expires_at 约束(心跳不续命),过期落 expired 后 404。"""
+        await set_cluster_config(sm)
+        async with sm() as session:
+            _e, token = await nodes_service.create_enrollment(
+                session, EnrollmentCreate(pool="hami"), created_by=1, idempotency_key=None
+            )
+        async with sm() as session:
+            _row, _cfg, progress = await nodes_service.bootstrap(
+                session, token, hostname="gpu-ttl-1", os_info={}, gpus=[], client_ip=None
+            )
+            assert progress is not None
+        async with sm() as session:
+            await session.execute(
+                update(NodeEnrollment)
+                .where(NodeEnrollment.progress_token_hash.is_not(None))
+                .values(expires_at=now_utc() - timedelta(minutes=1))
+            )
+            await session.commit()
+        # progress 令牌/注册令牌均随绝对过期失效
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await nodes_service.report_progress(
+                    session, progress, phase="driver", state="ok", message=None
+                )
+            assert exc.value.http_status == 404
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(NodeEnrollment).where(NodeEnrollment.node_name == "gpu-ttl-1")
+                )
+            ).scalar_one()
+            assert row.status == "expired"
+
     async def test_progress_drives_status(self, sm) -> None:
         await set_cluster_config(sm)
         async with sm() as session:
@@ -194,23 +293,31 @@ class TestEnrollmentStateMachine:
                 session, EnrollmentCreate(pool="mig"), created_by=1, idempotency_key=None
             )
         async with sm() as session:
-            await nodes_service.bootstrap(
+            _r, _c, progress = await nodes_service.bootstrap(
                 session, token, hostname="mig-node-1", os_info={}, gpus=[], client_ip=None
             )
+            assert progress is not None
+        # 消费后的注册令牌不能再上报进度(只能由窄权限 progress 令牌上报)
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await nodes_service.report_progress(
+                    session, token, phase="driver", state="ok", message=None
+                )
+            assert exc.value.http_status == 404
         # 需要重启 → rebooting;续跑第一条进度 → installing;rke2_start ok → joining
         async with sm() as session:
             row = await nodes_service.report_progress(
-                session, token, phase="reboot", state="rebooting", message=None
+                session, progress, phase="reboot", state="rebooting", message=None
             )
             assert row.status == "rebooting"
         async with sm() as session:
             row = await nodes_service.report_progress(
-                session, token, phase="registries", state="ok", message=None
+                session, progress, phase="registries", state="ok", message=None
             )
             assert row.status == "installing"
         async with sm() as session:
             row = await nodes_service.report_progress(
-                session, token, phase="rke2_start", state="ok", message=None
+                session, progress, phase="rke2_start", state="ok", message=None
             )
             assert row.status == "joining"
         # 失败上报 → failed 落 error;终态后再上报 → 404
@@ -219,19 +326,20 @@ class TestEnrollmentStateMachine:
                 session, EnrollmentCreate(pool="hami"), created_by=1, idempotency_key=None
             )
         async with sm() as session:
-            await nodes_service.bootstrap(
+            _r2, _c2, progress2 = await nodes_service.bootstrap(
                 session, token2, hostname="hami-node-9", os_info={}, gpus=[], client_ip=None
             )
+            assert progress2 is not None
         async with sm() as session:
             row = await nodes_service.report_progress(
-                session, token2, phase="driver", state="failed", message="apt 安装失败"
+                session, progress2, phase="driver", state="failed", message="apt 安装失败"
             )
             assert row.status == "failed" and row.error is not None
             assert "apt" in row.error
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await nodes_service.report_progress(
-                    session, token2, phase="driver", state="ok", message=None
+                    session, progress2, phase="driver", state="ok", message=None
                 )
             assert exc.value.http_status == 404
 
@@ -247,7 +355,9 @@ class TestEnrollRouterAnonymous:
         assert resp.text.count("__API_BASE__") == 1  # 仅剩护栏比较字面量
         assert '!= "__API_BASE__"' in resp.text
         assert "/api/v1/node-enroll/bootstrap" in resp.text
-        assert "sdln_" not in resp.text.replace("--token sdln_xxx", "")  # 脚本零密钥
+        # 脚本零密钥;--token 已移除(token 只经 --token-file 文件传入,不进进程 argv)
+        assert "sdlp_" not in resp.text
+        assert "--token " not in resp.text
 
     async def test_bootstrap_and_progress_http_flow(self, client, sm) -> None:
         await set_cluster_config(sm)
@@ -284,19 +394,37 @@ class TestEnrollRouterAnonymous:
         assert body["rke2_join_token"].endswith("secrettoken")
         assert body["pool"] == "hami"
         assert body["rke2_server_url"] == "https://10.0.0.10:9345"
+        # 首次 bootstrap 换发窄权限 progress 令牌,并下发脚本指纹
+        assert body["progress_token"].startswith("sdlp_")
+        assert len(body["script_sha256"]) == 64
+        progress_bearer = {"Authorization": f"Bearer {body['progress_token']}"}
+
+        # 注册令牌已消费:重复 bootstrap / 上报进度均 404
+        assert (
+            await client.post(
+                "/api/v1/node-enroll/bootstrap", json={"hostname": "gpu-a3-01"}, headers=bearer
+            )
+        ).status_code == 404
+        assert (
+            await client.post(
+                "/api/v1/node-enroll/progress",
+                json={"phase": "driver", "state": "ok"},
+                headers=bearer,
+            )
+        ).status_code == 404
 
         # 进度推进:rke2_start ok → joining;管理端列表可见且无 token
         for phase, state in [("driver", "ok"), ("rke2_install", "ok"), ("rke2_start", "ok")]:
             resp = await client.post(
                 "/api/v1/node-enroll/progress",
                 json={"phase": phase, "state": state},
-                headers=bearer,
+                headers=progress_bearer,
             )
             assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "joining"
         rows = (await client.get("/api/admin/v1/node-enrollments?active=true", headers=ah)).json()
         assert rows[0]["status"] == "joining" and rows[0]["node_name"] == "gpu-a3-01"
-        assert token not in str(rows)
+        assert token not in str(rows) and body["progress_token"] not in str(rows)
 
     async def test_revoked_token_uniform_404(self, client, sm) -> None:
         await set_cluster_config(sm)
@@ -347,13 +475,14 @@ class TestEnrollReconciler:
             ).json()
             token = created["token"]
             bearer = {"Authorization": f"Bearer {token}"}
-            await client.post(
+            boot = await client.post(
                 "/api/v1/node-enroll/bootstrap", json={"hostname": "gpu-b1-02"}, headers=bearer
             )
+            progress_bearer = {"Authorization": f"Bearer {boot.json()['progress_token']}"}
             await client.post(
                 "/api/v1/node-enroll/progress",
                 json={"phase": "rke2_start", "state": "ok"},
-                headers=bearer,
+                headers=progress_bearer,
             )
 
             # 节点未出现 → 不推进
@@ -474,6 +603,58 @@ class TestEnrollReconciler:
 
             counts = await reconcile_enrollments_once(sm)
             assert counts["expired"] == 1 and counts["failed"] == 1
+        finally:
+            set_orchestrator(None)
+
+    async def test_skip_locked_row_never_clobbers_concurrent_revoke(self, client, sm) -> None:
+        """对账器 SELECT ... FOR UPDATE SKIP LOCKED:行被并发事务(如 revoke)持锁时
+        本轮跳过(下轮自愈);吊销提交后不得被对账的旧读数覆盖回非终态。"""
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+        set_orchestrator(FakeOrchestrator())
+        try:
+            await set_cluster_config(sm)
+            ah = await admin_headers(sm, client, role="ops")
+            created = (
+                await client.post(
+                    "/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah
+                )
+            ).json()
+            eid = created["enrollment"]["id"]
+            await client.post(
+                "/api/v1/node-enroll/bootstrap",
+                json={"hostname": "lock-node"},
+                headers={"Authorization": f"Bearer {created['token']}"},
+            )
+            # 让其满足「绝对过期 → expired」条件:若对账器读到该行就一定会迁移它
+            async with sm() as session:
+                await session.execute(
+                    update(NodeEnrollment)
+                    .where(NodeEnrollment.id == eid)
+                    .values(expires_at=now_utc() - timedelta(minutes=1))
+                )
+                await session.commit()
+
+            # 会话 A 持行锁并写入 revoked(模拟并发 revoke 未提交)
+            async with sm() as locker:
+                row = (
+                    await locker.execute(
+                        select(NodeEnrollment).where(NodeEnrollment.id == eid).with_for_update()
+                    )
+                ).scalar_one()
+                row.status = "revoked"
+                # skip_locked:对账器跳过被锁行,不阻塞也不迁移
+                counts = await reconcile_enrollments_once(sm)
+                assert counts == {"joined": 0, "failed": 0, "expired": 0}
+                await locker.commit()
+
+            # 吊销提交后:revoked 是终态,对账器不再选中,更不得覆盖成 expired
+            counts = await reconcile_enrollments_once(sm)
+            assert counts == {"joined": 0, "failed": 0, "expired": 0}
+            rows = (await client.get("/api/admin/v1/node-enrollments", headers=ah)).json()
+            assert rows[0]["status"] == "revoked"
         finally:
             set_orchestrator(None)
 

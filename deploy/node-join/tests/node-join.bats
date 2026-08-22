@@ -15,6 +15,16 @@ setup() {
   export BOOTSTRAP_FIXTURE="$TMP/bootstrap-fixture.json"
   export NVIDIA_OK=1
   export DPKG_INSTALLED=0
+  # 注册令牌经文件传入(与生成命令同形态),不进进程 argv
+  printf 'sdln_testtoken' > "$TMP/token"
+  # 假安装器内容固定,pin 经 env 覆盖指向其真实 sha256(脚本内置 pin 是真上游的)
+  export FAKE_SCRIPT_SHA256="$(printf '#!/bin/bash\n' | sha256sum | awk '{print $1}')"
+  local fake_installer_sha256
+  fake_installer_sha256="$(printf 'fake-installer\n' | sha256sum | awk '{print $1}')"
+  export SUPERDL_JOIN_PIN_K3S_OFFICIAL="$fake_installer_sha256"
+  export SUPERDL_JOIN_PIN_K3S_CN="$fake_installer_sha256"
+  export SUPERDL_JOIN_PIN_RKE2_OFFICIAL="$fake_installer_sha256"
+  export SUPERDL_JOIN_PIN_RKE2_CN="$fake_installer_sha256"
   mkdir -p "$TMP/etc/modprobe.d" "$TMP/etc/sysctl.d" "$TMP/etc/systemd/system" "$TMP/bin"
   _write_fixture hami
   _write_shims
@@ -23,8 +33,8 @@ setup() {
 
 teardown() { rm -rf "$TMP"; }
 
-_write_fixture() { # _write_fixture <pool> [distro] [mirror=cn];字段与 BootstrapOut 契约一致,必发
-  python3 - "$1" "${2:-rke2}" "${3:-}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
+_write_fixture() { # _write_fixture <pool> [distro] [mirror=cn] [script_sha256];字段与 BootstrapOut 契约一致,必发
+  python3 - "$1" "${2:-rke2}" "${3:-}" "${4:-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json, sys
 distro = sys.argv[2]
 data = {
@@ -36,6 +46,9 @@ data = {
     "driver_version": "580",
     "nvme_devices": [],
     "registries_yaml": 'mirrors:\n  "*": {}\n',
+    # 首次 bootstrap 换发的窄权限 progress 令牌(仅上报进度)
+    "progress_token": "sdlp_fixturetoken",
+    "script_sha256": sys.argv[4],
 }
 data["k8s_distro"] = distro
 data["install_mirror"] = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "cn"
@@ -44,7 +57,7 @@ PYEOF
 }
 
 _write_shims() {
-  # curl:bootstrap → 落 fixture;progress/script → 记录后成功
+  # curl:bootstrap → 落 fixture;script → 假脚本;安装器 → 假安装器;progress → 记录后成功
   cat > "$TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$CURL_LOG"
@@ -53,10 +66,13 @@ for a in "$@"; do
   [[ "$prev" == "-o" ]] && out="$a"
   [[ "$a" == *node-enroll/bootstrap* ]] && mode=bootstrap
   [[ "$a" == *node-enroll/script* ]] && mode=script
+  [[ "$a" == *get.k3s.io* || "$a" == *k3s-install.sh* ]] && mode=installer
+  [[ "$a" == *get.rke2.io* || "$a" == *rke2/install.sh* ]] && mode=installer
   prev="$a"
 done
 if [[ "$mode" == "bootstrap" && -n "$out" ]]; then cp "$BOOTSTRAP_FIXTURE" "$out"; fi
 if [[ "$mode" == "script" && -n "$out" ]]; then echo "#!/bin/bash" > "$out"; fi
+if [[ "$mode" == "installer" && -n "$out" ]]; then echo "fake-installer" > "$out"; fi
 exit 0
 EOF
   # id:伪装 root(脚本入口即查 root,测试须能以任意用户跑)
@@ -98,12 +114,12 @@ EOF
 #!/usr/bin/env bash
 echo "rke2 version v1.36.2+rke2r1"
 EOF
-  # sh:安装管道末端(curl|sh -);记录安装器 env(如 INSTALL_K3S_MIRROR)后消费 stdin
+  # sh:安装器执行入口(sh <落盘文件>);记录安装器 env(如 INSTALL_K3S_MIRROR)。
+  # 注意不可读 stdin:管道执行本脚本时 stdin 是脚本本体,偷读会吃掉未执行部分
   cat > "$TMP/bin/sh" <<'EOF'
 #!/usr/bin/env bash
 [[ -n "${INSTALL_K3S_MIRROR:-}" ]] && echo "sh INSTALL_K3S_MIRROR=$INSTALL_K3S_MIRROR" >> "$SHIM_CALLS"
 [[ -n "${INSTALL_RKE2_MIRROR:-}" ]] && echo "sh INSTALL_RKE2_MIRROR=$INSTALL_RKE2_MIRROR" >> "$SHIM_CALLS"
-cat >/dev/null 2>&1 || true
 exit 0
 EOF
   # gpg:消费 stdin(curl 输出的 key),向 -o 目标写占位 keyring
@@ -149,16 +165,22 @@ EOF
   chmod +x "$TMP"/bin/*
 }
 
-run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.local "$@"; }
+run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fake.local "$@"; }
 
-@test "缺少 --token 退出 2" {
+@test "缺少 --token-file 退出 2" {
   run bash "$SCRIPT" --api-base http://fake.local
   [ "$status" -eq 2 ]
-  [[ "$output" == *"缺少 --token"* ]]
+  [[ "$output" == *"缺少 --token-file"* ]]
+}
+
+@test "token 文件不存在退出 2" {
+  run bash "$SCRIPT" --token-file "$TMP/no-such" --api-base http://fake.local
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"token 文件不存在"* ]]
 }
 
 @test "占位符未替换且未给 --api-base 退出 2" {
-  run bash "$SCRIPT" --token sdln_x
+  run bash "$SCRIPT" --token-file "$TMP/token"
   [ "$status" -eq 2 ]
   [[ "$output" == *"占位符未替换"* ]]
 }
@@ -172,8 +194,8 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
   # registries.yaml 落位
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
-  # markers 齐全
-  for m in precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start; do
+  # markers 齐全(含 bootstrap 与完成标记)
+  for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start completed; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
   # NVIDIA Container Toolkit:此处 nvidia-ctk 已存在,走跳过分支
@@ -187,16 +209,89 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   grep -q '"gpu_details": \[{"name": "NVIDIA GeForce RTX 4090", "memory_mib": 24564}\]' "$CURL_LOG"
 }
 
-@test "重跑幂等:第二次运行全部步骤跳过" {
+@test "令牌全程不进进程 argv;完成后 bootstrap.json 与令牌落盘即清" {
   run_script
   [ "$status" -eq 0 ]
-  run_script
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"precheck: 已完成,跳过"* ]]
-  [[ "$output" == *"agent_start: 已完成,跳过"* ]]
+  # curl 全部经 --config 注入 Authorization,argv(curl.log)不含任何令牌
+  grep -q -- "--config" "$CURL_LOG"
+  ! grep -q 'sdln_testtoken' "$CURL_LOG"
+  ! grep -q 'sdlp_fixturetoken' "$CURL_LOG"
+  # 装机完成即清敏感落盘
+  [ ! -e "$SUPERDL_JOIN_STATE_DIR/bootstrap.json" ]
+  [ ! -e "$SUPERDL_JOIN_STATE_DIR/token" ]
+  [ ! -e "$SUPERDL_JOIN_STATE_DIR/curl.conf" ]
 }
 
-@test "驱动未就绪触发重启断点:装驱动+写 oneshot+token 0600+systemctl reboot,rke2 尚未配置" {
+@test "完成后重跑:直接退出,不重复 bootstrap 不重复装机" {
+  run_script
+  [ "$status" -eq 0 ]
+  run_script
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"已完成加入"* ]]
+  # bootstrap 只发生一次(注册令牌一次性,重跑也不再换配置)
+  [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "1" ]
+  ! grep -q "vgcreate superdl-nvme" "$SHIM_CALLS"
+}
+
+@test "--force:清除断点从头重装(须管理端新签发令牌)" {
+  run_script
+  [ "$status" -eq 0 ]
+  run_script --force
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--force:清除本地断点"* ]]
+  [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "2" ]
+}
+
+@test "断点续跑:bootstrap 已有 marker 时跳过并用盘上 progress 令牌上报" {
+  # 首轮在 agent_start 处人为失败(agent 启动失败):保留 bootstrap marker/已下发配置/令牌落盘
+  cat > "$TMP/bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+echo "systemctl $*" >> "$SHIM_CALLS"
+case "$1" in
+  is-active) exit 0 ;;
+  is-enabled) exit 1 ;;
+  enable) [[ "$*" == *--now* ]] && exit 1; exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+  chmod +x "$TMP/bin/systemctl"
+  run_script
+  [ "$status" -eq 1 ]
+  grep -q '"phase":"agent_start","state":"failed"' "$CURL_LOG"
+  [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/bootstrap" ]
+  [ "$(cat "$SUPERDL_JOIN_STATE_DIR/token")" = "sdlp_fixturetoken" ]
+  # 修复环境后重跑同一命令:bootstrap 跳过,盘上 progress 令牌接管上报
+  cat > "$TMP/bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+echo "systemctl $*" >> "$SHIM_CALLS"
+case "$1" in
+  is-active) exit 0 ;;
+  is-enabled) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+  chmod +x "$TMP/bin/systemctl"
+  run_script
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bootstrap: 已完成,跳过"* ]]
+  [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "1" ]
+  # 完成后令牌落盘即清
+  [ ! -e "$SUPERDL_JOIN_STATE_DIR/token" ]
+}
+
+@test "旧服务端不下发 progress_token:全程沿用注册令牌,行为同升级前" {
+  python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
+import json
+print(json.dumps({"pool":"hami","hostname_expected":None,"k8s_distro":"rke2","install_mirror":"cn",
+  "rke2_version":"v1.36.2+rke2r1","rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
+  "driver_version":"580","nvme_devices":[],"registries_yaml":""}))
+PYEOF
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
+}
+
+@test "驱动未就绪触发重启断点:装驱动+写 oneshot+progress 令牌 0600+systemctl reboot,rke2 尚未配置" {
   export NVIDIA_OK=0
   run_script
   [ "$status" -eq 0 ]
@@ -204,10 +299,46 @@ run_script() { run bash "$SCRIPT" --token sdln_testtoken --api-base http://fake.
   grep -q "systemctl reboot" "$SHIM_CALLS"
   [ -f "$TMP/etc/systemd/system/superdl-node-join-resume.service" ]
   grep -q -- "--token-file" "$TMP/etc/systemd/system/superdl-node-join-resume.service"
+  # 续跑令牌已是 bootstrap 换发的窄权限 progress 令牌
+  [ "$(cat "$SUPERDL_JOIN_STATE_DIR/token")" = "sdlp_fixturetoken" ]
   [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR/token")" = "600" ]
+  [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR/curl.conf")" = "600" ]
   [ "$(cat "$SUPERDL_JOIN_STATE_DIR/reboot_count")" = "1" ]
   [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
   grep -q '"phase":"reboot","state":"rebooting"' "$CURL_LOG"
+}
+
+@test "管道执行的重启断点:从 API 重拉自身并校验 bootstrap 下发的指纹" {
+  export NVIDIA_OK=0
+  run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
+  [ "$status" -eq 0 ]
+  # 重拉的副本经指纹校验(fixture 的 script_sha256 即假脚本正文的 sha256)
+  [ "$(cat "$SUPERDL_JOIN_STATE_DIR/node-join.sh")" = "#!/bin/bash" ]
+  grep -q "systemctl reboot" "$SHIM_CALLS"
+}
+
+@test "重拉脚本指纹不符:中止重启并上报 failed" {
+  export NVIDIA_OK=0
+  _write_fixture hami rke2 "" "0000000000000000000000000000000000000000000000000000000000000000"
+  run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"指纹不符"* ]]
+  grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
+}
+
+@test "安装脚本 pin 校验和不符:拒绝执行并上报 failed" {
+  cat > "$TMP/bin/rke2" <<'RKESHIM'
+#!/usr/bin/env bash
+echo "rke2 version v0.0.0+rke2r0"
+RKESHIM
+  chmod +x "$TMP/bin/rke2"
+  export SUPERDL_JOIN_PIN_RKE2_CN="0000000000000000000000000000000000000000000000000000000000000000"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"校验和不符"* ]]
+  grep -q '"phase":"agent_install","state":"failed"' "$CURL_LOG"
+  # 校验不过的安装器绝不执行
+  ! grep -q "sh INSTALL_RKE2_MIRROR" "$SHIM_CALLS"
 }
 
 @test "kata 池写 GRUB IOMMU 配置" {
@@ -268,7 +399,7 @@ RKESHIM
 import json
 print(json.dumps({"pool":"hami","hostname_expected":None,"k8s_distro":"rke2","install_mirror":"cn",
   "rke2_version":"v1.36.2+rke2r1","rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
-  "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":""}))
+  "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":"","progress_token":"sdlp_fixturetoken"}))
 PYEOF
   run_script
   [ "$status" -eq 0 ]
