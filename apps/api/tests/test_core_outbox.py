@@ -154,3 +154,100 @@ class TestTaskTimeout:
         assert row.status == "pending"  # 退避重试,不是 done
         assert row.retries == 1
         assert "TimeoutError" in (row.last_error or "")
+
+
+class TestClaimOrder:
+    async def test_prefers_earliest_next_retry_at(
+        self, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """领取按 (next_retry_at, id) 排序:到期最早优先,不是纯 id FIFO。"""
+        calls: list[str] = []
+
+        async def handler(_session: AsyncSession, task: OutboxTask) -> None:
+            calls.append(task.payload["k"])
+
+        monkeypatch.setitem(outbox._registry, "t_order", handler)
+
+        async with sm() as session:
+            # late 先入库(id 更小)但更晚到期;early 应被先领取
+            session.add(OutboxTask(type="t_order", payload={"k": "late"}, next_retry_at=now_utc()))
+            session.add(
+                OutboxTask(
+                    type="t_order",
+                    payload={"k": "early"},
+                    next_retry_at=now_utc() - timedelta(minutes=5),
+                )
+            )
+            await session.commit()
+
+        assert await process_one(sm) is True
+        assert calls == ["early"]
+
+
+class TestConcurrency:
+    async def test_concurrent_workers_claim_distinct_tasks(
+        self, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """SKIP LOCKED 下多个领取协程并发执行不同任务,消除全局串行 FIFO 的队头阻塞。"""
+        import asyncio
+        import time
+
+        started: list[str] = []
+
+        async def slow_handler(_session: AsyncSession, task: OutboxTask) -> None:
+            started.append(task.payload["k"])
+            await asyncio.sleep(0.15)
+
+        monkeypatch.setitem(outbox._registry, "t_slow", slow_handler)
+
+        async with sm() as session:
+            enqueue(session, "t_slow", {"k": "a"})
+            enqueue(session, "t_slow", {"k": "b"})
+            await session.commit()
+
+        t0 = time.monotonic()
+        results = await asyncio.gather(process_one(sm, "w-0"), process_one(sm, "w-1"))
+        elapsed = time.monotonic() - t0
+
+        assert results == [True, True]
+        assert sorted(started) == ["a", "b"]
+        assert elapsed < 0.25  # 串行执行必然 ≥ 0.3s
+
+        async with sm() as session:
+            rows = (await session.execute(select(OutboxTask))).scalars().all()
+            assert {r.status for r in rows} == {"done"}
+
+
+class TestTerminalWriteOwnership:
+    async def test_ownership_lost_write_is_dropped(
+        self, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """执行期间被 reaper 回收(锁易主)→ 终态写必须放弃,不得覆盖接管者的状态。"""
+        from sqlalchemy import update
+
+        async def handler(_session: AsyncSession, task: OutboxTask) -> None:
+            # 模拟 reaper 在 handler 执行期回收本任务(独立事务)
+            async with sm() as s2:
+                await s2.execute(
+                    update(OutboxTask)
+                    .where(OutboxTask.id == task.id)
+                    .values(status="pending", locked_by=None, locked_at=None)
+                )
+                await s2.commit()
+
+        monkeypatch.setitem(outbox._registry, "t_race", handler)
+
+        async with sm() as session:
+            enqueue(session, "t_race", {})
+            await session.commit()
+
+        assert await process_one(sm, "w-victim") is True  # handler 本身成功
+        async with sm() as session:
+            row = (await session.execute(select(OutboxTask))).scalar_one()
+            assert row.status == "pending"  # 没被写成 done
+            assert row.locked_by is None
+
+
+def test_running_timeout_is_double_task_timeout():
+    """reaper 打回 running 的窗口必须显著大于任务执行上限,否则正常执行中的任务会被双认领。"""
+    assert timedelta(seconds=2 * outbox.TASK_TIMEOUT_SECONDS) <= outbox.RUNNING_TIMEOUT

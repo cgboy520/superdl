@@ -27,6 +27,8 @@ logger = get_logger(__name__)
 
 # failed 行自动重试的节流窗口(管理员手动预热不受此限)
 FAILED_RETRY_INTERVAL = timedelta(minutes=30)
+# pending 行卡死(outbox 死信/worker 长期停机)后的重派超时
+PENDING_REQUEUE_TIMEOUT = timedelta(minutes=10)
 # 预热覆盖的节点状态:Cordoned 会回役,继续维护缓存;NotReady 保留行但不派新任务
 TARGET_NODE_STATUSES = ("Ready", "Cordoned")
 
@@ -95,8 +97,19 @@ async def _plan(
                 counts["removed"] += 1
                 continue
             alive.add((row.image_id, row.node_name))
+            # NotReady 节点保留行但不派新任务(回 Ready/Cordoned 后由下列分支自然续派)
+            if row.node_name not in target_nodes:
+                continue
             if row.status == "failed" and row.updated_at < now - FAILED_RETRY_INTERVAL:
                 row.status = "pending"  # last_error 保留供 UI 展示直至下次收敛
+                enqueue(
+                    session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
+                )
+                counts["requeued"] += 1
+            elif row.status == "pending" and row.updated_at < now - PENDING_REQUEUE_TIMEOUT:
+                # 任务死信/丢失后行永远停在 pending:超时重派(幂等,Job IfNotPresent)。
+                # 拨 updated_at 节流,最多每 PENDING_REQUEUE_TIMEOUT 补一次
+                row.updated_at = now
                 enqueue(
                     session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
                 )

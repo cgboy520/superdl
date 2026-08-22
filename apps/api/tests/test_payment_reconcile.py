@@ -86,6 +86,26 @@ class TestReconcilePoller:
         ).json()
         assert detail["status"] == "pending"
 
+    async def test_single_order_failure_does_not_abort_round(self, client: AsyncClient, sm):
+        """单笔入账失败(渠道金额与订单不符)不能中断整轮:后面的订单照常收敛。"""
+        headers_bad = await user_headers(client, "13700000031")
+        bad = await create_order(client, headers_bad, "66.00")
+        headers_good = await user_headers(client, "13700000032")
+        good = await create_order(client, headers_good, "20.00")
+        # 坏单:渠道侧金额不符 → handle_callback 抛 PAYMENT_CHANNEL_ERROR
+        MockChannel.mark_paid(bad["order_no"], "txn-bad-amount", "65.90")
+        MockChannel.mark_paid(good["order_no"], "txn-good", "20.00")
+        await _backdate_order(sm, bad["order_no"], 2)
+        await _backdate_order(sm, good["order_no"], 2)
+
+        assert await reconcile_pending_orders(sm) == 1  # 只有好单入账
+        bad_detail = (
+            await client.get(f"/api/v1/wallet/recharges/{bad['order_no']}", headers=headers_bad)
+        ).json()
+        assert bad_detail["status"] == "pending"  # 留给人工核验,不静默入账
+        w = (await client.get("/api/v1/wallet", headers=headers_good)).json()
+        assert w["balance"] == "20.00"
+
 
 class TestBackfill:
     async def test_backfill_closed_order_after_verify(self, client: AsyncClient, sm):
@@ -127,6 +147,32 @@ class TestBackfill:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "88.00"
 
+    async def test_backfill_idempotency_key_replay(self, client: AsyncClient, sm):
+        """补单支持 Idempotency-Key:同键重放回当前状态而非 409;无键重试维持 409。"""
+        headers = await user_headers(client, "13700000041")
+        order = await create_order(client, headers, "66.00")
+        MockChannel.mark_paid(order["order_no"], "txn-backfill-idem", "66.00")
+
+        ah = await admin_headers(sm, client, role="finance")
+        keyed = {**ah, "Idempotency-Key": "backfill-20260822-01"}
+        r1 = await client.post(
+            f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
+            json={"reason": "回调丢失"},
+            headers=keyed,
+        )
+        assert r1.status_code == 200, r1.text
+        assert r1.json()["status"] == "paid"
+        # 同键重放(响应丢失后重试):返回当前状态,不重复入账
+        r2 = await client.post(
+            f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
+            json={"reason": "回调丢失"},
+            headers=keyed,
+        )
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["order_no"] == order["order_no"]
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "66.00"
+
     async def test_backfill_refused_when_channel_unpaid(self, client: AsyncClient, sm):
         """渠道侧未支付 → 补单被拒(操作者无法凭空造账)。"""
         headers = await user_headers(client, "13700000024")
@@ -142,8 +188,8 @@ class TestBackfill:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
 
-    async def test_backfill_refused_on_failed_status(self, client: AsyncClient, sm):
-        """failed 状态不可补单(仅 pending/closed 可救)。"""
+    async def test_backfill_failed_order_after_verify(self, client: AsyncClient, sm):
+        """failed 订单不是死胡同:渠道核验为已支付后同样可补单(渠道是唯一事实源)。"""
         headers = await user_headers(client, "13700000029")
         order = await create_order(client, headers, "11.00")
         async with sm() as session:
@@ -153,13 +199,37 @@ class TestBackfill:
             await session.commit()
         MockChannel.mark_paid(order["order_no"], "txn-failed-order", "11.00")
         ah = await admin_headers(sm, client, role="finance")
+        verify = await client.post(
+            f"/api/admin/v1/finance/orders/{order['order_no']}/verify", headers=ah
+        )
+        assert verify.status_code == 200
+        assert verify.json()["matches"] is True
         resp = await client.post(
             f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
-            json={"reason": "测试"},
+            json={"reason": "下单失败的订单,渠道侧实为已付"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "11.00"
+
+    async def test_backfill_failed_order_refused_when_channel_unpaid(self, client: AsyncClient, sm):
+        """failed 订单但渠道侧未支付:补单仍被拒(状态放宽不等于凭空造账)。"""
+        headers = await user_headers(client, "13700000030")
+        order = await create_order(client, headers, "13.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
+            )
+            await session.commit()
+        ah = await admin_headers(sm, client, role="finance")
+        resp = await client.post(
+            f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
+            json={"reason": "渠道未付"},
             headers=ah,
         )
         assert resp.status_code == 400
-        assert resp.json()["code"] == "CONFLICT"
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
 
     async def test_backfill_refused_on_amount_mismatch(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000025")

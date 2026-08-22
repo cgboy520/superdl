@@ -106,18 +106,42 @@ class TestMarket:
         await seed_skus(sm)
         calls = {"n": 0}
 
-        async def counting_provider(_sku):
+        async def counting_provider(_session, skus):
             calls["n"] += 1
-            return 5
+            return {s.id: 5 for s in skus}
 
         monkeypatch.setattr(inventory, "_provider", counting_provider)
         inventory.clear_cache()
         await client.get("/api/v1/skus")
         first = calls["n"]
+        assert first == 1  # 批量接口:一次调用算完全部 SKU,不是每 SKU 一次
         await client.get("/api/v1/skus")
         assert calls["n"] == first  # 30s 窗口内不重复计算
         data = (await client.get("/api/v1/skus")).json()
         assert all(s["available_count"] == 5 for s in data)
+
+    async def test_inventory_stale_on_provider_error(self, client: AsyncClient, sm, monkeypatch):
+        """台账查询故障且有旧快照:市场页展示陈旧库存而不是 500(/skus 免登录无限流)。"""
+        await seed_skus(sm)
+        calls = {"n": 0}
+
+        async def flaky_provider(_session, skus):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("seeded ledger failure")
+            return {s.id: 7 for s in skus}
+
+        monkeypatch.setattr(inventory, "_provider", flaky_provider)
+        inventory.clear_cache()
+        assert (await client.get("/api/v1/skus")).json()[0]["available_count"] == 7
+        assert inventory._cache is not None
+        inventory._cache = (  # 把快照拨过 TTL,触发刷新
+            inventory._cache[0] - inventory.CACHE_TTL_SECONDS - 1,
+            inventory._cache[1],
+        )
+        resp = await client.get("/api/v1/skus")
+        assert resp.status_code == 200
+        assert resp.json()[0]["available_count"] == 7  # 陈旧值兜底
 
 
 class TestAdminSku:

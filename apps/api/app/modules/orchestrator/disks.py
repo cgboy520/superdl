@@ -1,8 +1,10 @@
 """数据盘服务:创建/扩容/删除/挂载管理。独立于实例生命周期(留存抓手)。"""
 
+from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -11,16 +13,19 @@ from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
-from app.core.timeutil import now_utc
+from app.core.timeutil import ensure_utc, now_utc
 from app.modules.billing import service as billing_service
 from app.modules.nodes import service as nodes_service
-from app.modules.orchestrator.models import DataDisk
+from app.modules.orchestrator.models import DataDisk, Instance
 
 logger = get_logger(__name__)
 
-BILLABLE_STATUSES = ("active", "grace")  # frozen 不计费
+BILLABLE_STATUSES = ("active",)  # grace(欠费宽限)停计费,frozen 不计费
 # 欠费链路上的全部状态,巡检口径用这一组(见 list_arrears_chain_user_ids)
 ARREARS_CHAIN_STATUSES = ("active", "grace", "frozen")
+
+# 幂等键有效期:窗口内重放返回既有盘;窗口外同一键按新单处理
+IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 
 async def create_disk(
@@ -40,7 +45,11 @@ async def create_disk(
             )
         ).scalar_one_or_none()
         if existing is not None:
-            return existing
+            if now_utc() - ensure_utc(existing.created_at) < IDEMPOTENCY_WINDOW:
+                return existing
+            # 窗口外同一键按新单处理:先释放键位(唯一约束 (user_id, idempotency_key))
+            existing.idempotency_key = None
+            await session.flush()
     # JuiceFS SC 缺位时先拦下,不放出挂不上却按日计费的盘
     await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_effective_policies(session)
@@ -50,40 +59,60 @@ async def create_disk(
             key="disks.sizeRange",
             params={"min": policies.disk_min_gb, "max": policies.disk_max_gb},
         )
-    # 数量配额:建盘只校验余额(日结才扣),故另设上限
-    max_disks = get_settings().max_disks_per_user
-    live = (
-        await session.execute(
-            select(func.count())
-            .select_from(DataDisk)
-            .where(DataDisk.user_id == user_id, DataDisk.status != "deleted")
-        )
-    ).scalar_one()
-    if live >= max_disks:
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR, key="disks.countQuota", params={"max": max_disks}
-        )
     price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)
-    await billing_service.require_balance_at_least(
-        session,
-        user_id,
-        daily,
-        hint_key="billing.insufficientForDisk",
-        hint_params={"amount": daily},
-    )
-    disk_uuid = uuid4().hex
-    disk = DataDisk(
-        uuid=disk_uuid,
-        user_id=user_id,
-        name=name,
-        size_gb=size_gb,
-        juicefs_subpath=f"disk-{disk_uuid}",
-        price_gb_month=price,
-        idempotency_key=idempotency_key,
-    )
-    session.add(disk)
-    await session.commit()
+    # 临界区:assert_can_afford 锁钱包行(FOR UPDATE)并持有到 commit,并发建盘串行;
+    # 数量配额与余额校验都放进锁内,不存在 TOCTOU
+    try:
+        await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
+        # 数量配额:建盘只校验余额(日结才扣),故另设上限
+        max_disks = get_settings().max_disks_per_user
+        live = (
+            await session.execute(
+                select(func.count())
+                .select_from(DataDisk)
+                .where(DataDisk.user_id == user_id, DataDisk.status != "deleted")
+            )
+        ).scalar_one()
+        if live >= max_disks:
+            raise AppError(
+                ErrorCode.VALIDATION_ERROR, key="disks.countQuota", params={"max": max_disks}
+            )
+        disk_uuid = uuid4().hex
+        disk = DataDisk(
+            uuid=disk_uuid,
+            user_id=user_id,
+            name=name,
+            size_gb=size_gb,
+            juicefs_subpath=f"disk-{disk_uuid}",
+            price_gb_month=price,
+            idempotency_key=idempotency_key,
+        )
+        session.add(disk)
+        try:
+            await session.flush()
+        except IntegrityError:
+            # 并发同幂等键:对方已落库,回滚后按重放返回既有盘(不多开一块)
+            await session.rollback()
+            raced = (
+                await session.execute(
+                    select(DataDisk).where(
+                        DataDisk.user_id == user_id, DataDisk.idempotency_key == idempotency_key
+                    )
+                )
+            ).scalar_one_or_none()
+            if raced is not None:
+                return raced
+            raise
+        await session.commit()
+    except IntegrityError as exc:
+        # 钱包首建与并发请求互撞唯一索引:可安全重试
+        await session.rollback()
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="common.retryableConflict",
+            http_status=409,
+        ) from exc
     await session.refresh(disk)
     logger.info("disk_created", disk_id=disk.id, user_id=user_id, size_gb=size_gb)
     return disk
@@ -136,6 +165,8 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     await _settle_pending_days(session, disk)  # 先按旧容量结清,扩容不追溯涨价
+    # 注意:size_gb 目前只是计费/逻辑口径 —— JuiceFS 目录配额尚未下发到集群
+    # (需要 worker 镜像携带 juicefs CLI 与足够权限,见审计报告 #16),扩容只改这个数字。
     disk.size_gb = new_size_gb
     await session.commit()
     return disk
@@ -145,7 +176,13 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
     """删除(前端多级防护后调用)。挂载中禁止;进入 deleting,由 outbox 擦除后置 deleted。"""
     disk = await get_disk(session, user_id, uuid)
     if disk.mounted_instance_id is not None:
-        raise AppError(ErrorCode.DISK_IN_USE, key="disks.inUseDelete")
+        # 挂载实例已停机/冻结/失败(Pod 不在)时放行并自动解挂:
+        # 否则「实例卡 stopping 期间盘删不掉、还按日计费」没有出口
+        inst = await session.get(Instance, disk.mounted_instance_id)
+        if inst is not None and inst.status in ("stopped", "frozen", "failed"):
+            disk.mounted_instance_id = None
+        else:
+            raise AppError(ErrorCode.DISK_IN_USE, key="disks.inUseDelete")
     if disk.status == "deleting":
         return disk
     await _settle_pending_days(session, disk)  # 末日账:当日建当日删不能免单
@@ -205,7 +242,12 @@ async def list_billable_disks(session: AsyncSession) -> list[DataDisk]:
 
 
 async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
-    """欠费巡检钩子:active↔grace→frozen→deleting 链路。返回变更数。"""
+    """欠费巡检钩子:active↔grace→frozen→deleting 链路。返回变更数。
+
+    计时口径:grace_started_at 首次进入宽限后不再清零(充值不重置冻结倒计时),
+    防止「欠费 → 小额充值 → 再欠费」循环让宽限钟永远归零;frozen_started_at 是
+    删除倒计时,每次进入 frozen 重新起算(回款解冻即清零)。
+    """
     policies = await get_effective_policies(session)
     now = now_utc()
     changed = 0
@@ -223,13 +265,15 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
         if not in_arrears:
             if disk.status in ("grace", "frozen"):
                 disk.status = "active"
-                disk.grace_started_at = None
+                # grace_started_at 保留(累计计时);frozen_started_at 清零(已出冻结态)
                 disk.frozen_started_at = None
                 changed += 1
             continue
         if disk.status == "active":
+            await _settle_pending_days(session, disk)  # 进 grace 即停计费:先结清在账天数
             disk.status = "grace"
-            disk.grace_started_at = now
+            if disk.grace_started_at is None:
+                disk.grace_started_at = now
             changed += 1
         elif disk.status == "grace" and disk.grace_started_at is not None:
             from datetime import timedelta

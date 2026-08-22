@@ -37,9 +37,16 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
     try:
         await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
     except NodePortTaken as exc:
+        # 先取 id 再回滚:rollback 后对象过期,访问属性会触发异步上下文外的懒加载
+        instance_id = instance.id
         # 先回滚再标记:本事务未提交的同主键 PortAllocation 会锁死 block_port 的独立事务
         await session.rollback()
-        await block_port(get_sessionmaker(), exc.port, reason="node port taken by cluster object")
+        await block_port(
+            get_sessionmaker(),
+            exc.port,
+            reason="node port taken by cluster object",
+            expected_instance_id=instance_id,
+        )
         raise
     instance.pod_name = instance.uuid
 
@@ -98,11 +105,14 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
             actor="system",
             metadata={"restart": True},
         )
+        # 尾账与 stopped 边先单独落库:后续建 Pod 撞 NodePortTaken 会 rollback 本事务,
+        # 不分开提交会把已完成的迁移和尾账一起回滚掉(尾账丢失 = 少计停机前费用)
+        await session.commit()
     if instance.status == sm_def.STOPPED:
         estimate = as_amount(instance.price_hourly * instance.gpu_count)
         try:
-            await billing_service.require_balance_at_least(
-                session, instance.user_id, estimate, hint_key="billing.insufficientForRestart"
+            await billing_service.assert_can_afford(
+                session, instance.user_id, additional_hourly=estimate
             )
         except AppError as exc:
             if exc.code is not ErrorCode.INSUFFICIENT_BALANCE:
@@ -157,7 +167,14 @@ async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     if disk is None or disk.status != "deleting":
         return
     namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
-    await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
+    try:
+        await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
+    except Exception as exc:
+        # 租户 ns 不存在(从未建过实例即删盘):无物可擦,视为完成而非死信。
+        # ApiException 不能 import(业务代码不碰 kubernetes 客户端),按 status 属性鸭子判定。
+        if getattr(exc, "status", None) != 404:
+            raise
+        logger.warning("disk_wipe_namespace_missing", disk_id=disk.id, namespace=namespace)
     logger.info("disk_wiped", disk_id=disk.id, subpath=disk.juicefs_subpath)
     disk.status = "deleted"
     disk.mounted_instance_id = None

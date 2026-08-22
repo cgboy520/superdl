@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Header, Query, Request, status
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
+from app.core.pagination import Page
 from app.modules.account.deps import CurrentUser
 from app.modules.orchestrator import service
 from app.modules.orchestrator.schemas import (
@@ -99,12 +100,15 @@ async def release_instance(
 
 @router.get("/instances/{uuid}/events")
 async def list_instance_events(
-    uuid: str, user: CurrentUser, session: DbSession
-) -> list[InstanceEventOut]:
-    """状态时间线(计费依据)。"""
+    uuid: str,
+    user: CurrentUser,
+    session: DbSession,
+    cursor: str | None = None,
+    limit: int | None = Query(default=None, le=100),
+) -> Page[InstanceEventOut]:
+    """状态时间线(计费依据)。降序(最新在前)游标分页。"""
     instance = await service.get_instance(session, user.id, uuid)
-    events = await service.list_events(session, instance.id)
-    return [InstanceEventOut.model_validate(e) for e in events]
+    return await service.list_events(session, instance.id, cursor=cursor, limit=limit)
 
 
 @router.get("/instances/{uuid}/access")

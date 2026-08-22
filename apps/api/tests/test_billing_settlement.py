@@ -26,6 +26,13 @@ def ev(minute: float, from_s: str | None, to_s: str) -> tuple[datetime, str | No
     return (H + timedelta(minutes=minute), from_s, to_s)
 
 
+def evm(
+    minute: float, from_s: str | None, to_s: str, meta: dict
+) -> tuple[datetime, str | None, str, dict]:
+    """带 metadata 的事件(失联截断用例用)。"""
+    return (H + timedelta(minutes=minute), from_s, to_s, meta)
+
+
 class TestRunningSeconds:
     def test_full_hour(self):
         events = [ev(-120, None, "creating"), ev(-119, "creating", "running")]
@@ -95,10 +102,13 @@ async def seed_instance(
     user_id: int = 1,
     price: str = "1.6800",
     gpu_count: int = 1,
-    events: list[tuple[datetime, str | None, str]] | None = None,
+    events: list[tuple] | None = None,
     status: str = "stopped",
 ) -> int:
-    """直接落库实例 + 事件(合成时间戳),返回 instance_id。"""
+    """直接落库实例 + 事件(合成时间戳),返回 instance_id。
+
+    events 元素:(ts, from, to) 或 (ts, from, to, metadata)。
+    """
     async with sm() as session:
         inst = Instance(
             uuid=f"u{user_id}i{datetime.now(UTC).timestamp()}".replace(".", ""),
@@ -124,7 +134,8 @@ async def seed_instance(
         )
         session.add(inst)
         await session.flush()
-        for ts, from_s, to_s in events or []:
+        for e in events or []:
+            ts, from_s, to_s = e[0], e[1], e[2]
             session.add(
                 InstanceEvent(
                     instance_id=inst.id,
@@ -132,6 +143,7 @@ async def seed_instance(
                     to_status=to_s,
                     reason="seed",
                     actor="system",
+                    event_metadata=e[3] if len(e) > 3 else None,
                     created_at=ts,
                 )
             )
@@ -359,7 +371,9 @@ class TestHourlySettlementJob:
 
     async def test_long_running_instance_without_window_events(self, sm):
         """跨小时持续 running(窗口内无事件)也必须被结算。"""
-        await seed_instance(sm, events=[(H - timedelta(hours=5), "creating", "running")])
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=5), "creating", "running")], status="running"
+        )
         assert await settle_due_hours(sm, at=H_END + timedelta(minutes=2)) == 1
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
@@ -372,6 +386,7 @@ class TestHourlySettlementJob:
             price="3.0000",
             gpu_count=4,
             events=[(H - timedelta(hours=1), "creating", "running")],
+            status="running",
         )
         await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         async with sm() as session:
@@ -379,7 +394,9 @@ class TestHourlySettlementJob:
         assert bill.amount == Decimal("12.00")  # 3.00 × 4 卡
 
     async def test_ledger_balance_chain_consistent(self, sm):
-        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
+        )
         await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         async with sm() as session:
             entries = (
@@ -463,7 +480,9 @@ class TestCatchUpSettlement:
 
     async def test_missed_hours_are_caught_up(self, sm):
         # 持续 running 3 小时;worker 只在最后一个整点后跑了一轮
-        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
+        )
         at = H + timedelta(hours=3, minutes=2)
         assert await settle_due_hours(sm, at=at) == 1  # 首轮只结上一小时,水位线落 [12:00)
         at2 = H + timedelta(hours=6, minutes=2)  # 停机 3 小时后恢复
@@ -481,7 +500,9 @@ class TestCatchUpSettlement:
         assert w.balance == Decimal("100.00") - Decimal("1.68") * 4
 
     async def test_watermark_advances_and_blocks_replay(self, sm):
-        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
+        )
         at = H_END + timedelta(minutes=2)
         await settle_due_hours(sm, at=at)
         async with sm() as session:
@@ -492,7 +513,9 @@ class TestCatchUpSettlement:
         """停机超出追平上限:只结最近 MAX_CATCHUP_HOURS 小时,不把 worker 拖死。"""
         from app.modules.billing.settlement import MAX_CATCHUP_HOURS
 
-        await seed_instance(sm, events=[(H - timedelta(hours=1), "creating", "running")])
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
+        )
         await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         at = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
         assert await settle_due_hours(sm, at=at) == MAX_CATCHUP_HOURS
@@ -590,3 +613,156 @@ class TestOverdraftRefusal:
             )
         assert w.balance == Decimal("1.00")
         assert len(entries) == 1  # 只有那笔充值,没有半截扣款
+
+
+class TestNodeLostBillingTruncation:
+    """节点失联/Pod 丢失(node_lost/pod_lost):宽限观察期不计费。
+
+    计费截断到 Pod 首次 not-ready 的时刻(metadata.unready_since),而非 reconciler
+    判定时刻。挂了 = 节点断电后宽限期(默认 10 分钟)照收 GPU 时费;或尾账截断了、
+    整点结算又把宽限期秒数补扣回来(口径不一致)。
+    """
+
+    async def test_reconstruction_truncates_at_unready_since(self, sm):
+        unready = H + timedelta(minutes=5)
+        inst_id = await seed_instance(
+            sm,
+            status="failed",
+            events=[
+                ev(-30, "creating", "running"),
+                evm(15, "running", "failed", {"unready_since": unready.isoformat()}),
+            ],
+        )
+        async with sm() as session:
+            charged = await settle_instance_window(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("1.6800"),
+                gpu_count=1,
+                window_start=H,
+                window_end=H_END,
+                source="hourly",
+            )
+            await session.commit()
+        assert charged == Decimal("0.14")
+        # 重复结算(尾账/整点/追平同口径):零新增,不重复扣
+        async with sm() as session:
+            again = await settle_instance_window(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("1.6800"),
+                gpu_count=1,
+                window_start=H,
+                window_end=H_END,
+                source="hourly",
+            )
+            await session.commit()
+        assert again == Decimal("0.00")
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+        assert bill.seconds_used == 300  # 10:00~10:05,不是到判定时刻 10:15 的 900s
+        assert bill.amount == Decimal("0.14")
+
+    async def test_tail_listener_truncates_and_marks_detail(self, sm):
+        """尾账(与迁移同事务):截断窗口 + bills_hourly.detail 留截断依据。"""
+        from app.modules.billing.edge_listener import on_instance_transition
+
+        unready = H + timedelta(minutes=5)
+        inst_id = await seed_instance(sm, status="failed", events=[ev(-30, "creating", "running")])
+        async with sm() as session:
+            inst = await session.get(Instance, inst_id)
+            assert inst is not None
+            inst.unready_since = unready  # reconciler 判定时刻实例行上的现场
+            event = InstanceEvent(
+                instance_id=inst_id,
+                from_status="running",
+                to_status="failed",
+                reason="node_lost",
+                actor="system",
+                event_metadata={"unready_since": unready.isoformat()},
+                created_at=H + timedelta(minutes=15),  # 判定时刻(宽限 10 分钟后)
+            )
+            session.add(event)
+            await on_instance_transition(session, inst, event)
+            await session.commit()
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+            w = (await session.execute(select(Wallet))).scalar_one()
+        assert bill.seconds_used == 300
+        assert bill.amount == Decimal("0.14")
+        assert w.balance == Decimal("99.86")
+        assert bill.detail is not None
+        assert bill.detail["truncate_reason"] == "node_lost"
+        assert bill.detail["truncated_at"] == unready.isoformat()
+
+        # 整点结算同小时:口径一致,宽限期秒数不会被补扣回来
+        async with sm() as session:
+            topup = await settle_instance_window(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("1.6800"),
+                gpu_count=1,
+                window_start=H,
+                window_end=H_END,
+                source="hourly",
+            )
+            await session.commit()
+        assert topup == Decimal("0.00")
+
+    async def test_tail_truncation_across_hour_boundary(self, sm):
+        """unready 在上一小时:尾账落在 unready 所在小时(而非判定时刻的小时)。"""
+        from app.modules.billing.edge_listener import on_instance_transition
+
+        unready = H - timedelta(minutes=5)  # 09:55
+        inst_id = await seed_instance(sm, status="failed", events=[ev(-30, "creating", "running")])
+        async with sm() as session:
+            inst = await session.get(Instance, inst_id)
+            assert inst is not None
+            inst.unready_since = unready
+            event = InstanceEvent(
+                instance_id=inst_id,
+                from_status="running",
+                to_status="failed",
+                reason="node_lost",
+                actor="system",
+                event_metadata={"unready_since": unready.isoformat()},
+                created_at=H + timedelta(minutes=15),  # 10:15 判定
+            )
+            session.add(event)
+            await on_instance_transition(session, inst, event)
+            await session.commit()
+        async with sm() as session:
+            bills = (await session.execute(select(BillHourly))).scalars().all()
+        # 只有 09 点这一小时的账(09:30~09:55 = 1500s);10 点小时不产生账单
+        assert len(bills) == 1
+        assert bills[0].hour_start.replace(tzinfo=UTC) == H - timedelta(hours=1)
+        assert bills[0].seconds_used == 1500
+
+    async def test_pod_lost_without_unready_bills_to_event(self, sm):
+        """pod_lost 但从未观测到 not-ready(unready_since 为空):无法知道何时不可用,
+        维持按事件时刻结算 —— 截断只发生在有依据时。"""
+        from app.modules.billing.edge_listener import on_instance_transition
+
+        inst_id = await seed_instance(sm, status="failed", events=[ev(-30, "creating", "running")])
+        async with sm() as session:
+            inst = await session.get(Instance, inst_id)
+            assert inst is not None and inst.unready_since is None
+            event = InstanceEvent(
+                instance_id=inst_id,
+                from_status="running",
+                to_status="failed",
+                reason="pod_lost",
+                actor="system",
+                event_metadata={"phase": "Missing", "ready": False},
+                created_at=H + timedelta(minutes=15),
+            )
+            session.add(event)
+            await on_instance_transition(session, inst, event)
+            await session.commit()
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+        assert bill.seconds_used == 900  # 不截断
+        assert bill.detail is not None and "truncated_at" not in bill.detail

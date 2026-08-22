@@ -7,8 +7,10 @@
 微信/支付宝需真实商户凭据;未配置时报 PAYMENT_CHANNEL_ERROR。
 """
 
+import asyncio
 from collections.abc import Mapping
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,9 +18,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.core.platform_config import get_effective_platform_config
+from app.core.timeutil import ensure_utc, now_utc
 
 if TYPE_CHECKING:
     from app.modules.billing.models import Order
+
+
+# 回调时间戳新鲜度窗口(纵深防御;重放本身已由 handle_callback 的幂等挡住)。
+# 刻意放宽到 24h:渠道失败重试横跨约一天,关单后迟到的合法成功回调还要走
+# rescue 自动入账(见 payment_service),窗口必须覆盖这些正常迟到路径,否则会误伤。
+CALLBACK_MAX_AGE_SECONDS = 24 * 3600
+
+
+def _check_freshness(callback_at: datetime, *, key: str) -> None:
+    """回调时间戳超出 ±24h 即拒(判验签失败,不单独造错误码)。"""
+    if abs((now_utc() - ensure_utc(callback_at)).total_seconds()) > CALLBACK_MAX_AGE_SECONDS:
+        raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key=key)
 
 
 class CallbackResult:
@@ -94,7 +109,8 @@ class MockChannel:
                 amount=Decimal(str(data["amount"])),
                 success=bool(data.get("success", True)),
             )
-        except (ValueError, KeyError) as exc:
+        # InvalidOperation:amount 非数值;TypeError:报文不是 JSON 对象(数组/标量)
+        except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockCallbackParseFailed"
             ) from exc
@@ -190,13 +206,24 @@ class WechatChannel:
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """验签 + AES-GCM 解密 + 核对商户身份。
+        """验签 + 时间戳新鲜度 + AES-GCM 解密 + 核对商户身份。
 
         SDK 的失败路径不都是返回值(未签名探测请求会直接抛裸 Exception),在此统一归一化。
         """
         import asyncio
         from typing import Any
 
+        # 头部键大小写不敏感:路由层 dict(request.headers) 是小写,测试直传是原样大小写
+        lowered = {k.lower(): v for k, v in headers.items()}
+        try:
+            callback_at = datetime.fromtimestamp(
+                int(lowered.get("wechatpay-timestamp", "")), tz=UTC
+            )
+        except (ValueError, OverflowError, OSError) as exc:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            ) from exc
+        _check_freshness(callback_at, key="billing.wechatCallbackVerifyFailed")
         try:
             result: Any = await asyncio.to_thread(self._wxpay.callback, headers, body)
         except AppError:
@@ -210,11 +237,10 @@ class WechatChannel:
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
         resource: dict[str, Any] = result["resource"]
-        # 官方要求:除验签外还要核对通知里的商户号/应用号确实是自己的
-        if resource.get("mchid") not in (None, self._mchid) or resource.get("appid") not in (
-            None,
-            self._appid,
-        ):
+        # 官方要求:除验签外还要核对通知里的商户号/应用号确实是自己的。
+        # 缺失即判失败(真实交易通知的 resource 恒带 mchid/appid;按缺失放行会让
+        # 构造不带这两个字段的报文绕过核对)
+        if resource.get("mchid") != self._mchid or resource.get("appid") != self._appid:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
             )
@@ -329,7 +355,9 @@ class AlipayChannel:
             verify_with_rsa,
         )
 
-        params = dict(parse_qsl(body.decode("utf-8"), keep_blank_values=True))
+        # 官方验签口径:剔除空值参数(parse_qsl 默认 keep_blank_values=False)。
+        # 保留空值会把官方未参与加签的空字段拼进验签串,合法通知会被误判失败。
+        params = dict(parse_qsl(body.decode("utf-8")))
         sign = params.pop("sign", "")
         params.pop("sign_type", None)
         message = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
@@ -343,6 +371,16 @@ class AlipayChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
             )
+        # 新鲜度窗口:notify_time 是加签参数(北京时间,秒级),篡改即验签失败
+        try:
+            notify_at = datetime.strptime(
+                params.get("notify_time", ""), "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=timezone(timedelta(hours=8)))
+        except ValueError as exc:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackVerifyFailed"
+            ) from exc
+        _check_freshness(notify_at, key="billing.alipayCallbackVerifyFailed")
         # 官方通知校验清单的另外两条:app_id 必须是自己的应用,seller_id 必须是自己的收款账号
         if params.get("app_id") != self._app_id:
             raise AppError(
@@ -422,6 +460,9 @@ async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     cached = _real_channel_cache.get(name)
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
-    channel: PaymentChannel = WechatChannel(cfg) if name == "wechat" else AlipayChannel(cfg)
+    # 构造函数同步解析 PEM(RSA 密钥加载是阻塞 CPU 操作),出让事件循环
+    channel: PaymentChannel = await asyncio.to_thread(
+        WechatChannel if name == "wechat" else AlipayChannel, cfg
+    )
     _real_channel_cache[name] = (fingerprint, channel)
     return channel

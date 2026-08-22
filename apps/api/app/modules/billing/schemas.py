@@ -1,14 +1,15 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.money import MoneyOut
 
 
 class WalletOut(BaseModel):
     balance: MoneyOut
-    frozen_amount: MoneyOut
+    # 冻结预占未实现(见 models.Wallet 注释),字段保留仅为契约兼容
+    frozen_amount: MoneyOut = Field(description='预留字段:冻结预占未实现,恒为 "0.00"')
 
     model_config = {"from_attributes": True}
 
@@ -29,6 +30,8 @@ class LedgerEntryOut(BaseModel):
 class BillHourlyOut(BaseModel):
     id: int
     instance_id: int
+    # 展示用冗余(当前实例名;释放后仍可查,改名跟当前名),不参与对账
+    instance_name: str | None = None
     hour_start: datetime
     seconds_used: int
     unit_price: MoneyOut

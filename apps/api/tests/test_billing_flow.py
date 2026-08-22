@@ -126,7 +126,9 @@ class TestArrearsChain:
         assert (await get_instance(client, headers, uuid))["status"] == "released"
 
         # 事件链完整可追溯
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]
         reasons = [e["reason"] for e in events]
         assert "arrears_stop" in reasons
         assert "arrears_freeze" in reasons

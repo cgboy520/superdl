@@ -192,3 +192,68 @@ class TestPrewarmLifecycle:
         assert counts["requeued"] == 3
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pending"] * 3
+
+    async def test_pending_row_requeued_after_timeout(self, sm, fake: FakeOrchestrator) -> None:
+        """pending 行超时(默认 10min)重派:outbox 任务死信/丢失后行不再永远卡 pending。
+
+        挂了 = 预热任务一旦丢失,该 (镜像,节点) 永远不会再有缓存。
+        """
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        assert await pending_tasks(sm) == 3
+        # 模拟任务丢失(死信被人工清理/队列异常):删掉 pending 任务,行仍 pending
+        async with sm() as session:
+            for t in (await session.execute(select(OutboxTask))).scalars().all():
+                await session.delete(t)
+            await session.execute(
+                update(ImageNodeCache).values(updated_at=now_utc() - timedelta(minutes=11))
+            )
+            await session.commit()
+        counts = await prewarm_patrol(sm)
+        assert counts["requeued"] == 3
+        assert await pending_tasks(sm) == 3
+
+    async def test_not_ready_node_gets_no_new_task(self, sm, fake: FakeOrchestrator) -> None:
+        """NotReady 节点保留行但不派新任务(挂了 = 向失联节点反复派注定失败的拉取 Job)。
+
+        铺行只覆盖 Ready/Cordoned;failed 重试与 pending 重派同样跳过 NotReady。
+        """
+        from app.core.k8s.base import NodeInfo
+
+        fake.inject_node(
+            NodeInfo(
+                name="sick-node",
+                pool_label="hami",
+                gpu_model="RTX4090",
+                gpu_total=8,
+                gpu_used=0,
+                status="NotReady",
+            )
+        )
+        image_id = await make_image(sm)
+        counts = await prewarm_patrol(sm)
+        assert counts["planned"] == 3  # 只铺 Ready 三节点,sick-node 不在期望集
+        # 手工种一条 sick-node 的 failed 行(模拟它曾经 Ready 过):重试不应派发
+        async with sm() as session:
+            session.add(
+                ImageNodeCache(
+                    image_id=image_id,
+                    node_name="sick-node",
+                    status="failed",
+                    updated_at=now_utc() - timedelta(hours=1),
+                )
+            )
+            await session.commit()
+        counts = await prewarm_patrol(sm)
+        assert counts["requeued"] == 0
+        async with sm() as session:
+            tasks = (
+                (
+                    await session.execute(
+                        select(OutboxTask).where(OutboxTask.type == "image.prewarm")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert all(t.payload["node_name"] != "sick-node" for t in tasks)

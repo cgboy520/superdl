@@ -11,6 +11,18 @@ class Sku(Base):
     """商品规格。超卖参数是 SKU 属性;变更仅影响新实例(实例落库时快照)。"""
 
     __tablename__ = "skus"
+    # 业务唯一键:同一 (型号, 档位, MIG 切片, 算力份额) 只允许一条,mig_profile 为空也算相等
+    # (NULLS NOT DISTINCT),防并发/重试建出同义 SKU 把库存口径搅浑
+    __table_args__ = (
+        UniqueConstraint(
+            "gpu_model",
+            "tier",
+            "mig_profile",
+            "gpu_cores_pct",
+            name="uq_skus_business_key",
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64))

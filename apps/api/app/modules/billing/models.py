@@ -52,7 +52,8 @@ class BillHourly(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    instance_id: Mapped[int] = mapped_column(index=True)
+    # 查询走 UniqueConstraint(instance_id, hour_start) 前导列,不建冗余单列索引
+    instance_id: Mapped[int]
     user_id: Mapped[int] = mapped_column(index=True)
     hour_start: Mapped[datetime] = mapped_column(index=True)
     seconds_used: Mapped[int]
@@ -74,7 +75,7 @@ class BillDailyDisk(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    disk_id: Mapped[int] = mapped_column(index=True)
+    disk_id: Mapped[int]  # 查询走 UniqueConstraint(disk_id, day) 前导列,不建冗余单列索引
     user_id: Mapped[int] = mapped_column(index=True)
     day: Mapped[datetime]
     size_gb: Mapped[int]
@@ -96,6 +97,41 @@ class SettlementWatermark(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class SettlementGap(Base):
+    """结算缺口登记:水位线越过但账未结清的窗口,一律在此留痕。
+
+    两个来源:追平截断(catchup_truncated,整窗跳过,object_id=0)与死信
+    (dead_letter,单对象连续失败超限)。只登记不自动补:由补结任务或人工按
+    (kind, window_start, object_id) 追溯,处理后标记 resolved_at。
+    """
+
+    __tablename__ = "settlement_gaps"
+    __table_args__ = (UniqueConstraint("kind", "window_start", "object_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))  # hourly / daily_disk
+    window_start: Mapped[datetime]  # 缺口窗口起点(小时/自然日)
+    object_id: Mapped[int] = mapped_column(BigInteger, default=0)  # 实例/盘 id;0 = 整窗截断
+    reason: Mapped[str] = mapped_column(String(32))  # catchup_truncated / dead_letter
+    resolved_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ReconcileCheckpoint(Base):
+    """钱包-流水链式核对的增量游标:该用户已验到的最后一笔流水。
+
+    balance_after 为该笔提交后的钱包快照;updated_at 为本轮扫描开始的库时钟,
+    与 wallets.updated_at 比较决定下轮是否需重验(只扫增量流水)。
+    """
+
+    __tablename__ = "reconcile_checkpoints"
+
+    user_id: Mapped[int] = mapped_column(primary_key=True)
+    last_ledger_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    updated_at: Mapped[datetime]
+
+
 class Order(Base):
     """充值订单。支付回调幂等靠 channel_txn_id 唯一 + status 检查。"""
 
@@ -115,6 +151,8 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending / paid / closed / failed
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 管理端人工补单的幂等键:同键重放直接回当前状态,不再报「已入账」409
+    backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     qr_url: Mapped[str | None] = mapped_column(String(512))
     paid_at: Mapped[datetime | None]
     expires_at: Mapped[datetime]

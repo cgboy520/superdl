@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.core.logging import get_logger
-from app.core.money import as_price
+from app.core.money import as_amount, as_price
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
 from app.modules.catalog import inventory
@@ -34,11 +34,12 @@ async def list_market_skus(
         stmt = stmt.where(Sku.tier == tier)
     if gpu_model:
         stmt = stmt.where(Sku.gpu_model == gpu_model)
-    skus = (await session.execute(stmt)).scalars().all()
+    skus = list((await session.execute(stmt)).scalars().all())
+    counts = await inventory.get_available_counts(session, skus)  # 批量一次,免 N+1 扇出
     out: list[SkuMarketOut] = []
     for sku in skus:
         item = SkuMarketOut.model_validate(sku)
-        item.available_count = await inventory.get_available_count(sku)
+        item.available_count = counts.get(sku.id, 0)
         out.append(item)
     return out
 
@@ -126,10 +127,17 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
 
 
 def _checked_price(value: Decimal) -> Decimal:
-    """单价统一走 money.as_price(4 位);量化后为 0 直接拒绝(numeric(12,4) 会静默舍成免费)。"""
+    """单价统一走 money.as_price(4 位);量化后为 0 直接拒绝(numeric(12,4) 会静默舍成免费)。
+
+    另设可入账下限:入账按 2 位小数 ROUND_HALF_EVEN,单卡满 1 小时不足 ¥0.005
+    (即 4 位时价 < 0.0051,注意 0.0050 恰是 tie,HALF_EVEN 也舍为 0)的 SKU 会
+    全程计 ¥0.00 —— 上架即免费,必须拦在上架/改价时。
+    """
     price = as_price(value)
     if price <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
+    if as_amount(price) <= 0:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceBelowBillable")
     return price
 
 
@@ -138,7 +146,15 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     values["price_hourly"] = _checked_price(values["price_hourly"])
     sku = Sku(**values)
     session.add(sku)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="catalog.skuBusinessKeyExists",
+            http_status=status.HTTP_409_CONFLICT,
+        ) from exc
     await session.refresh(sku)
     return sku
 

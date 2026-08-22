@@ -14,7 +14,7 @@ from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import drain
 from app.modules.billing.models import BalanceLedger
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, gen_ed25519_key
+from tests.helpers import create_test_sku, gen_ed25519_key, seed_node_spec
 
 
 @pytest.fixture
@@ -62,6 +62,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
 
     # ── 4. 市场选共享档 → 创建实例(挂盘,Idempotency-Key)──
     sku_id = await create_test_sku(sm)  # 共享标准档 1.68/时 hami 池
+    await seed_node_spec(sm)  # 台账:hami 池 32 张 RTX4090 全空闲(市场库存数据源)
     market = (await client.get("/api/v1/skus")).json()
     assert any(s["id"] == sku_id and s["available_count"] > 0 for s in market)
 
@@ -93,7 +94,10 @@ async def test_full_lifecycle_drill(client, sm, fake):
         access["ssh_command"].startswith("ssh root@")
         and str(access["ssh_port"]) in access["ssh_command"]
     )
-    assert access["jupyter_url"].startswith("https://") and "token=" in access["jupyter_url"]
+    # 一次性 bootstrap 票据:token 不出现在 URL(访问日志/浏览器历史不沉淀长效凭据)
+    assert access["jupyter_url"].startswith("https://")
+    assert "/superdl-bootstrap?" in access["jupyter_url"]
+    assert "token=" not in access["jupyter_url"]
     # Pod 规格:HAMi 资源 + userns 加固 + JuiceFS 子路径
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert pod_spec.gpu_resources["nvidia.com/gpucores"] == "50"
@@ -114,8 +118,8 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert expected_secs - 2 <= bills[0]["seconds_used"] <= expected_secs + 15
 
     # ── 7. 事件时间线 = 计费依据,链路完整 ──────────────────
-    events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()
-    chain = [(e["from_status"], e["to_status"]) for e in events]
+    events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()["items"]
+    chain = [(e["from_status"], e["to_status"]) for e in reversed(events)]  # 降序 → 还原时序
     assert chain[0] == (None, "creating")
     assert ("creating", "running") in chain
     assert ("running", "stopping") in chain
@@ -125,9 +129,10 @@ async def test_full_lifecycle_drill(client, sm, fake):
     await client.delete(f"/api/v1/instances/{uuid}", headers=h)
     await drain(sm)
     await reconcile_once(sm)
-    events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()
-    assert events[-1]["to_status"] == "released"
-    assert events[-1]["event_metadata"]["disk_wipe"] == "blkdiscard"
+    events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()["items"]
+    assert events[0]["to_status"] == "released"
+    # 擦盘标记与实际行为一致(lvremove,未清零)
+    assert events[0]["event_metadata"]["disk_wipe"] == "lvremove(未清零)"
 
     disks = (await client.get("/api/v1/disks", headers=h)).json()
     assert disks[0]["status"] == "active" and disks[0]["mounted_instance_id"] is None

@@ -12,7 +12,7 @@ from app.core.outbox import OutboxTask, drain
 from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, create_user_with_key, fund_wallet
+from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -86,17 +86,39 @@ class TestCreateLifecycle:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
         # 事件时间线 = 计费依据
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
         assert [(e["from_status"], e["to_status"]) for e in events] == [
-            (None, "creating"),
             ("creating", "running"),
+            (None, "creating"),
         ]
 
-        # 接入信息
+        # 接入信息:jupyter_url 是一次性 bootstrap 票据(不含 token 本体)
         access = (await client.get(f"/api/v1/instances/{uuid}/access", headers=headers)).json()
         assert access["ssh_command"].startswith("ssh root@")
         assert uuid in access["jupyter_url"]
-        assert "token=" in access["jupyter_url"]
+        assert "/superdl-bootstrap?" in access["jupyter_url"]
+        assert "token=" not in access["jupyter_url"]
+        # 票据签名以实例 token 为 HMAC 密钥;token 密文落库(enc:v1:)
+        import hashlib
+        import hmac
+        from urllib.parse import parse_qs, urlparse
+
+        from app.modules.orchestrator.service import _token_plain
+
+        qs = parse_qs(urlparse(access["jupyter_url"]).query)
+        async with sm() as session:
+            inst = (
+                await session.execute(select(Instance).where(Instance.uuid == uuid))
+            ).scalar_one()
+        assert inst.jupyter_token.startswith("enc:v1:")
+        expected_sig = hmac.new(
+            _token_plain(inst).encode(),
+            f"{qs['code'][0]}.{qs['exp'][0]}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        assert qs["sig"][0] == expected_sig
 
     async def test_insufficient_balance(self, client, sm):
         headers, _user_id, key_id = await create_user_with_key(client)
@@ -237,7 +259,9 @@ class TestStopStartRestart:
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
         chain = [(e["from_status"], e["to_status"]) for e in events]
         assert ("running", "stopping") in chain
         assert ("stopping", "stopped") in chain
@@ -254,9 +278,11 @@ class TestFailureModes:
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "failed"
         # 计费边:running→failed 事件在案(结算按此停费)
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
-        assert events[-1]["from_status"] == "running"
-        assert events[-1]["to_status"] == "failed"
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert events[0]["from_status"] == "running"
+        assert events[0]["to_status"] == "failed"
         # 盘不动:pod_lost 是故障不是终结,用户释放前数据必须还在
         assert (f"tenant-{user_id}", uuid) in fake.instance_disks
         # 端口已回收
@@ -300,13 +326,17 @@ class TestFailureModes:
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "failed"
         # 计费边闭合:running→failed 事件在案,结算据此停费
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
-        assert (events[-1]["from_status"], events[-1]["to_status"]) == ("running", "failed")
-        assert events[-1]["reason"] == "node_lost"
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert (events[0]["from_status"], events[0]["to_status"]) == ("running", "failed")
+        assert events[0]["reason"] == "node_lost"
+        # 截断依据在事件里:计费按 unready_since 截断(宽限观察期不计费)
+        assert events[0]["event_metadata"]["unready_since"] is not None
         # 强删:失联节点上的 Pod 只有 grace=0 才会从 etcd 消失
         assert (ns, uuid) not in fake.pods
         # 用户拿到了通知,而不是自己发现 SSH 连不上
-        notes = (await client.get("/api/v1/notifications", headers=headers)).json()
+        notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("节点失联" in n["title"] for n in notes)
 
     async def test_creating_timeout_fails_and_cleans(self, client, sm, fake):
@@ -374,10 +404,12 @@ class TestRelease:
         instances = (await client.get("/api/v1/instances", headers=headers)).json()
         assert uuid not in [i["uuid"] for i in instances]
 
-        # 事件含擦盘标记,且盘真的被销毁了(释放是实例盘唯一的销毁时点)
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
-        assert events[-1]["to_status"] == "released"
-        assert events[-1]["event_metadata"]["disk_wipe"] == "blkdiscard"
+        # 事件含擦盘标记(lvremove,未清零——与 TopoLVM 实际行为一致),且盘真的被销毁了
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert events[0]["to_status"] == "released"
+        assert events[0]["event_metadata"]["disk_wipe"] == "lvremove(未清零)"
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
 
         # 端口回池
@@ -391,6 +423,52 @@ class TestRelease:
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.json()["code"] == "INSTANCE_NOT_STOPPED"
+
+    async def test_release_is_idempotent(self, client, sm, fake):
+        """重复 DELETE 不再 400:releasing/released 态直接回当前状态(照 delete_disk 写法)。"""
+        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain(sm)
+        await reconcile_once(sm)
+
+        resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
+        assert resp.json()["status"] == "releasing"
+        # 响应丢失后重试/双击:回当前状态而非 INSTANCE_NOT_STOPPED
+        resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "releasing"
+        await drain(sm)
+        await reconcile_once(sm)
+        resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "released"
+
+    async def test_events_pagination_desc(self, client, sm, fake):
+        """事件时间线:降序(最新在前)+ 游标翻页覆盖全量、不重不漏。"""
+        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain(sm)
+        await reconcile_once(sm)
+
+        page1 = (
+            await client.get(
+                f"/api/v1/instances/{uuid}/events", params={"limit": 2}, headers=headers
+            )
+        ).json()
+        assert len(page1["items"]) == 2
+        assert page1["next_cursor"] is not None
+        page2 = (
+            await client.get(
+                f"/api/v1/instances/{uuid}/events",
+                params={"limit": 2, "cursor": page1["next_cursor"]},
+                headers=headers,
+            )
+        ).json()
+        ids = [e["id"] for e in page1["items"] + page2["items"]]
+        assert ids == sorted(ids, reverse=True)  # 全局降序
+        assert page2["next_cursor"] is None
+        # 事件总数与全量一致(creating→running→stopping→stopped 共 4 条)
+        assert len(ids) == 4
 
     async def test_release_failed_instance_leaves_list(self, client, sm, fake):
         """失败实例可被释放并出清列表(failed 若无出边,用户永远删不掉它)。"""
@@ -407,8 +485,10 @@ class TestRelease:
 
         instances = (await client.get("/api/v1/instances", headers=headers)).json()
         assert uuid not in [i["uuid"] for i in instances]
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
-        assert [e["to_status"] for e in events][-3:] == ["failed", "releasing", "released"]
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert [e["to_status"] for e in events][:3] == ["released", "releasing", "failed"]
 
     async def test_cancel_creating_instance(self, client, sm, fake):
         """调度长期不满足时用户可主动取消 creating(不必干等超时);creating 未计费,零扣费。"""
@@ -428,8 +508,10 @@ class TestRelease:
         # 列表不再出现;事件链 creating → releasing → released,且从未进入 running(零 GPU 时费)
         instances = (await client.get("/api/v1/instances", headers=headers)).json()
         assert uuid not in [i["uuid"] for i in instances]
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
-        assert events[-1]["to_status"] == "released"
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert events[0]["to_status"] == "released"
         assert "running" not in [e["to_status"] for e in events]
 
 
@@ -531,9 +613,11 @@ class TestAdminOps:
             headers=ah,
         )
         assert resp.json()["status"] == "stopping"
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()
-        assert events[-1]["actor"] == "admin"
-        assert events[-1]["event_metadata"]["admin_reason"] == "违规用途排查"
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert events[0]["actor"] == "admin"
+        assert events[0]["event_metadata"]["admin_reason"] == "违规用途排查"
 
     async def test_frozen_cannot_start(self, client, sm, fake):
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
@@ -551,14 +635,25 @@ class TestAdminOps:
 
 class TestInventoryProvider:
     async def test_market_inventory_reflects_fake_capacity(self, client, sm, fake):
-        """orchestrator 的容量估算已注册为 catalog 库存 provider。"""
+        """市场库存按 (池, canonical 型号) 从节点台账估算(请求路径不碰 K8s)。"""
         from app.modules.catalog import inventory
 
         inventory.clear_cache()
         await create_test_sku(sm)  # hami 池,50% 算力,超卖 1.5
+        await seed_node_spec(sm)  # 台账:hami 池 32 张 RTX4090 全空闲
         skus = (await client.get("/api/v1/skus")).json()
         # 32 卡空闲 × (100×1.5/50)=3 实例/卡 = 96
         assert skus[0]["available_count"] == 96
+
+    async def test_market_inventory_excludes_not_ready_nodes(self, client, sm, fake):
+        """台账里 NotReady / Cordoned 节点的卡不计入可售库存(防止卖出调度不上的卡)。"""
+        from app.modules.catalog import inventory
+
+        inventory.clear_cache()
+        await create_test_sku(sm)
+        await seed_node_spec(sm, node_name="nr", status="NotReady")
+        skus = (await client.get("/api/v1/skus")).json()
+        assert skus[0]["available_count"] == 0
 
     async def test_shared_price_decimal(self, client, sm, fake):
         headers, user_id, key_id = await create_user_with_key(client, "13900000051")

@@ -45,10 +45,73 @@ async def create_user_with_key(
 
 
 async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> int:
+    """按业务唯一键 (gpu_model, tier, mig_profile, gpu_cores_pct) get-or-create。
+
+    skus 有业务键唯一约束:同一用例内多次 provisioning 复用同一条,而不是撞约束。
+    同键但其余字段不同的请求直接报错(测试写法问题,不该静默复用)。
+    """
+    from sqlalchemy import select
+
+    from app.modules.catalog.models import Sku
     from tests.test_catalog import make_sku
 
     async with sm() as session:
-        sku = make_sku(**overrides)
-        session.add(sku)
+        wanted = make_sku(**overrides)
+        existing = (
+            await session.execute(
+                select(Sku).where(
+                    Sku.gpu_model == wanted.gpu_model,
+                    Sku.tier == wanted.tier,
+                    Sku.mig_profile.is_(None)
+                    if wanted.mig_profile is None
+                    else Sku.mig_profile == wanted.mig_profile,
+                    Sku.gpu_cores_pct == wanted.gpu_cores_pct,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            same = (
+                existing.pool_label == wanted.pool_label
+                and existing.price_hourly == wanted.price_hourly
+                and existing.max_gpus_per_instance == wanted.max_gpus_per_instance
+            )
+            if not same:
+                raise AssertionError(
+                    "同业务键 SKU 已存在但字段不同:测试应换型号/份额或复用已有 SKU"
+                )
+            return existing.id
+        session.add(wanted)
         await session.commit()
-        return sku.id
+        return wanted.id
+
+
+async def seed_node_spec(
+    sm: async_sessionmaker[AsyncSession],
+    *,
+    node_name: str = "node-1",
+    pool_label: str = "hami",
+    gpu_model: str = "RTX4090",
+    gpu_count: int = 32,
+    gpu_used: int = 0,
+    status: str = "Ready",
+) -> None:
+    """写一条节点台账(node_specs):市场近似库存与创建软准入的唯一数据源。
+
+    巡检(60s)在真实环境写这张表;测试里显式播种等价于「巡检已跑过一轮」。
+    """
+    from app.core.timeutil import now_utc
+    from app.modules.nodes.models import NodeSpec
+
+    async with sm() as session:
+        session.add(
+            NodeSpec(
+                node_name=node_name,
+                pool_label=pool_label,
+                gpu_model=gpu_model,
+                gpu_count=gpu_count,
+                gpu_used=gpu_used,
+                status=status,
+                last_seen=now_utc(),
+            )
+        )
+        await session.commit()

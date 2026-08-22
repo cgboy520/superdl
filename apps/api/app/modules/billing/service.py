@@ -8,6 +8,7 @@ from app.modules.billing.payment_service import (
 from app.modules.billing.settlement import settle_disk_pending_days
 from app.modules.billing.wallet import (
     admin_list_orders,
+    assert_can_afford,
     balances_by_user,
     billed_by_instance,
     consumed_by_user,
@@ -18,12 +19,12 @@ from app.modules.billing.wallet import (
     hourly_bills_page,
     ledger_page,
     lock_wallet,
-    require_balance_at_least,
     revenue_summary,
 )
 
 __all__ = [
     "admin_list_orders",
+    "assert_can_afford",
     "backfill_order",
     "balances_by_user",
     "billed_by_instance",
@@ -36,7 +37,6 @@ __all__ = [
     "ledger_page",
     "list_payment_anomalies",
     "lock_wallet",
-    "require_balance_at_least",
     "revenue_summary",
     "settle_disk_pending_days",
     "verify_order",

@@ -81,6 +81,27 @@ class TestRecharge:
             orders = (await session.execute(select(Order))).scalars().all()
         assert len(orders) == 1
 
+    async def test_concurrent_same_key_first_request(self, client: AsyncClient, sm):
+        """同键并发首请求(双击/超时重试):唯一约束兜底,负方回查返回同一订单,不许 500。"""
+        import asyncio
+
+        headers = {**(await user_headers(client, "13700000039")), "Idempotency-Key": "race-1"}
+
+        async def create():
+            return await client.post(
+                "/api/v1/wallet/recharges",
+                json={"amount": "20.00", "channel": "mock"},
+                headers=headers,
+            )
+
+        a, b = await asyncio.gather(create(), create())
+        assert a.status_code == 201, a.text
+        assert b.status_code == 201, b.text
+        assert a.json()["order_no"] == b.json()["order_no"]
+        async with sm() as session:
+            orders = (await session.execute(select(Order))).scalars().all()
+        assert len(orders) == 1
+
     async def test_amount_limits(self, client: AsyncClient, sm):
         headers = await user_headers(client)
         resp = await client.post(
@@ -111,6 +132,29 @@ class TestRecharge:
         assert detail["status"] == "failed"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
+
+
+class TestMockCallbackParsing:
+    """mock 回调解析的畸形报文:一律 400 PAYMENT_CHANNEL_ERROR,不许漏成 500。"""
+
+    async def test_non_numeric_amount(self, client: AsyncClient):
+        resp = await client.post("/api/v1/webhooks/mock", json={"order_no": "X1", "amount": "abc"})
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
+
+    async def test_non_object_body(self, client: AsyncClient):
+        resp = await client.post(
+            "/api/v1/webhooks/mock",
+            content=b"[1,2,3]",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
+
+    async def test_missing_order_no(self, client: AsyncClient):
+        resp = await client.post("/api/v1/webhooks/mock", json={"amount": "10.00"})
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
 
     async def test_expired_orders_closed(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

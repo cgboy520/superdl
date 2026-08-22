@@ -299,7 +299,9 @@ class TestDiskArrearsChain:
         await balance_patrol(sm)
         d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
         assert d["status"] == "active"
-        assert d["frozen_started_at"] is None and d["grace_started_at"] is None
+        # grace_started_at sticky:宽限钟累计不随充值清零(防「欠费→充值→再欠费」无限循环);
+        # frozen_started_at 是删除倒计时,出冻结态即清零
+        assert d["frozen_started_at"] is None and d["grace_started_at"] is not None
 
 
 class TestDiskQuota:

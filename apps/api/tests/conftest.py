@@ -88,6 +88,17 @@ async def db(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession
         yield session
 
 
+@pytest.fixture(autouse=True)
+def _clear_inventory_cache() -> Iterator[None]:
+    """inventory 近似库存是 30s 进程内缓存:逐用例清空,防跨用例污染(TRUNCATE 会重置
+    自增 id,上一用例的缓存键可能命中本用例的新 SKU)。"""
+    from app.modules.catalog import inventory
+
+    inventory.clear_cache()
+    yield
+    inventory.clear_cache()
+
+
 @pytest.fixture
 async def client(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncClient]:
     from app.main import create_app

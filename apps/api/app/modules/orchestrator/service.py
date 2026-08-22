@@ -5,25 +5,32 @@
 - 「改 DB + 动 K8s」一律 outbox;请求路径绝不直接调 K8s
 """
 
+import hashlib
+import hmac
 import re
 import secrets
+import time
 from collections.abc import Awaitable, Callable, Iterable
+from datetime import timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from fastapi import status as http_status
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import CursorResult, func, select, union, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.crypto import decrypt_str, encrypt_str, is_encrypted
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import spec_to_gpu_request
-from app.core.gpu_models import canonical_gpu_model
+from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.outbox import enqueue
-from app.core.timeutil import now_utc
+from app.core.timeutil import ensure_utc, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
@@ -35,8 +42,12 @@ from app.modules.orchestrator.statemachine import validate_transition
 
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
+    from app.modules.nodes.service import GpuModelAggregate
 
 logger = get_logger(__name__)
+
+# 幂等键有效期:窗口内重放返回既有资源;窗口外同一键按新单处理
+IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 # 迁移监听器:billing 注册尾账/计费边处理,与状态迁移同事务
 TransitionListener = Callable[[AsyncSession, Instance, InstanceEvent], Awaitable[None]]
@@ -124,6 +135,38 @@ async def _require_cluster_for_tier(
     await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
 
 
+# ---------- Jupyter token(密文落库;bootstrap 票据入场) ----------
+
+
+def _encode_token(plaintext: str, *, instance_uuid: str) -> str:
+    """落库形态:AES-GCM 密文,AAD 绑定实例 uuid(防密文跨实例搬运)。"""
+    return encrypt_str(plaintext, aad=f"jupyter-token:{instance_uuid}")
+
+
+def _token_plain(instance: Instance) -> str:
+    """读出明文:enc:v1: 前缀走解密;存量明文行(加密上线前创建)原样返回。"""
+    if is_encrypted(instance.jupyter_token):
+        return decrypt_str(instance.jupyter_token, aad=f"jupyter-token:{instance.uuid}")
+    return instance.jupyter_token
+
+
+def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
+    """一次性入场票据:code(单次)+ 60s TTL + HMAC 签名(密钥=Jupyter token 本体)。
+
+    票据 URL 落在实例自己的域名上,由镜像内 bootstrap handler 验签、核销并
+    Set-Cookie 第一方会话 cookie;token 从此不进 URL(访问日志/浏览器历史/Referer)。
+    验签密钥随 token 轮换(reset-jupyter-token),旧票据即全部作废。
+    """
+    settings = get_settings()
+    code = secrets.token_urlsafe(12)
+    exp = int(time.time()) + settings.jupyter_ticket_ttl_seconds
+    sig = hmac.new(token_plain.encode(), f"{code}.{exp}".encode(), hashlib.sha256).hexdigest()
+    return (
+        f"https://{instance.uuid}.{settings.jupyter_domain_suffix}"
+        f"/superdl-bootstrap?code={code}&exp={exp}&sig={sig}"
+    )
+
+
 # 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串
 _IMAGE_REF_RE = re.compile(
     r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
@@ -189,6 +232,68 @@ async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) 
         )
 
 
+# ---------- 容量估算((池, 型号) 双维度,数据源是节点台账而非请求路径直连 K8s) ----------
+
+
+def _sku_free_capacity(sku: "Sku", aggregates: list["GpuModelAggregate"]) -> tuple[int | None, int]:
+    """该 SKU 的近似可分配量:返回 (匹配桶的 Ready 空闲卡合计, 折算后可售实例数)。
+
+    第一项为 None 表示台账无此池×型号数据。台账(node_specs)只统计 Ready 节点:
+    NotReady/Cordoned/Missing 不卖。共享档按算力份额折算可售实例数(超卖生效在调度层)。
+    """
+    wanted = canonical_gpu_model(sku.gpu_model)
+    matching = [
+        a
+        for a in aggregates
+        if a.pool_label == sku.pool_label and model_matches(wanted, a.gpu_model)
+    ]
+    if not matching:
+        return None, 0
+    free = sum(a.ready_gpu_free for a in matching)
+    if sku.tier in _SHARED_TIERS:
+        per_gpu = max(1, int(100 * float(sku.oversell_cores)) // max(1, sku.gpu_cores_pct))
+        return free, free * per_gpu
+    return free, free
+
+
+async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int) -> None:
+    """创建软准入:台账明确显示该 (池, 型号) 可分配量不足 → 即时 409。
+
+    台账 60s 粒度,只是近似:无数据(巡检未覆盖/全新集群)一律放行,交调度器裁决;
+    放行后仍可能调度超时转 failed,本判断只挡「确定卖不出去」的单。
+    """
+    aggregates = await nodes_service.gpu_model_aggregates(session)
+    matching_free, sellable = _sku_free_capacity(sku, aggregates)
+    if matching_free is None:
+        return
+    if sellable < gpu_count:
+        raise AppError(
+            ErrorCode.NO_CAPACITY,
+            key="orchestrator.noCapacity",
+            params={"model": sku.gpu_model, "pool": sku.pool_label},
+            http_status=http_status.HTTP_409_CONFLICT,
+        )
+
+
+async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
+    """该用户 creating/starting 实例的时费合计:尚未跑起来不算「在途」,
+    assert_can_afford 看不到它们,由调用方并入 additional_hourly 防止连续开户绕过护栏。
+    """
+    rows = (
+        (
+            await session.execute(
+                select(Instance.price_hourly, Instance.gpu_count).where(
+                    Instance.user_id == user_id,
+                    Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    return sum((as_amount(price * count) for price, count in rows), Decimal("0.00"))
+
+
 async def create_instance(
     session: AsyncSession,
     user_id: int,
@@ -210,7 +315,11 @@ async def create_instance(
             )
         ).scalar_one_or_none()
         if existing is not None:
-            return existing
+            if now_utc() - ensure_utc(existing.created_at) < IDEMPOTENCY_WINDOW:
+                return existing
+            # 窗口外同一键按新单处理:先释放键位(唯一约束 (user_id, idempotency_key))
+            existing.idempotency_key = None
+            await session.flush()
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
     await _require_cluster_for_tier(session, sku.tier, with_data_disk=data_disk_id is not None)
@@ -221,65 +330,94 @@ async def create_instance(
             params={"max": sku.max_gpus_per_instance},
         )
     await _validate_image_ref(session, image_ref)
-    await _check_user_quota(session, user_id, gpu_count)
-    # 计费护栏:开机前校验余额 ≥ 1 小时预估费用
+    await _soft_admit_capacity(session, sku, gpu_count)
+
+    # 临界区开始:先 FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
+    # 在途统计与配额校验必须在锁内做(先算后锁 = 经典 TOCTOU:两请求都在对方提交前统计)。
+    # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增。
     estimate = as_amount(sku.price_hourly * gpu_count)
-    await billing_service.require_balance_at_least(
-        session,
-        user_id,
-        estimate,
-        hint_key="billing.insufficientForStart",
-        hint_params={"amount": estimate},
-    )
-
-    keys = await account_service.list_ssh_keys(session, user_id)
-    selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
-    if not selected:
-        raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
-
-    disk_id_validated: int | None = None
-    if data_disk_id is not None:
-        from app.modules.orchestrator import disks as disks_service
-
-        # 先校验归属与状态;实例 id 生成后再占用
-        disk = await disks_service.get_disk_by_id_for_user(session, user_id, data_disk_id)
-        disk_id_validated = disk.id
-
-    instance = Instance(
-        uuid=uuid4().hex,
-        user_id=user_id,
-        name=name or f"instance-{uuid4().hex[:6]}",
-        sku_id=sku.id,
-        spec=_snapshot_spec(sku),
-        price_hourly=sku.price_hourly,
-        gpu_count=gpu_count,
-        image_ref=image_ref,
-        status=sm_def.CREATING,
-        k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
-        jupyter_token=secrets.token_urlsafe(24),
-        authorized_keys=selected,
-        data_disk_id=disk_id_validated,
-        idempotency_key=idempotency_key,
-    )
-    session.add(instance)
-    await session.flush()
-    if disk_id_validated is not None:
-        from app.modules.orchestrator import disks as disks_service
-
-        await disks_service.attach_for_instance(session, user_id, disk_id_validated, instance.id)
-    session.add(
-        InstanceEvent(
-            instance_id=instance.id,
-            from_status=None,
-            to_status=sm_def.CREATING,
-            reason="create",
-            actor="user",
-            event_metadata={"sku_id": sku.id, "gpu_count": gpu_count},
-            created_at=now_utc(),
+    try:
+        await billing_service.lock_wallet(session, user_id)
+        pending = await _pending_hourly(session, user_id)
+        await billing_service.assert_can_afford(
+            session, user_id, additional_hourly=as_amount(estimate + pending)
         )
-    )
-    enqueue(session, "instance.create", {"instance_id": instance.id})
-    await session.commit()
+        await _check_user_quota(session, user_id, gpu_count)
+
+        keys = await account_service.list_ssh_keys(session, user_id)
+        selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
+        if not selected:
+            raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
+
+        disk_id_validated: int | None = None
+        if data_disk_id is not None:
+            from app.modules.orchestrator import disks as disks_service
+
+            # 先校验归属与状态;实例 id 生成后再占用
+            disk = await disks_service.get_disk_by_id_for_user(session, user_id, data_disk_id)
+            disk_id_validated = disk.id
+
+        instance_uuid = uuid4().hex
+        jupyter_token = secrets.token_urlsafe(24)
+        instance = Instance(
+            uuid=instance_uuid,
+            user_id=user_id,
+            name=name or f"instance-{uuid4().hex[:6]}",
+            sku_id=sku.id,
+            spec=_snapshot_spec(sku),
+            price_hourly=sku.price_hourly,
+            gpu_count=gpu_count,
+            image_ref=image_ref,
+            status=sm_def.CREATING,
+            k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
+            jupyter_token=_encode_token(jupyter_token, instance_uuid=instance_uuid),
+            authorized_keys=selected,
+            data_disk_id=disk_id_validated,
+            idempotency_key=idempotency_key,
+        )
+        session.add(instance)
+        try:
+            await session.flush()
+        except IntegrityError:
+            # 并发同幂等键:对方已落库,回滚后按重放返回既有实例(不多开一台)
+            await session.rollback()
+            raced = (
+                await session.execute(
+                    select(Instance).where(
+                        Instance.user_id == user_id, Instance.idempotency_key == idempotency_key
+                    )
+                )
+            ).scalar_one_or_none()
+            if raced is not None:
+                return raced
+            raise
+        if disk_id_validated is not None:
+            from app.modules.orchestrator import disks as disks_service
+
+            await disks_service.attach_for_instance(
+                session, user_id, disk_id_validated, instance.id
+            )
+        session.add(
+            InstanceEvent(
+                instance_id=instance.id,
+                from_status=None,
+                to_status=sm_def.CREATING,
+                reason="create",
+                actor="user",
+                event_metadata={"sku_id": sku.id, "gpu_count": gpu_count},
+                created_at=now_utc(),
+            )
+        )
+        enqueue(session, "instance.create", {"instance_id": instance.id})
+        await session.commit()
+    except IntegrityError as exc:
+        # 钱包首建与并发开户互撞唯一索引(locks 序列化前的瞬时竞争):可安全重试
+        await session.rollback()
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="common.retryableConflict",
+            http_status=http_status.HTTP_409_CONFLICT,
+        ) from exc
     logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
     return instance
 
@@ -307,15 +445,27 @@ async def list_instances(session: AsyncSession, user_id: int) -> list[Instance]:
     )
 
 
-async def list_events(session: AsyncSession, instance_id: int) -> list[InstanceEvent]:
-    return list(
-        (
-            await session.execute(
-                select(InstanceEvent)
-                .where(InstanceEvent.instance_id == instance_id)
-                .order_by(InstanceEvent.id)
-            )
-        ).scalars()
+async def list_events(
+    session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
+):
+    """实例事件时间线:降序(最新在前)游标分页,与资金流水/账单同一套分页语义。"""
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.modules.orchestrator.schemas import InstanceEventOut
+
+    lim = clamp_limit(limit)
+    stmt = (
+        select(InstanceEvent)
+        .where(InstanceEvent.instance_id == instance_id)
+        .order_by(InstanceEvent.id.desc())
+        .limit(lim + 1)
+    )
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(InstanceEvent.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    return Page[InstanceEventOut](
+        items=[InstanceEventOut.model_validate(e) for e in rows[:lim]], next_cursor=next_cursor
     )
 
 
@@ -341,23 +491,42 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
     return instance
 
 
+async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
+    """(重新)占用数据盘标记。failed 恢复开机时:失败边缘已解挂(detach),盘若还在就重新占用;
+    盘已被用户删掉则放弃挂载点(系统盘数据仍在,实例照常能开)。"""
+    if instance.data_disk_id is None:
+        return
+    disk = await session.get(DataDisk, instance.data_disk_id)
+    if disk is None or disk.status == "deleted":
+        instance.data_disk_id = None
+        await session.flush()
+        return
+    if disk.mounted_instance_id == instance.id:
+        return
+    if disk.status != "active":
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
+    if disk.mounted_instance_id is not None:
+        raise AppError(ErrorCode.DISK_IN_USE, key="disks.mountedElsewhere")
+    disk.mounted_instance_id = instance.id
+    await session.flush()
+
+
 async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
     if instance.status == sm_def.FROZEN:
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
-    if instance.status != sm_def.STOPPED:
+    recovered = instance.status == sm_def.FAILED
+    if instance.status != sm_def.STOPPED and not recovered:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
     await _require_cluster_for_tier(
         session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
     )
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
-    await billing_service.require_balance_at_least(
-        session,
-        user_id,
-        estimate,
-        hint_key="billing.insufficientForStart",
-        hint_params={"amount": estimate},
-    )
+    await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
+    if recovered:
+        # 故障恢复:failed → stopped(复用同一块实例盘)→ 走正常开机链路
+        await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
+        await _rebind_data_disk(session, instance)
     await transition(session, instance, sm_def.STARTING, reason="user_start", actor="user")
     enqueue(session, "instance.start", {"instance_id": instance.id})
     await session.commit()
@@ -390,11 +559,16 @@ async def release_instance(
     session: AsyncSession, user_id: int, uuid: str, *, actor: str = "user"
 ) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
+        # 幂等释放:释放中/已释放直接回当前状态(照 delete_disk 的 deleting 写法),
+        # 重试/双击不再报 400
+        return instance
     if instance.status not in (
         sm_def.STOPPED,
         sm_def.FROZEN,
         sm_def.FAILED,  # 清理失败实例,同走 releasing→released
         sm_def.CREATING,  # 用户主动取消,不等 creating 超时
+        sm_def.STOPPING,  # 关机悬挂:允许用户直接放弃(reconciler 超时强删兜底)
     ):
         raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, key="orchestrator.releaseNeedsStopped")
     await transition(session, instance, sm_def.RELEASING, reason=f"{actor}_release", actor=actor)
@@ -445,19 +619,27 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     return next_port
 
 
-async def block_port(sm: Any, port: int, *, reason: str) -> None:
+async def block_port(sm: Any, port: int, *, reason: str, expected_instance_id: int | None) -> None:
     """把一个被集群其它对象占用的端口标记为不可分配。独立事务提交(调用方那笔要回滚)。
 
     调用方须先 rollback 再调本函数,否则未提交的同端口 PortAllocation 会锁死这笔事务。
+    防迟到的占用报告覆盖活分配:仅当该端口空闲、或正分配给发起本次报告的实例
+    (expected_instance_id,重启换端口自愈路径)时才落 blocked;已分配给其它实例的
+    端口说明报告已过时,跳过不破坏在用归属。
     """
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+    condition = PortAllocation.instance_id.is_(None)
+    if expected_instance_id is not None:
+        condition = condition | (PortAllocation.instance_id == expected_instance_id)
     async with sm() as session:
         await session.execute(
             pg_insert(PortAllocation)
             .values(port=port, instance_id=None, blocked=True)
             .on_conflict_do_update(
-                index_elements=["port"], set_={"blocked": True, "instance_id": None}
+                index_elements=["port"],
+                set_={"blocked": True, "instance_id": None},
+                where=condition,
             )
         )
         await session.commit()
@@ -514,7 +696,7 @@ def build_pod_spec(
         ssh_node_port=instance.ssh_port,
         jupyter_host=f"{instance.uuid}.{settings.jupyter_domain_suffix}",
         env={
-            "JUPYTER_TOKEN": instance.jupyter_token,
+            "JUPYTER_TOKEN": _token_plain(instance),
             # 实例自己的域名:镜像据此收敛 Jupyter 的 Origin 校验(防跨站 WebSocket)
             "JUPYTER_ALLOW_ORIGIN": (f"https://{instance.uuid}.{settings.jupyter_domain_suffix}"),
         },
@@ -546,20 +728,20 @@ def build_access(instance: Instance) -> dict[str, Any]:
     settings = get_settings()
     if instance.status != sm_def.RUNNING:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.accessNeedsRunning")
+    token_plain = _token_plain(instance)
     return {
         "ssh_host": settings.ssh_host,
         "ssh_port": instance.ssh_port,
         "ssh_command": f"ssh root@{settings.ssh_host} -p {instance.ssh_port}",
-        "jupyter_url": (
-            f"https://{instance.uuid}.{settings.jupyter_domain_suffix}/"
-            f"?token={instance.jupyter_token}"
-        ),
+        # 一次性入场票据(单次、60s):浏览器打在实例域名的 bootstrap handler 上,
+        # 验签核销后 Set-Cookie 第一方会话 cookie 再跳 Jupyter;token 不出现在 URL。
+        "jupyter_url": _new_jupyter_ticket(instance, token_plain),
     }
 
 
 async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
-    instance.jupyter_token = secrets.token_urlsafe(24)
+    instance.jupyter_token = _encode_token(secrets.token_urlsafe(24), instance_uuid=instance.uuid)
     # 需要重建 Pod 才生效(env 注入);running 时走 restart 流程
     if instance.status == sm_def.RUNNING:
         await transition(
@@ -578,14 +760,15 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
 # ---------- 近似库存 provider(注册进 catalog) ----------
 
 
-async def estimate_available(sku: "Sku") -> int:
-    orch = get_orchestrator()
-    free_gpus = await orch.available_gpus(sku.pool_label)
-    if sku.tier in ("shared_std", "shared_eco"):
-        # 共享档按算力份额折算可售实例数(近似;超卖参数生效在调度层)
-        per_gpu = max(1, int(100 * float(sku.oversell_cores)) // max(1, sku.gpu_cores_pct))
-        return free_gpus * per_gpu
-    return free_gpus
+async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> dict[int, int]:
+    """市场近似库存(批量):sku_id → 可售实例数。
+
+    数据源是节点台账(node_specs,巡检 60s 粒度),按 (池, canonical 型号) 双维度
+    聚合 Ready 节点空闲卡;请求路径不碰 K8s,台账一次查询供全部 SKU。
+    台账无该池×型号数据 → 0(与市场页「无货」语义一致)。
+    """
+    aggregates = await nodes_service.gpu_model_aggregates(session)
+    return {sku.id: _sku_free_capacity(sku, aggregates)[1] for sku in skus}
 
 
 # ---------- 管理端 ----------
@@ -665,8 +848,12 @@ async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> 
 
 async def billing_events_before(
     session: AsyncSession, instance_id: int, before: Any
-) -> list[tuple[Any, str | None, str]]:
-    """实例截至某时刻的事件 (created_at, from_status, to_status),按发生序。"""
+) -> list[tuple[Any, str | None, str, Any]]:
+    """实例截至某时刻的事件 (created_at, from_status, to_status, event_metadata),按发生序。
+
+    metadata 随行返回:node_lost/pod_lost 的退出边带 unready_since,结算据此把
+    计费截断到 Pod 首次不可用时点(平台责任时段不向用户计费)。
+    """
     return list(
         (
             await session.execute(
@@ -674,6 +861,7 @@ async def billing_events_before(
                     InstanceEvent.created_at,
                     InstanceEvent.from_status,
                     InstanceEvent.to_status,
+                    InstanceEvent.event_metadata,
                 )
                 .where(
                     InstanceEvent.instance_id == instance_id,
@@ -692,38 +880,22 @@ async def billing_candidates(
 ) -> list[tuple[int, int, Any, int]]:
     """小时结算候选:(instance_id, user_id, price_hourly, gpu_count)。
 
-    候选 = 截至窗口末仍在 running 的实例 ∪ 窗口内有事件的实例。
+    候选 = 当前 running 的实例 ∪ 自窗口起点以来离开过 running 的实例。
+    完备性论证:「窗口末仍在 running」= 现在仍 running ∪ 窗口末之后才离开 running;
+    每个已结束的 running 区间都有一条 from_status='running' 的离开事件。
+    两条腿都走索引(instances.status / instance_events.created_at),
+    不再对全量历史事件做 DISTINCT ON。
     """
-    latest = (
-        select(InstanceEvent.instance_id, InstanceEvent.to_status)
-        .where(InstanceEvent.created_at < window_end)
-        .distinct(InstanceEvent.instance_id)
-        .order_by(InstanceEvent.instance_id, InstanceEvent.id.desc())
-    ).subquery()
-    a_ids = set(
-        (
-            await session.execute(
-                select(latest.c.instance_id).where(latest.c.to_status == sm_def.RUNNING)
-            )
+    running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
+    exited = (
+        select(InstanceEvent.instance_id.label("iid"))
+        .where(
+            InstanceEvent.from_status == sm_def.RUNNING,
+            InstanceEvent.created_at >= window_start,
         )
-        .scalars()
-        .all()
+        .distinct()
     )
-    b_ids = set(
-        (
-            await session.execute(
-                select(InstanceEvent.instance_id)
-                .where(
-                    InstanceEvent.created_at >= window_start,
-                    InstanceEvent.created_at < window_end,
-                )
-                .distinct()
-            )
-        )
-        .scalars()
-        .all()
-    )
-    candidates = a_ids | b_ids
+    candidates = [row[0] for row in (await session.execute(union(running_now, exited))).all()]
     if not candidates:
         return []
     return list(
@@ -779,6 +951,19 @@ async def instance_hourly_prices(
         .all()
     )
     return {iid: as_amount(price * count) for iid, price, count in rows}
+
+
+async def instance_names(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
+    """账单展示用:instance_id → 实例名(释放后行保留,改名跟当前名)。"""
+    ids = list(instance_ids)
+    if not ids:
+        return {}
+    rows = (
+        (await session.execute(select(Instance.id, Instance.name).where(Instance.id.in_(ids))))
+        .tuples()
+        .all()
+    )
+    return dict(rows)
 
 
 async def list_running_instances_by_user(session: AsyncSession) -> dict[int, list[Instance]]:
@@ -894,30 +1079,25 @@ async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrea
     return await disks_service.arrears_transition_disks(session, user_id, in_arrears)
 
 
-async def instance_disk_stats_by_user(session: AsyncSession) -> dict[int, dict[str, int]]:
-    """管理端租户表:user_id → {instances, disk_gb}。"""
-    inst_rows = (
-        (
-            await session.execute(
-                select(Instance.user_id, func.count())
-                .where(Instance.status != sm_def.RELEASED)
-                .group_by(Instance.user_id)
-            )
-        )
-        .tuples()
-        .all()
+async def instance_disk_stats_by_user(
+    session: AsyncSession, user_ids: list[int] | None = None
+) -> dict[int, dict[str, int]]:
+    """管理端租户表:user_id → {instances, disk_gb}。user_ids 给定则只聚合这些用户。"""
+    inst_stmt = (
+        select(Instance.user_id, func.count())
+        .where(Instance.status != sm_def.RELEASED)
+        .group_by(Instance.user_id)
     )
-    disk_rows = (
-        (
-            await session.execute(
-                select(DataDisk.user_id, func.coalesce(func.sum(DataDisk.size_gb), 0))
-                .where(DataDisk.status != "deleted")
-                .group_by(DataDisk.user_id)
-            )
-        )
-        .tuples()
-        .all()
+    disk_stmt = (
+        select(DataDisk.user_id, func.coalesce(func.sum(DataDisk.size_gb), 0))
+        .where(DataDisk.status != "deleted")
+        .group_by(DataDisk.user_id)
     )
+    if user_ids is not None:
+        inst_stmt = inst_stmt.where(Instance.user_id.in_(user_ids))
+        disk_stmt = disk_stmt.where(DataDisk.user_id.in_(user_ids))
+    inst_rows = (await session.execute(inst_stmt)).tuples().all()
+    disk_rows = (await session.execute(disk_stmt)).tuples().all()
     stats: dict[int, dict[str, int]] = {}
     for uid, n in inst_rows:
         stats.setdefault(uid, {"instances": 0, "disk_gb": 0})["instances"] = int(n)

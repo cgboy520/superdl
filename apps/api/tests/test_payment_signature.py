@@ -6,6 +6,8 @@
 
 import base64
 import json
+import time
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import pytest
@@ -55,8 +57,11 @@ def _alipay_channel(keypair: tuple[str, str], *, seller_id: str = SELLER_ID) -> 
     )
 
 
-def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
-    """按官方异步通知的加签口径构造一条通知体:去 sign/sign_type,按 key 排序,k=v 用 & 连。"""
+def _alipay_notify(private_pem: str, *, stale: bool = False, **overrides: str) -> bytes:
+    """按官方异步通知的加签口径构造一条通知体:去 sign/sign_type 与空值,按 key 排序,k=v 用 & 连。"""
+    # notify_time 是加签参数(北京时间串);新鲜度窗口要求它在 ±24h 内
+    at = datetime.now(UTC) - (timedelta(days=2) if stale else timedelta())
+    notify_time = (at + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
     params = {
         "app_id": APP_ID,
         "seller_id": SELLER_ID,
@@ -65,6 +70,7 @@ def _alipay_notify(private_pem: str, **overrides: str) -> bytes:
         "total_amount": "100.00",
         "trade_status": "TRADE_SUCCESS",
         "notify_id": "abc123",
+        "notify_time": notify_time,
         **overrides,
     }
     # 加签口径是**解码后**的值,而真实通知是 application/x-www-form-urlencoded:
@@ -137,6 +143,24 @@ class TestAlipayCallbackSignature:
         )
         assert result.success is False
 
+    async def test_stale_notify_time_rejected(self, keypair):
+        """新鲜度窗口:48h 前的合法签名通知(重放/异常迟到)直接拒。"""
+        priv, _pub = keypair
+        with pytest.raises(AppError) as exc:
+            await _alipay_channel(keypair).parse_callback({}, _alipay_notify(priv, stale=True))
+        assert exc.value.message_key == "billing.alipayCallbackVerifyFailed"
+
+    async def test_blank_value_param_still_verifies(self, keypair):
+        """官方口径剔除空值参数:通知里带空字段(如 body=)不应误判验签失败。"""
+        from urllib.parse import parse_qsl
+
+        priv, _pub = keypair
+        body = _alipay_notify(priv) + b"&body=&extend="
+        #  sanity:解析侧确实会丢掉这两个空值参数
+        assert dict(parse_qsl(body.decode())).get("body") is None
+        result = await _alipay_channel(keypair).parse_callback({}, body)
+        assert result.success is True
+
 
 APIV3_KEY = "0123456789abcdef0123456789abcdef"
 MCHID = "1900000001"
@@ -158,7 +182,9 @@ def _wechat_channel(keypair: tuple[str, str]) -> WechatChannel:
     )
 
 
-def _wechat_notify(private_pem: str, resource_plain: dict) -> tuple[dict, bytes]:
+def _wechat_notify(
+    private_pem: str, resource_plain: dict, *, stale: bool = False
+) -> tuple[dict, bytes]:
     """构造一条 APIv3 通知:资源体 AES-256-GCM 加密,再对 timestamp\\nnonce\\nbody\\n 签名。"""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -180,7 +206,9 @@ def _wechat_notify(private_pem: str, resource_plain: dict) -> tuple[dict, bytes]
         },
     }
     body = json.dumps(body_obj).encode()
-    timestamp, wx_nonce = "1787000000", "nonce123"
+    # 新鲜度窗口要求 Wechatpay-Timestamp 在 ±24h 内,用当前时刻(死值会被拒)
+    ts = int(time.time()) - (2 * 24 * 3600 if stale else 0)
+    timestamp, wx_nonce = str(ts), "nonce123"
     signed = f"{timestamp}\n{wx_nonce}\n{body.decode()}\n".encode()
     signature = _sign(private_pem, signed)
     headers = {
@@ -237,3 +265,29 @@ class TestWechatCallbackSignature:
         with pytest.raises(AppError) as exc:
             await _wechat_channel(keypair).parse_callback(headers, body)
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
+
+    async def test_missing_mchid_rejected(self, keypair):
+        """通知不带 mchid/appid 即判失败(此前按缺失放行,恒真分支等于没核对)。"""
+        priv, _pub = keypair
+        resource = _wx_resource()
+        del resource["mchid"]
+        headers, body = _wechat_notify(priv, resource)
+        with pytest.raises(AppError) as exc:
+            await _wechat_channel(keypair).parse_callback(headers, body)
+        assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
+
+    async def test_stale_timestamp_rejected(self, keypair):
+        """新鲜度窗口:48h 前的合法签名通知(重放/异常迟到)直接拒。"""
+        priv, _pub = keypair
+        headers, body = _wechat_notify(priv, _wx_resource(), stale=True)
+        with pytest.raises(AppError) as exc:
+            await _wechat_channel(keypair).parse_callback(headers, body)
+        assert exc.value.message_key == "billing.wechatCallbackVerifyFailed"
+
+    async def test_lowercase_header_names_accepted(self, keypair):
+        """生产路径 dict(request.headers) 的键是小写:时间戳读取必须大小写不敏感。"""
+        priv, _pub = keypair
+        headers, body = _wechat_notify(priv, _wx_resource())
+        lowered = {k.lower(): v for k, v in headers.items()}
+        result = await _wechat_channel(keypair).parse_callback(lowered, body)
+        assert result.success is True

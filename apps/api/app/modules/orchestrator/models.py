@@ -2,7 +2,16 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import BigInteger, Numeric, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,7 +20,16 @@ from app.core.db import Base
 
 class Instance(Base):
     __tablename__ = "instances"
-    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        # 状态枚举兜底(手工 SQL 旁路防护);合法迁移见 statemachine.TRANSITIONS
+        # (naming convention 自动补 ck_<表>_ 前缀,声明短名)
+        CheckConstraint(
+            "status IN ('creating', 'running', 'stopping', 'stopped', 'starting', 'frozen',"
+            " 'releasing', 'released', 'failed')",
+            name="status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column(String(32), unique=True)  # k8s 对象名
@@ -27,9 +45,10 @@ class Instance(Base):
     version: Mapped[int] = mapped_column(default=0)  # 乐观锁
     k8s_namespace: Mapped[str] = mapped_column(String(64))
     pod_name: Mapped[str | None] = mapped_column(String(64))
-    node_name: Mapped[str | None] = mapped_column(String(64))
+    node_name: Mapped[str | None] = mapped_column(String(253))  # 与 node_specs 同宽(K8s 上限 253)
     ssh_port: Mapped[int | None]
-    jupyter_token: Mapped[str] = mapped_column(String(64))
+    # AES-GCM 密文(enc:v1: 前缀,约 90 字符);存量明文行原样识别,重启/重置后自然轮换
+    jupyter_token: Mapped[str] = mapped_column(String(160))
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
@@ -63,6 +82,15 @@ class PortAllocation(Base):
     """
 
     __tablename__ = "port_allocations"
+    # 一台实例至多占一个端口(部分唯一:空闲行 instance_id 为 NULL,不参与约束)
+    __table_args__ = (
+        Index(
+            "uq_port_allocations_instance",
+            "instance_id",
+            unique=True,
+            postgresql_where=text("instance_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     port: Mapped[int] = mapped_column(unique=True)
@@ -75,8 +103,17 @@ class DataDisk(Base):
     """数据盘:独立于实例生命周期(留存抓手)。JuiceFS 子路径,挂载点 /root/data。"""
 
     __tablename__ = "data_disks"
-    # 幂等键:响应丢失后重试不会开出第二块盘
-    __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),)
+    # 幂等键:响应丢失后重试不会开出第二块盘;
+    # 部分唯一索引:一台实例至多挂一块盘(与 instances.data_disk_id 的 1:1 模型一致)
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        Index(
+            "uq_data_disks_mounted_instance",
+            "mounted_instance_id",
+            unique=True,
+            postgresql_where=text("mounted_instance_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column(String(32), unique=True)

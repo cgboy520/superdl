@@ -3,18 +3,22 @@
 每步落事件与通知。数据盘独立宽限,不随实例回收。
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
+from app.core.metrics import PATROL_FAILED_TOTAL
 from app.core.money import as_amount
 from app.core.policies import get_effective_policies
-from app.core.timeutil import now_utc
+from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import wallet
+from app.modules.billing.models import BillHourly
+from app.modules.billing.settlement import bill_amount, running_seconds_in_window
 from app.modules.notify import service as notify_service
 
 logger = get_logger(__name__)
@@ -39,8 +43,8 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         await _patrol_running(sm, counts)
         await _patrol_frozen_and_arrears_stopped(sm, counts)
         await _patrol_disks(sm, counts)
-    if any(counts.values()):
-        logger.info("balance_patrol_done", **counts)
+    # 无条件打 done:counts 全 0(如 reclaim 全败)时也要留本轮巡检的完成痕迹
+    logger.info("balance_patrol_done", **counts)
     return counts
 
 
@@ -67,7 +71,31 @@ async def _patrol_frozen_tenants(
                 await session.commit()
                 counts["stopped"] += stopped
         except Exception:
+            PATROL_FAILED_TOTAL.labels(stage="frozen_tenant").inc()
             logger.exception("patrol_frozen_tenant_failed", user_id=user_id)
+
+
+async def _unsettled_burn(session: AsyncSession, inst, now: datetime) -> Decimal:
+    """该实例当前自然小时「已跑未出账」的实时估算消耗(2 位小数)。
+
+    与结算同口径:事件重建当前小时 running 秒数,减去该小时已出账秒数(中途尾账),
+    按单价折算。估算只用于停机/预警判据,永不入账。
+    """
+    from app.modules.orchestrator import service as orchestrator_service
+
+    h0 = hour_floor(now)
+    events = await orchestrator_service.billing_events_before(session, inst.id, now)
+    # 巡检估算不截断失联宽限:按最保守(多估)口径驱动停机判据,估算永不入账
+    seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], h0, now)
+    billed = (
+        await session.execute(
+            select(BillHourly.seconds_used).where(
+                BillHourly.instance_id == inst.id, BillHourly.hour_start == h0
+            )
+        )
+    ).scalar_one_or_none()
+    unsettled_seconds = max(0, seconds - (billed or 0))
+    return bill_amount(inst.price_hourly, inst.gpu_count, unsettled_seconds)
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
@@ -85,7 +113,14 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     (as_amount(i.price_hourly * i.gpu_count) for i in instances),
                     Decimal("0.00"),
                 )
-                if balance <= 0:
+                # 停机判据:余额 − 当前小时未结算消耗 ≤ 0。小时结算次小时 :02 才落账,
+                # 只看余额会有最长约 65 分钟的停机盲区;实时估算把盲区压到巡检周期内。
+                now = now_utc()
+                unsettled = Decimal("0.00")
+                for inst in instances:
+                    unsettled += await _unsettled_burn(session, inst, now)
+                effective = as_amount(balance - unsettled)
+                if effective <= 0:
                     for inst in instances:
                         fresh = await orchestrator_service.get_instance(session, user_id, inst.uuid)
                         if fresh.status == "running":
@@ -99,13 +134,14 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     )
                     await session.commit()
                 elif burn_per_hour > 0:
-                    est_hours = float(balance / burn_per_hour)
+                    est_hours = float(effective / burn_per_hour)
                     if est_hours < thresholds.get(user_id, 24):
                         await notify_service.send_low_balance_warning(
                             session, user_id, est_hours=est_hours, balance=format(balance, "f")
                         )
                         counts["warned"] += 1
         except Exception:
+            PATROL_FAILED_TOTAL.labels(stage="running").inc()
             logger.exception("patrol_running_failed", user_id=user_id)
 
 
@@ -143,6 +179,7 @@ async def _patrol_frozen_and_arrears_stopped(
                 await session.commit()
                 counts["frozen"] += 1
         except Exception:
+            PATROL_FAILED_TOTAL.labels(stage="freeze").inc()
             logger.exception("patrol_freeze_failed", instance_id=inst.id)
 
     # frozen:充值 → 解冻;到期 → 回收
@@ -167,6 +204,7 @@ async def _patrol_frozen_and_arrears_stopped(
                     counts["reclaimed"] += 1
                 await session.commit()
         except Exception:
+            PATROL_FAILED_TOTAL.labels(stage="frozen").inc()
             logger.exception("patrol_frozen_failed", instance_id=inst.id)
 
 
@@ -189,4 +227,5 @@ async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                 await session.commit()
                 counts["disks"] += changed
         except Exception:
+            PATROL_FAILED_TOTAL.labels(stage="disks").inc()
             logger.exception("patrol_disks_failed", user_id=user_id)

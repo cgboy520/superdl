@@ -18,6 +18,10 @@ logger = get_logger(__name__)
 
 RUNNING = "running"
 
+# 平台责任失联(节点失联/Pod 丢失):计费截断到 Pod 首次 not-ready 的时刻,
+# 判定前的宽限观察期不向用户计费。pod_unready(节点正常,负载自身问题)不在此列。
+_TRUNCATE_REASONS = ("node_lost", "pod_lost")
+
 
 async def on_instance_transition(
     session: AsyncSession, instance: "Instance", event: "InstanceEvent"
@@ -25,6 +29,17 @@ async def on_instance_transition(
     if event.from_status != RUNNING:
         return
     at = ensure_utc(event.created_at)
+    detail_extra = None
+    if event.reason in _TRUNCATE_REASONS and instance.unready_since is not None:
+        unready_at = ensure_utc(instance.unready_since)
+        if unready_at < at:
+            at = unready_at
+            # 截断依据留进 bills_hourly.detail(事件重建层另有同口径截断,见
+            # settlement._billing_view:整点结算不会把宽限期秒数再补回来)
+            detail_extra = {
+                "truncated_at": unready_at.isoformat(),
+                "truncate_reason": event.reason,
+            }
     charged = await settle_instance_window(
         session,
         instance_id=instance.id,
@@ -34,6 +49,7 @@ async def on_instance_transition(
         window_start=hour_floor(at),
         window_end=at,
         source="tail",
+        detail_extra=detail_extra,
     )
     if charged > 0:
         logger.info(
