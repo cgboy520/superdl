@@ -2,7 +2,7 @@
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
 import { diskStatusMap, instanceStatusMap, metaOf, skuTierMap } from "@superdl/ui";
-import { App, Badge, Button, Tag } from "antd";
+import { App, Badge, Button, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -40,12 +40,9 @@ export function TierTag({ tier }: { tier: string }) {
   const { t } = useTranslation(["web", "shared"]);
   const meta = metaOf(skuTierMap, tier);
   if (!meta) return <Tag>{tier}</Tag>;
-  return (
-    <Tag color={meta.color}>
-      {t(meta.labelKey)}
-      {"hintKey" in meta ? `(${t(meta.hintKey)})` : ""}
-    </Tag>
-  );
+  const tag = <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
+  // hint(如「性能可能波动」)收进 Tooltip:内联拼进 Tag 不换行,会把表格规格列压爆
+  return "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
 }
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {

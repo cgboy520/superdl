@@ -15,9 +15,9 @@ import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
 import { moneyOr } from "../QueryState";
-import { useMarkNotificationRead } from "../../api/mutations";
+import { useLogout, useMarkNotificationRead } from "../../api/mutations";
 import { useMe, useNotifications, useWallet } from "../../api/queries";
-import { authStore, useIsLoggedIn } from "../../stores/auth";
+import { useIsLoggedIn } from "../../stores/auth";
 
 const WHITE = { color: "#fff" } as const;
 
@@ -33,7 +33,7 @@ function NotificationBell() {
       content={
         <List
           style={{ width: 360, maxHeight: 420, overflow: "auto" }}
-          dataSource={all ?? []}
+          dataSource={all?.items ?? []}
           locale={{ emptyText: t("topbar.noNotifications") }}
           renderItem={(n) => (
             <List.Item
@@ -58,7 +58,7 @@ function NotificationBell() {
         />
       }
     >
-      <Badge count={unread?.length ?? 0} size="small">
+      <Badge count={unread?.items.length ?? 0} size="small">
         <Button type="text" aria-label={t("topbar.notifications")} icon={<BellOutlined style={WHITE} />} />
       </Badge>
     </Popover>
@@ -70,6 +70,7 @@ export function TopBarUser() {
   const { formatMoney } = useFormat();
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
+  const logout = useLogout();
   const { data: me } = useMe({ enabled: loggedIn });
   const { data: wallet } = useWallet({ enabled: loggedIn });
 
@@ -101,8 +102,7 @@ export function TopBarUser() {
           ],
           onClick: ({ key }) => {
             if (key === "logout") {
-              authStore.getState().logout();
-              void navigate({ to: "/login" });
+              void logout();
             } else {
               void navigate({ to: "/settings" });
             }

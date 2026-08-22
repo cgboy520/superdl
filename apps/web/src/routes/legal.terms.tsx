@@ -1,7 +1,10 @@
-/** 用户协议(公开)。模板文案 —— 正式上线前须经法务审定后替换。 */
+/** 用户协议(公开)。模板文案 —— 正式上线前须经法务审定后替换。英文界面暂显示中文文本(待法务译本)。 */
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, Typography } from "antd";
+
+import { AppTopBar } from "../components/layout/AppTopBar";
+import { SiteFooter } from "../components/layout/SiteFooter";
 
 export const Route = createFileRoute("/legal/terms")({
   component: TermsPage,
@@ -36,24 +39,28 @@ const SECTIONS: { title: string; body: string }[] = [
 
 function TermsPage() {
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", padding: "48px 24px" }}>
-      <Alert
-        type="warning"
-        showIcon
-        title="本页为协议模板,正式上线前须经法务审定后替换。"
-        style={{ marginBottom: 24 }}
-      />
-      <Typography.Title level={2}>SuperDL 用户协议</Typography.Title>
-      <Typography.Paragraph type="secondary">版本 v0.1(草案) · 2026-08-19</Typography.Paragraph>
-      {SECTIONS.map((s) => (
-        <div key={s.title} style={{ marginBottom: 20 }}>
-          <Typography.Title level={4}>{s.title}</Typography.Title>
-          <Typography.Paragraph>{s.body}</Typography.Paragraph>
-        </div>
-      ))}
-      <Typography.Paragraph>
-        <Link to="/legal/privacy">《隐私政策》</Link> · <Link to="/">返回首页</Link>
-      </Typography.Paragraph>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <AppTopBar variant="public" />
+      <div style={{ flex: 1, maxWidth: 800, width: "100%", margin: "0 auto", padding: "48px 24px" }}>
+        <Alert
+          type="warning"
+          showIcon
+          title="本页为协议模板,正式上线前须经法务审定后替换。"
+          style={{ marginBottom: 24 }}
+        />
+        <Typography.Title level={2}>SuperDL 用户协议</Typography.Title>
+        <Typography.Paragraph type="secondary">版本 v0.1(草案) · 2026-08-19</Typography.Paragraph>
+        {SECTIONS.map((s) => (
+          <div key={s.title} style={{ marginBottom: 20 }}>
+            <Typography.Title level={4}>{s.title}</Typography.Title>
+            <Typography.Paragraph>{s.body}</Typography.Paragraph>
+          </div>
+        ))}
+        <Typography.Paragraph>
+          <Link to="/legal/privacy">《隐私政策》</Link> · <Link to="/">返回首页</Link>
+        </Typography.Paragraph>
+      </div>
+      <SiteFooter />
     </div>
   );
 }

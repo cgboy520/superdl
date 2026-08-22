@@ -22,10 +22,10 @@ export function LangSwitcher({ variant = "dark" }: { variant?: "dark" | "light" 
           style={{ color: variant === "dark" ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.45)" }}
         />
       }
-      style={{ width: 110 }}
+      style={{ width: 88 }}
       options={SUPPORTED_LANGS.map((l) => ({ value: l, label: labels[l] }))}
       onChange={(lng) => void i18n.changeLanguage(lng)}
-      aria-label="language"
+      aria-label={t("lang.switchLabel")}
     />
   );
 }

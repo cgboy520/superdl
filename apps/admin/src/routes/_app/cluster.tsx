@@ -60,12 +60,12 @@ function ClusterPage() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      {isK3s && <Alert type="warning" showIcon message={t("cluster.lightWarning")} />}
+      {isK3s && <Alert type="warning" showIcon title={t("cluster.lightWarning")} />}
       {data && !data.api_reachable && data.error && (
-        <Alert type="error" showIcon message={t("cluster.unreachable")} description={data.error} />
+        <Alert type="error" showIcon title={t("cluster.unreachable")} description={data.error} />
       )}
       {data && !data.config.prometheus_url_set && (
-        <Alert type="info" showIcon message={t("cluster.promHint")} />
+        <Alert type="info" showIcon title={t("cluster.promHint")} />
       )}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
@@ -186,7 +186,7 @@ function ClusterPage() {
                 <Alert
                   type="warning"
                   showIcon
-                  message={t("cluster.unlabeledWarn", { count: unlabeled })}
+                  title={t("cluster.unlabeledWarn", { count: unlabeled })}
                   action={<Link to="/nodes">{t("cluster.viewNodes")}</Link>}
                 />
               )}

@@ -13,6 +13,8 @@ export default defineConfig({
       httpClient: "fetch",
       clean: true,
       indexFiles: true,
+      // 把 spec 的 header 参数(Idempotency-Key 等)生成进函数签名,不再靠调用方手搓 options.headers
+      headers: true,
       override: {
         mutator: {
           path: "src/mutator.ts",

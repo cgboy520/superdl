@@ -47,6 +47,7 @@
     "pollNote": "This window confirms payment automatically; unpaid orders close after 2 hours",
     "realNameRequired": "Regulations require identity verification before topping up",
     "recharge": "Top up",
+    "rechargeAmount": "Top-up amount",
     "save": "Save",
     "scanWithAlipay": "Scan with Alipay to pay",
     "scanWithWechat": "Scan with WeChat to pay",
@@ -83,6 +84,7 @@
       "r4": "On insufficient balance the instance stops; after 72 h frozen the instance disk is reclaimed (data disks unaffected)"
     },
     "channelComingSoon": "Opens after merchant onboarding; use mock payment (dev) for now",
+    "channelPending": "Opens after merchant onboarding",
     "comingSoon": "Coming soon",
     "createFailedNoCharge": "Billing starts only when the instance runs; this failed creation cost nothing",
     "dailyCostNote": "Daily costs: charges that accrue even while stopped (data disks bill per day)",
@@ -108,14 +110,14 @@
     "releaseNeedsStopped": "Stop the instance before releasing it",
     "sshKeyOnly": "Instances accept SSH key login only; passwords are not supported",
     "startNeedsStopped": "Only stopped instances can be started",
-    "stockAvailable_one": "{{count}} GPU available",
-    "stockAvailable_other": "{{count}} GPUs available",
+    "stockAvailable_one": "1 instance available",
+    "stockAvailable_other": "{{count}} instances available",
     "stopConfirm": "Stopping releases the GPU and stops billing immediately; instance disk data is kept. Restarting later may require waiting or switching specs if this one sells out",
     "stopNeedsRunning": "Only running instances can be stopped"
   },
   "create": {
     "addKey": "Add public key",
-    "balanceNeedNote": "Balance must cover at least 1 hour before boot",
+    "balanceNeedNote": "Balance must cover at least 1 hour before boot. Pay as you go: metered per second while Running, down to the moment you stop; stopping ends GPU charges",
     "cancel": "Cancel",
     "cascadePlaceholder": "Framework / version / Python / CUDA",
     "changeSpec": "Change spec",
@@ -132,7 +134,7 @@
     "diskAutoCreateNote": "created automatically on submit and mounted with the instance",
     "diskCard": "Data disk (optional)",
     "diskExisting": "Mount existing",
-    "diskIndependentNote": "Data disks outlive instances: kept through stop and release",
+    "diskIndependentNote": "Data disks outlive instances: kept through stop and release, and bill per day even while stopped",
     "diskNew": "New data disk",
     "diskNone": "None",
     "ecoAgree": "I have read and accept the terms above",
@@ -330,15 +332,15 @@
     "cta": {
       "button": "Sign up free",
       "fallback": "Elastic GPU compute, ready at signup",
-      "withStock_one": "{{count}} GPU idle right now — register to launch",
-      "withStock_other": "{{count}} GPUs idle right now — register to launch"
+      "withStock_one": "{{count}} instance available now — register to launch",
+      "withStock_other": "{{count}} instances available now — register to launch"
     },
     "hero": {
       "ctaPrimary": "Sign up free",
       "ctaSecondary": "Browse marketplace",
-      "freeCards_one": "{{count}} GPU",
-      "freeCards_other": "{{count}} GPUs",
-      "freeLabel": "Idle GPUs now",
+      "freeCards_one": "{{count}} instance",
+      "freeCards_other": "{{count}} instances",
+      "freeLabel": "Instances available now",
       "minPriceLabel": "GPU rates from",
       "subtitle": "GPU rental with per-second startup and pay-as-you-go billing",
       "title": "SuperDL GPU Cloud"
@@ -349,7 +351,7 @@
       "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
       "moreLink": "All specs and filters",
       "sharedSpec": "{{pct}}% compute (avg) · {{vram}}G VRAM",
-      "subtitle": "Prices are inventory: the count on the button matches the console in real time",
+      "subtitle": "Prices are inventory: the instance count on the button matches the console in real time",
       "tabDedicated": "Dedicated",
       "tabShared": "Sliced & shared",
       "tflops": "FP32 {{fp32}} TFLOPS / FP16 {{fp16}} Tensor TFLOPS",
@@ -385,6 +387,7 @@
   },
   "lang": {
     "en": "English",
+    "switchLabel": "Switch language",
     "zh": "中文"
   },
   "login": {
@@ -429,8 +432,8 @@
     "chipGpuModel": "GPU model",
     "chipTier": "Tier",
     "chipVram": "VRAM",
-    "freeSuffix_one": "{{count}} idle",
-    "freeSuffix_other": "{{count}} idle",
+    "freeSuffix_one": "{{count}} available",
+    "freeSuffix_other": "{{count}} available",
     "loginToRent": "Log in to rent",
     "next": "Next: configure instance",
     "noMatch": "No specs match — try relaxing the filters",
@@ -495,7 +498,7 @@
     "billingModeTitle": "Billing mode",
     "colCuda": "Max CUDA",
     "colDisk": "Instance disk",
-    "colFree": "Idle GPUs",
+    "colFree": "Available",
     "colGpu": "GPU / VRAM",
     "colHost": "Host spec",
     "colPrice": "Price (per GPU)",
@@ -525,7 +528,7 @@
     "confirmExpandTo": "Expand to {{size}}",
     "created": "Data disk created",
     "createFirst": "Create your first data disk",
-    "createNote": "{{price}}, billed daily at the monthly rate ÷ 30",
+    "createNote": "{{price}}, billed daily at the monthly rate ÷ 30 — charges accrue even while stopped",
     "dailyEstimate": "{{size}} GB ≈ {{amount}}/day",
     "delete": "Delete",
     "deleteBody": "About to delete data disk <b>{{name}}({{size}})</b>. All data on it will be wiped permanently.",
@@ -556,6 +559,7 @@
     "market": "Marketplace",
     "noNotifications": "No notifications",
     "notifications": "Notifications",
+    "openMenu": "Open navigation menu",
     "pricing": "GPU Pricing",
     "ranking": "Compute Ranking",
     "register": "Sign up free"

@@ -25,15 +25,26 @@ import { Badge, Dropdown, Layout, Menu, Popover, Space, Tag, Typography, theme }
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
 
-import { type AlertRow, useAlerts } from "../api";
+import { type AlertRow, fetchAdminMe, useAlerts } from "../api";
 import { LangSwitcher } from "../components/LangSwitcher";
 import { type MenuKey, canSeeMenu } from "../lib/menu";
 import { authStore, useAuth } from "../stores/auth";
 
 export const Route = createFileRoute("/_app")({
-  beforeLoad: () => {
-    if (!authStore.getState().accessToken) {
-      throw redirect({ to: "/login" });
+  beforeLoad: async ({ location }) => {
+    const auth = authStore.getState();
+    if (!auth.accessToken) {
+      throw redirect({ to: "/login", search: { returnTo: location.href } });
+    }
+    // 角色只信服务端:进入/切换受保护路由都调 /me 校准一次。
+    // token 失效/被撤销(改密、降权、停用即 token_version+1)在这里被拦下,直跳登录不闪屏;
+    // 被降权的账号最迟在下一次路由切换看到新菜单(残余窗口 = 停留在当前页的时长)。
+    try {
+      const me = await fetchAdminMe();
+      auth.setAdmin({ id: me.id, username: me.username, role: me.role });
+    } catch {
+      authStore.getState().logout();
+      throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
   },
   component: AppLayout,
@@ -63,7 +74,8 @@ function AlertBell() {
   const { t } = useTranslation();
   const { data } = useAlerts({ refetchInterval: 30_000 });
   const alerts: AlertRow[] = data ?? [];
-  const today = alerts.filter((a) => dayjs(a.created_at).isSame(dayjs(), "day"));
+  // 角标按「最近 24 小时」计数:按自然日计数会在跨零点瞬间归零,掩盖昨夜未处理的告警
+  const recent = alerts.filter((a) => dayjs(a.created_at).isAfter(dayjs().subtract(24, "hour")));
   return (
     <Popover
       placement="bottomRight"
@@ -92,7 +104,7 @@ function AlertBell() {
         </div>
       }
     >
-      <Badge count={today.length} size="small">
+      <Badge count={recent.length} size="small" title={t("shell.alertsBadgeHint")}>
         <AlertOutlined style={{ fontSize: 18, color: adminColors.alertAccent, cursor: "pointer" }} />
       </Badge>
     </Popover>

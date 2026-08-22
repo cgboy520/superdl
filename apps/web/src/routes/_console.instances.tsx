@@ -140,9 +140,10 @@ function UtilCell({
 function FailedCell({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const { data: events } = useInstanceEvents(instance.uuid);
-  const failedEvents = (events ?? []).filter((e) => e.to_status === "failed");
-  const reason = failedEvents[failedEvents.length - 1]?.reason;
-  const everRan = (events ?? []).some((e) => e.to_status === "running");
+  // 服务端降序(最新在前):最新一次 failed 原因取首元素
+  const failedEvents = (events?.items ?? []).filter((e) => e.to_status === "failed");
+  const reason = failedEvents[0]?.reason;
+  const everRan = (events?.items ?? []).some((e) => e.to_status === "running");
   return (
     <Space orientation="vertical" size={4}>
       <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
@@ -183,6 +184,23 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   const [value, setValue] = useState(instance.name);
   const rename = useRenameInstance();
   const { message } = App.useApp();
+  // 失焦即保存(有改动时):旧实现 onBlur 直接丢弃输入且不提示
+  const save = async () => {
+    if (rename.isPending) return;
+    const name = value.trim();
+    if (!name || name === instance.name) {
+      setValue(instance.name);
+      setEditing(false);
+      return;
+    }
+    try {
+      await rename.mutateAsync({ uuid: instance.uuid, name });
+      message.success(t("instances.renamed"));
+      setEditing(false);
+    } catch {
+      // 错误提示由 useApiMutation 统一弹出;保持编辑态不丢输入
+    }
+  };
   if (editing) {
     return (
       <Input
@@ -190,12 +208,8 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
         autoFocus
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        onBlur={() => setEditing(false)}
-        onPressEnter={async () => {
-          await rename.mutateAsync({ uuid: instance.uuid, name: value });
-          setEditing(false);
-          message.success(t("instances.renamed"));
-        }}
+        onBlur={() => void save()}
+        onPressEnter={() => void save()}
         style={{ width: 160 }}
       />
     );
@@ -208,10 +222,14 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
         role="button"
         tabIndex={0}
         aria-label={t("instances.renameAria", { name: instance.name })}
-        onClick={() => setEditing(true)}
+        onClick={() => {
+          setValue(instance.name);
+          setEditing(true);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
+            setValue(instance.name);
             setEditing(true);
           }
         }}
@@ -291,6 +309,7 @@ function InstancesPage() {
             allowClear
             prefix={<SearchOutlined />}
             placeholder={t("instances.searchPlaceholder")}
+            aria-label={t("instances.searchPlaceholder")}
             style={{ width: 220 }}
             value={q}
             onChange={(e) => setQ(e.target.value)}

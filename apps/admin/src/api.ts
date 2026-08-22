@@ -5,6 +5,7 @@ import {
   adminChangeOwnPasswordApiAdminV1MePasswordPost,
   adminCreateAdminApiAdminV1AdminsPost,
   adminListAdminsApiAdminV1AdminsGet,
+  adminMeApiAdminV1MeGet,
   adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost,
   adminUpdateAdminApiAdminV1AdminsAdminIdPatch,
   adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost,
@@ -19,11 +20,10 @@ import {
   adminListDeadTasksApiAdminV1OutboxDeadGet,
   adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet,
   adminPublishAnnouncementApiAdminV1AnnouncementsPost,
-  adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost,
   adminUpdatePoliciesApiAdminV1PoliciesPut,
   adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost,
+  customFetch,
   revenueReportApiAdminV1ReportsRevenueGet,
-  adminAuditLogApiAdminV1AuditGet,
   adminCreateAdjustmentApiAdminV1AdjustmentsPost,
   adminCordonNodeApiAdminV1NodesNodeNameCordonPost,
   adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost,
@@ -39,7 +39,7 @@ import {
   adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost,
   adminUpdateImageApiAdminV1ImagesImageIdPatch,
   adminForceStopApiAdminV1InstancesUuidForceStopPost,
-  adminFreezeTenantApiAdminV1TenantsUserIdFreezePost,
+  adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost,
   adminListAdjustmentsApiAdminV1AdjustmentsGet,
   adminListInstancesApiAdminV1InstancesGet,
   adminListNodesApiAdminV1NodesGet,
@@ -51,7 +51,6 @@ import {
   adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet,
   adminLoginApiAdminV1AuthLoginPost,
   adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost,
-  adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost,
   adminUpdateSkuApiAdminV1SkusSkuIdPatch,
   oversellReportApiAdminV1ReportsOversellGet,
   reconciliationApiAdminV1ReconciliationGet,
@@ -59,16 +58,17 @@ import {
 } from "@superdl/api-client";
 import type {
   AdjustmentCreate,
-  AdminAuditLogApiAdminV1AuditGetParams,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminListTenantsApiAdminV1TenantsGetParams,
   AdminAccountOut,
   AdminCreateRequest,
+  AdminOut,
   AdminResetPasswordRequest,
   AdminSelfPasswordRequest,
   AdminUpdateRequest,
   AnnouncementCreate,
+  AuditLogOut,
   CapacityPreviewOut,
   EnrollmentCommandOut,
   EnrollmentCreate,
@@ -77,6 +77,7 @@ import type {
   ImageCreate,
   ImageDeleteRequest,
   ImageUpdate,
+  LedgerEntryOut,
   NodeCordonRequest,
   PrewarmEnqueuedOut,
   OrderBackfillRequest,
@@ -93,6 +94,7 @@ import type {
   TenantFreezeRequest,
 } from "@superdl/api-client";
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   type UseMutationOptions,
@@ -166,11 +168,12 @@ export function useTestClusterConnection(opts?: MutOpts<unknown, void>) {
   });
 }
 
-export function useGpuModelAggregates() {
+export function useGpuModelAggregates(options?: { enabled?: boolean }) {
   const queryKey = ["admin", "gpu-models"] as const;
   const q = useQuery({
     queryKey,
     queryFn: () => adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet(),
+    enabled: options?.enabled ?? true,
   });
   return { ...q, queryKey };
 }
@@ -215,20 +218,32 @@ export function useTenants(params?: AdminListTenantsApiAdminV1TenantsGetParams) 
 /** 租户账单下钻:资金流水与小时账单(游标分页,与用户端同源同实现)。 */
 export function useTenantLedger(userId: number | null) {
   const queryKey = ["admin", "tenant-ledger", userId] as const;
-  const q = useQuery({
+  const q = useInfiniteQuery({
     queryKey,
     enabled: userId !== null,
-    queryFn: () => adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId as number, { limit: 50 }),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId as number, {
+        limit: 50,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   return { ...q, queryKey };
 }
 
 export function useTenantBills(userId: number | null) {
   const queryKey = ["admin", "tenant-bills", userId] as const;
-  const q = useQuery({
+  const q = useInfiniteQuery({
     queryKey,
     enabled: userId !== null,
-    queryFn: () => adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId as number, { limit: 50 }),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId as number, {
+        limit: 50,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   return { ...q, queryKey };
 }
@@ -325,11 +340,40 @@ export function useAdjustments() {
   return { ...q, queryKey };
 }
 
-export function useAuditLog(params?: AdminAuditLogApiAdminV1AuditGetParams) {
-  return useQuery({
-    queryKey: ["admin", "audit", params],
-    queryFn: () => adminAuditLogApiAdminV1AuditGet(params),
+/** 审计检索:游标翻页(响应是数组;满页即还有更早,游标=末行 id 的 base64)。 */
+export interface AuditFilters {
+  actor_type?: string;
+  actor_id?: string;
+  q?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+export const AUDIT_DEFAULT_LIMIT = 100;
+
+export function useAuditLog(filters: AuditFilters) {
+  const limit = filters.limit ?? AUDIT_DEFAULT_LIMIT;
+  const queryKey = ["admin", "audit", filters] as const;
+  const q = useInfiniteQuery({
+    queryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => {
+      const sp = new URLSearchParams();
+      for (const [k, v] of Object.entries(filters)) {
+        if (v !== undefined && v !== "") sp.set(k, String(v));
+      }
+      if (pageParam) sp.set("cursor", pageParam);
+      const suffix = sp.toString();
+      return customFetch<AuditLogOut[]>(`/api/admin/v1/audit${suffix ? `?${suffix}` : ""}`, {
+        method: "GET",
+      });
+    },
+    // 后端数组不按 Page 包装:满页视为还有更早,游标取末行 id
+    getNextPageParam: (last) =>
+      last.length >= limit ? btoa(String(last[last.length - 1]!.id)) : undefined,
   });
+  return { ...q, queryKey };
 }
 
 // ---------- 变更 hooks ----------
@@ -378,7 +422,7 @@ export function useCreateEnrollment(
     mutationFn: (v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
       adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(
         v.data,
-        v.idempotencyKey ? { headers: { "Idempotency-Key": v.idempotencyKey } } : undefined,
+        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
       ),
     ...opts?.mutation,
   });
@@ -459,10 +503,21 @@ export function useForceStop() {
   });
 }
 
+/** 冻结响应:比生成契约多 instances_stopped(本批新增,orval 重生成后回收手写类型)。 */
+export interface TenantStatusOut {
+  id: number;
+  status: string;
+  /** 仅冻结时返回:本次一并停掉的 running 实例台数 */
+  instances_stopped?: number | null;
+}
+
 export function useFreezeTenant() {
   return useMutation({
     mutationFn: (v: { userId: number; data: TenantFreezeRequest }) =>
-      adminFreezeTenantApiAdminV1TenantsUserIdFreezePost(v.userId, v.data),
+      customFetch<TenantStatusOut>(`/api/admin/v1/tenants/${v.userId}/freeze`, {
+        method: "POST",
+        body: JSON.stringify(v.data),
+      }),
   });
 }
 
@@ -503,11 +558,12 @@ export function useAnomalies() {
   return { ...q, queryKey };
 }
 
-export function useDeadTasks() {
+export function useDeadTasks(options?: { enabled?: boolean }) {
   const queryKey = ["admin", "outbox-dead"] as const;
   const q = useQuery({
     queryKey,
     queryFn: () => adminListDeadTasksApiAdminV1OutboxDeadGet(),
+    enabled: options?.enabled ?? true,
   });
   return { ...q, queryKey };
 }
@@ -543,9 +599,14 @@ export function useBackfillOrder() {
   });
 }
 
+/** 重放死信:需原因(与忽略对齐,本批起生成契约已过期,手写 fetcher)。 */
 export function useRetryDeadTask() {
   return useMutation({
-    mutationFn: (v: { taskId: number }) => adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(v.taskId),
+    mutationFn: (v: { taskId: number; data: { reason: string } }) =>
+      customFetch<{ id: number; status: string }>(`/api/admin/v1/outbox/${v.taskId}/retry`, {
+        method: "POST",
+        body: JSON.stringify(v.data),
+      }),
   });
 }
 
@@ -644,5 +705,82 @@ export function useChangeOwnPassword(opts?: MutOpts<void, { data: AdminSelfPassw
     mutationFn: (v: { data: AdminSelfPasswordRequest }) =>
       adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
     ...opts?.mutation,
+  });
+}
+
+// ---------- 本批新端点(orval 重生成前的手写 fetcher;统一 customFetch,生成后回收) ----------
+
+/** 路由守卫用:/me 校准角色(角色只信服务端响应)。 */
+export function fetchAdminMe(): Promise<AdminOut> {
+  return adminMeApiAdminV1MeGet();
+}
+
+export interface OverviewPoolOut {
+  pool: string;
+  /** 物理卡(含非 Ready 节点) */
+  gpu_total: number;
+  gpu_used: number;
+  ready_gpu_total: number;
+}
+
+export interface OverviewOut {
+  /** 非终态分状态计数(不含 released) */
+  instances_by_status: Record<string, number>;
+  tenants_total: number;
+  paying_tenants: number;
+  nodes_total: number;
+  nodes_ready: number;
+  nodes_missing: number;
+  pools: OverviewPoolOut[];
+}
+
+/** 总览聚合:精确 COUNT(全角色可读),替代在截断列表里数数。 */
+export function useOverview() {
+  const queryKey = ["admin", "overview"] as const;
+  const q = useQuery({
+    queryKey,
+    queryFn: () => customFetch<OverviewOut>("/api/admin/v1/overview", { method: "GET" }),
+  });
+  return { ...q, queryKey };
+}
+
+export interface AdjustContextOut {
+  user_id: number;
+  phone_masked: string;
+  status: string;
+  balance: string;
+  running_instances: number;
+  recent_ledger: LedgerEntryOut[];
+}
+
+/** 调账前置上下文:回显租户身份与资金现状;不存在 → 404(调用方据 error 阻止提交)。 */
+export function useAdjustContext(userId: number | null) {
+  return useQuery({
+    queryKey: ["admin", "adjust-context", userId],
+    enabled: userId !== null,
+    retry: 0,
+    staleTime: 30_000,
+    queryFn: () =>
+      customFetch<AdjustContextOut>(`/api/admin/v1/tenants/${userId}/adjust-context`, {
+        method: "GET",
+      }),
+  });
+}
+
+export interface SkuImpactOut {
+  sku_id: number;
+  active_instances: number;
+  active_users: number;
+  active_gpus: number;
+}
+
+/** 改价影响面:该 SKU 当前活跃实例数/用户数/卡数。 */
+export function useSkuImpact(skuId: number | null) {
+  return useQuery({
+    queryKey: ["admin", "sku-impact", skuId],
+    enabled: skuId !== null,
+    staleTime: 30_000,
+    queryFn: () =>
+      customFetch<SkuImpactOut>(`/api/admin/v1/skus/${skuId}/impact`, { method: "GET" }),
   });
 }

@@ -82,13 +82,15 @@ export function PricingSection() {
                     hoverable
                     title={
                       <span>
-                        {spec?.label ?? sku.gpu_model}{" "}
-                        <TierTag tier={sku.tier} />
+                        {sku.name} <TierTag tier={sku.tier} />
                       </span>
                     }
                     styles={{ body: { display: "flex", flexDirection: "column", gap: 4 } }}
                     style={{ height: "100%" }}
                   >
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {spec?.label ?? sku.gpu_model}
+                    </Typography.Text>
                     <Typography.Text strong>
                       {shared
                         ? t("landing.pricing.sharedSpec", { pct: sku.gpu_cores_pct, vram: sku.vram_gb })

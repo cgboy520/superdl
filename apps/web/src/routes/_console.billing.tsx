@@ -35,14 +35,15 @@ import {
 } from "antd";
 import { useFormat } from "../lib/format";
 import EChart from "../components/EChart";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { useCreateRecharge, useMockPay, useSetWarnThreshold } from "../api/mutations";
-import { DataErrorAlert, moneyOr } from "../components/QueryState";
+import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import {
   useBillSummary,
   useDailySummary,
-  useHourlyBills,
+  useHourlyBillPages,
   useLedgerPages,
   useMe,
   usePolicies,
@@ -67,6 +68,9 @@ const LEDGER_TYPE = {
 type LedgerTypeKey = keyof typeof LEDGER_TYPE;
 
 const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
+
+/** 进行中的充值订单号(sessionStorage):支付中途关窗后重开可恢复轮询。 */
+const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
 
 /** 支付倒计时:把到期时刻渲染成剩余时长。 */
 function PayCountdown({ expiresAt }: { expiresAt: string }) {
@@ -94,11 +98,14 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const { formatMoney } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
+  const queryClient = useQueryClient();
   // 金额必须按字符串走(InputNumber stringMode),禁止经二进制浮点
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
   const [idem, setIdem] = useState(() => crypto.randomUUID());
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
+  // 中断找回:订单号落 sessionStorage,支付中途关窗/刷新后重开可恢复轮询
+  const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
 
   // 渠道开关来自管理端·平台配置(site-config 公开端点)
   const { data: site } = useSiteConfig();
@@ -110,30 +117,68 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const firstEnabled = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
   const channel = pickedChannel ?? firstEnabled;
   const anyEnabled = enabled.wechat || enabled.alipay || enabled.mock;
+  // mock 渠道关闭(正式环境)时,未开通渠道不再引导用户去找模拟支付
+  const channelTip = enabled.mock ? t("copy.channelComingSoon") : t("copy.channelPending");
 
   const create = useCreateRecharge({
-    onSuccess: (d) => setOrder(d as RechargeOut),
+    onSuccess: (d) => {
+      const o = d as RechargeOut;
+      setOrder(o);
+      setResumedNo(o.order_no);
+      sessionStorage.setItem(PENDING_ORDER_KEY, o.order_no);
+    },
   });
   const mockPay = useMockPay({ onSuccess: () => message.success(t("billing.mockPaySent")) });
-  const { data: polled } = useRecharge(order?.order_no ?? "", {
-    enabled: Boolean(order),
-    // 到终态(paid/closed/failed)即停,不再空转打接口
-    refetchInterval: (q) =>
-      q.state.data && q.state.data.status !== "pending" ? false : 2_000,
+  const activeNo = order?.order_no ?? resumedNo;
+  const rechargeQ = useRecharge(activeNo, {
+    enabled: activeNo !== "",
+    // 到终态(paid/closed/failed)即停,不再空转打接口;出错(如找回的单号已失效)也停
+    refetchInterval: (q) => {
+      if (q.state.status === "error") return false;
+      return q.state.data && q.state.data.status !== "pending" ? false : 2_000;
+    },
   });
-
-  const status = polled?.status ?? order?.status;
+  const { data: polled } = rechargeQ;
+  // 找回的单号已失效(关单/账号已切):清找回标记;shown 为 null 自然回表单态
+  useEffect(() => {
+    if (rechargeQ.isError && !order) sessionStorage.removeItem(PENDING_ORDER_KEY);
+  }, [rechargeQ.isError, order]);
+  // 恢复的订单没有本地创建快照,轮询结果就是订单本体
+  const shown = polled ?? order;
+  const status = shown?.status;
   const paid = status === "paid";
+
+  // 到终态即清找回标记;到账定向失效钱包与流水(不再等 10s 轮询)
+  useEffect(() => {
+    if (!status) return;
+    if (status === "paid") {
+      sessionStorage.removeItem(PENDING_ORDER_KEY);
+      void queryClient.invalidateQueries({ queryKey: ["wallet"] });
+      void queryClient.invalidateQueries({ queryKey: ["ledger"] });
+    } else if (status !== "pending") {
+      sessionStorage.removeItem(PENDING_ORDER_KEY);
+    }
+  }, [status, queryClient]);
 
   const reset = () => {
     setOrder(null);
+    setResumedNo("");
     setIdem(crypto.randomUUID());
     onClose();
   };
 
   return (
-    <Modal title={t("billing.recharge")} open={open} onCancel={reset} footer={null}>
-      {!order ? (
+    <Modal
+      title={t("billing.recharge")}
+      open={open}
+      onCancel={reset}
+      footer={null}
+      // 中途关窗保留找回标记;重新打开时若本地无单,从 sessionStorage 再捡回来
+      afterOpenChange={(o) => {
+        if (o && !order) setResumedNo(sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
+      }}
+    >
+      {!shown ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Tabs
             activeKey={channel}
@@ -145,7 +190,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
                 label: enabled.wechat ? (
                   t("billing.wechat")
                 ) : (
-                  <Tooltip title={t("copy.channelComingSoon")}>{t("billing.wechat")}</Tooltip>
+                  <Tooltip title={channelTip}>{t("billing.wechat")}</Tooltip>
                 ),
                 disabled: !enabled.wechat,
               },
@@ -154,7 +199,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
                 label: enabled.alipay ? (
                   t("billing.alipay")
                 ) : (
-                  <Tooltip title={t("copy.channelComingSoon")}>{t("billing.alipay")}</Tooltip>
+                  <Tooltip title={channelTip}>{t("billing.alipay")}</Tooltip>
                 ),
                 disabled: !enabled.alipay,
               },
@@ -178,6 +223,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             value={amount}
             onChange={(v) => setAmount(v ?? "0")}
             prefix="¥"
+            aria-label={t("billing.rechargeAmount")}
           />
           <Button
             type="primary"
@@ -199,7 +245,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           <Typography.Title level={4} type="success">
             {t("billing.paySuccess")}
           </Typography.Title>
-          <Typography.Text>{t("billing.credited", { amount: formatMoney(order.amount) })}</Typography.Text>
+          <Typography.Text>{t("billing.credited", { amount: formatMoney(shown.amount) })}</Typography.Text>
           <Button type="primary" onClick={reset}>
             {t("billing.done")}
           </Button>
@@ -210,32 +256,32 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             type="info"
             showIcon
             title={t("billing.orderWaiting", {
-              no: order.order_no,
-              time: formatDateTime(polled?.expires_at ?? order.expires_at),
+              no: shown.order_no,
+              time: formatDateTime(shown.expires_at),
             })}
             description={
-              <PayCountdown expiresAt={polled?.expires_at ?? order.expires_at} />
+              <PayCountdown expiresAt={shown.expires_at} />
             }
           />
           <div style={{ display: "flex", justifyContent: "center" }}>
-            <QRCode value={order.qr_url ?? order.order_no} size={168} />
+            <QRCode value={shown.qr_url ?? shown.order_no} size={168} />
           </div>
-          {order.channel === "wechat" && (
+          {shown.channel === "wechat" && (
             <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
               {t("billing.scanWithWechat")}
             </Typography.Text>
           )}
-          {order.channel === "alipay" && (
+          {shown.channel === "alipay" && (
             <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
               {t("billing.scanWithAlipay")}
             </Typography.Text>
           )}
-          {order.channel === "mock" && (
+          {shown.channel === "mock" && (
             <Button
               block
               loading={mockPay.isPending}
               onClick={() =>
-                mockPay.mutate({ order_no: order.order_no, amount: order.amount })
+                mockPay.mutate({ order_no: shown.order_no, amount: shown.amount })
               }
             >
               {t("billing.mockPayNow")}
@@ -247,6 +293,53 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
         </Space>
       )}
     </Modal>
+  );
+}
+
+/** 小时账单:游标分页 + 「加载更多」(与收支明细同构),金额不过 Number。 */
+function HourlyBillsTable({ month, tzOffsetMinutes }: { month: string; tzOffsetMinutes: number }) {
+  const { t } = useTranslation();
+  const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
+  const { data, isLoading, isError, refetch, isFetchingNextPage, hasNextPage, fetchNextPage } =
+    useHourlyBillPages({ month, tz_offset_minutes: tzOffsetMinutes });
+  const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
+
+  return (
+    <Space orientation="vertical" style={{ width: "100%" }}>
+      <Table
+        rowKey="id"
+        size="small"
+        pagination={false}
+        scroll={{ x: 760 }}
+        loading={isLoading}
+        dataSource={rows}
+        locale={{
+          emptyText: isError ? <TableErrorEmpty onRetry={() => void refetch()} /> : undefined,
+        }}
+        columns={[
+          { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
+          { title: t("billing.colInstance"), render: (_, r) => r.instance_name ?? `#${r.instance_id}` },
+          { title: t("instances.colBillDuration"), render: (_, r) => formatDuration(r.seconds_used) },
+          {
+            title: t("instances.colBillUnit"),
+            render: (_, r) => (
+              <span>
+                {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
+              </span>
+            ),
+          },
+          {
+            title: t("instances.colBillAmount"),
+            render: (_, r) => <span>{formatMoney(r.amount)}</span>,
+          },
+        ]}
+      />
+      {hasNextPage && (
+        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+          {t("billing.loadMore")}
+        </Button>
+      )}
+    </Space>
   );
 }
 
@@ -304,7 +397,7 @@ function LedgerTable() {
 }
 
 function BillingPage() {
-  const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
+  const { formatMoney } = useFormat();
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [rechargeOpen, setRechargeOpen] = useState(false);
@@ -322,8 +415,6 @@ function BillingPage() {
   // 三个查询必须共用同一个本地时区口径,否则 31 天日账单之和 ≠ 月账单
   const { data: summary } = useBillSummary(month, tzOffsetMinutes);
   const { data: daily } = useDailySummary(date, tzOffsetMinutes);
-  // 账单表与 CSV 导出必须同口径(都按当月)
-  const { data: bills } = useHourlyBills({ month, tz_offset_minutes: tzOffsetMinutes, limit: 50 });
   const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("billing.thresholdSaved")) });
 
   const saveThreshold = (v: number | undefined) => {
@@ -394,7 +485,7 @@ function BillingPage() {
   };
 
   const pieData = (summary?.items ?? []).map((i) => ({
-    name: t("billing.instanceRef", { id: i.instance_id }),
+    name: i.instance_name ?? t("billing.instanceRef", { id: i.instance_id }),
     value: parseFloat(i.total_amount),
   }));
 
@@ -404,7 +495,8 @@ function BillingPage() {
         {t("billing.title")}
       </Typography.Title>
       {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
-      {policies?.real_name_required_for_recharge && me?.verification_status !== "verified" && (
+      {/* /me 未就绪(加载/失败)时不弹实名横幅:已实名用户绝不能被误判成未认证 */}
+      {policies?.real_name_required_for_recharge && me != null && me.verification_status !== "verified" && (
         <Alert
           type="warning"
           showIcon
@@ -435,6 +527,7 @@ function BillingPage() {
                 size="small"
                 min={1}
                 max={168}
+                aria-label={t("settings.warnThresholdLabel")}
                 value={warnHours ?? me?.low_balance_warn_hours}
                 onChange={(v) => setWarnHours(v ?? undefined)}
                 onPressEnter={() => saveThreshold(warnHours ?? me?.low_balance_warn_hours)}
@@ -512,34 +605,7 @@ function BillingPage() {
             {
               key: "bills",
               label: t("billing.tabBills"),
-              children: (
-                <Table
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  scroll={{ x: 760 }}
-                  dataSource={bills?.items ?? []}
-                  columns={[
-                    { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
-                    { title: t("billing.colInstance"), render: (_, r) => `#${r.instance_id}` },
-                    { title: t("instances.colBillDuration"), render: (_, r) => formatDuration(r.seconds_used) },
-                    {
-                      title: t("instances.colBillUnit"),
-                      render: (_, r) => (
-                        <span>
-                          {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
-                        </span>
-                      ),
-                    },
-                    {
-                      title: t("instances.colBillAmount"),
-                      render: (_, r) => (
-                        <span>{formatMoney(r.amount)}</span>
-                      ),
-                    },
-                  ]}
-                />
-              ),
+              children: <HourlyBillsTable month={month} tzOffsetMinutes={tzOffsetMinutes} />,
             },
             { key: "ledger", label: t("billing.tabLedger"), children: <LedgerTable /> },
           ]}

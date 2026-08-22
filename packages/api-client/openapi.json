@@ -1,6 +1,48 @@
 {
   "components": {
     "schemas": {
+      "AdjustContextOut": {
+        "description": "调账前置上下文:回显租户身份与资金现状,防止调错人。",
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "string"
+          },
+          "phone_masked": {
+            "title": "Phone Masked",
+            "type": "string"
+          },
+          "recent_ledger": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryOut"
+            },
+            "title": "Recent Ledger",
+            "type": "array"
+          },
+          "running_instances": {
+            "title": "Running Instances",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "phone_masked",
+          "status",
+          "balance",
+          "running_instances",
+          "recent_ledger"
+        ],
+        "title": "AdjustContextOut",
+        "type": "object"
+      },
       "AdjustmentCreate": {
         "properties": {
           "amount": {
@@ -791,6 +833,17 @@
             "title": "Instance Id",
             "type": "integer"
           },
+          "instance_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Name"
+          },
           "seconds_used": {
             "title": "Seconds Used",
             "type": "integer"
@@ -915,6 +968,17 @@
             "title": "Pool",
             "type": "string"
           },
+          "progress_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Token"
+          },
           "registries_yaml": {
             "title": "Registries Yaml",
             "type": "string"
@@ -930,6 +994,10 @@
           "rke2_version": {
             "title": "Rke2 Version",
             "type": "string"
+          },
+          "script_sha256": {
+            "title": "Script Sha256",
+            "type": "string"
           }
         },
         "required": [
@@ -941,7 +1009,8 @@
           "rke2_join_token",
           "driver_version",
           "nvme_devices",
-          "registries_yaml"
+          "registries_yaml",
+          "script_sha256"
         ],
         "title": "BootstrapOut",
         "type": "object"
@@ -2767,6 +2836,21 @@
         "title": "OutboxDiscardRequest",
         "type": "object"
       },
+      "OutboxRetryRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OutboxRetryRequest",
+        "type": "object"
+      },
       "OutboxTaskStatusOut": {
         "properties": {
           "id": {
@@ -2825,6 +2909,85 @@
         "title": "OversellPoolOut",
         "type": "object"
       },
+      "OverviewOut": {
+        "description": "总览聚合:全部精确计数,不从截断列表推算。",
+        "properties": {
+          "instances_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Instances By Status",
+            "type": "object"
+          },
+          "nodes_missing": {
+            "title": "Nodes Missing",
+            "type": "integer"
+          },
+          "nodes_ready": {
+            "title": "Nodes Ready",
+            "type": "integer"
+          },
+          "nodes_total": {
+            "title": "Nodes Total",
+            "type": "integer"
+          },
+          "paying_tenants": {
+            "title": "Paying Tenants",
+            "type": "integer"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewPoolOut"
+            },
+            "title": "Pools",
+            "type": "array"
+          },
+          "tenants_total": {
+            "title": "Tenants Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instances_by_status",
+          "tenants_total",
+          "paying_tenants",
+          "nodes_total",
+          "nodes_ready",
+          "nodes_missing",
+          "pools"
+        ],
+        "title": "OverviewOut",
+        "type": "object"
+      },
+      "OverviewPoolOut": {
+        "description": "池级 GPU 台账:总量含非 Ready 节点(前端单独画第三段)。",
+        "properties": {
+          "gpu_total": {
+            "title": "Gpu Total",
+            "type": "integer"
+          },
+          "gpu_used": {
+            "title": "Gpu Used",
+            "type": "integer"
+          },
+          "pool": {
+            "title": "Pool",
+            "type": "string"
+          },
+          "ready_gpu_total": {
+            "title": "Ready Gpu Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pool",
+          "gpu_total",
+          "gpu_used",
+          "ready_gpu_total"
+        ],
+        "title": "OverviewPoolOut",
+        "type": "object"
+      },
       "Page_BillHourlyOut_": {
         "properties": {
           "items": {
@@ -2852,6 +3015,33 @@
         "title": "Page[BillHourlyOut]",
         "type": "object"
       },
+      "Page_InstanceEventOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceEventOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[InstanceEventOut]",
+        "type": "object"
+      },
       "Page_LedgerEntryOut_": {
         "properties": {
           "items": {
@@ -2877,6 +3067,33 @@
           "items"
         ],
         "title": "Page[LedgerEntryOut]",
+        "type": "object"
+      },
+      "Page_NotificationOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[NotificationOut]",
         "type": "object"
       },
       "PasswordResetRequest": {
@@ -3911,6 +4128,35 @@
         "title": "SkuCreate",
         "type": "object"
       },
+      "SkuImpactOut": {
+        "description": "改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。",
+        "properties": {
+          "active_gpus": {
+            "title": "Active Gpus",
+            "type": "integer"
+          },
+          "active_instances": {
+            "title": "Active Instances",
+            "type": "integer"
+          },
+          "active_users": {
+            "title": "Active Users",
+            "type": "integer"
+          },
+          "sku_id": {
+            "title": "Sku Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sku_id",
+          "active_instances",
+          "active_users",
+          "active_gpus"
+        ],
+        "title": "SkuImpactOut",
+        "type": "object"
+      },
       "SkuMarketOut": {
         "description": "市场卡片视图(用户端)。",
         "properties": {
@@ -4372,6 +4618,17 @@
             "title": "Id",
             "type": "integer"
           },
+          "instances_stopped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instances Stopped"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -4514,6 +4771,7 @@
             "type": "string"
           },
           "frozen_amount": {
+            "description": "预留字段:冻结预占未实现,恒为 \"0.00\"",
             "title": "Frozen Amount",
             "type": "string"
           }
@@ -4584,7 +4842,26 @@
         ]
       },
       "post": {
+        "description": "发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单。",
         "operationId": "admin_create_adjustment_api_admin_v1_adjustments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4954,7 +5231,7 @@
     },
     "/api/admin/v1/audit": {
       "get": {
-        "description": "审计检索:actor_id / 动作前缀 / 时间区间。",
+        "description": "审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(响应保持数组,满页即还有更早)。",
         "operationId": "admin_audit_log_api_admin_v1_audit_get",
         "parameters": [
           {
@@ -5045,8 +5322,26 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 500,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           }
         ],
@@ -5246,7 +5541,7 @@
     },
     "/api/admin/v1/finance/orders/{order_no}/backfill": {
       "post": {
-        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。",
+        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态。",
         "operationId": "admin_backfill_order_api_admin_v1_finance_orders__order_no__backfill_post",
         "parameters": [
           {
@@ -5256,6 +5551,22 @@
             "schema": {
               "title": "Order No",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -6482,7 +6793,7 @@
     },
     "/api/admin/v1/outbox/{task_id}/retry": {
       "post": {
-        "description": "重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。",
+        "description": "重放死信(需原因,与忽略对齐):置回 pending 交还 worker(handler 幂等,重放安全)。",
         "operationId": "admin_retry_dead_task_api_admin_v1_outbox__task_id__retry_post",
         "parameters": [
           {
@@ -6495,6 +6806,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboxRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -6523,6 +6844,33 @@
           }
         ],
         "summary": "Admin Retry Dead Task",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/overview": {
+      "get": {
+        "description": "值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。\n\n全是精确计数,替代前端在截断列表(200/500 条)里数数的错误口径。",
+        "operationId": "admin_overview_api_admin_v1_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Overview",
         "tags": [
           "admin"
         ]
@@ -7099,9 +7447,57 @@
         ]
       }
     },
+    "/api/admin/v1/skus/{sku_id}/impact": {
+      "get": {
+        "description": "改价/下架影响面(只读):当前活跃实例数/涉及用户数/占用卡数。",
+        "operationId": "admin_sku_impact_api_admin_v1_skus__sku_id__impact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sku_id",
+            "required": true,
+            "schema": {
+              "title": "Sku Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkuImpactOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Sku Impact",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/tenants": {
       "get": {
-        "description": "租户列表。q = 手机号(完整号码精确,短串按后缀)。\n\n列表只回掩码。按号码检索是敏感读,显式落一条审计(中间件默认只审计写操作)。",
+        "description": "租户列表。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。\n\n订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行排在最前,\n手机号后缀命中行保持原序随后。列表只回掩码。按号码/id 检索是敏感读,显式落一条审计\n(中间件默认只审计写操作)。",
         "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
         "parameters": [
           {
@@ -7169,6 +7565,54 @@
           }
         ],
         "summary": "Admin List Tenants",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/tenants/{user_id}/adjust-context": {
+      "get": {
+        "description": "调账前置上下文(只读):回显掩码手机号/当前余额/近 3 条流水。不存在 → 404。",
+        "operationId": "admin_adjust_context_api_admin_v1_tenants__user_id__adjust_context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustContextOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Adjust Context",
         "tags": [
           "admin"
         ]
@@ -7502,6 +7946,61 @@
           }
         },
         "summary": "Login",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "登出当前会话(refresh token 一次性消费位撤销)。token 无效也回 204,防枚举。",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/logout-all": {
+      "post": {
+        "description": "登出全部会话:token_version+1,已签发的 access/refresh 即刻全部失效。",
+        "operationId": "logout_all_api_v1_auth_logout_all_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Logout All",
         "tags": [
           "account"
         ]
@@ -8411,7 +8910,7 @@
     },
     "/api/v1/instances/{uuid}/events": {
       "get": {
-        "description": "状态时间线(计费依据)。",
+        "description": "状态时间线(计费依据)。降序(最新在前)游标分页。",
         "operationId": "list_instance_events_api_v1_instances__uuid__events_get",
         "parameters": [
           {
@@ -8422,6 +8921,39 @@
               "title": "Uuid",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -8429,11 +8961,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/InstanceEventOut"
-                  },
-                  "title": "Response List Instance Events Api V1 Instances  Uuid  Events Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_InstanceEventOut_"
                 }
               }
             },
@@ -8998,6 +9526,7 @@
     },
     "/api/v1/notifications": {
       "get": {
+        "description": "站内信:降序(最新在前)游标分页。",
         "operationId": "list_notifications_api_v1_notifications_get",
         "parameters": [
           {
@@ -9009,6 +9538,39 @@
               "title": "Unread",
               "type": "boolean"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -9016,11 +9578,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/NotificationOut"
-                  },
-                  "title": "Response List Notifications Api V1 Notifications Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_NotificationOut_"
                 }
               }
             },

@@ -5,7 +5,7 @@
 
 import { brand, colorPrimary } from "@superdl/ui";
 import { Button, Space, theme, Tooltip, Typography } from "antd";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 export interface ChipOption<T extends string | number> {
   value: T;
@@ -28,15 +28,17 @@ export function ChipRow<T extends string | number>({
   extra?: ReactNode;
 }) {
   const { token } = theme.useToken();
+  const labelId = useId();
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
       <Typography.Text
         type="secondary"
+        id={labelId}
         style={{ flexShrink: 0, width: 72, lineHeight: "32px", textAlign: "right" }}
       >
         {label}
       </Typography.Text>
-      <Space wrap size={8} style={{ flex: 1 }}>
+      <Space wrap size={8} style={{ flex: 1 }} role="group" aria-labelledby={labelId}>
         {options.map((o) => {
           const selected = o.value === value;
           const btn = (
@@ -44,6 +46,7 @@ export function ChipRow<T extends string | number>({
               key={String(o.value)}
               size="middle"
               disabled={o.disabled}
+              aria-pressed={selected}
               onClick={() => onChange(o.value)}
               style={
                 selected

@@ -7,5 +7,6 @@
 
 export interface WalletOut {
   balance: string;
+  /** 预留字段:冻结预占未实现,恒为 "0.00" */
   frozen_amount: string;
 }

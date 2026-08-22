@@ -32,6 +32,8 @@ export function skuColumns(
   const availability = [
     {
       title: t("sku.colFree"),
+      width: 110,
+      sorter: (a: SkuMarketOut, b: SkuMarketOut) => (a.available_count ?? 0) - (b.available_count ?? 0),
       render: (_: unknown, s: SkuMarketOut) => {
         const n = s.available_count ?? 0;
         return n > 0 ? (
@@ -45,6 +47,8 @@ export function skuColumns(
   return [
     {
       title: t("sku.colSpec"),
+      // fixed 价格列使整表 table-layout:fixed;规格列不声明宽度会被档位徽标(不换行)压成逐字竖排
+      width: 220,
       render: (_: unknown, s: SkuMarketOut) => (
         <Space>
           <Typography.Text strong>{s.name}</Typography.Text>
@@ -73,6 +77,7 @@ export function skuColumns(
       fixed: "right" as const,
       align: "right" as const,
       width: 150,
+      sorter: (a: SkuMarketOut, b: SkuMarketOut) => Number(a.price_hourly) - Number(b.price_hourly),
       render: (_: unknown, s: SkuMarketOut) => (
         <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
           {opts.fmt.formatHourlyPrice(s.price_hourly)}

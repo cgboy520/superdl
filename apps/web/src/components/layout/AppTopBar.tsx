@@ -2,13 +2,15 @@
  * 全宽品牌顶栏(56px,渐变靛蓝)。
  * public:中部锚点导航 + 右侧 登录/免费注册(已登录换「进入控制台」)。
  * console:右区(余额/通知/用户)由壳经 right 注入。
+ * 窄屏(≤768px)中部导航收进汉堡 Drawer,保持可达。
  */
 
+import { MenuOutlined } from "@ant-design/icons";
 import { brand, colorPrimary } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
-import { Button, Space } from "antd";
+import { Button, Drawer, Grid, Space } from "antd";
 import { useTranslation } from "react-i18next";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useIsLoggedIn } from "../../stores/auth";
 import { BrandLogo } from "./BrandLogo";
@@ -23,20 +25,18 @@ export function AppTopBar({
 }) {
   const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
+  const screens = Grid.useBreakpoint();
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <header
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-        height: 56,
-        background: brand.topBarBg,
-        display: "flex",
-        alignItems: "center",
-        paddingInline: 24,
-        gap: 20,
-      }}
-    >
+    <header className="app-topbar" style={{ background: brand.topBarBg }}>
+      {!screens.md && (
+        <Button
+          type="text"
+          aria-label={t("topbar.openMenu")}
+          icon={<MenuOutlined style={{ color: "#fff", fontSize: 18 }} />}
+          onClick={() => setMenuOpen(true)}
+        />
+      )}
       <Link to="/" style={{ display: "inline-flex", textDecoration: "none" }}>
         <BrandLogo variant="light" />
       </Link>
@@ -56,7 +56,7 @@ export function AppTopBar({
           </>
         )}
       </nav>
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="app-topbar-right">
         <LangSwitcher />
         {variant === "public" ? (
           loggedIn ? (
@@ -86,6 +86,29 @@ export function AppTopBar({
           right
         )}
       </div>
+      <Drawer
+        title={<BrandLogo />}
+        placement="left"
+        size={260}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+      >
+        <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <Link to="/market" className="drawer-link" onClick={() => setMenuOpen(false)}>
+            {t("topbar.market")}
+          </Link>
+          {variant === "public" && (
+            <>
+              <a href="/#pricing" className="drawer-link" onClick={() => setMenuOpen(false)}>
+                {t("topbar.pricing")}
+              </a>
+              <a href="/#ranking" className="drawer-link" onClick={() => setMenuOpen(false)}>
+                {t("topbar.ranking")}
+              </a>
+            </>
+          )}
+        </nav>
+      </Drawer>
     </header>
   );
 }

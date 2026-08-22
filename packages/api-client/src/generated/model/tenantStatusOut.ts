@@ -7,5 +7,6 @@
 
 export interface TenantStatusOut {
   id: number;
+  instances_stopped?: number | null;
   status: string;
 }

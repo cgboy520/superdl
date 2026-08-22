@@ -23,6 +23,14 @@ const ROLES = ["admin", "ops", "finance", "readonly"] as const;
 type AdminRole = (typeof ROLES)[number];
 const MIN_PASSWORD = 12;
 
+// 角色文案复用 roles.* 目录(与顶栏角色 Tag 同源)
+const ROLE_LABEL_KEY = {
+  admin: "roles.admin",
+  ops: "roles.ops",
+  finance: "roles.finance",
+  readonly: "roles.readonly",
+} as const satisfies Record<AdminRole, string>;
+
 function roleColor(role: string): string {
   if (role === "admin") return adminColors.critical;
   if (role === "readonly") return adminColors.textMuted;
@@ -59,7 +67,7 @@ export function AdminsTab() {
       title: t("admins.colRole"),
       dataIndex: "role",
       key: "role",
-      render: (role: string) => <Tag color={roleColor(role)}>{t(`admins.role_${role}` as never)}</Tag>,
+      render: (role: AdminRole) => <Tag color={roleColor(role)}>{t(ROLE_LABEL_KEY[role])}</Tag>,
     },
     {
       title: t("admins.colStatus"),
@@ -91,11 +99,11 @@ export function AdminsTab() {
               style={{ width: 110 }}
               value={row.role as AdminRole}
               disabled={!isSuperAdmin || isSelf}
-              options={ROLES.map((r) => ({ value: r, label: t(`admins.role_${r}` as never) }))}
+              options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
               onChange={(role: AdminRole) => {
                 // 改角色必须带 reason:审计只记新值,不带原因就答不出「从什么改成什么」
                 Modal.confirm({
-                  title: t("admins.confirmRoleTitle", { name: row.username, role: t(`admins.role_${role}` as never) }),
+                  title: t("admins.confirmRoleTitle", { name: row.username, role: t(ROLE_LABEL_KEY[role]) }),
                   content: t("admins.roleTakesEffectNow"),
                   onOk: async () => {
                     try {
@@ -162,11 +170,11 @@ export function AdminsTab() {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message={t("admins.needSecondAdmin")}
+          title={t("admins.needSecondAdmin")}
           description={t("admins.needSecondAdminDetail")}
         />
       )}
-      {!isSuperAdmin && <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t("admins.superAdminOnly")} />}
+      {!isSuperAdmin && <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t("admins.superAdminOnly")} />}
       <Table<AdminAccountOut>
         rowKey="id"
         size="small"
@@ -209,7 +217,7 @@ export function AdminsTab() {
             <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Form.Item name="role" label={t("admins.colRole")} initialValue="ops" rules={[{ required: true }]}>
-            <Select options={ROLES.map((r) => ({ value: r, label: t(`admins.role_${r}` as never) }))} />
+            <Select options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))} />
           </Form.Item>
           <Form.Item name="reason" label={t("admins.reason")} rules={[{ required: true, min: 2, max: 200 }]}>
             <Input.TextArea rows={2} placeholder={t("admins.reasonPlaceholder")} />
@@ -236,7 +244,7 @@ export function AdminsTab() {
           }
         }}
       >
-        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t("admins.resetKicksSessions")} />
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }} title={t("admins.resetKicksSessions")} />
         <Form form={pwdForm} layout="vertical">
           <Form.Item
             name="password"
@@ -269,7 +277,7 @@ export function AdminsTab() {
           }
         }}
       >
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message={t("admins.selfChangeKicksSessions")} />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} title={t("admins.selfChangeKicksSessions")} />
         <Form form={selfForm} layout="vertical">
           <Form.Item name="current_password" label={t("admins.currentPassword")} rules={[{ required: true }]}>
             <Input.Password autoComplete="current-password" />

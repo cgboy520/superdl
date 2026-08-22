@@ -1,25 +1,28 @@
-import { adminColors, formatDateTime, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
+import { adminColors, formatDateTime, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  Alert,
   App,
   Button,
   Card,
   Col,
   DatePicker,
+  Descriptions,
   Form,
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Row,
   Select,
   Space,
+  Spin,
   Statistic,
   Table,
   Tabs,
   Tag,
   Tooltip,
+  Typography,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useState } from "react";
@@ -30,7 +33,7 @@ import {
   type AnomalyRow,
   type OrderRow,
   type ReconciliationReport,
-  isApiError,
+  useAdjustContext,
   useAdjustments,
   useAnomalies,
   useBackfillOrder,
@@ -44,6 +47,8 @@ import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
+import { StatusTag } from "../../components/StatusTag";
+import { TenantLink } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/finance")({
@@ -63,13 +68,13 @@ function ReconciliationCard() {
       extra={<DatePicker value={day} onChange={(d) => d && setDay(d)} allowClear={false} />}
     >
       <Row gutter={16}>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={8}>
           <Statistic title={t("finance.billedTotal")} value={report ? formatMoney(report.billed_total) : "—"} />
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={8}>
           <Statistic title={t("finance.estimatedTotal")} value={report ? formatMoney(report.estimated_total) : "—"} />
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={8}>
           <Statistic
             title="diff%"
             value={report ? report.diff_pct : "—"}
@@ -139,7 +144,12 @@ function OrdersTab() {
         dataSource={orders}
         columns={[
           { title: t("finance.colOrderNo"), dataIndex: "order_no" },
-          { title: t("finance.colTenant"), dataIndex: "user_id", width: 80 },
+          {
+            title: t("finance.colTenant"),
+            dataIndex: "user_id",
+            width: 80,
+            render: (v: number) => <TenantLink id={v} />,
+          },
           { title: t("finance.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
           {
             title: t("finance.colChannel"),
@@ -154,7 +164,7 @@ function OrdersTab() {
             dataIndex: "status",
             render: (v: string) => {
               const m = metaOf(orderStatusMap, v);
-              return <Tag color={m?.color}>{m ? t(m.labelKey) : v}</Tag>;
+              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
             },
           },
           { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
@@ -165,8 +175,92 @@ function OrdersTab() {
   );
 }
 
-function AdjustmentsTab() {
+// 与 adminapi/service.ADJUST_MAX_ABS 对齐:单笔绝对值上限,超出走对公/线下流程
+const ADJUST_MAX_ABS = 100000;
+
+/** 复核确认框:列出租户/当前余额/调账后余额/发起人/原因(不再是只有金额的一句话)。 */
+function ReviewConfirmModal({
+  target,
+  onClose,
+  onReviewed,
+}: {
+  target: { adj: AdjustmentRow; approve: boolean } | null;
+  onClose: () => void;
+  onReviewed: () => void;
+}) {
   const { t } = useTranslation();
+  const errText = useApiErrorText();
+  const { formatMoney } = useFormat();
+  const { message } = App.useApp();
+  const ctx = useAdjustContext(target?.adj.user_id ?? null);
+  const review = useReviewAdjustment({
+    mutation: {
+      onSuccess: () => {
+        message.success(t("finance.reviewed"));
+        onReviewed();
+        onClose();
+      },
+      // 统一走 message_key 目录映射,不直接展示 e.message(#254)
+      onError: (e) => message.error(errText(e, t("finance.reviewFailed"))),
+    },
+  });
+  if (!target) return null;
+  const { adj, approve } = target;
+  const balance = ctx.data ? Number(ctx.data.balance) : null;
+  const afterCents =
+    balance === null ? null : Math.round(balance * 100) + Math.round(Number(adj.amount) * 100);
+  return (
+    <Modal
+      open
+      title={approve ? t("finance.approveTitle") : t("finance.rejectTitle")}
+      okText={approve ? t("finance.approve") : t("finance.reject")}
+      okButtonProps={{ danger: !approve, loading: review.isPending, disabled: ctx.isError }}
+      onCancel={onClose}
+      onOk={() =>
+        review.mutate({
+          adjustmentId: adj.id,
+          data: approve
+            ? { approve: true }
+            : { approve: false, comment: t("finance.rejectComment") },
+        })
+      }
+    >
+      <Descriptions column={1} size="small" bordered>
+        <Descriptions.Item label={t("finance.colTenant")}>
+          #{adj.user_id}
+          {ctx.data ? ` · ${ctx.data.phone_masked}` : ""}
+          {ctx.data?.status === "frozen" ? ` · ${t("tenants.frozen")}` : ""}
+        </Descriptions.Item>
+        <Descriptions.Item label={t("finance.colAmount")}>
+          <span style={{ color: adj.amount.startsWith("-") ? adminColors.negative : adminColors.positive }}>
+            {formatMoney(adj.amount)}
+          </span>
+        </Descriptions.Item>
+        <Descriptions.Item label={t("finance.ctxBalance")}>
+          {ctx.isLoading ? "…" : ctx.data ? formatMoney(ctx.data.balance) : "—"}
+        </Descriptions.Item>
+        {approve && (
+          <Descriptions.Item label={t("finance.ctxBalanceAfter")}>
+            {afterCents === null ? "—" : formatMoney((afterCents / 100).toFixed(2))}
+          </Descriptions.Item>
+        )}
+        <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
+        <Descriptions.Item label={t("finance.colReason")}>{adj.reason}</Descriptions.Item>
+      </Descriptions>
+      {ctx.isError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 12 }}
+          title={t("finance.tenantNotFound")}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function AdjustmentsTab() {
+  const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { formatMoney } = useFormat();
   const { message } = App.useApp();
@@ -177,8 +271,14 @@ function AdjustmentsTab() {
   const { data, queryKey } = useAdjustments();
   const rows: AdjustmentRow[] = data ?? [];
   const [creating, setCreating] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<{ adj: AdjustmentRow; approve: boolean } | null>(null);
   const [form] = Form.useForm<{ user_id: number; amount: string; reason: string }>();
   const refresh = () => void qc.invalidateQueries({ queryKey });
+
+  // 输入 user_id 即时回显租户身份与资金现状;不存在则阻止提交
+  const wUserId = Form.useWatch("user_id", form);
+  const ctxId = typeof wUserId === "number" && Number.isInteger(wUserId) && wUserId > 0 ? wUserId : null;
+  const ctx = useAdjustContext(creating ? ctxId : null);
 
   const create = useCreateAdjustment({
     mutation: {
@@ -189,22 +289,6 @@ function AdjustmentsTab() {
         refresh();
       },
       onError: (e) => message.error(errText(e, t("finance.createFailed"))),
-    },
-  });
-  const review = useReviewAdjustment({
-    mutation: {
-      onSuccess: () => {
-        message.success(t("finance.reviewed"));
-        refresh();
-      },
-      onError: (e) =>
-        message.error(
-          isApiError(e) && e.code === "ADMIN_SECOND_REVIEW_REQUIRED"
-            ? t("finance.noSelfReview")
-            : isApiError(e)
-              ? e.message
-              : t("finance.reviewFailed"),
-        ),
     },
   });
 
@@ -226,7 +310,12 @@ function AdjustmentsTab() {
         dataSource={rows}
         columns={[
           { title: t("finance.colAdjustId"), dataIndex: "id", width: 70 },
-          { title: t("finance.colTenant"), dataIndex: "user_id", width: 80 },
+          {
+            title: t("finance.colTenant"),
+            dataIndex: "user_id",
+            width: 80,
+            render: (v: number) => <TenantLink id={v} />,
+          },
           {
             title: t("finance.colAmount"),
             dataIndex: "amount",
@@ -275,31 +364,22 @@ function AdjustmentsTab() {
                   }
                 >
                   <Space>
-                    <Popconfirm
-                      title={t("finance.approveConfirm", { amount: formatMoney(r.amount) })}
-                      onConfirm={() =>
-                        review.mutate({ adjustmentId: r.id, data: { approve: true } })
-                      }
+                    <Button
+                      size="small"
+                      type="primary"
                       disabled={!writable || isCreator}
+                      onClick={() => setReviewTarget({ adj: r, approve: true })}
                     >
-                      <Button size="small" type="primary" disabled={!writable || isCreator}>
-                        {t("finance.approve")}
-                      </Button>
-                    </Popconfirm>
-                    <Popconfirm
-                      title={t("finance.rejectConfirm")}
-                      onConfirm={() =>
-                        review.mutate({
-                          adjustmentId: r.id,
-                          data: { approve: false, comment: t("finance.rejectComment") },
-                        })
-                      }
+                      {t("finance.approve")}
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
                       disabled={!writable || isCreator}
+                      onClick={() => setReviewTarget({ adj: r, approve: false })}
                     >
-                      <Button size="small" danger disabled={!writable || isCreator}>
-                        {t("finance.reject")}
-                      </Button>
-                    </Popconfirm>
+                      {t("finance.reject")}
+                    </Button>
                   </Space>
                 </Tooltip>
               );
@@ -309,12 +389,19 @@ function AdjustmentsTab() {
         ]}
       />
       <ListCapNote rows={rows.length} cap={LIST_CAPS.adjustments} />
+      <ReviewConfirmModal
+        target={reviewTarget}
+        onClose={() => setReviewTarget(null)}
+        onReviewed={refresh}
+      />
       <Modal
         title={t("finance.createAdjustTitle")}
         open={creating}
         onCancel={() => setCreating(false)}
         onOk={async () => {
           const values = await form.validateFields();
+          // 上下文必须已确认(不存在/查询失败都阻止提交;服务端再拦一道)
+          if (!ctx.data) return;
           create.mutate({
             data: {
               user_id: values.user_id,
@@ -323,22 +410,69 @@ function AdjustmentsTab() {
             },
           });
         }}
-        okButtonProps={{ loading: create.isPending }}
+        okButtonProps={{ loading: create.isPending, disabled: ctxId === null || !ctx.data }}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="user_id" label={t("finance.tenantIdLabel")} rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: "100%" }} />
+            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
           </Form.Item>
+          {ctxId !== null && (
+            <div style={{ marginTop: -8, marginBottom: 16 }}>
+              {ctx.isLoading && <Spin size="small" />}
+              {ctx.isError && (
+                <Typography.Text type="danger">{t("finance.tenantNotFound")}</Typography.Text>
+              )}
+              {ctx.data && (
+                <Alert
+                  type={ctx.data.status === "frozen" ? "warning" : "info"}
+                  showIcon
+                  title={
+                    <Space size={12} wrap>
+                      <span>{ctx.data.phone_masked}</span>
+                      <span>
+                        {ctx.data.status === "frozen" ? t("tenants.frozen") : t("tenants.active")}
+                      </span>
+                      <span>
+                        {t("finance.ctxBalance")}:<b>{formatMoney(ctx.data.balance)}</b>
+                      </span>
+                      <span>
+                        {t("finance.ctxRunning", { count: ctx.data.running_instances })}
+                      </span>
+                    </Space>
+                  }
+                  description={
+                    ctx.data.recent_ledger.length > 0 ? (
+                      <Space orientation="vertical" size={2} style={{ width: "100%" }}>
+                        {ctx.data.recent_ledger.map((l) => (
+                          <span key={l.id} style={{ fontSize: 12 }}>
+                            {formatDateTime(l.created_at)} ·{" "}
+                            {(() => {
+                              const m = metaOf(ledgerTypeMap, l.type);
+                              return m ? t(m.labelKey) : l.type;
+                            })()}{" "}
+                            · {formatMoney(l.amount)}
+                            {l.remark ? ` · ${l.remark}` : ""}
+                          </span>
+                        ))}
+                      </Space>
+                    ) : undefined
+                  }
+                />
+              )}
+            </div>
+          )}
           <Form.Item
             name="amount"
             label={t("finance.amountLabel")}
             rules={[{ required: true }]}
           >
-            {/* stringMode:调账金额直接以字符串提交,不经二进制浮点 */}
+            {/* stringMode:调账金额直接以字符串提交,不经二进制浮点;上限与后端 ADJUST_MAX_ABS 对齐 */}
             <InputNumber
               step="0.01"
               precision={2}
               stringMode
+              min={String(-ADJUST_MAX_ABS)}
+              max={String(ADJUST_MAX_ABS)}
               style={{ width: "100%" }}
               placeholder={t("finance.amountPlaceholder")}
             />
@@ -421,7 +555,7 @@ function AnomaliesTab() {
             title: t("finance.colSubject"),
             render: (_, r) => (
               <>
-                {r.order_no ?? t("finance.tenantRef", { id: r.user_id })}
+                {r.order_no ?? <TenantLink id={r.user_id} />}
                 <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.detail}</div>
               </>
             ),

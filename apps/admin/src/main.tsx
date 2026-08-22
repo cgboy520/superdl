@@ -4,6 +4,7 @@ import { createRouter, RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
+import "./global.css";
 import "./i18n";
 import { routeTree } from "./routeTree.gen";
 import { authStore } from "./stores/auth";
@@ -14,7 +15,9 @@ configureApiClient({
   onUnauthorized: () => {
     authStore.getState().logout();
     if (!window.location.pathname.startsWith("/login")) {
-      window.location.href = "/login";
+      // 硬跳转到登录页并保留回跳地址(站内路径由登录页白名单校验)
+      const returnTo = window.location.pathname + window.location.search;
+      window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
     }
   },
 });

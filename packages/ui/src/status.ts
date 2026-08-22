@@ -63,8 +63,8 @@ export type SkuTier = "dedicated" | "mig" | "shared_std" | "shared_eco";
 export const skuTierMap = {
   dedicated: { labelKey: "shared:status.tier.dedicated", color: "#4F46E5" },
   mig: { labelKey: "shared:status.tier.mig", color: "#0891B2" },
-  shared_std: { labelKey: "shared:status.tier.shared_std", color: "#16A34A" },
-  shared_eco: { labelKey: "shared:status.tier.shared_eco", color: "#EA580C", hintKey: "shared:status.tierHint.shared_eco" },
+  shared_std: { labelKey: "shared:status.tier.shared_std", color: statusColors.green },
+  shared_eco: { labelKey: "shared:status.tier.shared_eco", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_eco" },
 } as const satisfies Record<SkuTier, { labelKey: string; color: string; hintKey?: string }>;
 export type SkuTierMeta = (typeof skuTierMap)[SkuTier];
 

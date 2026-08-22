@@ -3,10 +3,13 @@ import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
+import relativeTime from "dayjs/plugin/relativeTime";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { AppLang } from "../i18n";
+
+dayjs.extend(relativeTime);
 
 const ANTD_LOCALES = { "zh-CN": zhCN, "en-US": enUS } as const;
 const DAYJS_LOCALES = { "zh-CN": "zh-cn", "en-US": "en" } as const;

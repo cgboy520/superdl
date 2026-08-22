@@ -17,7 +17,8 @@ interface Props {
   disabled?: boolean;
   /** 禁用原因(tooltip)。无权限/状态不符时必填 */
   disabledReason?: string;
-  onSubmit: (reason: string) => Promise<void>;
+  /** 返回字符串则作为成功提示(用于回显影响面,如「已停 N 台」),否则用通用文案 */
+  onSubmit: (reason: string) => Promise<string | void>;
 }
 
 export function ReasonAction({
@@ -47,8 +48,8 @@ export function ReasonAction({
     const { reason } = form.getFieldsValue();
     setLoading(true);
     try {
-      await onSubmit(reason);
-      message.success(t("common.actionDone", { action: title }));
+      const custom = await onSubmit(reason);
+      message.success(typeof custom === "string" ? custom : t("common.actionDone", { action: title }));
       setOpen(false);
       setConfirming(false);
       form.resetFields();
@@ -75,6 +76,8 @@ export function ReasonAction({
           } catch {
             return;
           }
+          // 先关原因弹窗再开二次确认:两层 Modal 叠开时 ESC/蒙层会误关底下那层
+          setOpen(false);
           setConfirming(true);
         }}
         okText={t("common.next")}

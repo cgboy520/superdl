@@ -25,10 +25,11 @@ import {
 import type {
   ApiError,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
-  InstanceEventOut,
   InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
   ListSkusApiV1SkusGetParams,
+  PageBillHourlyOut,
+  PageInstanceEventOut,
   PageLedgerEntryOut,
   RechargeOut,
 } from "@superdl/api-client";
@@ -41,7 +42,9 @@ interface QueryOpts<T = unknown> {
   refetchInterval?:
     | number
     | false
-    | ((query: { state: { data: T | undefined } }) => number | false | undefined);
+    | ((query: {
+        state: { data: T | undefined; status: "pending" | "error" | "success" };
+      }) => number | false | undefined);
   retry?: number | boolean;
 }
 
@@ -84,10 +87,11 @@ export const useInstances = (opts?: QueryOpts<InstanceOut[]>) =>
   useApiQuery(["instances"], () => listInstancesApiV1InstancesGet(), opts);
 export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
   useApiQuery(["instances", uuid], () => getInstanceApiV1InstancesUuidGet(uuid), opts);
-export const useInstanceEvents = (uuid: string, opts?: QueryOpts<InstanceEventOut[]>) =>
+export const useInstanceEvents = (uuid: string, opts?: QueryOpts<PageInstanceEventOut>) =>
   useApiQuery(
     ["instances", uuid, "events"],
-    () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid),
+    // 服务端已改降序游标分页;取大页保持「失败原因/运行过」判定的旧语义
+    () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { limit: 200 }),
     opts,
   );
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
@@ -104,6 +108,15 @@ export const useInstanceMetrics = (
   );
 export const useHourlyBills = (params?: ListHourlyBillsApiV1BillsHourlyGetParams) =>
   useApiQuery(["bills", params], () => listHourlyBillsApiV1BillsHourlyGet(params));
+/** 小时账单游标分页(费用中心「加载更多」);queryKey 与单页版同属 bills 域,失效一并命中。 */
+export const useHourlyBillPages = (params?: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">) =>
+  useInfiniteQuery<PageBillHourlyOut, ApiError, InfiniteData<PageBillHourlyOut>, unknown[], string | undefined>({
+    queryKey: normalizeKey(["bills", "pages", params]),
+    queryFn: ({ pageParam }) =>
+      listHourlyBillsApiV1BillsHourlyGet({ ...params, cursor: pageParam, limit: 50 }),
+    initialPageParam: undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
 /** 资金流水游标分页。必须走 useInfiniteQuery:自行把页累积进 useState 后,缓存失效不会刷新。 */
 export const useLedgerPages = (limit = 20) =>
   useInfiniteQuery<PageLedgerEntryOut, ApiError, InfiniteData<PageLedgerEntryOut>, unknown[], string | undefined>({

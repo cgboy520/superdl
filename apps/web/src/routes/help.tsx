@@ -74,7 +74,7 @@ function HelpPage() {
               <Typography.Text type="secondary">{t("help.contactHint")}</Typography.Text>
             </Space>
           ) : (
-            <Alert type="info" showIcon message={t("help.contactMissing")} />
+            <Alert type="info" showIcon title={t("help.contactMissing")} />
           )}
         </Card>
 

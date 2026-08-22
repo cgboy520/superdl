@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdjustContextOut,
   AdjustmentCreate,
   AdjustmentOut,
   AdjustmentReview,
@@ -27,6 +28,9 @@ import type {
   AdminAccountOut,
   AdminAlertOut,
   AdminAuditLogApiAdminV1AuditGetParams,
+  AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders,
+  AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders,
+  AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders,
   AdminCreateRequest,
   AdminForceStopRequest,
   AdminImageOut,
@@ -72,8 +76,10 @@ import type {
   OrderBackfillRequest,
   OrderVerifyOut,
   OutboxDiscardRequest,
+  OutboxRetryRequest,
   OutboxTaskStatusOut,
   OversellPoolOut,
+  OverviewOut,
   PageBillHourlyOut,
   PageLedgerEntryOut,
   PaymentAnomalyOut,
@@ -89,6 +95,7 @@ import type {
   SkuAdminOut,
   SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
   SkuCreate,
+  SkuImpactOut,
   SkuUpdate,
   SmsTestOut,
   SmsTestRequest,
@@ -229,15 +236,17 @@ export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
 }
 
 /**
+ * 发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单。
  * @summary Admin Create Adjustment
  */
-export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentStatusOut> => {
+export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate,
+    headers?: AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentStatusOut> => {
 
   return customFetch<AdjustmentStatusOut>(getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(adjustmentCreate)
   }
 );}
@@ -253,7 +262,8 @@ export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostQueryKey = (adjust
     }
 
 
-export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError = HTTPValidationError>(adjustmentCreate: AdjustmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError = HTTPValidationError>(adjustmentCreate: AdjustmentCreate,
+    headers?: AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -262,7 +272,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>> = ({ signal }) => adminCreateAdjustmentApiAdminV1AdjustmentsPost(adjustmentCreate, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>> = ({ signal }) => adminCreateAdjustmentApiAdminV1AdjustmentsPost(adjustmentCreate,headers, { signal, ...requestOptions });
 
 
 
@@ -276,7 +286,8 @@ export type AdminCreateAdjustmentApiAdminV1AdjustmentsPostQueryError = HTTPValid
 
 
 export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError = HTTPValidationError>(
- adjustmentCreate: AdjustmentCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>> & Pick<
+ adjustmentCreate: AdjustmentCreate,
+    headers: undefined |  AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>,
           TError,
@@ -286,7 +297,8 @@ export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaite
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError = HTTPValidationError>(
- adjustmentCreate: AdjustmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>> & Pick<
+ adjustmentCreate: AdjustmentCreate,
+    headers?: AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>,
           TError,
@@ -296,7 +308,8 @@ export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaite
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError = HTTPValidationError>(
- adjustmentCreate: AdjustmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ adjustmentCreate: AdjustmentCreate,
+    headers?: AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -304,11 +317,12 @@ export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaite
  */
 
 export function useAdminCreateAdjustmentApiAdminV1AdjustmentsPost<TData = Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError = HTTPValidationError>(
- adjustmentCreate: AdjustmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ adjustmentCreate: AdjustmentCreate,
+    headers?: AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminCreateAdjustmentApiAdminV1AdjustmentsPostQueryOptions(adjustmentCreate,options)
+  const queryOptions = getAdminCreateAdjustmentApiAdminV1AdjustmentsPostQueryOptions(adjustmentCreate,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -1060,7 +1074,7 @@ export const getAdminAuditLogApiAdminV1AuditGetUrl = (params?: AdminAuditLogApiA
 }
 
 /**
- * 审计检索:actor_id / 动作前缀 / 时间区间。
+ * 审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(响应保持数组,满页即还有更早)。
  * @summary Admin Audit Log
  */
 export const adminAuditLogApiAdminV1AuditGet = async (params?: AdminAuditLogApiAdminV1AuditGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditLogOut[]> => {
@@ -1665,17 +1679,18 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
 }
 
 /**
- * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。
+ * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态。
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options?: Parameters<typeof customFetch>[1]): Promise<OrderBackfillOut> => {
+    orderBackfillRequest: OrderBackfillRequest,
+    headers?: AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<OrderBackfillOut> => {
 
   return customFetch<OrderBackfillOut>(getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl(orderNo),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(orderBackfillRequest)
   }
 );}
@@ -1693,7 +1708,8 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQuer
 
 
 export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryOptions = <TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+    orderBackfillRequest: OrderBackfillRequest,
+    headers?: AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1702,7 +1718,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>> = ({ signal }) => adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(orderNo,orderBackfillRequest, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>> = ({ signal }) => adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(orderNo,orderBackfillRequest,headers, { signal, ...requestOptions });
 
 
 
@@ -1717,7 +1733,8 @@ export type AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryErr
 
 export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
  orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>> & Pick<
+    orderBackfillRequest: OrderBackfillRequest,
+    headers: undefined |  AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>,
           TError,
@@ -1728,7 +1745,8 @@ export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
  orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>> & Pick<
+    orderBackfillRequest: OrderBackfillRequest,
+    headers?: AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>,
           TError,
@@ -1739,7 +1757,8 @@ export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
  orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+    orderBackfillRequest: OrderBackfillRequest,
+    headers?: AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -1748,11 +1767,12 @@ export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<
 
 export function useAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost<TData = Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError = HTTPValidationError>(
  orderNo: string,
-    orderBackfillRequest: OrderBackfillRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+    orderBackfillRequest: OrderBackfillRequest,
+    headers?: AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryOptions(orderNo,orderBackfillRequest,options)
+  const queryOptions = getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostQueryOptions(orderNo,orderBackfillRequest,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -3021,13 +3041,14 @@ export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl = () => {
  * Idempotency-Key 重放不建新行(轮换该行 token 后返回)。
  * @summary Admin Create Enrollment
  */
-export const adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost = async (enrollmentCreate: EnrollmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<EnrollmentCommandOut> => {
+export const adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost = async (enrollmentCreate: EnrollmentCreate,
+    headers?: AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EnrollmentCommandOut> => {
 
   return customFetch<EnrollmentCommandOut>(getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(enrollmentCreate)
   }
 );}
@@ -3043,7 +3064,8 @@ export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryKey = (en
     }
 
 
-export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(enrollmentCreate: EnrollmentCreate,
+    headers?: AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -3052,7 +3074,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>> = ({ signal }) => adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(enrollmentCreate, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>> = ({ signal }) => adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(enrollmentCreate,headers, { signal, ...requestOptions });
 
 
 
@@ -3066,7 +3088,8 @@ export type AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryError = HTTPV
 
 
 export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
- enrollmentCreate: EnrollmentCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>> & Pick<
+ enrollmentCreate: EnrollmentCreate,
+    headers: undefined |  AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>,
           TError,
@@ -3076,7 +3099,8 @@ export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Aw
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
- enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>> & Pick<
+ enrollmentCreate: EnrollmentCreate,
+    headers?: AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>,
           TError,
@@ -3086,7 +3110,8 @@ export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Aw
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
- enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ enrollmentCreate: EnrollmentCreate,
+    headers?: AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -3094,11 +3119,12 @@ export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Aw
  */
 
 export function useAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPost<TData = Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError = HTTPValidationError>(
- enrollmentCreate: EnrollmentCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ enrollmentCreate: EnrollmentCreate,
+    headers?: AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryOptions(enrollmentCreate,options)
+  const queryOptions = getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostQueryOptions(enrollmentCreate,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -4086,17 +4112,18 @@ export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl = (taskId: 
 }
 
 /**
- * 重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。
+ * 重放死信(需原因,与忽略对齐):置回 pending 交还 worker(handler 幂等,重放安全)。
  * @summary Admin Retry Dead Task
  */
-export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskStatusOut> => {
+export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number,
+    outboxRetryRequest: OutboxRetryRequest, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskStatusOut> => {
 
   return customFetch<OutboxTaskStatusOut>(getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl(taskId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(outboxRetryRequest)
   }
 );}
 
@@ -4104,23 +4131,25 @@ export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: 
 
 
 
-export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryKey = (taskId: number,) => {
+export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryKey = (taskId: number,
+    outboxRetryRequest?: OutboxRetryRequest,) => {
     return [
-    'POST', `/api/admin/v1/outbox/${taskId}/retry`
+    'POST', `/api/admin/v1/outbox/${taskId}/retry`, outboxRetryRequest
     ] as const;
     }
 
 
-export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions = <TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions = <TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(taskId: number,
+    outboxRetryRequest: OutboxRetryRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryKey(taskId);
+  const queryKey =  queryOptions?.queryKey ?? getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryKey(taskId,outboxRetryRequest);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>> = ({ signal }) => adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(taskId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>> = ({ signal }) => adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(taskId,outboxRetryRequest, { signal, ...requestOptions });
 
 
 
@@ -4134,7 +4163,8 @@ export type AdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryError = HTTPVa
 
 
 export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
- taskId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>> & Pick<
+ taskId: number,
+    outboxRetryRequest: OutboxRetryRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>,
           TError,
@@ -4144,7 +4174,8 @@ export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awa
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
- taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>> & Pick<
+ taskId: number,
+    outboxRetryRequest: OutboxRetryRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>,
           TError,
@@ -4154,7 +4185,8 @@ export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awa
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
- taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ taskId: number,
+    outboxRetryRequest: OutboxRetryRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -4162,11 +4194,115 @@ export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awa
  */
 
 export function useAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost<TData = Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError = HTTPValidationError>(
- taskId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ taskId: number,
+    outboxRetryRequest: OutboxRetryRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions(taskId,options)
+  const queryOptions = getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostQueryOptions(taskId,outboxRetryRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminOverviewApiAdminV1OverviewGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/overview`
+}
+
+/**
+ * 值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。
+ *
+ * 全是精确计数,替代前端在截断列表(200/500 条)里数数的错误口径。
+ * @summary Admin Overview
+ */
+export const adminOverviewApiAdminV1OverviewGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OverviewOut> => {
+
+  return customFetch<OverviewOut>(getAdminOverviewApiAdminV1OverviewGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminOverviewApiAdminV1OverviewGetQueryKey = () => {
+    return [
+    `/api/admin/v1/overview`
+    ] as const;
+    }
+
+
+export const getAdminOverviewApiAdminV1OverviewGetQueryOptions = <TData = Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminOverviewApiAdminV1OverviewGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>> = ({ signal }) => adminOverviewApiAdminV1OverviewGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminOverviewApiAdminV1OverviewGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>>
+export type AdminOverviewApiAdminV1OverviewGetQueryError = unknown
+
+
+export function useAdminOverviewApiAdminV1OverviewGet<TData = Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminOverviewApiAdminV1OverviewGet<TData = Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminOverviewApiAdminV1OverviewGet<TData = Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Overview
+ */
+
+export function useAdminOverviewApiAdminV1OverviewGet<TData = Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOverviewApiAdminV1OverviewGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminOverviewApiAdminV1OverviewGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -5431,6 +5567,107 @@ export function useAdminUpdateSkuApiAdminV1SkusSkuIdPatch<TData = Awaited<Return
 
 
 
+export const getAdminSkuImpactApiAdminV1SkusSkuIdImpactGetUrl = (skuId: number,) => {
+
+
+
+
+  return `/api/admin/v1/skus/${skuId}/impact`
+}
+
+/**
+ * 改价/下架影响面(只读):当前活跃实例数/涉及用户数/占用卡数。
+ * @summary Admin Sku Impact
+ */
+export const adminSkuImpactApiAdminV1SkusSkuIdImpactGet = async (skuId: number, options?: Parameters<typeof customFetch>[1]): Promise<SkuImpactOut> => {
+
+  return customFetch<SkuImpactOut>(getAdminSkuImpactApiAdminV1SkusSkuIdImpactGetUrl(skuId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminSkuImpactApiAdminV1SkusSkuIdImpactGetQueryKey = (skuId: number,) => {
+    return [
+    `/api/admin/v1/skus/${skuId}/impact`
+    ] as const;
+    }
+
+
+export const getAdminSkuImpactApiAdminV1SkusSkuIdImpactGetQueryOptions = <TData = Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError = HTTPValidationError>(skuId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminSkuImpactApiAdminV1SkusSkuIdImpactGetQueryKey(skuId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>> = ({ signal }) => adminSkuImpactApiAdminV1SkusSkuIdImpactGet(skuId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: skuId !== null && skuId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminSkuImpactApiAdminV1SkusSkuIdImpactGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>>
+export type AdminSkuImpactApiAdminV1SkusSkuIdImpactGetQueryError = HTTPValidationError
+
+
+export function useAdminSkuImpactApiAdminV1SkusSkuIdImpactGet<TData = Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError = HTTPValidationError>(
+ skuId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminSkuImpactApiAdminV1SkusSkuIdImpactGet<TData = Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError = HTTPValidationError>(
+ skuId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminSkuImpactApiAdminV1SkusSkuIdImpactGet<TData = Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError = HTTPValidationError>(
+ skuId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Sku Impact
+ */
+
+export function useAdminSkuImpactApiAdminV1SkusSkuIdImpactGet<TData = Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError = HTTPValidationError>(
+ skuId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSkuImpactApiAdminV1SkusSkuIdImpactGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminSkuImpactApiAdminV1SkusSkuIdImpactGetQueryOptions(skuId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTenantsApiAdminV1TenantsGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -5447,9 +5684,11 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 }
 
 /**
- * 租户列表。q = 手机号(完整号码精确,短串按后缀)。
+ * 租户列表。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
  *
- * 列表只回掩码。按号码检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
+ * 订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行排在最前,
+ * 手机号后缀命中行保持原序随后。列表只回掩码。按号码/id 检索是敏感读,显式落一条审计
+ * (中间件默认只审计写操作)。
  * @summary Admin List Tenants
  */
 export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {
@@ -5530,6 +5769,107 @@ export function useAdminListTenantsApiAdminV1TenantsGet<TData = Awaited<ReturnTy
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListTenantsApiAdminV1TenantsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetUrl = (userId: number,) => {
+
+
+
+
+  return `/api/admin/v1/tenants/${userId}/adjust-context`
+}
+
+/**
+ * 调账前置上下文(只读):回显掩码手机号/当前余额/近 3 条流水。不存在 → 404。
+ * @summary Admin Adjust Context
+ */
+export const adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdjustContextOut> => {
+
+  return customFetch<AdjustContextOut>(getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetQueryKey = (userId: number,) => {
+    return [
+    `/api/admin/v1/tenants/${userId}/adjust-context`
+    ] as const;
+    }
+
+
+export const getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError = HTTPValidationError>(userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>> = ({ signal }) => adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>>
+export type AdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetQueryError = HTTPValidationError
+
+
+export function useAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet<TData = Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError = HTTPValidationError>(
+ userId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet<TData = Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError = HTTPValidationError>(
+ userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet<TData = Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError = HTTPValidationError>(
+ userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Adjust Context
+ */
+
+export function useAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet<TData = Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError = HTTPValidationError>(
+ userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAdjustContextApiAdminV1TenantsUserIdAdjustContextGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminAdjustContextApiAdminV1TenantsUserIdAdjustContextGetQueryOptions(userId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

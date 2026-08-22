@@ -10,6 +10,7 @@ import {
   Card,
   Descriptions,
   Radio,
+  Skeleton,
   Space,
   Table,
   Tabs,
@@ -35,11 +36,17 @@ import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/I
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
+const DETAIL_TABS = ["metrics", "access", "events", "bills"] as const;
+
 export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
-  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
-    tab: typeof search["tab"] === "string" ? search["tab"] : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => {
+    // tab 白名单:非法值回退默认 Tab,不渲染无选中态的 Tabs
+    const tab = search["tab"];
+    return typeof tab === "string" && (DETAIL_TABS as readonly string[]).includes(tab)
+      ? { tab }
+      : {};
+  },
   component: InstanceDetail,
 });
 
@@ -53,7 +60,7 @@ const SERIES_META = {
 function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   const { t } = useTranslation();
   const [range, setRange] = useState<"1h" | "6h" | "24h">("1h");
-  const { data, error, isLoading } = useInstanceMetrics(
+  const { data, error, isLoading, refetch } = useInstanceMetrics(
     uuid,
     { range },
     { enabled: running, refetchInterval: 60_000, retry: 0 },
@@ -62,8 +69,12 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   if (!running) {
     return <Alert type="info" showIcon title={t("instances.metricsNotRunning")} />;
   }
+  // 503 = 监控源未接入/断源(专用文案,不影响计费);其余错误绝不能静默渲染成空图
   if (error && isApiError(error) && error.status === 503) {
     return <Alert type="warning" showIcon title={t("copy.monitoringDown")} />;
+  }
+  if (error) {
+    return <DataErrorAlert onRetry={() => void refetch()} />;
   }
   const series = (data?.series ?? {}) as Record<string, [number, number][]>;
   return (
@@ -162,7 +173,7 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
       <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
       {isError && <DataErrorAlert onRetry={() => void refetch()} />}
       <Timeline
-        items={(events ?? []).map((e) => ({
+        items={(events?.items ?? []).map((e) => ({
           color:
             e.to_status === "running" ? "green" : e.to_status === "failed" ? "red" : "gray",
           content: (
@@ -240,7 +251,19 @@ function InstanceDetail() {
   if (instanceError && !instance) {
     return <DataErrorAlert onRetry={() => void refetchInstance()} />;
   }
-  if (!instance) return null; // 首载中
+  // 首载骨架:白屏会被读成页面挂掉
+  if (!instance) {
+    return (
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Card>
+          <Skeleton active title={{ width: 240 }} paragraph={{ rows: 2 }} />
+        </Card>
+        <Card>
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </Card>
+      </Space>
+    );
+  }
   const running = instance.status === "running";
   const canRelease = canReleaseStatus(instance.status);
 
@@ -261,7 +284,7 @@ function InstanceDetail() {
             </Space>
             <Descriptions
               size="small"
-              column={4}
+              column={{ xs: 1, sm: 2, md: 3, xl: 4 }}
               items={[
                 { label: t("instances.labelId"), children: instance.uuid.slice(0, 12) },
                 {

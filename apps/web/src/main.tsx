@@ -9,6 +9,20 @@ import { authStore, readTokens } from "./stores/auth";
 import "./i18n";
 import "./styles.css";
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 10_000 },
+  },
+});
+
+const router = createRouter({ routeTree, defaultPreload: "intent" });
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
+
 configureApiClient({
   baseUrl: "",
   // 请求路径读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
@@ -23,30 +37,21 @@ configureApiClient({
   },
   onUnauthorized: () => {
     authStore.getState().logout();
-    if (!window.location.pathname.startsWith("/login")) {
-      window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+    const { pathname, href } = router.state.location;
+    if (!pathname.startsWith("/login")) {
+      // 回跳地址带完整 query/hash(如 /instances?tab=events),走路由跳转而非整页刷新
+      void router.navigate({ to: "/login", search: { redirect: href } });
     }
   },
 });
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 10_000 },
-  },
-});
-
-// 登录态消失即清查询缓存,否则换号登录会先渲染上一个账号的余额与实例
+// token 变化(登出/换号/他标签页同步)即清查询缓存:先取消在途查询再 clear,
+// 否则换号登录会先渲染上一个账号的余额与实例
 authStore.subscribe((state, prev) => {
-  if (prev.accessToken && !state.accessToken) queryClient.clear();
-});
-
-const router = createRouter({ routeTree, defaultPreload: "intent" });
-
-declare module "@tanstack/react-router" {
-  interface Register {
-    router: typeof router;
+  if (prev.accessToken && prev.accessToken !== state.accessToken) {
+    void queryClient.cancelQueries().then(() => queryClient.clear());
   }
-}
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

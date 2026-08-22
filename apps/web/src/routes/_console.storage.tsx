@@ -312,11 +312,12 @@ function StoragePage() {
               min={policies?.disk_min_gb}
               max={policies?.disk_max_gb}
               step={10}
+              disabled={!policies}
               style={{ width: 200 }}
             />
           </Form.Item>
           <Typography.Text type="secondary">
-            {t("storage.createNote", { price: priceText })};{t("copy.dailyCostNote")}
+            {t("storage.createNote", { price: priceText })}
           </Typography.Text>
           {/* 容量对应的日费实时折算 */}
           <Typography.Text strong style={{ display: "block", marginTop: 8 }}>

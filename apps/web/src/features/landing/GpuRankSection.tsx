@@ -1,7 +1,7 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径,脚注声明);在售型号标记联动价格墙。 */
 
 import { colorPrimary, gpuSpecs } from "@superdl/ui";
-import { Tabs, Tag, theme, Typography } from "antd";
+import { Grid, Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,6 +14,8 @@ export function GpuRankSection() {
   const { token } = theme.useToken();
   const [metric, setMetric] = useState<"fp16" | "fp32">("fp16");
   const { data: skus } = useSkus();
+  // 窄屏紧凑模式:收缩定宽列,避免整行把页面撑出横向滚动
+  const wide = Grid.useBreakpoint().md;
 
   const onSale = useMemo(
     () => new Set((skus ?? []).map((s) => s.gpu_model.replace(/[\s-]/g, "").toUpperCase())),
@@ -66,10 +68,19 @@ export function GpuRankSection() {
               >
                 {i + 1}
               </span>
-              <span style={{ width: 150, flexShrink: 0 }}>
+              <span
+                style={{
+                  width: wide ? 150 : 104,
+                  flexShrink: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: wide ? 14 : 13,
+                }}
+              >
                 {t("landing.ranking.modelVram", { label: r.spec.label, vram: r.spec.vramGb })}
               </span>
-              <div style={{ flex: 1, background: token.colorFillQuaternary, borderRadius: 4, height: 14 }}>
+              <div style={{ flex: 1, minWidth: 32, background: token.colorFillQuaternary, borderRadius: 4, height: 14 }}>
                 <div
                   style={{
                     width: `${Math.max((r.value / max) * 100, 2)}%`,
@@ -79,10 +90,11 @@ export function GpuRankSection() {
                   }}
                 />
               </div>
-              <span style={{ width: 170, textAlign: "right", flexShrink: 0 }}>
-                {r.value} {metric === "fp16" ? "Tensor TFLOPS" : "TFLOPS"}
+              <span style={{ width: wide ? 170 : 56, textAlign: "right", flexShrink: 0, fontSize: wide ? 14 : 13 }}>
+                {r.value}
+                {wide ? (metric === "fp16" ? " Tensor TFLOPS" : " TFLOPS") : ""}
               </span>
-              <span style={{ width: 56, flexShrink: 0 }}>
+              <span style={{ width: wide ? 56 : 40, flexShrink: 0, fontSize: wide ? 14 : 12 }}>
                 {onSale.has(r.model) && (
                   <a href="/#pricing">
                     <Tag color={colorPrimary} style={{ marginInlineEnd: 0 }}>

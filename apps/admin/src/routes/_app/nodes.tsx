@@ -1,4 +1,4 @@
-import { adminColors, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
+import { adminColors, formatDateTime, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -20,7 +20,7 @@ import {
   Typography,
 } from "antd";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import EChart from "../../components/EChart";
@@ -222,7 +222,7 @@ function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
       <Alert
         type="warning"
         showIcon
-        message={t("nodes.tokenOnce")}
+        title={t("nodes.tokenOnce")}
         description={t("nodes.tokenOnceDesc", { time: dayjs(result.enrollment.expires_at).format("MM-DD HH:mm") })}
       />
       <div>
@@ -307,7 +307,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message={t("nodes.poolRule")}
+            title={t("nodes.poolRule")}
             description={t("nodes.poolRuleDesc")}
           />
           <Form.Item name="pool" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
@@ -349,7 +349,12 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const qc = useQueryClient();
-  const { data, queryKey } = useEnrollments({ active: true, refetchInterval: 5_000 });
+  // 进行中=活跃行(5s 轮询);全部=含 joined/expired/revoked 的历史装机记录
+  const [scope, setScope] = useState<"active" | "all">("active");
+  const { data, queryKey } = useEnrollments({
+    active: scope === "active" ? true : undefined,
+    refetchInterval: scope === "active" ? 5_000 : undefined,
+  });
   const rows: EnrollmentRow[] = data ?? [];
   const [regenResult, setRegenResult] = useState<EnrollmentCommandOut | null>(null);
   const regenerate = useRegenerateEnrollment({
@@ -365,10 +370,24 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
     mutation: { onSuccess: () => void qc.invalidateQueries({ queryKey }) },
   });
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0 && scope === "active") return null;
   return (
-    <Card title={t("nodes.pendingTitle")} style={{ marginBottom: 16 }}>
-      <Table<EnrollmentRow>
+    <Card
+      title={scope === "active" ? t("nodes.pendingTitle") : t("nodes.allEnrollmentsTitle")}
+      style={{ marginBottom: 16 }}
+      extra={
+        <Radio.Group
+          size="small"
+          optionType="button"
+          value={scope}
+          onChange={(e) => setScope(e.target.value as "active" | "all")}
+          options={[
+            { value: "active", label: t("nodes.scopeActive") },
+            { value: "all", label: t("nodes.scopeAll") },
+          ]}
+        />
+      }
+    >      <Table<EnrollmentRow>
         size="small"
         rowKey="id"
         scroll={{ x: 900 }}
@@ -385,6 +404,13 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             render: (_, r) => r.node_name ?? r.hostname ?? "-",
           },
           { title: t("nodes.noteCol"), dataIndex: "note", render: (v: string | null) => v ?? "-" },
+          {
+            title: t("nodes.colCreatedAt"),
+            dataIndex: "created_at",
+            width: 150,
+            render: formatDateTime,
+            sorter: (a, b) => dayjs(a.created_at).valueOf() - dayjs(b.created_at).valueOf(),
+          },
           {
             title: t("nodes.colStatus"),
             dataIndex: "status",
@@ -486,23 +512,40 @@ function NodesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data, refetch } = useNodes();
+  const { data } = useNodes();
   const nodes: NodeRow[] = data ?? [];
   const [selected, setSelected] = useState<string | null>(null);
   const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
   const node = nodes.find((n) => n.name === selected) ?? nodes[0];
   const { data: nodeMetrics } = useNodeMetrics(node?.name ?? null, range);
+  // cordon 经 outbox 异步生效:3s 后补拉一次;组件卸载必须清定时器
+  const cordonTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (cordonTimer.current) clearTimeout(cordonTimer.current);
+    },
+    [],
+  );
   const cordon = useCordonNode({
     mutation: {
-      onSuccess: (_r, v) => {
+      onSuccess: (r, v) => {
         message.success(t("nodes.cordonSubmitted", { action: v.on ? "cordon" : "uncordon" }));
         void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
-        setTimeout(() => void refetch(), 3_000);
+        // queued=true:经 outbox 异步执行,3s 后补拉一次看生效
+        if ((r as { queued?: boolean }).queued) {
+          cordonTimer.current = setTimeout(
+            () => void qc.invalidateQueries({ queryKey: ["admin", "nodes"] }),
+            3_000,
+          );
+        }
       },
       onError: (e) => message.error(errText(e, t("common.actionFailed", { action: "" }))),
     },
   });
+  const poolFilters = [...new Set(nodes.map((n) => (n.unlabeled ? "" : n.pool_label)))].map((p) =>
+    p ? { text: p, value: p } : { text: t("nodes.unlabeledTag"), value: "" },
+  );
 
   return (
     <>
@@ -518,16 +561,22 @@ function NodesPage() {
         }
       >
         <Table<NodeRow>
-          scroll={{ x: 800 }}
+          scroll={{ x: 1000 }}
           rowKey="name"
           dataSource={nodes}
           pagination={false}
           onRow={(r) => ({ onClick: () => setSelected(r.name), style: { cursor: "pointer" } })}
           columns={[
-            { title: t("nodes.colNode"), dataIndex: "name" },
+            {
+              title: t("nodes.colNode"),
+              dataIndex: "name",
+              sorter: (a, b) => a.name.localeCompare(b.name),
+            },
             {
               title: t("nodes.colPool"),
               dataIndex: "pool_label",
+              filters: poolFilters,
+              onFilter: (v, r) => (r.unlabeled ? "" : r.pool_label) === v,
               render: (v: string, r) =>
                 r.unlabeled || !v ? (
                   <Tag color="red">{t("nodes.unlabeledTag")}</Tag>
@@ -556,15 +605,47 @@ function NodesPage() {
               title: t("nodes.colVram"),
               render: (_, r) => (r.vram_gb ? `${r.vram_gb} G` : "—"),
             },
-            { title: t("nodes.colUsed"), dataIndex: "gpu_used" },
+            {
+              title: t("nodes.colUsed"),
+              dataIndex: "gpu_used",
+              sorter: (a, b) => a.gpu_used - b.gpu_used,
+            },
             { title: t("nodes.colDriver"), render: (_, r) => r.driver_version || "—" },
             { title: "CUDA", render: (_, r) => r.cuda_version || "—" },
             { title: t("nodes.colCpu"), render: (_, r) => t("nodes.coreCount", { count: r.vcpu }) },
-            { title: t("nodes.colMem"), render: (_, r) => `${r.mem_gb} G` },
-            { title: t("nodes.colDisk"), render: (_, r) => `${r.disk_gb} G` },
+            {
+              title: t("nodes.colMem"),
+              render: (_, r) => `${r.mem_gb} G`,
+              sorter: (a, b) => a.mem_gb - b.mem_gb,
+            },
+            {
+              title: t("nodes.colDisk"),
+              render: (_, r) => `${r.disk_gb} G`,
+              sorter: (a, b) => a.disk_gb - b.disk_gb,
+            },
+            {
+              title: t("nodes.colLastSeen"),
+              dataIndex: "last_seen",
+              width: 130,
+              sorter: (a, b) => dayjs(a.last_seen || 0).valueOf() - dayjs(b.last_seen || 0).valueOf(),
+              // 相对时间直读,hover 给绝对时间;空 = 尚无台账行
+              render: (v: string) =>
+                v ? (
+                  <Tooltip title={formatDateTime(v)}>
+                    <span>{dayjs(v).fromNow()}</span>
+                  </Tooltip>
+                ) : (
+                  "—"
+                ),
+            },
             {
               title: t("nodes.colStatus"),
               dataIndex: "status",
+              filters: ["Ready", "NotReady", "Cordoned", "Missing"].map((s) => ({
+                text: s,
+                value: s,
+              })),
+              onFilter: (v, r) => r.status === v,
               render: (v: string) => (
                 <Tag
                   color={

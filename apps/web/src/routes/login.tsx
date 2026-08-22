@@ -19,12 +19,17 @@ import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
-    // 仅接受站内路径(/ 开头且非 //),防 open redirect
+    // 回跳白名单:解析后必须仍属本站 origin(防 /\evil.com 这类绕过),归一化为 path+query+hash
     const r = search.redirect;
-    if (typeof r === "string" && r.startsWith("/") && !r.startsWith("//")) {
-      return { redirect: r };
+    if (typeof r !== "string" || r === "") return {};
+    try {
+      const u = new URL(r, window.location.origin);
+      // origin 必须仍属本站;"/\evil.com" 这类会被 URL 解析归一成 "//evil.com",一并拒掉
+      if (u.origin !== window.location.origin || u.pathname.startsWith("//")) return {};
+      return { redirect: `${u.pathname}${u.search}${u.hash}` };
+    } catch {
+      return {};
     }
-    return {};
   },
   component: LoginPage,
 });
@@ -92,6 +97,14 @@ function LoginPage() {
     [],
   );
 
+  // 倒计时归零时清 timer(updater 保持纯函数,StrictMode 双调安全)
+  useEffect(() => {
+    if (countdown <= 0 && timer.current) {
+      clearInterval(timer.current);
+      timer.current = null;
+    }
+  }, [countdown]);
+
   const onLoggedIn = (data: unknown) => {
     const pair = data as TokenPair;
     authStore.getState().login(pair.access_token, pair.refresh_token);
@@ -105,12 +118,10 @@ function LoginPage() {
   const sendCode = useSendSmsCode({
     onSuccess: () => {
       message.success(t("login.codeSent"));
+      if (timer.current) clearInterval(timer.current);
       setCountdown(60);
       timer.current = setInterval(() => {
-        setCountdown((c) => {
-          if (c <= 1 && timer.current) clearInterval(timer.current);
-          return c - 1;
-        });
+        setCountdown((c) => (c > 0 ? c - 1 : 0));
       }, 1000);
     },
   });
@@ -197,12 +208,23 @@ function LoginPage() {
               name="phone"
               rules={[{ required: true, pattern: /^1[3-9]\d{9}$/, message: t("login.phoneInvalid") }]}
             >
-              <Input prefix={<span style={{ color: "rgba(0,0,0,0.45)" }}>+86</span>} placeholder={t("login.phonePlaceholder")} maxLength={11} />
+              <Input
+                prefix={<span style={{ color: "rgba(0,0,0,0.45)" }}>+86</span>}
+                placeholder={t("login.phonePlaceholder")}
+                maxLength={11}
+                autoComplete="tel-national"
+                aria-label={t("login.phonePlaceholder")}
+              />
             </Form.Item>
             {needsSms && (
               <Form.Item name="sms_code" rules={[{ required: true, message: t("login.smsRequired") }]}>
                 <Space.Compact style={{ width: "100%" }}>
-                  <Input placeholder={t("login.smsPlaceholder")} maxLength={6} />
+                  <Input
+                    placeholder={t("login.smsPlaceholder")}
+                    maxLength={6}
+                    autoComplete="one-time-code"
+                    aria-label={t("login.smsPlaceholder")}
+                  />
                   <Button
                     disabled={countdown > 0}
                     loading={sendCode.isPending}
@@ -237,6 +259,14 @@ function LoginPage() {
                 }
               >
                 <Input.Password
+                  autoComplete={mode === "password" ? "current-password" : "new-password"}
+                  aria-label={
+                    mode === "password"
+                      ? t("login.passwordPlaceholder")
+                      : mode === "reset"
+                        ? t("login.passwordResetPlaceholder")
+                        : t("login.passwordSetPlaceholder")
+                  }
                   placeholder={
                     mode === "password"
                       ? t("login.passwordPlaceholder")

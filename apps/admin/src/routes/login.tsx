@@ -1,5 +1,5 @@
 import { adminColors } from "@superdl/ui";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { App, Button, Card, Form, Input, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -8,6 +8,11 @@ import { useApiErrorText } from "../lib/apiError";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>): { returnTo?: string } => {
+    // 仅接受站内路径(/ 开头且非 //),防 open redirect
+    const r = search.returnTo;
+    return { returnTo: typeof r === "string" && r.startsWith("/") && !r.startsWith("//") ? r : undefined };
+  },
   component: LoginPage,
 });
 
@@ -15,12 +20,14 @@ function LoginPage() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
   const { message } = App.useApp();
-  const navigate = useNavigate();
+  const router = useRouter();
+  const { returnTo } = Route.useSearch();
   const login = useAdminLogin({
     mutation: {
       onSuccess: (data) => {
         authStore.getState().login(data.access_token, data.admin);
-        void navigate({ to: "/" });
+        // 登录成功跳回原页(无则回总览)
+        router.history.push(returnTo ?? "/");
       },
       onError: (e) => {
         message.error(errText(e, t("login.failed")));

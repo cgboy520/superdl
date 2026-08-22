@@ -1,0 +1,30 @@
+/* 全局基础样式(深色 NOC):antd token 不管的部分。色值与 packages/ui adminColors 同源。 */
+
+body {
+  margin: 0;
+  /* 首屏未挂载前不闪白(index.html 内联同款,防 FOUC 双写) */
+  background: #0b1220;
+}
+
+/* 表格与 KPI 数字等宽:列宽不随数值抖动 */
+.ant-table,
+.ant-statistic-content {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 深色滚动条(细、低存在感的 NOC 惯例) */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+html {
+  scrollbar-color: #334155 transparent;
+  scrollbar-width: thin;
+}

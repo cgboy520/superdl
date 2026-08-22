@@ -1,12 +1,13 @@
 /** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
-import { DatePicker, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { Button, DatePicker, Input, Select, Space, Table, Tag, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { type AuditRow, useAuditLog } from "../api";
+import { AUDIT_DEFAULT_LIMIT, type AuditRow, useAuditLog } from "../api";
+import { ListCapNote } from "./ListCapNote";
 
 /** detail 摘要:优先显示 reason,其次 before→after,最后回落原始 JSON。 */
 function detailSummary(detail: Record<string, unknown> | null | undefined): string {
@@ -27,15 +28,18 @@ export function AuditTable() {
   const [actorType, setActorType] = useState<string | undefined>();
   const [actorId, setActorId] = useState("");
   const [q, setQ] = useState("");
+  const [limit, setLimit] = useState<number>(AUDIT_DEFAULT_LIMIT);
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
-  const { data } = useAuditLog({
+  const audit = useAuditLog({
     ...(actorType ? { actor_type: actorType } : {}),
     ...(actorId ? { actor_id: actorId } : {}),
     ...(q ? { q } : {}),
-    ...(range?.[0] ? { since: range[0].startOf("day").toISOString() } : {}),
-    ...(range?.[1] ? { until: range[1].endOf("day").toISOString() } : {}),
+    // showTime:分钟级窗口,不再强制整天(startOf/endOf 会把边界外的记录吞掉)
+    ...(range?.[0] ? { since: range[0].toISOString() } : {}),
+    ...(range?.[1] ? { until: range[1].toISOString() } : {}),
+    limit,
   });
-  const rows: AuditRow[] = data ?? [];
+  const rows: AuditRow[] = audit.data?.pages.flatMap((p) => p) ?? [];
 
   return (
     <>
@@ -43,7 +47,7 @@ export function AuditTable() {
       <Select
         allowClear
         placeholder={t("audit.actorTypePlaceholder")}
-        style={{ width: 160 }}
+        style={{ width: 140 }}
         value={actorType}
         onChange={setActorType}
         options={[
@@ -55,22 +59,36 @@ export function AuditTable() {
       <Input.Search
         allowClear
         placeholder={t("audit.actorIdPlaceholder")}
-        style={{ width: 160 }}
+        style={{ width: 150 }}
         onSearch={setActorId}
       />
       <Input.Search
         allowClear
         placeholder={t("audit.keywordPlaceholder")}
-        style={{ width: 220 }}
+        style={{ width: 200 }}
         onSearch={setQ}
       />
-      <DatePicker.RangePicker onChange={(v) => setRange(v as [Dayjs | null, Dayjs | null] | null)} />
+      <DatePicker.RangePicker
+        showTime={{ format: "HH:mm" }}
+        onChange={(v) => setRange(v as [Dayjs | null, Dayjs | null] | null)}
+      />
+      <Select<number>
+        value={limit}
+        style={{ width: 130 }}
+        onChange={setLimit}
+        options={[50, 100, 200, 500].map((v) => ({
+          value: v,
+          label: t("audit.limitOption", { count: v }),
+        }))}
+      />
       </Space>
       <Table<AuditRow>
         scroll={{ x: 900 }}
         rowKey="id"
         dataSource={rows}
         size="small"
+        loading={audit.isLoading}
+        pagination={false}
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },
           {
@@ -114,6 +132,19 @@ export function AuditTable() {
           ),
         }}
       />
+      {audit.hasNextPage && (
+        <Button
+          block
+          size="small"
+          style={{ marginTop: 8 }}
+          loading={audit.isFetchingNextPage}
+          onClick={() => void audit.fetchNextPage()}
+        >
+          {t("common.loadMore")}
+        </Button>
+      )}
+      {/* 单页满额 = 还有更早的记录;可继续翻页或用筛选缩小范围 */}
+      {audit.hasNextPage && <ListCapNote rows={limit} cap={limit} />}
     </>
   );
 }

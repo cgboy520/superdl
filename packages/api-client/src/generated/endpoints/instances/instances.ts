@@ -20,12 +20,14 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CreateInstanceApiV1InstancesPostHeaders,
   HTTPValidationError,
   InstanceAccessOut,
   InstanceCreate,
-  InstanceEventOut,
   InstanceOut,
-  InstanceRename
+  InstanceRename,
+  ListInstanceEventsApiV1InstancesUuidEventsGetParams,
+  PageInstanceEventOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -161,13 +163,14 @@ export const getCreateInstanceApiV1InstancesPostUrl = () => {
 /**
  * @summary Create Instance
  */
-export const createInstanceApiV1InstancesPost = async (instanceCreate: InstanceCreate, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
+export const createInstanceApiV1InstancesPost = async (instanceCreate: InstanceCreate,
+    headers?: CreateInstanceApiV1InstancesPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
 
   return customFetch<InstanceOut>(getCreateInstanceApiV1InstancesPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(instanceCreate)
   }
 );}
@@ -183,7 +186,8 @@ export const getCreateInstanceApiV1InstancesPostQueryKey = (instanceCreate?: Ins
     }
 
 
-export const getCreateInstanceApiV1InstancesPostQueryOptions = <TData = Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError = HTTPValidationError>(instanceCreate: InstanceCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getCreateInstanceApiV1InstancesPostQueryOptions = <TData = Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError = HTTPValidationError>(instanceCreate: InstanceCreate,
+    headers?: CreateInstanceApiV1InstancesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -192,7 +196,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>> = ({ signal }) => createInstanceApiV1InstancesPost(instanceCreate, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>> = ({ signal }) => createInstanceApiV1InstancesPost(instanceCreate,headers, { signal, ...requestOptions });
 
 
 
@@ -206,7 +210,8 @@ export type CreateInstanceApiV1InstancesPostQueryError = HTTPValidationError
 
 
 export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError = HTTPValidationError>(
- instanceCreate: InstanceCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>> & Pick<
+ instanceCreate: InstanceCreate,
+    headers: undefined |  CreateInstanceApiV1InstancesPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>,
           TError,
@@ -216,7 +221,8 @@ export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<t
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError = HTTPValidationError>(
- instanceCreate: InstanceCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>> & Pick<
+ instanceCreate: InstanceCreate,
+    headers?: CreateInstanceApiV1InstancesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>,
           TError,
@@ -226,7 +232,8 @@ export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<t
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError = HTTPValidationError>(
- instanceCreate: InstanceCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ instanceCreate: InstanceCreate,
+    headers?: CreateInstanceApiV1InstancesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -234,11 +241,12 @@ export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<t
  */
 
 export function useCreateInstanceApiV1InstancesPost<TData = Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError = HTTPValidationError>(
- instanceCreate: InstanceCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ instanceCreate: InstanceCreate,
+    headers?: CreateInstanceApiV1InstancesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInstanceApiV1InstancesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getCreateInstanceApiV1InstancesPostQueryOptions(instanceCreate,options)
+  const queryOptions = getCreateInstanceApiV1InstancesPostQueryOptions(instanceCreate,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -658,21 +666,30 @@ export function useGetInstanceAccessApiV1InstancesUuidAccessGet<TData = Awaited<
 
 
 
-export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string,) => {
+export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/instances/${uuid}/events`
+  return stringifiedParams.length > 0 ? `/api/v1/instances/${uuid}/events?${stringifiedParams}` : `/api/v1/instances/${uuid}/events`
 }
 
 /**
- * 状态时间线(计费依据)。
+ * 状态时间线(计费依据)。降序(最新在前)游标分页。
  * @summary List Instance Events
  */
-export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceEventOut[]> => {
+export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInstanceEventOut> => {
 
-  return customFetch<InstanceEventOut[]>(getListInstanceEventsApiV1InstancesUuidEventsGetUrl(uuid),
+  return customFetch<PageInstanceEventOut>(getListInstanceEventsApiV1InstancesUuidEventsGetUrl(uuid,params),
   {
     ...options,
     method: 'GET'
@@ -685,23 +702,25 @@ export const listInstanceEventsApiV1InstancesUuidEventsGet = async (uuid: string
 
 
 
-export const getListInstanceEventsApiV1InstancesUuidEventsGetQueryKey = (uuid: string,) => {
+export const getListInstanceEventsApiV1InstancesUuidEventsGetQueryKey = (uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams,) => {
     return [
-    `/api/v1/instances/${uuid}/events`
+    `/api/v1/instances/${uuid}/events`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListInstanceEventsApiV1InstancesUuidEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getListInstanceEventsApiV1InstancesUuidEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListInstanceEventsApiV1InstancesUuidEventsGetQueryKey(uuid);
+  const queryKey =  queryOptions?.queryKey ?? getListInstanceEventsApiV1InstancesUuidEventsGetQueryKey(uuid,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>> = ({ signal }) => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>> = ({ signal }) => listInstanceEventsApiV1InstancesUuidEventsGet(uuid,params, { signal, ...requestOptions });
 
 
 
@@ -715,7 +734,8 @@ export type ListInstanceEventsApiV1InstancesUuidEventsGetQueryError = HTTPValida
 
 
 export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
- uuid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
+ uuid: string,
+    params: undefined |  ListInstanceEventsApiV1InstancesUuidEventsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>,
           TError,
@@ -725,7 +745,8 @@ export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
- uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
+ uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>,
           TError,
@@ -735,7 +756,8 @@ export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
- uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -743,11 +765,12 @@ export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited
  */
 
 export function useListInstanceEventsApiV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
- uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ uuid: string,
+    params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstanceEventsApiV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListInstanceEventsApiV1InstancesUuidEventsGetQueryOptions(uuid,options)
+  const queryOptions = getListInstanceEventsApiV1InstancesUuidEventsGetQueryOptions(uuid,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

@@ -29,8 +29,8 @@ function Overview() {
   const todayTotal = daily ? formatMoney(addAmounts(daily.gpu_total, daily.disk_total)) : "—";
 
   const running = instances?.filter((i) => i.status === "running").length ?? 0;
-  const hasWarn = (unread ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
-  const announcement = (unread ?? []).find((n) => n.type === "announcement");
+  const hasWarn = (unread?.items ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
+  const announcement = (unread?.items ?? []).find((n) => n.type === "announcement");
   const hasError = instancesQ.isError || walletQ.isError || dailyQ.isError;
 
   return (
@@ -91,7 +91,7 @@ function Overview() {
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title={t("dashboard.unread")} value={unread ? unread.length : "—"} />
+            <Statistic title={t("dashboard.unread")} value={unread ? unread.items.length : "—"} />
           </Card>
         </Col>
       </Row>

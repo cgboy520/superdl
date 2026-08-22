@@ -19,6 +19,7 @@ import {
   Modal,
   Radio,
   Select,
+  Skeleton,
   Slider,
   Space,
   Table,
@@ -29,10 +30,12 @@ import {
 import { useMemo, useState } from "react";
 
 import { useFormat } from "../lib/format";
+import { useApiErrorText } from "../lib/apiError";
 import { useAddSshKey, useCreateDisk, useCreateInstance } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
+import { DataErrorAlert } from "../components/QueryState";
 import { BillingModeCard, skuColumns } from "../components/skuTable";
 import { requireAuth } from "../lib/guard";
 
@@ -61,7 +64,7 @@ function CreatePage() {
   const navigate = useNavigate();
   const { message } = App.useApp();
 
-  const { data: skus } = useSkus({});
+  const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus({});
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
 
   const { data: images } = useImages();
@@ -109,7 +112,10 @@ function CreatePage() {
     }));
   }, [images]);
 
+  const errText = useApiErrorText();
   const create = useCreateInstance({
+    // 错误统一在本页 doCreate 的 catch 里出(避免 NO_CAPACITY 引导与全局错误弹两条)
+    silentError: true,
     onSuccess: (data) => {
       const inst = data as InstanceOut;
       message.success(t("create.creating", { name: inst.name }));
@@ -125,8 +131,47 @@ function CreatePage() {
     },
   });
 
+  // 规格三态:加载中骨架 / 加载失败可重试(绝不能渲染成「已下架」) / 真不存在才提示下架
+  if (skusError && !skus) {
+    return (
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t("create.title")}
+        </Typography.Title>
+        <DataErrorAlert onRetry={() => void refetchSkus()} />
+      </Space>
+    );
+  }
+  if (!skus) {
+    return (
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t("create.title")}
+        </Typography.Title>
+        <Card>
+          <Skeleton active paragraph={{ rows: 6 }} loading={skusLoading} />
+        </Card>
+      </Space>
+    );
+  }
   if (!sku) {
-    return <Alert type="warning" showIcon title={t("create.skuMissing")} />;
+    return (
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t("create.title")}
+        </Typography.Title>
+        <Alert
+          type="warning"
+          showIcon
+          title={t("create.skuMissing")}
+          action={
+            <Link to="/market">
+              <Button size="small">{t("instances.goMarket")}</Button>
+            </Link>
+          }
+        />
+      </Space>
+    );
   }
 
   const diskPriceGbMonth = policies?.disk_price_gb_month;
@@ -198,8 +243,11 @@ function CreatePage() {
         });
       } catch (err) {
         // 刻意不换键:失败可能只是响应丢了而实例已经建好,换键会让重试开出第二台机器
+        // silentError 模式下这里统一出提示:库存不足给换档引导,其余给错误原文
         if (isApiError(err) && err.code === "NO_CAPACITY") {
           message.warning(t("copy.noCapacityGuide"), 6);
+        } else {
+          message.error(errText(err));
         }
         if (diskMode === "new" && diskId != null) {
           message.warning(t("copy.diskCreatedButInstanceFailed"), 6);
@@ -326,6 +374,7 @@ function CreatePage() {
                 step={10}
                 value={newDiskGb}
                 onChange={setNewDiskGb}
+                disabled={!policies}
               />
               <Typography.Text type="secondary">
                 {formatSizeGb(newDiskGb)}
@@ -352,7 +401,7 @@ function CreatePage() {
             />
           )}
           <Typography.Text type="secondary">
-            {t("create.diskIndependentNote")};{t("copy.dailyCostNote")}
+            {t("create.diskIndependentNote")}
           </Typography.Text>
         </Space>
       </Card>
@@ -430,7 +479,7 @@ function CreatePage() {
                 : t("create.detailDiskNone")}
             </span>
             <Typography.Text type="secondary">
-              {t("create.balanceNeedNote")};{t("copy.billingBasis")}
+              {t("create.balanceNeedNote")}
             </Typography.Text>
           </Space>
         }
@@ -477,17 +526,27 @@ function CreatePage() {
           setEcoChecked(false);
         }}
         footer={
-          <Button
-            type="primary"
-            disabled={!ecoChecked}
-            loading={submitting || create.isPending}
-            onClick={() => {
-              setEcoOpen(false);
-              void doCreate();
-            }}
-          >
-            {t("create.ecoConfirm")}
-          </Button>
+          <Space>
+            <Button
+              onClick={() => {
+                setEcoOpen(false);
+                setEcoChecked(false);
+              }}
+            >
+              {t("create.cancel")}
+            </Button>
+            <Button
+              type="primary"
+              disabled={!ecoChecked}
+              loading={submitting || create.isPending}
+              onClick={() => {
+                setEcoOpen(false);
+                void doCreate();
+              }}
+            >
+              {t("create.ecoConfirm")}
+            </Button>
+          </Space>
         }
       >
         <ul style={{ paddingLeft: 20 }}>

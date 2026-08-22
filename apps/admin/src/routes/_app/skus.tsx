@@ -1,4 +1,4 @@
-import { metaOf, skuTierMap, type SkuTier } from "@superdl/ui";
+import { adminColors, metaOf, skuTierMap, type SkuTier } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -11,6 +11,7 @@ import {
   Input,
   InputNumber,
   Select,
+  Space,
   Spin,
   Switch,
   Table,
@@ -29,10 +30,12 @@ import {
   useCreateSku,
   useGpuModelAggregates,
   useSkuCapacityPreview,
+  useSkuImpact,
   useUpdateSku,
 } from "../../api";
 import { useFormat } from "../../lib/format";
 import { useApiErrorText } from "../../lib/apiError";
+import { StatusTag } from "../../components/StatusTag";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/skus")({
@@ -99,7 +102,10 @@ function SkusPage() {
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const { data: skus, refetch, queryKey } = useAdminSkus();
-  const { data: aggregates } = useGpuModelAggregates();
+  // 聚合端点只放 ops/readonly:finance 可看 SKU 页但拉它会 403,按角色关停查询
+  const { data: aggregates } = useGpuModelAggregates({
+    enabled: canWriteOps(role) || role === "readonly",
+  });
   const [editing, setEditing] = useState<SkuAdminOut | "new" | null>(null);
   const [clusterPick, setClusterPick] = useState<GpuModelAggregate | null>(null);
   const [form] = Form.useForm<SkuFormValues>();
@@ -156,6 +162,8 @@ function SkusPage() {
 
   // 表单联动:实时容量预览参数(编辑态型号/档位不在表单里,取自记录)
   const record = editing !== null && editing !== "new" ? editing : null;
+  // 改价影响面(编辑态才查;新建无存量实例)
+  const impact = useSkuImpact(record?.id ?? null);
   const wModel = Form.useWatch("gpu_model", form);
   const wTier = Form.useWatch("tier", form);
   const wPool = Form.useWatch("pool_label", form);
@@ -257,17 +265,47 @@ function SkusPage() {
         update.mutate({ skuId: editing.id, data: payload as never });
       }
     };
-    if (values.oversell_vram > 1.2) {
-      modal.confirm({
-        title: t("skus.vramOversellConfirmTitle"),
-        content: t("skus.vramOversellConfirmBody"),
-        okText: t("skus.confirmSubmit"),
-        okButtonProps: { danger: true },
-        onOk: doSubmit,
-      });
-    } else {
+    // 改价二次确认(带影响预览:当前在跑台数/涉及用户);显存超卖 >1.2 同框复用
+    const priceChanged =
+      record !== null && Number(values.price_hourly) !== Number(record.price_hourly);
+    const vramHigh = values.oversell_vram > 1.2;
+    if (!priceChanged && !vramHigh) {
       doSubmit();
+      return;
     }
+    modal.confirm({
+      title: t("skus.submitConfirmTitle"),
+      content: (
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          {vramHigh && <span>{t("skus.vramOversellConfirmBody")}</span>}
+          {priceChanged && record && (
+            <>
+              <span>
+                {t("skus.priceChangeLine", {
+                  from: formatHourlyPrice(record.price_hourly),
+                  to: formatHourlyPrice(values.price_hourly),
+                })}
+              </span>
+              <span style={{ color: adminColors.alertAccent }}>
+                {impact.data
+                  ? t("skus.priceChangeImpact", {
+                      instances: impact.data.active_instances,
+                      users: impact.data.active_users,
+                      gpus: impact.data.active_gpus,
+                    })
+                  : t("skus.priceChangeImpactPending")}
+              </span>
+              <span style={{ color: adminColors.textSecondary, fontSize: 12 }}>
+                {t("skus.priceChangeScope")}
+              </span>
+            </>
+          )}
+        </Space>
+      ),
+      okText: t("skus.confirmSubmit"),
+      okButtonProps: { danger: vramHigh },
+      onOk: doSubmit,
+    });
   };
 
   const isNew = editing === "new";
@@ -299,7 +337,7 @@ function SkusPage() {
             dataIndex: "tier",
             render: (v: SkuTier) => {
               const m = metaOf(skuTierMap, v);
-              return <Tag color={m?.color}>{m ? t(m.labelKey) : v}</Tag>;
+              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
             },
           },
           {
@@ -405,7 +443,7 @@ function SkusPage() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={t("skus.clusterEmptyHint")}
+                title={t("skus.clusterEmptyHint")}
               />
             )}
             <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
@@ -487,7 +525,7 @@ function SkusPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message={t("skus.oversellRisk")}
+              title={t("skus.oversellRisk")}
               description={t("skus.oversellRiskDesc")}
             />
             <Form.Item
@@ -567,7 +605,7 @@ function SkusPage() {
                     type="warning"
                     showIcon
                     style={{ marginTop: 8 }}
-                    message={warnText(t, w)}
+                    title={warnText(t, w)}
                   />
                 ))}
               </>

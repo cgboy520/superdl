@@ -189,7 +189,7 @@ function ImagesPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message={t("images.prewarmInfo")}
+        title={t("images.prewarmInfo")}
         description={t("images.prewarmInfoDesc")}
       />
       <Table<ImageRow>
@@ -322,7 +322,7 @@ function ImagesPage() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message={t("images.refChangeWarn")}
+              title={t("images.refChangeWarn")}
             />
           )}
           <Form.Item

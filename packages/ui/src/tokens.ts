@@ -45,12 +45,12 @@ export const adminColors = {
   critical: "#DC2626",
 } as const;
 
-/** 状态语义色(两端同一套,管理端深色下由 antd 算法自动调亮) */
+/** 状态语义色(两端同一套,管理端深色下由 antd 算法自动调亮)。绿/橙取深档:浅底白字文本对比度过 WCAG AA(4.5:1)。 */
 export const statusColors = {
-  green: "#16A34A",
+  green: "#15803D",
   blue: "#2563EB",
   gray: "#9CA3AF",
-  orange: "#EA580C",
+  orange: "#C2410C",
   red: "#DC2626",
 } as const;
 
@@ -64,6 +64,8 @@ export const webTheme = {
     colorWarning: statusColors.orange,
     colorError: statusColors.red,
     colorBgLayout: brand.pageBg,
+    // 默认 rgba(0,0,0,0.45) 白底对比度不足 AA;调实到 ≈5.3:1
+    colorTextDescription: "rgba(0,0,0,0.58)",
     borderRadius: 6,
     fontFamily,
   },

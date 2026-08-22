@@ -156,6 +156,208 @@ export function useLoginApiV1AuthLoginPost<TData = Awaited<ReturnType<typeof log
 
 
 
+export const getLogoutApiV1AuthLogoutPostUrl = () => {
+
+
+
+
+  return `/api/v1/auth/logout`
+}
+
+/**
+ * 登出当前会话(refresh token 一次性消费位撤销)。token 无效也回 204,防枚举。
+ * @summary Logout
+ */
+export const logoutApiV1AuthLogoutPost = async (refreshRequest: RefreshRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getLogoutApiV1AuthLogoutPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(refreshRequest)
+  }
+);}
+
+
+
+
+
+export const getLogoutApiV1AuthLogoutPostQueryKey = (refreshRequest?: RefreshRequest,) => {
+    return [
+    'POST', `/api/v1/auth/logout`, refreshRequest
+    ] as const;
+    }
+
+
+export const getLogoutApiV1AuthLogoutPostQueryOptions = <TData = Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError = HTTPValidationError>(refreshRequest: RefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getLogoutApiV1AuthLogoutPostQueryKey(refreshRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>> = ({ signal }) => logoutApiV1AuthLogoutPost(refreshRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type LogoutApiV1AuthLogoutPostQueryResult = NonNullable<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>>
+export type LogoutApiV1AuthLogoutPostQueryError = HTTPValidationError
+
+
+export function useLogoutApiV1AuthLogoutPost<TData = Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError = HTTPValidationError>(
+ refreshRequest: RefreshRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+          TError,
+          Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useLogoutApiV1AuthLogoutPost<TData = Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError = HTTPValidationError>(
+ refreshRequest: RefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>,
+          TError,
+          Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useLogoutApiV1AuthLogoutPost<TData = Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError = HTTPValidationError>(
+ refreshRequest: RefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Logout
+ */
+
+export function useLogoutApiV1AuthLogoutPost<TData = Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError = HTTPValidationError>(
+ refreshRequest: RefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutApiV1AuthLogoutPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getLogoutApiV1AuthLogoutPostQueryOptions(refreshRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getLogoutAllApiV1AuthLogoutAllPostUrl = () => {
+
+
+
+
+  return `/api/v1/auth/logout-all`
+}
+
+/**
+ * 登出全部会话:token_version+1,已签发的 access/refresh 即刻全部失效。
+ * @summary Logout All
+ */
+export const logoutAllApiV1AuthLogoutAllPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getLogoutAllApiV1AuthLogoutAllPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getLogoutAllApiV1AuthLogoutAllPostQueryKey = () => {
+    return [
+    'POST', `/api/v1/auth/logout-all`
+    ] as const;
+    }
+
+
+export const getLogoutAllApiV1AuthLogoutAllPostQueryOptions = <TData = Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getLogoutAllApiV1AuthLogoutAllPostQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>> = ({ signal }) => logoutAllApiV1AuthLogoutAllPost({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type LogoutAllApiV1AuthLogoutAllPostQueryResult = NonNullable<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>>
+export type LogoutAllApiV1AuthLogoutAllPostQueryError = unknown
+
+
+export function useLogoutAllApiV1AuthLogoutAllPost<TData = Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>,
+          TError,
+          Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useLogoutAllApiV1AuthLogoutAllPost<TData = Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>,
+          TError,
+          Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useLogoutAllApiV1AuthLogoutAllPost<TData = Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Logout All
+ */
+
+export function useLogoutAllApiV1AuthLogoutAllPost<TData = Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof logoutAllApiV1AuthLogoutAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getLogoutAllApiV1AuthLogoutAllPostQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getResetPasswordApiV1AuthPasswordResetPostUrl = () => {
 
 

@@ -53,3 +53,49 @@ body {
     display: none;
   }
 }
+
+/* 品牌顶栏本体:sticky + 横向内边距(窄屏收紧,防右侧溢出) */
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-inline: 24px;
+}
+
+@media (max-width: 768px) {
+  .app-topbar {
+    padding-inline: 12px;
+    gap: 10px;
+  }
+}
+
+/* 顶栏右区(语言/余额/用户):内联样式会压住媒体查询,走类 */
+.app-topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .app-topbar-right {
+    gap: 6px;
+  }
+}
+
+/* 移动端抽屉导航链接(浅底深字,与 .topbar-link 深底白字相对) */
+.drawer-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: rgba(0, 0, 0, 0.88);
+  text-decoration: none;
+  font-size: 15px;
+}
+.drawer-link:hover {
+  background: rgba(0, 0, 0, 0.04);
+}

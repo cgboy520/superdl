@@ -11,5 +11,10 @@ actor_id?: string | null;
 q?: string | null;
 since?: string | null;
 until?: string | null;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
 limit?: number;
+cursor?: string | null;
 };

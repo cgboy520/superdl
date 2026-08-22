@@ -34,6 +34,13 @@ void i18n
       lookupLocalStorage: "superdl.lang",
     },
     returnNull: false,
-  });
+  })
+  .then(() => syncHtmlLang(i18n.language));
+
+// <html lang> 跟随运行时语言;index.html 的 zh-CN 只是 JS 启动前的静态默认
+function syncHtmlLang(lng: string): void {
+  document.documentElement.lang = lng;
+}
+i18n.on("languageChanged", syncHtmlLang);
 
 export default i18n;

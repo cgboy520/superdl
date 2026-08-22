@@ -11,6 +11,7 @@ export interface BillHourlyOut {
   hour_start: string;
   id: number;
   instance_id: number;
+  instance_name?: string | null;
   seconds_used: number;
   unit_price: string;
 }

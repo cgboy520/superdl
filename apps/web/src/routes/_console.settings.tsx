@@ -1,9 +1,8 @@
 /** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名、登录密码、登出)。 */
 
-import { TableErrorEmpty } from "../components/QueryState";
 import type { TokenPair } from "@superdl/api-client";
 import { formatDateTime } from "@superdl/ui";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   App,
@@ -14,22 +13,25 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Skeleton,
   Space,
   Table,
   Tag,
   Typography,
 } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   useAddSshKey,
   useDeleteSshKey,
+  useLogout,
   useResetPassword,
   useSendSmsCode,
   useSetWarnThreshold,
   useSubmitRealName,
 } from "../api/mutations";
 import { useMe, useSshKeys } from "../api/queries";
+import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 import { authStore } from "../stores/auth";
 
@@ -41,12 +43,13 @@ export const Route = createFileRoute("/_console/settings")({
 function SettingsPage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const navigate = useNavigate();
-  const { data: me } = useMe();
+  const meQ = useMe();
+  const { data: me } = meQ;
   const { data: keys, isLoading, isError, refetch } = useSshKeys();
   const [form] = Form.useForm();
   const [warnHours, setWarnHours] = useState<number>();
   const [pwdOpen, setPwdOpen] = useState(false);
+  const logout = useLogout();
 
   const addKey = useAddSshKey({
     onSuccess: () => {
@@ -146,6 +149,7 @@ function SettingsPage() {
           <InputNumber
             min={1}
             max={168}
+            aria-label={t("settings.warnThresholdLabel")}
             value={warnHours ?? me?.low_balance_warn_hours}
             onChange={(v) => setWarnHours(v ?? undefined)}
             onPressEnter={() => {
@@ -166,7 +170,12 @@ function SettingsPage() {
         </Space>
       </Card>
 
-      <RealNameCard verified={me?.verification_status === "verified"} />
+      <RealNameCard
+        me={me}
+        loading={meQ.isPending}
+        error={meQ.isError}
+        onRetry={() => void meQ.refetch()}
+      />
 
       <Card title={t("settings.accountCard")}>
         <Space orientation="vertical" size={12}>
@@ -177,13 +186,7 @@ function SettingsPage() {
               {t("settings.changePasswordHint")}
             </Typography.Text>
           </Space>
-          <Button
-            danger
-            onClick={() => {
-              authStore.getState().logout();
-              void navigate({ to: "/login" });
-            }}
-          >
+          <Button danger onClick={() => void logout()}>
             {t("settings.logout")}
           </Button>
         </Space>
@@ -207,14 +210,26 @@ function PasswordModal({
   const { message } = App.useApp();
   const [form] = Form.useForm<{ sms_code: string; new_password: string }>();
   const [countdown, setCountdown] = useState(0);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 倒计时递减只走 updater 纯函数;清零与卸载的清 timer 都在 effect 里(StrictMode 双调安全)
+  useEffect(() => {
+    if (countdown <= 0 && timer.current) {
+      clearInterval(timer.current);
+      timer.current = null;
+    }
+  }, [countdown]);
+  useEffect(
+    () => () => {
+      if (timer.current) clearInterval(timer.current);
+    },
+    [],
+  );
   const sendCode = useSendSmsCode({
     onSuccess: () => {
       message.success(t("settings.codeSent"));
+      if (timer.current) clearInterval(timer.current);
       setCountdown(60);
-      const timer = setInterval(
-        () => setCountdown((c) => (c <= 1 ? (clearInterval(timer), 0) : c - 1)),
-        1000,
-      );
+      timer.current = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
     },
   });
   const reset = useResetPassword({
@@ -248,7 +263,12 @@ function PasswordModal({
         </Typography.Paragraph>
         <Form.Item name="sms_code" rules={[{ required: true, message: t("settings.codeRequired") }]}>
           <Space.Compact style={{ width: "100%" }}>
-            <Input placeholder={t("settings.codePlaceholder")} maxLength={6} />
+            <Input
+              placeholder={t("settings.codePlaceholder")}
+              maxLength={6}
+              autoComplete="one-time-code"
+              aria-label={t("settings.codePlaceholder")}
+            />
             <Button
               disabled={countdown > 0}
               loading={sendCode.isPending}
@@ -269,23 +289,43 @@ function PasswordModal({
   );
 }
 
-function RealNameCard({ verified }: { verified: boolean }) {
+/** 实名卡四态:未就绪骨架 / 错误可重试(绝不把「没查到」渲染成「未认证」) / 已认证 / 未认证。 */
+function RealNameCard({
+  me,
+  loading,
+  error,
+  onRetry,
+}: {
+  me: { verification_status?: string } | undefined;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+}) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [form] = Form.useForm<{ name: string; id_number: string }>();
   const submit = useSubmitRealName({
     onSuccess: () => message.success(t("settings.realNameDone")),
   });
+  const verified = me?.verification_status === "verified";
   return (
     <Card
       title={
         <Space size={8}>
           {t("settings.realNameCard")}
-          <Tag color={verified ? "green" : "orange"}>{verified ? t("settings.verified") : t("settings.unverified")}</Tag>
+          {!loading && !error && (
+            <Tag color={verified ? "green" : "orange"}>
+              {verified ? t("settings.verified") : t("settings.unverified")}
+            </Tag>
+          )}
         </Space>
       }
     >
-      {verified ? (
+      {loading ? (
+        <Skeleton active paragraph={{ rows: 1 }} title={false} />
+      ) : error ? (
+        <DataErrorAlert onRetry={onRetry} />
+      ) : verified ? (
         <Typography.Text type="secondary">{t("settings.realNameDoneNote")}</Typography.Text>
       ) : (
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
@@ -301,7 +341,12 @@ function RealNameCard({ verified }: { verified: boolean }) {
               name="name"
               rules={[{ required: true, min: 2, message: t("settings.realNameNameRule") }]}
             >
-              <Input placeholder={t("settings.realNamePlaceholder")} style={{ width: 160 }} />
+              <Input
+                placeholder={t("settings.realNamePlaceholder")}
+                aria-label={t("settings.realNamePlaceholder")}
+                autoComplete="name"
+                style={{ width: 160 }}
+              />
             </Form.Item>
             <Form.Item
               name="id_number"
@@ -313,7 +358,12 @@ function RealNameCard({ verified }: { verified: boolean }) {
                 },
               ]}
             >
-              <Input placeholder={t("settings.idNumberPlaceholder")} style={{ width: 220 }} maxLength={18} />
+              <Input
+                placeholder={t("settings.idNumberPlaceholder")}
+                aria-label={t("settings.idNumberPlaceholder")}
+                style={{ width: 220 }}
+                maxLength={18}
+              />
             </Form.Item>
             <Button type="primary" htmlType="submit" loading={submit.isPending}>
               {t("settings.submitVerify")}

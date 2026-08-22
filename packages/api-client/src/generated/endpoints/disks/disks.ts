@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CreateDiskApiV1DisksPostHeaders,
   DiskCreate,
   DiskExpand,
   DiskOut,
@@ -159,13 +160,14 @@ export const getCreateDiskApiV1DisksPostUrl = () => {
 /**
  * @summary Create Disk
  */
-export const createDiskApiV1DisksPost = async (diskCreate: DiskCreate, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
+export const createDiskApiV1DisksPost = async (diskCreate: DiskCreate,
+    headers?: CreateDiskApiV1DisksPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
 
   return customFetch<DiskOut>(getCreateDiskApiV1DisksPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(diskCreate)
   }
 );}
@@ -181,7 +183,8 @@ export const getCreateDiskApiV1DisksPostQueryKey = (diskCreate?: DiskCreate,) =>
     }
 
 
-export const getCreateDiskApiV1DisksPostQueryOptions = <TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(diskCreate: DiskCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getCreateDiskApiV1DisksPostQueryOptions = <TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(diskCreate: DiskCreate,
+    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -190,7 +193,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>> = ({ signal }) => createDiskApiV1DisksPost(diskCreate, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>> = ({ signal }) => createDiskApiV1DisksPost(diskCreate,headers, { signal, ...requestOptions });
 
 
 
@@ -204,7 +207,8 @@ export type CreateDiskApiV1DisksPostQueryError = HTTPValidationError
 
 
 export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>> & Pick<
+ diskCreate: DiskCreate,
+    headers: undefined |  CreateDiskApiV1DisksPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof createDiskApiV1DisksPost>>,
           TError,
@@ -214,7 +218,8 @@ export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof cr
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>> & Pick<
+ diskCreate: DiskCreate,
+    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof createDiskApiV1DisksPost>>,
           TError,
@@ -224,7 +229,8 @@ export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof cr
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ diskCreate: DiskCreate,
+    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -232,11 +238,12 @@ export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof cr
  */
 
 export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ diskCreate: DiskCreate,
+    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getCreateDiskApiV1DisksPostQueryOptions(diskCreate,options)
+  const queryOptions = getCreateDiskApiV1DisksPostQueryOptions(diskCreate,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

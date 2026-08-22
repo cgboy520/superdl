@@ -21,9 +21,10 @@ import type {
 
 import type {
   AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200,
+  AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders,
   HTTPValidationError,
   ListNotificationsApiV1NotificationsGetParams,
-  NotificationOut
+  PageNotificationOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -64,11 +65,12 @@ export const getListNotificationsApiV1NotificationsGetUrl = (params?: ListNotifi
 }
 
 /**
+ * 站内信:降序(最新在前)游标分页。
  * @summary List Notifications
  */
-export const listNotificationsApiV1NotificationsGet = async (params?: ListNotificationsApiV1NotificationsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<NotificationOut[]> => {
+export const listNotificationsApiV1NotificationsGet = async (params?: ListNotificationsApiV1NotificationsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageNotificationOut> => {
 
-  return customFetch<NotificationOut[]>(getListNotificationsApiV1NotificationsGetUrl(params),
+  return customFetch<PageNotificationOut>(getListNotificationsApiV1NotificationsGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -267,13 +269,13 @@ export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostUrl = () => {
  * Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。
  * @summary Alertmanager Webhook
  */
-export const alertmanagerWebhookApiV1WebhooksAlertmanagerPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200> => {
+export const alertmanagerWebhookApiV1WebhooksAlertmanagerPost = async (headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200> => {
 
   return customFetch<AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200>(getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostUrl(),
   {
     ...options,
-    method: 'POST'
-
+    method: 'POST',
+    headers: { ...headers, ...options?.headers }
 
   }
 );}
@@ -289,7 +291,7 @@ export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryKey = () =>
     }
 
 
-export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryOptions = <TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryOptions = <TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -298,7 +300,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>> = ({ signal }) => alertmanagerWebhookApiV1WebhooksAlertmanagerPost({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>> = ({ signal }) => alertmanagerWebhookApiV1WebhooksAlertmanagerPost(headers, { signal, ...requestOptions });
 
 
 
@@ -312,7 +314,7 @@ export type AlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryError = HTTPVal
 
 
 export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>> & Pick<
+ headers: undefined |  AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>,
           TError,
@@ -322,7 +324,7 @@ export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awai
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>> & Pick<
+ headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>,
           TError,
@@ -332,7 +334,7 @@ export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awai
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -340,11 +342,11 @@ export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awai
  */
 
 export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryOptions(options)
+  const queryOptions = getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryOptions(headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

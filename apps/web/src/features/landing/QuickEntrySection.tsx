@@ -61,6 +61,16 @@ export function QuickEntrySection() {
               onClick={() => go(e.key)}
               styles={{ body: { padding: 20 } }}
               style={{ height: "100%" }}
+              // Card 无原生键盘语义:快捷入口必须可 Tab 聚焦、Enter/Space 触发
+              role="button"
+              tabIndex={0}
+              aria-label={`${TITLE[e.key]} — ${DESC[e.key]}`}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  ev.preventDefault();
+                  go(e.key);
+                }
+              }}
             >
               <div style={{ fontSize: 22, color: colorPrimary, marginBottom: 8 }}>{e.icon}</div>
               <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>

@@ -19,6 +19,8 @@ interface AuthState {
   accessToken: string | null;
   admin: AdminInfo | null;
   login: (accessToken: string, admin: AdminInfo) => void;
+  /** 以服务端 /me 响应校准本地身份(角色只信服务端);token 不变。 */
+  setAdmin: (admin: AdminInfo) => void;
   logout: () => void;
 }
 
@@ -38,6 +40,10 @@ export const authStore = createStore<AuthState>()((set) => ({
     localStorage.setItem(TOKEN_KEY, accessToken);
     localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
     set({ accessToken, admin });
+  },
+  setAdmin: (admin) => {
+    localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
+    set({ admin });
   },
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
