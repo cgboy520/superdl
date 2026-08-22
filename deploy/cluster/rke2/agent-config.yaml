@@ -2,6 +2,9 @@
 # 配套:registries.yaml 必须同步分发到本节点(Spegel P2P + registry mirror)
 # 新节点首选管理端「添加节点」一键命令,会自动生成本文件与 registries.yaml
 server: https://<server-ip>:9345
+# token 必须是专用 agent token(server-config.yaml 的 agent-token 值),禁止填 server 的
+# node-token:server token 能再拉 server 进 etcd 环,落到 GPU 节点(跑租户负载)等于把
+# 控制面钥匙挂在最不安全的机器上。平台「集群接入」的 cluster_join_token 录的也是 agent token。
 token: <cluster-token>
 node-label:
   - "superdl.io/pool=<kata|hami|mig>"    # 分池铁律:装机时定池,Kata 与 HAMi 永不混布

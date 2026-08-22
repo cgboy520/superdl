@@ -13,5 +13,10 @@ hubble:
   enabled: true
   relay:
     enabled: true
+  # hubble-ui(可选,报告评估结论:默认关):流量可视化排障好用,但自身无认证,
+  # 绝不可经 Ingress 暴露;需要时开 enabled 并仅 `kubectl -n kube-system port-forward
+  # svc/hubble-ui 12000:80` 本地用,用完关回。
+  # ui:
+  #   enabled: true
 operator:
   replicas: 1

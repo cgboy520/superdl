@@ -4,6 +4,14 @@
 prometheus:
   prometheusSpec:
     retention: 3d
+    retentionSize: "3GB"     # 覆盖 full 档的 40GB(单机盘小)
+    storageSpec:             # 覆盖 full 档的 50Gi
+      volumeClaimTemplate:
+        spec:
+          storageClassName: topolvm-provisioner
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests: {storage: 5Gi}
     resources:
       requests: {cpu: 100m, memory: 512Mi}
       limits: {memory: 1Gi}

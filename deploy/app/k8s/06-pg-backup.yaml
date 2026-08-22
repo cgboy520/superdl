@@ -1,4 +1,6 @@
-# PostgreSQL 逻辑备份(每日 02:30 北京 = 18:30 UTC,保留由对象存储生命周期策略管)。
+# PostgreSQL 逻辑备份(每日 02:30 北京 = 18:30 UTC)。
+# 保留策略:对象存储桶生命周期管理——建议 daily/ 前缀 30 天滚动删除 + 每月 1 日转低频/归档层
+# 留存 12 个月(在桶控制台/IaC 配置,不在本清单);恢复演练每季度一次,见 runbooks/pg-backup-restore.md。
 # 这是 RPO=24h 的最低保障;钱包/账本库的 PITR 方案见 runbooks/pg-backup-restore.md。
 # 凭据 Secret(superdl-pg-backup)模板见 ../secrets.example.yaml,不在整目录 apply 路径内。
 apiVersion: batch/v1
@@ -15,8 +17,11 @@ spec:
     spec:
       backoffLimit: 1
       template:
+        metadata:
+          labels: {app: pg-backup}   # NetworkPolicy(09)按此标签放行出向
         spec:
           restartPolicy: Never
+          automountServiceAccountToken: false   # 只连 PG 与对象存储,不访问 K8s API
           # 非 root 运行(pg_dump / aws s3 cp 都不需要 root);fsGroup 让两个容器
           # 都能读写交接用的 emptyDir
           securityContext:
@@ -25,7 +30,10 @@ spec:
             runAsGroup: 999
             fsGroup: 999
             seccompProfile: {type: RuntimeDefault}
-          # 转储与上传各用官方镜像、经 emptyDir 交接;禁止在运行期 apt-get 装工具
+          # 转储与上传各用官方镜像、经 emptyDir 交接;禁止在运行期 apt-get 装工具。
+          # 为何不走 `pg_dump | aws s3 cp -` 流式:postgres 镜像无 aws cli、aws-cli 镜像无
+          # pg_dump,流式需自制镜像(构建链多一个维护面);落盘 + sizeLimit 已能兜住磁盘打满
+          # 风险,将来库体积接近 sizeLimit 一半时再评估自制镜像改流式。
           initContainers:
             - name: dump
               image: postgres:18
@@ -63,6 +71,9 @@ spec:
                 - sh
                 - -ec
                 - |
+                  # 加密:以桶级默认加密(SSE-KMS / OSS 服务端加密)为准,务必在桶侧开启。
+                  # 如需显式请求头加密可追加 --sse aws:kms(先用小文件验证:部分 S3 兼容
+                  # 端点不支持该头,直接加可能整个上传失败)。
                   aws s3 cp /backup/ "s3://$S3_BUCKET/daily/" --recursive \
                     --exclude "*" --include "superdl-*.dump" --endpoint-url "$S3_ENDPOINT"
                   echo "upload done"
@@ -73,5 +84,7 @@ spec:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 512Mi}
           volumes:
-            - {name: backup, emptyDir: {}}
-            - {name: tmp, emptyDir: {}}
+            # sizeLimit 兜住「dump 把节点磁盘打满」:按 库体积×2 预估并随增长上调
+            # (kubelet 按 du 周期性检查,超限先 evict Pod,不会写穿节点磁盘)。
+            - {name: backup, emptyDir: {sizeLimit: 20Gi}}
+            - {name: tmp, emptyDir: {sizeLimit: 1Gi}}

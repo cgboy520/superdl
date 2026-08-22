@@ -9,11 +9,18 @@ spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:
+    metadata:
+      labels: {app: superdl-migrate}   # NetworkPolicy(09)按此标签放行出向
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false   # 只连 PG,不访问 K8s API
+      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
+      # imagePullSecrets:
+      #   - {name: superdl-ghcr-pull}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: migrate
           image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
@@ -22,6 +29,18 @@ spec:
           envFrom:
             - configMapRef: {name: superdl-api-config}
             - secretRef: {name: superdl-api-secrets}
+          env:
+            # 迁移兜底超时:DDL 等锁超 3s 即失败(宁可迁移失败重跑,不可顶着业务锁表);
+            # 单条语句 60s 上限,防长迁移拖垮在线库。大数据量变更须走分批小迁移。
+            - {name: PGOPTIONS, value: "-c lock_timeout=3s -c statement_timeout=60s"}
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}

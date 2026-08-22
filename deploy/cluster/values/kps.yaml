@@ -2,10 +2,23 @@
 prometheus:
   prometheusSpec:
     retention: 15d
+    retentionSize: "40GB"      # 约为 PVC 的 80%,到量先删最旧块,与 retention 双闸
+    # 持久化:默认 emptyDir 意味着 Pod 重建丢全部指标历史(用量对账曲线断档)。
+    # 升级路径(已部署集群):StatefulSet 的 volumeClaimTemplates 不可变,需先
+    # `kubectl -n monitoring delete sts prometheus-kube-prometheus-stack-prometheus --cascade=orphan`
+    # 再 helmfile apply(或接受重建;空窗期告警仍由 Alertmanager 工作,历史指标可放弃)。
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: topolvm-provisioner
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests: {storage: 50Gi}
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
+      limits: {memory: 4Gi}    # 只限内存:CPU 限速会拖慢查询/规则评估,OOMKill 反而更可见
     # HAMi 自带指标:scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
     # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认值)
     additionalScrapeConfigs:
@@ -87,6 +100,14 @@ alertmanager:
             auth_password_file: /etc/alertmanager/secrets/superdl-smtp-password/password
             require_tls: true
   alertmanagerSpec:
+    # silence/通知状态持久化:默认 emptyDir,Pod 重建后进行中的静默全部丢失
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: topolvm-provisioner
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests: {storage: 2Gi}
     secrets:
       - superdl-alert-token
       # kubectl -n monitoring create secret generic superdl-smtp-password \
@@ -125,6 +146,25 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: warning}
             annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝"}
+  # 证书过期预警:指标来自 cert-manager ServiceMonitor(values/cert-manager.yaml);
+  # 覆盖 api/console/admin 入口证书与租户 Jupyter 泛域名证书。
+  superdl-certmanager:
+    groups:
+      - name: superdl.certmanager
+        rules:
+          - alert: CertExpiringSoon
+            expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 7 * 24 * 3600
+            labels: {severity: warning}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})7 天内到期:查 cert-manager 续签"}
+          - alert: CertExpiringCritical
+            expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 2 * 24 * 3600
+            labels: {severity: critical}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})48 小时内到期:立即人工介入"}
+          - alert: CertManagerMetricsMissing
+            expr: absent(certmanager_certificate_expiration_timestamp_seconds)
+            for: 1h
+            labels: {severity: warning}
+            annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警"}
   # 平台自身业务指标。抓取接线:deploy/app/k8s/08-monitoring.yaml
   # (API 走 ServiceMonitor + SUPERDL_METRICS_TOKEN Bearer;worker 走 PodMonitor)
   superdl-platform:

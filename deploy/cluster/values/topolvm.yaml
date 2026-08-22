@@ -1,4 +1,5 @@
-# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁时 blkdiscard(擦盘)。
+# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁为 lvremove(不清零 extent)。
+# 需要「擦盘」语义时在 agent 节点 lvm.conf 开 issue_discards=1(NVMe discard 性能代价需实测)。
 # 实例盘 PVC 由平台自管生命周期(<instance-uuid>-root,只在释放/回收时删)。
 # reclaimPolicy 显式写死,不取 chart 默认值。
 storageClasses:

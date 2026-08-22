@@ -5,3 +5,22 @@ controller:
     default-ssl-certificate: "superdl/superdl-jupyter-wildcard-tls"
   config:
     ssl-redirect: "true"
+  # 可用性:双副本 + PDB(chart 在 replicaCount>1 时按 minAvailable 自动建 PDB)+ 拓扑摊开。
+  # 北向唯一入口(api/console/admin/租户 Jupyter 全走这里),单点重启不应断流。
+  replicaCount: 2
+  minAvailable: 1
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway   # 单节点集群仍可调度
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+          app.kubernetes.io/component: controller
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+          app.kubernetes.io/component: controller

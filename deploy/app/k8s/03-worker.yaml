@@ -15,7 +15,10 @@ spec:
     metadata:
       labels: {app: superdl-worker}
     spec:
-      serviceAccountName: superdl-api
+      serviceAccountName: superdl-worker   # 编排写权限只在 worker(见 01-rbac.yaml)
+      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
+      # imagePullSecrets:
+      #   - {name: superdl-ghcr-pull}
       terminationGracePeriodSeconds: 60  # SIGTERM 后收尾当前 outbox 任务
       securityContext:
         runAsNonRoot: true
@@ -41,9 +44,10 @@ spec:
                 - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
             initialDelaySeconds: 30
             periodSeconds: 30
+          # requests==limits → Guaranteed(同 02-api.yaml):结算/巡检是计费要害,不得先被 evict
           resources:
-            requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: "1", memory: 512Mi}
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 512Mi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

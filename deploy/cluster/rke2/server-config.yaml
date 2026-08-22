@@ -5,8 +5,19 @@ cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(CNI + 
 disable:
   - rke2-ingress-nginx       # 禁内置版本,改由 helmfile 装上游 ingress-nginx(版本可控)
   - rke2-canal
+secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。
+                             # 存量集群开启:RKE2 启动时自动重写加密既有 Secret(滚动重启
+                             # server 逐台做,etcd 快照照常可还原);开启后 etcd 快照虽不再
+                             # 明文含 Secret,快照本体仍含全部集群状态,必须异地加密保存
+                             # (勿只留在本机 /var/lib/rancher)。
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 12
+# 节点加入用专用 agent token,禁止把 server token(node-token)下发到 GPU 节点/平台库:
+# server token 可再拉 server 入环(etcd 成员),被泄=集群控制面沦陷;agent token 只能拉 agent。
+# 首装前生成(openssl rand -hex 32),取消下面注释;装机后补设则需滚动重启各 server。
+#agent-token: "CHANGE_ME_AGENT_TOKEN"
+# 平台「集群接入」配置项 cluster_join_token 录这个值(应用侧 hint 仍写 node-token,
+# 以本文件与 deploy/cluster/README.md 为准);轮换步骤见 deploy/cluster/README.md。
 embedded-registry: true      # Spegel P2P 镜像共享:节点间互拉已缓存镜像(TCP 5001/9345 内网互通)
                              # 需配套 registries.yaml 分发到全部节点;latest tag 不参与 P2P
 supervisor-metrics: true     # 暴露 spegel/supervisor 指标供 kps 抓取

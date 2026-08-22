@@ -1,12 +1,34 @@
 # 集群内私有镜像仓库:registry.superdl.local 的真实落点。
 # 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维内网)与 pull(节点 registries.yaml mirror)。
-# 应用:kubectl apply -f registry.yaml;节点侧配置见 ../rke2/registries.yaml
-# 无认证无 TLS,安全边界靠两条:租户实例的 Egress NetworkPolicy 禁全部私网段,
-# 机房防火墙不对外暴露 NodePort 30500。
+# 应用:kubectl apply -f registry.yaml(apply 前必须替换两处占位:htpasswd 口令与
+# NetworkPolicy 的 ipBlock CIDR,否则认证口令公开/NetworkPolicy 校验报错)。
+# 节点侧配置见 ../rke2/registries.yaml 与
+# runbooks/image-prewarm.md(htpasswd 生成、节点 configs.auth、滚动顺序都在那里有步骤)。
+#
+# 认证迁移顺序(已部署集群照此滚动,避免节点 pull 中断):
+#   1) 先建 registry-htpasswd Secret(把下面占位行换成真实 bcrypt,见 image-prewarm.md);
+#   2) 全节点 registries.yaml 先配上 configs.auth(仓库未开认证时,带凭据访问匿名仓库不受影响);
+#   3) 最后 apply 本文件开启认证(探针为 tcpSocket,401 不影响就绪判定);
+#   4) 新节点的 registries.yaml 由平台生成:开启认证后须在 管理端·平台配置·集群接入 的
+#      node_registries_yaml(DB 覆盖层)放入含 configs.auth 的完整模板,直到应用侧模板跟进。
+# 残余边界:NodePort 30500 仍限内网(机房防火墙不得对外);TLS 升级路径见文件末尾 Service 注释。
 apiVersion: v1
 kind: Namespace
 metadata:
   name: registry
+---
+# htpasswd 认证凭据。占位行 = 用户 ops / 口令 CHANGE_ME(上线前必须替换,生成法见
+# runbooks/image-prewarm.md:htpasswd -nbB ops '<强口令>')。bcrypt 格式合法,可直接 apply
+# 启动,但占位口令等于公开——替换后 `kubectl -n registry rollout restart deploy/registry`。
+apiVersion: v1
+kind: Secret
+metadata:
+  name: registry-htpasswd
+  namespace: registry
+type: Opaque
+stringData:
+  htpasswd: |
+    ops:$2y$05$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -15,7 +37,11 @@ metadata:
   namespace: registry
 spec:
   accessModes: ["ReadWriteOnce"]
-  storageClassName: topolvm-provisioner   # 节点本地 NVMe;仓库丢失可重 push,灾备见 runbooks/image-prewarm.md
+  # 节点本地 NVMe:注意这会占用 GPU 节点 superdl-nvme VG 的 500Gi(与实例盘同源),
+  # GPU 节点盘位宝贵时建议:①把 registry 调度/存储迁到 infra/管理节点(TopoLVM 另建 VG
+  # 或独立 storageClass),或 ②改共享存储(JuiceFS/NFS,RWX)。仓库丢失可重 push,灾备见
+  # runbooks/image-prewarm.md。
+  storageClassName: topolvm-provisioner
   resources:
     requests:
       storage: 500Gi
@@ -46,17 +72,30 @@ spec:
           ports:
             - containerPort: 5000
           env:
+            - name: REGISTRY_AUTH
+              value: htpasswd
+            - name: REGISTRY_AUTH_HTPASSWD_REALM
+              value: superdl-registry
+            - name: REGISTRY_AUTH_HTPASSWD_PATH
+              value: /auth/htpasswd
+            # 关闭 API DELETE(防误删/恶意删 manifest)。空间回收走 Pod 内
+            # `registry garbage-collect /etc/registry/config.yml -m`(二进制直操作存储,
+            # 不受本开关影响),见 runbooks/image-prewarm.md。
             - name: REGISTRY_STORAGE_DELETE_ENABLED
-              value: "true"      # 允许 DELETE manifest,配合周期 GC(见 runbook)
+              value: "false"
           volumeMounts:
             - name: data
               mountPath: /var/lib/registry
+            - name: auth
+              mountPath: /auth
+              readOnly: true
+          # 认证开启后 /v2/ 匿名返回 401,httpGet 探针会误判不就绪,故用 TCP 探活
           readinessProbe:
-            httpGet: {path: /v2/, port: 5000}
+            tcpSocket: {port: 5000}
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
-            httpGet: {path: /v2/, port: 5000}
+            tcpSocket: {port: 5000}
             initialDelaySeconds: 15
             periodSeconds: 30
           resources:
@@ -66,6 +105,27 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: registry-data
+        - name: auth
+          secret:
+            secretName: registry-htpasswd
+---
+# 默认拒绝入方向,仅放行节点/运维网段到 5000(节点 pull 经 NodePort 回源、运维 push 直达)。
+# 把 ipBlock 改成实际 节点网段+运维网段(可多段);Cilium 若对本 Service 做 SNAT,源地址会
+# 折进节点网段,本策略仍生效;若改 externalTrafficPolicy=Local,需把真实客户端网段一并加入。
+# 注意:light 档(k3s+flannel)不执行 NetworkPolicy,该档请依赖防火墙等外层边界。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: registry-default-deny
+  namespace: registry
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - ipBlock: {cidr: "CHANGE_ME_NODE_OPS_CIDR/24"}
+      ports:
+        - {protocol: TCP, port: 5000}
 ---
 apiVersion: v1
 kind: Service
@@ -73,9 +133,15 @@ metadata:
   name: registry
   namespace: registry
 spec:
-  type: NodePort               # 全节点 30500 开放;仅限集群内网,防火墙不得对外暴露
+  type: NodePort               # 全节点 30500 开放;节点经本机地址 pull 是现有架构,
+                               # 改 ClusterIP 会断装机链路,故保留。
   selector: {app: registry}
   ports:
     - port: 5000
       targetPort: 5000
       nodePort: 30500
+# 残余风险(保留 NodePort 的代价):内网任意能触达节点 30500 的主体,凭 htpasswd 口令即可
+# push/pull;口令强度与分发范围因此成为边界(叠加租户 Egress NetworkPolicy 禁私网段兜底)。
+# TLS 升级路径:registry 加 REGISTRY_HTTP_TLS_CERTIFICATE/KEY(cert-manager 签内网 CA 证书),
+# 节点 registries.yaml 的 endpoint 改 https 并配 configs.tls.ca_file;之后再评估
+# mutual TLS 或收编为 ClusterIP + 节点本地代理。未上 TLS 前,口令在内网明文传输,须按季度轮换。

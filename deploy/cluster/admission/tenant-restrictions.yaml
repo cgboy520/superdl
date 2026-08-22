@@ -1,0 +1,110 @@
+# 租户与平台 SA 的准入约束(ValidatingAdmissionPolicy,API Server 内置,无 webhook 依赖)。
+#
+# 先决条件:K8s ≥ 1.30(VAP GA;本仓库钉 RKE2/k3s v1.36,满足)。独立可选清单,
+# 不在 helmfile 内:`kubectl apply -f admission/tenant-restrictions.yaml`。
+# 回滚:`kubectl delete -f admission/tenant-restrictions.yaml`(先删 Binding 即失效)。
+#
+# 上线建议:第一次部署把两个 Binding 的 validationActions 改成 [Audit] 跑一周
+# (kubectl get events / apiserver 日志看 violation),确认零误伤再改回 [Deny]。
+# 以下规则已与平台实际行为对齐(不会误伤正常编排):
+#   - worker 只写 superdl/tenant-* 命名空间 + nodes(patch);namespace 只建 tenant-*;
+#   - 租户 Pod 本身即 automountServiceAccountToken: false、无 hostPath/host*、
+#     hostUsers 仅 shared/mig 档显式 false(dedicated/Kata 档不传,VM 级隔离不叠 userns)。
+#
+# 注意:本文件只约束「创建/更新/删除」,读(get/list)不经过准入层,无需在此放行。
+
+---
+# 策略一:平台两个 SA(superdl-api 只读 / superdl-worker 编排)的写操作范围钉死。
+# RBAC 因 tenant-* 动态创建只能给 ClusterRole(见 deploy/app/k8s/01-rbac.yaml 的收敛说明),
+# 本策略把 ClusterRole 的实际可达面收窄到目标命名空间,二者叠加才是完整最小权限。
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: superdl-platform-sa-scope
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["*"]
+        operations: ["CREATE", "UPDATE", "PATCH", "DELETE"]
+        scope: "*"
+  matchConditions:
+    - name: platform-sa-only
+      expression: >-
+        request.userInfo.username == 'system:serviceaccount:superdl:superdl-api' ||
+        request.userInfo.username == 'system:serviceaccount:superdl:superdl-worker'
+  validations:
+    # namespace 对象本身:只允许创建/删除 tenant-*(平台从不删 ns,删除也仅放行 tenant-*)
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
+        (request.operation == 'DELETE'
+          ? oldObject.metadata.name.startsWith('tenant-')
+          : object.metadata.name.startsWith('tenant-'))
+      message: "平台 SA 只能创建/删除 tenant-* 命名空间"
+    # 其余资源:命名空间内只能写 superdl 或 tenant-*;集群级只放行 nodes(cordon/标签 patch)
+    - expression: >-
+        (request.resource.group == '' && request.resource.resource == 'namespaces') ||
+        request.namespace == 'superdl' ||
+        request.namespace.startsWith('tenant-') ||
+        (request.namespace == '' && request.resource.group == '' && request.resource.resource == 'nodes')
+      message: "平台 SA 的写操作仅限 superdl/tenant-* 命名空间与 nodes"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: superdl-platform-sa-scope
+spec:
+  policyName: superdl-platform-sa-scope
+  validationActions: [Deny]   # 首次上线先 [Audit] 观察,确认零误伤再改 Deny
+
+---
+# 策略二:租户命名空间(平台打标 superdl.io/managed=true)内的 Pod 安全基线。
+# 防的是「平台被注入/编排逻辑出 bug 时创建出越权 Pod」这层残余风险;正常租户 Pod 全部满足。
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: superdl-tenant-pod-baseline
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        superdl.io/managed: "true"   # ensure_namespace 给每个 tenant-* 打的标签
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["*"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+        operations: ["CREATE", "UPDATE"]
+        scope: "Namespaced"
+  validations:
+    # 可选列表字段必须先 has() 再 exists():CEL 访问未设置字段会报错,在 failurePolicy: Fail
+    # 下等同于拒绝(租户 Pod 恰好没有 initContainers/ephemeralContainers)。
+    - expression: >-
+        !object.spec.containers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged) &&
+        (!has(object.spec.initContainers) || !object.spec.initContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)) &&
+        (!has(object.spec.ephemeralContainers) || !object.spec.ephemeralContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged))
+      message: "租户 Pod 禁止 privileged 容器"
+    - expression: "!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath))"
+      message: "租户 Pod 禁止 hostPath 卷"
+    - expression: >-
+        (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+        (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
+        (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
+      message: "租户 Pod 禁止 hostNetwork/hostPID/hostIPC"
+    # dedicated(Kata)档不传 hostUsers(VM 级隔离);shared/mig 档必须显式 false(userns)。
+    # 规则只禁「显式 true」,两档行为均不受影响。
+    - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
+      message: "租户 Pod 禁止 hostUsers: true"
+    # 平台创建租户 Pod 时恒为 false;禁止任何 SA token 挂进租户容器
+    - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
+      message: "租户 Pod 必须 automountServiceAccountToken: false"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: superdl-tenant-pod-baseline
+spec:
+  policyName: superdl-tenant-pod-baseline
+  validationActions: [Deny]   # 首次上线先 [Audit] 观察,确认零误伤再改 Deny

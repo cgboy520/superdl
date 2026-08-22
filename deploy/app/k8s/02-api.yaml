@@ -13,7 +13,22 @@ spec:
     metadata:
       labels: {app: superdl-api}
     spec:
-      serviceAccountName: superdl-api
+      serviceAccountName: superdl-api   # 只读身份(见 01-rbac.yaml;写权限全在 worker)
+      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
+      # imagePullSecrets:
+      #   - {name: superdl-ghcr-pull}
+      topologySpreadConstraints:
+        # 2 副本尽量跨节点/跨可用区摊开;小集群不满足时仍可调度(ScheduleAnyway)
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: superdl-api}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: superdl-api}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -34,9 +49,12 @@ spec:
             httpGet: {path: /readyz, port: http}
             periodSeconds: 5
             failureThreshold: 3
+          # requests==limits → Guaranteed:节点资源紧张时平台控制面与租户 Pod 同级,不先被 evict。
+          # 内存取原 limits 值(eviction 看内存);CPU 可压缩,取请求与上限的中档。
+          # 进一步的抢占保护(优先级压过租户)可再加 priorityClassName,需要时单独评估。
           resources:
-            requests: {cpu: 250m, memory: 512Mi}
-            limits: {cpu: "2", memory: 1Gi}
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "1", memory: 1Gi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

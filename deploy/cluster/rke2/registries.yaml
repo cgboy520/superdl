@@ -8,5 +8,17 @@ mirrors:
     endpoint:
       - "http://<server-ip>:30500"   # NodePort 全节点开放;server IP 是节点必达的稳定地址(与 agent-config.yaml 同占位符)
 # endpoint 显式 http(集群内网明文),不涉 TLS 校验,无需 configs.tls 块。
+# registry 已开 htpasswd 认证(deploy/cluster/registry/registry.yaml):节点 pull 凭据在
+# 下面 configs 块配置——启用步骤:①去掉注释 ②把 CHANGE_ME 换成与 htpasswd 一致的口令
+# ③重启 rke2-agent/k3s-agent。仓库未开认证前配上凭据也不影响匿名访问,可先铺节点再开认证。
+# configs:
+#   registry.superdl.local:
+#     auth:
+#       username: ops
+#       password: CHANGE_ME   # 与 registry-htpasswd Secret 中该用户的明文口令一致
 # 租户 Pod 的 Egress NetworkPolicy 已禁全部私网段(app/core/k8s/real.py PRIVATE_CIDRS),
 # 租户实例无法触达 30500。
+#
+# 新节点注意:本文件由平台按模板自动生成下发(管理端·平台配置·集群接入的
+# node_registries_yaml,留空=内置模板)。开启认证后,须把含上面 configs.auth 的完整模板
+# 粘进该配置项,否则新节点无法 pull(内置模板跟进前的手工兜底)。

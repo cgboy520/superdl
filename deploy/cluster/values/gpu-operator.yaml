@@ -1,26 +1,43 @@
 # GPU Operator v26.3:驱动由 Ansible 预装(driver.enabled=false 避免与 HAMi/Kata 池互扰)
+#
+# ⚠️ 组件落点机制(v26 起,已核对 v26.3.0 chart 源码):ClusterPolicy 不再接受
+# 各组件的 nodeSelector(写了会被静默忽略),operand DaemonSet 一律按
+# `nvidia.com/gpu.deploy.<组件>=true` 节点标签调度;operator 依据节点的
+# `nvidia.com/gpu.workload.config`(container 默认 / vm-passthrough / vm-vgpu)自动打这套标签,
+# 已存在的标签值会被尊重(不会覆盖)。因此分池靠【节点标签】而非本文件:
+#   kata 池: kubectl label node <节点> nvidia.com/gpu.workload.config=vm-passthrough
+#           (operator 随即在该池部署 kata-sandbox-device-plugin + vfio-manager,
+#            并撤掉普通 device-plugin;nvidia.com/gpu 由 kata 沙箱插件注册)
+#   hami 池: kubectl label node <节点> nvidia.com/gpu.deploy.device-plugin=false
+#           (禁掉官方 device-plugin,避免与 HAMi 插件抢注 nvidia.com/gpu;
+#            toolkit/dcgm-exporter 等其他组件照常部署)
+#   mig 池: 无需标签(container 默认;MIG 机型自动获得 mig-manager)。
+#           切分按需:kubectl label node <节点> nvidia.com/mig.config=all-1g.10gb --overwrite
+# ⚠️ 上线纪律:MIG 切分与 Kata 开机必须实机验证(runbooks/cluster-validation.md 三池全流程),
+# 未验证前管理端禁止上架 dedicated/mig 档 SKU。
 driver:
   enabled: false           # 装机基线已装宿主驱动
 toolkit:
   enabled: true
 devicePlugin:
   enabled: true
-  # HAMi 池节点由 HAMi 自己的 device plugin 接管(按节点标签互斥,见 hami values)
-  nodeSelector:
-    superdl.io/pool: kata  # 官方 device plugin 只服务整卡(kata)池
+  # 整卡(kata)与 MIG(mig)两池都由它服务:落点由上述节点标签决定,不在此设 selector。
+  # HAMi 池节点须打 nvidia.com/gpu.deploy.device-plugin=false 与其互斥(见头注释)。
 migManager:
-  enabled: true
-  nodeSelector:
-    superdl.io/pool: mig
+  enabled: true             # v26 起自动落在 MIG 机型节点(container 负载),无需 selector
 mig:
-  strategy: single
+  # 必须 mixed:平台 gpu_adapter 申请的是 nvidia.com/mig-{profile} 资源
+  # (apps/api/app/core/gpu_adapter),只有 mixed 策略才注册该资源名;
+  # single 会把切片注册成 nvidia.com/gpu,与整卡语义冲突且平台永远调度不上。
+  strategy: mixed
 dcgmExporter:
   enabled: true            # DCGM 指标 → usage_hourly 聚合 + 大盘 24450
   serviceMonitor:
     enabled: true
 sandboxWorkloads:
-  enabled: true            # kata 池 VFIO 直通(vfio-manager)
-vfioManager:
   enabled: true
-  nodeSelector:
-    superdl.io/pool: kata
+  # kata 模式:vm-passthrough 节点(kata 池)部署 kata-sandbox-device-plugin
+  # (默认 kubevirt 模式部署的是 kubevirt 插件,与 kata-qemu 不匹配)
+  mode: kata
+vfioManager:
+  enabled: true            # kata 池 VFIO 直通;落点由 workload 标签驱动(vm-passthrough)

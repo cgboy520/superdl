@@ -6,6 +6,9 @@
   # 分批滚动:registries.yaml 变更会 try-restart rke2-agent,整机房同时 bounce 等于全站抖动
   serial: "25%"
   vars:
+    # 单一事实源是平台配置 node_driver_version(管理端·平台配置;env 默认 SUPERDL_NODE_DRIVER_VERSION=580):
+    # 新节点由 node-join.sh 按服务端下发版本安装。本变量是其在存量机批量装机侧的镜像,
+    # 升版本先改平台配置,再把这里同步成同一值,避免两套真相漂移。
     nvidia_driver_version: "580"          # 与 GPU Operator v26.3 兼容矩阵核对后锁定
   tasks:
     - name: 禁用 nouveau

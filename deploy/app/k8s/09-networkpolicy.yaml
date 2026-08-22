@@ -1,0 +1,163 @@
+# superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 宽 ipBlock 起步。
+#
+# 先观察再收紧(出向):
+#   1) 各 *-egress 默认放行 0.0.0.0/0 —— PG/对象存储/SMTP/支付网关等外部端点 IP 因环境而异,
+#      宽 ipBlock 保证默认 apply 不断连(等价于无出向限制),策略骨架先就位;
+#   2) 观察 1~2 天实际出向(Hubble / `cilium monitor` / 应用日志);
+#   3) 把宽 ipBlock 替换为具体 CIDR:端口对(示例写在 api-egress 注释里),外部端点变更时同步改。
+#
+# 入向已是精确放行,无需再收紧。新增 Pod 必须补对应放行规则,否则双不通。
+# light 档(k3s+flannel)不执行 NetworkPolicy,该档依赖防火墙等外层边界(同 cluster/registry)。
+# kubelet 探针来自节点 host,不受 NetworkPolicy 影响;DNS 由 allow-dns-egress 统一放行。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: superdl
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+# 全命名空间放行 DNS:CoreDNS 在 kube-system;没有它所有 Pod 域名解析全挂。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: superdl
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# 前端入向:仅 ingress-nginx 控制器转发来的外部流量。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontends-ingress
+  namespace: superdl
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [superdl-web, superdl-admin]}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# 前端出向:只做 /api 反代(见 ../nginx.web.conf / nginx.admin.conf),目标仅 superdl-api。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontends-egress
+  namespace: superdl
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [superdl-web, superdl-admin]}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app: superdl-api}
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# API 入向:ingress-nginx(外部 API 流量)、monitoring(Prometheus 抓 /metrics、
+# Alertmanager 告警 webhook)、前端 nginx(/api 反代)。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress
+  namespace: superdl
+spec:
+  podSelector:
+    matchLabels: {app: superdl-api}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [superdl-web, superdl-admin]}
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# API 出向:PG / 对象存储 / K8s API(只读身份)。宽 ipBlock 起步,观察后收紧,例:
+#   egress:
+#     - to: [{ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}}]
+#       ports: [{protocol: TCP, port: 5432}]
+#     - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+#       ports: [{protocol: TCP, port: 443}]   # 对象存储 + K8s API(走 https)
+# 注意 K8s API 可能落在私网 ClusterIP/节点 IP 上:给宽 ipBlock 加 except 私网段会把它一起断掉。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress
+  namespace: superdl
+spec:
+  podSelector:
+    matchLabels: {app: superdl-api}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+---
+# worker 入向:仅 Prometheus(PodMonitor 直抓 Pod :9000,不走 Service)。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-ingress
+  namespace: superdl
+spec:
+  podSelector:
+    matchLabels: {app: superdl-worker}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 9000}
+---
+# worker 出向:PG / 对象存储 / K8s API(编排写)/ SMTP(465/587)/ 短信与支付网关(443)。
+# 宽 ipBlock 起步;收紧时 SMTP 与支付回调网关单独列 CIDR:端口,同 api-egress 的示例。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-egress
+  namespace: superdl
+spec:
+  podSelector:
+    matchLabels: {app: superdl-worker}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+---
+# 一次性 Job(迁移 / PG 备份)出向:PG,备份另需对象存储上传;无入向。
+# 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上,收紧示例同 api-egress。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jobs-egress
+  namespace: superdl
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [superdl-migrate, pg-backup]}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}

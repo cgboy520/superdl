@@ -10,7 +10,9 @@ services:
       POSTGRES_PASSWORD: superdl
       POSTGRES_DB: superdl
     ports:
-      - "5432:5432"
+      # 仅绑回环:compose 里是弱口令 dev 库,绑 0.0.0.0 会被同网段直连;
+      # 容器网络内 api/worker 走 postgres:5432,不受本行影响。
+      - "127.0.0.1:5432:5432"
     volumes:
       # postgres:18 的数据目录约定:挂载 /var/lib/postgresql(内含版本子目录)
       - pgdata:/var/lib/postgresql

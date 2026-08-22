@@ -37,7 +37,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 ## D. 存储
 
 - [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线
-- [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;删除路径带 blkdiscard(issue_discards)
+- [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;当前删除路径为 lvremove(未清零),如需擦盘语义先在节点开 issue_discards=1 再验收
 
 ## E. 监控与告警
 
@@ -59,12 +59,15 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] kata 池重启断点:重启后 systemd oneshot 自动续跑至完成
 - [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
-- [ ] server 侧 node-token 录入管理端的引导路径可走通
+- [ ] server 侧 agent token(非 node-token)录入管理端的引导路径可走通
+- [ ] GPU Operator 工作负载标签就位:kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、
+      hami 池 `nvidia.com/gpu.deploy.device-plugin=false`(契约见 `values/gpu-operator.yaml` 头注释);
+      kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin,hami 池上无官方 device-plugin
 
 ## G. 镜像缓存与预热
 
 - [ ] Spegel P2P:node-A `crictl pull` 某钉版本镜像后,node-B 拉同镜像秒级完成
-- [ ] 集群内 registry:内网 `skopeo copy` push 与节点侧 pull 均通
+- [ ] 集群内 registry:匿名 push/pull 返回 401;带凭据(`--dest-creds ops:…`)push 与节点侧 pull 均通
 - [ ] 预热 Job 在 kata/hami/mig 三池均可落(tolerations Exists)
 - [ ] kubelet 镜像 GC 后,按 `prewarm_recheck_hours` 复检自动重拉
 - [ ] 20GB 级镜像在 `activeDeadlineSeconds=1800` 内拉完

@@ -47,8 +47,8 @@ say "== values/ 占位符残留(未替换直接 apply 会让组件起不来)=="
 placeholder_files=(values/cilium.yaml values/kps.yaml)
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
-  if grep -qE '<server-ip>|CHANGE_ME' "$f"; then
-    miss "$f 仍有 <server-ip>/CHANGE_ME 占位符未替换"
+  if grep -qE '<server-ip>|CHANGE_ME|example\.com' "$f"; then
+    miss "$f 仍有 <server-ip>/CHANGE_ME/example.com 占位符未替换"
   else
     ok "$f"
   fi

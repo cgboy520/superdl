@@ -4,6 +4,10 @@
 write-kubeconfig-mode: "0640"
 disable:
   - traefik                  # Ingress 统一走 helmfile 的 ingress-nginx(与 full 档一致)
+secrets-encryption: true     # etcd/sqlite 静态加密;快照仍需异地加密保存(见 rke2/server-config.yaml 注释)
+# 与 full 档同规:节点加入用专用 agent token,禁止下发 server node-token(见
+# deploy/cluster/README.md「server token 与 agent token」节)。首装前生成后取消注释:
+#agent-token: "CHANGE_ME_AGENT_TOKEN"
 embedded-registry: true      # Spegel P2P 镜像共享;配套 registries.yaml 由平台生成下发
                              # (管理端·平台配置·集群接入,node-join.sh 自动落位)
 # 单机时 server 兼跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);

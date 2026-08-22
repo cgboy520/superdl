@@ -1,32 +1,43 @@
-# 平台 ServiceAccount:RealOrchestrator 所需最小权限
-# (租户 namespace/Pod/Service/Ingress/NetworkPolicy/PVC 生命周期 + 节点只读)。
+# 平台 ServiceAccount 拆身份(最小权限):
+#   superdl-api    → API(serve)进程:仅只读探测(集群页 test-connection / 容量预览)。
+#                    业务规范:请求路径禁止直接改 K8s(一律走 outbox),故 API 无任何写权限。
+#   superdl-worker → worker(outbox + 巡检)进程:租户资源全生命周期 + nodes:patch(cordon/巡检回写标签)。
+#
+# 为何 pods/services 写权限是 ClusterRole 而非 RoleBinding:tenant-* namespace 是
+# 首次开机时动态创建的,无法预先绑定 RoleBinding(预绑本身又需要更大的 RBAC 权限)。
+# 收敛路线:①deploy/cluster/admission/tenant-restrictions.yaml(ValidatingAdmissionPolicy)
+# 把这两个 SA 的写操作钉死在 superdl/tenant-* 命名空间 + nodes;②更远期可评估
+# per-tenant SA + impersonation。两步都不影响本文件的对象形状。
+#
+# 升级路径(已部署集群):本文件把 superdl-orchestrator 的绑定主体从 superdl-api 换成
+# superdl-worker,并新增只读 ClusterRole 给 superdl-api;apply 后 worker 滚动重启
+# (strategy=Recreate,outbox 短暂停顿,任务幂等可重入,无业务损失),api 仅换 SA 不改行为。
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: superdl-api
   namespace: superdl
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: superdl-worker
+  namespace: superdl
+---
+# 只读面:与 app/core/k8s/real.py 的 probe_cluster / available_gpus 一一对应
+# (VersionApi 走 /version 非资源路径,认证用户默认可读,无需授权)。
+# API(集群页探测/市场近似库存)与 worker(节点巡检阶段 A 也跑 probe_cluster)共用。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: superdl-orchestrator
+  name: superdl-cluster-readonly
 rules:
   - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "create"]
-  - apiGroups: [""]
-    resources: ["pods", "services", "persistentvolumeclaims", "resourcequotas"]
-    verbs: ["get", "list", "create", "delete"]
+    resources: ["pods"]   # 容量预览/节点已用份额聚合(list_pod_for_all_namespaces)
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list", "patch"]  # patch:管理端 cordon/uncordon(经 outbox)
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["ingresses", "networkpolicies"]
-    verbs: ["get", "create", "delete"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]  # disk.wipe 擦除任务 + image.prewarm 预热任务
-    verbs: ["get", "list", "create", "delete"]
-  # 集群能力探测(nodes 巡检 probe_cluster,只读)
+    verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments", "daemonsets", "statefulsets"]
     verbs: ["get", "list"]
@@ -40,6 +51,44 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
+  name: superdl-cluster-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: superdl-cluster-readonly
+subjects:
+  - kind: ServiceAccount
+    name: superdl-api
+    namespace: superdl
+  - kind: ServiceAccount
+    name: superdl-worker   # 巡检 probe_cluster 同用
+    namespace: superdl
+---
+# worker 编排面:租户 namespace/Pod/Service/Ingress/NetworkPolicy/PVC/Job 生命周期。
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: superdl-orchestrator
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "persistentvolumeclaims", "resourcequotas"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch"]  # patch:管理端 cordon/uncordon(经 outbox)+ 巡检回写型号标签
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]  # disk.wipe 擦除任务 + image.prewarm 预热任务
+    verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
   name: superdl-orchestrator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -47,5 +96,5 @@ roleRef:
   name: superdl-orchestrator
 subjects:
   - kind: ServiceAccount
-    name: superdl-api
+    name: superdl-worker
     namespace: superdl

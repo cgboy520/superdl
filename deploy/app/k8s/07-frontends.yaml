@@ -13,6 +13,10 @@ spec:
     metadata:
       labels: {app: superdl-web}
     spec:
+      automountServiceAccountToken: false   # 纯静态托管 + 反代,不访问 K8s API
+      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
+      # imagePullSecrets:
+      #   - {name: superdl-ghcr-pull}
       securityContext:
         runAsNonRoot: true
         runAsUser: 101            # nginx-unprivileged
@@ -61,6 +65,10 @@ spec:
     metadata:
       labels: {app: superdl-admin}
     spec:
+      automountServiceAccountToken: false   # 纯静态托管 + 反代,不访问 K8s API
+      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
+      # imagePullSecrets:
+      #   - {name: superdl-ghcr-pull}
       securityContext:
         runAsNonRoot: true
         runAsUser: 101            # nginx-unprivileged

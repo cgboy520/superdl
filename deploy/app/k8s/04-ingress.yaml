@@ -30,7 +30,7 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["console.superdl.example.com", "admin.superdl.example.com"]
+    - hosts: ["console.superdl.example.com"]
       secretName: superdl-frontends-tls
   rules:
     - host: console.superdl.example.com
@@ -40,6 +40,30 @@ spec:
             pathType: Prefix
             backend:
               service: {name: superdl-web, port: {name: http}}
+---
+# 管理端独立 Ingress:便于单独施加访问边界,不与用户端互相影响。
+# 升级路径(已部署集群):admin host 从 superdl-frontends 挪到本对象,apply 时 ingress-nginx
+# 按 host 重渲染,连接平滑;证书改用独立 superdl-admin-tls(首次 apply 触发一次新签发,
+# 签发完成前 admin 域短暂回落默认证书,通常秒级;也可提前手动备好同名 secret 做到零窗口)。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: superdl-admin
+  namespace: superdl
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-dns
+    # 可选:管理端源 IP 白名单(默认关闭,不锁死)。生产建议至少三选一:
+    # VPN / 身份感知代理(如 oauth2-proxy) / 本注解的 IP 边界。
+    # 启用时取消注释并把 CIDR 改成办公网/跳板机出口(多个用英文逗号分隔):
+    # nginx.ingress.kubernetes.io/whitelist-source-range: "CHANGE_ME_OFFICE_CIDR/32"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["admin.superdl.example.com"]
+      # 独立 secret:与 superdl-frontends-tls 共用会让 ingress-shim 生成的两张
+      # Certificate 抢同一个 secret(dnsNames 不同,互相覆盖抖动)
+      secretName: superdl-admin-tls
+  rules:
     - host: admin.superdl.example.com
       http:
         paths:
