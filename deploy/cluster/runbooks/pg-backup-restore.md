@@ -20,7 +20,7 @@
 aws s3 ls s3://superdl-pg-backup/daily/ --endpoint-url $S3_ENDPOINT | tail -5
 aws s3 cp s3://superdl-pg-backup/daily/superdl-<ts>.dump /tmp/ --endpoint-url $S3_ENDPOINT
 
-# 2. 停写入(摘 api 流量 + 停 worker,防止恢复期间产生分叉账)
+# 2. 停写入(摘 api 流量 + 停 worker),防止恢复期间产生分叉账
 kubectl -n superdl scale deploy superdl-api superdl-worker --replicas=0
 
 # 3. 恢复到新库(禁止原地覆盖),核验后再切换连接串

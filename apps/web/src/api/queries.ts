@@ -90,7 +90,7 @@ export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
 export const useInstanceEvents = (uuid: string, opts?: QueryOpts<PageInstanceEventOut>) =>
   useApiQuery(
     ["instances", uuid, "events"],
-    // 服务端已改降序游标分页;取大页保持「失败原因/运行过」判定的旧语义
+    // 服务端为降序游标分页;取大页以覆盖「失败原因 / 是否运行过」的判定
     () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { limit: 200 }),
     opts,
   );

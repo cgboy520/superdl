@@ -24,8 +24,8 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 - SKU 变更只影响新实例:实例落库时快照 `price_hourly` 与规格,存量实例不随改价变动。
 - SKU 业务唯一键 `(gpu_model, tier, mig_profile, gpu_cores_pct)` 唯一约束(NULLS NOT DISTINCT,非 mig 档 mig_profile 为 NULL 也判重),重复创建 409。
-- 近似库存按 (池, canonical 型号) 双维度估:数据源是节点台账 `node_specs`(巡检 60s 写,只算 Ready 节点空闲卡),请求路径不直连 K8s;provider 一次批量计算全部 SKU,30s 进程内缓存按覆盖集合命中,single-flight 合并刷新,故障回退陈旧值(/skus 免登录,不因库存挂掉 500)。创建路径软准入:台账明确该 (池,型号) 可分配量不足 → 409 `NO_CAPACITY`;台账无数据一律放行,最终以调度结果为准。
-- 不做库存预占:库存是近似值(台账 60s × 缓存 30s),最终以调度结果为准。
+- 近似库存按 (池, canonical 型号) 双维度估:数据源是节点台账 `node_specs`(巡检 60s 写,只算 Ready 节点空闲卡),请求路径不直连 K8s;provider 一次批量计算全部 SKU,30s 进程内缓存按覆盖集合命中,single-flight 合并刷新,故障回退陈旧值。
+- 创建路径软准入:台账明确该 (池,型号) 可分配量不足 → 409 `NO_CAPACITY`,台账无数据一律放行。不做库存预占,库存是近似值(台账 60s × 缓存 30s),最终以调度结果为准。
 - 超卖参数是纯定价参数,不下发调度;显存超卖 >1.2 由前端二次确认。
 - 上架为硬校验(可 force 覆盖),创建与编辑为软校验(容量预览警示,可保存)。
 - off 架 SKU 用户端不可见;readonly 角色全站只读,finance 不能改 SKU。

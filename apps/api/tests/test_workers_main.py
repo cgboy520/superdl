@@ -34,7 +34,7 @@ def _call_wsgi(app: Any, authorization: str | None) -> tuple[str, bytes]:
 
 
 class TestWorkerMetricsAuth:
-    """worker /metrics 与 API 同一 SUPERDL_METRICS_TOKEN Bearer 门禁(报告2#20)。"""
+    """worker /metrics 与 API 同一 SUPERDL_METRICS_TOKEN Bearer 门禁。"""
 
     def test_rejects_without_token_header(self):
         status, _ = _call_wsgi(_metrics_wsgi_app("s3cret"), None)

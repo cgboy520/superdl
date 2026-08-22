@@ -256,10 +256,9 @@ def _env_layer() -> dict[str, str]:
     return {key: _env_default(key) for key in SETTING_SPECS}
 
 
-# 生效配置进程内缓存。调用密集(每条短信 2 次、每次充值、每次页载),
-# 全表读 + 全量 AES-GCM 解密不划算;键面只有 SETTING_SPECS 白名单这几十行。
-# 失效签名 = (行数, max(updated_at), env 默认值层指纹):
-# 改值必动 updated_at(set_platform_settings 显式 bump),增删动行数,env 变更动指纹。
+# 生效配置进程内缓存(读路径调用密集,不每次全表读 + 全量 AES-GCM 解密)。
+# 失效签名 =(行数, max(updated_at), env 默认值层指纹):
+# 改值 bump updated_at,增删动行数,env 变更动指纹。
 _config_cache: tuple[tuple[object, ...], dict[str, str]] | None = None
 
 

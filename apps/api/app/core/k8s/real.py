@@ -1,4 +1,4 @@
-"""生产 K8s 编排(kubernetes 官方客户端 36.x,已对齐 K8s 1.36)。
+"""生产 K8s 编排(kubernetes 官方客户端)。
 
 官方客户端为同步实现,全部调用经专属有界执行器出让事件循环(见 _run)。
 
@@ -39,10 +39,9 @@ PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实�
 INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPolicy 放行来源)
 PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
 
-# 租户 ns 的 Pod Security Admission 标签:enforce 只敢到 baseline ——
-# 平台镜像以 root 运行(sshd + Jupyter,实例盘挂 /root),restricted 要求的
-# runAsNonRoot 会拒绝全部租户 Pod;逃逸面由 kata VM / userns(hostUsers=false)承担。
-# audit/warn 打 restricted:把与 restricted 的差距留在审计日志里,不挡调度。
+# 租户 ns 的 Pod Security Admission 标签。enforce 只到 baseline:平台镜像以 root 运行,
+# restricted 的 runAsNonRoot 会拒绝全部租户 Pod;逃逸面由 kata VM / userns 承担。
+# audit/warn 打 restricted,只进审计日志、不挡调度。
 TENANT_NS_PSA_LABELS = {
     "pod-security.kubernetes.io/enforce": "baseline",
     "pod-security.kubernetes.io/audit": "restricted",
@@ -73,10 +72,8 @@ def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
 
 
-# 租户命名空间兜底配额:主闸是每用户配额(max 10 实例 / 8 GPU),资源总量留数倍
-# 余量,只在应用侧配额失效时挡住失控创建,不得误伤正常租户。
-# 含 cpu/memory/ephemeral 的 Quota 会强制该 ns 所有 Pod 声明对应 request/limit
-# (实例 Pod 与擦盘 Job 均已显式声明)。
+# 租户命名空间兜底配额:主闸是每用户配额,这里留数倍余量,只挡应用侧配额失效时的失控创建。
+# 含 cpu/memory/ephemeral 的 Quota 会强制该 ns 所有 Pod 声明对应 request/limit。
 TENANT_QUOTA = {
     "pods": "64",
     "services": "64",
@@ -88,10 +85,9 @@ TENANT_QUOTA = {
     "limits.memory": "1Ti",
     "limits.ephemeral-storage": "500Gi",
 }
-# 租户容器禁访的内网/元数据网段(Egress 白名单公网,黑名单私网)。
-# 100.64.0.0/10 = CGNAT(云厂商内网 VIP 常用此段,封禁属有意);198.18.0.0/15 = 基准测试段;
-# 云 metadata(169.254.169.254)含在 169.254.0.0/16 内。IPv6 不入表:集群未开双栈时
-# 默认拒已覆盖,开双栈需在部署侧另行评审放行策略。
+# 租户容器禁访的内网/元数据网段(Egress 放行公网,黑名单私网)。
+# 100.64.0.0/10 = CGNAT,198.18.0.0/15 = 基准测试段,云 metadata 169.254.169.254 含在 169.254.0.0/16。
+# IPv6 不入表:未开双栈时默认拒已覆盖,开双栈需在部署侧评审放行策略。
 PRIVATE_CIDRS = [
     "10.0.0.0/8",
     "172.16.0.0/12",
@@ -104,9 +100,8 @@ PRIVATE_CIDRS = [
 # Telnet(23)、RDP(3389)。只封明确滥用途;HTTPS/SSH 出/包管理/对象存储等照常放行。
 EGRESS_BLOCKED_TCP_PORTS = (23, 25, 135, 139, 445, 465, 587, 3389)
 
-# 租户容器 ephemeral-storage:镜像只读层不计入容器口径,此限额只管可写层+日志+
-# emptyDir。request 取小值(调度占位),limit 取镜像常规可写用量数倍的值 ——
-# 超限会驱逐 Pod,必须足够宽松;防的是写爆节点盘连坐整节点的滥用。
+# 租户容器 ephemeral-storage:只管可写层 + 日志 + emptyDir,镜像只读层不计入。
+# request 为调度占位,limit 须宽松(超限即驱逐 Pod),只挡写爆节点盘的滥用。
 TENANT_EPHEMERAL_REQUEST = "2Gi"
 TENANT_EPHEMERAL_LIMIT = "64Gi"
 

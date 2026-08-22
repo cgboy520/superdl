@@ -355,9 +355,8 @@ async def _catchup_settle(
         async with sm() as session:
             watermark = await get_watermark(session, kind)
         if watermark is None:
-            # 无水位线有两种来源,不可区分:首次部署引导(正常)/ 水位线行被误删或库回退
-            # (异常)。两种情形本轮都只结最近窗口;异常情形的更早窗口不会自动补,
-            # 显式留痕供告警规则匹配,而不是静默当作首次运行。
+            # 无水位线两种来源不可区分:首次部署引导(正常)/ 水位线行被误删或库回退(异常)。
+            # 两种情形本轮都只结最近窗口,更早窗口不自动补,显式留痕供告警匹配。
             logger.warning(
                 f"{kind}_watermark_missing",
                 hint="无结算水位线:首次部署属正常引导;若非首次部署则水位线已丢失,"
@@ -585,7 +584,7 @@ async def settle_daily_disks(
     async def settle_window(window_start: datetime, window_end: datetime) -> tuple[int, list[int]]:
         nonlocal disk_rows
         if disk_rows is None:
-            # 首个窗口才拉盘清单(此时已持 advisory lock);轮内不变,与旧实现一致
+            # 首个窗口才拉盘清单(此时已持 advisory lock),轮内不变
             async with sm() as session:
                 disks = await orchestrator_service.billable_disks(session)
                 disk_rows = [

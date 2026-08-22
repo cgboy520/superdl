@@ -6,9 +6,9 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
-# 存储契约:三个名字须与 deploy/cluster/values/{topolvm,juicefs}.yaml 创建的
-# StorageClass 一致。K8s 建 PVC 时不校验 SC 是否存在,名字错了 PVC 永久 Pending。
-# 下发门禁(nodes.require_storage_classes)按名核对已探测到的 SC。
+# 存储契约:三个名字须与 deploy/cluster/values/{topolvm,juicefs}.yaml 建出的 StorageClass 一致
+# (K8s 建 PVC 不校验 SC 存在,名字错了 PVC 永久 Pending)。
+# 下发门禁 nodes.require_storage_classes 按名核对已探测到的 SC。
 INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NVMe LV
 JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
 JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)

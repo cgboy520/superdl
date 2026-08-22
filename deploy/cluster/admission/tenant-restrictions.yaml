@@ -1,6 +1,6 @@
 # 租户与平台 SA 的准入约束(ValidatingAdmissionPolicy,API Server 内置,无 webhook 依赖)。
 #
-# 先决条件:K8s ≥ 1.30(VAP GA;本仓库钉 RKE2/k3s v1.36,满足)。独立可选清单,
+# 先决条件:K8s ≥ 1.30(VAP GA)。独立可选清单,
 # 不在 helmfile 内:`kubectl apply -f admission/tenant-restrictions.yaml`。
 # 回滚:`kubectl delete -f admission/tenant-restrictions.yaml`(先删 Binding 即失效)。
 #

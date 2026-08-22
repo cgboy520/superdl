@@ -14,7 +14,7 @@ from app.modules.notify.schemas import NotificationOut
 router = APIRouter(tags=["notify"])
 
 # 告警接入端点无用户鉴权(Bearer token 即鉴权)且报文驱动写库,故加固:
-# IP 限流阈值取在 Alertmanager 失败重试节奏之上,体积/字段长度兜底防畸形报文撑库。
+# IP 限流 + 体积与字段长度上限。
 ALERT_RATE_LIMIT = 120
 ALERT_RATE_WINDOW = 60.0
 ALERT_MAX_BODY_BYTES = 1024 * 1024

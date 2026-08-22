@@ -22,7 +22,7 @@ class NodeEnrollment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # sha256 hex
     # 首次 bootstrap 消费注册令牌后换发的窄权限令牌(仅 /progress 上报),同只存 sha256;
-    # NULL = 升级前创建的旧行(仍允许注册令牌重复 bootstrap/上报,兼容重启续跑)
+    # NULL = 存量旧行,仍允许注册令牌重复 bootstrap 与上报
     progress_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     pool: Mapped[str] = mapped_column(String(8))  # kata / hami / mig(分池铁律)
     hostname: Mapped[str | None] = mapped_column(String(253))  # 期望主机名(可选,防令牌串用)

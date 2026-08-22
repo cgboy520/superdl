@@ -203,7 +203,7 @@ class TestMalformedResponse:
 
 class TestAggregationPartialFailure:
     async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):
-        """单实例查询失败只丢该实例该小时:整轮其它实例照常聚合(此前 return 全丢)。"""
+        """单实例查询失败只丢该实例该小时,整轮其它实例照常聚合。"""
         _h1, uuid1, _u1 = await _provision_running(client, sm, fake, phone="13900000021")
         _h2, _uuid2, _u2 = await _provision_running(client, sm, fake, phone="13900000022")
 
@@ -227,7 +227,7 @@ class TestAggregationPartialFailure:
         assert len(rows) == 1
 
     async def test_vram_zero_is_not_null(self, client, sm, fake):
-        """vram 峰值 0 是合法值,不能写成 NULL(此前 `or None` 会吞掉 0)。"""
+        """vram 峰值 0 是合法值,不能写成 NULL。"""
         await _provision_running(client, sm, fake, phone="13900000023")
         prom.set_client(
             prom_mock_routed(

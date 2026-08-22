@@ -71,7 +71,7 @@ async def _seed_disk(
 
 
 class TestAffordGuard:
-    """#1(报告3#7):assert_can_afford 燃烧率感知校验 —— 挡住「¥1.68 串行开 8 台」。"""
+    """assert_can_afford 燃烧率感知校验:挡住「¥1.68 串行开 8 台」。"""
 
     async def test_first_instance_passes_with_one_hour_cover(self, sm):
         """无在途资源:余额 ≥ 新增 1 小时费即放行(门槛适度,不要求预存巨款)。"""
@@ -158,7 +158,7 @@ class TestAffordGuard:
 
 
 class TestPatrolUnsettledBurn:
-    """#3(报告3#9):停机判据 = 余额 − 当前小时未结算消耗 ≤ 0,盲区压到巡检周期内。"""
+    """停机判据 = 余额 − 当前小时未结算消耗 ≤ 0,盲区压到巡检周期内。"""
 
     FIXED_NOW = datetime(2026, 8, 22, 10, 35, tzinfo=UTC)  # 当前小时已过半
 
@@ -189,7 +189,7 @@ class TestPatrolUnsettledBurn:
 
             inst = await session.get(Instance, inst_id)
             assert inst.status == "stopping"
-            # 欠费通知的短信走 outbox 入队,不在巡检事务里发(#10)
+            # 欠费通知的短信走 outbox 入队,不在巡检事务里发
             from app.core.outbox import OutboxTask
 
             tasks = (await session.execute(select(OutboxTask))).scalars().all()
@@ -254,7 +254,7 @@ class TestPatrolUnsettledBurn:
 
 
 class TestSettlementGaps:
-    """#6(报告3#31/#32):截断/死信跳窗必须登记缺口,告警指标单调不自愈。"""
+    """截断/死信跳窗必须登记缺口,告警指标单调不自愈。"""
 
     async def test_catchup_truncation_records_gaps(self, sm):
         """停机超追平上限:被跳过的窗口逐一登记 settlement_gaps(整窗,object_id=0)。"""
@@ -276,7 +276,7 @@ class TestSettlementGaps:
         assert skipped > 0
         assert len([g for g in gaps if g.reason == "catchup_truncated"]) == skipped
         assert all(g.kind == "hourly" and g.object_id == 0 for g in gaps)
-        assert wm == target  # 水位线推进了,但缺口留痕(旧实现:悄悄跳过且告警自愈)
+        assert wm == target  # 水位线推进了,但缺口留痕,不静默跳过
 
     async def test_dead_letter_after_consecutive_failures(self, sm, monkeypatch):
         """单实例连续失败 N 轮 → 死信记缺口,水位线越过,不再反复重试。"""
@@ -414,7 +414,7 @@ class TestSettlementGaps:
 
 
 class TestReconcileAttribution:
-    """#7(报告3#33):日终核对按账单归属期切窗,跨日补差价不再误报。"""
+    """日终核对按账单归属期切窗,跨日补差价不误报。"""
 
     async def test_cross_day_topup_no_false_positive(self, sm):
         """23 点的账单在次日 00:02 被补差价:两侧都归到账单所属日,不误判差异。"""
@@ -476,7 +476,7 @@ class TestReconcileAttribution:
 
 
 class TestWalletChainCheck:
-    """#11(报告3#129):钱包核对改增量链式校验,只扫新增流水且能定位断链。"""
+    """钱包核对为增量链式校验:只扫新增流水,断链可定位。"""
 
     async def test_checkpoint_written_and_second_run_skips(self, sm):
         """首轮全量验过即落游标;无新流水时第二轮不再重扫(游标不动)。"""
@@ -555,7 +555,7 @@ class TestWalletChainCheck:
 
 
 class TestRevenueAttribution:
-    """#9(报告3#38):营收按账单归属期(hour_start/day)计,不按扣款入账时间。"""
+    """营收按账单归属期(hour_start/day)计,不按扣款入账时间。"""
 
     async def test_last_hour_of_day_attributed_to_that_day(self, sm):
         """昨日 23 点的消费在今日 00:02 才扣款:报表必须归到昨日。"""
@@ -596,7 +596,7 @@ class TestRevenueAttribution:
 
 
 class TestSmsOutbox:
-    """#10(报告3#52):短信经 outbox 异步投递,业务事务里不做网络调用。"""
+    """短信经 outbox 异步投递,业务事务里不做网络调用。"""
 
     async def test_notify_enqueues_sms_and_handler_sends(self, client, sm):
         from app.core.outbox import OutboxTask, drain
@@ -655,7 +655,7 @@ class TestSmsOutbox:
 
 
 class TestPriceFloor:
-    """#8(报告3#37):时价折算满 1 小时不足 ¥0.01 的 SKU 恒免费,上架/改价必须拦。"""
+    """时价折算满 1 小时不足 ¥0.01 的 SKU 恒免费,上架/改价必须拦。"""
 
     def test_sub_half_cent_price_rejected(self):
         from app.modules.catalog.service import _checked_price

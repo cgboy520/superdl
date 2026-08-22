@@ -32,7 +32,7 @@ HEARTBEAT_INTERVAL_SECONDS = 10.0
 OUTBOX_CONCURRENCY = int(os.environ.get("SUPERDL_OUTBOX_CONCURRENCY", "4"))
 
 # K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
-# ——挂在循环里探的是「当前任务跑完没有」,长任务会让活着的 worker 被 SIGKILL。
+# (挂在循环里长任务会让活着的 worker 被 SIGKILL)。
 HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
 
 # /metrics 端口:结算/死信/reconciler 指标产生在 worker 进程内,单独暴露给 PodMonitor 直抓

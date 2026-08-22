@@ -81,17 +81,15 @@ class Settings(BaseSettings):
     afford_cover_hours: int = 1
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
     # running 实例的 Pod 持续 not-ready 多久判定不可用 → 停止计费。
-    # 须宽于 K8s unreachable taint 的 tolerationSeconds(默认 300):容忍期过后驱逐
-    # (deletionTimestamp)通常先生效,本判定退居兜底;默认 600 给节点自愈留足窗口。
+    # 须宽于 K8s unreachable taint 的 tolerationSeconds(默认 300),本判定为兜底。
     running_unready_timeout_seconds: int = 600
     # stopping/releasing 悬挂超时:第一档经 outbox 重发删除,第二档 force 强删。
-    # 默认 10 分钟级 —— 宁宽勿严,优雅删除 + 节点抖动不应误走强删。
     stopping_timeout_seconds: int = 600
     releasing_timeout_seconds: int = 600
     # 泄漏回收熔断:未知(DB 无记录)Pod 占比超过该值即中止本轮回收并告警
     leak_reclaim_abort_ratio: float = 0.5
-    # 长期停机/失败实例的实例盘保留期(solvent 用户);到期转 releasing 回收。
-    # failed 实例盘默认 7 天;stopped 默认 30 天且提前 warned 天通知。数据盘不受影响。
+    # 长期停机/失败实例的实例盘保留期,到期转 releasing 回收;stopped 提前 warn_days 通知。
+    # 数据盘不受影响。
     failed_retention_days: int = 7
     stopped_retention_days: int = 30
     stopped_retention_warn_days: int = 7

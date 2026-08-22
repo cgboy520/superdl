@@ -5,12 +5,9 @@
 # 节点侧配置见 ../rke2/registries.yaml 与
 # runbooks/image-prewarm.md(htpasswd 生成、节点 configs.auth、滚动顺序都在那里有步骤)。
 #
-# 认证迁移顺序(已部署集群照此滚动,避免节点 pull 中断):
-#   1) 先建 registry-htpasswd Secret(把下面占位行换成真实 bcrypt,见 image-prewarm.md);
-#   2) 全节点 registries.yaml 先配上 configs.auth(仓库未开认证时,带凭据访问匿名仓库不受影响);
-#   3) 最后 apply 本文件开启认证(探针为 tcpSocket,401 不影响就绪判定);
-#   4) 新节点的 registries.yaml 由平台生成:开启认证后须在 管理端·平台配置·集群接入 的
-#      node_registries_yaml(DB 覆盖层)放入含 configs.auth 的完整模板,直到应用侧模板跟进。
+# 启用/轮换认证的滚动顺序见 runbooks/image-prewarm.md(铁律:先铺节点凭据,后开仓库认证)。
+# 开启认证后,新节点的 registries.yaml 须在 管理端·平台配置·集群接入 的
+# node_registries_yaml(DB 覆盖层)放入含 configs.auth 的完整模板。
 # 残余边界:NodePort 30500 仍限内网(机房防火墙不得对外);TLS 升级路径见文件末尾 Service 注释。
 apiVersion: v1
 kind: Namespace

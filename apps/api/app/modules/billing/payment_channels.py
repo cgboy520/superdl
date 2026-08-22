@@ -24,9 +24,8 @@ if TYPE_CHECKING:
     from app.modules.billing.models import Order
 
 
-# 回调时间戳新鲜度窗口(纵深防御;重放本身已由 handle_callback 的幂等挡住)。
-# 刻意放宽到 24h:渠道失败重试横跨约一天,关单后迟到的合法成功回调还要走
-# rescue 自动入账(见 payment_service),窗口必须覆盖这些正常迟到路径,否则会误伤。
+# 回调时间戳新鲜度窗口(重放本身已由 handle_callback 的幂等挡住)。
+# 放宽到 24h 以覆盖渠道一天量级的重试与关单后迟到回调的 rescue 入账(见 payment_service)。
 CALLBACK_MAX_AGE_SECONDS = 24 * 3600
 
 
@@ -237,9 +236,7 @@ class WechatChannel:
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
         resource: dict[str, Any] = result["resource"]
-        # 官方要求:除验签外还要核对通知里的商户号/应用号确实是自己的。
-        # 缺失即判失败(真实交易通知的 resource 恒带 mchid/appid;按缺失放行会让
-        # 构造不带这两个字段的报文绕过核对)
+        # 除验签外还要核对通知里的商户号/应用号确为已方;缺失即判失败,不按缺失放行。
         if resource.get("mchid") != self._mchid or resource.get("appid") != self._appid:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"

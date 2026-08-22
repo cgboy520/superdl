@@ -1,10 +1,9 @@
-# GPU Operator v26.3:驱动由 Ansible 预装(driver.enabled=false 避免与 HAMi/Kata 池互扰)
+# GPU Operator:驱动由 Ansible 预装(driver.enabled=false,避免与 HAMi/Kata 池互扰)
 #
-# ⚠️ 组件落点机制(v26 起,已核对 v26.3.0 chart 源码):ClusterPolicy 不再接受
-# 各组件的 nodeSelector(写了会被静默忽略),operand DaemonSet 一律按
-# `nvidia.com/gpu.deploy.<组件>=true` 节点标签调度;operator 依据节点的
+# 组件落点机制:ClusterPolicy 不接受各组件的 nodeSelector(写了会被静默忽略),operand
+# DaemonSet 一律按 `nvidia.com/gpu.deploy.<组件>=true` 节点标签调度;operator 依据节点的
 # `nvidia.com/gpu.workload.config`(container 默认 / vm-passthrough / vm-vgpu)自动打这套标签,
-# 已存在的标签值会被尊重(不会覆盖)。因此分池靠【节点标签】而非本文件:
+# 已存在的标签值不被覆盖。因此分池靠【节点标签】而非本文件:
 #   kata 池: kubectl label node <节点> nvidia.com/gpu.workload.config=vm-passthrough
 #           (operator 随即在该池部署 kata-sandbox-device-plugin + vfio-manager,
 #            并撤掉普通 device-plugin;nvidia.com/gpu 由 kata 沙箱插件注册)
@@ -13,7 +12,7 @@
 #            toolkit/dcgm-exporter 等其他组件照常部署)
 #   mig 池: 无需标签(container 默认;MIG 机型自动获得 mig-manager)。
 #           切分按需:kubectl label node <节点> nvidia.com/mig.config=all-1g.10gb --overwrite
-# ⚠️ 上线纪律:MIG 切分与 Kata 开机必须实机验证(runbooks/cluster-validation.md 三池全流程),
+# 上线纪律:MIG 切分与 Kata 开机必须实机验证(runbooks/cluster-validation.md 三池全流程),
 # 未验证前管理端禁止上架 dedicated/mig 档 SKU。
 driver:
   enabled: false           # 装机基线已装宿主驱动
@@ -24,7 +23,7 @@ devicePlugin:
   # 整卡(kata)与 MIG(mig)两池都由它服务:落点由上述节点标签决定,不在此设 selector。
   # HAMi 池节点须打 nvidia.com/gpu.deploy.device-plugin=false 与其互斥(见头注释)。
 migManager:
-  enabled: true             # v26 起自动落在 MIG 机型节点(container 负载),无需 selector
+  enabled: true             # 自动落在 MIG 机型节点(container 负载),无需 selector
 mig:
   # 必须 mixed:平台 gpu_adapter 申请的是 nvidia.com/mig-{profile} 资源
   # (apps/api/app/core/gpu_adapter),只有 mixed 策略才注册该资源名;

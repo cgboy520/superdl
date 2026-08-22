@@ -29,8 +29,8 @@ QUERIES = {
     ),
 }
 
-# 共享档实例级(HAMi 软切分下 DCGM 的 per-pod 归属不可靠,改用 vGPUmonitor 容器维指标;
-# 指标名为 HAMi v2.9 默认)。查空时调用方回落 DCGM 模板。
+# 共享档实例级:HAMi 软切分下 DCGM 的 per-pod 归属不可靠,改用 vGPUmonitor 容器维指标
+# (指标名为 HAMi 默认)。查空时调用方回落 DCGM 模板。
 HAMI_QUERIES = {
     "gpu_util": (
         'sum(Device_utilization_desc_of_container{{podnamespace="{ns}",podname="{pod}"}})'

@@ -14,7 +14,7 @@ flowchart LR
     PAY[微信/支付宝] -- 回调 --> API
     API --> PG[(PostgreSQL 18)]
     API -- 查询 --> PROM[Prometheus + dcgm-exporter]
-    API -- outbox 异步编排 --> K8S[RKE2 / k3s v1.36]
+    API -- outbox 异步编排 --> K8S[RKE2 / k3s]
     K8S --> P1[kata 池:整卡直通] & P2[hami 池:runc+userns 超卖] & P3[mig 池]
     P1 & P2 & P3 --- LVM[TopoLVM 实例盘] & JFS[JuiceFS 数据盘]
     JFS --> OSS[(云 OSS 或 SeaweedFS)]
@@ -22,27 +22,27 @@ flowchart LR
 
 ## 2. 技术栈
 
-**后端**:Python 3.13(uv 管理)+ FastAPI 0.141.x + SQLAlchemy 2.0.x(async)+ asyncpg + Alembic + PostgreSQL 18;
-定时与队列 APScheduler 3.11 + 自研事务性 outbox;K8s 客户端 `kubernetes` 36.x;支付 `wechatpayv3` 2.0.x +
-`alipay-sdk-python` 3.7.x;观测 structlog + prometheus-client;质量闸门 ruff + pyright + pytest + import-linter。
+**后端**:Python 3.13(uv 管理)+ FastAPI + SQLAlchemy 2.0(async)+ asyncpg + Alembic + PostgreSQL 18;
+定时与队列 APScheduler + 自研事务性 outbox;K8s 官方 `kubernetes` 客户端;支付 `wechatpayv3` + `alipay-sdk-python`;
+观测 structlog + prometheus-client;质量闸门 ruff + pyright + pytest + import-linter。版本钉在 `apps/api/pyproject.toml`。
 
-**前端**:React 19.2 + Vite 8.x + Ant Design 6.6 + TanStack Router 1.x / Query 5.x + Zustand 5 + ECharts 6.1;
-i18n 用 i18next 26 + react-i18next 17(zh-CN / en-US);工程链 pnpm 11 + Turborepo 2.x + ESLint/Prettier。antd 6
-原生组件自封装,不引 `@ant-design/pro-components`;管理端监控图一律自绘(ECharts),Grafana 只作可选外链。
+**前端**:React 19 + Vite + Ant Design 6 + TanStack Router / Query + Zustand + ECharts;i18n 用 i18next +
+react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd 6 原生组件自封装,不引
+`@ant-design/pro-components`;管理端监控图一律自绘(ECharts),Grafana 只作可选外链。版本钉在 `package.json`。
 
 **平台层**:两档集群。**full** = RKE2 多机生产,全档位(dedicated/mig/shared);**light** = k3s 单机,仅共享档。发行版由
-平台探测,业务侧无需声明。所有 chart 钉版本,升级走变更评审。
+平台探测,业务侧无需声明。chart 版本钉在 `deploy/cluster/helmfile.yaml.gotmpl`,升级走变更评审。
 
-| 组件 | 版本 | 备注 |
-|---|---|---|
-| RKE2 / k3s | v1.36 | userns(`hostUsers: false`)GA |
-| Cilium / GPU Operator | 1.20 / v26.3 | 仅 full 档;light 档用 k3s 内置 flannel + HAMi 直装 |
-| Kata | 4.0 | RuntimeClass `kata-qemu`,VFIO 整卡直通 |
-| HAMi | v2.9 | 共享档 CUDA 层软切分与限额 |
-| kube-prometheus-stack | 88.x | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
-| JuiceFS CSI | 0.32.x(JuiceFS 1.4.x LTS) | 数据盘;后端云 OSS 或自建 SeaweedFS 4.4x |
-| TopoLVM | chart 17.x | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
-| cert-manager / ingress-nginx | 1.19.x / chart 4.13.x | 泛域名证书与 Jupyter 北向入口 |
+| 组件 | 角色 |
+|---|---|
+| RKE2 / k3s | 容器平台,发行版钉 v1.36(userns `hostUsers: false` 在该版本 GA) |
+| Cilium / GPU Operator | 仅 full 档;light 档用 k3s 内置 flannel + HAMi 直装 |
+| Kata | RuntimeClass `kata-qemu`,VFIO 整卡直通 |
+| HAMi | 共享档 CUDA 层软切分与限额 |
+| kube-prometheus-stack | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
+| JuiceFS CSI | 数据盘;后端云 OSS 或自建 SeaweedFS |
+| TopoLVM | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
+| cert-manager / ingress-nginx | 泛域名证书与 Jupyter 北向入口 |
 
 GPU 资源申请统一经 `app/core/gpu_adapter` 抽象:当前用 device-plugin 语法,切 DRA 只改这一层。
 
@@ -74,21 +74,20 @@ apps/api/app/
 ## 4. 控制面正确性的两根支柱
 
 **支柱一:事务性 outbox。** 所有「改 DB + 动 K8s」的操作,在同一事务里完成业务写入与 `outbox_tasks` 插入,worker
-用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(带重试、退避、死信),据此排除「扣了费但没建资源」
-与「建了资源但没记账」。
+用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(带重试、退避、死信)。
 
 **支柱二:reconciler 对账循环。** 每 30s 比对「DB 期望状态 ↔ K8s 实际状态」(按租户 namespace 前缀 list):Pod 消失
 而 DB 是 running → 记 `failed` 事件、停止计费并告警;Pod 存在而 DB 已 released → 强制删除并告警;
-`creating` 超时未调度 → 失败退款。reconciler 是状态漂移的兜底,不得关闭。
+`creating` 超时未调度 → 失败退款。reconciler 不得关闭。
 
 worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、支付查单与超时关单、
-镜像预热巡检、节点规格巡检与入网 reconciler、数据保洁。定时任务一律先抢 pg advisory lock,多副本下天然单实例执行。
+镜像预热巡检、节点规格巡检与入网 reconciler、数据保洁。定时任务一律先抢 pg advisory lock,多副本下单实例执行。
 
 ## 5. 接入层
 
 | 通道 | 机制 |
 |---|---|
-| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 拆成两个 Service:`type=NodePort` 会给每个 port 都分配 NodePort,合并会让 Jupyter 随机占走端口池号段 |
+| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 必须拆成两个 Service:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 随机占走端口池号段 |
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),`<instance>.app.<域名>` 泛域名 ingress-nginx 按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
 | 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,仅放行 Ingress Controller 到 8888;禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
 
@@ -143,27 +142,27 @@ Service、Ingress;Pod Ready 后同事务转 `running` 并写计费起点事件�
 
 ### 7.3 小时结算
 
-每小时 :02 触发(advisory lock 单实例执行),结算窗口由 `settlement_watermarks` 水位线推进,worker 重启或跨整点停机
-漏掉的窗口下一轮自动补上(追平上限 72 小时 / 14 天,超出需人工补,`SETTLEMENT_LAG` 指标持续告警)。每个窗口扫
-`instance_events` 重建 running 秒数 → 幂等 upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance_ledger`。
-离开 running 时由计费边监听器即时出尾账,与状态迁移同事务。数据盘每日 00:10 UTC 日结,00:30 UTC 跑资金核对(只报不改)。
-usage 聚合独立运行:Prometheus 全挂,计费不停。
+每小时 :02 触发(advisory lock 单实例执行),结算窗口由 `settlement_watermarks` 水位线推进,漏掉的窗口下一轮自动补上
+(追平有上限,超出需人工补,`SETTLEMENT_LAG` 指标持续告警)。每个窗口扫 `instance_events` 重建 running 秒数 → 幂等
+upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance_ledger`。离开 running 时由计费边监听器即时出尾账,
+与状态迁移同事务。数据盘每日 00:10 UTC 日结,00:30 UTC 跑资金核对(只报不改)。usage 聚合独立运行:Prometheus
+全挂,计费不停。口径与参数见 [`reference/billing.md`](./reference/billing.md)。
 
 ### 7.4 欠费与回收
 
-余额巡检每 5 分钟一轮:预估可用时长低于 `low_balance_warn_hours`(默认 24h)→ 短信与站内预警;余额耗尽 → 停机出尾账
-→ `frozen` 并倒计时 `freeze_grace_hours`(默认 72h)→ 到期 `releasing` → 删除 K8s 资源 → 实例盘 lvremove → `released`。
-数据盘走独立时钟:欠费 7 天宽限(只读)→ 冻结 30 天 → 清除。天数与盘价都是可在线调整的策略参数(`policy_overrides`)。
+余额巡检每 5 分钟一轮:预估可用时长低于预警阈值 → 短信与站内预警;余额耗尽 → 停机出尾账 → `frozen` 并倒计时 →
+到期 `releasing` → 删除 K8s 资源 → 实例盘 lvremove → `released`。数据盘走独立时钟:欠费宽限(只读)→ 冻结 → 清除。
+天数与盘价都是可在线调整的策略参数(`policy_overrides`),取值见 [`reference/billing.md`](./reference/billing.md)
+与 [`reference/disks.md`](./reference/disks.md)。
 
 ## 8. 硬约束
 
-1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池。** HAMi 的 device plugin 与 Kata / KubeVirt 不兼容。节点池标签
+1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**(HAMi device plugin 与 Kata / KubeVirt 不兼容)。节点池标签
    `superdl.io/pool` 装机时定死,RuntimeClass 的 nodeSelector 再兜一层:dedicated → kata 池;mig / shared_* → runc,
    分别落 mig / hami 池。
-2. **计费主依据是 `instance_events`**(running↔非 running 的边);Prometheus 指标只做展示与对账,不参与计费。
-3. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** 整卡与 MIG 档不超卖。
-4. **共享池与 MIG 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;Kata 档本身是
+2. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** 整卡与 MIG 档不超卖。
+3. **共享池与 MIG 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;Kata 档本身是
    VM 级隔离,不加 userns。
-5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
+4. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
 
-金额、时间、钱包加锁、outbox、状态机等编码级硬性规范见 `CLAUDE.md`。
+金额、时间、钱包加锁、outbox、状态机、计费依据等编码级硬性规范见 `CLAUDE.md`。

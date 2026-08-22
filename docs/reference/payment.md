@@ -22,13 +22,13 @@
 - 支付宝走当面付(alipay-sdk-python):precreate + RSA2 普通公钥模式,含查单。
 - `PaymentChannel.query_order` 是各渠道统一查单 seam,mock 渠道自带渠道侧账本。
 - 回调必须靠 `channel_txn_id` 唯一约束幂等,重放不重复入账;金额不匹配的回调拒绝并告警。
-- 回调加时间戳新鲜度窗口(±24h,微信 `Wechatpay-Timestamp` / 支付宝 `notify_time` 加签参数):窗口刻意放宽以覆盖渠道约一天的重试节奏与关单后迟到回调的 rescue 路径(见下),纵深防陈旧报文重放。
+- 回调加时间戳新鲜度窗口 ±24h(微信 `Wechatpay-Timestamp` / 支付宝 `notify_time` 加签参数):覆盖渠道一天量级的重试节奏与关单后迟到回调的 rescue 路径。
 - 微信回调除验签外核对 resource 的 mchid/appid 确为已方商户(缺失即判失败);支付宝验签串按官方口径剔除空值参数。
 - 渠道构造(PEM/RSA 加载)经 `asyncio.to_thread` 出让事件循环,实例按配置指纹缓存。
-- 支付宝回调应答必须是纯文本 `success`:返回 JSON 会被渠道判为失败并反复重试。
-- 下单必须向渠道传过期时间(微信 `time_expire` RFC3339 / 支付宝 `timeout_express` 分钟),与本地关单时间同步,不留资金悬置窗口。
+- 支付宝回调应答必须是纯文本 `success`,不能返回 JSON。
+- 下单必须向渠道传过期时间(微信 `time_expire` RFC3339 / 支付宝 `timeout_express` 分钟),与本地关单时间同步。
 - 关单后到达、验签有效且金额一致的成功回调自动入账(与人工补单同等校验);failed 单与金额不符仍拒。指标 `superdl_payment_closed_order_rescued_total` 非零即说明本地关单 TTL 与渠道过期不同步。
 - 查单 poller 每 2 分钟收敛丢回调(advisory lock 1007),不扫 closed 单;单笔入账失败(金额/渠道不符、唯一约束冲突)记 `superdl_payment_recover_failed_total` 后跳过,不中断整轮;残余窗口由异常清单 + 人工补单兜底。
-- 人工补单为渠道核验制:服务端实时查渠道(锁外查询、显式超时 15s,落账前行锁内复核状态),已支付且金额一致才入账;pending/closed/failed 单均可补 —— failed 单(下单失败/失败回调)不是死胡同,渠道是唯一事实源。支持 Idempotency-Key:同键重放且已入账则回当前状态而非 409(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。
+- 人工补单为渠道核验制:服务端实时查渠道(锁外查询、显式超时 15s,落账前行锁内复核状态),已支付且金额一致才入账;pending / closed / failed 单均可补,渠道是唯一事实源。支持 Idempotency-Key:同键重放且已入账则回当前状态而非 409(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。
 - 渠道凭据与开关在管理端配置,不入代码与 K8s Secret 之外的任何位置,见 [platform-config.md](./platform-config.md)。
 - 不做渠道原路退款:资金退回一律走调账双复核。

@@ -165,8 +165,7 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     await _settle_pending_days(session, disk)  # 先按旧容量结清,扩容不追溯涨价
-    # 注意:size_gb 目前只是计费/逻辑口径 —— JuiceFS 目录配额尚未下发到集群
-    # (需要 worker 镜像携带 juicefs CLI 与足够权限,见审计报告 #16),扩容只改这个数字。
+    # size_gb 只是计费与逻辑口径:JuiceFS 目录配额未下发集群,扩容只改这个数字。
     disk.size_gb = new_size_gb
     await session.commit()
     return disk
@@ -176,8 +175,7 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
     """删除(前端多级防护后调用)。挂载中禁止;进入 deleting,由 outbox 擦除后置 deleted。"""
     disk = await get_disk(session, user_id, uuid)
     if disk.mounted_instance_id is not None:
-        # 挂载实例已停机/冻结/失败(Pod 不在)时放行并自动解挂:
-        # 否则「实例卡 stopping 期间盘删不掉、还按日计费」没有出口
+        # 挂载实例已停机/冻结/失败(Pod 不在)时放行并自动解挂
         inst = await session.get(Instance, disk.mounted_instance_id)
         if inst is not None and inst.status in ("stopped", "frozen", "failed"):
             disk.mounted_instance_id = None

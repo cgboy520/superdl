@@ -318,8 +318,8 @@ class TestBillingCandidatesCompleteness:
     async def test_candidates_cover_all_running_segments(self, sm):
         """结算候选 = 当前 running ∪ 窗口内/后离开 running 的实例。
 
-        回归「窗口末仍 running、之后才停机」:这类实例的旧实现靠全量 DISTINCT ON 兜住,
-        新实现靠 from_status='running' 事件;漏了就是少结账(平台亏钱)。
+        覆盖「窗口末仍 running、之后才停机」:这类实例靠 from_status='running' 事件命中,
+        漏了就是少结账(平台亏钱)。
         """
         from tests.test_billing_settlement import H_END, H, seed_instance
 

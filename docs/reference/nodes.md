@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发;NULL=升级前旧行)、pool(kata/hami/mig)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
+- `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发;NULL=存量旧行)、pool(kata/hami/mig)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
 - `node_specs`:node_name 唯一、pool_label?、unlabeled、gpu_model_raw?、gpu_model?(canonical)、label_synced、gpu_count、gpu_used、vram_gb、vcpu、mem_gb、disk_gb、driver_version?、cuda_version?、status(Ready/NotReady/Cordoned/Missing)、last_seen
 - `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、storage_classes JSONB?、pools JSONB?、detail JSONB?、error?、probed_at
 
@@ -29,24 +29,24 @@
 
 ## 规则与不变量
 
-- 令牌只走 `sdln_` 前缀 256-bit 随机串,只存 sha256;无效/过期/吊销/终态一律返 404,不区分原因以防探测。progress 令牌 `sdlp_` 前缀同规格。
-- token 不进 URL(否则落 access log 与代理日志),也不进命令行参数(节点本地用户 ps 可见):生成命令经 stdin 把 token 写入 `/run/superdl-join.token`(0600),脚本只认 `--token-file`;curl 一律 `--config` 注入 Authorization 头。集群 server URL 与 join token 不进脚本,由脚本凭 token `POST /bootstrap` 换取。
-- 注册令牌一次性:首次 bootstrap(pending→installing)即消费并换发窄权限 progress 令牌(仅可 /progress,换发/吊销/轮换注册令牌时同步作废);重复 bootstrap 一律 404。存量旧行(progress_token_hash 为 NULL)保持可重复 bootstrap 与注册令牌上报,兼容升级前正在装机的节点。
+- 令牌只走 `sdln_` 前缀 256-bit 随机串,只存 sha256;无效/过期/吊销/终态一律返 404,不区分原因。progress 令牌 `sdlp_` 前缀同规格。
+- token 不进 URL、不进命令行参数:生成命令经 stdin 把 token 写入 `/run/superdl-join.token`(0600),脚本只认 `--token-file`;curl 一律 `--config` 注入 Authorization 头。集群 server URL 与 join token 不进脚本,由脚本凭 token `POST /bootstrap` 换取。
+- 注册令牌一次性:首次 bootstrap(pending→installing)即消费并换发窄权限 progress 令牌(仅可 /progress,换发/吊销/轮换注册令牌时同步作废);重复 bootstrap 一律 404。存量旧行(`progress_token_hash` 为 NULL)保持可重复 bootstrap 与注册令牌上报。
 - 令牌绝对过期:expires_at 对一切非终态生效(progress 只刷新 last_report_at,不延长截止),过期即落 expired 并 404;对账器同步清扫。
 - bootstrap 下发配置收窄到 cluster 组 6 键(server_url/join_token/agent_version/driver_version/install_mirror/registries_yaml),全量生效配置(含解密后的支付私钥等)不出注册链路。
-- 未预填 hostname 的令牌在首次 bootstrap 时绑定上报主机名(新签发默认绑定;存量未绑定行首次上报即锁),此后主机名不符即置 failed,防令牌串用。
+- 未预填 hostname 的令牌在首次 bootstrap 时绑定上报主机名(存量未绑定行首次上报即锁),此后主机名不符即置 failed。
 - 对账器(30s,advisory lock 1009)判定 joined 的唯一依据是 K8s 中该 node_name 出现且 Ready 且池标签匹配;池标签不符 → failed;2h 无心跳 → failed。读取走 `FOR UPDATE SKIP LOCKED`,与请求路径并发吊销/上报不互相覆盖。
 - 节点巡检(60s,advisory lock 1010)是节点事实源:阶段 A 纯 K8s 读 → 阶段 B 单事务 DB 收敛 → 阶段 C 逐节点 label patch(失败下轮自愈)。`enrollment.gpu_info` 只是装机一次性快照,不得当事实源。
 - 业务读台账,不实时调 K8s;节点消失先置 `Missing`,超 7 天才删行;上架校验只认 Ready。
 - 巡检在 worker 收敛环直连 K8s 并以幂等重试保证收敛,outbox 只管请求路径的业务事务。
 - 型号归一化在 `core/gpu_models.py`:`canonical_gpu_model(raw)` 未识别返回 None,同名多容量家族(A100/A800/H100/H800/H200/V100)追加 `-{n}G`;`model_matches(sku, node)` 为相等或节点值前缀匹配(SKU `A100` 匹配台账 `A100-80G`)。
 - `gpu_model` 必须参与调度,靠平台自有 label `superdl.io/gpu-model` 回写节点(不依赖 GFD、发行版无关)。
-- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死(回落 default-scheduler 后 `nvidia.com/gpucores` 照样 Pending)。
+- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;k3s 为受支持的轻量档,仅限 hami 池 SKU,dedicated/mig 需 full 集群。
-- k3s 只探测 nvidia 运行时、不设默认运行时,故 k3s 上 shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。
+- k3s 只探测 nvidia 运行时、不设默认运行时,shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。
 - cluster 配置组键面:`cluster_server_url / cluster_join_token(secret)/ cluster_agent_version / node_driver_version / node_registries_yaml(留空=平台生成)/ node_install_mirror(""|cn,默认 cn)`,无 k8s_distro 键。
 - `render_registries_yaml` 由 server_url 解析 host + registry NodePort 30500 常量 + 模板生成。
-- cluster 键不做启动 fail-fast(推荐配置路径是 DB 覆盖层,启动只查 env 会误报);改由 lifespan 在 DB 就绪后查生效配置打 error + 集群页红牌 + 创建注册命令 409。
+- cluster 键不做启动 fail-fast(配置路径是 DB 覆盖层):改由 lifespan 在 DB 就绪后查生效配置打 error + 集群页红牌 + 创建注册命令 409。
 - `node-join.sh` 随 API 镜像下发,步骤 marker 可无限重跑;需重启的场景(kata 池 IOMMU 等)用 systemd oneshot 断点续跑。phase 名发行版中性:bootstrap/precheck/nouveau/sysctl/iommu/driver/nvidia_toolkit/nvme_vg/reboot/registries/agent_config/agent_install/agent_start/waiting_node。
-- 一节点一令牌,不做批量可重用令牌;不做 drain(牵扯计费与迁移策略)。
+- 一节点一令牌,不做批量可重用令牌;不做 drain。
 - join token 最终必然落节点 agent config 文件(0600 root),轮换走发行版自带的 token rotate。

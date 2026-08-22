@@ -1,7 +1,7 @@
 """GPU 资源申请抽象层:device-plugin 语法(HAMi 软切分 / MIG / 整卡直通)。
 
 分池铁律:
-- dedicated → Kata 4.0(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
+- dedicated → Kata(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
 - mig       → runc + MIG device plugin + userns 加固(hostUsers=false),mig 池
 - shared_*  → runc + HAMi 软切分 + userns 加固(hostUsers=false),hami 池
 Kata 与 HAMi 永不混布同一节点池。

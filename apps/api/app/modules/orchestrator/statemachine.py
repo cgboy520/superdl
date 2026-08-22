@@ -18,8 +18,8 @@ FAILED = "failed"
 
 # from → 允许的 to。RELEASED 是唯一终态;RUNNING→FAILED 仅系统使用(pod_lost);
 # CREATING→RELEASING 为用户取消;FAILED→RELEASING 为用户清理失败实例;
-# FAILED→STOPPED 为故障恢复(复用同一块实例盘重开机,见 service.start_instance);
-# STOPPING→RELEASING 为关机悬挂时用户直接放弃(强删链路,见 reconciler 超时处理)。
+# FAILED→STOPPED 为故障恢复(复用实例盘重开机,见 service.start_instance);
+# STOPPING→RELEASING 为关机悬挂时用户直接放弃(见 reconciler 超时处理)。
 TRANSITIONS: dict[str, frozenset[str]] = {
     CREATING: frozenset({RUNNING, FAILED, RELEASING}),
     RUNNING: frozenset({STOPPING, FAILED}),

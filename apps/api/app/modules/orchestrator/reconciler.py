@@ -295,9 +295,8 @@ async def _reconcile_instances(
                         if instance.unready_since is not None:
                             instance.unready_since = None  # 抖动恢复,重新计时
                     else:
-                        # 平台责任失联(node_lost/pod_lost):把 unready_since 写进事件
-                        # metadata,计费据此截断到 Pod 首次不可用时点(宽限期不计费);
-                        # pod_unready 是负载自身问题,不截断照常计费
+                        # 平台责任失联(node_lost/pod_lost):unready_since 写进事件 metadata,
+                        # 计费据此截断到 Pod 首次不可用时点;pod_unready 不截断,照常计费
                         meta: dict[str, Any] = {
                             "phase": st.phase if st.exists else "Missing",
                             "ready": st.ready,

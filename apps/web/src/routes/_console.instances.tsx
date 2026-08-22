@@ -184,7 +184,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   const [value, setValue] = useState(instance.name);
   const rename = useRenameInstance();
   const { message } = App.useApp();
-  // 失焦即保存(有改动时):旧实现 onBlur 直接丢弃输入且不提示
+  // 失焦即保存(仅在有改动时)
   const save = async () => {
     if (rename.isPending) return;
     const name = value.trim();

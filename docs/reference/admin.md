@@ -36,13 +36,13 @@
 ## 规则与不变量
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
-- 管理端登录限流只计失败:账号桶 `admin-login:{ip}:{username}` 5 次/5 分钟(成功清零),纯 IP 桶 `admin-login-ip:{ip}` 30 次/时(只计失败、不清零,防遍历用户名的口令喷洒;阈值按办公网 NAT 出口多管理员放宽)。
+- 管理端登录限流只计失败:账号桶 `admin-login:{ip}:{username}` 5 次/5 分钟(成功清零),纯 IP 桶 `admin-login-ip:{ip}` 30 次/时(只计失败、不清零)。
 - readonly 全站只读;finance 只在财务区可写。
-- 调账复核必须以 `with_for_update` 行锁读取:并发复核的后到者见非 pending 即返 409,保证恰一次入账、ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号(防自建第二账号绕双人制衡)。
+- 调账复核必须以 `with_for_update` 行锁读取:并发复核的后到者见非 pending 即返 409,保证恰一次入账、ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号。
 - 调账发起与人工补单均支持 Idempotency-Key(调账落 `(created_by, idempotency_key)` 唯一约束;补单落 `orders.backfill_idempotency_key`,同键重放回当前状态而非 409)。
 - 公告群发为分块批量 INSERT(单事务 ⌈N/1000⌉ 条语句),只触达 active 用户。
 - 补单为渠道核验制:服务端实时查渠道,已支付且金额一致才入账,不接受人工填写的支付结果。
-- 「超卖率 vs 利用率」按池加权聚合(metering 出 per-instance 小时聚合,orchestrator 出实例→池映射,adminapi 组装);无数据的池返 `null`,不用全集群均值冒充。
-- 管理端所见账单与用户所见同源,避免两套查询对不上。
+- 「超卖率 vs 利用率」按池加权聚合(metering 出 per-instance 小时聚合,orchestrator 出实例→池映射,adminapi 组装);无数据的池返 `null`,不用全集群均值代替。
+- 管理端所见账单与用户所见同源。
 - adminapi 端点全部声明响应模型(kind/group/source 用 Literal 出联合类型);前端行类型一律从生成契约再导出,不手写、不强转。
 - 高危操作原因必填 → 二次确认 → 审计;色值集中在 `adminColors` token,message 走 `App.useApp()`。

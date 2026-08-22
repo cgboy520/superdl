@@ -267,7 +267,7 @@ class TestWechatCallbackSignature:
         assert exc.value.message_key == "billing.wechatCallbackMerchantMismatch"
 
     async def test_missing_mchid_rejected(self, keypair):
-        """通知不带 mchid/appid 即判失败(此前按缺失放行,恒真分支等于没核对)。"""
+        """通知不带 mchid/appid 即判失败:缺失不放行,否则等于没核对。"""
         priv, _pub = keypair
         resource = _wx_resource()
         del resource["mchid"]

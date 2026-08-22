@@ -200,7 +200,7 @@ function ReviewConfirmModal({
         onReviewed();
         onClose();
       },
-      // 统一走 message_key 目录映射,不直接展示 e.message(#254)
+      // 统一走 message_key 目录映射,不直接展示 e.message
       onError: (e) => message.error(errText(e, t("finance.reviewFailed"))),
     },
   });

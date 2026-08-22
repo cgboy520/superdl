@@ -87,8 +87,8 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
         # 用户端与管理端共用一份 OpenAPI(orval 按 tag 分组生成)。
-        # 生产同时关 docs/redoc/openapi 三条路由:只关 docs_url 时 openapi_url
-        # 仍会吐出整份管理端 schema。export_openapi 直取 app.openapi(),不经路由。
+        # 生产三条路由同时关:只关 docs_url 时 openapi_url 仍会吐出整份管理端 schema。
+        # export_openapi 直取 app.openapi(),不经路由。
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",

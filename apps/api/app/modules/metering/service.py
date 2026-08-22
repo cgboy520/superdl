@@ -132,7 +132,6 @@ async def aggregate_previous_hour(
                 )
             except prom.PrometheusUnavailable:
                 # 单次抖动只丢该实例该小时:continue 保住整轮其它实例
-                # (此前 return 会把排在后面的实例整小时全丢掉)
                 failed += 1
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
                 continue
@@ -200,7 +199,7 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
     est_total = Decimal("0.00")
     diffs: list[dict[str, Any]] = []
     all_ids = set(billed) | set(usage_by_instance)
-    # 按 id 精确取价:复用管理端 LIMIT 200 列表会把老实例按单价 0 估算,凭空造出差异
+    # 按 id 精确取价:走管理端 LIMIT 200 列表会把截断外的实例按单价 0 估算,凭空造出差异
     price_by_id = await orchestrator_service.instance_hourly_prices(session, all_ids)
     for iid in all_ids:
         est = as_amount(price_by_id.get(iid, Decimal("0")) * usage_by_instance.get(iid, 0))

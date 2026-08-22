@@ -183,7 +183,7 @@ class TestLogin:
         assert resp.status_code == 401
 
     async def test_successful_logins_not_rate_limited(self, client: AsyncClient):
-        """连登不锁:成功登录不计入失败配额(此前连成功也计数,连登 5 次第 6 次 429)。"""
+        """连登不锁:成功登录不计入失败配额。"""
         await register(client, "13800000081", password="secret123")
         for _ in range(6):
             resp = await client.post(

@@ -7,7 +7,7 @@ PhoneStr = Field(pattern=r"^1[3-9]\d{9}$", description="中国大陆手机号")
 
 
 def _within_bcrypt_limit(v: str) -> str:
-    # bcrypt 只认前 72 字节(5.0 起超长直接抛 ValueError,落到哈希层就是 500);
+    # bcrypt 只认前 72 字节,超长会在哈希层抛错;
     # max_length 按字符计,中文等多字节口令必须再按字节数拦一道
     if len(v.encode()) > 72:
         raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")

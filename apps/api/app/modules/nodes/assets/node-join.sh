@@ -151,8 +151,8 @@ PYEOF
     -H "Content-Type: application/json" \
     -d "$payload" "$API_BASE/api/v1/node-enroll/bootstrap" -o "$STATE_DIR/bootstrap.json"
   chmod 600 "$STATE_DIR/bootstrap.json"
-  # 注册令牌一次性:服务端已消费并换发 progress 令牌,此后上报/续跑只用它
-  # (旧服务端不下发该字段时回落注册令牌,行为同升级前)
+  # 注册令牌一次性:服务端已消费并换发 progress 令牌,此后上报与续跑只用它
+  # (服务端不下发该字段时回落注册令牌)
   local progress
   progress="$(cfg_get progress_token)"
   if [[ -n "$progress" ]]; then
@@ -326,7 +326,7 @@ maybe_reboot() {
     fi
   fi
   chmod 700 "$STATE_DIR/node-join.sh"
-  # 断点续跑用令牌:新流程下已是窄权限 progress 令牌(旧流程为注册令牌,服务端兼容)
+  # 断点续跑用令牌:正常为窄权限 progress 令牌,缺失时回落注册令牌
   printf '%s' "$TOKEN" > "$STATE_DIR/token"
   chmod 600 "$STATE_DIR/token"
   cat > "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" <<EOF

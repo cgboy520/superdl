@@ -22,8 +22,8 @@ if [[ -n "${AUTHORIZED_KEYS:-}" ]]; then
   chmod 600 /root/.ssh/authorized_keys
 fi
 
-# SSH host key 持久化到实例盘(/root):Pod 重建后指纹不变,用户不再收到
-# known_hosts 变更告警。/etc/ssh 下的是指向持久目录的符号链接。
+# SSH host key 持久化到实例盘(/root):Pod 重建后指纹不变,不触发 known_hosts
+# 变更告警。/etc/ssh 下的是指向持久目录的符号链接。
 hostkey_dir=/root/.ssh/host_keys
 mkdir -p "$hostkey_dir"
 chmod 700 "$hostkey_dir"
@@ -59,7 +59,7 @@ else
   echo "warn: superdl_jupyter_auth 不可导入,回退 stock token 鉴权" >&2
 fi
 
-# 守护循环而非 exec:jupyter 不做 PID 1,用户误杀/崩溃后自动拉起,实例不再整台转 failed。
+# 守护循环而非 exec:jupyter 不做 PID 1,用户误杀或崩溃后自动拉起,不让整台实例转 failed。
 # 连续秒退(如配置错误)超过 5 次则放弃,让 Pod 失败收敛,不无限假活。
 fast_failures=0
 while true; do

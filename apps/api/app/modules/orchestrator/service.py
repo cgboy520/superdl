@@ -332,8 +332,8 @@ async def create_instance(
     await _validate_image_ref(session, image_ref)
     await _soft_admit_capacity(session, sku, gpu_count)
 
-    # 临界区开始:先 FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
-    # 在途统计与配额校验必须在锁内做(先算后锁 = 经典 TOCTOU:两请求都在对方提交前统计)。
+    # 临界区开始:FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
+    # 在途统计与配额校验必须在锁内做(先算后锁即 TOCTOU)。
     # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增。
     estimate = as_amount(sku.price_hourly * gpu_count)
     try:
@@ -883,8 +883,7 @@ async def billing_candidates(
     候选 = 当前 running 的实例 ∪ 自窗口起点以来离开过 running 的实例。
     完备性论证:「窗口末仍在 running」= 现在仍 running ∪ 窗口末之后才离开 running;
     每个已结束的 running 区间都有一条 from_status='running' 的离开事件。
-    两条腿都走索引(instances.status / instance_events.created_at),
-    不再对全量历史事件做 DISTINCT ON。
+    两条腿都走索引(instances.status / instance_events.created_at)。
     """
     running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
     exited = (

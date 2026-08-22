@@ -2,7 +2,7 @@
 
 脚本本体在 **`apps/api/app/modules/nodes/assets/node-join.sh`**(随 API 镜像打包,
 `GET /api/v1/node-enroll/script` 直接下发,服务端仅替换 `__API_BASE__` 占位符)。
-本目录只放测试与说明,避免两份拷贝漂移。
+本目录只放测试与说明,不留第二份脚本拷贝。
 
 ## 使用(运维视角)
 
@@ -14,17 +14,17 @@
    ```bash
    echo 'sdln_xxx' | sudo sh -c 'umask 077; cat > /run/superdl-join.token; curl -fsSL https://<api>/api/v1/node-enroll/script | bash -s -- --token-file /run/superdl-join.token; s=$?; rm -f /run/superdl-join.token; exit $s'
    ```
-   token 经 stdin 落入 `/run` 下的 0600 文件(tmpfs,重启即消),脚本一律从文件读 token:
-   全程不出现在节点任何进程的 argv 里(本地用户 `ps` 不可见),命令执行完即删。
+   token 经 stdin 落入 `/run` 下的 0600 文件(tmpfs,重启即消),脚本一律从文件读 token,
+   不出现在任何进程的 argv 里,命令执行完即删。
 3. 新服务器上粘贴执行;管理端「待加入节点」实时看阶段进度。kata 池含一次自动重启
    (IOMMU/驱动生效,systemd oneshot 断点续跑)。失败可修复环境后重跑同一条命令
    (断点续跑,已完成步骤跳过);节点加入完成后重跑直接退出,从头重装须
    `--force` + 管理端新签发的令牌。
 
-安全模型:脚本本体零密钥;server 地址/join token 凭注册令牌 `POST /bootstrap` 换取
-(Bearer,令牌 256-bit 只存哈希、绝对过期、统一 404 防探测)。注册令牌**一次性**:
+安全模型:脚本本体零密钥;server 地址与 join token 凭注册令牌 `POST /bootstrap` 换取
+(Bearer,令牌 256-bit 只存哈希、绝对过期、无效一律 404)。注册令牌**一次性**:
 首次 bootstrap 即被服务端消费,换发窄权限 progress 令牌(仅可上报进度,不可再拉配置),
-落 `/var/lib/superdl-node-join/token`(0600)供断点续跑;装机完成即连同 bootstrap.json
+落 `/var/lib/superdl-node-join/token`(0600)供断点续跑,装机完成即连同 bootstrap.json
 一起删除。k3s/rke2 安装器不裸 `curl|sh`:固定 URL 下载后校验脚本内置 sha256 pin 再执行;
 管道执行时重启前从 API 重拉脚本本体,并校验 bootstrap 下发的脚本指纹(script_sha256)。
 join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即可。

@@ -18,7 +18,7 @@ kubectl apply -f ../registry/registry.yaml
 # 4. 轮换口令:改 Secret → rollout restart registry → 同步更新全部节点 configs.auth
 ```
 
-滚动顺序铁律:**先铺节点凭据,后开仓库认证**(带凭据访问匿名仓库不受影响,反向则节点 pull 全断)。
+滚动顺序铁律:**先铺节点凭据,后开仓库认证**(反向则节点 pull 全断)。
 
 ## 平台镜像发布 SOP
 
@@ -46,8 +46,8 @@ curl -u ops:'<强口令>' http://<server-ip>:30500/v2/_catalog     # 仓库存�
 
 ## 灾备与容量
 
-- registry 数据在 TopoLVM 本地卷(500Gi,占 GPU 节点 NVMe——迁 infra 节点/共享存储的取舍见
-  registry.yaml 的 PVC 注释):丢了可全量重 push(权威副本在构建产物/上游),不做跨节点冗余。
+- registry 数据在 TopoLVM 本地卷(500Gi,占 GPU 节点 NVMe;迁移取舍见 registry.yaml 的 PVC 注释),
+  不做跨节点冗余,丢了全量重 push。
 - 空间回收:管理端删除镜像条目只删平台目录;registry 侧 API DELETE 已关
   (REGISTRY_STORAGE_DELETE_ENABLED=false),回收进 Pod 执行
   `registry garbage-collect /etc/registry/config.yml -m`(删未引用 blob 与 untagged manifest,
@@ -58,7 +58,7 @@ curl -u ops:'<强口令>' http://<server-ip>:30500/v2/_catalog     # 仓库存�
 
 - htpasswd 认证(匿名 push/pull 一律 401)+ registry namespace 默认拒绝 NetworkPolicy
   (仅放行节点/运维网段);light 档(k3s+flannel)不执行 NetworkPolicy,依赖机房防火墙。
-- NodePort 30500 仅限集群内网,机房防火墙不得对外暴露;TLS 升级路径与口令轮换要求见
-  registry.yaml 末尾 Service 注释(未上 TLS 前口令内网明文传输,按季度轮换)。
+- NodePort 30500 仅限集群内网,机房防火墙不得对外暴露;TLS 升级路径见 registry.yaml 末尾
+  Service 注释,未上 TLS 前口令内网明文传输,按季度轮换。
 - 租户实例无法触达 30500:租户 Pod Egress NetworkPolicy 禁全部私网段
   (app/core/k8s/real.py PRIVATE_CIDRS)。

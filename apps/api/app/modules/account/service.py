@@ -39,16 +39,14 @@ _DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 MAX_SMS_CODE_ATTEMPTS = 5
 
 # 同号发送退避的指数上限:连续第 N 条未消费验证码的间隔 = 基础间隔 × 2^min(N-1, 上限)
-# (默认 60s 基础间隔 → 60s/120s/240s,封顶 480s;轰炸者收不到码只会指数拉长自己的
-# 发送间隔,受害者正常消费验证码后连续计数即归零)
+# (60s 基础间隔 → 60s/120s/240s,封顶 480s);验证码被正常消费后连续计数归零。
 SMS_SEND_BACKOFF_MAX_EXPONENT = 3
 
-# 验证码日配额(按「消费」计,见 _consume_sms_code):攻击者替受害者请求验证码
-# 耗不到该配额 —— 只有真正读到码并完成登录/注册/重置的一方才计数
+# 验证码日配额,按「消费」计(见 _consume_sms_code):只有真正读到码并完成登录/注册/重置的
+# 一方才计数,替他人请求验证码耗不到该配额
 SMS_CONSUME_DAILY_MAX = 10
 
-# 同 jti 重放宽限窗:窗内视为并发重试(多标签页/客户端重试)按正常轮换处理,
-# 窗外才判泄露并撤销全部会话(Auth0 同款 reuse-leeway 思路)
+# 同 jti 重放宽限窗:窗内视为并发重试,按正常轮换处理;窗外判泄露并撤销全部会话
 REFRESH_REPLAY_GRACE_SECONDS = 10.0
 
 
@@ -63,13 +61,11 @@ async def send_sms_code(
     session: AsyncSession, phone: str, purpose: str, *, client_ip: str | None = None
 ) -> None:
     settings = get_settings()
-    # 发送尝试只按 IP 限流。手机号日配额不在此计:请求路径无鉴权、phone 由请求方
-    # 指定,按发送计配额会让攻击者替受害者耗尽当日额度(代耗);配额移到消费侧计。
+    # 发送尝试只按 IP 限流;手机号日配额在消费侧计(见 SMS_CONSUME_DAILY_MAX)。
     await check_rate_limit(
         f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
     )
-    # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长。
-    # 轰炸收不到码,间隔只会指数拉长;受害者消费一条后连续计数归零,体验不受影响。
+    # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长;消费一条即归零。
     recent = list(
         (
             await session.execute(
@@ -152,8 +148,7 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
             row.used_at = now_utc()
         await session.commit()
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    # 手机号日配额按「消费」计:只有真正读到码的一方才占用额度;
-    # 放在成功分支、标 used_at 之前,失败尝试与超额请求都不消耗配额
+    # 日配额按「消费」计:放在成功分支、标 used_at 之前,失败尝试与超额请求都不消耗配额
     await check_rate_limit(
         f"sms-consume-phone:{phone}", max_attempts=SMS_CONSUME_DAILY_MAX, window_seconds=86400.0
     )
@@ -232,7 +227,7 @@ async def login(
             raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
     except AppError as exc:
         if exc.code == ErrorCode.LOGIN_FAILED:
-            # 只在失败后计数:成功登录不消耗配额(此前连成功也计数,连登 5 次即被 429)。
+            # 只在失败后计数,成功登录不消耗配额;
             # 含手机号的键遍历号段即换桶,故再加一个只按 IP 切分的桶
             await check_rate_limit(
                 f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
@@ -429,8 +424,7 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
         normalized, fingerprint = parse_public_key(public_key)
     except ValueError as exc:
         raise AppError(ErrorCode.SSH_KEY_INVALID, str(exc)) from exc
-    # 查重按本用户口径:同一把钥匙不同租户各自可添加;同一用户重复添加才拒绝。
-    # 删除是硬删除,删过的指纹天然可重新添加,无需恢复语义。
+    # 查重按本用户口径:同一把钥匙不同租户各自可添加,同一用户重复添加才拒绝。
     dup = (
         await session.execute(
             select(SshKey).where(SshKey.user_id == user_id, SshKey.fingerprint == fingerprint)

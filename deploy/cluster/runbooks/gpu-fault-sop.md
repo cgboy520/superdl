@@ -4,7 +4,7 @@
 Alertmanager `GPUXidCriticalError`(Xid 48/63/64/79/94/95)→ 平台告警流 + 值班短信。
 
 ## 处置(值班执行,全程动作入审计)
-1. **隔离**:`kubectl cordon <node>`(阻止新调度;管理端节点页同步显示 Cordoned)
+1. **隔离**:`kubectl cordon <node>`;管理端节点页同步显示 Cordoned
 2. **定位受影响实例**:管理端 节点页 → 该节点实例列表(跨租户);或
    `kubectl get pod -A -l superdl.io/managed=true -o wide | grep <node>`
 3. **停机结算**:对受影响实例执行管理端「强制停止」(原因:GPU 硬件故障)——
