@@ -7,8 +7,8 @@ from tests.test_catalog import admin_headers
 
 class TestLoginRateLimit:
     async def test_admin_login_locked_after_5_attempts(self, client: AsyncClient, sm):
-        await admin_headers(sm, client)  # 创建 admin-user(消耗 1 次成功登录计数)
-        for _ in range(4):
+        await admin_headers(sm, client)  # 创建 admin-user(成功登录不计数)
+        for _ in range(5):
             resp = await client.post(
                 "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "wrong"}
             )
@@ -18,11 +18,35 @@ class TestLoginRateLimit:
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
-        # 正确密码也被限流拦住(锁定期内)
+        # 限流响应必须告诉客户端窗口剩余秒数(Retry-After)
+        assert resp.headers["retry-after"].isdigit()
+        # 锁的是失败计数而非账号:凭据正确随时可登(不惩罚记对密码的管理员),成功即清零
         resp = await client.post(
             "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "pass1234"}
         )
+        assert resp.status_code == 200, resp.text
+        resp = await client.post(
+            "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "wrong"}
+        )
+        assert resp.json()["code"] == "LOGIN_FAILED"
+
+    async def test_admin_login_pure_ip_bucket(self, client: AsyncClient, sm, monkeypatch):
+        """纯 IP 桶:遍历用户名换账号桶也躲不开;只计失败,阈值放宽防误伤 NAT 出口。"""
+        from app.modules.adminapi import service as admin_service
+
+        monkeypatch.setattr(admin_service, "LOGIN_IP_MAX_ATTEMPTS", 3)
+        await admin_headers(sm, client)
+        # 每次换用户名:账号桶每桶仅 1 次,远不到 5;压力全落在纯 IP 桶上
+        for i in range(3):
+            resp = await client.post(
+                "/api/admin/v1/auth/login", json={"username": f"spray{i}", "password": "wrong"}
+            )
+            assert resp.json()["code"] == "LOGIN_FAILED"
+        resp = await client.post(
+            "/api/admin/v1/auth/login", json={"username": "spray3", "password": "wrong"}
+        )
         assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_counter_survives_business_rollback(self, client: AsyncClient, sm):
         """限流计数走独立事务:业务事务回滚不能把这次尝试抹掉(否则可无限重试)。"""
@@ -58,6 +82,33 @@ class TestNoDefaultBootstrapAdmin:
 
 
 class TestProdConfigValidation:
+    @staticmethod
+    def _complete_prod_kwargs() -> dict:
+        """一套能通过 prod 校验的完整配置;各用例在此基础上注入一个坏值。"""
+        return {
+            "_env_file": None,  # 运行时参数,stub 未暴露
+            "environment": "prod",
+            "jwt_secret": "x" * 40,
+            "sms_provider": "aliyun",
+            "sms_access_key_id": "ak",
+            "sms_access_key_secret": "sk",
+            "sms_sign_name": "SuperDL",
+            "sms_template_verify": "SMS_1",
+            "sms_template_notice": "SMS_2",
+            "k8s_backend": "real",
+            "payment_mock": False,
+            "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
+            "cors_origins": ["https://console.superdl.cn"],
+            "ssh_host": "ssh1.superdl.cn",
+            "jupyter_domain_suffix": "app.superdl.cn",
+            "public_base_url": "https://api.superdl.cn",
+            "prometheus_url": "http://kube-prometheus-stack-prometheus.monitoring.svc:9090",
+            "alertmanager_token": "token",
+            "metrics_token": "mtoken",
+            "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
+            "image_allowed_registries": ["registry.superdl.internal/"],
+        }
+
     def test_prod_rejects_dev_defaults(self):
         """environment=prod + 任一开发默认值 → 启动即拒。"""
         import pytest
@@ -78,28 +129,7 @@ class TestProdConfigValidation:
     def test_prod_accepts_complete_config(self):
         from app.core.config import Settings
 
-        s = Settings(
-            _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
-            environment="prod",
-            jwt_secret="x" * 40,
-            sms_provider="aliyun",
-            sms_access_key_id="ak",
-            sms_access_key_secret="sk",
-            sms_sign_name="SuperDL",
-            sms_template_verify="SMS_1",
-            sms_template_notice="SMS_2",
-            k8s_backend="real",
-            payment_mock=False,
-            database_url="postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
-            cors_origins=["https://console.superdl.cn"],
-            ssh_host="ssh1.superdl.cn",
-            jupyter_domain_suffix="app.superdl.cn",
-            public_base_url="https://api.superdl.cn",
-            prometheus_url="http://kube-prometheus-stack-prometheus.monitoring.svc:9090",
-            alertmanager_token="token",
-            metrics_token="mtoken",
-            config_encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
-        )
+        s = Settings(**self._complete_prod_kwargs())
         assert s.environment == "prod"
 
     def test_prod_rejects_localhost_prometheus(self):
@@ -108,37 +138,59 @@ class TestProdConfigValidation:
 
         from app.core.config import Settings
 
+        kwargs = self._complete_prod_kwargs()
+        del kwargs["prometheus_url"]  # 回落默认值 http://localhost:9090
         with _pytest.raises(ValueError, match="prometheus_url"):
-            Settings(
-                _env_file=None,  # pyright: ignore[reportCallIssue]
-                environment="prod",
-                jwt_secret="x" * 40,
-                sms_provider="aliyun",
-                sms_access_key_id="ak",
-                sms_access_key_secret="sk",
-                sms_sign_name="SuperDL",
-                sms_template_verify="SMS_1",
-                sms_template_notice="SMS_2",
-                k8s_backend="real",
-                payment_mock=False,
-                database_url="postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
-                cors_origins=["https://console.superdl.cn"],
-                ssh_host="ssh1.superdl.cn",
-                jupyter_domain_suffix="app.superdl.cn",
-                public_base_url="https://api.superdl.cn",
-                alertmanager_token="token",
-                metrics_token="mtoken",
-                config_encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
-            )
+            Settings(**kwargs)
+
+    def test_prod_rejects_bootstrap_admin_password(self):
+        """引导口令是一次性 dev 工具:带进 prod 说明运维忘了删,启动即拒并给出正确做法。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError, match="bootstrap_admin_password"):
+            Settings(**self._complete_prod_kwargs(), bootstrap_admin_password="bootstrap-123")
+
+    def test_prod_rejects_mock_realname_when_required(self):
+        """充值强制实名 + mock 渠道 = 实名形同虚设(mock 核验恒过),prod 必拒。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError, match="real_name_provider"):
+            Settings(**self._complete_prod_kwargs(), real_name_required_for_recharge=True)
+
+    def test_prod_allows_mock_realname_when_not_required(self):
+        """实名开关未启用时 mock 无害,不过度收紧。"""
+        from app.core.config import Settings
+
+        s = Settings(**self._complete_prod_kwargs())
+        assert s.real_name_provider == "mock"
+
+    def test_prod_rejects_empty_image_allowed_registries(self):
+        """空白名单 = 租户可拉任意仓库镜像(把任意镜像引进集群),prod 必须显式配置。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        kwargs = self._complete_prod_kwargs()
+        del kwargs["image_allowed_registries"]
+        with pytest.raises(ValidationError, match="image_allowed_registries"):
+            Settings(**kwargs)
 
 
 class TestSmsCodeBruteForce:
     async def test_code_burned_after_max_attempts(self, client: AsyncClient, sm):
-        """同一条验证码失败 5 次后作废:正确码也不再放行(计次持久化于 DB)。"""
+        """同一条验证码失败 5 次后作废:used_at 落库,正确码也不再放行(计次持久化于 DB)。"""
         import pytest
 
         from app.core.errors import AppError
         from app.modules.account import service as account_service
+        from app.modules.account.models import SmsCode
 
         phone = "13800000088"
         resp = await client.post(
@@ -149,6 +201,16 @@ class TestSmsCodeBruteForce:
             async with sm() as session:
                 with pytest.raises(AppError):
                     await account_service._consume_sms_code(session, phone, "000000", "register")
+        # 达上限即置 used_at:烧毁的行不再满足 used_at IS NULL,不会被反复选中
+        from sqlalchemy import select
+
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(SmsCode).where(SmsCode.phone == phone).order_by(SmsCode.id.desc())
+                )
+            ).scalar_one()
+        assert row.used_at is not None
         async with sm() as session:
             with pytest.raises(AppError):  # mock 固定码 123456 本是正确码
                 await account_service._consume_sms_code(session, phone, "123456", "register")
@@ -221,6 +283,21 @@ class TestMetricsGuard:
             assert (await client.get("/metrics/")).status_code == 401
             resp = await client.get("/metrics/", headers={"Authorization": "Bearer mtok"})
             assert resp.status_code == 200
+        finally:
+            settings.metrics_token = None
+
+    async def test_non_ascii_authorization_rejected_not_500(self, client: AsyncClient):
+        """非 ASCII 的 Authorization 头:compare_digest 收 str 会抛 TypeError,必须先 encode。"""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        settings.metrics_token = "mtok"
+        try:
+            resp = await client.get(
+                "/metrics/",
+                headers={b"authorization": "Bearer caf\u00e9".encode("latin-1")},
+            )
+            assert resp.status_code == 401
         finally:
             settings.metrics_token = None
 
@@ -297,3 +374,153 @@ class TestSmsCodeAtRest:
         assert row.code_hash == hash_sms_code("13800000777", "register", "123456")
         assert hash_sms_code("13800000778", "register", "123456") != row.code_hash
         assert hash_sms_code("13800000777", "login", "123456") != row.code_hash
+
+
+class TestGhostEnvKeys:
+    def test_unknown_superdl_vars_reported(self):
+        """拼错/残留的 SUPERDL_* 变量会被 pydantic 静默忽略:启动扫描负责把它们揪出来。"""
+        from app.core.config import unknown_superdl_env_keys
+
+        env = {
+            "SUPERDL_JWT_SECRET": "x",  # 合法键
+            "SUPERDL_RKE2_VERSION": "v1",  # AliasChoices 别名键
+            "SUPERDL_JWT_SECERT": "typo",  # 拼写错误
+            "SUPERDL_OLD_REMOVED_KEY": "y",  # 改名残留
+            "DATABASE_URL": "z",  # 非本前缀,不管
+        }
+        assert unknown_superdl_env_keys(env) == [
+            "SUPERDL_JWT_SECERT",
+            "SUPERDL_OLD_REMOVED_KEY",
+        ]
+
+
+class TestBootstrapAdminGate:
+    async def test_bootstrap_password_policy_at_service_layer(self, sm):
+        """服务层自查(不经 lifespan):过短/超 72 字节都拒,合规才建号。"""
+        import pytest
+        from sqlalchemy import select
+
+        from app.modules.adminapi.models import AdminUser
+        from app.modules.adminapi.service import ensure_bootstrap_admin
+
+        async with sm() as session:
+            with pytest.raises(RuntimeError, match="引导口令"):
+                await ensure_bootstrap_admin(session, "short")
+        async with sm() as session:
+            with pytest.raises(RuntimeError, match="引导口令"):
+                await ensure_bootstrap_admin(session, "汉" * 25)  # 75 字节
+        async with sm() as session:
+            await ensure_bootstrap_admin(session, "l0ng-enough-pass")
+            admins = (await session.execute(select(AdminUser))).scalars().all()
+        assert [a.username for a in admins] == ["admin"]
+
+    async def test_bootstrap_creates_admin_in_dev(self, client: AsyncClient, sm, monkeypatch):
+        """dev + 口令 → 创建首管并可登录;口令是一次性变量,建完即应删除。"""
+        from app.core.config import get_settings
+        from app.main import create_app, lifespan
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "dev", raising=False)
+        monkeypatch.setattr(
+            settings, "bootstrap_admin_password", "bootstrap-pass-123", raising=False
+        )
+        async with lifespan(create_app()):
+            pass
+        resp = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "admin", "password": "bootstrap-pass-123"},
+        )
+        assert resp.status_code == 200
+
+    async def test_bootstrap_skipped_outside_dev(self, sm, monkeypatch):
+        """非 dev 环境带引导口令:跳过创建(prod 在配置校验层已直接拒启动)。"""
+        from sqlalchemy import select
+
+        from app.core.config import get_settings
+        from app.main import create_app, lifespan
+        from app.modules.adminapi.models import AdminUser
+
+        # conftest 已把 environment 钉为 test
+        monkeypatch.setattr(
+            get_settings(), "bootstrap_admin_password", "bootstrap-pass-123", raising=False
+        )
+        async with lifespan(create_app()):
+            pass
+        async with sm() as session:
+            rows = (await session.execute(select(AdminUser))).scalars().all()
+        assert rows == []
+
+    async def test_bootstrap_short_password_rejected(self, sm, monkeypatch):
+        """弱口令引导拒绝启动(与管理端创建管理员的 min_length=12 对齐)。"""
+        import pytest
+
+        from app.core.config import get_settings
+        from app.main import create_app, lifespan
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "dev", raising=False)
+        monkeypatch.setattr(settings, "bootstrap_admin_password", "short", raising=False)
+        with pytest.raises(RuntimeError, match="12"):
+            async with lifespan(create_app()):
+                pass
+
+
+class TestUnifiedErrorBodyForHttpException:
+    async def test_404_returns_unified_body(self, client: AsyncClient):
+        """路由层 404(框架异常)也要是统一错误体:前端只认一种错误形状。"""
+        resp = await client.get("/api/v1/no-such-route")
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["code"] == "NOT_FOUND"
+        assert body["message_key"] == "common.notFound"
+        assert body["message"] == "资源不存在"
+
+    async def test_405_returns_unified_body_and_allow_header(self, client: AsyncClient):
+        resp = await client.post("/healthz")  # 仅注册了 GET
+        assert resp.status_code == 405
+        body = resp.json()
+        assert body["code"] == "METHOD_NOT_ALLOWED"
+        assert body["message_key"] == "common.methodNotAllowed"
+        assert "GET" in resp.headers["allow"]
+
+
+class TestAuthenticateHeader:
+    async def test_401_carries_www_authenticate(self, client: AsyncClient):
+        """RFC 6750:Bearer 鉴权失败必须回 WWW-Authenticate,客户端据此识别挑战。"""
+        resp = await client.get("/api/v1/notifications")
+        assert resp.status_code == 401
+        assert resp.headers["www-authenticate"] == "Bearer"
+        assert resp.json()["code"] == "UNAUTHORIZED"
+
+
+class TestAuditOnUnhandledException:
+    async def test_500_is_audited(self, sm):
+        """未捕获异常(result=500)也要落审计行:500 恰恰是最需要留痕的结果。"""
+        import pytest
+        from httpx import ASGITransport
+        from sqlalchemy import select
+
+        from app.core.audit import AuditLog
+        from app.main import create_app
+
+        app = create_app()
+
+        @app.post("/api/v1/__boom")
+        async def _boom() -> None:
+            raise RuntimeError("boom")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            with pytest.raises(RuntimeError, match="boom"):
+                await c.post("/api/v1/__boom")
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(AuditLog.action == "POST /api/v1/__boom")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert [r.result for r in rows] == [500]

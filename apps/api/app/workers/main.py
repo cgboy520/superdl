@@ -8,13 +8,18 @@ import contextlib
 import os
 import signal
 import socket
+import threading
+import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger, setup_logging
-from app.core.metrics import WORKER_HEARTBEAT_TS
+from app.core.metrics import SCHEDULED_TICK_DURATION, WORKER_HEARTBEAT_TS
 from app.core.outbox import process_one, reap_stuck_running
 from app.core.timeutil import now_utc
 
@@ -22,6 +27,9 @@ logger = get_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
+# 并发领取协程数:claim 是 FOR UPDATE SKIP LOCKED,多协程不会重复领取;
+# 消除全局串行 FIFO 的队头阻塞(一个慢任务不再挡住排在后面的关机请求)
+OUTBOX_CONCURRENCY = int(os.environ.get("SUPERDL_OUTBOX_CONCURRENCY", "4"))
 
 # K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
 # ——挂在循环里探的是「当前任务跑完没有」,长任务会让活着的 worker 被 SIGKILL。
@@ -49,17 +57,64 @@ async def heartbeat_loop() -> None:
 
 
 async def outbox_loop(worker_id: str) -> None:
+    """N 条并发领取协程(SKIP LOCKED 保证不重复);领取按 next_retry_at, id 公平排序。"""
     sm = get_sessionmaker()
-    logger.info("outbox_worker_started", worker_id=worker_id)
-    while not _stop.is_set():
-        try:
-            processed = await process_one(sm, worker_id)
-        except Exception:
-            logger.exception("outbox_loop_error")
-            processed = False
-        if not processed and not _stop.is_set():
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(_stop.wait(), timeout=POLL_INTERVAL_SECONDS)
+    logger.info("outbox_worker_started", worker_id=worker_id, concurrency=OUTBOX_CONCURRENCY)
+
+    async def claim_loop(lane: int) -> None:
+        # 终态写按 locked_by 校验归属,各 lane 的 worker_id 必须互不相同
+        lane_id = f"{worker_id}-{lane}"
+        while not _stop.is_set():
+            try:
+                processed = await process_one(sm, lane_id)
+            except Exception:
+                logger.exception("outbox_loop_error")
+                processed = False
+            if not processed and not _stop.is_set():
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(_stop.wait(), timeout=POLL_INTERVAL_SECONDS)
+
+    await asyncio.gather(*(claim_loop(i) for i in range(OUTBOX_CONCURRENCY)))
+
+
+def _metrics_wsgi_app(token: str | None) -> Callable[..., Any]:
+    """worker /metrics 的 WSGI 应用:与 API 同一 SUPERDL_METRICS_TOKEN Bearer 门禁。"""
+    import secrets
+
+    from prometheus_client import make_wsgi_app
+
+    inner = make_wsgi_app()
+
+    def app(environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
+        if token:
+            authorization = environ.get("HTTP_AUTHORIZATION") or ""
+            # 常量时间比较;先 encode:compare_digest 收 str 遇非 ASCII 会抛 TypeError
+            if not secrets.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
+                start_response(
+                    "401 Unauthorized",
+                    [("Content-Type", "text/plain"), ("WWW-Authenticate", "Bearer")],
+                )
+                return [b"unauthorized"]
+        return inner(environ, start_response)
+
+    return app
+
+
+def _start_metrics_server(port: int, token: str | None) -> None:
+    """线程内 wsgiref(PodMonitor 直抓;无 Ingress 仅集群内可达,仍要求 Bearer)。"""
+    import socketserver
+    from wsgiref.simple_server import WSGIRequestHandler, WSGIServer
+
+    class _QuietHandler(WSGIRequestHandler):
+        def log_message(self, format: str, *args: Any) -> None:
+            return  # 抓取高频,不打 stderr
+
+    class _ThreadingWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
+        daemon_threads = True
+
+    httpd = _ThreadingWSGIServer(("0.0.0.0", port), _QuietHandler)
+    httpd.set_app(_metrics_wsgi_app(token))
+    threading.Thread(target=httpd.serve_forever, daemon=True, name="metrics-httpd").start()
 
 
 async def cleanup_expired_rows(sm) -> dict[str, int]:
@@ -95,8 +150,34 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
     return counts
 
 
+def _timed_job(
+    job_id: str, fn: Callable[..., Awaitable[Any]], period_seconds: float
+) -> Callable[..., Awaitable[Any]]:
+    """包一层耗时观测:单轮耗时进 Histogram;超过周期 80% 打 warning。
+
+    APScheduler 的 coalesce/misfire 会静默丢弃整轮,耗时逼近周期是唯一可观测前兆。
+    """
+
+    async def wrapped(*args: Any) -> Any:
+        started = time.monotonic()
+        try:
+            return await fn(*args)
+        finally:
+            elapsed = time.monotonic() - started
+            SCHEDULED_TICK_DURATION.labels(job=job_id).observe(elapsed)
+            if elapsed > 0.8 * period_seconds:
+                logger.warning(
+                    "scheduled_tick_slow",
+                    job=job_id,
+                    elapsed_seconds=round(elapsed, 1),
+                    period_seconds=period_seconds,
+                )
+
+    return wrapped
+
+
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """各模块定时任务注册(结算/巡检/聚合)。"""
+    """各模块定时任务注册(结算/巡检/聚合)。callable 一律经 _timed_job 包耗时观测。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.reconcile import reconcile_funds
@@ -110,14 +191,14 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     sm = get_sessionmaker()
 
     scheduler.add_job(
-        reap_stuck_running,
+        _timed_job("outbox_reaper", reap_stuck_running, 300),
         "interval",
         minutes=5,
         args=[sm],
         id="outbox_reaper",
     )
     scheduler.add_job(
-        reconcile_once,
+        _timed_job("reconciler", reconcile_once, 30),
         "interval",
         seconds=30,
         args=[sm],
@@ -127,7 +208,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     )
     # misfire 宽限:APScheduler 默认只有 1 秒,事件循环稍有阻塞就整轮跳过
     scheduler.add_job(
-        settle_due_hours,
+        _timed_job("hourly_settlement", settle_due_hours, 3600),
         "cron",
         minute=2,
         args=[sm],
@@ -136,7 +217,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         misfire_grace_time=1800,
     )
     scheduler.add_job(
-        settle_daily_disks,
+        _timed_job("daily_disk_settlement", settle_daily_disks, 86400),
         "cron",
         hour=0,
         minute=10,
@@ -147,7 +228,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     )
     # 排在日结之后:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」
     scheduler.add_job(
-        reconcile_funds,
+        _timed_job("fund_reconcile", reconcile_funds, 86400),
         "cron",
         hour=0,
         minute=30,
@@ -157,7 +238,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         misfire_grace_time=3600,
     )
     scheduler.add_job(
-        aggregate_previous_hour,
+        _timed_job("usage_aggregation", aggregate_previous_hour, 3600),
         "cron",
         minute=5,
         args=[sm],
@@ -166,7 +247,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         misfire_grace_time=1800,
     )
     scheduler.add_job(
-        close_expired_orders,
+        _timed_job("close_expired_orders", close_expired_orders, 600),
         "interval",
         minutes=10,
         args=[sm],
@@ -174,7 +255,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     scheduler.add_job(
-        reconcile_pending_orders,
+        _timed_job("payment_reconcile", reconcile_pending_orders, 120),
         "interval",
         minutes=2,
         args=[sm],
@@ -183,7 +264,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     scheduler.add_job(
-        cleanup_expired_rows,
+        _timed_job("cleanup_expired_rows", cleanup_expired_rows, 86400),
         "cron",
         hour=19,  # UTC 19 = 北京 03:00 低峰
         minute=0,
@@ -193,7 +274,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         misfire_grace_time=3600,
     )
     scheduler.add_job(
-        balance_patrol,
+        _timed_job("balance_patrol", balance_patrol, 300),
         "interval",
         minutes=5,
         args=[sm],
@@ -202,7 +283,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     scheduler.add_job(
-        prewarm_patrol,
+        _timed_job("prewarm_patrol", prewarm_patrol, 60),
         "interval",
         seconds=60,
         args=[sm],
@@ -211,7 +292,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     scheduler.add_job(
-        node_spec_patrol,
+        _timed_job("node_spec_patrol", node_spec_patrol, 60),
         "interval",
         seconds=60,
         args=[sm],
@@ -221,7 +302,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         next_run_time=now_utc(),  # 立即首跑:shared 档门禁读能力缓存,不能等首个周期
     )
     scheduler.add_job(
-        reconcile_enrollments_once,
+        _timed_job("node_enroll_reconciler", reconcile_enrollments_once, 30),
         "interval",
         seconds=30,
         args=[sm],
@@ -234,15 +315,13 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
 async def main() -> None:
     setup_logging()
     from app.core.errors import init_sentry
-    from app.main import wire_modules
+    from app.wiring import wire_modules
 
     init_sentry()
     wire_modules()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
 
-    from prometheus_client import start_http_server
-
-    start_http_server(METRICS_PORT)
+    _start_metrics_server(METRICS_PORT, get_settings().metrics_token)
     logger.info("worker_metrics_listening", port=METRICS_PORT)
 
     # SIGTERM/SIGINT 优雅停机:停调度器 → 让 outbox 循环收尾当前任务后退出

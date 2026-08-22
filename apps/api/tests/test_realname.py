@@ -50,6 +50,23 @@ class TestRealName:
         assert resp.status_code == 400
         assert resp.json()["code"] == "REAL_NAME_MISMATCH"
 
+    async def test_provider_misconfigured_is_502_not_500(self, client: AsyncClient, sm):
+        """real_name_provider=aliyun 但凭据未配置:取 provider 即抛 RealNameError,
+        必须走设计好的 502 渠道故障(与 verify 失败同径),不能漏成 500。"""
+        from app.core.platform_config import PlatformSetting
+
+        async with sm() as session:
+            session.add(PlatformSetting(key="real_name_provider", value="aliyun"))
+            await session.commit()
+        headers, _ = await _headers(client, "13800000164")
+        resp = await client.post(
+            "/api/v1/me/real-name",
+            json={"name": "张三", "id_number": "110101199001011234"},
+            headers=headers,
+        )
+        assert resp.status_code == 502
+        assert resp.json()["code"] == "REAL_NAME_CHANNEL_ERROR"
+
     async def test_recharge_gate_when_required(self, client: AsyncClient):
         settings = get_settings()
         settings.real_name_required_for_recharge = True

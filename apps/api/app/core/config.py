@@ -1,3 +1,5 @@
+import os
+from collections.abc import Mapping
 from functools import lru_cache
 from typing import Literal
 
@@ -75,10 +77,26 @@ class Settings(BaseSettings):
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
     low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
+    # 开户前燃烧率校验:余额须覆盖「在途+新增」实例的这么多小时消耗(护栏,非预占)
+    afford_cover_hours: int = 1
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款
-    # running 实例的 Pod 持续 not-ready 多久判定节点失联 → 停止计费。
-    # 必须与 K8s unreachable taint 的 tolerationSeconds(默认 300)对齐。
-    running_unready_timeout_seconds: int = 300
+    # running 实例的 Pod 持续 not-ready 多久判定不可用 → 停止计费。
+    # 须宽于 K8s unreachable taint 的 tolerationSeconds(默认 300):容忍期过后驱逐
+    # (deletionTimestamp)通常先生效,本判定退居兜底;默认 600 给节点自愈留足窗口。
+    running_unready_timeout_seconds: int = 600
+    # stopping/releasing 悬挂超时:第一档经 outbox 重发删除,第二档 force 强删。
+    # 默认 10 分钟级 —— 宁宽勿严,优雅删除 + 节点抖动不应误走强删。
+    stopping_timeout_seconds: int = 600
+    releasing_timeout_seconds: int = 600
+    # 泄漏回收熔断:未知(DB 无记录)Pod 占比超过该值即中止本轮回收并告警
+    leak_reclaim_abort_ratio: float = 0.5
+    # 长期停机/失败实例的实例盘保留期(solvent 用户);到期转 releasing 回收。
+    # failed 实例盘默认 7 天;stopped 默认 30 天且提前 warned 天通知。数据盘不受影响。
+    failed_retention_days: int = 7
+    stopped_retention_days: int = 30
+    stopped_retention_warn_days: int = 7
+    # Jupyter 一次性入场票据有效期(access 端点签发的 bootstrap URL)
+    jupyter_ticket_ttl_seconds: int = 60
 
     # 镜像预热(可运营调整)
     prewarm_min_coverage_pct: int = 90  # is_prewarmed=true 所需的节点覆盖率下限
@@ -134,6 +152,8 @@ class Settings(BaseSettings):
 
     # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"
+    # 单次 PromQL 请求超时;代理查询可放大(批量端点 cap 20),超时必须显式可调
+    prometheus_timeout_seconds: float = 5.0
 
     # 支付(dev 用 mock 渠道;真实商户凭据经环境变量注入)
     payment_mock: bool = True
@@ -185,6 +205,21 @@ class Settings(BaseSettings):
             problems.append(
                 "prometheus_url 仍为本地默认(监控将静默失效,计费不受影响但对账/面板全空)"
             )
+        if self.bootstrap_admin_password is not None:
+            problems.append(
+                "bootstrap_admin_password 仅限 dev 一次性引导:请先用它在 dev 环境初始化首个管理员,"
+                "再从生产环境变量中删除该变量(prod 管理员经管理端账号页维护)"
+            )
+        if self.real_name_required_for_recharge and self.real_name_provider == "mock":
+            problems.append(
+                "real_name_required_for_recharge=true 时 real_name_provider 不得为 mock"
+                "(mock 恒过,等于实名形同虚设;请接阿里云实名,或先关闭充值强制实名)"
+            )
+        if not self.image_allowed_registries:
+            problems.append(
+                "image_allowed_registries 为空(空=不限制镜像来源,租户可拉任意仓库镜像);"
+                '请配置仓库前缀列表,如 ["registry.superdl.internal/"]'
+            )
         if not self.alertmanager_token:
             problems.append("alertmanager_token 未配置")
         if not self.metrics_token:
@@ -207,3 +242,18 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def unknown_superdl_env_keys(env: Mapping[str, str] | None = None) -> list[str]:
+    """扫描 SUPERDL_ 前缀环境变量,返回不命中任何 Settings 字段/别名的键。
+
+    幽灵键(拼写错误、改名残留)会被 pydantic 静默忽略,配置者以为生效其实没有;
+    启动时打 WARNING 即可,不 fail(兼容滚动发版期间新旧键并存)。
+    """
+    source = os.environ if env is None else env
+    known = {f"SUPERDL_{name.upper()}" for name in Settings.model_fields}
+    for f in Settings.model_fields.values():
+        if isinstance(f.validation_alias, AliasChoices):
+            known.update(str(choice).upper() for choice in f.validation_alias.choices)
+    # pydantic-settings 默认大小写不敏感,统一按大写比对
+    return sorted(k for k in source if k.startswith("SUPERDL_") and k.upper() not in known)

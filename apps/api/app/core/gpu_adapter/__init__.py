@@ -10,9 +10,8 @@ Kata 与 HAMi 永不混布同一节点池。
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.k8s.base import GPU_MODEL_NODE_LABEL
+from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL
 
-POOL_NODE_LABEL = "superdl.io/pool"
 # HAMi 型号白名单 annotation,值须为 HAMi 登记的原文串(nvidia-smi 名),canonical 不同构
 HAMI_USE_GPUTYPE_ANNOTATION = "nvidia.com/use-gputype"
 

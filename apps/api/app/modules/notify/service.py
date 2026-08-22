@@ -1,4 +1,4 @@
-"""通知服务:站内信 + 短信(mock 落日志)+ 告警接入。
+"""通知服务:站内信 + 短信(outbox 异步发送)+ 告警接入。
 
 同类型预警 24h 去重(dedup_key 唯一约束,幂等)。
 """
@@ -10,7 +10,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.errors import AppError
 from app.core.logging import get_logger
+from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.platform_config import get_effective_platform_config
 from app.core.sms import get_sms_channel
 from app.core.timeutil import now_utc
@@ -34,7 +36,11 @@ async def notify(
     dedup_key: str | None = None,
     sms: bool = False,
 ) -> bool:
-    """写站内信(可选发短信)。dedup_key 冲突 = 已通知过,返回 False。不 commit。"""
+    """写站内信(可选发短信)。dedup_key 冲突 = 已通知过,返回 False。不 commit。
+
+    短信不在本事务里发:同事务 enqueue 一条 notify.sms,由 outbox worker 异步投递
+    (渠道网络调用可能秒级,持锁/持连接期间调外部渠道会放大故障面)。
+    """
     result = (
         await session.execute(
             pg_insert(Notification)
@@ -53,21 +59,32 @@ async def notify(
     if result is None:
         return False
     if sms and user_id is not None:
-        await _send_sms_notice(session, user_id, title)
+        enqueue(session, SMS_TASK_TYPE, {"user_id": user_id, "title": title})
     return True
 
 
-async def _send_sms_notice(session: AsyncSession, user_id: int, title: str) -> None:
-    """通知短信:尽力而为,失败仅记日志(站内信已落库,不因渠道故障中断业务事务)。"""
+SMS_TASK_TYPE = "notify.sms"
+
+
+@outbox_handler(SMS_TASK_TYPE)
+async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
+    """通知短信发送(outbox 执行)。站内信已落库,短信尽力而为:失败退避重试,超预算进死信。
+
+    幂等说明:SMS 通道侧无法去重,at-least-once 下同一通知可能投递多条短信,接受。
+    """
     from app.modules.account.service import get_user
 
+    user_id = task.payload["user_id"]
     try:
         user = await get_user(session, user_id)
-        cfg = await get_effective_platform_config(session)
-        channel = await get_sms_channel(session)
-        await channel.send(user.phone, cfg["sms_template_notice"] or "", {"title": title})
-    except Exception as exc:
-        logger.warning("sms_notify_failed", user_id=user_id, error=str(exc))
+    except AppError:
+        logger.warning("sms_user_missing", user_id=user_id, task_id=task.id)
+        return  # 用户不存在:无重试价值,直接消化
+    cfg = await get_effective_platform_config(session)
+    channel = await get_sms_channel(session)
+    await channel.send(
+        user.phone, cfg["sms_template_notice"] or "", {"title": task.payload["title"]}
+    )
 
 
 async def send_low_balance_warning(
@@ -108,19 +125,33 @@ async def send_arrears_notice(
     # patrol 的事务里调用,由调用方 commit;此处不强制
 
 
+# 群发的单语句行数上限:PG 单条语句 65535 个绑定参数,按 4 列 × 1000 行留足余量
+_ANNOUNCEMENT_CHUNK = 1000
+
+
 async def publish_announcement(session: AsyncSession, *, title: str, content: str) -> int:
-    """公告群发:对全部 active 用户写 announcement 站内信。返回触达人数。"""
+    """公告群发:对全部 active 用户写 announcement 站内信。返回触达人数。
+
+    分块批量 INSERT(替代逐用户 INSERT...RETURNING 的 N+1):公告无 dedup_key、
+    允许重复发布,无需逐行冲突判定;单事务内仅 ⌈N/1000⌉ 条语句。
+    """
     from app.modules.account.service import list_active_user_ids
 
     user_ids = await list_active_user_ids(session)
-    for uid in user_ids:
-        await notify(
-            session,
-            uid,
-            type_="announcement",
-            title=title,
-            content=content,
-            severity="info",
+    for i in range(0, len(user_ids), _ANNOUNCEMENT_CHUNK):
+        await session.execute(
+            pg_insert(Notification).values(
+                [
+                    {
+                        "user_id": uid,
+                        "type": "announcement",
+                        "title": title,
+                        "content": content,
+                        "severity": "info",
+                    }
+                    for uid in user_ids[i : i + _ANNOUNCEMENT_CHUNK]
+                ]
+            )
         )
     await session.commit()
     logger.info("announcement_published", title=title, reached=len(user_ids))
@@ -128,17 +159,34 @@ async def publish_announcement(session: AsyncSession, *, title: str, content: st
 
 
 async def list_notifications(
-    session: AsyncSession, user_id: int, *, unread_only: bool = False, limit: int = 50
-) -> list[Notification]:
+    session: AsyncSession,
+    user_id: int,
+    *,
+    unread_only: bool = False,
+    cursor: str | None = None,
+    limit: int | None = None,
+):
+    """站内信列表:降序(最新在前)游标分页,与流水/账单同一套分页语义。"""
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.modules.notify.schemas import NotificationOut
+
+    lim = clamp_limit(limit)
     stmt = (
         select(Notification)
         .where(Notification.user_id == user_id)
         .order_by(Notification.id.desc())
-        .limit(limit)
+        .limit(lim + 1)
     )
     if unread_only:
         stmt = stmt.where(Notification.read_at.is_(None))
-    return list((await session.execute(stmt)).scalars())
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(Notification.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    return Page[NotificationOut](
+        items=[NotificationOut.model_validate(r) for r in rows[:lim]], next_cursor=next_cursor
+    )
 
 
 async def mark_read(session: AsyncSession, user_id: int, notification_id: int) -> None:

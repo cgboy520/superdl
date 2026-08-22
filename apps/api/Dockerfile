@@ -1,7 +1,9 @@
-FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim
+# tag: python3.13-trixie-slim(digest 钉死保证可复现;升版本时同步更新 tag 注释与 digest)
+FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim@sha256:d1e005e6f5aac724b7554db95f1c128a77d8d35b59ebe70e188852b4bdad3a3d
 
 WORKDIR /srv/api
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+# 只读根文件系统下运行期不产生 .pyc(构建期已 UV_COMPILE_BYTECODE 预编译)
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONDONTWRITEBYTECODE=1
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev

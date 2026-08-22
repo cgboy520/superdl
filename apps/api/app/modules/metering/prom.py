@@ -57,7 +57,10 @@ _client: httpx.AsyncClient | None = None
 def get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(base_url=get_settings().prometheus_url, timeout=5.0)
+        settings = get_settings()
+        _client = httpx.AsyncClient(
+            base_url=settings.prometheus_url, timeout=settings.prometheus_timeout_seconds
+        )
     return _client
 
 
@@ -67,8 +70,35 @@ def set_client(client: httpx.AsyncClient | None) -> None:
     _client = client
 
 
+async def close_client() -> None:
+    """lifespan 收尾调用:显式关闭全局客户端连接池,不放任 socket 泄漏。"""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
+
 class PrometheusUnavailable(Exception):
     pass
+
+
+def _extract_result(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """校验并取出 data.result;响应形态异常(缺键/类型错)统一归 PrometheusUnavailable,
+    不能让 KeyError 击穿成 500 —— 上游抖动对调用方必须是 503/降级语义。"""
+    if data.get("status") != "success":
+        raise PrometheusUnavailable(str(data))
+    try:
+        return list(data["data"]["result"])
+    except (KeyError, TypeError) as exc:
+        raise PrometheusUnavailable(f"malformed prometheus response: {exc}") from exc
+
+
+def _extract_points(series: dict[str, Any]) -> list[tuple[float, float]]:
+    """取单序列 [(unix_ts, value)];形态异常归 PrometheusUnavailable。"""
+    try:
+        return [(float(ts), float(v)) for ts, v in series["values"]]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PrometheusUnavailable(f"malformed prometheus series: {exc}") from exc
 
 
 async def query_range(
@@ -85,12 +115,10 @@ async def query_range(
         data: dict[str, Any] = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise PrometheusUnavailable(str(exc)) from exc
-    if data.get("status") != "success":
-        raise PrometheusUnavailable(str(data))
-    results = data["data"]["result"]
+    results = _extract_result(data)
     if not results:
         return []
-    return [(float(ts), float(v)) for ts, v in results[0]["values"]]
+    return _extract_points(results[0])
 
 
 async def query_range_raw(
@@ -106,9 +134,7 @@ async def query_range_raw(
         data: dict[str, Any] = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise PrometheusUnavailable(str(exc)) from exc
-    if data.get("status") != "success":
-        raise PrometheusUnavailable(str(data))
-    return list(data["data"]["result"])
+    return _extract_result(data)
 
 
 async def query_range_multi(
@@ -132,12 +158,13 @@ async def query_instant(promql: str) -> float | None:
         data: dict[str, Any] = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise PrometheusUnavailable(str(exc)) from exc
-    if data.get("status") != "success":
-        raise PrometheusUnavailable(str(data))
-    results = data["data"]["result"]
+    results = _extract_result(data)
     if not results:
         return None
-    return float(results[0]["value"][1])
+    try:
+        return float(results[0]["value"][1])
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise PrometheusUnavailable(f"malformed prometheus response: {exc}") from exc
 
 
 async def query_instance_metric(
@@ -148,5 +175,5 @@ async def query_instance_metric(
         promql = HAMI_QUERIES[metric].format(ns=ns, pod=pod)
         results = await query_range_raw(promql, start=start, end=end, step=step)
         if results:
-            return [(float(ts), float(v)) for ts, v in results[0]["values"]]
+            return _extract_points(results[0])
     return await query_range(metric, ns, pod, start=start, end=end, step=step)

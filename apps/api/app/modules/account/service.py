@@ -1,17 +1,20 @@
+import math
 import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.crypto import hash_sms_code
+from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
-from app.core.ratelimit import check_rate_limit
+from app.core.ratelimit import RateLimitCounter, check_rate_limit
 from app.core.security import (
     create_token,
     decode_token,
@@ -20,7 +23,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.sms import SmsError, get_sms_channel
-from app.core.timeutil import now_utc
+from app.core.timeutil import ensure_utc, now_utc
 from app.modules.account.models import SmsCode, SshKey, UsedRefreshToken, User
 from app.modules.account.schemas import TokenPair, UserOut
 from app.modules.account.sshkey_util import parse_public_key
@@ -35,31 +38,65 @@ _DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 # 单条验证码最多允许失败次数,达到即作废
 MAX_SMS_CODE_ATTEMPTS = 5
 
+# 同号发送退避的指数上限:连续第 N 条未消费验证码的间隔 = 基础间隔 × 2^min(N-1, 上限)
+# (默认 60s 基础间隔 → 60s/120s/240s,封顶 480s;轰炸者收不到码只会指数拉长自己的
+# 发送间隔,受害者正常消费验证码后连续计数即归零)
+SMS_SEND_BACKOFF_MAX_EXPONENT = 3
+
+# 验证码日配额(按「消费」计,见 _consume_sms_code):攻击者替受害者请求验证码
+# 耗不到该配额 —— 只有真正读到码并完成登录/注册/重置的一方才计数
+SMS_CONSUME_DAILY_MAX = 10
+
+# 同 jti 重放宽限窗:窗内视为并发重试(多标签页/客户端重试)按正常轮换处理,
+# 窗外才判泄露并撤销全部会话(Auth0 同款 reuse-leeway 思路)
+REFRESH_REPLAY_GRACE_SECONDS = 10.0
+
+
+async def _clear_login_failures(key: str) -> None:
+    """登录成功清零该桶的失败计数(独立事务,不随业务 session 回滚)。"""
+    async with get_sessionmaker()() as session:
+        await session.execute(delete(RateLimitCounter).where(RateLimitCounter.key == key))
+        await session.commit()
+
 
 async def send_sms_code(
     session: AsyncSession, phone: str, purpose: str, *, client_ip: str | None = None
 ) -> None:
     settings = get_settings()
-    # IP 维度限流 + 手机号维度限日发送量(60s 间隔由下方 DB 记录把关)
+    # 发送尝试只按 IP 限流。手机号日配额不在此计:请求路径无鉴权、phone 由请求方
+    # 指定,按发送计配额会让攻击者替受害者耗尽当日额度(代耗);配额移到消费侧计。
     await check_rate_limit(
         f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
     )
-    await check_rate_limit(f"sms-send-phone:{phone}", max_attempts=10, window_seconds=86400.0)
-    interval = timedelta(seconds=settings.sms_send_interval_seconds)
-    recent = (
-        await session.execute(
-            select(SmsCode)
-            .where(SmsCode.phone == phone, SmsCode.created_at > now_utc() - interval)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if recent is not None:
-        raise AppError(
-            ErrorCode.SMS_TOO_FREQUENT,
-            key="account.smsTooFrequent",
-            params={"seconds": settings.sms_send_interval_seconds},
-            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
+    # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长。
+    # 轰炸收不到码,间隔只会指数拉长;受害者消费一条后连续计数归零,体验不受影响。
+    recent = list(
+        (
+            await session.execute(
+                select(SmsCode)
+                .where(SmsCode.phone == phone, SmsCode.created_at > now_utc() - timedelta(hours=24))
+                .order_by(SmsCode.id.desc())
+                .limit(16)
+            )
+        ).scalars()
+    )
+    streak = 0
+    for row in recent:
+        if row.used_at is None:
+            streak += 1
+        else:
+            break
+    if streak:
+        base = settings.sms_send_interval_seconds
+        required = base * (2 ** min(streak - 1, SMS_SEND_BACKOFF_MAX_EXPONENT))
+        elapsed = (now_utc() - ensure_utc(recent[0].created_at)).total_seconds()
+        if elapsed < required:
+            raise AppError(
+                ErrorCode.SMS_TOO_FREQUENT,
+                key="account.smsTooFrequent",
+                params={"seconds": math.ceil(required - elapsed)},
+                http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
     cfg = await get_effective_platform_config(session)
     code = MOCK_SMS_CODE if cfg["sms_provider"] == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
@@ -110,8 +147,16 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     expected = hash_sms_code(phone, purpose, code)
     if row.attempts >= MAX_SMS_CODE_ATTEMPTS or not secrets.compare_digest(row.code_hash, expected):
         row.attempts += 1
+        if row.attempts >= MAX_SMS_CODE_ATTEMPTS:
+            # 达上限即作废:否则 used_at 恒空,这条已烧毁的码会被反复选中
+            row.used_at = now_utc()
         await session.commit()
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
+    # 手机号日配额按「消费」计:只有真正读到码的一方才占用额度;
+    # 放在成功分支、标 used_at 之前,失败尝试与超额请求都不消耗配额
+    await check_rate_limit(
+        f"sms-consume-phone:{phone}", max_attempts=SMS_CONSUME_DAILY_MAX, window_seconds=86400.0
+    )
     row.used_at = now_utc()
 
 
@@ -145,7 +190,12 @@ async def register(
         raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
     user = User(phone=phone, password_hash=await hash_password(password) if password else None)
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        # 并发同号注册(双击/重试):先 SELECT 后 INSERT 的竞态由唯一约束兜底
+        await session.rollback()
+        raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken") from exc
     await session.refresh(user)
     logger.info("user_registered", user_id=user.id)
     return _issue_tokens(user)
@@ -159,32 +209,40 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    # 全局闸:含手机号的键遍历号段即换桶,故再加一个只按 IP 切分的桶
-    await check_rate_limit(
-        f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
-    )
-    # 密码与验证码两条路径同限流
-    await check_rate_limit(
-        f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
-    )
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-    # 「未注册」与「已注册但凭证错」不可区分:文案统一 loginFailed,
-    # 时序也拉平(未注册路径照付 bcrypt 的 ~200ms)
-    if sms_code is not None:
-        try:
-            await _consume_sms_code(session, phone, sms_code, "login")
-        except AppError as exc:
-            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed") from exc
-        if user is None:
-            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
-        await session.commit()
-    elif password is not None:
-        stored = user.password_hash if (user is not None and user.password_hash) else _DUMMY_HASH
-        password_ok = await verify_password(password, stored)
-        if user is None or user.password_hash is None or not password_ok:
-            raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
-    else:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
+    try:
+        # 「未注册」与「已注册但凭证错」不可区分:文案统一 loginFailed,
+        # 时序也拉平(未注册路径照付 bcrypt 的 ~200ms);密码与验证码两条路径同限流
+        if sms_code is not None:
+            try:
+                await _consume_sms_code(session, phone, sms_code, "login")
+            except AppError as exc:
+                raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed") from exc
+            if user is None:
+                raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
+            await session.commit()
+        elif password is not None:
+            stored = (
+                user.password_hash if (user is not None and user.password_hash) else _DUMMY_HASH
+            )
+            password_ok = await verify_password(password, stored)
+            if user is None or user.password_hash is None or not password_ok:
+                raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
+        else:
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
+    except AppError as exc:
+        if exc.code == ErrorCode.LOGIN_FAILED:
+            # 只在失败后计数:成功登录不消耗配额(此前连成功也计数,连登 5 次即被 429)。
+            # 含手机号的键遍历号段即换桶,故再加一个只按 IP 切分的桶
+            await check_rate_limit(
+                f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
+            )
+            await check_rate_limit(
+                f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
+            )
+        raise
+    # 凭据正确即清零该账号桶的失败计数(IP 桶不清:撞库不会产生成功登录)
+    await _clear_login_failures(f"user-login:{client_ip or '-'}:{phone}")
     if user.status == "frozen":
         raise AppError(
             ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
@@ -209,7 +267,10 @@ async def reset_password(
         f"password-reset:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     await _consume_sms_code(session, phone, sms_code, "reset_password")
-    user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
+    # 行锁:token_version 读-改-写与 refresh 重放撤销/登出全部互斥,防并发丢更新
+    user = (
+        await session.execute(select(User).where(User.phone == phone).with_for_update())
+    ).scalar_one_or_none()
     if user is None:
         raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
     if user.status == "frozen":
@@ -225,9 +286,14 @@ async def reset_password(
 
 
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
-    """轮换式刷新:refresh 一次性消费(jti 落库),重放视为泄露 → 撤销全部在外 token。"""
+    """轮换式刷新:refresh 一次性消费(jti 落库),重放视为泄露 → 撤销全部在外 token。
+
+    宽限窗:同 jti 在 REFRESH_REPLAY_GRACE_SECONDS 内被重复消费视为并发重试
+    (多标签页/客户端网络重试),按正常轮换补发新对,不触发撤销。
+    """
     payload = decode_token(refresh_token, "user", expected_type="refresh")
-    user = await session.get(User, int(payload["sub"]))
+    # 行锁:token_version 读-改-写与改密/登出全部/并发刷新互斥,防并发丢更新
+    user = await session.get(User, int(payload["sub"]), with_for_update=True)
     if user is None or user.status == "frozen":
         raise unauthorized()
     if payload.get("ver", 0) != user.token_version:
@@ -246,6 +312,12 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
         )
     ).scalar_one_or_none()
     if inserted is None:
+        used = await session.get(UsedRefreshToken, jti)
+        if used is not None and used.used_at > now_utc() - timedelta(
+            seconds=REFRESH_REPLAY_GRACE_SECONDS
+        ):
+            # 宽限窗内的重放 = 并发重试:本事务未消费 jti,直接补发一对新 token
+            return _issue_tokens(user)
         user.token_version += 1
         await session.commit()
         logger.warning("refresh_token_replayed", user_id=user.id)
@@ -254,10 +326,46 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
     return _issue_tokens(user)
 
 
+async def logout(session: AsyncSession, refresh_token: str) -> None:
+    """登出当前会话:refresh token 落 used_refresh_tokens(与轮换同一条一次性消费位)。
+
+    token 无效/过期/已登出也静默成功(调用方恒回 204),不构成 token 有效性探测口。
+    已知竞态:登出与同 jti 的并发刷新撞在宽限窗内时,刷新方按并发重试放行;
+    登出本就不是即时全局失效(access token 尚有短 TTL),要即时全撤用 logout_all。
+    """
+    try:
+        payload = decode_token(refresh_token, "user", expected_type="refresh")
+    except AppError:
+        return
+    user_id = int(payload["sub"])
+    if await session.get(User, user_id) is None:
+        return
+    await session.execute(
+        pg_insert(UsedRefreshToken)
+        .values(
+            jti=str(payload.get("jti", "")),
+            user_id=user_id,
+            expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+        )
+        .on_conflict_do_nothing(index_elements=["jti"])
+    )
+    await session.commit()
+
+
+async def logout_all(session: AsyncSession, user_id: int) -> None:
+    """登出全部会话:token_version+1,已签发的 access/refresh 全部失效。"""
+    # 行锁:与改密/refresh 重放撤销的 token_version 读-改-写互斥(同 _get_admin 写法)
+    user = await session.get(User, user_id, with_for_update=True)
+    if user is None:
+        raise not_found()
+    user.token_version += 1
+    await session.commit()
+
+
 async def get_user(session: AsyncSession, user_id: int) -> User:
     user = await session.get(User, user_id)
     if user is None:
-        raise not_found("用户不存在")
+        raise not_found()
     return user
 
 
@@ -275,8 +383,9 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     if user.verification_status == "verified":
         raise AppError(ErrorCode.CONFLICT, key="account.realNameDone")
     await check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
-    provider = await get_realname_provider(session)
     try:
+        # 取 provider 也可能失败(凭据未配置):与渠道故障同属 502,不能漏成 500
+        provider = await get_realname_provider(session)
         ok = await provider.verify(name, id_number, user.phone)
     except RealNameError as exc:
         # 渠道故障 ≠ 核验不一致:502 上抛
@@ -320,14 +429,23 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
         normalized, fingerprint = parse_public_key(public_key)
     except ValueError as exc:
         raise AppError(ErrorCode.SSH_KEY_INVALID, str(exc)) from exc
+    # 查重按本用户口径:同一把钥匙不同租户各自可添加;同一用户重复添加才拒绝。
+    # 删除是硬删除,删过的指纹天然可重新添加,无需恢复语义。
     dup = (
-        await session.execute(select(SshKey).where(SshKey.fingerprint == fingerprint))
+        await session.execute(
+            select(SshKey).where(SshKey.user_id == user_id, SshKey.fingerprint == fingerprint)
+        )
     ).scalar_one_or_none()
     if dup is not None:
         raise AppError(ErrorCode.SSH_KEY_DUPLICATE, key="account.sshKeyDuplicate")
     key = SshKey(user_id=user_id, name=name, public_key=normalized, fingerprint=fingerprint)
     session.add(key)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        # 并发同用户同指纹:唯一约束 (user_id, fingerprint) 兜底,按重复处理而非 500
+        await session.rollback()
+        raise AppError(ErrorCode.SSH_KEY_DUPLICATE, key="account.sshKeyDuplicate") from exc
     await session.refresh(key)
     return key
 
@@ -335,7 +453,7 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
 async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> None:
     key = await session.get(SshKey, key_id)
     if key is None or key.user_id != user_id:
-        raise not_found("公钥不存在")
+        raise not_found()
     await session.delete(key)
     await session.commit()
 
@@ -392,7 +510,12 @@ async def admin_list_users(
         stmt = stmt.where(User.status == status)
     q = (q or "").strip()
     if q:
-        stmt = stmt.where(User.phone == q if len(q) >= 11 else User.phone.like(f"%{q}"))
+        if len(q) >= 11:
+            stmt = stmt.where(User.phone == q)
+        else:
+            # LIKE 元字符转义:q="%" / "_" 不匹配任意字符(否则一个 % 即拖全表)
+            escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            stmt = stmt.where(User.phone.like(f"%{escaped}", escape="\\"))
     return list((await session.execute(stmt)).scalars())
 
 

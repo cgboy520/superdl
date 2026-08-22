@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Numeric, String, func
+from sqlalchemy import Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -26,6 +26,8 @@ class AdminAdjustment(Base):
     """调账单:发起 → 第二管理员复核 → 生效。全程留痕。"""
 
     __tablename__ = "admin_adjustments"
+    # 幂等键:响应丢失后重试不会开出第二张调账单(与充值订单同款的 (发起人, 键) 口径)
+    __table_args__ = (UniqueConstraint("created_by", "idempotency_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(index=True)
@@ -36,5 +38,6 @@ class AdminAdjustment(Base):
     created_by: Mapped[int]  # admin_users.id
     reviewed_by: Mapped[int | None]
     review_comment: Mapped[str | None] = mapped_column(String(256))
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]

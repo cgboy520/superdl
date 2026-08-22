@@ -26,10 +26,32 @@ FUND_RECONCILE_MISMATCH_TOTAL = Counter(
     "资金账实核对发现的差异数(wallet_ledger:余额≠流水累计;bill_consume:出账≠消费流水)",
     ["kind"],
 )
+SETTLEMENT_GAP_TOTAL = Counter(
+    "superdl_settlement_gap_total",
+    "结算缺口登记次数(catchup_truncated/dead_letter;单调不降,告警按 increase 判)",
+    ["kind", "reason"],
+)
+PATROL_FAILED_TOTAL = Counter(
+    "superdl_patrol_failed_total", "余额巡检各环节异常次数(按阶段区分)", ["stage"]
+)
+PAYMENT_RECOVER_FAILED_TOTAL = Counter(
+    "superdl_payment_recover_failed_total",
+    "查单收敛单笔入账失败次数(金额/渠道不符、唯一约束等;不中断整轮)",
+    ["error"],
+)
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
 INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",
     "因节点失联(Pod 持续 not-ready)被判定停止的实例数",
+)
+RECONCILE_STUCK_INSTANCES = Gauge(
+    "superdl_reconcile_stuck_instances",
+    "悬挂实例数(进入 stopping/releasing 超过第一档超时仍未收敛)",
+    ["status"],
+)
+RECONCILE_LEAK_ABORTED_TOTAL = Counter(
+    "superdl_reconcile_leak_aborted_total",
+    "泄漏回收因未知 Pod 占比超阈被熔断中止的轮数(单调不降,告警按 increase 判)",
 )
 PREWARM_NODES = Gauge(
     "superdl_prewarm_nodes",
@@ -53,6 +75,11 @@ PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",
+)
+SCHEDULED_TICK_DURATION = Histogram(
+    "superdl_scheduled_tick_duration_seconds",
+    "定时任务单轮耗时(秒);单轮超过周期 80% 时 worker 另打 warning 日志",
+    ["job"],
 )
 HTTP_REQUEST_DURATION = Histogram(
     "superdl_http_request_duration_seconds",

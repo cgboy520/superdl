@@ -1,14 +1,16 @@
 """生产 K8s 编排(kubernetes 官方客户端 36.x,已对齐 K8s 1.36)。
 
-官方客户端为同步实现,全部调用经 asyncio.to_thread 出让事件循环。
+官方客户端为同步实现,全部调用经专属有界执行器出让事件循环(见 _run)。
 
 对象命名:pod/svc/ingress 同名 = instance uuid;统一打标 superdl.io/instance。
 """
 
-# pragma: no cover - 本文件需真实集群,单测不覆盖
+# 本文件需真实集群,单测不覆盖(pyproject [tool.coverage.run] omit 整文件;
+# 独立成行的文件级 pragma 对 coverage.py 无效,不再使用)
 
 import asyncio
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 from kubernetes import client, config
@@ -19,6 +21,7 @@ from app.core.k8s.base import (
     INSTANCE_DISK_STORAGE_CLASS,
     JUICEFS_PVC_NAME,
     JUICEFS_STORAGE_CLASS,
+    POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
     NodeInfo,
@@ -32,10 +35,19 @@ from app.core.k8s.base import (
 
 INSTANCE_LABEL = "superdl.io/instance"
 MANAGED_LABEL = "superdl.io/managed"
-POOL_NODE_LABEL = "superdl.io/pool"
 PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
 INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPolicy 放行来源)
 PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
+
+# 租户 ns 的 Pod Security Admission 标签:enforce 只敢到 baseline ——
+# 平台镜像以 root 运行(sshd + Jupyter,实例盘挂 /root),restricted 要求的
+# runAsNonRoot 会拒绝全部租户 Pod;逃逸面由 kata VM / userns(hostUsers=false)承担。
+# audit/warn 打 restricted:把与 restricted 的差距留在审计日志里,不挡调度。
+TENANT_NS_PSA_LABELS = {
+    "pod-security.kubernetes.io/enforce": "baseline",
+    "pod-security.kubernetes.io/audit": "restricted",
+    "pod-security.kubernetes.io/warn": "restricted",
+}
 
 
 def tenant_security_context() -> "client.V1SecurityContext":
@@ -43,6 +55,8 @@ def tenant_security_context() -> "client.V1SecurityContext":
 
     capabilities / allowPrivilegeEscalation / seccompProfile 是标准 OCI 字段,
     kata-qemu 在 guest 内照常施加;userns 只挡逃逸后在宿主的权限,不替代这一层。
+    不下发 runAsNonRoot:平台镜像以 root 运行(ssh root@ + 实例盘挂 /root),
+    强开会杀死全部租户 Pod;root 的宿主侧风险由 userns 映射与 kata VM 边界兜住。
     """
     return client.V1SecurityContext(
         allow_privilege_escalation=False,
@@ -59,10 +73,54 @@ def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
 
 
-# 租户命名空间兜底配额(每用户配额主闸在 create_instance)
-TENANT_QUOTA = {"pods": "64", "services": "64", "persistentvolumeclaims": "128"}
-# 租户容器禁访的内网/元数据网段(Egress 白名单公网,黑名单私网)
-PRIVATE_CIDRS = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
+# 租户命名空间兜底配额:主闸是每用户配额(max 10 实例 / 8 GPU),资源总量留数倍
+# 余量,只在应用侧配额失效时挡住失控创建,不得误伤正常租户。
+# 含 cpu/memory/ephemeral 的 Quota 会强制该 ns 所有 Pod 声明对应 request/limit
+# (实例 Pod 与擦盘 Job 均已显式声明)。
+TENANT_QUOTA = {
+    "pods": "64",
+    "services": "64",
+    "persistentvolumeclaims": "128",
+    "requests.cpu": "256",
+    "requests.memory": "1Ti",
+    "requests.ephemeral-storage": "500Gi",
+    "limits.cpu": "256",
+    "limits.memory": "1Ti",
+    "limits.ephemeral-storage": "500Gi",
+}
+# 租户容器禁访的内网/元数据网段(Egress 白名单公网,黑名单私网)。
+# 100.64.0.0/10 = CGNAT(云厂商内网 VIP 常用此段,封禁属有意);198.18.0.0/15 = 基准测试段;
+# 云 metadata(169.254.169.254)含在 169.254.0.0/16 内。IPv6 不入表:集群未开双栈时
+# 默认拒已覆盖,开双栈需在部署侧另行评审放行策略。
+PRIVATE_CIDRS = [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "100.64.0.0/10",
+    "198.18.0.0/15",
+]
+# Egress 明确滥用途 TCP 端口黑名单:SMTP 发信(25/465/587)、SMB/NetBIOS(135/139/445)、
+# Telnet(23)、RDP(3389)。只封明确滥用途;HTTPS/SSH 出/包管理/对象存储等照常放行。
+EGRESS_BLOCKED_TCP_PORTS = (23, 25, 135, 139, 445, 465, 587, 3389)
+
+# 租户容器 ephemeral-storage:镜像只读层不计入容器口径,此限额只管可写层+日志+
+# emptyDir。request 取小值(调度占位),limit 取镜像常规可写用量数倍的值 ——
+# 超限会驱逐 Pod,必须足够宽松;防的是写爆节点盘连坐整节点的滥用。
+TENANT_EPHEMERAL_REQUEST = "2Gi"
+TENANT_EPHEMERAL_LIMIT = "64Gi"
+
+
+def _allowed_tcp_port_ranges() -> list["client.V1NetworkPolicyPort"]:
+    """1-65535 扣除黑名单端口后的允许区间(endPort 需 K8s 1.21+,Cilium 支持)。"""
+    ports: list[client.V1NetworkPolicyPort] = []
+    lo = 1
+    for blocked in sorted(EGRESS_BLOCKED_TCP_PORTS):
+        if lo < blocked:
+            ports.append(client.V1NetworkPolicyPort(protocol="TCP", port=lo, end_port=blocked - 1))
+        lo = blocked + 1
+    ports.append(client.V1NetworkPolicyPort(protocol="TCP", port=lo, end_port=65535))
+    return ports
 
 
 class _TimeoutApi:
@@ -98,37 +156,49 @@ class RealOrchestrator:
             self.settings.k8s_connect_timeout_seconds,
             self.settings.k8s_read_timeout_seconds,
         )
+        self._timeout = timeout  # 供探测等裸客户端包装(见 _probe_cluster_sync)
         # cast 保留静态签名检查,运行时是注超时的代理(见 _TimeoutApi)
         self.core = cast(client.CoreV1Api, _TimeoutApi(client.CoreV1Api(), timeout))
         self.net = cast(client.NetworkingV1Api, _TimeoutApi(client.NetworkingV1Api(), timeout))
         self.batch = cast(client.BatchV1Api, _TimeoutApi(client.BatchV1Api(), timeout))
+        # K8s 同步调用出让到专属有界执行器:与 bcrypt 等共用的默认执行器隔离,
+        # 防集群抖动时慢调用占满默认线程池、卡死登录等无关链路
+        self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="k8s")
+
+    async def _run(self, fn: Any, *args: Any) -> Any:
+        """asyncio.to_thread 的等价物,换专属执行器(run_in_executor 不支持 kwargs)。"""
+        return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
 
     # ---------- namespace ----------
 
     async def ensure_namespace(self, namespace: str) -> None:
-        await asyncio.to_thread(self._ensure_namespace_sync, namespace)
+        await self._run(self._ensure_namespace_sync, namespace)
 
     def _ensure_namespace_sync(self, namespace: str) -> None:
+        labels = {MANAGED_LABEL: "true", **TENANT_NS_PSA_LABELS}
         try:
             self.core.create_namespace(
-                client.V1Namespace(
-                    metadata=client.V1ObjectMeta(name=namespace, labels={MANAGED_LABEL: "true"})
-                )
+                client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels))
             )
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
+            # 既有 ns 也要补标:create 只发生一次,标签演进靠 patch 收敛存量租户
+            self.core.patch_namespace(namespace, {"metadata": {"labels": labels}})
         self._ensure_default_netpol_sync(namespace)
         self._ensure_quota_sync(namespace)
         self._ensure_juicefs_pvc_sync(namespace)
 
-    def _ensure_default_netpol_sync(self, namespace: str) -> None:
-        """入方向:默认拒东西向,仅放行 Ingress Controller 到 Jupyter 端口(北向入口);
-        出方向放行公网 + DNS,禁访节点/Service/Pod 网段与云元数据(169.254.0.0/16)。
+    def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
+        """入方向:默认拒东西向,放行 Ingress Controller 到 Jupyter(8888)与 SSH(22);
+        出方向放行公网(除私网/元数据网段 + 明确滥用途端口黑名单)+ DNS。
 
-        SSH 走 NodePort(kube-proxy DNAT,不过 NetworkPolicy),无需放行。
+        SSH 走 NodePort:DNAT 后是否过 NetworkPolicy 取决于 CNI(Cilium 会过,
+        kube-proxy iptables 通常不过),显式放行 22 消除对「NodePort 不过策略」的
+        隐式依赖;from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。
+        sshd 仅密钥登录,Jupyter(8888)仍只放行 Ingress 来源。
         """
-        policy = client.V1NetworkPolicy(
+        return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
             spec=client.V1NetworkPolicySpec(
                 pod_selector=client.V1LabelSelector(),
@@ -144,16 +214,26 @@ class RealOrchestrator:
                             )
                         ],
                         ports=[client.V1NetworkPolicyPort(protocol="TCP", port=8888)],
-                    )
+                    ),
+                    # SSH NodePort 入流量(见 docstring)
+                    client.V1NetworkPolicyIngressRule(
+                        _from=[
+                            client.V1NetworkPolicyPeer(ip_block=client.V1IPBlock(cidr="0.0.0.0/0"))
+                        ],
+                        ports=[client.V1NetworkPolicyPort(protocol="TCP", port=22)],
+                    ),
                 ],
                 egress=[
-                    # DNS(kube-system CoreDNS)
+                    # DNS:收敛到 CoreDNS Pod(不再放行整个 kube-system 命名空间)
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
                                 namespace_selector=client.V1LabelSelector(
                                     match_labels={"kubernetes.io/metadata.name": "kube-system"}
-                                )
+                                ),
+                                pod_selector=client.V1LabelSelector(
+                                    match_labels={"k8s-app": "kube-dns"}
+                                ),
                             )
                         ],
                         ports=[
@@ -161,22 +241,37 @@ class RealOrchestrator:
                             client.V1NetworkPolicyPort(protocol="TCP", port=53),
                         ],
                     ),
-                    # 公网:0.0.0.0/0 除私网与元数据段
+                    # 公网 TCP:除私网/元数据网段;端口扣除明确滥用途黑名单
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
                                 ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=PRIVATE_CIDRS)
                             )
-                        ]
+                        ],
+                        ports=_allowed_tcp_port_ranges(),
+                    ),
+                    # 公网 UDP 不限端口(黑名单语义均为 TCP 服务;DoH/QUIC 属正常用途)
+                    client.V1NetworkPolicyEgressRule(
+                        to=[
+                            client.V1NetworkPolicyPeer(
+                                ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=PRIVATE_CIDRS)
+                            )
+                        ],
+                        ports=[client.V1NetworkPolicyPort(protocol="UDP")],
                     ),
                 ],
             ),
         )
+
+    def _ensure_default_netpol_sync(self, namespace: str) -> None:
+        policy = self._tenant_netpol(namespace)
         try:
             self.net.create_namespaced_network_policy(namespace, policy)
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
+            # 已存在则 patch 收敛:策略加固必须覆盖存量租户 ns
+            self.net.patch_namespaced_network_policy("tenant-default", namespace, policy)
 
     def _ensure_quota_sync(self, namespace: str) -> None:
         quota = client.V1ResourceQuota(
@@ -188,6 +283,8 @@ class RealOrchestrator:
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
+            # 已存在则 patch 收敛(硬限演进要覆盖存量 ns)
+            self.core.patch_namespaced_resource_quota("tenant-quota", namespace, quota)
 
     def _ensure_juicefs_pvc_sync(self, namespace: str) -> None:
         """每租户 namespace 一只共享 JuiceFS PVC(数据盘 subPath 挂载的底座)。
@@ -211,7 +308,7 @@ class RealOrchestrator:
     # ---------- instance ----------
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        await asyncio.to_thread(self._create_instance_sync, spec)
+        await self._run(self._create_instance_sync, spec)
 
     def _create_instance_sync(self, spec: InstancePodSpec) -> None:
         self._ensure_instance_disk_sync(spec)
@@ -243,7 +340,13 @@ class RealOrchestrator:
                 raise
 
     def _create_pod_sync(self, spec: InstancePodSpec) -> None:
-        resources = {"cpu": str(spec.vcpu), "memory": f"{spec.mem_gb}Gi", **spec.gpu_resources}
+        requests = {
+            "cpu": str(spec.vcpu),
+            "memory": f"{spec.mem_gb}Gi",
+            "ephemeral-storage": TENANT_EPHEMERAL_REQUEST,
+            **spec.gpu_resources,
+        }
+        limits = {**requests, "ephemeral-storage": TENANT_EPHEMERAL_LIMIT}
         env = [client.V1EnvVar(name=k, value=v) for k, v in spec.env.items()]
         env.append(client.V1EnvVar(name="AUTHORIZED_KEYS", value="\n".join(spec.authorized_keys)))
         volumes: list[client.V1Volume] = [
@@ -290,9 +393,7 @@ class RealOrchestrator:
                     client.V1Container(
                         name="workspace",
                         image=spec.image,
-                        resources=client.V1ResourceRequirements(
-                            limits=resources, requests=resources
-                        ),
+                        resources=client.V1ResourceRequirements(limits=limits, requests=requests),
                         env=env,
                         ports=[
                             client.V1ContainerPort(container_port=22, name="ssh"),
@@ -360,11 +461,49 @@ class RealOrchestrator:
                 raise NodePortTaken(spec.ssh_node_port) from exc
             if not _is_conflict(exc):
                 raise
+            self._reconcile_ssh_service_conflict_sync(spec, exc)
         try:
             self.core.create_namespaced_service(spec.namespace, jupyter_svc)
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
+
+    def _reconcile_ssh_service_conflict_sync(
+        self, spec: InstancePodSpec, create_exc: "client.ApiException"
+    ) -> None:
+        """SSH Service 409 的核对:同名对象存在 ≠ 幂等成功,nodePort 必须与期望一致
+        (写法对照 _create_pod_sync 的 deletion_timestamp 核对)。漂移则 patch 回期望端口。"""
+        existing: Any = self.core.read_namespaced_service(spec.name, spec.namespace)
+        if existing.metadata.deletion_timestamp is not None:
+            raise RuntimeError(
+                f"service {spec.name} is terminating; create must wait for it to disappear"
+            ) from create_exc
+        ports = (existing.spec and existing.spec.ports) or []
+        current = ports[0].node_port if ports else None
+        if current == spec.ssh_node_port:
+            return  # 幂等成功:此前创建的就是期望端口
+        try:
+            self.core.patch_namespaced_service(
+                spec.name,
+                spec.namespace,
+                {
+                    "spec": {
+                        "ports": [
+                            {
+                                "name": "ssh",
+                                "port": 22,
+                                "targetPort": 22,
+                                "nodePort": spec.ssh_node_port,
+                            }
+                        ]
+                    }
+                },
+            )
+        except client.ApiException as patch_exc:
+            # 期望端口已被集群其它对象占用:同样归一化成交编排层换端口
+            if patch_exc.status == 422 and "already allocated" in str(patch_exc.body or ""):
+                raise NodePortTaken(spec.ssh_node_port) from patch_exc
+            raise
 
     def _create_ingress_sync(self, spec: InstancePodSpec) -> None:
         ingress = client.V1Ingress(
@@ -407,7 +546,7 @@ class RealOrchestrator:
                 raise
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        await asyncio.to_thread(self._delete_instance_sync, namespace, name, force)
+        await self._run(self._delete_instance_sync, namespace, name, force)
 
     def _delete_instance_sync(self, namespace: str, name: str, force: bool = False) -> None:
         # 节点失联时 kubelet 确认不了删除,Pod 无限期 Terminating;强删(grace 0)直接摘对象
@@ -425,7 +564,7 @@ class RealOrchestrator:
                     raise
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        await asyncio.to_thread(self._delete_instance_disk_sync, namespace, name)
+        await self._run(self._delete_instance_disk_sync, namespace, name)
 
     def _delete_instance_disk_sync(self, namespace: str, name: str) -> None:
         try:
@@ -437,7 +576,7 @@ class RealOrchestrator:
                 raise
 
     async def get_status(self, namespace: str, name: str) -> PodStatus:
-        return await asyncio.to_thread(self._get_status_sync, namespace, name)
+        return await self._run(self._get_status_sync, namespace, name)
 
     def _get_status_sync(self, namespace: str, name: str) -> PodStatus:
         try:
@@ -457,21 +596,21 @@ class RealOrchestrator:
         )
 
     async def list_instance_pods(self) -> list[tuple[str, str]]:
-        return await asyncio.to_thread(self._list_instance_pods_sync)
+        return await self._run(self._list_instance_pods_sync)
 
     def _list_instance_pods_sync(self) -> list[tuple[str, str]]:
-        pods: Any = self.core.list_pod_for_all_namespaces(label_selector=MANAGED_LABEL)
+        pods = self._list_all(self.core.list_pod_for_all_namespaces, label_selector=MANAGED_LABEL)
         prefix = self.settings.k8s_namespace_prefix
         return [
             (p.metadata.namespace, p.metadata.name)
-            for p in pods.items
+            for p in pods
             if p.metadata.namespace.startswith(prefix)
         ]
 
     # ---------- 数据盘擦除 ----------
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        await asyncio.to_thread(self._wipe_disk_sync, namespace, subpath)
+        await self._run(self._wipe_disk_sync, namespace, subpath)
 
     def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
         """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录。幂等:
@@ -516,6 +655,20 @@ class RealOrchestrator:
                                 volume_mounts=[
                                     client.V1VolumeMount(name="juicefs", mount_path="/data")
                                 ],
+                                # 租户 ns 的 ResourceQuota 含 cpu/memory/ephemeral 硬限,
+                                # 不声明 request/limit 的 Pod 会被配额准入直接拒绝
+                                resources=client.V1ResourceRequirements(
+                                    requests={
+                                        "cpu": "10m",
+                                        "memory": "16Mi",
+                                        "ephemeral-storage": "16Mi",
+                                    },
+                                    limits={
+                                        "cpu": "100m",
+                                        "memory": "64Mi",
+                                        "ephemeral-storage": "64Mi",
+                                    },
+                                ),
                                 security_context=client.V1SecurityContext(
                                     allow_privilege_escalation=False,
                                     capabilities=client.V1Capabilities(drop=["ALL"]),
@@ -556,23 +709,50 @@ class RealOrchestrator:
         return total
 
     async def available_gpus(self, pool_label: str) -> int:
-        return await asyncio.to_thread(self._available_gpus_sync, pool_label)
+        return await self._run(self._available_gpus_sync, pool_label)
 
     def _available_gpus_sync(self, pool_label: str) -> int:
-        nodes: Any = self.core.list_node(label_selector=f"{POOL_NODE_LABEL}={pool_label}")
-        total = sum(self._gpu_amount(n.status.allocatable) for n in nodes.items)
+        nodes = self._list_all(
+            self.core.list_node, label_selector=f"{POOL_NODE_LABEL}={pool_label}"
+        )
+        total = sum(self._gpu_amount(n.status.allocatable) for n in nodes)
         used = self._used_gpus_by_pool().get(pool_label, 0)
         return max(0, total - used)
 
+    @staticmethod
+    def _list_all(list_fn: Any, **kwargs: Any) -> list[Any]:
+        """分页拉满全量:官方客户端默认不翻页,对象超过单页上限会被静默截断。"""
+        items: list[Any] = []
+        kwargs["limit"] = 500
+        cont: str | None = None
+        while True:
+            if cont:
+                kwargs["_continue"] = cont
+            page: Any = list_fn(**kwargs)
+            items.extend(page.items)
+            cont = getattr(page.metadata, "_continue", None)
+            if not cont:
+                return items
+
     def _used_gpus_by_pool(self) -> dict[str, int]:
-        """全部受管 Pod 一次拉取,按池聚合已用份额(整卡 + MIG + HAMi 虚拟份额)。"""
-        pods: Any = self.core.list_pod_for_all_namespaces(
-            label_selector=MANAGED_LABEL, field_selector="status.phase!=Failed"
+        """全部受管 Pod 一次拉取,按池聚合已用份额(整卡 + MIG + HAMi 虚拟份额)。
+
+        无 nodeSelector 的 Pod(存量实例/异常路径)不能跳过:按 spec.nodeName
+        所在节点的池标签保守归账,否则已用量被低估、库存虚高超卖。
+        """
+        pods = self._list_all(
+            self.core.list_pod_for_all_namespaces,
+            label_selector=MANAGED_LABEL,
+            field_selector="status.phase!=Failed",
         )
+        nodes = self._list_all(self.core.list_node)
+        node_pool = {n.metadata.name: (n.metadata.labels or {}).get(POOL_NODE_LABEL) for n in nodes}
         used: dict[str, int] = {}
-        for pod in pods.items:
+        for pod in pods:
             pool = (pod.spec.node_selector or {}).get(POOL_NODE_LABEL)
             if pool is None:
+                pool = node_pool.get(pod.spec.node_name or "")
+            if pool is None:  # 未调度且无 selector:无法归池,只能跳过
                 continue
             for c in pod.spec.containers:
                 limits = (c.resources and c.resources.limits) or {}
@@ -580,11 +760,13 @@ class RealOrchestrator:
         return used
 
     def _used_gpus_by_node(self) -> dict[str, int]:
-        pods: Any = self.core.list_pod_for_all_namespaces(
-            label_selector=MANAGED_LABEL, field_selector="status.phase!=Failed"
+        pods = self._list_all(
+            self.core.list_pod_for_all_namespaces,
+            label_selector=MANAGED_LABEL,
+            field_selector="status.phase!=Failed",
         )
         used: dict[str, int] = {}
-        for pod in pods.items:
+        for pod in pods:
             node = pod.spec.node_name
             if not node:
                 continue
@@ -594,10 +776,10 @@ class RealOrchestrator:
         return used
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
-        return await asyncio.to_thread(self._list_nodes_sync, include_unlabeled)
+        return await self._run(self._list_nodes_sync, include_unlabeled)
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str]) -> None:
-        await asyncio.to_thread(self.core.patch_node, node_name, {"metadata": {"labels": labels}})
+        await self._run(self.core.patch_node, node_name, {"metadata": {"labels": labels}})
 
     @staticmethod
     def _qty_to_bytes(q: str | None) -> int:
@@ -616,10 +798,11 @@ class RealOrchestrator:
             "T": 1000**4,
             "P": 1000**5,
         }
-        for suf, mult in units.items():
+        # 必须长后缀优先("Ki" 先于 "K"):显式按键长降序,不依赖 dict 插入顺序
+        for suf in sorted(units, key=len, reverse=True):
             if q.endswith(suf):
                 try:
-                    return int(float(q[: -len(suf)]) * mult)
+                    return int(float(q[: -len(suf)]) * units[suf])
                 except ValueError:
                     return 0
         try:
@@ -639,10 +822,10 @@ class RealOrchestrator:
 
     def _list_nodes_sync(self, include_unlabeled: bool = False) -> list[NodeInfo]:
         selector = None if include_unlabeled else POOL_NODE_LABEL
-        nodes: Any = self.core.list_node(label_selector=selector)
+        nodes = self._list_all(self.core.list_node, label_selector=selector)
         used_by_node = self._used_gpus_by_node()  # 一次拉取全量,避免逐节点扫 Pod
         out: list[NodeInfo] = []
-        for node in nodes.items:
+        for node in nodes:
             labels = node.metadata.labels or {}
             conditions = node.status.conditions or []
             ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
@@ -667,17 +850,18 @@ class RealOrchestrator:
         return out
 
     async def probe_cluster(self) -> ClusterProbe:
-        return await asyncio.to_thread(self._probe_cluster_sync)
+        return await self._run(self._probe_cluster_sync)
 
     def _probe_cluster_sync(self) -> ClusterProbe:
+        # 裸客户端同样经 _TimeoutApi 注超时:探测挂在慢集群上会把巡检整轮拖死。
         # 版本失败 = API 不可达,整体判不可用;组件清点逐项容错(RBAC 缺项不清零全局)
         try:
-            version: Any = client.VersionApi().get_code()
+            version: Any = _TimeoutApi(client.VersionApi(), self._timeout).get_code()
             git_version = getattr(version, "git_version", None)
         except Exception as exc:
             return ClusterProbe(api_reachable=False, error=str(exc))
         errors: list[str] = []
-        apps = client.AppsV1Api()
+        apps = _TimeoutApi(client.AppsV1Api(), self._timeout)
         hami_ready = dcgm = kps = gpu_operator = False
         try:
             deployments: Any = apps.list_deployment_for_all_namespaces()
@@ -702,13 +886,13 @@ class RealOrchestrator:
             errors.append(f"apps: {exc.status}")
         runtime_classes: tuple[str, ...] = ()
         try:
-            rcs: Any = client.NodeV1Api().list_runtime_class()
+            rcs: Any = _TimeoutApi(client.NodeV1Api(), self._timeout).list_runtime_class()
             runtime_classes = tuple(rc.metadata.name for rc in rcs.items)
         except client.ApiException as exc:
             errors.append(f"runtimeclasses: {exc.status}")
         storage_classes: tuple[str, ...] = ()
         try:
-            scs: Any = client.StorageV1Api().list_storage_class()
+            scs: Any = _TimeoutApi(client.StorageV1Api(), self._timeout).list_storage_class()
             storage_classes = tuple(sc.metadata.name for sc in scs.items)
         except client.ApiException as exc:
             errors.append(f"storageclasses: {exc.status}")
@@ -735,7 +919,7 @@ class RealOrchestrator:
         )
 
     async def set_node_unschedulable(self, node_name: str, unschedulable: bool) -> None:
-        await asyncio.to_thread(self._set_node_unschedulable_sync, node_name, unschedulable)
+        await self._run(self._set_node_unschedulable_sync, node_name, unschedulable)
 
     def _set_node_unschedulable_sync(self, node_name: str, unschedulable: bool) -> None:
         # RBAC:需 ClusterRole nodes patch(deploy/app/k8s/01-rbac.yaml)
@@ -751,7 +935,7 @@ class RealOrchestrator:
         return f"prewarm-{ref_hash}-{node_hash}"
 
     async def prewarm_image(self, node_name: str, image_ref: str) -> None:
-        await asyncio.to_thread(self._prewarm_image_sync, node_name, image_ref)
+        await self._run(self._prewarm_image_sync, node_name, image_ref)
 
     def _prewarm_image_sync(self, node_name: str, image_ref: str) -> None:
         """nodeName 定点起拉取 Job,创建后即返回(不等待,大镜像拉取可达数十分钟,
@@ -811,7 +995,7 @@ class RealOrchestrator:
                 raise
 
     async def get_prewarm_status(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
-        return await asyncio.to_thread(self._get_prewarm_status_sync, node_name, image_ref)
+        return await self._run(self._get_prewarm_status_sync, node_name, image_ref)
 
     def _get_prewarm_status_sync(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
         job_name = self._prewarm_job_name(node_name, image_ref)
@@ -846,7 +1030,7 @@ class RealOrchestrator:
         return "job failed (BackoffLimitExceeded/DeadlineExceeded)"
 
     async def delete_prewarm_job(self, node_name: str, image_ref: str) -> None:
-        await asyncio.to_thread(self._delete_prewarm_job_sync, node_name, image_ref)
+        await self._run(self._delete_prewarm_job_sync, node_name, image_ref)
 
     def _delete_prewarm_job_sync(self, node_name: str, image_ref: str) -> None:
         job_name = self._prewarm_job_name(node_name, image_ref)

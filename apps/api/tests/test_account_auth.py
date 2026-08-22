@@ -46,6 +46,36 @@ class TestRegister:
         assert resp.status_code == 200
         assert resp.json()["phone"] == PHONE
 
+    async def test_password_byte_boundary(self, client: AsyncClient):
+        """bcrypt 上限 72 字节:多字节口令按字符数会绕过 max_length,必须按字节拦成 422。
+
+        72 字节(24 个汉字)可注册;73 字节(25 个汉字)在 schema 层拒掉,不得到哈希层炸 500。
+        """
+        await send_code(client, "13800000071", "register")
+        ok = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "phone": "13800000071",
+                "sms_code": "123456",
+                "password": "汉" * 24,  # 72 字节
+                "accept_terms": True,
+            },
+        )
+        assert ok.status_code == 201, ok.text
+
+        await send_code(client, "13800000072", "register")
+        too_long = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "phone": "13800000072",
+                "sms_code": "123456",
+                "password": "汉" * 25,  # 75 字节
+                "accept_terms": True,
+            },
+        )
+        assert too_long.status_code == 422
+        assert too_long.json()["code"] == "VALIDATION_ERROR"
+
     async def test_duplicate_phone(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
@@ -101,6 +131,7 @@ class TestLogin:
         """未注册的号 与 已注册但密码错,响应必须逐字节相同。
 
         可区分即是一个免登录的手机号枚举 oracle。
+        (request_id 是每请求随机值、不含账号信息,比对时剔除。)
         """
         await register(client, password="secret123")
         registered = await client.post(
@@ -110,7 +141,10 @@ class TestLogin:
             "/api/v1/auth/login", json={"phone": "13800009999", "password": "wrong-pass"}
         )
         assert registered.status_code == unknown.status_code
-        assert registered.json() == unknown.json()
+        r, u = registered.json(), unknown.json()
+        r.pop("request_id")
+        u.pop("request_id")
+        assert r == u
         # 验证码路径同理
         bad_code_registered = await client.post(
             "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "000000"}
@@ -118,7 +152,10 @@ class TestLogin:
         bad_code_unknown = await client.post(
             "/api/v1/auth/login", json={"phone": "13800009998", "sms_code": "000000"}
         )
-        assert bad_code_registered.json() == bad_code_unknown.json()
+        br, bu = bad_code_registered.json(), bad_code_unknown.json()
+        br.pop("request_id")
+        bu.pop("request_id")
+        assert br == bu
 
     async def test_login_with_sms(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
@@ -144,6 +181,38 @@ class TestLogin:
             "/api/v1/auth/refresh", json={"refresh_token": data["access_token"]}
         )
         assert resp.status_code == 401
+
+    async def test_successful_logins_not_rate_limited(self, client: AsyncClient):
+        """连登不锁:成功登录不计入失败配额(此前连成功也计数,连登 5 次第 6 次 429)。"""
+        await register(client, "13800000081", password="secret123")
+        for _ in range(6):
+            resp = await client.post(
+                "/api/v1/auth/login", json={"phone": "13800000081", "password": "secret123"}
+            )
+            assert resp.status_code == 200, resp.text
+
+    async def test_failure_counter_reset_by_success(self, client: AsyncClient):
+        """失败才计数,成功一次清零:手滑几次后登成功,不应背着之前的失败配额。"""
+        phone = "13800000082"
+        await register(client, phone, password="secret123")
+        for _ in range(4):
+            resp = await client.post(
+                "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+            )
+            assert resp.json()["code"] == "LOGIN_FAILED"
+        ok = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "secret123"})
+        assert ok.status_code == 200, ok.text
+        # 计数已清零:再错 5 次仍是 LOGIN_FAILED,第 6 次才 429
+        for _ in range(5):
+            resp = await client.post(
+                "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+            )
+            assert resp.json()["code"] == "LOGIN_FAILED"
+        resp = await client.post(
+            "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
 
 
 class TestAudienceIsolation:
@@ -230,3 +299,150 @@ class TestPasswordReset:
             json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123"},
         )
         assert resp.json()["code"] == "SMS_CODE_INVALID"
+
+    async def test_new_password_byte_limit(self, client: AsyncClient, sm):
+        """找回/设置密码同走字节上限:73 字节的多字节口令 422,不进哈希层。"""
+        await register(client, "13800000093")
+        await issue_code(sm, "13800000093", "reset_password")
+        resp = await client.post(
+            "/api/v1/auth/password/reset",
+            json={
+                "phone": "13800000093",
+                "sms_code": "123456",
+                "new_password": "汉" * 25,  # 75 字节
+            },
+        )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+
+
+class TestRegisterRace:
+    async def test_concurrent_register_same_phone(self, sm, monkeypatch):
+        """并发注册同号:验证码一次性消费闸(行锁)在请求层先兜住并发;若仍同时到达
+        写库,唯一约束 + IntegrityError 捕获保证负方拿 PHONE_TAKEN 而不是 500。
+
+        服务层旁路验证码闸,专测最后防线。
+        """
+        import asyncio
+
+        from app.core.errors import AppError
+        from app.modules.account import service as account_service
+
+        async def _noop_consume(session, phone, code, purpose) -> None:
+            return None
+
+        monkeypatch.setattr(account_service, "_consume_sms_code", _noop_consume)
+        phone = "13800000073"
+        async with sm() as s1, sm() as s2:
+            results = await asyncio.gather(
+                account_service.register(s1, phone, "111111", None, accept_terms=True),
+                account_service.register(s2, phone, "222222", None, accept_terms=True),
+                return_exceptions=True,
+            )
+        winners = [r for r in results if not isinstance(r, Exception)]
+        losers = [r for r in results if isinstance(r, AppError)]
+        assert len(winners) == 1 and len(losers) == 1, results
+        assert losers[0].code == "PHONE_TAKEN"
+
+
+class TestSmsQuotaAndBackoff:
+    async def test_unconsumed_sends_do_not_burn_victim_daily_quota(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """代耗回归:攻击者替受害者请求验证码,耗不到受害者的 10 次/日配额。
+
+        日配额只按「消费」计(攻击者读不到码,永远计不上);发送侧由 IP 限流与
+        同号递增退避兜底轰炸成本。挂了 = 受害者当日收不到码也登不上。
+        """
+        phone = "13800000096"
+        async with sm() as session:
+            # 同号已有 10 条未消费验证码(旧口径下该号当日配额已被耗尽)
+            for _ in range(10):
+                session.add(
+                    SmsCode(
+                        phone=phone,
+                        code_hash="0" * 64,
+                        purpose="register",
+                        expires_at=now_utc() + timedelta(minutes=5),
+                        created_at=now_utc() - timedelta(hours=2),
+                    )
+                )
+            await session.commit()
+        # 受害者自己请求:不被日配额挡(退避上限 480s,最近一条在 2h 前 → 放行)
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+        )
+        assert resp.status_code == 204, resp.text
+        # 消费(注册)同样不受那 10 条未消费记录影响
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={"phone": phone, "sms_code": "123456", "accept_terms": True},
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_send_backoff_escalates_on_unconsumed_codes(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """同号连续未消费 → 发送间隔递增(60s → 120s);正常消费后连续计数归零。"""
+        phone = "13800000097"
+        await send_code(client, phone)
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "SMS_TOO_FREQUENT"
+        assert resp.json()["params"]["seconds"] <= 60  # 第一条:基础间隔
+
+        # 越过基础间隔后第二条放行;两条未消费 → 退避升到 120s
+        async with sm() as session:
+            await session.execute(
+                update(SmsCode)
+                .where(SmsCode.phone == phone)
+                .values(created_at=now_utc() - timedelta(seconds=61))
+            )
+            await session.commit()
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+        )
+        assert resp.status_code == 204, resp.text
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+        )
+        assert resp.status_code == 429
+        assert 60 < resp.json()["params"]["seconds"] <= 120
+
+    async def test_consume_quota_counts_only_successful_reads(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """日配额计在消费侧:消费满 10 次才限;校验失败的尝试不占额度。"""
+        from app.core.crypto import hash_sms_code
+        from app.core.errors import ErrorCode
+        from app.modules.account import service as account_service
+
+        phone = "13800000098"
+        codes = [f"{200000 + i}" for i in range(11)]
+        async with sm() as session:
+            for code in codes:
+                session.add(
+                    SmsCode(
+                        phone=phone,
+                        code_hash=hash_sms_code(phone, "login", code),
+                        purpose="login",
+                        expires_at=now_utc() + timedelta(minutes=5),
+                    )
+                )
+            await session.commit()
+        # 失败尝试不占配额
+        async with sm() as session:
+            with pytest.raises(AppError):
+                await account_service._consume_sms_code(session, phone, "999999", "login")
+        # 消费与发送逆序(每次选中最新一条未消费记录)
+        for code in reversed(codes[1:]):
+            async with sm() as session:
+                await account_service._consume_sms_code(session, phone, code, "login")
+                await session.commit()
+        # 第 11 次消费超出日配额
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await account_service._consume_sms_code(session, phone, codes[0], "login")
+            assert exc.value.code == ErrorCode.RATE_LIMITED

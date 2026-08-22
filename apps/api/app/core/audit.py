@@ -50,35 +50,45 @@ class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        response = await call_next(request)
-        # 默认只审计写操作;敏感读端点显式调 mark_audited_read 后也落一行
-        if request.method not in AUDIT_METHODS and not getattr(request.state, "audit_force", False):
-            return response
-        path = request.url.path
-        if path.startswith(AUDIT_EXCLUDE_PREFIXES):
-            return response
         try:
-            actor: AuditActor | None = getattr(request.state, "audit_actor", None)
-            target: str | None = getattr(request.state, "audit_target", None)
-            detail: dict[str, Any] | None = getattr(request.state, "audit_detail", None)
-            action_prefix = "admin." if path.startswith("/api/admin/") else ""
-            async with get_sessionmaker()() as session:
-                session.add(
-                    AuditLog(
-                        actor_type=actor.actor_type if actor else "anonymous",
-                        actor_id=actor.actor_id if actor else None,
-                        action=f"{action_prefix}{request.method} {path}",
-                        target=target,
-                        ip=request.client.host if request.client else None,
-                        result=response.status_code,
-                        detail=detail,
-                    )
-                )
-                await session.commit()
+            response = await call_next(request)
         except Exception:
-            # 审计失败不得影响业务响应
-            logger.exception("audit_write_failed", path=path)
+            # 未捕获异常由外层 ServerErrorMiddleware 兜底成 500 统一错误体;
+            # 这里先按 result=500 落一条审计再原样上抛(否则 500 反而没有留痕)
+            await _write_audit_row(request, 500)
+            raise
+        await _write_audit_row(request, response.status_code)
         return response
+
+
+async def _write_audit_row(request: Request, result: int) -> None:
+    # 默认只审计写操作;敏感读端点显式调 mark_audited_read 后也落一行
+    if request.method not in AUDIT_METHODS and not getattr(request.state, "audit_force", False):
+        return
+    path = request.url.path
+    if path.startswith(AUDIT_EXCLUDE_PREFIXES):
+        return
+    try:
+        actor: AuditActor | None = getattr(request.state, "audit_actor", None)
+        target: str | None = getattr(request.state, "audit_target", None)
+        detail: dict[str, Any] | None = getattr(request.state, "audit_detail", None)
+        action_prefix = "admin." if path.startswith("/api/admin/") else ""
+        async with get_sessionmaker()() as session:
+            session.add(
+                AuditLog(
+                    actor_type=actor.actor_type if actor else "anonymous",
+                    actor_id=actor.actor_id if actor else None,
+                    action=f"{action_prefix}{request.method} {path}",
+                    target=target,
+                    ip=request.client.host if request.client else None,
+                    result=result,
+                    detail=detail,
+                )
+            )
+            await session.commit()
+    except Exception:
+        # 审计失败不得影响业务响应
+        logger.exception("audit_write_failed", path=path)
 
 
 def set_audit_target(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:

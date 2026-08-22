@@ -91,3 +91,21 @@ class TestNotifySmsBestEffort:
                 )
             ).scalar_one()
             assert row.type == "balance_warn"
+
+
+class TestMockChannelRedaction:
+    async def test_code_masked_in_log(self, monkeypatch):
+        """mock 渠道落日志时验证码打码:日志被集中采集后,明文码等于绕过一切防盗。"""
+        from app.core import sms as sms_module
+
+        captured: dict = {}
+
+        class _Capture:
+            def info(self, event: str, **kwargs) -> None:
+                captured.update(kwargs)
+
+        monkeypatch.setattr(sms_module, "logger", _Capture())
+        await sms_module.MockSmsChannel().send(
+            "13800000000", "SMS_123", {"code": "123456", "title": "余额预警"}
+        )
+        assert captured["params"] == {"code": "******", "title": "余额预警"}

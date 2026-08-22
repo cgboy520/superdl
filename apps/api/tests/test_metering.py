@@ -173,3 +173,86 @@ class TestTierSource:
             "gpu_util", "tenant-1", "u1", tier="shared_eco", start=0, end=1, step="60s"
         )
         assert fallback == [(1.0, 70.0)]
+
+
+def prom_mock_malformed():
+    """返回 200 但缺 data 键的畸形响应(上游故障/代理截断)。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=json.dumps({"status": "success"}))
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://prom")
+
+
+class TestMalformedResponse:
+    async def test_instance_metrics_503_not_500(self, client, sm, fake):
+        """Prometheus 响应缺 data 键:KeyError 不能击穿成 500,必须走 503 降级语义。"""
+        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        prom.set_client(prom_mock_malformed())
+        resp = await client.get(f"/api/v1/instances/{uuid}/metrics", headers=headers)
+        assert resp.status_code == 503
+        assert resp.json()["message_key"] == "metering.unavailable"
+
+    async def test_node_metrics_degrades_not_crashes(self):
+        from app.modules.metering.service import node_gpu_metrics
+
+        prom.set_client(prom_mock_malformed())
+        out = await node_gpu_metrics("gpu-a3-01", "1h")
+        assert out["available"] is False
+
+
+class TestAggregationPartialFailure:
+    async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):
+        """单实例查询失败只丢该实例该小时:整轮其它实例照常聚合(此前 return 全丢)。"""
+        _h1, uuid1, _u1 = await _provision_running(client, sm, fake, phone="13900000021")
+        _h2, _uuid2, _u2 = await _provision_running(client, sm, fake, phone="13900000022")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            query = request.url.params.get("query", "")
+            if uuid1 in query:
+                return httpx.Response(500, text="flap")
+            body = {
+                "status": "success",
+                "data": {"result": [{"metric": {}, "values": [[1e9, "50"]]}]},
+            }
+            return httpx.Response(200, text=json.dumps(body))
+
+        prom.set_client(
+            httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://p")
+        )
+        at = datetime.now(UTC) + timedelta(hours=1)
+        assert await aggregate_previous_hour(sm, at=at) == 1  # uuid2 正常写入
+        async with sm() as session:
+            rows = (await session.execute(select(UsageHourly))).scalars().all()
+        assert len(rows) == 1
+
+    async def test_vram_zero_is_not_null(self, client, sm, fake):
+        """vram 峰值 0 是合法值,不能写成 NULL(此前 `or None` 会吞掉 0)。"""
+        await _provision_running(client, sm, fake, phone="13900000023")
+        prom.set_client(
+            prom_mock_routed(
+                {
+                    "DCGM_FI_DEV_GPU_UTIL": [{"metric": {}, "values": [[1e9, "50"]]}],
+                    "DCGM_FI_DEV_FB_USED": [{"metric": {}, "values": [[1e9, "0"]]}],
+                    "container_cpu_usage_seconds_total": [{"metric": {}, "values": [[1e9, "3"]]}],
+                }
+            )
+        )
+        at = datetime.now(UTC) + timedelta(hours=1)
+        assert await aggregate_previous_hour(sm, at=at) == 1
+        async with sm() as session:
+            row = (await session.execute(select(UsageHourly))).scalar_one()
+        assert row.vram_max_mb == 0
+        assert row.gpu_util_avg == 50.0
+
+
+class TestNodeNameValidation:
+    async def test_injection_rejected_with_400(self):
+        """node_name 是 format 进 PromQL 的路径参数:非法名必须 400,不能进查询模板。"""
+        from app.core.errors import AppError
+        from app.modules.metering.service import node_gpu_metrics
+
+        for bad in ('gpu";drop', "a b", "UPPER_ok", "x" * 300, "-lead", ""):
+            with pytest.raises(AppError) as exc_info:
+                await node_gpu_metrics(bad, "1h")
+            assert exc_info.value.http_status == 400

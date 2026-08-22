@@ -29,9 +29,22 @@ logger = get_logger(__name__)
 MAX_RETRIES = 5
 BACKOFF_BASE_SECONDS = 10
 BACKOFF_MAX_SECONDS = 600  # 退避上限
-RUNNING_TIMEOUT = timedelta(minutes=10)  # reaper:running 超时打回 pending
-# 单个 handler 的执行上限;队列全局串行 FIFO,挂死的调用会占住队头
-TASK_TIMEOUT_SECONDS = RUNNING_TIMEOUT.total_seconds()
+# 单个 handler 的执行上限;超时取消的只是协程 —— 底层同步线程(如 K8s 客户端调用)
+# 无法被中途杀死,会跑完但结果被丢弃;操作幂等,退避重试是安全的
+TASK_TIMEOUT_SECONDS = 600.0
+# reaper:running 超时打回 pending。必须显著大于 TASK_TIMEOUT_SECONDS,
+# 任务还在正常执行时绝不允许被别的副本认领(否则同一任务双写终态),取 2 倍
+RUNNING_TIMEOUT = timedelta(seconds=2 * TASK_TIMEOUT_SECONDS)
+# 按任务类型的执行超时覆盖(秒):纯删除/通知类快操作不该占满全局上限。
+# 未列出的类型用 TASK_TIMEOUT_SECONDS;handler 归属模块不改,映射集中在这里
+TASK_TIMEOUT_OVERRIDES: dict[str, float] = {
+    "instance.stop": 180.0,
+    "instance.release": 300.0,
+    "disk.wipe": 120.0,
+    "image.prewarm": 120.0,
+    "node.cordon": 120.0,
+    "notify.sms": 60.0,
+}
 
 
 @dataclass(frozen=True)
@@ -105,7 +118,7 @@ async def _claim_one(session: AsyncSession, worker_id: str) -> OutboxTask | None
         await session.execute(
             select(OutboxTask)
             .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
-            .order_by(OutboxTask.id)
+            .order_by(OutboxTask.next_retry_at, OutboxTask.id)  # 到期最早优先,id 决胜
             .limit(1)
             .with_for_update(skip_locked=True)
         )
@@ -126,56 +139,93 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
     if task is None:
         return False
 
+    policy = retry_policy_for(task.type)
+    attempt = task.retries + 1
+    will_retry = attempt <= policy.max_retries
+    timeout = TASK_TIMEOUT_OVERRIDES.get(task.type, TASK_TIMEOUT_SECONDS)
     error: str | None = None
     try:
         handler = _registry.get(task.type)
         if handler is None:
             raise RuntimeError(f"no handler for outbox task type: {task.type}")
         async with sm() as session:
-            await asyncio.wait_for(handler(session, task), timeout=TASK_TIMEOUT_SECONDS)
+            await asyncio.wait_for(handler(session, task), timeout=timeout)
             await session.commit()
     except TimeoutError as exc:
-        error = f"TimeoutError: handler exceeded {TASK_TIMEOUT_SECONDS:.0f}s"
+        error = f"TimeoutError: handler exceeded {timeout:.0f}s"
         OUTBOX_TASK_TIMEOUT_TOTAL.labels(task_type=task.type).inc()
-        logger.error("outbox_task_timeout", task_id=task.id, task_type=task.type, error=str(exc))
-    except Exception as exc:
-        error = f"{type(exc).__name__}: {exc}"
-        logger.exception("outbox_task_failed", task_id=task.id, task_type=task.type)
-
-    async with sm() as session:
-        if error is None:
-            await session.execute(
-                update(OutboxTask).where(OutboxTask.id == task.id).values(status="done")
+        if will_retry:
+            # 预期内重试(队头卡死退化为一次可重试失败):warning,不带 traceback
+            logger.warning(
+                "outbox_task_timeout_retry",
+                task_id=task.id,
+                task_type=task.type,
+                attempt=attempt,
+                max_retries=policy.max_retries,
+                error=error,
             )
         else:
-            policy = retry_policy_for(task.type)
-            retries = task.retries + 1
-            if retries > policy.max_retries:
-                logger.error("outbox_task_dead", task_id=task.id, task_type=task.type, error=error)
-                OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
-                await session.execute(
-                    update(OutboxTask)
-                    .where(OutboxTask.id == task.id)
-                    .values(status="dead", retries=retries, last_error=error)
+            logger.error(
+                "outbox_task_timeout", task_id=task.id, task_type=task.type, error=str(exc)
+            )
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        if will_retry:
+            # 「还没完成」型任务(disk.wipe 轮询、restart 跨优雅期)用抛错表达重试,
+            # 属正常控制流:warning 不带 traceback;预算耗尽的最后一次才记 ERROR
+            logger.warning(
+                "outbox_task_retry",
+                task_id=task.id,
+                task_type=task.type,
+                attempt=attempt,
+                max_retries=policy.max_retries,
+                error=error,
+            )
+        else:
+            logger.exception("outbox_task_failed", task_id=task.id, task_type=task.type)
+
+    outcome = "done" if error is None else ("retry" if will_retry else "dead")
+    if outcome == "done":
+        new_values: dict[str, Any] = {"status": "done"}
+    elif outcome == "retry":
+        backoff = timedelta(
+            seconds=min(
+                policy.backoff_base_seconds * 2 ** (attempt - 1),
+                policy.backoff_max_seconds,
+            )
+        )
+        new_values = {
+            "status": "pending",
+            "retries": attempt,
+            "next_retry_at": now_utc() + backoff,
+            "last_error": error,
+        }
+    else:
+        new_values = {"status": "dead", "retries": attempt, "last_error": error}
+
+    async with sm() as session:
+        # 终态/回退写都必须仍由本 worker 持有该任务:执行期 reaper 可能已回收并交给
+        # 其它副本;rowcount==0 = 已有主副本接管,本次结果直接放弃,不得覆盖
+        result = cast(
+            CursorResult[Any],
+            await session.execute(
+                update(OutboxTask)
+                .where(
+                    OutboxTask.id == task.id,
+                    OutboxTask.status == "running",
+                    OutboxTask.locked_by == worker_id,
                 )
-            else:
-                backoff = timedelta(
-                    seconds=min(
-                        policy.backoff_base_seconds * 2 ** (retries - 1),
-                        policy.backoff_max_seconds,
-                    )
-                )
-                await session.execute(
-                    update(OutboxTask)
-                    .where(OutboxTask.id == task.id)
-                    .values(
-                        status="pending",
-                        retries=retries,
-                        next_retry_at=now_utc() + backoff,
-                        last_error=error,
-                    )
-                )
+                .values(**new_values)
+            ),
+        )
         await session.commit()
+    if result.rowcount == 0:
+        logger.warning(
+            "outbox_task_ownership_lost", task_id=task.id, task_type=task.type, worker_id=worker_id
+        )
+    elif outcome == "dead":
+        logger.error("outbox_task_dead", task_id=task.id, task_type=task.type, error=error)
+        OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
     return True
 
 

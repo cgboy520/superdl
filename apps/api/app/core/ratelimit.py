@@ -25,7 +25,8 @@ class RateLimitCounter(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
-# 单条原子语句:窗口过期即重置为 1,否则自增。RETURNING 给出本次命中后的计数。
+# 单条原子语句:窗口过期即重置为 1,否则自增。
+# RETURNING 给出本次命中后的计数与窗口剩余秒数(DB 侧计算,回避应用/库时钟与列时区差异)。
 _HIT_SQL = text("""
     INSERT INTO rate_limit_counters AS c (key, window_start, hits, updated_at)
     VALUES (:key, now(), 1, now())
@@ -37,20 +38,23 @@ _HIT_SQL = text("""
             WHEN c.window_start <= now() - make_interval(secs => :window) THEN 1
             ELSE c.hits + 1 END,
         updated_at = now()
-    RETURNING hits
+    RETURNING hits,
+        GREATEST(
+            0, CEIL(EXTRACT(EPOCH FROM (window_start + make_interval(secs => :window) - now())))
+        )::int AS retry_after
 """)
 
 
 async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float) -> None:
-    """记一次命中并判定。超限抛 RATE_LIMITED(429)。"""
+    """记一次命中并判定。超限抛 RATE_LIMITED(429,带 Retry-After 窗口剩余秒数)。"""
     async with get_sessionmaker()() as session:
-        hits = (
-            await session.execute(_HIT_SQL, {"key": key[:128], "window": window_seconds})
-        ).scalar_one()
+        row = (await session.execute(_HIT_SQL, {"key": key[:128], "window": window_seconds})).one()
         await session.commit()
+    hits, retry_after = row.hits, row.retry_after
     if hits > max_attempts:
         raise AppError(
             ErrorCode.RATE_LIMITED,
             key="common.rateLimited",
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            headers={"Retry-After": str(max(1, retry_after))},
         )

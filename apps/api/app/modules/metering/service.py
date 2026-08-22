@@ -97,6 +97,7 @@ async def aggregate_previous_hour(
                 session, window_start, window_end
             )
             loc = await orchestrator_service.instance_locations(session, [c[0] for c in candidates])
+        failed = 0
         for inst_id, _user_id, _price, _gpus in candidates:
             located = loc.get(inst_id)
             if located is None:  # 实例在候选查询与定位查询之间被删:跳过该台,不作废整轮
@@ -130,8 +131,11 @@ async def aggregate_previous_hour(
                     step="60s",
                 )
             except prom.PrometheusUnavailable:
+                # 单次抖动只丢该实例该小时:continue 保住整轮其它实例
+                # (此前 return 会把排在后面的实例整小时全丢掉)
+                failed += 1
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
-                return written
+                continue
             utils = [v for _, v in values]
             cpus = [v for _, v in cpu]
             async with sm() as session:
@@ -147,13 +151,23 @@ async def aggregate_previous_hour(
                             if utils
                             else None
                         ),
-                        vram_max_mb=int(max((v for _, v in vram), default=0)) or None,
+                        # vram 查空才是 None;max(...)=0 是合法值,不能用 or None 吞掉
+                        vram_max_mb=int(max((v for _, v in vram), default=0)) if vram else None,
                         cpu_avg_pct=(sum(cpus) / len(cpus)) if cpus else None,
                     )
                     .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
                 )
                 await session.commit()
                 written += 1
+        if failed:
+            # 记缺口:该小时对这些实例永久缺失(任务只聚合上一小时),告警靠日志检索;
+            # 不做自动回填(指标不参与计费,重流程收益低),需要时按 hour_start 人工补跑
+            logger.warning(
+                "usage_aggregation_partial",
+                hour_start=window_start.isoformat(),
+                written=written,
+                failed=failed,
+            )
     return written
 
 

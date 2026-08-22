@@ -1,9 +1,20 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 PhoneStr = Field(pattern=r"^1[3-9]\d{9}$", description="中国大陆手机号")
+
+
+def _within_bcrypt_limit(v: str) -> str:
+    # bcrypt 只认前 72 字节(5.0 起超长直接抛 ValueError,落到哈希层就是 500);
+    # max_length 按字符计,中文等多字节口令必须再按字节数拦一道
+    if len(v.encode()) > 72:
+        raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")
+    return v
+
+
+PasswordStr = Annotated[str, AfterValidator(_within_bcrypt_limit)]
 
 
 class SmsCodeRequest(BaseModel):
@@ -14,7 +25,7 @@ class SmsCodeRequest(BaseModel):
 class RegisterRequest(BaseModel):
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
-    password: str | None = Field(default=None, min_length=8, max_length=64)
+    password: PasswordStr | None = Field(default=None, min_length=8, max_length=64)
     accept_terms: bool = False  # 必须显式同意用户协议与隐私政策(服务端强校验)
 
 
@@ -33,7 +44,7 @@ class PasswordResetRequest(BaseModel):
 
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)
-    new_password: str = Field(min_length=8, max_length=64)
+    new_password: PasswordStr = Field(min_length=8, max_length=64)
 
 
 class UserOut(BaseModel):

@@ -1,8 +1,7 @@
 """message_key 机制:key 渲染/params 插值/旧签名兼容/缺键回落/422 兜底键/导出脚本幂等。"""
 
-import subprocess
-import sys
 from pathlib import Path
+from typing import Any
 
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.messages import MESSAGES, render_message
@@ -44,15 +43,23 @@ def test_params_mismatch_falls_back_to_template() -> None:
 
 
 def test_export_script_matches_checked_in_catalog(tmp_path: Path) -> None:
-    """生成链 no-diff:入库的 zh errors.json 必须与 MESSAGES 同步(CI 同款校验)。"""
+    """生成链 no-diff:入库的 zh errors.json 必须与 MESSAGES 同步(CI 同款校验)。
+
+    导出目标改指 tmp_path:漂移时只 fail,不污染工作区文件。
+    """
+    import importlib.util
+
     repo = Path(__file__).resolve().parents[3]
-    target = repo / "packages" / "ui" / "locales" / "zh-CN" / "errors.json"
-    before = target.read_text()
-    subprocess.run(
-        [sys.executable, str(repo / "apps" / "api" / "scripts" / "export_error_messages.py")],
-        check=True,
-    )
-    after = target.read_text()
-    assert after == before, (
+    script = repo / "apps" / "api" / "scripts" / "export_error_messages.py"
+    spec = importlib.util.spec_from_file_location("export_error_messages", script)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out = tmp_path / "errors.json"
+    mod_any: Any = mod  # 动态加载的模块,pyright 不认其属性; ruff 禁常量 setattr
+    mod_any.OUT = out
+    mod_any.main()
+    checked_in = (repo / "packages" / "ui" / "locales" / "zh-CN" / "errors.json").read_text()
+    assert out.read_text() == checked_in, (
         "core/messages.py 与 errors.json 漂移:跑 export_error_messages.py 并提交"
     )

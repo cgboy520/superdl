@@ -2,12 +2,12 @@
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.audit import AuditActor
 from app.core.db import DbSession
-from app.core.errors import forbidden, unauthorized
+from app.core.errors import AppError, ErrorCode, unauthorized
 from app.core.security import decode_token
 from app.modules.account.models import User
 
@@ -26,7 +26,9 @@ async def get_current_user(
     if user is None:
         raise unauthorized()
     if user.status == "frozen":
-        raise forbidden("账号已被冻结")
+        raise AppError(
+            ErrorCode.FORBIDDEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
+        )
     if payload.get("ver", 0) != user.token_version:
         raise unauthorized()  # 已被撤销(冻结期版本推进/refresh 重放触发)
     request.state.audit_actor = AuditActor("user", str(user.id))

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Text, func
+from sqlalchemy import String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -31,12 +31,14 @@ class User(Base):
 
 class SshKey(Base):
     __tablename__ = "ssh_keys"
+    # 指纹按 (用户, 指纹) 唯一:全局唯一会变成跨租户枚举面(探测/占位阻断他租户添加同名钥匙)
+    __table_args__ = (UniqueConstraint("user_id", "fingerprint"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(index=True)
     name: Mapped[str] = mapped_column(String(64))
     public_key: Mapped[str] = mapped_column(Text)
-    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)  # SHA256:base64
+    fingerprint: Mapped[str] = mapped_column(String(64))  # SHA256:base64
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

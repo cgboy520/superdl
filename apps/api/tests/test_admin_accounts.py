@@ -193,3 +193,64 @@ class TestAdminAccounts:
             headers=h_ops,
         )
         assert resp.status_code == 403
+
+    async def test_require_roles_no_arg_has_own_message(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """require_roles() 无参(仅超管)的拒绝文案单独成键,不再是半截话「需要角色:」。"""
+        h_ops = await admin_headers(sm, client, role="ops")
+        resp = await client.get("/api/admin/v1/admins", headers=h_ops)
+        assert resp.status_code == 403
+        assert resp.json()["message_key"] == "adminapi.roleRequiredAdmin"
+        # 有参分支走角色清单键
+        resp = await client.post(
+            "/api/admin/v1/adjustments",
+            json={"user_id": 1, "amount": "1.00", "reason": "角色门验证"},
+            headers=h_ops,
+        )
+        assert resp.status_code == 403
+        assert resp.json()["message_key"] == "adminapi.roleRequired"
+        assert resp.json()["params"] == {"roles": "finance"}
+
+
+class TestAdminPasswordByteLimit:
+    """bcrypt 上限 72 字节:schema 按字符计,多字节口令在服务层按字节拦成 400,不进哈希层炸 500。"""
+
+    async def test_create_admin_multibyte_password(self, client, sm):
+        h = await admin_headers(sm, client)
+        too_long = await client.post(
+            "/api/admin/v1/admins",
+            json={"username": "ops-cn", "password": "汉" * 25, "role": "ops", "reason": "入职"},
+            headers=h,
+        )
+        assert too_long.status_code == 400
+        assert too_long.json()["code"] == "VALIDATION_ERROR"
+        # 72 字节整(24 个汉字)可建可登录
+        ok = await client.post(
+            "/api/admin/v1/admins",
+            json={"username": "ops-cn2", "password": "汉" * 24, "role": "ops", "reason": "入职"},
+            headers=h,
+        )
+        assert ok.status_code == 201, ok.text
+        assert (await login(client, "ops-cn2", "汉" * 24)).status_code == 200
+
+    async def test_reset_password_multibyte_limit(self, client, sm):
+        h = await admin_headers(sm, client)
+        me = (await client.get("/api/admin/v1/me", headers=h)).json()
+        resp = await client.post(
+            f"/api/admin/v1/admins/{me['id']}/reset-password",
+            json={"password": "汉" * 25, "reason": "轮换"},
+            headers=h,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+
+    async def test_self_password_change_multibyte_limit(self, client, sm):
+        h = await admin_headers(sm, client)
+        resp = await client.post(
+            "/api/admin/v1/me/password",
+            json={"current_password": "pass1234", "new_password": "汉" * 25},
+            headers=h,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "VALIDATION_ERROR"

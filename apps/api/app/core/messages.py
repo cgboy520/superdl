@@ -28,10 +28,13 @@ MESSAGES: dict[str, str] = {
     "adminapi.adjustAlreadyProcessed": "调账单已处理",
     "adminapi.adjustNotZero": "调账金额不能为 0",
     "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
+    "adminapi.adjustReviewerTooNew": "复核账号在调账发起后才创建,不构成双人复核",
     "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
     "adminapi.adminUsernameTaken": "该用户名已存在",
     "adminapi.cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
     "adminapi.loginFailed": "用户名或密码错误",
+    "adminapi.roleRequired": "需要角色:{roles}",
+    "adminapi.roleRequiredAdmin": "需要超级管理员权限",
     "adminapi.smsTestFailed": "发送失败:{message}",
     "adminapi.taskNotFound": "任务不存在",
     "adminapi.taskStateNotIgnorable": "任务状态 {status} 不可忽略",
@@ -51,6 +54,10 @@ MESSAGES: dict[str, str] = {
     "billing.channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
     "billing.channelStateNotBackfillable": "渠道侧状态为 {status},不能补单",
     "billing.insufficientBalance": "余额不足,请先充值",
+    "billing.insufficientForInFlight": (
+        "余额不足:在途资源预计还要消耗 ¥{inflight},本次操作要求余额不少于 ¥{required}"
+        "(当前 ¥{balance}),请先充值"
+    ),
     "billing.insufficientForDisk": "余额不足:新建数据盘需要至少 1 日费用 ¥{amount}",
     "billing.insufficientForRestart": "余额不足:重启需要至少 1 小时预估费用",
     "billing.insufficientForStart": "余额不足:开机需要至少 1 小时预估费用 ¥{amount}",
@@ -72,17 +79,27 @@ MESSAGES: dict[str, str] = {
     "catalog.imageRefExists": "镜像 image_ref 已存在",
     "catalog.prewarmDisabled": "该镜像已关闭预热,请先开启",
     "catalog.priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
+    "catalog.priceBelowBillable": (
+        "时价过低:单卡满 1 小时折算不足 ¥0.01,按 2 位小数入账会恒被舍为 0(等同免费);"
+        "请设不低于 0.0051 元/时"
+    ),
     "catalog.skuNotSellable": (
         "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
     ),
     "catalog.skuOffSale": "该规格已下架",
+    "catalog.skuBusinessKeyExists": "相同型号、档位、切片与算力份额的规格已存在,请直接编辑该规格",
     # 通用兜底(errors.py 三个 helper 与 422/500 handler 使用)
     "common.forbidden": "无权访问",
+    "common.httpError": "请求失败({status})",
     "common.internal": "服务器内部错误,请稍后重试",
+    "common.invalidResponse": "服务响应异常,请稍后重试",
+    "common.methodNotAllowed": "该接口不支持此请求方法",
+    "common.networkError": "网络连接失败,请检查网络后重试",
     "common.notFound": "资源不存在",
     "common.unauthorized": "未登录或凭证已过期",
     "common.badCursor": "无效的分页游标",
     "common.rateLimited": "尝试过于频繁,请稍后再试",
+    "common.retryableConflict": "请求与另一个进行中的操作冲突,请重试",
     "common.validation": "参数校验失败",
     # 数据盘
     "disks.countQuota": "数据盘数量已达上限({max} 块),请删除不用的盘或联系客服提额",
@@ -118,6 +135,7 @@ MESSAGES: dict[str, str] = {
     "orchestrator.imageRefNotAllowed": "该镜像仓库未被允许,请使用平台镜像或以下仓库:{registries}",
     "orchestrator.instanceQuota": "实例数已达上限({max} 台),请释放后再创建或联系客服提额",
     "orchestrator.invalidTransition": "实例当前状态({from})不允许该操作",
+    "orchestrator.noCapacity": "「{model} × {pool} 池」当前无可分配容量,请稍后重试或选择其他规格",
     "orchestrator.releaseNeedsStopped": "关机后才能释放实例",
     "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
     "orchestrator.sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",

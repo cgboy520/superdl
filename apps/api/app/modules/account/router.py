@@ -71,6 +71,21 @@ async def refresh(body: RefreshRequest, session: DbSession) -> TokenPair:
     return await service.refresh_tokens(session, body.refresh_token)
 
 
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(body: RefreshRequest, session: DbSession) -> Response:
+    """登出当前会话(refresh token 一次性消费位撤销)。token 无效也回 204,防枚举。"""
+    await service.logout(session, body.refresh_token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all(user: CurrentUser, session: DbSession, request: Request) -> Response:
+    """登出全部会话:token_version+1,已签发的 access/refresh 即刻全部失效。"""
+    await service.logout_all(session, user.id)
+    set_audit_target(request, f"user:{user.id}", detail={"action": "logout_all"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/me")
 async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)

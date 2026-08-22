@@ -6,12 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 
 from app.core.audit import AuditMiddleware
-from app.core.config import get_settings
+from app.core.config import get_settings, unknown_superdl_env_keys
 from app.core.db import dispose_engine
 from app.core.errors import init_sentry, install_error_handlers
-from app.core.logging import setup_logging
+from app.core.logging import get_logger, setup_logging
 from app.core.observability import ObservabilityMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.wiring import wire_modules
 
 
 @asynccontextmanager
@@ -19,30 +20,62 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     init_sentry()
     settings = get_settings()
-    # 一次性引导:配置了口令且 admin_users 为空时创建首个超管
+    log = get_logger("app.lifespan")
+    # 幽灵 SUPERDL_* 变量(拼写错误/改名残留)会被静默忽略:启动即告警,不 fail
+    unknown_keys = unknown_superdl_env_keys()
+    if unknown_keys:
+        log.warning(
+            "unknown_superdl_env_vars",
+            keys=unknown_keys,
+            hint="这些 SUPERDL_* 变量不匹配任何配置项,将被忽略;请核对拼写",
+        )
+    if settings.environment != "prod":
+        # 忘记显式设置 SUPERDL_ENVIRONMENT 的生产部署会以 dev 默认值裸奔:至少留一条醒目告警
+        log.warning(
+            "non_prod_environment",
+            environment=settings.environment,
+            hint="生产部署必须显式设置 SUPERDL_ENVIRONMENT=prod(prod 有配置 fail-fast 校验)",
+        )
+    # 一次性引导:仅 dev,配置了口令且 admin_users 为空时创建首个超管
     if settings.bootstrap_admin_password:
-        from app.core.db import get_sessionmaker
-        from app.modules.adminapi.service import ensure_bootstrap_admin
+        if settings.environment != "dev":
+            log.warning(
+                "bootstrap_admin_skipped",
+                environment=settings.environment,
+                hint="SUPERDL_BOOTSTRAP_ADMIN_PASSWORD 仅 dev 生效(prod 由配置校验直接拒启动)",
+            )
+        else:
+            if len(settings.bootstrap_admin_password) < 12:
+                raise RuntimeError(
+                    "SUPERDL_BOOTSTRAP_ADMIN_PASSWORD 口令长度至少 12 位"
+                    "(与管理端创建管理员的约束一致);这是一次性引导变量,首个管理员创建成功后"
+                    "请立即从环境变量中删除"
+                )
+            from app.core.db import get_sessionmaker
+            from app.modules.adminapi.service import ensure_bootstrap_admin
 
-        async with get_sessionmaker()() as session:
-            await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
+            async with get_sessionmaker()() as session:
+                await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
     if settings.environment == "prod":
         # cluster 键不做启动 fail-fast(经 DB 覆盖层维护,查 env 会误报):
         # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 兜底
         from app.core.db import get_sessionmaker
-        from app.core.logging import get_logger
         from app.core.platform_config import get_effective_platform_config
 
         async with get_sessionmaker()() as session:
             cfg = await get_effective_platform_config(session)
         missing = [k for k in ("cluster_server_url", "cluster_join_token") if not cfg.get(k)]
         if missing:
-            get_logger("app.lifespan").error(
+            log.error(
                 "cluster_config_missing",
                 keys=missing,
                 hint="管理端「平台配置 · 集群接入」录入;加节点将被 409 拦截",
             )
     yield
+    # Prometheus 代理客户端是全局单例(连接池),进程退出前显式关闭
+    from app.modules.metering import prom as metering_prom
+
+    await metering_prom.close_client()
     await dispose_engine()
 
 
@@ -70,6 +103,8 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # CORS 默认不暴露自定义响应头;前端 fetch 需读到该头做全链路追踪
+        expose_headers=["X-Request-ID"],
     )
 
     @app.get("/healthz", tags=["infra"], include_in_schema=False)
@@ -102,11 +137,15 @@ def create_app() -> FastAPI:
         from starlette.responses import PlainTextResponse
 
         token = get_settings().metrics_token
-        # 常量时间比较,防计时探测出 token 前缀
-        if token and not secrets.compare_digest(
-            Headers(scope=scope).get("authorization") or "", f"Bearer {token}"
-        ):
-            await PlainTextResponse("unauthorized", status_code=401)(scope, receive, send)
+        # 常量时间比较,防计时探测出 token 前缀;
+        # 先 encode:compare_digest 的 str 入参遇非 ASCII(如畸形头)会抛 TypeError
+        authorization = Headers(scope=scope).get("authorization") or ""
+        if token and not secrets.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
+            await PlainTextResponse(
+                "unauthorized",
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )(scope, receive, send)
             return
         await metrics_app(scope, receive, send)
 
@@ -140,19 +179,6 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(metering_router, prefix="/api/v1")
     app.include_router(notify_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
-
-
-def wire_modules() -> None:
-    """跨模块运行时接线:outbox handlers + 库存 provider + 计费边监听。双入口共用。"""
-    from app.modules.billing.edge_listener import register_billing_edge_listener
-    from app.modules.catalog import prewarm as _prewarm  # noqa: F401 注册 image.prewarm handler
-    from app.modules.catalog.inventory import register_inventory_provider
-    from app.modules.nodes import handlers as _node_handlers  # noqa: F401 注册 node.cordon handler
-    from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
-    from app.modules.orchestrator.service import estimate_available
-
-    register_inventory_provider(estimate_available)
-    register_billing_edge_listener()
 
 
 app = create_app()

@@ -194,6 +194,99 @@ class TestAdjustments:
             )
         assert len(entries) == 1
 
+    async def test_reviewer_created_after_adjustment_rejected(self, client, sm, fake):
+        """防自建第二账号绕双人复核:复核人必须是调账发起前已存在的账号。
+
+        挂了 = 单个 admin 发起调账后自建新账号复核,双人制衡形同虚设。
+        """
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        fin_a = await second_admin_headers(sm, client, "fin-late-a")
+        resp = await client.post(
+            "/api/admin/v1/adjustments",
+            json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
+            headers=fin_a,
+        )
+        assert resp.status_code == 201, resp.text
+        adj_id = resp.json()["id"]
+
+        # 发起后才创建的账号:不能充当第二复核人
+        fin_b = await second_admin_headers(sm, client, "fin-late-b")
+        resp = await client.post(
+            f"/api/admin/v1/adjustments/{adj_id}/review",
+            json={"approve": True},
+            headers=fin_b,
+        )
+        assert resp.status_code == 403
+        assert resp.json()["message_key"] == "adminapi.adjustReviewerTooNew"
+
+        # 发起前已存在的账号:正常复核通过
+        fin_c = await second_admin_headers(sm, client, "fin-late-c")
+        resp = await client.post(
+            "/api/admin/v1/adjustments",
+            json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
+            headers=fin_a,
+        )
+        adj2_id = resp.json()["id"]
+        resp = await client.post(
+            f"/api/admin/v1/adjustments/{adj2_id}/review",
+            json={"approve": True},
+            headers=fin_c,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "approved"
+
+    async def test_create_adjustment_idempotency_key(self, client, sm, fake):
+        """调账发起支持 Idempotency-Key:同键重放返回同一单,不开第二张。"""
+        from app.modules.adminapi.models import AdminAdjustment
+
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        fin = await second_admin_headers(sm, client, "fin-idem-a")
+        keyed = {**fin, "Idempotency-Key": "adj-20260822-01"}
+        body = {"user_id": user_id, "amount": "12.00", "reason": "重复提交演练"}
+        r1 = await client.post("/api/admin/v1/adjustments", json=body, headers=keyed)
+        assert r1.status_code == 201, r1.text
+        r2 = await client.post("/api/admin/v1/adjustments", json=body, headers=keyed)
+        assert r2.status_code == 201, r2.text
+        assert r2.json()["id"] == r1.json()["id"]
+        async with sm() as session:
+            rows = (await session.execute(select(AdminAdjustment))).scalars().all()
+        assert len(rows) == 1
+
+
+class TestTenantAggregations:
+    async def test_scoped_to_page_users(self, client, sm, fake):
+        """租户列表的三个按 user 聚合只算本页用户(IN 过滤),不做全表 GROUP BY。
+
+        挂了 = 带 q 检索单租户也全表聚合 balances/ledger/instances,数据量上来后列表页拖垮库。
+        """
+        from tests.helpers import fund_wallet
+
+        _headers, _uuid, id1 = await _provision_running(client, sm, fake, "13600000061")
+        u2 = await register(client, "13600000062")
+        id2 = u2["user"]["id"]
+        await fund_wallet(sm, id1, "10.00")
+        await fund_wallet(sm, id2, "20.00")
+        from app.modules.billing import service as billing_service
+
+        async with sm() as session:
+            await billing_service.debit(
+                session, id2, Decimal("3.00"), type_="consume", allow_negative=True
+            )
+            await session.commit()
+
+        from app.modules.orchestrator import service as orchestrator_service
+
+        async with sm() as session:
+            stats = await orchestrator_service.instance_disk_stats_by_user(session, [id1])
+            assert set(stats) == {id1} and stats[id1]["instances"] == 1
+            balances = await billing_service.balances_by_user(session, [id1])
+            assert set(balances) == {id1}
+            consumed = await billing_service.consumed_by_user(session, [id2])
+            assert set(consumed) == {id2} and consumed[id2] == Decimal("3.00")
+        # 不传 user_ids 保持全量口径(总览付费租户计数在用)
+        async with sm() as session:
+            assert id1 in await orchestrator_service.instance_disk_stats_by_user(session)
+
 
 class TestNodesAndReports:
     async def test_oversell_report(self, client, sm, fake):
@@ -256,15 +349,25 @@ class TestOutboxDead:
         rows = (await client.get("/api/admin/v1/outbox/dead", headers=ah)).json()
         assert any(r["id"] == task_id for r in rows)
 
-        # 重放:置回 pending,计数清零
+        # 重放:需原因(与忽略对齐),置回 pending,计数清零
         resp = await client.post(f"/api/admin/v1/outbox/{task_id}/retry", headers=ah)
+        assert resp.status_code == 422  # 缺原因直接拒
+        resp = await client.post(
+            f"/api/admin/v1/outbox/{task_id}/retry",
+            json={"reason": "调度抖动已恢复"},
+            headers=ah,
+        )
         assert resp.status_code == 200
         async with sm() as session:
             task = await session.get(OutboxTask, task_id)
             assert task is not None and task.status == "pending" and task.retries == 0
 
         # 非 dead 状态不可重放/忽略
-        resp = await client.post(f"/api/admin/v1/outbox/{task_id}/retry", headers=ah)
+        resp = await client.post(
+            f"/api/admin/v1/outbox/{task_id}/retry",
+            json={"reason": "再试一次"},
+            headers=ah,
+        )
         assert resp.status_code == 400
 
         # 忽略需原因
@@ -280,14 +383,20 @@ class TestOutboxDead:
 
 class TestRevenueReport:
     async def test_today_revenue_and_signups(self, client: AsyncClient, sm):
+        """营收口径 = 账单归属期(bills_hourly.hour_start),不是 ledger 入账时间。"""
+        from app.modules.billing.models import BillHourly
+
         data = await register(client, "13600000043")
+        hour = now_utc().replace(minute=0, second=0, microsecond=0)
         async with sm() as session:
             session.add(
-                BalanceLedger(
+                BillHourly(
+                    instance_id=1,
                     user_id=data["user"]["id"],
-                    type="consume",
-                    amount=Decimal("-12.50"),
-                    balance_after=Decimal("87.50"),
+                    hour_start=hour,
+                    seconds_used=3600,
+                    unit_price=Decimal("12.5000"),
+                    amount=Decimal("12.50"),
                 )
             )
             await session.commit()
@@ -332,8 +441,48 @@ class TestAnnouncement:
 
         # 用户端可见
         headers = {"Authorization": f"Bearer {u1['access_token']}"}
-        notifications = (await client.get("/api/v1/notifications", headers=headers)).json()
+        notifications = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any(n["type"] == "announcement" for n in notifications)
+
+    async def test_publish_bulk_insert_skips_frozen(
+        self, client: AsyncClient, sm, monkeypatch: pytest.MonkeyPatch
+    ):
+        """群发是批量 INSERT(单事务 ⌈N/1000⌉ 条语句),且只触达 active 用户。
+
+        逐用户 INSERT...RETURNING 的 N+1 若回潮,本用例经 monkeypatch 直接失败。
+        """
+        from app.modules.account import service as account_service
+        from app.modules.notify import service as notify_service
+
+        async def _no_per_user_notify(*args, **kwargs):
+            raise AssertionError("公告群发不得逐用户调用 notify()")
+
+        monkeypatch.setattr(notify_service, "notify", _no_per_user_notify)
+
+        u1 = await register(client, "13600000043")
+        u2 = await register(client, "13600000044")
+        async with sm() as session:
+            await account_service.admin_set_user_status(session, u2["user"]["id"], "frozen")
+            await session.commit()
+        ah = await admin_headers(sm, client, role="ops")
+        resp = await client.post(
+            "/api/admin/v1/announcements",
+            json={"title": "批量写入验证", "content": "维护通知"},
+            headers=ah,
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["reached"] == 1  # 冻结用户不触达
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(Notification).where(Notification.type == "announcement")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert {r.user_id for r in rows} == {u1["user"]["id"]}
 
 
 class TestTenantBillingDrilldown:
@@ -387,6 +536,8 @@ class TestFreezeStopsInstances:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "frozen"
+        # 回显本次停掉的 running 台数,前端据此提示影响面
+        assert resp.json()["instances_stopped"] == 1
 
         async with sm() as session:
             tasks = (
@@ -443,6 +594,20 @@ class TestAdminSearch:
         assert [t["phone_masked"] for t in suffix] == ["136****0002"]
         # 列表仍只回掩码:「查得到」不等于「看得到」
         assert all("phone" not in t or t.get("phone") is None for t in exact)
+
+    async def test_tenant_search_escapes_like_metachars(self, client, sm, fake):
+        """q 未转义时一个 % 即拖全表:元字符按字面匹配,正常后缀检索行为不变。"""
+        h = await admin_headers(sm, client)
+        await register(client, "13611110001")
+
+        pct = (await client.get("/api/admin/v1/tenants", params={"q": "%"}, headers=h)).json()
+        assert pct == []
+        underscore = (
+            await client.get("/api/admin/v1/tenants", params={"q": "_"}, headers=h)
+        ).json()
+        assert underscore == []
+        suffix = (await client.get("/api/admin/v1/tenants", params={"q": "0001"}, headers=h)).json()
+        assert [t["phone_masked"] for t in suffix] == ["136****0001"]
 
     async def test_tenant_search_is_audited(self, client, sm, fake):
         """按号码检索是敏感读:默认只审计写操作,这里必须显式留痕。"""
@@ -522,3 +687,178 @@ class TestAdminSearch:
             await client.get("/api/admin/v1/orders", params={"order_no": "SDL-B"}, headers=h)
         ).json()
         assert [o["order_no"] for o in found] == ["SDL-B"]
+
+
+class TestTenantLookupById:
+    async def test_numeric_q_hits_user_id(self, client, sm, fake):
+        """订单/调账/实例全以 user_id 指代租户:纯数字 q 必须能按 id 精确命中(排在最前)。"""
+        h = await admin_headers(sm, client)
+        data = await register(client, "13633330003")
+        uid = data["user"]["id"]
+
+        rows = (await client.get("/api/admin/v1/tenants", params={"q": str(uid)}, headers=h)).json()
+        assert rows[0]["id"] == uid
+        # id 无命中时回落手机号后缀语义,不报错
+        assert (
+            await client.get("/api/admin/v1/tenants", params={"q": "99999999"}, headers=h)
+        ).json() == []
+        # 手机号后缀检索行为不变
+        rows = (await client.get("/api/admin/v1/tenants", params={"q": "0003"}, headers=h)).json()
+        assert any(t["id"] == uid for t in rows)
+
+
+class TestAdjustContext:
+    async def test_context_and_unknown_user(self, client, sm, fake):
+        """调账前置上下文:掩码手机号 + 当前余额 + 近 3 条流水 + 在跑台数;幽灵 id → 404。"""
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        fin = await second_admin_headers(sm, client, "fin-ctx")
+
+        resp = await client.get(f"/api/admin/v1/tenants/{user_id}/adjust-context", headers=fin)
+        assert resp.status_code == 200, resp.text
+        ctx = resp.json()
+        assert ctx["user_id"] == user_id
+        assert "****" in ctx["phone_masked"]
+        assert ctx["balance"] == "100.00"
+        assert ctx["running_instances"] == 1
+        assert len(ctx["recent_ledger"]) >= 1  # fund_wallet 的 recharge 入账
+
+        resp = await client.get("/api/admin/v1/tenants/999999/adjust-context", headers=fin)
+        assert resp.status_code == 404
+
+    async def test_create_unknown_user_rejected(self, client, sm, fake):
+        """钱包会为任意 user_id 凭空建行:发起调账必须先拦住不存在的租户。"""
+        fin = await second_admin_headers(sm, client, "fin-ghost")
+        resp = await client.post(
+            "/api/admin/v1/adjustments",
+            json={"user_id": 999999, "amount": "10.00", "reason": "测试"},
+            headers=fin,
+        )
+        assert resp.status_code == 404
+
+    async def test_create_over_cap_rejected(self, client, sm, fake):
+        """单笔绝对值上限(ADJUST_MAX_ABS):防手滑多敲零,超出走对公/线下流程。"""
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        fin = await second_admin_headers(sm, client, "fin-cap")
+
+        for amount in ("100000.01", "-200000.00"):
+            resp = await client.post(
+                "/api/admin/v1/adjustments",
+                json={"user_id": user_id, "amount": amount, "reason": "超额"},
+                headers=fin,
+            )
+            assert resp.status_code == 400
+            assert resp.json()["code"] == "VALIDATION_ERROR"
+        # 上限边界值仍放行
+        resp = await client.post(
+            "/api/admin/v1/adjustments",
+            json={"user_id": user_id, "amount": "100000.00", "reason": "边界值"},
+            headers=fin,
+        )
+        assert resp.status_code == 201, resp.text
+
+
+class TestOverview:
+    async def test_exact_counts(self, client, sm, fake):
+        """总览聚合:精确 COUNT 口径,替代在截断列表(200/500 条)里数数。"""
+        from app.modules.nodes.models import NodeSpec
+
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        async with sm() as session:
+            session.add_all(
+                [
+                    NodeSpec(
+                        node_name="gpu-a1",
+                        pool_label="hami",
+                        gpu_count=8,
+                        gpu_used=3,
+                        status="Ready",
+                        last_seen=now_utc(),
+                    ),
+                    NodeSpec(
+                        node_name="gpu-b1",
+                        pool_label="hami",
+                        gpu_count=8,
+                        gpu_used=0,
+                        status="NotReady",
+                        last_seen=now_utc(),
+                    ),
+                    NodeSpec(
+                        node_name="gpu-c1",
+                        pool_label="kata",
+                        gpu_count=4,
+                        gpu_used=0,
+                        status="Missing",
+                        last_seen=now_utc(),
+                    ),
+                ]
+            )
+            await session.commit()
+
+        ah = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/overview", headers=ah)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["instances_by_status"]["running"] == 1
+        assert body["tenants_total"] >= 1
+        assert body["paying_tenants"] == 0  # 只有 recharge,没有 consume 流水
+        assert body["nodes_total"] == 3
+        assert body["nodes_ready"] == 1
+        assert body["nodes_missing"] == 1
+        hami = next(p for p in body["pools"] if p["pool"] == "hami")
+        assert hami["gpu_total"] == 16  # 含 NotReady 节点
+        assert hami["ready_gpu_total"] == 8
+
+        # 落一条 consume 流水后,付费租户精确 +1
+        async with sm() as session:
+            session.add(
+                BalanceLedger(
+                    user_id=user_id,
+                    type="consume",
+                    amount=Decimal("-1.00"),
+                    balance_after=Decimal("99.00"),
+                )
+            )
+            await session.commit()
+        body = (await client.get("/api/admin/v1/overview", headers=ah)).json()
+        assert body["paying_tenants"] == 1
+
+    async def test_sku_impact(self, client, sm, fake):
+        """改价影响面:该 SKU 当前活跃实例数 / 涉及用户数 / 占用卡数。"""
+        from app.modules.orchestrator.models import Instance
+
+        await _provision_running(client, sm, fake)
+        async with sm() as session:
+            sku_id = (await session.execute(select(Instance.sku_id))).scalar_one()
+        ah = await admin_headers(sm, client, role="ops")
+        resp = await client.get(f"/api/admin/v1/skus/{sku_id}/impact", headers=ah)
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {
+            "sku_id": sku_id,
+            "active_instances": 1,
+            "active_users": 1,
+            "active_gpus": 1,
+        }
+
+
+class TestAuditPagination:
+    async def test_cursor_turns_page(self, client, sm, fake):
+        """审计翻页:cursor=末行 id 的不透明编码,下一页全是更早的行;非法游标 400。"""
+        import base64
+
+        await _provision_running(client, sm, fake)  # 产生若干审计行
+        ah = await admin_headers(sm, client, role="admin")
+
+        page1 = (await client.get("/api/admin/v1/audit", params={"limit": 2}, headers=ah)).json()
+        assert len(page1) == 2
+        cursor = base64.urlsafe_b64encode(str(page1[-1]["id"]).encode()).decode()
+        page2 = (
+            await client.get(
+                "/api/admin/v1/audit", params={"limit": 2, "cursor": cursor}, headers=ah
+            )
+        ).json()
+        assert len(page2) >= 1
+        assert all(r["id"] < page1[-1]["id"] for r in page2)
+
+        resp = await client.get("/api/admin/v1/audit", params={"cursor": "!!!"}, headers=ah)
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "common.badCursor"

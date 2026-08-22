@@ -61,3 +61,31 @@ class TestSshKeys:
             headers=headers,
         )
         assert resp.json()["code"] == "SSH_KEY_INVALID"
+
+    async def test_same_key_allowed_across_users(self, client: AsyncClient):
+        """指纹唯一性收窄为 (user_id, fingerprint):全局唯一是跨租户枚举面
+        (可探测/占位阻断他租户添加自己的钥匙)。挂了 = 枚举面回潮。"""
+        from tests.test_account_auth import register
+
+        h1 = await auth_client(client)
+        data = await register(client, "13800000010")
+        h2 = {"Authorization": f"Bearer {data['access_token']}"}
+        for h in (h1, h2):
+            resp = await client.post(
+                "/api/v1/ssh-keys", json={"name": "k", "public_key": ED25519_KEY}, headers=h
+            )
+            assert resp.status_code == 201, resp.text
+
+    async def test_delete_then_readd_same_key(self, client: AsyncClient):
+        """删除是硬删除:删过的指纹可直接重新添加(无恢复语义)。"""
+        headers = await auth_client(client)
+        resp = await client.post(
+            "/api/v1/ssh-keys", json={"name": "k", "public_key": ED25519_KEY}, headers=headers
+        )
+        key_id = resp.json()["id"]
+        resp = await client.delete(f"/api/v1/ssh-keys/{key_id}", headers=headers)
+        assert resp.status_code == 204
+        resp = await client.post(
+            "/api/v1/ssh-keys", json={"name": "k2", "public_key": ED25519_KEY}, headers=headers
+        )
+        assert resp.status_code == 201, resp.text

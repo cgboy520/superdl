@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class ErrorCode(StrEnum):
@@ -21,6 +22,7 @@ class ErrorCode(StrEnum):
     FORBIDDEN = "FORBIDDEN"
     CONFLICT = "CONFLICT"
     RATE_LIMITED = "RATE_LIMITED"
+    METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL = "INTERNAL"
     # 账户
     SMS_CODE_INVALID = "SMS_CODE_INVALID"
@@ -69,6 +71,7 @@ class AppError(Exception):
         params: Mapping[str, Any] | None = None,
         http_status: int = status.HTTP_400_BAD_REQUEST,
         detail: Any = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         if key is not None:
             from app.core.messages import render_message
@@ -83,6 +86,7 @@ class AppError(Exception):
         self.params = dict(params) if params else None
         self.http_status = http_status
         self.detail = detail
+        self.headers = dict(headers) if headers else None
 
 
 def not_found(message: str | None = None, *, key: str | None = None) -> AppError:
@@ -97,9 +101,43 @@ def unauthorized(message: str | None = None, *, key: str | None = None) -> AppEr
     )
 
 
-def forbidden(message: str | None = None, *, key: str | None = None) -> AppError:
+def forbidden(
+    message: str | None = None,
+    *,
+    key: str | None = None,
+    params: Mapping[str, Any] | None = None,
+) -> AppError:
     key = None if message is not None else (key or "common.forbidden")
-    return AppError(ErrorCode.FORBIDDEN, message, key=key, http_status=status.HTTP_403_FORBIDDEN)
+    return AppError(
+        ErrorCode.FORBIDDEN, message, key=key, params=params, http_status=status.HTTP_403_FORBIDDEN
+    )
+
+
+def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[str, str]:
+    """统一响应头:401 一律带 WWW-Authenticate(RFC 6750),调用方自定义头合并保留。"""
+    out = dict(headers or {})
+    if http_status == status.HTTP_401_UNAUTHORIZED:
+        out.setdefault("WWW-Authenticate", "Bearer")
+    return out
+
+
+def _current_request_id() -> str | None:
+    """错误体回带 request_id(observability 中间件绑定的 contextvar),便于凭单排障。"""
+    import structlog
+
+    value = structlog.contextvars.get_contextvars().get("request_id")
+    return str(value) if value else None
+
+
+# 框架层 HTTPException(路由 404/405 等)→ 统一错误体的状态码映射
+_HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
+    status.HTTP_400_BAD_REQUEST: (ErrorCode.VALIDATION_ERROR, "common.validation"),
+    status.HTTP_401_UNAUTHORIZED: (ErrorCode.UNAUTHORIZED, "common.unauthorized"),
+    status.HTTP_403_FORBIDDEN: (ErrorCode.FORBIDDEN, "common.forbidden"),
+    status.HTTP_404_NOT_FOUND: (ErrorCode.NOT_FOUND, "common.notFound"),
+    status.HTTP_405_METHOD_NOT_ALLOWED: (ErrorCode.METHOD_NOT_ALLOWED, "common.methodNotAllowed"),
+    status.HTTP_429_TOO_MANY_REQUESTS: (ErrorCode.RATE_LIMITED, "common.rateLimited"),
+}
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -113,7 +151,35 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message_key": exc.message_key,
                 "params": jsonable_encoder(exc.params),
                 "detail": jsonable_encoder(exc.detail),
+                "request_id": _current_request_id(),
             },
+            headers=_error_headers(exc.http_status, exc.headers),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        _request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        """路由层 404/405 等框架异常也渲染统一错误体(否则前端拿到的是另一种形状)。"""
+        from app.core.messages import render_message
+
+        code, key = _HTTP_STATUS_MAP.get(
+            exc.status_code,
+            (ErrorCode.VALIDATION_ERROR, "common.validation")
+            if exc.status_code < 500
+            else (ErrorCode.INTERNAL, "common.internal"),
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": code.value,
+                "message": render_message(key, None),
+                "message_key": key,
+                "params": None,
+                "detail": jsonable_encoder(exc.detail),
+                "request_id": _current_request_id(),
+            },
+            headers=_error_headers(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -130,6 +196,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message_key": "common.validation",
                 "params": None,
                 "detail": jsonable_encoder(detail),
+                "request_id": _current_request_id(),
             },
         )
 
@@ -150,6 +217,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message_key": "common.internal",
                 "params": None,
                 "detail": None,
+                "request_id": _current_request_id(),
             },
         )
 

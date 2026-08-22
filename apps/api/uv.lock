@@ -1721,7 +1721,7 @@ requires-dist = [
     { name = "alipay-sdk-python", specifier = ">=3.7.1160" },
     { name = "apscheduler", specifier = ">=3.11,<4" },
     { name = "asyncpg", specifier = ">=0.31" },
-    { name = "bcrypt", specifier = ">=5.0" },
+    { name = "bcrypt", specifier = ">=5.0,<6" },
     { name = "cryptography", specifier = ">=45.0" },
     { name = "fastapi", specifier = ">=0.141,<0.142" },
     { name = "httpx", specifier = ">=0.28" },

@@ -334,3 +334,87 @@ class TestClusterKeyRename:
             Settings(_env_file=None).cluster_server_url  # type: ignore[call-arg]
             == "https://8.8.8.8:9345"
         )
+
+
+class TestEffectiveConfigCache:
+    async def test_repeat_read_served_from_cache_without_decrypt(self, sm, monkeypatch):
+        """缓存命中时不再全量解密(AES-GCM 是短信/充值/页载密集路径上的主要开销)。"""
+        from app.core.platform_config import (
+            get_effective_platform_config,
+            set_platform_settings,
+        )
+
+        async with sm() as session:
+            await set_platform_settings(
+                session, {"sms_access_key_secret": "CACHE-TEST-SECRET"}, updated_by=None
+            )
+            await session.commit()
+        async with sm() as session:
+            cfg = await get_effective_platform_config(session)
+        assert cfg["sms_access_key_secret"] == "CACHE-TEST-SECRET"
+
+        def _boom(*args: object, **kwargs: object) -> str:
+            raise AssertionError("缓存命中不应再解密")
+
+        monkeypatch.setattr(crypto, "decrypt_str", _boom)
+        async with sm() as session:
+            cfg2 = await get_effective_platform_config(session)
+        assert cfg2["sms_access_key_secret"] == "CACHE-TEST-SECRET"
+
+    async def test_cache_invalidates_on_write(self, sm):
+        """写覆盖/清除后立刻读到新值:失效签名由写入侧显式 bump 的 updated_at 驱动。"""
+        from app.core.platform_config import (
+            get_effective_platform_config,
+            set_platform_settings,
+        )
+
+        async with sm() as session:
+            assert (await get_effective_platform_config(session))["icp_number"] == ""
+        async with sm() as session:
+            await set_platform_settings(
+                session, {"icp_number": "京ICP备2026011111号-1"}, updated_by=None
+            )
+            await session.commit()
+        async with sm() as session:
+            assert (await get_effective_platform_config(session))[
+                "icp_number"
+            ] == "京ICP备2026011111号-1"
+        async with sm() as session:
+            await set_platform_settings(session, {"icp_number": ""}, updated_by=None)
+            await session.commit()
+        async with sm() as session:
+            assert (await get_effective_platform_config(session))["icp_number"] == ""
+
+    async def test_corrupt_secret_row_falls_back_to_env(self, sm):
+        """单行密文损坏(主密钥换错/手工改库)只让该键回落 env,不得拖垮整份配置。"""
+        from app.core.platform_config import PlatformSetting, get_effective_platform_config
+
+        async with sm() as session:
+            session.add(
+                PlatformSetting(
+                    key="sms_access_key_secret", value="enc:v1:corrupt", updated_by=None
+                )
+            )
+            await session.commit()
+        async with sm() as session:
+            cfg = await get_effective_platform_config(session)  # 不抛
+        assert cfg["sms_access_key_secret"] == ""  # env 未设 → 空串
+
+    async def test_prod_write_path_rejects_mock_realname_combo(self, sm, monkeypatch):
+        """prod 下经 DB 覆盖层也不得组合出「强制实名 + mock 渠道」(与启动校验同口径)。"""
+        from app.core.config import get_settings
+        from app.core.platform_config import set_platform_settings
+
+        monkeypatch.setattr(get_settings(), "environment", "prod", raising=False)
+        async with sm() as session:
+            with pytest.raises(ValueError, match="real_name_provider"):
+                await set_platform_settings(
+                    session, {"real_name_required_for_recharge": "true"}, updated_by=None
+                )
+        async with sm() as session:
+            # 同一批把渠道切成 aliyun 则放行(组合终态合法)
+            await set_platform_settings(
+                session,
+                {"real_name_required_for_recharge": "true", "real_name_provider": "aliyun"},
+                updated_by=None,
+            )

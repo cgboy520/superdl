@@ -17,6 +17,17 @@ class TestRequestId:
         resp = await client.get("/healthz", headers={"X-Request-ID": "gw-abc123"})
         assert resp.headers["x-request-id"] == "gw-abc123"
 
+    async def test_cors_exposes_request_id(self, client: AsyncClient):
+        """浏览器跨域 fetch 默认读不到自定义响应头:必须经 expose_headers 放行。"""
+        resp = await client.get("/healthz", headers={"Origin": "http://localhost:5173"})
+        assert "x-request-id" in resp.headers.get("access-control-expose-headers", "").lower()
+
+    async def test_error_body_carries_request_id(self, client: AsyncClient):
+        """错误响应体回带 request_id:用户报错时凭单号即可串联日志。"""
+        resp = await client.get("/api/v1/no-such-route", headers={"X-Request-ID": "gw-err-1"})
+        assert resp.status_code == 404
+        assert resp.json()["request_id"] == "gw-err-1"
+
 
 class TestHealthEndpoints:
     async def test_ready_when_db_up(self, client: AsyncClient):

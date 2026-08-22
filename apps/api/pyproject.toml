@@ -12,7 +12,7 @@ dependencies = [
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
     "pyjwt>=2.13",
-    "bcrypt>=5.0",
+    "bcrypt>=5.0,<6", # 5.x 起 72 字节上限抛 ValueError,主版本钉住防行为漂移
     "structlog>=26.1",
     "prometheus-client>=0.26",
     "apscheduler>=3.11,<4",
@@ -64,10 +64,12 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning:testcontainers"]
+markers = ["real_k8s: 需真实集群（SUPERDL_TEST_KUBECONFIG 门控，CI kind job 使用）"]
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/export_openapi.py"]
+# real.py 需真实集群,单测不覆盖;独立成行的文件级 pragma 对 coverage.py 无效,须走 omit
+omit = ["app/export_openapi.py", "app/core/k8s/real.py"]
 # SQLAlchemy async 在 greenlet 里跑同步核心:不声明 greenlet 并发会丢失 await 之后的行
 concurrency = ["greenlet", "thread"]
 

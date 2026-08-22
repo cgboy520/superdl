@@ -7,8 +7,10 @@ kill_pod / inject_pod(reconciler 场景)。容量按 pool 配置,近似库存=�
 from dataclasses import dataclass, field
 
 from app.core.k8s.base import (
+    GPU_MODEL_NODE_LABEL,
     INSTANCE_DISK_STORAGE_CLASS,
     JUICEFS_STORAGE_CLASS,
+    POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
     PodStatus,
@@ -149,7 +151,7 @@ class FakeOrchestrator:
         used = sum(
             int(p.spec.gpu_resources.get("nvidia.com/gpu", "0"))
             for p in self.pods.values()
-            if p.spec.node_selector.get("superdl.io/pool") == pool_label
+            if p.spec.node_selector.get(POOL_NODE_LABEL) == pool_label
         )
         return max(0, cap - used)
 
@@ -222,7 +224,7 @@ class FakeOrchestrator:
                     disk_gb=2048,
                     gpu_model_label=self.node_gfd_labels.get(name, ""),
                     model_label_current=self.node_labels.get(name, {}).get(
-                        "superdl.io/gpu-model", ""
+                        GPU_MODEL_NODE_LABEL, ""
                     ),
                 )
             )
@@ -242,7 +244,7 @@ class FakeOrchestrator:
                 disk_gb=n.disk_gb,
                 gpu_model_label=n.gpu_model_label or self.node_gfd_labels.get(n.name, ""),
                 model_label_current=n.model_label_current
-                or self.node_labels.get(n.name, {}).get("superdl.io/gpu-model", ""),
+                or self.node_labels.get(n.name, {}).get(GPU_MODEL_NODE_LABEL, ""),
             )
             for n in nodes
         ]

@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.core.platform_config import SettingGroup, SettingKind
-from app.modules.billing.schemas import RechargeOut
+from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
 
 
 class AdminLoginRequest(BaseModel):
@@ -83,6 +83,49 @@ class TenantOut(BaseModel):
 class TenantStatusOut(BaseModel):
     id: int
     status: str
+    # 仅冻结时返回:本次一并停掉的 running 实例台数(前端回显用)
+    instances_stopped: int | None = None
+
+
+class OverviewPoolOut(BaseModel):
+    """池级 GPU 台账:总量含非 Ready 节点(前端单独画第三段)。"""
+
+    pool: str
+    gpu_total: int
+    gpu_used: int
+    ready_gpu_total: int
+
+
+class OverviewOut(BaseModel):
+    """总览聚合:全部精确计数,不从截断列表推算。"""
+
+    instances_by_status: dict[str, int]  # 非终态分状态计数(不含 released)
+    tenants_total: int  # active 用户口径
+    paying_tenants: int  # ledger consume > 0 的精确人数
+    nodes_total: int
+    nodes_ready: int
+    nodes_missing: int
+    pools: list[OverviewPoolOut]
+
+
+class AdjustContextOut(BaseModel):
+    """调账前置上下文:回显租户身份与资金现状,防止调错人。"""
+
+    user_id: int
+    phone_masked: str
+    status: str
+    balance: str
+    running_instances: int
+    recent_ledger: list[LedgerEntryOut]
+
+
+class SkuImpactOut(BaseModel):
+    """改价影响面:该 SKU 活跃(creating/starting/running)实例数/用户数/卡数。"""
+
+    sku_id: int
+    active_instances: int
+    active_users: int
+    active_gpus: int
 
 
 class NodeOut(BaseModel):

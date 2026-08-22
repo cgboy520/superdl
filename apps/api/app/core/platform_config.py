@@ -17,6 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core import crypto
 from app.core.config import get_settings
 from app.core.db import Base
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class PlatformSetting(Base):
@@ -167,7 +170,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "cluster",
         "secret",
         max_len=512,
-        hint="server 节点 /var/lib/rancher/<rke2|k3s>/server/node-token 文件内容",
+        hint="专用 agent token(server 的 .../server/agent-token;禁止填 node-token)",
     ),
     "cluster_agent_version": SettingSpec(
         "cluster",
@@ -249,24 +252,69 @@ def _env_default(key: str) -> str:
     return str(v)
 
 
+def _env_layer() -> dict[str, str]:
+    return {key: _env_default(key) for key in SETTING_SPECS}
+
+
+# 生效配置进程内缓存。调用密集(每条短信 2 次、每次充值、每次页载),
+# 全表读 + 全量 AES-GCM 解密不划算;键面只有 SETTING_SPECS 白名单这几十行。
+# 失效签名 = (行数, max(updated_at), env 默认值层指纹):
+# 改值必动 updated_at(set_platform_settings 显式 bump),增删动行数,env 变更动指纹。
+_config_cache: tuple[tuple[object, ...], dict[str, str]] | None = None
+
+
+async def _config_signature(session: AsyncSession) -> tuple[object, ...]:
+    count, max_updated = (
+        await session.execute(select(func.count(), func.max(PlatformSetting.updated_at)))
+    ).one()
+    return (count, max_updated, tuple(_env_layer().values()))
+
+
+def _decrypt_row(key: str, value: str, *, aad: str) -> str | None:
+    """单行解密;密文损坏(主密钥换错/手工改库)返回 None 让调用方回落 env,
+    不得拖垮整份配置(prod lifespan 也走这里)。"""
+    try:
+        return crypto.decrypt_str(value, aad=aad)
+    except Exception:
+        logger.error("platform_setting_decrypt_failed", key=key, fallback="env")
+        return None
+
+
 async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]:
     """生效配置全量映射(secret 已解密,仅进程内使用,严禁整体入日志/响应)。"""
-    eff = {key: _env_default(key) for key in SETTING_SPECS}
+    global _config_cache
+    signature = await _config_signature(session)
+    if _config_cache is not None and _config_cache[0] == signature:
+        return dict(_config_cache[1])
+    eff = _env_layer()
     rows = {r.key: r for r in (await session.execute(select(PlatformSetting))).scalars()}
     for key, row in rows.items():
         spec = SETTING_SPECS.get(key)
         if spec is None:
             continue  # 不在白名单内的键忽略(含改名后的遗留行,由别名回落处理)
-        eff[key] = crypto.decrypt_str(row.value, aad=key) if spec.kind == "secret" else row.value
+        if spec.kind == "secret":
+            if (plain := _decrypt_row(key, row.value, aad=key)) is not None:
+                eff[key] = plain
+        else:
+            eff[key] = row.value
     for new_key, old_key in LEGACY_KEY_ALIASES.items():
         if new_key not in rows and old_key in rows:
             spec = SETTING_SPECS[new_key]
-            eff[new_key] = (
-                crypto.decrypt_str(rows[old_key].value, aad=old_key)
-                if spec.kind == "secret"
-                else rows[old_key].value
-            )
-    return eff
+            if spec.kind == "secret":
+                plain = _decrypt_row(new_key, rows[old_key].value, aad=old_key)
+                if plain is not None:
+                    eff[new_key] = plain
+            else:
+                eff[new_key] = rows[old_key].value
+    # 以本次全量读自身的快照重算签名,保证缓存内容与签名自洽
+    # (快捷签名查询与全量读之间可能隔着其他事务的提交)
+    built_signature = (
+        len(rows),
+        max((r.updated_at for r in rows.values() if r.updated_at is not None), default=None),
+        signature[2],
+    )
+    _config_cache = (built_signature, eff)
+    return dict(eff)
 
 
 async def set_platform_settings(
@@ -290,13 +338,45 @@ async def set_platform_settings(
             pg_insert(PlatformSetting)
             .values(key=key, value=value, updated_by=updated_by)
             .on_conflict_do_update(
-                index_elements=["key"], set_={"value": value, "updated_by": updated_by}
+                index_elements=["key"],
+                # updated_at 显式 bump:既让管理端看到真实更新时间,也驱动读缓存失效
+                set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )
         if key in LEGACY_KEY_ALIASES:  # 写新删旧:此后不再走别名回落
             await session.execute(
                 delete(PlatformSetting).where(PlatformSetting.key == LEGACY_KEY_ALIASES[key])
             )
+    await _check_prod_real_name_combination(session, updates)
+
+
+async def _check_prod_real_name_combination(session: AsyncSession, updates: dict[str, str]) -> None:
+    """与 Settings._validate_prod 同口径的写入侧 fail-closed:
+
+    prod 下「充值强制实名 + mock 渠道」组合经 DB 覆盖层也要拦住
+    (mock 恒过等于实名形同虚设)。实名未启用时 mock 无害,不拦。
+    """
+    if get_settings().environment != "prod" or not (
+        updates.keys() & {"real_name_provider", "real_name_required_for_recharge"}
+    ):
+        return
+    rows = await list_platform_overrides(session)
+    provider = (
+        rows["real_name_provider"].value
+        if "real_name_provider" in rows
+        else _env_default("real_name_provider")
+    )
+    required = (
+        rows["real_name_required_for_recharge"].value
+        if "real_name_required_for_recharge" in rows
+        else _env_default("real_name_required_for_recharge")
+    )
+    if provider == "mock" and required == "true":
+        raise ValueError(
+            "real_name_provider=mock 与 real_name_required_for_recharge=true 不能同时生效"
+            "(mock 渠道核验恒过,等于实名形同虚设):请先接入阿里云实名"
+            "(real_name_access_key_*),或先关闭充值强制实名"
+        )
 
 
 async def list_platform_overrides(session: AsyncSession) -> dict[str, PlatformSetting]:

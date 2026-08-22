@@ -36,13 +36,16 @@ CurrentAdmin = Annotated[AdminUser, Depends(get_current_admin)]
 
 
 def require_roles(*roles: str):
-    """角色门:admin 恒许;其余按白名单。"""
+    """角色门:admin 恒许;其余按白名单。无参调用 = 仅 admin。"""
 
     async def checker(
         admin: Annotated[AdminUser, Depends(get_current_admin)],
     ) -> AdminUser:
         if admin.role != "admin" and admin.role not in roles:
-            raise forbidden(f"需要角色:{'/'.join(roles)}")
+            if roles:
+                raise forbidden(key="adminapi.roleRequired", params={"roles": "/".join(roles)})
+            # 无参分支单独给文案:空串拼接会留下半截话(「需要角色:」)
+            raise forbidden(key="adminapi.roleRequiredAdmin")
         return admin
 
     return Depends(checker)

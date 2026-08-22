@@ -19,6 +19,7 @@ from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.schemas import (
+    AdjustContextOut,
     AdjustmentOut,
     AdjustmentStatusOut,
     AdminAccountOut,
@@ -48,6 +49,7 @@ from app.modules.adminapi.schemas import (
     OrderVerifyOut,
     OutboxTaskStatusOut,
     OversellPoolOut,
+    OverviewOut,
     PaymentAnomalyOut,
     PlatformConfigItemOut,
     PlatformConfigOut,
@@ -55,6 +57,7 @@ from app.modules.adminapi.schemas import (
     PrewarmEnqueuedOut,
     ReconciliationOut,
     RevenueReportOut,
+    SkuImpactOut,
     SmsTestOut,
     TenantOut,
     TenantStatusOut,
@@ -107,6 +110,18 @@ async def admin_change_own_password(
     await service.change_own_password(session, admin.id, body.current_password, body.new_password)
     set_audit_target(request, f"admin:{admin.id}", detail={"action": "self_password_change"})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- 总览聚合(只读,全角色) ----------
+
+
+@router.get("/overview", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_overview(session: DbSession) -> OverviewOut:
+    """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。
+
+    全是精确计数,替代前端在截断列表(200/500 条)里数数的错误口径。
+    """
+    return OverviewOut.model_validate(await service.overview(session))
 
 
 # ---------- 管理员账号(角色:仅 admin) ----------
@@ -246,6 +261,12 @@ async def sku_capacity_preview(
         est_instances=est,
         warnings=warnings,
     )
+
+
+@router.get("/skus/{sku_id}/impact", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_sku_impact(sku_id: int, session: DbSession) -> SkuImpactOut:
+    """改价/下架影响面(只读):当前活跃实例数/涉及用户数/占用卡数。"""
+    return SkuImpactOut.model_validate(await service.sku_impact(session, sku_id))
 
 
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
@@ -439,9 +460,11 @@ async def admin_list_tenants(
     q: str | None = None,
     status: str | None = None,
 ) -> list[TenantOut]:
-    """租户列表。q = 手机号(完整号码精确,短串按后缀)。
+    """租户列表。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
 
-    列表只回掩码。按号码检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
+    订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行排在最前,
+    手机号后缀命中行保持原序随后。列表只回掩码。按号码/id 检索是敏感读,显式落一条审计
+    (中间件默认只审计写操作)。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
@@ -450,9 +473,25 @@ async def admin_list_tenants(
         masked = q[:3] + "****" + q[-4:] if len(q) >= 7 else "***"
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
     users = await account_service.admin_list_users(session, q=q, status=status)
-    balances = await billing_service.balances_by_user(session)
-    consumed = await billing_service.consumed_by_user(session)
-    stats = await orchestrator_service.instance_disk_stats_by_user(session)
+    q_digits = (q or "").strip()
+    # 纯数字额外按租户 id 精确命中;id 是 int32,超过 9 位的数字串(如完整手机号)直接跳过
+    if q_digits.isdigit() and len(q_digits) <= 9:
+        by_id = None
+        try:
+            by_id = await account_service.get_user(session, int(q_digits))
+        except AppError:
+            by_id = None  # id 无命中,保留手机号后缀匹配结果
+        if (
+            by_id is not None
+            and (not status or by_id.status == status)
+            and all(u.id != by_id.id for u in users)
+        ):
+            users.insert(0, by_id)
+    # 只聚合本页用户:三个按 user 分组的聚合都带 IN 过滤,不做全表 GROUP BY
+    page_user_ids = [u.id for u in users]
+    balances = await billing_service.balances_by_user(session, page_user_ids)
+    consumed = await billing_service.consumed_by_user(session, page_user_ids)
+    stats = await orchestrator_service.instance_disk_stats_by_user(session, page_user_ids)
     out = []
     for u in users:
         st = stats.get(u.id, {"instances": 0, "disk_gb": 0})
@@ -500,6 +539,17 @@ async def admin_tenant_bills(
     )
 
 
+@router.get(
+    "/tenants/{user_id}/adjust-context", dependencies=[require_roles("ops", "finance", "readonly")]
+)
+async def admin_adjust_context(
+    user_id: int, session: DbSession, request: Request
+) -> AdjustContextOut:
+    """调账前置上下文(只读):回显掩码手机号/当前余额/近 3 条流水。不存在 → 404。"""
+    mark_audited_read(request, f"tenant-adjust-context:{user_id}")
+    return AdjustContextOut.model_validate(await service.adjust_context(session, user_id))
+
+
 @router.post("/tenants/{user_id}/freeze", dependencies=[require_roles("ops")])
 async def admin_freeze_tenant(
     user_id: int, body: TenantFreezeRequest, session: DbSession, request: Request
@@ -515,7 +565,8 @@ async def admin_freeze_tenant(
     set_audit_target(
         request, f"user:{user_id}", detail={"reason": body.reason, "instances_stopped": stopped}
     )
-    return TenantStatusOut(id=user.id, status=user.status)
+    # 回显停机台数:前端据此提示「已停 N 台」(creating/starting 由巡检收敛,不在此计数)
+    return TenantStatusOut(id=user.id, status=user.status, instances_stopped=stopped)
 
 
 @router.post("/tenants/{user_id}/unfreeze", dependencies=[require_roles("ops")])
@@ -883,14 +934,17 @@ async def admin_create_adjustment(
     body: AdjustmentCreate,
     session: DbSession,
     request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
+    """发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单。"""
     adj = await service.create_adjustment(
         session,
         user_id=body.user_id,
         amount=body.amount,
         reason=body.reason,
         created_by=admin.id,
+        idempotency_key=idempotency_key,
     )
     set_audit_target(request, f"adjustment:{adj.id}", detail={"amount": str(adj.amount)})
     return AdjustmentStatusOut(id=adj.id, status=adj.status)
@@ -926,26 +980,36 @@ async def admin_audit_log(
     q: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = None,
 ) -> list[AuditLogOut]:
-    """审计检索:actor_id / 动作前缀 / 时间区间。"""
+    """审计检索:actor_id / 动作前缀 / 时间区间;cursor 向前翻页(响应保持数组,满页即还有更早)。"""
     from sqlalchemy import select as sa_select
 
     from app.core.audit import AuditLog
+    from app.core.pagination import decode_cursor_int
 
-    stmt = sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(min(limit, 500))
+    stmt = sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)
     if actor_type:
         stmt = stmt.where(AuditLog.actor_type == actor_type)
     if actor_id:
         stmt = stmt.where(AuditLog.actor_id == actor_id)
     if q:
-        # 动作/目标关键字。两列都是短串,量级由 limit 兜住
-        pattern = f"%{q}%"
-        stmt = stmt.where(AuditLog.action.ilike(pattern) | AuditLog.target.ilike(pattern))
+        # 动作/目标关键字。两列都是短串,量级由 limit 兜住;
+        # LIKE 元字符转义:q 里的 %/_ 按字面匹配,不当通配符
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        stmt = stmt.where(
+            AuditLog.action.ilike(pattern, escape="\\")
+            | AuditLog.target.ilike(pattern, escape="\\")
+        )
     if since:
         stmt = stmt.where(AuditLog.created_at >= since)
     if until:
         stmt = stmt.where(AuditLog.created_at < until)
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(AuditLog.id < last_id)
     rows = (await session.execute(stmt)).scalars().all()
     return [
         AuditLogOut(
@@ -1197,11 +1261,15 @@ class OutboxDiscardRequest(BaseModel):
     reason: str = Field(min_length=2, max_length=200)
 
 
+class OutboxRetryRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=200)
+
+
 @router.post("/outbox/{task_id}/retry", dependencies=[require_roles("ops")])
 async def admin_retry_dead_task(
-    task_id: int, session: DbSession, request: Request
+    task_id: int, body: OutboxRetryRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
-    """重放死信:置回 pending 交还 worker(handler 幂等,重放安全)。"""
+    """重放死信(需原因,与忽略对齐):置回 pending 交还 worker(handler 幂等,重放安全)。"""
     from app.core.errors import AppError, ErrorCode
     from app.core.outbox import OutboxTask
     from app.core.timeutil import now_utc
@@ -1221,7 +1289,9 @@ async def admin_retry_dead_task(
     task.locked_by = None
     task.locked_at = None
     await session.commit()
-    set_audit_target(request, f"outbox:{task_id}", detail={"type": task.type})
+    set_audit_target(
+        request, f"outbox:{task_id}", detail={"type": task.type, "reason": body.reason}
+    )
     return OutboxTaskStatusOut(id=task.id, status=task.status)
 
 
@@ -1273,12 +1343,16 @@ class OrderBackfillRequest(BaseModel):
 
 @router.post("/finance/orders/{order_no}/backfill", dependencies=[require_roles("finance")])
 async def admin_backfill_order(
-    order_no: str, body: OrderBackfillRequest, session: DbSession, request: Request
+    order_no: str,
+    body: OrderBackfillRequest,
+    session: DbSession,
+    request: Request,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> OrderBackfillOut:
-    """人工补单:服务端实时向渠道核验已支付且金额一致才入账。"""
+    """人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态。"""
     from app.modules.billing import service as billing_service
 
-    order = await billing_service.backfill_order(session, order_no)
+    order = await billing_service.backfill_order(session, order_no, idempotency_key=idempotency_key)
     set_audit_target(
         request, f"order:{order_no}", detail={"reason": body.reason, "amount": str(order.amount)}
     )
