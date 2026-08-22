@@ -52,7 +52,7 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 5. **计费主依据是 `instance_events`**（running↔非 running 的边），Prometheus 指标只做展示与对账，不参与计费。
 6. **模块边界**：`app/modules/*` 之间只许 import 对方的 `service.py` 与 `schemas.py`，禁止跨模块 import 其他文件或跨模块查表；唯一例外是 `account/deps.py`（`CurrentUser` 为全站鉴权依赖）。import-linter 按「整包禁止 + 只放行 service/schemas」强制，新增文件默认受约束。
 7. **API 契约**：OpenAPI-first。改了路由/schema 必须重新导出 openapi.json 并跑 `pnpm api-client`；前端禁止手写 fetch，一律用生成的 hooks。
-8. **统一错误体** `{code, message, message_key, params, detail}`（`app/core/errors.py` 的 AppError）；创建类 POST 支持 `Idempotency-Key`。
+8. **统一错误体** `{code, message, message_key, params, detail, request_id}`（`app/core/errors.py` 的 AppError）；创建类 POST 支持 `Idempotency-Key`。
 9. **所有写操作过审计中间件**；管理端 API 与用户端 API 物理分离（独立 JWT audience：`user` / `admin`）。
 10. **状态机迁移**只能通过 `orchestrator/service.py` 的 transition 函数（同事务写 instance_events），禁止直接 UPDATE status。
 11. **前端**：antd 6 原生组件自封装，不引 pro-components；服务端状态全走 TanStack Query；文案与状态映射集中在 `packages/ui`。

@@ -4,21 +4,21 @@
 
 ## 数据模型
 
-- `node_enrollments`:token_hash(sha256 唯一)、pool(kata/hami/mig)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
+- `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发;NULL=升级前旧行)、pool(kata/hami/mig)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
 - `node_specs`:node_name 唯一、pool_label?、unlabeled、gpu_model_raw?、gpu_model?(canonical)、label_synced、gpu_count、gpu_used、vram_gb、vcpu、mem_gb、disk_gb、driver_version?、cuda_version?、status(Ready/NotReady/Cordoned/Missing)、last_seen
 - `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、storage_classes JSONB?、pools JSONB?、detail JSONB?、error?、probed_at
 
-装机状态机:pending → installing → rebooting ⇆ installing → joining → joined,旁路终态 failed / expired / revoked。
+装机状态机:pending → installing → rebooting ⇆ installing → joining → joined,旁路终态 failed / expired / revoked(非终态均可因绝对过期落 expired)。
 
 ## 契约
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
 | `GET /api/v1/node-enroll/script` | 匿名+限流 | 静态脚本,仅替换 `__API_BASE__`,内容零密钥 |
-| `POST /api/v1/node-enroll/bootstrap` | Bearer token | 上报 hostname/os/`gpu_details:[{name, memory_mib}]` → 回 pool/发行版/agent 版本/server_url/join_token/驱动版本/nvme/registries_yaml;仅 pending/installing/rebooting 放行,其余统一 404;按 IP 限流 |
-| `POST /api/v1/node-enroll/progress` | Bearer token | `{phase, state: running\|ok\|failed\|rebooting, message?}` 推进 phase/status/error/心跳 |
+| `POST /api/v1/node-enroll/bootstrap` | Bearer 注册令牌(一次性) | 上报 hostname/os/`gpu_details:[{name, memory_mib}]` → 回 pool/发行版/agent 版本/server_url/join_token/驱动版本/nvme/registries_yaml + `progress_token`(首跑换发) + `script_sha256`(重拉脚本指纹);首跑即消费注册令牌,之后任何令牌 bootstrap 均 404;按 IP 限流 |
+| `POST /api/v1/node-enroll/progress` | Bearer progress 令牌 | `{phase, state: running\|ok\|failed\|rebooting, message?}` 推进 phase/status/error/心跳;存量旧行(未签发 progress 令牌)仍认注册令牌 |
 | `GET /api/admin/v1/node-enrollments` | ops/readonly | `?active=true` 排除 revoked、超 24h 的 joined、超 7d 的 expired |
-| `POST /api/admin/v1/node-enrollments` | ops | 响应含 token 明文与完整命令,仅此一次;Idempotency-Key 重放轮换该行 token 而不建新行;cluster 组未配 server_url/join_token → 409 |
+| `POST /api/admin/v1/node-enrollments` | ops | 响应含 token 明文与完整命令,仅此一次;Idempotency-Key 重放轮换该行 token 而不建新行(仅 pending/expired/failed,进行中 409,同 regenerate 守卫);cluster 组未配 server_url/join_token → 409 |
 | `POST .../{enrollment_id}/regenerate` | ops | 仅 pending/expired/failed:换新 token 与有效期,状态回 pending |
 | `POST .../{enrollment_id}/revoke` | ops | reason 必填,非终态 → revoked |
 | `GET /api/admin/v1/nodes` | ops/readonly | 数据源为台账;含 `gpu_model_raw / unlabeled / label_synced / last_seen / vram_gb`,含未打标与 Missing |
@@ -29,10 +29,13 @@
 
 ## 规则与不变量
 
-- 令牌只走 `sdln_` 前缀 256-bit 随机串,只存 sha256;无效/过期/吊销/终态一律返 404,不区分原因以防探测。
-- token 只经命令行参数传入,不进 URL(否则落 access log 与代理日志);集群 server URL 与 join token 不进脚本,由脚本凭 token `POST /bootstrap` 换取。
-- bootstrap 上报的 hostname 与预填不符即置 failed,防令牌串用。
-- 对账器(30s,advisory lock 1009)判定 joined 的唯一依据是 K8s 中该 node_name 出现且 Ready 且池标签匹配;池标签不符 → failed;pending 过 expires_at → expired;2h 无心跳 → failed。
+- 令牌只走 `sdln_` 前缀 256-bit 随机串,只存 sha256;无效/过期/吊销/终态一律返 404,不区分原因以防探测。progress 令牌 `sdlp_` 前缀同规格。
+- token 不进 URL(否则落 access log 与代理日志),也不进命令行参数(节点本地用户 ps 可见):生成命令经 stdin 把 token 写入 `/run/superdl-join.token`(0600),脚本只认 `--token-file`;curl 一律 `--config` 注入 Authorization 头。集群 server URL 与 join token 不进脚本,由脚本凭 token `POST /bootstrap` 换取。
+- 注册令牌一次性:首次 bootstrap(pending→installing)即消费并换发窄权限 progress 令牌(仅可 /progress,换发/吊销/轮换注册令牌时同步作废);重复 bootstrap 一律 404。存量旧行(progress_token_hash 为 NULL)保持可重复 bootstrap 与注册令牌上报,兼容升级前正在装机的节点。
+- 令牌绝对过期:expires_at 对一切非终态生效(progress 只刷新 last_report_at,不延长截止),过期即落 expired 并 404;对账器同步清扫。
+- bootstrap 下发配置收窄到 cluster 组 6 键(server_url/join_token/agent_version/driver_version/install_mirror/registries_yaml),全量生效配置(含解密后的支付私钥等)不出注册链路。
+- 未预填 hostname 的令牌在首次 bootstrap 时绑定上报主机名(新签发默认绑定;存量未绑定行首次上报即锁),此后主机名不符即置 failed,防令牌串用。
+- 对账器(30s,advisory lock 1009)判定 joined 的唯一依据是 K8s 中该 node_name 出现且 Ready 且池标签匹配;池标签不符 → failed;2h 无心跳 → failed。读取走 `FOR UPDATE SKIP LOCKED`,与请求路径并发吊销/上报不互相覆盖。
 - 节点巡检(60s,advisory lock 1010)是节点事实源:阶段 A 纯 K8s 读 → 阶段 B 单事务 DB 收敛 → 阶段 C 逐节点 label patch(失败下轮自愈)。`enrollment.gpu_info` 只是装机一次性快照,不得当事实源。
 - 业务读台账,不实时调 K8s;节点消失先置 `Missing`,超 7 天才删行;上架校验只认 Ready。
 - 巡检在 worker 收敛环直连 K8s 并以幂等重试保证收敛,outbox 只管请求路径的业务事务。

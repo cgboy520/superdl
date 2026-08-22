@@ -41,7 +41,7 @@ i18n 用 i18next 26 + react-i18next 17(zh-CN / en-US);工程链 pnpm 11 + Turbor
 | HAMi | v2.9 | 共享档 CUDA 层软切分与限额 |
 | kube-prometheus-stack | 88.x | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
 | JuiceFS CSI | 0.32.x(JuiceFS 1.4.x LTS) | 数据盘;后端云 OSS 或自建 SeaweedFS 4.4x |
-| TopoLVM | chart 17.x | 实例盘本地 NVMe,销毁 `blkdiscard` |
+| TopoLVM | chart 17.x | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
 | cert-manager / ingress-nginx | 1.19.x / chart 4.13.x | 泛域名证书与 Jupyter 北向入口 |
 
 GPU 资源申请统一经 `app/core/gpu_adapter` 抽象:当前用 device-plugin 语法,切 DRA 只改这一层。
@@ -124,12 +124,12 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 |---|---|
 | creating | running(Pod Ready,计费开始)/ failed(调度或拉镜像超时,全额退)/ releasing(用户取消) |
 | running | stopping(关机 / 欠费 / 到期)/ failed(pod_lost,仅系统) |
-| stopping | stopped(Pod 删除,出尾账) |
+| stopping | stopped(Pod 删除,出尾账)/ releasing(悬挂超时或用户直接放弃) |
 | stopped | starting(校验余额)/ frozen(欠费)/ releasing(用户释放,二次确认) |
 | starting | running / failed(库存不足) |
 | frozen | stopped(充值解冻)/ releasing(宽限到期) |
-| failed | releasing(清理失败实例) |
-| releasing | released(擦盘完成,`blkdiscard`) |
+| failed | stopped(恢复重开,复用实例盘)/ releasing(清理失败实例) |
+| releasing | released(实例盘 LV 已删除,lvremove 未清零) |
 
 `released` 是唯一终态。状态迁移只能经 `orchestrator/service.py` 的 transition 函数,同事务写 `instance_events`,禁止直接
 UPDATE status。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原节点),数据盘照常计费。
@@ -152,7 +152,7 @@ usage 聚合独立运行:Prometheus 全挂,计费不停。
 ### 7.4 欠费与回收
 
 余额巡检每 5 分钟一轮:预估可用时长低于 `low_balance_warn_hours`(默认 24h)→ 短信与站内预警;余额耗尽 → 停机出尾账
-→ `frozen` 并倒计时 `freeze_grace_hours`(默认 72h)→ 到期 `releasing` → 删除 K8s 资源 → 实例盘 `blkdiscard` → `released`。
+→ `frozen` 并倒计时 `freeze_grace_hours`(默认 72h)→ 到期 `releasing` → 删除 K8s 资源 → 实例盘 lvremove → `released`。
 数据盘走独立时钟:欠费 7 天宽限(只读)→ 冻结 30 天 → 清除。天数与盘价都是可在线调整的策略参数(`policy_overrides`)。
 
 ## 8. 硬约束

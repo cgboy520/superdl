@@ -26,5 +26,5 @@
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
-- 私有仓库为集群内单实例 distribution registry(`registry.superdl.local`,NodePort 30500),内网明文 HTTP 且无认证,防火墙不得对外暴露。
+- 私有仓库为集群内单实例 distribution registry(`registry.superdl.local`,NodePort 30500):htpasswd 认证(凭据经 Secret 注入)+ 默认拒绝 NetworkPolicy(仅节点网段可达)+ DELETE 关闭(GC 走 Pod 内 `registry garbage-collect -m`);内网明文 HTTP,残余风险与 TLS 升级路径见 deploy/cluster/registry/registry.yaml 尾注,防火墙不得对外暴露。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。
