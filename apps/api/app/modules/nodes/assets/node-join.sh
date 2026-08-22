@@ -10,8 +10,8 @@
 # - 全幂等:每步落 marker(/var/lib/superdl-node-join/done.d/),可无限次重跑。
 # - 需重启的步骤(nouveau/IOMMU/驱动)合并为一次重启,systemd oneshot 断点续跑;
 #   最多 2 次重启,仍未就绪则上报 failed。
-# - phase 取值与后端契约一致:precheck nouveau sysctl iommu driver
-#   nvme_vg reboot registries agent_config agent_install agent_start waiting_node
+# - phase 取值与后端契约一致:bootstrap precheck nouveau sysctl iommu driver
+#   nvidia_toolkit nvme_vg reboot registries agent_config agent_install agent_start waiting_node
 set -euo pipefail
 
 API_BASE="__API_BASE__" # 服务端下发时替换;可用 --api-base 覆盖(测试用)
@@ -221,8 +221,7 @@ step_nvidia_toolkit() {
 step_nvme_vg() {
   local devices
   devices="$(cfg_get nvme_devices)"
-  # 未登记 NVMe 时禁止自动用文件兜底:降级须运维在管理端显式登记。该节点仍可加入,
-  # 但没有 TopoLVM 本地实例盘能力,直到登记真实 NVMe 后重跑。
+  # 未登记 NVMe 时不自动用文件兜底:节点仍可加入,但无 TopoLVM 本地实例盘能力
   if [[ -z "$devices" ]]; then
     echo "!! 未登记 NVMe 设备:不创建 superdl-nvme VG,也不自动兜底。" \
          "该节点无本地实例盘能力;如需请在管理端为本节点登记 NVMe 设备后重跑同一命令。"
@@ -240,7 +239,7 @@ step_nvme_vg() {
       [[ -f "$LVM_IMG_DIR/superdl-nvme.img" ]] || truncate -s "${size}G" "$LVM_IMG_DIR/superdl-nvme.img"
       pvs+=("$(losetup --find --show "$LVM_IMG_DIR/superdl-nvme.img")")
       _write_loop_unit
-      echo "-- 按登记选择:用 loop 文件做实例盘(${size}G,仅测试;非专用盘性能,登记者已显式确认)"
+      echo "-- 按登记选择:用 loop 文件做实例盘(${size}G,仅测试,非专用盘性能)"
     else
       pvs+=("$dev")
     fi

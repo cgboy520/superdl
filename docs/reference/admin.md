@@ -17,10 +17,12 @@
 | `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因)+ 从集群资源创建 + 容量预览 |
 | `/tenants` 租户与实例 | ops 可写 | 租户表(冻结/解冻需原因)+ 账单下钻侧滑 + 全局实例表(强制停止;驱逐重调度为占位按钮,未开放) |
 | `/finance` 财务对账 | finance 可写 | 日对账卡(diff% >2% 标红)+ 充值流水 + 小时账单 + 调账 + 异常清单 |
-| `/images` `/cluster` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、平台配置、系统设置(策略 + 公告)、审计 |
+| `/images` `/cluster` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、平台配置、系统设置(策略参数 / 公告 / 管理员账号)、审计 |
 | `GET /api/admin/v1/tenants/{user_id}/ledger` `/bills` | ops/finance/readonly | 游标分页;与用户端同一函数(`billing.wallet.ledger_page` / `hourly_bills_page`) |
 | `GET /api/admin/v1/outbox/dead` `POST .../{task_id}/retry` `/discard` | ops(读含 readonly) | 死信列表、重放、忽略 |
 | `POST /api/admin/v1/announcements` | ops | 公告群发 |
+| `GET/POST /api/admin/v1/admins` `PATCH .../{admin_id}` `POST .../{admin_id}/reset-password` | admin | 管理员账号 CRUD;改角色/停用/重置密码即 token_version+1 |
+| `POST /api/admin/v1/me/password` | 全角色 | 自助改密,成功即撤销本人全部在外会话 |
 | `GET/PUT /api/admin/v1/policies` | 读 ops/finance/readonly,写 ops | 策略参数在线化,落 `policy_overrides` |
 | `GET /api/admin/v1/reports/revenue` `/reports/oversell` | ops/finance/readonly | 收入报表、超卖率报表 |
 | `GET /api/admin/v1/finance/anomalies` | finance/readonly | 丢回调/关单/负余额异常清单 |

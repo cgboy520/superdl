@@ -17,12 +17,12 @@
 ## 规则与不变量
 
 - request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体,Sentry 为可选依赖 seam。
-- worker 必须自起 `/metrics` 端口(默认 9000,`SUPERDL_WORKER_METRICS_PORT`):结算失败、死信、泄漏回收等指标产生在 worker 进程内,只抓 API 看不到。
+- worker 自起 `/metrics` 端口(默认 9000,`SUPERDL_WORKER_METRICS_PORT`):结算失败、死信、泄漏回收等指标产生在 worker 进程内。
 - 抓取配置 `deploy/app/k8s/08-monitoring.yaml` = API ServiceMonitor(Bearer)+ worker PodMonitor。
 - WorkerDown 告警按心跳 Gauge 判定,不用 `absent()`:带 label 的 Counter 在首次 inc 前没有序列,`absent()` 会常驻误报。
 - worker 支持 SIGTERM 优雅停机并写心跳文件(K8s exec 探针据此判活)。
-- worker 心跳不得挂在 outbox 循环上,长任务会把自己探活探死并连带停掉定时任务。
-- Alertmanager critical 走双通道(webhook + 外部 SMTP),避免「API/DB 挂时 webhook 恰好送不出去」的自引用死结。
+- worker 心跳由独立协程触碰,不挂在 outbox 循环上(长任务会把自己探活探死)。
+- Alertmanager critical 走双通道(webhook + 外部 SMTP),第二条不经过平台自身组件。
 - 每日数据保洁:验证码、refresh 记录、已完成 outbox、超保留期审计。
 - 管理端监控自绘、不做 Grafana iframe:节点页每卡热力格(util%/显存/温度染色,XID>0 红点)+ 节点详情 ECharts 曲线;`grafana_url` 仅作外链,未配置时只显示一行提示。
 - 指标断源时管理端降级为「已租/空闲」形态,不报错、不开天窗。

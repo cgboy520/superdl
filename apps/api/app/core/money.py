@@ -30,16 +30,13 @@ def as_amount(value: Decimal | str | int) -> Decimal:
 
 
 def disk_daily_charge(price_gb_month: Decimal, size_gb: int, day: date | None = None) -> Decimal:
-    """数据盘日结:GB·月单价 / 30 × 容量。返回该「盘×日」应扣的 2 位小数金额。
+    """数据盘日结:GB·月单价 / 30 × 容量,返回该「盘×日」应扣的 2 位小数金额。
 
-    31 天的月份实际收 31/30 的名义月费,这是定价模型本身,不要「修正」。
+    口径为累积差分:第 k 天 = as_amount(月费 × k / 30) - as_amount(月费 × (k-1) / 30),
+    整月累计恒等于 as_amount(月费 × 当月天数 / 30)。逐日单独舍入会朝同方向累积误差。
+    31 天的月份按名义月费的 31/30 收取,属定价模型。
 
-    必须用累积差分:第 k 天扣的是「前 k 天累计应收」减「前 k-1 天累计应收」,两端只在出账
-    那一刻各舍一次。改成逐日单独舍到分会朝同一方向累积误差(默认单价下整月可达 ±14%);
-    累积差分让整月累计恒等于 as_amount(月费 × 当月天数 / 30),且仍是 (price, size, day)
-    的纯函数,幂等重跑与补账结果一致。
-
-    day 省略时退化为「均摊日费」(展示与余额预估用,不作为入账口径)。
+    day 省略时返回均摊日费,仅用于展示与余额预估,不作入账口径。
     """
     if size_gb < 0:
         raise ValueError(f"size_gb out of range: {size_gb}")

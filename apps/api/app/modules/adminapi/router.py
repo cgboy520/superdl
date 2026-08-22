@@ -103,7 +103,7 @@ async def admin_me(admin: CurrentAdmin) -> AdminOut:
 async def admin_change_own_password(
     body: AdminSelfPasswordRequest, admin: CurrentAdmin, session: DbSession, request: Request
 ) -> Response:
-    """自助改密。成功即 token_version+1 —— 改密就该踢掉全部在外会话(含泄露的那个)。"""
+    """自助改密。成功即 token_version+1,踢掉全部在外会话。"""
     await service.change_own_password(session, admin.id, body.current_password, body.new_password)
     set_audit_target(request, f"admin:{admin.id}", detail={"action": "self_password_change"})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -251,7 +251,7 @@ async def sku_capacity_preview(
 @router.post("/skus", dependencies=[require_roles("ops")], status_code=201)
 async def admin_create_sku(body: SkuCreate, session: DbSession, request: Request) -> SkuAdminOut:
     sku = await catalog_service.admin_create_sku(session, body)
-    # 记完整初始值(尤其单价):只记 name 的话,第一次改价就无从对照原价
+    # 记完整初始值(尤其单价),供后续改价对照
     set_audit_target(
         request,
         f"sku:{sku.id}",
@@ -441,7 +441,7 @@ async def admin_list_tenants(
 ) -> list[TenantOut]:
     """租户列表。q = 手机号(完整号码精确,短串按后缀)。
 
-    列表只回掩码。按号码检索是敏感读,必须显式落一条审计(默认只审计写操作)。
+    列表只回掩码。按号码检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
@@ -478,7 +478,7 @@ async def admin_tenant_ledger(
     cursor: str | None = None,
     limit: int | None = Query(default=None, le=100),
 ) -> Page[LedgerEntryOut]:
-    """租户资金流水下钻(账单争议处理的第一现场)。与用户端同一实现,同一游标语义。"""
+    """租户资金流水下钻。与用户端同一实现,同一游标语义。"""
     from app.modules.billing import service as billing_service
 
     return await billing_service.ledger_page(session, user_id, cursor=cursor, limit=limit)
@@ -508,9 +508,8 @@ async def admin_freeze_tenant(
     from app.modules.orchestrator import service as orchestrator_service
 
     user = await account_service.admin_set_user_status(session, user_id, "frozen")
-    # 封禁必须同时停机:计费主链路不看用户状态,只改 status 的话被封账号的 GPU 继续跑、
-    # 继续扣费,而 deps 的 403 让他既停不了机也充不了值。
-    # 与 status 变更同一事务提交,不在请求路径直接调 K8s(走 outbox)。
+    # 封禁同时停机:计费主链路不看用户状态,只改 status 会让被封账号的 GPU 继续跑并继续扣费。
+    # 与 status 变更同一事务提交,K8s 动作走 outbox。
     stopped = await orchestrator_service.stop_all_for_user(session, user_id, reason="tenant_frozen")
     await session.commit()
     set_audit_target(
@@ -1163,7 +1162,7 @@ async def admin_publish_announcement(
 
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])
 async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
-    """死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。"""
+    """死信任务列表:重试耗尽的编排任务在此可见(另有 outbox_dead_total 指标接告警)。"""
     from sqlalchemy import select as sa_select
 
     from app.core.outbox import OutboxTask

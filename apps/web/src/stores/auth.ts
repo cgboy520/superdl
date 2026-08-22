@@ -1,9 +1,8 @@
 /**
- * 认证状态(客户端状态极薄:只存 token 与登录态,用户资料走 TanStack Query)。
+ * 认证状态(只存 token 与登录态,用户资料走 TanStack Query)。
  *
- * localStorage 是跨标签页的单一事实源:请求路径一律经 readTokens() 读它,
- * store 只驱动渲染。后端 refresh 一次性消费且「重放即撤销全部会话」,
- * 拿标签页内的陈旧副本去续期会把用户全线登出。
+ * localStorage 是跨标签页的单一事实源:请求路径一律经 readTokens() 读它,store 只驱动渲染。
+ * 后端 refresh 一次性消费,用陈旧副本续期会撤销该用户全部会话。
  */
 
 import { createStore } from "zustand/vanilla";

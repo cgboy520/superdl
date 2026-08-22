@@ -28,10 +28,9 @@ logger = get_logger(__name__)
 
 MAX_RETRIES = 5
 BACKOFF_BASE_SECONDS = 10
-BACKOFF_MAX_SECONDS = 600  # 退避上限,防指数爆到「下次重试在几天后」
+BACKOFF_MAX_SECONDS = 600  # 退避上限
 RUNNING_TIMEOUT = timedelta(minutes=10)  # reaper:running 超时打回 pending
-# 单个 handler 的执行上限。队列是全局串行 FIFO 且单副本,挂死的调用会占住队头;
-# 取与 RUNNING_TIMEOUT 同量级,让队头卡死变成一次可重试的失败。
+# 单个 handler 的执行上限;队列全局串行 FIFO,挂死的调用会占住队头
 TASK_TIMEOUT_SECONDS = RUNNING_TIMEOUT.total_seconds()
 
 
@@ -39,8 +38,7 @@ TASK_TIMEOUT_SECONDS = RUNNING_TIMEOUT.total_seconds()
 class RetryPolicy:
     """按任务类型的重试预算。默认 5 次 × 10s 指数退避 ≈ 5 分钟。
 
-    「等外部作业完成」型任务(如 disk.wipe 轮询集群 Job)必须显式放宽预算,
-    否则作业没跑完任务已进死信,数据盘会永久卡在 deleting。
+    「等外部作业完成」型任务(如 disk.wipe 轮询集群 Job)须显式放宽预算。
     """
 
     max_retries: int = MAX_RETRIES

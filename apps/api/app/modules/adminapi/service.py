@@ -101,10 +101,10 @@ async def update_admin(
     new_status: str | None,
     actor_id: int,
 ) -> tuple[AdminUser, dict[str, Any]]:
-    """改角色/停用。返回 (账号, 旧值快照) —— 审计只记新值答不出「从什么改成什么」。"""
+    """改角色/停用。返回 (账号, 旧值快照),旧值交调用方落审计。"""
     admin = await _get_admin(session, admin_id)
     if admin.id == actor_id and (new_status == "disabled" or (role and role != admin.role)):
-        # 禁止自停用/自降权;调用方必然是仍在位的 active admin,故无需再加计数守卫
+        # 禁止自停用/自降权
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="adminapi.cannotChangeSelf",
@@ -118,7 +118,7 @@ async def update_admin(
         before["status"] = admin.status
         admin.status = new_status
     if before:
-        # 角色变更、停用都必须立即失效已签发的 token,不能等 2 小时 TTL
+        # 角色变更/停用立即失效已签发的 token
         admin.token_version += 1
     await session.commit()
     await session.refresh(admin)
@@ -128,7 +128,7 @@ async def update_admin(
 async def reset_admin_password(session: AsyncSession, admin_id: int, password: str) -> AdminUser:
     admin = await _get_admin(session, admin_id)
     admin.password_hash = await hash_password(password)
-    admin.token_version += 1  # 改密即踢掉全部在外会话(含泄露的那个)
+    admin.token_version += 1  # 改密即踢掉全部在外会话
     await session.commit()
     await session.refresh(admin)
     return admin
@@ -217,8 +217,7 @@ async def review_adjustment(
             ref_type="adjustment",
             ref_id=str(adj.id),
             remark=f"调账:{adj.reason}",
-            # 纠正一笔错误入账不能被当前余额卡住(否则冲正金额被当前余额封顶)
-            allow_negative=True,
+            allow_negative=True,  # 冲正金额不受当前余额封顶
         )
     await session.commit()
     return adj

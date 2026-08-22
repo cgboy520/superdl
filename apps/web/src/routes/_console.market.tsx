@@ -86,8 +86,7 @@ function MarketPage() {
   const columns = skuColumns({ fmt, t, availability: true, priceFontSize: 18 });
 
   return (
-    // 禁止用 Space:它给每个子项包一层等高的 ant-space-item,底部 sticky 结算条的
-    // 包含块只剩自身高度,粘滞行程为 0
+    // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("market.title")}

@@ -3,8 +3,7 @@
 核对两个不变式:每个用户 wallets.balance == balance_ledger 累计;
 窗口内 bills_* 出账合计 == ledger consume 合计。
 
-只报不改:发现差异打 error 日志 + 指标 + 管理端告警,绝不自动「纠正」——
-自动改账会把一个可查的差异变成一个不可查的差异。
+只报不改:发现差异打 error 日志 + 指标 + 管理端告警,不自动纠正。
 """
 
 from datetime import datetime, timedelta
@@ -28,10 +27,7 @@ CONSUME_REF_TYPES = ("bill_hourly", "bill_daily_disk")
 async def wallet_ledger_mismatches(
     session: AsyncSession,
 ) -> list[tuple[int, Decimal, Decimal]]:
-    """余额 ≠ 流水累计的用户。返回 (user_id, wallet_balance, ledger_sum)。
-
-    必须是一条分组 SQL:每日全量核对,不能 N+1。
-    """
+    """余额 ≠ 流水累计的用户。返回 (user_id, wallet_balance, ledger_sum)。每日全量,单条分组 SQL。"""
     ledger = (
         select(
             BalanceLedger.user_id.label("user_id"),

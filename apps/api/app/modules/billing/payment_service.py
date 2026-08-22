@@ -74,15 +74,14 @@ async def create_recharge(
         expires_at=now_utc() + timedelta(seconds=get_settings().recharge_order_ttl_seconds),
     )
     session.add(order)
-    await session.commit()  # 先落单再调渠道,渠道抖动不占着 DB 连接
+    await session.commit()  # 先落单再调渠道
     logger.info("recharge_order_created", order_no=order.order_no, user_id=user_id)
     return await _attach_payment(session, order, channel)
 
 
 async def _attach_payment(session: AsyncSession, order: Order, channel: PaymentChannel) -> Order:
-    """向渠道下单并回填二维码。
+    """向渠道下单并回填二维码。不在事务里调渠道(连接池会被渠道抖动占满)。
 
-    刻意不在事务里调渠道:连接池只有 10 条,渠道一抖动就会被下单请求占满。
     失败的订单让出幂等键,用户按原键重试即可开新单。
     """
     try:
@@ -237,9 +236,9 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
 
 
 async def backfill_order(session: AsyncSession, order_no: str) -> Order:
-    """管理端人工补单:仅当渠道侧核验为已支付且金额一致才入账(操作者无法凭空造账)。
+    """管理端人工补单:仅当渠道侧核验为已支付且金额一致才入账,closed 订单同样可补。
 
-    幂等由 channel_txn_id 唯一约束 + 行锁 + 状态检查三重保障;closed 订单同样可救。
+    幂等由 channel_txn_id 唯一约束 + 行锁 + 状态检查三重保障。
     """
     order = (
         await session.execute(select(Order).where(Order.order_no == order_no).with_for_update())

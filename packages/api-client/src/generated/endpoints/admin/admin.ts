@@ -2808,7 +2808,7 @@ export const getAdminChangeOwnPasswordApiAdminV1MePasswordPostUrl = () => {
 }
 
 /**
- * 自助改密。成功即 token_version+1 —— 改密就该踢掉全部在外会话(含泄露的那个)。
+ * 自助改密。成功即 token_version+1,踢掉全部在外会话。
  * @summary Admin Change Own Password
  */
 export const adminChangeOwnPasswordApiAdminV1MePasswordPost = async (adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
@@ -3877,7 +3877,7 @@ export const getAdminListDeadTasksApiAdminV1OutboxDeadGetUrl = () => {
 }
 
 /**
- * 死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。
+ * 死信任务列表:重试耗尽的编排任务在此可见(另有 outbox_dead_total 指标接告警)。
  * @summary Admin List Dead Tasks
  */
 export const adminListDeadTasksApiAdminV1OutboxDeadGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeadTaskOut[]> => {
@@ -5449,7 +5449,7 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 /**
  * 租户列表。q = 手机号(完整号码精确,短串按后缀)。
  *
- * 列表只回掩码。按号码检索是敏感读,必须显式落一条审计(默认只审计写操作)。
+ * 列表只回掩码。按号码检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
  * @summary Admin List Tenants
  */
 export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {
@@ -5781,7 +5781,7 @@ export const getAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetUrl = (userId: 
 }
 
 /**
- * 租户资金流水下钻(账单争议处理的第一现场)。与用户端同一实现,同一游标语义。
+ * 租户资金流水下钻。与用户端同一实现,同一游标语义。
  * @summary Admin Tenant Ledger
  */
 export const adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet = async (userId: number,

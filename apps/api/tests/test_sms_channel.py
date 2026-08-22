@@ -21,7 +21,7 @@ class _FailingChannel:
 
 class TestAliyunSignature:
     def test_signature_snapshot(self):
-        """RPC V1 签名回归锚点(排序/RFC3986 编码/HMAC-SHA1 任一变动都会破坏此值)。"""
+        """RPC V1 签名锚点:排序 / RFC3986 编码 / HMAC-SHA1 任一变动都会破坏此值。"""
         ch = AliyunSmsChannel("testid", "testsecret", "SuperDL")
         p = ch.signed_params(
             "13800000000",

@@ -17,7 +17,7 @@ from app.modules.nodes.service import transition_enrollment
 
 logger = get_logger(__name__)
 
-# installing/rebooting/joining 超过该时长无心跳判失联(装机含驱动 apt + 一次重启,给足余量)
+# installing/rebooting/joining 超过该时长无心跳判失联
 STALE_HEARTBEAT = timedelta(hours=2)
 ACTIVE_STATUSES = ("pending", "installing", "rebooting", "joining")
 
@@ -58,8 +58,8 @@ async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> di
                             row,
                             "failed",
                             error=(
-                                f"池标签不符:登记 {row.pool},节点实际 {node.pool_label}"
-                                "(有人手改过 config.yaml?联系运维核查)"
+                                f"池标签不符:登记 {row.pool},节点实际 {node.pool_label};"
+                                "请核查该节点的 config.yaml"
                             ),
                         )
                         counts["failed"] += 1

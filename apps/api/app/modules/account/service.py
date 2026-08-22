@@ -32,7 +32,7 @@ MOCK_SMS_CODE = "123456"
 # 未注册的手机号也走一次哈希校验,拉平时间侧信道(管理端登录同款)
 _DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 
-# 单条验证码最多允许失败次数,达到即作废(防 TTL 窗口内穷举 6 位码)
+# 单条验证码最多允许失败次数,达到即作废
 MAX_SMS_CODE_ATTEMPTS = 5
 
 
@@ -159,7 +159,7 @@ async def login(
     *,
     client_ip: str | None = None,
 ) -> TokenPair:
-    # 全局闸:含手机号的限流键遍历号段即换桶,必须再加一个只按 IP 切分的桶
+    # 全局闸:含手机号的键遍历号段即换桶,故再加一个只按 IP 切分的桶
     await check_rate_limit(
         f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
     )
@@ -168,8 +168,8 @@ async def login(
         f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
     user = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
-    # 「该号未注册」与「该号已注册但凭证错」必须完全不可区分:文案统一 loginFailed,
-    # 时序也要拉平 —— 提前返回不付 bcrypt 的 ~200ms 本身就是一个 oracle。
+    # 「未注册」与「已注册但凭证错」不可区分:文案统一 loginFailed,
+    # 时序也拉平(未注册路径照付 bcrypt 的 ~200ms)
     if sms_code is not None:
         try:
             await _consume_sms_code(session, phone, sms_code, "login")
@@ -203,8 +203,7 @@ async def reset_password(
     """凭手机号 + 验证码设置新密码(首次设置、修改、找回同一条路径)。
 
     先验码再查账号:反过来是手机号枚举 oracle。
-    成功后 token_version+1 —— 改密即踢掉全部在外会话(含泄露的那个),
-    并给调用方发一对新 token,当前设备不必重新登录。
+    成功后 token_version+1 撤销全部在外会话,并给调用方发一对新 token。
     """
     await check_rate_limit(
         f"password-reset:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
@@ -386,14 +385,13 @@ async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) ->
 async def admin_list_users(
     session: AsyncSession, *, q: str | None = None, status: str | None = None
 ) -> list[User]:
-    """租户列表。q = 手机号(完整号码精确匹配走唯一索引;短串按后缀匹配)。"""
+    """租户列表。q = 手机号:完整 11 位精确匹配走唯一索引,短串按后缀匹配。"""
     # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.tenants 对齐
     stmt = select(User).order_by(User.id.desc()).limit(500)
     if status:
         stmt = stmt.where(User.status == status)
     q = (q or "").strip()
     if q:
-        # 完整 11 位手机号走 unique 索引;更短的串按后缀匹配(客服常只记得后几位)
         stmt = stmt.where(User.phone == q if len(q) >= 11 else User.phone.like(f"%{q}"))
     return list((await session.execute(stmt)).scalars())
 
@@ -404,8 +402,7 @@ async def frozen_user_ids(session: AsyncSession) -> list[int]:
 
 
 async def admin_set_user_status(session: AsyncSession, user_id: int, status_: str) -> User:
-    """只管 users 表(账号模块的边界)。**不 commit** —— 调用方要把「停机」编排到同一个
-    事务里,否则会出现「账号已冻结但机器还在跑」的半成品状态。"""
+    """只管 users 表(账号模块的边界)。不 commit:调用方把「停机」编排进同一事务。"""
     user = await get_user(session, user_id)
     user.status = status_
     if status_ == "frozen":

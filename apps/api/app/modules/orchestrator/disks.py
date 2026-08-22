@@ -18,9 +18,8 @@ from app.modules.orchestrator.models import DataDisk
 
 logger = get_logger(__name__)
 
-BILLABLE_STATUSES = ("active", "grace")  # frozen 不再计费
-# 欠费链路上的全部状态。巡检口径必须用这一组:用 BILLABLE_STATUSES 会漏掉「盘全部 frozen
-# 且已充值」的用户,他们永远不被处理(见 list_arrears_chain_user_ids)。
+BILLABLE_STATUSES = ("active", "grace")  # frozen 不计费
+# 欠费链路上的全部状态,巡检口径用这一组(见 list_arrears_chain_user_ids)
 ARREARS_CHAIN_STATUSES = ("active", "grace", "frozen")
 
 
@@ -32,7 +31,7 @@ async def create_disk(
     idempotency_key: str | None = None,
 ) -> DataDisk:
     if idempotency_key:
-        # 与实例创建同款:响应丢失时用户按第二下不会开出第二块按日计费的盘
+        # 幂等键:响应丢失后重试不会开出第二块盘
         existing = (
             await session.execute(
                 select(DataDisk).where(
@@ -42,7 +41,7 @@ async def create_disk(
         ).scalar_one_or_none()
         if existing is not None:
             return existing
-    # JuiceFS SC 缺位时先拦下:否则用户买到一块永远挂不上、却按日计费的盘
+    # JuiceFS SC 缺位时先拦下,不放出挂不上却按日计费的盘
     await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_effective_policies(session)
     if not policies.disk_min_gb <= size_gb <= policies.disk_max_gb:
@@ -51,7 +50,7 @@ async def create_disk(
             key="disks.sizeRange",
             params={"min": policies.disk_min_gb, "max": policies.disk_max_gb},
         )
-    # 数量配额:建盘只校验余额(日结才扣),不设上限的话一个账号能把 JuiceFS 铺满
+    # 数量配额:建盘只校验余额(日结才扣),故另设上限
     max_disks = get_settings().max_disks_per_user
     live = (
         await session.execute(
@@ -159,8 +158,7 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
 async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int, instance_id: int):
     """实例创建时挂载校验 + 占用。同事务调用,不 commit。
 
-    FOR UPDATE 锁盘行:读-判-写之间无锁时,两个并发创建可把同一块盘挂到两台实例
-    (同 subPath 双挂,数据互踩)。
+    FOR UPDATE 锁盘行,防并发创建把同一块盘挂到两台实例(同 subPath 双挂)。
     """
     disk = await session.get(DataDisk, disk_id, with_for_update=True)
     if disk is None or disk.user_id != user_id or disk.status == "deleted":
@@ -183,10 +181,9 @@ async def detach_for_instance(session: AsyncSession, instance_id: int) -> None:
 
 
 async def list_arrears_chain_user_ids(session: AsyncSession) -> list[int]:
-    """欠费巡检的用户集合:名下有任何一块处于欠费链路上的盘。
+    """欠费巡检的用户集合:名下有任何一块处于欠费链路(active/grace/frozen)上的盘。
 
-    禁止拼成「有 active/grace 盘的用户 ∪ 余额≤0 的用户」:盘已熬到 frozen 而用户刚充了钱时
-    两个集合都不命中,他的盘永远解冻不了、也永远不会到期清除。
+    不按「计费态盘 ∪ 余额≤0」取:盘已 frozen 而用户刚充值时两边都不命中,盘永远解不了冻。
     """
     return list(
         (

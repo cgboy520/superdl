@@ -82,7 +82,7 @@ class Settings(BaseSettings):
 
     # 镜像预热(可运营调整)
     prewarm_min_coverage_pct: int = 90  # is_prewarmed=true 所需的节点覆盖率下限
-    prewarm_recheck_hours: int = 24  # cached 复检窗口(防 kubelet 镜像 GC 后状态失真)
+    prewarm_recheck_hours: int = 24  # cached 复检窗口
 
     # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
     cluster_server_url: str = Field(
@@ -107,11 +107,10 @@ class Settings(BaseSettings):
     # 共享档 Pod 注 HAMi use-gputype annotation(SKU 原文串);仅混卡节点池需要,默认关
     hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
-    # 每次 K8s 请求的超时(连接, 读)。官方客户端无全局超时,必须显式设置:
-    # 否则 API server 挂起时 to_thread 线程永久悬挂,outbox 单队列被整队拖停
+    # 每次 K8s 请求的超时(连接, 读);官方客户端无全局超时,须显式设置
     k8s_connect_timeout_seconds: float = 5.0
     k8s_read_timeout_seconds: float = 30.0
-    # 租户 Jupyter Ingress 的 IngressClass。必须显式指定:未标 default 的 IngressClass 不会自动接管。
+    # 租户 Jupyter Ingress 的 IngressClass;未标 default 的 IngressClass 不自动接管,须显式指定
     ingress_class_name: str = "nginx"
     ssh_host: str = "ssh1.superdl.example.com"
     ssh_port_range_start: int = 30000
@@ -131,7 +130,7 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
 
     # 数据保洁保留期
-    audit_retention_days: int = 365  # 等保要求日志留存 ≥6 个月
+    audit_retention_days: int = 365  # 等保要求 ≥6 个月
 
     # Prometheus 代理
     prometheus_url: str = "http://localhost:9090"

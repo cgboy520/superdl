@@ -24,7 +24,7 @@ from app.modules.nodes.models import NodeEnrollment, NodeSpec
 
 logger = get_logger(__name__)
 
-MISSING_RETENTION = timedelta(days=7)  # Missing 超此时长删行(上架校验只认 Ready,不受抖动影响)
+MISSING_RETENTION = timedelta(days=7)  # Missing 超此时长删行
 
 
 def _gpu_entry_name(entry: Any) -> str:

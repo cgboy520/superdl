@@ -23,14 +23,12 @@ logger = get_logger(__name__)
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
 
-# K8s liveness:exec 探针检查该文件 mtime。心跳必须由独立协程触碰,禁止挂在 outbox 循环上:
-# 挂在循环里探的就成了「当前任务跑完没有」,一个长任务就能让活着的 worker 被 SIGKILL,
-# 连带停掉全部定时任务并误报 WorkerDown。K8s 调用都在 asyncio.to_thread 里,事件循环不被
-# 阻塞,真正的进程僵死仍然探得出来。
+# K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
+# ——挂在循环里探的是「当前任务跑完没有」,长任务会让活着的 worker 被 SIGKILL。
 HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
 
-# /metrics 端口(结算/死信/reconciler 指标都在 worker 进程内,必须单独暴露被抓取;
-# 仅集群内可达 —— 无 Ingress 路由,PodMonitor 直抓 Pod 端口)
+# /metrics 端口:结算/死信/reconciler 指标产生在 worker 进程内,单独暴露给 PodMonitor 直抓
+# (无 Ingress 路由,仅集群内可达)
 METRICS_PORT = int(os.environ.get("SUPERDL_WORKER_METRICS_PORT", "9000"))
 
 _stop = asyncio.Event()
@@ -147,8 +145,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=3600,
     )
-    # 日结之后再跑资金核对:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」。
-    # 只报不改:自动纠正会把可查的差异变成不可查的差异。
+    # 排在日结之后:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」
     scheduler.add_job(
         reconcile_funds,
         "cron",
@@ -257,7 +254,7 @@ async def main() -> None:
     scheduler = AsyncIOScheduler(timezone="UTC")
     register_scheduled_jobs(scheduler)
     scheduler.start()
-    _touch_heartbeat()  # 起步先落一次,免得探针在首个 interval 之前就判死
+    _touch_heartbeat()  # 起步先落一次,不让探针在首个 interval 前判死
     heartbeat = asyncio.create_task(heartbeat_loop())
     try:
         await outbox_loop(worker_id)

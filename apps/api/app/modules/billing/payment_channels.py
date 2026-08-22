@@ -131,7 +131,7 @@ class WechatChannel:
     """微信支付 Native(扫码),APIv3。
 
     验签双模式(wechatpayv3 原生支持):配置了微信支付公钥 + 公钥 ID(PUB_KEY_ID_*)
-    走公钥模式(2024-10 后新商户唯一模式);否则回退平台证书模式(SDK 自动拉取轮换)。
+    走公钥模式(新商户唯一模式);否则回退平台证书模式(SDK 自动拉取轮换)。
     """
 
     name = "wechat"
@@ -190,10 +190,9 @@ class WechatChannel:
         return json.loads(message)["code_url"]
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:
-        """验签 + AES-GCM 解密 + 核对商户身份。这是这条无鉴权加钱接口**唯一**的防线。
+        """验签 + AES-GCM 解密 + 核对商户身份。
 
-        SDK 的失败路径不都是返回值:缺 Wechatpay-Signature-Type 这类未签名探测请求会直接抛裸
-        Exception,必须在此归一化,否则以 500 落到全局 handler。
+        SDK 的失败路径不都是返回值(未签名探测请求会直接抛裸 Exception),在此统一归一化。
         """
         import asyncio
         from typing import Any
@@ -255,7 +254,7 @@ class WechatChannel:
 class AlipayChannel:
     """支付宝当面付(precreate 扫码 + 异步通知 RSA2 验签 + 主动查单)。
 
-    凭据经 SUPERDL_ALIPAY_* 注入(应用私钥 + 支付宝公钥)。
+    凭据(应用私钥 + 支付宝公钥)取自平台配置中心,env SUPERDL_ALIPAY_* 为默认值层。
     """
 
     name = "alipay"

@@ -1,7 +1,7 @@
 """审计:所有写操作(POST/PUT/PATCH/DELETE)由中间件统一落 audit_log。
 
 actor 由鉴权依赖写入 request.state.audit_actor;管理端动作带 "admin." 前缀。
-审计必须用独立 session 写入,不得并入业务事务:业务失败也要留痕。
+审计走独立 session,不并入业务事务(业务失败也留痕)。
 """
 
 from collections.abc import Awaitable, Callable

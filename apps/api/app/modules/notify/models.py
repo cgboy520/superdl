@@ -14,7 +14,8 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int | None] = mapped_column(index=True)
     type: Mapped[str] = mapped_column(String(32), index=True)
-    # balance_warn / arrears / instance_failed / gpu_fault / announcement / admin_alert
+    # account / instance / balance_warn / arrears / gpu_fault / announcement / admin_alert
+    # / recharge / consume / adjust
     title: Mapped[str] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text)
     severity: Mapped[str] = mapped_column(String(16), default="info")  # info/warning/critical

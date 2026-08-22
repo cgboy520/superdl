@@ -35,10 +35,9 @@ let refreshInFlight: Promise<boolean> | null = null;
 const REFRESH_LOCK = "superdl:token-refresh";
 
 /**
- * 续期一次。staleToken 是发起该请求时用的 access token:
- * 进入临界区后 token 已变,说明别的标签页/并发请求刚续期成功,直接重放即可 ——
- * 否则第二个标签页会拿已被消费的 refresh token 重放,把用户的全部会话(含刚续期的
- * 那个)一起撤销。
+ * 续期一次。staleToken 是发起该请求时用的 access token:进入临界区后 token 已变,
+ * 说明别的标签页/并发请求刚续期成功,直接重放。
+ * 后端 refresh 一次性消费,重放旧 token 会撤销该用户全部会话。
  */
 async function refreshOnce(staleToken: string | null): Promise<boolean> {
   const run = async (): Promise<boolean> => {
@@ -108,8 +107,7 @@ export const customFetch = async <T>(url: string, options: RequestInit): Promise
   }
 
   const text = await response.text();
-  // 网关 502/504 返回的是 HTML,不是错误体:直接 JSON.parse 会抛 SyntaxError,
-  // 用户看到的是 "Unexpected token '<'" 而不是「服务暂时不可用」
+  // 网关 502/504 返回 HTML 而非错误体,直接 JSON.parse 会抛 SyntaxError
   let body: unknown = null;
   if (text) {
     try {

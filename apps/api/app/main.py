@@ -19,8 +19,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     init_sentry()
     settings = get_settings()
-    # 一次性引导:配置了口令且 admin_users 为空时创建首个超管,建出来之后自动失效
-    # (ensure_bootstrap_admin 内部判空表)
+    # 一次性引导:配置了口令且 admin_users 为空时创建首个超管
     if settings.bootstrap_admin_password:
         from app.core.db import get_sessionmaker
         from app.modules.adminapi.service import ensure_bootstrap_admin
@@ -28,8 +27,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         async with get_sessionmaker()() as session:
             await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
     if settings.environment == "prod":
-        # cluster 键不做启动 fail-fast(经管理端 DB 覆盖层维护,查 env 会误报):
-        # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 门禁兜底
+        # cluster 键不做启动 fail-fast(经 DB 覆盖层维护,查 env 会误报):
+        # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 兜底
         from app.core.db import get_sessionmaker
         from app.core.logging import get_logger
         from app.core.platform_config import get_effective_platform_config
@@ -54,10 +53,9 @@ def create_app() -> FastAPI:
         title="SuperDL API",
         version="0.1.0",
         lifespan=lifespan,
-        # 用户端与管理端共用一份 OpenAPI(orval 按 tag 分组生成)
-        # 生产必须同时关掉 docs/redoc/openapi 三条路由:API host 公网直出,只关 docs_url
-        # 时 openapi_url 仍会把整份管理端 schema 吐出去。export_openapi 直取 app.openapi(),
-        # 不经这些路由,契约闸门不受影响。
+        # 用户端与管理端共用一份 OpenAPI(orval 按 tag 分组生成)。
+        # 生产同时关 docs/redoc/openapi 三条路由:只关 docs_url 时 openapi_url
+        # 仍会吐出整份管理端 schema。export_openapi 直取 app.openapi(),不经路由。
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",
@@ -76,7 +74,7 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz", tags=["infra"], include_in_schema=False)
     async def healthz() -> dict[str, str]:
-        """liveness:进程活着即可,不探依赖(避免 DB 抖动引发重启风暴)。"""
+        """liveness:进程活着即可,不探依赖。"""
         return {"status": "ok"}
 
     @app.get("/readyz", tags=["infra"], include_in_schema=False)
@@ -104,7 +102,7 @@ def create_app() -> FastAPI:
         from starlette.responses import PlainTextResponse
 
         token = get_settings().metrics_token
-        # 常量时间比较:逐字节短路比较可被计时探测出 token 前缀
+        # 常量时间比较,防计时探测出 token 前缀
         if token and not secrets.compare_digest(
             Headers(scope=scope).get("authorization") or "", f"Bearer {token}"
         ):

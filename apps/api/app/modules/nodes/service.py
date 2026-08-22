@@ -163,7 +163,7 @@ async def list_enrollments(
     for r in rows:
         if r.status == "revoked":
             continue
-        # joined 已毕业到正式「节点」列表,不再占用「待加入」视图(避免与节点表重复)
+        # joined 已进入正式「节点」列表,不占用「待加入」视图
         if r.status == "joined":
             continue
         if r.status == "expired" and r.updated_at < now - timedelta(days=7):
@@ -182,7 +182,7 @@ async def get_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEnrol
 async def regenerate_enrollment(
     session: AsyncSession, enrollment_id: int, *, ttl_hours: int = 24
 ) -> tuple[NodeEnrollment, str]:
-    """换新令牌:仅 pending/expired/failed(installing 等进行中状态换令牌会掐断在跑的脚本)。"""
+    """换新令牌:仅 pending/expired/failed —— 换令牌会掐断进行中的脚本。"""
     await require_cluster_config(session)
     enrollment = await get_enrollment(session, enrollment_id)
     if enrollment.status not in REGENERATABLE_STATUSES:
@@ -274,7 +274,7 @@ async def bootstrap(
             http_status=http_status.HTTP_409_CONFLICT,
         )
     if row.reported_ip and client_ip and row.reported_ip != client_ip:
-        # 换 IP 重跑常见(多网卡/NAT):不硬拒,留审计信号
+        # 换 IP 重跑常见(多网卡/NAT),不硬拒,只留审计信号
         logger.warning(
             "node_enrollment_ip_changed",
             enrollment_id=row.id,
@@ -414,7 +414,7 @@ def render_registries_yaml(cfg: dict[str, str]) -> str:
 
     node_registries_yaml 有值 = 高级覆盖优先;server_url 未配置返回空串(脚本跳过)。
     与 deploy/cluster/rke2/registries.yaml 模板同源:mirrors "*" 声明 Spegel P2P,
-    registry.superdl.local 指到集群内 registry。
+    registry.superdl.local 指向集群内 registry。
     """
     override = (cfg.get("node_registries_yaml") or "").strip()
     if override:
@@ -447,9 +447,9 @@ HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为�
 
 
 async def require_hami_ready(session: AsyncSession) -> None:
-    """shared 档下发门禁:调度器缺位即时清晰报错,而非等 Pending 超时。
+    """shared 档下发门禁:调度器缺位即时报错,而非等 Pod Pending 超时。
 
-    缓存缺失/陈旧一律拒绝:巡检 60s 一轮,陈旧说明 worker 停摆,下发也只会悬挂。
+    缓存缺失/陈旧一律拒绝(巡检 60s 一轮,陈旧即 worker 停摆)。
     """
     row = await get_cluster_status(session)
     if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:
@@ -469,10 +469,9 @@ async def require_hami_ready(session: AsyncSession) -> None:
 
 
 async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool) -> None:
-    """存储下发门禁:StorageClass 缺位即时 409,而非让用户等 300 秒 Pending 超时。
+    """存储下发门禁:StorageClass 缺位即时 409,而非等 Pod Pending 超时。
 
-    必须按名核对 ClusterStatus.storage_classes 里实例盘/数据盘各自的 SC:
-    只判「集群里有任意一个 SC」拦不下名字错配这类必然失败的下发。
+    按名核对 ClusterStatus.storage_classes 里实例盘/数据盘各自的 SC。
     """
     row = await get_cluster_status(session)
     if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:

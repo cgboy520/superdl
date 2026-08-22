@@ -7,8 +7,8 @@
 #     --from-literal=storage=oss \
 #     --from-literal=bucket='https://<bucket>.<oss-endpoint>' \
 #     --from-literal=access-key=<ak> --from-literal=secret-key=<sk>
-# SC 名与 apps/api/app/core/k8s/base.py 的 JUICEFS_STORAGE_CLASS 必须一致,
-# 且不得叫 juicefs-shared —— 那是每租户 ns 里 PVC 的名字,同名极易读混。
+# SC 名须与 apps/api/app/core/k8s/base.py 的 JUICEFS_STORAGE_CLASS 一致;
+# 不得叫 juicefs-shared,那是每租户 ns 里 PVC 的名字。
 storageClasses:
   - name: superdl-juicefs
     enabled: true

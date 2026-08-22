@@ -12,8 +12,8 @@ export function toCsv(
 ): string {
   const esc = (v: string | number | null | undefined): string => {
     let s = v == null ? "" : String(v);
-    // 防公式注入:危险前导字符(或以 - 开头且非纯数字)前置单引号,
-    // 让电子表格按文本处理;负数金额(纯数字)不受影响
+    // 防公式注入:危险前导字符(或以 - 开头且非纯数字)前置单引号按文本处理;
+    // 纯数字的负数金额不受影响
     if (FORMULA_LEAD.test(s) || (s.startsWith("-") && !PLAIN_NUMBER.test(s))) {
       s = `'${s}`;
     }

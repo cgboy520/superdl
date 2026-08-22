@@ -50,8 +50,7 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 async def _entered_status_at(session: AsyncSession, instance: Instance):
     """实例进入当前状态的时刻(取该状态最后一条事件)。
 
-    不能用 updated_at 判超时:它带 onupdate,handler 回填 ssh_port/pod_name 等任何字段
-    都会把计时重置,creating 超时可能永远不触发。
+    不用 updated_at:它带 onupdate,handler 回填任何字段都会重置计时。
     """
     entered = (
         await session.execute(
@@ -69,8 +68,8 @@ async def _running_pod_lost_reason(
 ) -> str | None:
     """running 实例是否已经不可用了。返回迁移 reason,None = 还活着。
 
-    只看 exists 和 phase 不够:节点失联时 kubelet 不可达,Ready condition 被置 False,
-    但 phase 仍是 Running、对象仍在 etcd 里。漏掉这一条则控制台显示「运行中」而账单照扣。
+    节点失联时 phase 仍是 Running、对象仍在 etcd,只有 Ready condition 转 False,
+    故 exists 与 phase 之外还要看 ready。
     """
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
@@ -78,7 +77,7 @@ async def _running_pod_lost_reason(
         return "pod_lost"  # 被驱逐/被外部删除,不是我们发起的
     if st.ready:
         return None
-    # not-ready 给一段宽限:容器重启、镜像层重挂这类抖动不该误杀实例
+    # not-ready 给一段宽限,容忍容器重启、镜像层重挂这类抖动
     if instance.unready_since is None:
         instance.unready_since = now_utc()
         await session.flush()
@@ -137,8 +136,8 @@ async def _reconcile_instances(
                         await detach_for_instance(session, instance.id)
                         await orch.delete_instance(instance.k8s_namespace, instance.uuid)
                         if first_boot:
-                            # creating 超时 = 这只盘从未承载过数据,回收掉不留孤儿 LV;
-                            # starting 超时禁止删盘:那是停过机的实例,盘里有上一轮数据。
+                            # creating 超时的盘从未承载数据,回收不留孤儿 LV;
+                            # starting 超时不删盘(实例停过机,盘里有上一轮数据)
                             await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
                         counts["to_failed"] += 1
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)
@@ -163,8 +162,7 @@ async def _reconcile_instances(
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
                         if st.exists:
-                            # 失联节点上的 Pod 只有强删才会从 etcd 消失(kubelet 确认不了),
-                            # 优雅删除会让实例永久卡在 stopping/releasing。
+                            # 失联节点上的 Pod 只有强删才会从 etcd 消失
                             await orch.delete_instance(
                                 instance.k8s_namespace, instance.uuid, force=lost == "node_lost"
                             )
@@ -214,8 +212,7 @@ async def _reconcile_instances(
                     )
                     await free_port(session, instance.id)
                     await detach_for_instance(session, instance.id)
-                    # 释放是实例盘唯一的销毁时点(用户复述实例名 + 勾选确认过)。
-                    # Pod 已确认消失,PVC 不会被 pvc-protection 挂住。
+                    # 释放是实例盘唯一的销毁时点;Pod 已确认消失,PVC 不会被 pvc-protection 挂住
                     await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
                     counts["to_released"] += 1
 
@@ -227,7 +224,7 @@ async def _reconcile_instances(
 async def _reclaim_leaked_pods(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """K8s 里存在、但 DB 已终态/已停止的 Pod → 强删。泄漏 = 白送算力。"""
+    """K8s 里存在、但 DB 已终态/已停止的 Pod → 强删。"""
     orch = get_orchestrator()
     pods = await orch.list_instance_pods()
     if not pods:

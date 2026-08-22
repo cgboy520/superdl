@@ -46,8 +46,7 @@ interface QueryOpts<T = unknown> {
 }
 
 /**
- * queryKey 归一化:undefined 与 {} 是同一个查询,值为 undefined 的参数不该进键,
- * 键序也不该影响缓存身份。不归一会出现「同一页两份缓存、两次请求」。
+ * queryKey 归一化:undefined 与 {} 视为同一查询,剔除值为 undefined 的参数,键序不影响缓存身份。
  */
 function normalizeKey(key: unknown[]): unknown[] {
   return key.map((part) => {
@@ -113,8 +112,7 @@ export const useLedgerPages = (limit = 20) =>
     initialPageParam: undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-/** 月度汇总:窗口按**本地**月界切,offset 必须与「今日消费」用同一个来源,否则同一页面上
- * 的两个数字永远对不上(月账单按 UTC 切时,北京的「8 月」实际是 7/31 08:00 起算)。 */
+/** 月度汇总:窗口按本地月界切,offset 与「今日消费」取同一来源,两个数字才对得上。 */
 export const useBillSummary = (month: string, tzOffsetMinutes: number) =>
   useApiQuery(["bill-summary", month, tzOffsetMinutes], () =>
     billSummaryApiV1BillsSummaryGet({ month, tz_offset_minutes: tzOffsetMinutes }),

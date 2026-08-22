@@ -90,11 +90,10 @@ async def debit(
     remark: str | None = None,
     allow_negative: bool,
 ) -> Wallet:
-    """扣款。**allow_negative 是必填关键字**,不给默认值:每个调用点都必须显式表态。
+    """扣款。allow_negative 为必填关键字,每个调用点显式表态。
 
-    - 结算扣款(小时账单、盘日费)必须允许透支:服务已消费完,拒绝扣款等于静默丢收入;
-    - 管理员调账扣减也必须允许:纠正一笔错误入账不能被当前余额卡住;
-    - 「先付后用」的同步消费不允许透支(开机/建盘走 require_balance_at_least 预校验)。
+    - 结算扣款(小时账单、盘日费)与管理员调账扣减:允许透支;
+    - 「先付后用」的同步消费:不允许(开机/建盘走 require_balance_at_least 预校验)。
     """
     amount = as_amount(amount)
     if amount <= 0:

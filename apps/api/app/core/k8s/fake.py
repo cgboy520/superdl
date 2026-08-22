@@ -104,8 +104,7 @@ class FakeOrchestrator:
         existing = self.pods.get(key)
         if existing is not None:
             if existing.deleting:
-                # 真实集群里同名对象 Terminating 时 create 返回 409;
-                # 当幂等跳过 = Pod 没建出来却报成功
+                # 真实集群里同名对象 Terminating 时 create 返回 409,不可当幂等跳过
                 raise RuntimeError(f"fake: pod {spec.name} is terminating, create must wait")
             return  # 幂等
         self.pods[key] = _FakePod(

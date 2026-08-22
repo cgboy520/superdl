@@ -11,9 +11,8 @@ from app.modules.billing.payment_channels import get_channel
 
 router = APIRouter(tags=["webhooks"])
 
-# 两条端点无鉴权,每次调用都要做 RSA 验签并对订单行取 FOR UPDATE;微信侧遇到未知的
-# Wechatpay-Serial 还会触发 SDK 向外拉取平台证书,故必须限流。阈值取在渠道正常重试
-# 节奏之上(微信最多重试 15 次、支付宝 8 次)。
+# 回调端点无鉴权且每次都要 RSA 验签 + 订单行 FOR UPDATE(微信侧未知 Wechatpay-Serial
+# 还会触发 SDK 外拉平台证书),故限流。阈值取在渠道重试节奏之上(微信 15 次、支付宝 8 次)。
 CALLBACK_RATE_LIMIT = 120
 CALLBACK_RATE_WINDOW = 60.0
 

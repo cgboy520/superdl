@@ -207,7 +207,7 @@ class TestRealChannelWebhookRoutes:
     async def test_alipay_webhook_plain_text_success(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """P1 回归:支付宝应答必须是纯文本 success(JSON 会被渠道判失败重试 8 次)。"""
+        """支付宝应答必须是纯文本 success(JSON 会被渠道判失败并重试 8 次)。"""
         from app.modules.billing.payment_channels import MockChannel
 
         async def fake_get_channel(name, session):

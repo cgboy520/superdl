@@ -118,7 +118,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        # 只回位置/原因/类型:pydantic errors() 的 input 是提交原值,回显即泄露密码/身份证号
+        # 只回位置/原因/类型:pydantic errors() 的 input 是提交原值,回显即泄露凭据
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]

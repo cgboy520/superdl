@@ -1,8 +1,8 @@
 # 集群内私有镜像仓库:registry.superdl.local 的真实落点。
 # 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维内网)与 pull(节点 registries.yaml mirror)。
 # 应用:kubectl apply -f registry.yaml;节点侧配置见 ../rke2/registries.yaml
-# 无认证无 TLS,安全边界靠两条:租户实例的 Egress NetworkPolicy 禁全部私网段(触达不了
-# NodePort 30500),机房防火墙不对外暴露 30500(push 面仅剩内网运维机)。两条都不可省。
+# 无认证无 TLS,安全边界靠两条:租户实例的 Egress NetworkPolicy 禁全部私网段,
+# 机房防火墙不对外暴露 NodePort 30500。
 apiVersion: v1
 kind: Namespace
 metadata:

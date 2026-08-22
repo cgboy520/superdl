@@ -115,19 +115,16 @@ _SHARED_TIERS = ("shared_std", "shared_eco")
 async def _require_cluster_for_tier(
     session: AsyncSession, tier: str | None, *, with_data_disk: bool = False
 ) -> None:
-    """下发门禁:能力缺位即时 409,而非等 Pending 超时。
+    """下发门禁:能力缺位即时 409,而非等 Pod Pending 到超时。
 
-    - HAMi:只有 shared 档依赖 hami-scheduler,dedicated/mig 不受影响。
-    - StorageClass:实例盘人人要挂,数据盘按需;名字对不上或档位没装,
-      Pod 会永久 Pending 到 300 秒判 failed。
+    HAMi 只有 shared 档依赖;StorageClass 实例盘人人要挂,数据盘按需。
     """
     if tier in _SHARED_TIERS:
         await nodes_service.require_hami_ready(session)
     await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
 
 
-# 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串,
-# 免得垃圾值一路走到 K8s 才变成 creating 超时 + 退款
+# 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串
 _IMAGE_REF_RE = re.compile(
     r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
     r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
@@ -139,8 +136,8 @@ _IMAGE_REF_RE = re.compile(
 async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
     """镜像引用校验:先形态,再来源。
 
-    来源白名单默认关(自定义镜像自由输入是产品能力)。配置 SUPERDL_IMAGE_ALLOWED_REGISTRIES
-    后只放行平台镜像目录内的引用与白名单前缀;这是唯一的镜像来源闸门。
+    来源白名单默认关。配置 SUPERDL_IMAGE_ALLOWED_REGISTRIES 后只放行平台镜像目录内的
+    引用与白名单前缀;这是唯一的镜像来源闸门。
     """
     if not _IMAGE_REF_RE.match(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
@@ -159,7 +156,7 @@ async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
 
 
 async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) -> None:
-    """每用户配额(实例数 / GPU 总数):防单账号无限开机(K8s 侧 ResourceQuota 是兜底)。"""
+    """每用户配额(实例数 / GPU 总数);K8s 侧 ResourceQuota 为兜底。"""
     from sqlalchemy import func
 
     from app.core.config import get_settings
@@ -396,8 +393,8 @@ async def release_instance(
     if instance.status not in (
         sm_def.STOPPED,
         sm_def.FROZEN,
-        sm_def.FAILED,  # 失败实例的清理:同走 releasing→released,否则永远留在列表
-        sm_def.CREATING,  # 调度长期不满足时用户可主动取消,不必干等 creating 超时
+        sm_def.FAILED,  # 清理失败实例,同走 releasing→released
+        sm_def.CREATING,  # 用户主动取消,不等 creating 超时
     ):
         raise AppError(ErrorCode.INSTANCE_NOT_STOPPED, key="orchestrator.releaseNeedsStopped")
     await transition(session, instance, sm_def.RELEASING, reason=f"{actor}_release", actor=actor)
@@ -412,10 +409,8 @@ async def release_instance(
 async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     """分配一个 SSH NodePort。已分配则原样返回(幂等)。
 
-    端口池 30000–32767 与 K8s NodePort 同段,集群内其它对象会硬占其中某些端口。两道防护:
-    - `ssh_port_excluded`:已知被占端口一开始就跳过;
-    - `blocked` 标记:运行期真撞上时由 handle_create 落一行 blocked(独立事务),分配器此后
-      绕开它。少了它,高水位线会永远停在被占端口前面,此后所有触顶的新建实例全部失败。
+    端口池 30000–32767 与 K8s NodePort 同段,集群其它对象会硬占其中某些端口,两道防护:
+    `ssh_port_excluded` 预先跳过已知占用;`blocked` 由 handle_create 在运行期撞占后标记。
     """
     settings = get_settings()
     mine = (
@@ -451,10 +446,9 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
 
 
 async def block_port(sm: Any, port: int, *, reason: str) -> None:
-    """把一个被集群其它对象占用的端口标记为不可分配。**独立事务**提交。
+    """把一个被集群其它对象占用的端口标记为不可分配。独立事务提交(调用方那笔要回滚)。
 
-    必须独立:调用方那笔事务马上要整体回滚,标记跟着回滚就等于没标。
-    调用方须先 rollback 再调本函数,否则未提交的同端口 PortAllocation 会把这笔独立事务锁死。
+    调用方须先 rollback 再调本函数,否则未提交的同端口 PortAllocation 会锁死这笔事务。
     """
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -496,9 +490,8 @@ async def active_gpu_counts_by_sku(session: AsyncSession) -> dict[int, int]:
 def build_pod_spec(
     instance: Instance, *, distro: str | None = None, data_disk_subpath: str | None = None
 ) -> InstancePodSpec:
-    """构造 Pod spec。data_disk_subpath 必须由调用方从盘记录读出后传入 ——
-    subPath 只有 `data_disks.juicefs_subpath` 一个事实源:在这里就地重算过一次
-    `disk-{data_disk_id}`,与擦除路径永不相等,删盘会擦空目录而真实数据永久留存。"""
+    """构造 Pod spec。data_disk_subpath 由调用方从盘记录读出后传入:
+    subPath 的唯一事实源是 `data_disks.juicefs_subpath`,就地重算会与擦除路径对不上。"""
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
         instance.spec,
@@ -607,8 +600,7 @@ async def admin_list_instances(
     node_name: str | None = None,
 ) -> list[Instance]:
     """管理端实例列表。q 按实例名或 uuid 前缀匹配,node_name 精确。"""
-    # 固定截断:超出即在管理端表底给出「已达上限」提示(admin/components/ListCapNote.tsx),
-    # 改这里的数字要同步改那里 —— 静默截断看上去和「一共就这些」一模一样
+    # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS 对齐(表底给出「已达上限」)
     stmt = select(Instance).order_by(Instance.id.desc()).limit(200)
     if status_filter:
         stmt = stmt.where(Instance.status == status_filter)
@@ -660,13 +652,9 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
     """结算前先拿实例行锁,再读事件。同事务内重复加锁是 no-op。
 
-    transition() 的第一步是 `UPDATE instances`(乐观锁那条),持该行写锁直到提交,而事件的
-    created_at 在拿到锁之后才生成。结算不先拿这把锁,就会读到「少了最后那条 stopping」的
-    事件流并把窗口算满;而 upsert_hour_bill 单调只增,先入账的高估值永远无法回退。
-
-    拿了锁之后两个方向都安全:在飞的迁移先提交完(结算随后读得到);或结算先拿到锁、迁移被
-    挡住,其事件时间戳必然落进下一个小时窗口。
-    锁序统一为 instance → bill_hourly → wallet,与 transition 一致,无新增死锁面。
+    transition() 首步 `UPDATE instances` 持该行写锁到提交,事件 created_at 在拿锁后生成。
+    先拿锁则:在飞的迁移已提交(读得到),或迁移被挡住(其事件落进下一个小时窗口)。
+    锁序 instance → bill_hourly → wallet,与 transition 一致。
     """
     await session.execute(
         select(Instance.id)
@@ -754,10 +742,7 @@ async def billing_candidates(
 async def instance_locations(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, tuple[str, str, str | None]]:
-    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。
-
-    按 id 精确取:不能复用带 LIMIT 的管理端列表,否则实例数超上限后聚合整轮作废。
-    """
+    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。按 id 精确取,不走列表截断。"""
     ids = list(instance_ids)
     if not ids:
         return {}
@@ -855,8 +840,8 @@ async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
 async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str) -> int:
     """停掉该用户全部 running 实例(封禁/风控处置用)。同事务落事件 + outbox,不 commit。
 
-    返回被停的台数。creating/starting 的实例这一轮停不了(状态机不允许 → stopping),
-    它们会先收敛到 running,再由巡检那一轮兜住(见 billing.patrol 的冻结用户处置)。
+    返回被停的台数。creating/starting 本轮停不了(状态机不允许),它们收敛到 running 后
+    由巡检兜住(见 billing.patrol 的冻结用户处置)。
     """
     rows = list(
         (

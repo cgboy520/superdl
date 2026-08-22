@@ -31,8 +31,7 @@ function currencySymbol(locale: string): string {
 
 /**
  * "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en);负数符号在最前。
- * null/undefined 的语义是**真的是零**;「数据未就绪」必须由调用方套 moneyOr 显示 "—",
- * 否则查询失败(data 恒为 undefined)时会渲染出一个假的 ¥0.00。
+ * null/undefined 一律渲染为零;「数据未就绪」由调用方套 moneyOr 显示 "—"。
  */
 export function formatMoney(amount: string | null | undefined, locale: string): string {
   const currency = currencySymbol(locale);
@@ -64,8 +63,7 @@ export function mulPrice(price: string | null | undefined, count: number): strin
 
 /**
  * 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_EVEN 到分)。
- * 展示层估算,入账以后端日结为准;舍入模式必须与后端 as_amount 一致(HALF_EVEN),
- * 否则预估与实扣会差一分。
+ * 展示层估算,入账以后端日结为准;舍入模式与后端 as_amount 一致。
  */
 export function diskDailyEstimate(priceGbMonth: string | null | undefined, gb: number): string {
   if (!priceGbMonth || gb <= 0 || !Number.isInteger(gb)) return "0.00";

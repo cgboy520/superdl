@@ -26,9 +26,7 @@ class BalanceLedger(Base):
     """追加式资金流水,对账基准。amount 带符号;balance_after 为扣/入账后的快照。"""
 
     __tablename__ = "balance_ledger"
-    # amount <> 0:金额为 0 的流水没有业务含义,出现即 bug,写入那一刻就失败。
-    # 刻意**不**加 wallets.balance >= 0:透支是设计内的(服务已消费完才结算),
-    # 加了会让合法的结算扣款整批失败。
+    # amount <> 0:零额流水无业务含义。刻意不加 balance >= 0:透支是设计内的(先消费后结算)
     __table_args__ = (CheckConstraint("amount <> 0", name="amount_nonzero"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -88,7 +86,7 @@ class BillDailyDisk(Base):
 class SettlementWatermark(Base):
     """结算水位线:已结清的最后一个窗口起点(key='hourly' 存小时,'daily_disk' 存自然日)。
 
-    结算是「从水位线追平到当前」而非只结上一个窗口:worker 停机跨整点/跨日不再永久漏账。
+    结算口径是「从水位线追平到当前」而非只结上一个窗口,worker 停机跨整点/跨日可自动补上。
     """
 
     __tablename__ = "settlement_watermarks"

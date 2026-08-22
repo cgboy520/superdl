@@ -16,9 +16,8 @@ RELEASING = "releasing"
 RELEASED = "released"
 FAILED = "failed"
 
-# from → 允许的 to。RELEASED 是唯一终态(无出边);RUNNING→FAILED 仅系统使用(pod_lost);
-# CREATING→RELEASING 为用户取消(creating 非计费态,未产生费用,无需退款);
-# FAILED→RELEASING 为用户清理失败实例。
+# from → 允许的 to。RELEASED 是唯一终态;RUNNING→FAILED 仅系统使用(pod_lost);
+# CREATING→RELEASING 为用户取消;FAILED→RELEASING 为用户清理失败实例。
 TRANSITIONS: dict[str, frozenset[str]] = {
     CREATING: frozenset({RUNNING, FAILED, RELEASING}),
     RUNNING: frozenset({STOPPING, FAILED}),

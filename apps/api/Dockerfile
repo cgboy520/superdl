@@ -15,6 +15,6 @@ USER 10001
 
 EXPOSE 8000
 # 同一镜像双入口:serve(默认)/ worker(compose 里覆盖 command)
-# --proxy-headers 配合 FORWARDED_ALLOW_IPS(deploy/app/k8s/00-namespace-config.yaml):
-# 不配则只信任 127.0.0.1,client.host 恒为代理 IP,按 IP 限流与审计源 IP 全部失真。
+# --proxy-headers 配合 FORWARDED_ALLOW_IPS(deploy/app/k8s/00-namespace-config.yaml);
+# 不配则只信任 127.0.0.1,client.host 恒为代理 IP。
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

@@ -177,8 +177,8 @@ function StoragePage() {
       diskKeys.clear(); // 建成了才作废这批键,下一块盘重新分配
     },
   });
-  // 幂等键按「盘名 + 容量」派生:响应丢失后重提不会多出一块按日计费的孤儿盘;
-  // 改了参数即另一块盘,键随之改变,不会被上一次的结果遮住
+  // 幂等键按「盘名 + 容量」派生:响应丢失后重提不会多出一块盘;
+  // 改了参数即另一块盘,键随之改变
   const diskIdempotencyKey = (name: string, sizeGb: number): string => {
     const seed = `${name}|${sizeGb}`;
     let k = diskKeys.get(seed);

@@ -106,8 +106,7 @@ class SkuUpdate(BaseModel):
     max_gpus_per_instance: int | None = Field(default=None, ge=1, le=8)
     cuda_max: str | None = None
     status: str | None = Field(default=None, pattern="^(on|off)$")
-    # 必填原因:改价单人一步生效,且会被新实例永久快照(改回来只影响之后新建的实例)。
-    # 不上双人复核,但「必填原因 + 记录旧值 + 幅度超阈告警」三件必须有。同策略参数 PUT。
+    # 必填原因:改价单人一步生效且被新实例快照;配套记录旧值与幅度超阈告警。同策略参数 PUT。
     reason: str = Field(min_length=2, max_length=200)
 
 

@@ -203,11 +203,11 @@ SETTING_SPECS: dict[str, SettingSpec] = {
 }
 
 
-# 旧键读回落:secret 走 AES-GCM 且 AAD=行 key,禁止直接 UPDATE 键名(会静默毁掉密文),
-# 只能按旧行的原键解密;写新键成功后同事务删旧行(见 set_platform_settings)。
+# 旧键读回落:secret 的 AES-GCM AAD=行 key,直接 UPDATE 键名会毁掉密文,
+# 只能按旧行原键解密;写新键后同事务删旧行(见 set_platform_settings)。
 LEGACY_KEY_ALIASES: dict[str, str] = {
     "cluster_join_token": "rke2_join_token",
-    "cluster_server_url": "rke2_server_url",  # 明文行,别名兜未跑迁移的窗口
+    "cluster_server_url": "rke2_server_url",  # 明文行,别名兜未跑迁移的库
     "cluster_agent_version": "rke2_version",
 }
 

@@ -127,7 +127,7 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
   );
 
 // ---------- disks ----------
-/** 建盘同样要幂等键:响应丢失时用户按第二下,否则会多出一块按日计费的孤儿盘。 */
+/** 建盘同样要幂等键:响应丢失后重提不会多出一块按日计费的盘。 */
 export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: DiskCreate; idempotencyKey: string }) =>

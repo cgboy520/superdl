@@ -74,12 +74,12 @@ apps/api/app/
 ## 4. 控制面正确性的两根支柱
 
 **支柱一:事务性 outbox。** 所有「改 DB + 动 K8s」的操作,在同一事务里完成业务写入与 `outbox_tasks` 插入,worker
-用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(带重试、退避、死信)。「扣了费但没建资源」「建了资源但
-没记账」由此在架构上不可能发生。
+用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(带重试、退避、死信),据此排除「扣了费但没建资源」
+与「建了资源但没记账」。
 
 **支柱二:reconciler 对账循环。** 每 30s 比对「DB 期望状态 ↔ K8s 实际状态」(按租户 namespace 前缀 list):Pod 消失
-而 DB 是 running → 记 `failed` 事件、停止计费并告警;Pod 存在而 DB 已 released → 强制删除并告警(泄漏等于白送算力);
-`creating` 超时未调度 → 失败退款。reconciler 是状态漂移的兜底地板,不得关闭。
+而 DB 是 running → 记 `failed` 事件、停止计费并告警;Pod 存在而 DB 已 released → 强制删除并告警;
+`creating` 超时未调度 → 失败退款。reconciler 是状态漂移的兜底,不得关闭。
 
 worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、支付查单与超时关单、
 镜像预热巡检、节点规格巡检与入网 reconciler、数据保洁。定时任务一律先抢 pg advisory lock,多副本下天然单实例执行。
@@ -88,7 +88,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 
 | 通道 | 机制 |
 |---|---|
-| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 必须拆成两个 Service:`type=NodePort` 会给每个 port 都分配 NodePort,合并会让 Jupyter 随机占走端口池号段 |
+| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 拆成两个 Service:`type=NodePort` 会给每个 port 都分配 NodePort,合并会让 Jupyter 随机占走端口池号段 |
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),`<instance>.app.<域名>` 泛域名 ingress-nginx 按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
 | 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,仅放行 Ingress Controller 到 8888;禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
 
@@ -136,7 +136,7 @@ UPDATE status。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原�
 
 ### 7.2 创建实例
 
-`POST /instances`(带 `Idempotency-Key`)在一个事务里校验余额 ≥ 1 小时预估费用,写 `instances(creating)` +
+`POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额 ≥ 1 小时预估费用,写 `instances(creating)` +
 `instance_events` + `outbox_tasks`,立即返回 202。worker 领取任务后 ensure Namespace / NetworkPolicy / Quota /
 JuiceFS PVC,再建 Pod(RuntimeClass 按档位、GPU 资源经 gpu_adapter、注入公钥与 jupyter token)、SSH 与 Jupyter 两个
 Service、Ingress;Pod Ready 后同事务转 `running` 并写计费起点事件。超时未 Ready 转 `failed`,退款并清理。

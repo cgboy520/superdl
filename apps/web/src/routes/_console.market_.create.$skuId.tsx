@@ -140,7 +140,7 @@ function CreatePage() {
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
   const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
   // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)。
-  // 必须按三态处理:未就绪 ≠ 余额为 0 —— 把 undefined 当 0 会把余额充足的用户挡在创建入口外。
+  // 三态处理:未就绪 ≠ 余额为 0。
   const balanceReady = wallet != null;
   const enough = balanceReady && compareAmounts(wallet.balance, hourlyTotal) >= 0;
 
@@ -149,9 +149,8 @@ function CreatePage() {
 
   const doCreate = async () => {
     setSubmitting(true);
-    // 幂等键必须由「本次提交的参数」派生,不能在失败时轮换:后端只在实例行 commit 成功时
-    // 才落下幂等键,响应丢失时换新键会让用户按第二下开出第二台 GPU;参数变了则键随之变,
-    // 不会被上一次的结果遮住。
+    // 幂等键由本次提交的参数派生,失败时不轮换:响应丢失后重提不会开出第二台;
+    // 参数变了键随之变,不会被上一次的结果遮住
     const seed = JSON.stringify([
       sku.id,
       gpuCount,
@@ -226,8 +225,7 @@ function CreatePage() {
   const columns = skuColumns({ fmt, t });
 
   return (
-    // 禁止用 Space:它给每个子项包一层等高的 ant-space-item,底部 sticky 结算条的
-    // 包含块只剩自身高度,粘滞行程为 0
+    // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("create.title")}

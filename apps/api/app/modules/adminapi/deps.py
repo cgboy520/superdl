@@ -25,7 +25,7 @@ async def get_current_admin(
     admin = await session.get(AdminUser, int(payload["sub"]))
     if admin is None or admin.status != "active":
         raise unauthorized()
-    # 撤销闸:停用、改角色、改密都会 +1,已签发的 token 立即失效
+    # 撤销闸,见 AdminUser.token_version
     if payload.get("ver", 0) != admin.token_version:
         raise unauthorized()
     request.state.audit_actor = AuditActor("admin", str(admin.id))

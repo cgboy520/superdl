@@ -155,7 +155,7 @@ class TestAdjustments:
         assert resp.status_code == 403
 
     async def test_concurrent_review_single_credit(self, client, sm, fake):
-        """P0 竞态回归:两名复核人并发 approve 同一单,行锁保证只入账一次。"""
+        """两名复核人并发 approve 同一单:行锁保证只入账一次。"""
         headers, _uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             creator = await create_admin(session, "fin-race-a", "pass1234", "finance")
@@ -206,7 +206,7 @@ class TestNodesAndReports:
         assert hami["oversell_ratio"] == round(0.5 / 32, 3)
 
     async def test_oversell_report_pool_scoped_utilization(self, client, sm, fake):
-        """P0 回归:利用率按池加权聚合;无数据的池必须是 null,不得用集群均值冒充。"""
+        """利用率按池加权聚合;无数据的池必须是 null,不得用集群均值冒充。"""
         from app.modules.metering.models import UsageHourly
         from app.modules.orchestrator.models import Instance
 

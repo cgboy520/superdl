@@ -1,10 +1,7 @@
 """限流计数:固定窗口,计数落 PostgreSQL(多副本共享)。
 
-计数必须出进程:进程内计数在多副本下等于把阈值乘以副本数。
-计数走独立 session 并即时 commit:业务事务回滚不能把「这次尝试」抹掉,
-否则密码/验证码爆破可以靠触发业务错误无限重试。
-
-语义:窗口内命中数超过 max_attempts 即拒绝,窗口到期整体重置。
+窗口内命中数超过 max_attempts 即拒绝,窗口到期整体重置。
+计数走独立 session 并即时 commit,不随业务事务回滚。
 """
 
 from datetime import datetime

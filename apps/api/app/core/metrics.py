@@ -18,7 +18,7 @@ SETTLEMENT_LAG = Gauge(
 )
 OUTBOX_TASK_TIMEOUT_TOTAL = Counter(
     "superdl_outbox_task_timeout_total",
-    "超过执行上限被中断的 outbox 任务数(队头卡死;心跳与任务解耦后这是唯一的卡死信号)",
+    "超过执行上限被中断的 outbox 任务数(队头卡死)",
     ["task_type"],
 )
 FUND_RECONCILE_MISMATCH_TOTAL = Counter(
@@ -29,7 +29,7 @@ FUND_RECONCILE_MISMATCH_TOTAL = Counter(
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
 INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",
-    "因节点失联(Pod 持续 not-ready)被判定停止的实例数(每一条 = 一个付了钱但机器不可用的用户)",
+    "因节点失联(Pod 持续 not-ready)被判定停止的实例数",
 )
 PREWARM_NODES = Gauge(
     "superdl_prewarm_nodes",
@@ -47,9 +47,9 @@ PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL = Counter(
 )
 PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
     "superdl_payment_closed_order_rescued_total",
-    "关单后有效成功回调自动入账数(非零说明本地关单早于渠道侧过期,需核对 TTL)",
+    "关单后有效成功回调自动入账数(非零 = 本地关单早于渠道侧过期)",
 )
-# WorkerDown 告警依据:带 label 的 Counter 在首次 inc 前无序列,不能用 absent 判活
+# WorkerDown 告警据此判活:带 label 的 Counter 在首次 inc 前无序列,absent() 不可用
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",

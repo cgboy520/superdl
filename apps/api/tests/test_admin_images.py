@@ -125,7 +125,7 @@ class TestPublicIsPrewarmed:
         ah = await admin_headers(sm, client, role="ops")
         image_id = await create_image(client, ah)
 
-        # 零 cache 行:回落 prewarm_enabled(dev/演示零回归)
+        # 零 cache 行:回落 prewarm_enabled
         imgs = (await client.get("/api/v1/images")).json()
         assert imgs[0]["is_prewarmed"] is True
 

@@ -51,10 +51,10 @@ def decrypt_str(token: str, *, aad: str) -> str:
 
 
 def hash_sms_code(phone: str, purpose: str, code: str) -> str:
-    """短信验证码的**带密钥**摘要(HMAC-SHA256,hex)。
+    """短信验证码的带密钥摘要(HMAC-SHA256,hex)。
 
-    必须带密钥:验证码只有 6 位数字,无密钥的 sha256(每行加盐同理)对拿到库 dump 的
-    攻击者等同明文。密钥取平台配置主密钥(只走 env、不落库),phone 与 purpose 混进消息做域分离。
+    密钥取平台配置主密钥(只走 env、不落库);phone 与 purpose 混进消息做域分离。
+    6 位数字码在无密钥摘要下对拿到库 dump 的攻击者等同明文,故不用裸 sha256。
     """
     import hmac
 

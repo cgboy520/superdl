@@ -9,7 +9,7 @@
 ## 规则与不变量
 
 - `Settings._validate_prod` 在 prod 下 fail-fast,任一项不合格即拒绝启动:jwt_secret 仍为开发默认或不足 32 字符、`sms_provider=mock` 或阿里云短信凭据/签名/模板不全、`k8s_backend=fake`、`payment_mock=true`、database_url 仍为本地默认、cors_origins 含 localhost、ssh_host/jupyter_domain_suffix/public_base_url 仍为占位域名、prometheus_url 指向本地、alertmanager_token 未配、metrics_token 未配、config_encryption_key 缺失或非 32 字节 urlsafe-base64。
-- 限流计数必须落 PG(`rate_limit_counters`),不得只用进程内计数 —— 多副本下进程内限流失效。
+- 限流计数落 PG(`rate_limit_counters`),不用进程内计数(多副本下失效)。
 - 安全响应头由纯 ASGI 中间件统一注入;`/metrics` 须 Bearer 鉴权(见 [observability.md](./observability.md))。
 - 短信渠道走 `app/core/sms.py` 的 Protocol + 工厂(mock / 阿里云 dysmsapi RPC 签名),不在业务代码里直连渠道 SDK。
 - 租户 Pod 必须带 Egress 隔离 NetworkPolicy,禁止访问内网网段与云元数据地址。

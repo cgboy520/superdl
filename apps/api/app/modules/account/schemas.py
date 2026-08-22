@@ -29,7 +29,7 @@ class RefreshRequest(BaseModel):
 
 
 class PasswordResetRequest(BaseModel):
-    """设置/修改/找回密码:一律凭手机号 + 验证码,不需要旧密码(旧密码可能就是忘了的那个)。"""
+    """设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。"""
 
     phone: str = PhoneStr
     sms_code: str = Field(min_length=4, max_length=8)

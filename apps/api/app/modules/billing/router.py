@@ -53,10 +53,7 @@ TzOffset = Query(default=480, ge=-720, le=840)
 
 
 def _parse_month(month: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
-    """月窗口按**本地**月初/次月初切,不是 UTC。
-
-    月账单按 UTC 切而日账单按本地切时,两个口径对不上:31 天日账单加起来 ≠ 月账单。
-    """
+    """月窗口按本地月初/次月初切,与日账单同口径(按 UTC 切会让日账单加总 ≠ 月账单)。"""
     try:
         local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     except ValueError as exc:

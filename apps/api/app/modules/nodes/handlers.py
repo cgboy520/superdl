@@ -12,8 +12,7 @@ logger = get_logger(__name__)
 @outbox_handler("node.cordon")
 async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
     """cordon/uncordon(payload: node_name, unschedulable, reason)。
-    幂等:重复 patch 同值无副作用;节点不存在 K8s 报 404 → 退避重试后进死信,
-    管理端死信卡可见(输错节点名的兜底)。"""
+    幂等:重复 patch 同值无副作用;节点不存在时 K8s 报 404,退避重试后进死信。"""
     node_name = task.payload["node_name"]
     unschedulable = task.payload["unschedulable"]
     await get_orchestrator().set_node_unschedulable(node_name, unschedulable)

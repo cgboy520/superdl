@@ -267,8 +267,8 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const close = () => {
     setResult(null);
     form.resetFields();
-    // 幂等键必须随「下一次注册」轮换:同键重放后端返回原单,
-    // 不换会让同一页面会话里注册的第二个节点静默拿到第一个节点的加入命令
+    // 幂等键随「下一次注册」轮换:同键重放后端返回原单,
+    // 不换会让本页注册的第二个节点拿到第一个节点的加入命令
     setIdemKey(crypto.randomUUID());
     onClose();
   };

@@ -2880,7 +2880,7 @@
         "type": "object"
       },
       "PasswordResetRequest": {
-        "description": "设置/修改/找回密码:一律凭手机号 + 验证码,不需要旧密码(旧密码可能就是忘了的那个)。",
+        "description": "设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。",
         "properties": {
           "new_password": {
             "maxLength": 64,
@@ -5824,7 +5824,7 @@
     },
     "/api/admin/v1/me/password": {
       "post": {
-        "description": "自助改密。成功即 token_version+1 —— 改密就该踢掉全部在外会话(含泄露的那个)。",
+        "description": "自助改密。成功即 token_version+1,踢掉全部在外会话。",
         "operationId": "admin_change_own_password_api_admin_v1_me_password_post",
         "requestBody": {
           "content": {
@@ -6393,7 +6393,7 @@
     },
     "/api/admin/v1/outbox/dead": {
       "get": {
-        "description": "死信任务列表:重试耗尽的编排任务在此可见(同时有 outbox_dead_total 指标接告警)。",
+        "description": "死信任务列表:重试耗尽的编排任务在此可见(另有 outbox_dead_total 指标接告警)。",
         "operationId": "admin_list_dead_tasks_api_admin_v1_outbox_dead_get",
         "responses": {
           "200": {
@@ -7101,7 +7101,7 @@
     },
     "/api/admin/v1/tenants": {
       "get": {
-        "description": "租户列表。q = 手机号(完整号码精确,短串按后缀)。\n\n列表只回掩码。按号码检索是敏感读,必须显式落一条审计(默认只审计写操作)。",
+        "description": "租户列表。q = 手机号(完整号码精确,短串按后缀)。\n\n列表只回掩码。按号码检索是敏感读,显式落一条审计(中间件默认只审计写操作)。",
         "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
         "parameters": [
           {
@@ -7330,7 +7330,7 @@
     },
     "/api/admin/v1/tenants/{user_id}/ledger": {
       "get": {
-        "description": "租户资金流水下钻(账单争议处理的第一现场)。与用户端同一实现,同一游标语义。",
+        "description": "租户资金流水下钻。与用户端同一实现,同一游标语义。",
         "operationId": "admin_tenant_ledger_api_admin_v1_tenants__user_id__ledger_get",
         "parameters": [
           {

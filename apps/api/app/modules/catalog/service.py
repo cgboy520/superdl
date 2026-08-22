@@ -126,10 +126,7 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
 
 
 def _checked_price(value: Decimal) -> Decimal:
-    """单价统一走 money.as_price(4 位)。量化后为 0 直接拒绝:
-
-    numeric(12,4) 会把 0.00004 静默舍成 0.0000,SKU 变成免费卡。
-    """
+    """单价统一走 money.as_price(4 位);量化后为 0 直接拒绝(numeric(12,4) 会静默舍成免费)。"""
     price = as_price(value)
     if price <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
@@ -146,17 +143,14 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     return sku
 
 
-# 单次改价幅度超过这个比例即告警(不阻断:大促确实可能整档腰斩)
+# 单次改价幅度超过这个比例即告警,不阻断
 PRICE_CHANGE_ALERT_RATIO = Decimal("0.5")
 
 
 async def admin_update_sku(
     session: AsyncSession, sku_id: int, data: SkuUpdate, *, force: bool = False
 ) -> tuple[Sku, dict[str, Any]]:
-    """更新 SKU。返回 (sku, 本次实际变更字段的**旧值**快照)。
-
-    旧值必须返回给调用方落审计:Sku 表无历史表也无价格快照,不记旧值则原价永久丢失。
-    """
+    """更新 SKU。返回 (sku, 本次实际变更字段的旧值快照),旧值交调用方落审计。"""
     sku = await get_sku(session, sku_id)
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})
     if updates.get("price_hourly") is not None:
@@ -183,7 +177,7 @@ async def admin_update_sku(
 async def _alert_large_price_change(
     session: AsyncSession, sku: Sku, old: Decimal, new: Decimal, reason: str
 ) -> None:
-    """大幅改价落一条管理端告警。不阻断 —— 手滑打错一位小数点没有任何东西会提醒人。"""
+    """大幅改价落一条管理端告警,不阻断。"""
     if old <= 0:
         return
     ratio = abs(new - old) / old

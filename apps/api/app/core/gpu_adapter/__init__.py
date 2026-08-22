@@ -51,7 +51,7 @@ def build_gpu_request(
         return GpuRequest(
             resources={"nvidia.com/gpu": str(gpu_count)},
             runtime_class="kata-qemu",
-            host_users=True,  # Kata 本身是 VM 级隔离,无需 userns
+            host_users=True,  # Kata 为 VM 级隔离,不叠 userns
             node_selector=node_selector,
         )
     if tier == "mig":
@@ -60,7 +60,7 @@ def build_gpu_request(
         return GpuRequest(
             resources={f"nvidia.com/mig-{mig_profile}": str(gpu_count)},
             runtime_class=None,
-            host_users=False,  # runc 池必须 userns 加固
+            host_users=False,
             node_selector=node_selector,
         )
     if tier in ("shared_std", "shared_eco"):
@@ -72,7 +72,7 @@ def build_gpu_request(
                 "nvidia.com/gpumem": str(vram_gb * 1024),
             },
             runtime_class="nvidia" if distro == "k3s" else None,
-            host_users=False,  # 共享池必须 userns 加固
+            host_users=False,
             node_selector=node_selector,
             scheduler_name="hami-scheduler",
             annotations={HAMI_USE_GPUTYPE_ANNOTATION: hami_gputype} if hami_gputype else {},

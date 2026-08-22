@@ -151,7 +151,7 @@ additionalPrometheusRulesMap:
           - alert: InstanceNodeLost
             expr: increase(superdl_instance_node_lost_total[15m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "有租户实例因所在节点失联被判停:每一条都是一个付了钱却用不了机器的用户,需人工核对是否退费"}
+            annotations: {summary: "有租户实例因所在节点失联被判停:需人工核对是否退费"}
           - alert: LeakedPodsReclaimed
             expr: increase(superdl_reconcile_leaked_total[30m]) > 3
             labels: {severity: warning}
@@ -168,7 +168,7 @@ additionalPrometheusRulesMap:
           - alert: OutboxTaskTimeout
             expr: increase(superdl_outbox_task_timeout_total[30m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "outbox 有任务被执行超时中断:队列是全局串行的,队头卡死会让所有人的关机/释放请求一起排队"}
+            annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队"}
           # 以心跳 Gauge 判定存活:带 label 的 Counter 首次 inc 前无序列,不能用 absent
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)

@@ -28,5 +28,6 @@ join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即�
 shellcheck apps/api/app/modules/nodes/assets/node-join.sh
 bats deploy/node-join/tests          # PATH shim 伪造系统命令,不碰真实系统
 ```
-覆盖:参数错误 / 全流程免重启 / 幂等重跑 / 重启断点(oneshot+token 0600) / kata GRUB / 重启循环保护。
+覆盖:参数错误 / 全流程免重启 / 幂等重跑 / 重启断点(oneshot + token 0600)/ 重启循环保护 /
+kata GRUB IOMMU / k3s 模式落位 / 安装源 cn 与 official / NVMe 未登记不兜底 / loop 显式登记。
 实机验证项见 `deploy/cluster/runbooks/cluster-validation.md`;节点域说明见 `docs/reference/nodes.md`。

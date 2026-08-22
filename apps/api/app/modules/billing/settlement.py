@@ -9,9 +9,9 @@
 同一小时先尾账后整点结算、重复执行、并发执行,都只补不重扣。
 事件读取一律经 orchestrator.service 只读接口(模块边界)。
 
-追平设计:结算窗口由 settlement_watermarks 水位线推进,不是「只结上一个窗口」——
-worker 重启/停机恰好跨过整点(或跨过日结时刻)时,漏掉的窗口下一轮自动补上。
-超过追平上限的窗口只能人工补,此时 SETTLEMENT_LAG 指标已持续告警。
+追平设计:结算窗口由 settlement_watermarks 水位线推进而非只结上一个窗口,worker 停机
+跨过整点/日结时刻时漏掉的窗口下一轮自动补上。超出追平上限的窗口只能人工补,
+此时 SETTLEMENT_LAG 指标已持续告警。
 """
 
 from datetime import datetime, timedelta
@@ -153,7 +153,7 @@ async def upsert_hour_bill(
         ref_type="bill_hourly",
         ref_id=str(row.id),
         remark=f"实例 GPU 时费({source})",
-        allow_negative=True,  # 服务已消费完:拒绝扣款只会静默丢掉收入
+        allow_negative=True,  # 结算扣款允许透支
     )
     return charged
 
@@ -171,8 +171,7 @@ async def settle_instance_window(
 ) -> Decimal:
     """按事件重建窗口秒数并入账。窗口必须落在单一自然小时内。
 
-    读事件前必须先拿实例行锁:在飞的状态迁移事务对无锁读不可见,漏掉最后一条 stopping
-    会算出偏高的秒数,而入账单调只增,高估值再也回不去。
+    读事件前先拿实例行锁(见 orchestrator.service.lock_instance_for_billing)。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -341,7 +340,7 @@ async def charge_disk_day(
             ref_type="bill_daily_disk",
             ref_id=str(inserted),
             remark="数据盘日常费用",
-            allow_negative=True,  # 同上:存储已经占用了一整天
+            allow_negative=True,  # 结算扣款允许透支
         )
     return amount
 
@@ -358,10 +357,8 @@ async def settle_disk_pending_days(
 ) -> Decimal:
     """结清该盘截至今日、尚未出账的自然日(同事务调用,不 commit)。返回扣款合计。
 
-    删盘与扩容前必须调用,否则两个口径漏洞成立:
-    - 日结只对「结算时点仍存活」的盘出账 → 当日建、当日删可循环零费用占用存储;
-    - 日结按结算时点容量出账 → 扩容会把更大的容量追溯到尚未出账的旧日期(多扣用户)。
-    下界取日结水位线而非建盘日:欠费冻结期这类「有意不计费」的日子不会被补回来。
+    删盘与扩容前必须调用:日结只对结算时点仍存活的盘、按结算时点容量出账。
+    下界取日结水位线而非建盘日,欠费冻结期这类有意不计费的日子不补回来。
     """
     target_day = day_floor(at or now_utc())
     watermark = await get_watermark(session, "daily_disk")

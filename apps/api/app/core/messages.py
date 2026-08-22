@@ -12,7 +12,7 @@ from typing import Any
 MESSAGES: dict[str, str] = {
     # 账户
     "account.credentialRequired": "需提供验证码或密码",
-    # 登录失败一律用这一条:密码错、验证码错、未注册三种情况必须不可区分
+    # 密码错、验证码错、未注册三种情况共用本条,不可区分
     "account.loginFailed": "手机号或凭证错误",
     "account.phoneTaken": "该手机号已注册,请直接登录",
     "account.realNameChannelError": "实名核验服务暂不可用,请稍后重试",
@@ -80,9 +80,6 @@ MESSAGES: dict[str, str] = {
     "common.forbidden": "无权访问",
     "common.internal": "服务器内部错误,请稍后重试",
     "common.notFound": "资源不存在",
-    "nodes.clusterProbeFailed": "集群连接失败:{error}",
-    "nodes.clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
-    "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     "common.unauthorized": "未登录或凭证已过期",
     "common.badCursor": "无效的分页游标",
     "common.rateLimited": "尝试过于频繁,请稍后再试",
@@ -102,12 +99,15 @@ MESSAGES: dict[str, str] = {
     "metering.unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
     # 节点接入
     "nodes.alreadyTerminal": "状态 {status} 已是终态,无需吊销",
+    "nodes.clusterNotReady": "集群调度组件未就绪,暂时无法开机;平台正在自动检测恢复,请稍后重试",
+    "nodes.clusterProbeFailed": "集群连接失败:{error}",
     "nodes.clusterNotConfigured": (
         "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token"
     ),
     "nodes.enrollTransition": "注册状态不允许 {from} → {to}",
     "nodes.hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
     "nodes.regenerateNotAllowed": "状态 {status} 不允许重新生成(仅 待执行/已过期/已失败)",
+    "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     # 实例编排
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
     "orchestrator.forceStopNeedsRunning": "仅运行中的实例可以强制停止",

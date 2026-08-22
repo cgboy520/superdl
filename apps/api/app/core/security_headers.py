@@ -1,7 +1,6 @@
-"""安全响应头(纯 ASGI,避开 BaseHTTPMiddleware 的流式响应问题)。
+"""安全响应头(纯 ASGI,不走 BaseHTTPMiddleware)。
 
-API 只出 JSON:CSP default-src 'none' + 禁嵌入;/docs /redoc 需要加载 swagger 资源,
-仅对其豁免 CSP。HSTS 只在 prod 下发(需 TLS 终端在前)。
+CSP `default-src 'none'` + 禁嵌入;/docs /redoc 豁免 CSP。HSTS 仅 prod 下发。
 """
 
 from starlette.datastructures import MutableHeaders

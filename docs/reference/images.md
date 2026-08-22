@@ -27,4 +27,4 @@
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
 - 私有仓库为集群内单实例 distribution registry(`registry.superdl.local`,NodePort 30500),内网明文 HTTP 且无认证,防火墙不得对外暴露。
-- 创建实例只校验镜像引用**形态**(域名/路径/tag 合法);来源白名单默认关,见 [security.md](./security.md)。
+- 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。

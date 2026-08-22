@@ -38,12 +38,12 @@
 - 巡检在 worker 收敛环直连 K8s 并以幂等重试保证收敛,outbox 只管请求路径的业务事务。
 - 型号归一化在 `core/gpu_models.py`:`canonical_gpu_model(raw)` 未识别返回 None,同名多容量家族(A100/A800/H100/H800/H200/V100)追加 `-{n}G`;`model_matches(sku, node)` 为相等或节点值前缀匹配(SKU `A100` 匹配台账 `A100-80G`)。
 - `gpu_model` 必须参与调度,靠平台自有 label `superdl.io/gpu-model` 回写节点(不依赖 GFD、发行版无关)。
-- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死 —— 回落 default-scheduler 后 `nvidia.com/gpucores` 扩展资源照样 Pending,还丢失报错。
+- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死(回落 default-scheduler 后 `nvidia.com/gpucores` 照样 Pending)。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;k3s 为受支持的轻量档,仅限 hami 池 SKU,dedicated/mig 需 full 集群。
 - k3s 只探测 nvidia 运行时、不设默认运行时,故 k3s 上 shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。
 - cluster 配置组键面:`cluster_server_url / cluster_join_token(secret)/ cluster_agent_version / node_driver_version / node_registries_yaml(留空=平台生成)/ node_install_mirror(""|cn,默认 cn)`,无 k8s_distro 键。
 - `render_registries_yaml` 由 server_url 解析 host + registry NodePort 30500 常量 + 模板生成。
 - cluster 键不做启动 fail-fast(推荐配置路径是 DB 覆盖层,启动只查 env 会误报);改由 lifespan 在 DB 就绪后查生效配置打 error + 集群页红牌 + 创建注册命令 409。
-- `node-join.sh` 随 API 镜像下发,步骤 marker 可无限重跑;需重启的场景(kata 池 IOMMU 等)用 systemd oneshot 断点续跑。phase 名发行版中性:precheck/nouveau/sysctl/iommu/driver/nvme_vg/reboot/registries/agent_config/agent_install/agent_start/waiting_node。
+- `node-join.sh` 随 API 镜像下发,步骤 marker 可无限重跑;需重启的场景(kata 池 IOMMU 等)用 systemd oneshot 断点续跑。phase 名发行版中性:bootstrap/precheck/nouveau/sysctl/iommu/driver/nvidia_toolkit/nvme_vg/reboot/registries/agent_config/agent_install/agent_start/waiting_node。
 - 一节点一令牌,不做批量可重用令牌;不做 drain(牵扯计费与迁移策略)。
 - join token 最终必然落节点 agent config 文件(0600 root),轮换走发行版自带的 token rotate。

@@ -8,7 +8,7 @@ def now_utc() -> datetime:
 
 
 def ensure_utc(dt: datetime) -> datetime:
-    """防御:拒绝 naive datetime,统一转 UTC。"""
+    """转 UTC;naive datetime 直接拒绝。"""
     if dt.tzinfo is None:
         raise ValueError(f"naive datetime is forbidden: {dt!r}")
     return dt.astimezone(UTC)
