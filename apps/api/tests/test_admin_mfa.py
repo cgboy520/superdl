@@ -1,5 +1,8 @@
 """管理端 TOTP MFA:admin/finance 强制绑定,二要素登录,恢复码,重置救援。"""
 
+import asyncio
+
+import pyotp
 import pytest
 from httpx import AsyncClient
 
@@ -60,6 +63,27 @@ class TestSetupFlow:
         b = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         assert a.json()["secret"] == b.json()["secret"]
         assert a.json()["otpauth_uri"].startswith("otpauth://totp/")
+
+    async def test_concurrent_begin_returns_the_stored_secret(self, client: AsyncClient, sm):
+        """并发 begin(StrictMode 双发 / 双击 / 多标签页)只能落一枚密钥,且页面拿到的
+        就是库里那枚。
+
+        它挂了说明:两路各生成一枚、后写者覆盖前者,用户照着二维码输的首个动态码必然
+        验不过 —— 首次绑定直接卡死(管理端 e2e 曾以此偶发红)。
+        """
+        await _create(client, sm, "race-admin", "admin")
+        ticket = (await _login(client, "race-admin")).json()["ticket"]
+        a, b = await asyncio.gather(
+            client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket}),
+            client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket}),
+        )
+        assert a.json()["secret"] == b.json()["secret"]
+        # 真正的判据不是两路自洽,而是「返回的密钥能绑定成功」= 与库里存的是同一枚
+        resp = await client.post(
+            "/api/admin/v1/auth/mfa/setup/confirm",
+            json={"ticket": ticket, "code": pyotp.TOTP(a.json()["secret"]).now()},
+        )
+        assert resp.status_code == 200, resp.text
 
     async def test_confirm_wrong_code_rejected(self, client: AsyncClient, sm):
         await _create(client, sm, "wrong-admin", "admin")
