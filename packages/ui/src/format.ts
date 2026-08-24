@@ -197,7 +197,7 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
   };
 }
 
-/** 时区后缀(P2-29):按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
+/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
 export function tzSuffix(d: Date = new Date()): string {
   const offsetMin = -d.getTimezoneOffset(); // getTimezoneOffset 以西为正,取反成 UTC 以东为正
   const sign = offsetMin >= 0 ? "+" : "-";

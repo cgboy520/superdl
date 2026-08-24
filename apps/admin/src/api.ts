@@ -288,7 +288,7 @@ export function useSkuCapacityPreview(
   });
 }
 
-/** 管理端实例列表(游标分页,P1-13):status/user_id/q/node_name 服务端过滤,「加载更多」向下翻页。 */
+/** 管理端实例列表(游标分页):status/user_id/q/node_name 服务端过滤,「加载更多」向下翻页。 */
 export function useAdminInstances(
   params?: Omit<AdminListInstancesApiAdminV1InstancesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
@@ -310,7 +310,7 @@ export function useAdminInstances(
   return { ...q, queryKey };
 }
 
-/** 租户列表(游标分页,P1-13)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按 id 命中首页。 */
+/** 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按 id 命中首页。 */
 export function useTenants(params?: Omit<AdminListTenantsApiAdminV1TenantsGetParams, "cursor" | "limit">) {
   const queryKey = ["admin", "tenants", params] as const;
   const q = useInfiniteQuery({
@@ -344,7 +344,7 @@ export function useTenantLedger(userId: number | null) {
   return { ...q, queryKey };
 }
 
-/** 租户小时账单;instanceId 非空时按实例过滤(F10 排障:只盯一台机的账)。 */
+/** 租户小时账单;instanceId 非空时按实例过滤(排障:只盯一台机的账)。 */
 export function useTenantBills(userId: number | null, instanceId?: number | null) {
   const queryKey = ["admin", "tenant-bills", userId, instanceId ?? null] as const;
   const q = useInfiniteQuery({
@@ -362,7 +362,7 @@ export function useTenantBills(userId: number | null, instanceId?: number | null
   return { ...q, queryKey };
 }
 
-/** 租户配额覆盖 + 生效值(F9;抽屉「配额」Tab)。 */
+/** 租户配额覆盖 + 生效值(抽屉「配额」Tab)。 */
 export function useTenantQuota(userId: number | null) {
   const queryKey = ["admin", "tenant-quota", userId] as const;
   const q = useQuery({
@@ -380,7 +380,7 @@ export function useSetTenantQuota() {
   });
 }
 
-/** 实例事件时间线(F10 排障;管理端不限租户,游标分页)。 */
+/** 实例事件时间线(排障;管理端不限租户,游标分页)。 */
 export function useInstanceEvents(uuid: string | null) {
   const queryKey = ["admin", "instance-events", uuid] as const;
   const q = useInfiniteQuery({
@@ -456,7 +456,7 @@ export function useReconciliation(day: string) {
   });
 }
 
-/** 告警流(F8):severity 服务端过滤。 */
+/** 告警流:severity 服务端过滤。 */
 export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
   options?: { refetchInterval?: number },
@@ -487,7 +487,7 @@ export function useAckAlert(opts?: MutOpts<unknown, { alertId: number }>) {
   });
 }
 
-/** 充值订单(游标分页,P1-13)。order_no 精确;day=YYYY-MM-DD 按下单日(UTC)过滤。 */
+/** 充值订单(游标分页)。order_no 精确;day=YYYY-MM-DD 按下单日(UTC)过滤。 */
 export function useOrders(
   params?: Omit<AdminListOrdersApiAdminV1OrdersGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean },
@@ -508,7 +508,7 @@ export function useOrders(
   return { ...q, queryKey };
 }
 
-/** 调账单(游标分页,P1-13):status/user_id/day 服务端过滤。 */
+/** 调账单(游标分页):status/user_id/day 服务端过滤。 */
 export function useAdjustments(
   params?: Omit<AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, "cursor" | "limit">,
 ) {
@@ -527,7 +527,7 @@ export function useAdjustments(
   return { ...q, queryKey };
 }
 
-/** 退款单列表(F1,游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日,与对账口径一致)。 */
+/** 退款单列表(游标分页)。status 服务端过滤;day=YYYY-MM-DD(UTC 日,与对账口径一致)。 */
 export function useRefunds(
   params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">,
 ) {
@@ -576,7 +576,7 @@ export function useCancelRefund(
   });
 }
 
-/** 发票申请列表(F2)。status/period(YYYY-MM)服务端过滤。 */
+/** 发票申请列表。status/period(YYYY-MM)服务端过滤。 */
 export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams) {
   const queryKey = ["admin", "invoices", params] as const;
   const q = useQuery({
@@ -606,7 +606,7 @@ export function useRejectInvoice(
   });
 }
 
-/** 工单列表(F3)。status/category 服务端过滤。 */
+/** 工单列表。status/category 服务端过滤。 */
 export function useTickets(params?: AdminListTicketsApiAdminV1TicketsGetParams) {
   const queryKey = ["admin", "tickets", params] as const;
   const q = useQuery({
@@ -616,7 +616,7 @@ export function useTickets(params?: AdminListTicketsApiAdminV1TicketsGetParams) 
   return { ...q, queryKey };
 }
 
-/** 注销申请列表(F4)。status 服务端过滤;行内附执行前校验计数。 */
+/** 注销申请列表。status 服务端过滤;行内附执行前校验计数。 */
 export function useDeletionRequests(params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams) {
   const queryKey = ["admin", "deletion-requests", params] as const;
   const q = useQuery({
@@ -657,7 +657,7 @@ export function useTicketDetail(ticketId: number | null) {
   return { ...q, queryKey };
 }
 
-// ---------- 法务文档(F7:读全角色,写仅 admin) ----------
+// ---------- 法务文档(读全角色,写仅 admin) ----------
 
 export type { LegalDocCellOut as LegalDocCell, LegalDocVersionOut as LegalDocVersion } from "@superdl/api-client";
 
@@ -1058,7 +1058,7 @@ export function usePublishAnnouncement(
   });
 }
 
-/** 公告历史(F6:含已撤回;固定截断 200,页面用 ListCapNote 提示)。 */
+/** 公告历史(含已撤回;固定截断 200,页面用 ListCapNote 提示)。 */
 export function useAnnouncements() {
   const queryKey = ["admin", "announcements"] as const;
   const q = useQuery({
@@ -1202,7 +1202,7 @@ export function useSkuImpact(skuId: number | null) {
   });
 }
 
-// ---------- CSV 导出(P2-37;生成 fetcher,文本响应;截断标记见 lib/csv.ts) ----------
+// ---------- CSV 导出(生成 fetcher,文本响应;截断标记见 lib/csv.ts) ----------
 
 /** 服务端 CSV 截断标记(与 apps/api core/csvexport.py TRUNCATED_MARKER 一致)。 */
 export const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";

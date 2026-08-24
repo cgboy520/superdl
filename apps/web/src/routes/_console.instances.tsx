@@ -1,7 +1,7 @@
 /**
  * 容器实例列表(默认落地页):策略提示条 + 动作行(租用/刷新/密钥设置/状态过滤/搜索)+ 密集表格
  * (名称/状态/规格/GPU利用率 sparkline/计费+今日消费/操作)。
- * 列表走服务端游标分页(P1-11) + status/name 过滤(P2-17 状态入 URL);
+ * 列表走服务端游标分页 + status/name 过滤(状态入 URL);
  * access/events 在行展开时按需加载,不在行内预取;轮询只回刷第一页(摘要列),旧页不重取。
  */
 
@@ -61,7 +61,7 @@ const FILTER_STATUSES = [
 
 export const Route = createFileRoute("/_console/instances")({
   beforeLoad: requireAuth,
-  // 列表状态入 URL(P2-17):可分享/返回不丢;非法值丢弃回默认
+  // 列表状态入 URL:可分享/返回不丢;非法值丢弃回默认
   validateSearch: (search: Record<string, unknown>): { q?: string; status?: string } => {
     const out: { q?: string; status?: string } = {};
     if (typeof search.q === "string" && search.q.trim()) out.q = search.q;
@@ -260,7 +260,7 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   );
 }
 
-// 轮询行 memo(报告3#42):react-query 结构共享保证数据未变时引用不变,
+// 轮询行 memo:react-query 结构共享保证数据未变时引用不变,
 // 5s/30s 轮询只重渲真正变化的行;onDetail 每次渲染都新建,但从 uuid 派生,比较时排除
 const UtilCellMemo = memo(
   UtilCell,
@@ -405,7 +405,7 @@ function InstancesPage() {
         pagination={false}
         scroll={{ x: 960 }}
         expandable={{
-          // access/events 行展开按需加载(P1-11):仅 running(工具)/failed(原因)可展开
+          // access/events 行展开按需加载:仅 running(工具)/failed(原因)可展开
           rowExpandable: (r) => r.status === "running" || r.status === "failed",
           expandedRowRender: (r) =>
             r.status === "failed" ? <ExpandedFailed instance={r} /> : <ExpandedTools instance={r} />,

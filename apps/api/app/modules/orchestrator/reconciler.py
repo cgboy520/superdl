@@ -9,7 +9,7 @@
 - 长期 stopped / failed 的实例盘保留期 GC(先预警,到期 releasing;数据盘不受影响)
 
 K8s 读放大控制:每轮一次 list_instance_pods 即状态源(ready/phase/node_name/deleting),
-不再逐实例 get_status(单查会占满执行器线程,让建/删 Pod 排队)。
+不逐实例 get_status(单查会占满执行器线程,让建/删 Pod 排队)。
 
 stopping/releasing 悬挂两档超时(默认各 10 分钟,宁宽勿严):
 第一档经 outbox 重发删除任务,第二档 force=True 强删(失联节点上的优雅删除永远
@@ -153,7 +153,7 @@ async def _running_pod_lost_reason(
 async def _reenqueue_delete(session: AsyncSession, task_type: str, instance_id: int) -> bool:
     """悬挂恢复第一档:重发删除任务。已有在途同型任务则跳过(不堆重复任务)。
 
-    在途判定(P1-36):running 行仅在 locked_at 租约未超 RUNNING_TIMEOUT 时算在途;
+    在途判定:running 行仅在 locked_at 租约未超 RUNNING_TIMEOUT 时算在途;
     租约过期 = 执行 worker 已死(终态写按 locked_by 校验,旧副本结果会被丢弃),
     等 reaper(5 分钟一轮)打回 pending 之前,这里直接补发新任务让收敛不等拍。
     """
@@ -647,7 +647,7 @@ _QUOTA_ENQUEUE_CAP_PER_ROUND = 50
 async def _reconcile_disk_quotas(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """JuiceFS 目录配额对账(W1-1):
+    """JuiceFS 目录配额对账:
     a) quota_synced=false 且无在途 disk.quota 任务的盘补发任务(存量回填 + 失败自愈);
     b) 死信 disk.quota 超 1 小时重派并计指标(配额未强制是计费完整性与防滥用缺口)。
     """

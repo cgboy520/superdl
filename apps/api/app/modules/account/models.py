@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
-# 注销冷静期(F4):pending 满 7 天后管理端才可执行
+# 注销冷静期:pending 满 7 天后管理端才可执行
 DELETION_COOLDOWN = timedelta(days=7)
 
 
@@ -34,7 +34,7 @@ class User(Base):
 
 
 class UserQuotaOverride(Base):
-    """用户级配额覆盖(F9):任一字段为 None = 该维走默认链(policy → env)。"""
+    """用户级配额覆盖:任一字段为 None = 该维走默认链(policy → env)。"""
 
     __tablename__ = "user_quota_overrides"
 
@@ -78,7 +78,7 @@ class UsedRefreshToken(Base):
 
 
 class AccountDeletionRequest(Base):
-    """账号注销申请(F4)。
+    """账号注销申请。
 
     状态机:pending →(冷静期满 + 校验通过,执行匿名化)completed
                   →(用户冷静期内撤销)cancelled

@@ -78,8 +78,12 @@ test("全生命周期冒烟", async ({ page }) => {
   await expect(page).toHaveURL(/instances/, { timeout: 15_000 });
   const row = page.locator(".ant-table-row").first();
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
-  await expect(row.getByRole("button", { name: "SSH" })).toBeVisible();
-  await expect(row.getByText("JupyterLab")).toBeVisible();
+  // 快捷工具在行展开区(antd 渲染成兄弟 tr.ant-table-expanded-row,不带 ant-table-row),
+  // access 也是展开才拉,故先点开再断言并给足超时
+  await row.locator(".ant-table-row-expand-icon").click();
+  const tools = page.locator(".ant-table-expanded-row").first();
+  await expect(tools.getByRole("button", { name: "SSH" })).toBeVisible({ timeout: 15_000 });
+  await expect(tools.getByText("JupyterLab")).toBeVisible();
 
   // ── 实例详情:双击进入 → 直刷 URL 可达 → 事件即计费依据 ──
   await row.dblclick();
@@ -99,10 +103,14 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByText("小时账单").click();
   await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 15_000 });
 
-  // ── 释放:多级防护(勾选解锁)→ 列表消失 ────────────────
+  // ── 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失 ──────
   await page.goto("/instances");
   await page.locator(".ant-table-row").first().getByText(/更\s*多/).click();
   await page.getByText("释放实例", { exact: true }).click();
+  // 多级防护两道闸(ui-ux-spec 规则 4):键入实例名 + 勾选清盘知情,缺一红按钮不解锁。
+  // placeholder 即实例名,不必把服务端生成的名字再拼一遍
+  const confirmInput = page.getByLabel(/请输入实例名/);
+  await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "确认释放" }).click();
   await expect(page.getByText(/释放中|暂无|没有/).first()).toBeVisible({ timeout: 90_000 });

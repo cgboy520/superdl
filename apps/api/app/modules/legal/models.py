@@ -16,7 +16,7 @@ from app.core.db import Base
 
 
 class LegalDocVersion(Base):
-    """法务文档版本(F7)。(doc_key, locale, version) 唯一;
+    """法务文档版本。(doc_key, locale, version) 唯一;
     部分唯一索引保证每 (doc_key, locale) 至多一条 published(发布事务把旧版转 archived)。
 
     published_by/published_at 仅 published 落;预置版本发布人留空(系统预置)。
@@ -50,7 +50,7 @@ class LegalDocVersion(Base):
 
 
 class UserConsent(Base):
-    """注册同意存证(F7,合规举证):注册必勾时按当前 published 版本落 terms/privacy 各一条。"""
+    """注册同意存证(合规举证):注册必勾时按当前 published 版本落 terms/privacy 各一条。"""
 
     __tablename__ = "user_consents"
 

@@ -7,7 +7,7 @@ controller:
     ssl-redirect: "true"
   # 可用性:双副本 + PDB(chart 在 replicaCount>1 时按 minAvailable 自动建 PDB)+ 拓扑摊开。
   # 北向唯一入口(api/console/admin/租户 Jupyter 全走这里),单点重启不应断流。
-  # 资源(P1-33):南北向入口 requests==limits 提 Guaranteed——节点资源紧张时不与租户
+  # 资源:南北向入口 requests==limits 提 Guaranteed——节点资源紧张时不与租户
   # Pod 同级,避免先被驱逐;按入口峰值带宽/连接数实测后再调。
   resources:
     requests: {cpu: 500m, memory: 512Mi}

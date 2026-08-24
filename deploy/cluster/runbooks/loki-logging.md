@@ -1,8 +1,8 @@
 # 日志与审计留存(Loki)
 
 组件:helmfile 的 `loki`(grafana-community/loki,Monolithic 单副本)+ `alloy`
-(grafana/alloy,promtail 的官方继任)。采集面:全部命名空间的容器日志
-(discovery.kubernetes,等价原 promtail kubernetes_sd)+ 控制面节点 apiserver
+(grafana/alloy)。采集面:全部命名空间的容器日志
+(discovery.kubernetes)+ 控制面节点 apiserver
 审计文件(`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
 
 ## 留存口径(合规基线)
@@ -21,10 +21,10 @@ Grafana(full 档)→ Explore → Loki 数据源(或 `logcli`):
 
 ```logql
 # 1. 按 request_id 串联一次请求的 API + worker(outbox)全链日志
-#    (outbox payload 的 _request_id 键在执行时回填日志上下文,P1-32)
+#    (outbox payload 的 _request_id 键在执行时回填日志上下文)
 {namespace="superdl"} |~ `"request_id":"<request-id>"`
 
-# 2. API 未捕获异常(统一 500 留痕;原 sentry 告警职责由本查询承接,P1-32e)
+# 2. API 未捕获异常(统一 500 留痕)
 {namespace="superdl", container="api"} |~ "unhandled_exception"
 
 # 3. outbox 死信/重试(编排链路排障)
@@ -41,7 +41,7 @@ Grafana(full 档)→ Explore → Loki 数据源(或 `logcli`):
 平台日志 prod 为 JSON 行(structlog;`request_id`/`level`/`event` 为键),
 `| json` 后可按键过滤,如 `{namespace="superdl"} | json | level="error"`。
 
-## 告警(替代 sentry 的决策落点)
+## 告警
 
 未捕获异常、outbox 死信等已有 Prometheus 指标告警(kps values 的
 `superdl.platform` 规则组:`ApiHighErrorRate`/`OutboxTaskDead` 等,走

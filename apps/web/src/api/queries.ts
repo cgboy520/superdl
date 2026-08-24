@@ -93,7 +93,7 @@ function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts<N
 
 
 export const useMe = (opts?: QueryOpts) => useApiQuery(["me"], () => meApiV1MeGet(), opts);
-/** 我的注销申请(F4):pending 或最近一条;null = 从未申请。 */
+/** 我的注销申请:pending 或最近一条;null = 从未申请。 */
 export const useMyDeletionRequest = (opts?: QueryOpts) =>
   useApiQuery(["deletion-request"], () => getDeletionRequestApiV1MeDeletionRequestGet(), opts);
 export const useWallet = (opts?: QueryOpts) => useApiQuery(["wallet"], () => getWalletApiV1WalletGet(), opts);
@@ -115,7 +115,7 @@ export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
     select: (p) => p.items,
     ...opts,
   });
-/** 实例列表游标分页(P1-11):status 精确/name 模糊服务端过滤,「加载更多」向下翻页。 */
+/** 实例列表游标分页:status 精确/name 模糊服务端过滤,「加载更多」向下翻页。 */
 export const useInstancePages = (params?: { status?: string; name?: string }) => {
   const status = params?.status;
   const name = params?.name?.trim() || undefined;
@@ -168,7 +168,7 @@ export const useInstanceEvents = (uuid: string, opts?: QueryOpts<PageInstanceEve
     () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { limit: 200 }),
     opts,
   );
-/** 事件时间线游标分页(P1-09,与费用中心小时账单同构):详情页「事件」Tab 加载更多。 */
+/** 事件时间线游标分页(与费用中心小时账单同构):详情页「事件」Tab 加载更多。 */
 export const useInstanceEventPages = (uuid: string) =>
   useInfiniteQuery<
     PageInstanceEventOut,
@@ -185,7 +185,7 @@ export const useInstanceEventPages = (uuid: string) =>
   });
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
   useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
-/** 容器日志(F5):tail/自动刷新由调用方经 params 与 refetchInterval 控制。 */
+/** 容器日志:tail/自动刷新由调用方经 params 与 refetchInterval 控制。 */
 export const useInstanceLogs = (
   uuid: string,
   params: GetInstanceLogsApiV1InstancesUuidLogsGetParams,
@@ -234,7 +234,7 @@ export const usePolicies = () =>
 /** 站点公开配置(备案号/可用支付渠道):公开端点,页脚与充值弹窗消费。 */
 export const useSiteConfig = () =>
   useApiQuery(["site-config"], () => getSiteConfigApiV1SiteConfigGet(), { retry: 1 });
-/** 法务文档(F7):公开端点,按界面语言取当前 published 版(en-US 缺失服务端回落 zh-CN)。 */
+/** 法务文档:公开端点,按界面语言取当前 published 版(en-US 缺失服务端回落 zh-CN)。 */
 export const useLegalDoc = (docKey: string, lang: string) =>
   useApiQuery(["legal-doc", docKey, lang], () => getLegalDocApiV1LegalDocKeyGet(docKey, { lang }), { retry: 1 });
 /** 实例列表 sparkline 批量摘要:断源时 available=false(200),独立于 5s 实例轮询。 */
@@ -271,7 +271,7 @@ export const useInvoicePages = (limit = 20) =>
     initialPageParam: undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-/** 我的工单游标分页(F3,与退款单同构)。 */
+/** 我的工单游标分页(与退款单同构)。 */
 export const useTicketPages = (limit = 20) =>
   useInfiniteQuery<PageTicketOut, ApiError, InfiniteData<PageTicketOut>, unknown[], string | undefined>({
     queryKey: ["tickets", limit],

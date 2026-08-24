@@ -107,7 +107,7 @@ async def login(
     )
     password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
-        # 只在失败后计数:成功登录不消耗配额(此前连成功也计数,连登 5 次即被 429)
+        # 只在失败后计数:成功登录不消耗配额
         await check_rate_limit(
             f"admin-login-ip:{client_ip or '-'}",
             max_attempts=LOGIN_IP_MAX_ATTEMPTS,
@@ -256,19 +256,29 @@ async def _consume_recovery_code(admin: AdminUser, code: str) -> bool:
 
 async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str]:
     """生成(或复用进行中的)TOTP 密钥,返回 (secret, otpauth_uri)。
-    复用让绑定页刷新/重进看到同一二维码;确认绑定前 totp_enabled 恒为 false。"""
+    复用让绑定页刷新/重进看到同一二维码;确认绑定前 totp_enabled 恒为 false。
+
+    行锁下读改写:并发 begin(React StrictMode 双发、双击、多标签页)若各自读到
+    totp_secret is None,会各生成一枚密钥、后写者覆盖前者,而页面可能渲染的是被覆盖
+    的那枚 —— 用户照着二维码输的首个动态码必然验不过,首次绑定卡死。
+    """
     import pyotp
 
     from app.core.crypto import encrypt_str
 
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
-    if admin.totp_secret is None:
+    # populate_existing 不可省:_admin_from_ticket 已把该行读进 identity map,
+    # 不强制重读则 get() 直接返回缓存实例,锁拿到了却看的是加锁前的旧值
+    locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
+    if locked is None:  # 票据校验后被删:与票据失效同等处理
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    if locked.totp_secret is None:
         secret = pyotp.random_base32()
-        admin.totp_secret = encrypt_str(secret, aad=f"totp:{admin.id}")
-        await session.commit()
+        locked.totp_secret = encrypt_str(secret, aad=f"totp:{locked.id}")
     else:
-        secret = _decrypt_totp_secret(admin)
-    uri = pyotp.TOTP(secret).provisioning_uri(name=admin.username, issuer_name="SuperDL 管理端")
+        secret = _decrypt_totp_secret(locked)
+    await session.commit()  # 锁随事务结束释放;未改也要提交,不能把锁留到请求结束
+    uri = pyotp.TOTP(secret).provisioning_uri(name=locked.username, issuer_name="SuperDL 管理端")
     return secret, uri
 
 

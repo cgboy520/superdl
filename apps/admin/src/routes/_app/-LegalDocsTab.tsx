@@ -1,4 +1,4 @@
-/** 法务文档(F7)Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史。
+/** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史。
  * 写操作仅 admin;发布确认弹窗带与现版的行级 diff 统计(+/−)。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";

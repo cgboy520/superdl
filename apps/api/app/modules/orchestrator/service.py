@@ -4,7 +4,7 @@
 - 状态变更只走 transition()(乐观锁 + 同事务 instance_events + 迁移监听器)
 - 「改 DB + 动 K8s」一律 outbox;请求路径绝不直接调 K8s
 
-拆分(W6):状态迁移原语 → transitions.py;SSH 端口池 → ports.py;billing/管理端
+拆分:状态迁移原语 → transitions.py;SSH 端口池 → ports.py;billing/管理端
 查询聚合 → queries.py。本文件保留创建/操作/接入/日志主链路,并再导出全部拆出符号,
 跨模块仍只经 app.modules.orchestrator.service 访问(lint-imports 契约不变)。
 """
@@ -656,7 +656,7 @@ async def release_instance(
     instance = await get_instance(session, user_id, uuid)
     if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
         # 幂等释放:释放中/已释放直接回当前状态(照 delete_disk 的 deleting 写法),
-        # 重试/双击不再报 400
+        # 重试/双击不报 400
         return instance
     if instance.status not in (
         sm_def.STOPPED,
@@ -768,7 +768,7 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
     return instance
 
 
-# ---------- 容器日志(F5) ----------
+# ---------- 容器日志 ----------
 # 「请求路径绝不直接调 K8s」的例外:只读、用户在线等结果,走 outbox 语义不通。
 # 代价由三道闸兜住:owner 校验、20/h/user 限流、K8s 读 5s 超时(real 侧 _request_timeout)。
 

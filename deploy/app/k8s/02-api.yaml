@@ -17,7 +17,7 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
-      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod,
+      # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod,
       # 节点资源紧张时不与租户同级被驱逐。
       priorityClassName: system-cluster-critical
       nodeSelector:
@@ -69,7 +69,7 @@ spec:
               exec:
                 command: ["sh", "-c", "sleep 10"]
           # requests==limits → Guaranteed:节点资源紧张时平台控制面与租户 Pod 同级,不先被 evict;
-          # 叠加 pod 级 priorityClassName=system-cluster-critical(见上,P1-33)压过租户。
+          # 叠加 pod 级 priorityClassName=system-cluster-critical(见上)压过租户。
           # 内存取原 limits 值(eviction 看内存);CPU 可压缩,取请求与上限的中档。
           resources:
             requests: {cpu: "1", memory: 1Gi}

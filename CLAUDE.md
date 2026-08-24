@@ -57,7 +57,7 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 10. **状态机迁移**只能通过 `orchestrator/service.py` 的 transition 函数（同事务写 instance_events），禁止直接 UPDATE status。
 11. **前端**：antd 6 原生组件自封装，不引 pro-components；服务端状态全走 TanStack Query；文案与状态映射集中在 `packages/ui`。
 12. **文案**：用户可见文案的单一事实源是后端 `core/messages.py` 与两端 locales JSON；zh-CN 与 en-US 必须同时提交，风格见 `docs/copy-style-guide.md`。
-13. **测试**：每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是：金额与舍入、透支、结算幂等（「重复执行零重复扣款」）、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考，不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`，浏览器冒烟是 `e2e/tests/smoke.spec.ts`。
+13. **测试**：每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是：金额与舍入、透支、结算幂等（「重复执行零重复扣款」）、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考，不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`，浏览器冒烟在 `e2e/tests/`（smoke / admin / i18n）。
 14. **密钥/凭据不入 git**：只经环境变量或平台配置中心注入；deploy 模板一律 `CHANGE_ME` 占位（`deploy/app/secrets.example.yaml`）。
 
 ## 禁改清单

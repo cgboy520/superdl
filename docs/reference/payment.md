@@ -31,4 +31,5 @@
 - 查单 poller 每 2 分钟收敛丢回调(advisory lock 1007),不扫 closed 单;单笔入账失败(金额/渠道不符、唯一约束冲突)记 `superdl_payment_recover_failed_total` 后跳过,不中断整轮;残余窗口由异常清单 + 人工补单兜底。
 - 人工补单为渠道核验制:服务端实时查渠道(锁外查询、显式超时 15s,落账前行锁内复核状态),已支付且金额一致才入账;pending / closed / failed 单均可补,渠道是唯一事实源。支持 Idempotency-Key:同键重放且已入账则回当前状态而非 409(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。
 - 渠道凭据与开关在管理端配置,不入代码与 K8s Secret 之外的任何位置,见 [platform-config.md](./platform-config.md)。
-- 不做渠道原路退款:资金退回一律走调账双复核。
+- 不做渠道原路退款:退款单审批通过不动钱包,财务登记打款成功才同事务负向核销(审批与打款分人)。
+- 已开票(issued)账期的 paid 订单不可申请退款,须先红冲。

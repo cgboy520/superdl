@@ -197,7 +197,7 @@ describe("formatSizeGb", () => {
   });
 });
 
-describe("formatDateTime 时区后缀(P2-29)", () => {
+describe("formatDateTime 时区后缀", () => {
   it("输出带 (UTC±x) 后缀,与运行时偏移一致", () => {
     const out = formatDateTime("2026-08-19T02:30:00Z");
     expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(:\d{2})?\)$/);

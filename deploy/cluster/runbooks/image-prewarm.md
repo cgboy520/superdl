@@ -11,7 +11,7 @@
 ```bash
 # 1. 生成 htpasswd 行(任意有 htpasswd 的机器;-B = bcrypt,registry 只认 bcrypt)
 htpasswd -nbB ops '<强口令>' > htpasswd
-# 2. 凭据不落 git,手工建 Secret 后 apply(原占位口令 CHANGE_ME 已泄漏,禁止写回清单)
+# 2. 凭据不落 git,手工建 Secret 后 apply(占位口令 CHANGE_ME 的 hash 已泄漏,禁止写回清单)
 kubectl -n registry create secret generic registry-htpasswd --from-file=htpasswd && rm -f htpasswd
 kubectl apply -f ../registry/registry.yaml
 # 3. 节点侧:registries.yaml 去掉 configs 块注释并填同口令(模板见 ../rke2/registries.yaml),
@@ -62,7 +62,7 @@ curl -u ops:'<强口令>' http://127.0.0.1:5000/v2/_catalog          # 仓库存
 - htpasswd 认证(匿名 push/pull 一律 401)+ registry namespace 默认拒绝 NetworkPolicy
   (仅放行节点/运维网段);light 档 k3s 默认自带 netpol 控制器(内嵌 kube-router)
   会执行 NetworkPolicy,机房防火墙作为第二道边界。
-- registry 收编为 ClusterIP(P0-07),仅集群内可达;机房防火墙不得把集群网段对外暴露;
+- registry 收编为 ClusterIP,仅集群内可达;机房防火墙不得把集群网段对外暴露;
   TLS 升级路径见 registry.yaml 末尾 Service 注释,未上 TLS 前口令内网明文传输,按季度轮换。
 - 租户实例无法触达 registry:租户 Pod Egress NetworkPolicy 禁全部私网段
   (app/core/k8s/real.py PRIVATE_CIDRS),ClusterIP 段与 Pod 网段均在其内。

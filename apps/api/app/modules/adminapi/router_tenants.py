@@ -56,7 +56,7 @@ async def admin_list_tenants(
     手机号后缀命中行保持原序随后。手机号只回掩码。按号码/id 检索是敏感读,显式落一条审计
     (中间件默认只审计写操作)。
 
-    实名信息(F9):readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
+    实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
     本次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
     """
     from app.modules.account import service as account_service
@@ -145,7 +145,7 @@ async def admin_tenant_ledger_export(
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
-    """租户资金流水 CSV(P2-37,流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。"""
+    """租户资金流水 CSV(流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。"""
     from app.modules.billing import service as billing_service
 
     return csv_response(
@@ -172,7 +172,7 @@ async def admin_tenant_bills(
     )
 
 
-# ---------- 租户配额覆盖(F9:读全角色,写 ops;校验链 override → policy → env) ----------
+# ---------- 租户配额覆盖(读全角色,写 ops;校验链 override → policy → env) ----------
 
 
 async def _tenant_quota_out(session: AsyncSession, user_id: int) -> TenantQuotaOut:
@@ -295,7 +295,7 @@ async def admin_unfreeze_tenant(
     return TenantStatusOut(id=user.id, status=user.status)
 
 
-# ---------- 账号注销(F4:读 ops/finance/readonly,写仅 admin——最高危操作) ----------
+# ---------- 账号注销(读 ops/finance/readonly,写仅 admin——最高危操作) ----------
 
 
 @router.get("/deletion-requests", dependencies=[require_roles("ops", "finance", "readonly")])

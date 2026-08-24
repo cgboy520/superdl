@@ -151,7 +151,7 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
     """未捕获异常的统一渲染(结构化留痕 + 统一错误体)。
     exception handler 与 Uniform500Middleware 共用同一出口。
     留痕经 structlog 进 Loki(见 deploy/cluster/runbooks/loki-logging.md),
-    异常告警由 Loki 侧规则承接(决策:不引 sentry 依赖,见审计整改方案 P1-32)。"""
+    异常告警由 Loki 侧规则承接(不引 sentry 依赖)。"""
     from app.core.logging import get_logger
 
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
@@ -170,7 +170,7 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
 
 class Uniform500Middleware:
     """中间件链内层的未捕获异常兜底:500 在此渲染并沿链返回,
-    安全响应头(SecurityHeaders)与 request_id(Observability)不再丢失——
+    保住安全响应头(SecurityHeaders)与 request_id(Observability)——
     @app.exception_handler(Exception) 由最外层 ServerErrorMiddleware 承接,
     跑在两者之外,恰在唯一需要凭单排障的响应上丢掉它们。"""
 

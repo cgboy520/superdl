@@ -75,7 +75,7 @@ const ROLE_LABEL = {
 function AlertBell() {
   const { t } = useTranslation();
   const { data } = useAlerts(undefined, { refetchInterval: 30_000 });
-  // 角标 = 未确认告警数(F8:独立计数端点,不再用当页长度推算)
+  // 角标 = 未确认告警数(独立计数端点,不用当页长度推算)
   const { data: unread } = useAlertUnreadCount({ refetchInterval: 30_000 });
   const alerts: AlertRow[] = data ?? [];
   return (

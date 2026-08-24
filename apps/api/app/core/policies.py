@@ -34,7 +34,7 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "afford_cover_hours": ("int", Decimal(1), Decimal(24)),
     "prewarm_min_coverage_pct": ("int", Decimal(1), Decimal(100)),
     "prewarm_recheck_hours": ("int", Decimal(1), Decimal(168)),
-    # 每用户配额(F9):校验链 用户级覆盖 → 本层 → env 默认(Settings 同名字段)
+    # 每用户配额:校验链 用户级覆盖 → 本层 → env 默认(Settings 同名字段)
     "max_instances_per_user": ("int", Decimal(1), Decimal(1000)),
     "max_gpus_per_user": ("int", Decimal(1), Decimal(1024)),
     "max_disks_per_user": ("int", Decimal(1), Decimal(1000)),

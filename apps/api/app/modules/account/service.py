@@ -238,7 +238,7 @@ async def register(
         raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
     user = User(phone=phone, password_hash=await hash_password(password) if password else None)
     session.add(user)
-    # 注册必勾落证(F7,合规举证):terms/privacy 各一条,版本=当前 published,与建号同事务
+    # 注册必勾落证(合规举证):terms/privacy 各一条,版本=当前 published,与建号同事务
     from app.modules.legal import service as legal_service
 
     try:
@@ -675,7 +675,7 @@ async def admin_set_user_status(session: AsyncSession, user_id: int, status_: st
     return user
 
 
-# ---------- 用户级配额覆盖(F9) ----------
+# ---------- 用户级配额覆盖 ----------
 
 
 @dataclass(frozen=True)
@@ -762,7 +762,7 @@ def realname_view(user: User, *, masked: bool) -> tuple[str, str | None, str | N
     )
 
 
-# ---------- 账号注销(F4) ----------
+# ---------- 账号注销 ----------
 
 # 管理端注销申请列表固定截断(与 tickets/refunds 同款)
 ADMIN_DELETION_LIST_CAP = 200

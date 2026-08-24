@@ -10,7 +10,7 @@
 
 ## 生产发布流程(deploy/app/k8s)
 
-发布走 `scripts/release.sh <tag>` 一个入口(P1-37):迁移 Job → set image+apply
+发布走 `scripts/release.sh <tag>` 一个入口:迁移 Job → set image+apply
 (kustomize,tag 单点在 `app/k8s/kustomization.yaml` 的 `images`)→ rollout status →
 冒烟(`/healthz`+`/readyz`),四步任一失败即非零退出。禁止绕过脚本手改各清单 tag。
 

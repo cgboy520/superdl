@@ -7,7 +7,7 @@
 import type { OutboxTaskOutPayload } from './outboxTaskOutPayload';
 
 /**
- * outbox 全量查询(F10 排障):不限死信,带 status;固定截断 200。
+ * outbox 全量查询(排障):不限死信,带 status;固定截断 200。
  */
 export interface OutboxTaskOut {
   created_at: string;

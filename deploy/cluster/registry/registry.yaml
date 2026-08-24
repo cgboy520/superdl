@@ -1,8 +1,8 @@
 # 集群内私有镜像仓库:registry.superdl.local 的真实落点。
 # 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维经 kubectl port-forward)与
 # pull(节点 registries.yaml mirror 到 ClusterIP)。
-# 应用:kubectl apply -f registry.yaml。htpasswd 凭据不落 git(P0-07:原硬编码的占位
-# 口令已泄漏,其 bcrypt hash 一并移出清单),apply 前必须手工建 Secret——缺失则
+# 应用:kubectl apply -f registry.yaml。htpasswd 凭据不落 git(占位
+# 口令的 bcrypt hash 已泄漏,不得入库),apply 前必须手工建 Secret——缺失则
 # registry Pod 挂载失败、永不就绪,Service 保持无端点(预期兜底,建好后自动恢复):
 #   htpasswd -nbB ops '<强口令>' > htpasswd   # 生成法见 runbooks/image-prewarm.md
 #   kubectl -n registry create secret generic registry-htpasswd --from-file=htpasswd
@@ -25,7 +25,7 @@ metadata:
   namespace: registry
 spec:
   accessModes: ["ReadWriteOnce"]
-  # P1-33:存储移出 GPU 节点 superdl-nvme VG(原 topolvm-provisioner,与实例盘同源、
+  # 存储移出 GPU 节点 superdl-nvme VG(原 topolvm-provisioner,与实例盘同源、
   # 挤占 GPU 节点盘位)——改 JuiceFS 共享卷:registry 已固定在控制面/infra 节点(下方
   # nodeSelector),JuiceFS 与其解耦,且仓库内容全部可重 push(灾备见
   # runbooks/image-prewarm.md),对共享卷性能无硬要求。RWO:registry 单副本(strategy
@@ -52,7 +52,7 @@ spec:
       labels: {app: registry}
     spec:
       automountServiceAccountToken: false
-      # 平台组件与租户隔离(P1-33):迁到控制面/infra 节点运行(存储已改 JuiceFS 共享卷,
+      # 平台组件与租户隔离:迁到控制面/infra 节点运行(存储已改 JuiceFS 共享卷,
       # 不再要求目标节点建出 TopoLVM VG,见上方 PVC 注释),
       # 优先级压过租户 Pod,节点资源紧张时不与租户同级被驱逐。
       priorityClassName: system-cluster-critical
@@ -111,7 +111,7 @@ spec:
           resources:
             requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: "1", memory: 512Mi}
-          securityContext:       # P0-07:最小权限基线(数据写 PVC,根文件系统可只读)
+          securityContext:       # 最小权限基线(数据写 PVC,根文件系统可只读)
             allowPrivilegeEscalation: false
             capabilities: {drop: ["ALL"]}
             readOnlyRootFilesystem: true
@@ -153,7 +153,7 @@ metadata:
   name: registry
   namespace: registry
 spec:
-  type: ClusterIP              # P0-07:由 NodePort 30500 收编为 ClusterIP,不再全节点开端口;
+  type: ClusterIP              # 由 NodePort 30500 收编为 ClusterIP,不再全节点开端口;
                                # ClusterIP 稳定且 kube-proxy 全节点编程,节点 host 网络
                                # (containerd pull)可达,装机链路不断;节点 endpoint 见
                                # ../rke2/registries.yaml。

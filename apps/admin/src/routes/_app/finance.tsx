@@ -249,7 +249,7 @@ function OrdersTab() {
 // 与 adminapi/service.ADJUST_MAX_ABS 对齐:单笔绝对值上限,超出走对公/线下流程
 const ADJUST_MAX_ABS = 100000;
 
-/** 复核确认框:列出租户/当前余额/调账后余额/发起人/原因(不再是只有金额的一句话)。 */
+/** 复核确认框:列出租户/当前余额/调账后余额/发起人/原因。 */
 function ReviewConfirmModal({
   target,
   onClose,

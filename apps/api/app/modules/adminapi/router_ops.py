@@ -55,7 +55,7 @@ async def admin_overview(session: DbSession) -> OverviewOut:
     return OverviewOut.model_validate(await service.overview(session))
 
 
-# ---------- 工单(F3:读 ops/finance/readonly,写 ops/admin) ----------
+# ---------- 工单(读 ops/finance/readonly,写 ops/admin) ----------
 
 
 @router.get("/tickets", dependencies=[require_roles("ops", "finance", "readonly")])
@@ -183,7 +183,7 @@ async def admin_audit_export(
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
-    """审计检索 CSV(P2-37,流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
+    """审计检索 CSV(流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
     审计本身的批量导出是敏感读,落一条检索审计(只记筛选参数,不复制内容)。"""
     mark_audited_read(
         request,
@@ -442,7 +442,7 @@ async def admin_list_outbox_tasks(
     status: str | None = None,
     instance_id: int | None = None,
 ) -> list[OutboxTaskOut]:
-    """outbox 全量查询(F10 排障):不限死信(死信专用视图仍是 /outbox/dead)。
+    """outbox 全量查询(排障):不限死信(死信专用视图仍是 /outbox/dead)。
 
     status 精确过滤;instance_id 匹配 payload.instance_id(编排类任务都带)。
     固定截断 200(前端 ListCapNote 提示),按 id 倒序。

@@ -40,7 +40,7 @@ export function AuditTable({
     ...(actorType ? { actor_type: actorType } : {}),
     ...(actorId ? { actor_id: actorId } : {}),
     ...(q ? { q } : {}),
-    // showTime:分钟级窗口,不再强制整天(startOf/endOf 会把边界外的记录吞掉)
+    // showTime:分钟级窗口,不强制整天(startOf/endOf 会把边界外的记录吞掉)
     ...(range?.[0] ? { since: range[0].toISOString() } : {}),
     ...(range?.[1] ? { until: range[1].toISOString() } : {}),
     limit,

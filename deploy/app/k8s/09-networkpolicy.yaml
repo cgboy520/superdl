@@ -1,4 +1,4 @@
-# superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 按端点精确放行(报告3#11)。
+# superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 按端点精确放行。
 #
 # 出向已收敛为具体放行:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443 /
 # monitoring 9090(API/worker 查 Prometheus:用量聚合、节点热力图、对账报表、用户 GPU 曲线)
@@ -194,7 +194,7 @@ spec:
 # 一次性 Job(迁移 / PG 备份 / 数据盘配额下发)出向:PG + 对象存储(备份上传);无入向。
 # 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上;
 # superdl-disk-quota 是 worker 创建的 JuiceFS CLI Job(core/k8s/real.py set_disk_quota),
-# 其 PG 出向即 JuiceFS 元数据引擎(P0-13 后弃 Redis)。
+# 其 PG 出向即 JuiceFS 元数据引擎。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

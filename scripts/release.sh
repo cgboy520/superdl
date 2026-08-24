@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# SuperDL 发布流水线(P1-37):迁移 → set image+apply → rollout status → 冒烟,四步任一失败即退。
+# SuperDL 发布流水线:迁移 → set image+apply → rollout status → 冒烟,四步任一失败即退。
 #
 # 用法: scripts/release.sh <tag>
 #   tag:ghcr 已推送的发布标签(.github/workflows/release.yml 产物,形如 v1.2.3)。
 #
 # 顺序铁律:迁移 Job 必须先于滚动(expand-only 窗口内「老代码+新 schema」安全,
 # 反序「新代码+旧 schema」会被 /readyz 的 schema_mismatch 拦下,表现为发布卡死)。
-# 回滚:见 deploy/README.md「回滚指引」——rollout undo 三/四个 Deployment 即可,
+# 回滚:见 deploy/README.md「回滚指引」——rollout undo 各 Deployment 即可,
 # 迁移只增不删(expand-only),向后兼容窗口内无需回滚库。
 set -euo pipefail
 
@@ -34,7 +34,7 @@ echo "==> 2/4 set image + apply(tag 单点:kustomization.yaml images 的 CHANGE_
 kubectl kustomize "${K8S_DIR}" | sed "s/CHANGE_TAG/${TAG}/g" | kubectl apply -f -
 
 echo "==> 3/4 rollout status"
-# worker 组件集群(P1-18):同一镜像的 5 个 Deployment 必须全部滚动到位,
+# worker 组件集群:同一镜像的 5 个 Deployment 必须全部滚动到位,
 # 漏一个即旧代码继续领任务(队列兼容窗口靠任务幂等与 reaper 兜底,不替你做版本收敛)
 for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-node-mgr \
   superdl-worker-prewarm superdl-worker-disk-ops superdl-web superdl-admin; do

@@ -5,8 +5,7 @@
 对象命名:pod/svc/ingress 同名 = instance uuid;统一打标 superdl.io/instance。
 """
 
-# 本文件需真实集群,单测不覆盖(pyproject [tool.coverage.run] omit 整文件;
-# 独立成行的文件级 pragma 对 coverage.py 无效,不再使用)
+# 本文件需真实集群,单测不覆盖(pyproject [tool.coverage.run] omit 整文件)
 
 import asyncio
 import hashlib
@@ -73,6 +72,15 @@ def _is_not_found(exc: client.ApiException) -> bool:
 
 def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
+
+
+def _is_node_port_taken(exc: client.ApiException) -> bool:
+    """apiserver 拒绝显式 nodePort 的形状:422 + "provided port is already allocated"。
+
+    注意它不等于「端口被别人占」——同名 Service 幂等重建时,分配器先于 AlreadyExists
+    命中,于是重放拿到的是 422 而不是 409。占用者是不是自己,须读对象才能判。
+    """
+    return exc.status == 422 and "already allocated" in str(exc.body or "")
 
 
 # 租户命名空间兜底配额:主闸是每用户配额,这里留数倍余量,只挡应用侧配额失效时的失控创建。
@@ -226,7 +234,7 @@ class RealOrchestrator:
                     ),
                 ],
                 egress=[
-                    # DNS:收敛到 CoreDNS Pod(不再放行整个 kube-system 命名空间)
+                    # DNS:收敛到 CoreDNS Pod(不放行整个 kube-system 命名空间)
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
@@ -497,11 +505,9 @@ class RealOrchestrator:
         try:
             self.core.create_namespaced_service(spec.namespace, svc)
         except client.ApiException as exc:
-            # 422 + "provided port is already allocated" = 该 NodePort 被集群其它对象占用;
-            # 归一化成专用异常,交编排层标 blocked 并换端口
-            if exc.status == 422 and "already allocated" in str(exc.body or ""):
-                raise NodePortTaken(spec.ssh_node_port) from exc
-            if not _is_conflict(exc):
+            # 409(同名对象已存在)与 422(nodePort 分配器撞车)都可能是自己的幂等重放,
+            # 一律先读对象核对,由 _reconcile_ssh_service_conflict_sync 判幂等成功还是真被占
+            if not (_is_conflict(exc) or _is_node_port_taken(exc)):
                 raise
             self._reconcile_ssh_service_conflict_sync(spec, exc)
         try:
@@ -513,9 +519,18 @@ class RealOrchestrator:
     def _reconcile_ssh_service_conflict_sync(
         self, spec: InstancePodSpec, create_exc: "client.ApiException"
     ) -> None:
-        """SSH Service 409 的核对:同名对象存在 ≠ 幂等成功,nodePort 必须与期望一致
-        (写法对照 _create_pod_sync 的 deletion_timestamp 核对)。漂移则 patch 回期望端口。"""
-        existing: Any = self.core.read_namespaced_service(spec.name, spec.namespace)
+        """SSH Service 创建冲突(409/422)的核对:同名对象存在 ≠ 幂等成功,nodePort 必须
+        与期望一致(写法对照 _create_pod_sync 的 deletion_timestamp 核对)。漂移则 patch 回期望端口。
+
+        422 走到这里是因为分配器先于 AlreadyExists 命中:同名 Service 不存在才说明
+        端口真被集群其它对象占用,那时才归一化成 NodePortTaken 交编排层换端口。
+        """
+        try:
+            existing: Any = self.core.read_namespaced_service(spec.name, spec.namespace)
+        except client.ApiException as read_exc:
+            if read_exc.status == 404 and _is_node_port_taken(create_exc):
+                raise NodePortTaken(spec.ssh_node_port) from create_exc
+            raise
         if existing.metadata.deletion_timestamp is not None:
             raise RuntimeError(
                 f"service {spec.name} is terminating; create must wait for it to disappear"
@@ -523,7 +538,7 @@ class RealOrchestrator:
         ports = (existing.spec and existing.spec.ports) or []
         current = ports[0].node_port if ports else None
         if current == spec.ssh_node_port:
-            return  # 幂等成功:此前创建的就是期望端口
+            return  # 幂等成功:已创建的就是期望端口
         try:
             self.core.patch_namespaced_service(
                 spec.name,
@@ -543,7 +558,7 @@ class RealOrchestrator:
             )
         except client.ApiException as patch_exc:
             # 期望端口已被集群其它对象占用:同样归一化成交编排层换端口
-            if patch_exc.status == 422 and "already allocated" in str(patch_exc.body or ""):
+            if _is_node_port_taken(patch_exc):
                 raise NodePortTaken(spec.ssh_node_port) from patch_exc
             raise
 

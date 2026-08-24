@@ -288,6 +288,7 @@
   "instances": {
     "accessNotRunning": "Connection info is available while the instance is running",
     "actions": {
+      "ackDiskWipe": "I understand the instance disk will be wiped (data disks are unaffected)",
       "cancel": "Cancel",
       "cancelBody": "About to cancel creating instance <b>{{name}}({{id}})</b>. This cannot be undone. Creation has not started billing — no GPU charges.",
       "cancelCreate": "Cancel creation",

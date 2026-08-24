@@ -71,7 +71,7 @@ function MountOverview({ priceText }: { priceText: string }) {
 
 function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () => void }) {
   const { t } = useTranslation();
-  // 破坏确认(P2-22):键入资源名才解锁删除
+  // 破坏确认:键入资源名才解锁删除
   const [typed, setTyped] = useState("");
   const { message } = App.useApp();
   const del = useDeleteDisk({
@@ -137,7 +137,7 @@ function ExpiryCell({
 }) {
   const { formatDaysLeft } = useFormat();
   const { t } = useTranslation();
-  // 宽限/冻结天数读 /policies(P1-07);未就绪用无数字兜底句,绝不渲染占位符或硬编码数字
+  // 宽限/冻结天数读 /policies;未就绪用无数字兜底句,绝不渲染占位符或硬编码数字
   const policyTip =
     graceDays != null && frozenDays != null
       ? t("copy.diskExpirePolicy", { graceDays, frozenDays })

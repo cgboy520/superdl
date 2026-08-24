@@ -1,4 +1,4 @@
-/** WCAG 对比度回归(P2-19~21):状态徽标/热力格/奖牌/次级文本 token 必须 ≥4.5:1(AA)。 */
+/** WCAG 对比度回归:状态徽标/热力格/奖牌/次级文本 token 必须 ≥4.5:1(AA)。 */
 
 import { describe, expect, it } from "vitest";
 

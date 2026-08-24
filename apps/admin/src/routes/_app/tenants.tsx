@@ -346,7 +346,7 @@ function TenantsPage() {
   );
 }
 
-/** 注销申请(F4):列表 + 处理。执行仅超管;确认弹窗列出校验计数,全 0 且过冷静期才可点。 */
+/** 注销申请:列表 + 处理。执行仅超管;确认弹窗列出校验计数,全 0 且过冷静期才可点。 */
 function DeletionsTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();

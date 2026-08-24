@@ -2,7 +2,7 @@
 
 真实集群行为由 test_k8s_real_smoke.py(SUPERDL_TEST_KUBECONFIG 门控)覆盖;
 这里钉死「不需要集群就能验证」的逻辑:单位换算、端口区间、NetPol 结构、
-分页、库存保守归账、Service 409 核对。
+分页、库存保守归账、Service 409/422 核对。
 """
 
 from types import SimpleNamespace
@@ -371,17 +371,23 @@ def _spec(node_port: int = 31001) -> InstancePodSpec:
 
 
 class TestServiceConflict:
-    """SSH Service 409 不等于幂等成功:nodePort 必须读回核对,漂移则 patch。"""
+    """SSH Service 的 409/422 都不等于结论:nodePort 必须读回核对,漂移则 patch。"""
 
     def _orch(self, existing: Any, create_exc: k8s_client.ApiException | None = None) -> Any:
+        """existing 传 ApiException 表示读回时抛该异常(如同名 Service 不存在的 404)。"""
         orch = _bare()
         calls: dict[str, list] = {"patch": []}
 
         class CoreStub:
             def create_namespaced_service(self, ns: str, svc: Any) -> None:
+                # 被测的是 SSH(NodePort)那条;jupyter(ClusterIP)恒 409 走幂等
+                if svc.spec.type != "NodePort":
+                    raise _api_exc(409)
                 raise create_exc or _api_exc(409)
 
             def read_namespaced_service(self, name: str, ns: str) -> Any:
+                if isinstance(existing, k8s_client.ApiException):
+                    raise existing
                 return existing
 
             def patch_namespaced_service(self, name: str, ns: str, body: Any) -> None:
@@ -413,9 +419,22 @@ class TestServiceConflict:
         with pytest.raises(RuntimeError, match="terminating"):
             orch._create_service_sync(_spec(31001))
 
-    def test_port_taken_on_create_raises_nodeporttaken(self):
-        orch, _calls = self._orch(
+    def test_replayed_create_keeps_own_port(self):
+        """outbox at-least-once 重放:同名 Service 已持有期望端口,但 apiserver 先在
+        NodePort 分配器上撞车、返回 422 而非 409。这是幂等成功,不是端口被别人占。
+
+        它挂了说明重放打真集群会被误判成端口冲突,编排层据此去换端口。
+        """
+        orch, calls = self._orch(
             self._existing_svc(31001), _api_exc(422, "provided port is already allocated")
+        )
+        orch._create_service_sync(_spec(31001))  # 不抛错
+        assert calls["patch"] == []
+
+    def test_port_taken_by_other_object_raises_nodeporttaken(self):
+        """422 且同名 Service 读回 404 = 端口真被集群其它对象占用,交编排层换端口。"""
+        orch, _calls = self._orch(
+            _api_exc(404), _api_exc(422, "provided port is already allocated")
         )
         with pytest.raises(NodePortTaken):
             orch._create_service_sync(_spec(31001))

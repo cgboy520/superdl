@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { AuditTable } from "../../components/AuditTable";
 
 export const Route = createFileRoute("/_app/audit")({
-  // 租户抽屉「跳审计」带预筛跳入(F10):actor_type/actor_id/q 落进筛选框
+  // 租户抽屉「跳审计」带预筛跳入:actor_type/actor_id/q 落进筛选框
   validateSearch: (search: Record<string, unknown>): {
     actor_type?: string;
     actor_id?: string;

@@ -319,7 +319,7 @@ function PasswordModal({
   );
 }
 
-/** 危险区·账号注销(F4):申请(弹窗内联说明 + 键入手机号二次确认)/ 冷静期倒计时 + 撤销。 */
+/** 危险区·账号注销:申请(弹窗内联说明 + 键入手机号二次确认)/ 冷静期倒计时 + 撤销。 */
 function DeletionZone({ phone }: { phone: string }) {
   const { t } = useTranslation(["web", "shared"]);
   const { message } = App.useApp();

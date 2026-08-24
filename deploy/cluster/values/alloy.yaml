@@ -1,4 +1,4 @@
-# Grafana Alloy 日志采集(P1-32):promtail 的官方继任者
+# Grafana Alloy 日志采集
 # (promtail 2026-03-02 EOL 停支持,官方迁移路径即 Alloy;
 # 原 promtail kubernetes_sd 采集由 discovery.kubernetes + loki.source.kubernetes 等价实现)。
 # chart 版本钉在 ../helmfile.yaml.gotmpl。

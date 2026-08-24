@@ -71,7 +71,7 @@ async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
 async def reconciliation_export(
     session: DbSession, day: str, lang: Literal["zh-CN", "en-US"] = ExportLang
 ) -> StreamingResponse:
-    """日对账 CSV(P2-37):与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。"""
+    """日对账 CSV:与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。"""
     from datetime import UTC
 
     try:
@@ -131,7 +131,7 @@ async def admin_alerts(session: DbSession, severity: str | None = None) -> list[
 
 @router.get("/alerts/unread-count", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_alerts_unread_count(session: DbSession) -> AlertUnreadCountOut:
-    """未确认告警计数(顶栏铃铛角标;不再用当页长度推算)。"""
+    """未确认告警计数(顶栏铃铛角标;独立计数端点)。"""
     from app.modules.notify import service as notify_service
 
     return AlertUnreadCountOut(count=await notify_service.unread_alert_count(session))
@@ -231,7 +231,7 @@ async def admin_review_adjustment(
     return AdjustmentStatusOut(id=adj.id, status=adj.status)
 
 
-# ---------- 退款(F1:审批/打款双人制衡;角色:finance / admin) ----------
+# ---------- 退款(审批/打款双人制衡;角色:finance / admin) ----------
 
 
 @router.get("/refunds", dependencies=[require_roles("finance", "readonly")])
@@ -312,7 +312,7 @@ async def admin_cancel_refund(
     return AdminRefundOut.model_validate(req)
 
 
-# ---------- 发票(F2:人工开票;读 ops/finance/readonly,写 finance/admin) ----------
+# ---------- 发票(人工开票;读 ops/finance/readonly,写 finance/admin) ----------
 
 
 @router.get("/invoices", dependencies=[require_roles("ops", "finance", "readonly")])
@@ -413,7 +413,7 @@ async def admin_orders_export(
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
 ) -> StreamingResponse:
-    """充值订单 CSV(P2-37,流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。"""
+    """充值订单 CSV(流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。"""
     from app.modules.billing import service as billing_service
 
     return csv_response(

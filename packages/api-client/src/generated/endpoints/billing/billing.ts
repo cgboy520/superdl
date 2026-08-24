@@ -87,7 +87,7 @@ export const getExportBillingApiV1BillingExportGetUrl = (params?: ExportBillingA
 }
 
 /**
- * 账单 CSV 导出(P2-28,流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
+ * 账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
  * 写 #SUPERDL_EXPORT_TRUNCATED# 标记行(前端据以提示已截断)。
  * @summary Export Billing
  */

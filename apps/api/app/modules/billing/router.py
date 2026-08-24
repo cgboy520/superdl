@@ -224,7 +224,7 @@ async def export_billing(
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = "zh-CN",
 ) -> StreamingResponse:
-    """账单 CSV 导出(P2-28,流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
+    """账单 CSV 导出(流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
     写 #SUPERDL_EXPORT_TRUNCATED# 标记行(前端据以提示已截断)。"""
     if dataset == "hourly":
         stream = billing_export.stream_hourly_csv(
@@ -283,7 +283,7 @@ async def get_recharge(order_no: str, user: CurrentUser, session: DbSession) -> 
     return RechargeOut.model_validate(order)
 
 
-# ---------- 退款(F1) ----------
+# ---------- 退款 ----------
 
 
 @router.get("/wallet/refunds/eligible-orders")
@@ -329,7 +329,7 @@ async def list_my_refunds(
     return await refunds.list_my_refunds(session, user.id, cursor=cursor, limit=limit)
 
 
-# ---------- 发票(F2) ----------
+# ---------- 发票 ----------
 
 
 @router.get("/billing/invoices/eligible")

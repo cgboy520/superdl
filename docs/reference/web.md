@@ -1,6 +1,6 @@
 # 用户控制台
 
-`apps/web`:公开层 + 控制台六屏。视觉规格见 `docs/ui-ux-spec.md`。
+`apps/web`:公开层 + 控制台七屏。视觉规格见 `docs/ui-ux-spec.md`。
 
 ## 契约
 
@@ -8,15 +8,17 @@
 |---|---|---|
 | `/` | 公开 | 营销主页:Hero / 四宫格 / 实时价格墙 / 算力排名 / CTA / 三栏页脚 |
 | `/login` | 公开 | 左品牌右表单分屏,支持 `?redirect=` 回跳 |
-| `/legal/terms` `/legal/privacy` `/help` | 公开 | 合规与帮助 |
+| `/legal/terms` `/legal/privacy` `/legal/deletion-notice` `/help` | 公开 | 合规与帮助;正文取后端当前 published 版,en-US 缺失回落 zh-CN |
 | `/dashboard` | 登录 | 概览 |
 | `/market` | 公开可浏览 | 筛选链 + SKU 表格单选 + 底部结算条;CTA 即库存 |
 | `/market/create/:skuId` | 登录 | 单栏卡片流:规格/镜像级联/数据盘(可行内直建)/SSH 公钥(可行内添加)/名称 + 结算条;经济档知情同意 |
 | `/instances` | 登录 | 登录后默认落地页;表格含状态徽标(冻结倒计时)、利用率 sparkline、今日消费、SSH 复制、Jupyter 直达 |
 | `/instances/:uuid` | 登录 | 监控 / 连接 / 事件时间线 / 账单 四 Tab + 危险区释放 |
-| `/billing` | 登录 | 余额卡 + 充值 modal(二维码轮询)+ 消费概览 + 账单/收支明细/CSV 导出 |
+| `/billing` | 登录 | 余额卡 + 充值 modal(二维码轮询)+ 消费概览 + 账单/收支明细/退款/发票 + CSV 导出 |
 | `/storage` | 登录 | 挂载全景图 + 数据盘列表(扩容抽屉、到期倒计时、多级删除防护) |
-| `/settings` | 登录 | SSH 公钥、通知阈值、实名入口 |
+| `/settings` | 登录 | SSH 公钥、通知阈值、实名入口、危险区账号注销 |
+| `/support` | 登录 | 自助排查 FAQ + 联系客服 + 我的工单 |
+| `/support/:ticketId` | 登录 | 工单对话流(回复 / 关闭) |
 
 ## 规则与不变量
 

@@ -1,13 +1,14 @@
 /**
  * 实例操作组:开机/关机/更多(重启·事件·预留项·释放)。
  * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/保存镜像/转包年包月)
- * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、键入实例名才解锁,P2-22)。
+ * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、键入实例名、勾选盘数据清除确认
+ * 两道都满足才解锁红按钮 —— 见 docs/ui-ux-spec.md 规则 4)。
  */
 
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
 
-import { App, Button, Dropdown, Input, Modal, Space, Tooltip, Typography } from "antd";
+import { App, Button, Checkbox, Dropdown, Input, Modal, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -35,15 +36,19 @@ export function ReleaseModal({
   onReleased?: () => void;
 }) {
   const { t } = useTranslation();
-  // 破坏确认(P2-22):键入实例名才解锁
+  // 破坏确认两道闸:键入实例名 + 勾选盘数据清除知情。
+  // creating 尚未落盘,取消创建只过键入这道,不弹无意义的清盘确认。
   const [typed, setTyped] = useState("");
+  const [acked, setAcked] = useState(false);
   const { message } = App.useApp();
   const creating = instance.status === "creating";
   const nameMatched = typed.trim() === instance.name;
+  const unlocked = nameMatched && (creating || acked);
   const release = useReleaseInstance({
     onSuccess: () => {
       message.success(creating ? t("instances.actions.createCanceled") : t("instances.actions.releaseStarted"));
       setTyped("");
+      setAcked(false);
       onClose();
       onReleased?.();
     },
@@ -54,6 +59,7 @@ export function ReleaseModal({
       open={open}
       onCancel={() => {
         setTyped("");
+        setAcked(false);
         onClose();
       }}
       footer={
@@ -62,7 +68,7 @@ export function ReleaseModal({
           <Button
             danger
             type="primary"
-            disabled={!nameMatched}
+            disabled={!unlocked}
             loading={release.isPending}
             onClick={() => release.mutate(instance.uuid)}
           >
@@ -98,6 +104,11 @@ export function ReleaseModal({
           autoComplete="off"
           aria-label={t("instances.actions.typeNameToConfirm", { name: instance.name })}
         />
+        {creating ? null : (
+          <Checkbox checked={acked} onChange={(e) => setAcked(e.target.checked)}>
+            {t("instances.actions.ackDiskWipe")}
+          </Checkbox>
+        )}
       </Space>
     </Modal>
   );

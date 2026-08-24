@@ -25,7 +25,7 @@ pnpm --filter admin dev                     # 管理控制台 http://localhost:5
 
 | 目录 | 说明 |
 |---|---|
-| `apps/api` | FastAPI 模块化单体（account / catalog / orchestrator / billing / metering / notify / nodes / adminapi），同镜像双入口 serve / worker |
+| `apps/api` | FastAPI 模块化单体（account / catalog / orchestrator / billing / metering / notify / nodes / legal / tickets / adminapi），同镜像双入口 serve / worker |
 | `apps/web` | 用户控制台（React 19 + antd 6） |
 | `apps/admin` | 管理控制台（深色 NOC 风） |
 | `packages/api-client` | orval 从 openapi.json 生成的 TanStack Query hooks |

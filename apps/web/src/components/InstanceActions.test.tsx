@@ -77,7 +77,7 @@ describe("InstanceActions", () => {
     expect(screen.getByRole("button", { name: BTN_STOP })).toBeDisabled();
   });
 
-  it("释放全链路:更多 → 释放实例 → 键入名称解锁 → 触发 release", async () => {
+  it("释放全链路:更多 → 释放实例 → 键入名称 + 勾选清盘才解锁 → 触发 release", async () => {
     const user = userEvent.setup();
     renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
     await user.hover(screen.getByRole("button", { name: BTN_MORE }));
@@ -85,7 +85,10 @@ describe("InstanceActions", () => {
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog).getByRole("button", { name: "确认释放" });
     expect(confirm).toBeDisabled();
+    // 两道闸缺一不可(ui-ux-spec 规则 4):只键入名字仍锁着
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
+    expect(confirm).toBeDisabled();
+    await user.click(within(dialog).getByRole("checkbox"));
     expect(confirm).toBeEnabled();
     await user.click(confirm);
     expect(releaseMutate).toHaveBeenCalledWith("u-1");
@@ -100,7 +103,29 @@ describe("ReleaseModal", () => {
     const confirm = within(dialog).getByRole("button", { name: "确认释放" });
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm-typo");
+    await user.click(within(dialog).getByRole("checkbox"));
     expect(confirm).toBeDisabled();
     expect(releaseMutate).not.toHaveBeenCalled();
+  });
+
+  it("只勾选不键入名字,确认按钮保持禁用(两道闸相互独立)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<ReleaseModal instance={makeInstance("stopped")} open onClose={() => {}} />);
+    const dialog = await screen.findByRole("dialog");
+    const confirm = within(dialog).getByRole("button", { name: "确认释放" });
+    await user.click(within(dialog).getByRole("checkbox"));
+    expect(confirm).toBeDisabled();
+    expect(releaseMutate).not.toHaveBeenCalled();
+  });
+
+  it("creating 取消创建:尚未落盘,不弹清盘勾选,键入名字即解锁", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<ReleaseModal instance={makeInstance("creating")} open onClose={() => {}} />);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    const confirm = within(dialog).getByRole("button", { name: "确认取消" });
+    expect(confirm).toBeDisabled();
+    await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
+    expect(confirm).toBeEnabled();
   });
 });

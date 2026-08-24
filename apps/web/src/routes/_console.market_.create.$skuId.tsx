@@ -295,7 +295,7 @@ function CreatePage() {
             columns={columns}
             pagination={false}
           />
-          {/* 卡数选择受 available_count 约束(P2-23):无库存档位禁用 + 提示 */}
+          {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示 */}
           <ChipRow
             label={t("market.chipGpuCount")}
             value={gpuCount}

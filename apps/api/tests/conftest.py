@@ -20,7 +20,8 @@ from testcontainers.community.postgres import PostgresContainer
 # 不得渗进测试会话——测试环境必须确定性。
 os.environ["SUPERDL_ENVIRONMENT"] = "test"
 os.environ["SUPERDL_K8S_BACKEND"] = "fake"  # 单测一律 FakeOrchestrator,隔离本地 .env 的 real 配置
-os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = "300"  # 超时用例按默认 5 分钟断言,钉死不受 .env 影响
+# 超时用例按默认 5 分钟断言,钉死不受 .env 影响
+os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = "300"
 # 测试签名密钥 ≥32 字节(与 prod 校验同线;PyJWT 对短 HMAC 键打 InsecureKeyLengthWarning)
 os.environ["SUPERDL_JWT_SECRET"] = "test-jwt-secret-32-bytes-minimum!!"
 
@@ -91,7 +92,7 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
             ),
         )
         await session.commit()
-    # 法务文档预置(F7):单测走 create_all 不含迁移数据,等价「迁移已跑」显式播种
+    # 法务文档预置:单测走 create_all 不含迁移数据,等价「迁移已跑」显式播种
     from app.modules.legal import service as legal_service
 
     async with smaker() as session:

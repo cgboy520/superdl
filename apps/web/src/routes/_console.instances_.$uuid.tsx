@@ -1,5 +1,5 @@
 /** 实例详情:监控(降级文案)/连接/事件时间线(=计费依据)/账单 + 危险区释放。
- * 事件/账单两 Tab 走游标分页(P1-09);面包屑返回列表不丢筛选态(P2-18)。 */
+ * 事件/账单两 Tab 走游标分页;面包屑返回列表不丢筛选态。 */
 
 import { isApiError, type BillHourlyOut, type InstanceEventOut } from "@superdl/api-client";
 import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
@@ -261,7 +261,7 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
 
 function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   const { t } = useTranslation();
-  // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多(P1-09)
+  // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多
   const { data, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useInstanceEventPages(uuid);
   const events = useMemo<InstanceEventOut[]>(
@@ -310,7 +310,7 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
 function BillsTab({ instanceId }: { instanceId: number }) {
   const { t } = useTranslation();
   const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
-  // 游标分页 + 加载更多(P1-09,与费用中心小时账单同构)
+  // 游标分页 + 加载更多(与费用中心小时账单同构)
   const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useHourlyBillPages({ instance_id: instanceId });
   const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
@@ -392,7 +392,7 @@ function InstanceDetail() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      {/* 面包屑(P2-18):列表筛选态在 URL 上,返回列表不丢 */}
+      {/* 面包屑:列表筛选态在 URL 上,返回列表不丢 */}
       <Breadcrumb
         items={[
           {
@@ -435,7 +435,7 @@ function InstanceDetail() {
               ]}
             />
           </Space>
-          {/* 详情页的「事件日志」跳到本页事件 Tab(报告3#9:不传 onShowEvents 即死按钮) */}
+          {/* 详情页的「事件日志」跳到本页事件 Tab(不传 onShowEvents 即死按钮) */}
           <InstanceActions
             instance={instance}
             onShowEvents={() =>

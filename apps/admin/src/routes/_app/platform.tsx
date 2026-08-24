@@ -87,7 +87,7 @@ const FIELD_EXTRA: Record<string, string> = {
   oncall_phone: "critical 平台告警经阿里云短信直发该手机号(不依赖平台自身可用性);留空即关闭",
   payment_wechat_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现微信入口",
   payment_alipay_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现支付宝入口",
-  wechat_public_key_id: "公钥模式(2024-10 后新注册商户仅支持该模式);与公钥同时填写,留空则走平台证书模式",
+  wechat_public_key_id: "公钥模式(新注册商户仅支持该模式);与公钥同时填写,留空则走平台证书模式",
   real_name_required_for_recharge: "《网络安全法》要求;开启后未实名用户无法充值,用户端费用中心出现引导横幅",
   sms_template_verify: "模板需含变量 ${code}",
   sms_template_notice: "模板需含变量 ${title}",

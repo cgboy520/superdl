@@ -1,4 +1,4 @@
-"""账单 CSV 导出端点(P2-28):内容头、行数、月份窗口、时区后缀、截断标记、转义规则。"""
+"""账单 CSV 导出端点:内容头、行数、月份窗口、时区后缀、截断标记、转义规则。"""
 
 from datetime import UTC, datetime
 from decimal import Decimal

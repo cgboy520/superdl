@@ -1,4 +1,4 @@
-# worker 组件部署(P1-18/安全P0-1):单 Pod 单 SA,outbox 任务类型与定时任务按组件分片
+# worker 组件部署:单 Pod 单 SA,outbox 任务类型与定时任务按组件分片
 # (workers/components.py 为唯一事实源;SUPERDL_WORKER_COMPONENT 声明身份,非法值 fail-closed)。
 #
 # 组件矩阵(副本/权限按职责定;全部 app=superdl-worker 标签,NetworkPolicy 与 PodMonitor 不变):
@@ -9,6 +9,7 @@
 #   disk-ops    1 副本  配额下发/擦除 Job    SA superdl-disk-ops
 # 单副本组件:巡检类本就靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED 天然安全;
 # 需要更高可用时直接加副本,无需改代码。升级路径见 01-rbac.yaml 头注释。
+# liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,7 +33,7 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
-      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod,
+      # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod,
       # 节点资源紧张时不与租户同级被驱逐。
       priorityClassName: system-cluster-critical
       nodeSelector:

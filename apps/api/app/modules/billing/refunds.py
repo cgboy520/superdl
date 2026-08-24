@@ -1,4 +1,4 @@
-"""退款闭环(F1):申请 → 审批(finance) → 登记打款(双人) → 钱包核销。
+"""退款闭环:申请 → 审批(finance) → 登记打款(双人) → 钱包核销。
 
 关键不变量:
 - 审批通过 ≠ 出金。只有 payout_refund 成功才在同一事务做钱包负向调账
@@ -33,7 +33,7 @@ REFUNDABLE_ORDERS_CAP = 50
 
 
 async def _order_has_issued_invoice(session: AsyncSession, order: Order) -> bool:
-    """F2 联动:该订单所属用户、订单 paid 账期(北京时间)存在 status='issued' 的
+    """发票联动:该订单所属用户、订单 paid 账期(北京时间)存在 status='issued' 的
     发票申请即视为「该账期已开票」——已开票账期的订单不可退,须先红冲
     (服务层抛 billing.refundInvoiceIssued,文案引导联系客服)。
 

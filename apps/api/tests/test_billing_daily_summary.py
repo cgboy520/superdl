@@ -75,7 +75,7 @@ class TestDailySummary:
     async def test_tz_offset_bounds(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """TzOffset 统一 ±720 上下界:越界一律 422(此前 le=840 与默认 0 的漂移口径已收敛)。"""
+        """TzOffset 统一 ±720 上下界:越界一律 422。"""
         headers, _ = await register_user(client, "13900010099")
         for bad in (721, -721, 840, -840):
             resp = await client.get(

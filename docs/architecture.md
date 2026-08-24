@@ -24,18 +24,20 @@ flowchart LR
 
 **后端**:Python 3.13(uv 管理)+ FastAPI + SQLAlchemy 2.0(async)+ asyncpg + Alembic + PostgreSQL 18;
 定时与队列 APScheduler + 自研事务性 outbox;K8s 官方 `kubernetes` 客户端;支付 `wechatpayv3` + `alipay-sdk-python`;
-观测 structlog + prometheus-client;质量闸门 ruff + pyright + pytest + import-linter。版本钉在 `apps/api/pyproject.toml`。
+观测 structlog + prometheus-client;质量闸门 ruff + pyright + pytest + import-linter。
 
 **前端**:React 19 + Vite + Ant Design 6 + TanStack Router / Query + Zustand + ECharts;i18n 用 i18next +
 react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd 6 原生组件自封装,不引
-`@ant-design/pro-components`;管理端监控图一律自绘(ECharts),Grafana 只作可选外链。版本钉在 `package.json`。
+`@ant-design/pro-components`;管理端监控图一律自绘(ECharts),Grafana 只作可选外链。
 
 **平台层**:两档集群。**full** = RKE2 多机生产,全档位(dedicated/mig/shared);**light** = k3s 单机,仅共享档。发行版由
-平台探测,业务侧无需声明。chart 版本钉在 `deploy/cluster/helmfile.yaml.gotmpl`,升级走变更评审。
+平台探测,业务侧无需声明。
+
+依赖版本的单一事实源:`apps/api/pyproject.toml`(后端)、`package.json`(前端)、`deploy/cluster/helmfile.yaml.gotmpl`(chart),升级走变更评审。
 
 | 组件 | 角色 |
 |---|---|
-| RKE2 / k3s | 容器平台,发行版钉 v1.36(userns `hostUsers: false` 在该版本 GA) |
+| RKE2 / k3s | 容器平台,发行版钉 v1.36(userns `hostUsers: false` 所需的最低版本) |
 | Cilium / GPU Operator | 仅 full 档;light 档用 k3s 内置 flannel + HAMi 直装 |
 | Kata | RuntimeClass `kata-qemu`,VFIO 整卡直通 |
 | HAMi | 共享档 CUDA 层软切分与限额 |
@@ -60,7 +62,9 @@ apps/api/app/
 │  ├─ billing/      # 钱包、账本、小时结算、数据盘日结、余额巡检、支付渠道与回调、资金核对
 │  ├─ metering/     # Prometheus 代理查询、usage_hourly 聚合
 │  ├─ nodes/        # 节点注册(node-join.sh)、规格巡检、集群状态
-│  ├─ notify/       # 短信 / 站内信 / Alertmanager webhook
+│  ├─ notify/       # 短信 / 站内信 / 公告 / Alertmanager webhook
+│  ├─ legal/        # 法务文档版本流与注册同意存证
+│  ├─ tickets/      # 工单对话流与滞留巡检
 │  └─ adminapi/     # 管理端 API,独立 JWT audience 与审计动作前缀
 └─ workers/         # 同一镜像的第二入口:outbox worker + APScheduler 定时任务
 ```
@@ -98,13 +102,15 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 
 | 模块 | 表 |
 |---|---|
-| account | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` |
+| account | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests` |
 | catalog | `skus` `images` `image_node_cache` |
 | orchestrator | `instances` `instance_events` `port_allocations` `data_disks` |
-| billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `settlement_watermarks` `orders` |
+| billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
 | metering | `usage_hourly` |
 | nodes | `node_enrollments` `node_specs` `cluster_status` |
-| notify | `notifications` |
+| notify | `notifications` `announcements` |
+| legal | `legal_doc_versions` `user_consents` |
+| tickets | `tickets` `ticket_messages` |
 | adminapi | `admin_users` `admin_adjustments` |
 | core | `outbox_tasks` `audit_log` `policy_overrides` `platform_settings` `rate_limit_counters` |
 

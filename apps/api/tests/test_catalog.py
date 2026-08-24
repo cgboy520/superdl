@@ -96,7 +96,7 @@ async def admin_headers(
     if body["status"] == "ok":
         token = body["access_token"]
     else:
-        # admin/finance 强制 TOTP(W2-8):走完整绑定流拿 token
+        # admin/finance 强制 TOTP:走完整绑定流拿 token
         token = await complete_mfa_setup(client, body["ticket"])
     return {"Authorization": f"Bearer {token}"}
 

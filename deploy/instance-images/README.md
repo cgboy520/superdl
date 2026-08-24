@@ -20,7 +20,7 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 
 ## 构建与推送
 
-各镜像目录结构完全一致(都是「基座 + 同一 entrypoint/sshd 授权模式」),挑对应目录构建:
+各镜像目录结构完全一致:基座不同,`entrypoint.sh` 与 `superdl_jupyter_auth.py` 三份逐字节一致。基座 digest 钉在各自 Dockerfile。挑对应目录构建:
 
 ```bash
 # pytorch:quay.io/jupyter/pytorch-notebook(cuda12)

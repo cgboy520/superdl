@@ -7,7 +7,7 @@ from app.core.db import Base
 
 
 class Ticket(Base):
-    """工单(F3)。状态机:open → pending_staff(用户回复)→ pending_user(客服回复)
+    """工单。状态机:open → pending_staff(用户回复)→ pending_user(客服回复)
     → resolved(任一方标记解决)→ closed(仅 resolved 后可关);resolved/closed 不可再回复。
 
     (user_id, idempotency_key) 唯一:创建幂等,重放返回既有单(NULL 互不冲突)。

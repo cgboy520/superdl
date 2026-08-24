@@ -1,4 +1,4 @@
-"""数据盘 JuiceFS 目录配额(W1-1):创建/扩容下发、失败自愈与对账回填、删盘摘除。"""
+"""数据盘 JuiceFS 目录配额:创建/扩容下发、失败自愈与对账回填、删盘摘除。"""
 
 from datetime import timedelta
 

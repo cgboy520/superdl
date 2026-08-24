@@ -1,4 +1,4 @@
-"""用户端实例列表:游标分页 + status/name 过滤(P1-11)。"""
+"""用户端实例列表:游标分页 + status/name 过滤。"""
 
 import secrets
 from decimal import Decimal

@@ -246,7 +246,7 @@ class TestAlertmanagerWebhook:
 
 
 class TestAlertAck:
-    """告警闭环(F8):ack 落确认人/时间、重复 ack 409、unread-count 准确、severity 过滤、角色门。"""
+    """告警闭环:ack 落确认人/时间、重复 ack 409、unread-count 准确、severity 过滤、角色门。"""
 
     async def test_ack_records_actor_and_time(self, client, sm, fake):
         await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)

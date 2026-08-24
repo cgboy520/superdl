@@ -142,7 +142,7 @@ class TenantOut(BaseModel):
     instances: int
     disk_gb: int
     created_at: str
-    # 实名信息透出(F9):readonly 角色脱敏;ops/finance/admin 明文(敏感读,响应含实名字段即落审计)
+    # 实名信息透出:readonly 角色脱敏;ops/finance/admin 明文(敏感读,响应含实名字段即落审计)
     verification_status: str = "unverified"
     id_name: str | None = None
     company_name: str | None = None
@@ -320,7 +320,7 @@ class AdminAlertOut(BaseModel):
     content: str
     severity: str
     created_at: str
-    # 告警闭环(F8):确认留痕 + 跳转目标(无 target 前端不可点)
+    # 告警闭环:确认留痕 + 跳转目标(无 target 前端不可点)
     acked_by: int | None = None
     acked_by_username: str | None = None
     acked_at: str | None = None
@@ -439,7 +439,7 @@ class DeadTaskOut(BaseModel):
 
 
 class OutboxTaskOut(BaseModel):
-    """outbox 全量查询(F10 排障):不限死信,带 status;固定截断 200。"""
+    """outbox 全量查询(排障):不限死信,带 status;固定截断 200。"""
 
     id: int
     type: str

@@ -13,7 +13,7 @@ certManager: {enabled: true}
 ingressNginx: {enabled: true}
 # 平台库进 K8s(CloudNativePG)时打开;默认关闭 = 用托管 PG(见 deploy/README.md「生产数据库要求」)
 cnpg: {enabled: false}
-# 日志栈(P1-32):默认同开(资源已收紧,见 values/light/loki-light.yaml);
+# 日志栈:默认同开(资源已收紧,见 values/light/loki-light.yaml);
 # 单机盘紧张可置 false 整栈关掉(API 审计日志 ≥6 个月留存义务随之回到 DB audit_log 一路)
 loki: {enabled: true}
 logCollector: {enabled: true}

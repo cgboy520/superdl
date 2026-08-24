@@ -127,7 +127,7 @@ class TestAdminApi:
         assert site["icp_number"] is None
 
     async def test_company_info_flows_to_site_config(self, client: AsyncClient, sm):
-        """经营主体四项(P1-17,《电子商务法》第十五条):管理端写入 → 公开 site-config 透出。"""
+        """经营主体四项(《电子商务法》第十五条):管理端写入 → 公开 site-config 透出。"""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",

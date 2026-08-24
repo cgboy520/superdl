@@ -56,8 +56,8 @@ for f in "${placeholder_files[@]}"; do
   fi
 done
 
-say "== registry 私有镜像仓库(P0-07)=="
-# 回归拦截:原占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,凭据禁止再落 git
+say "== registry 私有镜像仓库 =="
+# 占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,凭据禁止再落 git
 leaked_hash='$2y$05$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW'
 if [[ -f registry/registry.yaml ]] && grep -qF "$leaked_hash" registry/registry.yaml; then
   miss "registry/registry.yaml 含已泄漏的 htpasswd hash 字面值(部署时手工建 Secret,见该文件头注释)"
@@ -71,7 +71,7 @@ else
   miss "NetworkPolicy registry/registry-default-deny 不存在(registry.yaml 的 ipBlock 示例段按真实节点/运维网段启用后 apply;缺失则仓库入方向无边界)"
 fi
 
-say "== 应用入口(../app,P0-08)=="
+say "== 应用入口(../app)=="
 app_ingress=../app/k8s/04-ingress.yaml
 if [[ -f "$app_ingress" ]]; then
   if grep -q 'CHANGE_ME_OFFICE_CIDR' "$app_ingress"; then
@@ -81,7 +81,7 @@ if [[ -f "$app_ingress" ]]; then
   fi
 fi
 
-say "== 准入策略(P1-24:ValidatingAdmissionPolicy 必须 Deny 生效)=="
+say "== 准入策略(ValidatingAdmissionPolicy 必须 Deny 生效)=="
 # 首次上线可先 [Audit] 观察一周(见 admission/tenant-restrictions.yaml 头注释),
 # 但正式发布前必须改回 Deny——本检查按 Deny 卡。
 # superdl-global-pod-guard 仍处 Audit 观察期(面大且覆盖第三方 ns),毕业后再补进本清单。
@@ -97,7 +97,7 @@ for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-nod
   fi
 done
 
-say "== 应用 NetworkPolicy 出向(报告3#11,提示性)=="
+say "== 应用 NetworkPolicy 出向(提示性)=="
 netpol=../app/k8s/09-networkpolicy.yaml
 if [[ -f "$netpol" ]]; then
   if grep -q 'CHANGE_ME' "$netpol"; then
@@ -109,7 +109,7 @@ if [[ -f "$netpol" ]]; then
 fi
 
 if [[ "$env_name" == "full" ]]; then
-  say "== 控制面 HA(P0-1:3 server 堆叠 etcd + VIP)=="
+  say "== 控制面 HA(3 server 堆叠 etcd + VIP)=="
   # server 节点数:奇数且 ≥3(etcd 法定人数;偶数台不抗脑裂,双台等于没有 HA)
   cp_nodes=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name 2>/dev/null | grep -c . || true)
   if [[ "$cp_nodes" -ge 3 && $((cp_nodes % 2)) -eq 1 ]]; then
