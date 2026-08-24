@@ -4,6 +4,8 @@
 #   ("0123...def" 等差序列),仅该行放行;同文件其他行混入真 secret 仍会告警
 # - apps/api/app/core/platform_config.py:命中行是 hint 文案里的 PEM 头字样
 #   ("含 -----BEGIN PRIVATE KEY-----"),该文件只定义配置项校验规格,不含真实密钥
+# - apps/api/tests/test_account_auth.py:改密/找回用例的入参口令("qwerty123456"
+#   "newpass123456"),是断言 200/422 用的字面量,不是任何环境的真凭据
 # 语义(gitleaks v8.25+):condition="AND" + regexTarget="line"
 # = path 命中且「命中行内容」匹配 regexes 才放行 —— 行级指纹,而非整文件豁免。
 [extend]
@@ -40,6 +42,17 @@ paths = [
 ]
 regexes = [
   '''curl -u ops:.{0,2}<强口令>''',
+]
+
+[[allowlists]]
+description = "已复核误报(行级):账号用例的测试口令(改密/找回的入参,非真凭据)"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/api/tests/test_account_auth\.py''',
+]
+regexes = [
+  '''"(?:new_)?password": "(?:newpass|qwerty)123456"''',
 ]
 
 # registry 占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,禁止再以任何形式入库
