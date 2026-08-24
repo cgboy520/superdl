@@ -284,6 +284,7 @@
   "instances": {
     "accessNotRunning": "实例运行中才能获取接入信息",
     "actions": {
+      "ackDiskWipe": "我确认将清除实例盘全部数据(数据盘不受影响)",
       "cancel": "取消",
       "cancelBody": "即将取消创建中的实例 <b>{{name}}({{id}})</b>,此操作不可恢复。创建中未开始计费,取消不产生 GPU 时费。",
       "cancelCreate": "取消创建",

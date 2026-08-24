@@ -103,13 +103,15 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByText("小时账单").click();
   await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 15_000 });
 
-  // ── 释放:多级防护(键入实例名解锁)→ 列表消失 ────────────
+  // ── 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失 ──────
   await page.goto("/instances");
   await page.locator(".ant-table-row").first().getByText(/更\s*多/).click();
   await page.getByText("释放实例", { exact: true }).click();
+  // 多级防护两道闸(ui-ux-spec 规则 4):键入实例名 + 勾选清盘知情,缺一红按钮不解锁。
   // placeholder 即实例名,不必把服务端生成的名字再拼一遍
   const confirmInput = page.getByLabel(/请输入实例名/);
   await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
+  await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "确认释放" }).click();
   await expect(page.getByText(/释放中|暂无|没有/).first()).toBeVisible({ timeout: 90_000 });
 });
