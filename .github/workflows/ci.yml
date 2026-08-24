@@ -8,6 +8,14 @@ on:
   # tag 构建前 api/frontend/security 必须重跑全绿
   workflow_call:
 
+# environment 是 fail-closed 必填项(app/core/config.py),CI 的干净检出没有 apps/api/.env,
+# 凡构造 Settings() 的步骤(alembic / openapi 导出 / 直接 new RealOrchestrator 的冒烟)都要它。
+# 放 workflow 级而非逐 step:新增 job 不会再漏配。
+# 必须是非 prod —— /api/v1/webhooks/mock 只在非 prod 注册(billing/webhooks_router.py),
+# 且该路径已在 packages/api-client/openapi.json 里,设成 prod 会让「契约无 diff」闸门红。
+env:
+  SUPERDL_ENVIRONMENT: dev
+
 jobs:
   api:
     runs-on: ubuntu-latest
