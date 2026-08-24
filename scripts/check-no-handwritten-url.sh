@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 「无手写 URL 绕过」闸门(P2-36):apps/*/src 内禁止裸 fetch("...") / customFetch / axios。
+# 「无手写 URL 绕过」闸门:apps/*/src 内禁止裸 fetch("...") / customFetch / axios。
 # 数据访问一律走 @superdl/api-client 的生成 fetcher(唯一例外:生成物不在此目录)。
 # 白名单机制:行内注释 no-handwritten-url(仅允许测试/mock 文件使用,并在 PR 中说明)。
 set -euo pipefail

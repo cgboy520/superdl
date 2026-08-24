@@ -1139,7 +1139,7 @@ export const getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetUrl = () => 
 }
 
 /**
- * 未确认告警计数(顶栏铃铛角标;不再用当页长度推算)。
+ * 未确认告警计数(顶栏铃铛角标;独立计数端点)。
  * @summary Admin Alerts Unread Count
  */
 export const adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlertUnreadCountOut> => {
@@ -1766,7 +1766,7 @@ export const getAdminAuditExportApiAdminV1AuditExportGetUrl = (params?: AdminAud
 }
 
 /**
- * 审计检索 CSV(P2-37,流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
+ * 审计检索 CSV(流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
  * 审计本身的批量导出是敏感读,落一条检索审计(只记筛选参数,不复制内容)。
  * @summary Admin Audit Export
  */
@@ -4045,7 +4045,7 @@ export const getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetUrl = (uu
 }
 
 /**
- * 管理端实例事件时间线(F10 排障):与用户端同一实现,降序游标分页;不限租户。
+ * 管理端实例事件时间线(排障):与用户端同一实现,降序游标分页;不限租户。
  * @summary Admin List Instance Events
  */
 export const adminListInstanceEventsApiAdminV1InstancesUuidEventsGet = async (uuid: string,
@@ -6605,7 +6605,7 @@ export const getAdminOrdersExportApiAdminV1OrdersExportGetUrl = (params?: AdminO
 }
 
 /**
- * 充值订单 CSV(P2-37,流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。
+ * 充值订单 CSV(流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。
  * @summary Admin Orders Export
  */
 export const adminOrdersExportApiAdminV1OrdersExportGet = async (params?: AdminOrdersExportApiAdminV1OrdersExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -6814,7 +6814,7 @@ export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetUrl = (params?: Admi
 }
 
 /**
- * outbox 全量查询(F10 排障):不限死信(死信专用视图仍是 /outbox/dead)。
+ * outbox 全量查询(排障):不限死信(死信专用视图仍是 /outbox/dead)。
  *
  * status 精确过滤;instance_id 匹配 payload.instance_id(编排类任务都带)。
  * 固定截断 200(前端 ListCapNote 提示),按 id 倒序。
@@ -7858,7 +7858,7 @@ export const getReconciliationExportApiAdminV1ReconciliationExportGetUrl = (para
 }
 
 /**
- * 日对账 CSV(P2-37):与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。
+ * 日对账 CSV:与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。
  * @summary Reconciliation Export
  */
 export const reconciliationExportApiAdminV1ReconciliationExportGet = async (params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -9145,7 +9145,7 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
  * 手机号后缀命中行保持原序随后。手机号只回掩码。按号码/id 检索是敏感读,显式落一条审计
  * (中间件默认只审计写操作)。
  *
- * 实名信息(F9):readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
+ * 实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
  * 本次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
  * @summary Admin List Tenants
  */
@@ -9695,7 +9695,7 @@ export const getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetUrl
 }
 
 /**
- * 租户资金流水 CSV(P2-37,流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。
+ * 租户资金流水 CSV(流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。
  * @summary Admin Tenant Ledger Export
  */
 export const adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet = async (userId: number,

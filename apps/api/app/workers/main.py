@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
 # 并发领取协程数:claim 是 FOR UPDATE SKIP LOCKED,多协程不会重复领取;
-# 消除全局串行 FIFO 的队头阻塞(一个慢任务不再挡住排在后面的关机请求)
+# 消除全局串行 FIFO 的队头阻塞(一个慢任务不挡住排在后面的关机请求)
 OUTBOX_CONCURRENCY = int(os.environ.get("SUPERDL_OUTBOX_CONCURRENCY", "4"))
 
 # K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
@@ -313,7 +313,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    # 工单滞留巡检(F3 遗留,F8 补):pending_staff 超 24h → admin_alerts warning
+    # 工单滞留巡检:pending_staff 超 24h → admin_alerts warning
     scheduler.add_job(
         _timed_job("ticket_stale_patrol", stale_ticket_patrol, 1800),
         "interval",

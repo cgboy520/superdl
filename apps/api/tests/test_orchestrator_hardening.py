@@ -223,7 +223,7 @@ class TestStuckEscape:
         assert (ns, uuid) not in fake.instance_disks  # 实例盘已销毁
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
-        """P1-36:running 删除任务的 locked_at 租约过期(执行 worker 已死)不算在途,
+        """running 删除任务的 locked_at 租约过期(执行 worker 已死)不算在途,
         悬挂判定照常重发(挂了 = 收敛要等 reaper 5 分钟轮次才把死任务打回 pending)。"""
         headers, uuid, _user_id = await _provision_running(client, sm, fake, "13900000107")
         fake.graceful_delete = True
@@ -250,7 +250,7 @@ class TestStuckEscape:
         assert counts["delete_requeued"] == 1
 
     async def test_stopping_reenqueue_skips_fresh_lease(self, client, sm, fake):
-        """P1-36 对照:running 行 locked_at 在租约内 = 真在途,不堆重复任务。"""
+        """对照:running 行 locked_at 在租约内 = 真在途,不堆重复任务。"""
         headers, uuid, _user_id = await _provision_running(client, sm, fake, "13900000108")
         fake.graceful_delete = True
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -700,7 +700,7 @@ class TestRestartPortConflict:
         await drain(sm)  # 第一次:STOPPED 落库 → STARTING 落库 → 撞端口回滚
 
         data = await get_instance(client, headers, uuid)
-        # STARTING 先落库再建 Pod(P1-02):撞端口回滚后停在 starting,重试由承接分支续建;
+        # STARTING 先落库再建 Pod:撞端口回滚后停在 starting,重试由承接分支续建;
         # 关键是不回退到 stopping(尾账不丢、泄漏回收对在途状态有宽限)
         assert data["status"] == "starting"
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[

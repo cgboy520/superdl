@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 TOKEN_PREFIX = "sdln_"
 PROGRESS_TOKEN_PREFIX = "sdlp_"
 TERMINAL_STATUSES = frozenset({"joined", "failed", "expired", "revoked"})
-# 允许 bootstrap 的状态:pending 首跑;installing/rebooting 仅限升级前创建的旧行
+# 允许 bootstrap 的状态:pending 首跑;installing/rebooting 仅限存量旧行
 # (未签发过 progress 令牌)重跑/重启续跑;新行首次 bootstrap 后注册令牌即被消费
 BOOTSTRAP_STATUSES = frozenset({"pending", "installing", "rebooting"})
 REGENERATABLE_STATUSES = frozenset({"pending", "expired", "failed"})
@@ -305,7 +305,7 @@ async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
 
 async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnrollment:
     """progress 令牌(进度上报用)。兼容存量:未签发过 progress 令牌的行仍认注册令牌
-    (升级前已在装机的节点,盘上只有注册令牌)。"""
+    (那些节点盘上只有注册令牌)。"""
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     row = (
         await session.execute(
@@ -337,8 +337,8 @@ async def bootstrap(
     """令牌换装机参数。返回 (enrollment, cluster 最小配置, progress 令牌|None)。
 
     注册令牌一次性:pending 首跑即消费(换发仅可上报进度的 progress 令牌),
-    此后任何令牌都不能再 bootstrap;旧行(progress_token_hash 为空,升级前
-    创建)保持可重复 bootstrap 以兼容重启续跑。
+    此后任何令牌都不能再 bootstrap;存量旧行(progress_token_hash 为空)
+    保持可重复 bootstrap 以兼容重启续跑。
     """
     row = await _resolve_token(session, token)
     if row.status not in BOOTSTRAP_STATUSES or row.progress_token_hash is not None:

@@ -189,14 +189,14 @@ export const useMockPay = (o?: { onSuccess?: () => void }) =>
       mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
     { ...o, invalidates: ["wallet", "recharge", "ledger"] },
   );
-/** 申请退款(F1):必须带幂等键(表单每次打开/重开生成新 UUID,重放返回既有单)。 */
+/** 申请退款:必须带幂等键(表单每次打开/重开生成新 UUID,重放返回既有单)。 */
 export const useCreateRefund = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RefundCreate; idempotencyKey: string }) =>
       createRefundApiV1WalletRefundsPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: ["refunds", "refundable-orders", "wallet", "ledger"] },
   );
-/** 申请开票(F2):金额由服务端按账期计算(客户端不提交金额);幂等键重放返回既有单。 */
+/** 申请开票:金额由服务端按账期计算(客户端不提交金额);幂等键重放返回既有单。 */
 export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InvoiceCreate; idempotencyKey: string }) =>
@@ -214,7 +214,7 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
     { ...o, invalidates: ["me"] },
   );
 
-// ---------- 账号注销(F4) ----------
+// ---------- 账号注销 ----------
 /** 申请注销:服务端按 (user_id, pending) 幂等,重复提交返回既有申请。 */
 export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
@@ -266,7 +266,7 @@ export const useMarkAllNotificationsRead = () =>
     invalidates: ["notifications"],
   });
 
-// ---------- tickets(F3) ----------
+// ---------- tickets ----------
 /** 新建工单:必须带幂等键(弹窗每次打开生成新 UUID,重放返回既有单)。 */
 export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
   useApiMutation(

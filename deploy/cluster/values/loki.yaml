@@ -1,4 +1,4 @@
-# Loki 日志聚合(P1-32):Monolithic 单副本,chunks/index 走 filesystem 存 JuiceFS 共享卷。
+# Loki 日志聚合:Monolithic 单副本,chunks/index 走 filesystem 存 JuiceFS 共享卷。
 # chart 版本钉在 ../helmfile.yaml.gotmpl(grafana-community/loki;2026-03-16 起 OSS chart
 # 迁出 grafana/loki,后者转 GEL 专用 —— OSS 用户唯一受维护来源即社区仓)。
 deploymentMode: Monolithic
@@ -28,7 +28,7 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: true
-    # RWX 共享卷(同 Prometheus 存储取舍,P1-34):节点死后可跨节点重调度重挂;
+    # RWX 共享卷(同 Prometheus 存储取舍):节点死后可跨节点重调度重挂;
     # light 档无 JuiceFS,由 values/light/loki-light.yaml 回落 topolvm。
     storageClass: superdl-juicefs
     accessModes: ["ReadWriteMany"]

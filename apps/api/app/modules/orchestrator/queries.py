@@ -196,7 +196,7 @@ async def instance_disk_stats_by_user(
 
 
 async def deletion_leftovers(session: AsyncSession, user_id: int) -> dict[str, list[str]]:
-    """注销前置校验(F4):未释放实例(status 不在 released/failed 终态)与
+    """注销前置校验:未释放实例(status 不在 released/failed 终态)与
     未删除数据盘(status != deleted)的 uuid 清单。空清单 = 资源已清空。"""
     instances = (
         (

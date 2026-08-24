@@ -1,8 +1,8 @@
-"""预置法务文档(F7):迁移把下列正文作为 published v1 写入(迁移文件内联同文快照,
+"""预置法务文档:迁移把下列正文作为 published v1 写入(迁移文件内联同文快照,
 迁移须自洽);测试基建(conftest)经 seed_preset_docs 播种同一份内容。
 
 terms/privacy 正文来自用户端原静态页(apps/web/src/routes/legal.terms.tsx /
-legal.privacy.tsx)的 markdown 化;deletion_notice 由 F4 注销弹窗 5 条说明扩写。
+legal.privacy.tsx)的 markdown 化;deletion_notice 与账号注销弹窗说明同源。
 """
 
 TERMS_TITLE = "SuperDL 用户协议"

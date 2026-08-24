@@ -55,7 +55,7 @@ export const statusColors = {
   red: "#DC2626",
 } as const;
 
-/** 节点页 GPU 热力格(P2-21):深底浅字,白字对比度 ≥4.5:1 */
+/** 节点页 GPU 热力格:深底浅字,白字对比度 ≥4.5:1 */
 export const heatColors = {
   /** 有指标且低载 */
   low: statusColors.green,
@@ -65,7 +65,7 @@ export const heatColors = {
   high: statusColors.red,
 } as const;
 
-/** 落地页算力排名奖牌(P2-20,金/银/铜):深底白字 ≥4.5:1 */
+/** 落地页算力排名奖牌(金/银/铜):深底白字 ≥4.5:1 */
 export const medalColors = ["#A16207", "#6B7280", "#92400E"] as const;
 
 /** antd 6 ConfigProvider theme —— 用户端(浅色) */

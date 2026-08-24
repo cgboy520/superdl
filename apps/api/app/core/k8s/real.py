@@ -5,8 +5,7 @@
 对象命名:pod/svc/ingress 同名 = instance uuid;统一打标 superdl.io/instance。
 """
 
-# 本文件需真实集群,单测不覆盖(pyproject [tool.coverage.run] omit 整文件;
-# 独立成行的文件级 pragma 对 coverage.py 无效,不再使用)
+# 本文件需真实集群,单测不覆盖(pyproject [tool.coverage.run] omit 整文件)
 
 import asyncio
 import hashlib
@@ -221,7 +220,7 @@ class RealOrchestrator:
                     ),
                 ],
                 egress=[
-                    # DNS:收敛到 CoreDNS Pod(不再放行整个 kube-system 命名空间)
+                    # DNS:收敛到 CoreDNS Pod(不放行整个 kube-system 命名空间)
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
@@ -478,7 +477,7 @@ class RealOrchestrator:
         ports = (existing.spec and existing.spec.ports) or []
         current = ports[0].node_port if ports else None
         if current == spec.ssh_node_port:
-            return  # 幂等成功:此前创建的就是期望端口
+            return  # 幂等成功:已创建的就是期望端口
         try:
             self.core.patch_namespaced_service(
                 spec.name,

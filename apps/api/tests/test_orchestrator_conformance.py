@@ -1,4 +1,4 @@
-"""编排协议 Fake/Real 契约一致性(P1-40):同一组用例参数化跑两个后端。
+"""编排协议 Fake/Real 契约一致性:同一组用例参数化跑两个后端。
 
 Fake 恒跑;Real 由 SUPERDL_TEST_KUBECONFIG 门控(与 test_k8s_real_smoke.py 一致,
 CI kind job 驱动;未设置时 real 参数跳过、fake 照常)。

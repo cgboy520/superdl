@@ -8,7 +8,7 @@ from app.workers.main import _metrics_wsgi_app, _timed_job
 
 
 class TestScheduledJobsManifest:
-    """register_scheduled_jobs 任务清单快照(P1-41c):新增任务未登记/误删任务
+    """register_scheduled_jobs 任务清单快照:新增任务未登记/误删任务
     未同步本断言即红 —— 防静默丢任务(结算/对账/巡检停摆无人发现)。"""
 
     EXPECTED_JOB_IDS = frozenset(

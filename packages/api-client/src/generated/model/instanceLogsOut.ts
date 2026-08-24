@@ -6,7 +6,7 @@
  */
 
 /**
- * 容器日志(F5):按行切分;truncated=True 表示日志量超过 tail_lines,只回了末尾段。
+ * 容器日志:按行切分;truncated=True 表示日志量超过 tail_lines,只回了末尾段。
  */
 export interface InstanceLogsOut {
   lines: string[];

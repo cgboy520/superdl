@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SuperDL 发布流水线(P1-37):迁移 → set image+apply → rollout status → 冒烟,四步任一失败即退。
+# SuperDL 发布流水线:迁移 → set image+apply → rollout status → 冒烟,四步任一失败即退。
 #
 # 用法: scripts/release.sh <tag>
 #   tag:ghcr 已推送的发布标签(.github/workflows/release.yml 产物,形如 v1.2.3)。

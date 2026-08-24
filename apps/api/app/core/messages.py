@@ -154,7 +154,7 @@ MESSAGES: dict[str, str] = {
     "disks.shrinkForbidden": "数据盘只支持扩容,不支持缩容",
     "disks.sizeMax": "容量上限 {max} GB",
     "disks.sizeRange": "容量须在 {min}~{max} GB 之间",
-    # 法务文档(F7)
+    # 法务文档
     "legal.docNotFound": "法务文档不存在或尚未发布",
     "legal.draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
     "legal.versionNotDraft": "版本状态为 {status},仅草稿可执行该操作",
@@ -201,7 +201,7 @@ MESSAGES: dict[str, str] = {
     "orchestrator.startNeedsStopped": "仅已关机的实例可以开机",
     "orchestrator.stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
     "orchestrator.stopNeedsRunning": "仅运行中的实例可以关机",
-    # 工单(F3)
+    # 工单
     "tickets.notFound": "工单不存在",
     "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",
     "tickets.stateNotClosable": "工单状态 {status} 不可关闭",

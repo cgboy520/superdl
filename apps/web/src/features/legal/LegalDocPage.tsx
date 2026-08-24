@@ -1,4 +1,4 @@
-/** 法务文档页(F7):从 GET /api/v1/legal/{doc_key} 拉取当前 published 版渲染。
+/** 法务文档页:从 GET /api/v1/legal/{doc_key} 拉取当前 published 版渲染。
  * en-US 缺失时服务端回落 zh-CN(fallback=true),顶部给一行提示。 */
 
 import { formatDateTime } from "@superdl/ui";

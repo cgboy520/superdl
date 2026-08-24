@@ -50,7 +50,7 @@ async def test_process_success(sm: async_sessionmaker[AsyncSession], monkeypatch
 async def test_enqueue_carries_request_id_into_handler_context(
     sm: async_sessionmaker[AsyncSession], monkeypatch
 ):
-    """跨进程请求链(P1-32):enqueue 把当前 contextvar 的 request_id 写进 payload
+    """跨进程请求链:enqueue 把当前 contextvar 的 request_id 写进 payload
     (_request_id 键);执行时回填日志上下文(handler 内可见),执行完解绑不残留。"""
     import structlog
 

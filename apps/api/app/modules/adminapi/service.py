@@ -97,7 +97,7 @@ async def login(
     )
     password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
-        # 只在失败后计数:成功登录不消耗配额(此前连成功也计数,连登 5 次即被 429)
+        # 只在失败后计数:成功登录不消耗配额
         await check_rate_limit(
             f"admin-login-ip:{client_ip or '-'}",
             max_attempts=LOGIN_IP_MAX_ATTEMPTS,

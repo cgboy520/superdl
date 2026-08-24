@@ -1,4 +1,4 @@
-"""管理端 TOTP MFA(W2-8):admin/finance 强制绑定,二要素登录,恢复码,重置救援。"""
+"""管理端 TOTP MFA:admin/finance 强制绑定,二要素登录,恢复码,重置救援。"""
 
 import pytest
 from httpx import AsyncClient

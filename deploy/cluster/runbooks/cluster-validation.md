@@ -8,7 +8,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] `kubectl get node -o wide`:全部 Ready,K8s **v1.36.x**
 - [ ] `kubectl get node -L superdl.io/pool`:池标签齐全,**kata 与 hami 无交集**
 - [ ] `kubectl explain pod.spec.hostUsers` 存在;跑一个 `hostUsers: false` 测试 Pod,容器内 `readlink /proc/self/ns/user` 与宿主不同
-- [ ] 内核 ≥6.3(Ubuntu 26.04):`uname -r`
+- [ ] 内核 ≥6.3:`uname -r`
 
 ## B. Kata 整卡直通
 
@@ -38,7 +38,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 - [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线
 - [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;当前删除路径为 lvremove(未清零),如需擦盘语义先在节点开 issue_discards=1 再验收
-- [ ] 数据盘目录硬配额(W1-1):建一块 1GB 测试盘,挂实例写超 1GB(`dd if=/dev/zero of=/root/data/fill bs=1M count=1200`)必须在配额处被拒(EDQUOT/No space);管理端死信页无 disk.quota 死信,Prometheus 查 `superdl_juicefs_quota_failed_total` 为 0;删盘后 `juicefs quota ls $METAURL` 无残留条目
+- [ ] 数据盘目录硬配额:建一块 1GB 测试盘,挂实例写超 1GB(`dd if=/dev/zero of=/root/data/fill bs=1M count=1200`)必须在配额处被拒(EDQUOT/No space);管理端死信页无 disk.quota 死信,Prometheus 查 `superdl_juicefs_quota_failed_total` 为 0;删盘后 `juicefs quota ls $METAURL` 无残留条目
 
 ## E. 监控与告警
 

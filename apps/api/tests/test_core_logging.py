@@ -1,4 +1,4 @@
-"""日志桥接(P1-32b):stdlib 第三方日志与 structlog 同一渲染管道,contextvars 不丢;
+"""日志桥接:stdlib 第三方日志与 structlog 同一渲染管道,contextvars 不丢;
 SUPERDL_LOG_LEVEL 同时约束两侧。"""
 
 import io

@@ -89,7 +89,7 @@ async def admin_list_instance_events(
     cursor: str | None = None,
     limit: int | None = Query(default=None, le=100),
 ) -> Page[InstanceEventOut]:
-    """管理端实例事件时间线(F10 排障):与用户端同一实现,降序游标分页;不限租户。"""
+    """管理端实例事件时间线(排障):与用户端同一实现,降序游标分页;不限租户。"""
     instance = await orchestrator_service.admin_get_instance(session, uuid)
     return await orchestrator_service.list_events(session, instance.id, cursor=cursor, limit=limit)
 

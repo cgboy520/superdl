@@ -50,7 +50,7 @@ INSTANCE_NODE_LOST_TOTAL = Counter(
 )
 INSTANCE_LOGS_TOTAL = Counter(
     "superdl_instance_logs_total",
-    "实例容器日志读取次数(F5 端点;outcome=ok/error,仅计真正打到 K8s 的读取)",
+    "实例容器日志读取次数(outcome=ok/error,仅计真正打到 K8s 的读取)",
     ["outcome"],
 )
 RECONCILE_STUCK_INSTANCES = Gauge(

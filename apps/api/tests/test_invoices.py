@@ -1,4 +1,4 @@
-"""发票闭环(F2):eligible 口径/服务端算额/幂等/开票与驳回/IDOR/F1 退款联动。"""
+"""发票闭环:eligible 口径/服务端算额/幂等/开票与驳回/IDOR/退款联动。"""
 
 from datetime import datetime, timedelta
 
@@ -324,7 +324,7 @@ class TestIdor:
 
 
 class TestRefundLinkage:
-    """F1 联动:已开票(issued)账期的 paid 订单不可退,须先红冲;submitted 不拦。"""
+    """退款联动:已开票(issued)账期的 paid 订单不可退,须先红冲;submitted 不拦。"""
 
     async def test_issued_period_blocks_refund(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000241")

@@ -924,7 +924,7 @@ class TestAuditPagination:
 
 
 class TestTenantRealnameExposure:
-    """F9① 实名透出:readonly 脱敏;ops/finance/admin 明文,且含实名字段的响应落敏感读审计。"""
+    """实名透出:readonly 脱敏;ops/finance/admin 明文,且含实名字段的响应落敏感读审计。"""
 
     async def _realname_user(self, client, sm) -> int:
         from app.modules.account import service as account_service
@@ -987,7 +987,7 @@ class TestTenantRealnameExposure:
 
 
 class TestTenantQuotaOverride:
-    """F9② 配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库;readonly 只读。"""
+    """配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库;readonly 只读。"""
 
     async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
         from tests.helpers import create_user_with_key, fund_wallet
@@ -1077,7 +1077,7 @@ class TestTenantQuotaOverride:
 
 
 class TestAdminInstanceEvents:
-    """F10 管理端实例事件时间线:读全角色,按时间倒序,游标分页;非管理端凭据拒绝。"""
+    """管理端实例事件时间线:读全角色,按时间倒序,游标分页;非管理端凭据拒绝。"""
 
     async def test_events_desc_and_cursor(self, client, sm, fake):
         _uh, uuid, _uid = await _provision_running(client, sm, fake)
@@ -1116,7 +1116,7 @@ class TestAdminInstanceEvents:
 
 
 class TestOutboxTasksFullQuery:
-    """F10 outbox 全量查询:不限死信;status 与 payload.instance_id 过滤正确。"""
+    """outbox 全量查询:不限死信;status 与 payload.instance_id 过滤正确。"""
 
     async def test_status_and_instance_id_filters(self, client: AsyncClient, sm):
         async with sm() as session:
@@ -1154,7 +1154,7 @@ class TestOutboxTasksFullQuery:
 
 
 class TestAdminListPagination:
-    """P1-13:五个管理端列表端点改游标分页(Page 包装 + next_cursor 走查)与新增筛选参数。"""
+    """五个管理端列表端点的游标分页(Page 包装 + next_cursor 走查)与筛选参数。"""
 
     async def test_tenants_cursor_walk(self, client, sm, fake):
         h = await admin_headers(sm, client)

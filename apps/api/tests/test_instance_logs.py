@@ -1,4 +1,4 @@
-"""F5 容器日志端点:200/截断/状态闸/IDOR/限流/失败注入与 outcome metric。"""
+"""容器日志端点:200/截断/状态闸/IDOR/限流/失败注入与 outcome metric。"""
 
 import pytest
 from httpx import AsyncClient

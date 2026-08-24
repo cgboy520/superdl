@@ -1,4 +1,4 @@
-# worker(outbox + 定时任务):2 副本高可用(报告3#12/P1-35)——节点故障/滚动发布时
+# worker(outbox + 定时任务):2 副本高可用——节点故障/滚动发布时
 # 结算与编排不停摆。liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
 apiVersion: apps/v1
 kind: Deployment
@@ -23,7 +23,7 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
-      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod,
+      # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod,
       # 节点资源紧张时不与租户同级被驱逐。
       priorityClassName: system-cluster-critical
       nodeSelector:

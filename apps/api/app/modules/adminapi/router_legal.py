@@ -18,7 +18,7 @@ from app.modules.legal.schemas import (
 router = APIRouter(tags=["admin"])
 
 
-# ---------- 法务文档(F7:读全角色,写仅 admin) ----------
+# ---------- 法务文档(读全角色,写仅 admin) ----------
 
 
 @router.get("/legal-docs", dependencies=[require_roles("ops", "finance", "readonly")])

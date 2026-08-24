@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     ingress_class_name: str = "nginx"
     ssh_host: str = "ssh1.superdl.example.com"
     # 管理端域名(admin SPA 经该域 nginx 同源反代 /api/admin/);prod 下 /api/admin/*
-    # 仅放行 Host 命中本项的请求(公网 api 域不再暴露管理端 API)
+    # 仅放行 Host 命中本项的请求(公网 api 域不暴露管理端 API)
     admin_host: str = "admin.superdl.example.com"
     ssh_port_range_start: int = 30000
     ssh_port_range_end: int = 32767

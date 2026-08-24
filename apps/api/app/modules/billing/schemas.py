@@ -102,9 +102,9 @@ class RechargeOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ---------- 退款(F1) ----------
+# ---------- 退款 ----------
 
-# 线下打款渠道(渠道侧原路退回是二期,见审计整改方案 6.1)
+# 线下打款渠道;不做渠道原路退回
 PayoutChannel = Literal["offline", "alipay_transfer", "wechat_transfer"]
 
 
@@ -175,7 +175,7 @@ class RefundCancel(BaseModel):
     reason: str = Field(min_length=2, max_length=256)
 
 
-# ---------- 发票(F2) ----------
+# ---------- 发票 ----------
 
 InvoiceTitleType = Literal["personal", "company"]
 

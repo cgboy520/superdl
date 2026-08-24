@@ -36,7 +36,7 @@ kubectl -n monitoring create secret generic grafana-admin \
    registries.yaml 平台自动生成,无需手改。
 3. **组件**:`./preflight.sh full && helmfile -e full apply`(含 Loki/Alloy 日志栈,
    审计日志留存与查询见 `runbooks/loki-logging.md`);再 apply 准入策略
-   (P1-24,preflight 强制校验两个 Binding 存在且 Deny):
+   (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    (首次上线可先 [Audit] 观察一周再改回 [Deny],见该文件头注释;Audit 期间 preflight 该项会报缺)
 4. **内部镜像仓库**:先手工建 htpasswd Secret(凭据不落 git,命令见 `registry/registry.yaml`
@@ -83,7 +83,7 @@ kubectl -n monitoring create secret generic grafana-admin \
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;
    禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
 3. **组件**:`./preflight.sh light && helmfile -e light apply`;再 apply 准入策略
-   (P1-24,preflight 强制校验两个 Binding 存在且 Deny):
+   (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    - light = HAMi(钉 k3s 版 scheduler 镜像 + devicePlugin runtimeClassName=nvidia,
      见 `values/light/hami-light.yaml`)+ kps 精简 + cert-manager + ingress-nginx

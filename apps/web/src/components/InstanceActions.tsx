@@ -1,7 +1,7 @@
 /**
  * 实例操作组:开机/关机/更多(重启·事件·预留项·释放)。
  * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/保存镜像/转包年包月)
- * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、键入实例名才解锁,P2-22)。
+ * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、键入实例名才解锁)。
  */
 
 import { DownOutlined } from "@ant-design/icons";
@@ -35,7 +35,7 @@ export function ReleaseModal({
   onReleased?: () => void;
 }) {
   const { t } = useTranslation();
-  // 破坏确认(P2-22):键入实例名才解锁
+  // 破坏确认:键入实例名才解锁
   const [typed, setTyped] = useState("");
   const { message } = App.useApp();
   const creating = instance.status === "creating";

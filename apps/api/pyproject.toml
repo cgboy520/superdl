@@ -64,12 +64,12 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
-# warning 即错误(W6 清零锁定),两类点名豁免并注明:
+# warning 即错误,两类点名豁免并注明:
 # - testcontainers 自身的 DeprecationWarning(第三方弃用 API,不受我们控制);
 # - PytestUnraisableExceptionWarning:teardown 期 GC 终结告警(asyncpg/psycopg/docker-py
 #   的连接对象 __del__ 兜底;GC 终结时序随机,会挂到任意在跑测试上)。我们持有的引擎与
 #   客户端已全部显式关闭(dispose_engine、docker client.close),剩余的终结对象是第三方
-#   连接内部状态,从我们的代码无法再关,故豁免(2026-08 本地 Windows 会话观察)。
+#   连接内部状态,从我们的代码无法再关,故豁免。
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:testcontainers",

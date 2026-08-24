@@ -12,7 +12,7 @@ secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。
                              # (勿只留在本机 /var/lib/rancher)。
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 12
-# etcd 快照异地保存(P0-15,对齐 deploy/cluster/README.md「etcd 快照托管」的既有要求):
+# etcd 快照异地保存(对齐 deploy/cluster/README.md「etcd 快照托管」的既有要求):
 # 控制面快照含全部集群状态与 token 材料,必须异地加密保存(对象存储开服务端加密/
 # bucket 默认加密,建议另一机房或独立账号),禁止只留 server 本机 /var/lib/rancher。
 # 开启后定时快照自动上传;access/secret key 来自密管下发,仓库内只留 CHANGE_ME 占位,

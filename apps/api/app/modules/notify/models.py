@@ -23,7 +23,7 @@ class Notification(Base):
     status: Mapped[str] = mapped_column(String(16), default="published", server_default="published")
     dedup_key: Mapped[str | None] = mapped_column(String(128), unique=True)  # 幂等去重
     read_at: Mapped[datetime | None]
-    # 告警闭环(F8):管理端告警流确认留痕;非告警行恒空
+    # 告警闭环:管理端告警流确认留痕;非告警行恒空
     acked_by: Mapped[int | None]  # admin_users.id
     acked_at: Mapped[datetime | None]
     # 翻页/排序一律走主键 id,created_at 无查询使用,不建索引
@@ -31,7 +31,7 @@ class Notification(Base):
 
 
 class Announcement(Base):
-    """公告(F6):管理端发布/撤回的公告级记录;用户端触达走 Notification fanout。
+    """公告:管理端发布/撤回的公告级记录;用户端触达走 Notification fanout。
 
     fanout 行 dedup_key = f"ann:{id}:{user_id}":撤回按此前缀精确收回,发布重试逐用户幂等。
     """

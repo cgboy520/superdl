@@ -1,4 +1,4 @@
-# 发布单点(P1-37):镜像 tag 只在本文件 images 的 newTag 占位(CHANGE_TAG),
+# 发布单点:镜像 tag 只在本文件 images 的 newTag 占位(CHANGE_TAG),
 # 由 scripts/release.sh 一步替换后 `kubectl apply -k`;禁止手改各清单里的 tag、禁止 latest。
 # 10-migrate-job.yaml 故意不入 resources:Job 不可 apply 复用(name 带 tag 后缀、
 # backoffLimit: 0),由 release.sh 在滚动前单独 create + wait(顺序铁律见该文件头注释)。

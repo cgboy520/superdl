@@ -78,7 +78,7 @@ class FakeOrchestrator:
     probe_hami_ready: bool = True
     fail_probe: bool = False
     probe_override: ClusterProbe | None = None
-    # 容器日志(F5):fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
+    # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
     fail_next_logs: bool = False
     log_calls: list[tuple[str, str, int, int | None]] = field(default_factory=list)
 

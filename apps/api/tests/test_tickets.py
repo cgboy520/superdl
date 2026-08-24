@@ -1,4 +1,4 @@
-"""工单系统(F3):创建(幂等/单号格式/上限/限流)/对话流状态机/联动通知/IDOR/管理端角色门。"""
+"""工单系统:创建(幂等/单号格式/上限/限流)/对话流状态机/联动通知/IDOR/管理端角色门。"""
 
 import re
 from datetime import timedelta
@@ -332,7 +332,7 @@ class TestAdmin:
 
 
 class TestStaleTicketPatrol:
-    """工单滞留巡检(F3 遗留,F8 补):pending_staff 超 24h → admin_alerts warning,dedup 不重复。"""
+    """工单滞留巡检:pending_staff 超 24h → admin_alerts warning,dedup 不重复。"""
 
     async def _make_stale_ticket(
         self, client: AsyncClient, sm, phone: str, *, age_hours: float

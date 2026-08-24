@@ -25,7 +25,7 @@ const WHITE = { color: "#fff" } as const;
 
 function NotificationBell() {
   const { t } = useTranslation();
-  // 单查询合并:角标未读数与列表同源(30s 轮询),不再双发 unread/all 两份查询
+  // 单查询合并:角标未读数与列表同源(30s 轮询),不双发 unread/all 两份查询
   const allQ = useNotifications({}, { refetchInterval: 30_000 });
   const { data: all } = allQ;
   const unreadCount = (all?.items ?? []).filter((n) => !n.read_at).length;

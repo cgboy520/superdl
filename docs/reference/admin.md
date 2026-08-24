@@ -11,7 +11,8 @@
 
 | 路由/端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离 |
+| `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离;admin/finance 强制 TOTP,未绑定发绑定票、已绑定发二要素票 |
+| `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由都调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |
 | `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、池级 GPU 台账(含非 Ready 段)、节点 Ready/Missing 计数 |
 | `/` 运营总览 | 全角色 | KPI 行(接 /overview 精确计数,含节点健康卡)+ 「实际超卖率 vs 真实利用率」双曲线(60%/85% 辅助线)+ GPU 池占用条(含未就绪段)+ 告警流 + 收入 KPI + 死信卡(重放/忽略都需原因) |
@@ -21,7 +22,7 @@
 | `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;驱逐重调度为占位按钮,未开放);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
 | `GET /api/admin/v1/tenants/{user_id}/adjust-context` | ops/finance/readonly | 调账前置上下文(只读,敏感读落审计):掩码手机号/当前余额/近 3 条流水/在跑台数;不存在 → 404 |
 | `/finance` 财务对账 | finance 可写 | 日对账卡(diff% >2% 标红)+ 充值流水 + 小时账单 + 调账(发起回显租户上下文,不存在的租户前端禁提交+后端 404;单笔绝对值上限 `ADJUST_MAX_ABS`;复核框列出租户/余额/调账后余额/发起人/原因)+ 异常清单 |
-| `/images` `/cluster` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、平台配置、系统设置(策略参数 / 公告 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
+| `/images` `/cluster` `/tickets` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
 | `GET /api/admin/v1/tenants/{user_id}/ledger` `/bills` | ops/finance/readonly | 游标分页;与用户端同一函数(`billing.wallet.ledger_page` / `hourly_bills_page`) |
 | `GET /api/admin/v1/outbox/dead` `POST .../{task_id}/retry` `/discard` | ops(读含 readonly) | 死信列表、重放(需原因)、忽略(需原因) |
 | `POST /api/admin/v1/announcements` | ops | 公告群发 |
@@ -32,6 +33,14 @@
 | `GET /api/admin/v1/finance/anomalies` | finance/readonly | 丢回调/关单/负余额异常清单 |
 | `POST /api/admin/v1/finance/orders/{order_no}/verify` `/backfill` | finance | 渠道核验与补单 |
 | `POST /api/admin/v1/adjustments` `/{adjustment_id}/review` | finance 发起,复核双人 | 调账双管理员复核 |
+| `GET /api/admin/v1/refunds` `POST .../{refund_id}/review` `/payout` `/cancel` | finance/admin | 退款审批与登记打款分人:审批不动钱包,登记打款成功才负向核销 |
+| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` | 读 ops/finance/readonly,写 finance/admin | 人工开票(填发票号)/ 驳回,站内信告知 |
+| `GET /api/admin/v1/tickets` `/{ticket_id}` `POST .../reply` `/status` | 读 ops/finance/readonly,写 ops/admin | 工单对话流与状态流转 |
+| `GET/POST/PUT/POST /api/admin/v1/legal-docs*` | 读全角色,写仅 admin | 法务文档草稿 → 发布 → 归档;每 (doc_key, locale) 仅一条 published |
+| `GET/PUT /api/admin/v1/tenants/{user_id}/quota` | 读全角色,写 ops | 用户级配额覆盖(留空 = 该维走 policy → env 默认链) |
+| `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行 |
+| `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环 |
+| `GET /api/admin/v1/outbox/tasks` | ops(读含 readonly) | outbox 全量排障视图,固定截断 200 |
 
 ## 规则与不变量
 

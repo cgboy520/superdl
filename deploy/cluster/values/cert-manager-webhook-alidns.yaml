@@ -1,4 +1,4 @@
-# cert-manager-webhook-alidns:阿里云 DNS01 solver(P0-16),泛域名证书
+# cert-manager-webhook-alidns:阿里云 DNS01 solver,泛域名证书
 # (*.Jupyter 子域、api/console/admin 入口)签发的 DNS 校验落点。
 # groupName 必须与 deploy/app/k8s/05-cert-manager.yaml 的 ClusterIssuer
 # letsencrypt-dns solvers.dns01.webhook.groupName 一致,改一边必须同步另一边。

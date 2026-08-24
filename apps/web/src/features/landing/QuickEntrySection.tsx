@@ -1,5 +1,5 @@
 /** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。
- * 信息型入口改指 /help 的 FAQ 锚点(P2-24);GPU 选型仍页内滚动到排名区。 */
+ * 信息型入口改指 /help 的 FAQ 锚点;GPU 选型仍页内滚动到排名区。 */
 
 import {
   AccountBookOutlined,

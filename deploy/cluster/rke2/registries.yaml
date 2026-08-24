@@ -6,7 +6,7 @@ mirrors:
   "*": {}                    # 所有仓库参与 P2P:任一节点已缓存的镜像,其余节点内网互拉(latest tag 除外)
   registry.superdl.local:
     endpoint:
-      - "http://<registry-cluster-ip>:5000"   # registry Service 的 ClusterIP(P0-07 起由 NodePort 30500 收编);
+      - "http://<registry-cluster-ip>:5000"   # registry Service 的 ClusterIP;
                                               # ClusterIP 分配后稳定不变,kube-proxy 全节点编程,节点 host 网络
                                               # (containerd)可达。查法:kubectl -n registry get svc registry
 # endpoint 显式 http(集群内网明文),不涉 TLS 校验,无需 configs.tls 块。

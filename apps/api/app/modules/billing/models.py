@@ -177,7 +177,7 @@ class Order(Base):
 
 
 class InvoiceRequest(Base):
-    """发票申请单(F2)。按账期合并开具:一个自然月一张;amount 由服务端按账期计算
+    """发票申请单。按账期合并开具:一个自然月一张;amount 由服务端按账期计算
     (Σ 该账期 paid 充值 − Σ 该账期 submitted+issued 申请),客户端只提交账期与抬头。
 
     部分唯一索引 uq_invoice_requests_active_period:同一 (user_id, period) 只允许一条
@@ -218,7 +218,7 @@ class InvoiceRequest(Base):
 
 
 class RefundRequest(Base):
-    """退款申请单(F1)。审批通过 ≠ 出金:登记打款成功才同事务钱包负向调账,
+    """退款申请单。审批通过 ≠ 出金:登记打款成功才同事务钱包负向调账,
     并回写 wallet_entry_id 关联 balance_ledger。
 
     双人制衡硬约束:DB CHECK 兜底 payout_by <> review_by(应用层同样拦截给 409 文案)。
@@ -258,7 +258,7 @@ class RefundRequest(Base):
     review_at: Mapped[datetime | None]
     review_comment: Mapped[str | None] = mapped_column(String(256))
     payout_channel: Mapped[str | None] = mapped_column(String(32))
-    # offline / alipay_transfer / wechat_transfer(线下打款;渠道原路退回是二期)
+    # offline / alipay_transfer / wechat_transfer(线下打款;不做渠道原路退回)
     payout_ref: Mapped[str | None] = mapped_column(String(128))  # 线下打款凭证号
     payout_by: Mapped[int | None]  # 打款登记人,强制 ≠ review_by
     payout_at: Mapped[datetime | None]

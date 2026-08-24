@@ -249,7 +249,7 @@ function alertLink(a: AlertRow): { to: string; search?: { q: string } } | null {
   return null;
 }
 
-/** 实时告警流(F8):severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户。 */
+/** 实时告警流:severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户。 */
 function AlertStreamCard() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
@@ -359,7 +359,7 @@ function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const { data: oversell, isError: oversellError, error: oversellErr, refetch: refetchOversell } = useOversellReport();
-  // 总览聚合:全部精确 COUNT(全角色可读),不再从截断列表推算;finance 角色也不会再 403
+  // 总览聚合:全部精确 COUNT(全角色可读),不从截断列表推算
   const { data: ov, isError: ovError, error: ovErr, refetch: refetchOv } = useOverview();
   const { data: alertsData } = useAlerts();
   const { data: revenue } = useRevenueReport();

@@ -1,7 +1,7 @@
 /**
  * 费用中心:余额卡(阈值带保存钮)/充值 Modal(渠道 Tab 预留+真二维码+有效期)/
- * 消费概览(月选择器+今日)环图/账单与收支明细(服务端 CSV 导出,P2-28)。
- * Tab 与月份入 URL(P2-17);充值幂等键按 (amount, channel) 派生(P1-10)。
+ * 消费概览(月选择器+今日)环图/账单与收支明细(服务端 CSV 导出)。
+ * Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。
  */
 
 import {
@@ -74,7 +74,7 @@ const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
 
 export const Route = createFileRoute("/_console/billing")({
   beforeLoad: requireAuth,
-  // Tab/月份入 URL(P2-17):可分享、返回不丢;非法值丢弃回默认
+  // Tab/月份入 URL:可分享、返回不丢;非法值丢弃回默认
   validateSearch: (search: Record<string, unknown>): { tab?: BillingTab; month?: string } => {
     const out: { tab?: BillingTab; month?: string } = {};
     if (typeof search.tab === "string" && (BILLING_TABS as readonly string[]).includes(search.tab)) {
@@ -131,7 +131,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   // 金额必须按字符串走(InputNumber stringMode),禁止经二进制浮点
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
-  // 幂等键按 (amount, channel) 派生(P1-10,照创建页模式):响应丢失后重提不会再开一单;
+  // 幂等键按 (amount, channel) 派生(照创建页模式):响应丢失后重提不会再开一单;
   // 改了金额/渠道即另一单,键随之改变;下单成功即作废该键,下一单重新分配
   const [idemKeys] = useState(() => new Map<string, string>());
   const rechargeIdemKey = (amt: string, ch: string): string => {
@@ -173,7 +173,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const mockPay = useMockPay({ onSuccess: () => message.success(t("billing.mockPaySent")) });
   const activeNo = order?.order_no ?? resumedNo;
   const rechargeQ = useRecharge(activeNo, {
-    // 轮询仅在弹窗 open 时进行(P2-26):关窗即停,重开经找回标记恢复
+    // 轮询仅在弹窗 open 时进行:关窗即停,重开经找回标记恢复
     enabled: open && activeNo !== "",
     // 到终态(paid/closed/failed)即停,不再空转打接口;出错(如找回的单号已失效)也停
     refetchInterval: (q) => {
@@ -443,7 +443,7 @@ function LedgerTable() {
   );
 }
 
-/** 退款(F1):申请表单(仅可申请口径的订单) + 我的退款列表。 */
+/** 退款:申请表单(仅可申请口径的订单) + 我的退款列表。 */
 const REFUND_REASON_CODE = {
   not_paid: "billing.refundOrderNotPaid",
   already_applied: "billing.refundOrderAlreadyApplied",
@@ -617,7 +617,7 @@ function RefundTab() {
   );
 }
 
-/** 发票(F2)申请弹窗:账期(仅 eligible 列表)+ 抬头信息;金额由服务端按账期计算。 */
+/** 发票申请弹窗:账期(仅 eligible 列表)+ 抬头信息;金额由服务端按账期计算。 */
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/; // 与服务端契约同一口径
 
 function InvoiceApplyModal({
@@ -729,7 +729,7 @@ function InvoiceApplyModal({
   );
 }
 
-/** 发票(F2):可开票额度卡片(总额 + 各账期明细) + 申请弹窗 + 我的发票列表。 */
+/** 发票:可开票额度卡片(总额 + 各账期明细) + 申请弹窗 + 我的发票列表。 */
 function InvoiceTab() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();
@@ -855,7 +855,7 @@ function BillingPage() {
   // 本地时区取当月(toISOString 是 UTC 切片,+08:00 月初凌晨会切到上个月)
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  // 月份选择器(P1-08):月汇总/环图/小时账单/CSV 导出共用同一口径
+  // 月份选择器:月汇总/环图/小时账单/CSV 导出共用同一口径
   const month = monthParam ?? currentMonth;
   const { date, tzOffsetMinutes } = localToday();
   // 三个查询必须共用同一个本地时区口径,否则 31 天日账单之和 ≠ 月账单
@@ -879,7 +879,7 @@ function BillingPage() {
       replace: true,
     });
 
-  // 服务端流式导出(P2-28):小时账单跟随所选月份(P1-08);触顶标记行 → 截断提示
+  // 服务端流式导出:小时账单跟随所选月份;触顶标记行 → 截断提示
   const exportCsv = async () => {
     setExporting(true);
     try {

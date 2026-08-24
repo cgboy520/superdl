@@ -23,7 +23,7 @@ repositories:
     url: https://topolvm.github.io/topolvm
   - name: jetstack
     url: https://charts.jetstack.io
-  # cert-manager 的阿里云 DNS01 solver(泛域名证书签发;P0-16)
+  # cert-manager 的阿里云 DNS01 solver(泛域名证书签发)
   # TODO(上线前确认):仓库地址以当时官方 README 为准,若迁移到主流替代仓库需同步改这里
   - name: cert-manager-webhook-alidns
     url: https://wjw465150.github.io/cert-manager-webhook-alidns
@@ -50,11 +50,9 @@ releases:
     condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
-    # 已钉死(2026-08 核验 GitHub NVIDIA/gpu-operator releases 最新稳定 v26.3.3,
-    # 修 device-plugin 误注 ibverbs 设备的回归;审计要求 ≥26.3.3)。
-    # HAMi/device-plugin 兼容性:HAMi 池节点以 nvidia.com/gpu.deploy.device-plugin=false
-    # 排斥官方插件(见 values/gpu-operator.yaml 头注释),26.3.x 未改该标签语义;
-    # 升 26.7+ 前须复核 release notes 的 labels/ClusterPolicy 字段变化。
+    # 不得低于 v26.3.3:更低版本 device-plugin 会误注 ibverbs 设备。
+    # HAMi 池节点以 nvidia.com/gpu.deploy.device-plugin=false 排斥官方插件
+    # (见 values/gpu-operator.yaml 头注释);升版前复核 release notes 的 labels/ClusterPolicy 字段变化。
     version: "v26.3.3"
     values: [values/gpu-operator.yaml]
 
@@ -120,39 +118,37 @@ releases:
     condition: ingressNginx.enabled
     namespace: ingress-nginx
     chart: ingress-nginx/ingress-nginx
-    # 已钉死(2026-08 核验 Artifact Hub/index.yaml 最新稳定 4.15.1 = controller v1.15.1;
-    # 4.13→4.15 无 values 破坏性变更,apply 前 helm diff 复核)
+    # chart 4.15.1 = controller v1.15.1;升版 apply 前 helm diff 复核
     version: "4.15.1"
     values: [values/ingress-nginx.yaml]
 
-  # CloudNativePG(P0-14):平台库进 K8s 时的唯一受支持形态(见 ../README.md「生产数据库要求」)。
+  # CloudNativePG:平台库进 K8s 时的唯一受支持形态(见 ../README.md「生产数据库要求」)。
   # 默认关闭(cnpg.enabled=false,用托管 PG 时不装);启用时 operator 与业务集群两个 release 一起进。
   - name: cloudnative-pg
     condition: cnpg.enabled
     namespace: cnpg-system
     chart: cloudnative-pg/cloudnative-pg
-    # 已钉死(2026-08 核验 Artifact Hub 最新稳定):chart 0.29.0 = operator 1.30.0
+    # chart 0.29.0 = operator 1.30.0
     version: "0.29.0"
 
   - name: cnpg-cluster
     condition: cnpg.enabled
     namespace: superdl
     chart: cloudnative-pg/cluster
-    # 已钉死(2026-08 核验最新稳定 0.8.x);升版时 values 键名以新版为准(先 helm template 验证)
+    # 升版时 values 键名以新版为准(先 helm template 验证)
     version: "0.8.1"
     needs:
       - cnpg-system/cloudnative-pg
     values: [values/cnpg-cluster.yaml]
 
-  # 日志栈(P1-32):Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
+  # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
   # API 审计相关日志经此留存 ≥6 个月(查询方式见 runbooks/loki-logging.md)。
   # light 档默认同开(可承受资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
   - name: loki
     condition: loki.enabled
     namespace: monitoring
     chart: grafana-community/loki
-    # 已钉死(2026-08 核验 Artifact Hub grafana-community/loki 最新稳定 18.9.1
-    # = Loki 3.7.6;社区 chart 12.0.0 起 SingleBinary 更名 Monolithic,values 已按新名)
+    # chart 18.9.1 = Loki 3.7.6;values 按 Monolithic 部署形态
     version: "18.9.1"
     values:
       - values/loki.yaml
@@ -164,8 +160,7 @@ releases:
     condition: logCollector.enabled
     namespace: monitoring
     chart: grafana/alloy
-    # 已钉死(2026-08 核验 Artifact Hub grafana/alloy 最新稳定 1.11.1 = Alloy v1.18.1;
-    # promtail chart 停在 6.17.1 且已废弃,不再引入)
+    # chart 1.11.1 = Alloy v1.18.1;promtail chart 已废弃,不引入
     version: "1.11.1"
     needs:
       - monitoring/loki

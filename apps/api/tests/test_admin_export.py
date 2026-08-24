@@ -1,4 +1,4 @@
-"""管理端 CSV 导出(P2-37):订单/租户流水/审计/日对账 —— 口径、角色门、截断标记。"""
+"""管理端 CSV 导出:订单/租户流水/审计/日对账 —— 口径、角色门、截断标记。"""
 
 from datetime import timedelta
 from decimal import Decimal

@@ -126,7 +126,7 @@ class RealNameRequest(BaseModel):
     id_number: str = Field(pattern=r"^\d{17}[\dXx]$")
 
 
-# ---------- 账号注销(F4) ----------
+# ---------- 账号注销 ----------
 
 
 class DeletionRequestCreate(BaseModel):

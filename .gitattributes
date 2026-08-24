@@ -1,0 +1,18 @@
+# 行尾统一 LF,与 .editorconfig 的 end_of_line = lf 一致。
+# 闸门与运行时都在 Linux:脚本带 CR 会让 bash -n / shellcheck / bats 直接失败;
+# COPY 进镜像的 entrypoint.sh 带 CR 则 shebang 找不到解释器,容器起不来;
+# openapi.json 由 Python 按平台行尾写出,仓库不定行尾时「契约无 diff」闸门必红。
+* text=auto eol=lf
+
+# 二进制:任何情况下不做行尾转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary

@@ -1,4 +1,4 @@
-/** 租户下钻抽屉(F9/F10):实名摘要 + 账单/流水/订单/实例/配额/事件 六 Tab + 跳审计。
+/** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/配额/事件 六 Tab + 跳审计。
  *
  * 从 tenants.tsx 拆出(dash 前缀 = 非路由组件,与 -AdminsTab 同款约定):
  * 抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。
@@ -157,7 +157,7 @@ export function TenantDrawer({
   );
 }
 
-/** 小时账单:可按实例过滤(F10 排障:只盯一台机的账);游标「加载更多」。 */
+/** 小时账单:可按实例过滤(排障:只盯一台机的账);游标「加载更多」。 */
 function BillsTab({ userId, instances }: { userId: number; instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
@@ -299,7 +299,7 @@ function LedgerTab({ userId }: { userId: number }) {
   );
 }
 
-/** 订单反查(F9③):该租户的充值订单(游标分页,加载更多)。 */
+/** 订单反查:该租户的充值订单(游标分页,加载更多)。 */
 function OrdersTab({ userId }: { userId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
@@ -358,7 +358,7 @@ function OrdersTab({ userId }: { userId: number }) {
   );
 }
 
-/** 实例反查(F9③):只读视图(写操作集中在「全局实例」Tab,口径单一;抽屉取前 100 条)。 */
+/** 实例反查:只读视图(写操作集中在「全局实例」Tab,口径单一;抽屉取前 100 条)。 */
 function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   return (
@@ -404,7 +404,7 @@ function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
   );
 }
 
-/** 配额覆盖(F9②):三个数字可留空(=该维走默认链),全空保存 = 清除覆盖;note 必填。 */
+/** 配额覆盖:三个数字可留空(=该维走默认链),全空保存 = 清除覆盖;note 必填。 */
 function QuotaTab({ userId }: { userId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
@@ -515,7 +515,7 @@ function QuotaTab({ userId }: { userId: number }) {
   );
 }
 
-/** 事件时间线(F10):实例选择器 + 该实例的状态迁移事件(倒序,游标加载更多)。 */
+/** 事件时间线:实例选择器 + 该实例的状态迁移事件(倒序,游标加载更多)。 */
 function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
   const { t } = useTranslation(["admin", "shared"]);
   const [uuid, setUuid] = useState<string | null>(null);

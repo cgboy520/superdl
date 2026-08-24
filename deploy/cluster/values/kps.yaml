@@ -10,7 +10,7 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # P1-34:共享存储(JuiceFS,RWX)而非节点本地 NVMe——节点死后可跨节点重调度
+          # 共享存储(JuiceFS,RWX)而非节点本地 NVMe——节点死后可跨节点重调度
           # 重挂载(本地卷随节点一起丢)。取舍记录:监控指标可重建(长期数据已进 PG
           # usage_hourly)、JuiceFS 性能对监控查询足够,节点复活前历史查询断档可接受。
           # light 档默认无 JuiceFS,由 values/light/kps-light.yaml 覆盖回 topolvm。
@@ -18,7 +18,7 @@ prometheus:
           accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 50Gi}
-    # 副本数暂保 1(取舍,P0-10 后续):可用性由 JuiceFS 底层(元数据走 PG、数据走对象存储)
+    # 副本数 1:可用性由 JuiceFS 底层(元数据走 PG、数据走对象存储)
     # 与跨节点重调度提供;双副本 Prometheus 需双份存储 + 查询去重,对「可重建的监控数据」
     # 不抵成本。判据变化(如对监控查询连续性有 SLA)再评 Thanos/双副本。
     replicas: 1
@@ -233,7 +233,7 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          # P1-34:同 Prometheus——共享存储(JuiceFS,RWX),节点死后单副本可跨节点重调度;
+          # 同 Prometheus——共享存储(JuiceFS,RWX),节点死后单副本可跨节点重调度;
           # 取舍记录见上方 prometheusSpec 存储/副本注释。
           storageClassName: superdl-juicefs
           accessModes: ["ReadWriteMany"]
@@ -244,7 +244,7 @@ alertmanager:
       # kubectl -n monitoring create secret generic superdl-smtp-password \
       #   --from-literal=password=<SMTP 口令>
       - superdl-smtp-password
-    # 钉钉触达(P0-10):prometheus-webhook-dingtalk 转换器以 sidecar 进 Alertmanager Pod
+    # 钉钉触达:prometheus-webhook-dingtalk 转换器以 sidecar 进 Alertmanager Pod
     # (不新增 helm release;superdl-dingtalk receiver 已指 http://localhost:8060/dingtalk/oncall/send)。
     # 上线时取消下面注释,镜像钉版本;access_token 不落 values,经 Secret 注入:
     #   kubectl -n monitoring create secret generic superdl-dingtalk-token \
@@ -375,7 +375,7 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: warning}
             annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)"}
-          # P0-11:资金/结算/巡检/查单/编排收尾的硬告警(指标定义见 apps/api/app/core/metrics.py)
+          # 资金/结算/巡检/查单/编排收尾的硬告警(指标定义见 apps/api/app/core/metrics.py)
           - alert: FundReconcileMismatch
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
             labels: {severity: critical}

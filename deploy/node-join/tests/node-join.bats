@@ -279,7 +279,7 @@ EOF
   [ ! -e "$SUPERDL_JOIN_STATE_DIR/token" ]
 }
 
-@test "旧服务端不下发 progress_token:全程沿用注册令牌,行为同升级前" {
+@test "旧服务端不下发 progress_token:全程沿用注册令牌" {
   python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json
 print(json.dumps({"pool":"hami","hostname_expected":None,"k8s_distro":"rke2","install_mirror":"cn",

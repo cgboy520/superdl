@@ -28,14 +28,15 @@
 ### 3.1 信息架构
 
 ```
-公开层    /(首页,未登录默认落地页;已登录照常显示,顶栏切「进入控制台」)· /login · /help · /legal/terms · /legal/privacy
+公开层    /(首页,未登录默认落地页;已登录照常显示,顶栏切「进入控制台」)· /login · /help · /legal/terms · /legal/privacy · /legal/deletion-notice
 控制台(全宽顶栏 + 浅色侧栏)
 ├─ 概览      /dashboard   # 实例数/余额/今日消费/未读通知 + 公告与预警横幅 + 快捷入口
 ├─ 算力市场  /market      ← 未登录可看,下单跳登录
 ├─ 容器实例  /instances   ← 登录后默认落地页
 ├─ 存储      /storage     # 数据盘 + 挂载全景
-├─ 费用中心  /billing     # 余额/充值/账单/收支明细
-└─ 账户设置  /settings    # SSH 公钥 / 通知阈值 / 实名 / 账号(改密·登出)
+├─ 费用中心  /billing     # 余额/充值/账单/收支明细/退款/发票
+├─ 支持      /support     # 自助排查 FAQ / 联系客服 / 我的工单
+└─ 账户设置  /settings    # SSH 公钥 / 通知阈值 / 实名 / 账号(改密·登出·注销)
 创建实例     /market/create/:skuId   ← 全页路由,不用弹窗
 ```
 
@@ -128,7 +129,7 @@ GB·月折日;注明计费依据为实例事件流水);余额不足时按钮变�
 ### 4.1 信息架构与角色
 
 导航:运营总览 `/` · 节点与 GPU `/nodes` · 集群 `/cluster` · SKU 与定价 `/skus` · 镜像与预热 `/images` · 租户与实例 `/tenants`
-· 财务对账 `/finance` · 审计日志 `/audit` · 平台配置 `/platform` · 系统设置 `/settings`。
+· 财务对账 `/finance` · 工单 `/tickets` · 审计日志 `/audit` · 平台配置 `/platform` · 系统设置 `/settings`。
 角色:admin(全部)/ ops(资源+实例)/ finance(财务区可写 —— 调账发起与复核、订单核验与补单,其余只读)/ readonly(全站只读)。
 
 高危操作(强制停止 / 冻结·解冻租户 / cordon·uncordon / 吊销注册令牌 / 忽略死信)统一走 `ReasonAction`:原因必填 → 二次确认 → 审计落库;调账原因必填,且要求第二管理员复核才入账,发起人不能自审。

@@ -1,4 +1,4 @@
-"""法务文档(F7):公开读取(回落 zh-CN)+ 注册同意存证 + 管理端版本流。
+"""法务文档:公开读取(回落 zh-CN)+ 注册同意存证 + 管理端版本流。
 
 版本流:新建 draft(基于当前 published 复制,version=max+1;同语言无 published 时以
 zh-CN published 为翻译底稿)→ 仅 draft 可编辑/发布/归档 → 发布事务把同 (doc_key, locale)
