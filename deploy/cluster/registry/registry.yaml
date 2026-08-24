@@ -57,12 +57,21 @@ spec:
       # 优先级压过租户 Pod,节点资源紧张时不与租户同级被驱逐。
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
-        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
-        node-role.kubernetes.io/control-plane: "true"
+        # 平台组件落点统一走 infra 标签(P0-1:与 control-plane 角色解耦,平台组件不再
+        # 绑死控制面)。full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
+        # node-label 自动携带;自建独立 infra 节点打同款标签 + CriticalAddonsOnly taint。
+        # GPU 节点严禁打此标签。
+        node-role.superdl.io/infra: "true"
       tolerations:
         # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      topologySpreadConstraints:
+        # 当前单副本不生效;扩副本(需同步改 RWX 卷)时即自带跨节点反亲和
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: registry}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

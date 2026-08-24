@@ -54,7 +54,7 @@ function ConsoleLayout() {
           theme="light"
           collapsible
           breakpoint="lg"
-          collapsedWidth={64}
+          collapsedWidth={0}
           style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
         >
           <Menu

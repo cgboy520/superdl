@@ -115,6 +115,10 @@ async def create_refund(
         raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     if order.status != "paid":
         raise AppError(ErrorCode.CONFLICT, key="billing.refundOrderNotPaid", http_status=409)
+    # 渠道冲正(用户已在微信/支付宝拒付拿回钱)后禁止平台侧二次退款出金——
+    # 冲正只打标记不动余额(支付侧策略),出金口必须在此拦截
+    if order.channel_reversed_at is not None:
+        raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
     if await _order_has_issued_invoice(session, order):
         raise AppError(ErrorCode.CONFLICT, key="billing.refundInvoiceIssued", http_status=409)
     if await _active_refund_of_order(session, order_no) is not None:
@@ -320,6 +324,13 @@ async def payout_refund(
     if req.review_by == operator_id:
         # 双人制衡硬要求(DB 还有 CHECK payout_not_reviewer 兜底)
         raise AppError(ErrorCode.CONFLICT, key="billing.refundPayoutSamePerson", http_status=409)
+    # 审批到打款之间订单可能被渠道冲正(webhook 随时可达),出金前必须复核:
+    # 用户已在渠道侧拿回钱的订单,平台再退一次 = 双重出金
+    order = (
+        await session.execute(select(Order).where(Order.order_no == req.order_no))
+    ).scalar_one_or_none()
+    if order is not None and order.channel_reversed_at is not None:
+        raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
     # 钱包行锁内再校验:审批后用户可能已消费,余额不足坚决不出金(不允许负余额核销)
     locked = await wallet.lock_wallet(session, req.user_id)
     if locked.balance < req.amount:

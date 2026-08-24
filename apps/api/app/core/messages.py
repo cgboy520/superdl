@@ -32,6 +32,9 @@ MESSAGES: dict[str, str] = {
     "account.smsCodeInvalid": "验证码错误或已过期",
     "account.smsSendFailed": "短信发送失败,请稍后重试",
     "account.smsTooFrequent": "发送过于频繁,请 {seconds} 秒后再试",
+    "account.captchaRequired": "请先完成人机校验",
+    "account.captchaVerifyFailed": "人机校验未通过,请重新完成验证后再试",
+    "account.captchaChannelError": "人机校验服务暂不可用,请稍后重试",
     "account.sshKeyDuplicate": "该公钥已添加过",
     "account.termsNotAccepted": "请先阅读并同意《用户协议》与《隐私政策》",
     "account.userFrozen": "账号已被冻结,请联系客服",
@@ -99,6 +102,7 @@ MESSAGES: dict[str, str] = {
     "billing.refundBalanceConsumed": (
         "余额已被消费,暂不能核销退款(当前余额 ¥{balance},应退 ¥{amount});请取消该退款单"
     ),
+    "billing.refundChannelReversed": "该订单支付已被支付渠道冲正(拒付),不可申请退款,请联系客服",
     "billing.refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
     "billing.refundNotFound": "退款单不存在",
     "billing.refundOrderNotPaid": "仅支付成功的充值订单可申请退款",
@@ -151,6 +155,7 @@ MESSAGES: dict[str, str] = {
     "disks.inUseDelete": "数据盘挂载中,请先释放对应实例",
     "disks.mountedElsewhere": "数据盘已挂载到其他实例",
     "disks.notMountable": "数据盘当前状态不可挂载",
+    "disks.quotaNotSynced": "存储配额同步中,请稍后重试;长时间未恢复请联系客服",
     "disks.shrinkForbidden": "数据盘只支持扩容,不支持缩容",
     "disks.sizeMax": "容量上限 {max} GB",
     "disks.sizeRange": "容量须在 {min}~{max} GB 之间",
@@ -195,6 +200,9 @@ MESSAGES: dict[str, str] = {
         "如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)"
     ),
     "orchestrator.releaseNeedsStopped": "关机后才能释放实例",
+    "orchestrator.realNameRequired": (
+        "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验"
+    ),
     "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
     "orchestrator.sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
     "orchestrator.sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",

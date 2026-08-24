@@ -85,3 +85,12 @@ async def ensure_not_rate_limited(key: str, *, max_attempts: int, window_seconds
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(max(1, row.retry_after))},
         )
+
+
+async def read_hits(key: str, *, window_seconds: float) -> int:
+    """窗口内当前命中数(只读,不计数):用于「成功登录前是否有失败记录」类判定。"""
+    async with get_sessionmaker()() as session:
+        row = (
+            await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
+        ).one_or_none()
+    return 0 if row is None else int(row.hits)

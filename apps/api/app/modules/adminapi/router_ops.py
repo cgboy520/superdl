@@ -1,15 +1,16 @@
 """管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信,自 router.py 拆分)。"""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.audit import mark_audited_read, set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
+from app.core.http import mark_idempotent_replay
 from app.core.params import TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.sqlutil import like_escape
@@ -333,9 +334,10 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
 
     from app.core.platform_config import get_effective_platform_config
     from app.core.ratelimit import check_rate_limit
-    from app.core.sms import SmsError, get_sms_channel
+    from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
+    await ensure_sms_platform_quota()  # 实发同样消耗平台预算池,与其他发送点同一闸门
     cfg = await get_effective_platform_config(session)
     channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"
@@ -381,14 +383,26 @@ def _announcement_out(a: Any) -> AnnouncementOut:
 
 @router.post("/announcements", dependencies=[require_roles("ops")], status_code=201)
 async def admin_publish_announcement(
-    body: AnnouncementCreate, admin: CurrentAdmin, session: DbSession, request: Request
+    body: AnnouncementCreate,
+    admin: CurrentAdmin,
+    session: DbSession,
+    request: Request,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> AnnouncementResultOut:
-    """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。"""
+    """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。
+    Idempotency-Key 重放不新建公告(否则全员收到重复站内信),回 200 + X-Idempotent-Replay。"""
     from app.modules.notify import service as notify_service
 
-    reached = await notify_service.publish_announcement(
-        session, title=body.title, content=body.content, created_by=admin.id
+    reached, created = await notify_service.publish_announcement(
+        session,
+        title=body.title,
+        content=body.content,
+        created_by=admin.id,
+        idempotency_key=idempotency_key,
     )
+    if not created:
+        mark_idempotent_replay(response)
     set_audit_target(request, "announcement", detail={"title": body.title, "reached": reached})
     return AnnouncementResultOut(reached=reached)
 

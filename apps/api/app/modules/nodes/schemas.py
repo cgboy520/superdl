@@ -10,7 +10,9 @@ HOSTNAME_PATTERN = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,
 
 class EnrollmentCreate(BaseModel):
     pool: Pool
-    hostname: str | None = Field(default=None, max_length=253, pattern=HOSTNAME_PATTERN)
+    # 签发时强制绑定期望主机名:令牌与机器一一对应,被盗令牌无法在其他机器上
+    # bootstrap 换出 join token(service 层对上报不符者直接 failed,防令牌串用)
+    hostname: str = Field(min_length=1, max_length=253, pattern=HOSTNAME_PATTERN)
     note: str | None = Field(default=None, max_length=128)
     nvme_devices: list[str] | None = Field(default=None, max_length=16)
     ttl_hours: int = Field(default=24, ge=1, le=168)

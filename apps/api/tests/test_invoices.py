@@ -69,6 +69,22 @@ async def eligible(client: AsyncClient, headers: dict) -> list[dict]:
 
 
 class TestEligible:
+    async def test_channel_reversed_excluded(self, client: AsyncClient, sm):
+        """被渠道冲正的 paid 订单不计入可开票额(钱已被渠道划回,对其开票=为未收到的款纳税)。"""
+        headers = await user_headers(client, "13700000203")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        await paid_order_at(client, sm, headers, "30.00", at1)
+        async with sm() as session:
+            await session.execute(
+                update(Order)
+                .where(Order.order_no == order["order_no"])
+                .values(channel_reversed_at=now_utc())
+            )
+            await session.commit()
+        rows = await eligible(client, headers)
+        assert [(r["period"], r["amount"]) for r in rows] == [(p1, "30.00")]
+
     async def test_grouped_by_period_and_summed(self, client: AsyncClient, sm):
         """Σpaid 按北京账期分组:两账期各聚合,倒序返回,金额为字符串。"""
         headers = await user_headers(client, "13700000201")
@@ -105,6 +121,67 @@ class TestEligible:
         order = await create_order(client, headers, "50.00")
         assert (await pay_mock(client, order["order_no"], "50.00")).status_code == 200
         assert await eligible(client, headers) == []
+
+
+class TestRefundDeduction:
+    """F1↔F2 口径:当期已打款退款从当期可开票额扣除(净实收),
+    否则用户在渠道侧拿回钱后平台仍按全额开票纳税,形成资损。"""
+
+    async def _refund_paid(
+        self, client, sm, headers, order_no: str, amount: str, payout_at
+    ) -> None:
+        """走完整退款流(申请→审批→打款),并把 payout_at 钉到指定时刻(构造账期归属)。"""
+        from app.modules.billing.models import RefundRequest
+        from tests.test_refunds import apply_refund, finance_pair
+
+        rid = (await apply_refund(client, headers, order_no, amount)).json()["id"]
+        reviewer, payer = await finance_pair(sm, client)
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-T"},
+            headers=payer,
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            await session.execute(
+                update(RefundRequest).where(RefundRequest.id == rid).values(payout_at=payout_at)
+            )
+            await session.commit()
+
+    async def test_refund_reduces_eligible_amount(self, client: AsyncClient, sm):
+        headers = await user_headers(client, "13700000204")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        await self._refund_paid(client, sm, headers, order["order_no"], "20.00", at1)
+        rows = await eligible(client, headers)
+        assert [(r["period"], r["amount"]) for r in rows] == [(p1, "30.00")]
+
+    async def test_full_refund_leaves_nothing_to_bill(self, client: AsyncClient, sm):
+        """全额退款后:账期不再出现在 eligible,create 也被服务端算额拦下。"""
+        headers = await user_headers(client, "13700000205")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        await self._refund_paid(client, sm, headers, order["order_no"], "50.00", at1)
+        assert await eligible(client, headers) == []
+        resp = await apply_invoice(client, headers, p1)
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.invoiceNothingToBill"
+
+    async def test_refund_in_other_period_not_deducted(self, client: AsyncClient, sm):
+        """退款打款落在别的账期:只扣打款所在账期,不误伤订单账期。"""
+        headers = await user_headers(client, "13700000206")
+        p1, at1 = past_period(1)
+        _p2, at2 = past_period(2)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        await self._refund_paid(client, sm, headers, order["order_no"], "20.00", at2)
+        rows = await eligible(client, headers)
+        assert [(r["period"], r["amount"]) for r in rows] == [(p1, "50.00")]
 
 
 class TestCreate:

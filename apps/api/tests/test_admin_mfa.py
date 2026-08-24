@@ -1,4 +1,4 @@
-"""管理端 TOTP MFA(W2-8):admin/finance 强制绑定,二要素登录,恢复码,重置救援。"""
+"""管理端 TOTP MFA:全部管理角色强制绑定,二要素登录,恢复码,重置救援。"""
 
 import pytest
 from httpx import AsyncClient
@@ -43,12 +43,12 @@ class TestMfaEnforcement:
         await _create(client, sm, "mfa-fin", "finance")
         assert (await _login(client, "mfa-fin")).json()["status"] == "mfa_setup"
 
-    async def test_ops_role_direct_token(self, client: AsyncClient, sm):
-        """非高权角色不强制:直发 token,登录路径不变。"""
+    async def test_ops_and_readonly_also_enforced(self, client: AsyncClient, sm):
+        """ops(可签节点接入令牌)与 readonly(可导出流水/审计)同样强制绑定 TOTP。"""
         await _create(client, sm, "mfa-ops", "ops")
-        body = (await _login(client, "mfa-ops")).json()
-        assert body["status"] == "ok"
-        assert body["access_token"]
+        assert (await _login(client, "mfa-ops")).json()["status"] == "mfa_setup"
+        await _create(client, sm, "mfa-ro", "readonly")
+        assert (await _login(client, "mfa-ro")).json()["status"] == "mfa_setup"
 
 
 class TestSetupFlow:

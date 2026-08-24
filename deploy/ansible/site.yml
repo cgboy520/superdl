@@ -22,6 +22,12 @@
     etcd_s3_access_key: ""
     etcd_s3_secret_key: ""
     agent_token: ""
+    # 控制面 HA(P0-1):定义 api_vip 即为 3 server 堆叠 etcd 集群渲染 tls-san
+    # (apiserver 证书覆盖 VIP + 全部 server IP;首台与后续 server 渲染产物一致)。
+    # 单 server 集群保持空值,server-config.yaml 的 tls-san 块维持注释。
+    api_vip: ""
+    server_ips: []                # 逐台 server IP,如 ["10.0.0.11","10.0.0.12","10.0.0.13"]
+    server_hostnames: []          # 可选:主机名 SAN,便于绕过 VIP 直连排障
   tasks:
     - name: rancher 配置目录
       file:
@@ -56,6 +62,33 @@
           {{ lookup('file', '../cluster/k3s/server-config.yaml')
              | replace('#agent-token: "CHANGE_ME_AGENT_TOKEN"', 'agent-token: "' + agent_token + '"') }}
       when: cluster_distro == 'k3s'
+
+    - name: HA 参数完备性(api_vip 与 server_ips 必须同定义,且奇数台 ≥3)
+      assert:
+        that:
+          - api_vip | length > 0
+          - server_ips | length >= 3
+          - (server_ips | length) % 2 == 1
+        fail_msg: >-
+          控制面 HA 需要 api_vip + 奇数台(≥3)server_ips(堆叠 etcd 法定人数);
+          单 server 集群请把 api_vip 留空(tls-san 维持注释)
+      when: cluster_distro == 'rke2' and (api_vip | length > 0 or server_ips | length > 0)
+
+    # HA(rke2 且定义 api_vip):tls-san 实块追加到配置末尾——模板内只是注释示例,
+    # 渲染一次成型,首台与后续 server 拿到逐字节一致的产物(配置漂移是 HA 大敌)
+    - name: HA 集群渲染 tls-san(api_vip + 全部 server 地址入 apiserver 证书)
+      set_fact:
+        server_config: >-
+          {{ server_config }}
+          tls-san:
+            - "{{ api_vip }}"
+          {% for ip in server_ips %}
+            - "{{ ip }}"
+          {% endfor %}
+          {% for hn in server_hostnames %}
+            - "{{ hn }}"
+          {% endfor %}
+      when: cluster_distro == 'rke2' and api_vip | length > 0
 
     - name: server config 无占位符残留
       assert:

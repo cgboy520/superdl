@@ -462,3 +462,16 @@ class TestEffectiveConfigCache:
                 {"real_name_required_for_recharge": "true", "real_name_provider": "aliyun"},
                 updated_by=None,
             )
+
+    async def test_prod_write_path_rejects_mock_realname_directly(self, sm, monkeypatch):
+        """prod 下 DB 覆盖层直写 real_name_provider=mock 也被拒(prod_forbidden 声明式拦截):
+        与 sms_provider 同口径——mock 对非 0000 结尾恒过,实名形同虚设。"""
+        from app.core.config import get_settings
+        from app.core.platform_config import set_platform_settings
+
+        monkeypatch.setattr(get_settings(), "environment", "prod", raising=False)
+        async with sm() as session:
+            with pytest.raises(ValueError, match="real_name_provider"):
+                await set_platform_settings(
+                    session, {"real_name_provider": "mock"}, updated_by=None
+                )

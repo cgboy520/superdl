@@ -1,14 +1,15 @@
-"""退款闭环(F1):申请口径/幂等/审批 → 打款出金/双人制衡/余额再校验/IDOR。"""
+"""退款闭环(F1):申请口径/幂等/审批 → 打款出金/双人制衡/余额再校验/IDOR/渠道冲正拦截。"""
 
 import re
 from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from app.core.timeutil import now_utc
 from app.modules.billing import service as billing_service
-from app.modules.billing.models import BalanceLedger, RefundRequest
+from app.modules.billing.models import BalanceLedger, Order, RefundRequest
 from tests.test_admin_ops import second_admin_headers
 from tests.test_catalog import admin_headers
 from tests.test_payment import create_order, pay_mock, user_headers
@@ -78,6 +79,23 @@ class TestApply:
         resp = await apply_refund(client, headers, order["order_no"])
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.refundOrderNotPaid"
+
+    async def test_channel_reversed_order_rejected(self, client: AsyncClient, sm):
+        """渠道冲正(用户已在渠道侧拒付拿回钱)的订单禁止平台二次退款出金。"""
+        headers = await user_headers(client, "13700000105")
+        order = await paid_order(client, headers, "50.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order)
+                .where(Order.order_no == order["order_no"])
+                .values(channel_reversed_at=now_utc())
+            )
+            await session.commit()
+        resp = await apply_refund(client, headers, order["order_no"], "50.00")
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.refundChannelReversed"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "50.00"  # 未出金
 
     async def test_amount_capped_by_min_of_order_and_balance(self, client: AsyncClient, sm):
         """金额上限 = min(订单额, 当前余额):超订单额与超余额各拒一次。"""
@@ -159,6 +177,35 @@ class TestAdminFlow:
             assert req is not None and req.wallet_entry_id == entry.id
             assert req.review_by is not None and req.payout_by is not None
             assert req.review_by != req.payout_by
+
+    async def test_payout_rejected_when_reversed_after_approval(self, client: AsyncClient, sm):
+        """审批通过后才被渠道冲正(webhook 随时可达):打款口必须复核并拒付。"""
+        headers = await user_headers(client, "13700000114")
+        order = await paid_order(client, headers, "50.00")
+        rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
+        reviewer, payer = await finance_pair(sm, client)
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200
+        async with sm() as session:  # 审批后、打款前渠道冲正到达
+            await session.execute(
+                update(Order)
+                .where(Order.order_no == order["order_no"])
+                .values(channel_reversed_at=now_utc())
+            )
+            await session.commit()
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-002"},
+            headers=payer,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.refundChannelReversed"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "50.00"  # 未出金
 
     async def test_payout_same_person_rejected(self, client: AsyncClient, sm):
         """双人制衡:打款登记人 == 审批人 → 409。"""

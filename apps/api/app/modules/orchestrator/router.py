@@ -4,8 +4,10 @@ from fastapi import APIRouter, Header, Query, Request, Response, status
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
+from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
+from app.core.platform_config import get_effective_platform_config
 from app.modules.account.deps import CurrentUser
 from app.modules.orchestrator import service
 from app.modules.orchestrator.schemas import (
@@ -29,6 +31,15 @@ async def create_instance(
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> InstanceOut:
+    # 与充值同一条强制实名开关:开启时算力开通同样拦截(监管对「算力服务」的要求
+    # 不低于「预收款」);此前只拦充值,不开通算力的匿名账号可绕过
+    cfg = await get_effective_platform_config(session)
+    if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
+        raise AppError(
+            ErrorCode.REAL_NAME_REQUIRED,
+            key="orchestrator.realNameRequired",
+            http_status=403,
+        )
     instance, created = await service.create_instance(
         session,
         user.id,

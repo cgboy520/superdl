@@ -6,9 +6,11 @@
 
 ## 使用(运维视角)
 
-1. 超管在管理端「平台配置 · 集群接入」录入一次:server 地址(RKE2 `https://<server-ip>:9345`,
-   k3s `https://<server-ip>:6443`)、join token(server 节点 node-token 文件:RKE2 在
-   `/var/lib/rancher/rke2/server/node-token`,k3s 在 `/var/lib/rancher/k3s/server/node-token`)、
+1. 超管在管理端「平台配置 · 集群接入」录入一次:server 地址(HA 集群填控制面 VIP:
+   RKE2 `https://<vip>:9345`;k3s 单 server 填 `https://<server-ip>:6443`)、join token
+   (专用 **agent token**:server config 的 `agent-token` 值;**禁止**填
+   `/var/lib/rancher/<rke2|k3s>/server/node-token`——server token 能再拉 server 进 etcd 环,
+   落到 GPU 节点等于交出控制面,见 deploy/cluster/README.md「server token 与 agent token」)、
    agent 版本、驱动版本;registries.yaml 留空则平台按 server 地址自动生成(高级覆盖可手填)。
 2. ops 在管理端「节点与 GPU · 添加节点」选池生成一次性命令(默认 24h 有效,只显示一次):
    ```bash

@@ -7,7 +7,12 @@
 import type { EnrollmentCreatePool } from './enrollmentCreatePool';
 
 export interface EnrollmentCreate {
-  hostname?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 253
+     * @pattern ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$
+     */
+  hostname: string;
   note?: string | null;
   nvme_devices?: string[] | null;
   pool: EnrollmentCreatePool;

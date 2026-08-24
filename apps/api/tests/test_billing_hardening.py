@@ -3,6 +3,7 @@
 每条用例对应一份审计论断的修复验收。
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -43,6 +44,99 @@ async def _fund(sm, user_id: int, amount: str) -> None:
     async with sm() as session:
         await wallet.credit(session, user_id, Decimal(amount), type_="recharge", remark="seed")
         await session.commit()
+
+
+class TestWalletLockGuards:
+    """钱路行锁变异守护:实测去掉 with_for_update 后 876 条测试只有 1 条会红,
+    这三条是必须存在的最低守护集(它们挂了 = 行锁被改回去了/锁内读到旧值)。"""
+
+    async def test_concurrent_credit_debit_no_lost_update(self, sm):
+        """同一钱包并发 credit/debit:无丢失更新,且 balance_after 链单调接续。"""
+        await _fund(sm, 1, "100.00")
+        gate = asyncio.Barrier(9)  # 4 credit + 4 debit + 主控,对齐起跑线
+
+        async def do_credit():
+            await gate.wait()
+            async with sm() as s:
+                await wallet.credit(s, 1, Decimal("10.00"), type_="recharge")
+                await s.commit()
+
+        async def do_debit():
+            await gate.wait()
+            async with sm() as s:
+                await wallet.debit(s, 1, Decimal("3.00"), allow_negative=True)
+                await s.commit()
+
+        await asyncio.gather(
+            do_credit(),
+            do_credit(),
+            do_credit(),
+            do_credit(),
+            do_debit(),
+            do_debit(),
+            do_debit(),
+            do_debit(),
+            gate.wait(),
+        )
+        async with sm() as s:
+            w = (await s.execute(select(Wallet).where(Wallet.user_id == 1))).scalar_one()
+            entries = (
+                (await s.execute(select(BalanceLedger).order_by(BalanceLedger.id))).scalars().all()
+            )
+        assert w.balance == Decimal("128.00")  # 100 + 4×10 − 4×3,一分不差
+        # 流水链:每行 balance_after = 上行 balance_after + 本行 amount;
+        # 首行是种子充值(0→100),链尾即当前余额
+        expected = Decimal("0.00")
+        for e in entries:
+            assert e.balance_after == expected + e.amount
+            expected = e.balance_after
+        assert expected == w.balance
+
+    async def test_payout_balance_recheck_reads_fresh_row(self, sm, client):
+        """打款锁内余额复检必须读到行锁后的新值:同会话早前装进 identity map 的旧
+        Wallet 副本不得让复检看见消费前余额(看见即误判放行,把钱包打成负的)。
+        注意:identity map 持弱引用,必须持强引用才能留住陈旧副本(get_balance
+        返回即被 GC,复现不了)。"""
+        from app.modules.adminapi.models import AdminUser
+        from app.modules.billing import refunds
+        from app.modules.billing.models import Order
+        from tests.test_payment import user_headers
+        from tests.test_refunds import apply_refund, finance_pair, paid_order
+
+        headers = await user_headers(client, "13700000116")
+        order = await paid_order(client, headers, "50.00")
+        rid = (await apply_refund(client, headers, order["order_no"], "40.00")).json()["id"]
+        reviewer, _payer_headers = await finance_pair(sm, client)
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as s:
+            uid = (
+                await s.execute(select(Order.user_id).where(Order.order_no == order["order_no"]))
+            ).scalar_one()
+            payer_id = (
+                await s.execute(select(AdminUser.id).where(AdminUser.username == "finance-payer"))
+            ).scalar_one()
+        # 持强引用把陈旧副本(50)留在 identity map,再由另一事务消费 30(行真值变 20):
+        # lock_wallet 若不重读行值,复检看到的仍是 50 → 误判放行
+        async with sm() as session:
+            _stale_wallet = (
+                await session.execute(select(Wallet).where(Wallet.user_id == uid))
+            ).scalar_one()
+            async with sm() as s2:
+                await wallet.debit(s2, uid, Decimal("30.00"), allow_negative=True)
+                await s2.commit()  # 行真值 20 < 应退 40
+            with pytest.raises(AppError) as exc:
+                await refunds.payout_refund(
+                    session, rid, channel="offline", ref="OFF-TOCTOU", operator_id=payer_id
+                )
+            assert exc.value.http_status == 409
+        async with sm() as s:
+            w = (await s.execute(select(Wallet).where(Wallet.user_id == uid))).scalar_one()
+        assert w.balance == Decimal("20.00")  # 未出金,未被写成 10(50−40 的错觉)
 
 
 async def _seed_disk(
@@ -376,7 +470,12 @@ class TestSettlementGaps:
         async with sm() as session:
             gaps = (await session.execute(select(SettlementGap))).scalars().all()
             bills = (await session.execute(select(BillHourly))).scalars().all()
-        assert [(g.kind, g.object_id, g.reason) for g in gaps] == [("hourly", bad, "dead_letter")]
+        gap_set = {(g.kind, g.object_id, g.reason) for g in gaps}
+        assert gap_set == {
+            # 前两轮水位线被坏实例卡住无法建立:watermark_missing 如实留痕(幂等,一轮一行)
+            ("hourly", 0, "watermark_missing"),
+            ("hourly", bad, "dead_letter"),
+        }
         assert [b.instance_id for b in bills] == [good]  # 好实例正常入账
 
         # 下一轮:死信窗口已被水位线越过,不再产生失败

@@ -34,7 +34,10 @@ echo "==> 2/4 set image + apply(tag 单点:kustomization.yaml images 的 CHANGE_
 kubectl kustomize "${K8S_DIR}" | sed "s/CHANGE_TAG/${TAG}/g" | kubectl apply -f -
 
 echo "==> 3/4 rollout status"
-for d in superdl-api superdl-worker superdl-web superdl-admin; do
+# worker 组件集群(P1-18):同一镜像的 5 个 Deployment 必须全部滚动到位,
+# 漏一个即旧代码继续领任务(队列兼容窗口靠任务幂等与 reaper 兜底,不替你做版本收敛)
+for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-node-mgr \
+  superdl-worker-prewarm superdl-worker-disk-ops superdl-web superdl-admin; do
   if ! kubectl -n "$NS" rollout status "deploy/${d}" --timeout=660s; then
     echo "::error::${d} 滚动超时/失败,按 deploy/README.md「回滚指引」回滚" >&2
     exit 1

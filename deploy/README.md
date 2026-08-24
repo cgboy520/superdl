@@ -19,18 +19,18 @@
 3. `scripts/release.sh vX.Y.Z`:
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`——**必须先于滚动**;`/readyz` 会比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都会在这一关现形;
    - 第 2 步 `kubectl apply -k`(image transformer 把 `CHANGE_TAG` 换成本次 tag);
-   - 第 3/4 步等四个 Deployment 滚动完成并冒烟,失败即退、按下方回滚指引处理。
+   - 第 3/4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成并冒烟,失败即退、按下方回滚指引处理。
 4. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
 ### 回滚指引
 
 - **应用回滚**(向后兼容窗口内,迁移只增不删,无需回滚库):
-  `kubectl -n superdl rollout undo deploy/superdl-api deploy/superdl-worker deploy/superdl-web deploy/superdl-admin`
-  (或 `scripts/release.sh <上一 tag>` 重放一遍——迁移 Job 对已追平的库是 no-op)。
+  `kubectl -n superdl rollout undo deploy/superdl-api deploy/superdl-worker deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm deploy/superdl-worker-disk-ops deploy/superdl-web deploy/superdl-admin`
+  (worker 组件集群(P1-18)共 5 个 Deployment,回滚必须成组;或 `scripts/release.sh <上一 tag>` 重放一遍——迁移 Job 对已追平的库是 no-op)。
 - **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型,见下节——正常
   流程下这类迁移要分两个发布窗口,窗口之间禁止回滚越过边界)。回滚前
   `git log <上一 tag>..<当前 tag> -- apps/api/alembic/versions/` 确认只有 expand 类迁移。
-- 回滚后核对:`kubectl -n superdl rollout status` × 4 + 冒烟两条(同 release.sh 第 4 步)。
+- 回滚后核对:`kubectl -n superdl rollout status` × 8(api + 5 个 worker 组件 + web/admin) + 冒烟两条(同 release.sh 第 4 步)。
 
 ### 迁移向前兼容窗口(expand-only)规范
 

@@ -21,7 +21,7 @@ export function CtaBanner() {
       <Typography.Title level={3} style={{ color: "#fff", marginTop: 0, marginBottom: 24 }}>
         {text}
       </Typography.Title>
-      <Link to={loggedIn ? "/market" : "/login"}>
+      <Link to={loggedIn ? "/market" : "/login"} search={loggedIn ? {} : { mode: "register" }}>
         <Button
           size="large"
           style={{

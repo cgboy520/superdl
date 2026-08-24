@@ -153,7 +153,7 @@ class TestEnrollmentStateMachine:
         async with sm() as session:
             enrollment, _token = await nodes_service.create_enrollment(
                 session,
-                EnrollmentCreate(pool="kata"),
+                EnrollmentCreate(pool="kata", hostname="kata-node-1"),
                 created_by=1,
                 idempotency_key=None,
             )
@@ -239,25 +239,23 @@ class TestEnrollmentStateMachine:
                 )
             assert exc.value.http_status == 404
 
-    async def test_bootstrap_binds_hostname_on_first_use(self, sm) -> None:
-        """新签发默认绑定:未预填 hostname 的令牌,首次 bootstrap 把上报主机名锁进登记。"""
+    async def test_hostname_required_at_creation(self, sm) -> None:
+        """签发时强制绑定主机名:不带 hostname 的创建请求直接被 schema 拒绝。"""
+        from pydantic import ValidationError
+
         await set_cluster_config(sm)
-        async with sm() as session:
-            _e, token = await nodes_service.create_enrollment(
-                session, EnrollmentCreate(pool="hami"), created_by=1, idempotency_key=None
-            )
-        async with sm() as session:
-            row, _cfg, _p = await nodes_service.bootstrap(
-                session, token, hostname="gpu-auto-1", os_info={}, gpus=[], client_ip=None
-            )
-            assert row.hostname == "gpu-auto-1"
+        with pytest.raises(ValidationError):
+            EnrollmentCreate.model_validate({"pool": "hami"})
 
     async def test_absolute_expiry_kills_inflight_token(self, sm) -> None:
         """令牌绝对过期:installing 也受 expires_at 约束(心跳不续命),过期落 expired 后 404。"""
         await set_cluster_config(sm)
         async with sm() as session:
             _e, token = await nodes_service.create_enrollment(
-                session, EnrollmentCreate(pool="hami"), created_by=1, idempotency_key=None
+                session,
+                EnrollmentCreate(pool="hami", hostname="gpu-ttl-1"),
+                created_by=1,
+                idempotency_key=None,
             )
         async with sm() as session:
             _row, _cfg, progress = await nodes_service.bootstrap(
@@ -290,7 +288,10 @@ class TestEnrollmentStateMachine:
         await set_cluster_config(sm)
         async with sm() as session:
             _e, token = await nodes_service.create_enrollment(
-                session, EnrollmentCreate(pool="mig"), created_by=1, idempotency_key=None
+                session,
+                EnrollmentCreate(pool="mig", hostname="mig-node-1"),
+                created_by=1,
+                idempotency_key=None,
             )
         async with sm() as session:
             _r, _c, progress = await nodes_service.bootstrap(
@@ -323,7 +324,10 @@ class TestEnrollmentStateMachine:
         # 失败上报 → failed 落 error;终态后再上报 → 404
         async with sm() as session:
             _e2, token2 = await nodes_service.create_enrollment(
-                session, EnrollmentCreate(pool="hami"), created_by=1, idempotency_key=None
+                session,
+                EnrollmentCreate(pool="hami", hostname="hami-node-9"),
+                created_by=1,
+                idempotency_key=None,
             )
         async with sm() as session:
             _r2, _c2, progress2 = await nodes_service.bootstrap(
@@ -363,7 +367,11 @@ class TestEnrollRouterAnonymous:
         await set_cluster_config(sm)
         ah = await admin_headers(sm, client, role="ops")
         created = (
-            await client.post("/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah)
+            await client.post(
+                "/api/admin/v1/node-enrollments",
+                json={"pool": "hami", "hostname": "gpu-a3-01"},
+                headers=ah,
+            )
         ).json()
         token = created["token"]
         bearer = {"Authorization": f"Bearer {token}"}
@@ -430,7 +438,11 @@ class TestEnrollRouterAnonymous:
         await set_cluster_config(sm)
         ah = await admin_headers(sm, client, role="ops")
         created = (
-            await client.post("/api/admin/v1/node-enrollments", json={"pool": "mig"}, headers=ah)
+            await client.post(
+                "/api/admin/v1/node-enrollments",
+                json={"pool": "mig", "hostname": "n2"},
+                headers=ah,
+            )
         ).json()
         eid = created["enrollment"]["id"]
         await client.post(
@@ -470,7 +482,9 @@ class TestEnrollReconciler:
             ah = await admin_headers(sm, client, role="ops")
             created = (
                 await client.post(
-                    "/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah
+                    "/api/admin/v1/node-enrollments",
+                    json={"pool": "hami", "hostname": "gpu-b1-02"},
+                    headers=ah,
                 )
             ).json()
             token = created["token"]
@@ -529,7 +543,9 @@ class TestEnrollReconciler:
             ah = await admin_headers(sm, client, role="ops")
             created = (
                 await client.post(
-                    "/api/admin/v1/node-enrollments", json={"pool": "kata"}, headers=ah
+                    "/api/admin/v1/node-enrollments",
+                    json={"pool": "kata", "hostname": "wrong-pool-node"},
+                    headers=ah,
                 )
             ).json()
             bearer = {"Authorization": f"Bearer {created['token']}"}
@@ -572,7 +588,9 @@ class TestEnrollReconciler:
             # pending 过期 → expired
             e1 = (
                 await client.post(
-                    "/api/admin/v1/node-enrollments", json={"pool": "mig"}, headers=ah
+                    "/api/admin/v1/node-enrollments",
+                    json={"pool": "mig", "hostname": "mig-stale-1"},
+                    headers=ah,
                 )
             ).json()
             async with sm() as session:
@@ -585,7 +603,9 @@ class TestEnrollReconciler:
             # installing 失联 → failed
             e2 = (
                 await client.post(
-                    "/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah
+                    "/api/admin/v1/node-enrollments",
+                    json={"pool": "hami", "hostname": "stale-node"},
+                    headers=ah,
                 )
             ).json()
             await client.post(
@@ -619,7 +639,9 @@ class TestEnrollReconciler:
             ah = await admin_headers(sm, client, role="ops")
             created = (
                 await client.post(
-                    "/api/admin/v1/node-enrollments", json={"pool": "hami"}, headers=ah
+                    "/api/admin/v1/node-enrollments",
+                    json={"pool": "hami", "hostname": "lock-node"},
+                    headers=ah,
                 )
             ).json()
             eid = created["enrollment"]["id"]

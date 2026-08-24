@@ -5,6 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { routeTree } from "./routeTree.gen";
+import { setupAuthCacheGuard } from "./lib/authCacheGuard";
 import { authStore, readTokens } from "./stores/auth";
 import "./i18n";
 import "./styles.css";
@@ -45,13 +46,8 @@ configureApiClient({
   },
 });
 
-// token 变化(登出/换号/他标签页同步)即清查询缓存:先取消在途查询再 clear,
-// 否则换号登录会先渲染上一个账号的余额与实例
-authStore.subscribe((state, prev) => {
-  if (prev.accessToken && prev.accessToken !== state.accessToken) {
-    void queryClient.cancelQueries().then(() => queryClient.clear());
-  }
-});
+// 登出即清查询缓存(静默续期不清,见 authCacheGuard 注释)
+setupAuthCacheGuard(queryClient);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

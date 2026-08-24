@@ -36,6 +36,7 @@ import {
 } from "../api/mutations";
 import { useMe, useMyDeletionRequest, useSshKeys } from "../api/queries";
 import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
+import { requestCaptchaToken } from "../lib/captcha";
 import { useFormat } from "../lib/format";
 import { requireAuth } from "../lib/guard";
 import { authStore } from "../stores/auth";
@@ -291,7 +292,17 @@ function PasswordModal({
             <Button
               disabled={countdown > 0}
               loading={sendCode.isPending}
-              onClick={() => sendCode.mutate({ phone, purpose: "reset_password" })}
+              onClick={() => {
+                // 人机校验先行(P1-17,与登录页同一闸门);SDK 不可用提示刷新
+                void (async () => {
+                  try {
+                    const captcha_token = await requestCaptchaToken();
+                    sendCode.mutate({ phone, purpose: "reset_password", captcha_token });
+                  } catch {
+                    message.error(t("login.captchaUnavailable"));
+                  }
+                })();
+              }}
             >
               {countdown > 0 ? `${countdown}s` : t("settings.getCode")}
             </Button>

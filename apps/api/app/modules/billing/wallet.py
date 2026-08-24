@@ -41,14 +41,28 @@ async def get_or_create_wallet(session: AsyncSession, user_id: int) -> Wallet:
 
 
 async def lock_wallet(session: AsyncSession, user_id: int) -> Wallet:
-    """FOR UPDATE 锁定钱包行(不存在则先创建,并发首建不炸外层事务)。"""
+    """FOR UPDATE 锁定钱包行(不存在则先创建,并发首建不炸外层事务)。
+
+    populate_existing 必须带:拿到行锁但读到 identity map 里的旧副本 = 锁内校验
+    (余额复检/燃烧率)对着陈旧值放行,等同 TOCTOU(实测:锁拿到、balance 是旧的)。
+    """
     wallet = (
-        await session.execute(select(Wallet).where(Wallet.user_id == user_id).with_for_update())
+        await session.execute(
+            select(Wallet)
+            .where(Wallet.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if wallet is None:
         await _insert_wallet_race_safe(session, user_id)
         wallet = (
-            await session.execute(select(Wallet).where(Wallet.user_id == user_id).with_for_update())
+            await session.execute(
+                select(Wallet)
+                .where(Wallet.user_id == user_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
         ).scalar_one()
     return wallet
 

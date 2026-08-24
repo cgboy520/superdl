@@ -410,7 +410,9 @@ step_registries() {
   [[ -n "$content" ]] || { echo "-- registries_yaml 为空,跳过(镜像缓存未配置)"; return 0; }
   mkdir -p "$RANCHER_DIR"
   printf '%s\n' "$content" > "$RANCHER_DIR"/registries.yaml
-  chmod 644 "$RANCHER_DIR"/registries.yaml
+  # 与 config.yaml 同口径 600:文件含仓库认证凭据(configs.auth),644 等于
+  # 把内网仓库口令放给节点上任意本地用户(含租户 Pod 逃逸后的立足点)
+  chmod 600 "$RANCHER_DIR"/registries.yaml
 }
 
 step_agent_config() {

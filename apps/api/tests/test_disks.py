@@ -74,6 +74,25 @@ class TestDiskCrud:
         )
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
+    async def test_expand_requires_balance(self, client, sm, fake):
+        """扩容与创建同一条燃烧率护栏:余额不足时不得把日费敞口免费放大(欠费用户
+        此前可把盘扩到 disk_max_gb,日结照扣,形成事实透支)。"""
+        headers, user_id, _key = await create_user_with_key(client, "13500000003")
+        await fund_wallet(sm, user_id)  # 100.00
+        disk = await create_disk(client, headers, size_gb=100)
+        await drain(sm)
+        # 余额压到接近零(模拟欠费):4096GB 的增量日费必然过不了护栏
+        async with sm() as session:
+            await wallet.debit(session, user_id, Decimal("99.99"), allow_negative=False)
+            await session.commit()
+        resp = await client.patch(
+            f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 4096}, headers=headers
+        )
+        assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
+        # 容量未被更新(校验与容量更新同一事务)
+        d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
+        assert d["size_gb"] == 100
+
     async def test_size_limits(self, client, sm, fake):
         headers, user_id, _key = await create_user_with_key(client, "13500000002")
         await fund_wallet(sm, user_id)
@@ -82,6 +101,42 @@ class TestDiskCrud:
 
 
 class TestMountLifecycle:
+    async def test_attach_rejected_until_quota_synced(self, client, sm, fake):
+        """配额未下发成功的盘不得挂载:JuiceFS 目录硬配额是唯一容量强制点,
+        无配额挂载 = 可写穿声明容量挤爆共享文件系统;同步完成后即可挂。"""
+        from tests.test_orchestrator_lifecycle import get_instance  # noqa: F401
+
+        headers, user_id, key_id = await create_user_with_key(client, "13500000013")
+        await fund_wallet(sm, user_id, "500.00")
+        sku_id = await create_test_sku(sm)
+        disk = await create_disk(client, headers)
+        # 不 drain:disk.quota 任务仍在途,quota_synced=false → 409
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "img",
+                "ssh_key_ids": [key_id],
+                "data_disk_id": disk["id"],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "disks.quotaNotSynced"
+        # 配额下发完成后挂载放行
+        await drain(sm)
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "img",
+                "ssh_key_ids": [key_id],
+                "data_disk_id": disk["id"],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
         """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不再挂到擦除中的旧 subPath。"""
         from tests.test_orchestrator_lifecycle import get_instance
@@ -90,6 +145,7 @@ class TestMountLifecycle:
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
+        await drain(sm)  # 配额下发完成(quota_synced=true)后才可挂载
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -136,6 +192,7 @@ class TestMountLifecycle:
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
+        await drain(sm)  # 配额下发完成后才可挂载
         resp = await client.post(
             "/api/v1/instances",
             json={
@@ -177,6 +234,7 @@ class TestMountLifecycle:
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
+        await drain(sm)  # 配额下发完成后才可挂载
 
         # 挂到实例 A
         resp = await client.post(

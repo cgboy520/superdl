@@ -170,6 +170,13 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     await _settle_pending_days(session, disk)  # 先按旧容量结清,扩容不追溯涨价
+    # 扩容护栏:增量日费必须过燃烧率校验,与容量更新/配额入队同一事务——
+    # 创建盘有 assert_can_afford,扩容此前绕过同一条护栏,
+    # 欠费用户可把日费敞口免费放大到 disk_max_gb
+    delta_daily = disk_daily_charge(disk.price_gb_month, new_size_gb) - disk_daily_charge(
+        disk.price_gb_month, disk.size_gb
+    )
+    await billing_service.assert_can_afford(session, user_id, additional_daily_disk=delta_daily)
     # size_gb 是计费与逻辑口径;同步重下发 JuiceFS 目录配额(失败留 quota_synced=false,
     # reconciler 对账环持续重派,新容量最终必然强制)
     disk.size_gb = new_size_gb
@@ -213,6 +220,11 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
         raise not_found("数据盘不存在")
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
+    # 配额未下发成功的盘不得挂载:JuiceFS 目录硬配额是唯一的容量强制点,
+    # 无配额挂载 = 用户可写穿声明容量挤爆共享文件系统。
+    # 扩容窗口内按旧额度继续限制(JuiceFS 侧配额未变),reconciler 重派成功后再挂
+    if not disk.quota_synced:
+        raise AppError(ErrorCode.CONFLICT, key="disks.quotaNotSynced", http_status=409)
     if disk.mounted_instance_id is not None and disk.mounted_instance_id != instance_id:
         raise AppError(ErrorCode.DISK_IN_USE, key="disks.mountedElsewhere")
     disk.mounted_instance_id = instance_id

@@ -1896,6 +1896,44 @@
         "title": "CapacityWarningOut",
         "type": "object"
       },
+      "CaptchaConfigOut": {
+        "description": "前端初始化验证码 SDK 所需的公开信息(身份标/场景非密;provider=mock 时前端\n直接回传固定放行串,不加载 SDK)。",
+        "properties": {
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          }
+        },
+        "required": [
+          "provider",
+          "scene_id",
+          "prefix"
+        ],
+        "title": "CaptchaConfigOut",
+        "type": "object"
+      },
       "ClusterComponentOut": {
         "description": "组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。",
         "properties": {
@@ -2384,17 +2422,11 @@
       "EnrollmentCreate": {
         "properties": {
           "hostname": {
-            "anyOf": [
-              {
-                "maxLength": 253,
-                "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+            "title": "Hostname",
+            "type": "string"
           },
           "note": {
             "anyOf": [
@@ -2441,7 +2473,8 @@
           }
         },
         "required": [
-          "pool"
+          "pool",
+          "hostname"
         ],
         "title": "EnrollmentCreate",
         "type": "object"
@@ -5168,6 +5201,7 @@
               "payment_alipay",
               "sms",
               "real_name",
+              "captcha",
               "compliance",
               "support",
               "cluster",
@@ -6732,6 +6766,18 @@
       },
       "SmsCodeRequest": {
         "properties": {
+          "captcha_token": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
+          },
           "phone": {
             "description": "中国大陆手机号",
             "pattern": "^1[3-9]\\d{9}$",
@@ -8179,8 +8225,26 @@
         ]
       },
       "post": {
-        "description": "公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。",
+        "description": "公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。\nIdempotency-Key 重放不新建公告(否则全员收到重复站内信),回 200 + X-Idempotent-Replay。",
         "operationId": "admin_publish_announcement_api_admin_v1_announcements_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13160,6 +13224,28 @@
         "summary": "Admin Update Ticket Status",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/auth/captcha-config": {
+      "get": {
+        "description": "验证码 2.0 客户端初始化配置(免鉴权;泄漏面无敏感——prefix/scene_id 本就写进前端 JS)。",
+        "operationId": "captcha_config_api_v1_auth_captcha_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptchaConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Captcha Config",
+        "tags": [
+          "account"
         ]
       }
     },

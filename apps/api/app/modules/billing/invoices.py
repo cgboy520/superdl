@@ -1,8 +1,9 @@
 """发票闭环(F2):用户按账期申请 → 财务人工开票(填发票号)/驳回 → 站内信告知。
 
 关键不变量:
-- 金额只由服务端计算:某账期可开票额 = Σ(该账期 paid 充值订单) − Σ(该账期
-  submitted + issued 申请)。客户端只提交账期与抬头,提交金额无效。
+- 金额只由服务端计算:某账期可开票额 = Σ(该账期 paid 充值订单,不含渠道冲正)
+  − Σ(该账期已打款退款) − Σ(该账期 submitted + issued 申请)。
+  客户端只提交账期与抬头,提交金额无效。
 - 按账期合并开具,一个自然月一张;仅可申请 < 当前北京月的账期(本月 paid 订单
   还可能变,不当月开票)。
 - 同一 (user_id, period) 仅一条非 rejected 申请(部分唯一索引兜底并发);
@@ -23,7 +24,7 @@ from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
 from app.core.timeutil import BILLING_DAY_OFFSET, now_utc
-from app.modules.billing.models import InvoiceRequest, Order
+from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
 from app.modules.billing.schemas import AdminInvoiceOut, InvoiceEligibleOut, InvoiceOut
 from app.modules.notify import service as notify_service
 
@@ -56,7 +57,8 @@ def _period_range_utc(period: str) -> tuple[datetime, datetime]:
 
 
 async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
-    """该用户该账期(北京月界)已支付充值订单总额。"""
+    """该用户该账期(北京月界)已支付充值订单总额(不含已被渠道冲正的订单——
+    冲正意味着钱已被渠道划回,对其开票等于为未收到的款纳税)。"""
     start, end = _period_range_utc(period)
     total = (
         await session.execute(
@@ -64,8 +66,29 @@ async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> 
                 Order.user_id == user_id,
                 Order.type == "recharge",
                 Order.status == "paid",
+                Order.channel_reversed_at.is_(None),
                 Order.paid_at >= start,
                 Order.paid_at < end,
+            )
+        )
+    ).scalar_one()
+    return Decimal(total)
+
+
+async def _period_refunded_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
+    """该账期(北京月界)已打款退款总额(status='paid',按 payout_at 归属)。
+
+    开票口径为净实收:当期已退的款不能再开票——否则用户在渠道侧拿回钱
+    (或平台打款退款)后,平台仍按全额开票纳税,形成资损。
+    """
+    start, end = _period_range_utc(period)
+    total = (
+        await session.execute(
+            select(func.coalesce(func.sum(RefundRequest.amount), 0)).where(
+                RefundRequest.user_id == user_id,
+                RefundRequest.status == "paid",
+                RefundRequest.payout_at >= start,
+                RefundRequest.payout_at < end,
             )
         )
     ).scalar_one()
@@ -126,6 +149,7 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
                     Order.user_id == user_id,
                     Order.type == "recharge",
                     Order.status == "paid",
+                    Order.channel_reversed_at.is_(None),  # 同 _period_paid_sum:冲正单不可开
                     Order.paid_at.is_not(None),
                 )
                 .group_by(period_col)
@@ -148,13 +172,37 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
         .tuples()
         .all()
     )
+    # 已打款退款按 payout_at 归账期,从对应账期的可开票额扣除(净实收口径)
+    refund_period_col = func.to_char(
+        func.timezone("Asia/Shanghai", RefundRequest.payout_at), "YYYY-MM"
+    )
+    refunded_rows = (
+        (
+            await session.execute(
+                select(refund_period_col, func.sum(RefundRequest.amount))
+                .where(
+                    RefundRequest.user_id == user_id,
+                    RefundRequest.status == "paid",
+                    RefundRequest.payout_at.is_not(None),
+                )
+                .group_by(refund_period_col)
+            )
+        )
+        .tuples()
+        .all()
+    )
     active_map = {p: Decimal(a) for p, a in active_rows}
+    refunded_map = {p: Decimal(a) for p, a in refunded_rows}
     current = current_beijing_period()
     out: list[InvoiceEligibleOut] = []
     for period, paid_sum in paid_rows:
         if period >= current:
             continue  # 当月账期不可开:paid 订单还可能变
-        remaining = as_amount(Decimal(paid_sum) - active_map.get(period, Decimal("0")))
+        remaining = as_amount(
+            Decimal(paid_sum)
+            - refunded_map.get(period, Decimal("0"))
+            - active_map.get(period, Decimal("0"))
+        )
         if remaining > 0:
             out.append(InvoiceEligibleOut(period=period, amount=remaining))
     out.sort(key=lambda item: item.period, reverse=True)
@@ -192,9 +240,10 @@ async def create_invoice(
             params={"period": period},
             http_status=409,
         )
-    # 金额服务端计算(客户端提交金额无效):Σpaid − Σ(submitted+issued)
+    # 金额服务端计算(客户端提交金额无效):Σpaid − Σ已打款退款 − Σ(submitted+issued)
     paid = await _period_paid_sum(session, user_id, period)
-    amount = as_amount(paid - await _period_active_sum(session, user_id, period))
+    refunded = await _period_refunded_sum(session, user_id, period)
+    amount = as_amount(paid - refunded - await _period_active_sum(session, user_id, period))
     if amount <= 0:
         raise AppError(
             ErrorCode.CONFLICT,

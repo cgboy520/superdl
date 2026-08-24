@@ -27,16 +27,39 @@ async def login(client: AsyncClient, username: str, password: str):
     )
 
 
+# TOTP 密钥注册表(进程级):同一账号多次 login_headers(绑定后重登录)共享密钥
+_TOTP_SECRETS: dict[str, str] = {}
+
+
 async def login_headers(client: AsyncClient, username: str, password: str) -> dict[str, str]:
-    from tests.test_catalog import complete_mfa_setup
+    """登录并拿到 token:全角色强制 TOTP 后,首次绑定走 setup 流并记下密钥,
+    已绑定账号走二要素验证流(密钥见 _TOTP_SECRETS)。"""
+    import pyotp
 
     resp = await login(client, username, password)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     if body["status"] == "ok":
         token = body["access_token"]
-    else:
-        token = await complete_mfa_setup(client, body["ticket"])  # admin/finance 强制 TOTP
+    elif body["status"] == "mfa_setup":
+        ticket = body["ticket"]
+        begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
+        assert begin.status_code == 200, begin.text
+        secret = begin.json()["secret"]
+        _TOTP_SECRETS[username] = secret
+        confirm = await client.post(
+            "/api/admin/v1/auth/mfa/setup/confirm",
+            json={"ticket": ticket, "code": pyotp.TOTP(secret).now()},
+        )
+        assert confirm.status_code == 200, confirm.text
+        token = confirm.json()["access_token"]
+    else:  # mfa_required:已绑定账号的二要素登录
+        verify = await client.post(
+            "/api/admin/v1/auth/login/mfa",
+            json={"ticket": body["ticket"], "code": pyotp.TOTP(_TOTP_SECRETS[username]).now()},
+        )
+        assert verify.status_code == 200, verify.text
+        token = verify.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 

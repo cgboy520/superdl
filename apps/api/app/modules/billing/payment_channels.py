@@ -251,9 +251,16 @@ class WechatChannel:
         trade_state = resource.get("trade_state")
         amount_obj = resource.get("amount")
         total = amount_obj.get("total") if isinstance(amount_obj, dict) else None
+        currency = amount_obj.get("currency") if isinstance(amount_obj, dict) else None
         if not out_trade_no or not transaction_id or not trade_state or total is None:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            )
+        # 官方验证清单:币种必须是人民币——商户号/appid 都校了,币种是同一清单上的一行,
+        # 漏校则外币通知的金额会被按 CNY 入账
+        if currency != "CNY":
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
             )
         return CallbackResult(
             order_no=out_trade_no,
@@ -402,6 +409,12 @@ class AlipayChannel:
             )
         # seller_id 缺失或不符一律拒收(当面付通知必带 seller_id;缺失即视为伪造/串号)
         if not self._seller_id or params.get("seller_id") != self._seller_id:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
+            )
+        # 币种防御:境内当面付结算恒为 CNY(通知本身不带币种字段),
+        # 一旦出现外币结算字段(trans_currency/currency)且非 CNY 即拒收,防金额被错币种入账
+        if params.get("trans_currency", "CNY") != "CNY" or params.get("currency", "CNY") != "CNY":
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )

@@ -228,7 +228,7 @@ def _wx_resource(**overrides) -> dict:
         "out_trade_no": "SDL20260819000002",
         "transaction_id": "4200001234202608190000000001",
         "trade_state": "SUCCESS",
-        "amount": {"total": 10000},
+        "amount": {"total": 10000, "currency": "CNY"},
         **overrides,
     }
 
@@ -241,6 +241,16 @@ class TestWechatCallbackSignature:
         assert result.order_no == "SDL20260819000002"
         assert str(result.amount) == "100"
         assert result.success is True
+
+    async def test_foreign_currency_rejected(self, keypair):
+        """币种是官方验证清单上的一行:外币通知的金额会被按 CNY 入账,必须拒收。"""
+        priv, _pub = keypair
+        headers, body = _wechat_notify(
+            priv, _wx_resource(amount={"total": 10000, "currency": "USD"})
+        )
+        with pytest.raises(AppError) as exc:
+            await _wechat_channel(keypair).parse_callback(headers, body)
+        assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
 
     async def test_tampered_body_rejected(self, keypair):
         priv, _pub = keypair

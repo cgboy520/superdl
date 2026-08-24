@@ -7,6 +7,13 @@ metadata:
   name: superdl
   labels:
     app.kubernetes.io/part-of: superdl
+    # PSA(安全P0-1):audit 先行观察 ≥2 周再转 enforce(与 tenant-* 的 audit/warn 档对齐)。
+    # 平台 Deployment/Job 已全部 restricted 合规(runAsNonRoot + drop ALL + seccomp);
+    # 已知偏差:worker 动态建的预热/磁盘配额 Job 未显式 runAsNonRoot,转 enforce 前须先补。
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
 ---
 apiVersion: v1
 kind: ConfigMap

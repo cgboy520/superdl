@@ -36,6 +36,7 @@ SettingGroup = Literal[
     "payment_alipay",
     "sms",
     "real_name",
+    "captcha",
     "compliance",
     "support",
     "cluster",
@@ -136,12 +137,39 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
     ),
     # ---- 实名认证(阿里云实人认证·手机号三要素核验) ----
-    "real_name_provider": SettingSpec("real_name", "choice", choices=("mock", "aliyun")),
+    "real_name_provider": SettingSpec(
+        "real_name",
+        "choice",
+        choices=("mock", "aliyun"),
+        prod_forbidden=("mock",),
+        hint="生产环境不得切回 mock(mock 对非 0000 结尾恒过,实名形同虚设)",
+    ),
     "real_name_required_for_recharge": SettingSpec("real_name", "bool"),
     "real_name_access_key_id": SettingSpec(
         "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
     ),
     "real_name_access_key_secret": SettingSpec("real_name", "secret", max_len=128),
+    # ---- 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸;防分布式脚本刷码) ----
+    "captcha_provider": SettingSpec(
+        "captcha",
+        "choice",
+        choices=("mock", "aliyun"),
+        prod_forbidden=("mock",),
+        hint="生产环境不得切回 mock(无校验,短信口子对脚本敞开)",
+    ),
+    "captcha_scene_id": SettingSpec(
+        "captcha", "str", max_len=64, hint="场景 ID(控制台·场景管理;服务端验签强制写入防篡改)"
+    ),
+    "captcha_prefix": SettingSpec(
+        "captcha", "str", max_len=64, hint="身份标(控制台·概览;前端 SDK 初始化用,公开信息)"
+    ),
+    "captcha_access_key_id": SettingSpec(
+        "captcha",
+        "str",
+        pattern=r"[0-9A-Za-z]{16,30}",
+        hint="AccessKey ID(建议独立 RAM 子账号,仅授 AliyunYundunAFSFullAccess)",
+    ),
+    "captcha_access_key_secret": SettingSpec("captcha", "secret", max_len=128),
     # ---- 合规备案(站点页脚展示) ----
     "icp_number": SettingSpec(
         "compliance", "str", max_len=64, hint="ICP 备案号,形如 京ICP备2026012345号-1"
@@ -182,7 +210,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "cluster",
         "str",
         pattern=r"https://[0-9A-Za-z.\-\[\]:]+:\d{1,5}",
-        hint="RKE2 supervisor 形如 https://<server-ip>:9345;k3s 为 https://<server-ip>:6443",
+        hint="HA 集群填控制面 VIP(P0-1):RKE2 形如 https://<vip>:9345;k3s 单 server 填 https://<server-ip>:6443",
     ),
     "cluster_join_token": SettingSpec(
         "cluster",

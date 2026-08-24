@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.captcha import CaptchaError, get_captcha_channel
 from app.core.config import get_settings
 from app.core.crypto import hash_sms_code
 from app.core.db import get_sessionmaker
@@ -18,7 +19,12 @@ from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
-from app.core.ratelimit import RateLimitCounter, check_rate_limit, ensure_not_rate_limited
+from app.core.ratelimit import (
+    RateLimitCounter,
+    check_rate_limit,
+    ensure_not_rate_limited,
+    read_hits,
+)
 from app.core.security import (
     create_token,
     decode_token,
@@ -26,7 +32,7 @@ from app.core.security import (
     hash_password_sync,
     verify_password,
 )
-from app.core.sms import SmsError, get_sms_channel
+from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.sqlutil import like_escape
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.account.models import (
@@ -71,13 +77,35 @@ async def _clear_login_failures(key: str) -> None:
 
 
 async def send_sms_code(
-    session: AsyncSession, phone: str, purpose: str, *, client_ip: str | None = None
+    session: AsyncSession,
+    phone: str,
+    purpose: str,
+    *,
+    client_ip: str | None = None,
+    captcha_token: str | None = None,
 ) -> None:
     settings = get_settings()
     # 发送尝试只按 IP 限流;手机号日配额在消费侧计(见 SMS_CONSUME_DAILY_MAX)。
     await check_rate_limit(
         f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
     )
+    # 人机校验(P1-17):分布式脚本可轮换 IP/号码池绕过全部单点限流,
+    # 行为验证码是唯一纵深。闸门 fail-closed:渠道故障一律 502,宁停服务不放轰炸。
+    if captcha_token is None:
+        raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
+    try:
+        captcha_ok = await (await get_captcha_channel(session)).verify(captcha_token, client_ip)
+    except CaptchaError as exc:
+        logger.error("captcha_channel_error", error=str(exc))
+        raise AppError(
+            ErrorCode.CAPTCHA_CHANNEL_ERROR,
+            key="account.captchaChannelError",
+            http_status=status.HTTP_502_BAD_GATEWAY,
+        ) from exc
+    if not captcha_ok:
+        raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
+    # 平台级闸门:分布式 IP/号码池可绕过单点限流,预算池兜底(计数即准入,不落库无效验证码)
+    await ensure_sms_platform_quota()
     # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长;消费一条即归零。
     recent = list(
         (
@@ -255,6 +283,14 @@ async def login(
             await ensure_not_rate_limited(
                 f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
             )
+            # 纯账号维度:撞库可以换 IP,但换不了目标账号——
+            # 只按 IP+账号的桶在 N 个源地址下是 5×N 次/5 分钟,必须有账号级锁定
+            await ensure_not_rate_limited(
+                f"user-login-acct:{phone}", max_attempts=10, window_seconds=900.0
+            )
+            await ensure_not_rate_limited(
+                f"user-login-acct-daily:{phone}", max_attempts=30, window_seconds=86400.0
+            )
             stored = (
                 user.password_hash if (user is not None and user.password_hash) else _DUMMY_HASH
             )
@@ -273,9 +309,37 @@ async def login(
             await check_rate_limit(
                 f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
             )
+            # 账号维度同计(15 分钟窗 + 日窗阶梯):换 IP 也逃不掉目标账号的锁定
+            await check_rate_limit(
+                f"user-login-acct:{phone}", max_attempts=10, window_seconds=900.0
+            )
+            await check_rate_limit(
+                f"user-login-acct-daily:{phone}", max_attempts=30, window_seconds=86400.0
+            )
         raise
     # 凭据正确即清零该账号桶的失败计数(IP 桶不清:撞库不会产生成功登录)
     await _clear_login_failures(f"user-login:{client_ip or '-'}:{phone}")
+    # 异常登录通知:账号桶在窗口内有失败记录而本次成功——疑似被撞库,通知本人;
+    # 随后清零账号桶(正常用户的预算不被攻击者的失败计数拖垮)
+    if user is not None and password is not None:
+        acct_hits = await read_hits(f"user-login-acct:{phone}", window_seconds=900.0)
+        if acct_hits > 0:
+            from app.modules.notify import service as notify_service
+
+            await notify_service.notify(
+                session,
+                user.id,
+                type_="account",
+                title="检测到异常登录尝试",
+                content=(
+                    f"您的账号近 15 分钟内有 {acct_hits} 次登录失败记录,本次登录成功。"
+                    "若非本人操作,请立即修改密码并检查账号安全。"
+                ),
+                severity="warning",
+                dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
+            )
+            await session.commit()  # 通知落库(password 路径此前无提交点)
+        await _clear_login_failures(f"user-login-acct:{phone}")
     if user.status == "deleted":
         raise AppError(
             ErrorCode.UNAUTHORIZED,

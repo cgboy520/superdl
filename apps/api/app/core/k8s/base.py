@@ -27,6 +27,15 @@ def instance_disk_pvc_name(instance_name: str) -> str:
     return f"{instance_name}-root"
 
 
+def instance_env_secret_name(instance_name: str) -> str:
+    """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等)。
+
+    与实例同生命周期(delete_instance 一并删除);Pod spec 只以 secretKeyRef 引用,
+    明文不落 spec(不进 etcd 明文面/审计快照,只读 SA 的 pods:get 也读不到)。
+    """
+    return f"jupyter-{instance_name}"
+
+
 @dataclass(frozen=True)
 class InstancePodSpec:
     """创建一个租户实例所需的全部 K8s 参数(由 orchestrator + gpu_adapter 产出)。"""
@@ -44,7 +53,10 @@ class InstancePodSpec:
     disk_gb: int
     ssh_node_port: int  # LB/NodePort 端口池分配
     jupyter_host: str  # <uuid>.app.<域名>,Ingress host 路由
-    env: dict[str, str] = field(default_factory=dict)  # 含 JUPYTER_TOKEN
+    env: dict[str, str] = field(default_factory=dict)  # 非敏感环境变量
+    # 敏感环境变量(如 JUPYTER_TOKEN):不落 Pod spec(明文 env 会进 etcd/审计日志/
+    # 任何 pods:get 身份),由编排层写 per-instance Secret,Pod 以 secretKeyRef 引用
+    secret_env: dict[str, str] = field(default_factory=dict)
     authorized_keys: tuple[str, ...] = ()
     node_selector: dict[str, str] = field(default_factory=dict)  # 池标签
     data_disk_subpath: str | None = None  # JuiceFS 子路径(挂 /root/data)

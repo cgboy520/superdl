@@ -42,7 +42,7 @@ import {
   usePolicies,
 } from "../api/queries";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
-import { TableErrorEmpty } from "../components/QueryState";
+import { moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
@@ -499,7 +499,10 @@ function InstancesPage() {
                   </span>
                 </Space>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t("instances.todayCost", { amount: formatMoney(todayByInstance.get(r.id)) })}
+                  {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
+                  {t("instances.todayCost", {
+                    amount: moneyOr(formatMoney(todayByInstance.get(r.id)), daily != null),
+                  })}
                 </Typography.Text>
               </Space>
             ),

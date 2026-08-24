@@ -67,9 +67,12 @@ function CreatePage() {
   const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus({});
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
 
-  const { data: images } = useImages();
-  const { data: keys } = useSshKeys();
-  const { data: disks } = useDisks();
+  const imagesQ = useImages();
+  const keysQ = useSshKeys();
+  const disksQ = useDisks();
+  const { data: images } = imagesQ;
+  const { data: keys } = keysQ;
+  const { data: disks } = disksQ;
   const { data: wallet } = useWallet();
   const { data: policies } = usePolicies();
 
@@ -324,14 +327,21 @@ function CreatePage() {
               label: t("create.tabPlatform"),
               children: (
                 <Space orientation="vertical" style={{ width: "100%" }}>
-                  <Cascader
-                    style={{ width: "100%" }}
-                    options={cascade}
-                    value={platformImage}
-                    onChange={(v) => setPlatformImage(v as string[])}
-                    placeholder={t("create.cascadePlaceholder")}
-                  />
-                  <Typography.Text type="secondary">{t("create.prewarmed")}</Typography.Text>
+                  {imagesQ.isError ? (
+                    // 镜像清单加载失败绝不伪装成「没有可用镜像」(购买路径硬停)
+                    <DataErrorAlert onRetry={() => void imagesQ.refetch()} />
+                  ) : (
+                    <>
+                      <Cascader
+                        style={{ width: "100%" }}
+                        options={cascade}
+                        value={platformImage}
+                        onChange={(v) => setPlatformImage(v as string[])}
+                        placeholder={t("create.cascadePlaceholder")}
+                      />
+                      <Typography.Text type="secondary">{t("create.prewarmed")}</Typography.Text>
+                    </>
+                  )}
                 </Space>
               ),
             },
@@ -400,21 +410,25 @@ function CreatePage() {
               </Typography.Text>
             </>
           )}
-          {diskMode === "existing" && (
-            <Select
-              style={{ width: 320 }}
-              placeholder={t("create.selectDiskPlaceholder")}
-              value={existingDiskId}
-              onChange={setExistingDiskId}
-              options={(disks ?? [])
-                .filter((d) => d.status === "active" && d.mounted_instance_id == null)
-                .map((d) => ({
-                  value: d.id,
-                  label: `${d.name}(${formatSizeGb(d.size_gb)})`,
-                }))}
-              notFoundContent={t("create.noMountableDisks")}
-            />
-          )}
+          {diskMode === "existing" &&
+            (disksQ.isError ? (
+              // 盘清单加载失败绝不伪装成「没有可挂载的盘」
+              <DataErrorAlert onRetry={() => void disksQ.refetch()} />
+            ) : (
+              <Select
+                style={{ width: 320 }}
+                placeholder={t("create.selectDiskPlaceholder")}
+                value={existingDiskId}
+                onChange={setExistingDiskId}
+                options={(disks ?? [])
+                  .filter((d) => d.status === "active" && d.mounted_instance_id == null)
+                  .map((d) => ({
+                    value: d.id,
+                    label: `${d.name}(${formatSizeGb(d.size_gb)})`,
+                  }))}
+                notFoundContent={t("create.noMountableDisks")}
+              />
+            ))}
           <Typography.Text type="secondary">
             {t("create.diskIndependentNote")}
           </Typography.Text>
@@ -422,7 +436,11 @@ function CreatePage() {
       </Card>
 
       <Card title={t("create.sshCard")}>
-        {(keys ?? []).length === 0 ? (
+        {keysQ.isError ? (
+          // SSH key 查询失败绝不伪装成「你还没有密钥」(老客户会看到添加表单,
+          // 提交又被 sshKeyDuplicate 拒绝——购买路径硬停)
+          <DataErrorAlert onRetry={() => void keysQ.refetch()} />
+        ) : (keys ?? []).length === 0 ? (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert type="warning" showIcon title={t("copy.sshKeyOnly")} />
             <Form

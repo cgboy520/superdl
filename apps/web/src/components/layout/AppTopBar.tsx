@@ -68,7 +68,7 @@ export function AppTopBar({
               <Link to="/login" className="topbar-link">
                 {t("topbar.login")}
               </Link>
-              <Link to="/login">
+              <Link to="/login" search={{ mode: "register" }}>
                 <Button
                   style={{
                     background: "#fff",

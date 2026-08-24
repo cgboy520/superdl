@@ -20,8 +20,12 @@
 aws s3 ls s3://superdl-pg-backup/daily/ --endpoint-url $S3_ENDPOINT | tail -5
 aws s3 cp s3://superdl-pg-backup/daily/superdl-<ts>.dump /tmp/ --endpoint-url $S3_ENDPOINT
 
-# 2. 停写入(摘 api 流量 + 停 worker),防止恢复期间产生分叉账
-kubectl -n superdl scale deploy superdl-api superdl-worker --replicas=0
+# 2. 停写入(摘 api 流量 + 停全部 worker 组件),防止恢复期间产生分叉账
+#    (P1-18 后 worker 共 5 个 Deployment:core/tenant-mgr/node-mgr/prewarm/disk-ops,
+#     漏停任何一个,outbox 任务仍在写库)
+kubectl -n superdl scale deploy superdl-api --replicas=0
+kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr \
+  superdl-worker-node-mgr superdl-worker-prewarm superdl-worker-disk-ops --replicas=0
 
 # 3. 恢复到新库(禁止原地覆盖),核验后再切换连接串
 createdb superdl_restore
@@ -31,10 +35,12 @@ pg_restore -d superdl_restore --no-owner /tmp/superdl-<ts>.dump
 psql superdl_restore -c "SELECT max(created_at) FROM balance_ledger"
 psql superdl_restore -c "SELECT version_num FROM alembic_version"
 
-# 5. 切换 SUPERDL_DATABASE_URL → superdl_restore,起 api(worker 后起)
+# 5. 切换 SUPERDL_DATABASE_URL → superdl_restore,起 api(worker 组件后起)
 kubectl -n superdl scale deploy superdl-api --replicas=2
-# 冒烟通过后
-kubectl -n superdl scale deploy superdl-worker --replicas=1
+# 冒烟通过后(worker 组件按 03-worker.yaml 的副本定义恢复)
+kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr --replicas=2
+kubectl -n superdl scale deploy superdl-worker-node-mgr superdl-worker-prewarm \
+  superdl-worker-disk-ops --replicas=1
 
 # 6. 公告用户:恢复点之后的充值以渠道对账单为准,走管理端「补单」逐笔补入
 ```

@@ -37,6 +37,31 @@ class TestAnnouncementAdmin:
         assert all(r["status"] == "published" for r in rows)
         assert all(r["reached"] == 0 for r in rows)  # 无注册用户时触达 0
 
+    async def test_publish_idempotent_replay_no_duplicate_fanout(self, client: AsyncClient, sm):
+        """HTTP 层重试(网络丢响应):同 Idempotency-Key 重放不新建公告,
+        否则 dedup 域随新 id 更换,全体租户收到重复站内信。"""
+        uh = await user_headers(client, "13700000402")
+        ops = await admin_headers(sm, client, role="ops")
+        h = {**ops, "Idempotency-Key": "ann-idem-1"}
+        r1 = await client.post(
+            "/api/admin/v1/announcements",
+            json={"title": "存储维护通知", "content": "本周六 02:00-04:00 维护"},
+            headers=h,
+        )
+        r2 = await client.post(
+            "/api/admin/v1/announcements",
+            json={"title": "存储维护通知", "content": "本周六 02:00-04:00 维护"},
+            headers=h,
+        )
+        assert r1.status_code == 201
+        assert r2.status_code == 200
+        assert r2.headers["x-idempotent-replay"] == "true"
+        assert r2.json()["reached"] == r1.json()["reached"]
+        ids = await _announcement_ids(client, ops)
+        assert len(ids) == 1  # 只落了一条公告
+        notes = (await client.get("/api/v1/notifications", headers=uh)).json()["items"]
+        assert len([n for n in notes if n["type"] == "announcement"]) == 1  # 用户只收到一条
+
     async def test_list_read_roles(self, client: AsyncClient, sm):
         for role in ("ops", "finance", "readonly"):
             headers = await admin_headers(sm, client, role=role)

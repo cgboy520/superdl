@@ -34,6 +34,8 @@ class Announcement(Base):
     """公告(F6):管理端发布/撤回的公告级记录;用户端触达走 Notification fanout。
 
     fanout 行 dedup_key = f"ann:{id}:{user_id}":撤回按此前缀精确收回,发布重试逐用户幂等。
+    idempotency_key:发布接口的幂等键(唯一约束兜底并发)——不带它时 HTTP 重试会产生
+    新公告 id(新 dedup 前缀),全体租户收到重复公告。
     """
 
     __tablename__ = "announcements"
@@ -45,6 +47,7 @@ class Announcement(Base):
     status: Mapped[str] = mapped_column(String(16), default="published")
     reached: Mapped[int] = mapped_column(default=0)  # 发布时触达的 active 用户数
     created_by: Mapped[int]  # admin_users.id
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     revoked_by: Mapped[int | None]  # admin_users.id
     revoked_at: Mapped[datetime | None]

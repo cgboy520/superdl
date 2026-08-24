@@ -126,6 +126,10 @@ const GROUP_INTRO: Record<string, string> = {
   real_name:
     "阿里云实人认证 · 手机号三要素核验(简版,Mobile3MetaSimpleVerify):开通「要素核验」服务并授权 RAM 子账号。" +
     "核验通过即标记已实名;身份证号仅存脱敏串,原文即用即弃。",
+  captcha:
+    "阿里云验证码 2.0(/auth/sms-code 前置人机校验,防分布式脚本刷码):开通验证码 2.0 后," +
+    "在控制台「场景管理」新建 Web/H5 场景取场景 ID,「概览」页取身份标;" +
+    "建议独立 RAM 子账号仅授 AliyunYundunAFSFullAccess。生产环境 Provider 必须为「阿里云」。",
   support:
     "客服联系方式展示于用户端页脚与「帮助与支持」页。留空即不展示对应入口 —— " +
     "GPU 租赁的用户教育成本高,没有任何联系方式等于把问题都堵在工单之外。",

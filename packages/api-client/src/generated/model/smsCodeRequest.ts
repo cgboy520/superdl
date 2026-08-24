@@ -7,6 +7,7 @@
 import type { SmsCodeRequestPurpose } from './smsCodeRequestPurpose';
 
 export interface SmsCodeRequest {
+  captcha_token?: string | null;
   /**
      * 中国大陆手机号
      * @pattern ^1[3-9]\d{9}$

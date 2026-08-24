@@ -32,6 +32,7 @@ from app.core.k8s.base import (
     PrewarmJobStatus,
     derive_distro,
     instance_disk_pvc_name,
+    instance_env_secret_name,
     jupyter_service_name,
 )
 
@@ -101,6 +102,10 @@ PRIVATE_CIDRS = [
 # Egress 明确滥用途 TCP 端口黑名单:SMTP 发信(25/465/587)、SMB/NetBIOS(135/139/445)、
 # Telnet(23)、RDP(3389)。只封明确滥用途;HTTPS/SSH 出/包管理/对象存储等照常放行。
 EGRESS_BLOCKED_TCP_PORTS = (23, 25, 135, 139, 445, 465, 587, 3389)
+# 公网 UDP 白名单:53(公网 DNS 兜底,主路径走 CoreDNS)/443(QUIC/HTTP3)。
+# 全端口放行的 GPU 机器是一流反射/洪泛源(NTP/DNS/CLDAP 放大、DDoS 代理),
+# 其余 UDP 端口按工单白名单逐案评审开放。
+EGRESS_ALLOWED_UDP_PORTS = (53, 443)
 
 # 租户容器 ephemeral-storage:只管可写层 + 日志 + emptyDir,镜像只读层不计入。
 # request 为调度占位,limit 须宽松(超限即驱逐 Pod),只挡写爆节点盘的滥用。
@@ -188,7 +193,7 @@ class RealOrchestrator:
 
     def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
         """入方向:默认拒东西向,放行 Ingress Controller 到 Jupyter(8888)与 SSH(22);
-        出方向放行公网(除私网/元数据网段 + 明确滥用途端口黑名单)+ DNS。
+        出方向放行公网(除私网/元数据网段):TCP 扣明确滥用途黑名单,UDP 白名单 53/443,+ DNS。
 
         SSH 走 NodePort:DNAT 后是否过 NetworkPolicy 取决于 CNI(Cilium 会过,
         kube-proxy iptables 通常不过),显式放行 22 消除对「NodePort 不过策略」的
@@ -247,14 +252,18 @@ class RealOrchestrator:
                         ],
                         ports=_allowed_tcp_port_ranges(),
                     ),
-                    # 公网 UDP 不限端口(黑名单语义均为 TCP 服务;DoH/QUIC 属正常用途)
+                    # 公网 UDP 白名单(EGRESS_ALLOWED_UDP_PORTS):DNS/QUIC 之外全拒,
+                    # 防反射放大与洪泛代理滥用;特殊协议走工单白名单逐案开放
                     client.V1NetworkPolicyEgressRule(
                         to=[
                             client.V1NetworkPolicyPeer(
                                 ip_block=client.V1IPBlock(cidr="0.0.0.0/0", _except=PRIVATE_CIDRS)
                             )
                         ],
-                        ports=[client.V1NetworkPolicyPort(protocol="UDP")],
+                        ports=[
+                            client.V1NetworkPolicyPort(protocol="UDP", port=p)
+                            for p in EGRESS_ALLOWED_UDP_PORTS
+                        ],
                     ),
                 ],
             ),
@@ -309,9 +318,34 @@ class RealOrchestrator:
 
     def _create_instance_sync(self, spec: InstancePodSpec) -> None:
         self._ensure_instance_disk_sync(spec)
+        self._ensure_instance_secret_sync(spec)
         self._create_pod_sync(spec)
         self._create_service_sync(spec)
         self._create_ingress_sync(spec)
+
+    def _ensure_instance_secret_sync(self, spec: InstancePodSpec) -> None:
+        """per-instance 敏感 env 的 Secret(JUPYTER_TOKEN 等)。
+
+        幂等:已存在则按最新内容 patch(token 轮换/同 uuid 重建收敛);
+        生命周期随实例(delete_instance 一并摘除)。
+        """
+        if not spec.secret_env:
+            return
+        name = instance_env_secret_name(spec.name)
+        secret = client.V1Secret(
+            metadata=client.V1ObjectMeta(
+                name=name,
+                namespace=spec.namespace,
+                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            ),
+            string_data=spec.secret_env,
+        )
+        try:
+            self.core.create_namespaced_secret(spec.namespace, secret)
+        except client.ApiException as exc:
+            if not _is_conflict(exc):
+                raise
+            self.core.patch_namespaced_secret(name, spec.namespace, {"stringData": spec.secret_env})
 
     def _ensure_instance_disk_sync(self, spec: InstancePodSpec) -> None:
         """实例盘 PVC。已存在即跳过,重新开机复用同一只盘,不按新容量重建。
@@ -345,6 +379,17 @@ class RealOrchestrator:
         }
         limits = {**requests, "ephemeral-storage": TENANT_EPHEMERAL_LIMIT}
         env = [client.V1EnvVar(name=k, value=v) for k, v in spec.env.items()]
+        # 敏感值只以 secretKeyRef 引用 per-instance Secret,明文不进 Pod spec
+        secret_name = instance_env_secret_name(spec.name)
+        for key in spec.secret_env:
+            env.append(
+                client.V1EnvVar(
+                    name=key,
+                    value_from=client.V1EnvVarSource(
+                        secret_key_ref=client.V1SecretKeySelector(name=secret_name, key=key)
+                    ),
+                )
+            )
         env.append(client.V1EnvVar(name="AUTHORIZED_KEYS", value="\n".join(spec.authorized_keys)))
         volumes: list[client.V1Volume] = [
             client.V1Volume(
@@ -552,6 +597,7 @@ class RealOrchestrator:
             lambda: self.core.delete_namespaced_pod(name, namespace, **pod_kwargs),
             lambda: self.core.delete_namespaced_service(name, namespace),
             lambda: self.core.delete_namespaced_service(jupyter_service_name(name), namespace),
+            lambda: self.core.delete_namespaced_secret(instance_env_secret_name(name), namespace),
             lambda: self.net.delete_namespaced_ingress(name, namespace),
         ):
             try:
@@ -664,10 +710,11 @@ class RealOrchestrator:
         return await self._run(self._used_node_ports_sync)
 
     def _used_node_ports_sync(self) -> set[int]:
+        # 必须列出全集群 Service 的 NodePort,不能按 MANAGED_LABEL 过滤:
+        # blocked 端口标的就是「被非平台对象占用」的端口,复检看不见占用者会
+        # 每 30 秒把真占用误放回池 → 再撞 → 再封,振荡并把新建实例推过创建超时
         ports: set[int] = set()
-        for svc in self._list_all(
-            self.core.list_service_for_all_namespaces, label_selector=MANAGED_LABEL
-        ):
+        for svc in self._list_all(self.core.list_service_for_all_namespaces):
             for p in svc.spec.ports or []:
                 if p.node_port:
                     ports.add(p.node_port)
@@ -788,17 +835,29 @@ class RealOrchestrator:
     def _disk_quota_sync(self, subpath: str, capacity_gb: int, is_set: bool) -> None:
         """平台 ns 起 juicefs CLI Job 下发/摘除目录配额。幂等(见 _run_managed_job_sync)。
         metaurl 经 secretKeyRef 注入(superdl-api-secrets 与 Job 同 ns),worker 零接触明文;
-        subpath/capacity 走 env 间接引用,不进 shell 命令串(防注入)。"""
+        subpath/capacity 走 env 间接引用,不进 shell 命令串(防注入)。
+        密码不进 argv:shell 内把 metaurl 拆成「无密码 URL(argv)+ META_PASSWORD(env)」,
+        juicefs v1.0+ 官方机制;否则全租户共享文件系统的元数据引擎凭据会出现在
+        /proc/<pid>/cmdline(节点上任何进程可读)。"""
         if "/" in subpath or ".." in subpath or not subpath:
             raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+        # 密码拆分在容器内 shell 完成(env 不进 /proc cmdline);metaurl 密码段约定不含 @
+        split = (
+            'export META_PASSWORD="$(printf \'%s\' "$JUICEFS_METAURL"'
+            " | sed -n 's|^[^:]*://[^:]*:\\([^@]*\\)@.*|\\1|p')\"; "
+            'METAURL_NOPASS="$(printf \'%s\' "$JUICEFS_METAURL"'
+            " | sed 's|^\\([^:]*://[^:]*\\):[^@]*@|\\1@|')\"; "
+        )
         if is_set:
             script = (
-                'juicefs quota set "$JUICEFS_METAURL" --path "/$QUOTA_SUBPATH"'
+                split + 'juicefs quota set "$METAURL_NOPASS" --path "/$QUOTA_SUBPATH"'
                 ' --capacity "$QUOTA_CAPACITY_GB" --create'
             )
         else:
             # 删盘链路:无配额记录(存量盘/从未下发成功)不算失败,目录随后由 wipe Job 擦除
-            script = 'juicefs quota delete "$JUICEFS_METAURL" --path "/$QUOTA_SUBPATH" || true'
+            script = (
+                split + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_SUBPATH" || true'
+            )
         container = self._batch_container(
             "quota", self.settings.juicefs_cli_image, ["sh", "-c", script], env=[]
         )

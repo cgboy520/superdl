@@ -5,6 +5,23 @@ cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(CNI + 
 disable:
   - rke2-ingress-nginx       # 禁内置版本,改由 helmfile 装上游 ingress-nginx(版本可控)
   - rke2-canal
+# 控制面 HA(3 server 堆叠 etcd,P0-1):apiserver 证书 SAN 必须覆盖 VIP 与全部 server
+# 地址,否则 agent/kubectl 经 VIP 连接时 TLS 校验失败,任一 server 重建后其余成员也失连。
+# 首台与后续 server 的本项必须逐字节一致(成员配置漂移是 HA 最难排查的故障源);
+# 单 server 集群可保持注释。ansible 在定义 api_vip/server_ips 时自动渲染本块(见
+# deploy/ansible/site.yml),手工部署照此格式填真实值:
+#tls-san:
+#  - "<api-vip>"                # 控制面 VIP(kube-vip/keepalived/SLB 任一)
+#  - "<server1-ip>"             # 逐台 server 的 IP(证书签出后增删 server 需重签并滚动重启)
+#  - "<server2-ip>"
+#  - "<server3-ip>"
+#  - "<server1-hostname>"       # 主机名 SAN(可选,便于绕过 VIP 直连排障)
+#  - "<server2-hostname>"
+#  - "<server3-hostname>"
+node-label:
+  - "node-role.superdl.io/infra=true"   # 平台组件(api/worker/前端/registry)只落带此标签的
+                             # 节点(deploy/app/k8s 各清单的 nodeSelector);GPU 节点严禁打此标签。
+                             # 后续扩独立 infra 节点:打同款标签 + CriticalAddonsOnly taint 即等价。
 secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。
                              # 存量集群开启:RKE2 启动时自动重写加密既有 Secret(滚动重启
                              # server 逐台做,etcd 快照照常可还原);开启后 etcd 快照虽不再

@@ -1,0 +1,105 @@
+/** 人机校验(阿里云验证码 2.0,P1-17)前端接入。
+ *
+ * 行为按 /auth/captcha-config 的 provider 决定:
+ * - mock:dev/test 直返固定放行串 "mock-pass"(与后端 MockCaptchaChannel 对齐),不加载 SDK;
+ * - aliyun:动态加载 AliyunCaptcha.js(仅一次),经隐藏触发按钮拉起弹窗验证,
+ *   通过回调 captchaVerifyParam 取得一次性 token 后随业务请求提交。
+ *
+ * token 一次性且 20 分钟内有效(阿里云约束):每次发码都重新拉起验证,不复用。
+ */
+import { captchaConfigApiV1AuthCaptchaConfigGet } from "@superdl/api-client";
+import type { CaptchaConfigOut } from "@superdl/api-client";
+
+const MOCK_PASS_TOKEN = "mock-pass";
+const SDK_URL = "https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js";
+const TRIGGER_ID = "superdl-aliyun-captcha-trigger";
+const BOX_ID = "superdl-aliyun-captcha-box";
+
+declare global {
+  interface Window {
+    initAliyunCaptcha?: (options: Record<string, unknown>) => void;
+  }
+}
+
+let configPromise: Promise<CaptchaConfigOut> | null = null;
+let sdkReady: Promise<void> | null = null;
+let sdkInitialized = false;
+let pendingResolve: ((token: string) => void) | null = null;
+
+function getConfig(): Promise<CaptchaConfigOut> {
+  configPromise ??= captchaConfigApiV1AuthCaptchaConfigGet();
+  return configPromise;
+}
+
+function loadSdk(): Promise<void> {
+  sdkReady ??= new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = SDK_URL;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("captcha sdk load failed"));
+    document.head.appendChild(script);
+  });
+  return sdkReady;
+}
+
+function ensureContainers(): void {
+  if (!document.getElementById(TRIGGER_ID)) {
+    const trigger = document.createElement("button");
+    trigger.id = TRIGGER_ID;
+    trigger.type = "button";
+    trigger.style.display = "none"; // 隐藏触发钮:由发送验证码按钮程序化点击
+    document.body.appendChild(trigger);
+  }
+  if (!document.getElementById(BOX_ID)) {
+    const box = document.createElement("div");
+    box.id = BOX_ID;
+    document.body.appendChild(box);
+  }
+}
+
+async function initAliyun(cfg: CaptchaConfigOut): Promise<void> {
+  if (sdkInitialized) return;
+  await loadSdk();
+  if (typeof window.initAliyunCaptcha !== "function") {
+    throw new Error("captcha sdk unavailable");
+  }
+  ensureContainers();
+  window.initAliyunCaptcha({
+    SceneId: cfg.scene_id,
+    prefix: cfg.prefix,
+    mode: "popup", // 弹窗形态:不占表单布局,验证通过即关
+    element: `#${BOX_ID}`,
+    button: `#${TRIGGER_ID}`,
+    captchaVerifyParam: (param: string) => {
+      // 阿里云 success 回调:一次性 token 到手,交给等待中的业务调用
+      pendingResolve?.(param);
+      pendingResolve = null;
+    },
+    onBizResultCallback: () => {},
+    getInstance: () => {},
+    slideStyle: { width: 360, height: 40 },
+    language: document.documentElement.lang.startsWith("en") ? "en" : "cn",
+    region: "cn",
+  });
+  sdkInitialized = true;
+}
+
+/** 获取一次人机校验 token。SDK 加载失败/不可用则 reject(调用方提示刷新重试)。 */
+export async function requestCaptchaToken(): Promise<string> {
+  const cfg = await getConfig();
+  if (cfg.provider === "mock") return MOCK_PASS_TOKEN;
+  await initAliyun(cfg);
+  return new Promise<string>((resolve) => {
+    pendingResolve = resolve;
+    document.getElementById(TRIGGER_ID)?.click(); // 拉起验证码弹窗;关闭弹窗=放弃(用户可重试)
+  });
+}
+
+/** 测试/开发辅助:重置模块缓存(仅测试环境使用)。 */
+export function _resetCaptchaModule(): void {
+  configPromise = null;
+  sdkReady = null;
+  sdkInitialized = false;
+  pendingResolve = null;
+}

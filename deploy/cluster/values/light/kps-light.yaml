@@ -17,6 +17,17 @@ prometheus:
       limits: {memory: 1Gi}
 grafana:
   enabled: false
+# Alertmanager 存储必须随档覆盖:full 档是 superdl-juicefs(RWX),light 无 JuiceFS,
+# 不覆盖则 PVC 永不绑定 → Alertmanager 永不启动 → 生产零告警且静默。
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: topolvm-provisioner
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests: {storage: 1Gi}
 prometheusOperator:
   resources:
     requests: {cpu: 50m, memory: 128Mi}

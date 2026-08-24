@@ -29,7 +29,17 @@ kubectl -n monitoring create secret generic grafana-admin \
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml
    systemctl enable --now rke2-server
    ```
-2. **平台接入**:管理端「平台配置 · 集群接入」录入 server 地址与 **agent token**——
+   **控制面 HA(公众生产强制,单 server 禁止对外开放;P0-1)**:3 台 server 堆叠 etcd
+   (奇数台法定人数) + 控制面 VIP(kube-vip/keepalived/SLB 任一)。ansible 在
+   `group_vars/servers.yml` 定义 `api_vip` + `server_ips`(奇数台 ≥3)即自动渲染
+   tls-san(apiserver 证书覆盖 VIP 与全部 server IP,模板内注释块保持不动);
+   手工部署照 `rke2/server-config.yaml` 头注释取消 tls-san 注释并填真实值。
+   第 2/3 台 server 加入:config.yaml 与首台同一渲染产物,另放
+   `rke2/server-join-config.yaml` 到 `/etc/rancher/rke2/config.yaml.d/50-join.yaml`
+   (server 指 VIP:9345 + server token,首台严禁放)。VIP 就绪前可先单台上线,
+   扩到 3 台前必须:tls-san 补齐 → 滚动重启全部 server → agent/cilium/netpol 统一切 VIP。
+2. **平台接入**:管理端「平台配置 · 集群接入」录入 server 地址(HA 集群录
+   `https://<VIP>:9345`,单 server 录该机 IP)与 **agent token**——
    即 server-config.yaml 里 `agent-token` 的值(首装前生成,见该文件注释);
    **禁止**录入 `/var/lib/rancher/rke2/server/node-token`(server token 能拉 server 进 etcd 环;
    轮换与托管见下文「server token 与 agent token」)。
@@ -72,6 +82,10 @@ kubectl -n monitoring create secret generic grafana-admin \
   访问快照的人等同于持有集群控制权,纳入审计。
 
 ## 路径 B:light(k3s 单机/小规模)
+
+> **定位边界(P0-1)**:light 档控制面即单点(单 server,etcd 与业务同机),只适用于
+> 内网试点/演示/开发联调;**禁止作为公众生产对外开放**——公众生产一律走路径 A
+> (3 server 堆叠 etcd + VIP)。管理端「集群」页对 light 档常驻「轻量集群」黄条即是此提示。
 
 1. **server(可兼跑业务)**:
    ```bash

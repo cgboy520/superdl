@@ -76,7 +76,8 @@ export function HeroSection() {
             {t("landing.hero.subtitle")}
           </Typography.Paragraph>
           <Space size={16}>
-            <Link to={loggedIn ? "/instances" : "/login"}>
+            {/* 未登录的主 CTA 是注册意图:直达注册态,别让陌生人进登录表单再被拒 */}
+            <Link to={loggedIn ? "/instances" : "/login"} search={loggedIn ? {} : { mode: "register" }}>
               <Button
                 size="large"
                 style={{

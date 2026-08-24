@@ -15,21 +15,29 @@ import { Trans, useTranslation } from "react-i18next";
 import { useLogin, useRegister, useResetPassword, useSendSmsCode } from "../api/mutations";
 import { BrandLogo } from "../components/layout/BrandLogo";
 import { LangSwitcher } from "../components/layout/LangSwitcher";
+import { requestCaptchaToken } from "../lib/captcha";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
+  validateSearch: (search: Record<string, unknown>): { redirect?: string; mode?: "register" } => {
     // 回跳白名单:解析后必须仍属本站 origin(防 /\evil.com 这类绕过),归一化为 path+query+hash
+    const out: { redirect?: string; mode?: "register" } = {};
     const r = search.redirect;
-    if (typeof r !== "string" || r === "") return {};
-    try {
-      const u = new URL(r, window.location.origin);
-      // origin 必须仍属本站;"/\evil.com" 这类会被 URL 解析归一成 "//evil.com",一并拒掉
-      if (u.origin !== window.location.origin || u.pathname.startsWith("//")) return {};
-      return { redirect: `${u.pathname}${u.search}${u.hash}` };
-    } catch {
-      return {};
+    if (typeof r === "string" && r !== "") {
+      try {
+        const u = new URL(r, window.location.origin);
+        // origin 必须仍属本站;"/\evil.com" 这类会被 URL 解析归一成 "//evil.com",一并拒掉
+        if (u.origin === window.location.origin && !u.pathname.startsWith("//")) {
+          out.redirect = `${u.pathname}${u.search}${u.hash}`;
+        }
+      } catch {
+        // 非法 redirect 直接丢弃
+      }
     }
+    // 「免费注册」CTA 直达注册态:默认短信登录态会让陌生人收到真验证码后被拒,
+    // 再注册要重新要码(未消费码的指数退避已把等待翻倍)——转化漏斗最顶端
+    if (search.mode === "register") out.mode = "register";
+    return out;
   },
   component: LoginPage,
 });
@@ -82,10 +90,10 @@ function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const router = useRouter();
-  const { redirect: redirectTo } = Route.useSearch();
+  const { redirect: redirectTo, mode: searchMode } = Route.useSearch();
   const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
-  const [mode, setMode] = useState<Mode>("sms");
+  const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
   const [countdown, setCountdown] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [form] = Form.useForm();
@@ -179,7 +187,7 @@ function LoginPage() {
         <div style={{ position: "absolute", top: 16, right: 16 }}>
           <LangSwitcher variant="light" />
         </div>
-        <div style={{ width: 400 }}>
+        <div style={{ width: "100%", maxWidth: 400 }}>
           {!screens.lg && (
             <div style={{ marginBottom: 24 }}>
               <Link to="/" style={{ textDecoration: "none" }}>
@@ -229,17 +237,24 @@ function LoginPage() {
                     disabled={countdown > 0}
                     loading={sendCode.isPending}
                     onClick={() => {
-                      void form.validateFields(["phone"]).then(({ phone }) =>
-                        sendCode.mutate({
-                          phone,
-                          purpose:
-                            mode === "register"
-                              ? "register"
-                              : mode === "reset"
-                                ? "reset_password"
-                                : "login",
-                        }),
-                      );
+                      void form.validateFields(["phone"]).then(async ({ phone }) => {
+                        // 人机校验先行(P1-17):拿到一次性 token 才发码;SDK 不可用提示刷新
+                        try {
+                          const captcha_token = await requestCaptchaToken();
+                          sendCode.mutate({
+                            phone,
+                            purpose:
+                              mode === "register"
+                                ? "register"
+                                : mode === "reset"
+                                  ? "reset_password"
+                                  : "login",
+                            captcha_token,
+                          });
+                        } catch {
+                          message.error(t("login.captchaUnavailable"));
+                        }
+                      });
                     }}
                   >
                     {countdown > 0 ? `${countdown}s` : t("login.getCode")}

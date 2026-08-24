@@ -31,6 +31,11 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
+    # 边缘收口(edge_guard):管理端 API 与 /metrics 不从公网 API 域暴露。
+    # 默认 None = 仅 prod 开;复用部署清单的类生产环境(如 staging 以非 prod 名运行)
+    # 必须显式置 true,否则完整管理端 API 只剩 JWT audience 一道闸暴露在公网 API 域上。
+    edge_guard_enabled: bool | None = None
+
     # 启动引导管理员:仅当显式设置本项且 environment=dev 时,在无任何管理员的库里创建 admin 账号
     bootstrap_admin_password: str | None = None
 
@@ -57,6 +62,14 @@ class Settings(BaseSettings):
     real_name_provider: Literal["mock", "aliyun"] = "mock"
     real_name_access_key_id: str | None = None
     real_name_access_key_secret: str | None = None
+
+    # 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸;P1-17)
+    # prod 强制 aliyun(见 prod 校验);scene/prefix 为客户端初始化所需公开信息(非密)
+    captcha_provider: Literal["mock", "aliyun"] = "mock"
+    captcha_scene_id: str | None = None
+    captcha_prefix: str | None = None
+    captcha_access_key_id: str | None = None
+    captcha_access_key_secret: str | None = None
 
     # 平台配置中心:敏感项落库加密主密钥(urlsafe-base64 的 32 字节;只走 env,prod 必配)
     config_encryption_key: str | None = None
@@ -241,10 +254,22 @@ class Settings(BaseSettings):
                 "bootstrap_admin_password 仅限 dev 一次性引导:请先用它在 dev 环境初始化首个管理员,"
                 "再从生产环境变量中删除该变量(prod 管理员经管理端账号页维护)"
             )
-        if self.real_name_required_for_recharge and self.real_name_provider == "mock":
+        # 与 sms/payment 同口径:prod 无条件拒绝 mock——mock 对非 0000 结尾恒过,
+        # 即使未开强制实名,平台也可能在任何时候经平台配置在线打开强制开关
+        if self.real_name_provider == "mock":
+            problems.append("real_name_provider 不得为 mock(mock 恒过,实名形同虚设;请接阿里云实名)")
+        # 人机校验同口径:/auth/sms-code 是撞库/刷码的头号口子,mock = 无校验门
+        if self.captcha_provider == "mock":
+            problems.append("captcha_provider 不得为 mock(短信口子对脚本敞开;请接阿里云验证码 2.0)")
+        elif not (
+            self.captcha_scene_id
+            and self.captcha_prefix
+            and self.captcha_access_key_id
+            and self.captcha_access_key_secret
+        ):
             problems.append(
-                "real_name_required_for_recharge=true 时 real_name_provider 不得为 mock"
-                "(mock 恒过,等于实名形同虚设;请接阿里云实名,或先关闭充值强制实名)"
+                "阿里云验证码配置不完整(SUPERDL_CAPTCHA_SCENE_ID/PREFIX/ACCESS_KEY_*);"
+                "env 缺失时 DB 覆盖层必须在管理端补齐,否则 /auth/sms-code 全量 502"
             )
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             # DB 覆盖层也可能已配:env 侧缺失只作 fail-fast 提示的其中一路;

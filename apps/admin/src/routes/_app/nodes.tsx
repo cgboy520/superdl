@@ -254,11 +254,15 @@ function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
 
 interface EnrollFormValues {
   pool: "kata" | "hami" | "mig";
-  hostname?: string;
+  hostname: string;
   note?: string;
   nvme_devices?: string[];
   ttl_hours: number;
 }
+
+// 与后端 nodes/schemas.py HOSTNAME_PATTERN 对齐(签发时强制绑定主机名,防令牌串用)
+const HOSTNAME_PATTERN =
+  /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -337,6 +341,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
           <Form.Item
             name="hostname"
             label={t("nodes.hostnameLabel")}
+            rules={[{ required: true }, { pattern: HOSTNAME_PATTERN }]}
           >
             <Input placeholder={t("nodes.hostnamePlaceholder")} />
           </Form.Item>

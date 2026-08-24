@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -49,6 +49,10 @@ MAX_CATCHUP_DAYS = 14
 # 同一 (窗口, 对象) 连续失败这么多轮即死信:记缺口后水位线允许越过,
 # 防一个坏对象永久卡住水位线(进而在追平上限外触发整段截断)
 DEAD_LETTER_AFTER = 3
+# worker/DB 时钟允许的最大偏差:计费时间线跑 worker 时钟(now_utc()),流水落 DB 时钟
+# (server_default=func.now());水位线严格单调,worker 时钟前跳一次就永久烧掉那几个
+# 小时的窗(无 gap 无恢复)。超阈值宁可本轮不结算,也不冒烧账期的险。
+CLOCK_SKEW_MAX_SECONDS = 30.0
 
 # (kind, window_start, object_id) → 连续失败轮数。进程内存:worker 重启只是多验几轮
 # (方向安全);多副本由 advisory lock 串行,各副本各记各的,最坏死信推迟几轮
@@ -257,6 +261,26 @@ async def get_watermark(session: AsyncSession, key: str) -> datetime | None:
     return ensure_utc(row.settled_through) if row else None
 
 
+async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
+    """worker/DB 时钟比对:偏差超阈值时拒绝本轮结算并告警(返回 True)。
+
+    计费时间线跑 worker 时钟,流水落 DB 时钟,两者从不比较的话,worker 时钟前跳
+    一次就永久烧掉那几个小时(_advance_watermark 严格单调,无 gap 无恢复)。
+    """
+    async with sm() as session:
+        db_now = ensure_utc((await session.execute(select(func.now()))).scalar_one())
+    skew = abs((db_now - now_utc()).total_seconds())
+    if skew <= CLOCK_SKEW_MAX_SECONDS:
+        return False
+    SETTLEMENT_FAILED_TOTAL.labels(kind="clock_skew").inc()
+    logger.error(
+        "settlement_clock_skew",
+        skew_seconds=skew,
+        hint="worker 与 DB 时钟偏差超阈值,本轮结算已拒绝;请校准 NTP 后重试",
+    )
+    return True
+
+
 async def _advance_watermark(
     sm: async_sessionmaker[AsyncSession], key: str, value: datetime
 ) -> None:
@@ -383,10 +407,16 @@ async def _catchup_settle(
         if watermark is None:
             # 无水位线两种来源不可区分:首次部署引导(正常)/ 水位线行被误删或库回退(异常)。
             # 两种情形本轮都只结最近窗口,更早窗口不自动补,显式留痕供告警匹配。
+            # 与其余跳窗路径同口径登记 settlement_gaps(幂等,单调可告警):
+            # 首次部署会留下一行 watermark_missing,验收时人工确认核销;此后该 reason 再出现
+            # 即水位线丢失事故(小时窗静默烧掉,账务无迹)。
             logger.warning(
                 f"{kind}_watermark_missing",
                 hint="无结算水位线:首次部署属正常引导;若非首次部署则水位线已丢失,"
                 "只结最近窗口,更早窗口需人工核查补结",
+            )
+            await _record_gaps(
+                sm, kind=kind, windows=[target_start], object_id=0, reason="watermark_missing"
             )
         first_start = target_start if watermark is None else floor_fn(watermark) + step
         floor_start = target_start - (max_catchup - 1) * step
@@ -464,6 +494,8 @@ async def settle_due_hours(
     """
     from app.modules.orchestrator import service as orchestrator_service
 
+    if await _clock_skew_exceeded(sm):
+        return 0
     target_start, _ = prev_hour_range(at or now_utc())
 
     async def settle_window(window_start: datetime, window_end: datetime) -> tuple[int, list[int]]:
@@ -610,6 +642,8 @@ async def settle_daily_disks(
     """
     from app.modules.orchestrator import service as orchestrator_service
 
+    if await _clock_skew_exceeded(sm):
+        return 0
     target_day = billing_day_floor(at or now_utc()) - timedelta(days=1)  # 结算昨日(北京日界)
     # (disk_id, user_id, price, size_gb, created_at, grace_started_at, grace_ended_at)
     disk_rows: (

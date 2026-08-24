@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, Response, status
+from pydantic import BaseModel
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
@@ -26,8 +27,40 @@ router = APIRouter(tags=["account"])
 
 @router.post("/auth/sms-code", status_code=status.HTTP_204_NO_CONTENT)
 async def send_sms_code(body: SmsCodeRequest, session: DbSession, request: Request) -> Response:
-    await service.send_sms_code(session, body.phone, body.purpose, client_ip=client_ip(request))
+    await service.send_sms_code(
+        session,
+        body.phone,
+        body.purpose,
+        client_ip=client_ip(request),
+        captcha_token=body.captcha_token,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class CaptchaConfigOut(BaseModel):
+    """前端初始化验证码 SDK 所需的公开信息(身份标/场景非密;provider=mock 时前端
+    直接回传固定放行串,不加载 SDK)。"""
+
+    provider: str
+    scene_id: str | None
+    prefix: str | None
+
+
+@router.get("/auth/captcha-config")
+async def captcha_config(session: DbSession, request: Request) -> CaptchaConfigOut:
+    """验证码 2.0 客户端初始化配置(免鉴权;泄漏面无敏感——prefix/scene_id 本就写进前端 JS)。"""
+    from app.core.platform_config import get_effective_platform_config
+    from app.core.ratelimit import check_rate_limit
+
+    await check_rate_limit(
+        f"captcha-config:{client_ip(request) or '-'}", max_attempts=120, window_seconds=60.0
+    )
+    cfg = await get_effective_platform_config(session)
+    return CaptchaConfigOut(
+        provider=cfg["captcha_provider"],
+        scene_id=cfg["captcha_scene_id"] or None,
+        prefix=cfg["captcha_prefix"] or None,
+    )
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)

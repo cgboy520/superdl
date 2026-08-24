@@ -153,7 +153,7 @@
     "startNeedsStopped": "Only stopped instances can be started",
     "stockAvailable_one": "1 instance available",
     "stockAvailable_other": "{{count}} instances available",
-    "stopConfirm": "Stopping releases the GPU and stops billing immediately; instance disk data is kept. Restarting later may require waiting or switching specs if this one sells out",
+    "stopConfirm": "Stopping releases the GPU and stops GPU billing immediately; instance disk data is kept, and any attached data disk keeps accruing daily charges. Restarting later may require waiting or switching specs if this one sells out",
     "stopNeedsRunning": "Only running instances can be stopped"
   },
   "create": {
@@ -464,6 +464,7 @@
       "b2": "Data disks outlive instances — release without losing data",
       "b3": "Public pricing — the stock on the button is the real stock"
     },
+    "captchaUnavailable": "Failed to load the human verification component — refresh and retry",
     "codeSent": "Code sent",
     "forgotPassword": "Forgot password?",
     "getCode": "Send code",

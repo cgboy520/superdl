@@ -705,10 +705,12 @@ def build_pod_spec(
         ssh_node_port=instance.ssh_port,
         jupyter_host=f"{instance.uuid}.{settings.jupyter_domain_suffix}",
         env={
-            "JUPYTER_TOKEN": _token_plain(instance),
             # 实例自己的域名:镜像据此收敛 Jupyter 的 Origin 校验(防跨站 WebSocket)
             "JUPYTER_ALLOW_ORIGIN": (f"https://{instance.uuid}.{settings.jupyter_domain_suffix}"),
         },
+        # token 走 per-instance Secret(secretKeyRef),不以明文 env 落 Pod spec:
+        # spec 会进 etcd/审计快照,任何 pods:get/list 身份(含只读 SA)都能读走
+        secret_env={"JUPYTER_TOKEN": _token_plain(instance)},
         authorized_keys=tuple(instance.authorized_keys),
         node_selector=gpu_req.node_selector,
         data_disk_subpath=data_disk_subpath,

@@ -1,11 +1,20 @@
-# worker(outbox + 定时任务):2 副本高可用(报告3#12/P1-35)——节点故障/滚动发布时
-# 结算与编排不停摆。liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
+# worker 组件部署(P1-18/安全P0-1):单 Pod 单 SA,outbox 任务类型与定时任务按组件分片
+# (workers/components.py 为唯一事实源;SUPERDL_WORKER_COMPONENT 声明身份,非法值 fail-closed)。
+#
+# 组件矩阵(副本/权限按职责定;全部 app=superdl-worker 标签,NetworkPolicy 与 PodMonitor 不变):
+#   core        2 副本  计费/通知/保洁       SA superdl-worker(零 K8s 权限)
+#   tenant-mgr  2 副本  租户编排 instance.*  SA superdl-tenant-mgr
+#   node-mgr    1 副本  cordon/巡检/注册收敛  SA superdl-node-mgr
+#   prewarm     1 副本  镜像预热 Job         SA superdl-prewarm
+#   disk-ops    1 副本  配额下发/擦除 Job    SA superdl-disk-ops
+# 单副本组件:巡检类本就靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED 天然安全;
+# 需要更高可用时直接加副本,无需改代码。升级路径见 01-rbac.yaml 头注释。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: superdl-worker
   namespace: superdl
-  labels: {app: superdl-worker}
+  labels: {app: superdl-worker, superdl.io/component: core}
 spec:
   replicas: 2
   strategy:
@@ -14,12 +23,12 @@ spec:
     # 滚动期间新旧副本并存不会重复执行。
     type: RollingUpdate
   selector:
-    matchLabels: {app: superdl-worker}
+    matchLabels: {app: superdl-worker, superdl.io/component: core}
   template:
     metadata:
-      labels: {app: superdl-worker}
+      labels: {app: superdl-worker, superdl.io/component: core}
     spec:
-      serviceAccountName: superdl-worker   # 编排写权限只在 worker(见 01-rbac.yaml)
+      serviceAccountName: superdl-worker   # core:纯 DB + 外部渠道,零 K8s 权限(01-rbac.yaml)
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
@@ -27,12 +36,26 @@ spec:
       # 节点资源紧张时不与租户同级被驱逐。
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
-        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
-        node-role.kubernetes.io/control-plane: "true"
+        # 平台组件落点统一走 infra 标签(P0-1:与 control-plane 角色解耦,平台组件不再
+        # 绑死控制面)。full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
+        # node-label 自动携带;自建独立 infra 节点打同款标签 + CriticalAddonsOnly taint。
+        # GPU 节点严禁打此标签。
+        node-role.superdl.io/infra: "true"
       tolerations:
         # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      topologySpreadConstraints:
+        # 2 副本尽量跨节点/跨可用区摊开(对齐 02-api);小集群不满足时仍可调度(ScheduleAnyway)
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: superdl-worker, superdl.io/component: core}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: superdl-worker, superdl.io/component: core}
       terminationGracePeriodSeconds: 660  # SIGTERM 后收尾当前 outbox 任务(执行超时上限 600s + 60s 余量)
       securityContext:
         runAsNonRoot: true
@@ -48,6 +71,7 @@ spec:
             - secretRef: {name: superdl-api-secrets}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+            - {name: SUPERDL_WORKER_COMPONENT, value: core}
           ports:
             - {containerPort: 9000, name: metrics}  # PodMonitor 抓取(集群内,无 Ingress 暴露)
           livenessProbe:
@@ -62,6 +86,257 @@ spec:
           resources:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-worker-tenant-mgr
+  namespace: superdl
+  labels: {app: superdl-worker, superdl.io/component: tenant-mgr}
+spec:
+  replicas: 2  # 租户编排时延敏感(开机/关机链路),双副本保滚动与节点故障不停摆
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {app: superdl-worker, superdl.io/component: tenant-mgr}
+  template:
+    metadata:
+      labels: {app: superdl-worker, superdl.io/component: tenant-mgr}
+    spec:
+      serviceAccountName: superdl-tenant-mgr   # 租户资源编排写权限(01-rbac.yaml)
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.superdl.io/infra: "true"     # 落点说明同 core worker
+      tolerations:
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: superdl-worker, superdl.io/component: tenant-mgr}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: superdl-worker, superdl.io/component: tenant-mgr}
+      terminationGracePeriodSeconds: 660
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          env:
+            - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+            - {name: SUPERDL_WORKER_COMPONENT, value: tenant-mgr}
+          ports:
+            - {containerPort: 9000, name: metrics}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-worker-node-mgr
+  namespace: superdl
+  labels: {app: superdl-worker, superdl.io/component: node-mgr}
+spec:
+  replicas: 1  # 巡检靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED;需要时直接加副本
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {app: superdl-worker, superdl.io/component: node-mgr}
+  template:
+    metadata:
+      labels: {app: superdl-worker, superdl.io/component: node-mgr}
+    spec:
+      serviceAccountName: superdl-node-mgr   # nodes patch(cordon/标签)+ 只读探测(01-rbac.yaml)
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.superdl.io/infra: "true"
+      tolerations:
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      terminationGracePeriodSeconds: 660
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          env:
+            - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+            - {name: SUPERDL_WORKER_COMPONENT, value: node-mgr}
+          ports:
+            - {containerPort: 9000, name: metrics}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-worker-prewarm
+  namespace: superdl
+  labels: {app: superdl-worker, superdl.io/component: prewarm}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {app: superdl-worker, superdl.io/component: prewarm}
+  template:
+    metadata:
+      labels: {app: superdl-worker, superdl.io/component: prewarm}
+    spec:
+      serviceAccountName: superdl-prewarm   # superdl ns 预热 Job + nodes 只读(01-rbac.yaml)
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.superdl.io/infra: "true"
+      tolerations:
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      terminationGracePeriodSeconds: 660
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          env:
+            - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+            - {name: SUPERDL_WORKER_COMPONENT, value: prewarm}
+          ports:
+            - {containerPort: 9000, name: metrics}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superdl-worker-disk-ops
+  namespace: superdl
+  labels: {app: superdl-worker, superdl.io/component: disk-ops}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {app: superdl-worker, superdl.io/component: disk-ops}
+  template:
+    metadata:
+      labels: {app: superdl-worker, superdl.io/component: disk-ops}
+    spec:
+      serviceAccountName: superdl-disk-ops   # 配额下发/擦除 Job(01-rbac.yaml)
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.superdl.io/infra: "true"
+      tolerations:
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      terminationGracePeriodSeconds: 660
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ghcr.io/OWNER/superdl-api:CHANGE_TAG
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: {name: superdl-api-config}
+            - secretRef: {name: superdl-api-secrets}
+          env:
+            - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
+            - {name: SUPERDL_WORKER_COMPONENT, value: disk-ops}
+          ports:
+            - {containerPort: 9000, name: metrics}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 100m, memory: 128Mi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

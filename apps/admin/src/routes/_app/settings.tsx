@@ -42,6 +42,7 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormDraft } from "../../lib/formDraft";
+import { idemKeyOf } from "../../lib/idemKey";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -253,7 +254,11 @@ function AnnouncementTab() {
         title={t("settings.confirmAnnounce")}
         onConfirm={async () => {
           const values = await form.validateFields();
-          publish.mutate({ data: values });
+          publish.mutate({
+            data: values,
+            // 幂等键从表单快照派生:重试/网络丢响应不会给全体租户重复推送
+            idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
+          });
         }}
         disabled={!writable}
       >

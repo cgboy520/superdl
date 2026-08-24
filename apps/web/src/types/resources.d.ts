@@ -3,6 +3,9 @@ export default interface Resources {
   "errors": {
     "account": {
       "accountDeleted": "账号已注销",
+      "captchaChannelError": "人机校验服务暂不可用,请稍后重试",
+      "captchaRequired": "请先完成人机校验",
+      "captchaVerifyFailed": "人机校验未通过,请重新完成验证后再试",
       "credentialRequired": "需提供验证码或密码",
       "deletionBalanceRemaining": "余额 ¥{{balance}} 尚未提现:请先经退款流程提现,到账后再执行注销",
       "deletionCooldown": "注销冷静期未满(剩余约 {{hours}} 小时),暂不可执行",
@@ -78,6 +81,7 @@ export default interface Resources {
       "refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
       "refundAmountExceeded": "退款金额不能超过可退上限 ¥{{max}}(订单金额 ¥{{order}},当前余额 ¥{{balance}})",
       "refundBalanceConsumed": "余额已被消费,暂不能核销退款(当前余额 ¥{{balance}},应退 ¥{{amount}});请取消该退款单",
+      "refundChannelReversed": "该订单支付已被支付渠道冲正(拒付),不可申请退款,请联系客服",
       "refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
       "refundNotFound": "退款单不存在",
       "refundOrderNotPaid": "仅支付成功的充值订单可申请退款",
@@ -123,6 +127,7 @@ export default interface Resources {
       "inUseDelete": "数据盘挂载中,请先释放对应实例",
       "mountedElsewhere": "数据盘已挂载到其他实例",
       "notMountable": "数据盘当前状态不可挂载",
+      "quotaNotSynced": "存储配额同步中,请稍后重试;长时间未恢复请联系客服",
       "shrinkForbidden": "数据盘只支持扩容,不支持缩容",
       "sizeMax": "容量上限 {{max}} GB",
       "sizeRange": "容量须在 {{min}}~{{max}} GB 之间"
@@ -163,6 +168,7 @@ export default interface Resources {
       "logsUnavailable": "日志读取失败,请稍后重试",
       "noCapacity": "「{{model}} × {{pool}} 池」当前无可分配容量,请稍后重试或选择其他规格",
       "nodeUnreachable": "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)",
+      "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
       "releaseNeedsStopped": "关机后才能释放实例",
       "restartNeedsRunning": "仅运行中的实例可以重启",
       "sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
@@ -462,7 +468,7 @@ export default interface Resources {
       "sshKeyOnly": "实例仅支持 SSH 密钥登录,不支持密码登录",
       "startNeedsStopped": "仅已关机的实例可以开机",
       "stockAvailable": "可开实例 {{count}}",
-      "stopConfirm": "关机后 GPU 立即释放、停止计费,实例盘数据保留;再次开机时若该规格已租完可能需要等待或更换规格",
+      "stopConfirm": "关机后 GPU 立即释放、停止 GPU 计费,实例盘数据保留;已挂载的数据盘继续按日计费。再次开机时若该规格已租完可能需要等待或更换规格",
       "stopNeedsRunning": "仅运行中的实例可以关机"
     },
     "create": {
@@ -766,6 +772,7 @@ export default interface Resources {
         "b2": "数据盘独立于实例,释放实例不丢数据",
         "b3": "价格公开,按钮上的库存就是真库存"
       },
+      "captchaUnavailable": "人机校验组件加载失败,请刷新页面后重试",
       "codeSent": "验证码已发送",
       "forgotPassword": "忘记密码?",
       "getCode": "获取验证码",

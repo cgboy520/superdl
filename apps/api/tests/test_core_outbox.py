@@ -10,7 +10,6 @@ from app.core.outbox import (
     OutboxTask,
     drain_strict,
     enqueue,
-    outbox_handler,
     process_one,
     reap_stuck_running,
 )
@@ -145,6 +144,31 @@ async def test_reaper_requeues_stuck_running(sm: async_sessionmaker[AsyncSession
         task = (await session.execute(select(OutboxTask))).scalar_one()
         assert task.status == "pending"
         assert task.locked_by is None
+        # 复活必须计一次失败并退避:杀进程的任务不计数会被 5 分钟无限重投,永不进 dead
+        assert task.retries == 1
+        assert task.next_retry_at > now_utc()
+
+
+async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[AsyncSession]):
+    """崩溃循环的任务:重试预算耗尽后必须进 dead(触发告警与管理端可见),而非无限重投。"""
+    async with sm() as session:
+        task = OutboxTask(
+            type="t_stuck",
+            payload={},
+            status="running",
+            retries=outbox.MAX_RETRIES,  # 已达预算上限,本次复活即越界
+            locked_by="dead-worker",
+            locked_at=now_utc() - timedelta(minutes=30),
+        )
+        session.add(task)
+        await session.commit()
+
+    assert await reap_stuck_running(sm) == 1
+    async with sm() as session:
+        task = (await session.execute(select(OutboxTask))).scalar_one()
+        assert task.status == "dead"
+        assert task.retries == outbox.MAX_RETRIES + 1
+        assert task.last_error is not None and "reaped" in task.last_error
 
 
 class TestRetryPolicy:
@@ -176,9 +200,12 @@ class TestTaskTimeout:
 
         monkeypatch.setattr(outbox_mod, "TASK_TIMEOUT_SECONDS", 0.05)
 
-        @outbox_handler("test.hang")
         async def _hang(session, task):
             await asyncio.sleep(5)
+
+        # 与同文件其它用例同规:setitem 注入(monkeypatch 收尾回滚);
+        # @outbox_handler 会永久写进全局 _registry,污染全量测试会话里其它模块的断言
+        monkeypatch.setitem(outbox_mod._registry, "test.hang", _hang)
 
         async with sm() as session:
             enqueue(session, "test.hang", {})

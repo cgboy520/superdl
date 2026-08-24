@@ -141,7 +141,8 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
         covered.update(range(lo, hi + 1))
     assert covered == set(range(1, 65536)) - blocked
     assert udp_rule.ports is not None
-    assert [(p.protocol, p.port) for p in udp_rule.ports] == [("UDP", None)]
+    # UDP 白名单收敛:仅 53(DNS 兜底)/443(QUIC),全端口放行 = 反射放大源
+    assert {(p.protocol, p.port) for p in udp_rule.ports} == {("UDP", 53), ("UDP", 443)}
 
     # 配额兜底(对象数 + 资源总量)与共享数据盘 PVC 就位(Pending 即可,kind 无对应 SC)
     quota: Any = orch.core.read_namespaced_resource_quota("tenant-quota", namespace)
@@ -166,7 +167,7 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
         disk_gb=1,
         ssh_node_port=31999,
         jupyter_host=f"{name}.app.example.invalid",
-        env={"JUPYTER_TOKEN": "smoke"},
+        secret_env={"JUPYTER_TOKEN": "smoke"},  # token 走 per-instance Secret,不落 Pod spec
         authorized_keys=(
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeFakeFakeFakeFakeFakeFakeFakeFak smoke",
         ),
@@ -179,6 +180,14 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
 
     pod: Any = orch.core.read_namespaced_pod(name, namespace)
     assert pod.spec is not None
+    # JUPYTER_TOKEN 必须以 secretKeyRef 引用 per-instance Secret,明文不进 Pod spec
+    # (spec 进 etcd/审计快照,任何 pods:get/list 身份都能读)
+    token_env = next(e for e in pod.spec.containers[0].env if e.name == "JUPYTER_TOKEN")
+    assert token_env.value is None
+    assert token_env.value_from is not None
+    assert token_env.value_from.secret_key_ref.name == f"jupyter-{name}"
+    secret: Any = orch.core.read_namespaced_secret(f"jupyter-{name}", namespace)
+    assert secret is not None
     # 租户容器加固基线必须无条件下发(real.py tenant_security_context)
     sc = pod.spec.containers[0].security_context
     assert sc is not None
@@ -199,10 +208,14 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
     orch.core.read_namespaced_service(jupyter_service_name(name), namespace)
     orch.net.read_namespaced_ingress(name, namespace)
 
-    # 删实例:Pod/SVC/Ingress 清除,实例盘必须保留(数据活过关机,见 base.py 契约)
+    # 删实例:Pod/SVC/Ingress/Secret 清除,实例盘必须保留(数据活过关机,见 base.py 契约)
     await orch.delete_instance(namespace, name, force=True)
     await _wait_pod_gone(orch, namespace, name)
     orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)  # 盘还在
+    # token Secret 随实例一并摘除(不留凭据残骸)
+    with pytest.raises(k8s_client.ApiException) as exc_secret:
+        orch.core.read_namespaced_secret(f"jupyter-{name}", namespace)
+    assert exc_secret.value.status == 404
 
     # 显式回收(释放/回收路径唯一允许的删盘入口):盘删除成功
     await orch.delete_instance_disk(namespace, name)

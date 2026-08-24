@@ -61,6 +61,7 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormDraft } from "../../lib/formDraft";
 import { useFormat } from "../../lib/format";
+import { idemKeyOf } from "../../lib/idemKey";
 import { AuditTable } from "../../components/AuditTable";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
@@ -520,6 +521,9 @@ function AdjustmentsTab() {
               amount: values.amount,
               reason: values.reason,
             },
+            // 幂等键从表单快照派生、失败不轮换:双击/重试安全重放,
+            // 改掉任一字段再提交才是真正的新调账(后端有唯一约束兜底)
+            idempotencyKey: idemKeyOf("adj", [values.user_id, values.amount, values.reason]),
           });
         }}
         okButtonProps={{ loading: create.isPending, disabled: ctxId === null || !ctx.data }}
@@ -720,6 +724,8 @@ function AnomaliesTab() {
             await backfill.mutateAsync({
               orderNo: backfillTarget!.order_no!,
               data: { reason },
+              // 同上调账:快照派生幂等键,重试不重复入账(后端唯一约束兜底)
+              idempotencyKey: idemKeyOf("backfill", [backfillTarget!.order_no!, reason]),
             });
             message.success(t("finance.backfilled"));
             setBackfillTarget(null);

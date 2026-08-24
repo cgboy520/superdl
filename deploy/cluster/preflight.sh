@@ -84,7 +84,8 @@ fi
 say "== 准入策略(P1-24:ValidatingAdmissionPolicy 必须 Deny 生效)=="
 # 首次上线可先 [Audit] 观察一周(见 admission/tenant-restrictions.yaml 头注释),
 # 但正式发布前必须改回 Deny——本检查按 Deny 卡。
-for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline; do
+# superdl-global-pod-guard 仍处 Audit 观察期(面大且覆盖第三方 ns),毕业后再补进本清单。
+for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope; do
   actions=$(kubectl get validatingadmissionpolicybinding "$binding" \
     -o jsonpath='{.spec.validationActions[*]}' 2>/dev/null || true)
   if [[ -z "$actions" ]]; then
@@ -104,6 +105,64 @@ if [[ -f "$netpol" ]]; then
     say "    apply 前必须替换为真实端点,否则平台出向全断(提示项,不阻断)"
   else
     ok "$netpol 出向已收敛为真实端点"
+  fi
+fi
+
+if [[ "$env_name" == "full" ]]; then
+  say "== 控制面 HA(P0-1:3 server 堆叠 etcd + VIP)=="
+  # server 节点数:奇数且 ≥3(etcd 法定人数;偶数台不抗脑裂,双台等于没有 HA)
+  cp_nodes=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name 2>/dev/null | grep -c . || true)
+  if [[ "$cp_nodes" -ge 3 && $((cp_nodes % 2)) -eq 1 ]]; then
+    ok "控制面节点 $cp_nodes 台(奇数 ≥3)"
+  else
+    miss "控制面节点 $cp_nodes 台:堆叠 etcd 需奇数台且 ≥3(单 server 集群禁止公众生产,见 README「路径 A」)"
+  fi
+  # etcd 静态 Pod 全部 Running(成员与 server 一一对应;少了说明有成员没入环或不健康)
+  etcd_running=$(kubectl -n kube-system get pods -l component=etcd,tier=control-plane \
+    --field-selector=status.phase=Running -o name 2>/dev/null | grep -c . || true)
+  if [[ "$etcd_running" -eq "$cp_nodes" && "$cp_nodes" -gt 0 ]]; then
+    ok "etcd Pod Running $etcd_running/$cp_nodes"
+  else
+    miss "etcd Pod Running $etcd_running/$cp_nodes:有控制面成员的 etcd 未入环或不健康(kubectl -n kube-system get pods -l component=etcd)"
+  fi
+  # VIP 可达:cilium.yaml 的 k8sServiceHost 是仓内唯一录 VIP 的位置(占位检查已在上方拦截)
+  vip=$(grep -E '^\s*k8sServiceHost:' values/cilium.yaml 2>/dev/null | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+  if [[ -n "$vip" && "$vip" != *CHANGE_ME* && "$vip" != *'<'* ]]; then
+    if curl -sk --max-time 5 "https://$vip:6443/healthz" 2>/dev/null | grep -q 'ok'; then
+      ok "控制面 VIP $vip:6443 /healthz 可达"
+    else
+      miss "控制面 VIP $vip:6443 不可达(kube-vip/keepalived/SLB 未就绪,或证书 SAN 未含 VIP——tls-san 见 rke2/server-config.yaml)"
+    fi
+  else
+    miss "values/cilium.yaml k8sServiceHost 未配真实 VIP(HA 集群 Cilium 必须直连 VIP,单 server IP 是数据面单点)"
+  fi
+  # 全节点 Ready:任一 NotReady 都可能是 etcd 成员半死或池节点失联
+  notready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v ' Ready ' | grep -c . || true)
+  if [[ "$notready" -eq 0 ]]; then
+    ok "全部节点 Ready"
+  else
+    miss "$notready 台节点非 Ready(kubectl get nodes;HA 集群里控制面 NotReady = etcd 法定人数在缩水)"
+  fi
+fi
+
+say "== PVC 引用的 StorageClass 存在性(SC 不存在则 PVC 永不绑定,组件静默起不来)=="
+check_sc() { # <sc 名称> <用途>
+  if kubectl get storageclass "$1" >/dev/null 2>&1; then
+    ok "StorageClass $1($2)"
+  else
+    miss "StorageClass $1 不存在($2)"
+  fi
+}
+check_sc topolvm-provisioner "实例盘/监控组件存储(full+light 均为强制依赖)"
+if [[ "$env_name" == "full" ]]; then
+  check_sc superdl-juicefs "共享数据盘/监控栈/registry 存储"
+else
+  # light 无 JuiceFS:registry.yaml 的 SC 必须已改回本地 SC,否则 registry PVC 永不绑定
+  registry_sc=$(grep -E '^\s*storageClassName:' registry/registry.yaml | head -1 | awk '{print $2}')
+  if [[ "$registry_sc" == "superdl-juicefs" ]]; then
+    miss "registry/registry.yaml storageClassName=superdl-juicefs 在 light 档永不绑定(改回 topolvm-provisioner,见该文件 PVC 注释)"
+  elif [[ -n "$registry_sc" ]]; then
+    check_sc "$registry_sc" "registry 镜像仓库存储"
   fi
 fi
 

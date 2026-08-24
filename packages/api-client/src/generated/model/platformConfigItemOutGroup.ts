@@ -13,6 +13,7 @@ export const PlatformConfigItemOutGroup = {
   payment_alipay: 'payment_alipay',
   sms: 'sms',
   real_name: 'real_name',
+  captcha: 'captcha',
   compliance: 'compliance',
   support: 'support',
   cluster: 'cluster',

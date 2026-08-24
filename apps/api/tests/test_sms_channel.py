@@ -60,7 +60,8 @@ class TestVerifyCodeSendFailure:
 
         set_sms_channel(_FailingChannel())
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000090", "purpose": "register"}
+            "/api/v1/auth/sms-code",
+            json={"phone": "13800000090", "purpose": "register", "captcha_token": "mock-pass"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "SMS_SEND_FAILED"
@@ -109,3 +110,62 @@ class TestMockChannelRedaction:
             "13800000000", "SMS_123", {"code": "123456", "title": "余额预警"}
         )
         assert captured["params"] == {"code": "******", "title": "余额预警"}
+
+
+class TestPlatformQuota:
+    """平台级配额(P1-17):单点限流防不住的分布式滥用,由全局预算池闸门兜底。"""
+
+    async def test_quota_exceeded_raises(self, sm, monkeypatch):
+        """计数即闸门:窗口内第 N+1 次调用直接 RATE_LIMITED。
+
+        sm fixture 不可省:计数行走全局 sessionmaker,不靠它清表会把命中数泄漏给后续用例。
+        """
+        from app.core import sms as sms_module
+        from app.core.errors import AppError, ErrorCode
+
+        monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 2)
+        await sms_module.ensure_sms_platform_quota()
+        await sms_module.ensure_sms_platform_quota()
+        with pytest.raises(AppError) as exc_info:
+            await sms_module.ensure_sms_platform_quota()
+        assert exc_info.value.code is ErrorCode.RATE_LIMITED
+        assert exc_info.value.http_status == 429
+
+    async def test_sms_code_blocked_by_platform_quota(self, client: AsyncClient, sm, monkeypatch):
+        """配额耗尽时验证码接口 429 RATE_LIMITED,且不落库无效验证码。"""
+        from app.core import sms as sms_module
+        from app.modules.account.models import SmsCode
+
+        monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 1)
+        await sms_module.ensure_sms_platform_quota()  # 占满配额
+        resp = await client.post(
+            "/api/v1/auth/sms-code",
+            json={"phone": "13800000093", "purpose": "register", "captcha_token": "mock-pass"},
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
+        async with sm() as session:
+            row = (
+                await session.execute(select(SmsCode).where(SmsCode.phone == "13800000093"))
+            ).scalar_one_or_none()
+            assert row is None
+
+    async def test_notify_sms_digested_when_quota_exhausted(self, sm, monkeypatch):
+        """通知短信遇配额耗尽:消化不重试、不触达渠道(best-effort,重试只会撞墙至死信)。"""
+        from app.core import sms as sms_module
+        from app.core.outbox import OutboxTask
+        from app.modules.notify.service import handle_notify_sms
+
+        sent: list[str] = []
+
+        class _CountingChannel:
+            async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
+                sent.append(phone)
+
+        set_sms_channel(_CountingChannel())
+        monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 1)
+        await sms_module.ensure_sms_platform_quota()  # 占满配额
+        task = OutboxTask(type="notify.sms", payload={"phone": "13800000094", "title": "余额预警"})
+        async with sm() as session:
+            await handle_notify_sms(session, task)  # 不抛 = 已消化
+        assert sent == []

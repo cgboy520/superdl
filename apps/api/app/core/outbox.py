@@ -132,16 +132,21 @@ def enqueue(session: AsyncSession, task_type: str, payload: dict[str, Any]) -> O
     return task
 
 
-async def _claim_one(session: AsyncSession, worker_id: str) -> OutboxTask | None:
-    row = (
-        await session.execute(
-            select(OutboxTask)
-            .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
-            .order_by(OutboxTask.next_retry_at, OutboxTask.id)  # 到期最早优先,id 决胜
-            .limit(1)
-            .with_for_update(skip_locked=True)
-        )
-    ).scalar_one_or_none()
+async def _claim_one(
+    session: AsyncSession, worker_id: str, task_types: frozenset[str] | None = None
+) -> OutboxTask | None:
+    """领取一个到期任务。task_types 非空时按组件过滤(P1-18):过滤是取数层语义,
+    其它组件的任务对本次查询不可见(不会被误领,也不会被排序阻塞)。"""
+    stmt = (
+        select(OutboxTask)
+        .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
+        .order_by(OutboxTask.next_retry_at, OutboxTask.id)  # 到期最早优先,id 决胜
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    if task_types is not None:
+        stmt = stmt.where(OutboxTask.type.in_(sorted(task_types)))
+    row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
         return None
     row.status = "running"
@@ -152,11 +157,13 @@ async def _claim_one(session: AsyncSession, worker_id: str) -> OutboxTask | None
 
 
 async def _process_one(
-    sm: async_sessionmaker[AsyncSession], worker_id: str = "worker-0"
+    sm: async_sessionmaker[AsyncSession],
+    worker_id: str = "worker-0",
+    task_types: frozenset[str] | None = None,
 ) -> Outcome | None:
     """领取并执行一个任务。返回执行结局;无任务可领返回 None。"""
     async with sm() as session:
-        task = await _claim_one(session, worker_id)
+        task = await _claim_one(session, worker_id, task_types)
     if task is None:
         return None
 
@@ -261,16 +268,25 @@ async def _process_one(
     return outcome
 
 
-async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "worker-0") -> bool:
+async def process_one(
+    sm: async_sessionmaker[AsyncSession],
+    worker_id: str = "worker-0",
+    task_types: frozenset[str] | None = None,
+) -> bool:
     """领取并执行一个任务。返回是否有任务被处理。"""
-    return await _process_one(sm, worker_id) is not None
+    return await _process_one(sm, worker_id, task_types) is not None
 
 
-async def drain(sm: async_sessionmaker[AsyncSession], *, limit: int = 100) -> int:
+async def drain(
+    sm: async_sessionmaker[AsyncSession],
+    *,
+    limit: int = 100,
+    task_types: frozenset[str] | None = None,
+) -> int:
     """连续处理直到队列空(或到 limit)。仅测试用:worker 关停不做冲刷
     (SIGTERM 直接停在跑任务,遗留 running 由 reaper 超时打回 pending)。"""
     n = 0
-    while n < limit and await process_one(sm):
+    while n < limit and await process_one(sm, task_types=task_types):
         n += 1
     return n
 
@@ -308,20 +324,47 @@ async def drain_strict(
 
 
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
-    """把超时的 running 任务打回 pending(worker 崩溃遗留)。定时任务调用。"""
+    """把超时的 running 任务打回 pending(worker 崩溃遗留)。定时任务调用。
+
+    复活必须计一次失败(retries+1 + 指数退避,预算耗尽进 dead):
+    杀进程的任务(OOM、段错误)若不计数,每 5 分钟被无限重投,
+    永远进不了 dead 队列、不触发 OUTBOX_DEAD_TOTAL、不上管理端。
+    """
     async with sm() as session:
-        result = cast(
-            CursorResult[Any],
-            await session.execute(
-                update(OutboxTask)
-                .where(
-                    OutboxTask.status == "running",
-                    OutboxTask.locked_at < now_utc() - RUNNING_TIMEOUT,
+        rows = list(
+            (
+                await session.execute(
+                    select(OutboxTask)
+                    .where(
+                        OutboxTask.status == "running",
+                        OutboxTask.locked_at < now_utc() - RUNNING_TIMEOUT,
+                    )
+                    .with_for_update(skip_locked=True)
                 )
-                .values(status="pending", locked_by=None, locked_at=None)
-            ),
+            ).scalars()
         )
+        for task in rows:
+            policy = retry_policy_for(task.type)
+            attempt = task.retries + 1
+            if attempt <= policy.max_retries:
+                backoff = timedelta(
+                    seconds=min(
+                        policy.backoff_base_seconds * 2 ** (attempt - 1),
+                        policy.backoff_max_seconds,
+                    )
+                )
+                task.status = "pending"
+                task.retries = attempt
+                task.next_retry_at = now_utc() + backoff
+                task.last_error = "reaped: running timeout (worker lost)"
+            else:
+                task.status = "dead"
+                task.retries = attempt
+                task.last_error = "reaped: running timeout (worker lost)"
+                OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
+            task.locked_by = None
+            task.locked_at = None
         await session.commit()
-        if result.rowcount:
-            logger.warning("outbox_reaped_stuck_tasks", count=result.rowcount)
-        return result.rowcount
+        if rows:
+            logger.warning("outbox_reaped_stuck_tasks", count=len(rows))
+        return len(rows)

@@ -148,7 +148,8 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
 
   // 渠道开关来自管理端·平台配置(site-config 公开端点)
-  const { data: site } = useSiteConfig();
+  const siteQ = useSiteConfig();
+  const { data: site } = siteQ;
   const enabled = {
     wechat: site?.payment_channels.wechat ?? false,
     alipay: site?.payment_channels.alipay ?? false,
@@ -222,6 +223,10 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
     >
       {!shown ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          {siteQ.isError && (
+            // 渠道信息加载失败绝不伪装成「全部渠道未开通」(两个灰 tab + 死按钮无解释)
+            <DataErrorAlert onRetry={() => void siteQ.refetch()} />
+          )}
           <Tabs
             activeKey={channel}
             onChange={setPickedChannel}

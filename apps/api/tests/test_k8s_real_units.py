@@ -89,7 +89,7 @@ class TestTenantNetpol:
         assert [(p.protocol, p.port) for p in ssh.ports] == [("TCP", 22)]
         assert ssh._from[0].ip_block.cidr == "0.0.0.0/0"
 
-        # 出方向:DNS(收敛 CoreDNS Pod)+ 公网 TCP(端口区间)+ 公网 UDP
+        # 出方向:DNS(收敛 CoreDNS Pod)+ 公网 TCP(端口区间)+ 公网 UDP(白名单 53/443)
         assert len(spec.egress) == 3
         dns = spec.egress[0].to[0]
         assert dns.namespace_selector.match_labels == {"kubernetes.io/metadata.name": "kube-system"}
@@ -98,12 +98,123 @@ class TestTenantNetpol:
             ip_block = rule.to[0].ip_block
             assert ip_block.cidr == "0.0.0.0/0"
             assert set(ip_block._except) == set(PRIVATE_CIDRS)
+        udp_ports = spec.egress[2].ports
+        assert {(p.protocol, p.port) for p in udp_ports} == {("UDP", 53), ("UDP", 443)}
 
     def test_private_cidrs_cover_cgnat_and_metadata(self):
         # 云 metadata 169.254.169.254 必须被 169.254.0.0/16 覆盖;CGNAT 段有意封禁
         assert "169.254.0.0/16" in PRIVATE_CIDRS
         assert "100.64.0.0/10" in PRIVATE_CIDRS
         assert "198.18.0.0/15" in PRIVATE_CIDRS
+
+
+class TestInstanceSecretHandling:
+    """JUPYTER_TOKEN 走 per-instance Secret + secretKeyRef,明文不落 Pod spec
+    (spec 进 etcd/审计快照,任何 pods:get/list 身份都能读走明文 env)。"""
+
+    def _spec(self) -> InstancePodSpec:
+        return InstancePodSpec(
+            namespace="tenant-1",
+            name="inst-1",
+            image="img",
+            gpu_resources={},
+            runtime_class=None,
+            host_users=True,
+            vcpu=1,
+            mem_gb=1,
+            disk_gb=1,
+            ssh_node_port=31234,
+            jupyter_host="inst-1.app.example.com",
+            secret_env={"JUPYTER_TOKEN": "plain-token-1"},
+        )
+
+    def test_secret_created_and_pod_references_it(self):
+        orch = _bare()
+        created: dict[str, Any] = {}
+
+        class Core:
+            def create_namespaced_secret(self, ns: str, secret: Any) -> None:
+                created["secret"] = secret
+
+            def create_namespaced_pod(self, ns: str, pod: Any) -> None:
+                created["pod"] = pod
+
+        orch.core = cast(Any, Core())
+        spec = self._spec()
+        orch._ensure_instance_secret_sync(spec)
+        assert created["secret"].metadata.name == "jupyter-inst-1"
+        assert created["secret"].string_data == {"JUPYTER_TOKEN": "plain-token-1"}
+        assert created["secret"].metadata.labels["superdl.io/managed"] == "true"
+
+        orch._create_pod_sync(spec)
+        env = created["pod"].spec.containers[0].env
+        token_env = next(e for e in env if e.name == "JUPYTER_TOKEN")
+        assert token_env.value is None  # 明文不落 spec
+        assert token_env.value_from.secret_key_ref.name == "jupyter-inst-1"
+        assert token_env.value_from.secret_key_ref.key == "JUPYTER_TOKEN"
+
+    def test_existing_secret_is_patched_not_duplicated(self):
+        """幂等重放(outbox at-least-once):已存在则 patch 收敛,不炸不重投。"""
+        orch = _bare()
+        calls: list[str] = []
+        body_holder: dict[str, Any] = {}
+
+        class Core:
+            def create_namespaced_secret(self, ns: str, secret: Any) -> None:
+                calls.append("create")
+                raise k8s_client.ApiException(status=409)
+
+            def patch_namespaced_secret(self, name: str, ns: str, body: Any) -> None:
+                calls.append("patch")
+                body_holder.update(body)
+
+        orch.core = cast(Any, Core())
+        orch._ensure_instance_secret_sync(self._spec())
+        assert calls == ["create", "patch"]
+        assert body_holder["stringData"] == {"JUPYTER_TOKEN": "plain-token-1"}
+
+
+class TestDiskQuotaJob:
+    """配额 Job 的 metaurl 处理:密码必须走 META_PASSWORD env,不得出现在 argv。"""
+
+    def _capture_container(self, monkeypatch: Any, is_set: bool) -> Any:
+        orch = _bare()
+        orch.settings = cast(  # cast:离线单测的 settings 桩(只用到这两个字段)
+            Any,
+            SimpleNamespace(
+                juicefs_cli_image="juicedata/juicefs-ce:v1.3.0", k8s_platform_namespace="superdl"
+            ),
+        )
+        captured: dict[str, Any] = {}
+
+        def fake_run_managed(namespace: str, job_name: str, container: Any, **kwargs: Any) -> None:
+            captured["container"] = container
+
+        monkeypatch.setattr(orch, "_run_managed_job_sync", fake_run_managed)
+        orch._disk_quota_sync("disk-subpath-1", 100, is_set)
+        return captured["container"]
+
+    def test_password_not_in_argv(self, monkeypatch: Any):
+        for is_set in (True, False):
+            container = self._capture_container(monkeypatch, is_set)
+            script = " ".join(container.command)
+            # juicefs 子进程 argv 不得直接拿到 metaurl(否则凭据现于 /proc/<pid>/cmdline);
+            # 脚本串里的变量名 $JUICEFS_METAURL 只是 shell 间接引用,值始终在 env
+            assert 'quota set "$JUICEFS_METAURL"' not in script
+            assert 'quota delete "$JUICEFS_METAURL"' not in script
+            assert '"$METAURL_NOPASS"' in script
+            assert "META_PASSWORD" in script
+            # metaurl 仍经 secretKeyRef 注入(worker 零接触明文)
+            metaurl_env = next(e for e in container.env if e.name == "JUICEFS_METAURL")
+            assert metaurl_env.value_from.secret_key_ref.name == "superdl-api-secrets"
+
+    def test_subpath_and_capacity_stay_env_indirect(self, monkeypatch: Any):
+        container = self._capture_container(monkeypatch, True)
+        script = " ".join(container.command)
+        assert "disk-subpath-1" not in script  # 防注入:值只走 env
+        env = {e.name: e.value for e in container.env if e.value is not None}
+        assert env["QUOTA_SUBPATH"] == "disk-subpath-1"
+        assert env["QUOTA_CAPACITY_GB"] == "100"
 
 
 def _page(items: list[Any], cont: str | None = None) -> Any:

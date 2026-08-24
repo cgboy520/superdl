@@ -54,6 +54,7 @@ import type {
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
   AdminOrdersExportApiAdminV1OrdersExportGetParams,
   AdminOut,
+  AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders,
   AdminRefreshOut,
   AdminRefreshRequest,
   AdminRefundOut,
@@ -1443,15 +1444,17 @@ export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl = () => {
 
 /**
  * 公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。
+ * Idempotency-Key 重放不新建公告(否则全员收到重复站内信),回 200 + X-Idempotent-Replay。
  * @summary Admin Publish Announcement
  */
-export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementResultOut> => {
+export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate,
+    headers?: AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementResultOut> => {
 
   return customFetch<AnnouncementResultOut>(getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(announcementCreate)
   }
 );}
@@ -1467,7 +1470,8 @@ export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryKey = (a
     }
 
 
-export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(announcementCreate: AnnouncementCreate,
+    headers?: AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1476,7 +1480,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>> = ({ signal }) => adminPublishAnnouncementApiAdminV1AnnouncementsPost(announcementCreate, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>> = ({ signal }) => adminPublishAnnouncementApiAdminV1AnnouncementsPost(announcementCreate,headers, { signal, ...requestOptions });
 
 
 
@@ -1490,7 +1494,8 @@ export type AdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryError = HTTP
 
 
 export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
- announcementCreate: AnnouncementCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>> & Pick<
+ announcementCreate: AnnouncementCreate,
+    headers: undefined |  AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>,
           TError,
@@ -1500,7 +1505,8 @@ export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = A
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
- announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>> & Pick<
+ announcementCreate: AnnouncementCreate,
+    headers?: AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>,
           TError,
@@ -1510,7 +1516,8 @@ export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = A
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
- announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ announcementCreate: AnnouncementCreate,
+    headers?: AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -1518,11 +1525,12 @@ export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = A
  */
 
 export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError = HTTPValidationError>(
- announcementCreate: AnnouncementCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ announcementCreate: AnnouncementCreate,
+    headers?: AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishAnnouncementApiAdminV1AnnouncementsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions(announcementCreate,options)
+  const queryOptions = getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions(announcementCreate,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

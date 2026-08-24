@@ -892,6 +892,7 @@ export default interface Resources {
       "refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
       "refundAmountExceeded": "退款金额不能超过可退上限 ¥{{max}}(订单金额 ¥{{order}},当前余额 ¥{{balance}})",
       "refundBalanceConsumed": "余额已被消费,暂不能核销退款(当前余额 ¥{{balance}},应退 ¥{{amount}});请取消该退款单",
+      "refundChannelReversed": "该订单支付已被支付渠道冲正(拒付),不可申请退款,请联系客服",
       "refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
       "refundNotFound": "退款单不存在",
       "refundOrderNotPaid": "仅支付成功的充值订单可申请退款",

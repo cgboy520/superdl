@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CaptchaConfigOut,
   DeletionRequestCreate,
   DeletionRequestOut,
   HTTPValidationError,
@@ -57,6 +58,107 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getCaptchaConfigApiV1AuthCaptchaConfigGetUrl = () => {
+
+
+
+
+  return `/api/v1/auth/captcha-config`
+}
+
+/**
+ * 验证码 2.0 客户端初始化配置(免鉴权;泄漏面无敏感——prefix/scene_id 本就写进前端 JS)。
+ * @summary Captcha Config
+ */
+export const captchaConfigApiV1AuthCaptchaConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CaptchaConfigOut> => {
+
+  return customFetch<CaptchaConfigOut>(getCaptchaConfigApiV1AuthCaptchaConfigGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCaptchaConfigApiV1AuthCaptchaConfigGetQueryKey = () => {
+    return [
+    `/api/v1/auth/captcha-config`
+    ] as const;
+    }
+
+
+export const getCaptchaConfigApiV1AuthCaptchaConfigGetQueryOptions = <TData = Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCaptchaConfigApiV1AuthCaptchaConfigGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>> = ({ signal }) => captchaConfigApiV1AuthCaptchaConfigGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CaptchaConfigApiV1AuthCaptchaConfigGetQueryResult = NonNullable<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>>
+export type CaptchaConfigApiV1AuthCaptchaConfigGetQueryError = unknown
+
+
+export function useCaptchaConfigApiV1AuthCaptchaConfigGet<TData = Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>,
+          TError,
+          Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCaptchaConfigApiV1AuthCaptchaConfigGet<TData = Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>,
+          TError,
+          Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCaptchaConfigApiV1AuthCaptchaConfigGet<TData = Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Captcha Config
+ */
+
+export function useCaptchaConfigApiV1AuthCaptchaConfigGet<TData = Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof captchaConfigApiV1AuthCaptchaConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getCaptchaConfigApiV1AuthCaptchaConfigGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
 
 export const getLoginApiV1AuthLoginPostUrl = () => {
 

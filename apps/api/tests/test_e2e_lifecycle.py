@@ -28,7 +28,10 @@ def fake():
 async def test_full_lifecycle_drill(client, sm, fake):
     # ── 1. 注册 ────────────────────────────────────────────────
     phone = "13411112222"
-    await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+    await client.post(
+        "/api/v1/auth/sms-code",
+        json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+    )
     reg = await client.post(
         "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
     )
@@ -59,6 +62,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     disk = (
         await client.post("/api/v1/disks", json={"name": "drill-data", "size_gb": 100}, headers=h)
     ).json()
+    await drain(sm)  # 配额下发完成(quota_synced=true)后才可挂载
 
     # ── 4. 市场选共享档 → 创建实例(挂盘,Idempotency-Key)──
     sku_id = await create_test_sku(sm)  # 共享标准档 1.68/时 hami 池
@@ -83,6 +87,10 @@ async def test_full_lifecycle_drill(client, sm, fake):
 
     # outbox 建 Pod → Ready → reconciler 计费开始
     await drain(sm)
+    # JUPYTER_TOKEN 不落 Pod spec(走 per-instance Secret + secretKeyRef)
+    pod = fake.pods[(f"tenant-{user_id}", uuid)]
+    assert "JUPYTER_TOKEN" not in pod.spec.env
+    assert fake.instance_secrets[(f"tenant-{user_id}", uuid)]["JUPYTER_TOKEN"]
     fake.mark_ready(f"tenant-{user_id}", uuid)
     await reconcile_once(sm)
     inst = (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()

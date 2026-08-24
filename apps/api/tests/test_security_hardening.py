@@ -69,6 +69,100 @@ class TestLoginRateLimit:
         assert [r.hits for r in rows] == [3]
 
 
+class TestAccountLevelLock:
+    """账号级锁定(P1-16):撞库可以换 IP,但换不了目标账号。
+
+    直连对端 IP 不可经 HTTP 头伪造(信任边界为直连),测试层换 IP 只能直接调 service。
+    """
+
+    async def test_user_login_account_lock_across_ips(self, client: AsyncClient, sm):
+        """10 个不同 IP 各失败 1 次(IP+账号桶每桶仅 1,不触发),第 11 次账号桶锁死。"""
+        import pytest
+
+        from app.core.errors import AppError, ErrorCode
+        from app.modules.account import service as account_service
+        from tests.test_account_auth import register
+
+        await register(client, "13800000081", password="secret123456")
+        for i in range(10):
+            async with sm() as session:
+                with pytest.raises(AppError) as exc_info:
+                    await account_service.login(
+                        session, "13800000081", None, "wrong-pass", client_ip=f"10.0.0.{i}"
+                    )
+                assert exc_info.value.code is ErrorCode.LOGIN_FAILED
+        # 第 11 个新 IP:IP 桶全冷,但账号桶已满 → 廉价准入在 bcrypt 之前拦下
+        async with sm() as session:
+            with pytest.raises(AppError) as exc_info:
+                await account_service.login(
+                    session, "13800000081", None, "wrong-pass", client_ip="10.0.0.99"
+                )
+            assert exc_info.value.code is ErrorCode.RATE_LIMITED
+            assert exc_info.value.http_status == 429
+
+    async def test_admin_login_account_lock_across_ips(self, client: AsyncClient, sm):
+        """管理端同款:换 IP 逃不掉目标账号的阶梯锁定。"""
+        import pytest
+
+        from app.core.errors import AppError, ErrorCode
+        from app.modules.adminapi import service as admin_service
+
+        await admin_headers(sm, client)  # 创建 admin-user(成功登录不计数)
+        for i in range(10):
+            async with sm() as session:
+                with pytest.raises(AppError) as exc_info:
+                    await admin_service.login(
+                        session, "admin-user", "wrong", client_ip=f"10.1.0.{i}"
+                    )
+                assert exc_info.value.code is ErrorCode.LOGIN_FAILED
+        async with sm() as session:
+            with pytest.raises(AppError) as exc_info:
+                await admin_service.login(session, "admin-user", "wrong", client_ip="10.1.0.99")
+            assert exc_info.value.code is ErrorCode.RATE_LIMITED
+
+    async def test_success_after_foreign_failures_notifies_and_clears(
+        self, client: AsyncClient, sm
+    ):
+        """账号桶有失败记录而本人成功登录:发异常登录通知并清零账号桶。
+
+        正常用户的预算不被攻击者的失败计数拖垮;通知让本人感知撞库。
+        """
+        import pytest
+        from sqlalchemy import select
+
+        from app.core.errors import AppError
+        from app.core.ratelimit import read_hits
+        from app.modules.account import service as account_service
+        from app.modules.notify.models import Notification
+        from tests.test_account_auth import register
+
+        data = await register(client, "13800000082", password="secret123456")
+        # 攻击者从另外两个 IP 撞库失败 2 次
+        for ip in ("10.2.0.1", "10.2.0.2"):
+            async with sm() as session:
+                with pytest.raises(AppError):
+                    await account_service.login(
+                        session, "13800000082", None, "wrong-pass", client_ip=ip
+                    )
+        assert await read_hits("user-login-acct:13800000082", window_seconds=900.0) == 2
+        # 本人成功登录
+        async with sm() as session:
+            pair = await account_service.login(
+                session, "13800000082", None, "secret123456", client_ip="10.2.0.3"
+            )
+        assert pair.access_token
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(Notification).where(Notification.user_id == data["user"]["id"])
+                )
+            ).scalar_one()
+            assert "异常登录" in row.title
+            assert row.severity == "warning"
+        # 账号桶已清零:后续本人登录不再重复通知,也不被历史失败拖垮
+        assert await read_hits("user-login-acct:13800000082", window_seconds=900.0) == 0
+
+
 class TestNoDefaultBootstrapAdmin:
     def test_bootstrap_password_defaults_to_none(self, monkeypatch):
         from app.core.config import Settings
@@ -136,6 +230,16 @@ class TestProdConfigValidation:
             "metrics_token": "mtoken",
             "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
             "image_allowed_registries": ["registry.superdl.internal/"],
+            # prod 无条件拒绝 mock 实名(与 sms/payment 同口径):基线配置必须是 aliyun
+            "real_name_provider": "aliyun",
+            "real_name_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "real_name_access_key_secret": "realname-secret",
+            # 人机校验同口径(P1-17):prod 必须 aliyun 且四项齐全
+            "captcha_provider": "aliyun",
+            "captcha_scene_id": "scene-1",
+            "captcha_prefix": "prefix-1",
+            "captcha_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "captcha_access_key_secret": "captcha-secret",
         }
 
     def test_prod_rejects_dev_defaults(self):
@@ -189,15 +293,24 @@ class TestProdConfigValidation:
 
         from app.core.config import Settings
 
+        kwargs = self._complete_prod_kwargs()
+        kwargs["real_name_provider"] = "mock"
+        kwargs["real_name_required_for_recharge"] = True
         with pytest.raises(ValidationError, match="real_name_provider"):
-            Settings(**self._complete_prod_kwargs(), real_name_required_for_recharge=True)
+            Settings(**kwargs)
 
-    def test_prod_allows_mock_realname_when_not_required(self):
-        """实名开关未启用时 mock 无害,不过度收紧。"""
+    def test_prod_rejects_mock_realname_unconditionally(self):
+        """mock 核验对非 0000 结尾恒过:即使未开强制实名,prod 也无条件拒绝 mock 渠道
+        (与 sms/payment 同口径——平台配置可在任意时刻在线打开强制开关,不能留后门)。"""
+        import pytest
+        from pydantic import ValidationError
+
         from app.core.config import Settings
 
-        s = Settings(**self._complete_prod_kwargs())
-        assert s.real_name_provider == "mock"
+        kwargs = self._complete_prod_kwargs()
+        kwargs["real_name_provider"] = "mock"
+        with pytest.raises(ValidationError, match="real_name_provider"):
+            Settings(**kwargs)
 
     def test_prod_rejects_empty_image_allowed_registries(self):
         """空白名单 = 租户可拉任意仓库镜像(把任意镜像引进集群),prod 必须显式配置。"""
@@ -239,7 +352,8 @@ class TestSmsCodeBruteForce:
 
         phone = "13800000088"
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"}
+            "/api/v1/auth/sms-code",
+            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
         )
         assert resp.status_code == 204
         for _ in range(5):
@@ -268,7 +382,10 @@ class TestSmsCodeBruteForce:
         from app.modules.account import service as account_service
 
         phone = "13800000090"
-        await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+        await client.post(
+            "/api/v1/auth/sms-code",
+            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+        )
         async with sm() as session:
             await account_service._consume_sms_code(session, phone, "123456", "register")
             await session.commit()
@@ -296,11 +413,16 @@ class TestSmsCodeBruteForce:
         for i in range(20):
             resp = await client.post(
                 "/api/v1/auth/sms-code",
-                json={"phone": f"138000001{i:02d}", "purpose": "register"},
+                json={
+                    "phone": f"138000001{i:02d}",
+                    "purpose": "register",
+                    "captcha_token": "mock-pass",
+                },
             )
             assert resp.status_code == 204
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000199", "purpose": "register"}
+            "/api/v1/auth/sms-code",
+            json={"phone": "13800000199", "purpose": "register", "captcha_token": "mock-pass"},
         )
         assert resp.status_code == 429
 
@@ -365,6 +487,20 @@ class TestEdgeGuard:
             "/api/admin/v1/auth/login", json={"username": "x", "password": "y"}
         )
         assert resp.status_code == 400
+
+    async def test_explicit_enable_outside_prod(self, client: AsyncClient, monkeypatch):
+        """staging 类环境(非 prod 名运行)显式开启后,管理端 API 同样不暴露在公网 Host 上。"""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "edge_guard_enabled", True, raising=False)
+        monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
+        resp = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "x", "password": "y"},
+            headers={"Host": "api.superdl.cn"},
+        )
+        assert resp.status_code == 404
 
 
 class TestMetricsGuard:
@@ -452,7 +588,8 @@ class TestSmsCodeAtRest:
         from app.modules.account.models import SmsCode
 
         resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000777", "purpose": "register"}
+            "/api/v1/auth/sms-code",
+            json={"phone": "13800000777", "purpose": "register", "captcha_token": "mock-pass"},
         )
         assert resp.status_code == 204, resp.text
         async with sm() as session:

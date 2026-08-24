@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -15,7 +16,7 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.platform_config import get_effective_platform_config
-from app.core.sms import get_sms_channel
+from app.core.sms import ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.notify.models import Announcement, Notification
 
@@ -90,6 +91,14 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
         return  # 无收件人:配置错误,无重试价值
     cfg = await get_effective_platform_config(session)
     channel = await get_sms_channel(session)
+    try:
+        await ensure_sms_platform_quota()
+    except AppError as exc:
+        if exc.code is ErrorCode.RATE_LIMITED:
+            # 平台预算池耗尽:通知短信 best-effort,消化不重试(重试只会反复撞墙至死信)
+            logger.warning("sms_platform_quota_exhausted", task_id=task.id)
+            return
+        raise
     await channel.send(phone, cfg["sms_template_notice"] or "", {"title": task.payload["title"]})
 
 
@@ -138,21 +147,52 @@ _ANNOUNCEMENT_CHUNK = 1000
 ANNOUNCEMENT_LIST_CAP = 200
 
 
+async def _announcement_by_idempotency_key(
+    session: AsyncSession, idempotency_key: str
+) -> Announcement | None:
+    return (
+        await session.execute(
+            select(Announcement).where(Announcement.idempotency_key == idempotency_key)
+        )
+    ).scalar_one_or_none()
+
+
 async def publish_announcement(
-    session: AsyncSession, *, title: str, content: str, created_by: int
-) -> int:
+    session: AsyncSession, *, title: str, content: str, created_by: int, idempotency_key: str | None
+) -> tuple[int, bool]:
     """公告群发:先落 announcements 记录,再对全部 active 用户写 announcement 站内信。
-    返回触达人数。
+    返回 (触达人数, created):created=False = 幂等重放(路由回 200 + X-Idempotent-Replay)。
 
     fanout 行 dedup_key = ann:{公告id}:{user_id}:撤回按前缀精确收回,
     且发布中途失败重试逐用户幂等(on_conflict_do_nothing)。分块批量 INSERT
     替代逐用户 INSERT 的 N+1;单事务内仅 ⌈N/1000⌉ 条语句。
+    幂等键必须带:不带键的 HTTP 重试会产生新公告 id(新 dedup 前缀),全员重复触达。
     """
     from app.modules.account.service import list_active_user_ids
 
-    announcement = Announcement(title=title, content=content, created_by=created_by, reached=0)
+    if idempotency_key:
+        existing = await _announcement_by_idempotency_key(session, idempotency_key)
+        if existing is not None:
+            return existing.reached, False  # 幂等重放
+
+    announcement = Announcement(
+        title=title,
+        content=content,
+        created_by=created_by,
+        reached=0,
+        idempotency_key=idempotency_key,
+    )
     session.add(announcement)
-    await session.flush()  # 先取公告 id:fanout dedup_key 以其为前缀
+    try:
+        await session.flush()  # 先取公告 id:fanout dedup_key 以其为前缀
+    except IntegrityError:
+        await session.rollback()
+        # 同键并发:返回胜出方的公告(唯一约束兜底)
+        if idempotency_key:
+            winner = await _announcement_by_idempotency_key(session, idempotency_key)
+            if winner is not None:
+                return winner.reached, False
+        raise
     user_ids = await list_active_user_ids(session)
     announcement.reached = len(user_ids)
     for i in range(0, len(user_ids), _ANNOUNCEMENT_CHUNK):
@@ -175,7 +215,7 @@ async def publish_announcement(
         )
     await session.commit()
     logger.info("announcement_published", title=title, reached=len(user_ids))
-    return len(user_ids)
+    return len(user_ids), True
 
 
 async def admin_list_announcements(session: AsyncSession) -> list[Announcement]:

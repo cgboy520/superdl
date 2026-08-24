@@ -152,7 +152,7 @@
     "sshKeyOnly": "实例仅支持 SSH 密钥登录,不支持密码登录",
     "startNeedsStopped": "仅已关机的实例可以开机",
     "stockAvailable": "可开实例 {{count}}",
-    "stopConfirm": "关机后 GPU 立即释放、停止计费,实例盘数据保留;再次开机时若该规格已租完可能需要等待或更换规格",
+    "stopConfirm": "关机后 GPU 立即释放、停止 GPU 计费,实例盘数据保留;已挂载的数据盘继续按日计费。再次开机时若该规格已租完可能需要等待或更换规格",
     "stopNeedsRunning": "仅运行中的实例可以关机"
   },
   "create": {
@@ -456,6 +456,7 @@
       "b2": "数据盘独立于实例,释放实例不丢数据",
       "b3": "价格公开,按钮上的库存就是真库存"
     },
+    "captchaUnavailable": "人机校验组件加载失败,请刷新页面后重试",
     "codeSent": "验证码已发送",
     "forgotPassword": "忘记密码?",
     "getCode": "获取验证码",

@@ -301,6 +301,50 @@ class TestUpsertIdempotency:
         assert len(bills) == 1
         assert w.balance == Decimal("98.00")  # 100 - 2.00,并发只扣一次
 
+    async def test_concurrent_growth_tops_up_delta_once(self, sm):
+        """已 charged 的账单行并发增量补足(先尾账后续跑):差价只加一次(重复执行零重复扣款)。"""
+        inst_id = await seed_instance(sm, events=[ev(0, "creating", "running")])
+        async with sm() as session:  # 先按半小时入账(1.00)并标记 charged
+            await upsert_hour_bill(
+                session,
+                instance_id=inst_id,
+                user_id=1,
+                unit_price=Decimal("2.0000"),
+                gpu_count=1,
+                hour_start=H,
+                seconds=1800,
+                source="hourly",
+            )
+            await session.commit()
+
+        gate = asyncio.Barrier(4)
+
+        async def topup() -> Decimal:
+            await gate.wait()
+            async with sm() as session:
+                charged = await upsert_hour_bill(
+                    session,
+                    instance_id=inst_id,
+                    user_id=1,
+                    unit_price=Decimal("2.0000"),
+                    gpu_count=1,
+                    hour_start=H,
+                    seconds=3600,
+                    source="hourly",
+                )
+                await session.commit()
+                return charged
+
+        results = await asyncio.gather(topup(), topup(), topup(), gate.wait())
+        # 三个并发里只有一个真的补扣了差价 1.00(行锁串行:后到者见 seconds 已 3600 → no-op)
+        assert sorted(results[:3]) == [Decimal("0.00"), Decimal("0.00"), Decimal("1.00")]
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+            w = (await session.execute(select(Wallet))).scalar_one()
+        assert bill.seconds_used == 3600
+        assert bill.amount == Decimal("2.00")
+        assert w.balance == Decimal("98.00")  # 100 − 2.00(1.00 首扣 + 1.00 补足,只此一次)
+
     async def test_settlement_waits_for_inflight_transition(self, sm):
         """在飞的尾账事务对无锁读不可见 → 结算会把「已经停了的那半小时」算成满小时。
 
@@ -545,6 +589,51 @@ class TestCatchUpSettlement:
         await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
         at = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
         assert await settle_due_hours(sm, at=at) == MAX_CATCHUP_HOURS
+
+    async def test_watermark_missing_records_gap(self, sm):
+        """无水位线(误删/库回退)必须与其余跳窗路径同口径登记 settlement_gaps,
+        保持 SETTLEMENT_GAP_TOTAL 单调可告警——否则小时窗静默烧掉,账务无迹。"""
+        from app.modules.billing.models import SettlementGap
+
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
+        )
+        at = H_END + timedelta(minutes=2)
+        await settle_due_hours(sm, at=at)  # 首轮无水位线
+        async with sm() as session:
+            gap = (
+                await session.execute(
+                    select(SettlementGap).where(SettlementGap.reason == "watermark_missing")
+                )
+            ).scalar_one()
+            assert gap.kind == "hourly"
+        # 幂等:水位线建立后重跑不再重复登记
+        await settle_due_hours(sm, at=at)
+        async with sm() as session:
+            count = len(
+                (
+                    await session.execute(
+                        select(SettlementGap).where(SettlementGap.reason == "watermark_missing")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert count == 1
+
+    async def test_clock_skew_refuses_round(self, sm, monkeypatch):
+        """worker 时钟前跳超阈值:本轮结算拒绝执行(单调水位线推进后烧掉的账期无 gap 无恢复)。"""
+        from app.modules.billing import settlement as st
+
+        await seed_instance(
+            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
+        )
+        # worker 时钟比 DB 快 1 小时(模拟时钟前跳)
+        monkeypatch.setattr(st, "now_utc", lambda: datetime.now(UTC) + timedelta(hours=1))
+        assert await settle_due_hours(sm) == 0
+        async with sm() as session:
+            assert (await session.execute(select(BillHourly))).scalars().all() == []
+            assert await get_watermark(session, "hourly") is None  # 水位线不得推进
 
 
 @pytest.mark.parametrize(

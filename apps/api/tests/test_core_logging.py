@@ -67,3 +67,26 @@ def test_log_level_config_filters_both_sides(restore_logging: None, monkeypatch)
     assert "warn_stdlib_hidden" not in out
     assert "error_struct_shown" in out
     assert "error_stdlib_shown" in out
+
+
+def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
+    """prod(JSON):logger.exception 渲染成结构化栈帧(dict_tracebacks),不再只剩一行 event。
+    dev 的 ConsoleRenderer 自己渲染 exc_info(不能叠 dict_tracebacks,见其 TypeError)。"""
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", "prod", raising=False)  # 绕开 prod 全量校验
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    setup_logging()
+
+    try:
+        raise ValueError("boom-marker")
+    except ValueError:
+        get_logger("t.exc").exception("evt_with_traceback")
+
+    out = buf.getvalue()
+    assert "evt_with_traceback" in out
+    assert "boom-marker" in out  # 异常消息/栈帧进入渲染输出
+    assert "ValueError" in out

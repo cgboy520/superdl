@@ -77,6 +77,40 @@ async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
         await session.commit()
 
 
+class TestBlockedPortRecheck:
+    async def test_external_occupant_stays_blocked(self, sm, fake):
+        """外部对象(无平台标签的 Service)占用的端口:复检必须看得见占用者。
+        误放回池 → 再撞 → 再封的振荡会把新建实例推过创建超时(creating_timeout)。"""
+        from app.modules.orchestrator.models import PortAllocation
+
+        fake.inject_external_port(31234)
+        async with sm() as session:
+            session.add(PortAllocation(port=31234, instance_id=None, blocked=True))
+            await session.commit()
+        counts = await reconcile_once(sm)
+        assert counts["ports_unblocked"] == 0
+        async with sm() as session:
+            row = (
+                await session.execute(select(PortAllocation).where(PortAllocation.port == 31234))
+            ).scalar_one()
+            assert row.blocked is True
+
+    async def test_vacated_port_is_recovered(self, sm, fake):
+        """占用消失(外部 Service 已删)的 blocked 端口必须放回池,防单向蚕食。"""
+        from app.modules.orchestrator.models import PortAllocation
+
+        async with sm() as session:
+            session.add(PortAllocation(port=31235, instance_id=None, blocked=True))
+            await session.commit()
+        counts = await reconcile_once(sm)
+        assert counts["ports_unblocked"] == 1
+        async with sm() as session:
+            row = (
+                await session.execute(select(PortAllocation).where(PortAllocation.port == 31235))
+            ).scalar_one()
+            assert row.blocked is False
+
+
 class TestStateMachineTable:
     # 全量合法边(加边/减边都必须改这张表,测试才跟着红)
     EXPECTED: ClassVar[set[tuple[str, str]]] = {
@@ -632,6 +666,7 @@ class TestDiskArrearsHardening:
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
+        await drain(sm)  # 配额下发完成后才可挂载
         resp = await client.post(
             "/api/v1/instances",
             json={

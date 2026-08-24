@@ -433,6 +433,8 @@ PYEOF
   [ "$status" -eq 0 ]
   [ "$(stat -c %a "$TMP/join.log")" = "644" ]
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
+  # registries.yaml 含仓库认证凭据(configs.auth):必须与 config.yaml 同口径 600
+  [ "$(stat -c %a "$TMP/etc/rancher/rke2/registries.yaml")" = "600" ]
   [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR")" = "700" ]
 }
 

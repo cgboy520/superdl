@@ -39,8 +39,10 @@ PASSWORD_MIN_LENGTH = 12
 # bcrypt 上限 72 字节;schema 的 max_length 按字符计,多字节口令会绕过
 PASSWORD_MAX_BYTES = 72
 
-# ---------- TOTP MFA(admin/finance 强制) ----------
-MFA_ROLES = ("admin", "finance")
+# ---------- TOTP MFA(全部管理角色强制) ----------
+# ops 能签发节点接入令牌(→ 集群 join token → 加恶意节点)、readonly 能导出全部
+# 租户流水与审计——免 MFA 的角色等于给口令泄漏开直通车道,无一例外强制。
+MFA_ROLES = ("admin", "finance", "ops", "readonly")
 MFA_SETUP_TICKET_SECONDS = 600  # 绑定票 10 分钟,一次性用途(typ=mfa_setup)
 MFA_VERIFY_TICKET_SECONDS = 300  # 二要素票 5 分钟
 MFA_MAX_ATTEMPTS = 5  # 同账号 5 次/10min,防在线爆破 6 位码
@@ -95,6 +97,14 @@ async def login(
         max_attempts=LOGIN_MAX_ATTEMPTS,
         window_seconds=LOGIN_WINDOW_SECONDS,
     )
+    # 纯账号维度:撞库可以换 IP,但换不了目标账号(叠加 P1-13 前的免 MFA 角色时,
+    # 这是管理端口令喷洒的唯一纵深;账号级 15 分钟窗 + 日窗阶梯锁定)
+    await ensure_not_rate_limited(
+        f"admin-login-acct:{username}", max_attempts=10, window_seconds=900.0
+    )
+    await ensure_not_rate_limited(
+        f"admin-login-acct-daily:{username}", max_attempts=30, window_seconds=86400.0
+    )
     password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
         # 只在失败后计数:成功登录不消耗配额(此前连成功也计数,连登 5 次即被 429)
@@ -108,6 +118,13 @@ async def login(
             max_attempts=LOGIN_MAX_ATTEMPTS,
             window_seconds=LOGIN_WINDOW_SECONDS,
         )
+        # 账号维度同计:换 IP 也逃不掉目标账号的锁定
+        await check_rate_limit(
+            f"admin-login-acct:{username}", max_attempts=10, window_seconds=900.0
+        )
+        await check_rate_limit(
+            f"admin-login-acct-daily:{username}", max_attempts=30, window_seconds=86400.0
+        )
         logger.warning("admin_login_failed", username=username, ip=client_ip)
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
     if admin.status != "active":
@@ -118,6 +135,7 @@ async def login(
         )
     # 凭据正确即清零该账号桶的失败计数(IP 桶不清:口令喷洒不会产生成功登录)
     await _clear_login_failures(f"admin-login:{client_ip or '-'}:{username}")
+    await _clear_login_failures(f"admin-login-acct:{username}")
     # 高权角色强制 TOTP:未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
     if admin.role in MFA_ROLES:
         if admin.totp_enabled:

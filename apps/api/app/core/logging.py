@@ -51,11 +51,18 @@ def setup_logging() -> None:
 
     # stdlib 侧:外来 LogRecord 先过 foreign_pre_chain(合并 contextvars/级别/时间戳),
     # 再经同一 renderer;remove_processors_meta 剥掉桥接内部键。
+    formatter_processors: list[structlog.typing.Processor] = [
+        structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+    ]
+    if settings.environment == "prod":
+        # dict_tracebacks:prod JSON 里 logger.exception 渲染成结构化栈帧
+        # (否则生产 traceback 只剩一行 event,排障无栈无行号)。
+        # dev 的 ConsoleRenderer 自己渲染 exc_info,不能加(dict_tracebacks 产 list,
+        # ConsoleRenderer 按 str 拼接会 TypeError)
+        formatter_processors.append(structlog.processors.dict_tracebacks)
+    formatter_processors.append(renderer)
     formatter = structlog.stdlib.ProcessorFormatter(
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            renderer,
-        ],
+        processors=formatter_processors,
         foreign_pre_chain=shared_processors,
     )
     handler = logging.StreamHandler(sys.stdout)

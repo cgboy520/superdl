@@ -58,17 +58,25 @@ async def heartbeat_loop() -> None:
             await asyncio.wait_for(_stop.wait(), timeout=HEARTBEAT_INTERVAL_SECONDS)
 
 
-async def outbox_loop(worker_id: str) -> None:
-    """N 条并发领取协程(SKIP LOCKED 保证不重复);领取按 next_retry_at, id 公平排序。"""
+async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) -> None:
+    """N 条并发领取协程(SKIP LOCKED 保证不重复);领取按 next_retry_at, id 公平排序。
+
+    task_types 非空时按组件过滤(P1-18):本进程只领自己的任务类型,
+    其它组件的任务在查询层不可见(不阻塞、不误领)。"""
     sm = get_sessionmaker()
-    logger.info("outbox_worker_started", worker_id=worker_id, concurrency=OUTBOX_CONCURRENCY)
+    logger.info(
+        "outbox_worker_started",
+        worker_id=worker_id,
+        concurrency=OUTBOX_CONCURRENCY,
+        task_types=sorted(task_types) if task_types is not None else "all",
+    )
 
     async def claim_loop(lane: int) -> None:
         # 终态写按 locked_by 校验归属,各 lane 的 worker_id 必须互不相同
         lane_id = f"{worker_id}-{lane}"
         while not _stop.is_set():
             try:
-                processed = await process_one(sm, lane_id)
+                processed = await process_one(sm, lane_id, task_types)
             except Exception:
                 logger.exception("outbox_loop_error")
                 processed = False
@@ -179,7 +187,10 @@ def _timed_job(
 
 
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
-    """各模块定时任务注册(结算/巡检/聚合)。callable 一律经 _timed_job 包耗时观测。"""
+    """各模块定时任务注册(结算/巡检/聚合)。callable 一律经 _timed_job 包耗时观测。
+
+    按 SUPERDL_WORKER_COMPONENT 过滤(P1-18):组件进程只注册自己的任务,
+    组件映射集中在 workers/components.py;ALL(默认)全量注册,行为与拆分前一致。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.reconcile import reconcile_funds
@@ -190,17 +201,25 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.orchestrator.reconciler import reconcile_once
     from app.modules.tickets.patrol import stale_ticket_patrol
+    from app.workers.components import current_component, scheduled_jobs_for
 
     sm = get_sessionmaker()
+    component = current_component()
+    enabled = scheduled_jobs_for(component)
 
-    scheduler.add_job(
+    def add_job(*args: Any, **kwargs: Any) -> None:
+        """组件过滤:非本组件的任务不注册(组件映射见 workers/components.py)。"""
+        if enabled is None or kwargs["id"] in enabled:
+            scheduler.add_job(*args, **kwargs)  # 注意:此处必须直呼 scheduler,勿改名
+
+    add_job(
         _timed_job("outbox_reaper", reap_stuck_running, 300),
         "interval",
         minutes=5,
         args=[sm],
         id="outbox_reaper",
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("reconciler", reconcile_once, 30),
         "interval",
         seconds=30,
@@ -210,7 +229,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     # misfire 宽限:APScheduler 默认只有 1 秒,事件循环稍有阻塞就整轮跳过
-    scheduler.add_job(
+    add_job(
         _timed_job("hourly_settlement", settle_due_hours, 3600),
         "cron",
         minute=2,
@@ -219,7 +238,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=1800,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("daily_disk_settlement", settle_daily_disks, 86400),
         "cron",
         hour=16,  # UTC 16:10 = 北京 00:10:盘费日界按北京日(见 timeutil.billing_day_floor)
@@ -230,7 +249,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         misfire_grace_time=3600,
     )
     # 排在日结之后:先出完账,再对「出账 vs 流水」与「余额 vs 流水累计」
-    scheduler.add_job(
+    add_job(
         _timed_job("fund_reconcile", reconcile_funds, 86400),
         "cron",
         hour=16,  # UTC 16:30 = 北京 00:30(北京日界日结之后)
@@ -240,7 +259,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=3600,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("usage_aggregation", aggregate_previous_hour, 3600),
         "cron",
         minute=5,
@@ -249,7 +268,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=1800,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("close_expired_orders", close_expired_orders, 600),
         "interval",
         minutes=10,
@@ -257,7 +276,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         id="close_expired_orders",
         coalesce=True,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("payment_reconcile", reconcile_pending_orders, 120),
         "interval",
         minutes=2,
@@ -266,7 +285,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("cleanup_expired_rows", cleanup_expired_rows, 86400),
         "cron",
         hour=19,  # UTC 19 = 北京 03:00 低峰
@@ -276,7 +295,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=3600,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("balance_patrol", balance_patrol, 300),
         "interval",
         minutes=5,
@@ -285,7 +304,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("prewarm_patrol", prewarm_patrol, 60),
         "interval",
         seconds=60,
@@ -294,7 +313,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("node_spec_patrol", node_spec_patrol, 60),
         "interval",
         seconds=60,
@@ -304,7 +323,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         next_run_time=now_utc(),  # 立即首跑:shared 档门禁读能力缓存,不能等首个周期
     )
-    scheduler.add_job(
+    add_job(
         _timed_job("node_enroll_reconciler", reconcile_enrollments_once, 30),
         "interval",
         seconds=30,
@@ -314,7 +333,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
     )
     # 工单滞留巡检(F3 遗留,F8 补):pending_staff 超 24h → admin_alerts warning
-    scheduler.add_job(
+    add_job(
         _timed_job("ticket_stale_patrol", stale_ticket_patrol, 1800),
         "interval",
         minutes=30,
@@ -328,9 +347,12 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
 async def main() -> None:
     setup_logging()
     from app.wiring import wire_modules
+    from app.workers.components import current_component, outbox_types_for
 
     wire_modules()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
+    component = current_component()  # 非法值在此即炸(fail-closed),不带病起跑
+    logger.info("worker_component_resolved", component=component.value)
 
     _start_metrics_server(METRICS_PORT, get_settings().metrics_token)
     logger.info("worker_metrics_listening", port=METRICS_PORT)
@@ -347,7 +369,7 @@ async def main() -> None:
     _touch_heartbeat()  # 起步先落一次,不让探针在首个 interval 前判死
     heartbeat = asyncio.create_task(heartbeat_loop())
     try:
-        await outbox_loop(worker_id)
+        await outbox_loop(worker_id, outbox_types_for(component))
     finally:
         _stop.set()
         heartbeat.cancel()

@@ -950,10 +950,15 @@ export function useUnfreezeTenant() {
   });
 }
 
-export function useCreateAdjustment(opts?: MutOpts<unknown, { data: AdjustmentCreate }>) {
+export function useCreateAdjustment(
+  opts?: MutOpts<unknown, { data: AdjustmentCreate; idempotencyKey?: string }>,
+) {
   return useMutation({
-    mutationFn: (v: { data: AdjustmentCreate }) =>
-      adminCreateAdjustmentApiAdminV1AdjustmentsPost(v.data),
+    mutationFn: (v: { data: AdjustmentCreate; idempotencyKey?: string }) =>
+      adminCreateAdjustmentApiAdminV1AdjustmentsPost(
+        v.data,
+        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+      ),
     ...opts?.mutation,
   });
 }
@@ -1016,8 +1021,12 @@ export function useVerifyOrder() {
 
 export function useBackfillOrder() {
   return useMutation({
-    mutationFn: (v: { orderNo: string; data: OrderBackfillRequest }) =>
-      adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(v.orderNo, v.data),
+    mutationFn: (v: { orderNo: string; data: OrderBackfillRequest; idempotencyKey?: string }) =>
+      adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(
+        v.orderNo,
+        v.data,
+        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+      ),
   });
 }
 
@@ -1037,11 +1046,14 @@ export function useDiscardDeadTask() {
 }
 
 export function usePublishAnnouncement(
-  opts?: MutOpts<AnnouncementResultOut, { data: AnnouncementCreate }>,
+  opts?: MutOpts<AnnouncementResultOut, { data: AnnouncementCreate; idempotencyKey?: string }>,
 ) {
   return useMutation({
-    mutationFn: (v: { data: AnnouncementCreate }) =>
-      adminPublishAnnouncementApiAdminV1AnnouncementsPost(v.data),
+    mutationFn: (v: { data: AnnouncementCreate; idempotencyKey?: string }) =>
+      adminPublishAnnouncementApiAdminV1AnnouncementsPost(
+        v.data,
+        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+      ),
     ...opts?.mutation,
   });
 }

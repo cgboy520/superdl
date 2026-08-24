@@ -283,7 +283,10 @@ class TestApproveSuccess:
             )
             await session.commit()
         # 登录拿 refresh token(执行后要验证旧凭证全废)
-        await client.post("/api/v1/auth/sms-code", json={"phone": PHONE, "purpose": "login"})
+        await client.post(
+            "/api/v1/auth/sms-code",
+            json={"phone": PHONE, "purpose": "login", "captcha_token": "mock-pass"},
+        )
         login = await client.post("/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"})
         assert login.status_code == 200, login.text
         old_refresh = login.json()["refresh_token"]
@@ -323,7 +326,10 @@ class TestApproveSuccess:
         # 登录 → 拒绝(手机号已释放,查无此号)。注意:登录路径按仓库防枚举口径
         # 统一 loginFailed(400),不可区分「已注销」与「未注册/凭证错」——
         # 「账号已注销」文案只出现在持有凭证的 access/refresh 路径(见上两条断言)。
-        await client.post("/api/v1/auth/sms-code", json={"phone": PHONE, "purpose": "login"})
+        await client.post(
+            "/api/v1/auth/sms-code",
+            json={"phone": PHONE, "purpose": "login", "captcha_token": "mock-pass"},
+        )
         relogin = await client.post(
             "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"}
         )
@@ -334,7 +340,8 @@ class TestApproveSuccess:
         # 该码未落消费标记会触发同号发码退避:回拨 created_at 越过 60s 窗口。
         await age_sms_codes(sm)
         send = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": PHONE, "purpose": "register"}
+            "/api/v1/auth/sms-code",
+            json={"phone": PHONE, "purpose": "register", "captcha_token": "mock-pass"},
         )
         assert send.status_code == 204, send.text
         reregister = await client.post(

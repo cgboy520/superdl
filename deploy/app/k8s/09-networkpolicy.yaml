@@ -1,6 +1,7 @@
 # superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 按端点精确放行(报告3#11)。
 #
-# 出向已收敛为具体放行:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443
+# 出向已收敛为具体放行:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443 /
+# monitoring 9090(API/worker 查 Prometheus:用量聚合、节点热力图、对账报表、用户 GPU 曲线)
 # (DNS 由 allow-dns-egress 统一放行)。CHANGE_ME_* 均为占位——apply 前必须替换为真实
 # 端点(preflight.sh 有提示性检查),外部端点变更时同步改本文件并重新 apply。
 # 网关类端点以域名给出(微信支付 api.mch.weixin.qq.com、支付宝 openapi.alipay.com、
@@ -96,8 +97,9 @@ spec:
         - {protocol: TCP, port: 8000}
 ---
 # API 出向:PG / 对象存储 / 支付·短信网关 / K8s API(只读身份;发短信验证码、下单直连渠道)。
-# K8s API 可能落在私网节点 IP 上(平台「集群接入」录入的 server https://<ip>:6443):
-# 给宽 ipBlock 加 except 私网段会把它一起断掉,必须按真实 server IP 放行。
+# K8s API 落在控制面节点(平台「集群接入」录入的 server 地址,HA 为 VIP,P0-1):
+# 给宽 ipBlock 加 except 私网段会把它一起断掉,必须按控制面子网 CIDR 放行(VIP +
+# 全部 server IP 都在其内,apiserver 后端切换/重建不断连)。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -122,9 +124,17 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_K8S_API_IP/32"}  # 租户集群 apiserver(「集群接入」server 地址)
+        # 控制面子网 CIDR(P0-1:含 VIP 与全部 server IP;apiserver 后端是任一 server,
+        # 写 /32 单 IP 会在控制面主备切换/节点重建后断连)
+        - ipBlock: {cidr: "CHANGE_ME_K8S_API_CIDR"}
       ports:
         - {protocol: TCP, port: 6443}
+    - to:
+        # Prometheus(用量聚合/节点热力图/对账报表/用户 GPU 曲线,00-namespace-config.yaml SUPERDL_PROMETHEUS_URL)
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 9090}
 ---
 # worker 入向:仅 Prometheus(PodMonitor 直抓 Pod :9000,不走 Service)。
 apiVersion: networking.k8s.io/v1
@@ -170,9 +180,16 @@ spec:
       ports:
         - {protocol: TCP, port: 443}
     - to:
-        - ipBlock: {cidr: "CHANGE_ME_K8S_API_IP/32"}  # 租户集群 apiserver(编排写)
+        # 控制面子网 CIDR(同 api-egress:VIP + 全部 server IP;编排写后端可是任一 server)
+        - ipBlock: {cidr: "CHANGE_ME_K8S_API_CIDR"}
       ports:
         - {protocol: TCP, port: 6443}
+    - to:
+        # Prometheus(用量聚合/对账任务查询,同 api-egress)
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 9090}
 ---
 # 一次性 Job(迁移 / PG 备份 / 数据盘配额下发)出向:PG + 对象存储(备份上传);无入向。
 # 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上;

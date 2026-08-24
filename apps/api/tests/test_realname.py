@@ -103,9 +103,46 @@ class TestRealName:
         finally:
             settings.real_name_required_for_recharge = False
 
+    async def test_create_instance_gate_when_required(self, client: AsyncClient, sm):
+        """强制实名开启时:算力开通同样拦截(监管对算力服务的要求不低于预收款),
+        此前只拦充值,匿名账号可绕过实名直接租 GPU。"""
+        from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
+
+        settings = get_settings()
+        settings.real_name_required_for_recharge = True
+        try:
+            headers, user_id, key_id = await create_user_with_key(client, "13800000165")
+            await fund_wallet(sm, user_id)
+            sku_id = await create_test_sku(sm)
+            await seed_node_spec(sm)
+            resp = await client.post(
+                "/api/v1/instances",
+                json={"sku_id": sku_id, "image_ref": "img", "ssh_key_ids": [key_id]},
+                headers=headers,
+            )
+            assert resp.status_code == 403
+            assert resp.json()["code"] == "REAL_NAME_REQUIRED"
+            assert resp.json()["message_key"] == "orchestrator.realNameRequired"
+
+            # 完成实名后放行(202 异步受理)
+            await client.post(
+                "/api/v1/me/real-name",
+                json={"name": "赵六", "id_number": "110101199001012222"},
+                headers=headers,
+            )
+            resp = await client.post(
+                "/api/v1/instances",
+                json={"sku_id": sku_id, "image_ref": "img", "ssh_key_ids": [key_id]},
+                headers=headers,
+            )
+            assert resp.status_code == 202, resp.text
+        finally:
+            settings.real_name_required_for_recharge = False
+
     async def test_register_requires_terms(self, client: AsyncClient):
         await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000163", "purpose": "register"}
+            "/api/v1/auth/sms-code",
+            json={"phone": "13800000163", "purpose": "register", "captcha_token": "mock-pass"},
         )
         resp = await client.post(
             "/api/v1/auth/register", json={"phone": "13800000163", "sms_code": "123456"}

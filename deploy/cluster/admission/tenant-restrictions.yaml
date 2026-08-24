@@ -14,9 +14,16 @@
 #     hostUsers 仅 shared/mig 档显式 false(dedicated/Kata 档不传,VM 级隔离不叠 userns)。
 #
 # 注意:本文件只约束「创建/更新/删除」,读(get/list)不经过准入层,无需在此放行。
+#
+# 策略清单(安全P0-1 扩展后共四条):
+#   ① superdl-platform-sa-scope    平台 SA 写操作范围(superdl/tenant-* ns + nodes)[Deny]
+#   ② superdl-tenant-pod-baseline  租户 ns Pod 安全基线(禁特权/host*/hostPath/nodeName 等)[Deny]
+#   ③ superdl-node-field-scope     平台 SA 对 Node 的字段级写白名单(cordon + superdl.io/* 标签)[Deny]
+#   ④ superdl-global-pod-guard     全局 Pod 兜底(白名单 ns 外同②基线 + RuntimeClass 白名单)
+#                                  —— [Audit] 先行:观察 ≥2 周零误伤后改 [Deny] 并纳入 preflight。
 
 ---
-# 策略一:平台两个 SA(superdl-api 只读 / superdl-worker 编排)的写操作范围钉死。
+# 策略一:平台 SA 的写操作范围钉死(superdl ns 全部 ServiceAccount,按前缀匹配)。
 # RBAC 因 tenant-* 动态创建只能给 ClusterRole(见 deploy/app/k8s/01-rbac.yaml 的收敛说明),
 # 本策略把 ClusterRole 的实际可达面收窄到目标命名空间,二者叠加才是完整最小权限。
 apiVersion: admissionregistration.k8s.io/v1
@@ -33,10 +40,10 @@ spec:
         operations: ["CREATE", "UPDATE", "PATCH", "DELETE"]
         scope: "*"
   matchConditions:
+    # 全部平台 SA(api / core worker / tenant-mgr / node-mgr / prewarm / disk-ops;
+    # P1-18 组件拆分后新增 SA 由前缀自动纳入,无需改本策略)
     - name: platform-sa-only
-      expression: >-
-        request.userInfo.username == 'system:serviceaccount:superdl:superdl-api' ||
-        request.userInfo.username == 'system:serviceaccount:superdl:superdl-worker'
+      expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   validations:
     # namespace 对象本身:只允许创建/删除 tenant-*(平台从不删 ns,删除也仅放行 tenant-*)
     - expression: >-
@@ -45,6 +52,22 @@ spec:
           ? oldObject.metadata.name.startsWith('tenant-')
           : object.metadata.name.startsWith('tenant-'))
       message: "平台 SA 只能创建/删除 tenant-* 命名空间"
+    # namespace 创建必须携带 superdl.io/managed=true(策略二的 namespaceSelector 锚点):
+    # 此前只查名字——注入/bug 建出不打标的 tenant-*,整个 Pod 基线被静默绕过(安全P0-1)
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
+        request.operation != 'CREATE' ||
+        (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
+         object.metadata.labels['superdl.io/managed'] == 'true')
+      message: "创建 tenant-* 命名空间必须携带 superdl.io/managed=true 标签(Pod 基线锚点)"
+    # tenant-* 的 managed 标签不可摘除(摘除即基线失效;平台收敛 patch 恒带标签,不受影响)
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
+        request.operation != 'UPDATE' ||
+        !oldObject.metadata.name.startsWith('tenant-') ||
+        (has(object.metadata.labels) && 'superdl.io/managed' in object.metadata.labels &&
+         object.metadata.labels['superdl.io/managed'] == 'true')
+      message: "tenant-* 命名空间的 superdl.io/managed=true 标签不可摘除"
     # 其余资源:命名空间内只能写 superdl 或 tenant-*;集群级只放行 nodes(cordon/标签 patch)
     - expression: >-
         (request.resource.group == '' && request.resource.resource == 'namespaces') ||
@@ -102,6 +125,16 @@ spec:
     # 平台创建租户 Pod 时恒为 false;禁止任何 SA token 挂进租户容器
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "租户 Pod 必须 automountServiceAccountToken: false"
+    # 租户 Pod 一律走 nodeSelector(独享池经标签绑节点):nodeName 是调度器旁路,
+    # 平台创建路径从不设置(real.py 仅 node_selector),出现即异常(安全P0-1)
+    - expression: "!has(object.spec.nodeName)"
+      message: "租户 Pod 禁止指定 spec.nodeName 绕过调度器"
+    # RuntimeClass 白名单:kata-qemu(dedicated 档 VM 隔离)与 nvidia(light 档 HAMi
+    # devicePlugin 注入)之外皆非法;危险 RuntimeClass 是容器逃逸的直达通道(安全P0-1)
+    - expression: >-
+        !has(object.spec.runtimeClassName) ||
+        object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
+      message: "租户 Pod 的 runtimeClassName 仅允许 kata-qemu / nvidia"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -110,3 +143,145 @@ metadata:
 spec:
   policyName: superdl-tenant-pod-baseline
   validationActions: [Deny]   # 首次上线先 [Audit] 观察,确认零误伤再改 Deny
+
+---
+# 策略三:平台 SA 对 Node 的字段级写白名单(安全P0-1)。K8s RBAC 无法限字段,
+# nodes:patch 全字段可写等于:改 taints 驱逐任意节点负载、改寻址字段伪装节点身份——
+# 这里把可达变更收窄到平台真实使用的两项:spec.unschedulable(cordon)与 superdl.io/* 标签
+# (pool/gpu-model 收敛)。CEL 对 typed 字段无 map 宏,spec 侧按危险字段显式锁;
+# labels/annotations 是 map,用白名单收敛。人类运维(kubectl cordon/label)身份非 SA,
+# 不受本策略约束,break-glass 通道保留。
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: superdl-node-field-scope
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["*"]
+        resources: ["nodes"]
+        operations: ["UPDATE", "PATCH"]
+        scope: "Cluster"
+  matchConditions:
+    - name: superdl-sa-only
+      expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
+  variables:
+    # 可选字段两边都缺省时直接相等;一边缺省一边存在即变更
+    - name: taintsSame
+      expression: >-
+        (!has(object.spec.taints) && !has(oldObject.spec.taints)) ||
+        (has(object.spec.taints) && has(oldObject.spec.taints) && object.spec.taints == oldObject.spec.taints)
+    - name: podCIDRSame
+      expression: >-
+        (!has(object.spec.podCIDR) && !has(oldObject.spec.podCIDR)) ||
+        (has(object.spec.podCIDR) && has(oldObject.spec.podCIDR) && object.spec.podCIDR == oldObject.spec.podCIDR)
+    - name: podCIDRsSame
+      expression: >-
+        (!has(object.spec.podCIDRs) && !has(oldObject.spec.podCIDRs)) ||
+        (has(object.spec.podCIDRs) && has(oldObject.spec.podCIDRs) && object.spec.podCIDRs == oldObject.spec.podCIDRs)
+    - name: providerIDSame
+      expression: >-
+        (!has(object.spec.providerID) && !has(oldObject.spec.providerID)) ||
+        (has(object.spec.providerID) && has(oldObject.spec.providerID) && object.spec.providerID == oldObject.spec.providerID)
+    - name: annotationsSame
+      expression: >-
+        (!has(object.metadata.annotations) && !has(oldObject.metadata.annotations)) ||
+        (has(object.metadata.annotations) && has(oldObject.metadata.annotations) &&
+         object.metadata.annotations == oldObject.metadata.annotations)
+    - name: finalizersSame
+      expression: >-
+        (!has(object.metadata.finalizers) && !has(oldObject.metadata.finalizers)) ||
+        (has(object.metadata.finalizers) && has(oldObject.metadata.finalizers) &&
+         object.metadata.finalizers == oldObject.metadata.finalizers)
+  validations:
+    # spec 仅 unschedulable 可变:taints(驱逐武器)/podCIDR/providerID(寻址身份)锁死
+    - expression: "variables.taintsSame && variables.podCIDRSame && variables.podCIDRsSame && variables.providerIDSame"
+      message: "平台 SA 对 Node spec 仅允许变更 unschedulable(cordon);taints/podCIDR/providerID 锁死"
+    # labels 仅 superdl.io/* 键可增删改;其余键(含 kubernetes.io/*)原样
+    - expression: >-
+        has(object.metadata.labels) && has(oldObject.metadata.labels) &&
+        object.metadata.labels.all(k, k.startsWith('superdl.io/') ||
+          (k in oldObject.metadata.labels && object.metadata.labels[k] == oldObject.metadata.labels[k])) &&
+        oldObject.metadata.labels.all(k, k.startsWith('superdl.io/') ||
+          (k in object.metadata.labels && oldObject.metadata.labels[k] == object.metadata.labels[k]))
+      message: "平台 SA 对 Node labels 仅允许变更 superdl.io/* 键"
+    # annotations(注解驱动的控制器行为是常见跳板)与 finalizers(卡删除)平台从不写
+    - expression: "variables.annotationsSame && variables.finalizersSame"
+      message: "平台 SA 禁止变更 Node annotations/finalizers"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: superdl-node-field-scope
+spec:
+  policyName: superdl-node-field-scope
+  validationActions: [Deny]
+
+---
+# 策略四:全局 Pod 安全兜底(安全P0-1)。策略二只覆盖 tenant-*(标签锚定),其余
+# 命名空间(default/cert-manager/cnpg-system/registry/superdl 等)此前无基线——
+# 任何被突破的写凭据都能在非豁免 ns 种特权 Pod。豁免 ns 仅放确实需要特权/host 面的
+# 基础设施栈;豁免名单新增成员前先评估。superdl ns 不放豁免:平台 Pod 全部满足基线,
+# 预热 Job 的 nodeName 由标签白名单单独放行(其 Job 模板无特权/host 面)。
+# 与策略二重叠 tenant-* 属纵深防御,规则语义一致无冲突。
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: superdl-global-pod-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        # 豁免:cilium/hami/juicefs-csi(kube-system)、gpu-operator、node-exporter+alloy
+        # (monitoring)、ingress-nginx、topolvm node plugin(topolvm-system)——
+        # 这些栈的 DaemonSet 合法需要 privileged/hostPath/hostNetwork。
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: ["kube-system", "gpu-operator", "monitoring", "ingress-nginx", "topolvm-system"]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["*"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+        operations: ["CREATE", "UPDATE"]
+        scope: "Namespaced"
+  validations:
+    - expression: >-
+        !object.spec.containers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged) &&
+        (!has(object.spec.initContainers) || !object.spec.initContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)) &&
+        (!has(object.spec.ephemeralContainers) || !object.spec.ephemeralContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged))
+      message: "非豁免命名空间禁止 privileged 容器"
+    - expression: "!has(object.spec.volumes) || !object.spec.volumes.exists(v, has(v.hostPath))"
+      message: "非豁免命名空间禁止 hostPath 卷"
+    - expression: >-
+        (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) &&
+        (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
+        (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
+      message: "非豁免命名空间禁止 hostNetwork/hostPID/hostIPC"
+    - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
+      message: "非豁免命名空间禁止 hostUsers: true"
+    # nodeName 绕过调度器:仅 superdl ns 的镜像预热 Job(定点拉取,平台镜像)放行;
+    # 注意 DaemonSet 控制器建 Pod 自带 nodeName——非豁免 ns 新增 DaemonSet 前须先扩豁免
+    - expression: >-
+        !has(object.spec.nodeName) ||
+        (request.namespace == 'superdl' && has(object.metadata.labels) &&
+         'superdl.io/prewarm' in object.metadata.labels &&
+         object.metadata.labels['superdl.io/prewarm'] == 'true')
+      message: "禁止指定 spec.nodeName 绕过调度器(仅平台预热 Job 放行)"
+    - expression: >-
+        !has(object.spec.runtimeClassName) ||
+        object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
+      message: "runtimeClassName 仅允许 kata-qemu / nvidia"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: superdl-global-pod-guard
+spec:
+  policyName: superdl-global-pod-guard
+  # 全局面大且覆盖第三方命名空间:[Audit] 先行观察 ≥2 周(apiserver 审计日志
+  # 按 validating_admission_policy 告警与 events 过滤),零误伤后改 [Deny]
+  # 并把本 Binding 补进 preflight.sh 的 Deny 强制清单。
+  validationActions: [Audit]

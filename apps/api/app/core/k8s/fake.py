@@ -13,6 +13,7 @@ from app.core.k8s.base import (
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
+    NodePortTaken,
     PodListEntry,
     PodStatus,
     PrewarmJobStatus,
@@ -73,6 +74,13 @@ class FakeOrchestrator:
     cordoned_nodes: set[str] = field(default_factory=set)
     # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
     endpoints: set[tuple[str, str]] = field(default_factory=set)
+    # 外部占用的 NodePort(非平台对象的 Service,如无 MANAGED_LABEL 的第三方服务):
+    # 撞占时 create_instance 抛 NodePortTaken(对齐 real 的 422 归一化),
+    # used_node_ports 必须看得见它——否则 blocked 端口周期复检会把真占用误判为已释放
+    external_node_ports: set[int] = field(default_factory=set)
+    # per-instance 敏感 env 的「Secret」(对齐 real 的 instance_env_secret_name 生命周期):
+    # 测试据此断言 token 不落 Pod spec,而是走 secretKeyRef
+    instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 能力探测:默认健康 RKE2;fail_probe 模拟断连,probe_override 全量覆盖
     probe_k8s_version: str = "v1.36.2+rke2r1"
     probe_hami_ready: bool = True
@@ -146,8 +154,13 @@ class FakeOrchestrator:
         if self.fail_next_create:
             self.fail_next_create = False
             raise RuntimeError("fake: create_instance failed (injected)")
+        if spec.ssh_node_port in self.external_node_ports:
+            # 对齐 real:apiserver 422 "provided port is already allocated" 的归一化
+            raise NodePortTaken(spec.ssh_node_port)
         self.create_calls += 1
         key = (spec.namespace, spec.name)
+        if spec.secret_env:
+            self.instance_secrets[key] = dict(spec.secret_env)
         # 实例盘已存在即复用(重新开机不重建盘);首次创建才落一个新 token
         self.instance_disks.setdefault(key, f"lv-{spec.name}")
         existing = self.pods.get(key)
@@ -170,6 +183,7 @@ class FakeOrchestrator:
                 pod.ready = False
             return
         self.pods.pop((namespace, name), None)  # 注意:不碰 instance_disks
+        self.instance_secrets.pop((namespace, name), None)
         self.endpoints.discard((namespace, name))
 
     def finish_delete(self, namespace: str, name: str) -> None:
@@ -180,7 +194,12 @@ class FakeOrchestrator:
         return sorted(self.endpoints)
 
     async def used_node_ports(self) -> set[int]:
-        return {p.spec.ssh_node_port for p in self.pods.values()}
+        # 与 real 同口径:平台 Pod 占用 + 外部对象占用(不带平台标签的 Service 也算)
+        return {p.spec.ssh_node_port for p in self.pods.values()} | set(self.external_node_ports)
+
+    def inject_external_port(self, port: int) -> None:
+        """测试注入:集群里出现一个非平台对象占用了该 NodePort。"""
+        self.external_node_ports.add(port)
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
         self.disk_delete_calls += 1

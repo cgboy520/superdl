@@ -13,21 +13,23 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
 
+# 静态测试环境变量:conftest 导入即就位,不挂在 pg_url fixture 上——
+# 不消费数据库 fixture 的用例(纯函数/Settings 单测)单独运行时也需要它们;
+# 挂 fixture 上会让"窄选集先跑无 DB 用例"的顺序组合炸 Settings 校验(顺序依赖)。
+# 一律强制赋值(非 setdefault):shell 里残留的同名贵方(如手工导过 SUPERDL_ENVIRONMENT)
+# 不得渗进测试会话——测试环境必须确定性。
+os.environ["SUPERDL_ENVIRONMENT"] = "test"
+os.environ["SUPERDL_K8S_BACKEND"] = "fake"  # 单测一律 FakeOrchestrator,隔离本地 .env 的 real 配置
+os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = "300"  # 超时用例按默认 5 分钟断言,钉死不受 .env 影响
+# 测试签名密钥 ≥32 字节(与 prod 校验同线;PyJWT 对短 HMAC 键打 InsecureKeyLengthWarning)
+os.environ["SUPERDL_JWT_SECRET"] = "test-jwt-secret-32-bytes-minimum!!"
+
 
 @pytest.fixture(scope="session")
 def pg_url() -> Iterator[str]:
     with PostgresContainer("postgres:18", driver="asyncpg") as pg:
         url = pg.get_connection_url()
         os.environ["SUPERDL_DATABASE_URL"] = url
-        os.environ["SUPERDL_ENVIRONMENT"] = "test"
-        os.environ["SUPERDL_K8S_BACKEND"] = (
-            "fake"  # 单测一律 FakeOrchestrator,隔离本地 .env 的 real 配置
-        )
-        os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = (
-            "300"  # 超时用例按默认 5 分钟断言,钉死不受 .env 影响
-        )
-        # 测试签名密钥 ≥32 字节(与 prod 校验同线;PyJWT 对短 HMAC 键打 InsecureKeyLengthWarning)
-        os.environ["SUPERDL_JWT_SECRET"] = "test-jwt-secret-32-bytes-minimum!!"
         # 环境变量就位后再清缓存,让所有 get_settings() 读到测试库
         from app.core.config import get_settings
 
