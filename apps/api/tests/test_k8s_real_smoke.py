@@ -46,6 +46,8 @@ pytestmark = [
 ]
 
 POD_GONE_TIMEOUT = 30.0  # force 删除通常秒级,留足余量防 CI 抖动
+# PVC 删除是异步的(pvc-protection finalizer 清掉才真消失),不能删完立刻断言 404
+PVC_GONE_TIMEOUT = 30.0
 
 
 @pytest.fixture(scope="module")
@@ -76,6 +78,21 @@ async def _wait_pod_gone(orch: RealOrchestrator, namespace: str, name: str) -> N
             return
         if asyncio.get_running_loop().time() > deadline:
             raise TimeoutError(f"pod {name} 删除超时")
+        await asyncio.sleep(0.5)
+
+
+async def _wait_pvc_gone(orch: RealOrchestrator, namespace: str, pvc_name: str) -> None:
+    """删盘同样等对象真消失:apiserver 先打 deletionTimestamp,finalizer 清完才 404。"""
+    deadline = asyncio.get_running_loop().time() + PVC_GONE_TIMEOUT
+    while True:
+        try:
+            orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
+        except k8s_client.ApiException as exc:
+            if exc.status == 404:
+                return
+            raise
+        if asyncio.get_running_loop().time() > deadline:
+            raise TimeoutError(f"pvc {pvc_name} 删除超时")
         await asyncio.sleep(0.5)
 
 
@@ -206,6 +223,4 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
 
     # 显式回收(释放/回收路径唯一允许的删盘入口):盘删除成功
     await orch.delete_instance_disk(namespace, name)
-    with pytest.raises(k8s_client.ApiException) as exc_info:
-        orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
-    assert exc_info.value.status == 404
+    await _wait_pvc_gone(orch, namespace, pvc_name)
