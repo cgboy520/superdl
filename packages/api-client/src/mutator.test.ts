@@ -106,4 +106,29 @@ describe("错误体解析", () => {
       message_key: "billing.x",
     });
   });
+
+  it("非 JSON 成功响应(text/csv 导出)原样透传文本", async () => {
+    // 注:Response.text() 按 UTF-8 解码会剥掉 BOM,下载落盘时由调用方补回
+    mockFetch([
+      new Response("a,b\r\n1,2\r\n", {
+        status: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8" },
+      }),
+    ]);
+    await expect(customFetch("/api/v1/billing/export", { method: "GET" })).resolves.toBe(
+      "a,b\r\n1,2\r\n",
+    );
+  });
+
+  it("声明 JSON 的 200 返回坏体仍抛 INVALID_RESPONSE", async () => {
+    mockFetch([
+      new Response("{broken", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ]);
+    await expect(customFetch("/api/v1/wallet", { method: "GET" })).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+  });
 });

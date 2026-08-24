@@ -16,8 +16,8 @@ from sqlalchemy import select, update
 
 from app.core.k8s import NodePortTaken, set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain
-from app.core.timeutil import now_utc
+from app.core.outbox import RUNNING_TIMEOUT, OutboxTask, drain
+from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BillDailyDisk, BillHourly
 from app.modules.billing.patrol import balance_patrol
@@ -64,6 +64,15 @@ async def _backdate_status(sm, uuid: str, to_status: str, age: timedelta) -> Non
             update(InstanceEvent)
             .where(InstanceEvent.instance_id == inst_id, InstanceEvent.to_status == to_status)
             .values(created_at=now_utc() - age)
+        )
+        await session.commit()
+
+
+async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
+    """把实例 created_at 回拨 age(GC 用例:retention 扫描的 SQL 年龄下推按它过滤)。"""
+    async with sm() as session:
+        await session.execute(
+            update(Instance).where(Instance.uuid == uuid).values(created_at=now_utc() - age)
         )
         await session.commit()
 
@@ -213,6 +222,58 @@ class TestStuckEscape:
         assert (await get_instance(client, headers, uuid))["status"] == "released"
         assert (ns, uuid) not in fake.instance_disks  # 实例盘已销毁
 
+    async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
+        """P1-36:running 删除任务的 locked_at 租约过期(执行 worker 已死)不算在途,
+        悬挂判定照常重发(挂了 = 收敛要等 reaper 5 分钟轮次才把死任务打回 pending)。"""
+        headers, uuid, _user_id = await _provision_running(client, sm, fake, "13900000107")
+        fake.graceful_delete = True
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain(sm)
+
+        # 模拟 worker 领到删除任务后崩溃:running 行,locked_at 已超 RUNNING_TIMEOUT
+        async with sm() as session:
+            inst_id = (
+                await session.execute(select(Instance.id).where(Instance.uuid == uuid))
+            ).scalar_one()
+            session.add(
+                OutboxTask(
+                    type="instance.stop",
+                    payload={"instance_id": inst_id},
+                    status="running",
+                    locked_by="dead-worker",
+                    locked_at=now_utc() - RUNNING_TIMEOUT - timedelta(seconds=1),
+                )
+            )
+            await session.commit()
+        await _backdate_status(sm, uuid, "stopping", timedelta(minutes=11))
+        counts = await reconcile_once(sm)
+        assert counts["delete_requeued"] == 1
+
+    async def test_stopping_reenqueue_skips_fresh_lease(self, client, sm, fake):
+        """P1-36 对照:running 行 locked_at 在租约内 = 真在途,不堆重复任务。"""
+        headers, uuid, _user_id = await _provision_running(client, sm, fake, "13900000108")
+        fake.graceful_delete = True
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain(sm)
+
+        async with sm() as session:
+            inst_id = (
+                await session.execute(select(Instance.id).where(Instance.uuid == uuid))
+            ).scalar_one()
+            session.add(
+                OutboxTask(
+                    type="instance.stop",
+                    payload={"instance_id": inst_id},
+                    status="running",
+                    locked_by="live-worker",
+                    locked_at=now_utc(),
+                )
+            )
+            await session.commit()
+        await _backdate_status(sm, uuid, "stopping", timedelta(minutes=11))
+        counts = await reconcile_once(sm)
+        assert counts["delete_requeued"] == 0
+
 
 class TestLeakReclaim:
     async def test_unknown_pod_ratio_trips_breaker(self, client, sm, fake):
@@ -227,7 +288,8 @@ class TestLeakReclaim:
         assert len(fake.pods) == 5  # 一个没动
 
     async def test_stopped_instance_leftover_pod_force_reclaimed(self, client, sm, fake):
-        """已 stopped 实例的残留 Pod 被强删回收(挂了 = 停机后泄漏的 Pod 白送算力)。"""
+        """已 stopped 实例的残留 Pod 过了宽限期被强删回收(挂了 = 停机后泄漏的 Pod 白送算力)。
+        宽限覆盖 restart 建 Pod 窗口(DB stopped、Pod 已建),宽限内不动。"""
         headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000106")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
@@ -236,6 +298,9 @@ class TestLeakReclaim:
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
         fake.inject_leaked_pod(ns, uuid, spec)  # 停机的 Pod 又冒出来了
+        counts = await reconcile_once(sm)
+        assert counts["leaked"] == 0  # 宽限内(restart 窗口保护)
+        await _backdate_status(sm, uuid, "stopped", timedelta(minutes=21))
         counts = await reconcile_once(sm)
         assert counts["leaked"] == 1
         assert (ns, uuid) not in fake.pods
@@ -259,11 +324,12 @@ class TestCreateCriticalSection:
         assert outcomes == [202, 400]
         rejected = r1 if r1.status_code != 202 else r2
         assert rejected.json()["code"] == "INSUFFICIENT_BALANCE"
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert len(instances) == 1
 
     async def test_concurrent_same_idempotency_key_single_instance(self, client, sm, fake):
-        """同幂等键并发重放:只开一台,两个请求拿到同一台(挂了 = 唯一约束竞争变 500)。"""
+        """同幂等键并发重放:只开一台,两个请求拿到同一台(挂了 = 唯一约束竞争变 500)。
+        新建方 202,重放方 200 + X-Idempotent-Replay(谁先谁后不定)。"""
         headers, user_id, key_id = await create_user_with_key(client, "13900000112")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -271,9 +337,11 @@ class TestCreateCriticalSection:
             _raw_create(client, headers, sku_id, key_id, idem="race-1"),
             _raw_create(client, headers, sku_id, key_id, idem="race-1"),
         )
-        assert r1.status_code == 202 and r2.status_code == 202, (r1.text, r2.text)
+        assert {r1.status_code, r2.status_code} == {200, 202}, (r1.text, r2.text)
+        replayed = r1 if r1.status_code == 200 else r2
+        assert replayed.headers["x-idempotent-replay"] == "true"
         assert r1.json()["uuid"] == r2.json()["uuid"]
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert len(instances) == 1
 
     async def test_idempotency_key_expires_after_24h(self, client, sm, fake):
@@ -376,6 +444,7 @@ class TestRetentionGC:
         assert (ns, uuid) in fake.instance_disks
 
         await _backdate_status(sm, uuid, "failed", timedelta(days=8))
+        await _backdate_created(sm, uuid, timedelta(days=8))
         counts = await reconcile_once(sm)
         assert counts["gc_released"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "releasing"
@@ -397,6 +466,7 @@ class TestRetentionGC:
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
         await _backdate_status(sm, uuid, "stopped", timedelta(days=24))
+        await _backdate_created(sm, uuid, timedelta(days=24))
         counts = await reconcile_once(sm)
         assert counts["gc_warned"] == 1 and counts["gc_released"] == 0
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
@@ -437,9 +507,11 @@ class TestDiskArrearsHardening:
             ).scalar_one()
             assert d.status == "grace"
             billed_days = {
-                b.day.date() for b in (await session.execute(select(BillDailyDisk))).scalars().all()
+                (b.day + BILLING_DAY_OFFSET).date()
+                for b in (await session.execute(select(BillDailyDisk))).scalars().all()
             }
-        assert t0.date() in billed_days  # 进 grace 当日已结清
+        billing_t0 = (billing_day_floor(t0) + BILLING_DAY_OFFSET).date()
+        assert billing_t0 in billed_days  # 进 grace 当日已结清
 
         # 宽限中推进两天日结:grace 盘不在计费集合,不出账
         await settle_daily_disks(sm, at=t0 + timedelta(days=3))
@@ -451,11 +523,76 @@ class TestDiskArrearsHardening:
         await settle_daily_disks(sm, at=t0 + timedelta(days=5))
         async with sm() as session:
             days = {
-                b.day.date() for b in (await session.execute(select(BillDailyDisk))).scalars().all()
+                (b.day + BILLING_DAY_OFFSET).date()
+                for b in (await session.execute(select(BillDailyDisk))).scalars().all()
             }
-        assert (t0 + timedelta(days=1)).date() not in days  # grace 日
-        assert (t0 + timedelta(days=2)).date() not in days  # grace 日
-        assert (t0 + timedelta(days=3)).date() in days  # 恢复后正常出账
+
+        def _billing_date(dt) -> object:
+            return (billing_day_floor(dt) + BILLING_DAY_OFFSET).date()
+
+        assert _billing_date(t0 + timedelta(days=1)) not in days  # grace 日
+        assert _billing_date(t0 + timedelta(days=2)) not in days  # grace 日
+        assert _billing_date(t0 + timedelta(days=3)) in days  # 恢复后正常出账
+
+    async def test_catchup_across_grace_records_gaps(self, client, sm, fake):
+        """日结停摆跨越 grace 转换:宽限区间内部日不出账且登记 grace_overlap 缺口;
+        边界日(进入/恢复当日)照常出账。"""
+        from app.modules.billing.models import SettlementGap
+        from app.modules.billing.settlement import _advance_watermark
+        from tests.test_disks import create_disk
+
+        headers, user_id, _key = await create_user_with_key(client, "13900000132")
+        await fund_wallet(sm, user_id)
+        await create_disk(client, headers)
+        t0 = now_utc()
+        t_day = billing_day_floor(t0)
+        # 构造现场:盘创建于 4 个计费日前;grace 区间 [T-3, T-1](T-2 为纯宽限日);
+        # 日结水位线停在 T-4(停摆),当前盘已恢复 active
+        async with sm() as session:
+            await session.execute(
+                update(DataDisk).values(
+                    created_at=t0 - timedelta(days=4),
+                    grace_started_at=t_day - timedelta(days=3),
+                    grace_ended_at=t_day - timedelta(days=1),
+                )
+            )
+            await session.commit()
+        await _advance_watermark(sm, "daily_disk", t_day - timedelta(days=4))
+        await settle_daily_disks(sm)  # 追平窗口:T-3、T-2、T-1
+
+        async with sm() as session:
+            billed = {
+                (b.day + BILLING_DAY_OFFSET).date()
+                for b in (await session.execute(select(BillDailyDisk))).scalars().all()
+            }
+            gaps = list(
+                (
+                    await session.execute(
+                        select(SettlementGap).where(
+                            SettlementGap.kind == "daily_disk",
+                            SettlementGap.reason == "grace_overlap",
+                        )
+                    )
+                ).scalars()
+            )
+        day = lambda back: (t_day - timedelta(days=back) + BILLING_DAY_OFFSET).date()  # noqa: E731
+        assert billed == {day(3), day(1)}  # 边界日照常出账
+        assert {(g.window_start + BILLING_DAY_OFFSET).date() for g in gaps} == {day(2)}
+        # 幂等:再跑一轮不重复扣款、不重复登记
+        await settle_daily_disks(sm)
+        async with sm() as session:
+            billed2 = (await session.execute(select(BillDailyDisk))).scalars().all()
+            gaps2 = (
+                (
+                    await session.execute(
+                        select(SettlementGap).where(SettlementGap.reason == "grace_overlap")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(billed2) == 2
+        assert len(gaps2) == 1
 
     async def test_grace_clock_not_reset_by_recharge(self, client, sm, fake):
         """宽限钟累计:充值恢复不清零 grace_started_at(挂了 = 欠费-充值循环永远不到 frozen)。"""
@@ -560,15 +697,18 @@ class TestRestartPortConflict:
 
         monkeypatch.setattr(fake, "create_instance", guarded)
         await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
-        await drain(sm)  # 第一次:STOPPED 落库 → STARTING → 撞端口回滚
+        await drain(sm)  # 第一次:STOPPED 落库 → STARTING 落库 → 撞端口回滚
 
         data = await get_instance(client, headers, uuid)
-        assert data["status"] == "stopped"  # 关键:不是回退到 stopping
+        # STARTING 先落库再建 Pod(P1-02):撞端口回滚后停在 starting,重试由承接分支续建;
+        # 关键是不回退到 stopping(尾账不丢、泄漏回收对在途状态有宽限)
+        assert data["status"] == "starting"
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]
         chain = [(e["from_status"], e["to_status"]) for e in events]
         assert ("stopping", "stopped") in chain
+        assert ("stopped", "starting") in chain
         async with sm() as session:
             bill = (
                 await session.execute(

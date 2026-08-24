@@ -67,6 +67,27 @@ class TestRunningSeconds:
         events = [ev(10, "creating", "running"), ev(70, "running", "stopping")]
         assert running_seconds_in_window(events, H, H_END) == 3000
 
+    def test_subsecond_rounds_half_even_not_truncates(self):
+        """微秒级事件:整数微秒累加 + HALF_EVEN 舍入(不再 int() 截断)。
+        0.6s 进 1;0.5s 恰半向偶(0);1.5s 恰半向偶(2)。"""
+        us = timedelta(microseconds=1)
+        # 0.6 秒:进入 running 后 0.6s 离开
+        events = [
+            (H, None, "creating"),
+            (H, "creating", "running"),
+            (H + 600_000 * us, "running", "stopping"),
+        ]
+        assert running_seconds_in_window(events, H, H_END) == 1
+        # 0.5 秒:恰半向偶 → 0(截断口径也是 0,区分点在 1.5s)
+        events[2] = (H + 500_000 * us, "running", "stopping")
+        assert running_seconds_in_window(events, H, H_END) == 0
+        # 1.5 秒:截断给 1,HALF_EVEN 给 2(向偶)
+        events[2] = (H + 1_500_000 * us, "running", "stopping")
+        assert running_seconds_in_window(events, H, H_END) == 2
+        # 2.5 秒:截断给 2,HALF_EVEN 向偶给 2
+        events[2] = (H + 2_500_000 * us, "running", "stopping")
+        assert running_seconds_in_window(events, H, H_END) == 2
+
 
 class TestBillAmount:
     def test_exact(self):
@@ -254,7 +275,12 @@ class TestUpsertIdempotency:
     async def test_concurrent_settlement_single_charge(self, sm):
         inst_id = await seed_instance(sm, events=[ev(0, "creating", "running")])
 
+        # 屏障对齐起跑线:三路写入同一时刻冲出,撞唯一约束的窗口拉到最大,
+        # 不依赖调度器碰巧交错
+        gate = asyncio.Barrier(4)
+
         async def run():
+            await gate.wait()
             async with sm() as session:
                 await upsert_hour_bill(
                     session,
@@ -268,7 +294,7 @@ class TestUpsertIdempotency:
                 )
                 await session.commit()
 
-        await asyncio.gather(run(), run(), run())
+        await asyncio.gather(run(), run(), run(), gate.wait())
         async with sm() as session:
             bills = (await session.execute(select(BillHourly))).scalars().all()
             w = (await session.execute(select(Wallet))).scalar_one()

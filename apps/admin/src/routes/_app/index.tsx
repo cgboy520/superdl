@@ -1,8 +1,9 @@
 import { adminColors, formatDateTime, statusColors } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   Alert,
+  App,
   Badge,
   Button,
   Card,
@@ -10,6 +11,7 @@ import {
   Collapse,
   Empty,
   Row,
+  Select,
   Space,
   Statistic,
   Table,
@@ -17,6 +19,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
@@ -28,6 +31,8 @@ import {
   type OversellRow,
   type OverviewOut,
   isApiError,
+  useAckAlert,
+  useAlertUnreadCount,
   useAlerts,
   useDeadTasks,
   useDiscardDeadTask,
@@ -37,6 +42,7 @@ import {
   useRevenueReport,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
+import { useApiErrorText } from "../../lib/apiError";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
@@ -233,6 +239,102 @@ function DeadTasksCard() {
   );
 }
 
+/** 告警跳转目标(后端按现有字段派生 target_kind/target_id):无 target 不可点。 */
+function alertLink(a: AlertRow): { to: string; search?: { q: string } } | null {
+  if (a.target_kind === "tenant" && a.target_id) {
+    return { to: "/tenants", search: { q: a.target_id } };
+  }
+  if (a.target_kind === "node") return { to: "/nodes" };
+  if (a.target_kind === "ticket") return { to: "/tickets" };
+  return null;
+}
+
+/** 实时告警流(F8):severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户。 */
+function AlertStreamCard() {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
+  const { message } = App.useApp();
+  const qc = useQueryClient();
+  const role = useAdminRole();
+  const writable = canWriteOps(role);
+  const [severity, setSeverity] = useState<string | undefined>();
+  const { data, queryKey } = useAlerts(severity ? { severity } : undefined);
+  const ack = useAckAlert({
+    mutation: {
+      onSuccess: () => {
+        message.success(t("overview.ackDone"));
+        void qc.invalidateQueries({ queryKey });
+        void qc.invalidateQueries({ queryKey: ["admin", "alerts", "unread-count"] });
+      },
+      onError: (e) => message.error(errText(e, t("overview.ackFailed"))),
+    },
+  });
+  const alerts: AlertRow[] = data ?? [];
+
+  return (
+    <Card
+      title={t("overview.alertStream")}
+      extra={
+        <Select
+          size="small"
+          allowClear
+          placeholder={t("overview.severityFilter")}
+          style={{ width: 120 }}
+          value={severity}
+          onChange={(v) => setSeverity(v)}
+          options={["info", "warning", "critical"].map((s) => ({ value: s, label: s }))}
+        />
+      }
+      styles={{ body: { maxHeight: 560, overflow: "auto" } }}
+    >
+      {alerts.length === 0 && <Empty description={t("shell.noAlerts")} />}
+      {alerts.map((a) => {
+        const link = alertLink(a);
+        return (
+          <div key={a.id} style={{ marginBottom: 12 }}>
+            <Badge
+              color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
+              text={
+                link ? (
+                  <Link to={link.to} search={link.search}>
+                    <b>{a.title}</b>
+                  </Link>
+                ) : (
+                  <b>{a.title}</b>
+                )
+              }
+            />
+            <div style={{ color: adminColors.textSecondary, fontSize: 12, paddingLeft: 14 }}>
+              {formatDateTime(a.created_at)} · {a.content}
+            </div>
+            <div style={{ paddingLeft: 14, marginTop: 2 }}>
+              {a.acked_at ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {t("overview.ackedBy", {
+                    name: a.acked_by_username ?? `#${a.acked_by ?? "-"}`,
+                    time: formatDateTime(a.acked_at),
+                  })}
+                </Typography.Text>
+              ) : (
+                <Tooltip title={writable ? "" : t("overview.opsOnly")}>
+                  <Button
+                    size="small"
+                    disabled={!writable}
+                    loading={ack.isPending && ack.variables?.alertId === a.id}
+                    onClick={() => ack.mutate({ alertId: a.id })}
+                  >
+                    {t("overview.ack")}
+                  </Button>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
 /** 取数失败要显式说:渲染成「暂无数据」等于把集群不可达伪装成没数据。403 单独提示无权限。 */
 function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const { t } = useTranslation();
@@ -261,6 +363,8 @@ function Overview() {
   const { data: ov, isError: ovError, error: ovErr, refetch: refetchOv } = useOverview();
   const { data: alertsData } = useAlerts();
   const { data: revenue } = useRevenueReport();
+  // 「告警(总)」 = 未确认告警精确计数(独立计数端点;截断的告警流长度会低估)
+  const { data: unread } = useAlertUnreadCount();
 
   const oversellRows: OversellRow[] = oversell ?? [];
   const alerts: AlertRow[] = alertsData ?? [];
@@ -298,9 +402,9 @@ function Overview() {
         <Card>
           <Statistic
             title={t("overview.alertsTotal")}
-            value={alerts.length}
+            value={unread?.count ?? "—"}
             styles={{
-              content: alerts.some((a) => a.severity === "critical")
+              content: alerts.some((a) => a.severity === "critical" && !a.acked_at)
                 ? { color: adminColors.negative }
                 : undefined,
             }}
@@ -369,20 +473,7 @@ function Overview() {
         </Card>
       </Col>
       <Col xs={24} xl={8}>
-        <Card title={t("overview.alertStream")} styles={{ body: { maxHeight: 560, overflow: "auto" } }}>
-          {alerts.length === 0 && <Empty description={t("shell.noAlerts")} />}
-          {alerts.map((a) => (
-            <div key={a.id} style={{ marginBottom: 12 }}>
-              <Badge
-                color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
-                text={<b>{a.title}</b>}
-              />
-              <div style={{ color: adminColors.textSecondary, fontSize: 12, paddingLeft: 14 }}>
-                {formatDateTime(a.created_at)} · {a.content}
-              </div>
-            </div>
-          ))}
-        </Card>
+        <AlertStreamCard />
       </Col>
     </Row>
   );

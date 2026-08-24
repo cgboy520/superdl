@@ -12,6 +12,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class ErrorCode(StrEnum):
@@ -48,7 +49,6 @@ class ErrorCode(StrEnum):
     NO_CAPACITY = "NO_CAPACITY"
     # 计费
     INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE"
-    WALLET_FROZEN = "WALLET_FROZEN"
     # 存储
     DISK_IN_USE = "DISK_IN_USE"
     DISK_SHRINK_FORBIDDEN = "DISK_SHRINK_FORBIDDEN"
@@ -57,6 +57,10 @@ class ErrorCode(StrEnum):
     PAYMENT_CHANNEL_ERROR = "PAYMENT_CHANNEL_ERROR"
     # 管理端
     ADMIN_SECOND_REVIEW_REQUIRED = "ADMIN_SECOND_REVIEW_REQUIRED"
+    MFA_TICKET_INVALID = "MFA_TICKET_INVALID"
+    MFA_CODE_INVALID = "MFA_CODE_INVALID"
+    MFA_NOT_BOUND = "MFA_NOT_BOUND"
+    MFA_RESET_SELF_FORBIDDEN = "MFA_RESET_SELF_FORBIDDEN"
 
 
 class AppError(Exception):
@@ -140,6 +144,49 @@ _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
 }
 
 
+def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONResponse:
+    """未捕获异常的统一渲染(结构化留痕 + 统一错误体)。
+    exception handler 与 Uniform500Middleware 共用同一出口。
+    留痕经 structlog 进 Loki(见 deploy/cluster/runbooks/loki-logging.md),
+    异常告警由 Loki 侧规则承接(决策:不引 sentry 依赖,见审计整改方案 P1-32)。"""
+    from app.core.logging import get_logger
+
+    get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "code": ErrorCode.INTERNAL.value,
+            "message": "服务器内部错误,请稍后重试",
+            "message_key": "common.internal",
+            "params": None,
+            "detail": None,
+            "request_id": _current_request_id(),
+        },
+    )
+
+
+class Uniform500Middleware:
+    """中间件链内层的未捕获异常兜底:500 在此渲染并沿链返回,
+    安全响应头(SecurityHeaders)与 request_id(Observability)不再丢失——
+    @app.exception_handler(Exception) 由最外层 ServerErrorMiddleware 承接,
+    跑在两者之外,恰在唯一需要凭单排障的响应上丢掉它们。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        try:
+            await self.app(scope, receive, send)
+        except Exception as exc:
+            response = _unhandled_response(
+                exc, path=scope.get("path", ""), method=scope.get("method", "")
+            )
+            await response(scope, receive, send)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
@@ -189,7 +236,7 @@ def install_error_handlers(app: FastAPI) -> None:
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "code": ErrorCode.VALIDATION_ERROR.value,
                 "message": "参数校验失败",
@@ -202,49 +249,7 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
-        """未捕获异常兜底:结构化留痕 + 上报 + 统一错误体。"""
-        from app.core.logging import get_logger
-
-        get_logger("app.errors").exception(
-            "unhandled_exception", path=request.url.path, method=request.method
-        )
-        _capture_exception(exc)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "code": ErrorCode.INTERNAL.value,
-                "message": "服务器内部错误,请稍后重试",
-                "message_key": "common.internal",
-                "params": None,
-                "detail": None,
-                "request_id": _current_request_id(),
-            },
-        )
-
-
-try:  # pragma: no cover - 可选依赖,缺失即降级为 no-op
-    import sentry_sdk  # type: ignore[import-not-found]
-except ImportError:
-    sentry_sdk = None
-
-
-def _capture_exception(exc: Exception) -> None:
-    """Sentry seam:配置 SUPERDL_SENTRY_DSN 且安装 sentry-sdk 才生效,否则静默跳过。"""
-    from app.core.config import get_settings
-
-    if sentry_sdk is not None and get_settings().sentry_dsn:
-        sentry_sdk.capture_exception(exc)
-
-
-def init_sentry() -> None:
-    """启动时初始化 Sentry(可选依赖,未安装仅告警一次)。"""
-    from app.core.config import get_settings
-    from app.core.logging import get_logger
-
-    dsn = get_settings().sentry_dsn
-    if not dsn:
-        return
-    if sentry_sdk is None:
-        get_logger("app.errors").warning("sentry_dsn_set_but_sdk_missing")
-        return
-    sentry_sdk.init(dsn=dsn, environment=get_settings().environment)
+        """未捕获异常兜底:结构化留痕 + 统一错误体。
+        正常路径的 500 已被 Uniform500Middleware 在内层渲染(安全头/request_id 不丢);
+        本 handler 只兜中间件自身的异常。"""
+        return _unhandled_response(exc, path=request.url.path, method=request.method)

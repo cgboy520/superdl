@@ -1,6 +1,8 @@
 """worker 入口:同一镜像的第二入口。outbox worker 循环 + APScheduler 定时任务。
 
-定时任务全部先抢 pg advisory lock,多副本部署下天然单实例执行。
+除三个对并发天然幂等的任务外,定时任务全部先抢 pg advisory lock,多副本单实例执行
+(例外:outbox_reaper/close_expired_orders/cleanup_expired_rows 均为条件 UPDATE/DELETE,
+并发同跑只是其中一个副本更新 0 行,不抢锁也安全)。
 """
 
 import asyncio
@@ -187,6 +189,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.modules.nodes.patrol import node_spec_patrol
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.orchestrator.reconciler import reconcile_once
+    from app.modules.tickets.patrol import stale_ticket_patrol
 
     sm = get_sessionmaker()
 
@@ -219,7 +222,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(
         _timed_job("daily_disk_settlement", settle_daily_disks, 86400),
         "cron",
-        hour=0,
+        hour=16,  # UTC 16:10 = 北京 00:10:盘费日界按北京日(见 timeutil.billing_day_floor)
         minute=10,
         args=[sm],
         id="daily_disk_settlement",
@@ -230,7 +233,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(
         _timed_job("fund_reconcile", reconcile_funds, 86400),
         "cron",
-        hour=0,
+        hour=16,  # UTC 16:30 = 北京 00:30(北京日界日结之后)
         minute=30,
         args=[sm],
         id="fund_reconcile",
@@ -310,14 +313,22 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
+    # 工单滞留巡检(F3 遗留,F8 补):pending_staff 超 24h → admin_alerts warning
+    scheduler.add_job(
+        _timed_job("ticket_stale_patrol", stale_ticket_patrol, 1800),
+        "interval",
+        minutes=30,
+        args=[sm],
+        id="ticket_stale_patrol",
+        max_instances=1,
+        coalesce=True,
+    )
 
 
 async def main() -> None:
     setup_logging()
-    from app.core.errors import init_sentry
     from app.wiring import wire_modules
 
-    init_sentry()
     wire_modules()
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
 

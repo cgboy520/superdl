@@ -1,6 +1,108 @@
-# 存量 GPU 机器批量装机基线:ansible-playbook -i inventory.ini site.yml -e rke2_server_ip=<server-ip>
-# 覆盖:内核参数(IOMMU/userns)、NVIDIA 驱动、NVMe VG(TopoLVM)、registries.yaml 分发
-# 新节点加入首选管理端「添加节点」一键命令;镜像预热由平台 outbox/巡检驱动,不在装机层做
+# 存量 GPU 机器批量装机基线 + 初始控制面:
+#   ansible-playbook -i inventory.ini site.yml -e rke2_server_ip=<server-ip>
+#   ansible-playbook -i inventory.ini site.yml --tags server   # 仅控制面([servers] 组)
+# 覆盖:初始 server 节点 rke2/k3s 安装(servers 组)、内核参数(IOMMU/userns)、NVIDIA 驱动
+# 与 container toolkit、NVMe VG(TopoLVM)、registries.yaml 分发、内核变更后自动重启验证。
+# 新 GPU 节点加入首选管理端「添加节点」一键命令;镜像预热由平台 outbox/巡检驱动,不在装机层做。
+# OS 基线与变量清单见本目录 README.md。
+
+# ───────────────────────── 控制面:初始 server 节点 ─────────────────────────
+# 与 agent 玩法对齐:配置文件先从仓库模板渲染(占位符全替换、无 CHANGE_ME 残留才落盘),
+# 再装 server 本体并 enable+start;幂等(已装跳过),config 变更才重启。
+- hosts: servers
+  become: true
+  vars:
+    cluster_distro: rke2            # rke2(full 档)/ k3s(light 档)
+    rke2_channel: latest
+    # 控制面敏感值(etcd 快照上传凭据、agent token):一律经 group_vars/servers.yml
+    # (不入 git)或 -e 注入;留空则渲染残留 CHANGE_ME,assert 直接拦截(不装半残控制面)
+    etcd_snapshot_bucket: ""
+    etcd_s3_region: ""
+    etcd_s3_endpoint: ""
+    etcd_s3_access_key: ""
+    etcd_s3_secret_key: ""
+    agent_token: ""
+  tasks:
+    - name: rancher 配置目录
+      file:
+        path: "/etc/rancher/{{ cluster_distro }}"
+        state: directory
+        mode: "0755"
+
+    - name: 分发 apiserver 审计策略(缺失则 apiserver 起不来)
+      copy:
+        src: ../cluster/rke2/audit-policy.yaml   # rke2/k3s 共用同一策略文件
+        dest: "/etc/rancher/{{ cluster_distro }}/audit-policy.yaml"
+        mode: "0644"
+
+    # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘(幂等,
+    # 不写「先 copy 占位再 replace」的非幂等两步)。
+    - name: 渲染 rke2 server config
+      set_fact:
+        server_config: >-
+          {{ lookup('file', '../cluster/rke2/server-config.yaml')
+             | replace('CHANGE_ME_ETCD_SNAPSHOT_BUCKET', etcd_snapshot_bucket)
+             | replace('CHANGE_ME_ETCD_S3_REGION', etcd_s3_region)
+             | replace('CHANGE_ME_ETCD_S3_ENDPOINT', etcd_s3_endpoint)
+             | replace('CHANGE_ME_ETCD_S3_ACCESS_KEY', etcd_s3_access_key)
+             | replace('CHANGE_ME_ETCD_S3_SECRET_KEY', etcd_s3_secret_key)
+             | replace('#agent-token: "CHANGE_ME_AGENT_TOKEN"', 'agent-token: "' + agent_token + '"') }}
+      when: cluster_distro == 'rke2'
+
+    # k3s:模板只有 agent-token 一处占位
+    - name: 渲染 k3s server config
+      set_fact:
+        server_config: >-
+          {{ lookup('file', '../cluster/k3s/server-config.yaml')
+             | replace('#agent-token: "CHANGE_ME_AGENT_TOKEN"', 'agent-token: "' + agent_token + '"') }}
+      when: cluster_distro == 'k3s'
+
+    - name: server config 无占位符残留
+      assert:
+        that: server_config is not search('CHANGE_ME')
+        fail_msg: >-
+          server config 仍有 CHANGE_ME 占位:请在 group_vars/servers.yml 提供
+          etcd_snapshot_bucket / etcd_s3_region / etcd_s3_endpoint / etcd_s3_access_key /
+          etcd_s3_secret_key(rke2)与 agent_token,见 deploy/ansible/README.md
+
+    - name: 落 server config(0600:含 etcd-s3 凭据与 agent token)
+      copy:
+        dest: "/etc/rancher/{{ cluster_distro }}/config.yaml"
+        content: "{{ server_config }}"
+        mode: "0600"
+      notify: restart-server
+
+    - name: 安装 rke2 server(幂等:已装跳过)
+      shell: >
+        curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh
+        | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh -
+      args:
+        executable: /bin/bash
+        creates: /etc/systemd/system/rke2-server.service
+      when: cluster_distro == 'rke2'
+
+    - name: 安装 k3s server(幂等:已装跳过)
+      shell: >
+        curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh
+        | INSTALL_K3S_MIRROR=cn sh -s - server
+      args:
+        executable: /bin/bash
+        creates: /etc/systemd/system/k3s.service
+      when: cluster_distro == 'k3s'
+
+    - name: server 服务开机自启并运行
+      systemd:
+        name: "{{ 'rke2-server' if cluster_distro == 'rke2' else 'k3s' }}.service"
+        enabled: true
+        state: started
+
+  handlers:
+    - name: restart-server
+      systemd:
+        name: "{{ 'rke2-server' if cluster_distro == 'rke2' else 'k3s' }}.service"
+        state: restarted
+
+# ───────────────────────── GPU 节点:存量机批量基线 ─────────────────────────
 - hosts: gpu_nodes
   become: true
   # 分批滚动:registries.yaml 变更会 try-restart rke2-agent,整机房同时 bounce 等于全站抖动
@@ -17,7 +119,9 @@
         content: |
           blacklist nouveau
           options nouveau modeset=0
-      notify: update-initramfs
+      notify:
+        - update-initramfs
+        - reboot-after-kernel-change
 
     - name: 内核参数(IOMMU 直通 + userns)
       copy:
@@ -25,7 +129,9 @@
         content: >
           GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT
           intel_iommu=on iommu=pt"
-      notify: update-grub
+      notify:
+        - update-grub
+        - reboot-after-kernel-change
       when: "'kata' in group_names"
 
     - name: sysctl(userns 上限,共享池加固前提)
@@ -39,6 +145,37 @@
         name: "nvidia-driver-{{ nvidia_driver_version }}-server"
         update_cache: true
       when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
+
+    # NVIDIA Container Toolkit:k8s 认卡的前置(容器运行时依赖)。装好后 rke2/k3s 的
+    # containerd 重启时会探测 nvidia-container-runtime 并生成 nvidia RuntimeClass
+    # (对齐 node-join.sh step_nvidia_toolkit:官方 .list + signed-by 注入)。
+    - name: nvidia-container-toolkit 仓库 keyring
+      shell: |
+        set -e
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+          | gpg --batch --yes --dearmor -o /etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg
+      args:
+        executable: /bin/bash
+        creates: /etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg
+      when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
+
+    - name: nvidia-container-toolkit apt 源
+      shell: >
+        curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
+        | sed "s#deb https://#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g"
+        > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      args:
+        executable: /bin/bash
+        creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
+
+    - name: 安装 nvidia-container-toolkit
+      apt:
+        name: nvidia-container-toolkit
+        update_cache: true
+      when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
+      notify: restart-rke2
 
     - name: 创建 TopoLVM VG(实例盘本地 NVMe)
       shell: |
@@ -59,6 +196,22 @@
       when: rke2_server_ip is defined
       notify: restart-rke2
 
+    # 内核/驱动变更先落地(grub/initramfs 更新)再重启生效;reboot handler 自身等待节点回归
+    - name: 应用挂起的内核变更(handler:update-grub/initramfs → reboot)
+      meta: flush_handlers
+
+    - name: 验证:驱动与容器运行时生效(reboot 后)
+      command: "{{ item }}"
+      loop:
+        - nvidia-smi -L
+        - nvidia-container-runtime --version
+      register: runtime_verify
+      changed_when: false
+      until: runtime_verify.rc == 0
+      retries: 5
+      delay: 10
+      when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
+
   handlers:
     - name: update-grub
       command: update-grub
@@ -67,3 +220,9 @@
     - name: restart-rke2
       # 首装时 rke2 尚未安装,try-restart 对未加载的 unit 静默跳过
       shell: "systemctl try-restart rke2-agent.service rke2-server.service || true"
+    # 内核变更(nouveau 黑名单/IOMMU)必须重启才生效;放 handler 链末位:
+    # grub/initramfs 先跑完。reboot 模块自带等待节点回归(reboot_timeout 内)。
+    - name: reboot-after-kernel-change
+      reboot:
+        reboot_timeout: 900
+        post_reboot_delay: 30

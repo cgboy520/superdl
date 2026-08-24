@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, Query, Request, Response, status
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, unauthorized
+from app.core.http import client_ip as http_client_ip
 from app.core.pagination import Page
 from app.core.ratelimit import check_rate_limit
 from app.modules.account.deps import CurrentUser
@@ -36,6 +37,13 @@ async def list_notifications(
     )
 
 
+@router.post("/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_all_read(user: CurrentUser, session: DbSession) -> Response:
+    """全部已读(幂等)。注意须注册在 {notification_id} 之前,避免 read-all 被当 id 解析。"""
+    await service.mark_all_read(session, user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_read(notification_id: int, user: CurrentUser, session: DbSession) -> Response:
     await service.mark_read(session, user.id, notification_id)
@@ -63,7 +71,7 @@ async def alertmanager_webhook(
     import json
     import secrets as _secrets
 
-    client_ip = request.client.host if request.client else None
+    client_ip = http_client_ip(request)
     await check_rate_limit(
         f"am-webhook:{client_ip or '-'}",
         max_attempts=ALERT_RATE_LIMIT,

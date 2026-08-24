@@ -427,3 +427,30 @@ PYEOF
   [ "$status" -eq 1 ]
   grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
 }
+
+@test "日志 0644 且敏感落盘 0600/0700(umask 前置,无先宽后窄窗口)" {
+  run_script
+  [ "$status" -eq 0 ]
+  [ "$(stat -c %a "$TMP/join.log")" = "644" ]
+  [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
+  [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR")" = "700" ]
+}
+
+@test "--uninstall:停 agent、删本脚本写入的全部配置、清状态目录,不碰 VG 与驱动" {
+  run_script
+  [ "$status" -eq 0 ]
+  # 断言用动作行都是 uninstall 独有的,不截断 SHIM_CALLS(安装期 tee 仍在收尾,截断会竞态)
+  run bash "$SCRIPT" --uninstall --token-file "$TMP/token" --api-base http://fake.local
+  [ "$status" -eq 0 ]
+  grep -q "systemctl disable --now rke2-agent.service" "$SHIM_CALLS"
+  # 本脚本写入的文件全部清除
+  [ ! -e "$SUPERDL_JOIN_STATE_DIR" ]
+  [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
+  [ ! -f "$TMP/etc/rancher/rke2/registries.yaml" ]
+  [ ! -f "$TMP/etc/sysctl.d/99-superdl.conf" ]
+  [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
+  # 业务数据与驱动不动:绝不出现 vgremove / apt-get remove
+  ! grep -q "vgremove" "$SHIM_CALLS"
+  ! grep -q "apt-get remove" "$SHIM_CALLS"
+  [[ "$output" == *"kubectl delete node"* ]]
+}

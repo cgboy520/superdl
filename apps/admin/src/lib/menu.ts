@@ -17,6 +17,7 @@ export const MENU_ROLES = {
 
   "/tenants": ALL_ROLES,
   "/finance": ["admin", "finance", "readonly"], // ops 无财务权限
+  "/tickets": ALL_ROLES, // 读全角色;写操作(ops/admin)由按钮级 disable + 后端 403 兜底
   "/audit": ALL_ROLES,
   "/platform": ["admin"], // 渠道凭据仅超管
   "/settings": ALL_ROLES,

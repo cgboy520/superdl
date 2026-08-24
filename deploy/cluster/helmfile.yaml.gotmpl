@@ -23,8 +23,20 @@ repositories:
     url: https://topolvm.github.io/topolvm
   - name: jetstack
     url: https://charts.jetstack.io
+  # cert-manager 的阿里云 DNS01 solver(泛域名证书签发;P0-16)
+  # TODO(上线前确认):仓库地址以当时官方 README 为准,若迁移到主流替代仓库需同步改这里
+  - name: cert-manager-webhook-alidns
+    url: https://wjw465150.github.io/cert-manager-webhook-alidns
   - name: ingress-nginx
     url: https://kubernetes.github.io/ingress-nginx
+  - name: cloudnative-pg
+    url: https://cloudnative-pg.github.io/charts
+  # Loki(OSS)自 2026-03-16 起由社区仓维护(grafana/loki 转 GEL 专用);
+  # 采集器 Alloy(promtail 2026-03-02 EOL 后的官方继任)仍在 grafana 仓
+  - name: grafana-community
+    url: https://grafana-community.github.io/helm-charts
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
 
 releases:
   - name: cilium
@@ -38,7 +50,12 @@ releases:
     condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
-    version: "v26.3.0"
+    # 已钉死(2026-08 核验 GitHub NVIDIA/gpu-operator releases 最新稳定 v26.3.3,
+    # 修 device-plugin 误注 ibverbs 设备的回归;审计要求 ≥26.3.3)。
+    # HAMi/device-plugin 兼容性:HAMi 池节点以 nvidia.com/gpu.deploy.device-plugin=false
+    # 排斥官方插件(见 values/gpu-operator.yaml 头注释),26.3.x 未改该标签语义;
+    # 升 26.7+ 前须复核 release notes 的 labels/ClusterPolicy 字段变化。
+    version: "v26.3.3"
     values: [values/gpu-operator.yaml]
 
   - name: hami
@@ -87,9 +104,73 @@ releases:
       - name: crds.enabled
         value: "true"
 
+  # alidns DNS01 solver:letsencrypt-dns ClusterIssuer 的 webhook 落点
+  # (deploy/app/k8s/05-cert-manager.yaml 的 groupName=acme.superdl 须与 values 一致);
+  # 凭据 alidns-credentials 不代建,apply 前手工建(见 values 内注释与 preflight 检查)
+  - name: cert-manager-webhook-alidns
+    condition: certManager.enabled
+    namespace: cert-manager
+    chart: cert-manager-webhook-alidns/cert-manager-webhook-alidns
+    # TODO(上线前必须钉死):helm search repo cert-manager-webhook-alidns --versions
+    # 取最新稳定版替换,禁止浮动;chart 名以仓库 index.yaml 实际为准
+    version: "0.1.0"
+    values: [values/cert-manager-webhook-alidns.yaml]
+
   - name: ingress-nginx
     condition: ingressNginx.enabled
     namespace: ingress-nginx
     chart: ingress-nginx/ingress-nginx
-    version: "4.13.0"
+    # 已钉死(2026-08 核验 Artifact Hub/index.yaml 最新稳定 4.15.1 = controller v1.15.1;
+    # 4.13→4.15 无 values 破坏性变更,apply 前 helm diff 复核)
+    version: "4.15.1"
     values: [values/ingress-nginx.yaml]
+
+  # CloudNativePG(P0-14):平台库进 K8s 时的唯一受支持形态(见 ../README.md「生产数据库要求」)。
+  # 默认关闭(cnpg.enabled=false,用托管 PG 时不装);启用时 operator 与业务集群两个 release 一起进。
+  - name: cloudnative-pg
+    condition: cnpg.enabled
+    namespace: cnpg-system
+    chart: cloudnative-pg/cloudnative-pg
+    # 已钉死(2026-08 核验 Artifact Hub 最新稳定):chart 0.29.0 = operator 1.30.0
+    version: "0.29.0"
+
+  - name: cnpg-cluster
+    condition: cnpg.enabled
+    namespace: superdl
+    chart: cloudnative-pg/cluster
+    # 已钉死(2026-08 核验最新稳定 0.8.x);升版时 values 键名以新版为准(先 helm template 验证)
+    version: "0.8.1"
+    needs:
+      - cnpg-system/cloudnative-pg
+    values: [values/cnpg-cluster.yaml]
+
+  # 日志栈(P1-32):Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
+  # API 审计相关日志经此留存 ≥6 个月(查询方式见 runbooks/loki-logging.md)。
+  # light 档默认同开(可承受资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
+  - name: loki
+    condition: loki.enabled
+    namespace: monitoring
+    chart: grafana-community/loki
+    # 已钉死(2026-08 核验 Artifact Hub grafana-community/loki 最新稳定 18.9.1
+    # = Loki 3.7.6;社区 chart 12.0.0 起 SingleBinary 更名 Monolithic,values 已按新名)
+    version: "18.9.1"
+    values:
+      - values/loki.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/loki-light.yaml
+      {{- end }}
+
+  - name: alloy
+    condition: logCollector.enabled
+    namespace: monitoring
+    chart: grafana/alloy
+    # 已钉死(2026-08 核验 Artifact Hub grafana/alloy 最新稳定 1.11.1 = Alloy v1.18.1;
+    # promtail chart 停在 6.17.1 且已废弃,不再引入)
+    version: "1.11.1"
+    needs:
+      - monitoring/loki
+    values: [values/alloy.yaml]
+
+# 注:admission/tenant-restrictions.yaml(ValidatingAdmissionPolicy)不是 helm release,
+# 不纳入本文件;由发布流程单独 kubectl apply(步骤见 README 两档「组件」节),
+# preflight.sh 强制校验集群内两个 Binding 存在且 validationActions 含 Deny。

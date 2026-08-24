@@ -24,6 +24,10 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
         police_record_number=cfg["police_record_number"] or None,
         support_email=cfg["support_email"] or None,
         support_wechat=cfg["support_wechat"] or None,
+        company_name=cfg["company_name"] or None,
+        company_address=cfg["company_address"] or None,
+        company_phone=cfg["company_phone"] or None,
+        business_license_url=cfg["business_license_url"] or None,
         payment_channels=PaymentChannelsOut(
             wechat=cfg["payment_wechat_enabled"] == "true",
             alipay=cfg["payment_alipay_enabled"] == "true",
@@ -36,7 +40,7 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
 async def list_skus(
     session: DbSession, tier: str | None = None, gpu_model: str | None = None
 ) -> list[SkuMarketOut]:
-    """算力市场:仅在架 SKU,含近似库存(30s 缓存)。未登录可访问。"""
+    """算力市场:仅在架 SKU,含近似库存(签名失效缓存)。未登录可访问。"""
     return await service.list_market_skus(session, tier, gpu_model)
 
 

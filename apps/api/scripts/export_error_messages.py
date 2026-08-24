@@ -28,7 +28,9 @@ def main() -> None:
         for part in parts[:-1]:
             node = node.setdefault(part, {})
         node[parts[-1]] = to_i18next(MESSAGES[key])
-    OUT.write_text(json.dumps(tree, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    OUT.write_text(
+        json.dumps(tree, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     sys.stdout.write(f"wrote {OUT}\n")
 
 

@@ -1,31 +1,22 @@
 # 集群内私有镜像仓库:registry.superdl.local 的真实落点。
-# 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维内网)与 pull(节点 registries.yaml mirror)。
-# 应用:kubectl apply -f registry.yaml(apply 前必须替换两处占位:htpasswd 口令与
-# NetworkPolicy 的 ipBlock CIDR,否则认证口令公开/NetworkPolicy 校验报错)。
-# 节点侧配置见 ../rke2/registries.yaml 与
-# runbooks/image-prewarm.md(htpasswd 生成、节点 configs.auth、滚动顺序都在那里有步骤)。
-#
-# 启用/轮换认证的滚动顺序见 runbooks/image-prewarm.md(铁律:先铺节点凭据,后开仓库认证)。
+# 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维经 kubectl port-forward)与
+# pull(节点 registries.yaml mirror 到 ClusterIP)。
+# 应用:kubectl apply -f registry.yaml。htpasswd 凭据不落 git(P0-07:原硬编码的占位
+# 口令已泄漏,其 bcrypt hash 一并移出清单),apply 前必须手工建 Secret——缺失则
+# registry Pod 挂载失败、永不就绪,Service 保持无端点(预期兜底,建好后自动恢复):
+#   htpasswd -nbB ops '<强口令>' > htpasswd   # 生成法见 runbooks/image-prewarm.md
+#   kubectl -n registry create secret generic registry-htpasswd --from-file=htpasswd
+#   rm -f htpasswd                            # 用后即焚
+# 轮换:重建 Secret → kubectl -n registry rollout restart deploy/registry → 同步全部节点
+# configs.auth(滚动顺序铁律:先铺节点凭据,后开仓库认证,见 runbooks/image-prewarm.md)。
 # 开启认证后,新节点的 registries.yaml 须在 管理端·平台配置·集群接入 的
 # node_registries_yaml(DB 覆盖层)放入含 configs.auth 的完整模板。
-# 残余边界:NodePort 30500 仍限内网(机房防火墙不得对外);TLS 升级路径见文件末尾 Service 注释。
+# 残余边界:ClusterIP 仅集群内可达(节点经 kube-proxy 回源),机房防火墙不得把集群
+# 网段对外暴露;TLS 升级路径见文件末尾 Service 注释。
 apiVersion: v1
 kind: Namespace
 metadata:
   name: registry
----
-# htpasswd 认证凭据。占位行 = 用户 ops / 口令 CHANGE_ME(上线前必须替换,生成法见
-# runbooks/image-prewarm.md:htpasswd -nbB ops '<强口令>')。bcrypt 格式合法,可直接 apply
-# 启动,但占位口令等于公开——替换后 `kubectl -n registry rollout restart deploy/registry`。
-apiVersion: v1
-kind: Secret
-metadata:
-  name: registry-htpasswd
-  namespace: registry
-type: Opaque
-stringData:
-  htpasswd: |
-    ops:$2y$05$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -34,11 +25,13 @@ metadata:
   namespace: registry
 spec:
   accessModes: ["ReadWriteOnce"]
-  # 节点本地 NVMe:注意这会占用 GPU 节点 superdl-nvme VG 的 500Gi(与实例盘同源),
-  # GPU 节点盘位宝贵时建议:①把 registry 调度/存储迁到 infra/管理节点(TopoLVM 另建 VG
-  # 或独立 storageClass),或 ②改共享存储(JuiceFS/NFS,RWX)。仓库丢失可重 push,灾备见
-  # runbooks/image-prewarm.md。
-  storageClassName: topolvm-provisioner
+  # P1-33:存储移出 GPU 节点 superdl-nvme VG(原 topolvm-provisioner,与实例盘同源、
+  # 挤占 GPU 节点盘位)——改 JuiceFS 共享卷:registry 已固定在控制面/infra 节点(下方
+  # nodeSelector),JuiceFS 与其解耦,且仓库内容全部可重 push(灾备见
+  # runbooks/image-prewarm.md),对共享卷性能无硬要求。RWO:registry 单副本(strategy
+  # Recreate),无需 RWX。light 档默认无 JuiceFS:改回 topolvm-provisioner(此时 registry
+  # 落回单机,占 superdl-nvme VG,单机可接受)。
+  storageClassName: superdl-juicefs
   resources:
     requests:
       storage: 500Gi
@@ -51,7 +44,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate               # RWO 本地卷,不允许双副本并存
+    type: Recreate               # RWO 卷(现 JuiceFS,见 PVC 注释),单副本不允许并存滚动
   selector:
     matchLabels: {app: registry}
   template:
@@ -59,6 +52,17 @@ spec:
       labels: {app: registry}
     spec:
       automountServiceAccountToken: false
+      # 平台组件与租户隔离(P1-33):迁到控制面/infra 节点运行(存储已改 JuiceFS 共享卷,
+      # 不再要求目标节点建出 TopoLVM VG,见上方 PVC 注释),
+      # 优先级压过租户 Pod,节点资源紧张时不与租户同级被驱逐。
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
+        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -98,6 +102,11 @@ spec:
           resources:
             requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: "1", memory: 512Mi}
+          securityContext:       # P0-07:最小权限基线(数据写 PVC,根文件系统可只读)
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+            readOnlyRootFilesystem: true
+            seccompProfile: {type: RuntimeDefault}
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -106,10 +115,14 @@ spec:
           secret:
             secretName: registry-htpasswd
 ---
-# 默认拒绝入方向,仅放行节点/运维网段到 5000(节点 pull 经 NodePort 回源、运维 push 直达)。
-# 把 ipBlock 改成实际 节点网段+运维网段(可多段);Cilium 若对本 Service 做 SNAT,源地址会
-# 折进节点网段,本策略仍生效;若改 externalTrafficPolicy=Local,需把真实客户端网段一并加入。
-# 注意:light 档(k3s+flannel)不执行 NetworkPolicy,该档请依赖防火墙等外层边界。
+# 默认拒绝入方向;放行段为注释示例——取消注释并把 CIDR 改成真实 节点网段+运维网段
+# (可多段)后才生效,未启用前 = 全拒绝(registry 完全不可达,属安全默认)。
+# 节点 pull 经 ClusterIP 回源(源地址为节点 IP)、运维 push 经
+# `kubectl -n registry port-forward svc/registry 5000`(源地址折进节点网段),均需被放行。
+# Cilium 若对本 Service 做 SNAT,源地址会折进节点网段,本策略仍生效。
+# 注意:light 档 k3s 默认自带 netpol 控制器(内嵌 kube-router),NetworkPolicy 照常执行;
+# 外层防火墙仍建议作为第二道边界(等效性核查见 runbooks/cluster-validation.md)。
+# preflight.sh 会校验集群内必须存在本 NetworkPolicy 才放行部署。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -118,11 +131,12 @@ metadata:
 spec:
   podSelector: {}
   policyTypes: ["Ingress"]
-  ingress:
-    - from:
-        - ipBlock: {cidr: "CHANGE_ME_NODE_OPS_CIDR/24"}
-      ports:
-        - {protocol: TCP, port: 5000}
+  # 放行示例(整段注释,按实际网段启用后重新 apply):
+  # ingress:
+  #   - from:
+  #       - ipBlock: {cidr: "<node-ops-cidr>/24"}
+  #     ports:
+  #       - {protocol: TCP, port: 5000}
 ---
 apiVersion: v1
 kind: Service
@@ -130,15 +144,16 @@ metadata:
   name: registry
   namespace: registry
 spec:
-  type: NodePort               # 全节点 30500 开放;节点经本机地址 pull 是现有架构,
-                               # 改 ClusterIP 会断装机链路,故保留。
+  type: ClusterIP              # P0-07:由 NodePort 30500 收编为 ClusterIP,不再全节点开端口;
+                               # ClusterIP 稳定且 kube-proxy 全节点编程,节点 host 网络
+                               # (containerd pull)可达,装机链路不断;节点 endpoint 见
+                               # ../rke2/registries.yaml。
   selector: {app: registry}
   ports:
     - port: 5000
       targetPort: 5000
-      nodePort: 30500
-# 残余风险(保留 NodePort 的代价):内网任意能触达节点 30500 的主体,凭 htpasswd 口令即可
-# push/pull;口令强度与分发范围因此成为边界(叠加租户 Egress NetworkPolicy 禁私网段兜底)。
+# 残余风险:集群内任意能触达 ClusterIP 的主体,凭 htpasswd 口令即可 push/pull;口令强度与
+# 分发范围因此成为边界(叠加租户 Egress NetworkPolicy 禁全部私网段兜底,ClusterIP 段在其内)。
 # TLS 升级路径:registry 加 REGISTRY_HTTP_TLS_CERTIFICATE/KEY(cert-manager 签内网 CA 证书),
-# 节点 registries.yaml 的 endpoint 改 https 并配 configs.tls.ca_file;之后再评估
-# mutual TLS 或收编为 ClusterIP + 节点本地代理。未上 TLS 前,口令在内网明文传输,须按季度轮换。
+# 节点 registries.yaml 的 endpoint 改 https 并配 configs.tls.ca_file;之后再评估 mutual TLS。
+# 未上 TLS 前,口令在内网明文传输,须按季度轮换。

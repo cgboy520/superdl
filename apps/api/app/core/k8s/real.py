@@ -10,6 +10,7 @@
 
 import asyncio
 import hashlib
+import math
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -26,6 +27,7 @@ from app.core.k8s.base import (
     InstancePodSpec,
     NodeInfo,
     NodePortTaken,
+    PodListEntry,
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
@@ -590,29 +592,99 @@ class RealOrchestrator:
             deleting=pod.metadata.deletion_timestamp is not None,
         )
 
-    async def list_instance_pods(self) -> list[tuple[str, str]]:
+    async def read_instance_logs(
+        self, namespace: str, name: str, *, tail_lines: int, since_seconds: int | None = None
+    ) -> str:
+        return await self._run(
+            self._read_instance_logs_sync, namespace, name, tail_lines, since_seconds
+        )
+
+    def _read_instance_logs_sync(
+        self, namespace: str, name: str, tail_lines: int, since_seconds: int | None
+    ) -> str:
+        # 用户在线等日志:覆盖默认读超时收紧到 5s(_TimeoutApi 只 setdefault,显式传参生效)
+        kwargs: dict[str, Any] = {
+            "container": "workspace",
+            "tail_lines": tail_lines,
+            "timestamps": True,
+            "_request_timeout": (5.0, 5.0),
+        }
+        if since_seconds is not None:
+            kwargs["since_seconds"] = since_seconds
+        return cast(str, self.core.read_namespaced_pod_log(name, namespace, **kwargs))
+
+    async def list_instance_pods(self) -> list[PodListEntry]:
         return await self._run(self._list_instance_pods_sync)
 
-    def _list_instance_pods_sync(self) -> list[tuple[str, str]]:
+    def _list_instance_pods_sync(self) -> list[PodListEntry]:
         pods = self._list_all(self.core.list_pod_for_all_namespaces, label_selector=MANAGED_LABEL)
         prefix = self.settings.k8s_namespace_prefix
-        return [
-            (p.metadata.namespace, p.metadata.name)
-            for p in pods
-            if p.metadata.namespace.startswith(prefix)
-        ]
+        out: list[PodListEntry] = []
+        for p in pods:
+            if not p.metadata.namespace.startswith(prefix):
+                continue
+            conditions = p.status.conditions or []
+            ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
+            out.append(
+                PodListEntry(
+                    namespace=p.metadata.namespace,
+                    name=p.metadata.name,
+                    ready=ready,
+                    phase=p.status.phase or "Unknown",
+                    node_name=p.spec.node_name,
+                    deleting=p.metadata.deletion_timestamp is not None,
+                )
+            )
+        return out
+
+    async def list_instance_endpoints(self) -> list[tuple[str, str]]:
+        return await self._run(self._list_instance_endpoints_sync)
+
+    def _list_instance_endpoints_sync(self) -> list[tuple[str, str]]:
+        prefix = self.settings.k8s_namespace_prefix
+        out: set[tuple[str, str]] = set()
+        for svc in self._list_all(
+            self.core.list_service_for_all_namespaces, label_selector=MANAGED_LABEL
+        ):
+            ns = svc.metadata.namespace
+            if not ns.startswith(prefix):
+                continue
+            name = svc.metadata.name
+            # jupyter 副名归并到实例名(<uuid>-jupyter → <uuid>)
+            out.add((ns, name[: -len("-jupyter")] if name.endswith("-jupyter") else name))
+        for ing in self._list_all(
+            self.net.list_ingress_for_all_namespaces, label_selector=MANAGED_LABEL
+        ):
+            ns = ing.metadata.namespace
+            if ns.startswith(prefix):
+                out.add((ns, ing.metadata.name))
+        return sorted(out)
+
+    async def used_node_ports(self) -> set[int]:
+        return await self._run(self._used_node_ports_sync)
+
+    def _used_node_ports_sync(self) -> set[int]:
+        ports: set[int] = set()
+        for svc in self._list_all(
+            self.core.list_service_for_all_namespaces, label_selector=MANAGED_LABEL
+        ):
+            for p in svc.spec.ports or []:
+                if p.node_port:
+                    ports.add(p.node_port)
+        return ports
 
     # ---------- 数据盘擦除 ----------
 
-    async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        await self._run(self._wipe_disk_sync, namespace, subpath)
-
-    def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
-        """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录。幂等:
-        Job 已成功 → 清理并返回;进行中 → 抛错交 outbox 退避重试;失败 → 删 Job 重建。"""
-        if "/" in subpath or ".." in subpath or not subpath:
-            raise ValueError(f"illegal juicefs subpath: {subpath!r}")
-        job_name = f"wipe-{subpath[-40:]}".lower()
+    def _run_managed_job_sync(
+        self,
+        namespace: str,
+        job_name: str,
+        container: Any,
+        volumes: list[Any],
+        pod_labels: dict[str, str],
+    ) -> None:
+        """受管 Job 生命周期(幂等):已成功 → 清理并返回;进行中 → 抛错交 outbox 退避重试;
+        失败 → 删 Job 重建;不存在 → 创建并抛错等下轮。wipe/quota/prewarm 共用。"""
         try:
             existing: Any = self.batch.read_namespaced_job(job_name, namespace)
         except client.ApiException as exc:
@@ -629,59 +701,25 @@ class RealOrchestrator:
                 self.batch.delete_namespaced_job(
                     job_name, namespace, propagation_policy="Background"
                 )
-                raise RuntimeError(f"disk wipe job failed, recreated next retry: {job_name}")
-            raise RuntimeError(f"disk wipe job still running: {job_name}")
+                raise RuntimeError(f"job failed, recreated next retry: {job_name}")
+            raise RuntimeError(f"job still running: {job_name}")
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
-                name=job_name, namespace=namespace, labels={MANAGED_LABEL: "true"}
+                name=job_name,
+                namespace=namespace,
+                labels={MANAGED_LABEL: "true", **pod_labels},
             ),
             spec=client.V1JobSpec(
                 backoff_limit=1,
                 ttl_seconds_after_finished=3600,
                 template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(labels={MANAGED_LABEL: "true", **pod_labels}),
                     spec=client.V1PodSpec(
                         restart_policy="Never",
                         automount_service_account_token=False,
-                        containers=[
-                            client.V1Container(
-                                name="wipe",
-                                image="busybox:1.36",
-                                command=["rm", "-rf", f"/data/{subpath}"],
-                                volume_mounts=[
-                                    client.V1VolumeMount(name="juicefs", mount_path="/data")
-                                ],
-                                # 租户 ns 的 ResourceQuota 含 cpu/memory/ephemeral 硬限,
-                                # 不声明 request/limit 的 Pod 会被配额准入直接拒绝
-                                resources=client.V1ResourceRequirements(
-                                    requests={
-                                        "cpu": "10m",
-                                        "memory": "16Mi",
-                                        "ephemeral-storage": "16Mi",
-                                    },
-                                    limits={
-                                        "cpu": "100m",
-                                        "memory": "64Mi",
-                                        "ephemeral-storage": "64Mi",
-                                    },
-                                ),
-                                security_context=client.V1SecurityContext(
-                                    allow_privilege_escalation=False,
-                                    capabilities=client.V1Capabilities(drop=["ALL"]),
-                                    seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
-                                ),
-                            )
-                        ],
-                        volumes=[
-                            client.V1Volume(
-                                name="juicefs",
-                                persistent_volume_claim=(
-                                    client.V1PersistentVolumeClaimVolumeSource(
-                                        claim_name=JUICEFS_PVC_NAME
-                                    )
-                                ),
-                            )
-                        ],
-                    )
+                        containers=[container],
+                        volumes=volumes,
+                    ),
                 ),
             ),
         )
@@ -690,7 +728,101 @@ class RealOrchestrator:
         except client.ApiException as exc:
             if not _is_conflict(exc):
                 raise
-        raise RuntimeError(f"disk wipe job created, awaiting completion: {job_name}")
+        raise RuntimeError(f"job created, awaiting completion: {job_name}")
+
+    @staticmethod
+    def _batch_container(name: str, image: str, command: list[str], env: list[Any]) -> Any:
+        """一次性 Job 容器基座:资源声明(租户 ns 的 ResourceQuota 要求)+ 安全上下文。"""
+        return client.V1Container(
+            name=name,
+            image=image,
+            command=command,
+            env=env,
+            # 租户 ns 的 ResourceQuota 含 cpu/memory/ephemeral 硬限,
+            # 不声明 request/limit 的 Pod 会被配额准入直接拒绝
+            resources=client.V1ResourceRequirements(
+                requests={"cpu": "10m", "memory": "16Mi", "ephemeral-storage": "16Mi"},
+                limits={"cpu": "100m", "memory": "64Mi", "ephemeral-storage": "64Mi"},
+            ),
+            security_context=client.V1SecurityContext(
+                allow_privilege_escalation=False,
+                capabilities=client.V1Capabilities(drop=["ALL"]),
+                seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
+            ),
+        )
+
+    async def wipe_disk(self, namespace: str, subpath: str) -> None:
+        await self._run(self._wipe_disk_sync, namespace, subpath)
+
+    def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
+        """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录。幂等:见 _run_managed_job_sync。"""
+        if "/" in subpath or ".." in subpath or not subpath:
+            raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+        container = self._batch_container(
+            "wipe", "busybox:1.36", ["rm", "-rf", f"/data/{subpath}"], env=[]
+        )
+        container.volume_mounts = [client.V1VolumeMount(name="juicefs", mount_path="/data")]
+        self._run_managed_job_sync(
+            namespace,
+            f"wipe-{subpath[-40:]}".lower(),
+            container,
+            volumes=[
+                client.V1Volume(
+                    name="juicefs",
+                    persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                        claim_name=JUICEFS_PVC_NAME
+                    ),
+                )
+            ],
+            pod_labels={},
+        )
+
+    # ---------- JuiceFS 目录配额(平台 ns,纯元数据操作,不挂卷) ----------
+
+    async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
+        await self._run(self._disk_quota_sync, subpath, capacity_gb, True)
+
+    async def delete_disk_quota(self, subpath: str) -> None:
+        await self._run(self._disk_quota_sync, subpath, 0, False)
+
+    def _disk_quota_sync(self, subpath: str, capacity_gb: int, is_set: bool) -> None:
+        """平台 ns 起 juicefs CLI Job 下发/摘除目录配额。幂等(见 _run_managed_job_sync)。
+        metaurl 经 secretKeyRef 注入(superdl-api-secrets 与 Job 同 ns),worker 零接触明文;
+        subpath/capacity 走 env 间接引用,不进 shell 命令串(防注入)。"""
+        if "/" in subpath or ".." in subpath or not subpath:
+            raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+        if is_set:
+            script = (
+                'juicefs quota set "$JUICEFS_METAURL" --path "/$QUOTA_SUBPATH"'
+                ' --capacity "$QUOTA_CAPACITY_GB" --create'
+            )
+        else:
+            # 删盘链路:无配额记录(存量盘/从未下发成功)不算失败,目录随后由 wipe Job 擦除
+            script = 'juicefs quota delete "$JUICEFS_METAURL" --path "/$QUOTA_SUBPATH" || true'
+        container = self._batch_container(
+            "quota", self.settings.juicefs_cli_image, ["sh", "-c", script], env=[]
+        )
+        container.env = [
+            client.V1EnvVar(
+                name="JUICEFS_METAURL",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="superdl-api-secrets", key="juicefs-metaurl"
+                    )
+                ),
+            ),
+            client.V1EnvVar(name="QUOTA_SUBPATH", value=subpath),
+            client.V1EnvVar(name="QUOTA_CAPACITY_GB", value=str(capacity_gb)),
+        ]
+        action = "set" if is_set else "del"
+        self._run_managed_job_sync(
+            self.settings.k8s_platform_namespace,
+            f"quota-{action}-{subpath[-36:]}".lower(),
+            container,
+            volumes=[],
+            # NetworkPolicy jobs-egress 按此标签放行 PG(JuiceFS 元数据引擎)出向
+            pod_labels={"app": "superdl-disk-quota"},
+        )
 
     # ---------- 库存与节点 ----------
 
@@ -703,6 +835,30 @@ class RealOrchestrator:
                 total += int(value)
         return total
 
+    @staticmethod
+    def _physical_gpu_amount(node: Any) -> int:
+        """节点物理卡数。HAMi device-plugin 把 allocatable nvidia.com/gpu 放大为
+        物理 × deviceSplitCount(默认 10):物理口径以 GFD 标签 nvidia.com/gpu.count 为准;
+        无该标签(未切分池)按 allocatable 原样。"""
+        labels = node.metadata.labels or {}
+        gfd = labels.get("nvidia.com/gpu.count")
+        allocatable = RealOrchestrator._gpu_amount(node.status.allocatable)
+        if gfd and str(gfd).isdigit():
+            physical = int(gfd)
+            if 0 < physical < allocatable:
+                return physical
+        return allocatable
+
+    @staticmethod
+    def _pod_gpu_occupancy(limits: dict[str, Any]) -> float:
+        """Pod 占用的物理卡当量:HAMi 份额按 gpucores 折算(N 虚卡 × X% = N·X/100 物理卡);
+        整卡/MIG 按 1/个。台账与库存统一物理口径,否则共享池被放大一个数量级。"""
+        whole = RealOrchestrator._gpu_amount(limits)
+        cores = limits.get("nvidia.com/gpucores")
+        if cores is not None and str(cores).isdigit() and whole > 0:
+            return whole * int(cores) / 100.0
+        return float(whole)
+
     async def available_gpus(self, pool_label: str) -> int:
         return await self._run(self._available_gpus_sync, pool_label)
 
@@ -710,7 +866,7 @@ class RealOrchestrator:
         nodes = self._list_all(
             self.core.list_node, label_selector=f"{POOL_NODE_LABEL}={pool_label}"
         )
-        total = sum(self._gpu_amount(n.status.allocatable) for n in nodes)
+        total = sum(self._physical_gpu_amount(n) for n in nodes)
         used = self._used_gpus_by_pool().get(pool_label, 0)
         return max(0, total - used)
 
@@ -730,7 +886,8 @@ class RealOrchestrator:
                 return items
 
     def _used_gpus_by_pool(self) -> dict[str, int]:
-        """全部受管 Pod 一次拉取,按池聚合已用份额(整卡 + MIG + HAMi 虚拟份额)。
+        """全部受管 Pod 一次拉取,按池聚合已用份额(物理卡当量:整卡/MIG 按 1,
+        HAMi 按 gpucores 折算后向上取整,不低估占用)。
 
         无 nodeSelector 的 Pod(存量实例/异常路径)不能跳过:按 spec.nodeName
         所在节点的池标签保守归账,否则已用量被低估、库存虚高超卖。
@@ -742,7 +899,7 @@ class RealOrchestrator:
         )
         nodes = self._list_all(self.core.list_node)
         node_pool = {n.metadata.name: (n.metadata.labels or {}).get(POOL_NODE_LABEL) for n in nodes}
-        used: dict[str, int] = {}
+        used: dict[str, float] = {}
         for pod in pods:
             pool = (pod.spec.node_selector or {}).get(POOL_NODE_LABEL)
             if pool is None:
@@ -751,8 +908,8 @@ class RealOrchestrator:
                 continue
             for c in pod.spec.containers:
                 limits = (c.resources and c.resources.limits) or {}
-                used[pool] = used.get(pool, 0) + self._gpu_amount(limits)
-        return used
+                used[pool] = used.get(pool, 0.0) + self._pod_gpu_occupancy(limits)
+        return {pool: math.ceil(v) for pool, v in used.items()}
 
     def _used_gpus_by_node(self) -> dict[str, int]:
         pods = self._list_all(
@@ -760,15 +917,15 @@ class RealOrchestrator:
             label_selector=MANAGED_LABEL,
             field_selector="status.phase!=Failed",
         )
-        used: dict[str, int] = {}
+        used: dict[str, float] = {}
         for pod in pods:
             node = pod.spec.node_name
             if not node:
                 continue
             for c in pod.spec.containers:
                 limits = (c.resources and c.resources.limits) or {}
-                used[node] = used.get(node, 0) + self._gpu_amount(limits)
-        return used
+                used[node] = used.get(node, 0.0) + self._pod_gpu_occupancy(limits)
+        return {node: math.ceil(v) for node, v in used.items()}
 
     async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
         return await self._run(self._list_nodes_sync, include_unlabeled)
@@ -825,7 +982,7 @@ class RealOrchestrator:
             conditions = node.status.conditions or []
             ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
             cordoned = bool(node.spec.unschedulable)
-            total = self._gpu_amount(node.status.allocatable)
+            total = self._physical_gpu_amount(node)
             cap = node.status.capacity or {}
             out.append(
                 NodeInfo(

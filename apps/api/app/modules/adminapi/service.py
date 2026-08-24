@@ -1,21 +1,26 @@
+from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_sessionmaker
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger
-from app.core.ratelimit import RateLimitCounter, check_rate_limit
+from app.core.pagination import Page
+from app.core.ratelimit import RateLimitCounter, check_rate_limit, ensure_not_rate_limited
 from app.core.security import (
     create_token,
+    decode_token,
     hash_password,
     hash_password_sync,
     verify_password,
 )
-from app.modules.adminapi.models import AdminUser
+from app.core.timeutil import now_utc
+from app.modules.adminapi.models import AdminAdjustment, AdminUser
+from app.modules.adminapi.schemas import AdjustmentOut, AdminOut, AdminToken, MfaChallengeOut
 
 logger = get_logger(__name__)
 
@@ -33,6 +38,14 @@ LOGIN_IP_WINDOW_SECONDS = 3600.0
 PASSWORD_MIN_LENGTH = 12
 # bcrypt 上限 72 字节;schema 的 max_length 按字符计,多字节口令会绕过
 PASSWORD_MAX_BYTES = 72
+
+# ---------- TOTP MFA(admin/finance 强制) ----------
+MFA_ROLES = ("admin", "finance")
+MFA_SETUP_TICKET_SECONDS = 600  # 绑定票 10 分钟,一次性用途(typ=mfa_setup)
+MFA_VERIFY_TICKET_SECONDS = 300  # 二要素票 5 分钟
+MFA_MAX_ATTEMPTS = 5  # 同账号 5 次/10min,防在线爆破 6 位码
+MFA_WINDOW_SECONDS = 600.0
+RECOVERY_CODE_COUNT = 10
 
 # 单笔调账绝对值上限:超出走对公/线下流程,不进双人复核(防手滑多敲零)
 ADJUST_MAX_ABS = Decimal("100000.00")
@@ -66,10 +79,22 @@ async def _clear_login_failures(key: str) -> None:
 
 async def login(
     session: AsyncSession, username: str, password: str, *, client_ip: str | None = None
-) -> tuple[str, AdminUser]:
+) -> tuple[AdminToken | MfaChallengeOut, AdminUser]:
+    """密码校验 → (登录产物, 账号)。高权角色产物为二要素挑战票而非 token。"""
     admin = (
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
+    # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不再付哈希成本
+    await ensure_not_rate_limited(
+        f"admin-login-ip:{client_ip or '-'}",
+        max_attempts=LOGIN_IP_MAX_ATTEMPTS,
+        window_seconds=LOGIN_IP_WINDOW_SECONDS,
+    )
+    await ensure_not_rate_limited(
+        f"admin-login:{client_ip or '-'}:{username}",
+        max_attempts=LOGIN_MAX_ATTEMPTS,
+        window_seconds=LOGIN_WINDOW_SECONDS,
+    )
     password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
         # 只在失败后计数:成功登录不消耗配额(此前连成功也计数,连登 5 次即被 429)
@@ -93,10 +118,225 @@ async def login(
         )
     # 凭据正确即清零该账号桶的失败计数(IP 桶不清:口令喷洒不会产生成功登录)
     await _clear_login_failures(f"admin-login:{client_ip or '-'}:{username}")
+    # 高权角色强制 TOTP:未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
+    if admin.role in MFA_ROLES:
+        if admin.totp_enabled:
+            challenge = MfaChallengeOut(
+                status="mfa_required", ticket=_mfa_ticket(admin, setup=False)
+            )
+        else:
+            challenge = MfaChallengeOut(status="mfa_setup", ticket=_mfa_ticket(admin, setup=True))
+        return challenge, admin
+    token = AdminToken(
+        access_token=create_token(
+            str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
+        ),
+        admin=AdminOut.model_validate(admin),
+    )
+    return token, admin
+
+
+# 静默续期:access 过期后 15 分钟宽限内可换发(401 反应式续期的窗口);
+# 自首次登录(sess_iat 跨续期链传递)起 12 小时绝对会话上限,到点必须重新登录
+RENEW_GRACE_SECONDS = 15 * 60
+SESSION_MAX_SECONDS = 12 * 3600
+
+
+async def renew_access_token(session: AsyncSession, token: str) -> str:
+    """有效或刚过期(宽限内)的管理端 access token 换发新 token。
+    账号停用/改密/重置(token_version 变)或超绝对会话上限即 401。"""
+    from datetime import UTC, datetime, timedelta
+
+    payload = decode_token(token, "admin", leeway_seconds=RENEW_GRACE_SECONDS)
+    # 续期链上 iat 每轮刷新,绝对上限须锚定首次登录时刻(sess_iat)
+    session_iat = int(payload.get("sess_iat") or payload["iat"])
+    issued_at = datetime.fromtimestamp(session_iat, tz=UTC)
+    if now_utc() - issued_at > timedelta(seconds=SESSION_MAX_SECONDS):
+        raise unauthorized("会话已达 12 小时上限,请重新登录")
+    admin = await session.get(AdminUser, int(payload["sub"]))
+    if admin is None or admin.status != "active" or payload.get("ver", 0) != admin.token_version:
+        raise unauthorized()
+    return create_token(
+        str(admin.id),
+        "admin",
+        token_type="access",
+        extra={"ver": admin.token_version, "sess_iat": session_iat},
+    )
+
+
+# ---------- TOTP 票据与校验 ----------
+def _mfa_ticket(admin: AdminUser, *, setup: bool) -> str:
+    return create_token(
+        str(admin.id),
+        "admin",
+        token_type="mfa_setup" if setup else "mfa_ticket",
+        ttl_seconds=MFA_SETUP_TICKET_SECONDS if setup else MFA_VERIFY_TICKET_SECONDS,
+        extra={"ver": admin.token_version},
+    )
+
+
+async def _admin_from_ticket(
+    session: AsyncSession, ticket: str, *, expected: Literal["mfa_setup", "mfa_ticket"]
+) -> AdminUser:
+    """校验短票并加载账号。票据无效/账号状态或版本已变 → MFA_TICKET_INVALID(重新登录)。"""
+    try:
+        payload = decode_token(ticket, "admin", expected_type=expected)
+    except AppError as exc:
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid") from exc
+    admin = await session.get(AdminUser, int(payload["sub"]))
+    if admin is None or admin.status != "active" or payload.get("ver", 0) != admin.token_version:
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    return admin
+
+
+async def _check_mfa_rate(admin_id: int) -> None:
+    await ensure_not_rate_limited(
+        f"admin-mfa:{admin_id}", max_attempts=MFA_MAX_ATTEMPTS, window_seconds=MFA_WINDOW_SECONDS
+    )
+
+
+async def _count_mfa_failure(admin_id: int) -> None:
+    await check_rate_limit(
+        f"admin-mfa:{admin_id}", max_attempts=MFA_MAX_ATTEMPTS, window_seconds=MFA_WINDOW_SECONDS
+    )
+
+
+def _decrypt_totp_secret(admin: AdminUser) -> str:
+    from app.core.crypto import decrypt_str
+
+    assert admin.totp_secret is not None  # 调用方保证(totp_enabled 或 setup 已开始)
+    return decrypt_str(admin.totp_secret, aad=f"totp:{admin.id}")
+
+
+def _gen_plain_recovery_codes() -> list[str]:
+    """10 个 XXXXX-XXXXX 恢复码(40 bit/个)。明文只存在于响应当次,落库只有 bcrypt 哈希。"""
+    import secrets
+
+    return [f"{(raw := secrets.token_hex(5))[:5]}-{raw[5:]}" for _ in range(RECOVERY_CODE_COUNT)]
+
+
+async def _hash_recovery_codes(plain: list[str]) -> list[str]:
+    """bcrypt ~200ms/个:gather 并发受 _bcrypt_permits(4)约束,10 个约 600ms。"""
+    import asyncio
+
+    return list(await asyncio.gather(*(hash_password(code) for code in plain)))
+
+
+async def _consume_recovery_code(admin: AdminUser, code: str) -> bool:
+    """匹配即作废(用后失效)。bcrypt 逐个比对,≤10 个,并发受信号量约束。"""
+    import asyncio
+
+    hashes = list(admin.totp_recovery or [])
+    if not hashes:
+        return False
+    results = await asyncio.gather(*(verify_password(code, h) for h in hashes))
+    if not any(results):
+        return False
+    admin.totp_recovery = [h for h, ok in zip(hashes, results, strict=True) if not ok]
+    return True
+
+
+async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str]:
+    """生成(或复用进行中的)TOTP 密钥,返回 (secret, otpauth_uri)。
+    复用让绑定页刷新/重进看到同一二维码;确认绑定前 totp_enabled 恒为 false。"""
+    import pyotp
+
+    from app.core.crypto import encrypt_str
+
+    admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
+    if admin.totp_secret is None:
+        secret = pyotp.random_base32()
+        admin.totp_secret = encrypt_str(secret, aad=f"totp:{admin.id}")
+        await session.commit()
+    else:
+        secret = _decrypt_totp_secret(admin)
+    uri = pyotp.TOTP(secret).provisioning_uri(name=admin.username, issuer_name="SuperDL 管理端")
+    return secret, uri
+
+
+async def confirm_totp_setup(
+    session: AsyncSession, ticket: str, code: str
+) -> tuple[str, AdminUser, list[str]]:
+    """校验首个动态码 → 启用 + 发恢复码(明文仅本次) → 签发正式 token。"""
+    import pyotp
+
+    admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
+    await _check_mfa_rate(admin.id)
+    if admin.totp_secret is None:  # 未 begin 直接 confirm
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    if not pyotp.TOTP(_decrypt_totp_secret(admin)).verify(code, valid_window=1):
+        await _count_mfa_failure(admin.id)
+        logger.warning("mfa_bind_failed", admin_id=admin.id)
+        raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
+    plain = _gen_plain_recovery_codes()
+    admin.totp_recovery = await _hash_recovery_codes(plain)
+    admin.totp_enabled = True
+    await session.commit()
+    logger.info("mfa_bound", admin_id=admin.id)
     token = create_token(
         str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
     )
-    return token, admin
+    return token, admin, plain
+
+
+async def verify_mfa_login(
+    session: AsyncSession, ticket: str, code: str
+) -> tuple[str, AdminUser, int | None]:
+    """二要素验证:6 位 TOTP,或恢复码(用后作废)。返回 (token, admin, 剩余恢复码数)。"""
+    import pyotp
+
+    admin = await _admin_from_ticket(session, ticket, expected="mfa_ticket")
+    await _check_mfa_rate(admin.id)
+    ok = False
+    used_recovery = False
+    if code.isdigit() and len(code) == 6:
+        ok = pyotp.TOTP(_decrypt_totp_secret(admin)).verify(code, valid_window=1)
+    else:
+        used_recovery = ok = await _consume_recovery_code(admin, code.strip().lower())
+    if not ok:
+        await _count_mfa_failure(admin.id)
+        logger.warning("mfa_verify_failed", admin_id=admin.id)
+        raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
+    if used_recovery:
+        await session.commit()  # 作废落库
+        logger.info("mfa_recovery_used", admin_id=admin.id)
+    token = create_token(
+        str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
+    )
+    left = len(admin.totp_recovery or []) if used_recovery else None
+    return token, admin, left
+
+
+async def regenerate_recovery_codes(session: AsyncSession, admin: AdminUser) -> list[str]:
+    """重新生成恢复码(旧的全作废)。仅已绑定账号;明文仅本次返回。"""
+    if not admin.totp_enabled:
+        raise AppError(ErrorCode.MFA_NOT_BOUND, key="adminapi.mfaNotBound")
+    plain = _gen_plain_recovery_codes()
+    admin.totp_recovery = await _hash_recovery_codes(plain)
+    await session.commit()
+    logger.info("mfa_recovery_regenerated", admin_id=admin.id)
+    return plain
+
+
+async def reset_totp(session: AsyncSession, actor: AdminUser, target_id: int) -> AdminUser:
+    """超管为他人重置 TOTP(锁死救援):清空绑定与恢复码并踢掉全部会话,
+    下次登录重新走强制绑定。本人不可自重置(恢复码或另一位超管)。"""
+    if actor.id == target_id:
+        raise AppError(
+            ErrorCode.MFA_RESET_SELF_FORBIDDEN,
+            key="adminapi.mfaResetSelfForbidden",
+            http_status=status.HTTP_409_CONFLICT,
+        )
+    target = await session.get(AdminUser, target_id)
+    if target is None:
+        raise not_found("管理员不存在")
+    target.totp_secret = None
+    target.totp_enabled = False
+    target.totp_recovery = None
+    target.token_version += 1
+    await session.commit()
+    logger.warning("mfa_reset", actor_id=actor.id, target_id=target_id)
+    return target
 
 
 async def create_admin(session: AsyncSession, username: str, password: str, role: str) -> AdminUser:
@@ -210,7 +450,8 @@ async def create_adjustment(
     reason: str,
     created_by: int,
     idempotency_key: str | None = None,
-):
+) -> tuple["AdminAdjustment", bool]:
+    """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。"""
     from sqlalchemy.exc import IntegrityError
 
     from app.core.errors import AppError, ErrorCode
@@ -228,7 +469,7 @@ async def create_adjustment(
             )
         ).scalar_one_or_none()
         if existing is not None:
-            return existing  # 幂等重放:返回已受理的调账单,不重复开单
+            return existing, False  # 幂等重放:返回已受理的调账单,不重复开单
 
     # 用户必须存在:否则复核通过时 wallet 会为幽灵 user_id 凭空建钱包并入账
     await account_service.get_user(session, user_id)
@@ -266,9 +507,9 @@ async def create_adjustment(
         ).scalar_one_or_none()
         if raced is None:
             raise  # 撞的是别的约束(理论不到达),原样上抛
-        return raced
+        return raced, False
     await session.refresh(adj)
-    return adj
+    return adj, True
 
 
 async def review_adjustment(
@@ -338,16 +579,49 @@ async def review_adjustment(
     return adj
 
 
-async def list_adjustments(session: AsyncSession):
-    from app.modules.adminapi.models import AdminAdjustment
+async def list_adjustments(
+    session: AsyncSession,
+    *,
+    status: str | None = None,
+    user_id: int | None = None,
+    day_range: tuple[datetime, datetime] | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> Page[AdjustmentOut]:
+    """调账单列表(游标分页,降序)。status/user_id 精确;day_range 按 created_at 过滤。"""
+    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
 
-    return list(
-        (
-            await session.execute(
-                # 固定截断,与 admin 的 LIST_CAPS.adjustments 对齐
-                select(AdminAdjustment).order_by(AdminAdjustment.id.desc()).limit(200)
+    lim = clamp_limit(limit)
+    stmt = select(AdminAdjustment).order_by(AdminAdjustment.id.desc()).limit(lim + 1)
+    if status:
+        stmt = stmt.where(AdminAdjustment.status == status)
+    if user_id is not None:
+        stmt = stmt.where(AdminAdjustment.user_id == user_id)
+    if day_range is not None:
+        stmt = stmt.where(
+            AdminAdjustment.created_at >= day_range[0], AdminAdjustment.created_at < day_range[1]
+        )
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(AdminAdjustment.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    return Page[AdjustmentOut](
+        items=[
+            AdjustmentOut(
+                id=r.id,
+                user_id=r.user_id,
+                amount=format(r.amount, "f"),
+                reason=r.reason,
+                status=r.status,
+                created_by=r.created_by,
+                reviewed_by=r.reviewed_by,
+                review_comment=r.review_comment,
+                created_at=r.created_at.isoformat(),
             )
-        ).scalars()
+            for r in page_items
+        ],
+        next_cursor=next_cursor,
     )
 
 
@@ -420,7 +694,7 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
     running_by_user = await orchestrator_service.list_running_instances_by_user(session)
     return {
         "user_id": user.id,
-        "phone_masked": user.phone[:3] + "****" + user.phone[-4:],
+        "phone_masked": account_service.mask_phone(user.phone),
         "status": user.status,
         "balance": format(balance, "f"),
         "running_instances": len(running_by_user.get(user_id, [])),

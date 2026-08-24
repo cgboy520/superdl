@@ -26,22 +26,37 @@ def pg_url() -> Iterator[str]:
         os.environ["SUPERDL_CREATING_TIMEOUT_SECONDS"] = (
             "300"  # 超时用例按默认 5 分钟断言,钉死不受 .env 影响
         )
+        # 测试签名密钥 ≥32 字节(与 prod 校验同线;PyJWT 对短 HMAC 键打 InsecureKeyLengthWarning)
+        os.environ["SUPERDL_JWT_SECRET"] = "test-jwt-secret-32-bytes-minimum!!"
         # 环境变量就位后再清缓存,让所有 get_settings() 读到测试库
         from app.core.config import get_settings
 
         get_settings.cache_clear()
         yield url
         get_settings.cache_clear()
+    # docker-py 客户端显式关闭(容器已停):其 urllib3 连接/socket 在 GC 终结时会打
+    # PytestUnraisableExceptionWarning(第三方 __del__ 兜底,主动关闭即不再触发)
+    pg.get_docker_client().client.close()
 
 
 @pytest.fixture(scope="session")
 async def engine(pg_url: str) -> AsyncIterator[AsyncEngine]:
-    from app.core.db import dispose_engine, get_engine
+    from app.core.db import code_schema_head, dispose_engine, get_engine
     from app.models_registry import Base
 
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all 不含 alembic_version:/readyz 的 schema 版本比对需要盖章到代码 head
+        # (不在 Base.metadata 内,sm fixture 的 TRUNCATE 清不到,随会话存活)
+        await conn.execute(
+            text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        await conn.execute(text("DELETE FROM alembic_version"))
+        await conn.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES (:v)"),
+            {"v": code_schema_head()},
+        )
     yield engine
     await dispose_engine()
 
@@ -74,6 +89,12 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
             ),
         )
         await session.commit()
+    # 法务文档预置(F7):单测走 create_all 不含迁移数据,等价「迁移已跑」显式播种
+    from app.modules.legal import service as legal_service
+
+    async with smaker() as session:
+        await legal_service.seed_preset_docs(session)
+        await session.commit()
     yield smaker
 
     async with engine.begin() as conn:
@@ -90,7 +111,7 @@ async def db(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession
 
 @pytest.fixture(autouse=True)
 def _clear_inventory_cache() -> Iterator[None]:
-    """inventory 近似库存是 30s 进程内缓存:逐用例清空,防跨用例污染(TRUNCATE 会重置
+    """inventory 近似库存是签名失效的进程内缓存:逐用例清空,防跨用例污染(TRUNCATE 会重置
     自增 id,上一用例的缓存键可能命中本用例的新 SKU)。"""
     from app.modules.catalog import inventory
 

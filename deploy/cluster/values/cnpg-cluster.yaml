@@ -1,0 +1,50 @@
+# cnpg-cluster(cloudnative-pg/cluster chart):平台库(钱包/账本)进 K8s 的唯一受支持
+# 形态(deploy/README.md「生产数据库要求」)——3 实例 + S3 持续 WAL 归档(RPO 分钟级)
+# + 每日定时基础备份;禁止单实例上生产。仅 environments/<档>.yaml 置 cnpg.enabled=true 时安装。
+# 键名以 helmfile 所钉 chart 版本为准(TODO 见 helmfile.yaml.gotmpl,apply 前 helm template 验证)。
+version:
+  postgresql: "18"            # 与 dev/test、备份镜像(postgres:18)对齐
+cluster:
+  instances: 3                # 1 主 2 备,故障自动切换;禁止调 1(单实例无高可用)
+  storage:
+    size: 100Gi               # 按库体积增长预估上调
+    storageClass: topolvm-provisioner   # 节点本地 NVMe;对象存储 WAL 归档兜底
+  walStorage:
+    enabled: true             # WAL 独立卷:与数据卷 IO 隔离
+    size: 20Gi
+    storageClass: topolvm-provisioner
+  resources:                  # requests==limits → Guaranteed:资金库不得先被 evict
+    requests: {cpu: "1", memory: 4Gi}
+    limits: {cpu: "1", memory: 4Gi}
+  priorityClassName: system-cluster-critical
+  monitoring:
+    enabled: true             # 生成 PodMonitor + 默认告警规则(kps 已全命名空间发现)
+backups:
+  enabled: true
+  # barmanObjectStore 为内置方法;CNPG 1.26+ 正逐步迁往 barman-cloud 插件
+  # (method: plugin + cluster.plugins 声明),升级 operator 时按官方迁移指南切换。
+  method: barmanObjectStore
+  provider: s3
+  endpointURL: "CHANGE_ME_S3_ENDPOINT"   # 对象存储 endpoint(如 OSS/S3 兼容网关)
+  destinationPath: "s3://CHANGE_ME_BUCKET/cnpg"
+  s3:
+    region: "CHANGE_ME_S3_REGION"        # 如 cn-hangzhou
+    bucket: "CHANGE_ME_BUCKET"
+    path: "/cnpg"
+  # 凭据不落 values:预建 Secret(键名 ACCESS_KEY_ID / ACCESS_SECRET_KEY,
+  # 以所钉 chart 版本模板为准):
+  #   kubectl -n superdl create secret generic cnpg-backup-s3 \
+  #     --from-literal=ACCESS_KEY_ID=<ak> --from-literal=ACCESS_SECRET_KEY=<sk>
+  secret:
+    create: false
+    name: cnpg-backup-s3
+  wal:
+    compression: gzip         # 持续 WAL 归档:PITR 的基础,资金库必须开(RPO 分钟级)
+    maxParallel: 2
+  data:
+    compression: gzip
+  retentionPolicy: "30d"      # 对象存储侧另配生命周期(低频/归档层),同 06-pg-backup.yaml 头注释
+  scheduledBackups:
+    - name: daily-basebackup
+      schedule: "30 18 * * *"   # 每日 02:30 北京(与逻辑备份 CronJob 同刻;负载冲突再错峰)
+      backupOwnerReference: self

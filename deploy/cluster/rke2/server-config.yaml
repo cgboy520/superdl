@@ -12,6 +12,18 @@ secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。
                              # (勿只留在本机 /var/lib/rancher)。
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 12
+# etcd 快照异地保存(P0-15,对齐 deploy/cluster/README.md「etcd 快照托管」的既有要求):
+# 控制面快照含全部集群状态与 token 材料,必须异地加密保存(对象存储开服务端加密/
+# bucket 默认加密,建议另一机房或独立账号),禁止只留 server 本机 /var/lib/rancher。
+# 开启后定时快照自动上传;access/secret key 来自密管下发,仓库内只留 CHANGE_ME 占位,
+# 真实值禁止提交(分发模板由 ansible/装机脚本落盘时替换)。
+etcd-s3: true
+etcd-s3-bucket: "CHANGE_ME_ETCD_SNAPSHOT_BUCKET"      # 来自密管/对象存储控制台
+etcd-s3-region: "CHANGE_ME_ETCD_S3_REGION"            # 如 cn-hangzhou
+etcd-s3-endpoint: "CHANGE_ME_ETCD_S3_ENDPOINT"        # 对象存储 endpoint(如 OSS/S3 兼容网关)
+etcd-s3-access-key: "CHANGE_ME_ETCD_S3_ACCESS_KEY"  # 来自密管
+etcd-s3-secret-key: "CHANGE_ME_ETCD_S3_SECRET_KEY"  # 来自密管
+etcd-s3-folder: "etcd-snapshots"
 # 节点加入用专用 agent token,禁止把 server token(node-token)下发到 GPU 节点/平台库:
 # server token 可再拉 server 入环(etcd 成员),被泄=集群控制面沦陷;agent token 只能拉 agent。
 # 首装前生成(openssl rand -hex 32),取消下面注释;装机后补设则需滚动重启各 server。

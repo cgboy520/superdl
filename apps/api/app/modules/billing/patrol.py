@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.locks import LockKey, try_advisory_lock
@@ -18,7 +18,11 @@ from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly
-from app.modules.billing.settlement import bill_amount, running_seconds_in_window
+from app.modules.billing.settlement import (
+    bill_amount_window,
+    get_watermark,
+    running_seconds_in_window,
+)
 from app.modules.notify import service as notify_service
 
 logger = get_logger(__name__)
@@ -75,27 +79,32 @@ async def _patrol_frozen_tenants(
             logger.exception("patrol_frozen_tenant_failed", user_id=user_id)
 
 
-async def _unsettled_burn(session: AsyncSession, inst, now: datetime) -> Decimal:
-    """该实例当前自然小时「已跑未出账」的实时估算消耗(2 位小数)。
+async def _unsettled_burn(
+    session: AsyncSession, inst, now: datetime, settled_through: datetime | None
+) -> Decimal:
+    """该实例「已跑未出账」的实时估算消耗(2 位小数)。
 
-    与结算同口径:事件重建当前小时 running 秒数,减去该小时已出账秒数(中途尾账),
+    窗口下界取 min(当前自然小时, 水位线+1h):结算停摆或水位线卡在失败窗口之前时,
+    更早的未落账小时同样计入停机判据——结算故障不得放大为无界免费算力。
+    与结算同口径:事件重建窗口 running 秒数,减去窗口内已出账秒数(中途尾账),
     按单价折算。估算只用于停机/预警判据,永不入账。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
     h0 = hour_floor(now)
+    start = h0 if settled_through is None else min(h0, settled_through + timedelta(hours=1))
     events = await orchestrator_service.billing_events_before(session, inst.id, now)
     # 巡检估算不截断失联宽限:按最保守(多估)口径驱动停机判据,估算永不入账
-    seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], h0, now)
+    seconds = running_seconds_in_window([(ts, f, t) for ts, f, t, _m in events], start, now)
     billed = (
         await session.execute(
-            select(BillHourly.seconds_used).where(
-                BillHourly.instance_id == inst.id, BillHourly.hour_start == h0
+            select(func.coalesce(func.sum(BillHourly.seconds_used), 0)).where(
+                BillHourly.instance_id == inst.id, BillHourly.hour_start >= start
             )
         )
-    ).scalar_one_or_none()
-    unsettled_seconds = max(0, seconds - (billed or 0))
-    return bill_amount(inst.price_hourly, inst.gpu_count, unsettled_seconds)
+    ).scalar_one()
+    unsettled_seconds = max(0, seconds - billed)
+    return bill_amount_window(inst.price_hourly, inst.gpu_count, unsettled_seconds)
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
@@ -104,6 +113,7 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
     async with sm() as session:
         by_user = await orchestrator_service.list_running_instances_by_user(session)
         thresholds = await account_service.get_warn_thresholds(session, list(by_user))
+        settled_through = await get_watermark(session, "hourly")
 
     for user_id, instances in by_user.items():
         try:
@@ -113,12 +123,13 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     (as_amount(i.price_hourly * i.gpu_count) for i in instances),
                     Decimal("0.00"),
                 )
-                # 停机判据:余额 − 当前小时未结算消耗 ≤ 0。小时结算次小时 :02 才落账,
+                # 停机判据:余额 − 未结算消耗 ≤ 0。小时结算次小时 :02 才落账,
                 # 只看余额会有最长约 65 分钟的停机盲区;实时估算把盲区压到巡检周期内。
+                # 估算窗口随结算水位线下探:结算停摆时停机判据不失灵。
                 now = now_utc()
                 unsettled = Decimal("0.00")
                 for inst in instances:
-                    unsettled += await _unsettled_burn(session, inst, now)
+                    unsettled += await _unsettled_burn(session, inst, now, settled_through)
                 effective = as_amount(balance - unsettled)
                 if effective <= 0:
                     for inst in instances:

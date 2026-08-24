@@ -18,6 +18,8 @@ data:
   SUPERDL_K8S_BACKEND: "real"
   SUPERDL_K8S_NAMESPACE_PREFIX: "tenant-"
   SUPERDL_PROMETHEUS_URL: "http://kube-prometheus-stack-prometheus.monitoring.svc:9090"
+  # 日志级别(structlog 与 stdlib 桥接同受此控,大写);日志经 Alloy 进 Loki(见 cluster/runbooks/loki-logging.md)
+  SUPERDL_LOG_LEVEL: "INFO"
   # 域名按实际环境改(prod 配置校验会拒绝 example.com 占位)
   SUPERDL_PUBLIC_BASE_URL: "https://api.superdl.example.com"
   SUPERDL_SSH_HOST: "ssh1.superdl.example.com"

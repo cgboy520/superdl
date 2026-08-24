@@ -40,9 +40,18 @@ PAYMENT_RECOVER_FAILED_TOTAL = Counter(
     ["error"],
 )
 RECONCILE_LEAKED_TOTAL = Counter("superdl_reconcile_leaked_total", "reconciler 回收的泄漏 Pod 数")
+JUICEFS_QUOTA_FAILED_TOTAL = Counter(
+    "superdl_juicefs_quota_failed_total",
+    "数据盘 JuiceFS 目录配额下发死信次数(每次重派前计一次;配额未强制期间盘仍可写)",
+)
 INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",
     "因节点失联(Pod 持续 not-ready)被判定停止的实例数",
+)
+INSTANCE_LOGS_TOTAL = Counter(
+    "superdl_instance_logs_total",
+    "实例容器日志读取次数(F5 端点;outcome=ok/error,仅计真正打到 K8s 的读取)",
+    ["outcome"],
 )
 RECONCILE_STUCK_INSTANCES = Gauge(
     "superdl_reconcile_stuck_instances",
@@ -70,6 +79,16 @@ PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL = Counter(
 PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
     "superdl_payment_closed_order_rescued_total",
     "关单后有效成功回调自动入账数(非零 = 本地关单早于渠道侧过期)",
+)
+PAYMENT_CALLBACK_DROPPED_TOTAL = Counter(
+    "superdl_payment_callback_dropped_total",
+    "非 pending 且不可救回状态上被丢弃的支付回调数(status 为订单当时状态;"
+    "failed 上到达的成功回调会被 rescue 路径拦截,不记入此指标)",
+    ["status"],
+)
+PAYMENT_CHANNEL_REVERSED_TOTAL = Counter(
+    "superdl_payment_channel_reversed_total",
+    "已入账订单收到渠道关单/退款类通知的次数(不自动冲账,人工核销;非零即需介入)",
 )
 # WorkerDown 告警据此判活:带 label 的 Counter 在首次 inc 前无序列,absent() 不可用
 WORKER_HEARTBEAT_TS = Gauge(

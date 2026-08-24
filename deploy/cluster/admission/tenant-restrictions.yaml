@@ -1,7 +1,9 @@
 # 租户与平台 SA 的准入约束(ValidatingAdmissionPolicy,API Server 内置,无 webhook 依赖)。
 #
-# 先决条件:K8s ≥ 1.30(VAP GA)。独立可选清单,
-# 不在 helmfile 内:`kubectl apply -f admission/tenant-restrictions.yaml`。
+# 先决条件:K8s ≥ 1.30(VAP GA)。非 helm release(helmfile.yaml.gotmpl 末尾有说明),
+# 由发布流程单独 apply(P1-24;步骤见 ../README.md 两档「组件」节):
+#   kubectl apply -f admission/tenant-restrictions.yaml
+# preflight.sh 强制校验:集群内两个 Binding 必须存在且 validationActions 含 Deny。
 # 回滚:`kubectl delete -f admission/tenant-restrictions.yaml`(先删 Binding 即失效)。
 #
 # 上线建议:第一次部署把两个 Binding 的 validationActions 改成 [Audit] 跑一周

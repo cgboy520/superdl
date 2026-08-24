@@ -12,7 +12,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import CursorResult, String, Text, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB
@@ -87,7 +87,20 @@ class OutboxTask(Base):
 
 Handler = Callable[[AsyncSession, "OutboxTask"], Awaitable[None]]
 
+# 单次执行的结局:done 成功;retry 失败但预算未尽、退避回 pending;dead 预算耗尽
+Outcome = Literal["done", "retry", "dead"]
+
 _registry: dict[str, Handler] = {}
+
+# payload 内的请求链键:enqueue 时把发起请求的 request_id 带进来,执行时回填日志上下文
+REQUEST_ID_KEY = "_request_id"
+
+
+def _current_request_id() -> str | None:
+    import structlog
+
+    value = structlog.contextvars.get_contextvars().get("request_id")
+    return str(value) if value else None
 
 
 def outbox_handler(
@@ -107,7 +120,13 @@ def outbox_handler(
 
 
 def enqueue(session: AsyncSession, task_type: str, payload: dict[str, Any]) -> OutboxTask:
-    """入队。不 commit —— 调用方必须把它放进业务事务。"""
+    """入队。不 commit —— 调用方必须把它放进业务事务。
+
+    跨进程请求链:当前 contextvar 的 request_id 随 payload 落库(_request_id 键),
+    worker 执行 handler 时回填日志上下文(API 请求与异步执行日志可按同一 id 串联)。
+    """
+    if REQUEST_ID_KEY not in payload and (request_id := _current_request_id()):
+        payload = {**payload, REQUEST_ID_KEY: request_id}
     task = OutboxTask(type=task_type, payload=payload)
     session.add(task)
     return task
@@ -132,25 +151,38 @@ async def _claim_one(session: AsyncSession, worker_id: str) -> OutboxTask | None
     return row
 
 
-async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "worker-0") -> bool:
-    """领取并执行一个任务。返回是否有任务被处理。"""
+async def _process_one(
+    sm: async_sessionmaker[AsyncSession], worker_id: str = "worker-0"
+) -> Outcome | None:
+    """领取并执行一个任务。返回执行结局;无任务可领返回 None。"""
     async with sm() as session:
         task = await _claim_one(session, worker_id)
     if task is None:
-        return False
+        return None
 
     policy = retry_policy_for(task.type)
     attempt = task.retries + 1
     will_retry = attempt <= policy.max_retries
     timeout = TASK_TIMEOUT_OVERRIDES.get(task.type, TASK_TIMEOUT_SECONDS)
     error: str | None = None
+    # 回填发起请求的 request_id(handler 内日志与 API 侧同一请求链);
+    # contextvar 按 asyncio 任务隔离,并发 lane 互不污染,执行完即解绑
+    request_id = task.payload.get(REQUEST_ID_KEY)
     try:
         handler = _registry.get(task.type)
         if handler is None:
             raise RuntimeError(f"no handler for outbox task type: {task.type}")
-        async with sm() as session:
-            await asyncio.wait_for(handler(session, task), timeout=timeout)
-            await session.commit()
+        import structlog
+
+        if request_id:
+            structlog.contextvars.bind_contextvars(request_id=str(request_id))
+        try:
+            async with sm() as session:
+                await asyncio.wait_for(handler(session, task), timeout=timeout)
+                await session.commit()
+        finally:
+            if request_id:
+                structlog.contextvars.unbind_contextvars("request_id")
     except TimeoutError as exc:
         error = f"TimeoutError: handler exceeded {timeout:.0f}s"
         OUTBOX_TASK_TIMEOUT_TOTAL.labels(task_type=task.type).inc()
@@ -184,7 +216,7 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
         else:
             logger.exception("outbox_task_failed", task_id=task.id, task_type=task.type)
 
-    outcome = "done" if error is None else ("retry" if will_retry else "dead")
+    outcome: Outcome = "done" if error is None else ("retry" if will_retry else "dead")
     if outcome == "done":
         new_values: dict[str, Any] = {"status": "done"}
     elif outcome == "retry":
@@ -226,15 +258,53 @@ async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "wo
     elif outcome == "dead":
         logger.error("outbox_task_dead", task_id=task.id, task_type=task.type, error=error)
         OUTBOX_DEAD_TOTAL.labels(task_type=task.type).inc()
-    return True
+    return outcome
+
+
+async def process_one(sm: async_sessionmaker[AsyncSession], worker_id: str = "worker-0") -> bool:
+    """领取并执行一个任务。返回是否有任务被处理。"""
+    return await _process_one(sm, worker_id) is not None
 
 
 async def drain(sm: async_sessionmaker[AsyncSession], *, limit: int = 100) -> int:
-    """连续处理直到队列空(或到 limit)。测试与关停前冲刷用。"""
+    """连续处理直到队列空(或到 limit)。仅测试用:worker 关停不做冲刷
+    (SIGTERM 直接停在跑任务,遗留 running 由 reaper 超时打回 pending)。"""
     n = 0
     while n < limit and await process_one(sm):
         n += 1
     return n
+
+
+class OutboxDrainError(RuntimeError):
+    """drain_strict 冲刷到未成功的任务(dead 或退避回 pending),携带 (done, failed) 计数。"""
+
+    def __init__(self, done_count: int, failed_count: int) -> None:
+        self.done_count = done_count
+        self.failed_count = failed_count
+        super().__init__(f"outbox drain 未全成功: done={done_count}, failed={failed_count}")
+
+
+async def drain_strict(
+    sm: async_sessionmaker[AsyncSession], *, limit: int = 100
+) -> tuple[int, int]:
+    """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功
+    (dead,或失败退避回 pending 等下轮)即抛 OutboxDrainError。
+
+    drain 只报告「处理了几个」,失败任务会静默滑进重试;测试需要断言
+    「队列不仅被处理而且全部成功」时换用本函数。
+    """
+    done = failed = 0
+    while done + failed < limit:
+        outcome = await _process_one(sm)
+        if outcome is None:
+            break
+        if outcome == "done":
+            done += 1
+        else:
+            failed += 1
+    if failed:
+        raise OutboxDrainError(done, failed)
+    return done, failed
 
 
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:

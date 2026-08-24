@@ -9,6 +9,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 COPY . .
+# prod 镜像剔除 mock 支付回调模块(产物正确,不依赖环境配置);
+# 本地联调镜像默认保留(compose 不传参),发布流水线(release.yml)显式传 EXCLUDE_MOCK=1
+ARG EXCLUDE_MOCK=0
+RUN if [ "$EXCLUDE_MOCK" = "1" ]; then rm -f app/modules/billing/webhooks_mock.py; fi
 ENV PATH="/srv/api/.venv/bin:$PATH"
 
 # 非 root 运行(K8s 侧再配 runAsNonRoot/readOnlyRootFilesystem)

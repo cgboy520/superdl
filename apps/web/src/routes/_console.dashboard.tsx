@@ -2,11 +2,18 @@
 
 import { addAmounts, localToday } from "@superdl/ui";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Alert, Button, Card, Col, Row, Space, Statistic, Typography } from "antd";
+import { Alert, Button, Card, Col, Row, Space, Statistic, Steps, Typography } from "antd";
 
 import { useFormat } from "../lib/format";
-import { useDailySummary, useInstances, useNotifications, useWallet } from "../api/queries";
+import {
+  useDailySummary,
+  useInstances,
+  useNotifications,
+  useRefundableOrders,
+  useWallet,
+} from "../api/queries";
 import { DataErrorAlert, moneyOr } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
@@ -14,6 +21,61 @@ export const Route = createFileRoute("/_console/dashboard")({
   beforeLoad: requireAuth,
   component: Overview,
 });
+
+const ONBOARDING_DISMISS_KEY = "superdl.web.onboardingDismissed";
+
+/** 新用户引导:无实例且无已支付充值时显示 充值→选规格→开机 三步卡;
+ * 有实例即永久隐藏(后端状态派生),手动关闭记 localStorage。 */
+function OnboardingCard() {
+  const { t } = useTranslation();
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(ONBOARDING_DISMISS_KEY) === "1",
+  );
+  const { data: instances } = useInstances();
+  const { data: orders } = useRefundableOrders();
+  if (dismissed || instances == null || orders == null) return null;
+  if (instances.length > 0) return null; // 已完成全流程:派生隐藏
+  const hasPaid = orders.length > 0;
+  const current = hasPaid ? 1 : 0;
+  return (
+    <Card
+      title={t("dashboard.onboardingTitle")}
+      extra={
+        <Button
+          size="small"
+          type="text"
+          onClick={() => {
+            localStorage.setItem(ONBOARDING_DISMISS_KEY, "1");
+            setDismissed(true);
+          }}
+        >
+          {t("dashboard.onboardingDismiss")}
+        </Button>
+      }
+    >
+      <Steps
+        size="small"
+        current={current}
+        items={[
+          {
+            title: t("dashboard.onboardingStep1"),
+            description: (
+              <Link to="/billing">{t("dashboard.onboardingStep1Action")}</Link>
+            ),
+          },
+          {
+            title: t("dashboard.onboardingStep2"),
+            description: <Link to="/market">{t("dashboard.onboardingStep2Action")}</Link>,
+          },
+          {
+            title: t("dashboard.onboardingStep3"),
+            description: t("dashboard.onboardingStep3Desc"),
+          },
+        ]}
+      />
+    </Card>
+  );
+}
 
 function Overview() {
   const { t } = useTranslation();
@@ -38,6 +100,7 @@ function Overview() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("dashboard.title")}
       </Typography.Title>
+      <OnboardingCard />
       {hasError && (
         <DataErrorAlert
           onRetry={() => {

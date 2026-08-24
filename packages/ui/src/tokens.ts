@@ -29,8 +29,8 @@ export const adminColors = {
   alertAccent: "#F59E0B",
   /** 次要文本(表格副行/图表轴标) */
   textSecondary: "#94A3B8",
-  /** 弱化文本(说明/占位) */
-  textMuted: "#64748B",
+  /** 弱化文本(说明/占位);深底上须 ≥4.5:1(WCAG AA),见 tokens.test.ts 对比度回归 */
+  textMuted: "#8296AD",
   /** 网格线/空块底 */
   gridLine: "#1E293B",
   /** 图表中性条 */
@@ -45,14 +45,28 @@ export const adminColors = {
   critical: "#DC2626",
 } as const;
 
-/** 状态语义色(两端同一套,管理端深色下由 antd 算法自动调亮)。绿/橙取深档:浅底白字文本对比度过 WCAG AA(4.5:1)。 */
+/** 状态语义色(两端同一套,管理端深色下由 antd 算法自动调亮)。
+ * 徽标为「深底白字」:全部取值白字对比度 ≥4.5:1(WCAG AA,tokens.test.ts 回归守护)。 */
 export const statusColors = {
   green: "#15803D",
   blue: "#2563EB",
-  gray: "#9CA3AF",
+  gray: "#6B7280",
   orange: "#C2410C",
   red: "#DC2626",
 } as const;
+
+/** 节点页 GPU 热力格(P2-21):深底浅字,白字对比度 ≥4.5:1 */
+export const heatColors = {
+  /** 有指标且低载 */
+  low: statusColors.green,
+  /** 中载(深琥珀;亮琥珀 #F59E0B 白字仅 2.3:1,不达标) */
+  mid: "#B45309",
+  /** 高载 */
+  high: statusColors.red,
+} as const;
+
+/** 落地页算力排名奖牌(P2-20,金/银/铜):深底白字 ≥4.5:1 */
+export const medalColors = ["#A16207", "#6B7280", "#92400E"] as const;
 
 /** antd 6 ConfigProvider theme —— 用户端(浅色) */
 export const webTheme = {
@@ -64,6 +78,8 @@ export const webTheme = {
     colorWarning: statusColors.orange,
     colorError: statusColors.red,
     colorBgLayout: brand.pageBg,
+    // 次级文本默认 rgba(0,0,0,0.45) 白底仅 ~3.7:1;取深一档到 ≈5.7:1(WCAG AA)
+    colorTextSecondary: "rgba(0,0,0,0.60)",
     // 默认 rgba(0,0,0,0.45) 白底对比度不足 AA;调实到 ≈5.3:1
     colorTextDescription: "rgba(0,0,0,0.58)",
     borderRadius: 6,

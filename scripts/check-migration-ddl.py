@@ -8,6 +8,12 @@
 命中以下危险操作时,文件内需显式标注 `# ddl-risk: reviewed`(说明为何可接受):
 - drop_column / drop_table / rename_table / alter_column(new_column_name=...)
 - op.execute 裸 SQL 里 ADD CONSTRAINT 未带 NOT VALID(锁表校验存量行)
+- add_column(nullable=False) 且无 server_default(大表重写/全表校验;三步法见
+  deploy/README.md「迁移向前兼容窗口(expand-only)规范」)
+- create_index 未带 postgresql_concurrently=True(在线建索引锁写;
+  本迁移内 create_table 新建表上的索引豁免——空表建索引零成本)
+- alter_column(type_=...) 或裸 SQL ALTER ... TYPE(列类型变更重写整表;
+  字符串同族长度调整豁免——varchar 扩长是零重写元数据操作)
 
 用法: python3 scripts/check-migration-ddl.py <迁移文件>...
 """
@@ -19,6 +25,7 @@ import sys
 MARKER = "# ddl-risk: reviewed"
 ADD_CONSTRAINT_RE = re.compile(r"\bADD\s+CONSTRAINT\b", re.IGNORECASE)
 NOT_VALID_RE = re.compile(r"\bNOT\s+VALID\b", re.IGNORECASE)
+ALTER_TYPE_RE = re.compile(r"\bALTER\s+(TYPE\b|TABLE\b[^;]*\bTYPE\b)", re.IGNORECASE)
 
 
 def _attr_name(node: ast.AST) -> str:
@@ -50,7 +57,18 @@ def check_file(path: str) -> list[str]:
         return [f"{path}: 语法解析失败: {exc}"]
 
     findings: list[str] = []
-    for call in _upgrade_calls(tree):
+    calls = _upgrade_calls(tree)
+    # 本迁移内新建的表:create_table 之后的 create_index 是空表建索引(零成本),
+    # 不算「在线建索引锁写」;只对既有表上的索引要求 CONCURRENTLY。
+    new_tables = {
+        c.args[0].value
+        for c in calls
+        if _attr_name(c.func).endswith("create_table")
+        and c.args
+        and isinstance(c.args[0], ast.Constant)
+        and isinstance(c.args[0].value, str)
+    }
+    for call in calls:
         target = _attr_name(call.func)
         short = target.rsplit(".", 1)[-1]
         if short in ("drop_column", "drop_table", "rename_table"):
@@ -59,6 +77,28 @@ def check_file(path: str) -> list[str]:
             kw.arg == "new_column_name" for kw in call.keywords
         ):
             findings.append(f"{path}:{call.lineno}: alter_column 改列名属危险 DDL")
+        elif short == "alter_column" and _is_type_change(call):
+            findings.append(
+                f"{path}:{call.lineno}: alter_column(type_=...) 列类型变更重写整表,拆窗口进行"
+            )
+        elif short == "add_column" and _is_not_null_without_default(call):
+            findings.append(
+                f"{path}:{call.lineno}: add_column(nullable=False) 无 server_default"
+                "(大表按三步法:可空加列 → 回填 → 校验收口,见 deploy/README.md)"
+            )
+        elif (
+            short == "create_index"
+            and not _index_on_new_table(call, new_tables)
+            and not any(
+                kw.arg == "postgresql_concurrently"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value is True
+                for kw in call.keywords
+            )
+        ):
+            findings.append(
+                f"{path}:{call.lineno}: create_index 未带 postgresql_concurrently=True(在线建索引锁写)"
+            )
         elif short == "execute":
             for arg in call.args:
                 sql = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else ""
@@ -66,7 +106,56 @@ def check_file(path: str) -> list[str]:
                     findings.append(
                         f"{path}:{call.lineno}: ADD CONSTRAINT 未带 NOT VALID(全表校验锁)"
                     )
+                if ALTER_TYPE_RE.search(sql):
+                    findings.append(
+                        f"{path}:{call.lineno}: 裸 SQL ALTER TYPE/ALTER ... TYPE 列类型变更,拆窗口进行"
+                    )
     return findings
+
+
+def _index_on_new_table(call: ast.Call, new_tables: set[str]) -> bool:
+    """create_index 的表名实参(op.create_index(<name>, <table>, ...))是否本迁移新建。"""
+    return (
+        len(call.args) >= 2
+        and isinstance(call.args[1], ast.Constant)
+        and call.args[1].value in new_tables
+    )
+
+
+# 字符串同族类型调整(varchar 扩长在 PG 是零重写元数据操作;缩长属 contract 窗口,
+# 由 review 把关),不算「重写整表」的类型变更
+_STRING_TYPES = ("String", "VARCHAR", "Unicode", "UnicodeText", "Text")
+
+
+def _is_type_change(call: ast.Call) -> bool:
+    """alter_column 是否带重写型 type_=... 变更(字符串同族调整豁免,见上方注释)。"""
+    for kw in call.keywords:
+        if kw.arg != "type_":
+            continue
+        if isinstance(kw.value, ast.Call) and _attr_name(kw.value.func).endswith(_STRING_TYPES):
+            return False
+        return True
+    return False
+
+
+def _is_not_null_without_default(call: ast.Call) -> bool:
+    """add_column 的 Column 实参是否 nullable=False 且无 server_default。
+
+    只识别字面写法(sa.Column(..., nullable=False));server_default 给任何值
+    (含 None)都算「有默认」——PG ≥ 11 加带默认列是 O(1) 元数据操作。
+    """
+    # op.add_column(table_name, column, ...):Column 实参从 args[1] 起
+    for arg in call.args[1:]:
+        if not (isinstance(arg, ast.Call) and _attr_name(arg.func).endswith("Column")):
+            continue
+        not_null = any(
+            kw.arg == "nullable" and isinstance(kw.value, ast.Constant) and kw.value.value is False
+            for kw in arg.keywords
+        )
+        has_default = any(kw.arg == "server_default" for kw in arg.keywords)
+        if not_null and not has_default:
+            return True
+    return False
 
 
 def main(argv: list[str]) -> int:

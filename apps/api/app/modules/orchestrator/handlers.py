@@ -51,21 +51,46 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
     instance.pod_name = instance.uuid
 
 
+async def _backfill_missing_port(session: AsyncSession, instance: Instance) -> None:
+    """状态已推进但端口未落库(K8s 建 Pod 成功后提交被回滚)的补救:
+    不补则 /access 500,restart 的 build_pod_spec 也会 RuntimeError。"""
+    if instance.ssh_port is None:
+        instance.ssh_port = await ensure_port(session, instance)
+        logger.warning("ssh_port_backfilled", instance_id=instance.id)
+
+
 @outbox_handler("instance.create")
 async def handle_create(session: AsyncSession, task: OutboxTask) -> None:
     instance = await _load(session, task)
-    if instance is None or instance.status != sm_def.CREATING:
+    if instance is None:
+        return
+    if instance.status != sm_def.CREATING:
+        await _backfill_missing_port(session, instance)
         return  # 已失败/已推进,幂等跳过
     await _create_with_port_recovery(session, instance)
+    # 建 Pod 耗时可能跨过 creating 超时:FOR UPDATE 重读,已被 reconciler 推进
+    # (超时 failed + 端口已回收)则回滚本事务——failed 实例不能占端口;
+    # 已建出的 Pod 由泄漏回收收敛
+    fresh = await session.get(Instance, instance.id, with_for_update=True)
+    if fresh is None or fresh.status != sm_def.CREATING:
+        await session.rollback()
+        return
     # 状态推进交给 reconciler(Pod Ready → running / 超时 → failed)
 
 
 @outbox_handler("instance.start")
 async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
     instance = await _load(session, task)
-    if instance is None or instance.status != sm_def.STARTING:
+    if instance is None:
+        return
+    if instance.status != sm_def.STARTING:
+        await _backfill_missing_port(session, instance)
         return
     await _create_with_port_recovery(session, instance)
+    fresh = await session.get(Instance, instance.id, with_for_update=True)
+    if fresh is None or fresh.status != sm_def.STARTING:
+        await session.rollback()
+        return
 
 
 @outbox_handler("instance.stop")
@@ -140,6 +165,13 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
             actor="system",
             metadata={"restart": True},
         )
+        instance.unready_since = None  # 新一轮就绪观察从零起算(同 start_instance)
+        # STARTING 先落库再建 Pod:建 Pod 期间 DB 已是 starting,泄漏回收对在途状态
+        # 有宽限,不会在「DB stopped + Pod 已建」窗口把实例当泄漏强删
+        await session.commit()
+        await _create_with_port_recovery(session, instance)
+    elif instance.status == sm_def.STARTING:
+        # 承接分支:上次在建 Pod 前/中崩溃,任务重试时状态已是 starting——直接续建
         await _create_with_port_recovery(session, instance)
 
 
@@ -155,17 +187,53 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
     # releasing → released 由 reconciler 在确认 Pod 消失后完成(含擦盘事件与端口回收)
 
 
+# 等 Pod 消失再删实例盘:预算 12×30s ≈ 1.5h,覆盖长 Terminating
+@outbox_handler("instance.disk_cleanup", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
+async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) -> None:
+    """first_boot 失败实例的实例盘延迟回收(creating 超时且 Pod 仍 Terminating 时入队)。
+
+    delete_instance_disk 的前置条件是 Pod 已消失(pvc-protection 会挂起 LV 回收);
+    Pod 还在就抛错退避重试。死信后由 reconciler 的死信重派兜底。"""
+    instance = await _load(session, task)
+    if instance is None or instance.status != sm_def.FAILED:
+        return  # 已被释放/恢复等路径推进,无需再清
+    orch = get_orchestrator()
+    st = await orch.get_status(instance.k8s_namespace, instance.uuid)
+    if st.exists:
+        raise RuntimeError(f"pod {instance.uuid} still exists; disk cleanup resumes on retry")
+    await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
+
+
+@outbox_handler("disk.quota", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
+async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
+    """下发 JuiceFS 目录硬配额(CLI Job,纯元数据)。成功置 quota_synced;
+    预算耗尽转死信后由 reconciler 周期重派(配额永不留缺口)。"""
+    from app.modules.orchestrator.models import DataDisk
+
+    disk = await session.get(DataDisk, task.payload["disk_id"])
+    if disk is None or disk.status in ("deleting", "deleted"):
+        return  # 删除链路有自己的配额摘除步,不下发
+    await get_orchestrator().set_disk_quota(disk.juicefs_subpath, disk.size_gb)
+    disk.quota_synced = True
+    logger.info("disk_quota_synced", disk_id=disk.id, capacity_gb=disk.size_gb)
+
+
 # 擦盘是轮询集群 Job 完成而非一次性调用,预算放宽到约 1.5 小时
 @outbox_handler("disk.wipe", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     """真实擦除 JuiceFS 子路径(集群侧 Job)后置 deleted。
-    wipe_disk 幂等:Job 未完成抛错 → outbox 退避重试,完成后本 handler 收尾状态。"""
+    wipe_disk 幂等:Job 未完成抛错 → outbox 退避重试,完成后本 handler 收尾状态。
+    擦除前先摘除目录配额(失败仅告警:残留配额条目指向将被擦除的目录,无实际影响)。"""
     from app.core.config import get_settings
     from app.modules.orchestrator.models import DataDisk
 
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return
+    try:
+        await get_orchestrator().delete_disk_quota(disk.juicefs_subpath)
+    except Exception:
+        logger.warning("disk_quota_delete_failed", disk_id=disk.id, exc_info=True)
     namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
     try:
         await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)

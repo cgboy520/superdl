@@ -11,8 +11,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../lib/format";
+import { dedupAvailableByModel } from "../lib/inventory";
 import { TableErrorEmpty } from "../components/QueryState";
-import { useSkus } from "../api/queries";
+import { usePolicies, useSkus } from "../api/queries";
 import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { BillingModeCard, skuColumns } from "../components/skuTable";
@@ -44,11 +45,10 @@ function MarketPage() {
     isError,
     refetch,
   } = useSkus({}, { refetchInterval: 30_000 });
+  // 计费规则的冻结宽限小时数读 /policies(P1-07);未就绪用无数字兜底句
+  const { data: policies } = usePolicies();
 
-  const freeByModel = new Map<string, number>();
-  for (const s of allSkus ?? []) {
-    freeByModel.set(s.gpu_model, (freeByModel.get(s.gpu_model) ?? 0) + (s.available_count ?? 0));
-  }
+  const freeByModel = dedupAvailableByModel(allSkus ?? []);
 
   const modelOptions: ChipOption<string>[] = [
     { value: ALL, label: t("market.all") },
@@ -207,7 +207,14 @@ function MarketPage() {
         title={t("market.billingRulesLink")}
       >
         <ul style={{ paddingInlineStart: 20, margin: 0 }}>
-          {[t("copy.billingRules.r1"), t("copy.billingRules.r2"), t("copy.billingRules.r3"), t("copy.billingRules.r4")].map((r) => (
+          {[
+            t("copy.billingRules.r1"),
+            t("copy.billingRules.r2"),
+            t("copy.billingRules.r3"),
+            policies
+              ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours })
+              : t("copy.billingRules.r4Fallback"),
+          ].map((r) => (
             <li key={r} style={{ marginBottom: 8 }}>
               {r}
             </li>

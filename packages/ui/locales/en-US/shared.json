@@ -24,6 +24,10 @@
     "perHour": "{{price}}/hr"
   },
   "status": {
+    "announcement": {
+      "published": "Published",
+      "revoked": "Revoked"
+    },
     "channel": {
       "wechat": "WeChat Pay",
       "alipay": "Alipay",
@@ -36,11 +40,23 @@
       "frozen": "Frozen",
       "grace": "Grace period"
     },
+    "deletion": {
+      "approved": "Approved",
+      "cancelled": "Cancelled",
+      "completed": "Deleted",
+      "pending": "Cooling-off",
+      "rejected": "Rejected"
+    },
     "imageCache": {
       "cached": "Cached",
       "failed": "Pull failed",
       "pending": "Queued",
       "pulling": "Pulling"
+    },
+    "invoice": {
+      "issued": "Issued",
+      "rejected": "Rejected",
+      "submitted": "In review"
     },
     "instance": {
       "creating": "Creating",
@@ -74,6 +90,32 @@
       "paid": "Paid",
       "closed": "Closed",
       "failed": "Failed"
+    },
+    "payoutChannel": {
+      "alipay_transfer": "Alipay transfer",
+      "offline": "Offline transfer",
+      "wechat_transfer": "WeChat transfer"
+    },
+    "refund": {
+      "approved": "Awaiting payout",
+      "cancelled": "Cancelled",
+      "paid": "Paid",
+      "pending": "Pending review",
+      "rejected": "Rejected"
+    },
+    "ticket": {
+      "closed": "Closed",
+      "open": "Open",
+      "pending_staff": "Awaiting support",
+      "pending_user": "Awaiting user",
+      "resolved": "Resolved"
+    },
+    "ticketCategory": {
+      "account": "Account",
+      "billing": "Billing",
+      "data": "Data & storage",
+      "instance": "Instance",
+      "other": "Other"
     },
     "tier": {
       "dedicated": "Dedicated GPU",

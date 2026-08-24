@@ -12,7 +12,7 @@
     "generate": "orval --config orval.config.ts && node scripts/build-index.mjs",
     "lint": "eslint src --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0"

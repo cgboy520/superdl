@@ -11,5 +11,7 @@ export type PaymentAnomalyOutKind = typeof PaymentAnomalyOutKind[keyof typeof Pa
 export const PaymentAnomalyOutKind = {
   lost_callback: 'lost_callback',
   closed_order: 'closed_order',
+  failed_order: 'failed_order',
+  channel_reversed: 'channel_reversed',
   negative_balance: 'negative_balance',
 } as const;

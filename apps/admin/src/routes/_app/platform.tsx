@@ -44,6 +44,7 @@ export const Route = createFileRoute("/_app/platform")({
 // i18n-exempt(至 GROUP_INTRO 为止):中国渠道(微信/支付宝/阿里云/工信部)字段名与操作指引,决策不译
 const FIELD_LABELS: Record<string, string> = {
   grafana_url: "Grafana 地址(可选,外链)",
+  oncall_phone: "值班手机号(critical 告警短信)",
   payment_wechat_enabled: "启用微信支付渠道",
   wechat_mchid: "商户号(mchid)",
   wechat_appid: "应用 AppID",
@@ -68,6 +69,10 @@ const FIELD_LABELS: Record<string, string> = {
   real_name_access_key_secret: "AccessKey Secret",
   icp_number: "ICP 备案号",
   police_record_number: "公安联网备案号",
+  company_name: "公司全称(营业执照)",
+  company_address: "公司注册地址",
+  company_phone: "对外联系电话",
+  business_license_url: "营业执照电子版链接(亮照)",
   support_email: "客服邮箱",
   support_wechat: "企业微信/微信客服号",
   cluster_server_url: "Server 地址",
@@ -79,6 +84,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const FIELD_EXTRA: Record<string, string> = {
+  oncall_phone: "critical 平台告警经阿里云短信直发该手机号(不依赖平台自身可用性);留空即关闭",
   payment_wechat_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现微信入口",
   payment_alipay_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现支付宝入口",
   wechat_public_key_id: "公钥模式(2024-10 后新注册商户仅支持该模式);与公钥同时填写,留空则走平台证书模式",
@@ -87,6 +93,10 @@ const FIELD_EXTRA: Record<string, string> = {
   sms_template_notice: "模板需含变量 ${title}",
   icp_number: "展示于用户端页脚,链接工信部备案系统(beian.miit.gov.cn)",
   police_record_number: "展示于用户端页脚,链接公安备案系统(beian.mps.gov.cn);未取得可留空",
+  company_name: "《电子商务法》第十五条公示项;展示于用户端页脚,留空即不展示",
+  company_address: "同上,页脚公司主体行展示;留空即不展示",
+  company_phone: "同上,页脚公司主体行展示;留空即不展示",
+  business_license_url: "仅接受 http(s) 绝对链接;配置后页脚「营业执照」可点击亮照,留空为纯文本展示",
   support_email: "展示于用户端页脚与「帮助与支持」页;留空即不展示邮箱入口",
   support_wechat: "同上,展示为可复制文本(用户自行搜索添加),留空即不展示",
 };
@@ -121,7 +131,8 @@ const GROUP_INTRO: Record<string, string> = {
     "GPU 租赁的用户教育成本高,没有任何联系方式等于把问题都堵在工单之外。",
   compliance:
     "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);" +
-    "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。",
+    "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。" +
+    "公司主体信息(全称/地址/电话/亮照链接)为《电子商务法》第十五条公示项,页脚持续展示,留空即不展示对应行。",
   cluster:
     "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点" +
     "(token 执行 cat /var/lib/rancher/<rke2|k3s>/server/node-token 获取,轮换后在此更新)。" +
@@ -295,8 +306,7 @@ function SmsTestCard({ disabled }: { disabled: boolean }) {
   const testSms = useTestSms({
     mutation: {
       onSuccess: (d) => {
-        const provider = (d as { provider: string }).provider;
-        message.success(t("platform.testSmsSent", { provider: PROVIDER_LABELS[provider] ?? provider }));
+        message.success(t("platform.testSmsSent", { provider: PROVIDER_LABELS[d.provider] ?? d.provider }));
       },
       onError: (e) => message.error(errText(e, t("platform.sendFailed"))),
     },
@@ -342,8 +352,7 @@ function PlatformConfigPage() {
   const update = useUpdatePlatformConfig({
     mutation: {
       onSuccess: (d) => {
-        const updated = (d as { updated: string[] }).updated;
-        message.success(t("platform.savedCount", { count: updated.length }));
+        message.success(t("platform.savedCount", { count: d.updated.length }));
         setDraft({});
         setReasonOpen(false);
         reasonForm.resetFields();

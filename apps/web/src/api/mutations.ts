@@ -8,14 +8,23 @@ import type { ApiError,
 } from "@superdl/api-client";
 import {
   addSshKeyApiV1SshKeysPost,
+  appendMessageApiV1TicketsTicketIdMessagesPost,
+  cancelDeletionRequestApiV1MeDeletionRequestCancelPost,
+  closeTicketApiV1TicketsTicketIdClosePost,
+  createDeletionRequestApiV1MeDeletionRequestPost,
   createDiskApiV1DisksPost,
   createInstanceApiV1InstancesPost,
+  createInvoiceApiV1BillingInvoicesPost,
   createRechargeApiV1WalletRechargesPost,
+  createRefundApiV1WalletRefundsPost,
+  createTicketApiV1TicketsPost,
   deleteDiskApiV1DisksUuidDelete,
   deleteSshKeyApiV1SshKeysKeyIdDelete,
   expandDiskApiV1DisksUuidPatch,
   loginApiV1AuthLoginPost,
+  logoutAllApiV1AuthLogoutAllPost,
   logoutApiV1AuthLogoutPost,
+  markAllReadApiV1NotificationsReadAllPost,
   markReadApiV1NotificationsNotificationIdReadPost,
   mockWebhookApiV1WebhooksMockPost,
   registerApiV1AuthRegisterPost,
@@ -31,15 +40,21 @@ import {
   stopInstanceApiV1InstancesUuidStopPost,
 } from "@superdl/api-client";
 import type {
+  DeletionRequestCreate,
   DiskCreate,
   DiskExpand,
   InstanceCreate,
+  InvoiceCreate,
   LoginRequest,
   RealNameRequest,
   RechargeCreate,
+  RefundCreate,
   PasswordResetRequest,
   RegisterRequest,
   SmsCodeRequest,
+  TicketCreate,
+  TicketMessageCreate,
+  TicketOut,
 } from "@superdl/api-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
@@ -108,6 +123,22 @@ export function useLogout() {
   }, []);
 }
 
+/**
+ * 登出全部设备:服务端撤销该账号全部会话(token_version+1),再清本地并整页刷新。
+ * 请求失败不阻断本地登出。
+ */
+export function useLogoutAll() {
+  return useCallback(async () => {
+    try {
+      await logoutAllApiV1AuthLogoutAllPost();
+    } catch {
+      // 同单端登出:尽力而为,本地清理不依赖远端结果
+    }
+    authStore.getState().logout();
+    window.location.assign("/login");
+  }, []);
+}
+
 // ---------- instances ----------
 // 实例写操作影响:实例域(列表/详情/事件/账单)与钱包余额(启停即结算)
 const INSTANCE_INVALIDATES = ["instances", "wallet", "bills", "bill-daily-summary"] as const;
@@ -158,6 +189,20 @@ export const useMockPay = (o?: { onSuccess?: () => void }) =>
       mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
     { ...o, invalidates: ["wallet", "recharge", "ledger"] },
   );
+/** 申请退款(F1):必须带幂等键(表单每次打开/重开生成新 UUID,重放返回既有单)。 */
+export const useCreateRefund = (o?: { onSuccess?: () => void }) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: RefundCreate; idempotencyKey: string }) =>
+      createRefundApiV1WalletRefundsPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: ["refunds", "refundable-orders", "wallet", "ledger"] },
+  );
+/** 申请开票(F2):金额由服务端按账期计算(客户端不提交金额);幂等键重放返回既有单。 */
+export const useCreateInvoice = (o?: { onSuccess?: () => void }) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: InvoiceCreate; idempotencyKey: string }) =>
+      createInvoiceApiV1BillingInvoicesPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: ["invoices", "invoice-eligible"] },
+  );
 export const useSubmitRealName = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     (body: RealNameRequest) => submitRealNameApiV1MeRealNamePost(body),
@@ -168,6 +213,20 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
     (hours: number) => setWarnThresholdApiV1MeWarnThresholdPatch({ low_balance_warn_hours: hours }),
     { ...o, invalidates: ["me"] },
   );
+
+// ---------- 账号注销(F4) ----------
+/** 申请注销:服务端按 (user_id, pending) 幂等,重复提交返回既有申请。 */
+export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
+  useApiMutation(
+    (body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body),
+    { ...o, invalidates: ["deletion-request"] },
+  );
+/** 冷静期内撤销注销申请。 */
+export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
+  useApiMutation((_v: void) => cancelDeletionRequestApiV1MeDeletionRequestCancelPost(), {
+    ...o,
+    invalidates: ["deletion-request"],
+  });
 
 // ---------- disks ----------
 /** 建盘同样要幂等键:响应丢失后重提不会多出一块按日计费的盘。 */
@@ -201,4 +260,28 @@ export const useDeleteSshKey = () =>
 export const useMarkNotificationRead = () =>
   useApiMutation((id: number) => markReadApiV1NotificationsNotificationIdReadPost(id), {
     invalidates: ["notifications"],
+  });
+export const useMarkAllNotificationsRead = () =>
+  useApiMutation((_: void) => markAllReadApiV1NotificationsReadAllPost(), {
+    invalidates: ["notifications"],
+  });
+
+// ---------- tickets(F3) ----------
+/** 新建工单:必须带幂等键(弹窗每次打开生成新 UUID,重放返回既有单)。 */
+export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: TicketCreate; idempotencyKey: string }) =>
+      createTicketApiV1TicketsPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: ["tickets"] },
+  );
+export const useAppendTicketMessage = (o?: { onSuccess?: () => void }) =>
+  useApiMutation(
+    ({ ticketId, body }: { ticketId: number; body: TicketMessageCreate }) =>
+      appendMessageApiV1TicketsTicketIdMessagesPost(ticketId, body),
+    { ...o, invalidates: ["tickets"] },
+  );
+export const useCloseTicket = (o?: { onSuccess?: () => void }) =>
+  useApiMutation((ticketId: number) => closeTicketApiV1TicketsTicketIdClosePost(ticketId), {
+    ...o,
+    invalidates: ["tickets"],
   });

@@ -157,6 +157,107 @@ export function useListNotificationsApiV1NotificationsGet<TData = Awaited<Return
 
 
 
+export const getMarkAllReadApiV1NotificationsReadAllPostUrl = () => {
+
+
+
+
+  return `/api/v1/notifications/read-all`
+}
+
+/**
+ * 全部已读(幂等)。注意须注册在 {notification_id} 之前,避免 read-all 被当 id 解析。
+ * @summary Mark All Read
+ */
+export const markAllReadApiV1NotificationsReadAllPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getMarkAllReadApiV1NotificationsReadAllPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkAllReadApiV1NotificationsReadAllPostQueryKey = () => {
+    return [
+    'POST', `/api/v1/notifications/read-all`
+    ] as const;
+    }
+
+
+export const getMarkAllReadApiV1NotificationsReadAllPostQueryOptions = <TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMarkAllReadApiV1NotificationsReadAllPostQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>> = ({ signal }) => markAllReadApiV1NotificationsReadAllPost({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MarkAllReadApiV1NotificationsReadAllPostQueryResult = NonNullable<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>>
+export type MarkAllReadApiV1NotificationsReadAllPostQueryError = unknown
+
+
+export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>,
+          TError,
+          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>,
+          TError,
+          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Mark All Read
+ */
+
+export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMarkAllReadApiV1NotificationsReadAllPostQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getMarkReadApiV1NotificationsNotificationIdReadPostUrl = (notificationId: number,) => {
 
 

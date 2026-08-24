@@ -5,7 +5,15 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.modules.account.models import User
+from app.modules.account.realname import mask_phone
 from tests.test_account_auth import register
+
+
+def test_mask_phone_helper():
+    """手机号脱敏单一定义点:前 3 后 4;短串退化为全掩(防前后段重叠泄露)。"""
+    assert mask_phone("13812345678") == "138****5678"
+    assert mask_phone("12345") == "***"
+    assert mask_phone("") == "***"
 
 
 async def _headers(client: AsyncClient, phone: str) -> tuple[dict, int]:

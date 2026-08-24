@@ -3,19 +3,64 @@
 | 目录 | 内容 |
 |---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/Ingress-TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
-| `ansible/` | 装机基线(存量机器批量):NVIDIA 驱动 / 内核参数(IOMMU、userns)/ NVMe VG / registries.yaml 分发。新节点首选管理端「添加节点」一键加入,本目录用于存量机器批量处理 |
-| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM),full/light 双档与版本锁定见 `cluster/README.md`;`cluster/admission/` 为准入策略(可选独立清单) |
+| `ansible/` | 装机基线(存量机器批量)+ 初始控制面([servers] 组 rke2/k3s server 安装):NVIDIA 驱动与 container toolkit / 内核参数(IOMMU、userns,变更后自动重启验证)/ NVMe VG / registries.yaml 分发。新节点首选管理端「添加节点」一键加入,本目录用于存量机器批量处理 |
+| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;`cluster/admission/` 为准入策略(非 helm release,发布流程内单独 `kubectl apply`,preflight 强制校验 Deny 生效) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
 
 ## 生产发布流程(deploy/app/k8s)
 
+发布走 `scripts/release.sh <tag>` 一个入口(P1-37):迁移 Job → set image+apply
+(kustomize,tag 单点在 `app/k8s/kustomization.yaml` 的 `images`)→ rollout status →
+冒烟(`/healthz`+`/readyz`),四步任一失败即非零退出。禁止绕过脚本手改各清单 tag。
+
 1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库)
-2. 打 tag 触发 `.github/workflows/release.yml`:构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr
-3. `kubectl create -f k8s/10-migrate-job.yaml`(把 `CHANGE_TAG` 占位符替换为本次 tag,name 与镜像各一处)→ `kubectl wait --for=condition=complete`
-4. 更新三个 Deployment 镜像 tag 滚动发布(清单里同样是 `CHANGE_TAG` 占位符);`/readyz` 就绪即接流量
-5. 回滚:Deployment 回退上一 tag;迁移只增不删,向后兼容窗口内可直接回滚
-6. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
+2. 打 tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr(api 镜像经 `EXCLUDE_MOCK=1` 剔除 mock 支付回调模块)
+3. `scripts/release.sh vX.Y.Z`:
+   - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`——**必须先于滚动**;`/readyz` 会比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都会在这一关现形;
+   - 第 2 步 `kubectl apply -k`(image transformer 把 `CHANGE_TAG` 换成本次 tag);
+   - 第 3/4 步等四个 Deployment 滚动完成并冒烟,失败即退、按下方回滚指引处理。
+4. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
+
+### 回滚指引
+
+- **应用回滚**(向后兼容窗口内,迁移只增不删,无需回滚库):
+  `kubectl -n superdl rollout undo deploy/superdl-api deploy/superdl-worker deploy/superdl-web deploy/superdl-admin`
+  (或 `scripts/release.sh <上一 tag>` 重放一遍——迁移 Job 对已追平的库是 no-op)。
+- **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型,见下节——正常
+  流程下这类迁移要分两个发布窗口,窗口之间禁止回滚越过边界)。回滚前
+  `git log <上一 tag>..<当前 tag> -- apps/api/alembic/versions/` 确认只有 expand 类迁移。
+- 回滚后核对:`kubectl -n superdl rollout status` × 4 + 冒烟两条(同 release.sh 第 4 步)。
+
+### 迁移向前兼容窗口(expand-only)规范
+
+滚动窗口内必然存在「老代码 + 新 schema」与「新代码 + 旧 schema」并存,因此:
+
+- **expand-only**:新增表/新增可空列/新增索引(CONCURRENTLY)/加约束(NOT VALID 先行)
+  随时可发;迁移与代码同 tag 发布,顺序「先迁移后滚动」由 release.sh 保证。
+- **contract(删列/改列名/改类型/删表)分两窗口**:窗口 A 先发「代码不再读写旧列 +
+  expand 部分」;全量滚动完成、确认无回滚需求后,窗口 B 再发删除性迁移。两窗口之间
+  禁止回滚越过 A 的边界。
+- 闸门:CI「迁移危险 DDL 检查」(`scripts/check-migration-ddl.py`)拦 drop/rename/
+  非空列无默认/非 CONCURRENTLY 索引/ALTER TYPE;确属 contract 窗口 B 的迁移,在文件内
+  标注 `# ddl-risk: reviewed` 并在 MR 说明窗口安排。
+- **大表迁移替代流程(三步法)**,以「大表加非空列」为例:
+  1. **加列带默认**:`add_column(..., nullable=True)`(PG ≥ 11 下 `server_default` 加列
+     也是 O(1) 元数据操作,但写入语义以可空 + 代码双写最稳);
+  2. **回填**:分批小步回填(按主键区间 UPDATE ... WHERE id BETWEEN,每批 commit,
+     迁移 Job 有 `statement_timeout=60s` 与 `lock_timeout=3s`,单批必须远小于此);
+  3. **校验后收口**:核对回填完整 → 下一窗口 `alter_column(nullable=False)` 或补
+     CHECK NOT VALID → VALIDATE CONSTRAINT。
+  索引一律 `postgresql_concurrently=True`(迁移内需 `op.execute("COMMIT")` 或
+  非事务迁移上下文);锁表型 DDL(ALTER TYPE、表重写)一律拆窗口,不得在在线迁移里做。
+
+上线硬性核查项(每次首发/变更发布通道后必过):
+
+- [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404(mock 端点已在产物中剔除)
+- [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404(管理端 API 不经公网 api 域暴露)
+- [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401(不带集群内 Bearer 不得取到指标)
+- [ ] Alertmanager critical 告警端到端实测一次(钉钉 + 值班手机短信都到人)
+- [ ] `superdl-api-secrets` 含 `juicefs-metaurl` 键(值同 kube-system/superdl-juicefs-secret 的 metaurl):缺失则数据盘配额 Job 永远死信(管理端死信页 + `superdl_juicefs_quota_failed_total` 可见),容量上限不被强制
 
 ## 生产数据库要求(必读)
 
@@ -33,6 +78,19 @@
 - **定期 restore 校验**:每季度按 runbook 做一次恢复演练(含 ledger 链抽检),
   未演练过的备份视为不存在。
 
+连接数对齐(改副本数或 `SUPERDL_DB_POOL_SIZE` 时必须复核):
+
+```
+max_connections ≥ (api 副本 + worker 副本) × (db_pool_size + max_overflow) + 迁移/运维预留
+              = (2 + 2) × (10 + 10) + 20 = 100   ← 默认值恰好在 PG 默认 100 的红线上
+```
+
+- SQLAlchemy 异步引擎默认 `max_overflow=10`:每进程峰值是 pool_size **+10**,不是 pool_size;
+- 建议生产 `max_connections=200` 留余量;超配症状为 `FATAL: remaining connection slots`
+  伴随批量 500 与 readiness 抖动;
+- api/worker 进程内已带 `statement_timeout=30s / lock_timeout=5s /
+  idle_in_transaction_session_timeout=60s`,卡死语句不会无限占连接。
+
 ## staging overlay(未实施,按需自建)
 
 仓库只定义 full/light 双档。自建 staging:复制 `cluster/environments/full.yaml` 为
@@ -42,7 +100,10 @@
 
 ## 管理端访问边界
 
-`admin.superdl.example.com` 默认公网可达(仅 TLS + 管理端 JWT)。生产至少叠加一层:
-VPN / 身份感知代理(oauth2-proxy 等)/ 源 IP 白名单——`app/k8s/04-ingress.yaml` 的
-`superdl-admin` Ingress 留有**可选**白名单注解(默认注释),填办公网出口 CIDR 即可启用;
+管理端 API 在公网 api 域下不可达(API 侧边缘收口:Host 非 admin 域一律 404);
+`admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(admin/finance 强制)。
+生产必须再叠加一层网络边界——`app/k8s/04-ingress.yaml` 的 `superdl-admin` Ingress
+**默认启用**源 IP 白名单注解(`CHANGE_ME_OFFICE_CIDR/32` 占位,preflight 强制校验已替换),
+填办公网/跳板机出口 CIDR;VPN 或身份感知代理(oauth2-proxy 等)可替代之。
+应急通道:白名单误伤时用 `kubectl port-forward`(见 runbook),勿直接放开 0.0.0.0/0。
 Grafana 等其他管理面只走内网或 port-forward,勿经 Ingress 暴露。

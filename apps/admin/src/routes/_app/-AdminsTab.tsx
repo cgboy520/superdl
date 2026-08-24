@@ -2,7 +2,7 @@
 
 import { adminColors, formatDateTime } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } from "antd";
+import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -12,6 +12,8 @@ import {
   useAdminAccounts,
   useChangeOwnPassword,
   useCreateAdminAccount,
+  useRegenerateRecoveryCodes,
+  useResetAdminMfa,
   useResetAdminPassword,
   useUpdateAdminAccount,
 } from "../../api";
@@ -40,7 +42,7 @@ function roleColor(role: string): string {
 export function AdminsTab() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const { admin: me, logout } = useAuth();
   const isSuperAdmin = me?.role === "admin";
@@ -58,6 +60,14 @@ export function AdminsTab() {
   const update = useUpdateAdminAccount();
   const resetPwd = useResetAdminPassword();
   const changeOwn = useChangeOwnPassword();
+  const resetMfa = useResetAdminMfa();
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const regenCodes = useRegenerateRecoveryCodes({
+    mutation: {
+      onSuccess: (d) => setCodes(d.recovery_codes),
+      onError: (e) => message.error(errText(e)),
+    },
+  });
 
   const activeAdmins = (data ?? []).filter((a) => a.role === "admin" && a.status === "active").length;
 
@@ -78,6 +88,20 @@ export function AdminsTab() {
           {s === "active" ? t("admins.statusActive") : t("admins.statusDisabled")}
         </Tag>
       ),
+    },
+    {
+      title: t("admins.colMfa"),
+      key: "mfa",
+      render: (_: unknown, row: AdminAccountOut) => {
+        // admin/finance 强制 TOTP;其余角色不启用,列显灰
+        const required = row.role === "admin" || row.role === "finance";
+        if (!required) return <Tag>{t("admins.mfaNotRequired")}</Tag>;
+        return row.totp_enabled ? (
+          <Tag color={adminColors.positive}>{t("admins.mfaBound")}</Tag>
+        ) : (
+          <Tag color="gold">{t("admins.mfaUnbound")}</Tag>
+        );
+      },
     },
     {
       title: t("admins.colCreatedAt"),
@@ -102,7 +126,8 @@ export function AdminsTab() {
               options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
               onChange={(role: AdminRole) => {
                 // 改角色必须带 reason:审计只记新值,不带原因就答不出「从什么改成什么」
-                Modal.confirm({
+                // 用 App.useApp() 的 modal 实例:静态 Modal.confirm 拿不到深色主题 token
+                modal.confirm({
                   title: t("admins.confirmRoleTitle", { name: row.username, role: t(ROLE_LABEL_KEY[role]) }),
                   content: t("admins.roleTakesEffectNow"),
                   onOk: async () => {
@@ -144,6 +169,21 @@ export function AdminsTab() {
             >
               {t("admins.resetPassword")}
             </Button>
+            {row.totp_enabled && (
+              <ReasonAction
+                label={t("admins.resetMfa")}
+                title={t("admins.resetMfaTitle", { name: row.username })}
+                confirmText={t("admins.resetMfaConfirm")}
+                danger
+                disabled={!isSuperAdmin || isSelf}
+                disabledReason={noPerm ?? selfNote}
+                onSubmit={async (reason) => {
+                  await resetMfa.mutateAsync({ id: row.id, reason });
+                  message.success(t("admins.resetMfaDone"));
+                  refresh();
+                }}
+              />
+            )}
           </Space>
         );
       },
@@ -156,6 +196,11 @@ export function AdminsTab() {
       styles={{ body: { padding: 0 } }}
       extra={
         <Space>
+          {(data ?? []).find((a) => a.id === me?.id)?.totp_enabled && (
+            <Button onClick={() => regenCodes.mutate()} loading={regenCodes.isPending}>
+              {t("admins.regenCodes")}
+            </Button>
+          )}
           <Button onClick={() => { selfForm.resetFields(); setSelfOpen(true); }}>
             {t("admins.changeOwnPassword")}
           </Button>
@@ -183,6 +228,32 @@ export function AdminsTab() {
         columns={columns}
         pagination={false}
       />
+
+      <Modal
+        open={codes != null}
+        title={t("admins.regenCodesTitle")}
+        footer={
+          <Button type="primary" onClick={() => setCodes(null)}>
+            {t("admins.regenCodesClose")}
+          </Button>
+        }
+        onCancel={() => setCodes(null)}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={t("admins.regenCodesHint")}
+        />
+        <Card size="small">
+          <Typography.Text code copyable={{ text: (codes ?? []).join("\n") }}>
+            {t("login.recoveryCopy")}
+          </Typography.Text>
+          <pre style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.8 }}>
+            {(codes ?? []).join("\n")}
+          </pre>
+        </Card>
+      </Modal>
 
       <Modal
         open={createOpen}

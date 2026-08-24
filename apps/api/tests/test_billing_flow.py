@@ -30,6 +30,39 @@ def fake():
     set_orchestrator(None)
 
 
+class TestWalletFirstCreate:
+    async def test_insert_race_safe_swallows_unique_conflict(self, sm):
+        """钱包首建并发兜底(SAVEPOINT):嵌套事务内撞 user_id 唯一约束只回退嵌套段,
+        外层事务不受污染,重查拿到既有行,后续写照常提交。"""
+        async with sm() as s1:
+            w = await wallet.get_or_create_wallet(s1, 424242)
+            await s1.commit()
+        assert w.user_id == 424242
+
+        async with sm() as s2:
+            # 模拟并发负方:外层事务先有别的工作,再撞首建冲突——必须不外溢成整事务回滚
+            await wallet._insert_wallet_race_safe(s2, 424242)
+            w2 = await wallet.lock_wallet(s2, 424242)
+            assert w2.id == w.id
+            w2.balance = Decimal("9.99")
+            await s2.commit()  # 外层事务仍能提交
+
+        async with sm() as s3:
+            w3 = (await s3.execute(select(Wallet).where(Wallet.user_id == 424242))).scalar_one()
+            assert w3.balance == Decimal("9.99")
+
+    async def test_get_or_create_returns_existing_after_race(self, sm):
+        """get_or_create 在「先查无、插入撞键」后重查返回胜出方(不抛 IntegrityError)。"""
+        async with sm() as s1:
+            await wallet.get_or_create_wallet(s1, 424243)
+            await s1.commit()
+        async with sm() as s2:
+            await wallet._insert_wallet_race_safe(s2, 424243)  # 撞键被吞
+            w = await wallet.get_or_create_wallet(s2, 424243)
+            assert w.user_id == 424243
+            await s2.commit()
+
+
 async def backdate_running_event(
     sm: async_sessionmaker[AsyncSession], uuid: str, minutes: int
 ) -> int:

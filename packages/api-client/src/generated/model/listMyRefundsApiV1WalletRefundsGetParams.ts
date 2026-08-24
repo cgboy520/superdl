@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200 = { [key: string]: unknown };
+export type ListMyRefundsApiV1WalletRefundsGetParams = {
+cursor?: string | null;
+limit?: number | null;
+};

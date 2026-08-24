@@ -23,16 +23,29 @@ import type {
   BillDailySummaryApiV1BillsDailySummaryGetParams,
   BillSummaryApiV1BillsSummaryGetParams,
   BillSummaryOut,
+  CreateInvoiceApiV1BillingInvoicesPostHeaders,
   CreateRechargeApiV1WalletRechargesPostHeaders,
+  CreateRefundApiV1WalletRefundsPostHeaders,
   DailySummaryOut,
+  ExportBillingApiV1BillingExportGetParams,
   GetLedgerApiV1WalletLedgerGetParams,
   HTTPValidationError,
+  InvoiceCreate,
+  InvoiceEligibleOut,
+  InvoiceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
+  ListMyInvoicesApiV1BillingInvoicesGetParams,
+  ListMyRefundsApiV1WalletRefundsGetParams,
   PageBillHourlyOut,
+  PageInvoiceOut,
   PageLedgerEntryOut,
+  PageRefundOut,
   PoliciesOut,
   RechargeCreate,
   RechargeOut,
+  RefundCreate,
+  RefundOut,
+  RefundableOrderOut,
   WalletOut
 } from '../../model';
 
@@ -57,6 +70,432 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getExportBillingApiV1BillingExportGetUrl = (params?: ExportBillingApiV1BillingExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/billing/export?${stringifiedParams}` : `/api/v1/billing/export`
+}
+
+/**
+ * 账单 CSV 导出(P2-28,流式)。month 仅作用于 hourly;行数硬上限,触顶在文件末尾
+ * 写 #SUPERDL_EXPORT_TRUNCATED# 标记行(前端据以提示已截断)。
+ * @summary Export Billing
+ */
+export const exportBillingApiV1BillingExportGet = async (params?: ExportBillingApiV1BillingExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getExportBillingApiV1BillingExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportBillingApiV1BillingExportGetQueryKey = (params?: ExportBillingApiV1BillingExportGetParams,) => {
+    return [
+    `/api/v1/billing/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportBillingApiV1BillingExportGetQueryOptions = <TData = Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError = HTTPValidationError>(params?: ExportBillingApiV1BillingExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportBillingApiV1BillingExportGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>> = ({ signal }) => exportBillingApiV1BillingExportGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ExportBillingApiV1BillingExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>>
+export type ExportBillingApiV1BillingExportGetQueryError = HTTPValidationError
+
+
+export function useExportBillingApiV1BillingExportGet<TData = Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError = HTTPValidationError>(
+ params: undefined |  ExportBillingApiV1BillingExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportBillingApiV1BillingExportGet<TData = Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError = HTTPValidationError>(
+ params?: ExportBillingApiV1BillingExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useExportBillingApiV1BillingExportGet<TData = Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError = HTTPValidationError>(
+ params?: ExportBillingApiV1BillingExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Export Billing
+ */
+
+export function useExportBillingApiV1BillingExportGet<TData = Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError = HTTPValidationError>(
+ params?: ExportBillingApiV1BillingExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof exportBillingApiV1BillingExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getExportBillingApiV1BillingExportGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getListMyInvoicesApiV1BillingInvoicesGetUrl = (params?: ListMyInvoicesApiV1BillingInvoicesGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/billing/invoices?${stringifiedParams}` : `/api/v1/billing/invoices`
+}
+
+/**
+ * 本人发票申请(游标分页)。
+ * @summary List My Invoices
+ */
+export const listMyInvoicesApiV1BillingInvoicesGet = async (params?: ListMyInvoicesApiV1BillingInvoicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInvoiceOut> => {
+
+  return customFetch<PageInvoiceOut>(getListMyInvoicesApiV1BillingInvoicesGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMyInvoicesApiV1BillingInvoicesGetQueryKey = (params?: ListMyInvoicesApiV1BillingInvoicesGetParams,) => {
+    return [
+    `/api/v1/billing/invoices`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMyInvoicesApiV1BillingInvoicesGetQueryOptions = <TData = Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError = HTTPValidationError>(params?: ListMyInvoicesApiV1BillingInvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMyInvoicesApiV1BillingInvoicesGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>> = ({ signal }) => listMyInvoicesApiV1BillingInvoicesGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMyInvoicesApiV1BillingInvoicesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>>
+export type ListMyInvoicesApiV1BillingInvoicesGetQueryError = HTTPValidationError
+
+
+export function useListMyInvoicesApiV1BillingInvoicesGet<TData = Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListMyInvoicesApiV1BillingInvoicesGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>,
+          TError,
+          Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMyInvoicesApiV1BillingInvoicesGet<TData = Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError = HTTPValidationError>(
+ params?: ListMyInvoicesApiV1BillingInvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>,
+          TError,
+          Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMyInvoicesApiV1BillingInvoicesGet<TData = Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError = HTTPValidationError>(
+ params?: ListMyInvoicesApiV1BillingInvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List My Invoices
+ */
+
+export function useListMyInvoicesApiV1BillingInvoicesGet<TData = Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError = HTTPValidationError>(
+ params?: ListMyInvoicesApiV1BillingInvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyInvoicesApiV1BillingInvoicesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListMyInvoicesApiV1BillingInvoicesGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCreateInvoiceApiV1BillingInvoicesPostUrl = () => {
+
+
+
+
+  return `/api/v1/billing/invoices`
+}
+
+/**
+ * 申请开票。amount 由服务端按账期计算;Idempotency-Key 重放返回既有单
+ * (200 + X-Idempotent-Replay)。
+ * @summary Create Invoice
+ */
+export const createInvoiceApiV1BillingInvoicesPost = async (invoiceCreate: InvoiceCreate,
+    headers?: CreateInvoiceApiV1BillingInvoicesPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<InvoiceOut> => {
+
+  return customFetch<InvoiceOut>(getCreateInvoiceApiV1BillingInvoicesPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    body: JSON.stringify(invoiceCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateInvoiceApiV1BillingInvoicesPostQueryKey = (invoiceCreate?: InvoiceCreate,) => {
+    return [
+    'POST', `/api/v1/billing/invoices`, invoiceCreate
+    ] as const;
+    }
+
+
+export const getCreateInvoiceApiV1BillingInvoicesPostQueryOptions = <TData = Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError = HTTPValidationError>(invoiceCreate: InvoiceCreate,
+    headers?: CreateInvoiceApiV1BillingInvoicesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCreateInvoiceApiV1BillingInvoicesPostQueryKey(invoiceCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>> = ({ signal }) => createInvoiceApiV1BillingInvoicesPost(invoiceCreate,headers, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CreateInvoiceApiV1BillingInvoicesPostQueryResult = NonNullable<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>>
+export type CreateInvoiceApiV1BillingInvoicesPostQueryError = HTTPValidationError
+
+
+export function useCreateInvoiceApiV1BillingInvoicesPost<TData = Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError = HTTPValidationError>(
+ invoiceCreate: InvoiceCreate,
+    headers: undefined |  CreateInvoiceApiV1BillingInvoicesPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>,
+          TError,
+          Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCreateInvoiceApiV1BillingInvoicesPost<TData = Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError = HTTPValidationError>(
+ invoiceCreate: InvoiceCreate,
+    headers?: CreateInvoiceApiV1BillingInvoicesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>,
+          TError,
+          Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCreateInvoiceApiV1BillingInvoicesPost<TData = Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError = HTTPValidationError>(
+ invoiceCreate: InvoiceCreate,
+    headers?: CreateInvoiceApiV1BillingInvoicesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Create Invoice
+ */
+
+export function useCreateInvoiceApiV1BillingInvoicesPost<TData = Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError = HTTPValidationError>(
+ invoiceCreate: InvoiceCreate,
+    headers?: CreateInvoiceApiV1BillingInvoicesPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createInvoiceApiV1BillingInvoicesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getCreateInvoiceApiV1BillingInvoicesPostQueryOptions(invoiceCreate,headers,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getListInvoiceEligibleApiV1BillingInvoicesEligibleGetUrl = () => {
+
+
+
+
+  return `/api/v1/billing/invoices/eligible`
+}
+
+/**
+ * 各账期可开票额度预览(仅 amount > 0 的已结束账期,申请弹窗的数据源)。
+ * @summary List Invoice Eligible
+ */
+export const listInvoiceEligibleApiV1BillingInvoicesEligibleGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<InvoiceEligibleOut[]> => {
+
+  return customFetch<InvoiceEligibleOut[]>(getListInvoiceEligibleApiV1BillingInvoicesEligibleGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListInvoiceEligibleApiV1BillingInvoicesEligibleGetQueryKey = () => {
+    return [
+    `/api/v1/billing/invoices/eligible`
+    ] as const;
+    }
+
+
+export const getListInvoiceEligibleApiV1BillingInvoicesEligibleGetQueryOptions = <TData = Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInvoiceEligibleApiV1BillingInvoicesEligibleGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>> = ({ signal }) => listInvoiceEligibleApiV1BillingInvoicesEligibleGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListInvoiceEligibleApiV1BillingInvoicesEligibleGetQueryResult = NonNullable<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>>
+export type ListInvoiceEligibleApiV1BillingInvoicesEligibleGetQueryError = unknown
+
+
+export function useListInvoiceEligibleApiV1BillingInvoicesEligibleGet<TData = Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>,
+          TError,
+          Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInvoiceEligibleApiV1BillingInvoicesEligibleGet<TData = Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>,
+          TError,
+          Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInvoiceEligibleApiV1BillingInvoicesEligibleGet<TData = Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Invoice Eligible
+ */
+
+export function useListInvoiceEligibleApiV1BillingInvoicesEligibleGet<TData = Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvoiceEligibleApiV1BillingInvoicesEligibleGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListInvoiceEligibleApiV1BillingInvoicesEligibleGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
 
 export const getBillDailySummaryApiV1BillsDailySummaryGetUrl = (params: BillDailySummaryApiV1BillsDailySummaryGetParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -884,6 +1323,323 @@ export function useGetRechargeApiV1WalletRechargesOrderNoGet<TData = Awaited<Ret
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetRechargeApiV1WalletRechargesOrderNoGetQueryOptions(orderNo,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getListMyRefundsApiV1WalletRefundsGetUrl = (params?: ListMyRefundsApiV1WalletRefundsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/wallet/refunds?${stringifiedParams}` : `/api/v1/wallet/refunds`
+}
+
+/**
+ * 本人退款单(游标分页)。
+ * @summary List My Refunds
+ */
+export const listMyRefundsApiV1WalletRefundsGet = async (params?: ListMyRefundsApiV1WalletRefundsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageRefundOut> => {
+
+  return customFetch<PageRefundOut>(getListMyRefundsApiV1WalletRefundsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMyRefundsApiV1WalletRefundsGetQueryKey = (params?: ListMyRefundsApiV1WalletRefundsGetParams,) => {
+    return [
+    `/api/v1/wallet/refunds`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMyRefundsApiV1WalletRefundsGetQueryOptions = <TData = Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError = HTTPValidationError>(params?: ListMyRefundsApiV1WalletRefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMyRefundsApiV1WalletRefundsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>> = ({ signal }) => listMyRefundsApiV1WalletRefundsGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListMyRefundsApiV1WalletRefundsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>>
+export type ListMyRefundsApiV1WalletRefundsGetQueryError = HTTPValidationError
+
+
+export function useListMyRefundsApiV1WalletRefundsGet<TData = Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError = HTTPValidationError>(
+ params: undefined |  ListMyRefundsApiV1WalletRefundsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMyRefundsApiV1WalletRefundsGet<TData = Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError = HTTPValidationError>(
+ params?: ListMyRefundsApiV1WalletRefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>,
+          TError,
+          Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListMyRefundsApiV1WalletRefundsGet<TData = Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError = HTTPValidationError>(
+ params?: ListMyRefundsApiV1WalletRefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List My Refunds
+ */
+
+export function useListMyRefundsApiV1WalletRefundsGet<TData = Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError = HTTPValidationError>(
+ params?: ListMyRefundsApiV1WalletRefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyRefundsApiV1WalletRefundsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListMyRefundsApiV1WalletRefundsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCreateRefundApiV1WalletRefundsPostUrl = () => {
+
+
+
+
+  return `/api/v1/wallet/refunds`
+}
+
+/**
+ * 申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);
+ * 同订单活跃申请被部分唯一索引拦截。
+ * @summary Create Refund
+ */
+export const createRefundApiV1WalletRefundsPost = async (refundCreate: RefundCreate,
+    headers?: CreateRefundApiV1WalletRefundsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RefundOut> => {
+
+  return customFetch<RefundOut>(getCreateRefundApiV1WalletRefundsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    body: JSON.stringify(refundCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateRefundApiV1WalletRefundsPostQueryKey = (refundCreate?: RefundCreate,) => {
+    return [
+    'POST', `/api/v1/wallet/refunds`, refundCreate
+    ] as const;
+    }
+
+
+export const getCreateRefundApiV1WalletRefundsPostQueryOptions = <TData = Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError = HTTPValidationError>(refundCreate: RefundCreate,
+    headers?: CreateRefundApiV1WalletRefundsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCreateRefundApiV1WalletRefundsPostQueryKey(refundCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>> = ({ signal }) => createRefundApiV1WalletRefundsPost(refundCreate,headers, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CreateRefundApiV1WalletRefundsPostQueryResult = NonNullable<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>>
+export type CreateRefundApiV1WalletRefundsPostQueryError = HTTPValidationError
+
+
+export function useCreateRefundApiV1WalletRefundsPost<TData = Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError = HTTPValidationError>(
+ refundCreate: RefundCreate,
+    headers: undefined |  CreateRefundApiV1WalletRefundsPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>,
+          TError,
+          Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCreateRefundApiV1WalletRefundsPost<TData = Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError = HTTPValidationError>(
+ refundCreate: RefundCreate,
+    headers?: CreateRefundApiV1WalletRefundsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>,
+          TError,
+          Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCreateRefundApiV1WalletRefundsPost<TData = Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError = HTTPValidationError>(
+ refundCreate: RefundCreate,
+    headers?: CreateRefundApiV1WalletRefundsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Create Refund
+ */
+
+export function useCreateRefundApiV1WalletRefundsPost<TData = Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError = HTTPValidationError>(
+ refundCreate: RefundCreate,
+    headers?: CreateRefundApiV1WalletRefundsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createRefundApiV1WalletRefundsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getCreateRefundApiV1WalletRefundsPostQueryOptions(refundCreate,headers,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetUrl = () => {
+
+
+
+
+  return `/api/v1/wallet/refunds/eligible-orders`
+}
+
+/**
+ * 退款表单候选集:最近充值订单逐单标注可否申请(不可申请的置灰并给出原因码)。
+ * @summary List Refundable Orders
+ */
+export const listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<RefundableOrderOut[]> => {
+
+  return customFetch<RefundableOrderOut[]>(getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetQueryKey = () => {
+    return [
+    `/api/v1/wallet/refunds/eligible-orders`
+    ] as const;
+    }
+
+
+export const getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetQueryOptions = <TData = Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>> = ({ signal }) => listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetQueryResult = NonNullable<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>>
+export type ListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetQueryError = unknown
+
+
+export function useListRefundableOrdersApiV1WalletRefundsEligibleOrdersGet<TData = Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>,
+          TError,
+          Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListRefundableOrdersApiV1WalletRefundsEligibleOrdersGet<TData = Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>,
+          TError,
+          Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListRefundableOrdersApiV1WalletRefundsEligibleOrdersGet<TData = Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List Refundable Orders
+ */
+
+export function useListRefundableOrdersApiV1WalletRefundsEligibleOrdersGet<TData = Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListRefundableOrdersApiV1WalletRefundsEligibleOrdersGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

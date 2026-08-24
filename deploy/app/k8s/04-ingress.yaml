@@ -52,10 +52,11 @@ metadata:
   namespace: superdl
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-dns
-    # 可选:管理端源 IP 白名单(默认关闭,不锁死)。生产建议至少三选一:
-    # VPN / 身份感知代理(如 oauth2-proxy) / 本注解的 IP 边界。
-    # 启用时取消注释并把 CIDR 改成办公网/跳板机出口(多个用英文逗号分隔):
-    # nginx.ingress.kubernetes.io/whitelist-source-range: "CHANGE_ME_OFFICE_CIDR/32"
+    # 管理端源 IP 白名单(P0-08,默认启用):把 CIDR 改成办公网/跳板机出口
+    # (多个用英文逗号分隔)。占位符必须替换——preflight.sh 会强制扫描
+    # CHANGE_ME_OFFICE_CIDR,未替换不予放行;确需临时放开须走变更评审,
+    # 长期仍建议叠加 VPN / 身份感知代理(如 oauth2-proxy)之一。
+    nginx.ingress.kubernetes.io/whitelist-source-range: "CHANGE_ME_OFFICE_CIDR/32"
 spec:
   ingressClassName: nginx
   tls:

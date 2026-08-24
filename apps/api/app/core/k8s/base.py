@@ -74,6 +74,18 @@ class PodStatus:
 
 
 @dataclass(frozen=True)
+class PodListEntry:
+    """全量 LIST 的 Pod 状态条目:reconciler 以此替代逐实例 get_status(读放大控制)。"""
+
+    namespace: str
+    name: str
+    ready: bool
+    phase: str
+    node_name: str | None
+    deleting: bool
+
+
+@dataclass(frozen=True)
 class ClusterProbe:
     """集群能力探测快照(nodes 巡检落 cluster_status 表,门禁与集群页读表不实时探测)。"""
 
@@ -138,13 +150,40 @@ class K8sOrchestrator(Protocol):
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...
 
-    async def list_instance_pods(self) -> list[tuple[str, str]]:
-        """列出全部租户实例 Pod (namespace, name)。reconciler 泄漏检测用。"""
+    async def read_instance_logs(
+        self, namespace: str, name: str, *, tail_lines: int, since_seconds: int | None = None
+    ) -> str:
+        """读取实例容器日志(只读,F5 日志端点):末尾 tail_lines 行,可选 since_seconds 时间窗。
+
+        请求路径同步直读的例外(实时性,不进 outbox);调用方须自行做 owner/状态/限流校验。
+        """
+        ...
+
+    async def list_instance_pods(self) -> list["PodListEntry"]:
+        """全量列出租户实例 Pod 状态(reconciler 每轮一次,替代逐实例 get_status)。"""
+        ...
+
+    async def list_instance_endpoints(self) -> list[tuple[str, str]]:
+        """列出全部租户实例的 Service/Ingress (namespace, 实例名;jupyter 副名已归并)。
+        reconciler 孤儿端点清理用(残留端点会持续占 NodePort)。"""
+        ...
+
+    async def used_node_ports(self) -> set[int]:
+        """集群内受管 Service 当前占用的 NodePort 集合。blocked 端口复检用。"""
         ...
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
         """真实擦除数据盘的 JuiceFS 子路径(集群侧 Job)。幂等;
         未完成时抛异常交 outbox 退避重试,下次执行看到已完成即返回。"""
+        ...
+
+    async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
+        """下发 JuiceFS 目录硬配额(平台 ns 的 CLI Job,纯元数据操作)。幂等;
+        Job 进行中/失败抛异常交 outbox 退避重试。配额是纯元数据,不挂卷。"""
+        ...
+
+    async def delete_disk_quota(self, subpath: str) -> None:
+        """删盘前摘除目录配额(无配额记录视为成功)。幂等;失败抛异常。"""
         ...
 
     async def available_gpus(self, pool_label: str) -> int:

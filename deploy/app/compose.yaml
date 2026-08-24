@@ -28,6 +28,7 @@ services:
       context: ../../apps/api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     environment:
+      SUPERDL_ENVIRONMENT: dev
       SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@postgres:5432/superdl
     ports:
       - "8000:8000"
@@ -41,6 +42,7 @@ services:
       context: ../../apps/api
     command: python -m app.workers.main
     environment:
+      SUPERDL_ENVIRONMENT: dev
       SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@postgres:5432/superdl
     depends_on:
       postgres:

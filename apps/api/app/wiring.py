@@ -11,9 +11,10 @@ def wire_modules() -> None:
     from app.modules.catalog import prewarm as _prewarm  # noqa: F401 注册 image.prewarm handler
     from app.modules.catalog.inventory import register_inventory_provider
     from app.modules.nodes import handlers as _node_handlers  # noqa: F401 注册 node.cordon handler
+    from app.modules.nodes.service import node_specs_signature
     from app.modules.notify import service as _notify_service  # noqa: F401 注册 notify.sms handler
     from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
     from app.modules.orchestrator.service import estimate_available_many
 
-    register_inventory_provider(estimate_available_many)
+    register_inventory_provider(estimate_available_many, node_specs_signature)
     register_billing_edge_listener()

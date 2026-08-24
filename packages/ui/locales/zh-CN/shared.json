@@ -23,6 +23,10 @@
     "perHour": "{{price}}/时"
   },
   "status": {
+    "announcement": {
+      "published": "已发布",
+      "revoked": "已撤回"
+    },
     "channel": {
       "wechat": "微信支付",
       "alipay": "支付宝",
@@ -35,11 +39,23 @@
       "frozen": "已冻结",
       "grace": "宽限期"
     },
+    "deletion": {
+      "approved": "已批准",
+      "cancelled": "已撤销",
+      "completed": "已注销",
+      "pending": "冷静期",
+      "rejected": "已驳回"
+    },
     "imageCache": {
       "cached": "已缓存",
       "failed": "拉取失败",
       "pending": "待预热",
       "pulling": "拉取中"
+    },
+    "invoice": {
+      "issued": "已开票",
+      "rejected": "已驳回",
+      "submitted": "审核中"
     },
     "instance": {
       "creating": "创建中",
@@ -73,6 +89,32 @@
       "paid": "已支付",
       "closed": "已关闭",
       "failed": "已失败"
+    },
+    "payoutChannel": {
+      "alipay_transfer": "支付宝转账",
+      "offline": "线下转账",
+      "wechat_transfer": "微信转账"
+    },
+    "refund": {
+      "approved": "待打款",
+      "cancelled": "已取消",
+      "paid": "已完成",
+      "pending": "待审批",
+      "rejected": "已驳回"
+    },
+    "ticket": {
+      "closed": "已关闭",
+      "open": "待处理",
+      "pending_staff": "待客服回复",
+      "pending_user": "待用户回复",
+      "resolved": "已解决"
+    },
+    "ticketCategory": {
+      "account": "账号问题",
+      "billing": "计费/账务",
+      "data": "数据/存储",
+      "instance": "实例问题",
+      "other": "其他"
     },
     "tier": {
       "dedicated": "独享整卡",

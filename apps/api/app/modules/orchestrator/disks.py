@@ -3,17 +3,17 @@
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
 from app.core.timeutil import ensure_utc, now_utc
+from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.nodes import service as nodes_service
 from app.modules.orchestrator.models import DataDisk, Instance
@@ -34,7 +34,8 @@ async def create_disk(
     name: str,
     size_gb: int,
     idempotency_key: str | None = None,
-) -> DataDisk:
+) -> tuple[DataDisk, bool]:
+    """创建数据盘。返回 (盘, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
     if idempotency_key:
         # 幂等键:响应丢失后重试不会开出第二块盘
         existing = (
@@ -46,7 +47,7 @@ async def create_disk(
         ).scalar_one_or_none()
         if existing is not None:
             if now_utc() - ensure_utc(existing.created_at) < IDEMPOTENCY_WINDOW:
-                return existing
+                return existing, False
             # 窗口外同一键按新单处理:先释放键位(唯一约束 (user_id, idempotency_key))
             existing.idempotency_key = None
             await session.flush()
@@ -65,8 +66,10 @@ async def create_disk(
     # 数量配额与余额校验都放进锁内,不存在 TOCTOU
     try:
         await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
-        # 数量配额:建盘只校验余额(日结才扣),故另设上限
-        max_disks = get_settings().max_disks_per_user
+        # 数量配额:建盘只校验余额(日结才扣),故另设上限;
+        # 生效值走统一校验链(用户覆盖 → 平台策略 → env 默认)
+        limits = await account_service.get_user_limits(session, user_id)
+        max_disks = limits.max_disks
         live = (
             await session.execute(
                 select(func.count())
@@ -102,8 +105,10 @@ async def create_disk(
                 )
             ).scalar_one_or_none()
             if raced is not None:
-                return raced
+                return raced, False
             raise
+        # JuiceFS 目录硬配额下发(同事务 outbox):handler 成功才置 quota_synced
+        enqueue(session, "disk.quota", {"disk_id": disk.id})
         await session.commit()
     except IntegrityError as exc:
         # 钱包首建与并发请求互撞唯一索引:可安全重试
@@ -115,7 +120,7 @@ async def create_disk(
         ) from exc
     await session.refresh(disk)
     logger.info("disk_created", disk_id=disk.id, user_id=user_id, size_gb=size_gb)
-    return disk
+    return disk, True
 
 
 async def get_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
@@ -165,8 +170,11 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     await _settle_pending_days(session, disk)  # 先按旧容量结清,扩容不追溯涨价
-    # size_gb 只是计费与逻辑口径:JuiceFS 目录配额未下发集群,扩容只改这个数字。
+    # size_gb 是计费与逻辑口径;同步重下发 JuiceFS 目录配额(失败留 quota_synced=false,
+    # reconciler 对账环持续重派,新容量最终必然强制)
     disk.size_gb = new_size_gb
+    disk.quota_synced = False
+    enqueue(session, "disk.quota", {"disk_id": disk.id})
     await session.commit()
     return disk
 
@@ -185,6 +193,11 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
         return disk
     await _settle_pending_days(session, disk)  # 末日账:当日建当日删不能免单
     disk.status = "deleting"
+    # 同事务摘除所有实例的挂载引用:否则停机实例仍按旧 id 挂 subPath,
+    # 用户会挂到擦除后重建的空目录(且擦盘 Job 可能与新 Pod 并发读写)
+    await session.execute(
+        update(Instance).where(Instance.data_disk_id == disk.id).values(data_disk_id=None)
+    )
     enqueue(session, "disk.wipe", {"disk_id": disk.id})
     await session.commit()
     return disk
@@ -263,8 +276,10 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
         if not in_arrears:
             if disk.status in ("grace", "frozen"):
                 disk.status = "active"
-                # grace_started_at 保留(累计计时);frozen_started_at 清零(已出冻结态)
+                # grace_started_at 保留(累计计时);frozen_started_at 清零(已出冻结态);
+                # grace_ended_at 记恢复时刻(日结追平的宽限区间右端)
                 disk.frozen_started_at = None
+                disk.grace_ended_at = now
                 changed += 1
             continue
         if disk.status == "active":
@@ -272,6 +287,7 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
             disk.status = "grace"
             if disk.grace_started_at is None:
                 disk.grace_started_at = now
+            disk.grace_ended_at = None  # 新一段宽限开始,上一段区间作废
             changed += 1
         elif disk.status == "grace" and disk.grace_started_at is not None:
             from datetime import timedelta

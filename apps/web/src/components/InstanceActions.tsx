@@ -1,13 +1,13 @@
 /**
  * 实例操作组:开机/关机/更多(重启·事件·预留项·释放)。
  * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/保存镜像/转包年包月)
- * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、勾选确认才解锁)。
+ * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、键入实例名才解锁,P2-22)。
  */
 
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
 
-import { App, Button, Checkbox, Dropdown, Modal, Space, Tooltip, Typography } from "antd";
+import { App, Button, Dropdown, Input, Modal, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -35,12 +35,15 @@ export function ReleaseModal({
   onReleased?: () => void;
 }) {
   const { t } = useTranslation();
-  const [checked, setChecked] = useState(false);
+  // 破坏确认(P2-22):键入实例名才解锁
+  const [typed, setTyped] = useState("");
   const { message } = App.useApp();
   const creating = instance.status === "creating";
+  const nameMatched = typed.trim() === instance.name;
   const release = useReleaseInstance({
     onSuccess: () => {
       message.success(creating ? t("instances.actions.createCanceled") : t("instances.actions.releaseStarted"));
+      setTyped("");
       onClose();
       onReleased?.();
     },
@@ -50,7 +53,7 @@ export function ReleaseModal({
       title={creating ? t("instances.actions.cancelModalTitle") : t("instances.actions.releaseModalTitle")}
       open={open}
       onCancel={() => {
-        setChecked(false);
+        setTyped("");
         onClose();
       }}
       footer={
@@ -59,7 +62,7 @@ export function ReleaseModal({
           <Button
             danger
             type="primary"
-            disabled={!checked}
+            disabled={!nameMatched}
             loading={release.isPending}
             onClick={() => release.mutate(instance.uuid)}
           >
@@ -83,9 +86,19 @@ export function ReleaseModal({
           />
         )}
       </Typography.Paragraph>
-      <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
-        {t("copy.releaseConfirmChecklist")}
-      </Checkbox>
+      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Typography.Text type="secondary">
+          {t("instances.actions.typeNameToConfirm", { name: instance.name })}
+        </Typography.Text>
+        <Input
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={instance.name}
+          maxLength={64}
+          autoComplete="off"
+          aria-label={t("instances.actions.typeNameToConfirm", { name: instance.name })}
+        />
+      </Space>
     </Modal>
   );
 }
@@ -141,7 +154,7 @@ export function InstanceActions({
         </Button>
       </Tooltip>
       <Tooltip title={canStop ? undefined : t("copy.stopNeedsRunning")}>
-        <Button size="small" disabled={!canStop} onClick={confirmStop}>
+        <Button size="small" disabled={!canStop} loading={stop.isPending} onClick={confirmStop}>
           {t("instances.actions.stop")}
         </Button>
       </Tooltip>

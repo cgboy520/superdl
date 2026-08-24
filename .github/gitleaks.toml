@@ -1,16 +1,63 @@
-# SuperDL gitleaks 配置:默认规则集 + 两条已复核误报的路径级放行。
+# SuperDL gitleaks 配置:默认规则集 + 已复核误报的行级放行(P1-31:整文件放行已收窄)。
 # 复核记录(2026-08,全历史扫描):
-# - apps/api/tests/test_payment_signature.py:APIV3_KEY 为 32 位十六进制测试假密钥,
-#   测试文件内的密钥均为构造的假数据
-# - apps/api/app/core/platform_config.py:命中内容是 hint 文案里的 PEM 头字样
+# - apps/api/tests/test_payment_signature.py:APIV3_KEY 为 32 位十六进制测试假密钥
+#   ("0123...def" 等差序列),仅该行放行;同文件其他行混入真 secret 仍会告警
+# - apps/api/app/core/platform_config.py:命中行是 hint 文案里的 PEM 头字样
 #   ("含 -----BEGIN PRIVATE KEY-----"),该文件只定义配置项校验规格,不含真实密钥
-# 注意:按路径放行后,这两个文件后续混入真 secret 也不会告警,改动它们时需人工留意。
+# 语义(gitleaks v8.25+,本仓 CI 钉 v8.29.1):condition="AND" + regexTarget="line"
+# = path 命中且「命中行内容」匹配 regexes 才放行 —— 行级指纹,而非整文件豁免。
 [extend]
 useDefault = true
 
-[allowlist]
-description = "已复核误报(见文件头注释)"
+[[allowlists]]
+description = "已复核误报(行级):32 位十六进制测试假密钥(见文件头注释)"
+condition = "AND"
+regexTarget = "line"
 paths = [
   '''apps/api/tests/test_payment_signature\.py''',
+]
+regexes = [
+  '''0123456789abcdef0123456789abcdef''',
+]
+
+[[allowlists]]
+description = "已复核误报(行级):hint 文案中的 PEM 头字样(见文件头注释)"
+condition = "AND"
+regexTarget = "line"
+paths = [
   '''apps/api/app/core/platform_config\.py''',
 ]
+regexes = [
+  '''含 -----BEGIN PRIVATE KEY-----''',
+]
+
+[[allowlists]]
+description = "已复核误报(行级):runbook 中的 curl 示例占位口令(<强口令> 非真凭据);该行写成真口令仍会告警"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''deploy/cluster/runbooks/image-prewarm\.md''',
+]
+regexes = [
+  '''curl -u ops:.{0,2}<强口令>''',
+]
+
+# P0-07 回归:registry 原占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,禁止再以任何形式入库
+# (凭据改为部署时手工建 Secret,见 deploy/cluster/registry/registry.yaml 头注释)
+[[rules]]
+id = "superdl-leaked-registry-htpasswd"
+description = "已泄漏的 registry htpasswd bcrypt hash(P0-07)"
+regex = '''\$2y\$05\$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW'''
+# 规则自身的两处合理出现:本配置(规则定义)与 preflight.sh(拦截器);其余路径一律告警
+[[rules.allowlists]]
+description = "规则定义与拦截器自身"
+paths = [
+  '''\.github/gitleaks\.toml''',
+  '''deploy/cluster/preflight\.sh''',
+]
+# hash 曾在 commit 0bbf540 的 registry.yaml 入库(P0-07 前的占位口令,后已移除并轮换)。
+# 全历史扫描无法避开该 commit,按 commit 级放行(不收窄到 path——未来任何 commit 的
+# registry.yaml 再含此 hash 仍告警)
+[[rules.allowlists]]
+description = "P0-07 前已入库该 hash 的历史 commit(已在后续 commit 移除)"
+commits = ["0bbf5403082957d771607458c3a94ed41e7253c2"]

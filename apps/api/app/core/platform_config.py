@@ -108,12 +108,13 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         forbid_contains="-----",
         hint="粘贴纯 base64 支付宝公钥体(开放平台·接口加签方式·支付宝公钥)",
     ),
-    # 收款方 PID(2088 开头 16 位)。异步通知除验签外还要核对 app_id 与 seller_id;留空则只核 app_id
+    # 收款方 PID(2088 开头 16 位)。异步通知除验签外还要核对 app_id 与 seller_id;
+    # prod 启用支付宝渠道时必填(渠道构造期 fail-fast),缺失 seller_id 的回调一律拒收
     "alipay_seller_id": SettingSpec(
         "payment_alipay",
         "str",
         pattern=r"|2088\d{12}",
-        hint="收款账号 PID(2088 开头 16 位),开放平台·账户中心可查;留空则不校验",
+        hint="收款账号 PID(2088 开头 16 位),开放平台·账户中心可查;prod 启用支付宝时必填",
     ),
     # ---- 阿里云短信(dysmsapi) ----
     "sms_provider": SettingSpec(
@@ -147,6 +148,23 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     ),
     "police_record_number": SettingSpec(
         "compliance", "str", max_len=64, hint="公安备案号,形如 京公网安备11010502000000号"
+    ),
+    # 经营主体信息(《电子商务法》第十五条:首页显著位置持续公示;页脚展示,留空即不展示)
+    "company_name": SettingSpec(
+        "compliance", "str", max_len=128, hint="营业执照上的公司全称,如 某某科技(北京)有限公司"
+    ),
+    "company_address": SettingSpec(
+        "compliance", "str", max_len=256, hint="公司注册地址(营业执照住所)"
+    ),
+    "company_phone": SettingSpec(
+        "compliance", "str", max_len=32, hint="对外联系电话,形如 010-12345678 或 400-800-1234"
+    ),
+    "business_license_url": SettingSpec(
+        "compliance",
+        "str",
+        pattern=r"|https?://\S+",
+        max_len=256,
+        hint="营业执照电子版链接(亮照);留空则不展示",
     ),
     # ---- 客服联系方式(页脚与帮助页;留空即不展示对应入口) ----
     "support_email": SettingSpec(
@@ -202,6 +220,13 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "str",
         pattern=r"https?://\S+",
         hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
+    ),
+    # 值班手机号:critical 平台告警短信直发(不依赖平台自身通知流;复用阿里云短信通道)
+    "oncall_phone": SettingSpec(
+        "observability",
+        "str",
+        pattern=r"|1[3-9]\d{9}",
+        hint="值班手机号:critical 告警短信直发;留空则不启用",
     ),
 }
 

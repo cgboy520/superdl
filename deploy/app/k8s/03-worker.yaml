@@ -1,5 +1,5 @@
-# worker(outbox + 定时任务):单副本即可(advisory lock 允许多副本,资源上单副本够用)。
-# liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
+# worker(outbox + 定时任务):2 副本高可用(报告3#12/P1-35)——节点故障/滚动发布时
+# 结算与编排不停摆。liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,8 +7,12 @@ metadata:
   namespace: superdl
   labels: {app: superdl-worker}
 spec:
-  replicas: 1
-  strategy: {type: Recreate}
+  replicas: 2
+  strategy:
+    # RollingUpdate 安全:定时任务由 PG advisory lock 保证单 leader(同刻只有一副本执行),
+    # outbox 领取走 SELECT ... FOR UPDATE SKIP LOCKED(多副本不重复领同一任务),
+    # 滚动期间新旧副本并存不会重复执行。
+    type: RollingUpdate
   selector:
     matchLabels: {app: superdl-worker}
   template:
@@ -19,7 +23,17 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
-      terminationGracePeriodSeconds: 60  # SIGTERM 后收尾当前 outbox 任务
+      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod,
+      # 节点资源紧张时不与租户同级被驱逐。
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
+        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      terminationGracePeriodSeconds: 660  # SIGTERM 后收尾当前 outbox 任务(执行超时上限 600s + 60s 余量)
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

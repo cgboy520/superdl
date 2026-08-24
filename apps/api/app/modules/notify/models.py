@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, String, Text, func
+from sqlalchemy import BigInteger, CheckConstraint, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -19,6 +19,33 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text)
     severity: Mapped[str] = mapped_column(String(16), default="info")  # info/warning/critical
+    # published / revoked:仅 announcement 类型会被撤回,其余类型恒 published
+    status: Mapped[str] = mapped_column(String(16), default="published", server_default="published")
     dedup_key: Mapped[str | None] = mapped_column(String(128), unique=True)  # 幂等去重
     read_at: Mapped[datetime | None]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    # 告警闭环(F8):管理端告警流确认留痕;非告警行恒空
+    acked_by: Mapped[int | None]  # admin_users.id
+    acked_at: Mapped[datetime | None]
+    # 翻页/排序一律走主键 id,created_at 无查询使用,不建索引
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Announcement(Base):
+    """公告(F6):管理端发布/撤回的公告级记录;用户端触达走 Notification fanout。
+
+    fanout 行 dedup_key = f"ann:{id}:{user_id}":撤回按此前缀精确收回,发布重试逐用户幂等。
+    """
+
+    __tablename__ = "announcements"
+    __table_args__ = (CheckConstraint("status IN ('published', 'revoked')", name="status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(128))
+    content: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="published")
+    reached: Mapped[int] = mapped_column(default=0)  # 发布时触达的 active 用户数
+    created_by: Mapped[int]  # admin_users.id
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    revoked_by: Mapped[int | None]  # admin_users.id
+    revoked_at: Mapped[datetime | None]
+    revoke_reason: Mapped[str | None] = mapped_column(String(256))

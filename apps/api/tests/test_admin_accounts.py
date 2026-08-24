@@ -28,9 +28,16 @@ async def login(client: AsyncClient, username: str, password: str):
 
 
 async def login_headers(client: AsyncClient, username: str, password: str) -> dict[str, str]:
+    from tests.test_catalog import complete_mfa_setup
+
     resp = await login(client, username, password)
     assert resp.status_code == 200, resp.text
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    body = resp.json()
+    if body["status"] == "ok":
+        token = body["access_token"]
+    else:
+        token = await complete_mfa_setup(client, body["ticket"])  # admin/finance 强制 TOTP
+    return {"Authorization": f"Bearer {token}"}
 
 
 class TestAdminAccounts:

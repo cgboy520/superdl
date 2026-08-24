@@ -34,6 +34,10 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "afford_cover_hours": ("int", Decimal(1), Decimal(24)),
     "prewarm_min_coverage_pct": ("int", Decimal(1), Decimal(100)),
     "prewarm_recheck_hours": ("int", Decimal(1), Decimal(168)),
+    # 每用户配额(F9):校验链 用户级覆盖 → 本层 → env 默认(Settings 同名字段)
+    "max_instances_per_user": ("int", Decimal(1), Decimal(1000)),
+    "max_gpus_per_user": ("int", Decimal(1), Decimal(1024)),
+    "max_disks_per_user": ("int", Decimal(1), Decimal(1000)),
 }
 
 
@@ -49,6 +53,9 @@ class EffectivePolicies:
     afford_cover_hours: int
     prewarm_min_coverage_pct: int
     prewarm_recheck_hours: int
+    max_instances_per_user: int
+    max_gpus_per_user: int
+    max_disks_per_user: int
 
 
 def validate_policy_value(key: str, value: str) -> str:
@@ -85,6 +92,9 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
         afford_cover_hours=int(eff["afford_cover_hours"]),
         prewarm_min_coverage_pct=int(eff["prewarm_min_coverage_pct"]),
         prewarm_recheck_hours=int(eff["prewarm_recheck_hours"]),
+        max_instances_per_user=int(eff["max_instances_per_user"]),
+        max_gpus_per_user=int(eff["max_gpus_per_user"]),
+        max_disks_per_user=int(eff["max_disks_per_user"]),
     )
 
 

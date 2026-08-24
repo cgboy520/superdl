@@ -22,37 +22,58 @@ import type {
 import type {
   AdjustContextOut,
   AdjustmentCreate,
-  AdjustmentOut,
   AdjustmentReview,
   AdjustmentStatusOut,
   AdminAccountOut,
   AdminAlertOut,
+  AdminAlertsApiAdminV1AlertsGetParams,
+  AdminAuditExportApiAdminV1AuditExportGetParams,
   AdminAuditLogApiAdminV1AuditGetParams,
   AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders,
   AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders,
   AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders,
   AdminCreateRequest,
+  AdminDeletionReject,
+  AdminDeletionRequestOut,
   AdminForceStopRequest,
   AdminImageOut,
-  AdminInstanceOut,
+  AdminInvoiceOut,
+  AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,
+  AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
   AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,
+  AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams,
   AdminListInstancesApiAdminV1InstancesGetParams,
+  AdminListInvoicesApiAdminV1InvoicesGetParams,
+  AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
+  AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,
+  AdminListRefundsApiAdminV1RefundsGetParams,
   AdminListTenantsApiAdminV1TenantsGetParams,
+  AdminListTicketsApiAdminV1TicketsGetParams,
   AdminLoginRequest,
-  AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200,
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
-  AdminOrderOut,
+  AdminOrdersExportApiAdminV1OrdersExportGetParams,
   AdminOut,
+  AdminRefreshOut,
+  AdminRefreshRequest,
+  AdminRefundOut,
   AdminResetPasswordRequest,
   AdminSelfPasswordRequest,
   AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
   AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
+  AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,
+  AdminTicketDetailOut,
+  AdminTicketOut,
+  AdminTicketReply,
+  AdminTicketStatusUpdate,
   AdminToken,
   AdminUpdateRequest,
   AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,
+  AlertUnreadCountOut,
   AnnouncementCreate,
+  AnnouncementOut,
   AnnouncementResultOut,
+  AnnouncementRevoke,
   AuditLogOut,
   CapacityPreviewOut,
   ClusterStatusOut,
@@ -68,28 +89,55 @@ import type {
   ImageNodeCacheOut,
   ImageUpdate,
   InstanceOut,
+  InvoiceIssue,
+  InvoiceReject,
+  LegalDocCellOut,
+  LegalDocVersionCreate,
+  LegalDocVersionOut,
+  LegalDocVersionUpdate,
+  MfaChallengeOut,
+  MfaCodeRequest,
+  MfaLoginOut,
+  MfaResetRequest,
+  MfaSetupConfirmOut,
+  MfaSetupOut,
+  MfaTicketRequest,
   NodeCordonOut,
   NodeCordonRequest,
   NodeEnrollmentOut,
+  NodeMetricsOut,
   NodeOut,
   OrderBackfillOut,
   OrderBackfillRequest,
   OrderVerifyOut,
   OutboxDiscardRequest,
   OutboxRetryRequest,
+  OutboxTaskOut,
   OutboxTaskStatusOut,
   OversellPoolOut,
   OverviewOut,
+  PageAdjustmentOut,
+  PageAdminInstanceOut,
+  PageAdminOrderOut,
+  PageAdminRefundOut,
   PageBillHourlyOut,
+  PageInstanceEventOut,
   PageLedgerEntryOut,
+  PageTenantOut,
   PaymentAnomalyOut,
   PlatformConfigOut,
   PlatformConfigUpdateRequest,
   PoliciesAdminOut,
   PolicyUpdateRequest,
+  PortPoolStatsOut,
   PrewarmEnqueuedOut,
   ReconciliationApiAdminV1ReconciliationGetParams,
+  ReconciliationExportApiAdminV1ReconciliationExportGetParams,
   ReconciliationOut,
+  RecoveryCodesOut,
+  RefundCancel,
+  RefundPayout,
+  RefundReview,
   RevenueReportApiAdminV1ReportsRevenueGetParams,
   RevenueReportOut,
   SkuAdminOut,
@@ -100,7 +148,8 @@ import type {
   SmsTestOut,
   SmsTestRequest,
   TenantFreezeRequest,
-  TenantOut,
+  TenantQuotaOut,
+  TenantQuotaUpdate,
   TenantStatusOut,
   UpdatedKeysOut
 } from '../../model';
@@ -127,20 +176,28 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl = () => {
+export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl = (params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/v1/adjustments`
+  return stringifiedParams.length > 0 ? `/api/admin/v1/adjustments?${stringifiedParams}` : `/api/admin/v1/adjustments`
 }
 
 /**
+ * 调账单列表(游标分页,降序)。status/user_id 精确过滤;day=YYYY-MM-DD 按发起日过滤。
  * @summary Admin List Adjustments
  */
-export const adminListAdjustmentsApiAdminV1AdjustmentsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentOut[]> => {
+export const adminListAdjustmentsApiAdminV1AdjustmentsGet = async (params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdjustmentOut> => {
 
-  return customFetch<AdjustmentOut[]>(getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl(),
+  return customFetch<PageAdjustmentOut>(getAdminListAdjustmentsApiAdminV1AdjustmentsGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -153,23 +210,23 @@ export const adminListAdjustmentsApiAdminV1AdjustmentsGet = async ( options?: Pa
 
 
 
-export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryKey = () => {
+export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryKey = (params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,) => {
     return [
-    `/api/admin/v1/adjustments`
+    `/api/admin/v1/adjustments`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = HTTPValidationError>(params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>> = ({ signal }) => adminListAdjustmentsApiAdminV1AdjustmentsGet({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>> = ({ signal }) => adminListAdjustmentsApiAdminV1AdjustmentsGet(params, { signal, ...requestOptions });
 
 
 
@@ -179,11 +236,11 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type AdminListAdjustmentsApiAdminV1AdjustmentsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>>
-export type AdminListAdjustmentsApiAdminV1AdjustmentsGetQueryError = unknown
+export type AdminListAdjustmentsApiAdminV1AdjustmentsGetQueryError = HTTPValidationError
 
 
-export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>> & Pick<
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>,
           TError,
@@ -192,8 +249,8 @@ export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<
       >, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>> & Pick<
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = HTTPValidationError>(
+ params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>,
           TError,
@@ -202,20 +259,20 @@ export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<
       >, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = HTTPValidationError>(
+ params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Admin List Adjustments
  */
 
-export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export function useAdminListAdjustmentsApiAdminV1AdjustmentsGet<TData = Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError = HTTPValidationError>(
+ params?: AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAdjustmentsApiAdminV1AdjustmentsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryOptions(options)
+  const queryOptions = getAdminListAdjustmentsApiAdminV1AdjustmentsGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -236,7 +293,8 @@ export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
 }
 
 /**
- * 发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单。
+ * 发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单
+ * (200 + X-Idempotent-Replay)。
  * @summary Admin Create Adjustment
  */
 export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate,
@@ -749,6 +807,114 @@ export function useAdminUpdateAdminApiAdminV1AdminsAdminIdPatch<TData = Awaited<
 
 
 
+export const getMfaResetApiAdminV1AdminsAdminIdMfaResetPostUrl = (adminId: number,) => {
+
+
+
+
+  return `/api/admin/v1/admins/${adminId}/mfa/reset`
+}
+
+/**
+ * 超管为他人重置 TOTP(锁死救援):清空绑定并踢掉全部会话,下次登录重新强制绑定。
+ * @summary Mfa Reset
+ */
+export const mfaResetApiAdminV1AdminsAdminIdMfaResetPost = async (adminId: number,
+    mfaResetRequest: MfaResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
+
+  return customFetch<AdminAccountOut>(getMfaResetApiAdminV1AdminsAdminIdMfaResetPostUrl(adminId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mfaResetRequest)
+  }
+);}
+
+
+
+
+
+export const getMfaResetApiAdminV1AdminsAdminIdMfaResetPostQueryKey = (adminId: number,
+    mfaResetRequest?: MfaResetRequest,) => {
+    return [
+    'POST', `/api/admin/v1/admins/${adminId}/mfa/reset`, mfaResetRequest
+    ] as const;
+    }
+
+
+export const getMfaResetApiAdminV1AdminsAdminIdMfaResetPostQueryOptions = <TData = Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError = HTTPValidationError>(adminId: number,
+    mfaResetRequest: MfaResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMfaResetApiAdminV1AdminsAdminIdMfaResetPostQueryKey(adminId,mfaResetRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>> = ({ signal }) => mfaResetApiAdminV1AdminsAdminIdMfaResetPost(adminId,mfaResetRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: adminId !== null && adminId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MfaResetApiAdminV1AdminsAdminIdMfaResetPostQueryResult = NonNullable<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>>
+export type MfaResetApiAdminV1AdminsAdminIdMfaResetPostQueryError = HTTPValidationError
+
+
+export function useMfaResetApiAdminV1AdminsAdminIdMfaResetPost<TData = Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    mfaResetRequest: MfaResetRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaResetApiAdminV1AdminsAdminIdMfaResetPost<TData = Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    mfaResetRequest: MfaResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaResetApiAdminV1AdminsAdminIdMfaResetPost<TData = Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    mfaResetRequest: MfaResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Mfa Reset
+ */
+
+export function useMfaResetApiAdminV1AdminsAdminIdMfaResetPost<TData = Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError = HTTPValidationError>(
+ adminId: number,
+    mfaResetRequest: MfaResetRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaResetApiAdminV1AdminsAdminIdMfaResetPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMfaResetApiAdminV1AdminsAdminIdMfaResetPostQueryOptions(adminId,mfaResetRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostUrl = (adminId: number,) => {
 
 
@@ -856,21 +1022,28 @@ export function useAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost<TD
 
 
 
-export const getAdminAlertsApiAdminV1AlertsGetUrl = () => {
+export const getAdminAlertsApiAdminV1AlertsGetUrl = (params?: AdminAlertsApiAdminV1AlertsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/v1/alerts`
+  return stringifiedParams.length > 0 ? `/api/admin/v1/alerts?${stringifiedParams}` : `/api/admin/v1/alerts`
 }
 
 /**
- * 管理端告警流(总览右栏数据源)。
+ * 管理端告警流(总览右栏数据源)。severity 精确过滤(可选)。
  * @summary Admin Alerts
  */
-export const adminAlertsApiAdminV1AlertsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertOut[]> => {
+export const adminAlertsApiAdminV1AlertsGet = async (params?: AdminAlertsApiAdminV1AlertsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertOut[]> => {
 
-  return customFetch<AdminAlertOut[]>(getAdminAlertsApiAdminV1AlertsGetUrl(),
+  return customFetch<AdminAlertOut[]>(getAdminAlertsApiAdminV1AlertsGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -883,23 +1056,23 @@ export const adminAlertsApiAdminV1AlertsGet = async ( options?: Parameters<typeo
 
 
 
-export const getAdminAlertsApiAdminV1AlertsGetQueryKey = () => {
+export const getAdminAlertsApiAdminV1AlertsGetQueryKey = (params?: AdminAlertsApiAdminV1AlertsGetParams,) => {
     return [
-    `/api/admin/v1/alerts`
+    `/api/admin/v1/alerts`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getAdminAlertsApiAdminV1AlertsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export const getAdminAlertsApiAdminV1AlertsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = HTTPValidationError>(params?: AdminAlertsApiAdminV1AlertsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminAlertsApiAdminV1AlertsGetQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getAdminAlertsApiAdminV1AlertsGetQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>> = ({ signal }) => adminAlertsApiAdminV1AlertsGet({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>> = ({ signal }) => adminAlertsApiAdminV1AlertsGet(params, { signal, ...requestOptions });
 
 
 
@@ -909,11 +1082,11 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type AdminAlertsApiAdminV1AlertsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>>
-export type AdminAlertsApiAdminV1AlertsGetQueryError = unknown
+export type AdminAlertsApiAdminV1AlertsGetQueryError = HTTPValidationError
 
 
-export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>> & Pick<
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminAlertsApiAdminV1AlertsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>,
           TError,
@@ -922,8 +1095,8 @@ export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typ
       >, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>> & Pick<
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = HTTPValidationError>(
+ params?: AdminAlertsApiAdminV1AlertsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>,
           TError,
@@ -932,20 +1105,323 @@ export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typ
       >, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = HTTPValidationError>(
+ params?: AdminAlertsApiAdminV1AlertsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Admin Alerts
  */
 
-export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+export function useAdminAlertsApiAdminV1AlertsGet<TData = Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError = HTTPValidationError>(
+ params?: AdminAlertsApiAdminV1AlertsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsApiAdminV1AlertsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getAdminAlertsApiAdminV1AlertsGetQueryOptions(options)
+  const queryOptions = getAdminAlertsApiAdminV1AlertsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/alerts/unread-count`
+}
+
+/**
+ * 未确认告警计数(顶栏铃铛角标;不再用当页长度推算)。
+ * @summary Admin Alerts Unread Count
+ */
+export const adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlertUnreadCountOut> => {
+
+  return customFetch<AlertUnreadCountOut>(getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetQueryKey = () => {
+    return [
+    `/api/admin/v1/alerts/unread-count`
+    ] as const;
+    }
+
+
+export const getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>> = ({ signal }) => adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>>
+export type AdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetQueryError = unknown
+
+
+export function useAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet<TData = Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet<TData = Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet<TData = Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Alerts Unread Count
+ */
+
+export function useAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet<TData = Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminAckAlertApiAdminV1AlertsAlertIdAckPostUrl = (alertId: number,) => {
+
+
+
+
+  return `/api/admin/v1/alerts/${alertId}/ack`
+}
+
+/**
+ * 确认告警(角色:ops/admin):落确认人与时间;重复确认 409。
+ * @summary Admin Ack Alert
+ */
+export const adminAckAlertApiAdminV1AlertsAlertIdAckPost = async (alertId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminAlertOut> => {
+
+  return customFetch<AdminAlertOut>(getAdminAckAlertApiAdminV1AlertsAlertIdAckPostUrl(alertId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminAckAlertApiAdminV1AlertsAlertIdAckPostQueryKey = (alertId: number,) => {
+    return [
+    'POST', `/api/admin/v1/alerts/${alertId}/ack`
+    ] as const;
+    }
+
+
+export const getAdminAckAlertApiAdminV1AlertsAlertIdAckPostQueryOptions = <TData = Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError = HTTPValidationError>(alertId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminAckAlertApiAdminV1AlertsAlertIdAckPostQueryKey(alertId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>> = ({ signal }) => adminAckAlertApiAdminV1AlertsAlertIdAckPost(alertId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: alertId !== null && alertId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminAckAlertApiAdminV1AlertsAlertIdAckPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>>
+export type AdminAckAlertApiAdminV1AlertsAlertIdAckPostQueryError = HTTPValidationError
+
+
+export function useAdminAckAlertApiAdminV1AlertsAlertIdAckPost<TData = Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError = HTTPValidationError>(
+ alertId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAckAlertApiAdminV1AlertsAlertIdAckPost<TData = Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError = HTTPValidationError>(
+ alertId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAckAlertApiAdminV1AlertsAlertIdAckPost<TData = Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError = HTTPValidationError>(
+ alertId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Ack Alert
+ */
+
+export function useAdminAckAlertApiAdminV1AlertsAlertIdAckPost<TData = Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError = HTTPValidationError>(
+ alertId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminAckAlertApiAdminV1AlertsAlertIdAckPostQueryOptions(alertId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListAnnouncementsApiAdminV1AnnouncementsGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/announcements`
+}
+
+/**
+ * 公告历史(含已撤回;固定截断 200,前端 ListCapNote 提示)。
+ * @summary Admin List Announcements
+ */
+export const adminListAnnouncementsApiAdminV1AnnouncementsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementOut[]> => {
+
+  return customFetch<AnnouncementOut[]>(getAdminListAnnouncementsApiAdminV1AnnouncementsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListAnnouncementsApiAdminV1AnnouncementsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/announcements`
+    ] as const;
+    }
+
+
+export const getAdminListAnnouncementsApiAdminV1AnnouncementsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListAnnouncementsApiAdminV1AnnouncementsGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>> = ({ signal }) => adminListAnnouncementsApiAdminV1AnnouncementsGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListAnnouncementsApiAdminV1AnnouncementsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>>
+export type AdminListAnnouncementsApiAdminV1AnnouncementsGetQueryError = unknown
+
+
+export function useAdminListAnnouncementsApiAdminV1AnnouncementsGet<TData = Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListAnnouncementsApiAdminV1AnnouncementsGet<TData = Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListAnnouncementsApiAdminV1AnnouncementsGet<TData = Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Announcements
+ */
+
+export function useAdminListAnnouncementsApiAdminV1AnnouncementsGet<TData = Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListAnnouncementsApiAdminV1AnnouncementsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListAnnouncementsApiAdminV1AnnouncementsGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -966,7 +1442,7 @@ export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl = () => {
 }
 
 /**
- * 公告群发(站内信 announcement 类型,全部 active 用户)。
+ * 公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。
  * @summary Admin Publish Announcement
  */
 export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementResultOut> => {
@@ -1047,6 +1523,114 @@ export function useAdminPublishAnnouncementApiAdminV1AnnouncementsPost<TData = A
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminPublishAnnouncementApiAdminV1AnnouncementsPostQueryOptions(announcementCreate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostUrl = (announcementId: number,) => {
+
+
+
+
+  return `/api/admin/v1/announcements/${announcementId}/revoke`
+}
+
+/**
+ * 撤回公告(原因必填,入审计):撤回后全部租户的站内信公告不再可见。重复撤回 409。
+ * @summary Admin Revoke Announcement
+ */
+export const adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost = async (announcementId: number,
+    announcementRevoke: AnnouncementRevoke, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementOut> => {
+
+  return customFetch<AnnouncementOut>(getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostUrl(announcementId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(announcementRevoke)
+  }
+);}
+
+
+
+
+
+export const getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostQueryKey = (announcementId: number,
+    announcementRevoke?: AnnouncementRevoke,) => {
+    return [
+    'POST', `/api/admin/v1/announcements/${announcementId}/revoke`, announcementRevoke
+    ] as const;
+    }
+
+
+export const getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostQueryOptions = <TData = Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError = HTTPValidationError>(announcementId: number,
+    announcementRevoke: AnnouncementRevoke, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostQueryKey(announcementId,announcementRevoke);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>> = ({ signal }) => adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost(announcementId,announcementRevoke, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: announcementId !== null && announcementId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>>
+export type AdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostQueryError = HTTPValidationError
+
+
+export function useAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError = HTTPValidationError>(
+ announcementId: number,
+    announcementRevoke: AnnouncementRevoke, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError = HTTPValidationError>(
+ announcementId: number,
+    announcementRevoke: AnnouncementRevoke, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError = HTTPValidationError>(
+ announcementId: number,
+    announcementRevoke: AnnouncementRevoke, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Revoke Announcement
+ */
+
+export function useAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost<TData = Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError = HTTPValidationError>(
+ announcementId: number,
+    announcementRevoke: AnnouncementRevoke, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostQueryOptions(announcementId,announcementRevoke,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -1166,6 +1750,115 @@ export function useAdminAuditLogApiAdminV1AuditGet<TData = Awaited<ReturnType<ty
 
 
 
+export const getAdminAuditExportApiAdminV1AuditExportGetUrl = (params?: AdminAuditExportApiAdminV1AuditExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/audit/export?${stringifiedParams}` : `/api/admin/v1/audit/export`
+}
+
+/**
+ * 审计检索 CSV(P2-37,流式):筛选口径与 GET /audit 一致;行数硬上限 + 截断标记行。
+ * 审计本身的批量导出是敏感读,落一条检索审计(只记筛选参数,不复制内容)。
+ * @summary Admin Audit Export
+ */
+export const adminAuditExportApiAdminV1AuditExportGet = async (params?: AdminAuditExportApiAdminV1AuditExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getAdminAuditExportApiAdminV1AuditExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminAuditExportApiAdminV1AuditExportGetQueryKey = (params?: AdminAuditExportApiAdminV1AuditExportGetParams,) => {
+    return [
+    `/api/admin/v1/audit/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminAuditExportApiAdminV1AuditExportGetQueryOptions = <TData = Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError = HTTPValidationError>(params?: AdminAuditExportApiAdminV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminAuditExportApiAdminV1AuditExportGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>> = ({ signal }) => adminAuditExportApiAdminV1AuditExportGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminAuditExportApiAdminV1AuditExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>>
+export type AdminAuditExportApiAdminV1AuditExportGetQueryError = HTTPValidationError
+
+
+export function useAdminAuditExportApiAdminV1AuditExportGet<TData = Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminAuditExportApiAdminV1AuditExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAuditExportApiAdminV1AuditExportGet<TData = Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError = HTTPValidationError>(
+ params?: AdminAuditExportApiAdminV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminAuditExportApiAdminV1AuditExportGet<TData = Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError = HTTPValidationError>(
+ params?: AdminAuditExportApiAdminV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Audit Export
+ */
+
+export function useAdminAuditExportApiAdminV1AuditExportGet<TData = Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError = HTTPValidationError>(
+ params?: AdminAuditExportApiAdminV1AuditExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminAuditExportApiAdminV1AuditExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminAuditExportApiAdminV1AuditExportGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
 
 
@@ -1177,9 +1870,9 @@ export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
 /**
  * @summary Admin Login
  */
-export const adminLoginApiAdminV1AuthLoginPost = async (adminLoginRequest: AdminLoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminToken> => {
+export const adminLoginApiAdminV1AuthLoginPost = async (adminLoginRequest: AdminLoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminToken | MfaChallengeOut> => {
 
-  return customFetch<AdminToken>(getAdminLoginApiAdminV1AuthLoginPostUrl(),
+  return customFetch<AdminToken | MfaChallengeOut>(getAdminLoginApiAdminV1AuthLoginPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -1255,6 +1948,411 @@ export function useAdminLoginApiAdminV1AuthLoginPost<TData = Awaited<ReturnType<
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminLoginApiAdminV1AuthLoginPostQueryOptions(adminLoginRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getMfaLoginVerifyApiAdminV1AuthLoginMfaPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/auth/login/mfa`
+}
+
+/**
+ * 二要素验证(6 位动态码或恢复码);恢复码用后作废,剩余 ≤2 提示重新生成。
+ * @summary Mfa Login Verify
+ */
+export const mfaLoginVerifyApiAdminV1AuthLoginMfaPost = async (mfaCodeRequest: MfaCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaLoginOut> => {
+
+  return customFetch<MfaLoginOut>(getMfaLoginVerifyApiAdminV1AuthLoginMfaPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mfaCodeRequest)
+  }
+);}
+
+
+
+
+
+export const getMfaLoginVerifyApiAdminV1AuthLoginMfaPostQueryKey = (mfaCodeRequest?: MfaCodeRequest,) => {
+    return [
+    'POST', `/api/admin/v1/auth/login/mfa`, mfaCodeRequest
+    ] as const;
+    }
+
+
+export const getMfaLoginVerifyApiAdminV1AuthLoginMfaPostQueryOptions = <TData = Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError = HTTPValidationError>(mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMfaLoginVerifyApiAdminV1AuthLoginMfaPostQueryKey(mfaCodeRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>> = ({ signal }) => mfaLoginVerifyApiAdminV1AuthLoginMfaPost(mfaCodeRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MfaLoginVerifyApiAdminV1AuthLoginMfaPostQueryResult = NonNullable<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>>
+export type MfaLoginVerifyApiAdminV1AuthLoginMfaPostQueryError = HTTPValidationError
+
+
+export function useMfaLoginVerifyApiAdminV1AuthLoginMfaPost<TData = Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaLoginVerifyApiAdminV1AuthLoginMfaPost<TData = Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaLoginVerifyApiAdminV1AuthLoginMfaPost<TData = Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Mfa Login Verify
+ */
+
+export function useMfaLoginVerifyApiAdminV1AuthLoginMfaPost<TData = Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaLoginVerifyApiAdminV1AuthLoginMfaPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMfaLoginVerifyApiAdminV1AuthLoginMfaPostQueryOptions(mfaCodeRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/auth/mfa/setup/begin`
+}
+
+/**
+ * 首次绑定:凭绑定票换 TOTP 密钥与 otpauth URI(前端渲染二维码)。
+ * @summary Mfa Setup Begin
+ */
+export const mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost = async (mfaTicketRequest: MfaTicketRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaSetupOut> => {
+
+  return customFetch<MfaSetupOut>(getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mfaTicketRequest)
+  }
+);}
+
+
+
+
+
+export const getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostQueryKey = (mfaTicketRequest?: MfaTicketRequest,) => {
+    return [
+    'POST', `/api/admin/v1/auth/mfa/setup/begin`, mfaTicketRequest
+    ] as const;
+    }
+
+
+export const getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostQueryOptions = <TData = Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError = HTTPValidationError>(mfaTicketRequest: MfaTicketRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostQueryKey(mfaTicketRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>> = ({ signal }) => mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost(mfaTicketRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MfaSetupBeginApiAdminV1AuthMfaSetupBeginPostQueryResult = NonNullable<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>>
+export type MfaSetupBeginApiAdminV1AuthMfaSetupBeginPostQueryError = HTTPValidationError
+
+
+export function useMfaSetupBeginApiAdminV1AuthMfaSetupBeginPost<TData = Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError = HTTPValidationError>(
+ mfaTicketRequest: MfaTicketRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaSetupBeginApiAdminV1AuthMfaSetupBeginPost<TData = Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError = HTTPValidationError>(
+ mfaTicketRequest: MfaTicketRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaSetupBeginApiAdminV1AuthMfaSetupBeginPost<TData = Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError = HTTPValidationError>(
+ mfaTicketRequest: MfaTicketRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Mfa Setup Begin
+ */
+
+export function useMfaSetupBeginApiAdminV1AuthMfaSetupBeginPost<TData = Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError = HTTPValidationError>(
+ mfaTicketRequest: MfaTicketRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostQueryOptions(mfaTicketRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/auth/mfa/setup/confirm`
+}
+
+/**
+ * 校验首个动态码完成绑定;恢复码仅此一次返回。
+ * @summary Mfa Setup Confirm
+ */
+export const mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost = async (mfaCodeRequest: MfaCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaSetupConfirmOut> => {
+
+  return customFetch<MfaSetupConfirmOut>(getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mfaCodeRequest)
+  }
+);}
+
+
+
+
+
+export const getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostQueryKey = (mfaCodeRequest?: MfaCodeRequest,) => {
+    return [
+    'POST', `/api/admin/v1/auth/mfa/setup/confirm`, mfaCodeRequest
+    ] as const;
+    }
+
+
+export const getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostQueryOptions = <TData = Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError = HTTPValidationError>(mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostQueryKey(mfaCodeRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>> = ({ signal }) => mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost(mfaCodeRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostQueryResult = NonNullable<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>>
+export type MfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostQueryError = HTTPValidationError
+
+
+export function useMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost<TData = Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost<TData = Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost<TData = Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Mfa Setup Confirm
+ */
+
+export function useMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost<TData = Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError = HTTPValidationError>(
+ mfaCodeRequest: MfaCodeRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostQueryOptions(mfaCodeRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRefreshApiAdminV1AuthRefreshPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/auth/refresh`
+}
+
+/**
+ * 静默续期:有效或刚过期(15 分钟宽限)的 access token 换新;
+ * 自首次签发(iat)起 12 小时绝对会话上限,到点须重新登录。高频自动调用,不落审计。
+ * @summary Admin Refresh
+ */
+export const adminRefreshApiAdminV1AuthRefreshPost = async (adminRefreshRequest: AdminRefreshRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefreshOut> => {
+
+  return customFetch<AdminRefreshOut>(getAdminRefreshApiAdminV1AuthRefreshPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminRefreshRequest)
+  }
+);}
+
+
+
+
+
+export const getAdminRefreshApiAdminV1AuthRefreshPostQueryKey = (adminRefreshRequest?: AdminRefreshRequest,) => {
+    return [
+    'POST', `/api/admin/v1/auth/refresh`, adminRefreshRequest
+    ] as const;
+    }
+
+
+export const getAdminRefreshApiAdminV1AuthRefreshPostQueryOptions = <TData = Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError = HTTPValidationError>(adminRefreshRequest: AdminRefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRefreshApiAdminV1AuthRefreshPostQueryKey(adminRefreshRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>> = ({ signal }) => adminRefreshApiAdminV1AuthRefreshPost(adminRefreshRequest, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRefreshApiAdminV1AuthRefreshPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>>
+export type AdminRefreshApiAdminV1AuthRefreshPostQueryError = HTTPValidationError
+
+
+export function useAdminRefreshApiAdminV1AuthRefreshPost<TData = Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError = HTTPValidationError>(
+ adminRefreshRequest: AdminRefreshRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRefreshApiAdminV1AuthRefreshPost<TData = Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError = HTTPValidationError>(
+ adminRefreshRequest: AdminRefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRefreshApiAdminV1AuthRefreshPost<TData = Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError = HTTPValidationError>(
+ adminRefreshRequest: AdminRefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Refresh
+ */
+
+export function useAdminRefreshApiAdminV1AuthRefreshPost<TData = Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError = HTTPValidationError>(
+ adminRefreshRequest: AdminRefreshRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRefreshApiAdminV1AuthRefreshPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRefreshApiAdminV1AuthRefreshPostQueryOptions(adminRefreshRequest,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -1569,6 +2667,324 @@ export function useAdminClusterTestConnectionApiAdminV1ClusterTestConnectionPost
 
 
 
+export const getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetUrl = (params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/deletion-requests?${stringifiedParams}` : `/api/admin/v1/deletion-requests`
+}
+
+/**
+ * 注销申请列表(固定截断 200)。行内附执行前校验计数(实例/盘/余额)。
+ * @summary Admin List Deletion Requests
+ */
+export const adminListDeletionRequestsApiAdminV1DeletionRequestsGet = async (params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut[]> => {
+
+  return customFetch<AdminDeletionRequestOut[]>(getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetQueryKey = (params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,) => {
+    return [
+    `/api/admin/v1/deletion-requests`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError = HTTPValidationError>(params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>> = ({ signal }) => adminListDeletionRequestsApiAdminV1DeletionRequestsGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListDeletionRequestsApiAdminV1DeletionRequestsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>>
+export type AdminListDeletionRequestsApiAdminV1DeletionRequestsGetQueryError = HTTPValidationError
+
+
+export function useAdminListDeletionRequestsApiAdminV1DeletionRequestsGet<TData = Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListDeletionRequestsApiAdminV1DeletionRequestsGet<TData = Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError = HTTPValidationError>(
+ params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListDeletionRequestsApiAdminV1DeletionRequestsGet<TData = Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError = HTTPValidationError>(
+ params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Deletion Requests
+ */
+
+export function useAdminListDeletionRequestsApiAdminV1DeletionRequestsGet<TData = Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError = HTTPValidationError>(
+ params?: AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListDeletionRequestsApiAdminV1DeletionRequestsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListDeletionRequestsApiAdminV1DeletionRequestsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostUrl = (requestId: number,) => {
+
+
+
+
+  return `/api/admin/v1/deletion-requests/${requestId}/approve`
+}
+
+/**
+ * 执行注销:冷静期未满 409;残留实例/数据盘或余额非零 → 自动驳回 + 409(detail 清单);
+ * 全通过则同事务匿名化(手机号哈希化、实名清空、全撤登录态)。
+ * @summary Admin Approve Deletion
+ */
+export const adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost = async (requestId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
+
+  return customFetch<AdminDeletionRequestOut>(getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostUrl(requestId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostQueryKey = (requestId: number,) => {
+    return [
+    'POST', `/api/admin/v1/deletion-requests/${requestId}/approve`
+    ] as const;
+    }
+
+
+export const getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostQueryOptions = <TData = Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError = HTTPValidationError>(requestId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostQueryKey(requestId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>> = ({ signal }) => adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(requestId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: requestId !== null && requestId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>>
+export type AdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostQueryError = HTTPValidationError
+
+
+export function useAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost<TData = Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError = HTTPValidationError>(
+ requestId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost<TData = Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError = HTTPValidationError>(
+ requestId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost<TData = Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError = HTTPValidationError>(
+ requestId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Approve Deletion
+ */
+
+export function useAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost<TData = Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError = HTTPValidationError>(
+ requestId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostQueryOptions(requestId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostUrl = (requestId: number,) => {
+
+
+
+
+  return `/api/admin/v1/deletion-requests/${requestId}/reject`
+}
+
+/**
+ * 驳回注销申请(理由必填,不受冷静期限制);驳回后用户可重新申请。
+ * @summary Admin Reject Deletion
+ */
+export const adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost = async (requestId: number,
+    adminDeletionReject: AdminDeletionReject, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
+
+  return customFetch<AdminDeletionRequestOut>(getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminDeletionReject)
+  }
+);}
+
+
+
+
+
+export const getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostQueryKey = (requestId: number,
+    adminDeletionReject?: AdminDeletionReject,) => {
+    return [
+    'POST', `/api/admin/v1/deletion-requests/${requestId}/reject`, adminDeletionReject
+    ] as const;
+    }
+
+
+export const getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostQueryOptions = <TData = Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError = HTTPValidationError>(requestId: number,
+    adminDeletionReject: AdminDeletionReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostQueryKey(requestId,adminDeletionReject);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>> = ({ signal }) => adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost(requestId,adminDeletionReject, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: requestId !== null && requestId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>>
+export type AdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostQueryError = HTTPValidationError
+
+
+export function useAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError = HTTPValidationError>(
+ requestId: number,
+    adminDeletionReject: AdminDeletionReject, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError = HTTPValidationError>(
+ requestId: number,
+    adminDeletionReject: AdminDeletionReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError = HTTPValidationError>(
+ requestId: number,
+    adminDeletionReject: AdminDeletionReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Reject Deletion
+ */
+
+export function useAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError = HTTPValidationError>(
+ requestId: number,
+    adminDeletionReject: AdminDeletionReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostQueryOptions(requestId,adminDeletionReject,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminPaymentAnomaliesApiAdminV1FinanceAnomaliesGetUrl = () => {
 
 
@@ -1679,7 +3095,8 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
 }
 
 /**
- * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态。
+ * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
+ * (X-Idempotent-Replay 头区分)。
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
@@ -2519,12 +3936,12 @@ export const getAdminListInstancesApiAdminV1InstancesGetUrl = (params?: AdminLis
 }
 
 /**
- * q:实例名或 uuid 前缀。node_name:精确。
+ * q:实例名或 uuid 前缀。node_name:精确。游标分页(降序)。
  * @summary Admin List Instances
  */
-export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminInstanceOut[]> => {
+export const adminListInstancesApiAdminV1InstancesGet = async (params?: AdminListInstancesApiAdminV1InstancesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminInstanceOut> => {
 
-  return customFetch<AdminInstanceOut[]>(getAdminListInstancesApiAdminV1InstancesGetUrl(params),
+  return customFetch<PageAdminInstanceOut>(getAdminListInstancesApiAdminV1InstancesGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2600,6 +4017,122 @@ export function useAdminListInstancesApiAdminV1InstancesGet<TData = Awaited<Retu
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListInstancesApiAdminV1InstancesGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetUrl = (uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/instances/${uuid}/events?${stringifiedParams}` : `/api/admin/v1/instances/${uuid}/events`
+}
+
+/**
+ * 管理端实例事件时间线(F10 排障):与用户端同一实现,降序游标分页;不限租户。
+ * @summary Admin List Instance Events
+ */
+export const adminListInstanceEventsApiAdminV1InstancesUuidEventsGet = async (uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageInstanceEventOut> => {
+
+  return customFetch<PageInstanceEventOut>(getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetUrl(uuid,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetQueryKey = (uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams,) => {
+    return [
+    `/api/admin/v1/instances/${uuid}/events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetQueryKey(uuid,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>> = ({ signal }) => adminListInstanceEventsApiAdminV1InstancesUuidEventsGet(uuid,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>>
+export type AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetQueryError = HTTPValidationError
+
+
+export function useAdminListInstanceEventsApiAdminV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params: undefined |  AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListInstanceEventsApiAdminV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListInstanceEventsApiAdminV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Instance Events
+ */
+
+export function useAdminListInstanceEventsApiAdminV1InstancesUuidEventsGet<TData = Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError = HTTPValidationError>(
+ uuid: string,
+    params?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInstanceEventsApiAdminV1InstancesUuidEventsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListInstanceEventsApiAdminV1InstancesUuidEventsGetQueryOptions(uuid,params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -2719,6 +4252,965 @@ export function useAdminForceStopApiAdminV1InstancesUuidForceStopPost<TData = Aw
 
 
 
+export const getAdminListInvoicesApiAdminV1InvoicesGetUrl = (params?: AdminListInvoicesApiAdminV1InvoicesGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/invoices?${stringifiedParams}` : `/api/admin/v1/invoices`
+}
+
+/**
+ * 发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。
+ * @summary Admin List Invoices
+ */
+export const adminListInvoicesApiAdminV1InvoicesGet = async (params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut[]> => {
+
+  return customFetch<AdminInvoiceOut[]>(getAdminListInvoicesApiAdminV1InvoicesGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListInvoicesApiAdminV1InvoicesGetQueryKey = (params?: AdminListInvoicesApiAdminV1InvoicesGetParams,) => {
+    return [
+    `/api/admin/v1/invoices`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListInvoicesApiAdminV1InvoicesGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError = HTTPValidationError>(params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListInvoicesApiAdminV1InvoicesGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>> = ({ signal }) => adminListInvoicesApiAdminV1InvoicesGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListInvoicesApiAdminV1InvoicesGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>>
+export type AdminListInvoicesApiAdminV1InvoicesGetQueryError = HTTPValidationError
+
+
+export function useAdminListInvoicesApiAdminV1InvoicesGet<TData = Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListInvoicesApiAdminV1InvoicesGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListInvoicesApiAdminV1InvoicesGet<TData = Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError = HTTPValidationError>(
+ params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListInvoicesApiAdminV1InvoicesGet<TData = Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError = HTTPValidationError>(
+ params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Invoices
+ */
+
+export function useAdminListInvoicesApiAdminV1InvoicesGet<TData = Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError = HTTPValidationError>(
+ params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListInvoicesApiAdminV1InvoicesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListInvoicesApiAdminV1InvoicesGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl = (invoiceId: number,) => {
+
+
+
+
+  return `/api/admin/v1/invoices/${invoiceId}/issue`
+}
+
+/**
+ * 开票:回填发票号(人工开票,发票经邮箱送达),站内信告知用户。
+ * @summary Admin Issue Invoice
+ */
+export const adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost = async (invoiceId: number,
+    invoiceIssue: InvoiceIssue, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut> => {
+
+  return customFetch<AdminInvoiceOut>(getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl(invoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(invoiceIssue)
+  }
+);}
+
+
+
+
+
+export const getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostQueryKey = (invoiceId: number,
+    invoiceIssue?: InvoiceIssue,) => {
+    return [
+    'POST', `/api/admin/v1/invoices/${invoiceId}/issue`, invoiceIssue
+    ] as const;
+    }
+
+
+export const getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostQueryOptions = <TData = Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError = HTTPValidationError>(invoiceId: number,
+    invoiceIssue: InvoiceIssue, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostQueryKey(invoiceId,invoiceIssue);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>> = ({ signal }) => adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost(invoiceId,invoiceIssue, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: invoiceId !== null && invoiceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>>
+export type AdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostQueryError = HTTPValidationError
+
+
+export function useAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost<TData = Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceIssue: InvoiceIssue, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost<TData = Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceIssue: InvoiceIssue, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost<TData = Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceIssue: InvoiceIssue, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Issue Invoice
+ */
+
+export function useAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost<TData = Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceIssue: InvoiceIssue, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostQueryOptions(invoiceId,invoiceIssue,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostUrl = (invoiceId: number,) => {
+
+
+
+
+  return `/api/admin/v1/invoices/${invoiceId}/reject`
+}
+
+/**
+ * 驳回(理由必填):站内信告知用户;驳回后同账期可重新申请。
+ * @summary Admin Reject Invoice
+ */
+export const adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost = async (invoiceId: number,
+    invoiceReject: InvoiceReject, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut> => {
+
+  return customFetch<AdminInvoiceOut>(getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostUrl(invoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(invoiceReject)
+  }
+);}
+
+
+
+
+
+export const getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostQueryKey = (invoiceId: number,
+    invoiceReject?: InvoiceReject,) => {
+    return [
+    'POST', `/api/admin/v1/invoices/${invoiceId}/reject`, invoiceReject
+    ] as const;
+    }
+
+
+export const getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostQueryOptions = <TData = Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError = HTTPValidationError>(invoiceId: number,
+    invoiceReject: InvoiceReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostQueryKey(invoiceId,invoiceReject);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>> = ({ signal }) => adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost(invoiceId,invoiceReject, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: invoiceId !== null && invoiceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>>
+export type AdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostQueryError = HTTPValidationError
+
+
+export function useAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceReject: InvoiceReject, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceReject: InvoiceReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceReject: InvoiceReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Reject Invoice
+ */
+
+export function useAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost<TData = Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError = HTTPValidationError>(
+ invoiceId: number,
+    invoiceReject: InvoiceReject, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostQueryOptions(invoiceId,invoiceReject,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListLegalDocsApiAdminV1LegalDocsGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/legal-docs`
+}
+
+/**
+ * 法务文档总览:doc_key × locale 状态格(当前 published + 最新 draft;均空 = 缺失)。
+ * @summary Admin List Legal Docs
+ */
+export const adminListLegalDocsApiAdminV1LegalDocsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<LegalDocCellOut[]> => {
+
+  return customFetch<LegalDocCellOut[]>(getAdminListLegalDocsApiAdminV1LegalDocsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListLegalDocsApiAdminV1LegalDocsGetQueryKey = () => {
+    return [
+    `/api/admin/v1/legal-docs`
+    ] as const;
+    }
+
+
+export const getAdminListLegalDocsApiAdminV1LegalDocsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListLegalDocsApiAdminV1LegalDocsGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>> = ({ signal }) => adminListLegalDocsApiAdminV1LegalDocsGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListLegalDocsApiAdminV1LegalDocsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>>
+export type AdminListLegalDocsApiAdminV1LegalDocsGetQueryError = unknown
+
+
+export function useAdminListLegalDocsApiAdminV1LegalDocsGet<TData = Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListLegalDocsApiAdminV1LegalDocsGet<TData = Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListLegalDocsApiAdminV1LegalDocsGet<TData = Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Legal Docs
+ */
+
+export function useAdminListLegalDocsApiAdminV1LegalDocsGet<TData = Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocsApiAdminV1LegalDocsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListLegalDocsApiAdminV1LegalDocsGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutUrl = (versionId: number,) => {
+
+
+
+
+  return `/api/admin/v1/legal-docs/versions/${versionId}`
+}
+
+/**
+ * 编辑草稿(仅 draft 可改 title/content_md/effective_note;非 draft 409)。
+ * @summary Admin Update Legal Doc Version
+ */
+export const adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut = async (versionId: number,
+    legalDocVersionUpdate: LegalDocVersionUpdate, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
+
+  return customFetch<LegalDocVersionOut>(getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(legalDocVersionUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutQueryKey = (versionId: number,
+    legalDocVersionUpdate?: LegalDocVersionUpdate,) => {
+    return [
+    'PUT', `/api/admin/v1/legal-docs/versions/${versionId}`, legalDocVersionUpdate
+    ] as const;
+    }
+
+
+export const getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError = HTTPValidationError>(versionId: number,
+    legalDocVersionUpdate: LegalDocVersionUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutQueryKey(versionId,legalDocVersionUpdate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>> = ({ signal }) => adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut(versionId,legalDocVersionUpdate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: versionId !== null && versionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutQueryResult = NonNullable<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>>
+export type AdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutQueryError = HTTPValidationError
+
+
+export function useAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut<TData = Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError = HTTPValidationError>(
+ versionId: number,
+    legalDocVersionUpdate: LegalDocVersionUpdate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut<TData = Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError = HTTPValidationError>(
+ versionId: number,
+    legalDocVersionUpdate: LegalDocVersionUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut<TData = Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError = HTTPValidationError>(
+ versionId: number,
+    legalDocVersionUpdate: LegalDocVersionUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Update Legal Doc Version
+ */
+
+export function useAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut<TData = Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError = HTTPValidationError>(
+ versionId: number,
+    legalDocVersionUpdate: LegalDocVersionUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutQueryOptions(versionId,legalDocVersionUpdate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostUrl = (versionId: number,) => {
+
+
+
+
+  return `/api/admin/v1/legal-docs/versions/${versionId}/archive`
+}
+
+/**
+ * 归档草稿(draft → archived);published 不可直接归档(409)。
+ * @summary Admin Archive Legal Doc Version
+ */
+export const adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost = async (versionId: number, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
+
+  return customFetch<LegalDocVersionOut>(getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostUrl(versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostQueryKey = (versionId: number,) => {
+    return [
+    'POST', `/api/admin/v1/legal-docs/versions/${versionId}/archive`
+    ] as const;
+    }
+
+
+export const getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostQueryOptions = <TData = Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError = HTTPValidationError>(versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostQueryKey(versionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>> = ({ signal }) => adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost(versionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: versionId !== null && versionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>>
+export type AdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostQueryError = HTTPValidationError
+
+
+export function useAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost<TData = Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError = HTTPValidationError>(
+ versionId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost<TData = Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError = HTTPValidationError>(
+ versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost<TData = Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError = HTTPValidationError>(
+ versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Archive Legal Doc Version
+ */
+
+export function useAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost<TData = Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError = HTTPValidationError>(
+ versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostQueryOptions(versionId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostUrl = (versionId: number,) => {
+
+
+
+
+  return `/api/admin/v1/legal-docs/versions/${versionId}/publish`
+}
+
+/**
+ * 发布:同事务把同 (doc_key, locale) 旧 published 转 archived;审计 detail 记版本 + sha256。
+ * @summary Admin Publish Legal Doc Version
+ */
+export const adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost = async (versionId: number, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
+
+  return customFetch<LegalDocVersionOut>(getAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostUrl(versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostQueryKey = (versionId: number,) => {
+    return [
+    'POST', `/api/admin/v1/legal-docs/versions/${versionId}/publish`
+    ] as const;
+    }
+
+
+export const getAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostQueryOptions = <TData = Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError = HTTPValidationError>(versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostQueryKey(versionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>> = ({ signal }) => adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost(versionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: versionId !== null && versionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>>
+export type AdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostQueryError = HTTPValidationError
+
+
+export function useAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost<TData = Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError = HTTPValidationError>(
+ versionId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost<TData = Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError = HTTPValidationError>(
+ versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost<TData = Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError = HTTPValidationError>(
+ versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Publish Legal Doc Version
+ */
+
+export function useAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost<TData = Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError = HTTPValidationError>(
+ versionId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPostQueryOptions(versionId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetUrl = (docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/legal-docs/${docKey}/versions?${stringifiedParams}` : `/api/admin/v1/legal-docs/${docKey}/versions`
+}
+
+/**
+ * 某 (doc_key, locale) 的版本历史(version 倒序)。
+ * @summary Admin List Legal Doc Versions
+ */
+export const adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet = async (docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut[]> => {
+
+  return customFetch<LegalDocVersionOut[]>(getAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetUrl(docKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetQueryKey = (docKey: string,
+    params?: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams,) => {
+    return [
+    `/api/admin/v1/legal-docs/${docKey}/versions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError = HTTPValidationError>(docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetQueryKey(docKey,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>> = ({ signal }) => adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet(docKey,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: docKey !== null && docKey !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>>
+export type AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetQueryError = HTTPValidationError
+
+
+export function useAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet<TData = Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError = HTTPValidationError>(
+ docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet<TData = Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError = HTTPValidationError>(
+ docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet<TData = Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError = HTTPValidationError>(
+ docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Legal Doc Versions
+ */
+
+export function useAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet<TData = Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError = HTTPValidationError>(
+ docKey: string,
+    params: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetQueryOptions(docKey,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostUrl = (docKey: string,) => {
+
+
+
+
+  return `/api/admin/v1/legal-docs/${docKey}/versions`
+}
+
+/**
+ * 基于当前 published 复制出新 draft(version=max+1);同语言无 published 以 zh-CN 为底稿。
+ * @summary Admin Create Legal Doc Version
+ */
+export const adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost = async (docKey: string,
+    legalDocVersionCreate: LegalDocVersionCreate, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
+
+  return customFetch<LegalDocVersionOut>(getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostUrl(docKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(legalDocVersionCreate)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostQueryKey = (docKey: string,
+    legalDocVersionCreate?: LegalDocVersionCreate,) => {
+    return [
+    'POST', `/api/admin/v1/legal-docs/${docKey}/versions`, legalDocVersionCreate
+    ] as const;
+    }
+
+
+export const getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError = HTTPValidationError>(docKey: string,
+    legalDocVersionCreate: LegalDocVersionCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostQueryKey(docKey,legalDocVersionCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>> = ({ signal }) => adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost(docKey,legalDocVersionCreate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: docKey !== null && docKey !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>>
+export type AdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostQueryError = HTTPValidationError
+
+
+export function useAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost<TData = Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError = HTTPValidationError>(
+ docKey: string,
+    legalDocVersionCreate: LegalDocVersionCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost<TData = Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError = HTTPValidationError>(
+ docKey: string,
+    legalDocVersionCreate: LegalDocVersionCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost<TData = Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError = HTTPValidationError>(
+ docKey: string,
+    legalDocVersionCreate: LegalDocVersionCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Create Legal Doc Version
+ */
+
+export function useAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost<TData = Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError = HTTPValidationError>(
+ docKey: string,
+    legalDocVersionCreate: LegalDocVersionCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostQueryOptions(docKey,legalDocVersionCreate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminMeApiAdminV1MeGetUrl = () => {
 
 
@@ -2808,6 +5300,107 @@ export function useAdminMeApiAdminV1MeGet<TData = Awaited<ReturnType<typeof admi
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminMeApiAdminV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/me/mfa/recovery-codes`
+}
+
+/**
+ * 重新生成恢复码(旧的全作废)。明文仅此一次返回。
+ * @summary Mfa Regenerate Recovery Codes
+ */
+export const mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<RecoveryCodesOut> => {
+
+  return customFetch<RecoveryCodesOut>(getMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostQueryKey = () => {
+    return [
+    'POST', `/api/admin/v1/me/mfa/recovery-codes`
+    ] as const;
+    }
+
+
+export const getMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostQueryOptions = <TData = Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>> = ({ signal }) => mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type MfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostQueryResult = NonNullable<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>>
+export type MfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostQueryError = unknown
+
+
+export function useMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost<TData = Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost<TData = Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>,
+          TError,
+          Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost<TData = Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Mfa Regenerate Recovery Codes
+ */
+
+export function useMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost<TData = Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getMfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPostQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -3452,6 +6045,107 @@ export function useAdminListNodesApiAdminV1NodesGet<TData = Awaited<ReturnType<t
 
 
 
+export const getAdminPortPoolStatsApiAdminV1NodesPortPoolGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/nodes/port-pool`
+}
+
+/**
+ * SSH 端口池水位:blocked=被集群对象撞占(周期复检自动放回),计数持续上涨要查孤儿端点。
+ * @summary Admin Port Pool Stats
+ */
+export const adminPortPoolStatsApiAdminV1NodesPortPoolGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PortPoolStatsOut> => {
+
+  return customFetch<PortPoolStatsOut>(getAdminPortPoolStatsApiAdminV1NodesPortPoolGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminPortPoolStatsApiAdminV1NodesPortPoolGetQueryKey = () => {
+    return [
+    `/api/admin/v1/nodes/port-pool`
+    ] as const;
+    }
+
+
+export const getAdminPortPoolStatsApiAdminV1NodesPortPoolGetQueryOptions = <TData = Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminPortPoolStatsApiAdminV1NodesPortPoolGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>> = ({ signal }) => adminPortPoolStatsApiAdminV1NodesPortPoolGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminPortPoolStatsApiAdminV1NodesPortPoolGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>>
+export type AdminPortPoolStatsApiAdminV1NodesPortPoolGetQueryError = unknown
+
+
+export function useAdminPortPoolStatsApiAdminV1NodesPortPoolGet<TData = Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPortPoolStatsApiAdminV1NodesPortPoolGet<TData = Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPortPoolStatsApiAdminV1NodesPortPoolGet<TData = Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Port Pool Stats
+ */
+
+export function useAdminPortPoolStatsApiAdminV1NodesPortPoolGet<TData = Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPortPoolStatsApiAdminV1NodesPortPoolGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminPortPoolStatsApiAdminV1NodesPortPoolGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostUrl = (nodeName: string,) => {
 
 
@@ -3583,9 +6277,9 @@ export const getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl = (nodeName
  * @summary Admin Node Metrics
  */
 export const adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet = async (nodeName: string,
-    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200> => {
+    params?: AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<NodeMetricsOut> => {
 
-  return customFetch<AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGet200>(getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl(nodeName,params),
+  return customFetch<NodeMetricsOut>(getAdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetUrl(nodeName,params),
   {
     ...options,
     method: 'GET'
@@ -3802,12 +6496,13 @@ export const getAdminListOrdersApiAdminV1OrdersGetUrl = (params?: AdminListOrder
 }
 
 /**
- * 充值订单列表。order_no 精确匹配,是 verify / backfill 两个补救端点的入参来源。
+ * 充值订单列表(游标分页,降序)。order_no 精确匹配,是 verify / backfill 两个补救端点的
+ * 入参来源;day=YYYY-MM-DD 按下单日过滤(UTC 日,与对账口径一致)。
  * @summary Admin List Orders
  */
-export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrderOut[]> => {
+export const adminListOrdersApiAdminV1OrdersGet = async (params?: AdminListOrdersApiAdminV1OrdersGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminOrderOut> => {
 
-  return customFetch<AdminOrderOut[]>(getAdminListOrdersApiAdminV1OrdersGetUrl(params),
+  return customFetch<PageAdminOrderOut>(getAdminListOrdersApiAdminV1OrdersGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -3883,6 +6578,114 @@ export function useAdminListOrdersApiAdminV1OrdersGet<TData = Awaited<ReturnType
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListOrdersApiAdminV1OrdersGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminOrdersExportApiAdminV1OrdersExportGetUrl = (params?: AdminOrdersExportApiAdminV1OrdersExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/orders/export?${stringifiedParams}` : `/api/admin/v1/orders/export`
+}
+
+/**
+ * 充值订单 CSV(P2-37,流式):筛选口径与 GET /orders 一致;行数硬上限 + 截断标记行。
+ * @summary Admin Orders Export
+ */
+export const adminOrdersExportApiAdminV1OrdersExportGet = async (params?: AdminOrdersExportApiAdminV1OrdersExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getAdminOrdersExportApiAdminV1OrdersExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminOrdersExportApiAdminV1OrdersExportGetQueryKey = (params?: AdminOrdersExportApiAdminV1OrdersExportGetParams,) => {
+    return [
+    `/api/admin/v1/orders/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminOrdersExportApiAdminV1OrdersExportGetQueryOptions = <TData = Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError = HTTPValidationError>(params?: AdminOrdersExportApiAdminV1OrdersExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminOrdersExportApiAdminV1OrdersExportGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>> = ({ signal }) => adminOrdersExportApiAdminV1OrdersExportGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminOrdersExportApiAdminV1OrdersExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>>
+export type AdminOrdersExportApiAdminV1OrdersExportGetQueryError = HTTPValidationError
+
+
+export function useAdminOrdersExportApiAdminV1OrdersExportGet<TData = Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminOrdersExportApiAdminV1OrdersExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminOrdersExportApiAdminV1OrdersExportGet<TData = Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError = HTTPValidationError>(
+ params?: AdminOrdersExportApiAdminV1OrdersExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminOrdersExportApiAdminV1OrdersExportGet<TData = Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError = HTTPValidationError>(
+ params?: AdminOrdersExportApiAdminV1OrdersExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Orders Export
+ */
+
+export function useAdminOrdersExportApiAdminV1OrdersExportGet<TData = Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError = HTTPValidationError>(
+ params?: AdminOrdersExportApiAdminV1OrdersExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminOrdersExportApiAdminV1OrdersExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminOrdersExportApiAdminV1OrdersExportGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -3984,6 +6787,117 @@ export function useAdminListDeadTasksApiAdminV1OutboxDeadGet<TData = Awaited<Ret
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListDeadTasksApiAdminV1OutboxDeadGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetUrl = (params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/outbox/tasks?${stringifiedParams}` : `/api/admin/v1/outbox/tasks`
+}
+
+/**
+ * outbox 全量查询(F10 排障):不限死信(死信专用视图仍是 /outbox/dead)。
+ *
+ * status 精确过滤;instance_id 匹配 payload.instance_id(编排类任务都带)。
+ * 固定截断 200(前端 ListCapNote 提示),按 id 倒序。
+ * @summary Admin List Outbox Tasks
+ */
+export const adminListOutboxTasksApiAdminV1OutboxTasksGet = async (params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskOut[]> => {
+
+  return customFetch<OutboxTaskOut[]>(getAdminListOutboxTasksApiAdminV1OutboxTasksGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryKey = (params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,) => {
+    return [
+    `/api/admin/v1/outbox/tasks`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>> = ({ signal }) => adminListOutboxTasksApiAdminV1OutboxTasksGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListOutboxTasksApiAdminV1OutboxTasksGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>>
+export type AdminListOutboxTasksApiAdminV1OutboxTasksGetQueryError = HTTPValidationError
+
+
+export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
+ params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
+ params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Outbox Tasks
+ */
+
+export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
+ params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -4728,6 +7642,7 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
 
 /**
  * 在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
+ * 审计 detail 记变更前后值与原因(改策略与改价同级,须答得出「从多少改成多少」)。
  * @summary Admin Update Policies
  */
 export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
@@ -4916,6 +7831,546 @@ export function useReconciliationApiAdminV1ReconciliationGet<TData = Awaited<Ret
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getReconciliationApiAdminV1ReconciliationGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getReconciliationExportApiAdminV1ReconciliationExportGetUrl = (params: ReconciliationExportApiAdminV1ReconciliationExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/reconciliation/export?${stringifiedParams}` : `/api/admin/v1/reconciliation/export`
+}
+
+/**
+ * 日对账 CSV(P2-37):与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。
+ * @summary Reconciliation Export
+ */
+export const reconciliationExportApiAdminV1ReconciliationExportGet = async (params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getReconciliationExportApiAdminV1ReconciliationExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getReconciliationExportApiAdminV1ReconciliationExportGetQueryKey = (params?: ReconciliationExportApiAdminV1ReconciliationExportGetParams,) => {
+    return [
+    `/api/admin/v1/reconciliation/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getReconciliationExportApiAdminV1ReconciliationExportGetQueryOptions = <TData = Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError = HTTPValidationError>(params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getReconciliationExportApiAdminV1ReconciliationExportGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>> = ({ signal }) => reconciliationExportApiAdminV1ReconciliationExportGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ReconciliationExportApiAdminV1ReconciliationExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>>
+export type ReconciliationExportApiAdminV1ReconciliationExportGetQueryError = HTTPValidationError
+
+
+export function useReconciliationExportApiAdminV1ReconciliationExportGet<TData = Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError = HTTPValidationError>(
+ params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useReconciliationExportApiAdminV1ReconciliationExportGet<TData = Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError = HTTPValidationError>(
+ params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useReconciliationExportApiAdminV1ReconciliationExportGet<TData = Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError = HTTPValidationError>(
+ params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Reconciliation Export
+ */
+
+export function useReconciliationExportApiAdminV1ReconciliationExportGet<TData = Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError = HTTPValidationError>(
+ params: ReconciliationExportApiAdminV1ReconciliationExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof reconciliationExportApiAdminV1ReconciliationExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getReconciliationExportApiAdminV1ReconciliationExportGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListRefundsApiAdminV1RefundsGetUrl = (params?: AdminListRefundsApiAdminV1RefundsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/refunds?${stringifiedParams}` : `/api/admin/v1/refunds`
+}
+
+/**
+ * 退款单列表(游标分页,降序)。day=YYYY-MM-DD 按申请时间过滤。
+ * @summary Admin List Refunds
+ */
+export const adminListRefundsApiAdminV1RefundsGet = async (params?: AdminListRefundsApiAdminV1RefundsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminRefundOut> => {
+
+  return customFetch<PageAdminRefundOut>(getAdminListRefundsApiAdminV1RefundsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListRefundsApiAdminV1RefundsGetQueryKey = (params?: AdminListRefundsApiAdminV1RefundsGetParams,) => {
+    return [
+    `/api/admin/v1/refunds`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListRefundsApiAdminV1RefundsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError = HTTPValidationError>(params?: AdminListRefundsApiAdminV1RefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListRefundsApiAdminV1RefundsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>> = ({ signal }) => adminListRefundsApiAdminV1RefundsGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListRefundsApiAdminV1RefundsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>>
+export type AdminListRefundsApiAdminV1RefundsGetQueryError = HTTPValidationError
+
+
+export function useAdminListRefundsApiAdminV1RefundsGet<TData = Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListRefundsApiAdminV1RefundsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListRefundsApiAdminV1RefundsGet<TData = Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError = HTTPValidationError>(
+ params?: AdminListRefundsApiAdminV1RefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListRefundsApiAdminV1RefundsGet<TData = Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError = HTTPValidationError>(
+ params?: AdminListRefundsApiAdminV1RefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Refunds
+ */
+
+export function useAdminListRefundsApiAdminV1RefundsGet<TData = Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError = HTTPValidationError>(
+ params?: AdminListRefundsApiAdminV1RefundsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListRefundsApiAdminV1RefundsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListRefundsApiAdminV1RefundsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl = (refundId: number,) => {
+
+
+
+
+  return `/api/admin/v1/refunds/${refundId}/cancel`
+}
+
+/**
+ * 取消退款单(仅 pending/approved;余额不足无法核销时的出口)。不动钱包。
+ * @summary Admin Cancel Refund
+ */
+export const adminCancelRefundApiAdminV1RefundsRefundIdCancelPost = async (refundId: number,
+    refundCancel: RefundCancel, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
+
+  return customFetch<AdminRefundOut>(getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl(refundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(refundCancel)
+  }
+);}
+
+
+
+
+
+export const getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostQueryKey = (refundId: number,
+    refundCancel?: RefundCancel,) => {
+    return [
+    'POST', `/api/admin/v1/refunds/${refundId}/cancel`, refundCancel
+    ] as const;
+    }
+
+
+export const getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostQueryOptions = <TData = Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError = HTTPValidationError>(refundId: number,
+    refundCancel: RefundCancel, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostQueryKey(refundId,refundCancel);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>> = ({ signal }) => adminCancelRefundApiAdminV1RefundsRefundIdCancelPost(refundId,refundCancel, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: refundId !== null && refundId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminCancelRefundApiAdminV1RefundsRefundIdCancelPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>>
+export type AdminCancelRefundApiAdminV1RefundsRefundIdCancelPostQueryError = HTTPValidationError
+
+
+export function useAdminCancelRefundApiAdminV1RefundsRefundIdCancelPost<TData = Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundCancel: RefundCancel, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCancelRefundApiAdminV1RefundsRefundIdCancelPost<TData = Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundCancel: RefundCancel, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminCancelRefundApiAdminV1RefundsRefundIdCancelPost<TData = Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundCancel: RefundCancel, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Cancel Refund
+ */
+
+export function useAdminCancelRefundApiAdminV1RefundsRefundIdCancelPost<TData = Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundCancel: RefundCancel, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostQueryOptions(refundId,refundCancel,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl = (refundId: number,) => {
+
+
+
+
+  return `/api/admin/v1/refunds/${refundId}/payout`
+}
+
+/**
+ * 登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
+ * @summary Admin Payout Refund
+ */
+export const adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost = async (refundId: number,
+    refundPayout: RefundPayout, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
+
+  return customFetch<AdminRefundOut>(getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl(refundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(refundPayout)
+  }
+);}
+
+
+
+
+
+export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostQueryKey = (refundId: number,
+    refundPayout?: RefundPayout,) => {
+    return [
+    'POST', `/api/admin/v1/refunds/${refundId}/payout`, refundPayout
+    ] as const;
+    }
+
+
+export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostQueryOptions = <TData = Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError = HTTPValidationError>(refundId: number,
+    refundPayout: RefundPayout, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostQueryKey(refundId,refundPayout);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>> = ({ signal }) => adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost(refundId,refundPayout, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: refundId !== null && refundId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>>
+export type AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostQueryError = HTTPValidationError
+
+
+export function useAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost<TData = Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundPayout: RefundPayout, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost<TData = Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundPayout: RefundPayout, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost<TData = Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundPayout: RefundPayout, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Payout Refund
+ */
+
+export function useAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost<TData = Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundPayout: RefundPayout, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostQueryOptions(refundId,refundPayout,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostUrl = (refundId: number,) => {
+
+
+
+
+  return `/api/admin/v1/refunds/${refundId}/review`
+}
+
+/**
+ * 审批(同意/驳回都须填意见)。通过 ≠ 出金:仅置 approved,等另一位财务登记打款。
+ * @summary Admin Review Refund
+ */
+export const adminReviewRefundApiAdminV1RefundsRefundIdReviewPost = async (refundId: number,
+    refundReview: RefundReview, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
+
+  return customFetch<AdminRefundOut>(getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostUrl(refundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(refundReview)
+  }
+);}
+
+
+
+
+
+export const getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostQueryKey = (refundId: number,
+    refundReview?: RefundReview,) => {
+    return [
+    'POST', `/api/admin/v1/refunds/${refundId}/review`, refundReview
+    ] as const;
+    }
+
+
+export const getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostQueryOptions = <TData = Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError = HTTPValidationError>(refundId: number,
+    refundReview: RefundReview, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostQueryKey(refundId,refundReview);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>> = ({ signal }) => adminReviewRefundApiAdminV1RefundsRefundIdReviewPost(refundId,refundReview, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: refundId !== null && refundId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminReviewRefundApiAdminV1RefundsRefundIdReviewPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>>
+export type AdminReviewRefundApiAdminV1RefundsRefundIdReviewPostQueryError = HTTPValidationError
+
+
+export function useAdminReviewRefundApiAdminV1RefundsRefundIdReviewPost<TData = Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundReview: RefundReview, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminReviewRefundApiAdminV1RefundsRefundIdReviewPost<TData = Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundReview: RefundReview, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminReviewRefundApiAdminV1RefundsRefundIdReviewPost<TData = Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundReview: RefundReview, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Review Refund
+ */
+
+export function useAdminReviewRefundApiAdminV1RefundsRefundIdReviewPost<TData = Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError = HTTPValidationError>(
+ refundId: number,
+    refundReview: RefundReview, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostQueryOptions(refundId,refundReview,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -5684,16 +9139,19 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 }
 
 /**
- * 租户列表。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
+ * 租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
  *
- * 订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行排在最前,
- * 手机号后缀命中行保持原序随后。列表只回掩码。按号码/id 检索是敏感读,显式落一条审计
+ * 订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行插在首页最前,
+ * 手机号后缀命中行保持原序随后。手机号只回掩码。按号码/id 检索是敏感读,显式落一条审计
  * (中间件默认只审计写操作)。
+ *
+ * 实名信息(F9):readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
+ * 本次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
  * @summary Admin List Tenants
  */
-export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<TenantOut[]> => {
+export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageTenantOut> => {
 
-  return customFetch<TenantOut[]>(getAdminListTenantsApiAdminV1TenantsGetUrl(params),
+  return customFetch<PageTenantOut>(getAdminListTenantsApiAdminV1TenantsGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -6220,6 +9678,331 @@ export function useAdminTenantLedgerApiAdminV1TenantsUserIdLedgerGet<TData = Awa
 
 
 
+export const getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetUrl = (userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/tenants/${userId}/ledger/export?${stringifiedParams}` : `/api/admin/v1/tenants/${userId}/ledger/export`
+}
+
+/**
+ * 租户资金流水 CSV(P2-37,流式):与「流水」Tab 同一数据源,行数硬上限 + 截断标记行。
+ * @summary Admin Tenant Ledger Export
+ */
+export const adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet = async (userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetQueryKey = (userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,) => {
+    return [
+    `/api/admin/v1/tenants/${userId}/ledger/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetQueryOptions = <TData = Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError = HTTPValidationError>(userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>> = ({ signal }) => adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>>
+export type AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetQueryError = HTTPValidationError
+
+
+export function useAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet<TData = Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params: undefined |  AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet<TData = Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet<TData = Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Tenant Ledger Export
+ */
+
+export function useAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet<TData = Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError = HTTPValidationError>(
+ userId: number,
+    params?: AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetUrl = (userId: number,) => {
+
+
+
+
+  return `/api/admin/v1/tenants/${userId}/quota`
+}
+
+/**
+ * 配额覆盖现状 + 生效值(抽屉「配额」Tab 数据源)。
+ * @summary Admin Get Tenant Quota
+ */
+export const adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet = async (userId: number, options?: Parameters<typeof customFetch>[1]): Promise<TenantQuotaOut> => {
+
+  return customFetch<TenantQuotaOut>(getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetQueryKey = (userId: number,) => {
+    return [
+    `/api/admin/v1/tenants/${userId}/quota`
+    ] as const;
+    }
+
+
+export const getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetQueryOptions = <TData = Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError = HTTPValidationError>(userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>> = ({ signal }) => adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>>
+export type AdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetQueryError = HTTPValidationError
+
+
+export function useAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet<TData = Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError = HTTPValidationError>(
+ userId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet<TData = Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError = HTTPValidationError>(
+ userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet<TData = Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError = HTTPValidationError>(
+ userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Get Tenant Quota
+ */
+
+export function useAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet<TData = Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError = HTTPValidationError>(
+ userId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminGetTenantQuotaApiAdminV1TenantsUserIdQuotaGetQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutUrl = (userId: number,) => {
+
+
+
+
+  return `/api/admin/v1/tenants/${userId}/quota`
+}
+
+/**
+ * 写配额覆盖(三个数字可留空 = 该维走默认链;全空 = 清除覆盖)。note 必填,审计落前后值。
+ * @summary Admin Set Tenant Quota
+ */
+export const adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut = async (userId: number,
+    tenantQuotaUpdate: TenantQuotaUpdate, options?: Parameters<typeof customFetch>[1]): Promise<TenantQuotaOut> => {
+
+  return customFetch<TenantQuotaOut>(getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tenantQuotaUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutQueryKey = (userId: number,
+    tenantQuotaUpdate?: TenantQuotaUpdate,) => {
+    return [
+    'PUT', `/api/admin/v1/tenants/${userId}/quota`, tenantQuotaUpdate
+    ] as const;
+    }
+
+
+export const getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutQueryOptions = <TData = Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError = HTTPValidationError>(userId: number,
+    tenantQuotaUpdate: TenantQuotaUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutQueryKey(userId,tenantQuotaUpdate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>> = ({ signal }) => adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut(userId,tenantQuotaUpdate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutQueryResult = NonNullable<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>>
+export type AdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutQueryError = HTTPValidationError
+
+
+export function useAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut<TData = Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError = HTTPValidationError>(
+ userId: number,
+    tenantQuotaUpdate: TenantQuotaUpdate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut<TData = Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError = HTTPValidationError>(
+ userId: number,
+    tenantQuotaUpdate: TenantQuotaUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>,
+          TError,
+          Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut<TData = Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError = HTTPValidationError>(
+ userId: number,
+    tenantQuotaUpdate: TenantQuotaUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Set Tenant Quota
+ */
+
+export function useAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut<TData = Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError = HTTPValidationError>(
+ userId: number,
+    tenantQuotaUpdate: TenantQuotaUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutQueryOptions(userId,tenantQuotaUpdate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 export const getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl = (userId: number,) => {
 
 
@@ -6316,6 +10099,431 @@ export function useAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost<TData 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostQueryOptions(userId,tenantFreezeRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListTicketsApiAdminV1TicketsGetUrl = (params?: AdminListTicketsApiAdminV1TicketsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/tickets?${stringifiedParams}` : `/api/admin/v1/tickets`
+}
+
+/**
+ * 工单列表(固定截断 200)。status/category 精确过滤。
+ * @summary Admin List Tickets
+ */
+export const adminListTicketsApiAdminV1TicketsGet = async (params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketOut[]> => {
+
+  return customFetch<AdminTicketOut[]>(getAdminListTicketsApiAdminV1TicketsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListTicketsApiAdminV1TicketsGetQueryKey = (params?: AdminListTicketsApiAdminV1TicketsGetParams,) => {
+    return [
+    `/api/admin/v1/tickets`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListTicketsApiAdminV1TicketsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError = HTTPValidationError>(params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListTicketsApiAdminV1TicketsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>> = ({ signal }) => adminListTicketsApiAdminV1TicketsGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListTicketsApiAdminV1TicketsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>>
+export type AdminListTicketsApiAdminV1TicketsGetQueryError = HTTPValidationError
+
+
+export function useAdminListTicketsApiAdminV1TicketsGet<TData = Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListTicketsApiAdminV1TicketsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListTicketsApiAdminV1TicketsGet<TData = Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError = HTTPValidationError>(
+ params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListTicketsApiAdminV1TicketsGet<TData = Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError = HTTPValidationError>(
+ params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Tickets
+ */
+
+export function useAdminListTicketsApiAdminV1TicketsGet<TData = Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError = HTTPValidationError>(
+ params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListTicketsApiAdminV1TicketsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListTicketsApiAdminV1TicketsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminGetTicketApiAdminV1TicketsTicketIdGetUrl = (ticketId: number,) => {
+
+
+
+
+  return `/api/admin/v1/tickets/${ticketId}`
+}
+
+/**
+ * 工单详情 + 消息流(时间升序)。
+ * @summary Admin Get Ticket
+ */
+export const adminGetTicketApiAdminV1TicketsTicketIdGet = async (ticketId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketDetailOut> => {
+
+  return customFetch<AdminTicketDetailOut>(getAdminGetTicketApiAdminV1TicketsTicketIdGetUrl(ticketId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetTicketApiAdminV1TicketsTicketIdGetQueryKey = (ticketId: number,) => {
+    return [
+    `/api/admin/v1/tickets/${ticketId}`
+    ] as const;
+    }
+
+
+export const getAdminGetTicketApiAdminV1TicketsTicketIdGetQueryOptions = <TData = Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError = HTTPValidationError>(ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetTicketApiAdminV1TicketsTicketIdGetQueryKey(ticketId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>> = ({ signal }) => adminGetTicketApiAdminV1TicketsTicketIdGet(ticketId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: ticketId !== null && ticketId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminGetTicketApiAdminV1TicketsTicketIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>>
+export type AdminGetTicketApiAdminV1TicketsTicketIdGetQueryError = HTTPValidationError
+
+
+export function useAdminGetTicketApiAdminV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
+ ticketId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetTicketApiAdminV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
+ ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminGetTicketApiAdminV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
+ ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Get Ticket
+ */
+
+export function useAdminGetTicketApiAdminV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
+ ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketApiAdminV1TicketsTicketIdGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminGetTicketApiAdminV1TicketsTicketIdGetQueryOptions(ticketId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostUrl = (ticketId: number,) => {
+
+
+
+
+  return `/api/admin/v1/tickets/${ticketId}/reply`
+}
+
+/**
+ * 客服回复(→ pending_user),站内信告知用户;resolved/closed 不可再回复。
+ * @summary Admin Reply Ticket
+ */
+export const adminReplyTicketApiAdminV1TicketsTicketIdReplyPost = async (ticketId: number,
+    adminTicketReply: AdminTicketReply, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketDetailOut> => {
+
+  return customFetch<AdminTicketDetailOut>(getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostUrl(ticketId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminTicketReply)
+  }
+);}
+
+
+
+
+
+export const getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostQueryKey = (ticketId: number,
+    adminTicketReply?: AdminTicketReply,) => {
+    return [
+    'POST', `/api/admin/v1/tickets/${ticketId}/reply`, adminTicketReply
+    ] as const;
+    }
+
+
+export const getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostQueryOptions = <TData = Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError = HTTPValidationError>(ticketId: number,
+    adminTicketReply: AdminTicketReply, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostQueryKey(ticketId,adminTicketReply);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>> = ({ signal }) => adminReplyTicketApiAdminV1TicketsTicketIdReplyPost(ticketId,adminTicketReply, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: ticketId !== null && ticketId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminReplyTicketApiAdminV1TicketsTicketIdReplyPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>>
+export type AdminReplyTicketApiAdminV1TicketsTicketIdReplyPostQueryError = HTTPValidationError
+
+
+export function useAdminReplyTicketApiAdminV1TicketsTicketIdReplyPost<TData = Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketReply: AdminTicketReply, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminReplyTicketApiAdminV1TicketsTicketIdReplyPost<TData = Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketReply: AdminTicketReply, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminReplyTicketApiAdminV1TicketsTicketIdReplyPost<TData = Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketReply: AdminTicketReply, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Reply Ticket
+ */
+
+export function useAdminReplyTicketApiAdminV1TicketsTicketIdReplyPost<TData = Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketReply: AdminTicketReply, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplyTicketApiAdminV1TicketsTicketIdReplyPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostQueryOptions(ticketId,adminTicketReply,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostUrl = (ticketId: number,) => {
+
+
+
+
+  return `/api/admin/v1/tickets/${ticketId}/status`
+}
+
+/**
+ * 标记解决/关闭(close 仅 resolved 后可;closed_at 仅 closed 落)。
+ * @summary Admin Update Ticket Status
+ */
+export const adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost = async (ticketId: number,
+    adminTicketStatusUpdate: AdminTicketStatusUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketOut> => {
+
+  return customFetch<AdminTicketOut>(getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostUrl(ticketId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminTicketStatusUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostQueryKey = (ticketId: number,
+    adminTicketStatusUpdate?: AdminTicketStatusUpdate,) => {
+    return [
+    'POST', `/api/admin/v1/tickets/${ticketId}/status`, adminTicketStatusUpdate
+    ] as const;
+    }
+
+
+export const getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostQueryOptions = <TData = Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError = HTTPValidationError>(ticketId: number,
+    adminTicketStatusUpdate: AdminTicketStatusUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostQueryKey(ticketId,adminTicketStatusUpdate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>> = ({ signal }) => adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(ticketId,adminTicketStatusUpdate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: ticketId !== null && ticketId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>>
+export type AdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostQueryError = HTTPValidationError
+
+
+export function useAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost<TData = Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketStatusUpdate: AdminTicketStatusUpdate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost<TData = Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketStatusUpdate: AdminTicketStatusUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost<TData = Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketStatusUpdate: AdminTicketStatusUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Update Ticket Status
+ */
+
+export function useAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost<TData = Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError = HTTPValidationError>(
+ ticketId: number,
+    adminTicketStatusUpdate: AdminTicketStatusUpdate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostQueryOptions(ticketId,adminTicketStatusUpdate,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

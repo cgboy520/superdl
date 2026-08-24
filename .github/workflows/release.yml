@@ -13,7 +13,16 @@ permissions:
   contents: read
 
 jobs:
+  # 发布闸门(P1-30/31):tag 构建前重跑 CI 的 api/frontend/security 等全部闸门 job,
+  # 任一红则整个 release 中止。跨 workflow 不能直接 needs 对方 job,故经 workflow_call
+  # 复用 ci.yml(其 on: 已加 workflow_call);发布闸门与 PR 闸门同源,不维护第二份定义。
+  ci-gates:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build-scan:
+    needs: ci-gates
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,6 +33,8 @@ jobs:
           - name: api
             context: apps/api
             dockerfile: apps/api/Dockerfile
+            # prod 发布产物剔除 mock 支付回调模块(配置之外的双保险)
+            build_args: EXCLUDE_MOCK=1
           - name: web
             context: .
             dockerfile: deploy/app/frontend.Dockerfile

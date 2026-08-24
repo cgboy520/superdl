@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  DeletionRequestCreate,
+  DeletionRequestOut,
   HTTPValidationError,
   LoginRequest,
   PasswordResetRequest,
@@ -848,6 +850,309 @@ export function useMeApiV1MeGet<TData = Awaited<ReturnType<typeof meApiV1MeGet>>
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getMeApiV1MeGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getGetDeletionRequestApiV1MeDeletionRequestGetUrl = () => {
+
+
+
+
+  return `/api/v1/me/deletion-request`
+}
+
+/**
+ * 当前 pending 申请;无则最近一条(展示驳回原因/冷静期倒计时);从未申请回 null。
+ * @summary Get Deletion Request
+ */
+export const getDeletionRequestApiV1MeDeletionRequestGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut | null> => {
+
+  return customFetch<DeletionRequestOut | null>(getGetDeletionRequestApiV1MeDeletionRequestGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDeletionRequestApiV1MeDeletionRequestGetQueryKey = () => {
+    return [
+    `/api/v1/me/deletion-request`
+    ] as const;
+    }
+
+
+export const getGetDeletionRequestApiV1MeDeletionRequestGetQueryOptions = <TData = Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDeletionRequestApiV1MeDeletionRequestGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>> = ({ signal }) => getDeletionRequestApiV1MeDeletionRequestGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetDeletionRequestApiV1MeDeletionRequestGetQueryResult = NonNullable<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>>
+export type GetDeletionRequestApiV1MeDeletionRequestGetQueryError = unknown
+
+
+export function useGetDeletionRequestApiV1MeDeletionRequestGet<TData = Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>,
+          TError,
+          Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeletionRequestApiV1MeDeletionRequestGet<TData = Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>,
+          TError,
+          Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetDeletionRequestApiV1MeDeletionRequestGet<TData = Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get Deletion Request
+ */
+
+export function useGetDeletionRequestApiV1MeDeletionRequestGet<TData = Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDeletionRequestApiV1MeDeletionRequestGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetDeletionRequestApiV1MeDeletionRequestGetQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCreateDeletionRequestApiV1MeDeletionRequestPostUrl = () => {
+
+
+
+
+  return `/api/v1/me/deletion-request`
+}
+
+/**
+ * 申请注销(7 天冷静期)。须键入与账号一致的完整手机号;已有 pending 返回既有(幂等)。
+ * @summary Create Deletion Request
+ */
+export const createDeletionRequestApiV1MeDeletionRequestPost = async (deletionRequestCreate: DeletionRequestCreate, options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut> => {
+
+  return customFetch<DeletionRequestOut>(getCreateDeletionRequestApiV1MeDeletionRequestPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(deletionRequestCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateDeletionRequestApiV1MeDeletionRequestPostQueryKey = (deletionRequestCreate?: DeletionRequestCreate,) => {
+    return [
+    'POST', `/api/v1/me/deletion-request`, deletionRequestCreate
+    ] as const;
+    }
+
+
+export const getCreateDeletionRequestApiV1MeDeletionRequestPostQueryOptions = <TData = Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError = HTTPValidationError>(deletionRequestCreate: DeletionRequestCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCreateDeletionRequestApiV1MeDeletionRequestPostQueryKey(deletionRequestCreate);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>> = ({ signal }) => createDeletionRequestApiV1MeDeletionRequestPost(deletionRequestCreate, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CreateDeletionRequestApiV1MeDeletionRequestPostQueryResult = NonNullable<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>>
+export type CreateDeletionRequestApiV1MeDeletionRequestPostQueryError = HTTPValidationError
+
+
+export function useCreateDeletionRequestApiV1MeDeletionRequestPost<TData = Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError = HTTPValidationError>(
+ deletionRequestCreate: DeletionRequestCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>,
+          TError,
+          Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCreateDeletionRequestApiV1MeDeletionRequestPost<TData = Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError = HTTPValidationError>(
+ deletionRequestCreate: DeletionRequestCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>,
+          TError,
+          Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCreateDeletionRequestApiV1MeDeletionRequestPost<TData = Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError = HTTPValidationError>(
+ deletionRequestCreate: DeletionRequestCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Create Deletion Request
+ */
+
+export function useCreateDeletionRequestApiV1MeDeletionRequestPost<TData = Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError = HTTPValidationError>(
+ deletionRequestCreate: DeletionRequestCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDeletionRequestApiV1MeDeletionRequestPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getCreateDeletionRequestApiV1MeDeletionRequestPostQueryOptions(deletionRequestCreate,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getCancelDeletionRequestApiV1MeDeletionRequestCancelPostUrl = () => {
+
+
+
+
+  return `/api/v1/me/deletion-request/cancel`
+}
+
+/**
+ * 冷静期内撤销注销申请(仅 pending 可撤)。
+ * @summary Cancel Deletion Request
+ */
+export const cancelDeletionRequestApiV1MeDeletionRequestCancelPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut> => {
+
+  return customFetch<DeletionRequestOut>(getCancelDeletionRequestApiV1MeDeletionRequestCancelPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelDeletionRequestApiV1MeDeletionRequestCancelPostQueryKey = () => {
+    return [
+    'POST', `/api/v1/me/deletion-request/cancel`
+    ] as const;
+    }
+
+
+export const getCancelDeletionRequestApiV1MeDeletionRequestCancelPostQueryOptions = <TData = Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCancelDeletionRequestApiV1MeDeletionRequestCancelPostQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>> = ({ signal }) => cancelDeletionRequestApiV1MeDeletionRequestCancelPost({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type CancelDeletionRequestApiV1MeDeletionRequestCancelPostQueryResult = NonNullable<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>>
+export type CancelDeletionRequestApiV1MeDeletionRequestCancelPostQueryError = unknown
+
+
+export function useCancelDeletionRequestApiV1MeDeletionRequestCancelPost<TData = Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>,
+          TError,
+          Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCancelDeletionRequestApiV1MeDeletionRequestCancelPost<TData = Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>,
+          TError,
+          Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useCancelDeletionRequestApiV1MeDeletionRequestCancelPost<TData = Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Cancel Deletion Request
+ */
+
+export function useCancelDeletionRequestApiV1MeDeletionRequestCancelPost<TData = Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof cancelDeletionRequestApiV1MeDeletionRequestCancelPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getCancelDeletionRequestApiV1MeDeletionRequestCancelPostQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

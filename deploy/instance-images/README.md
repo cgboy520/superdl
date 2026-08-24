@@ -20,10 +20,24 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 
 ## 构建与推送
 
+各镜像目录结构完全一致(都是「基座 + 同一 entrypoint/sshd 授权模式」),挑对应目录构建:
+
 ```bash
+# pytorch:quay.io/jupyter/pytorch-notebook(cuda12)
 cd deploy/instance-images/pytorch
 docker build -t <registry>/pytorch:2.9.0-cu128 .
 docker push <registry>/pytorch:2.9.0-cu128
+
+# tensorflow:quay.io/jupyter/tensorflow-notebook(cuda)
+cd ../tensorflow
+docker build -t <registry>/tensorflow:2.21.0-cuda .
+docker push <registry>/tensorflow:2.21.0-cuda
+
+# miniconda:continuumio/miniconda3 + JupyterLab(不预装 DL 框架,用户自建环境)
+cd ../miniconda
+docker build -t <registry>/miniconda:26.5.3 .
+docker push <registry>/miniconda:26.5.3
+
 # 之后在 管理端 · 镜像与预热 中登记该 image_ref,并按需开启预热
 ```
 

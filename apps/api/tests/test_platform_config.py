@@ -51,6 +51,13 @@ class TestSpecValidation:
             == "京ICP备2026012345号-1"
         )
         assert validate_setting_value("sms_template_verify", "SMS_123456789") == "SMS_123456789"
+        # 亮照链接仅接受 http(s)绝对 URL;留空走「清除覆盖」分支不经此校验
+        with pytest.raises(ValueError):
+            validate_setting_value("business_license_url", "javascript:alert(1)")
+        assert (
+            validate_setting_value("business_license_url", "https://example.com/l.png")
+            == "https://example.com/l.png"
+        )
 
 
 class TestAdminApi:
@@ -118,6 +125,43 @@ class TestAdminApi:
         )
         site = (await client.get("/api/v1/site-config")).json()
         assert site["icp_number"] is None
+
+    async def test_company_info_flows_to_site_config(self, client: AsyncClient, sm):
+        """经营主体四项(P1-17,《电子商务法》第十五条):管理端写入 → 公开 site-config 透出。"""
+        ah = await admin_headers(sm, client, role="admin")
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={
+                "updates": {
+                    "company_name": "示例云算力(北京)有限公司",
+                    "company_address": "北京市海淀区示例路 1 号",
+                    "company_phone": "010-12345678",
+                    "business_license_url": "https://example.com/license.png",
+                },
+                "reason": "上线公示",
+            },
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        data = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()
+        items = {i["key"]: i for i in data["items"]}
+        assert items["company_name"]["group"] == "compliance"
+        assert items["company_name"]["value"] == "示例云算力(北京)有限公司"
+
+        site = (await client.get("/api/v1/site-config")).json()
+        assert site["company_name"] == "示例云算力(北京)有限公司"
+        assert site["company_address"] == "北京市海淀区示例路 1 号"
+        assert site["company_phone"] == "010-12345678"
+        assert site["business_license_url"] == "https://example.com/license.png"
+
+        # 留空清除覆盖 → site-config 回 None(页脚不展示该行)
+        await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"business_license_url": ""}, "reason": "撤下亮照"},
+            headers=ah,
+        )
+        site = (await client.get("/api/v1/site-config")).json()
+        assert site["business_license_url"] is None
 
     async def test_unknown_key_rejected_via_api(self, client: AsyncClient, sm):
         """白名单是防线:管理端拿不到写任意配置(如 JWT 密钥)的口子。"""

@@ -3,12 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from app.core.audit import AuditMiddleware
 from app.core.config import get_settings, unknown_superdl_env_keys
 from app.core.db import dispose_engine
-from app.core.errors import init_sentry, install_error_handlers
+from app.core.edge_guard import EdgeGuardMiddleware
+from app.core.errors import Uniform500Middleware, install_error_handlers
 from app.core.logging import get_logger, setup_logging
 from app.core.observability import ObservabilityMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
@@ -18,7 +20,6 @@ from app.wiring import wire_modules
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
-    init_sentry()
     settings = get_settings()
     log = get_logger("app.lifespan")
     # 幽灵 SUPERDL_* 变量(拼写错误/改名残留)会被静默忽略:启动即告警,不 fail
@@ -94,6 +95,9 @@ def create_app() -> FastAPI:
         openapi_url=None if is_prod else "/openapi.json",
     )
     install_error_handlers(app)
+    # 最先注册 = 最内层:未捕获异常在此渲染 500 并沿链回传,
+    # 安全头(SecurityHeaders)与 x-request-id(Observability)才能挂上错误响应
+    app.add_middleware(Uniform500Middleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(ObservabilityMiddleware)
     app.add_middleware(AuditMiddleware)
@@ -106,6 +110,8 @@ def create_app() -> FastAPI:
         # CORS 默认不暴露自定义响应头;前端 fetch 需读到该头做全链路追踪
         expose_headers=["X-Request-ID"],
     )
+    # 最外层:边缘收口(prod 下 /api/admin 与 /metrics 不从公网 api 域暴露)
+    app.add_middleware(EdgeGuardMiddleware)
 
     @app.get("/healthz", tags=["infra"], include_in_schema=False)
     async def healthz() -> dict[str, str]:
@@ -113,19 +119,31 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/readyz", tags=["infra"], include_in_schema=False)
-    async def readyz() -> dict[str, str]:
-        """readiness:探 DB,失败摘流量。"""
-        from fastapi.responses import JSONResponse
+    async def readyz() -> JSONResponse:
+        """readiness:探 DB + 比对 schema 版本(迁移漏跑的新代码不就绪,防带病放量;
+        滚动窗口内「老代码+新 schema」按 expand-only 约定放行)。"""
         from sqlalchemy import text
 
-        from app.core.db import get_sessionmaker
+        from app.core.db import get_sessionmaker, schema_state
 
         try:
             async with get_sessionmaker()() as session:
-                await session.execute(text("SELECT 1"))
+                rows = (
+                    (await session.execute(text("SELECT version_num FROM alembic_version")))
+                    .scalars()
+                    .all()
+                )
+            state = schema_state(list(rows))
         except Exception:
-            return JSONResponse(status_code=503, content={"status": "db_unavailable"})  # type: ignore[return-value]
-        return {"status": "ready"}
+            state = "db_unavailable"
+        # 探针每 5s 一次:只在状态翻转时留日志,避免滚动窗口刷量
+        prev = getattr(app.state, "readyz_state", "ready")
+        if state != prev:
+            get_logger("app.readyz").warning("readyz_state_change", previous=prev, current=state)
+        app.state.readyz_state = state
+        if state != "ready":
+            return JSONResponse(status_code=503, content={"status": state})
+        return JSONResponse(content={"status": "ready"})
 
     # /metrics:配置了 SUPERDL_METRICS_TOKEN 即要求 Bearer(prod 校验强制配置)
     metrics_app = make_asgi_app()
@@ -163,11 +181,13 @@ def _register_module_routers(app: FastAPI) -> None:
     from app.modules.billing.router import router as billing_router
     from app.modules.billing.webhooks_router import router as webhooks_router
     from app.modules.catalog.router import router as catalog_router
+    from app.modules.legal.router import router as legal_router
     from app.modules.metering.router import router as metering_router
     from app.modules.nodes.enroll_router import router as node_enroll_router
     from app.modules.notify.router import router as notify_router
     from app.modules.orchestrator.disks_router import router as disks_router
     from app.modules.orchestrator.router import router as orchestrator_router
+    from app.modules.tickets.router import router as tickets_router
 
     app.include_router(account_router, prefix="/api/v1")
     app.include_router(catalog_router, prefix="/api/v1")
@@ -178,6 +198,8 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(node_enroll_router, prefix="/api/v1")
     app.include_router(metering_router, prefix="/api/v1")
     app.include_router(notify_router, prefix="/api/v1")
+    app.include_router(tickets_router, prefix="/api/v1")
+    app.include_router(legal_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
 
 

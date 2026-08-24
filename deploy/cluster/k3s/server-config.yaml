@@ -10,5 +10,11 @@ secrets-encryption: true     # etcd/sqlite 静态加密;快照仍需异地加密
 #agent-token: "CHANGE_ME_AGENT_TOKEN"
 embedded-registry: true      # Spegel P2P 镜像共享;配套 registries.yaml 由平台生成下发
                              # (管理端·平台配置·集群接入,node-join.sh 自动落位)
+# API 审计(对齐 rke2/server-config.yaml):策略文件复用 rke2/audit-policy.yaml,装机时
+# 一并拷到 /etc/rancher/k3s/(见 deploy/cluster/README.md 路径 B;缺失则 apiserver 起不来)。
+kube-apiserver-arg:
+  - audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
+  - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
+  - audit-log-maxage=30
 # 单机时 server 兼跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);
 # 多机 light 集群给 server 补 taint,GPU 节点经管理端一键加入。

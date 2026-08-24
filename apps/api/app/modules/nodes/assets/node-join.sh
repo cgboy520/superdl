@@ -18,6 +18,9 @@
 # - phase 取值与后端契约一致:bootstrap precheck nouveau sysctl iommu driver
 #   nvidia_toolkit nvme_vg reboot registries agent_config agent_install agent_start waiting_node
 set -eEuo pipefail
+# 生成文件一律先窄后宽:umask 077 保证令牌/配置落盘即 0600(不存在先 0644 再 chmod 的窗口),
+# 仅日志显式放宽 0644 供运维日常 tail
+umask 077
 
 API_BASE="__API_BASE__" # 服务端下发时替换;可用 --api-base 覆盖(测试用)
 # 路径可经 env 覆盖仅为 bats 测试隔离;生产一律默认值
@@ -29,6 +32,7 @@ RESUME_UNIT="superdl-node-join-resume"
 TOKEN=""
 TOKEN_FILE=""
 FORCE=0
+UNINSTALL=0
 CURRENT_PHASE="init"
 NEED_REBOOT=0
 
@@ -46,16 +50,66 @@ while [[ $# -gt 0 ]]; do
     --token-file) TOKEN_FILE="$2"; shift 2 ;;
     --api-base) API_BASE="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
+    --uninstall) UNINSTALL=1; shift ;;
     *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
 done
+[[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
+
+# ---------- 卸载(本地拆除,不碰业务数据) ----------
+# 逆向拆除本脚本安装的一切;superdl-nvme VG 与 loop 镜像属业务数据,一律保留
+# (节点清退后盘数据由平台另行处置,本地脚本绝不自动 vgremove)
+if [[ "$UNINSTALL" == "1" ]]; then
+  echo "==== $(date -Is) node-join --uninstall ===="
+  DISTRO_NAME=""
+  for d in rke2 k3s; do
+    if [[ -d "$ETC_DIR/rancher/$d" ]] || command -v "$d" >/dev/null 2>&1; then DISTRO_NAME="$d"; fi
+  done
+  AGENT="${DISTRO_NAME:+${DISTRO_NAME}-agent.service}"
+  if [[ -n "$AGENT" ]]; then
+    systemctl disable --now "$AGENT" 2>/dev/null || true
+  fi
+  # 发行版自带卸载脚本(k3s-agent-uninstall.sh / rke2-uninstall.sh)存在即执行
+  if [[ -n "$DISTRO_NAME" ]]; then
+    for us in "/usr/local/bin/${DISTRO_NAME}-agent-uninstall.sh" "/usr/local/bin/${DISTRO_NAME}-uninstall.sh"; do
+      [[ -x "$us" ]] && { echo "-- 执行 $us"; "$us"; }
+    done
+  fi
+  # 续跑 oneshot 与 loop 重建 unit
+  systemctl disable "${RESUME_UNIT}.service" 2>/dev/null || true
+  rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
+  systemctl disable superdl-nvme-loop.service 2>/dev/null || true
+  rm -f "$ETC_DIR/systemd/system/superdl-nvme-loop.service"
+  systemctl daemon-reload || true
+  # 本脚本写入的 sysctl / GRUB IOMMU / nouveau 黑名单 / 集群配置
+  rm -f "$ETC_DIR/sysctl.d/99-superdl.conf"
+  sysctl --system >/dev/null || true
+  if [[ -f "$ETC_DIR/default/grub.d/99-superdl.cfg" ]]; then
+    rm -f "$ETC_DIR/default/grub.d/99-superdl.cfg"
+    update-grub
+  fi
+  if [[ -f "$ETC_DIR/modprobe.d/blacklist-nouveau.conf" ]]; then
+    rm -f "$ETC_DIR/modprobe.d/blacklist-nouveau.conf"
+    update-initramfs -u
+  fi
+  if [[ -n "$DISTRO_NAME" ]]; then
+    rm -f "$ETC_DIR/rancher/$DISTRO_NAME/config.yaml" "$ETC_DIR/rancher/$DISTRO_NAME/registries.yaml"
+  fi
+  rm -rf "$STATE_DIR"
+  echo "==== 卸载完成:agent 已移除,平台侧请记得在集群中删除该节点(kubectl delete node) ===="
+  echo "-- 注意:superdl-nvme VG 与 loop 镜像属业务数据,未动;NVIDIA 驱动/container-toolkit 未动"
+  exit 0
+fi
+
 [[ -n "$TOKEN_FILE" ]] || { echo "缺少 --token-file(在管理端「添加节点」生成命令,token 不落命令行)" >&2; exit 2; }
 [[ -f "$TOKEN_FILE" ]] || { echo "token 文件不存在: $TOKEN_FILE" >&2; exit 2; }
 [[ "$API_BASE" != "__API_BASE__" ]] || { echo "脚本须经 API 下发(占位符未替换),或用 --api-base 指定" >&2; exit 2; }
-[[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
 
 mkdir -p "$STATE_DIR/done.d"
 chmod 700 "$STATE_DIR"
+# 日志显式 0644(运维日常 tail 无需 root;不含令牌,令牌只落 0600 的 STATE_DIR 文件)
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "==== $(date -Is) node-join 启动 (api=$API_BASE) ===="
 

@@ -8,6 +8,7 @@ import {
   CloudServerOutlined,
   DashboardOutlined,
   HddOutlined,
+  QuestionCircleOutlined,
   SettingOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
@@ -30,6 +31,7 @@ const NAV = [
   { key: "/instances", icon: <CloudServerOutlined />, labelKey: "instances.title" },
   { key: "/storage", icon: <HddOutlined />, labelKey: "storage.title" },
   { key: "/billing", icon: <WalletOutlined />, labelKey: "billing.title" },
+  { key: "/support", icon: <QuestionCircleOutlined />, labelKey: "support.title" },
   { key: "/settings", icon: <SettingOutlined />, labelKey: "settings.title" },
 ] as const;
 

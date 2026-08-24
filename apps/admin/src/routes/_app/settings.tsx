@@ -5,7 +5,7 @@
  * - 管理员账号:建号/改角色/停用/重置密码 + 自助改密
  */
 
-import { adminColors, formatDateTime } from "@superdl/ui";
+import { adminColors, announcementStatusMap, formatDateTime, metaOf } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -28,12 +28,20 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  type AnnouncementRow,
   useAdminPolicies,
+  useAnnouncements,
   usePublishAnnouncement,
+  useRevokeAnnouncement,
   useUpdatePolicies,
 } from "../../api";
 import { AdminsTab } from "./-AdminsTab";
+import { LegalDocsTab } from "./-LegalDocsTab";
+import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
+import { ReasonAction } from "../../components/ReasonAction";
+import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
+import { useFormDraft } from "../../lib/formDraft";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -183,38 +191,49 @@ function PoliciesTab() {
 }
 
 function AnnouncementTab() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
+  const qc = useQueryClient();
   const [form] = Form.useForm<{ title: string; content: string }>();
-  const [lastPublished, setLastPublished] = useState<{ title: string; at: string; reached: number } | null>(null);
+  // 公告草稿(sessionStorage):刷新/误关不丢;发布成功清除
+  const draft = useFormDraft<{ title: string; content: string }>("announcement-new");
+  const { data, queryKey, isLoading } = useAnnouncements();
+  const revoke = useRevokeAnnouncement();
+  const rows: AnnouncementRow[] = data ?? [];
+  // 「上次发布」读接口而非本地缓存:最新一条仍处 published 的公告
+  const lastPublished = rows.find((r) => r.status === "published");
+  const refresh = () => void qc.invalidateQueries({ queryKey });
 
   const publish = usePublishAnnouncement({
     mutation: {
       onSuccess: (d) => {
-        const reached = (d as { reached: number }).reached;
-        message.success(t("settings.announcementPublished", { count: reached }));
-        setLastPublished({
-          title: form.getFieldValue("title") as string,
-          at: new Date().toISOString(),
-          reached,
-        });
+        message.success(t("settings.announcementPublished", { count: d.reached }));
         form.resetFields();
+        draft.clear();
+        refresh();
       },
       onError: (e) => message.error(errText(e, t("settings.publishFailed"))),
     },
   });
 
   return (
-    <Space orientation="vertical" size={12} style={{ width: "100%", maxWidth: 640 }}>
+    <Space orientation="vertical" size={12} style={{ width: "100%", maxWidth: 860 }}>
       <Alert
         type="info"
         showIcon
         title={t("settings.announceScope")}
       />
-      <Form form={form} layout="vertical" disabled={!writable}>
+      <Form
+        form={form}
+        layout="vertical"
+        disabled={!writable}
+        style={{ maxWidth: 640 }}
+        initialValues={draft.load()}
+        onValuesChange={() => draft.save(form.getFieldsValue(true))}
+      >
         <Form.Item
           name="title"
           label={t("settings.announceTitleLabel")}
@@ -248,9 +267,82 @@ function AnnouncementTab() {
         <Alert
           type="success"
           showIcon
-          title={t("settings.lastPublished", { title: lastPublished.title, time: formatDateTime(lastPublished.at), count: lastPublished.reached })}
+          title={t("settings.lastPublished", { title: lastPublished.title, time: formatDateTime(lastPublished.created_at), count: lastPublished.reached })}
         />
       )}
+      <Table<AnnouncementRow>
+        rowKey="id"
+        size="small"
+        loading={isLoading}
+        pagination={false}
+        scroll={{ x: 720 }}
+        dataSource={rows}
+        columns={[
+          {
+            title: t("settings.colAnnTitle"),
+            dataIndex: "title",
+            render: (v: string, r) => (
+              <Tooltip title={r.content}>
+                <span>{v}</span>
+              </Tooltip>
+            ),
+          },
+          {
+            title: t("settings.colAnnPublishedAt"),
+            dataIndex: "created_at",
+            width: 170,
+            render: formatDateTime,
+          },
+          {
+            title: t("settings.colAnnStatus"),
+            dataIndex: "status",
+            width: 110,
+            render: (v: string, r) => {
+              const meta = metaOf(announcementStatusMap, v);
+              return (
+                <Tooltip
+                  title={
+                    r.status === "revoked" && r.revoked_at
+                      ? t("settings.revokedMeta", {
+                          time: formatDateTime(r.revoked_at),
+                          reason: r.revoke_reason ?? "-",
+                        })
+                      : undefined
+                  }
+                >
+                  <span>
+                    <StatusTag color={meta?.color}>{meta ? t(meta.labelKey) : v}</StatusTag>
+                  </span>
+                </Tooltip>
+              );
+            },
+          },
+          {
+            title: t("settings.colAnnActions"),
+            width: 100,
+            render: (_, r) =>
+              r.status === "published" ? (
+                <ReasonAction
+                  label={t("settings.revoke")}
+                  title={t("settings.revokeTitle")}
+                  confirmText={t("settings.revokeConfirm", { title: r.title })}
+                  danger
+                  disabled={!writable}
+                  disabledReason={t("settings.opsOnlyAnnounce")}
+                  onSubmit={async (reason) => {
+                    await revoke.mutateAsync({
+                      announcementId: r.id,
+                      data: { reason },
+                    });
+                    refresh();
+                    return t("settings.revokeDone");
+                  }}
+                />
+              ) : null,
+          },
+        ]}
+      />
+      <ListCapNote rows={rows.length} cap={LIST_CAPS.announcements} />
     </Space>
   );
 }
@@ -263,6 +355,7 @@ function SettingsPage() {
         items={[
           { key: "policies", label: t("settings.tabPolicies"), children: <PoliciesTab /> },
           { key: "announcement", label: t("settings.tabAnnouncement"), children: <AnnouncementTab /> },
+          { key: "legal", label: t("settings.tabLegal"), children: <LegalDocsTab /> },
           { key: "admins", label: t("settings.tabAdmins"), children: <AdminsTab /> },
         ]}
       />

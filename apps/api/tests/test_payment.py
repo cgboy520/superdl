@@ -75,7 +75,14 @@ class TestRecharge:
     async def test_idempotency_key_same_order(self, client: AsyncClient, sm):
         headers = {**(await user_headers(client)), "Idempotency-Key": "recharge-1"}
         a = await create_order(client, headers, "20.00")
-        b = await create_order(client, headers, "20.00")
+        resp = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "20.00", "channel": "mock"},
+            headers=headers,
+        )
+        assert resp.status_code == 200  # 重放:200 + X-Idempotent-Replay,而非 201
+        assert resp.headers["x-idempotent-replay"] == "true"
+        b = resp.json()
         assert a["order_no"] == b["order_no"]
         async with sm() as session:
             orders = (await session.execute(select(Order))).scalars().all()
@@ -95,8 +102,9 @@ class TestRecharge:
             )
 
         a, b = await asyncio.gather(create(), create())
-        assert a.status_code == 201, a.text
-        assert b.status_code == 201, b.text
+        assert {a.status_code, b.status_code} == {200, 201}, (a.text, b.text)
+        replayed = a if a.status_code == 200 else b
+        assert replayed.headers["x-idempotent-replay"] == "true"
         assert a.json()["order_no"] == b.json()["order_no"]
         async with sm() as session:
             orders = (await session.execute(select(Order))).scalars().all()
@@ -132,6 +140,54 @@ class TestRecharge:
         assert detail["status"] == "failed"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
+
+    async def test_reversal_on_paid_order_flagged_not_debited(self, client: AsyncClient, sm):
+        """已入账订单收到渠道关单/退款通知:不自动冲账,落 channel_reversed_at 标记,
+        进异常清单 channel_reversed 分桶供人工核销。"""
+        headers = await user_headers(client, "13700000044")
+        order = await create_order(client, headers, "20.00")
+        resp = await pay_mock(client, order["order_no"], "20.00")
+        assert resp.status_code == 200
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"
+        # 渠道侧反转(商户后台退款/关单)通知到达
+        resp = await client.post(
+            "/api/v1/webhooks/mock",
+            json={"order_no": order["order_no"], "amount": "20.00", "success": False},
+        )
+        assert resp.status_code == 200
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"  # 不自动冲账
+        async with sm() as session:
+            row = (
+                await session.execute(select(Order).where(Order.order_no == order["order_no"]))
+            ).scalar_one()
+            assert row.channel_reversed_at is not None
+        # 异常清单出现 channel_reversed 分桶
+        from tests.test_catalog import admin_headers
+
+        ah = await admin_headers(sm, client, role="finance")
+        anomalies = (await client.get("/api/admin/v1/finance/anomalies", headers=ah)).json()
+        assert any(
+            a["kind"] == "channel_reversed" and a["order_no"] == order["order_no"]
+            for a in anomalies
+        )
+
+    async def test_recharge_huge_amount_422_not_500(self, client: AsyncClient):
+        """超大金额(1e30)在契约层 422,而不是量化时 InvalidOperation 漏成 500。"""
+        headers = await user_headers(client, "13700000045")
+        resp = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "1e30", "channel": "mock"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+        resp = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "-5", "channel": "mock"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
 
 
 class TestMockCallbackParsing:
@@ -200,10 +256,10 @@ class TestMockCallbackParsing:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
 
-    async def test_failed_order_callback_not_rescued(
+    async def test_failed_order_callback_rescued(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """自动救回仅限 closed(超时关单):failed 订单收到成功回调不入账。"""
+        """failed 订单(渠道中间态误迁移)收到验签通过的成功回调:与 closed 同路径自动入账。"""
         headers = await user_headers(client, "13700000033")
         order = await create_order(client, headers, "20.00")
         async with sm() as session:
@@ -213,6 +269,27 @@ class TestMockCallbackParsing:
             await session.commit()
         resp = await pay_mock(client, order["order_no"], "20.00")
         assert resp.status_code == 200
+        detail = (
+            await client.get(f"/api/v1/wallet/recharges/{order['order_no']}", headers=headers)
+        ).json()
+        assert detail["status"] == "paid"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"
+
+    async def test_failed_order_callback_amount_mismatch_no_credit(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """failed 救回同样限金额一致:金额不符拒绝,走人工调账。"""
+        headers = await user_headers(client, "13700000039")
+        order = await create_order(client, headers, "20.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
+            )
+            await session.commit()
+        resp = await pay_mock(client, order["order_no"], "19.99")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
 

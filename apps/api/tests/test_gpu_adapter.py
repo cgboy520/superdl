@@ -109,6 +109,18 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
     assert pod.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
 
 
+def test_build_pod_spec_multi_gpu_scales_cpu_mem():
+    """N 卡实例 Pod limits = N × SKU(收 N 倍价即给 N 份资源);系统盘不放大。"""
+    inst = _instance(_spec("dedicated", "kata"))
+    inst.gpu_count = 8
+    pod = build_pod_spec(inst)
+    assert pod.vcpu == 8 * 8  # SKU 8 vCPU/卡 × 8 卡
+    assert pod.mem_gb == 32 * 8
+    assert pod.disk_gb == 100
+    single = build_pod_spec(_instance(_spec("dedicated", "kata")))
+    assert single.vcpu == 8 and single.mem_gb == 32
+
+
 @pytest.mark.parametrize(
     ("tier", "host_users"),
     [("dedicated", True), ("mig", False), ("shared_std", False), ("shared_eco", False)],

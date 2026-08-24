@@ -11,7 +11,18 @@ from typing import Any
 
 MESSAGES: dict[str, str] = {
     # 账户
+    "account.accountDeleted": "账号已注销",
     "account.credentialRequired": "需提供验证码或密码",
+    "account.deletionBalanceRemaining": (
+        "余额 ¥{balance} 尚未提现:请先经退款流程提现,到账后再执行注销"
+    ),
+    "account.deletionCooldown": "注销冷静期未满(剩余约 {hours} 小时),暂不可执行",
+    "account.deletionLeftovers": (
+        "名下仍有未释放实例 {instances} 台、未删除数据盘 {disks} 块:请先清空资源后再注销"
+    ),
+    "account.deletionNotCancellable": "注销申请状态为 {status},不可撤销",
+    "account.deletionNotPending": "注销申请状态为 {status},不可处理",
+    "account.deletionPhoneMismatch": "手机号与当前账号不一致,请核对后重试",
     # 密码错、验证码错、未注册三种情况共用本条,不可区分
     "account.loginFailed": "手机号或凭证错误",
     "account.phoneTaken": "该手机号已注册,请直接登录",
@@ -27,6 +38,8 @@ MESSAGES: dict[str, str] = {
     # 管理端
     "adminapi.adjustAlreadyProcessed": "调账单已处理",
     "adminapi.adjustNotZero": "调账金额不能为 0",
+    "adminapi.alertAlreadyAcked": "该告警已确认",
+    "adminapi.announcementAlreadyRevoked": "公告已撤回,无需重复操作",
     "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
     "adminapi.adjustReviewerTooNew": "复核账号在调账发起后才创建,不构成双人复核",
     "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
@@ -40,13 +53,21 @@ MESSAGES: dict[str, str] = {
     "adminapi.taskStateNotIgnorable": "任务状态 {status} 不可忽略",
     "adminapi.taskStateNotReplayable": "任务状态 {status} 不可重放",
     "adminapi.userDisabled": "账号已停用",
+    "adminapi.mfaTicketInvalid": "登录票据已过期,请重新输入账号密码",
+    "adminapi.mfaCodeInvalid": "动态码错误或已过期,请重试",
+    "adminapi.mfaNotBound": "该账号未绑定动态口令",
+    "adminapi.mfaResetSelfForbidden": "不能重置本人的动态口令:请用恢复码登录或找另一位超管",
     # 计费/支付
     "billing.alipayCallbackMerchantMismatch": "支付宝回调的商户信息与本平台不符",
     "billing.alipayCallbackVerifyFailed": "支付宝回调验签失败",
     "billing.alipayCreateFailed": "支付宝下单失败:{message}",
     "billing.alipayCredentialsIncomplete": "支付宝商户凭据不完整(管理端·平台配置)",
     "billing.alipayQueryFailed": "支付宝查单失败:{message}",
+    "billing.alipaySellerIdRequired": (
+        "支付宝渠道已启用但收款方 PID(seller_id)未配置(管理端·平台配置)"
+    ),
     "billing.amountMismatchAdjust": "渠道金额 {channel} 与订单金额 {order} 不符,需人工调账处理",
+    "billing.backfillKeyInUse": "该幂等键已用于补单 {order_no}:同键请复用原订单重放,换单请换键",
     "billing.badDateFormat": "日期格式应为 YYYY-MM-DD",
     "billing.badMonthFormat": "月份格式应为 YYYY-MM",
     "billing.callbackAmountMismatch": "回调金额与订单不符",
@@ -58,9 +79,12 @@ MESSAGES: dict[str, str] = {
         "余额不足:在途资源预计还要消耗 ¥{inflight},本次操作要求余额不少于 ¥{required}"
         "(当前 ¥{balance}),请先充值"
     ),
-    "billing.insufficientForDisk": "余额不足:新建数据盘需要至少 1 日费用 ¥{amount}",
-    "billing.insufficientForRestart": "余额不足:重启需要至少 1 小时预估费用",
-    "billing.insufficientForStart": "余额不足:开机需要至少 1 小时预估费用 ¥{amount}",
+    "billing.invoiceNothingToBill": "账期 {period} 没有可开票金额(无已支付充值或已全部申请)",
+    "billing.invoiceNotFound": "发票申请不存在",
+    "billing.invoicePeriodAlreadyApplied": "账期 {period} 已有申请中或已开票的发票,请勿重复提交",
+    "billing.invoicePeriodNotOpen": "账期 {period} 尚未结束:当月账期请于次月 1 日后再申请",
+    "billing.invoiceStateNotIssuable": "发票申请状态为 {status},仅「申请中」的发票可开票",
+    "billing.invoiceStateNotRejectable": "发票申请状态为 {status},仅「申请中」的发票可驳回",
     "billing.mockCallbackParseFailed": "mock 回调解析失败",
     "billing.mockDevOnly": "mock 渠道仅限开发环境",
     "billing.orderAlreadyPaid": "订单已入账,无需补单",
@@ -68,6 +92,22 @@ MESSAGES: dict[str, str] = {
     "billing.orderStateNotBackfillable": "订单状态 {status} 不可补单",
     "billing.realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
     "billing.rechargeAmountRange": "充值金额须在 {min}~{max} 元之间",
+    "billing.refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
+    "billing.refundAmountExceeded": (
+        "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},当前余额 ¥{balance})"
+    ),
+    "billing.refundBalanceConsumed": (
+        "余额已被消费,暂不能核销退款(当前余额 ¥{balance},应退 ¥{amount});请取消该退款单"
+    ),
+    "billing.refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
+    "billing.refundNotFound": "退款单不存在",
+    "billing.refundOrderNotPaid": "仅支付成功的充值订单可申请退款",
+    "billing.refundPayoutSamePerson": (
+        "打款登记人与审批人不得为同一人(双人制衡),请由另一位财务操作"
+    ),
+    "billing.refundStateNotCancellable": "退款单状态 {status} 不可取消",
+    "billing.refundStateNotPayable": "退款单状态 {status} 不可登记打款",
+    "billing.refundStateNotReviewable": "退款单状态 {status} 不可审批",
     "billing.unknownChannel": "未知支付渠道:{name}",
     "billing.wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
     "billing.wechatCallbackVerifyFailed": "微信回调验签失败",
@@ -81,7 +121,11 @@ MESSAGES: dict[str, str] = {
     "catalog.priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
     "catalog.priceBelowBillable": (
         "时价过低:单卡满 1 小时折算不足 ¥0.01,按 2 位小数入账会恒被舍为 0(等同免费);"
-        "请设不低于 0.0051 元/时"
+        "请设不低于 0.01 元/时"
+    ),
+    "catalog.priceHourlyTwoDecimals": (
+        "按小时计费的规格单价最多 2 位小数(逐小时按 2 位入账,更多位数会产生舍入漂移);"
+        "4 位精度仅用于数据盘 GB·月价"
     ),
     "catalog.skuNotSellable": (
         "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
@@ -110,6 +154,12 @@ MESSAGES: dict[str, str] = {
     "disks.shrinkForbidden": "数据盘只支持扩容,不支持缩容",
     "disks.sizeMax": "容量上限 {max} GB",
     "disks.sizeRange": "容量须在 {min}~{max} GB 之间",
+    # 法务文档(F7)
+    "legal.docNotFound": "法务文档不存在或尚未发布",
+    "legal.draftExists": "该文档与语言已存在草稿,请先处理现有草稿",
+    "legal.versionNotDraft": "版本状态为 {status},仅草稿可执行该操作",
+    "legal.publishedNotArchivable": "已发布版本不可直接归档",
+    "legal.localeUnsupported": "语言 {locale} 不受支持",
     # 计量/监控
     "metering.badNodeName": "节点名不合法",
     "metering.badRange": "range 须为 1h/6h/24h",
@@ -135,7 +185,15 @@ MESSAGES: dict[str, str] = {
     "orchestrator.imageRefNotAllowed": "该镜像仓库未被允许,请使用平台镜像或以下仓库:{registries}",
     "orchestrator.instanceQuota": "实例数已达上限({max} 台),请释放后再创建或联系客服提额",
     "orchestrator.invalidTransition": "实例当前状态({from})不允许该操作",
+    "orchestrator.logsNeedsRunning": (
+        "仅运行中或关机中的实例可读取容器日志:已关机实例无 Pod 日志,请开机后再试"
+    ),
+    "orchestrator.logsUnavailable": "日志读取失败,请稍后重试",
     "orchestrator.noCapacity": "「{model} × {pool} 池」当前无可分配容量,请稍后重试或选择其他规格",
+    "orchestrator.nodeUnreachable": (
+        "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。"
+        "如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)"
+    ),
     "orchestrator.releaseNeedsStopped": "关机后才能释放实例",
     "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
     "orchestrator.sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
@@ -143,6 +201,12 @@ MESSAGES: dict[str, str] = {
     "orchestrator.startNeedsStopped": "仅已关机的实例可以开机",
     "orchestrator.stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
     "orchestrator.stopNeedsRunning": "仅运行中的实例可以关机",
+    # 工单(F3)
+    "tickets.notFound": "工单不存在",
+    "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",
+    "tickets.stateNotClosable": "工单状态 {status} 不可关闭",
+    "tickets.stateNotRepliable": "工单已解决或关闭,不可再回复;如问题未解决请新建工单",
+    "tickets.stateNotResolvable": "工单状态 {status} 不可标记解决",
 }
 
 

@@ -1,35 +1,40 @@
 import {
   adminColors,
+  deletionStatusMap,
   formatDateTime,
   instanceStatusMap,
-  ledgerTypeMap,
   metaOf,
   skuTierMap,
   type InstanceStatus,
 } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Badge, Button, Card, Drawer, Input, Select, Space, Table, Tabs, Tag, Tooltip } from "antd";
+import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   type AdminInstanceOut,
+  type DeletionRow,
   type TenantRow,
   useAdminInstances,
+  useApproveDeletion,
+  useDeletionRequests,
   useForceStop,
   useFreezeTenant,
-  useTenantBills,
-  useTenantLedger,
+  useRejectDeletion,
   useTenants,
   useUnfreezeTenant,
 } from "../../api";
+import { useApiErrorText } from "../../lib/apiError";
 import { useFormat } from "../../lib/format";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
+import { LoadMoreButton } from "../../components/LoadMore";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { TenantDrawer } from "./-TenantDrawer";
 
 export const Route = createFileRoute("/_app/tenants")({
   // q:从其他页的 user_id 链接跳入,按 id 精确找人
@@ -60,8 +65,10 @@ function TenantsTab() {
       setSearch(urlQ);
     }
   }
-  const { data, queryKey } = useTenants(search ? { q: search } : undefined);
-  const tenants: TenantRow[] = data ?? [];
+  const { data, queryKey, hasNextPage, isFetchingNextPage, fetchNextPage } = useTenants(
+    search ? { q: search } : undefined,
+  );
+  const tenants: TenantRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
   const refresh = () => void qc.invalidateQueries({ queryKey });
@@ -189,166 +196,13 @@ function TenantsTab() {
         },
       ]}
     />
-    <ListCapNote rows={tenants.length} cap={LIST_CAPS.tenants} />
-    <TenantBillingDrawer tenant={drilldown} onClose={() => setDrilldown(null)} />
+    <LoadMoreButton
+      visible={Boolean(hasNextPage)}
+      loading={isFetchingNextPage}
+      onClick={() => void fetchNextPage()}
+    />
+    <TenantDrawer tenant={drilldown} onClose={() => setDrilldown(null)} />
     </>
-  );
-}
-
-/** 租户账单下钻:小时账单 + 资金流水,与用户端同源;游标「加载更多」。 */
-function TenantBillingDrawer({
-  tenant,
-  onClose,
-}: {
-  tenant: TenantRow | null;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation(["admin", "shared"]);
-  const { formatMoney, formatHourlyPrice, formatDuration } = useFormat();
-  const ledger = useTenantLedger(tenant?.id ?? null);
-  const bills = useTenantBills(tenant?.id ?? null);
-  const ledgerRows = ledger.data?.pages.flatMap((p) => p.items) ?? [];
-  const billRows = bills.data?.pages.flatMap((p) => p.items) ?? [];
-
-  return (
-    <Drawer
-      width={880}
-      open={tenant !== null}
-      onClose={onClose}
-      title={
-        tenant
-          ? t("tenants.drawerTitle", { id: tenant.id, phone: tenant.phone_masked })
-          : undefined
-      }
-    >
-      {tenant && (
-        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          <Space size={24}>
-            <span>
-              {t("tenants.colBalance")}:<b>{formatMoney(tenant.balance)}</b>
-            </span>
-            <span>
-              {t("tenants.colTotalConsumed")}:<b>{formatMoney(tenant.total_consumed)}</b>
-            </span>
-            <span>
-              {t("tenants.colInstances")}:<b>{tenant.instances}</b>
-            </span>
-          </Space>
-          <Tabs
-            items={[
-              {
-                key: "bills",
-                label: t("tenants.tabBills"),
-                children: (
-                  <>
-                  <Table
-                    size="small"
-                    rowKey="id"
-                    loading={bills.isLoading}
-                    pagination={false}
-                    scroll={{ y: 420 }}
-                    dataSource={billRows}
-                    columns={[
-                      {
-                        title: t("tenants.colHour"),
-                        dataIndex: "hour_start",
-                        render: formatDateTime,
-                      },
-                      { title: t("tenants.colInstanceId"), dataIndex: "instance_id", width: 90 },
-                      {
-                        title: t("tenants.colSeconds"),
-                        dataIndex: "seconds_used",
-                        render: (v: number) => formatDuration(v),
-                      },
-                      {
-                        title: t("tenants.colUnitPrice"),
-                        dataIndex: "unit_price",
-                        render: (v: string) => formatHourlyPrice(v),
-                      },
-                      {
-                        title: t("tenants.colAmount"),
-                        dataIndex: "amount",
-                        render: (v: string) => formatMoney(v),
-                      },
-                    ]}
-                  />
-                  {bills.hasNextPage && (
-                    <Button
-                      block
-                      size="small"
-                      style={{ marginTop: 8 }}
-                      loading={bills.isFetchingNextPage}
-                      onClick={() => void bills.fetchNextPage()}
-                    >
-                      {t("common.loadMore")}
-                    </Button>
-                  )}
-                  </>
-                ),
-              },
-              {
-                key: "ledger",
-                label: t("tenants.tabLedger"),
-                children: (
-                  <>
-                  <Table
-                    size="small"
-                    rowKey="id"
-                    loading={ledger.isLoading}
-                    pagination={false}
-                    scroll={{ y: 420 }}
-                    dataSource={ledgerRows}
-                    columns={[
-                      {
-                        title: t("tenants.colTime"),
-                        dataIndex: "created_at",
-                        render: formatDateTime,
-                      },
-                      {
-                        title: t("tenants.colType"),
-                        dataIndex: "type",
-                        width: 90,
-                        render: (v: string) => {
-                          const m = metaOf(ledgerTypeMap, v);
-                          return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
-                        },
-                      },
-                      {
-                        title: t("tenants.colAmount"),
-                        dataIndex: "amount",
-                        render: (v: string) => (
-                          <span style={{ color: v.startsWith("-") ? undefined : adminColors.positive }}>
-                            {formatMoney(v)}
-                          </span>
-                        ),
-                      },
-                      {
-                        title: t("tenants.colBalanceAfter"),
-                        dataIndex: "balance_after",
-                        render: (v: string) => formatMoney(v),
-                      },
-                      { title: t("tenants.colRemark"), dataIndex: "remark" },
-                    ]}
-                  />
-                  {ledger.hasNextPage && (
-                    <Button
-                      block
-                      size="small"
-                      style={{ marginTop: 8 }}
-                      loading={ledger.isFetchingNextPage}
-                      onClick={() => void ledger.fetchNextPage()}
-                    >
-                      {t("common.loadMore")}
-                    </Button>
-                  )}
-                  </>
-                ),
-              },
-            ]}
-          />
-        </Space>
-      )}
-    </Drawer>
   );
 }
 
@@ -360,11 +214,13 @@ function InstancesTab() {
   const [search, setSearch] = useState("");
   const [nodeName, setNodeName] = useState("");
   const qc = useQueryClient();
-  const { data: instances, queryKey } = useAdminInstances({
-    ...(status ? { status } : {}),
-    ...(search ? { q: search } : {}),
-    ...(nodeName ? { node_name: nodeName } : {}),
-  });
+  const { data, queryKey, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useAdminInstances({
+      ...(status ? { status } : {}),
+      ...(search ? { q: search } : {}),
+      ...(nodeName ? { node_name: nodeName } : {}),
+    });
+  const instances: AdminInstanceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
   const forceStop = useForceStop();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
@@ -398,7 +254,8 @@ function InstancesTab() {
       <Table<AdminInstanceOut>
         scroll={{ x: 1000 }}
         rowKey="uuid"
-        dataSource={instances ?? []}
+        loading={isLoading}
+        dataSource={instances}
         columns={[
           { title: t("tenants.colInstance"), dataIndex: "name" },
           {
@@ -465,7 +322,11 @@ function InstancesTab() {
           },
         ]}
       />
-      <ListCapNote rows={(instances ?? []).length} cap={LIST_CAPS.instances} />
+      <LoadMoreButton
+        visible={Boolean(hasNextPage)}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
+      />
     </>
   );
 }
@@ -478,8 +339,214 @@ function TenantsPage() {
         items={[
           { key: "tenants", label: t("tenants.tabTenants"), children: <TenantsTab /> },
           { key: "instances", label: t("tenants.tabInstances"), children: <InstancesTab /> },
+          { key: "deletions", label: t("tenants.tabDeletions"), children: <DeletionsTab /> },
         ]}
       />
     </Card>
+  );
+}
+
+/** 注销申请(F4):列表 + 处理。执行仅超管;确认弹窗列出校验计数,全 0 且过冷静期才可点。 */
+function DeletionsTab() {
+  const { t } = useTranslation(["admin", "shared"]);
+  const { message } = App.useApp();
+  const errText = useApiErrorText();
+  const { formatMoney, formatCountdown } = useFormat();
+  const role = useAdminRole();
+  const isAdmin = role === "admin";
+  const [status, setStatus] = useState<string | undefined>();
+  const qc = useQueryClient();
+  const { data, queryKey } = useDeletionRequests(status ? { status } : undefined);
+  const rows: DeletionRow[] = data ?? [];
+  const approve = useApproveDeletion();
+  const reject = useRejectDeletion();
+  const refresh = () => void qc.invalidateQueries({ queryKey });
+  const [approving, setApproving] = useState<DeletionRow | null>(null);
+  const [approveLoading, setApproveLoading] = useState(false);
+  // 渲染期禁调 Date.now(eslint react-hooks/purity):挂载快照即可,服务端仍会二次校验冷静期
+  const [nowTs] = useState(() => Date.now());
+
+  const runApprove = async () => {
+    if (!approving) return;
+    setApproveLoading(true);
+    try {
+      await approve.mutateAsync({ requestId: approving.id });
+      message.success(t("tenants.deletion.executed"));
+      setApproving(null);
+    } catch (e) {
+      // 校验不过 → 409(申请已被自动驳回);冷静期未满 → 409
+      message.error(errText(e, t("common.actionFailed", { action: t("tenants.deletion.approveTitle") })));
+    } finally {
+      setApproveLoading(false);
+      refresh();
+    }
+  };
+
+  const cooldownLeft = (r: DeletionRow) =>
+    r.status === "pending" ? formatCountdown(r.cooldown_ends_at) : null;
+  const precheckClear = (r: DeletionRow) =>
+    r.instances_active === 0 && r.disks_active === 0 && Number(r.balance) === 0;
+  const cooldownOver = (r: DeletionRow) => new Date(r.cooldown_ends_at).getTime() <= nowTs;
+
+  return (
+    <>
+      <Space style={{ marginBottom: 12 }}>
+        <Select
+          allowClear
+          placeholder={t("tenants.deletion.statusFilter")}
+          style={{ width: 160 }}
+          value={status}
+          onChange={setStatus}
+          options={Object.entries(deletionStatusMap).map(([v, m]) => ({
+            value: v,
+            label: t(m.labelKey),
+          }))}
+        />
+      </Space>
+      <Table<DeletionRow>
+        scroll={{ x: 1100 }}
+        rowKey="id"
+        dataSource={rows}
+        columns={[
+          { title: "ID", dataIndex: "id", width: 70 },
+          {
+            title: t("tenants.deletion.colUser"),
+            render: (_, r) => (
+              <Space size={8}>
+                <TenantLink id={r.user_id} />
+                <span>{r.phone_masked}</span>
+              </Space>
+            ),
+          },
+          {
+            title: t("tenants.deletion.colStatus"),
+            dataIndex: "status",
+            render: (v: string) => {
+              const m = metaOf(deletionStatusMap, v);
+              return <Badge color={m?.color} text={m ? t(m.labelKey) : v} />;
+            },
+          },
+          { title: t("tenants.deletion.colReason"), dataIndex: "reason", ellipsis: true },
+          {
+            title: t("tenants.deletion.colRequestedAt"),
+            dataIndex: "requested_at",
+            render: formatDateTime,
+          },
+          {
+            title: t("tenants.deletion.colCooldownEnd"),
+            dataIndex: "cooldown_ends_at",
+            render: (v: string, r) => (
+              <Space size={8}>
+                <span>{formatDateTime(v)}</span>
+                {r.status === "pending" && !cooldownOver(r) && (
+                  <Tag color="orange">{cooldownLeft(r)}</Tag>
+                )}
+              </Space>
+            ),
+          },
+          {
+            title: t("tenants.deletion.colPrecheck"),
+            render: (_, r) => (
+              <Space size={8}>
+                <span>{t("tenants.deletion.precheckInstances", { count: r.instances_active })}</span>
+                <span>{t("tenants.deletion.precheckDisks", { count: r.disks_active })}</span>
+                <span>{formatMoney(r.balance)}</span>
+              </Space>
+            ),
+          },
+          {
+            title: t("tenants.deletion.colProcessed"),
+            render: (_, r) =>
+              r.processed_at ? (
+                <Space orientation="vertical" size={0}>
+                  <Typography.Text style={{ fontSize: 12 }}>
+                    {t("tenants.deletion.processedBy", {
+                      id: r.processed_by ?? "-",
+                      time: formatDateTime(r.processed_at),
+                    })}
+                  </Typography.Text>
+                  {r.note && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {r.note}
+                    </Typography.Text>
+                  )}
+                </Space>
+              ) : (
+                "—"
+              ),
+          },
+          {
+            title: t("tenants.colActions"),
+            render: (_, r) =>
+              r.status === "pending" ? (
+                <Space>
+                  <Tooltip title={isAdmin ? undefined : t("tenants.deletion.noPermission")}>
+                    <Button
+                      size="small"
+                      danger
+                      disabled={!isAdmin}
+                      onClick={() => setApproving(r)}
+                    >
+                      {t("tenants.deletion.approve")}
+                    </Button>
+                  </Tooltip>
+                  <ReasonAction
+                    label={t("tenants.deletion.reject")}
+                    title={t("tenants.deletion.rejectTitle")}
+                    confirmText={t("tenants.deletion.rejectConfirm")}
+                    disabled={!isAdmin}
+                    disabledReason={t("tenants.deletion.noPermission")}
+                    onSubmit={async (note) => {
+                      await reject.mutateAsync({ requestId: r.id, data: { note } });
+                      refresh();
+                    }}
+                  />
+                </Space>
+              ) : null,
+          },
+        ]}
+      />
+      <ListCapNote rows={rows.length} cap={LIST_CAPS.deletions} />
+
+      <Modal
+        title={t("tenants.deletion.approveTitle")}
+        open={approving !== null}
+        onCancel={() => setApproving(null)}
+        okText={t("tenants.deletion.approve")}
+        okButtonProps={{
+          danger: true,
+          loading: approveLoading,
+          disabled: !approving || !precheckClear(approving) || !cooldownOver(approving),
+        }}
+        onOk={() => void runApprove()}
+      >
+        {approving && (
+          <Space orientation="vertical" size={8}>
+            <Typography.Text>
+              {t("tenants.deletion.approveCheckLine", {
+                instances: approving.instances_active,
+                disks: approving.disks_active,
+                balance: formatMoney(approving.balance),
+              })}
+            </Typography.Text>
+            {!precheckClear(approving) && (
+              <Typography.Text type="danger">
+                {t("tenants.deletion.approveBlocked")}
+              </Typography.Text>
+            )}
+            {!cooldownOver(approving) && (
+              <Typography.Text type="warning">
+                {t("tenants.deletion.cooldownRemaining", {
+                  countdown: cooldownLeft(approving) ?? "",
+                })}
+              </Typography.Text>
+            )}
+            <Typography.Text type="secondary">
+              {t("tenants.deletion.approveConfirmText")}
+            </Typography.Text>
+          </Space>
+        )}
+      </Modal>
+    </>
   );
 }

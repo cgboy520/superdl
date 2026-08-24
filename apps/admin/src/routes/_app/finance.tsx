@@ -1,4 +1,4 @@
-import { adminColors, formatDateTime, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap } from "@superdl/ui";
+import { addAmounts, adminColors, formatDateTime, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -31,20 +31,35 @@ import { useTranslation } from "react-i18next";
 import {
   type AdjustmentRow,
   type AnomalyRow,
+  type InvoiceRow,
   type OrderRow,
   type ReconciliationReport,
+  type RefundPayout,
+  type RefundRow,
+  exportOrdersCsv,
+  exportReconciliationCsv,
   useAdjustContext,
   useAdjustments,
   useAnomalies,
   useBackfillOrder,
+  useCancelRefund,
   useCreateAdjustment,
+  useInvoices,
+  useIssueInvoice,
   useOrders,
+  usePayoutRefund,
   useReconciliation,
+  useRefunds,
+  useRejectInvoice,
   useReviewAdjustment,
+  useReviewRefund,
   useVerifyOrder,
 } from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
+import { LoadMoreButton } from "../../components/LoadMore";
+import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "../../lib/apiError";
+import { useFormDraft } from "../../lib/formDraft";
 import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
 import { StatusTag } from "../../components/StatusTag";
@@ -56,16 +71,41 @@ export const Route = createFileRoute("/_app/finance")({
 });
 
 function ReconciliationCard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { formatMoney } = useFormat();
+  const { message } = App.useApp();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report } = useReconciliation(day.format("YYYY-MM-DD"));
   const diffHigh = report != null && report.diff_pct > 2;
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
+      const r = await exportReconciliationCsv(day.format("YYYY-MM-DD"), lang);
+      if (r === "truncated") {
+        message.warning(t("common.csvTruncated"));
+      } else {
+        message.success(t("common.csvExported"));
+      }
+    } catch {
+      message.error(t("common.csvExportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <Card
       title={t("finance.reconTitle")}
-      extra={<DatePicker value={day} onChange={(d) => d && setDay(d)} allowClear={false} />}
+      extra={
+        <Space>
+          <DatePicker value={day} onChange={(d) => d && setDay(d)} allowClear={false} />
+          <Button onClick={() => void doExport()} loading={exporting}>
+            {t("common.exportCsv")}
+          </Button>
+        </Space>
+      }
     >
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
@@ -111,15 +151,36 @@ function ReconciliationCard() {
 }
 
 function OrdersTab() {
-  const { t } = useTranslation(["admin", "shared"]);
+  const { t, i18n } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
+  const { message } = App.useApp();
   const [status, setStatus] = useState<string | undefined>();
   const [orderNo, setOrderNo] = useState("");
-  const { data } = useOrders({
+  const [day, setDay] = useState<Dayjs | null>(null);
+  const params = {
     ...(status ? { status } : {}),
     ...(orderNo ? { order_no: orderNo } : {}),
-  });
-  const orders: OrderRow[] = data ?? [];
+    ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
+  };
+  const q = useOrders(params);
+  const orders: OrderRow[] = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
+      const r = await exportOrdersCsv(params, -new Date().getTimezoneOffset(), lang);
+      if (r === "truncated") {
+        message.warning(t("common.csvTruncated"));
+      } else {
+        message.success(t("common.csvExported"));
+      }
+    } catch {
+      message.error(t("common.csvExportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <>
       <Space wrap style={{ marginBottom: 12 }}>
@@ -137,11 +198,16 @@ function OrdersTab() {
         style={{ width: 260 }}
         onSearch={setOrderNo}
       />
+      <DatePicker value={day} onChange={(d) => setDay(d)} allowClear />
+      <Button onClick={() => void doExport()} loading={exporting}>
+        {t("common.exportCsv")}
+      </Button>
       </Space>
       <Table<OrderRow>
         scroll={{ x: 900 }}
         rowKey="order_no"
         dataSource={orders}
+        loading={q.isLoading}
         columns={[
           { title: t("finance.colOrderNo"), dataIndex: "order_no" },
           {
@@ -170,7 +236,11 @@ function OrdersTab() {
           { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
-      <ListCapNote rows={orders.length} cap={LIST_CAPS.orders} />
+      <LoadMoreButton
+        visible={Boolean(q.hasNextPage)}
+        loading={q.isFetchingNextPage}
+        onClick={() => void q.fetchNextPage()}
+      />
     </>
   );
 }
@@ -206,9 +276,8 @@ function ReviewConfirmModal({
   });
   if (!target) return null;
   const { adj, approve } = target;
-  const balance = ctx.data ? Number(ctx.data.balance) : null;
-  const afterCents =
-    balance === null ? null : Math.round(balance * 100) + Math.round(Number(adj.amount) * 100);
+  // 复核预览的事后余额:BigInt 分级精确相加(禁浮点),与服务端 Numeric(14,2) 同口径
+  const after = ctx.data ? addAmounts(ctx.data.balance, adj.amount) : null;
   return (
     <Modal
       open
@@ -241,7 +310,7 @@ function ReviewConfirmModal({
         </Descriptions.Item>
         {approve && (
           <Descriptions.Item label={t("finance.ctxBalanceAfter")}>
-            {afterCents === null ? "—" : formatMoney((afterCents / 100).toFixed(2))}
+            {after === null ? "—" : formatMoney(after)}
           </Descriptions.Item>
         )}
         <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
@@ -268,11 +337,21 @@ function AdjustmentsTab() {
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  const { data, queryKey } = useAdjustments();
-  const rows: AdjustmentRow[] = data ?? [];
+  const [status, setStatus] = useState<string | undefined>();
+  const [day, setDay] = useState<Dayjs | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
+  const { data, queryKey, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useAdjustments({
+      ...(status ? { status } : {}),
+      ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
+      ...(userId ? { user_id: userId } : {}),
+    });
+  const rows: AdjustmentRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const [creating, setCreating] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ adj: AdjustmentRow; approve: boolean } | null>(null);
   const [form] = Form.useForm<{ user_id: number; amount: string; reason: string }>();
+  // 新建草稿(sessionStorage):误关弹窗不丢;发起成功后清除
+  const draft = useFormDraft<{ user_id: number; amount: string; reason: string }>("adjustment-new");
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   // 输入 user_id 即时回显租户身份与资金现状;不存在则阻止提交
@@ -286,6 +365,7 @@ function AdjustmentsTab() {
         message.success(t("finance.adjustCreated"));
         setCreating(false);
         form.resetFields();
+        draft.clear();
         refresh();
       },
       onError: (e) => message.error(errText(e, t("finance.createFailed"))),
@@ -294,19 +374,47 @@ function AdjustmentsTab() {
 
   return (
     <>
-      <Tooltip title={writable ? "" : t("finance.financeOnlyCreate")}>
-        <Button
-          type="primary"
-          disabled={!writable}
-          style={{ marginBottom: 12 }}
-          onClick={() => setCreating(true)}
-        >
-          {t("finance.createAdjust")}
-        </Button>
-      </Tooltip>
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Select
+          allowClear
+          placeholder={t("tenants.statusFilter")}
+          style={{ width: 150 }}
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "pending", label: t("finance.adjustPending") },
+            { value: "approved", label: t("finance.adjustApproved") },
+            { value: "rejected", label: t("finance.adjustRejected") },
+          ]}
+        />
+        <InputNumber
+          min={1}
+          precision={0}
+          placeholder={t("finance.filterTenantId")}
+          style={{ width: 140 }}
+          value={userId}
+          onChange={(v) => setUserId(v ?? null)}
+        />
+        <DatePicker value={day} onChange={(d) => setDay(d)} allowClear />
+        <Tooltip title={writable ? "" : t("finance.financeOnlyCreate")}>
+          <Button
+            type="primary"
+            disabled={!writable}
+            onClick={() => {
+              setCreating(true);
+              // 打开时复活草稿(若有),让误关的未提交内容回来
+              const d = draft.load();
+              if (d) form.setFieldsValue(d);
+            }}
+          >
+            {t("finance.createAdjust")}
+          </Button>
+        </Tooltip>
+      </Space>
       <Table<AdjustmentRow>
         scroll={{ x: 1000 }}
         rowKey="id"
+        loading={isLoading}
         dataSource={rows}
         columns={[
           { title: t("finance.colAdjustId"), dataIndex: "id", width: 70 },
@@ -325,7 +433,7 @@ function AdjustmentsTab() {
               </span>
             ),
           },
-          { title: t("finance.colReason"), dataIndex: "reason" },
+          { title: t("finance.colReason"), dataIndex: "reason", ellipsis: true },
           {
             title: t("finance.colStatus"),
             dataIndex: "status",
@@ -388,7 +496,11 @@ function AdjustmentsTab() {
           { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
-      <ListCapNote rows={rows.length} cap={LIST_CAPS.adjustments} />
+      <LoadMoreButton
+        visible={Boolean(hasNextPage)}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
+      />
       <ReviewConfirmModal
         target={reviewTarget}
         onClose={() => setReviewTarget(null)}
@@ -412,7 +524,11 @@ function AdjustmentsTab() {
         }}
         okButtonProps={{ loading: create.isPending, disabled: ctxId === null || !ctx.data }}
       >
-        <Form form={form} layout="vertical">
+        <Form
+          form={form}
+          layout="vertical"
+          onValuesChange={() => draft.save(form.getFieldsValue(true))}
+        >
           <Form.Item name="user_id" label={t("finance.tenantIdLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} precision={0} style={{ width: "100%" }} />
           </Form.Item>
@@ -493,6 +609,8 @@ function AdjustmentsTab() {
 const ANOMALY_META = {
   lost_callback: { labelKey: "finance.anomalyLostCallback", color: "orange" },
   closed_order: { labelKey: "finance.anomalyClosedOrder", color: "default" },
+  failed_order: { labelKey: "finance.anomalyFailedOrder", color: "volcano" },
+  channel_reversed: { labelKey: "finance.anomalyChannelReversed", color: "magenta" },
   negative_balance: { labelKey: "finance.anomalyNegativeBalance", color: "red" },
 } as const;
 
@@ -631,6 +749,491 @@ function AnomaliesTab() {
   );
 }
 
+/** 登记打款弹窗:渠道下拉 + 凭证号。出金只发生在这里(审批通过不动钱包)。 */
+function PayoutModal({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: RefundRow | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation(["admin", "shared"]);
+  const errText = useApiErrorText();
+  const { formatMoney } = useFormat();
+  const { message } = App.useApp();
+  const [form] = Form.useForm<RefundPayout>();
+  const payout = usePayoutRefund();
+  if (!target) return null;
+  return (
+    <Modal
+      open
+      title={t("finance.payoutTitle", { no: target.refund_no })}
+      okText={t("finance.payoutOk")}
+      okButtonProps={{ loading: payout.isPending }}
+      onCancel={onClose}
+      onOk={async () => {
+        const values = await form.validateFields();
+        try {
+          await payout.mutateAsync({ refundId: target.id, data: values });
+          message.success(t("finance.payoutDone"));
+          onDone();
+          onClose();
+        } catch (e) {
+          message.error(errText(e, t("finance.payoutFailed")));
+        }
+      }}
+    >
+      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Alert
+          type="info"
+          showIcon
+          title={t("finance.payoutNote", {
+            amount: formatMoney(target.amount),
+            reviewer: `#${target.review_by ?? "-"}`,
+          })}
+        />
+        <Form form={form} layout="vertical">
+          <Form.Item
+            name="channel"
+            label={t("finance.payoutChannelLabel")}
+            rules={[{ required: true }]}
+          >
+            <Select
+              options={Object.entries(payoutChannelMap).map(([v, m]) => ({
+                value: v,
+                label: t(m.labelKey),
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="ref"
+            label={t("finance.payoutRefLabel")}
+            rules={[{ required: true, min: 2, message: t("finance.payoutRefRule") }]}
+          >
+            <Input placeholder={t("finance.payoutRefPlaceholder")} />
+          </Form.Item>
+        </Form>
+      </Space>
+    </Modal>
+  );
+}
+
+function RefundsTab() {
+  const { t } = useTranslation(["admin", "shared"]);
+  const { formatMoney } = useFormat();
+  const role = useAdminRole();
+  const { admin } = useAuth();
+  const writable = canWriteFinance(role);
+  const qc = useQueryClient();
+  const [status, setStatus] = useState<string | undefined>();
+  const [day, setDay] = useState<Dayjs | null>(null);
+  // 渠道过滤在客户端做(接口口径只有 status/day;对已加载页生效)
+  const [channel, setChannel] = useState<string | undefined>();
+  const { data, queryKey, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useRefunds({
+    ...(status ? { status } : {}),
+    ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
+  });
+  const all: RefundRow[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
+  const [payoutTarget, setPayoutTarget] = useState<RefundRow | null>(null);
+  const review = useReviewRefund();
+  const cancel = useCancelRefund();
+  const refresh = () => void qc.invalidateQueries({ queryKey });
+  const noPerm = t("finance.financeOnlyRefund");
+
+  return (
+    <>
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Select
+          allowClear
+          placeholder={t("tenants.statusFilter")}
+          style={{ width: 150 }}
+          value={status}
+          onChange={setStatus}
+          options={Object.entries(refundStatusMap).map(([v, m]) => ({
+            value: v,
+            label: t(m.labelKey),
+          }))}
+        />
+        <Select
+          allowClear
+          placeholder={t("finance.filterPayoutChannel")}
+          style={{ width: 150 }}
+          value={channel}
+          onChange={setChannel}
+          options={Object.entries(payoutChannelMap).map(([v, m]) => ({
+            value: v,
+            label: t(m.labelKey),
+          }))}
+        />
+        <DatePicker value={day} onChange={(d) => setDay(d)} allowClear />
+      </Space>
+      <Table<RefundRow>
+        scroll={{ x: 1100 }}
+        rowKey="id"
+        loading={isLoading}
+        dataSource={rows}
+        columns={[
+          { title: t("finance.colRefundNo"), dataIndex: "refund_no", width: 130 },
+          {
+            title: t("finance.colTenant"),
+            dataIndex: "user_id",
+            width: 80,
+            render: (v: number) => <TenantLink id={v} />,
+          },
+          { title: t("finance.colOrderNo"), dataIndex: "order_no", width: 190 },
+          {
+            title: t("finance.colAmount"),
+            dataIndex: "amount",
+            width: 100,
+            render: (v: string) => formatMoney(v),
+          },
+          {
+            title: t("finance.colStatus"),
+            dataIndex: "status",
+            width: 90,
+            render: (v: string) => {
+              const m = metaOf(refundStatusMap, v);
+              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+            },
+          },
+          { title: t("finance.colReason"), dataIndex: "reason", ellipsis: true },
+          {
+            title: t("finance.colReviewInfo"),
+            width: 150,
+            render: (_, r) =>
+              r.review_by ? (
+                <span style={{ color: adminColors.textMuted }}>
+                  {`#${r.review_by} ${r.review_comment ?? ""}`}
+                </span>
+              ) : (
+                "-"
+              ),
+          },
+          {
+            title: t("finance.colPayout"),
+            width: 190,
+            render: (_, r) => {
+              if (r.status !== "paid") return "-";
+              const m = r.payout_channel ? metaOf(payoutChannelMap, r.payout_channel) : undefined;
+              return (
+                <span>
+                  {m ? t(m.labelKey) : r.payout_channel} · {r.payout_ref}
+                  <div style={{ color: adminColors.textMuted, fontSize: 12 }}>
+                    #{r.payout_by} · {r.payout_at ? formatDateTime(r.payout_at) : ""}
+                  </div>
+                </span>
+              );
+            },
+          },
+          {
+            title: t("finance.colAction"),
+            width: 230,
+            render: (_, r) => {
+              if (r.status !== "pending" && r.status !== "approved") return null;
+              const isReviewer = admin?.id === r.review_by;
+              return (
+                <Space wrap>
+                  {r.status === "pending" && (
+                    <>
+                      <ReasonAction
+                        label={t("finance.refundApprove")}
+                        title={t("finance.refundApproveTitle")}
+                        confirmText={t("finance.refundApproveConfirm", {
+                          amount: formatMoney(r.amount),
+                        })}
+                        disabled={!writable}
+                        disabledReason={noPerm}
+                        onSubmit={async (comment) => {
+                          await review.mutateAsync({
+                            refundId: r.id,
+                            data: { approve: true, comment },
+                          });
+                          refresh();
+                        }}
+                      />
+                      <ReasonAction
+                        label={t("finance.refundReject")}
+                        title={t("finance.refundRejectTitle")}
+                        confirmText={t("finance.refundRejectConfirm")}
+                        danger
+                        disabled={!writable}
+                        disabledReason={noPerm}
+                        onSubmit={async (comment) => {
+                          await review.mutateAsync({
+                            refundId: r.id,
+                            data: { approve: false, comment },
+                          });
+                          refresh();
+                        }}
+                      />
+                    </>
+                  )}
+                  {r.status === "approved" && (
+                    <Tooltip
+                      title={
+                        !writable
+                          ? noPerm
+                          : isReviewer
+                            ? t("finance.refundNoSelfPayout")
+                            : ""
+                      }
+                    >
+                      <Button
+                        size="small"
+                        type="primary"
+                        disabled={!writable || isReviewer}
+                        onClick={() => setPayoutTarget(r)}
+                      >
+                        {t("finance.payout")}
+                      </Button>
+                    </Tooltip>
+                  )}
+                  <ReasonAction
+                    label={t("finance.cancelRefund")}
+                    title={t("finance.cancelRefundTitle")}
+                    confirmText={t("finance.cancelRefundConfirm")}
+                    danger
+                    disabled={!writable}
+                    disabledReason={noPerm}
+                    onSubmit={async (reason) => {
+                      await cancel.mutateAsync({ refundId: r.id, data: { reason } });
+                      refresh();
+                    }}
+                  />
+                </Space>
+              );
+            },
+          },
+          { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
+        ]}
+      />
+      <LoadMoreButton
+        visible={Boolean(hasNextPage)}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
+      />
+      <PayoutModal
+        target={payoutTarget}
+        onClose={() => setPayoutTarget(null)}
+        onDone={refresh}
+      />
+    </>
+  );
+}
+
+/** 开票弹窗:填发票号(人工开票,发票经邮箱送达用户;提交即站内信通知)。 */
+function IssueInvoiceModal({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: InvoiceRow | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation(["admin", "shared"]);
+  const errText = useApiErrorText();
+  const { formatMoney } = useFormat();
+  const { message } = App.useApp();
+  const [form] = Form.useForm<{ invoice_no: string }>();
+  const issue = useIssueInvoice();
+  if (!target) return null;
+  return (
+    <Modal
+      open
+      title={t("finance.invoiceIssueTitle")}
+      okText={t("finance.invoiceIssue")}
+      okButtonProps={{ loading: issue.isPending }}
+      onCancel={onClose}
+      onOk={async () => {
+        const values = await form.validateFields();
+        try {
+          await issue.mutateAsync({ invoiceId: target.id, data: values });
+          message.success(t("finance.invoiceIssued"));
+          onDone();
+          onClose();
+        } catch (e) {
+          message.error(errText(e, t("finance.invoiceIssueFailed")));
+        }
+      }}
+    >
+      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Alert
+          type="info"
+          showIcon
+          title={t("finance.invoiceIssueNote", {
+            period: target.period,
+            amount: formatMoney(target.amount),
+            title: target.title,
+            email: target.email,
+          })}
+        />
+        <Form form={form} layout="vertical">
+          <Form.Item
+            name="invoice_no"
+            label={t("finance.invoiceNoLabel")}
+            rules={[{ required: true, min: 2, message: t("finance.invoiceNoRule") }]}
+          >
+            <Input placeholder={t("finance.invoiceNoPlaceholder")} maxLength={64} />
+          </Form.Item>
+        </Form>
+      </Space>
+    </Modal>
+  );
+}
+
+function InvoicesTab() {
+  const { t } = useTranslation(["admin", "shared"]);
+  const { formatMoney } = useFormat();
+  const role = useAdminRole();
+  const writable = canWriteFinance(role);
+  const qc = useQueryClient();
+  const [status, setStatus] = useState<string | undefined>();
+  const [period, setPeriod] = useState("");
+  const { data, queryKey, isLoading } = useInvoices({
+    ...(status ? { status } : {}),
+    ...(period ? { period } : {}),
+  });
+  const rows: InvoiceRow[] = data ?? [];
+  const [issueTarget, setIssueTarget] = useState<InvoiceRow | null>(null);
+  const reject = useRejectInvoice();
+  const refresh = () => void qc.invalidateQueries({ queryKey });
+  const noPerm = t("finance.financeOnlyInvoice");
+
+  return (
+    <>
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Select
+          allowClear
+          placeholder={t("tenants.statusFilter")}
+          style={{ width: 150 }}
+          value={status}
+          onChange={setStatus}
+          options={Object.entries(invoiceStatusMap).map(([v, m]) => ({
+            value: v,
+            label: t(m.labelKey),
+          }))}
+        />
+        <Input.Search
+          allowClear
+          placeholder={t("finance.filterPeriod")}
+          style={{ width: 200 }}
+          onSearch={setPeriod}
+        />
+      </Space>
+      <Table<InvoiceRow>
+        scroll={{ x: 1100 }}
+        rowKey="id"
+        loading={isLoading}
+        dataSource={rows}
+        columns={[
+          { title: t("finance.colPeriod"), dataIndex: "period", width: 90 },
+          {
+            title: t("finance.colTenant"),
+            dataIndex: "user_id",
+            width: 80,
+            render: (v: number) => <TenantLink id={v} />,
+          },
+          {
+            title: t("finance.colAmount"),
+            dataIndex: "amount",
+            width: 100,
+            render: (v: string) => formatMoney(v),
+          },
+          {
+            title: t("finance.colTitleInfo"),
+            ellipsis: true,
+            render: (_, r) => (
+              <>
+                {r.title}
+                <div style={{ color: adminColors.textMuted, fontSize: 12 }}>
+                  {r.title_type === "company"
+                    ? t("finance.invoiceTitleTypeCompany")
+                    : t("finance.invoiceTitleTypePersonal")}
+                  {r.tax_id ? ` · ${r.tax_id}` : ""}
+                </div>
+              </>
+            ),
+          },
+          { title: t("finance.colEmail"), dataIndex: "email", width: 180, ellipsis: true },
+          {
+            title: t("finance.colStatus"),
+            dataIndex: "status",
+            width: 90,
+            render: (v: string) => {
+              const m = metaOf(invoiceStatusMap, v);
+              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+            },
+          },
+          {
+            title: t("finance.colInvoiceInfo"),
+            width: 190,
+            render: (_, r) => {
+              if (r.status === "issued") {
+                return (
+                  <span>
+                    {r.invoice_no}
+                    <div style={{ color: adminColors.textMuted, fontSize: 12 }}>
+                      #{r.issued_by} · {r.issued_at ? formatDateTime(r.issued_at) : ""}
+                    </div>
+                  </span>
+                );
+              }
+              if (r.status === "rejected") {
+                return <span style={{ color: adminColors.textMuted }}>{r.reject_reason}</span>;
+              }
+              return "-";
+            },
+          },
+          {
+            title: t("finance.colAction"),
+            width: 150,
+            render: (_, r) => {
+              if (r.status !== "submitted") return null;
+              return (
+                <Space wrap>
+                  <Tooltip title={writable ? "" : noPerm}>
+                    <Button
+                      size="small"
+                      type="primary"
+                      disabled={!writable}
+                      onClick={() => setIssueTarget(r)}
+                    >
+                      {t("finance.invoiceIssue")}
+                    </Button>
+                  </Tooltip>
+                  <ReasonAction
+                    label={t("finance.invoiceReject")}
+                    title={t("finance.invoiceRejectTitle")}
+                    confirmText={t("finance.invoiceRejectConfirm")}
+                    danger
+                    disabled={!writable}
+                    disabledReason={noPerm}
+                    onSubmit={async (reason) => {
+                      await reject.mutateAsync({ invoiceId: r.id, data: { reason } });
+                      refresh();
+                    }}
+                  />
+                </Space>
+              );
+            },
+          },
+          { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
+        ]}
+      />
+      <ListCapNote rows={rows.length} cap={LIST_CAPS.invoices} />
+      <IssueInvoiceModal
+        target={issueTarget}
+        onClose={() => setIssueTarget(null)}
+        onDone={refresh}
+      />
+    </>
+  );
+}
+
 function FinancePage() {
   const { t } = useTranslation();
   const { data: anomalies } = useAnomalies();
@@ -642,6 +1245,8 @@ function FinancePage() {
         <Tabs
           items={[
             { key: "orders", label: t("finance.tabOrders"), children: <OrdersTab /> },
+            { key: "refunds", label: t("finance.tabRefunds"), children: <RefundsTab /> },
+            { key: "invoices", label: t("finance.tabInvoices"), children: <InvoicesTab /> },
             { key: "adjustments", label: t("finance.tabAdjustments"), children: <AdjustmentsTab /> },
             {
               key: "anomalies",

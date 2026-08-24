@@ -1,13 +1,14 @@
-# superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 宽 ipBlock 起步。
+# superdl 命名空间网络边界:入向默认拒绝 + 按服务放行;出向默认拒绝 + 按端点精确放行(报告3#11)。
 #
-# 先观察再收紧(出向):
-#   1) 各 *-egress 默认放行 0.0.0.0/0 —— PG/对象存储/SMTP/支付网关等外部端点 IP 因环境而异,
-#      宽 ipBlock 保证默认 apply 不断连(等价于无出向限制),策略骨架先就位;
-#   2) 观察 1~2 天实际出向(Hubble / `cilium monitor` / 应用日志);
-#   3) 把宽 ipBlock 替换为具体 CIDR:端口对(示例写在 api-egress 注释里),外部端点变更时同步改。
+# 出向已收敛为具体放行:PG 5432 / 对象存储 443 / 支付·短信网关 443 / K8s API 6443
+# (DNS 由 allow-dns-egress 统一放行)。CHANGE_ME_* 均为占位——apply 前必须替换为真实
+# 端点(preflight.sh 有提示性检查),外部端点变更时同步改本文件并重新 apply。
+# 网关类端点以域名给出(微信支付 api.mch.weixin.qq.com、支付宝 openapi.alipay.com、
+# 短信服务商 API 域名等):apply 时解析为 CIDR 写入,域名 IP 漂移时同步更新。
 #
-# 入向已是精确放行,无需再收紧。新增 Pod 必须补对应放行规则,否则双不通。
-# light 档(k3s+flannel)不执行 NetworkPolicy,该档依赖防火墙等外层边界(同 cluster/registry)。
+# 入向已是精确放行。新增 Pod 必须补对应放行规则,否则双不通。
+# light 档 k3s 默认自带 netpol 控制器(内嵌 kube-router),NetworkPolicy 会被执行,
+# 无需依赖外层防火墙兜底(等效性核查见 cluster/runbooks/cluster-validation.md)。
 # kubelet 探针来自节点 host,不受 NetworkPolicy 影响;DNS 由 allow-dns-egress 统一放行。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -94,13 +95,9 @@ spec:
       ports:
         - {protocol: TCP, port: 8000}
 ---
-# API 出向:PG / 对象存储 / K8s API(只读身份)。宽 ipBlock 起步,观察后收紧,例:
-#   egress:
-#     - to: [{ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}}]
-#       ports: [{protocol: TCP, port: 5432}]
-#     - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
-#       ports: [{protocol: TCP, port: 443}]   # 对象存储 + K8s API(走 https)
-# 注意 K8s API 可能落在私网 ClusterIP/节点 IP 上:给宽 ipBlock 加 except 私网段会把它一起断掉。
+# API 出向:PG / 对象存储 / 支付·短信网关 / K8s API(只读身份;发短信验证码、下单直连渠道)。
+# K8s API 可能落在私网节点 IP 上(平台「集群接入」录入的 server https://<ip>:6443):
+# 给宽 ipBlock 加 except 私网段会把它一起断掉,必须按真实 server IP 放行。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -112,7 +109,22 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
-        - ipBlock: {cidr: 0.0.0.0/0}
+        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}       # 平台库地址(托管 PG / cnpg,resolve 后填 /32)
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}       # 对象存储 endpoint 网段(JuiceFS 后端/备份上传)
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        # 支付/短信网关域名(微信支付/支付宝/短信服务商)apply 时解析为 CIDR;漂移时同步更新
+        - ipBlock: {cidr: "CHANGE_ME_GATEWAY_CIDR"}
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_K8S_API_IP/32"}  # 租户集群 apiserver(「集群接入」server 地址)
+      ports:
+        - {protocol: TCP, port: 6443}
 ---
 # worker 入向:仅 Prometheus(PodMonitor 直抓 Pod :9000,不走 Service)。
 apiVersion: networking.k8s.io/v1
@@ -131,8 +143,9 @@ spec:
       ports:
         - {protocol: TCP, port: 9000}
 ---
-# worker 出向:PG / 对象存储 / K8s API(编排写)/ SMTP(465/587)/ 短信与支付网关(443)。
-# 宽 ipBlock 起步;收紧时 SMTP 与支付回调网关单独列 CIDR:端口,同 api-egress 的示例。
+# worker 出向:PG / 对象存储 / 支付·短信网关(查单、回调补单)/ K8s API(编排写)。
+# 短信/支付网关域名同 api-egress 注释:apply 时解析为 CIDR,漂移时同步更新。
+# preset(按需启用):平台若开 SMTP 发信,追加一条 465/587 到邮件服务商 CIDR 的规则。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -144,10 +157,27 @@ spec:
   policyTypes: ["Egress"]
   egress:
     - to:
-        - ipBlock: {cidr: 0.0.0.0/0}
+        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}       # 平台库地址
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}       # 对象存储 endpoint 网段
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        # 支付/短信网关域名(微信支付/支付宝/短信服务商)apply 时解析为 CIDR;漂移时同步更新
+        - ipBlock: {cidr: "CHANGE_ME_GATEWAY_CIDR"}
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_K8S_API_IP/32"}  # 租户集群 apiserver(编排写)
+      ports:
+        - {protocol: TCP, port: 6443}
 ---
-# 一次性 Job(迁移 / PG 备份)出向:PG,备份另需对象存储上传;无入向。
-# 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上,收紧示例同 api-egress。
+# 一次性 Job(迁移 / PG 备份 / 数据盘配额下发)出向:PG + 对象存储(备份上传);无入向。
+# 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上;
+# superdl-disk-quota 是 worker 创建的 JuiceFS CLI Job(core/k8s/real.py set_disk_quota),
+# 其 PG 出向即 JuiceFS 元数据引擎(P0-13 后弃 Redis)。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -156,8 +186,14 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - {key: app, operator: In, values: [superdl-migrate, pg-backup]}
+      - {key: app, operator: In, values: [superdl-migrate, pg-backup, superdl-disk-quota]}
   policyTypes: ["Egress"]
   egress:
     - to:
-        - ipBlock: {cidr: 0.0.0.0/0}
+        - ipBlock: {cidr: "CHANGE_ME_PG_IP/32"}       # 平台库地址
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_OSS_CIDR"}       # 对象存储 endpoint 网段(备份上传)
+      ports:
+        - {protocol: TCP, port: 443}

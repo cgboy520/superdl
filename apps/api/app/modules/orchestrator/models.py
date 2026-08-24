@@ -127,5 +127,11 @@ class DataDisk(Base):
     # active / grace(欠费宽限,只读) / frozen / deleting / deleted
     mounted_instance_id: Mapped[int | None] = mapped_column(index=True)
     grace_started_at: Mapped[datetime | None]
+    # 最近一次回款恢复(离开 grace/frozen)的时刻:日结追平按 [grace_started, grace_ended)
+    # 区间判定宽限日;grace_started_at 为欠费倒计时语义保持 sticky,不混用
+    grace_ended_at: Mapped[datetime | None]
     frozen_started_at: Mapped[datetime | None]
+    # JuiceFS 目录硬配额是否已按 size_gb 下发(创建/扩容后置 false 并入队 disk.quota;
+    # 存量盘迁移为 false,由 reconciler 对账环回填)。false ≠ 不可用,仅配额未强制
+    quota_synced: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

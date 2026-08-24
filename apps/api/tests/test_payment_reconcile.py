@@ -62,6 +62,41 @@ class TestReconcilePoller:
         ).json()
         assert detail["status"] == "pending"
 
+    async def test_failed_order_recovered_by_poller(self, client: AsyncClient, sm):
+        """failed 订单(渠道中间态误迁移)渠道侧实为已付 → poller 收敛入账;重复执行幂等。"""
+        headers = await user_headers(client, "13700000042")
+        order = await create_order(client, headers, "33.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
+            )
+            await session.commit()
+        MockChannel.mark_paid(order["order_no"], "txn-failed-poll", "33.00")
+        await _backdate_order(sm, order["order_no"], 2)
+
+        assert await reconcile_pending_orders(sm) == 1
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "33.00"
+        # 幂等:再跑一轮不重复入账
+        assert await reconcile_pending_orders(sm) == 0
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "33.00"
+
+    async def test_stale_failed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
+        """48h 窗口外的 failed 旧单不参与查单(防无限重扫下单即废的订单)。"""
+        headers = await user_headers(client, "13700000043")
+        order = await create_order(client, headers, "44.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
+            )
+            await session.commit()
+        MockChannel.mark_paid(order["order_no"], "txn-stale-failed", "44.00")
+        await _backdate_order(sm, order["order_no"], 49 * 60)
+        assert await reconcile_pending_orders(sm) == 0
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "0.00"
+
     async def test_skipped_when_lock_held(self, client: AsyncClient, sm):
         """advisory lock 已被占(另一副本在跑)→ 本轮直接让出。"""
         from app.core.locks import LockKey, try_advisory_lock
@@ -162,16 +197,44 @@ class TestBackfill:
         )
         assert r1.status_code == 200, r1.text
         assert r1.json()["status"] == "paid"
-        # 同键重放(响应丢失后重试):返回当前状态,不重复入账
+        # 同键重放(响应丢失后重试):返回当前状态 + X-Idempotent-Replay,不重复入账
         r2 = await client.post(
             f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
             json={"reason": "回调丢失"},
             headers=keyed,
         )
         assert r2.status_code == 200, r2.text
+        assert r2.headers["x-idempotent-replay"] == "true"
         assert r2.json()["order_no"] == order["order_no"]
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "66.00"
+
+    async def test_backfill_key_reused_on_other_order_conflicts(self, client: AsyncClient, sm):
+        """同一幂等键用到另一笔订单:DB 唯一约束兜底,409 并指明持键订单(不 500 不双入账)。"""
+        headers = await user_headers(client, "13700000042")
+        order_a = await create_order(client, headers, "61.00")
+        order_b = await create_order(client, headers, "62.00")
+        MockChannel.mark_paid(order_a["order_no"], "txn-backfill-a", "61.00")
+        MockChannel.mark_paid(order_b["order_no"], "txn-backfill-b", "62.00")
+
+        ah = await admin_headers(sm, client, role="finance")
+        keyed = {**ah, "Idempotency-Key": "backfill-shared-key"}
+        r1 = await client.post(
+            f"/api/admin/v1/finance/orders/{order_a['order_no']}/backfill",
+            json={"reason": "首单补账"},
+            headers=keyed,
+        )
+        assert r1.status_code == 200, r1.text
+        r2 = await client.post(
+            f"/api/admin/v1/finance/orders/{order_b['order_no']}/backfill",
+            json={"reason": "同键换单"},
+            headers=keyed,
+        )
+        assert r2.status_code == 409
+        assert r2.json()["message_key"] == "billing.backfillKeyInUse"
+        # order_b 未入账
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "61.00"
 
     async def test_backfill_refused_when_channel_unpaid(self, client: AsyncClient, sm):
         """渠道侧未支付 → 补单被拒(操作者无法凭空造账)。"""
@@ -247,15 +310,19 @@ class TestBackfill:
 
 
 class TestAnomalies:
-    async def test_three_kinds_listed(self, client: AsyncClient, sm):
+    async def test_four_kinds_listed(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000026")
         stale = await create_order(client, headers, "15.00")
         await _backdate_order(sm, stale["order_no"], 15)
         closed = await create_order(client, headers, "25.00")
+        failed = await create_order(client, headers, "35.00")
         await client.get("/api/v1/wallet", headers=headers)  # 触发钱包创建
         async with sm() as session:
             await session.execute(
                 update(Order).where(Order.order_no == closed["order_no"]).values(status="closed")
+            )
+            await session.execute(
+                update(Order).where(Order.order_no == failed["order_no"]).values(status="failed")
             )
             # 负余额钱包
             wallet_row = (await session.execute(select(Wallet).limit(1))).scalar_one_or_none()
@@ -269,4 +336,5 @@ class TestAnomalies:
         kinds = {item["kind"] for item in resp.json()}
         assert "lost_callback" in kinds
         assert "closed_order" in kinds
+        assert "failed_order" in kinds
         assert "negative_balance" in kinds

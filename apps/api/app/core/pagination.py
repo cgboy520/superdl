@@ -2,6 +2,8 @@
 
 import base64
 import binascii
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 
@@ -12,6 +14,14 @@ MAX_LIMIT = 100
 
 
 class Page[T](BaseModel):
+    items: list[T]
+    next_cursor: str | None = None
+
+
+@dataclass(frozen=True)
+class RawPage[T]:
+    """service 层内部载体:items 为 ORM 行(无 pydantic schema),由 router 映射成 Page[Out]。"""
+
     items: list[T]
     next_cursor: str | None = None
 
@@ -34,3 +44,13 @@ def clamp_limit(limit: int | None) -> int:
     if limit is None:
         return DEFAULT_LIMIT
     return max(1, min(limit, MAX_LIMIT))
+
+
+def slice_page[T](
+    rows: Sequence[T], lim: int, key: Callable[[T], int]
+) -> tuple[list[T], str | None]:
+    """lim+1 取行切页(降序游标的标准收尾):满页回 (前 lim 行, 以第 lim 行 key 编码的
+    next_cursor),否则 (全部行, None)。调用方负责按 lim+1 取行并按 key 降序排列。"""
+    if len(rows) > lim:
+        return list(rows[:lim]), encode_cursor(key(rows[lim - 1]))
+    return list(rows), None

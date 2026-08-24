@@ -72,6 +72,26 @@ async def get_summary(
 
 
 class TestDailySummary:
+    async def test_tz_offset_bounds(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """TzOffset 统一 ±720 上下界:越界一律 422(此前 le=840 与默认 0 的漂移口径已收敛)。"""
+        headers, _ = await register_user(client, "13900010099")
+        for bad in (721, -721, 840, -840):
+            resp = await client.get(
+                "/api/v1/bills/daily-summary",
+                params={"date": "2026-08-19", "tz_offset_minutes": bad},
+                headers=headers,
+            )
+            assert resp.status_code == 422, (bad, resp.text)
+        for good in (720, -720, 480):
+            resp = await client.get(
+                "/api/v1/bills/daily-summary",
+                params={"date": "2026-08-19", "tz_offset_minutes": good},
+                headers=headers,
+            )
+            assert resp.status_code == 200, (good, resp.text)
+
     async def test_day_boundary_attribution_utc8(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):

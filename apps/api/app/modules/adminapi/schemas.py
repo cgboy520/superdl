@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,12 +25,13 @@ AdminRole = Literal["admin", "ops", "finance", "readonly"]
 
 
 class AdminAccountOut(BaseModel):
-    """管理员账号(账号管理列表)。不透出 password_hash / token_version。"""
+    """管理员账号(账号管理列表)。不透出 password_hash / token_version / totp_secret。"""
 
     id: int
     username: str
     role: str
     status: str
+    totp_enabled: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -60,9 +61,72 @@ class AdminSelfPasswordRequest(BaseModel):
 
 
 class AdminToken(BaseModel):
+    status: Literal["ok"] = "ok"
     access_token: str
     token_type: str = "bearer"
     admin: AdminOut
+
+
+class MfaChallengeOut(BaseModel):
+    """登录二要素挑战:admin/finance 强制。mfa_setup=首次绑定;mfa_required=已绑定验证。"""
+
+    status: Literal["mfa_setup", "mfa_required"]
+    ticket: str
+
+
+# 登录响应:成功直发 token;需二要素时发短时票据(setup 10min / verify 5min)
+AdminLoginOut = Annotated[AdminToken | MfaChallengeOut, Field(discriminator="status")]
+
+
+class MfaTicketRequest(BaseModel):
+    ticket: str = Field(min_length=1)
+
+
+class MfaSetupOut(BaseModel):
+    """TOTP 绑定材料:otpauth_uri 渲染二维码;secret 供手动录入。"""
+
+    secret: str
+    otpauth_uri: str
+
+
+class MfaCodeRequest(BaseModel):
+    ticket: str = Field(min_length=1)
+    code: str = Field(min_length=6, max_length=16)  # 6 位 TOTP 或 11 位恢复码(XXXXX-XXXXX)
+
+
+class MfaSetupConfirmOut(BaseModel):
+    """绑定成功:恢复码仅此一次返回,10 个,须离线保存。"""
+
+    access_token: str
+    token_type: str = "bearer"
+    admin: AdminOut
+    recovery_codes: list[str]
+
+
+class MfaLoginOut(BaseModel):
+    """二要素验证通过。用了恢复码时 recovery_codes_left 骤减,≤2 提示重新生成。"""
+
+    access_token: str
+    token_type: str = "bearer"
+    admin: AdminOut
+    recovery_codes_left: int | None = None
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: list[str]
+
+
+class MfaResetRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=200)
+
+
+class AdminRefreshRequest(BaseModel):
+    access_token: str = Field(min_length=1)
+
+
+class AdminRefreshOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 # ---------- 管理端响应模型 ----------
@@ -78,6 +142,34 @@ class TenantOut(BaseModel):
     instances: int
     disk_gb: int
     created_at: str
+    # 实名信息透出(F9):readonly 角色脱敏;ops/finance/admin 明文(敏感读,响应含实名字段即落审计)
+    verification_status: str = "unverified"
+    id_name: str | None = None
+    company_name: str | None = None
+
+
+class TenantQuotaOut(BaseModel):
+    """租户配额覆盖与生效值(override → policy → env)。三项 override 为 None = 走默认链。"""
+
+    user_id: int
+    max_gpus: int | None
+    max_instances: int | None
+    max_disks: int | None
+    effective_max_gpus: int
+    effective_max_instances: int
+    effective_max_disks: int
+    note: str | None = None
+    updated_by: int | None = None
+    updated_at: str | None = None
+
+
+class TenantQuotaUpdate(BaseModel):
+    """写覆盖:三个数字可留空(=该维走默认);全空 = 清除覆盖恢复默认。note 必填(留痕)。"""
+
+    max_gpus: int | None = Field(default=None, ge=1, le=100000)
+    max_instances: int | None = Field(default=None, ge=1, le=100000)
+    max_disks: int | None = Field(default=None, ge=1, le=100000)
+    note: str = Field(min_length=2, max_length=200)
 
 
 class TenantStatusOut(BaseModel):
@@ -228,6 +320,31 @@ class AdminAlertOut(BaseModel):
     content: str
     severity: str
     created_at: str
+    # 告警闭环(F8):确认留痕 + 跳转目标(无 target 前端不可点)
+    acked_by: int | None = None
+    acked_by_username: str | None = None
+    acked_at: str | None = None
+    target_kind: str | None = None  # tenant / node / ticket
+    target_id: str | None = None
+
+
+class AlertUnreadCountOut(BaseModel):
+    """未确认告警数(顶栏铃铛角标)。"""
+
+    count: int
+
+
+class AnnouncementOut(BaseModel):
+    id: int
+    title: str
+    content: str
+    status: str  # published / revoked
+    reached: int
+    created_by: int
+    created_at: str
+    revoked_by: int | None = None
+    revoked_at: str | None = None
+    revoke_reason: str | None = None
 
 
 class AdjustmentOut(BaseModel):
@@ -321,13 +438,28 @@ class DeadTaskOut(BaseModel):
     updated_at: str
 
 
+class OutboxTaskOut(BaseModel):
+    """outbox 全量查询(F10 排障):不限死信,带 status;固定截断 200。"""
+
+    id: int
+    type: str
+    status: str
+    payload: dict
+    retries: int
+    last_error: str | None
+    created_at: str
+    updated_at: str
+
+
 class OutboxTaskStatusOut(BaseModel):
     id: int
     status: str
 
 
 class PaymentAnomalyOut(BaseModel):
-    kind: Literal["lost_callback", "closed_order", "negative_balance"]
+    kind: Literal[
+        "lost_callback", "closed_order", "failed_order", "channel_reversed", "negative_balance"
+    ]
     order_no: str | None
     user_id: int
     amount: str

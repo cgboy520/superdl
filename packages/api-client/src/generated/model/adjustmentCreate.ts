@@ -6,6 +6,7 @@
  */
 
 export interface AdjustmentCreate {
+  /** @pattern ^-?(0|[1-9]\d{0,11})(\.\d{1,2})?$ */
   amount: string;
   /**
      * @minLength 2

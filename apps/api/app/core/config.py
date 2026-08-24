@@ -12,18 +12,22 @@ _DEV_JWT_SECRET = "dev-secret-change-me"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SUPERDL_", env_file=".env", extra="ignore")
 
-    environment: Literal["dev", "test", "prod"] = "dev"
+    # 必填(fail-closed):漏配即拒绝启动。dev/test 的宽松默认(mock 支付、固定短信码、
+    # /docs、mock webhook)只允许在显式声明的环境里存在
+    environment: Literal["dev", "test", "prod"]
 
     database_url: str = "postgresql+asyncpg://superdl:superdl@localhost:5432/superdl"
     db_pool_size: int = 10
 
-    # JWT:用户端与管理端物理隔离,audience 不同
+    # JWT:用户端与管理端物理隔离,audience 不同。
+    # 令牌收紧基线:access ≤1h(前端 Web Locks 静默续期,用户无感)、refresh ≤7d;
+    # prod 校验在 _validate_prod 兜底上限,防止经 env 放松
     jwt_secret: str = "dev-secret-change-me"
     jwt_issuer: str = "superdl"
     jwt_user_audience: str = "superdl:user"
     jwt_admin_audience: str = "superdl:admin"
-    access_token_ttl_seconds: int = 2 * 3600
-    refresh_token_ttl_seconds: int = 30 * 24 * 3600
+    access_token_ttl_seconds: int = 3600
+    refresh_token_ttl_seconds: int = 7 * 24 * 3600
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
@@ -60,6 +64,11 @@ class Settings(BaseSettings):
     # 合规备案(站点页脚;可被平台配置中心覆盖)
     icp_number: str | None = None
     police_record_number: str | None = None
+    # 经营主体信息(《电子商务法》第十五条公示;页脚展示,留空即不展示)
+    company_name: str | None = None
+    company_address: str | None = None
+    company_phone: str | None = None
+    business_license_url: str | None = None
 
     # 客服联系方式(页脚与帮助页展示;可被平台配置中心覆盖)。留空即不展示该入口
     support_email: str | None = None
@@ -123,12 +132,20 @@ class Settings(BaseSettings):
     # 共享档 Pod 注 HAMi use-gputype annotation(SKU 原文串);仅混卡节点池需要,默认关
     hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
+    # 平台侧 Job(数据盘配额等 JuiceFS 元数据操作)所在 ns:与 superdl-api-secrets 同 ns,
+    # Job 以 secretKeyRef 读 juicefs-metaurl,worker 进程零接触明文
+    k8s_platform_namespace: str = "superdl"
+    # JuiceFS CLI 镜像(quota set/delete):与 deploy/cluster/helmfile 的 CSI chart 钉版对齐
+    juicefs_cli_image: str = "juicedata/juicefs-csi-driver:v0.32.3"
     # 每次 K8s 请求的超时(连接, 读);官方客户端无全局超时,须显式设置
     k8s_connect_timeout_seconds: float = 5.0
     k8s_read_timeout_seconds: float = 30.0
     # 租户 Jupyter Ingress 的 IngressClass;未标 default 的 IngressClass 不自动接管,须显式指定
     ingress_class_name: str = "nginx"
     ssh_host: str = "ssh1.superdl.example.com"
+    # 管理端域名(admin SPA 经该域 nginx 同源反代 /api/admin/);prod 下 /api/admin/*
+    # 仅放行 Host 命中本项的请求(公网 api 域不再暴露管理端 API)
+    admin_host: str = "admin.superdl.example.com"
     ssh_port_range_start: int = 30000
     ssh_port_range_end: int = 32767
     # 已知被集群其它对象占用的 NodePort(端口池与 NodePort 同段),分配器跳过;
@@ -142,8 +159,8 @@ class Settings(BaseSettings):
     # /metrics 抓取鉴权(Prometheus scrape 配置同一 Bearer;prod 必配)
     metrics_token: str | None = None
 
-    # 错误上报(可选:配置 DSN 且安装 sentry-sdk 即启用)
-    sentry_dsn: str | None = None
+    # 日志级别(structlog 与 stdlib 桥接同受此控;大写,默认 INFO)
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     # 数据保洁保留期
     audit_retention_days: int = 365  # 等保要求 ≥6 个月
@@ -169,6 +186,18 @@ class Settings(BaseSettings):
     alipay_app_id: str | None = None
     alipay_private_key: str | None = None
     alipay_public_key: str | None = None
+    alipay_seller_id: str | None = None  # 收款方 PID(2088 开头;prod 启用支付宝时必填)
+
+    @model_validator(mode="after")
+    def _fail_closed_real_cluster(self) -> "Settings":
+        """真实集群必须显式 prod:dev/test 的宽松配置(mock 支付、固定短信码、mock webhook)
+        不得与真实编排后端共存——漏配/错配 environment 即拒绝启动。"""
+        if self.k8s_backend == "real" and self.environment != "prod":
+            raise ValueError(
+                f"k8s_backend=real 要求 SUPERDL_ENVIRONMENT=prod(当前 {self.environment});"
+                "真实集群不得以 dev/test 宽松配置运行(mock 支付/固定短信码将暴露)"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
@@ -178,6 +207,10 @@ class Settings(BaseSettings):
         problems: list[str] = []
         if self.jwt_secret == _DEV_JWT_SECRET or len(self.jwt_secret) < 32:
             problems.append("jwt_secret 仍为开发默认值或长度不足 32 字符")
+        if self.access_token_ttl_seconds > 3600:
+            problems.append("access_token_ttl_seconds 超过 1 小时上限(令牌收紧基线)")
+        if self.refresh_token_ttl_seconds > 7 * 24 * 3600:
+            problems.append("refresh_token_ttl_seconds 超过 7 天上限(令牌收紧基线)")
         if self.sms_provider == "mock":
             problems.append("sms_provider 不得为 mock(验证码将是固定值)")
         elif not (
@@ -196,7 +229,7 @@ class Settings(BaseSettings):
             problems.append("database_url 仍为本地开发默认")
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
             problems.append("cors_origins 含 localhost")
-        for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url"):
+        for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url", "admin_host"):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
         if "localhost" in self.prometheus_url or "127.0.0.1" in self.prometheus_url:
@@ -212,6 +245,13 @@ class Settings(BaseSettings):
             problems.append(
                 "real_name_required_for_recharge=true 时 real_name_provider 不得为 mock"
                 "(mock 恒过,等于实名形同虚设;请接阿里云实名,或先关闭充值强制实名)"
+            )
+        if self.payment_alipay_enabled and not self.alipay_seller_id:
+            # DB 覆盖层也可能已配:env 侧缺失只作 fail-fast 提示的其中一路;
+            # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次
+            problems.append(
+                "payment_alipay_enabled=true 时 alipay_seller_id 必填"
+                "(收款方 PID,2088 开头;缺失则回调无法核对收款账号)"
             )
         if not self.image_allowed_registries:
             problems.append(
@@ -239,7 +279,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # environment 为必填项(fail-closed),运行期由 pydantic-settings 从 SUPERDL_ENVIRONMENT 注入;
+    # 静态检查看不到 env 填充,故忽略 call-arg
+    return Settings()  # pyright: ignore[reportCallIssue]
 
 
 def unknown_superdl_env_keys(env: Mapping[str, str] | None = None) -> list[str]:

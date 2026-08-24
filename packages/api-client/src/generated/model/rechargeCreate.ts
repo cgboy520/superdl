@@ -7,5 +7,5 @@
 
 export interface RechargeCreate {
   amount: number | string;
-  channel?: string;
+  channel: string;
 }

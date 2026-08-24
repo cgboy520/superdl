@@ -25,6 +25,13 @@ async def get_current_user(
     user = await session.get(User, int(payload["sub"]))
     if user is None:
         raise unauthorized()
+    if user.status == "deleted":
+        # 已注销:全部在外凭证一律 401(含 token_version 尚未推进前签发的旧 token)
+        raise AppError(
+            ErrorCode.UNAUTHORIZED,
+            key="account.accountDeleted",
+            http_status=status.HTTP_401_UNAUTHORIZED,
+        )
     if user.status == "frozen":
         raise AppError(
             ErrorCode.FORBIDDEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN

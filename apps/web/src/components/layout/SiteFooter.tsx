@@ -4,10 +4,16 @@
 const ICP_FALLBACK = import.meta.env.VITE_ICP_NUMBER as string | undefined;
 
 
+import { Link } from "@tanstack/react-router";
 import { theme, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useSiteConfig } from "../../api/queries";
+
+/** 站内路径(单 `/` 开头)走 SPA Link 避免整页刷新;锚点/mailto/外链保持 <a>。 */
+function isInternal(to: string): boolean {
+  return to.startsWith("/") && !to.startsWith("/#");
+}
 
 function FooterCol({
   title,
@@ -25,9 +31,15 @@ function FooterCol({
       {links.map((l) => (
         <div key={l.label} style={{ marginBottom: 8 }}>
           {l.to ? (
-            <a href={l.to} style={{ color: token.colorTextSecondary }}>
-              {l.label}
-            </a>
+            isInternal(l.to) ? (
+              <Link to={l.to} style={{ color: token.colorTextSecondary }}>
+                {l.label}
+              </Link>
+            ) : (
+              <a href={l.to} style={{ color: token.colorTextSecondary }}>
+                {l.label}
+              </a>
+            )
           ) : (
             <Typography.Text type="secondary">{l.label}</Typography.Text>
           )}
@@ -43,6 +55,11 @@ export function SiteFooter() {
   const { data: site } = useSiteConfig();
   const icp = site?.icp_number ?? ICP_FALLBACK;
   const police = site?.police_record_number;
+  // 经营主体公示(《电子商务法》第十五条):留空的项不展示
+  const companyName = site?.company_name;
+  const companyAddress = site?.company_address;
+  const companyPhone = site?.company_phone;
+  const licenseUrl = site?.business_license_url;
   const productLinks = [
     { label: t("footer.linkMarket"), to: "/market" },
     { label: t("footer.linkPricing"), to: "/#pricing" },
@@ -86,8 +103,22 @@ export function SiteFooter() {
             textAlign: "center",
           }}
         >
+          {(companyName || companyAddress || companyPhone) && (
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+              {companyName &&
+                (licenseUrl ? (
+                  <a href={licenseUrl} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
+                    {companyName}
+                  </a>
+                ) : (
+                  companyName
+                ))}
+              {companyAddress && ` · ${companyAddress}`}
+              {companyPhone && ` · ${companyPhone}`}
+            </Typography.Paragraph>
+          )}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("footer.copyright")}
+            {t("footer.copyright", { year: new Date().getFullYear() })}
             {icp && (
               <>
                 {" · "}

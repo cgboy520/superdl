@@ -6,10 +6,15 @@
  */
 
 export interface AdminAlertOut {
+  acked_at?: string | null;
+  acked_by?: number | null;
+  acked_by_username?: string | null;
   content: string;
   created_at: string;
   id: number;
   severity: string;
+  target_id?: string | null;
+  target_kind?: string | null;
   title: string;
   type: string;
 }

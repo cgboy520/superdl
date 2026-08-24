@@ -37,12 +37,19 @@ def fake():
 async def second_admin_headers(
     sm: async_sessionmaker[AsyncSession], client, username: str, role: str = "finance"
 ) -> dict[str, str]:
+    from tests.test_catalog import complete_mfa_setup
+
     async with sm() as session:
         await create_admin(session, username, "pass1234", role)
     resp = await client.post(
         "/api/admin/v1/auth/login", json={"username": username, "password": "pass1234"}
     )
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    body = resp.json()
+    if body["status"] == "ok":
+        token = body["access_token"]
+    else:
+        token = await complete_mfa_setup(client, body["ticket"])  # admin/finance 强制 TOTP
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def _make_dead_task(sm) -> int:
@@ -64,7 +71,7 @@ class TestTenants:
         headers, _uuid, user_id = await _provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="ops")
 
-        tenants = (await client.get("/api/admin/v1/tenants", headers=ah)).json()
+        tenants = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
         me = next(t for t in tenants if t["id"] == user_id)
         assert me["phone_masked"].startswith("139") and "****" in me["phone_masked"]
         assert me["instances"] == 1
@@ -163,7 +170,7 @@ class TestAdjustments:
             r2 = await create_admin(session, "fin-race-c", "pass1234", "finance")
             creator_id, r1_id, r2_id = creator.id, r1.id, r2.id
         async with sm() as session:
-            adj = await admin_service.create_adjustment(
+            adj, _created = await admin_service.create_adjustment(
                 session,
                 user_id=user_id,
                 amount="10.00",
@@ -246,11 +253,31 @@ class TestAdjustments:
         r1 = await client.post("/api/admin/v1/adjustments", json=body, headers=keyed)
         assert r1.status_code == 201, r1.text
         r2 = await client.post("/api/admin/v1/adjustments", json=body, headers=keyed)
-        assert r2.status_code == 201, r2.text
+        assert r2.status_code == 200, r2.text
+        assert r2.headers["x-idempotent-replay"] == "true"
         assert r2.json()["id"] == r1.json()["id"]
         async with sm() as session:
             rows = (await session.execute(select(AdminAdjustment))).scalars().all()
         assert len(rows) == 1
+
+    async def test_adjustment_amount_strict_decimal(self, client, sm, fake):
+        """调账金额契约层严格十进制:科学计数法/超 2 位小数/非数字一律 422,不进服务层。"""
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        fin = await second_admin_headers(sm, client, "fin-strict")
+        for bad in ("1e2", "1E-3", "10.005", "abc", "1,000.00", "10.", ".5", "--10.00", ""):
+            resp = await client.post(
+                "/api/admin/v1/adjustments",
+                json={"user_id": user_id, "amount": bad, "reason": "严格校验"},
+                headers=fin,
+            )
+            assert resp.status_code == 422, (bad, resp.text)
+        for good in ("-10.00", "25.50", "0.01", "-0.01", "100", "99999.99"):
+            resp = await client.post(
+                "/api/admin/v1/adjustments",
+                json={"user_id": user_id, "amount": good, "reason": "严格校验"},
+                headers=fin,
+            )
+            assert resp.status_code == 201, (good, resp.text)
 
 
 class TestTenantAggregations:
@@ -289,8 +316,24 @@ class TestTenantAggregations:
 
 
 class TestNodesAndReports:
+    async def test_port_pool_stats(self, client, sm, fake):
+        """端口池水位:assigned=已分配实例数;blocked=撞占标记(周期复检会放回)。"""
+        from app.modules.orchestrator.service import block_port
+
+        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # 占 1 端口
+        await block_port(sm, 31999, reason="test_orphan_endpoint", expected_instance_id=None)
+        ah = await admin_headers(sm, client, role="readonly")
+        pool = (await client.get("/api/admin/v1/nodes/port-pool", headers=ah)).json()
+        assert pool["assigned"] == 1
+        assert pool["blocked"] == 1
+        assert pool["total"] >= 2
+
     async def test_oversell_report(self, client, sm, fake):
         _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池 50% × 1
+        # 报表读台账(node_specs):先跑一轮巡检把 fake 节点写进台账(等价真实环境 60s 巡检)
+        from app.modules.nodes.patrol import node_spec_patrol
+
+        await node_spec_patrol(sm)
         ah = await admin_headers(sm, client, role="finance")
         report = (await client.get("/api/admin/v1/reports/oversell", headers=ah)).json()
         hami = next(r for r in report if r["pool"] == "hami")
@@ -301,9 +344,11 @@ class TestNodesAndReports:
     async def test_oversell_report_pool_scoped_utilization(self, client, sm, fake):
         """利用率按池加权聚合;无数据的池必须是 null,不得用集群均值冒充。"""
         from app.modules.metering.models import UsageHourly
+        from app.modules.nodes.patrol import node_spec_patrol
         from app.modules.orchestrator.models import Instance
 
         _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池实例
+        await node_spec_patrol(sm)  # 台账播种:报表物理口径来自 node_specs
         hour = now_utc().replace(minute=0, second=0, microsecond=0)
         async with sm() as session:
             inst_id = (await session.execute(select(Instance.id))).scalar_one()
@@ -383,7 +428,8 @@ class TestOutboxDead:
 
 class TestRevenueReport:
     async def test_today_revenue_and_signups(self, client: AsyncClient, sm):
-        """营收口径 = 账单归属期(bills_hourly.hour_start),不是 ledger 入账时间。"""
+        """营收口径 = 账单归属期(bills_hourly.hour_start),不是 ledger 入账时间。
+        tz_offset 缺省 480(东八区):UTC 16:00–24:00 的账归北京次日,不在「今日」。"""
         from app.modules.billing.models import BillHourly
 
         data = await register(client, "13600000043")
@@ -405,9 +451,18 @@ class TestRevenueReport:
         resp = await client.get("/api/admin/v1/reports/revenue", headers=ah)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["today_revenue"] == "12.50"
+        beijing_day_start = (now_utc() + timedelta(hours=8)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) - timedelta(hours=8)
+        expected_today = "12.50" if hour >= beijing_day_start else "0"
+        assert body["today_revenue"] == expected_today  # 缺省 tz_offset=480(原默认 0 已修正)
         assert body["month_revenue"] == "12.50"
         assert body["today_signups"] >= 1
+        # 显式越界一律 422(±720 上下界)
+        resp = await client.get(
+            "/api/admin/v1/reports/revenue", params={"tz_offset_minutes": 840}, headers=ah
+        )
+        assert resp.status_code == 422
 
 
 class TestAnnouncement:
@@ -552,11 +607,11 @@ class TestFreezeStopsInstances:
         assert len(tasks) == 1
 
         # 用户端此刻已经登不上,用管理端列表核对状态
-        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
+        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopping"]
         await drain(sm)
         await reconcile_once(sm)
-        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
+        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
         # 计费边(running→stopping→stopped)已闭合,后续小时不再产生账单
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
 
@@ -573,7 +628,7 @@ class TestFreezeStopsInstances:
             f"/api/admin/v1/tenants/{user_id}/unfreeze", json={"reason": "核查完毕"}, headers=h
         )
         assert resp.status_code == 200
-        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()
+        listed = (await client.get("/api/admin/v1/instances", headers=h)).json()["items"]
         assert [i["status"] for i in listed if i["uuid"] == uuid] == ["stopped"]
 
 
@@ -587,10 +642,11 @@ class TestAdminSearch:
 
         exact = (
             await client.get("/api/admin/v1/tenants", params={"q": "13611110001"}, headers=h)
-        ).json()
+        ).json()["items"]
         assert [t["phone_masked"] for t in exact] == ["136****0001"]
         # 只记得后几位也能找到(客服常见情形)
-        suffix = (await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)).json()
+        resp = await client.get("/api/admin/v1/tenants", params={"q": "0002"}, headers=h)
+        suffix = resp.json()["items"]
         assert [t["phone_masked"] for t in suffix] == ["136****0002"]
         # 列表仍只回掩码:「查得到」不等于「看得到」
         assert all("phone" not in t or t.get("phone") is None for t in exact)
@@ -601,12 +657,13 @@ class TestAdminSearch:
         await register(client, "13611110001")
 
         pct = (await client.get("/api/admin/v1/tenants", params={"q": "%"}, headers=h)).json()
-        assert pct == []
+        assert pct["items"] == []
         underscore = (
             await client.get("/api/admin/v1/tenants", params={"q": "_"}, headers=h)
         ).json()
-        assert underscore == []
-        suffix = (await client.get("/api/admin/v1/tenants", params={"q": "0001"}, headers=h)).json()
+        assert underscore["items"] == []
+        resp = await client.get("/api/admin/v1/tenants", params={"q": "0001"}, headers=h)
+        suffix = resp.json()["items"]
         assert [t["phone_masked"] for t in suffix] == ["136****0001"]
 
     async def test_tenant_search_is_audited(self, client, sm, fake):
@@ -654,18 +711,18 @@ class TestAdminSearch:
             await client.get(
                 "/api/admin/v1/instances", params={"node_name": "fake-node-1"}, headers=h
             )
-        ).json()
+        ).json()["items"]
         assert [i["uuid"] for i in by_node] == [uuid]
         # 「这台 GPU 是谁的」:管理端实例视图带租户与节点
         assert by_node[0]["user_id"] == user_id
         assert by_node[0]["node_name"] == "fake-node-1"
         by_uuid = (
             await client.get("/api/admin/v1/instances", params={"q": uuid[:8]}, headers=h)
-        ).json()
+        ).json()["items"]
         assert [i["uuid"] for i in by_uuid] == [uuid]
         assert (
             await client.get("/api/admin/v1/instances", params={"node_name": "nope"}, headers=h)
-        ).json() == []
+        ).json()["items"] == []
 
     async def test_order_lookup_by_order_no(self, client, sm, fake):
         from app.modules.billing.models import Order
@@ -685,7 +742,7 @@ class TestAdminSearch:
             await session.commit()
         found = (
             await client.get("/api/admin/v1/orders", params={"order_no": "SDL-B"}, headers=h)
-        ).json()
+        ).json()["items"]
         assert [o["order_no"] for o in found] == ["SDL-B"]
 
 
@@ -696,14 +753,16 @@ class TestTenantLookupById:
         data = await register(client, "13633330003")
         uid = data["user"]["id"]
 
-        rows = (await client.get("/api/admin/v1/tenants", params={"q": str(uid)}, headers=h)).json()
+        resp = await client.get("/api/admin/v1/tenants", params={"q": str(uid)}, headers=h)
+        rows = resp.json()["items"]
         assert rows[0]["id"] == uid
         # id 无命中时回落手机号后缀语义,不报错
         assert (
             await client.get("/api/admin/v1/tenants", params={"q": "99999999"}, headers=h)
-        ).json() == []
+        ).json()["items"] == []
         # 手机号后缀检索行为不变
-        rows = (await client.get("/api/admin/v1/tenants", params={"q": "0003"}, headers=h)).json()
+        resp = await client.get("/api/admin/v1/tenants", params={"q": "0003"}, headers=h)
+        rows = resp.json()["items"]
         assert any(t["id"] == uid for t in rows)
 
 
@@ -862,3 +921,377 @@ class TestAuditPagination:
         resp = await client.get("/api/admin/v1/audit", params={"cursor": "!!!"}, headers=ah)
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "common.badCursor"
+
+
+class TestTenantRealnameExposure:
+    """F9① 实名透出:readonly 脱敏;ops/finance/admin 明文,且含实名字段的响应落敏感读审计。"""
+
+    async def _realname_user(self, client, sm) -> int:
+        from app.modules.account import service as account_service
+
+        data = await register(client, "13655550001")
+        uid = data["user"]["id"]
+        async with sm() as session:
+            user = await account_service.get_user(session, uid)
+            user.company_name = "北京示例科技有限公司"
+            await account_service.submit_real_name(session, user, "张三", "110101199001011234")
+        return uid
+
+    async def test_readonly_sees_masked_and_no_audit(self, client, sm, fake):
+        """readonly:姓名留姓掩名、企业名留首尾;脱敏响应不落实名读审计(防列表页写放大)。"""
+        from app.core.audit import AuditLog
+
+        uid = await self._realname_user(client, sm)
+        ro = await admin_headers(sm, client, role="readonly")
+        rows = (await client.get("/api/admin/v1/tenants", headers=ro)).json()["items"]
+        me = next(t for t in rows if t["id"] == uid)
+        assert me["verification_status"] == "verified"
+        assert me["id_name"] == "张*"
+        assert me["company_name"] == "北京******公司"
+        async with sm() as session:
+            hits = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(AuditLog.target == "tenant-realname:list")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert hits == []
+
+    async def test_ops_sees_plaintext_and_audited(self, client, sm, fake):
+        """ops 看明文;响应真含实名字段 → 恰好落一条敏感读审计(内容不进审计,只记条数)。"""
+        from app.core.audit import AuditLog
+
+        uid = await self._realname_user(client, sm)
+        ah = await admin_headers(sm, client, role="ops")
+        rows = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
+        me = next(t for t in rows if t["id"] == uid)
+        assert me["verification_status"] == "verified"
+        assert me["id_name"] == "张三"
+        assert me["company_name"] == "北京示例科技有限公司"
+        async with sm() as session:
+            hits = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(AuditLog.target == "tenant-realname:list")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(hits) == 1
+        assert hits[0].action == "admin.GET /api/admin/v1/tenants"
+        assert hits[0].detail == {"rows": 1}
+
+
+class TestTenantQuotaOverride:
+    """F9② 配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库;readonly 只读。"""
+
+    async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
+        from tests.helpers import create_user_with_key, fund_wallet
+        from tests.test_disks import create_disk
+
+        headers, user_id, _key = await create_user_with_key(client, "13655550002")
+        await fund_wallet(sm, user_id)
+        ah = await admin_headers(sm, client, role="ops")
+
+        resp = await client.put(
+            f"/api/admin/v1/tenants/{user_id}/quota",
+            json={"max_disks": 1, "note": "防滥用限一块"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["max_disks"] == 1 and body["effective_max_disks"] == 1
+        assert body["note"] == "防滥用限一块"
+
+        # updated_by 落库:写覆盖的管理员 id
+        from app.modules.adminapi.models import AdminUser
+
+        async with sm() as session:
+            admin_id = (
+                await session.execute(select(AdminUser.id).where(AdminUser.username == "ops-user"))
+            ).scalar_one()
+        assert body["updated_by"] == admin_id and body["updated_at"]
+
+        await create_disk(client, headers, name="d1", size_gb=50)
+        # 覆盖(1)优先于 env 默认(20):第 2 块被拒
+        blocked = await client.post(
+            "/api/v1/disks", json={"name": "d2", "size_gb": 50}, headers=headers
+        )
+        assert blocked.status_code == 400
+        assert blocked.json()["message_key"] == "disks.countQuota"
+        assert blocked.json()["params"]["max"] == 1
+
+        # 清空覆盖(三项全空)→ 恢复默认链,第 2 块放行
+        resp = await client.put(
+            f"/api/admin/v1/tenants/{user_id}/quota",
+            json={"note": "复核后恢复默认"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["max_disks"] is None and body["effective_max_disks"] == 20
+        assert body["updated_by"] is None
+        await create_disk(client, headers, name="d2", size_gb=50)
+
+        # 清空操作本身也过审计(写操作中间件 + set_audit_target)
+        from app.core.audit import AuditLog
+
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog)
+                        .where(
+                            AuditLog.action == f"admin.PUT /api/admin/v1/tenants/{user_id}/quota"
+                        )
+                        .order_by(AuditLog.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 2
+        assert rows[-1].detail["after"] == {
+            "max_gpus": None,
+            "max_instances": None,
+            "max_disks": None,
+        }
+
+    async def test_readonly_cannot_write_quota(self, client, sm, fake):
+        data = await register(client, "13655550003")
+        ro = await admin_headers(sm, client, role="readonly")
+        resp = await client.put(
+            f"/api/admin/v1/tenants/{data['user']['id']}/quota",
+            json={"max_disks": 1, "note": "越权尝试"},
+            headers=ro,
+        )
+        assert resp.status_code == 403
+        # 读不挡:全角色可见生效值
+        resp = await client.get(f"/api/admin/v1/tenants/{data['user']['id']}/quota", headers=ro)
+        assert resp.status_code == 200
+        assert resp.json()["effective_max_disks"] == 20
+
+
+class TestAdminInstanceEvents:
+    """F10 管理端实例事件时间线:读全角色,按时间倒序,游标分页;非管理端凭据拒绝。"""
+
+    async def test_events_desc_and_cursor(self, client, sm, fake):
+        _uh, uuid, _uid = await _provision_running(client, sm, fake)
+        ah = await admin_headers(sm, client, role="readonly")
+
+        resp = await client.get(f"/api/admin/v1/instances/{uuid}/events", headers=ah)
+        assert resp.status_code == 200, resp.text
+        page = resp.json()
+        ids = [e["id"] for e in page["items"]]
+        assert len(ids) >= 2
+        assert ids == sorted(ids, reverse=True)
+
+        p1 = (await client.get(f"/api/admin/v1/instances/{uuid}/events?limit=1", headers=ah)).json()
+        assert len(p1["items"]) == 1 and p1["next_cursor"]
+        p2 = (
+            await client.get(
+                f"/api/admin/v1/instances/{uuid}/events?limit=1&cursor={p1['next_cursor']}",
+                headers=ah,
+            )
+        ).json()
+        assert len(p2["items"]) >= 1
+        assert all(e["id"] < p1["items"][0]["id"] for e in p2["items"])
+
+    async def test_user_token_rejected_and_unknown_uuid(self, client, sm, fake):
+        _uh, uuid, _uid = await _provision_running(client, sm, fake)
+        data = await register(client, "13655550004")
+        # 管理端是独立 JWT audience:用户 token 过不了鉴权依赖(401)
+        resp = await client.get(
+            f"/api/admin/v1/instances/{uuid}/events",
+            headers={"Authorization": f"Bearer {data['access_token']}"},
+        )
+        assert resp.status_code == 401
+        ah = await admin_headers(sm, client, role="ops")
+        resp = await client.get("/api/admin/v1/instances/nope-uuid/events", headers=ah)
+        assert resp.status_code == 404
+
+
+class TestOutboxTasksFullQuery:
+    """F10 outbox 全量查询:不限死信;status 与 payload.instance_id 过滤正确。"""
+
+    async def test_status_and_instance_id_filters(self, client: AsyncClient, sm):
+        async with sm() as session:
+            t1 = OutboxTask(type="instance.create", payload={"instance_id": 111}, status="pending")
+            t2 = OutboxTask(
+                type="instance.stop",
+                payload={"instance_id": 222},
+                status="dead",
+                retries=5,
+                last_error="boom",
+            )
+            t3 = OutboxTask(type="notify.sms", payload={"phone": "136****0001"}, status="done")
+            session.add_all([t1, t2, t3])
+            await session.commit()
+
+        ah = await admin_headers(sm, client, role="readonly")
+        all_rows = (await client.get("/api/admin/v1/outbox/tasks", headers=ah)).json()
+        assert [r["id"] for r in all_rows] == [t3.id, t2.id, t1.id]  # id 倒序,全量不限死信
+        assert {r["status"] for r in all_rows} == {"pending", "dead", "done"}
+
+        pending = (
+            await client.get("/api/admin/v1/outbox/tasks", params={"status": "pending"}, headers=ah)
+        ).json()
+        assert [r["id"] for r in pending] == [t1.id]
+
+        by_instance = (
+            await client.get("/api/admin/v1/outbox/tasks", params={"instance_id": 222}, headers=ah)
+        ).json()
+        assert [r["id"] for r in by_instance] == [t2.id]
+        assert by_instance[0]["status"] == "dead"
+        # payload 无 instance_id 键的行不得命中
+        assert (
+            await client.get("/api/admin/v1/outbox/tasks", params={"instance_id": 999}, headers=ah)
+        ).json() == []
+
+
+class TestAdminListPagination:
+    """P1-13:五个管理端列表端点改游标分页(Page 包装 + next_cursor 走查)与新增筛选参数。"""
+
+    async def test_tenants_cursor_walk(self, client, sm, fake):
+        h = await admin_headers(sm, client)
+        for i in range(3):
+            await register(client, f"1367777{i:04d}")
+        p1 = (await client.get("/api/admin/v1/tenants", params={"limit": 2}, headers=h)).json()
+        assert len(p1["items"]) == 2 and p1["next_cursor"]
+        p2 = (
+            await client.get(
+                "/api/admin/v1/tenants",
+                params={"limit": 2, "cursor": p1["next_cursor"]},
+                headers=h,
+            )
+        ).json()
+        ids1 = {t["id"] for t in p1["items"]}
+        assert len(p2["items"]) >= 1
+        assert all(t["id"] not in ids1 for t in p2["items"])
+        # 降序:第二页 id 全部小于第一页最小 id
+        assert max(t["id"] for t in p2["items"]) < min(ids1)
+
+    async def test_instances_cursor_walk(self, client, sm, fake):
+        h = await admin_headers(sm, client)
+        _h1, uuid1, _u1 = await _provision_running(client, sm, fake, "13677780001")
+        _h2, uuid2, _u2 = await _provision_running(client, sm, fake, "13677780002")
+        p1 = (await client.get("/api/admin/v1/instances", params={"limit": 1}, headers=h)).json()
+        assert len(p1["items"]) == 1 and p1["next_cursor"]
+        p2 = (
+            await client.get(
+                "/api/admin/v1/instances",
+                params={"limit": 1, "cursor": p1["next_cursor"]},
+                headers=h,
+            )
+        ).json()
+        seen = {p1["items"][0]["uuid"], *(i["uuid"] for i in p2["items"])}
+        assert {uuid1, uuid2} <= seen
+
+    async def test_orders_cursor_and_day_filter(self, client, sm, fake):
+        """订单:游标走查;day=YYYY-MM-DD 只留当日单(昨日单被滤掉)。"""
+        from app.modules.billing.models import Order
+
+        h = await admin_headers(sm, client, role="finance")
+        async with sm() as session:
+            for i in range(3):
+                session.add(
+                    Order(
+                        order_no=f"SDL-PAGE-{i}",
+                        user_id=1,
+                        amount=Decimal("10.00"),
+                        channel="mock",
+                        expires_at=now_utc() + timedelta(minutes=30),
+                    )
+                )
+            await session.commit()
+        # 把最旧的一单改到昨天:day=today 须滤掉它,day=yesterday 只剩它
+        async with sm() as session:
+            oldest = (
+                await session.execute(select(Order).where(Order.order_no == "SDL-PAGE-0"))
+            ).scalar_one()
+            oldest.created_at = now_utc() - timedelta(days=1)
+            await session.commit()
+
+        today = now_utc().date().isoformat()
+        today_rows = (
+            await client.get("/api/admin/v1/orders", params={"day": today}, headers=h)
+        ).json()["items"]
+        assert {o["order_no"] for o in today_rows} == {"SDL-PAGE-1", "SDL-PAGE-2"}
+        yesterday = (now_utc() - timedelta(days=1)).date().isoformat()
+        y_rows = (
+            await client.get("/api/admin/v1/orders", params={"day": yesterday}, headers=h)
+        ).json()["items"]
+        assert [o["order_no"] for o in y_rows] == ["SDL-PAGE-0"]
+        # 非法日期格式 → 400(与对账端点同口径)
+        bad = await client.get("/api/admin/v1/orders", params={"day": "2026-13-99"}, headers=h)
+        assert bad.status_code == 400
+
+        p1 = (await client.get("/api/admin/v1/orders", params={"limit": 2}, headers=h)).json()
+        assert len(p1["items"]) == 2 and p1["next_cursor"]
+        p2 = (
+            await client.get(
+                "/api/admin/v1/orders",
+                params={"limit": 2, "cursor": p1["next_cursor"]},
+                headers=h,
+            )
+        ).json()
+        assert [o["order_no"] for o in p2["items"]] == ["SDL-PAGE-0"]
+
+    async def test_adjustments_cursor_and_filters(self, client, sm, fake):
+        """调账:status/user_id 过滤 + 游标走查。"""
+        from app.modules.adminapi.models import AdminUser
+
+        _headers, _uuid, user_id = await _provision_running(client, sm, fake, "13677780003")
+        fin = await second_admin_headers(sm, client, "fin-page")
+        async with sm() as session:
+            creator = (
+                await session.execute(select(AdminUser.id).where(AdminUser.username == "fin-page"))
+            ).scalar_one()
+            for i in range(3):
+                await admin_service.create_adjustment(
+                    session,
+                    user_id=user_id,
+                    amount="1.00",
+                    reason=f"分页走查 {i}",
+                    created_by=creator,
+                )
+        p1 = (
+            await client.get("/api/admin/v1/adjustments", params={"limit": 2}, headers=fin)
+        ).json()
+        assert len(p1["items"]) == 2 and p1["next_cursor"]
+        p2 = (
+            await client.get(
+                "/api/admin/v1/adjustments",
+                params={"limit": 2, "cursor": p1["next_cursor"]},
+                headers=fin,
+            )
+        ).json()
+        assert len(p2["items"]) == 1 and p2["next_cursor"] is None
+        # status / user_id 过滤
+        pending = (
+            await client.get("/api/admin/v1/adjustments", params={"status": "pending"}, headers=fin)
+        ).json()["items"]
+        assert len(pending) == 3
+        approved = (
+            await client.get(
+                "/api/admin/v1/adjustments", params={"status": "approved"}, headers=fin
+            )
+        ).json()["items"]
+        assert approved == []
+        by_user = (
+            await client.get("/api/admin/v1/adjustments", params={"user_id": user_id}, headers=fin)
+        ).json()["items"]
+        assert len(by_user) == 3
+        ghost = (
+            await client.get("/api/admin/v1/adjustments", params={"user_id": 999999}, headers=fin)
+        ).json()["items"]
+        assert ghost == []
+
+    async def test_refunds_cursor_smoke(self, client, sm, fake):
+        fin = await second_admin_headers(sm, client, "fin-page2")
+        page = (await client.get("/api/admin/v1/refunds", headers=fin)).json()
+        assert page["items"] == [] and page["next_cursor"] is None

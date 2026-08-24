@@ -13,6 +13,7 @@ from app.core.k8s.base import (
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
+    PodListEntry,
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
@@ -48,6 +49,16 @@ class FakeOrchestrator:
     delete_calls: int = 0
     disk_delete_calls: int = 0
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
+    # 数据盘目录配额:subpath -> capacity_gb;fail_next_quota 注入一次下发失败
+    disk_quotas: dict[str, int] = field(default_factory=dict)
+    fail_next_quota: bool = False
+    fail_next_delete: bool = False  # delete_disk_quota 一次性失败注入
+    # 擦除异步语义:auto_wipe=False 时 wipe_disk 进入「进行中」(抛错,对齐真实 Job),
+    # finish_wipe 标记完成后调用返回;fail_next_wipe 注入一次性失败
+    auto_wipe: bool = True
+    fail_next_wipe: bool = False
+    wipe_pending: set[tuple[str, str]] = field(default_factory=set)
+    wipe_completed: set[tuple[str, str]] = field(default_factory=set)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
     prewarm_calls: list[tuple[str, str]] = field(default_factory=list)
@@ -60,11 +71,16 @@ class FakeOrchestrator:
     node_gfd_labels: dict[str, str] = field(default_factory=dict)  # 模拟 GFD 标签
     # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
+    # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
+    endpoints: set[tuple[str, str]] = field(default_factory=set)
     # 能力探测:默认健康 RKE2;fail_probe 模拟断连,probe_override 全量覆盖
     probe_k8s_version: str = "v1.36.2+rke2r1"
     probe_hami_ready: bool = True
     fail_probe: bool = False
     probe_override: ClusterProbe | None = None
+    # 容器日志(F5):fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
+    fail_next_logs: bool = False
+    log_calls: list[tuple[str, str, int, int | None]] = field(default_factory=list)
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -93,7 +109,38 @@ class FakeOrchestrator:
         )
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        self.wiped_disks.append((namespace, subpath))
+        if self.fail_next_wipe:
+            self.fail_next_wipe = False
+            raise RuntimeError("fake: wipe_disk failed (injected)")
+        key = (namespace, subpath)
+        if key in self.wipe_completed:
+            # 真实语义:Job 已成功 → 清理并返回(擦除只记录这一次)
+            self.wipe_completed.discard(key)
+            self.wiped_disks.append(key)
+            return
+        if self.auto_wipe:
+            self.wiped_disks.append(key)
+            return
+        # 进行中:抛错交 outbox 退避重试(对齐 real._run_managed_job_sync)
+        self.wipe_pending.add(key)
+        raise RuntimeError(f"fake: wipe in progress: {subpath}")
+
+    def finish_wipe(self, namespace: str, subpath: str) -> None:
+        """测试注入:擦除作业完成;下次 wipe_disk 调用清理并返回成功。"""
+        self.wipe_pending.discard((namespace, subpath))
+        self.wipe_completed.add((namespace, subpath))
+
+    async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
+        if self.fail_next_quota:
+            self.fail_next_quota = False
+            raise RuntimeError("fake: set_disk_quota failed (injected)")
+        self.disk_quotas[subpath] = capacity_gb
+
+    async def delete_disk_quota(self, subpath: str) -> None:
+        if self.fail_next_delete:
+            self.fail_next_delete = False
+            raise RuntimeError("fake: delete_disk_quota failed (injected)")
+        self.disk_quotas.pop(subpath, None)
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
         if self.fail_next_create:
@@ -112,6 +159,7 @@ class FakeOrchestrator:
         self.pods[key] = _FakePod(
             spec=spec, ready=self.auto_ready, phase="Running" if self.auto_ready else "Pending"
         )
+        self.endpoints.add(key)
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
         self.delete_calls += 1
@@ -122,10 +170,17 @@ class FakeOrchestrator:
                 pod.ready = False
             return
         self.pods.pop((namespace, name), None)  # 注意:不碰 instance_disks
+        self.endpoints.discard((namespace, name))
 
     def finish_delete(self, namespace: str, name: str) -> None:
         """测试注入:优雅期结束,对象真正从 etcd 消失。"""
         self.pods.pop((namespace, name), None)
+
+    async def list_instance_endpoints(self) -> list[tuple[str, str]]:
+        return sorted(self.endpoints)
+
+    async def used_node_ports(self) -> set[int]:
+        return {p.spec.ssh_node_port for p in self.pods.values()}
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
         self.disk_delete_calls += 1
@@ -143,8 +198,40 @@ class FakeOrchestrator:
             deleting=pod.deleting,
         )
 
-    async def list_instance_pods(self) -> list[tuple[str, str]]:
-        return list(self.pods)
+    async def read_instance_logs(
+        self, namespace: str, name: str, *, tail_lines: int, since_seconds: int | None = None
+    ) -> str:
+        """合成日志:带时间戳的固定几行(含实例名),不按 Pod 存在性报错——
+        dev 下 API 与 worker 是两个进程,内存态 Pod 不同步,存在性报错会让前端联调恒失败。
+        失败路径由 fail_next_logs 注入覆盖。"""
+        if self.fail_next_logs:
+            self.fail_next_logs = False
+            raise RuntimeError("fake: read_instance_logs failed (injected)")
+        self.log_calls.append((namespace, name, tail_lines, since_seconds))
+        lines = [
+            f"2026-08-23T03:14:01Z [entrypoint] instance {name} booting",
+            "2026-08-23T03:14:01Z [entrypoint] mounting instance disk at /root",
+            "2026-08-23T03:14:02Z [entrypoint] starting sshd on :22",
+            "2026-08-23T03:14:02Z [sshd] Server listening on 0.0.0.0 port 22",
+            "2026-08-23T03:14:03Z [entrypoint] starting jupyter…",
+            "2026-08-23T03:14:03Z [jupyter] Jupyter Server 2.16.0 is running at http://0.0.0.0:8888/lab",
+            f"2026-08-23T03:14:04Z [jupyter] incoming websocket from console ({name})",
+            "2026-08-23T03:14:05Z [entrypoint] bootstrap done, workspace ready",
+        ]
+        return "\n".join(lines[-tail_lines:])
+
+    async def list_instance_pods(self) -> list[PodListEntry]:
+        return [
+            PodListEntry(
+                namespace=ns,
+                name=name,
+                ready=pod.ready,
+                phase=pod.phase,
+                node_name=pod.node_name,
+                deleting=pod.deleting,
+            )
+            for (ns, name), pod in self.pods.items()
+        ]
 
     async def available_gpus(self, pool_label: str) -> int:
         cap = self.pool_capacity.get(pool_label, 0)

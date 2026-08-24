@@ -25,7 +25,7 @@ export type SharedFormatKey =
 export type SharedT = (key: SharedFormatKey, opts?: Record<string, unknown>) => string;
 
 /** 业务货币恒为人民币;en 语境用 CN¥ 避免被读作日元。 */
-function currencySymbol(locale: string): string {
+export function currencySymbol(locale: string): string {
   return locale.startsWith("zh") ? "¥" : "CN¥";
 }
 
@@ -136,6 +136,7 @@ export function formatDaysLeft(
 
 /** 应用侧经 useFormat() 一次绑定 t/locale 后使用的格式化件集合。 */
 export interface Formatters {
+  currencySymbol: string;
   formatMoney(amount: string | null | undefined): string;
   formatHourlyPrice(price: string | null | undefined): string;
   formatDuration(seconds: number): string;
@@ -146,6 +147,7 @@ export interface Formatters {
 
 export function makeFormatters(t: SharedT, locale: string): Formatters {
   return {
+    currencySymbol: currencySymbol(locale),
     formatMoney: (amount) => formatMoney(amount, locale),
     formatHourlyPrice: (price) => formatHourlyPrice(price, t, locale),
     formatDuration: (seconds) => formatDuration(seconds, t),
@@ -195,12 +197,22 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
   };
 }
 
-/** ISO 时间 → "2026-08-19 10:30" */
+/** 时区后缀(P2-29):按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
+export function tzSuffix(d: Date = new Date()): string {
+  const offsetMin = -d.getTimezoneOffset(); // getTimezoneOffset 以西为正,取反成 UTC 以东为正
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `(UTC${sign}${h}${m ? `:${String(m).padStart(2, "0")}` : ""})`;
+}
+
+/** ISO 时间 → "2026-08-19 10:30 (UTC+8)"(后缀随浏览器本地时区) */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${tzSuffix(d)}`;
 }
 
 /** GB 容量 → "100 GB" / "1.5 TB" */
@@ -210,4 +222,9 @@ export function formatSizeGb(gb: number): string {
     return `${Number.isInteger(tb) ? tb : tb.toFixed(1)} TB`;
   }
   return `${gb} GB`;
+}
+
+/** 手机号脱敏(与后端 account.realname.mask_phone 同口径):前 3 + 后 4,短串全掩。 */
+export function maskPhone(phone: string): string {
+  return phone.length >= 7 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : "***";
 }

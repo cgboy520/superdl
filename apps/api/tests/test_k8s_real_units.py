@@ -135,33 +135,88 @@ def _pod(
     pool: str | None,
     node_name: str | None,
     gpu: int,
+    cores: int | None = None,
 ) -> Any:
+    limits = {"nvidia.com/gpu": str(gpu)}
+    if cores is not None:
+        limits["nvidia.com/gpucores"] = str(cores)
     return SimpleNamespace(
         spec=SimpleNamespace(
             node_selector=({POOL_NODE_LABEL: pool} if pool else None),
             node_name=node_name,
-            containers=[
-                SimpleNamespace(resources=SimpleNamespace(limits={"nvidia.com/gpu": str(gpu)}))
-            ],
+            containers=[SimpleNamespace(resources=SimpleNamespace(limits=limits))],
         )
     )
 
 
+def _orch_with(pods: list[Any], nodes: list[Any]) -> RealOrchestrator:
+    """挂 CoreStub 的裸 RealOrchestrator(不连集群)。"""
+    orch = _bare()
+
+    class CoreStub:
+        def list_pod_for_all_namespaces(self, **kwargs: Any) -> Any:
+            return _page(pods)
+
+        def list_node(self, **kwargs: Any) -> Any:
+            return _page(nodes)
+
+    orch.core = cast(Any, CoreStub())
+    return orch
+
+
+class TestHamiCapacityAccounting:
+    """HAMi 池容量口径:物理卡数取 GFD 标签,已用份额按 gpucores 折算(物理卡当量)。"""
+
+    def _node(self, *, allocatable_gpu: int, gfd_count: str | None) -> Any:
+        labels = {POOL_NODE_LABEL: "hami"}
+        if gfd_count is not None:
+            labels["nvidia.com/gpu.count"] = gfd_count
+        return SimpleNamespace(
+            metadata=SimpleNamespace(name="hami-n1", labels=labels),
+            status=SimpleNamespace(allocatable={"nvidia.com/gpu": str(allocatable_gpu)}),
+        )
+
+    def test_physical_count_prefers_gfd_label(self):
+        # 2 物理卡 × deviceSplitCount 10 → allocatable 20;物理口径必须是 2
+        node = self._node(allocatable_gpu=20, gfd_count="2")
+        assert RealOrchestrator._physical_gpu_amount(node) == 2
+
+    def test_no_gfd_label_falls_back_to_allocatable(self):
+        node = self._node(allocatable_gpu=8, gfd_count=None)
+        assert RealOrchestrator._physical_gpu_amount(node) == 8
+
+    def test_occupancy_by_gpucores(self):
+        # 1 虚卡 × 50% 算力 = 0.5 物理卡当量
+        assert (
+            RealOrchestrator._pod_gpu_occupancy(
+                {"nvidia.com/gpu": "1", "nvidia.com/gpucores": "50"}
+            )
+            == 0.5
+        )
+        # 2 虚卡 × 30% = 0.6;整卡无 gpucores = 1
+        assert (
+            RealOrchestrator._pod_gpu_occupancy(
+                {"nvidia.com/gpu": "2", "nvidia.com/gpucores": "30"}
+            )
+            == 0.6
+        )
+        assert RealOrchestrator._pod_gpu_occupancy({"nvidia.com/gpu": "1"}) == 1.0
+        assert RealOrchestrator._pod_gpu_occupancy({"nvidia.com/mig-1g.10gb": "2"}) == 2.0
+
+    def test_used_pool_ceil_after_share_sum(self):
+        nodes = [
+            SimpleNamespace(metadata=SimpleNamespace(name="n1", labels={POOL_NODE_LABEL: "hami"}))
+        ]
+        pods = [
+            _pod(pool="hami", node_name="n1", gpu=1, cores=50),
+            _pod(pool="hami", node_name="n1", gpu=1, cores=30),
+        ]
+        # 0.5 + 0.3 = 0.8 → 向上取整 1(不低估占用)
+        assert _orch_with(pods, nodes)._used_gpus_by_pool() == {"hami": 1}
+
+
 class TestUsedGpusByPool:
     """无 nodeSelector 的 Pod 必须按 nodeName 所在节点保守归池,否则库存虚高超卖。"""
-
-    def _orch(self, pods: list[Any], nodes: list[Any]) -> RealOrchestrator:
-        orch = _bare()
-
-        class CoreStub:
-            def list_pod_for_all_namespaces(self, **kwargs: Any) -> Any:
-                return _page(pods)
-
-            def list_node(self, **kwargs: Any) -> Any:
-                return _page(nodes)
-
-        orch.core = cast(Any, CoreStub())
-        return orch
 
     def test_selectorless_pod_counted_by_node(self):
         nodes = [
@@ -172,14 +227,14 @@ class TestUsedGpusByPool:
             _pod(pool=None, node_name="n1", gpu=2),  # 无 selector:按节点归 hami
             _pod(pool=None, node_name=None, gpu=9),  # 未调度:无法归池,跳过
         ]
-        assert self._orch(pods, nodes)._used_gpus_by_pool() == {"kata": 1, "hami": 2}
+        assert _orch_with(pods, nodes)._used_gpus_by_pool() == {"kata": 1, "hami": 2}
 
     def test_all_selectorless_cluster_not_overcounted(self):
         nodes = [
             SimpleNamespace(metadata=SimpleNamespace(name="n1", labels={POOL_NODE_LABEL: "mig"}))
         ]
         pods = [_pod(pool=None, node_name="n1", gpu=1)]
-        assert self._orch(pods, nodes)._used_gpus_by_pool() == {"mig": 1}
+        assert _orch_with(pods, nodes)._used_gpus_by_pool() == {"mig": 1}
 
 
 def _api_exc(status: int, body: str = "") -> k8s_client.ApiException:

@@ -68,6 +68,21 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
     inventory.clear_cache()
 
 
+async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
+    """mfa_setup 票 → begin → confirm(当前 TOTP)→ access token。供管理端测试复用。"""
+    import pyotp
+
+    begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
+    assert begin.status_code == 200, begin.text
+    secret = begin.json()["secret"]
+    confirm = await client.post(
+        "/api/admin/v1/auth/mfa/setup/confirm",
+        json={"ticket": ticket, "code": pyotp.TOTP(secret).now()},
+    )
+    assert confirm.status_code == 200, confirm.text
+    return confirm.json()["access_token"]
+
+
 async def admin_headers(
     sm: async_sessionmaker[AsyncSession], client: AsyncClient, role: str = "admin"
 ) -> dict[str, str]:
@@ -77,7 +92,13 @@ async def admin_headers(
         "/api/admin/v1/auth/login", json={"username": f"{role}-user", "password": "pass1234"}
     )
     assert resp.status_code == 200, resp.text
-    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    body = resp.json()
+    if body["status"] == "ok":
+        token = body["access_token"]
+    else:
+        # admin/finance 强制 TOTP(W2-8):走完整绑定流拿 token
+        token = await complete_mfa_setup(client, body["ticket"])
+    return {"Authorization": f"Bearer {token}"}
 
 
 class TestMarket:
@@ -102,7 +123,10 @@ class TestMarket:
         prices = [s["price_hourly"] for s in resp.json()]
         assert "1.6800" in prices  # 字符串且保留 4 位 scale
 
-    async def test_inventory_cached_30s(self, client: AsyncClient, sm, monkeypatch):
+    async def test_inventory_cached_while_signature_unchanged(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """签名(台账行数/max(updated_at))未变时不重复计算;签名变化立即触发重算。"""
         await seed_skus(sm)
         calls = {"n": 0}
 
@@ -116,9 +140,15 @@ class TestMarket:
         first = calls["n"]
         assert first == 1  # 批量接口:一次调用算完全部 SKU,不是每 SKU 一次
         await client.get("/api/v1/skus")
-        assert calls["n"] == first  # 30s 窗口内不重复计算
+        assert calls["n"] == first  # 签名未变不重复计算
         data = (await client.get("/api/v1/skus")).json()
         assert all(s["available_count"] == 5 for s in data)
+        # 台账写入(签名变化)→ 下一次查询立即重算,不等任何 TTL
+        from tests.helpers import seed_node_spec
+
+        await seed_node_spec(sm, node_name="node-sig-1")
+        await client.get("/api/v1/skus")
+        assert calls["n"] == first + 1
 
     async def test_inventory_stale_on_provider_error(self, client: AsyncClient, sm, monkeypatch):
         """台账查询故障且有旧快照:市场页展示陈旧库存而不是 500(/skus 免登录无限流)。"""
@@ -135,10 +165,10 @@ class TestMarket:
         inventory.clear_cache()
         assert (await client.get("/api/v1/skus")).json()[0]["available_count"] == 7
         assert inventory._cache is not None
-        inventory._cache = (  # 把快照拨过 TTL,触发刷新
-            inventory._cache[0] - inventory.CACHE_TTL_SECONDS - 1,
-            inventory._cache[1],
-        )
+        # 拨动签名触发重算(等价台账巡检写入),provider 故障 → 陈旧值兜底
+        from tests.helpers import seed_node_spec
+
+        await seed_node_spec(sm, node_name="node-stale-1")
         resp = await client.get("/api/v1/skus")
         assert resp.status_code == 200
         assert resp.json()[0]["available_count"] == 7  # 陈旧值兜底

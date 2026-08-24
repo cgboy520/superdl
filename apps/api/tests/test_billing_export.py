@@ -1,0 +1,179 @@
+"""账单 CSV 导出端点(P2-28):内容头、行数、月份窗口、时区后缀、截断标记、转义规则。"""
+
+from datetime import UTC, datetime
+from decimal import Decimal
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.modules.billing import export as billing_export
+from app.modules.billing.models import BillHourly
+from tests.helpers import create_user_with_key, fund_wallet
+
+
+def _hour(y: int, m: int, d: int, h: int) -> datetime:
+    return datetime(y, m, d, h, tzinfo=UTC)
+
+
+async def _seed_hourly(
+    sm: async_sessionmaker[AsyncSession], user_id: int, hours: list[datetime]
+) -> None:
+    async with sm() as session:
+        for h in hours:
+            session.add(
+                BillHourly(
+                    instance_id=1,
+                    user_id=user_id,
+                    hour_start=h,
+                    seconds_used=3600,
+                    unit_price=Decimal("1.6800"),
+                    gpu_count=1,
+                    amount=Decimal("1.68"),
+                )
+            )
+        await session.commit()
+
+
+class TestEscaping:
+    """与前端 lib/csv.ts 同一套规则的镜像单测(无 DB)。"""
+
+    def test_formula_lead_prefixed(self):
+        assert billing_export.csv_line(["=1+1"]) == "'=1+1\r\n"
+        assert billing_export.csv_line(["@who"]) == "'@who\r\n"
+        # 纯数字负数金额不受影响;非纯数字的 - 前导按文本化
+        assert billing_export.csv_line(["-12.30"]) == "-12.30\r\n"
+        assert billing_export.csv_line(["-2+3"]) == "'-2+3\r\n"
+
+    def test_comma_quote_newline_quoted(self):
+        assert billing_export.csv_line(['a,"b"\nc']) == '"a,""b""\nc"\r\n'
+
+    def test_none_empty(self):
+        assert billing_export.csv_line([None, "x"]) == ",x\r\n"
+
+    def test_utc_suffix(self):
+        assert billing_export.utc_suffix(480) == "(UTC+8)"
+        assert billing_export.utc_suffix(-300) == "(UTC-5)"
+        assert billing_export.utc_suffix(345) == "(UTC+5:45)"
+        assert billing_export.utc_suffix(0) == "(UTC+0)"
+
+
+class TestHourlyExport:
+    async def test_headers_rows_and_month_window(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        headers, user_id, _ = await create_user_with_key(client, "13900000301")
+        await _seed_hourly(
+            sm,
+            user_id,
+            [_hour(2026, 8, 1, 0), _hour(2026, 8, 1, 1), _hour(2026, 7, 31, 20)],
+        )
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "hourly", "month": "2026-08", "tz_offset_minutes": 480},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        assert "attachment" in resp.headers["content-disposition"]
+        assert "superdl-hourly-2026-08.csv" in resp.headers["content-disposition"]
+
+        text = resp.text
+        assert text.startswith("\ufeff小时,实例ID,运行秒数,单价(元/时),卡数,金额(元)\r\n")
+        lines = [ln for ln in text.removeprefix("\ufeff").split("\r\n") if ln]
+        # 8 月窗口(UTC+8):8/1 00:00、8/1 01:00 UTC 两行;7/31 20:00 UTC = 8/1 04:00 本地也在月内
+        assert len(lines) == 1 + 3
+        # 行按 id 降序(最新写入在前);时间按 UTC+8 折算并带后缀
+        hours = {ln.split(",", 1)[0] for ln in lines[1:]}
+        assert hours == {
+            "2026-08-01 08:00 (UTC+8)",
+            "2026-08-01 09:00 (UTC+8)",
+            "2026-08-01 04:00 (UTC+8)",
+        }
+        assert lines[1].endswith(",1,3600,1.6800,1,1.68")
+        assert billing_export.TRUNCATED_MARKER not in text
+
+    async def test_month_excludes_outside_rows(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        headers, user_id, _ = await create_user_with_key(client, "13900000302")
+        # 6/30 17:00 UTC = 7/1 01:00 (UTC+8),不属于 6 月窗口
+        await _seed_hourly(sm, user_id, [_hour(2026, 6, 30, 17), _hour(2026, 6, 15, 0)])
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "hourly", "month": "2026-06", "tz_offset_minutes": 480},
+            headers=headers,
+        )
+        lines = [ln for ln in resp.text.split("\r\n") if ln]
+        assert len(lines) == 1 + 1  # 只剩 6/15 那行
+
+    async def test_en_headers(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
+        headers, user_id, _ = await create_user_with_key(client, "13900000303")
+        await _seed_hourly(sm, user_id, [_hour(2026, 8, 1, 0)])
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "hourly", "month": "2026-08", "lang": "en-US"},
+            headers=headers,
+        )
+        assert "Hour,Instance ID,Seconds" in resp.text
+
+    async def test_truncation_marker(
+        self,
+        client: AsyncClient,
+        sm: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        headers, user_id, _ = await create_user_with_key(client, "13900000304")
+        await _seed_hourly(sm, user_id, [_hour(2026, 8, 1, h) for h in range(4)])
+        monkeypatch.setattr(billing_export, "EXPORT_MAX_ROWS", 2)
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "hourly", "month": "2026-08"},
+            headers=headers,
+        )
+        lines = [ln for ln in resp.text.split("\r\n") if ln]
+        assert len(lines) == 1 + 2 + 1  # 表头 + 上限行数 + 截断标记行
+        assert lines[-1].startswith(billing_export.TRUNCATED_MARKER)
+
+    async def test_bad_month_rejected(self, client: AsyncClient):
+        headers, _, _ = await create_user_with_key(client, "13900000305")
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "hourly", "month": "2026-13"},
+            headers=headers,
+        )
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+
+
+class TestLedgerExport:
+    async def test_ledger_rows(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
+        headers, user_id, _ = await create_user_with_key(client, "13900000306")
+        await fund_wallet(sm, user_id, "100.00")
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "ledger", "tz_offset_minutes": 480},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        text = resp.text
+        assert "时间,类型,金额(元),余额快照(元),关联,备注" in text
+        assert "充值,100.00,100.00" in text
+        assert "(UTC+8)" in text
+
+    async def test_isolation(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
+        headers, _user_id, _ = await create_user_with_key(client, "13900000307")
+        _headers2, user_id2, _ = await create_user_with_key(client, "13900000308")
+        await fund_wallet(sm, user_id2, "888.00")
+        await _seed_hourly(sm, user_id2, [_hour(2026, 8, 1, 0)])
+        resp = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "ledger"},
+            headers=headers,
+        )
+        assert "888.00" not in resp.text
+        resp2 = await client.get(
+            "/api/v1/billing/export",
+            params={"dataset": "hourly", "month": "2026-08"},
+            headers=headers,
+        )
+        assert "1.6800" not in resp2.text

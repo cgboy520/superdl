@@ -1,7 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, CheckConstraint, Numeric, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,7 +46,8 @@ class BalanceLedger(Base):
     ref_type: Mapped[str | None] = mapped_column(String(32))  # bill_hourly / order / adjustment...
     ref_id: Mapped[str | None] = mapped_column(String(64))
     remark: Mapped[str | None] = mapped_column(String(256))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    # 翻页/对账一律走主键 id,created_at 无查询使用,不建索引
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class BillHourly(Base):
@@ -138,6 +148,8 @@ class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
+        # 人工补单幂等键 DB 兜底:同键只可能落在一笔订单上(应用层先判重放,约束兜并发)
+        UniqueConstraint("backfill_idempotency_key"),
         CheckConstraint("amount > 0", name="amount_positive"),
     )
 
@@ -155,8 +167,101 @@ class Order(Base):
     backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     qr_url: Mapped[str | None] = mapped_column(String(512))
     paid_at: Mapped[datetime | None]
+    # 渠道侧对已入账订单的关单/退款通知到达时刻(不自动冲账,人工核销;异常清单分桶依据)
+    channel_reversed_at: Mapped[datetime | None]
     expires_at: Mapped[datetime]
     # 发票字段预留
     invoice_title: Mapped[str | None] = mapped_column(String(128))
     invoice_tax_id: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class InvoiceRequest(Base):
+    """发票申请单(F2)。按账期合并开具:一个自然月一张;amount 由服务端按账期计算
+    (Σ 该账期 paid 充值 − Σ 该账期 submitted+issued 申请),客户端只提交账期与抬头。
+
+    部分唯一索引 uq_invoice_requests_active_period:同一 (user_id, period) 只允许一条
+    非 rejected 申请(rejected 不占位,用户可修改抬头后重新申请)。
+    """
+
+    __tablename__ = "invoice_requests"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("status IN ('submitted', 'issued', 'rejected')", name="status"),
+        CheckConstraint("title_type IN ('personal', 'company')", name="title_type"),
+        Index(
+            "uq_invoice_requests_active_period",
+            "user_id",
+            "period",
+            unique=True,
+            postgresql_where=text("status IN ('submitted', 'issued')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    period: Mapped[str] = mapped_column(String(7))  # 申请账期 YYYY-MM(北京月界)
+    title_type: Mapped[str] = mapped_column(String(16))  # personal / company
+    title: Mapped[str] = mapped_column(String(128))  # 发票抬头
+    tax_id: Mapped[str | None] = mapped_column(String(32))  # 税号(企业抬头必填,个人为空)
+    email: Mapped[str] = mapped_column(String(128))  # 接收邮箱(人工开票后发送至该邮箱)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(16), default="submitted", index=True)
+    # submitted → issued / rejected
+    invoice_no: Mapped[str | None] = mapped_column(String(64))  # 发票号(开票时填)
+    reject_reason: Mapped[str | None] = mapped_column(String(256))
+    issued_by: Mapped[int | None]  # 开票操作人(admin_users.id,finance/admin)
+    issued_at: Mapped[datetime | None]
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class RefundRequest(Base):
+    """退款申请单(F1)。审批通过 ≠ 出金:登记打款成功才同事务钱包负向调账,
+    并回写 wallet_entry_id 关联 balance_ledger。
+
+    双人制衡硬约束:DB CHECK 兜底 payout_by <> review_by(应用层同样拦截给 409 文案)。
+    部分唯一索引 uq_refund_requests_active_order:同一订单只允许一条活跃申请
+    (rejected/cancelled 后用户可重新申请)。
+    """
+
+    __tablename__ = "refund_requests"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key"),
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'paid', 'cancelled')", name="status"
+        ),
+        CheckConstraint(
+            "payout_by IS NULL OR review_by IS NULL OR payout_by <> review_by",
+            name="payout_not_reviewer",
+        ),
+        Index(
+            "uq_refund_requests_active_order",
+            "order_no",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'approved', 'paid')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # R+yyyymmdd+两位日内序列(如 R20260823-01);序列由服务层当日计数+唯一冲突重试生成
+    refund_no: Mapped[str] = mapped_column(String(20), unique=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    order_no: Mapped[str] = mapped_column(String(40))  # 原充值订单号
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    reason: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # pending → approved / rejected → paid / cancelled
+    review_by: Mapped[int | None]  # 审批人(admin_users.id,finance/admin)
+    review_at: Mapped[datetime | None]
+    review_comment: Mapped[str | None] = mapped_column(String(256))
+    payout_channel: Mapped[str | None] = mapped_column(String(32))
+    # offline / alipay_transfer / wechat_transfer(线下打款;渠道原路退回是二期)
+    payout_ref: Mapped[str | None] = mapped_column(String(128))  # 线下打款凭证号
+    payout_by: Mapped[int | None]  # 打款登记人,强制 ≠ review_by
+    payout_at: Mapped[datetime | None]
+    wallet_entry_id: Mapped[int | None] = mapped_column(BigInteger)  # 核销后的 balance_ledger.id
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

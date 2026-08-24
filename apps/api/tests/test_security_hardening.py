@@ -20,15 +20,12 @@ class TestLoginRateLimit:
         assert resp.json()["code"] == "RATE_LIMITED"
         # 限流响应必须告诉客户端窗口剩余秒数(Retry-After)
         assert resp.headers["retry-after"].isdigit()
-        # 锁的是失败计数而非账号:凭据正确随时可登(不惩罚记对密码的管理员),成功即清零
+        # 封禁期内连正确密码也 429:廉价准入先于 bcrypt,封禁中的请求不再付哈希成本
         resp = await client.post(
             "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "pass1234"}
         )
-        assert resp.status_code == 200, resp.text
-        resp = await client.post(
-            "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "wrong"}
-        )
-        assert resp.json()["code"] == "LOGIN_FAILED"
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
 
     async def test_admin_login_pure_ip_bucket(self, client: AsyncClient, sm, monkeypatch):
         """纯 IP 桶:遍历用户名换账号桶也躲不开;只计失败,阈值放宽防误伤 NAT 出口。"""
@@ -78,7 +75,38 @@ class TestNoDefaultBootstrapAdmin:
 
         monkeypatch.delenv("SUPERDL_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
         # _env_file=None:只验代码默认值,不受本地 dev .env 影响
-        assert Settings(_env_file=None).bootstrap_admin_password is None  # type: ignore[call-arg]
+        s = Settings(_env_file=None, environment="dev")  # type: ignore[call-arg]
+        assert s.bootstrap_admin_password is None
+
+
+class TestEnvironmentFailClosed:
+    def test_environment_is_required(self, monkeypatch):
+        """SUPERDL_ENVIRONMENT 无默认:缺失即拒绝启动(fail-closed)。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        monkeypatch.delenv("SUPERDL_ENVIRONMENT", raising=False)
+        with pytest.raises(ValidationError, match="environment"):
+            Settings(_env_file=None)  # type: ignore[call-arg]
+
+    def test_real_backend_requires_prod(self):
+        """k8s_backend=real + 非 prod 环境 = 宽松默认(mock 支付/固定短信码)暴露在真实集群。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        for env in ("dev", "test"):
+            with pytest.raises(ValidationError, match="SUPERDL_ENVIRONMENT=prod"):
+                Settings(_env_file=None, environment=env, k8s_backend="real")  # type: ignore[call-arg]
+
+    def test_fake_backend_allows_dev(self):
+        from app.core.config import Settings
+
+        s = Settings(_env_file=None, environment="dev", k8s_backend="fake")  # type: ignore[call-arg]
+        assert s.environment == "dev"
 
 
 class TestProdConfigValidation:
@@ -100,6 +128,7 @@ class TestProdConfigValidation:
             "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
             "cors_origins": ["https://console.superdl.cn"],
             "ssh_host": "ssh1.superdl.cn",
+            "admin_host": "admin.superdl.cn",
             "jupyter_domain_suffix": "app.superdl.cn",
             "public_base_url": "https://api.superdl.cn",
             "prometheus_url": "http://kube-prometheus-stack-prometheus.monitoring.svc:9090",
@@ -181,6 +210,22 @@ class TestProdConfigValidation:
         del kwargs["image_allowed_registries"]
         with pytest.raises(ValidationError, match="image_allowed_registries"):
             Settings(**kwargs)
+
+    def test_prod_alipay_enabled_requires_seller_id(self):
+        """prod 启用支付宝但缺收款方 PID:回调无法核对收款账号,启动即拒。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError, match="alipay_seller_id"):
+            Settings(**self._complete_prod_kwargs(), payment_alipay_enabled=True)
+        s = Settings(
+            **self._complete_prod_kwargs(),
+            payment_alipay_enabled=True,
+            alipay_seller_id="2088123456789012",
+        )
+        assert s.payment_alipay_enabled is True
 
 
 class TestSmsCodeBruteForce:
@@ -271,6 +316,55 @@ class TestSecurityHeaders:
     async def test_docs_exempt_from_csp(self, client: AsyncClient):
         resp = await client.get("/docs")
         assert "content-security-policy" not in resp.headers
+
+
+class TestEdgeGuard:
+    """prod 边缘收口:/api/admin 与 /metrics 不从公网 api 域暴露。"""
+
+    async def test_admin_api_hidden_from_public_host(self, client: AsyncClient, monkeypatch):
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "prod", raising=False)
+        monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
+        # 公网 api 域:管理端登录面 404(不暴露)
+        resp = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "x", "password": "y"},
+            headers={"Host": "api.superdl.cn"},
+        )
+        assert resp.status_code == 404
+        # admin 域(admin SPA 同源反代):穿过收口,到达路由(凭据错 400,不是 404)
+        resp = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "x", "password": "y"},
+            headers={"Host": "admin.superdl.cn"},
+        )
+        assert resp.status_code == 400
+        # 用户端 API 不受影响
+        assert (await client.get("/healthz", headers={"Host": "api.superdl.cn"})).status_code == 200
+
+    async def test_metrics_rejects_ingress_traffic(self, client: AsyncClient, monkeypatch):
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "prod", raising=False)
+        monkeypatch.setattr(settings, "metrics_token", "mtok", raising=False)
+        # 经 ingress(带 XFF)→ 404;集群内直刮 → 到达 Bearer 校验(无 token 401)
+        assert (
+            await client.get("/metrics/", headers={"X-Forwarded-For": "1.2.3.4"})
+        ).status_code == 404
+        assert (await client.get("/metrics/")).status_code == 401
+        assert (
+            await client.get("/metrics/", headers={"Authorization": "Bearer mtok"})
+        ).status_code == 200
+
+    async def test_non_prod_not_guarded(self, client: AsyncClient):
+        # test 环境无 ingress(Host 是 testserver),收口不启用:admin 路由照常到达
+        resp = await client.post(
+            "/api/admin/v1/auth/login", json={"username": "x", "password": "y"}
+        )
+        assert resp.status_code == 400
 
 
 class TestMetricsGuard:
@@ -484,6 +578,71 @@ class TestUnifiedErrorBodyForHttpException:
         assert "GET" in resp.headers["allow"]
 
 
+class TestAdminTokenRenewal:
+    async def test_renew_issues_usable_token(self, client: AsyncClient, sm):
+        ah = await admin_headers(sm, client, role="ops")
+        old = ah["Authorization"].removeprefix("Bearer ")
+        resp = await client.post("/api/admin/v1/auth/refresh", json={"access_token": old})
+        assert resp.status_code == 200
+        new = resp.json()["access_token"]
+        assert new != old
+        me = await client.get("/api/admin/v1/me", headers={"Authorization": f"Bearer {new}"})
+        assert me.status_code == 200
+
+    async def test_renew_rejects_garbage_and_user_token(self, client: AsyncClient):
+        garbage = await client.post("/api/admin/v1/auth/refresh", json={"access_token": "xx"})
+        assert garbage.status_code == 401
+        # 用户端 token 不可换管理端(audience 物理隔离)
+        from tests.test_account_auth import register
+
+        data = await register(client, "13900000071")
+        cross = await client.post(
+            "/api/admin/v1/auth/refresh", json={"access_token": data["access_token"]}
+        )
+        assert cross.status_code == 401
+
+    async def test_renew_grace_and_absolute_cap(self, client: AsyncClient, sm):
+        """过期 15 分钟宽限内可续;首次登录超 12h(sess_iat 锚定)必须重新登录。"""
+        from datetime import timedelta
+
+        from app.core.security import create_token
+        from app.core.timeutil import now_utc
+        from app.modules.adminapi.service import SESSION_MAX_SECONDS, create_admin
+
+        async with sm() as session:
+            admin = await create_admin(session, "grace-admin", "pass1234", "ops")
+        ver = admin.token_version
+        # 过期 5 分钟(宽限内):可续
+        expired = create_token(
+            str(admin.id),
+            "admin",
+            extra={"ver": ver},
+            iat=now_utc() - timedelta(seconds=3600 + 300),
+        )
+        resp = await client.post("/api/admin/v1/auth/refresh", json={"access_token": expired})
+        assert resp.status_code == 200
+        # sess_iat 超 12h:即使当前 token 未过期也拒(绝对会话上限跨续期链生效)
+        ancient = create_token(
+            str(admin.id),
+            "admin",
+            extra={
+                "ver": ver,
+                "sess_iat": int(
+                    (now_utc() - timedelta(seconds=SESSION_MAX_SECONDS + 60)).timestamp()
+                ),
+            },
+        )
+        resp2 = await client.post("/api/admin/v1/auth/refresh", json={"access_token": ancient})
+        assert resp2.status_code == 401
+        # token_version 变(改密/停用)即不可续
+        async with sm() as session:
+            admin.token_version += 1
+            session.add(admin)
+            await session.commit()
+        resp3 = await client.post("/api/admin/v1/auth/refresh", json={"access_token": expired})
+        assert resp3.status_code == 401
+
+
 class TestAuthenticateHeader:
     async def test_401_carries_www_authenticate(self, client: AsyncClient):
         """RFC 6750:Bearer 鉴权失败必须回 WWW-Authenticate,客户端据此识别挑战。"""
@@ -495,8 +654,9 @@ class TestAuthenticateHeader:
 
 class TestAuditOnUnhandledException:
     async def test_500_is_audited(self, sm):
-        """未捕获异常(result=500)也要落审计行:500 恰恰是最需要留痕的结果。"""
-        import pytest
+        """未捕获异常(result=500)也要落审计行:500 恰恰是最需要留痕的结果。
+        Uniform500Middleware 在链内层渲染 500(异常不再穿透审计中间件),
+        审计走正常响应路径留痕,result 仍为 500。"""
         from httpx import ASGITransport
         from sqlalchemy import select
 
@@ -505,14 +665,14 @@ class TestAuditOnUnhandledException:
 
         app = create_app()
 
-        @app.post("/api/v1/__boom")
-        async def _boom() -> None:
+        @app.post("/api/v1/__boom", include_in_schema=False)
+        async def _boom() -> None:  # pyright: ignore[reportUnusedFunction]
             raise RuntimeError("boom")
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
-            with pytest.raises(RuntimeError, match="boom"):
-                await c.post("/api/v1/__boom")
+            resp = await c.post("/api/v1/__boom")
+        assert resp.status_code == 500
         async with sm() as session:
             rows = (
                 (

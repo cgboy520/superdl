@@ -6,15 +6,19 @@ import zhShared from "../locales/zh-CN/shared.json";
 import {
   addAmounts,
   compareAmounts,
+  currencySymbol,
   diskDailyEstimate,
   formatCountdown,
+  formatDateTime,
   formatDaysLeft,
   formatDuration,
   formatHourlyPrice,
   formatMoney,
   formatReclaimCountdown,
   formatSizeGb,
+  maskPhone,
   mulPrice,
+  tzSuffix,
   type SharedT,
 } from "./format";
 
@@ -44,6 +48,21 @@ describe("addAmounts", () => {
     expect(addAmounts("-1.50", "1.00")).toBe("-0.50");
     expect(addAmounts(null, "2.00")).toBe("2.00");
     expect(addAmounts(null, undefined)).toBe("0.00");
+  });
+});
+
+describe("currencySymbol", () => {
+  it("zh 用 ¥,en 用 CN¥ 防读作日元", () => {
+    expect(currencySymbol("zh-CN")).toBe("¥");
+    expect(currencySymbol("en-US")).toBe("CN¥");
+  });
+});
+
+describe("maskPhone", () => {
+  it("前 3 后 4,短串全掩(与后端同口径)", () => {
+    expect(maskPhone("13812345678")).toBe("138****5678");
+    expect(maskPhone("12345")).toBe("***");
+    expect(maskPhone("")).toBe("***");
   });
 });
 
@@ -175,6 +194,23 @@ describe("formatSizeGb", () => {
     expect(formatSizeGb(100)).toBe("100 GB");
     expect(formatSizeGb(1024)).toBe("1 TB");
     expect(formatSizeGb(1536)).toBe("1.5 TB");
+  });
+});
+
+describe("formatDateTime 时区后缀(P2-29)", () => {
+  it("输出带 (UTC±x) 后缀,与运行时偏移一致", () => {
+    const out = formatDateTime("2026-08-19T02:30:00Z");
+    expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(:\d{2})?\)$/);
+    expect(out.endsWith(tzSuffix(new Date("2026-08-19T02:30:00Z")))).toBe(true);
+  });
+  it("空值仍为占位符", () => {
+    expect(formatDateTime(null)).toBe("-");
+    expect(formatDateTime(undefined)).toBe("-");
+  });
+  it("tzSuffix 半小时间带出分钟", () => {
+    // 无法注入偏移,直接对当前 Date 校验形态(东/西区、是否带 :mm)
+    const s = tzSuffix(new Date());
+    expect(s).toMatch(/^\(UTC[+-]\d+(:\d{2})?\)$/);
   });
 });
 

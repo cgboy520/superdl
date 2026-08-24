@@ -9,5 +9,6 @@ import type { AdminOut } from './adminOut';
 export interface AdminToken {
   access_token: string;
   admin: AdminOut;
+  status?: 'ok';
   token_type?: string;
 }

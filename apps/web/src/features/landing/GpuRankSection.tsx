@@ -1,13 +1,14 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径,脚注声明);在售型号标记联动价格墙。 */
 
-import { colorPrimary, gpuSpecs } from "@superdl/ui";
+import { colorPrimary, gpuSpecs, medalColors } from "@superdl/ui";
 import { Grid, Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useSkus } from "../../api/queries";
 
-const MEDALS = ["#D97706", "#9CA3AF", "#B45309"];
+// 深底白字(WCAG AA):取值收敛在 packages/ui medalColors
+const MEDALS = medalColors;
 
 export function GpuRankSection() {
   const { t } = useTranslation();

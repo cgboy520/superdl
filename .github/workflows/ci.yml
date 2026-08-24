@@ -4,10 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  # release.yml 以 workflow_call 复用本流水线作发布闸门(P1-30/31):
+  # tag 构建前 api/frontend/security 必须重跑全绿
+  workflow_call:
 
 jobs:
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 30   # pytest 全量挂死时由 job 级超时兜底(不引入 pytest-timeout 依赖)
     defaults:
       run:
         working-directory: apps/api
@@ -22,6 +26,11 @@ jobs:
       - run: uv run pyright
       - run: uv run lint-imports
       - run: uv run pytest --cov=app --cov-report=term
+      # schema diff 双保险之一(P2-47):单测基建走 create_all(见 tests/conftest.py),
+      # 它与迁移链的一致性由此步把关 —— upgrade head 后 alembic check 以 Base.metadata
+      # 为基准做 autogenerate diff,模型 ≠ 迁移即非零退出。不必另造 create_all vs
+      # upgrade head 的对比轮子;「带数据升级不丢数」维度由下方
+      # alembic-populated-upgrade job 覆盖。
       - name: alembic check (migrations match models)
         run: |
           docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18
@@ -35,8 +44,43 @@ jobs:
           uv run python -m app.export_openapi
           git diff --exit-code ../../packages/api-client/openapi.json
 
+  # populated-DB upgrade(P2-46):空库 upgrade head 只验证「能建起来」,不验证
+  # 「老库带数据升上来不丢数」。这里现造基线:upgrade 到上一 head 前停 → 灌种子行
+  # (outbox_tasks 自首个迁移即存在,充任关键表探针)→ 再 upgrade head → 断言数据仍在。
+  alembic-populated-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - name: populated-DB upgrade(上一 head 停 → 种子行 → upgrade head → 数据仍在)
+        env:
+          SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
+        run: |
+          docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18
+          until docker exec pg pg_isready -U superdl; do sleep 1; done
+          prev=$(uv run python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; s = ScriptDirectory.from_config(Config('alembic.ini')); dr = s.get_revision(s.get_current_head()).down_revision; assert isinstance(dr, str), f'expect single down_revision, got {dr!r}'; print(dr)")
+          echo "baseline = 上一 head: $prev"
+          uv run alembic upgrade "$prev"
+          docker exec pg psql -U superdl -d superdl -v ON_ERROR_STOP=1 \
+            -c "INSERT INTO outbox_tasks (type, payload, status, retries) VALUES ('ci.populated-probe', '{}', 'done', 0)"
+          uv run alembic upgrade head
+          count=$(docker exec pg psql -U superdl -d superdl -tA -c "SELECT count(*) FROM outbox_tasks WHERE type='ci.populated-probe'")
+          if [ "$count" != "1" ]; then
+            echo "::error::populated-DB upgrade 后种子行丢失(count=$count)"
+            exit 1
+          fi
+          echo "种子行在 upgrade head 后仍在(count=$count)"
+
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
@@ -58,6 +102,7 @@ jobs:
 
   node-join-script:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install shellcheck + bats
@@ -84,43 +129,56 @@ jobs:
         working-directory: apps/api
         run: |
           uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
-          set +e
-          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
-          code=$?
-          set -e
+          code=0
+          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off || code=$?
           # pip-audit 约定:0=无漏洞,1=发现漏洞;其余非零=工具自身失败(网络/OSV 不可达等)
+          # P1-31:工具失败即红——允许一次重试,重试仍失败则闸门红(不得静默放行)
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "::warning::pip-audit 首次执行失败(code=$code),重试一次"
+            code=0
+            uvx pip-audit -r /tmp/reqs.txt --progress-spinner off || code=$?
+          fi
           if [ "$code" -eq 1 ]; then
             echo "::error::pip-audit 发现生产依赖漏洞"
             exit 1
           elif [ "$code" -ne 0 ]; then
-            echo "::warning::pip-audit 工具执行失败(多为网络问题),按可用性约束本次放行"
+            echo "::error::pip-audit 工具执行失败(重试后仍失败,code=$code),按 P1-31 闸门红处理"
+            exit 1
           fi
       - name: pnpm audit(前端生产依赖,HIGH+ 阻断)
         run: |
-          set +e
-          pnpm audit --prod --audit-level=high --json > /tmp/pnpm-audit.json
-          code=$?
-          set -e
-          # 区分「真发现」与「工具失败」:registry 不可达时 pnpm 也非零退出,但产不出合法 JSON
+          code=0
+          pnpm audit --prod --audit-level=high --json > /tmp/pnpm-audit.json || code=$?
+          # 区分「真发现」与「工具失败」:registry 不可达时 pnpm 也非零退出,但产不出合法 JSON;
+          # P1-31:工具失败即红——允许一次重试,重试仍失败则闸门红(不得静默放行)
+          if [ "$code" -ne 0 ] && ! jq -e '.metadata' /tmp/pnpm-audit.json > /dev/null 2>&1; then
+            echo "::warning::pnpm audit 首次执行失败(code=$code,产物非合法 JSON),重试一次"
+            code=0
+            pnpm audit --prod --audit-level=high --json > /tmp/pnpm-audit.json || code=$?
+          fi
           if [ "$code" -ne 0 ]; then
             if jq -e '.metadata.vulnerabilities | (.high + .critical) > 0' /tmp/pnpm-audit.json > /dev/null 2>&1; then
               jq -r '.advisories | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "::error::\(.value.module_name) (\(.value.severity)): \(.value.title)"' /tmp/pnpm-audit.json
               echo "::error::pnpm audit 发现 HIGH/CRITICAL 生产依赖漏洞"
               exit 1
             fi
-            echo "::warning::pnpm audit 工具执行失败(多为 registry 不可达),按可用性约束本次放行"
+            echo "::error::pnpm audit 工具执行失败(重试后仍失败,code=$code),按 P1-31 闸门红处理"
+            exit 1
           fi
       - name: gitleaks(secret 泄漏扫描,全历史)
         run: |
           # 仓库历史短,直接全量扫;历史变重后改 --log-opts 限定 PR diff。
-          # 镜像按 digest 钉死;拉取失败(网络)只告警跳过,扫到泄漏才 fail。
+          # 镜像按 digest 钉死;P1-31:拉取失败(网络)重试一次,再失败闸门红(不得静默跳过)。
           img="zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a"
           if ! docker pull -q "$img" > /dev/null; then
-            echo "::warning::gitleaks 镜像拉取失败(网络问题),本次跳过 secret 扫描"
-            exit 0
+            echo "::warning::gitleaks 镜像首次拉取失败,重试一次"
+            if ! docker pull -q "$img" > /dev/null; then
+              echo "::error::gitleaks 镜像拉取失败(重试后仍失败),按 P1-31 闸门红处理"
+              exit 1
+            fi
           fi
           # 容器内 root 与挂载目录属主不同,需先声明 safe.directory 才能跑 git 扫描;
-          # 两条已复核误报的放行见 .github/gitleaks.toml
+          # 已复核误报的行级放行(path + 行内容 AND)见 .github/gitleaks.toml
           docker run --rm -v "$PWD:/repo" --entrypoint sh "$img" \
             -c "git config --global --add safe.directory /repo && gitleaks git /repo --config /repo/.github/gitleaks.toml --verbose"
       - name: 迁移危险 DDL 检查(alembic)
@@ -160,9 +218,13 @@ jobs:
         run: |
           uv sync --frozen
           uv run pytest tests/test_k8s_real_smoke.py -v
+          # P1-40 契约一致性套件的 Real 侧(同 SUPERDL_TEST_KUBECONFIG 门控):
+          # kind 上 JuiceFS 作业永不完成,完成分支由套件 patch Job status 注入(见文件头注释)
+          uv run pytest tests/test_orchestrator_conformance.py -v
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
@@ -180,6 +242,7 @@ jobs:
       - name: Migrate + seed + start API/worker
         working-directory: apps/api
         env:
+          SUPERDL_ENVIRONMENT: dev
           SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
         run: |
           uv sync --frozen
@@ -189,6 +252,10 @@ jobs:
           nohup uv run python -m app.workers.main > /tmp/worker.log 2>&1 &
           for _ in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
       - name: Playwright smoke
+        env:
+          # P1-41a 管理端冒烟(登录→MFA 现算→调账双人复核→冻结租户):
+          # 本 job 有浏览器(下行装 chromium)故开门;无浏览器环境/本地不想跑时不设此变量即跳过
+          SUPERDL_ADMIN_E2E: "1"
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @superdl/e2e exec playwright install --with-deps chromium
@@ -196,3 +263,31 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: tail -80 /tmp/api.log /tmp/worker.log
+
+  # k8s 清单 schema 校验(kubeconform):deploy/app/k8s 全部清单过 k8s OpenAPI schema。
+  # (compose.yaml 是 docker-compose 格式,非 k8s 清单,不在 kubeconform 适用范围)
+  k8s-manifest-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: kubeconform(deploy/app/k8s)
+        run: |
+          # 2026-08 核验最新稳定 v0.8.0(GitHub yannh/kubeconform releases);digest 钉死
+          img="ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e"
+          # P1-31 同规:拉取失败重试一次,再失败闸门红
+          if ! docker pull -q "$img" > /dev/null; then
+            echo "::warning::kubeconform 镜像首次拉取失败,重试一次"
+            if ! docker pull -q "$img" > /dev/null; then
+              echo "::error::kubeconform 镜像拉取失败(重试后仍失败),闸门红处理"
+              exit 1
+            fi
+          fi
+          # -skip:CRD 类(cert-manager/prometheus-operator)不在内置 schema;
+          # Kustomization 是 kustomize 配置而非 k8s 清单,同样无 schema;
+          # -ignore-filename-pattern:10-migrate-job.yaml 的 name 含 CHANGE_TAG 占位
+          # (非法 DNS 名,由 scripts/release.sh 渲染后 create),不做静态校验
+          docker run --rm -v "$PWD:/work" "$img" \
+            -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization \
+            -ignore-filename-pattern '10-migrate-job' \
+            -summary /work/deploy/app/k8s

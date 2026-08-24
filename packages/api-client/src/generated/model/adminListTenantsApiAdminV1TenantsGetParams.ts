@@ -8,4 +8,6 @@
 export type AdminListTenantsApiAdminV1TenantsGetParams = {
 q?: string | null;
 status?: string | null;
+cursor?: string | null;
+limit?: number | null;
 };

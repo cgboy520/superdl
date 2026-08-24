@@ -11,7 +11,6 @@ import {
   App,
   Button,
   Card,
-  Checkbox,
   Drawer,
   Empty,
   Form,
@@ -21,6 +20,7 @@ import {
   Slider,
   Space,
   Table,
+  Tag,
   theme,
   Tooltip,
   Typography,
@@ -71,7 +71,8 @@ function MountOverview({ priceText }: { priceText: string }) {
 
 function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () => void }) {
   const { t } = useTranslation();
-  const [checked, setChecked] = useState(false);
+  // 破坏确认(P2-22):键入资源名才解锁删除
+  const [typed, setTyped] = useState("");
   const { message } = App.useApp();
   const del = useDeleteDisk({
     onSuccess: () => {
@@ -79,19 +80,20 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
       onClose();
     },
   });
+  const nameMatched = disk != null && typed.trim() === disk.name;
   return (
     <Modal
       title={t("storage.deleteModalTitle")}
       open={Boolean(disk)}
       onCancel={() => {
-        setChecked(false);
+        setTyped("");
         onClose();
       }}
       footer={
         <Button
           danger
           type="primary"
-          disabled={!checked}
+          disabled={!nameMatched}
           loading={del.isPending}
           onClick={() => disk && del.mutate(disk.uuid)}
         >
@@ -106,9 +108,19 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
           components={{ b: <Typography.Text strong /> }}
         />
       </Typography.Paragraph>
-      <Checkbox checked={checked} onChange={(e) => setChecked(e.target.checked)}>
-        {t("storage.deleteChecklist")}
-      </Checkbox>
+      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Typography.Text type="secondary">
+          {t("storage.typeNameToConfirm", { name: disk?.name ?? "" })}
+        </Typography.Text>
+        <Input
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={disk?.name ?? ""}
+          maxLength={64}
+          autoComplete="off"
+          aria-label={t("storage.typeNameToConfirm", { name: disk?.name ?? "" })}
+        />
+      </Space>
     </Modal>
   );
 }
@@ -125,13 +137,18 @@ function ExpiryCell({
 }) {
   const { formatDaysLeft } = useFormat();
   const { t } = useTranslation();
+  // 宽限/冻结天数读 /policies(P1-07);未就绪用无数字兜底句,绝不渲染占位符或硬编码数字
+  const policyTip =
+    graceDays != null && frozenDays != null
+      ? t("copy.diskExpirePolicy", { graceDays, frozenDays })
+      : t("copy.diskExpirePolicyFallback");
   if (disk.status === "active") {
     return <Typography.Text type="secondary">{t("storage.activeBilling")}</Typography.Text>;
   }
   if (disk.status === "grace") {
     const left = graceDays == null ? null : formatDaysLeft(disk.grace_started_at, graceDays);
     return (
-      <Tooltip title={t("copy.diskExpirePolicy")}>
+      <Tooltip title={policyTip}>
         <Typography.Text type="warning">{t("storage.graceLine", { left: left ?? "—" })}</Typography.Text>
       </Tooltip>
     );
@@ -139,7 +156,7 @@ function ExpiryCell({
   if (disk.status === "frozen") {
     const left = frozenDays == null ? null : formatDaysLeft(disk.frozen_started_at, frozenDays);
     return (
-      <Tooltip title={t("copy.diskExpirePolicy")}>
+      <Tooltip title={policyTip}>
         <Typography.Text type="danger">{t("storage.frozenLine", { left: left ?? "—" })}</Typography.Text>
       </Tooltip>
     );
@@ -239,7 +256,18 @@ function StoragePage() {
                   </Space>
                 ),
               },
-              { title: t("storage.colStatus"), render: (_, r) => <DiskStatusBadge status={r.status} /> },
+              { title: t("storage.colStatus"), render: (_, r) => (
+                <Space size={4}>
+                  <DiskStatusBadge status={r.status} />
+                  {!r.quota_synced && r.status !== "deleting" && (
+                    <Tooltip title={t("storage.quotaPendingHint")}>
+                      <Tag color="gold" style={{ marginInlineEnd: 0 }}>
+                        {t("storage.quotaPending")}
+                      </Tag>
+                    </Tooltip>
+                  )}
+                </Space>
+              ) },
               {
                 title: t("storage.colExpiry"),
                 render: (_, r) => (

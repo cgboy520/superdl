@@ -1,11 +1,14 @@
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import outbox
 from app.core.outbox import (
+    OutboxDrainError,
     OutboxTask,
+    drain_strict,
     enqueue,
     outbox_handler,
     process_one,
@@ -42,6 +45,40 @@ async def test_process_success(sm: async_sessionmaker[AsyncSession], monkeypatch
     async with sm() as session:
         task = (await session.execute(select(OutboxTask))).scalar_one()
         assert task.status == "done"
+
+
+async def test_enqueue_carries_request_id_into_handler_context(
+    sm: async_sessionmaker[AsyncSession], monkeypatch
+):
+    """跨进程请求链(P1-32):enqueue 把当前 contextvar 的 request_id 写进 payload
+    (_request_id 键);执行时回填日志上下文(handler 内可见),执行完解绑不残留。"""
+    import structlog
+
+    seen: list[object] = []
+
+    async def handler(_session: AsyncSession, _task: OutboxTask) -> None:
+        seen.append(structlog.contextvars.get_contextvars().get("request_id"))
+
+    monkeypatch.setitem(outbox._registry, "t_rid", handler)
+    structlog.contextvars.bind_contextvars(request_id="rid-test-1")
+    try:
+        async with sm() as session:
+            task = enqueue(session, "t_rid", {"x": 1})
+            assert task.payload["_request_id"] == "rid-test-1"
+            await session.commit()
+    finally:
+        structlog.contextvars.unbind_contextvars("request_id")
+
+    assert await process_one(sm) is True
+    assert seen == ["rid-test-1"]  # handler 执行期回填
+    assert structlog.contextvars.get_contextvars().get("request_id") is None  # 执行完已解绑
+
+
+async def test_enqueue_without_request_id_keeps_payload(sm: async_sessionmaker[AsyncSession]):
+    """无 request_id 上下文(如 worker 内部入队):payload 原样,不画蛇添足。"""
+    async with sm() as session:
+        task = enqueue(session, "noop_plain", {"x": 1})
+        assert task.payload == {"x": 1}
 
 
 async def test_process_failure_retries_then_dead(sm: async_sessionmaker[AsyncSession], monkeypatch):
@@ -188,34 +225,99 @@ class TestConcurrency:
     async def test_concurrent_workers_claim_distinct_tasks(
         self, sm: async_sessionmaker[AsyncSession], monkeypatch
     ):
-        """SKIP LOCKED 下多个领取协程并发执行不同任务,消除全局串行 FIFO 的队头阻塞。"""
-        import asyncio
-        import time
+        """SKIP LOCKED 下多个领取协程并发执行不同任务,消除全局串行 FIFO 的队头阻塞。
 
+        屏障模式:两路 handler 与主协程在 Barrier(3) 汇合后才放行;若领取退化
+        为串行,先跑的 handler 永远等不到汇合 → wait_for 超时判负,不靠 wall-clock。
+        """
+        import asyncio
+
+        gate = asyncio.Barrier(3)
         started: list[str] = []
 
-        async def slow_handler(_session: AsyncSession, task: OutboxTask) -> None:
+        async def gated_handler(_session: AsyncSession, task: OutboxTask) -> None:
             started.append(task.payload["k"])
-            await asyncio.sleep(0.15)
+            await gate.wait()  # 两路 handler 同时在场才放行
 
-        monkeypatch.setitem(outbox._registry, "t_slow", slow_handler)
+        monkeypatch.setitem(outbox._registry, "t_gated", gated_handler)
 
         async with sm() as session:
-            enqueue(session, "t_slow", {"k": "a"})
-            enqueue(session, "t_slow", {"k": "b"})
+            enqueue(session, "t_gated", {"k": "a"})
+            enqueue(session, "t_gated", {"k": "b"})
             await session.commit()
 
-        t0 = time.monotonic()
-        results = await asyncio.gather(process_one(sm, "w-0"), process_one(sm, "w-1"))
-        elapsed = time.monotonic() - t0
-
-        assert results == [True, True]
+        # 超时只是「串行退化 → 屏障凑不齐」的判负兜底:Linux CI 毫秒级放行;
+        # Windows 本机第二条并发 claim 的 asyncpg 建联可能慢到十几秒,余量放宽
+        r0, r1, _ = await asyncio.wait_for(
+            asyncio.gather(process_one(sm, "w-0"), process_one(sm, "w-1"), gate.wait()),
+            timeout=60,
+        )
+        assert (r0, r1) == (True, True)
         assert sorted(started) == ["a", "b"]
-        assert elapsed < 0.25  # 串行执行必然 ≥ 0.3s
 
         async with sm() as session:
             rows = (await session.execute(select(OutboxTask))).scalars().all()
             assert {r.status for r in rows} == {"done"}
+
+
+class TestDrainStrict:
+    async def test_all_done_returns_counts(self, sm: async_sessionmaker[AsyncSession], monkeypatch):
+        async def ok_handler(_session: AsyncSession, _task: OutboxTask) -> None:
+            return None
+
+        monkeypatch.setitem(outbox._registry, "t_ds_ok", ok_handler)
+
+        async with sm() as session:
+            enqueue(session, "t_ds_ok", {"i": 1})
+            enqueue(session, "t_ds_ok", {"i": 2})
+            await session.commit()
+
+        assert await drain_strict(sm) == (2, 0)
+
+    async def test_failed_task_raises_with_counts(
+        self, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """drain 只报处理个数,失败任务静默滑进重试;drain_strict 必须把失败抛出来。"""
+
+        async def bad_handler(_session: AsyncSession, _task: OutboxTask) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setitem(outbox._registry, "t_ds_bad", bad_handler)
+
+        async with sm() as session:
+            enqueue(session, "t_ds_bad", {})
+            await session.commit()
+
+        with pytest.raises(OutboxDrainError) as exc_info:
+            await drain_strict(sm)
+        assert (exc_info.value.done_count, exc_info.value.failed_count) == (0, 1)
+
+        # 失败任务退避回 pending(未死循环、未误标 done)
+        async with sm() as session:
+            row = (await session.execute(select(OutboxTask))).scalar_one()
+            assert row.status == "pending"
+            assert row.retries == 1
+
+    async def test_mixed_outcomes_counts_both(
+        self, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        async def ok_handler(_session: AsyncSession, _task: OutboxTask) -> None:
+            return None
+
+        async def bad_handler(_session: AsyncSession, _task: OutboxTask) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setitem(outbox._registry, "t_ds_ok2", ok_handler)
+        monkeypatch.setitem(outbox._registry, "t_ds_bad2", bad_handler)
+
+        async with sm() as session:
+            enqueue(session, "t_ds_ok2", {})
+            enqueue(session, "t_ds_bad2", {})
+            await session.commit()
+
+        with pytest.raises(OutboxDrainError) as exc_info:
+            await drain_strict(sm)
+        assert (exc_info.value.done_count, exc_info.value.failed_count) == (1, 1)
 
 
 class TestTerminalWriteOwnership:

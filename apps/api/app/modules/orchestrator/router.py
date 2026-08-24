@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Query, Request, status
+from fastapi import APIRouter, Header, Query, Request, Response, status
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
+from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
 from app.modules.account.deps import CurrentUser
 from app.modules.orchestrator import service
@@ -11,6 +12,7 @@ from app.modules.orchestrator.schemas import (
     InstanceAccessOut,
     InstanceCreate,
     InstanceEventOut,
+    InstanceLogsOut,
     InstanceOut,
     InstanceRename,
 )
@@ -24,9 +26,10 @@ async def create_instance(
     user: CurrentUser,
     session: DbSession,
     request: Request,
+    response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> InstanceOut:
-    instance = await service.create_instance(
+    instance, created = await service.create_instance(
         session,
         user.id,
         sku_id=body.sku_id,
@@ -37,14 +40,25 @@ async def create_instance(
         data_disk_id=body.data_disk_id,
         idempotency_key=idempotency_key,
     )
+    if not created:
+        mark_idempotent_replay(response)
     set_audit_target(request, f"instance:{instance.uuid}")
     return InstanceOut.model_validate(instance)
 
 
 @router.get("/instances")
-async def list_instances(user: CurrentUser, session: DbSession) -> list[InstanceOut]:
-    instances = await service.list_instances(session, user.id)
-    return [InstanceOut.model_validate(i) for i in instances]
+async def list_instances(
+    user: CurrentUser,
+    session: DbSession,
+    status: str | None = None,
+    name: str | None = None,
+    cursor: str | None = None,
+    limit: int | None = Query(default=None, le=100),
+) -> Page[InstanceOut]:
+    """实例列表:降序游标分页;status 精确过滤,name 模糊匹配(含 uuid 前缀)。"""
+    return await service.list_instances_page(
+        session, user.id, status=status, name=name, cursor=cursor, limit=limit
+    )
 
 
 @router.get("/instances/{uuid}")
@@ -117,6 +131,24 @@ async def get_instance_access(
 ) -> InstanceAccessOut:
     instance = await service.get_instance(session, user.id, uuid)
     return InstanceAccessOut.model_validate(service.build_access(instance))
+
+
+@router.get("/instances/{uuid}/logs")
+async def get_instance_logs(
+    uuid: str,
+    user: CurrentUser,
+    session: DbSession,
+    tail_lines: int = Query(default=200, ge=1),
+    since_seconds: int | None = Query(default=None, ge=1),
+) -> InstanceLogsOut:
+    """容器日志(F5)。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。
+
+    仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按
+    2000 截断;since_seconds 可选、超 86400 按 86400 截断。不记审计;记
+    superdl_instance_logs_total{outcome}。"""
+    return await service.read_instance_logs(
+        session, user.id, uuid, tail_lines=tail_lines, since_seconds=since_seconds
+    )
 
 
 @router.post("/instances/{uuid}/reset-jupyter-token")

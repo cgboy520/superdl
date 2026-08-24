@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import status as http_status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -261,9 +261,17 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
 async def request_cordon(
     session: AsyncSession, node_name: str, *, unschedulable: bool, reason: str
 ) -> None:
-    """cordon/uncordon 只入队不直接动 K8s,handler 幂等执行。"""
+    """期望态落台账 + outbox 入队:handler 读期望态而非 payload,
+    乱序重试(cordon 失败退避 vs 后发 uncordon 成功)不会把旧意图盖回去。"""
     from app.core.outbox import enqueue
+    from app.modules.nodes.models import NodeSpec
 
+    row = (
+        await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
+    ).scalar_one_or_none()
+    if row is not None:
+        row.desired_unschedulable = unschedulable
+        row.desired_at = now_utc()
     enqueue(
         session,
         "node.cordon",
@@ -400,6 +408,22 @@ async def list_node_specs(session: AsyncSession) -> list[NodeSpec]:
     """全量台账(含 Missing/未打标),管理端节点页数据源。"""
     rows = (await session.execute(select(NodeSpec).order_by(NodeSpec.node_name))).scalars()
     return list(rows)
+
+
+async def node_specs_signature(session: AsyncSession) -> tuple[object, ...]:
+    """台账失效签名(与 platform_config 缓存同一模式:行数 + max(updated_at))。
+    廉价查询,供 catalog 近似库存缓存每次调用先验签名再决定是否重算。"""
+    count, max_updated = (
+        await session.execute(select(func.count(), func.max(NodeSpec.updated_at)))
+    ).one()
+    return (count, max_updated)
+
+
+async def get_node_spec(session: AsyncSession, node_name: str) -> NodeSpec | None:
+    rows = (
+        await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
+    ).scalars()
+    return next(iter(rows), None)
 
 
 async def ready_specs(session: AsyncSession) -> list[NodeSpec]:

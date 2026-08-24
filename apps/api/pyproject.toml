@@ -21,6 +21,7 @@ dependencies = [
     "kubernetes>=36.0.3",
     "wechatpayv3>=2.0.3",
     "alipay-sdk-python>=3.7.1160",
+    "pyotp>=2.10.0",
 ]
 
 [dependency-groups]
@@ -63,7 +64,17 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
-filterwarnings = ["ignore::DeprecationWarning:testcontainers"]
+# warning 即错误(W6 清零锁定),两类点名豁免并注明:
+# - testcontainers 自身的 DeprecationWarning(第三方弃用 API,不受我们控制);
+# - PytestUnraisableExceptionWarning:teardown 期 GC 终结告警(asyncpg/psycopg/docker-py
+#   的连接对象 __del__ 兜底;GC 终结时序随机,会挂到任意在跑测试上)。我们持有的引擎与
+#   客户端已全部显式关闭(dispose_engine、docker client.close),剩余的终结对象是第三方
+#   连接内部状态,从我们的代码无法再关,故豁免(2026-08 本地 Windows 会话观察)。
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:testcontainers",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
 markers = ["real_k8s: 需真实集群（SUPERDL_TEST_KUBECONFIG 门控，CI kind job 使用）"]
 
 [tool.coverage.run]
@@ -88,121 +99,27 @@ source_modules = ["app.core"]
 forbidden_modules = ["app.modules", "app.workers"]
 
 [[tool.importlinter.contracts]]
-name = "account 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.account"]
-forbidden_modules = [
-    "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
+name = "业务模块跨模块访问只经 service/schemas(认证依赖经 account.deps)"
+type = "independence"
+# independence 对列出模块两两断言「无任何(含间接)依赖」,语义即旧 forbidden 矩阵的合取,
+# 且比旧矩阵更严(旧矩阵 allow_indirect_imports 放行间接链)。
+# ignore 用通配表达「只经 service/schemas 的例外」:增删业务模块只需动 modules 清单,
+# 不会像旧矩阵那样每个模块一份 ignore、随模块增减成批腐烂。
+modules = [
+    "app.modules.account",
+    "app.modules.catalog",
+    "app.modules.orchestrator",
+    "app.modules.billing",
+    "app.modules.metering",
+    "app.modules.notify",
+    "app.modules.nodes",
+    "app.modules.adminapi",
+    "app.modules.tickets",
+    "app.modules.legal",
 ]
 ignore_imports = [
-    "app.modules.account.** -> app.modules.*.service",
-    "app.modules.account.** -> app.modules.*.schemas",
-    "app.modules.account.** -> app.modules.account.deps",
+    "app.modules.** -> app.modules.*.service",
+    "app.modules.** -> app.modules.*.schemas",
+    "app.modules.** -> app.modules.account.deps",
 ]
-
-[[tool.importlinter.contracts]]
-name = "catalog 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
 unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.catalog"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
-]
-ignore_imports = [
-    "app.modules.catalog.** -> app.modules.*.service",
-    "app.modules.catalog.** -> app.modules.*.schemas",
-    "app.modules.catalog.** -> app.modules.account.deps",
-]
-
-[[tool.importlinter.contracts]]
-name = "orchestrator 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.orchestrator"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.catalog", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
-]
-ignore_imports = [
-    "app.modules.orchestrator.** -> app.modules.*.service",
-    "app.modules.orchestrator.** -> app.modules.*.schemas",
-    "app.modules.orchestrator.** -> app.modules.account.deps",
-]
-
-[[tool.importlinter.contracts]]
-name = "billing 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.billing"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.metering", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
-]
-ignore_imports = [
-    "app.modules.billing.** -> app.modules.*.service",
-    "app.modules.billing.** -> app.modules.*.schemas",
-    "app.modules.billing.** -> app.modules.account.deps",
-]
-
-[[tool.importlinter.contracts]]
-name = "metering 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.metering"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.notify", "app.modules.nodes", "app.modules.adminapi",
-]
-ignore_imports = [
-    "app.modules.metering.** -> app.modules.*.service",
-    "app.modules.metering.** -> app.modules.*.schemas",
-    "app.modules.metering.** -> app.modules.account.deps",
-]
-
-[[tool.importlinter.contracts]]
-name = "notify 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.notify"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.nodes", "app.modules.adminapi",
-]
-ignore_imports = [
-    "app.modules.notify.** -> app.modules.*.service",
-    "app.modules.notify.** -> app.modules.*.schemas",
-    "app.modules.notify.** -> app.modules.account.deps",
-]
-
-[[tool.importlinter.contracts]]
-name = "nodes 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.nodes"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.adminapi",
-]
-ignore_imports = [
-    "app.modules.nodes.** -> app.modules.*.service",
-    "app.modules.nodes.** -> app.modules.*.schemas",
-    "app.modules.nodes.** -> app.modules.account.deps",
-]
-
-[[tool.importlinter.contracts]]
-name = "adminapi 只经 service/schemas 访问其他模块"
-type = "forbidden"
-allow_indirect_imports = true
-unmatched_ignore_imports_alerting = "warn"
-source_modules = ["app.modules.adminapi"]
-forbidden_modules = [
-    "app.modules.account", "app.modules.catalog", "app.modules.orchestrator", "app.modules.billing", "app.modules.metering", "app.modules.notify", "app.modules.nodes",
-]
-ignore_imports = [
-    "app.modules.adminapi.** -> app.modules.*.service",
-    "app.modules.adminapi.** -> app.modules.*.schemas",
-    "app.modules.adminapi.** -> app.modules.account.deps",
-]

@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.core.errors import AppError, ErrorCode
-from app.core.timeutil import day_floor, hour_floor, now_utc
+from app.core.timeutil import billing_day_floor, day_floor, hour_floor, now_utc
 from app.modules.billing import patrol, settlement, wallet
 from app.modules.billing.models import (
     BalanceLedger,
@@ -252,6 +252,66 @@ class TestPatrolUnsettledBurn:
         counts = await patrol.balance_patrol(sm)
         assert counts["stopped"] == 0
 
+    async def test_lagged_watermark_extends_unsettled_window(self, sm, _freeze_now):
+        """结算水位线滞后 5 小时:未落账小时全量计入停机判据(结算故障≠免费算力)。"""
+        from app.modules.billing.settlement import _advance_watermark
+
+        h0 = hour_floor(self.FIXED_NOW)  # 10:00
+        # 06:35 起跑至今(4h);水位线停在 05:00(结算停摆),06:00 起的小时全未落账
+        await seed_instance(
+            sm,
+            user_id=1,
+            price="1.6800",
+            status="running",
+            events=[(h0 - timedelta(hours=4), "creating", "running")],
+        )
+        await _advance_watermark(sm, "hourly", h0 - timedelta(hours=5))
+        async with sm() as session:
+            await session.execute(
+                update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("1.00"))
+            )
+            await session.commit()
+        # 未结算 4h × 1.68 = 6.72;1.00 − 6.72 ≤ 0 → 停机
+        # (旧口径只看当前小时 0.98,1.00 − 0.98 > 0 会漏停)
+        counts = await patrol.balance_patrol(sm)
+        assert counts["stopped"] == 1
+
+    async def test_lagged_watermark_billed_hours_not_double_counted(self, sm, _freeze_now):
+        """水位线滞后但窗口内小时已出账(尾账/补结):不得重复估进未结算消耗。"""
+        from app.modules.billing.settlement import _advance_watermark
+
+        h0 = hour_floor(self.FIXED_NOW)
+        inst_id = await seed_instance(
+            sm,
+            user_id=1,
+            price="1.6800",
+            status="running",
+            events=[(h0 - timedelta(hours=2), "creating", "running")],
+        )
+        await _advance_watermark(sm, "hourly", h0 - timedelta(hours=3))
+        async with sm() as session:
+            # 08:00、09:00 两小时已落账(各 3600 秒 × 1.68 = 1.68),仅当前小时未结
+            for h in (h0 - timedelta(hours=2), h0 - timedelta(hours=1)):
+                session.add(
+                    BillHourly(
+                        instance_id=inst_id,
+                        user_id=1,
+                        hour_start=h,
+                        seconds_used=3600,
+                        unit_price=Decimal("1.6800"),
+                        gpu_count=1,
+                        amount=Decimal("1.68"),
+                        detail={"charged": True},
+                    )
+                )
+            await session.execute(
+                update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("1.00"))
+            )
+            await session.commit()
+        # 未结算仅当前小时 35 分钟 ≈ 0.98;1.00 − 0.98 > 0 → 不停机
+        counts = await patrol.balance_patrol(sm)
+        assert counts["stopped"] == 0
+
 
 class TestSettlementGaps:
     """截断/死信跳窗必须登记缺口,告警指标单调不自愈。"""
@@ -388,7 +448,7 @@ class TestSettlementGaps:
         """日结侧同构修复:超追平上限的日期登记 settlement_gaps(kind=daily_disk)。"""
         from app.modules.billing.settlement import MAX_CATCHUP_DAYS, _advance_watermark
 
-        old_day = day_floor(now_utc()) - timedelta(days=MAX_CATCHUP_DAYS + 10)
+        old_day = billing_day_floor(now_utc()) - timedelta(days=MAX_CATCHUP_DAYS + 10)
         await _seed_disk(sm, 1, created_at=old_day)
         await _fund(sm, 1, "100.00")
         await _advance_watermark(sm, "daily_disk", old_day)
@@ -407,7 +467,7 @@ class TestSettlementGaps:
             bills = (await session.execute(select(BillDailyDisk))).scalars().all()
         assert all(g.reason == "catchup_truncated" and g.object_id == 0 for g in gaps)
         # 水位线在 MAX+10 天前 → first_day=水位+1,截到 floor=昨日-(MAX-1) → 缺 9 天
-        target_day = day_floor(now_utc()) - timedelta(days=1)
+        target_day = billing_day_floor(now_utc()) - timedelta(days=1)
         expected = (target_day - timedelta(days=MAX_CATCHUP_DAYS - 1) - old_day).days - 1
         assert len(gaps) == expected == 9
         assert len(bills) == MAX_CATCHUP_DAYS  # 追平上限内的日子照常出账
@@ -675,8 +735,20 @@ class TestPriceFloor:
     def test_min_billable_price_accepted(self):
         from app.modules.catalog.service import _checked_price
 
-        assert _checked_price(Decimal("0.0051")) == Decimal("0.0051")
+        assert _checked_price(Decimal("0.01")) == Decimal("0.01")
         assert _checked_price(Decimal("1.6800")) == Decimal("1.6800")
+
+    def test_sub_cent_precision_rejected(self):
+        """按小时计费的 SKU 超过 2 位小数即拒:逐小时独立舍入会单向漂移
+        (0.0051 被按 0.01/时近翻倍收;1.2345 满月少收 0.36%)。"""
+        from app.modules.catalog.service import _checked_price
+
+        with pytest.raises(AppError) as exc:
+            _checked_price(Decimal("0.0051"))
+        assert exc.value.message_key == "catalog.priceHourlyTwoDecimals"
+        with pytest.raises(AppError) as exc:
+            _checked_price(Decimal("1.2345"))
+        assert exc.value.message_key == "catalog.priceHourlyTwoDecimals"
 
     def test_zero_price_still_rejected_with_original_key(self):
         from app.modules.catalog.service import _checked_price

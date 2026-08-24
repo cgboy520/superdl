@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview",
-    "i18n": "i18next-cli extract --ci && i18next-cli types --ci && bash ../../scripts/check-cjk.sh && bash ../../scripts/check-copy-banned.sh",
+    "i18n": "i18next-cli extract --ci && i18next-cli types --ci && bash ../../scripts/check-cjk.sh && bash ../../scripts/check-copy-banned.sh && bash ../../scripts/check-no-handwritten-url.sh",
     "i18n:write": "i18next-cli extract && i18next-cli types"
   },
   "dependencies": {
@@ -28,6 +28,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.12",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

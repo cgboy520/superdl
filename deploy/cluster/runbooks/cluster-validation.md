@@ -38,6 +38,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 - [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线
 - [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;当前删除路径为 lvremove(未清零),如需擦盘语义先在节点开 issue_discards=1 再验收
+- [ ] 数据盘目录硬配额(W1-1):建一块 1GB 测试盘,挂实例写超 1GB(`dd if=/dev/zero of=/root/data/fill bs=1M count=1200`)必须在配额处被拒(EDQUOT/No space);管理端死信页无 disk.quota 死信,Prometheus 查 `superdl_juicefs_quota_failed_total` 为 0;删盘后 `juicefs quota ls $METAURL` 无残留条目
 
 ## E. 监控与告警
 

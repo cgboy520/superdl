@@ -28,7 +28,14 @@ from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import SETTLEMENT_FAILED_TOTAL, SETTLEMENT_GAP_TOTAL, SETTLEMENT_LAG
 from app.core.money import as_amount, as_price, disk_daily_charge
-from app.core.timeutil import day_floor, ensure_utc, hour_floor, now_utc, prev_hour_range
+from app.core.timeutil import (
+    BILLING_DAY_OFFSET,
+    billing_day_floor,
+    ensure_utc,
+    hour_floor,
+    now_utc,
+    prev_hour_range,
+)
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, SettlementGap, SettlementWatermark
 
@@ -59,11 +66,16 @@ def _billing_view(
     尾账已截断的秒数再补回来)。
     """
     out: list[tuple[datetime, str | None, str]] = []
+    running_entry: datetime | None = None
     for created_at, from_status, to_status, meta in events:
         ts = ensure_utc(created_at)
+        if to_status == RUNNING:
+            running_entry = ts
         if from_status == RUNNING and meta and meta.get("unready_since"):
             unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
-            if unready_at < ts:
+            # 早于本次进入 running 的 unready_since 是上次失联的残留,不参与截断
+            stale = running_entry is not None and unready_at < running_entry
+            if not stale and unready_at < ts:
                 ts = unready_at
         out.append((ts, from_status, to_status))
     return out
@@ -95,18 +107,32 @@ def running_seconds_in_window(
     if running_since is not None:
         periods.append((running_since, window_end))
 
-    total = 0.0
+    total_us = 0  # 整数微秒累加(计费链路禁 float 中间态);timedelta 三元组精确无舍入
     for start, end in periods:
         s = max(start, window_start)
         e = min(end, window_end)
         if e > s:
-            total += (e - s).total_seconds()
-    return int(total)
+            delta = e - s
+            total_us += (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds
+    # 微秒 → 秒:整数 HALF_EVEN(与金额 as_amount 同一舍入族,不截断也不经 float)
+    q, r = divmod(total_us, 1_000_000)
+    if r > 500_000 or (r == 500_000 and q % 2 == 1):
+        q += 1
+    return q
 
 
 def bill_amount(unit_price: Decimal, gpu_count: int, seconds: int) -> Decimal:
     """入账 2 位 HALF_EVEN。seconds ∈ [0, 3600](单整点小时窗口);越界即窗口计算有 bug,报错不截断。"""
     if not 0 <= seconds <= 3600:
+        raise ValueError(f"seconds out of range: {seconds}")
+    raw = as_price(unit_price) * Decimal(gpu_count) * Decimal(seconds) / Decimal(3600)
+    return as_amount(raw)
+
+
+def bill_amount_window(unit_price: Decimal, gpu_count: int, seconds: int) -> Decimal:
+    """多小时窗口的估算口径(巡检停机判据用,永不入账):与 bill_amount 同公式,
+    seconds 上限放宽到 31 天,越界同样报错不截断。入账一律走 bill_amount 逐窗。"""
+    if not 0 <= seconds <= 31 * 24 * 3600:
         raise ValueError(f"seconds out of range: {seconds}")
     raw = as_price(unit_price) * Decimal(gpu_count) * Decimal(seconds) / Decimal(3600)
     return as_amount(raw)
@@ -480,8 +506,11 @@ async def charge_disk_day(
     """
     from app.modules.billing.models import BillDailyDisk
 
-    day = day_floor(day)
-    amount = disk_daily_charge(price_gb_month, size_gb, day)
+    day = billing_day_floor(day)
+    # 累积差分公式按月内第几天取值,须传该计费日的北京日历日
+    # (billing_day_floor 折回 UTC 后 .day 会差一天)
+    beijing_date = (day + BILLING_DAY_OFFSET).date()
+    amount = disk_daily_charge(price_gb_month, size_gb, beijing_date)
     inserted = (
         await session.execute(
             pg_insert(BillDailyDisk)
@@ -528,12 +557,15 @@ async def settle_disk_pending_days(
     删盘与扩容前必须调用:日结只对结算时点仍存活的盘、按结算时点容量出账。
     下界取日结水位线而非建盘日,欠费冻结期这类有意不计费的日子不补回来。
     """
-    target_day = day_floor(at or now_utc())
+    target_day = billing_day_floor(at or now_utc())
     watermark = await get_watermark(session, "daily_disk")
     if watermark is None:
         first_day = target_day
     else:
-        first_day = max(day_floor(watermark) + timedelta(days=1), day_floor(ensure_utc(created_at)))
+        first_day = max(
+            billing_day_floor(watermark) + timedelta(days=1),
+            billing_day_floor(ensure_utc(created_at)),
+        )
     first_day = max(first_day, target_day - timedelta(days=MAX_CATCHUP_DAYS - 1))
     total = Decimal("0.00")
     day = first_day
@@ -578,8 +610,11 @@ async def settle_daily_disks(
     """
     from app.modules.orchestrator import service as orchestrator_service
 
-    target_day = day_floor(at or now_utc()) - timedelta(days=1)  # 结算昨日
-    disk_rows: list[tuple[int, int, Decimal, int, datetime]] | None = None
+    target_day = billing_day_floor(at or now_utc()) - timedelta(days=1)  # 结算昨日(北京日界)
+    # (disk_id, user_id, price, size_gb, created_at, grace_started_at, grace_ended_at)
+    disk_rows: (
+        list[tuple[int, int, Decimal, int, datetime, datetime | None, datetime | None]] | None
+    ) = None
 
     async def settle_window(window_start: datetime, window_end: datetime) -> tuple[int, list[int]]:
         nonlocal disk_rows
@@ -588,14 +623,39 @@ async def settle_daily_disks(
             async with sm() as session:
                 disks = await orchestrator_service.billable_disks(session)
                 disk_rows = [
-                    (d.id, d.user_id, d.price_gb_month, d.size_gb, ensure_utc(d.created_at))
+                    (
+                        d.id,
+                        d.user_id,
+                        d.price_gb_month,
+                        d.size_gb,
+                        ensure_utc(d.created_at),
+                        ensure_utc(d.grace_started_at) if d.grace_started_at else None,
+                        ensure_utc(d.grace_ended_at) if d.grace_ended_at else None,
+                    )
                     for d in disks
                 ]
-        attempts = [
-            (disk_id, _disk_attempt(disk_id, user_id, price, size_gb, window_start))
-            for disk_id, user_id, price, size_gb, created_at in disk_rows
-            if created_at < window_end  # 该日之后创建的盘不出账
-        ]
+        attempts = []
+        for disk_id, user_id, price, size_gb, created_at, grace_started, grace_ended in disk_rows:
+            if created_at >= window_end:
+                continue  # 该日之后创建的盘不出账
+            if grace_started is not None:
+                # 追平跨过 grace 的日子按「grace 不计费」跳过区间内部日(登记缺口人工核查)。
+                # 边界日(进入/恢复当日)照常出账:进入时已结清、恢复日应计;UNIQUE(disk_id, day)
+                # 幂等兜底,不会重复扣款
+                g_start = billing_day_floor(grace_started)
+                g_end = billing_day_floor(grace_ended) if grace_ended is not None else None
+                if g_start < window_start and (g_end is None or window_start < g_end):
+                    await _record_gaps(
+                        sm,
+                        kind="daily_disk",
+                        windows=[window_start],
+                        object_id=disk_id,
+                        reason="grace_overlap",
+                    )
+                    continue
+            attempts.append(
+                (disk_id, _disk_attempt(disk_id, user_id, price, size_gb, window_start))
+            )
         return await _settle_window_objects(
             sm, kind="daily_disk", window_start=window_start, attempts=attempts
         )
@@ -607,6 +667,6 @@ async def settle_daily_disks(
         target_start=target_day,
         step=timedelta(days=1),
         max_catchup=MAX_CATCHUP_DAYS,
-        floor_fn=day_floor,
+        floor_fn=billing_day_floor,
         settle_window=settle_window,
     )

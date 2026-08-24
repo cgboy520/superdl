@@ -7,9 +7,13 @@
 import type { PaymentChannelsOut } from './paymentChannelsOut';
 
 /**
- * 站点公开配置(页脚备案号等,未登录可访问)。
+ * 站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。
  */
 export interface SiteConfigOut {
+  business_license_url?: string | null;
+  company_address?: string | null;
+  company_name?: string | null;
+  company_phone?: string | null;
   icp_number: string | null;
   payment_channels: PaymentChannelsOut;
   police_record_number: string | null;

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain
+from app.core.outbox import OutboxTask, drain, drain_strict
 from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
@@ -69,8 +69,8 @@ class TestCreateLifecycle:
         assert data["status"] == "creating"
         uuid = data["uuid"]
 
-        # outbox worker 建 Pod
-        assert await drain(sm) == 1
+        # outbox worker 建 Pod(drain_strict:断言任务成功而非仅被处理)
+        assert await drain_strict(sm) == (1, 0)
         assert (f"tenant-{user_id}", uuid) in fake.pods
         data = await get_instance(client, headers, uuid)
         assert data["ssh_port"] is not None
@@ -148,10 +148,20 @@ class TestCreateLifecycle:
         headers, user_id, key_id = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
         sku_id = await create_test_sku(sm)
-        a = await create_instance_api(client, headers, sku_id, key_id, idem="idem-1")
-        b = await create_instance_api(client, headers, sku_id, key_id, idem="idem-1")
+        h = {**headers, "Idempotency-Key": "idem-1"}
+        body = {
+            "sku_id": sku_id,
+            "gpu_count": 1,
+            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "ssh_key_ids": [key_id],
+        }
+        r1 = await client.post("/api/v1/instances", json=body, headers=h)
+        r2 = await client.post("/api/v1/instances", json=body, headers=h)
+        assert r1.status_code == 202 and r2.status_code == 200
+        assert r2.headers["x-idempotent-replay"] == "true"
+        a, b = r1.json(), r2.json()
         assert a["uuid"] == b["uuid"]
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert len(instances) == 1
 
     async def test_gpu_count_exceeds_sku_limit(self, client, sm):
@@ -367,8 +377,14 @@ class TestFailureModes:
         assert counts["to_failed"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
         assert (f"tenant-{user_id}", uuid) not in fake.pods  # 已清理
-        # 首开就没起来 = 盘从未承载数据,一并回收不留孤儿 LV
+        # 首开就没起来 = 盘从未承载数据,一并回收不留孤儿 LV;
+        # Pod 刚消失/将消失时经 outbox disk_cleanup 延迟回收(pvc-protection)
+        await drain(sm)
+        await reconcile_once(sm)
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
+        # 创建失败主动通知用户(未计费),不再等刷新才发现
+        notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
+        assert any("调度超时" in n["title"] for n in notes)
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
         """验收:DB 无主的泄漏 Pod 被回收(泄漏=白送算力)。"""
@@ -401,7 +417,7 @@ class TestRelease:
         assert counts["to_released"] == 1
 
         # released 实例不出现在列表
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
 
         # 事件含擦盘标记(lvremove,未清零——与 TopoLVM 实际行为一致),且盘真的被销毁了
@@ -483,7 +499,7 @@ class TestRelease:
         counts = await reconcile_once(sm)
         assert counts["to_released"] == 1
 
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -506,7 +522,7 @@ class TestRelease:
         assert counts["to_released"] == 1
 
         # 列表不再出现;事件链 creating → releasing → released,且从未进入 running(零 GPU 时费)
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()
+        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -604,7 +620,7 @@ class TestAdminOps:
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="ops")
 
-        listed = (await client.get("/api/admin/v1/instances", headers=ah)).json()
+        listed = (await client.get("/api/admin/v1/instances", headers=ah)).json()["items"]
         assert uuid in [i["uuid"] for i in listed]
 
         resp = await client.post(

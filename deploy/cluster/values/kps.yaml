@@ -10,15 +10,27 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: topolvm-provisioner
-          accessModes: ["ReadWriteOnce"]
+          # P1-34:共享存储(JuiceFS,RWX)而非节点本地 NVMe——节点死后可跨节点重调度
+          # 重挂载(本地卷随节点一起丢)。取舍记录:监控指标可重建(长期数据已进 PG
+          # usage_hourly)、JuiceFS 性能对监控查询足够,节点复活前历史查询断档可接受。
+          # light 档默认无 JuiceFS,由 values/light/kps-light.yaml 覆盖回 topolvm。
+          storageClassName: superdl-juicefs
+          accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 50Gi}
+    # 副本数暂保 1(取舍,P0-10 后续):可用性由 JuiceFS 底层(元数据走 PG、数据走对象存储)
+    # 与跨节点重调度提供;双副本 Prometheus 需双份存储 + 查询去重,对「可重建的监控数据」
+    # 不抵成本。判据变化(如对监控查询连续性有 SLA)再评 Thanos/双副本。
+    replicas: 1
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
       limits: {memory: 4Gi}    # 只限内存:CPU 限速会拖慢查询/规则评估,OOMKill 反而更可见
+    # postgres_exporter(最小方案记录):cnpg 进集群时 operator 自带监控
+    # (values/cnpg-cluster.yaml monitoring.enabled=true,生成 PodMonitor + 默认规则,
+    # 无需另起 exporter);托管 PG 走云厂商指标,不在本栈抓取——故此处不重复加
+    # postgres_exporter additionalScrapeConfigs。
     # HAMi 自带指标:scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
     # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认值)
     additionalScrapeConfigs:
@@ -66,6 +78,99 @@ grafana:
       cookie_samesite: lax
     auth.anonymous:
       enabled: false
+  # Dashboard as code:SuperDL 基础大盘随监控栈 provisioning(sidecar 发现 grafana_dashboard
+  # ConfigMap),实例/账单/节点三面板起步。改盘 = 改本 values(随仓库评审);Grafana UI 内
+  # 手改不落盘、Pod 重启即失,需要长期盘一律回写这里。light 档 grafana.enabled=false 时忽略。
+  dashboards:
+    superdl:
+      superdl-overview:
+        json: |
+          {
+            "uid": "superdl-overview",
+            "title": "SuperDL 总览",
+            "schemaVersion": 39,
+            "version": 1,
+            "editable": false,
+            "timezone": "browser",
+            "time": {"from": "now-6h", "to": "now"},
+            "panels": [
+              {
+                "id": 1,
+                "title": "实例编排健康",
+                "type": "timeseries",
+                "datasource": {"type": "prometheus"},
+                "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+                "fieldConfig": {"defaults": {"min": 0}, "overrides": []},
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "max(superdl_reconcile_stuck_instances)",
+                    "legendFormat": "悬挂实例({{status}})"
+                  },
+                  {
+                    "refId": "B",
+                    "expr": "increase(superdl_instance_node_lost_total[1h])",
+                    "legendFormat": "节点失联判停/h"
+                  },
+                  {
+                    "refId": "C",
+                    "expr": "increase(superdl_outbox_dead_total[1h])",
+                    "legendFormat": "outbox 死信/h({{task_type}})"
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "title": "账单结算",
+                "type": "timeseries",
+                "datasource": {"type": "prometheus"},
+                "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+                "fieldConfig": {"defaults": {"min": 0}, "overrides": []},
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "superdl_settlement_lag_windows",
+                    "legendFormat": "结算水位滞后窗口({{kind}})"
+                  },
+                  {
+                    "refId": "B",
+                    "expr": "increase(superdl_settlement_failed_total[1h])",
+                    "legendFormat": "结算失败/h({{kind}})"
+                  },
+                  {
+                    "refId": "C",
+                    "expr": "increase(superdl_fund_reconcile_mismatch_total[1h])",
+                    "legendFormat": "账实不平/h({{kind}})"
+                  }
+                ]
+              },
+              {
+                "id": 3,
+                "title": "节点与 GPU",
+                "type": "timeseries",
+                "datasource": {"type": "prometheus"},
+                "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+                "fieldConfig": {"defaults": {"min": 0}, "overrides": []},
+                "targets": [
+                  {
+                    "refId": "A",
+                    "expr": "count(kube_node_status_condition{condition=\"Ready\", status=\"true\"})",
+                    "legendFormat": "Ready 节点数"
+                  },
+                  {
+                    "refId": "B",
+                    "expr": "avg by (node) (DCGM_FI_DEV_GPU_UTIL)",
+                    "legendFormat": "GPU 利用率%({{node}})"
+                  },
+                  {
+                    "refId": "C",
+                    "expr": "max by (node) (DCGM_FI_DEV_GPU_TEMP)",
+                    "legendFormat": "GPU 温度°C({{node}})"
+                  }
+                ]
+              }
+            ]
+          }
 alertmanager:
   config:
     route:
@@ -73,16 +178,34 @@ alertmanager:
       group_by: [alertname, namespace]
       repeat_interval: 4h
       routes:
-        # critical 双通道:平台 webhook 之外必须有一条不依赖平台自身的路
+        # critical 多通道:平台 webhook 之外必须有不依赖平台自身的路(邮件 + 钉钉机器人)
         - matchers: ['severity="critical"']
           receiver: superdl-oncall-mail
           continue: true
+        - matchers: ['severity="critical"']
+          receiver: superdl-dingtalk
+          continue: true
+        # Watchdog(severity=none)只用于链路探活,直接进 null 不通知;
+        # 排在通配路由之前,不匹配 continue,到此为止
+        - matchers: ['severity="none"']
+          receiver: "null"
+        # warning 只走平台 webhook(管理端告警中心)
         - matchers: ['severity=~".+"']
           receiver: superdl-api
+    inhibit_rules:
+      # Watchdog 抑制:任一真实告警 firing 期间,探活 Watchdog 不再重复通知(降噪);
+      # Watchdog 本身路由到 null,这里兜底多通道/未来路由变更时的刷屏
+      - source_matchers: ['severity=~"warning|critical"']
+        target_matchers: ['alertname="Watchdog"']
+      # 同故障只报最高级:critical 抑制同名同租户的 warning
+      - source_matchers: ['severity="critical"']
+        target_matchers: ['severity="warning"']
+        equal: ['alertname', 'namespace']
     receivers:
+      - name: "null"           # Watchdog 等探活告警的丢弃口
       - name: superdl-api
         webhook_configs:
-          - url: "http://superdl-api.superdl.svc:8000/api/v1/webhooks/alertmanager"
+          - url: "http://superdl-api.superdl.svc:80/api/v1/webhooks/alertmanager"
             http_config:
               authorization:
                 type: Bearer
@@ -99,13 +222,21 @@ alertmanager:
             auth_username: "alertmanager@superdl.example.com"  # CHANGE_ME
             auth_password_file: /etc/alertmanager/secrets/superdl-smtp-password/password
             require_tls: true
+      # 第三通道(仅 critical):钉钉群机器人。Alertmanager 原生不签发钉钉格式,
+      # 经 prometheus-webhook-dingtalk 转换器中转,sidecar 部署方式见 alertmanagerSpec 注释;
+      # 转换器不可用时本通道静默失败,邮件 + 平台 webhook 仍兜底。
+      - name: superdl-dingtalk
+        webhook_configs:
+          - url: "http://localhost:8060/dingtalk/oncall/send"
   alertmanagerSpec:
     # silence/通知状态持久化:默认 emptyDir,Pod 重建后进行中的静默全部丢失
     storage:
       volumeClaimTemplate:
         spec:
-          storageClassName: topolvm-provisioner
-          accessModes: ["ReadWriteOnce"]
+          # P1-34:同 Prometheus——共享存储(JuiceFS,RWX),节点死后单副本可跨节点重调度;
+          # 取舍记录见上方 prometheusSpec 存储/副本注释。
+          storageClassName: superdl-juicefs
+          accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 2Gi}
     secrets:
@@ -113,6 +244,25 @@ alertmanager:
       # kubectl -n monitoring create secret generic superdl-smtp-password \
       #   --from-literal=password=<SMTP 口令>
       - superdl-smtp-password
+    # 钉钉触达(P0-10):prometheus-webhook-dingtalk 转换器以 sidecar 进 Alertmanager Pod
+    # (不新增 helm release;superdl-dingtalk receiver 已指 http://localhost:8060/dingtalk/oncall/send)。
+    # 上线时取消下面注释,镜像钉版本;access_token 不落 values,经 Secret 注入:
+    #   kubectl -n monitoring create secret generic superdl-dingtalk-token \
+    #     --from-literal=token=<钉钉机器人 access_token>
+    # containers:
+    #   - name: dingtalk-transformer
+    #     image: timonwong/prometheus-webhook-dingtalk:v2.1.0   # TODO(上线前钉死最新稳定版)
+    #     args:
+    #       - --ding.profile=oncall=https://oapi.dingtalk.com/robot/send?access_token=$(DINGTALK_TOKEN)
+    #     env:
+    #       - name: DINGTALK_TOKEN
+    #         valueFrom: {secretKeyRef: {name: superdl-dingtalk-token, key: token}}
+    #     ports:
+    #       - {containerPort: 8060}
+    #     resources:
+    #       requests: {cpu: 10m, memory: 32Mi}
+    #       limits: {memory: 64Mi}
+    # 机器人若开加签,image 版本需支持 secret 参数(一并经 Secret 注入);关键链路有邮件兜底。
 additionalPrometheusRulesMap:
   superdl-gpu:
     groups:
@@ -217,9 +367,43 @@ additionalPrometheusRulesMap:
             annotations: {summary: "worker 心跳缺失超 2 分钟:outbox/结算/巡检/查单全部停摆"}
           - alert: PgBackupFailed
             expr: kube_job_status_failed{namespace="superdl", job_name=~"pg-backup-daily-.*"} > 0
+            for: 5m
             labels: {severity: critical}
             annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理"}
           - alert: PgBackupStale
             expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})
+            for: 5m
             labels: {severity: warning}
             annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)"}
+          # P0-11:资金/结算/巡检/查单/编排收尾的硬告警(指标定义见 apps/api/app/core/metrics.py)
+          - alert: FundReconcileMismatch
+            expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "资金账实不平({{ $labels.kind }}):余额与流水不一致,先冻结出账再人工核对"}
+          - alert: SettlementGapRecorded
+            expr: increase(superdl_settlement_gap_total[5m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "结算缺口登记({{ $labels.kind }}/{{ $labels.reason }}):有账期追不平,按缺口清单人工补结算"}
+          - alert: PatrolFailed
+            expr: increase(superdl_patrol_failed_total[15m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "余额巡检环节异常({{ $labels.stage }}):巡检停摆会掩盖账实漂移,查 worker 日志"}
+          - alert: PaymentRecoverFailed
+            expr: increase(superdl_payment_recover_failed_total[15m]) > 0
+            labels: {severity: warning}
+            annotations: {summary: "查单收敛单笔入账失败({{ $labels.error }}):整轮不中断,该笔需人工核对入账"}
+          # 悬挂实例是 Gauge(当前滞留数,非单调),不能用 increase:>0 持续 15 分钟即告警
+          - alert: ReconcileStuckInstances
+            expr: max(superdl_reconcile_stuck_instances) > 0
+            for: 15m
+            labels: {severity: warning}
+            annotations: {summary: "实例悬挂在 {{ $labels.status }} 超 15 分钟未收敛:编排收尾卡死,管理端实例详情人工介入"}
+          - alert: ReconcileLeakAborted
+            expr: increase(superdl_reconcile_leak_aborted_total[15m]) > 0
+            labels: {severity: warning}
+            annotations: {summary: "泄漏回收被熔断中止(未知 Pod 占比超阈):本轮泄漏未回收,人工核对节点残留"}
+          - alert: CertNotReady
+            expr: certmanager_certificate_ready_status{condition="False"} == 1
+            for: 10m
+            labels: {severity: warning}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver"}

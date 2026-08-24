@@ -7,6 +7,47 @@ from prometheus_client import REGISTRY
 from app.workers.main import _metrics_wsgi_app, _timed_job
 
 
+class TestScheduledJobsManifest:
+    """register_scheduled_jobs 任务清单快照(P1-41c):新增任务未登记/误删任务
+    未同步本断言即红 —— 防静默丢任务(结算/对账/巡检停摆无人发现)。"""
+
+    EXPECTED_JOB_IDS = frozenset(
+        {
+            "outbox_reaper",
+            "reconciler",
+            "hourly_settlement",
+            "daily_disk_settlement",
+            "fund_reconcile",
+            "usage_aggregation",
+            "close_expired_orders",
+            "payment_reconcile",
+            "cleanup_expired_rows",
+            "balance_patrol",
+            "prewarm_patrol",
+            "node_spec_patrol",
+            "node_enroll_reconciler",
+            "ticket_stale_patrol",
+        }
+    )
+
+    async def test_registered_jobs_manifest(self):
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+        from app.workers.main import register_scheduled_jobs
+
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        register_scheduled_jobs(scheduler)
+        scheduler.start(paused=True)  # paused:只取注册清单,不触发任何任务执行
+        try:
+            ids = {job.id for job in scheduler.get_jobs()}
+        finally:
+            scheduler.shutdown(wait=False)
+        assert ids == self.EXPECTED_JOB_IDS, (
+            f"定时任务清单漂移:新增未登记 {sorted(ids - self.EXPECTED_JOB_IDS)};"
+            f"丢失 {sorted(self.EXPECTED_JOB_IDS - ids)}"
+        )
+
+
 def _call_wsgi(app: Any, authorization: str | None) -> tuple[str, bytes]:
     environ: dict[str, Any] = {
         "REQUEST_METHOD": "GET",
@@ -75,16 +116,20 @@ class TestTimedJob:
         )
         assert (after or 0) == (before or 0) + 1
 
-    async def test_slow_tick_warns(self, capsys):
-        """单轮耗时超过周期 80% 必须打 warning(coalesce/misfire 静默丢轮的前兆)。"""
+    async def test_slow_tick_warns(self):
+        """单轮耗时超过周期 80% 必须打 warning(coalesce/misfire 静默丢轮的前兆)。
+        用 structlog 事件捕获而非 capsys:日志管道在套件早期已绑定原始 stdout,
+        全量跑时 capsys 抓不到(顺序相关 flake)。"""
+        from structlog.testing import capture_logs
 
         async def slow() -> None:
             import asyncio
 
             await asyncio.sleep(0.05)
 
-        await _timed_job("t_slow", slow, 0.01)()  # 周期 10ms,必然超 80%
-        assert "scheduled_tick_slow" in capsys.readouterr().out
+        with capture_logs() as logs:
+            await _timed_job("t_slow", slow, 0.01)()  # 周期 10ms,必然超 80%
+        assert any(e.get("event") == "scheduled_tick_slow" for e in logs)
 
     async def test_exception_still_observed(self):
         import pytest

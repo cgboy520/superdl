@@ -10,7 +10,7 @@ from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.money import disk_daily_charge
 from app.core.outbox import drain
-from app.core.timeutil import now_utc
+from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillDailyDisk
 from app.modules.billing.patrol import balance_patrol
@@ -82,6 +82,93 @@ class TestDiskCrud:
 
 
 class TestMountLifecycle:
+    async def test_start_after_delete_disk_detaches(self, client, sm, fake):
+        """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不再挂到擦除中的旧 subPath。"""
+        from tests.test_orchestrator_lifecycle import get_instance
+
+        headers, user_id, key_id = await create_user_with_key(client, "13500000011")
+        await fund_wallet(sm, user_id, "500.00")
+        sku_id = await create_test_sku(sm)
+        disk = await create_disk(client, headers)
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "img",
+                "ssh_key_ids": [key_id],
+                "data_disk_id": disk["id"],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        a_uuid = resp.json()["uuid"]
+        await drain(sm)
+        fake.mark_ready(f"tenant-{user_id}", a_uuid)
+        await reconcile_once(sm)
+        # 停机(数据盘保持挂载标记,删盘时按 stopped 自动解挂)
+        await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
+        await drain(sm)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
+        # 删盘 → 引用摘除 + 擦除完成
+        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        async with sm() as session:
+            from app.modules.orchestrator.models import Instance
+
+            inst = (
+                await session.execute(select(Instance).where(Instance.uuid == a_uuid))
+            ).scalar_one()
+            assert inst.data_disk_id is None
+        # 开机:不带数据盘,不报错;新 Pod 无 subPath
+        resp = await client.post(f"/api/v1/instances/{a_uuid}/start", headers=headers)
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
+        assert pod.spec.data_disk_subpath is None
+
+    async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
+        """盘处于 deleting(擦除中)时开机被拒绝:不能挂到正在被擦除的目录。"""
+        from tests.test_orchestrator_lifecycle import get_instance
+
+        headers, user_id, key_id = await create_user_with_key(client, "13500000012")
+        await fund_wallet(sm, user_id, "500.00")
+        sku_id = await create_test_sku(sm)
+        disk = await create_disk(client, headers)
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "img",
+                "ssh_key_ids": [key_id],
+                "data_disk_id": disk["id"],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        a_uuid = resp.json()["uuid"]
+        await drain(sm)
+        fake.mark_ready(f"tenant-{user_id}", a_uuid)
+        await reconcile_once(sm)
+        await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
+        await drain(sm)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
+        # 删盘但不 drain:盘停在 deleting,引用已摘除 —— 手工恢复引用模拟存量数据/竞态
+        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            from app.modules.orchestrator.models import Instance
+
+            await session.execute(
+                update(Instance).where(Instance.uuid == a_uuid).values(data_disk_id=disk["id"])
+            )
+            await session.commit()
+        resp = await client.post(f"/api/v1/instances/{a_uuid}/start", headers=headers)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+
     async def test_cross_instance_mount(self, client, sm, fake):
         """验收:A 挂载 → A 释放(盘保留)→ B 挂载同一块盘。"""
         from tests.test_orchestrator_lifecycle import get_instance
@@ -176,7 +263,7 @@ class TestDailyDiskBilling:
             entries = (await session.execute(select(BalanceLedger))).scalars().all()
         # 日费按「前 k 天累计 − 前 k−1 天累计」出账(整月累计才精确等于月单价 × 天数 / 30),
         # 所以单日金额随当月第几天在 0.11/0.12 之间摆动 —— 不能写死某一个值
-        yesterday = (now_utc() - timedelta(days=1)).date()
+        yesterday = (billing_day_floor(now_utc()) - timedelta(days=1) + BILLING_DAY_OFFSET).date()
         expected = disk_daily_charge(Decimal("0.0350"), 100, yesterday)
         assert bill.amount == expected
         assert len([e for e in entries if e.type == "consume"]) == 1
@@ -198,9 +285,11 @@ class TestDailyDiskBilling:
         await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
-        assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, now_utc().date())
+        today = (billing_day_floor(now_utc()) + BILLING_DAY_OFFSET).date()
+        expected = disk_daily_charge(Decimal("0.0350"), 100, today)
+        assert bill.amount == expected
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
-        assert w["balance"] == "99.88"
+        assert w["balance"] == str(Decimal("100.00") - expected)
 
     async def test_expand_settles_old_size_first(self, client, sm, fake):
         """扩容前按旧容量结清未出账日期:新容量不追溯到旧日期(多扣用户)。"""
@@ -214,7 +303,8 @@ class TestDailyDiskBilling:
         async with sm() as session:
             bill = (await session.execute(select(BillDailyDisk))).scalar_one()
         assert bill.size_gb == 100  # 当日按旧容量
-        assert bill.amount == Decimal("0.12")
+        today = (billing_day_floor(now_utc()) + BILLING_DAY_OFFSET).date()
+        assert bill.amount == disk_daily_charge(Decimal("0.0350"), 100, today)
 
     async def test_frozen_disk_delete_not_billed(self, client, sm, fake):
         """冻结态不计费:欠费回收删盘不补账(否则把有意不计费的日子补回来)。"""
@@ -328,6 +418,7 @@ class TestDiskIdempotency:
         h = {**headers, "Idempotency-Key": "disk-idem-1"}
         a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
         b = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
-        assert a.status_code == 201 and b.status_code == 201
+        assert a.status_code == 201 and b.status_code == 200
+        assert b.headers["x-idempotent-replay"] == "true"
         assert a.json()["uuid"] == b.json()["uuid"]
         assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1

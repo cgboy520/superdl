@@ -663,12 +663,14 @@ class TestNodeCordon:
     async def test_cordon_via_outbox_and_uncordon(self, client, sm) -> None:
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
-        from app.core.outbox import drain
+        from app.core.outbox import drain, drain_strict
+        from app.modules.nodes.patrol import node_spec_patrol
 
         fake = FakeOrchestrator()
         set_orchestrator(fake)
         try:
             ah = await admin_headers(sm, client, role="ops")
+            await node_spec_patrol(sm)  # 台账就位(cordon 校验读 node_specs,不直连 K8s)
             # 未知节点 → 404
             assert (
                 await client.post(
@@ -686,7 +688,7 @@ class TestNodeCordon:
             )
             assert resp.status_code == 200 and resp.json()["queued"] is True
             assert "fake-hami-node-1" not in fake.cordoned_nodes  # 请求路径零 K8s 调用
-            assert await drain(sm) == 1
+            assert await drain_strict(sm) == (1, 0)  # cordon 任务必须成功而非仅被处理
             assert "fake-hami-node-1" in fake.cordoned_nodes
             from app.modules.nodes.patrol import node_spec_patrol
 
@@ -719,5 +721,46 @@ class TestNodeCordon:
                     headers=ro,
                 )
             ).status_code == 403
+        finally:
+            set_orchestrator(None)
+
+    async def test_out_of_order_replay_converges_to_latest_intent(self, client, sm) -> None:
+        """乱序安全:cordon 与 uncordon 先后入队,handler 读台账期望态而非 payload,
+        即便先发的 cordon 后执行,最终也收敛到 uncordon(管理员最后意图)。"""
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.core.outbox import drain
+        from app.modules.nodes.patrol import node_spec_patrol
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            ah = await admin_headers(sm, client, role="ops")
+            await node_spec_patrol(sm)
+            # 快速连发 cordon → uncordon(期望态最终为 False)
+            await client.post(
+                "/api/admin/v1/nodes/fake-hami-node-1/cordon",
+                json={"reason": "维护"},
+                headers=ah,
+            )
+            await client.post(
+                "/api/admin/v1/nodes/fake-hami-node-1/uncordon",
+                json={"reason": "完成"},
+                headers=ah,
+            )
+            await drain(sm)  # 两个任务都按最新期望态执行:最终 uncordoned
+            assert "fake-hami-node-1" not in fake.cordoned_nodes
+            # 巡检收敛环:实际与期望一致,无收敛动作
+            from sqlalchemy import select as _select
+
+            from app.modules.nodes.models import NodeSpec
+
+            async with sm() as session:
+                row = (
+                    await session.execute(
+                        _select(NodeSpec).where(NodeSpec.node_name == "fake-hami-node-1")
+                    )
+                ).scalar_one()
+                assert row.desired_unschedulable is False
         finally:
             set_orchestrator(None)

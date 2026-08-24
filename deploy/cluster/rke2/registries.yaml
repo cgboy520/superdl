@@ -1,12 +1,14 @@
 # /etc/rancher/rke2/registries.yaml —— 分发到全部节点(server + agent),改动后重启 rke2 服务生效
 # 作用:①声明参与 Spegel P2P 共享的仓库(embedded-registry,见 server-config.yaml)
-#      ②把 registry.superdl.local 指到集群内 registry(deploy/cluster/registry/,NodePort 30500)
+#      ②把 registry.superdl.local 指到集群内 registry(deploy/cluster/registry/,ClusterIP 5000)
 # 分发途径:存量节点走 ansible(../../ansible/site.yml);新节点由管理端一键加入脚本落位
 mirrors:
   "*": {}                    # 所有仓库参与 P2P:任一节点已缓存的镜像,其余节点内网互拉(latest tag 除外)
   registry.superdl.local:
     endpoint:
-      - "http://<server-ip>:30500"   # NodePort 全节点开放;server IP 是节点必达的稳定地址(与 agent-config.yaml 同占位符)
+      - "http://<registry-cluster-ip>:5000"   # registry Service 的 ClusterIP(P0-07 起由 NodePort 30500 收编);
+                                              # ClusterIP 分配后稳定不变,kube-proxy 全节点编程,节点 host 网络
+                                              # (containerd)可达。查法:kubectl -n registry get svc registry
 # endpoint 显式 http(集群内网明文),不涉 TLS 校验,无需 configs.tls 块。
 # registry 已开 htpasswd 认证(deploy/cluster/registry/registry.yaml):节点 pull 凭据在
 # 下面 configs 块配置——启用步骤:①去掉注释 ②把 CHANGE_ME 换成与 htpasswd 一致的口令
@@ -17,7 +19,7 @@ mirrors:
 #       username: ops
 #       password: CHANGE_ME   # 与 registry-htpasswd Secret 中该用户的明文口令一致
 # 租户 Pod 的 Egress NetworkPolicy 已禁全部私网段(app/core/k8s/real.py PRIVATE_CIDRS),
-# 租户实例无法触达 30500。
+# ClusterIP 段与 Pod 网段均在其内,租户实例无法触达 registry。
 #
 # 新节点注意:本文件由平台按模板自动生成下发(管理端·平台配置·集群接入的
 # node_registries_yaml,留空=内置模板)。开启认证后,须把含上面 configs.auth 的完整模板

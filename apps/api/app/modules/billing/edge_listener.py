@@ -32,7 +32,13 @@ async def on_instance_transition(
     detail_extra = None
     if event.reason in _TRUNCATE_REASONS and instance.unready_since is not None:
         unready_at = ensure_utc(instance.unready_since)
-        if unready_at < at:
+        # 健全性:早于本次进入 running 的 unready_since 是上次失联 episode 的残留,
+        # 不参与截断——否则几天前的记录会把整段计费截断到过去时刻(本小时计 0 秒)
+        from app.modules.orchestrator.service import last_entered_status_at
+
+        entered_running = await last_entered_status_at(session, instance.id, RUNNING)
+        stale = entered_running is not None and unready_at < ensure_utc(entered_running)
+        if not stale and unready_at < at:
             at = unready_at
             # 截断依据留进 bills_hourly.detail(事件重建层另有同口径截断,见
             # settlement._billing_view:整点结算不会把宽限期秒数再补回来)

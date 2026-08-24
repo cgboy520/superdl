@@ -97,6 +97,23 @@ export async function requestTokenRefresh(
   }
 }
 
+/** 管理端静默续期(滑动窗口,15 分钟过期宽限):access token 换新。失败返回 null。 */
+export async function requestAdminTokenRefresh(
+  accessToken: string,
+): Promise<{ access_token: string } | null> {
+  try {
+    const resp = await fetch(`${config.baseUrl}/api/admin/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken }),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as { access_token: string };
+  } catch {
+    return null;
+  }
+}
+
 /** 网络层失败(断网/DNS/连接拒绝)统一成 ApiError:fetch 的 TypeError 原文绝不能甩给用户。 */
 function networkError(): ApiError {
   return {
@@ -155,6 +172,9 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
       body = JSON.parse(text);
     } catch {
       if (response.ok) {
+        // 非 JSON 的成功响应(如 text/csv 导出端点)原样透传文本
+        const contentType = response.headers.get("Content-Type") ?? "";
+        if (!contentType.includes("application/json")) return text as T;
         throw {
           code: "INVALID_RESPONSE",
           message: "服务响应异常,请稍后重试",

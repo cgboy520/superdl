@@ -29,6 +29,10 @@
 管道执行时重启前从 API 重拉脚本本体,并校验 bootstrap 下发的脚本指纹(script_sha256)。
 join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即可。
 
+落盘权限:`umask 077` 前置(生成文件先窄后宽,无 0644→chmod 窗口),日志显式 0644。
+卸载:`sudo bash node-join.sh --uninstall` 逆向拆除(agent、本脚本写入的 sysctl/GRUB/黑名单/
+集群配置、状态目录),不碰 superdl-nvme VG 与驱动;节点清退仍需平台侧 `kubectl delete node`。
+
 ## 测试
 
 ```bash

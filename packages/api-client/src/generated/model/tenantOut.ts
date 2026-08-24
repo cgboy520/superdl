@@ -7,11 +7,14 @@
 
 export interface TenantOut {
   balance: string;
+  company_name?: string | null;
   created_at: string;
   disk_gb: number;
   id: number;
+  id_name?: string | null;
   instances: number;
   phone_masked: string;
   status: string;
   total_consumed: string;
+  verification_status?: string;
 }

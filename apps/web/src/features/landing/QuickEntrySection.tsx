@@ -1,4 +1,5 @@
-/** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。 */
+/** 快捷入口四宫格:快速开始 / GPU 选型 / 透明计费 / 数据无忧。
+ * 信息型入口改指 /help 的 FAQ 锚点(P2-24);GPU 选型仍页内滚动到排名区。 */
 
 import {
   AccountBookOutlined,
@@ -12,8 +13,6 @@ import { Card, Col, Row, Typography } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useIsLoggedIn } from "../../stores/auth";
-
 const ENTRIES: Array<{ key: "start" | "gpu" | "billing" | "data"; icon: ReactNode }> = [
   { key: "start", icon: <ThunderboltOutlined /> },
   { key: "gpu", icon: <AimOutlined /> },
@@ -21,21 +20,24 @@ const ENTRIES: Array<{ key: "start" | "gpu" | "billing" | "data"; icon: ReactNod
   { key: "data", icon: <DatabaseOutlined /> },
 ];
 
+/** key → /help 的 FAQ 锚点(与 help.tsx FAQ_KEYS 的 id 一一对应) */
+const FAQ_ANCHOR = {
+  start: "faq-connectSsh",
+  billing: "faq-billingStart",
+  data: "faq-dataPersist",
+} as const;
+
 export function QuickEntrySection() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const loggedIn = useIsLoggedIn();
 
   const go = (key: string) => {
     if (key === "gpu") {
       document.getElementById("ranking")?.scrollIntoView({ behavior: "smooth" });
-    } else if (key === "start") {
-      void navigate({ to: loggedIn ? "/market" : "/login" });
-    } else if (key === "billing") {
-      void navigate({ to: "/billing" });
-    } else {
-      void navigate({ to: "/storage" });
+      return;
     }
+    const anchor = FAQ_ANCHOR[key as keyof typeof FAQ_ANCHOR];
+    void navigate({ to: "/help", hash: anchor });
   };
 
   const TITLE = {

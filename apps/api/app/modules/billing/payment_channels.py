@@ -235,17 +235,31 @@ class WechatChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
-        resource: dict[str, Any] = result["resource"]
+        resource = result.get("resource")
+        if not isinstance(resource, dict):
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            )
         # 除验签外还要核对通知里的商户号/应用号确为已方;缺失即判失败,不按缺失放行。
         if resource.get("mchid") != self._mchid or resource.get("appid") != self._appid:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"
             )
+        # 缺字段显式 4xx(裸 [] 索引的 KeyError 会漏成 500,微信对非 SUCCESS 应答重试 15 次)
+        out_trade_no = resource.get("out_trade_no")
+        transaction_id = resource.get("transaction_id")
+        trade_state = resource.get("trade_state")
+        amount_obj = resource.get("amount")
+        total = amount_obj.get("total") if isinstance(amount_obj, dict) else None
+        if not out_trade_no or not transaction_id or not trade_state or total is None:
+            raise AppError(
+                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
+            )
         return CallbackResult(
-            order_no=resource["out_trade_no"],
-            channel_txn_id=resource["transaction_id"],
-            amount=Decimal(resource["amount"]["total"]) / 100,
-            success=resource["trade_state"] == "SUCCESS",
+            order_no=out_trade_no,
+            channel_txn_id=transaction_id,
+            amount=Decimal(total) / 100,
+            success=trade_state == "SUCCESS",
         )
 
     async def query_order(self, order: "Order") -> QueryResult:  # pragma: no cover - 需真实商户
@@ -305,6 +319,9 @@ class AlipayChannel:
         self._public_key = cfg["alipay_public_key"]
         self._app_id = cfg["alipay_app_id"]
         self._seller_id = cfg.get("alipay_seller_id") or ""
+        # prod 强制 seller_id:回调除验签外必须核对收款方身份,留空等于收款账号不校验
+        if get_settings().environment == "prod" and not self._seller_id:
+            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipaySellerIdRequired")
         self._notify_url = f"{get_settings().public_base_url}/api/v1/webhooks/alipay"
 
     async def create_payment(self, order: "Order") -> str:  # pragma: no cover - 需真实商户凭据
@@ -383,7 +400,8 @@ class AlipayChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )
-        if self._seller_id and params.get("seller_id") not in (None, self._seller_id):
+        # seller_id 缺失或不符一律拒收(当面付通知必带 seller_id;缺失即视为伪造/串号)
+        if not self._seller_id or params.get("seller_id") != self._seller_id:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )

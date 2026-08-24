@@ -21,6 +21,7 @@ import { Route as AppPlatformRouteImport } from './routes/_app/platform'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSkusRouteImport } from './routes/_app/skus'
 import { Route as AppTenantsRouteImport } from './routes/_app/tenants'
+import { Route as AppTicketsRouteImport } from './routes/_app/tickets'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -81,6 +82,11 @@ const AppTenantsRoute = AppTenantsRouteImport.update({
   path: '/tenants',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTicketsRoute = AppTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
+  '/tickets': typeof AppTicketsRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/skus': typeof AppSkusRoute
   '/tenants': typeof AppTenantsRoute
+  '/tickets': typeof AppTicketsRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/skus': typeof AppSkusRoute
   '/_app/tenants': typeof AppTenantsRoute
+  '/_app/tickets': typeof AppTicketsRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/skus'
     | '/tenants'
+    | '/tickets'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/skus'
     | '/tenants'
+    | '/tickets'
     | '/'
   id:
     | '__root__'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/skus'
     | '/_app/tenants'
+    | '/_app/tickets'
     | '/_app/'
   fileRoutesById: FileRoutesById
 }
@@ -257,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTenantsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/tickets': {
+      id: '/_app/tickets'
+      path: '/tickets'
+      fullPath: '/tickets'
+      preLoaderRoute: typeof AppTicketsRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -270,6 +289,7 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppSkusRoute: typeof AppSkusRoute
   AppTenantsRoute: typeof AppTenantsRoute
+  AppTicketsRoute: typeof AppTicketsRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
@@ -283,6 +303,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppSkusRoute: AppSkusRoute,
   AppTenantsRoute: AppTenantsRoute,
+  AppTicketsRoute: AppTicketsRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

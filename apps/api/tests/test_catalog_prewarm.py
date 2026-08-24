@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain
+from app.core.outbox import OutboxTask, drain, drain_strict
 from app.core.timeutil import now_utc
 from app.modules.catalog.models import ImageNodeCache, PlatformImage
 from app.modules.catalog.prewarm import prewarm_patrol
@@ -74,7 +74,8 @@ class TestPrewarmFullChain:
         assert [r.status for r in rows] == ["pending"] * 3
         assert await pending_tasks(sm) == 3
 
-        assert await drain(sm) == 3  # handler:建 Job(auto_prewarm → succeeded)+ 行置 pulling
+        # handler:建 Job(auto_prewarm → succeeded)+ 行置 pulling;drain_strict 断言全部成功
+        assert await drain_strict(sm) == (3, 0)
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pulling"] * 3
         assert len(fake.prewarm_jobs) == 3

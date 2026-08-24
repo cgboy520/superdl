@@ -1,4 +1,4 @@
-import { adminColors, formatDateTime, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
+import { adminColors, formatDateTime, heatColors, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -34,10 +34,12 @@ import {
   useCreateEnrollment,
   useEnrollments,
   useNodes,
+  usePortPool,
   useRegenerateEnrollment,
   useRevokeEnrollment,
 } from "../../api";
 import { useApiErrorText } from "../../lib/apiError";
+import { useFormDraft } from "../../lib/formDraft";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -65,7 +67,8 @@ const PHASE_LABEL = {
   joined: "nodes.phase.joined",
 } as const;
 
-const HEAT_COLORS = { idle: adminColors.gridLine, low: "#16A34A", mid: "#F59E0B", high: "#DC2626" };
+// 热力格深底浅字(WCAG AA):取值收敛在 packages/ui heatColors,白字对比度 ≥4.5:1
+const HEAT_COLORS = { idle: adminColors.gridLine, ...heatColors };
 
 function heatColor(util: number): string {
   if (util < 10) return HEAT_COLORS.idle;
@@ -74,7 +77,7 @@ function heatColor(util: number): string {
   return HEAT_COLORS.high;
 }
 
-function last(points?: [number, number][]): number | null {
+function last(points?: [number, number][] | null): number | null {
   const p = points?.[points.length - 1];
   return p ? p[1] : null;
 }
@@ -121,7 +124,14 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
                 fontSize: 11,
                 lineHeight: 1.2,
                 background: bg,
-                color: live && (util ?? 0) >= 10 ? "#fff" : adminColors.textMuted,
+                // 字色随底:深底(热力档/空闲格)浅字;亮青(断源已租)反压深字;断源空闲格深底浅字
+                color: !live
+                  ? used
+                    ? adminColors.bgBase
+                    : adminColors.textSecondary
+                  : (util ?? 0) >= 10
+                    ? "#fff"
+                    : adminColors.textSecondary,
                 fontWeight: 600,
               }}
             >
@@ -255,11 +265,16 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const [form] = Form.useForm<EnrollFormValues>();
+  // 新建草稿(sessionStorage):误关弹窗不丢;生成命令成功后清除
+  const draft = useFormDraft<EnrollFormValues>("node-new");
   const [result, setResult] = useState<EnrollmentCommandOut | null>(null);
   const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
   const create = useCreateEnrollment({
     mutation: {
-      onSuccess: (r) => setResult(r),
+      onSuccess: (r) => {
+        draft.clear();
+        setResult(r);
+      },
       onError: (e) => message.error(errText(e, t("nodes.generateFailed"))),
     },
   });
@@ -514,6 +529,7 @@ function NodesPage() {
   const qc = useQueryClient();
   const { data } = useNodes();
   const nodes: NodeRow[] = data ?? [];
+  const { data: portPool } = usePortPool();
   const [selected, setSelected] = useState<string | null>(null);
   const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
@@ -553,11 +569,27 @@ function NodesPage() {
       <Card
         title={t("nodes.title")}
         extra={
-          <Tooltip title={writable ? "" : t("nodes.readonlyNoAdd")}>
-            <Button type="primary" disabled={!writable} onClick={() => setAddOpen(true)}>
-              {t("nodes.addNode")}
-            </Button>
-          </Tooltip>
+          <Space size={12}>
+            {portPool && (
+              <Tooltip title={t("nodes.portPoolHint")}>
+                <Tag
+                  color={portPool.blocked > 0 ? "red" : "default"}
+                  style={{ marginInlineEnd: 0 }}
+                >
+                  {t("nodes.portPool", {
+                    assigned: portPool.assigned,
+                    total: portPool.total,
+                    blocked: portPool.blocked,
+                  })}
+                </Tag>
+              </Tooltip>
+            )}
+            <Tooltip title={writable ? "" : t("nodes.readonlyNoAdd")}>
+              <Button type="primary" disabled={!writable} onClick={() => setAddOpen(true)}>
+                {t("nodes.addNode")}
+              </Button>
+            </Tooltip>
+          </Space>
         }
       >
         <Table<NodeRow>

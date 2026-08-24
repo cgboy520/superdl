@@ -6,13 +6,14 @@ import { Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useSkus } from "../../api/queries";
+import { dedupAvailableTotal } from "../../lib/inventory";
 import { useIsLoggedIn } from "../../stores/auth";
 
 export function CtaBanner() {
   const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
   const { data: skus } = useSkus();
-  const freeCards = (skus ?? []).reduce((sum, s) => sum + (s.available_count ?? 0), 0);
+  const freeCards = dedupAvailableTotal(skus ?? []);
   const text = freeCards > 0 ? t("landing.cta.withStock", { count: freeCards }) : t("landing.cta.fallback");
 
   return (

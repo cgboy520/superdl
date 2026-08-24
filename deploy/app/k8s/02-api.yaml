@@ -17,6 +17,16 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
+      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod,
+      # 节点资源紧张时不与租户同级被驱逐。
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
+        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
         # 2 副本尽量跨节点/跨可用区摊开;小集群不满足时仍可调度(ScheduleAnyway)
         - maxSkew: 1
@@ -48,10 +58,17 @@ spec:
           readinessProbe:
             httpGet: {path: /readyz, port: http}
             periodSeconds: 5
+            timeoutSeconds: 5   # /readyz 含 DB 探测:默认 1s 在 DB 抖动时易误判摘流;放宽到 5s,超时即失败摘流
             failureThreshold: 3
-          # requests==limits → Guaranteed:节点资源紧张时平台控制面与租户 Pod 同级,不先被 evict。
+          lifecycle:
+            # 滚动/缩容先摘流再退出:preStop 等 Endpoints 摘除传播到 ingress-nginx/iptables,
+            # 避免在途请求被 SIGTERM 直接掐断。
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+          # requests==limits → Guaranteed:节点资源紧张时平台控制面与租户 Pod 同级,不先被 evict;
+          # 叠加 pod 级 priorityClassName=system-cluster-critical(见上,P1-33)压过租户。
           # 内存取原 limits 值(eviction 看内存);CPU 可压缩,取请求与上限的中档。
-          # 进一步的抢占保护(优先级压过租户)可再加 priorityClassName,需要时单独评估。
           resources:
             requests: {cpu: "1", memory: 1Gi}
             limits: {cpu: "1", memory: 1Gi}

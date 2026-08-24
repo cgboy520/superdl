@@ -76,6 +76,63 @@ class TestRegister:
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
 
+    async def test_password_min_length_12(self, client: AsyncClient):
+        """用户口令最小 12 位:11 位 422,12 位可注册。"""
+        await send_code(client, "13800000073", "register")
+        short = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "phone": "13800000073",
+                "sms_code": "123456",
+                "password": "x9k" * 3 + "m2",  # 11 位
+                "accept_terms": True,
+            },
+        )
+        assert short.status_code == 422
+        assert short.json()["code"] == "VALIDATION_ERROR"
+
+        await send_code(client, "13800000074", "register")
+        ok = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "phone": "13800000074",
+                "sms_code": "123456",
+                "password": "x9k" * 4,  # 12 位
+                "accept_terms": True,
+            },
+        )
+        assert ok.status_code == 201, ok.text
+
+    async def test_password_weak_blacklist(self, client: AsyncClient):
+        """弱口令黑名单(Top 20,不区分大小写):满足长度仍 422;改密路径同表拦截。"""
+        await send_code(client, "13800000075", "register")
+        weak = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "phone": "13800000075",
+                "sms_code": "123456",
+                "password": "Password123",  # 黑名单(大小写不敏感)
+                "accept_terms": True,
+            },
+        )
+        assert weak.status_code == 422
+        assert weak.json()["code"] == "VALIDATION_ERROR"
+
+        # 改密路径:同一 PasswordStr 校验链
+        data = await register(client, "13800000076", password="x9k" * 4)
+        await send_code(client, "13800000076", "reset_password")
+        resp = await client.post(
+            "/api/v1/auth/password/reset",
+            json={
+                "phone": "13800000076",
+                "sms_code": "123456",
+                "new_password": "qwerty123456",
+            },
+        )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+        assert data["access_token"]  # 原会话未被改密失败影响
+
     async def test_duplicate_phone(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         await register(client)
         await age_sms_codes(sm)
@@ -120,9 +177,9 @@ class TestRegister:
 
 class TestLogin:
     async def test_login_with_password(self, client: AsyncClient):
-        await register(client, password="secret123")
+        await register(client, password="secret123456")
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "password": "secret123"}
+            "/api/v1/auth/login", json={"phone": PHONE, "password": "secret123456"}
         )
         assert resp.status_code == 200
         assert resp.json()["access_token"]
@@ -133,7 +190,7 @@ class TestLogin:
         可区分即是一个免登录的手机号枚举 oracle。
         (request_id 是每请求随机值、不含账号信息,比对时剔除。)
         """
-        await register(client, password="secret123")
+        await register(client, password="secret123456")
         registered = await client.post(
             "/api/v1/auth/login", json={"phone": PHONE, "password": "wrong-pass"}
         )
@@ -165,12 +222,12 @@ class TestLogin:
         assert resp.status_code == 200
 
     async def test_frozen_user(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        await register(client, password="secret123")
+        await register(client, password="secret123456")
         async with sm() as session:
             await session.execute(update(User).values(status="frozen"))
             await session.commit()
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": PHONE, "password": "secret123"}
+            "/api/v1/auth/login", json={"phone": PHONE, "password": "secret123456"}
         )
         assert resp.status_code == 403
         assert resp.json()["code"] == "USER_FROZEN"
@@ -184,23 +241,25 @@ class TestLogin:
 
     async def test_successful_logins_not_rate_limited(self, client: AsyncClient):
         """连登不锁:成功登录不计入失败配额。"""
-        await register(client, "13800000081", password="secret123")
+        await register(client, "13800000081", password="secret123456")
         for _ in range(6):
             resp = await client.post(
-                "/api/v1/auth/login", json={"phone": "13800000081", "password": "secret123"}
+                "/api/v1/auth/login", json={"phone": "13800000081", "password": "secret123456"}
             )
             assert resp.status_code == 200, resp.text
 
     async def test_failure_counter_reset_by_success(self, client: AsyncClient):
         """失败才计数,成功一次清零:手滑几次后登成功,不应背着之前的失败配额。"""
         phone = "13800000082"
-        await register(client, phone, password="secret123")
+        await register(client, phone, password="secret123456")
         for _ in range(4):
             resp = await client.post(
                 "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
             )
             assert resp.json()["code"] == "LOGIN_FAILED"
-        ok = await client.post("/api/v1/auth/login", json={"phone": phone, "password": "secret123"})
+        ok = await client.post(
+            "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
+        )
         assert ok.status_code == 200, ok.text
         # 计数已清零:再错 5 次仍是 LOGIN_FAILED,第 6 次才 429
         for _ in range(5):
@@ -210,6 +269,23 @@ class TestLogin:
             assert resp.json()["code"] == "LOGIN_FAILED"
         resp = await client.post(
             "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
+
+    async def test_locked_bucket_blocks_before_password_check(self, client: AsyncClient):
+        """桶已封禁时连正确密码也 429:封禁期内的请求在 bcrypt 之前被拦下,
+        不再为撞库流量支付哈希成本。"""
+        phone = "13800000083"
+        await register(client, phone, password="secret123456")
+        for _ in range(5):
+            resp = await client.post(
+                "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
+            )
+            assert resp.json()["code"] == "LOGIN_FAILED"
+        # 桶已满(5/5):正确密码同样 429 —— 证明廉价准入先于凭据校验
+        resp = await client.post(
+            "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
@@ -272,7 +348,7 @@ class TestPasswordReset:
         await issue_code(sm, "13800000090", "reset_password")
         resp = await client.post(
             "/api/v1/auth/password/reset",
-            json={"phone": "13800000090", "sms_code": "123456", "new_password": "newpass123"},
+            json={"phone": "13800000090", "sms_code": "123456", "new_password": "newpass123456"},
         )
         assert resp.status_code == 200, resp.text
         new_pair = resp.json()
@@ -288,7 +364,7 @@ class TestPasswordReset:
         ).status_code == 200
         # 新密码可登录
         resp = await client.post(
-            "/api/v1/auth/login", json={"phone": "13800000090", "password": "newpass123"}
+            "/api/v1/auth/login", json={"phone": "13800000090", "password": "newpass123456"}
         )
         assert resp.status_code == 200, resp.text
 
@@ -296,7 +372,7 @@ class TestPasswordReset:
         """未注册手机号:先要过验证码那关,不构成「这个号存不存在」的探测口。"""
         resp = await client.post(
             "/api/v1/auth/password/reset",
-            json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123"},
+            json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123456"},
         )
         assert resp.json()["code"] == "SMS_CODE_INVALID"
 

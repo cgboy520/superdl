@@ -13,7 +13,7 @@ helm 不代建 Secret,先建好再 `./preflight.sh <full|light>`(只读,缺什�
 ```bash
 kubectl create ns monitoring --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n kube-system create secret generic superdl-juicefs-secret \
-  --from-literal=metaurl=<redis://…> --from-literal=access-key=<…> --from-literal=secret-key=<…>
+  --from-literal=metaurl=<postgres://juicefs:…@<pg-host>:5432/juicefs_meta?sslmode=require> --from-literal=access-key=<…> --from-literal=secret-key=<…>
 kubectl -n monitoring create secret generic superdl-alert-token --from-literal=token=<与 SUPERDL_ALERTMANAGER_TOKEN 一致>
 kubectl -n monitoring create secret generic superdl-smtp-password --from-literal=password=<SMTP 口令>
 kubectl -n monitoring create secret generic grafana-admin \
@@ -34,9 +34,14 @@ kubectl -n monitoring create secret generic grafana-admin \
    **禁止**录入 `/var/lib/rancher/rke2/server/node-token`(server token 能拉 server 进 etcd 环;
    轮换与托管见下文「server token 与 agent token」)。
    registries.yaml 平台自动生成,无需手改。
-3. **组件**:`./preflight.sh full && helmfile -e full apply`
-4. **内部镜像仓库**:`kubectl apply -f registry/registry.yaml`(已开 htpasswd 认证,
-   apply 前先替换 htpasswd 口令与 NetworkPolicy ipBlock 两处占位;
+3. **组件**:`./preflight.sh full && helmfile -e full apply`(含 Loki/Alloy 日志栈,
+   审计日志留存与查询见 `runbooks/loki-logging.md`);再 apply 准入策略
+   (P1-24,preflight 强制校验两个 Binding 存在且 Deny):
+   `kubectl apply -f admission/tenant-restrictions.yaml`
+   (首次上线可先 [Audit] 观察一周再改回 [Deny],见该文件头注释;Audit 期间 preflight 该项会报缺)
+4. **内部镜像仓库**:先手工建 htpasswd Secret(凭据不落 git,命令见 `registry/registry.yaml`
+   头注释),再 `kubectl apply -f registry/registry.yaml`(已开 htpasswd 认证;
+   NetworkPolicy ipBlock 示例段按真实节点/运维网段取消注释后一并 apply;
    节点 pull 凭据与滚动顺序 SOP:`runbooks/image-prewarm.md`)
 5. **Kata**(dedicated 档):`kata/` 下 kata-deploy(仅 kata 池节点)+
    `kubectl apply -f kata/kata-runtimeclass.yaml`
@@ -71,14 +76,19 @@ kubectl -n monitoring create secret generic grafana-admin \
 1. **server(可兼跑业务)**:
    ```bash
    mkdir -p /etc/rancher/k3s && cp k3s/server-config.yaml /etc/rancher/k3s/config.yaml
+   cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml   # apiserver 审计策略,与 rke2 同规,缺失则起不来
    curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
    ```
    (config 已含 `disable: traefik` 与 `embedded-registry: true`=Spegel)
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;
    禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
-3. **组件**:`./preflight.sh light && helmfile -e light apply`
+3. **组件**:`./preflight.sh light && helmfile -e light apply`;再 apply 准入策略
+   (P1-24,preflight 强制校验两个 Binding 存在且 Deny):
+   `kubectl apply -f admission/tenant-restrictions.yaml`
    - light = HAMi(钉 k3s 版 scheduler 镜像 + devicePlugin runtimeClassName=nvidia,
-     见 `values/light/hami-light.yaml`)+ kps 精简 + cert-manager + ingress-nginx;
+     见 `values/light/hami-light.yaml`)+ kps 精简 + cert-manager + ingress-nginx
+     + Loki/Alloy 日志栈(默认开,资源收紧见 `values/light/loki-light.yaml`;
+     盘紧可在 `environments/light.yaml` 关);
      Cilium/gpu-operator 不装;**TopoLVM 必开**(每个租户 Pod 都要挂实例盘;
      需先由 ansible 基线建出 VG `superdl-nvme`);JuiceFS 可选(只有数据盘用),
      要数据盘时在 `environments/light.yaml` 打开。

@@ -15,12 +15,17 @@ class PaymentChannelsOut(BaseModel):
 
 
 class SiteConfigOut(BaseModel):
-    """站点公开配置(页脚备案号等,未登录可访问)。"""
+    """站点公开配置(页脚备案号与经营主体信息等,未登录可访问)。"""
 
     icp_number: str | None
     police_record_number: str | None
     support_email: str | None
     support_wechat: str | None
+    # 经营主体(《电子商务法》第十五条;留空 = 前端不展示该行)
+    company_name: str | None = None
+    company_address: str | None = None
+    company_phone: str | None = None
+    business_license_url: str | None = None
     payment_channels: PaymentChannelsOut
 
 
@@ -40,7 +45,9 @@ class SkuMarketOut(BaseModel):
     price_hourly: MoneyOut
     max_gpus_per_instance: int
     cuda_max: str | None
-    available_count: int = 0  # 近似库存(30s 缓存),service 填充
+    # 池标签:同一 (pool, model) 物理池上的互斥档位可售数不可相加(前端按组取 max 展示)
+    pool_label: str
+    available_count: int = 0  # 近似库存(签名失效缓存),service 填充
 
     model_config = {"from_attributes": True}
 

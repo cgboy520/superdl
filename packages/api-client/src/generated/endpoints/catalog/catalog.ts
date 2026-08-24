@@ -268,7 +268,7 @@ export const getListSkusApiV1SkusGetUrl = (params?: ListSkusApiV1SkusGetParams,)
 }
 
 /**
- * 算力市场:仅在架 SKU,含近似库存(30s 缓存)。未登录可访问。
+ * 算力市场:仅在架 SKU,含近似库存(签名失效缓存)。未登录可访问。
  * @summary List Skus
  */
 export const listSkusApiV1SkusGet = async (params?: ListSkusApiV1SkusGetParams, options?: Parameters<typeof customFetch>[1]): Promise<SkuMarketOut[]> => {

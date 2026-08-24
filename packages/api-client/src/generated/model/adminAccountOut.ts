@@ -6,12 +6,13 @@
  */
 
 /**
- * 管理员账号(账号管理列表)。不透出 password_hash / token_version。
+ * 管理员账号(账号管理列表)。不透出 password_hash / token_version / totp_secret。
  */
 export interface AdminAccountOut {
   created_at: string;
   id: number;
   role: string;
   status: string;
+  totp_enabled: boolean;
   username: string;
 }

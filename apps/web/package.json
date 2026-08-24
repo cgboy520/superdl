@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "preview": "vite preview",
-    "i18n": "i18next-cli extract --ci && i18next-cli types --ci && i18next-cli lint && bash ../../scripts/check-cjk.sh && bash ../../scripts/check-copy-banned.sh",
+    "i18n": "i18next-cli extract --ci && i18next-cli types --ci && i18next-cli lint && bash ../../scripts/check-cjk.sh && bash ../../scripts/check-copy-banned.sh && bash ../../scripts/check-no-handwritten-url.sh",
     "i18n:write": "i18next-cli extract && i18next-cli types"
   },
   "dependencies": {
@@ -28,10 +28,15 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.12",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tanstack/router-plugin": "^1.168.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.5",

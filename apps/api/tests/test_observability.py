@@ -35,6 +35,47 @@ class TestHealthEndpoints:
         assert resp.status_code == 200
         assert resp.json()["status"] == "ready"
 
+    async def test_schema_lag_not_ready(self, client: AsyncClient, sm):
+        """DB 停在代码 head 的祖先版本 = 迁移漏跑:503 摘流,新代码不得带病放量。"""
+        from app.core.db import _script_directory, code_schema_head
+
+        oldest = list(_script_directory().walk_revisions())[-1].revision
+        assert oldest != code_schema_head()  # 仓库已有多个迁移,前提成立
+        async with sm() as session:
+            await session.execute(
+                text("UPDATE alembic_version SET version_num = :v"), {"v": oldest}
+            )
+            await session.commit()
+        try:
+            resp = await client.get("/readyz")
+            assert resp.status_code == 503
+            assert resp.json()["status"] == "schema_mismatch"
+        finally:
+            async with sm() as session:
+                await session.execute(
+                    text("UPDATE alembic_version SET version_num = :v"),
+                    {"v": code_schema_head()},
+                )
+                await session.commit()
+
+    async def test_rollout_window_tolerated(self, client: AsyncClient, sm):
+        """DB 版本比代码新(迁移 Job 先跑、老 Pod 未轮换):expand-only 约定下放行。"""
+        from app.core.db import code_schema_head
+
+        async with sm() as session:
+            await session.execute(text("UPDATE alembic_version SET version_num = 'futurerev99'"))
+            await session.commit()
+        try:
+            resp = await client.get("/readyz")
+            assert resp.status_code == 200
+        finally:
+            async with sm() as session:
+                await session.execute(
+                    text("UPDATE alembic_version SET version_num = :v"),
+                    {"v": code_schema_head()},
+                )
+                await session.commit()
+
 
 class TestBusinessMetrics:
     async def test_http_histogram_uses_route_template(self, client: AsyncClient):
@@ -59,6 +100,25 @@ class TestUnhandledException:
         assert resp.status_code == 500
         assert resp.json()["code"] == "INTERNAL"
         assert "kaboom" not in resp.text  # 不泄露内部细节
+
+    async def test_500_keeps_security_headers_and_request_id(self, sm):
+        """500 在中间件链内层渲染(Uniform500):安全响应头与 x-request-id 必须还在——
+        这是最需要对外的凭单排障响应。若退回 ServerErrorMiddleware 渲染则两皆丢。"""
+        from app.main import create_app
+
+        app = create_app()
+
+        @app.get("/boom2", include_in_schema=False)
+        async def boom2() -> dict:  # pyright: ignore[reportUnusedFunction]
+            raise RuntimeError("kaboom")
+
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/boom2", headers={"X-Request-ID": "gw-boom-1"})
+        assert resp.status_code == 500
+        assert resp.headers["x-request-id"] == "gw-boom-1"
+        assert resp.headers["x-content-type-options"] == "nosniff"
+        assert resp.json()["request_id"] == "gw-boom-1"
 
 
 class TestCleanup:

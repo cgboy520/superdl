@@ -26,6 +26,9 @@ import {
   type CapacityWarning,
   type GpuModelAggregate,
   type SkuAdminOut,
+  type SkuCreate,
+  type SkuUpdate,
+  isApiError,
   useAdminSkus,
   useCreateSku,
   useGpuModelAggregates,
@@ -35,6 +38,7 @@ import {
 } from "../../api";
 import { useFormat } from "../../lib/format";
 import { useApiErrorText } from "../../lib/apiError";
+import { useFormDraft } from "../../lib/formDraft";
 import { StatusTag } from "../../components/StatusTag";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -58,6 +62,8 @@ interface SkuFormValues {
   price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
   max_gpus_per_instance: number;
   cuda_max?: string | null;
+  /** 编辑必填(入审计);新建端点不接受 reason,提交时不带 */
+  reason?: string;
 }
 
 const TIER_POOL: Record<SkuTier, string> = {
@@ -109,6 +115,8 @@ function SkusPage() {
   const [editing, setEditing] = useState<SkuAdminOut | "new" | null>(null);
   const [clusterPick, setClusterPick] = useState<GpuModelAggregate | null>(null);
   const [form] = Form.useForm<SkuFormValues>();
+  // 新建草稿(sessionStorage):误关抽屉/刷新不丢;编辑态不写草稿(避免跨记录串值)
+  const draft = useFormDraft<SkuFormValues>("sku-new");
 
   const clusterOptions = useMemo(
     () => (aggregates ?? []).filter((a) => a.gpu_model && a.pool_label && POOL_TIERS[a.pool_label]),
@@ -123,6 +131,7 @@ function SkusPage() {
     mutation: {
       onSuccess: () => {
         message.success(t("skus.created"));
+        draft.clear();
         setEditing(null);
         refresh();
       },
@@ -144,7 +153,7 @@ function SkusPage() {
     mutation: {
       onSuccess: refresh,
       onError: (e, vars) => {
-        const code = (e as { code?: string }).code;
+        const code = isApiError(e) ? e.code : undefined;
         if (code === "SKU_NOT_SELLABLE" && !vars.force) {
           modal.confirm({
             title: t("skus.notSellableTitle"),
@@ -235,6 +244,8 @@ function SkusPage() {
       form.setFieldsValue({
         tier: "shared_std", gpu_cores_pct: 50, oversell_cores: 1.5, oversell_vram: 1.0,
         disk_gb: 100, max_gpus_per_instance: 1, pool_label: "hami", vcpu: 8, mem_gb: 32,
+        // 草稿覆盖默认值(仅新建):误关抽屉后重开不丢
+        ...draft.load(),
       });
     } else {
       form.setFieldsValue({
@@ -250,19 +261,43 @@ function SkusPage() {
   const submit = async () => {
     const values = await form.validateFields();
     const doSubmit = () => {
-      const payload = {
-        ...values,
-        oversell_cores: String(values.oversell_cores),
-        oversell_vram: String(values.oversell_vram),
-        price_hourly: values.price_hourly,
-      };
       if (editing === "new") {
-        // 新建端点不接受 reason,提交前必须显式剥掉
-        const createPayload = { ...(payload as Record<string, unknown>) };
-        delete createPayload.reason;
-        create.mutate({ data: createPayload as never });
+        // 新建端点不接受 reason(编辑才必填,入审计)
+        const createPayload: SkuCreate = {
+          name: values.name,
+          gpu_model: values.gpu_model,
+          tier: values.tier,
+          mig_profile: values.mig_profile ?? null,
+          gpu_cores_pct: values.gpu_cores_pct,
+          vram_gb: values.vram_gb,
+          oversell_cores: String(values.oversell_cores),
+          oversell_vram: String(values.oversell_vram),
+          pool_label: values.pool_label,
+          vcpu: values.vcpu,
+          mem_gb: values.mem_gb,
+          disk_gb: values.disk_gb,
+          price_hourly: values.price_hourly,
+          max_gpus_per_instance: values.max_gpus_per_instance,
+          cuda_max: values.cuda_max ?? null,
+        };
+        create.mutate({ data: createPayload });
       } else if (editing) {
-        update.mutate({ skuId: editing.id, data: payload as never });
+        const updatePayload: SkuUpdate = {
+          name: values.name,
+          gpu_cores_pct: values.gpu_cores_pct,
+          vram_gb: values.vram_gb,
+          oversell_cores: String(values.oversell_cores),
+          oversell_vram: String(values.oversell_vram),
+          pool_label: values.pool_label,
+          vcpu: values.vcpu,
+          mem_gb: values.mem_gb,
+          disk_gb: values.disk_gb,
+          price_hourly: values.price_hourly,
+          max_gpus_per_instance: values.max_gpus_per_instance,
+          cuda_max: values.cuda_max ?? null,
+          reason: values.reason ?? "",
+        };
+        update.mutate({ skuId: editing.id, data: updatePayload });
       }
     };
     // 改价二次确认(带影响预览:当前在跑台数/涉及用户);显存超卖 >1.2 同框复用
@@ -418,7 +453,14 @@ function SkusPage() {
         }
       >
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-          <Form form={form} layout="vertical" style={{ flex: 1, minWidth: 0 }}>
+          <Form
+            form={form}
+            layout="vertical"
+            style={{ flex: 1, minWidth: 0 }}
+            onValuesChange={() => {
+              if (isNew) draft.save(form.getFieldsValue(true) as Partial<SkuFormValues>);
+            }}
+          >
             {isNew && clusterOptions.length > 0 && (
               <Form.Item label={t("skus.fromClusterLabel")}>
                 <Select<number | "manual">

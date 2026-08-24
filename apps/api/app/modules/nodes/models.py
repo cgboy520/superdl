@@ -31,7 +31,8 @@ class NodeEnrollment(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     phase: Mapped[str | None] = mapped_column(String(32))  # 脚本细粒度进度
     error: Mapped[str | None] = mapped_column(Text)
-    node_name: Mapped[str | None] = mapped_column(String(253), index=True)  # bootstrap 上报
+    # bootstrap 查行一律走 token_hash/progress_token_hash,node_name 无查询使用,不建索引
+    node_name: Mapped[str | None] = mapped_column(String(253))  # bootstrap 上报
     reported_ip: Mapped[str | None] = mapped_column(String(64))
     os_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     gpu_info: Mapped[list[Any] | None] = mapped_column(
@@ -58,10 +59,11 @@ class NodeSpec(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     node_name: Mapped[str] = mapped_column(String(253), unique=True)
-    pool_label: Mapped[str | None] = mapped_column(String(32), index=True)
+    # 池/型号只在 Python 侧聚合(gpu_model_aggregates 全量读),无按列过滤查询,不建索引
+    pool_label: Mapped[str | None] = mapped_column(String(32))
     unlabeled: Mapped[bool] = mapped_column(default=False)  # 无 superdl.io/pool 标签
     gpu_model_raw: Mapped[str | None] = mapped_column(String(128))  # nvidia-smi/GFD 原文
-    gpu_model: Mapped[str | None] = mapped_column(String(32), index=True)  # canonical;None=未识别
+    gpu_model: Mapped[str | None] = mapped_column(String(32))  # canonical;None=未识别
     label_synced: Mapped[bool] = mapped_column(default=False)  # superdl.io/gpu-model 已收敛
     gpu_count: Mapped[int] = mapped_column(default=0)
     gpu_used: Mapped[int] = mapped_column(default=0)  # 展示用,60s 粒度
@@ -72,6 +74,9 @@ class NodeSpec(Base):
     driver_version: Mapped[str | None] = mapped_column(String(32))  # 装机登记兜底
     cuda_version: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
+    # cordon 期望态:管理端操作写入,handler/巡检按它收敛(outbox 乱序重试不读 payload)
+    desired_unschedulable: Mapped[bool | None]
+    desired_at: Mapped[datetime | None]
     last_seen: Mapped[datetime]  # 最近一次 K8s 可见
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

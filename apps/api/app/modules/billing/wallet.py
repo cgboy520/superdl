@@ -4,14 +4,28 @@
 本文件函数不 commit —— 由调用方把余额变动放进业务事务。
 """
 
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount, disk_daily_charge
-from app.modules.billing.models import BalanceLedger, Wallet
+from app.core.pagination import RawPage
+from app.modules.billing.models import BalanceLedger, Order, Wallet
+
+
+async def _insert_wallet_race_safe(session: AsyncSession, user_id: int) -> None:
+    """首建钱包行:并发首建撞 user_id 唯一约束由 SAVEPOINT 兜底——撞键只回退嵌套事务,
+    外层事务不受污染(胜出方提交后其行对外层可见,调用方重查即得)。"""
+    try:
+        async with session.begin_nested():
+            session.add(Wallet(user_id=user_id))
+            await session.flush()
+    except IntegrityError:
+        pass  # 并发首建竞争:让出,调用方随后重查胜出方的行
 
 
 async def get_or_create_wallet(session: AsyncSession, user_id: int) -> Wallet:
@@ -19,20 +33,20 @@ async def get_or_create_wallet(session: AsyncSession, user_id: int) -> Wallet:
         await session.execute(select(Wallet).where(Wallet.user_id == user_id))
     ).scalar_one_or_none()
     if wallet is None:
-        wallet = Wallet(user_id=user_id)
-        session.add(wallet)
-        await session.flush()
+        await _insert_wallet_race_safe(session, user_id)
+        wallet = (
+            await session.execute(select(Wallet).where(Wallet.user_id == user_id))
+        ).scalar_one()
     return wallet
 
 
 async def lock_wallet(session: AsyncSession, user_id: int) -> Wallet:
-    """FOR UPDATE 锁定钱包行(不存在则先创建)。"""
+    """FOR UPDATE 锁定钱包行(不存在则先创建,并发首建不炸外层事务)。"""
     wallet = (
         await session.execute(select(Wallet).where(Wallet.user_id == user_id).with_for_update())
     ).scalar_one_or_none()
     if wallet is None:
-        session.add(Wallet(user_id=user_id))
-        await session.flush()
+        await _insert_wallet_race_safe(session, user_id)
         wallet = (
             await session.execute(select(Wallet).where(Wallet.user_id == user_id).with_for_update())
         ).scalar_one()
@@ -87,11 +101,14 @@ async def debit(
     ref_id: str | None = None,
     remark: str | None = None,
     allow_negative: bool,
-) -> Wallet:
+) -> BalanceLedger:
     """扣款。allow_negative 为必填关键字,每个调用点显式表态。
 
     - 结算扣款(小时账单、盘日费)与管理员调账扣减:允许透支;
     - 「先付后用」的同步消费:不允许(开机/建盘走 assert_can_afford 预校验)。
+
+    返回刚写入的流水行(已 flush,id 可用)——退款闭环需要回写 wallet_entry_id;
+    其余调用方忽略返回值即可。
     """
     amount = as_amount(amount)
     if amount <= 0:
@@ -101,8 +118,10 @@ async def debit(
     if not allow_negative and new_balance < 0:
         raise AppError(ErrorCode.INSUFFICIENT_BALANCE, key="billing.insufficientBalance")
     wallet.balance = new_balance
-    session.add(_ledger(wallet, type_, -amount, ref_type, ref_id, remark))
-    return wallet
+    entry = _ledger(wallet, type_, -amount, ref_type, ref_id, remark)
+    session.add(entry)
+    await session.flush()
+    return entry
 
 
 async def get_balance(session: AsyncSession, user_id: int) -> Decimal:
@@ -130,10 +149,10 @@ async def assert_can_afford(
       开新机/开机传该机费用;实例启动前不算「在途」,必须由调用方显式传入。
     - `additional_daily_disk`:本次新增数据盘的日均费(disk_daily_charge 均摊口径)。
     - 预留期:实例 afford_cover_hours 小时(默认 1),数据盘 disk_grace_days 天
-      (欠费宽限期内盘仍计费,暴露上限即「日费 × 宽限天数」)。均为 policies 在线可调。
+      (暴露上限即「日费 × 宽限天数」)。均为 policies 在线可调。
     - 校验口径:余额 ≥ (在途实例时费 + additional_hourly) × afford_cover_hours
       + (在途盘日费 + additional_daily_disk) × disk_grace_days。
-      「在途」= running 实例 + 计费态(active/grace)数据盘。
+      「在途」= running 实例 + active 数据盘(grace 宽限盘已停计费,不计入)。
     - 不足抛 INSUFFICIENT_BALANCE(billing.insufficientForInFlight),params 含
       balance / required / inflight(在途部分的预留额),文案写明在途消耗原因。
     - 只校验不扣款:这是护栏不是精确预占,实际消耗由结算扣款(允许透支)兜底。
@@ -190,7 +209,7 @@ async def ledger_page(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
     """资金流水游标分页(用户端与管理端下钻共用同一实现)。"""
-    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
     from app.modules.billing.schemas import LedgerEntryOut
 
     lim = clamp_limit(limit)
@@ -204,9 +223,9 @@ async def ledger_page(
     if last_id is not None:
         stmt = stmt.where(BalanceLedger.id < last_id)
     rows = list((await session.execute(stmt)).scalars())
-    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
     return Page[LedgerEntryOut](
-        items=[LedgerEntryOut.model_validate(r) for r in rows[:lim]], next_cursor=next_cursor
+        items=[LedgerEntryOut.model_validate(r) for r in page_items], next_cursor=next_cursor
     )
 
 
@@ -220,7 +239,7 @@ async def hourly_bills_page(
     limit: int | None = None,
 ):
     """小时账单游标分页(用户端与管理端下钻共用同一实现)。"""
-    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
     from app.modules.billing.models import BillHourly
     from app.modules.billing.schemas import BillHourlyOut
 
@@ -241,13 +260,13 @@ async def hourly_bills_page(
     if last_id is not None:
         stmt = stmt.where(BillHourly.id < last_id)
     rows = list((await session.execute(stmt)).scalars())
-    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
     # 补实例名供账单页展示(纯数字 id 对运营/用户都不可读;实例行释放后仍保留,可查)
     from app.modules.orchestrator import service as orchestrator_service
 
-    names = await orchestrator_service.instance_names(session, [r.instance_id for r in rows[:lim]])
+    names = await orchestrator_service.instance_names(session, [r.instance_id for r in page_items])
     items = []
-    for r in rows[:lim]:
+    for r in page_items:
         out = BillHourlyOut.model_validate(r)
         out.instance_name = names.get(r.instance_id)
         items.append(out)
@@ -349,16 +368,26 @@ async def admin_list_orders(
     *,
     order_no: str | None = None,
     user_id: int | None = None,
-) -> list:
-    """充值订单列表。order_no 精确匹配(unique 索引)。"""
-    from app.modules.billing.models import Order
+    day_range: tuple[datetime, datetime] | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> RawPage[Order]:
+    """充值订单列表(游标分页,降序)。order_no 精确匹配(unique 索引);day_range 按 created_at 过滤。"""
+    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
 
-    # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.orders 对齐
-    stmt = select(Order).order_by(Order.id.desc()).limit(200)
+    lim = clamp_limit(limit)
+    stmt = select(Order).order_by(Order.id.desc()).limit(lim + 1)
     if status:
         stmt = stmt.where(Order.status == status)
     if order_no:
         stmt = stmt.where(Order.order_no == order_no.strip())
     if user_id:
         stmt = stmt.where(Order.user_id == user_id)
-    return list((await session.execute(stmt)).scalars())
+    if day_range is not None:
+        stmt = stmt.where(Order.created_at >= day_range[0], Order.created_at < day_range[1])
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(Order.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    return RawPage(items=page_items, next_cursor=next_cursor)

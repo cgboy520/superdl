@@ -254,8 +254,8 @@ function LoginPage() {
                   mode === "password"
                     ? [{ required: true, message: t("login.passwordRequired") }]
                     : mode === "reset"
-                      ? [{ required: true, min: 8, message: t("login.passwordMin") }]
-                      : [{ min: 8, message: t("login.passwordMin") }]
+                      ? [{ required: true, min: 12, message: t("login.passwordMin") }]
+                      : [{ min: 12, message: t("login.passwordMin") }]
                 }
               >
                 <Input.Password

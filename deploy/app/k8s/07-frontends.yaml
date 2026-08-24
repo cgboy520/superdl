@@ -17,6 +17,15 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
+      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod。
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
+        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       securityContext:
         runAsNonRoot: true
         runAsUser: 101            # nginx-unprivileged
@@ -69,6 +78,15 @@ spec:
       # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
       # imagePullSecrets:
       #   - {name: superdl-ghcr-pull}
+      # 平台组件与租户隔离(P1-33):只落控制面/infra 节点,优先级压过租户 Pod。
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        # full 档 RKE2 server / light 档 k3s server 自带该标签;自建 infra 节点改打
+        # node-role.kubernetes.io/infra: "true" 并同步改此处。GPU 节点不得带此标签。
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       securityContext:
         runAsNonRoot: true
         runAsUser: 101            # nginx-unprivileged

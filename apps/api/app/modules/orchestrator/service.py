@@ -1,8 +1,12 @@
-"""编排服务:实例生命周期的唯一入口。
+"""编排服务:实例生命周期的唯一入口(门面)。
 
 事务纪律:
 - 状态变更只走 transition()(乐观锁 + 同事务 instance_events + 迁移监听器)
 - 「改 DB + 动 K8s」一律 outbox;请求路径绝不直接调 K8s
+
+拆分(W6):状态迁移原语 → transitions.py;SSH 端口池 → ports.py;billing/管理端
+查询聚合 → queries.py。本文件保留创建/操作/接入/日志主链路,并再导出全部拆出符号,
+跨模块仍只经 app.modules.orchestrator.service 访问(lint-imports 契约不变)。
 """
 
 import hashlib
@@ -10,14 +14,13 @@ import hmac
 import re
 import secrets
 import time
-from collections.abc import Awaitable, Callable, Iterable
 from datetime import timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import status as http_status
-from sqlalchemy import CursorResult, func, select, union, update
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,8 +31,12 @@ from app.core.gpu_adapter import spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
+from app.core.metrics import INSTANCE_LOGS_TOTAL
 from app.core.money import as_amount
 from app.core.outbox import enqueue
+from app.core.pagination import RawPage
+from app.core.ratelimit import check_rate_limit
+from app.core.sqlutil import like_escape
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
@@ -37,69 +44,95 @@ from app.modules.catalog import service as catalog_service
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
-from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
-from app.modules.orchestrator.statemachine import validate_transition
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
+from app.modules.orchestrator.ports import (
+    active_gpu_counts_by_sku as active_gpu_counts_by_sku,
+)
+from app.modules.orchestrator.ports import (
+    block_port as block_port,
+)
+from app.modules.orchestrator.ports import (
+    ensure_port as ensure_port,
+)
+from app.modules.orchestrator.ports import (
+    free_port as free_port,
+)
+from app.modules.orchestrator.ports import (
+    port_pool_stats as port_pool_stats,
+)
+from app.modules.orchestrator.queries import (
+    arrears_chain_disk_user_ids as arrears_chain_disk_user_ids,
+)
+from app.modules.orchestrator.queries import (
+    billable_disks as billable_disks,
+)
+from app.modules.orchestrator.queries import (
+    billing_candidates as billing_candidates,
+)
+from app.modules.orchestrator.queries import (
+    billing_events_before as billing_events_before,
+)
+from app.modules.orchestrator.queries import (
+    cluster_nodes as cluster_nodes,
+)
+from app.modules.orchestrator.queries import (
+    deletion_leftover_counts as deletion_leftover_counts,
+)
+from app.modules.orchestrator.queries import (
+    deletion_leftovers as deletion_leftovers,
+)
+from app.modules.orchestrator.queries import (
+    disks_arrears_transition as disks_arrears_transition,
+)
+from app.modules.orchestrator.queries import (
+    instance_disk_stats_by_user as instance_disk_stats_by_user,
+)
+from app.modules.orchestrator.queries import (
+    instance_hourly_prices as instance_hourly_prices,
+)
+from app.modules.orchestrator.queries import (
+    instance_locations as instance_locations,
+)
+from app.modules.orchestrator.queries import (
+    instance_names as instance_names,
+)
+from app.modules.orchestrator.queries import (
+    list_instances_by_status as list_instances_by_status,
+)
+from app.modules.orchestrator.queries import (
+    list_running_instances_by_user as list_running_instances_by_user,
+)
+from app.modules.orchestrator.queries import (
+    lock_instance_for_billing as lock_instance_for_billing,
+)
+from app.modules.orchestrator.queries import (
+    pool_by_instance as pool_by_instance,
+)
+from app.modules.orchestrator.queries import (
+    running_gpu_share_by_pool as running_gpu_share_by_pool,
+)
+from app.modules.orchestrator.transitions import (
+    TransitionListener as TransitionListener,
+)
+from app.modules.orchestrator.transitions import (
+    last_entered_status_at as last_entered_status_at,
+)
+from app.modules.orchestrator.transitions import (
+    register_transition_listener as register_transition_listener,
+)
+from app.modules.orchestrator.transitions import (
+    transition as transition,
+)
 
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
     from app.modules.nodes.service import GpuModelAggregate
+    from app.modules.orchestrator.schemas import InstanceLogsOut
 
 logger = get_logger(__name__)
 
 # 幂等键有效期:窗口内重放返回既有资源;窗口外同一键按新单处理
 IDEMPOTENCY_WINDOW = timedelta(hours=24)
-
-# 迁移监听器:billing 注册尾账/计费边处理,与状态迁移同事务
-TransitionListener = Callable[[AsyncSession, Instance, InstanceEvent], Awaitable[None]]
-_transition_listeners: list[TransitionListener] = []
-
-
-def register_transition_listener(listener: TransitionListener) -> None:
-    _transition_listeners.append(listener)
-
-
-async def transition(
-    session: AsyncSession,
-    instance: Instance,
-    to_status: str,
-    *,
-    reason: str,
-    actor: str,
-    metadata: dict[str, Any] | None = None,
-) -> InstanceEvent:
-    """校验 + 乐观锁更新 + 落事件 + 触发监听器。不 commit,由调用方控制事务。"""
-    from_status = instance.status
-    validate_transition(from_status, to_status)
-    result = cast(
-        CursorResult[Any],
-        await session.execute(
-            update(Instance)
-            .where(Instance.id == instance.id, Instance.version == instance.version)
-            .values(status=to_status, version=instance.version + 1)
-        ),
-    )
-    if result.rowcount == 0:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="orchestrator.stateChangedRetry",
-            http_status=http_status.HTTP_409_CONFLICT,
-        )
-    instance.status = to_status
-    instance.version += 1
-    event = InstanceEvent(
-        instance_id=instance.id,
-        from_status=from_status,
-        to_status=to_status,
-        reason=reason,
-        actor=actor,
-        event_metadata=metadata,
-        created_at=now_utc(),  # 计费依赖精确时刻,显式生成而非 server_default
-    )
-    session.add(event)
-    await session.flush()
-    for listener in _transition_listeners:
-        await listener(session, instance, event)
-    return event
 
 
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
@@ -199,12 +232,12 @@ async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
 
 
 async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) -> None:
-    """每用户配额(实例数 / GPU 总数);K8s 侧 ResourceQuota 为兜底。"""
-    from sqlalchemy import func
+    """每用户配额(实例数 / GPU 总数);K8s 侧 ResourceQuota 为兜底。
 
-    from app.core.config import get_settings
+    生效值走统一校验链(account.get_user_limits:用户覆盖 → 平台策略 → env 默认)。
+    """
 
-    settings = get_settings()
+    limits = await account_service.get_user_limits(session, user_id)
     live = (
         (
             await session.execute(
@@ -218,17 +251,17 @@ async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) 
         .one()
     )
     count, gpus = live
-    if count >= settings.max_instances_per_user:
+    if count >= limits.max_instances:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="orchestrator.instanceQuota",
-            params={"max": settings.max_instances_per_user},
+            params={"max": limits.max_instances},
         )
-    if gpus + new_gpus > settings.max_gpus_per_user:
+    if gpus + new_gpus > limits.max_gpus:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="orchestrator.gpuQuota",
-            params={"max": settings.max_gpus_per_user},
+            params={"max": limits.max_gpus},
         )
 
 
@@ -305,7 +338,9 @@ async def create_instance(
     name: str | None,
     data_disk_id: int | None,
     idempotency_key: str | None,
-) -> Instance:
+) -> tuple[Instance, bool]:
+    """创建实例(202 异步)。返回 (实例, created):created=False = 幂等重放,
+    路由据此回 200 + X-Idempotent-Replay 而非 202。"""
     if idempotency_key:
         existing = (
             await session.execute(
@@ -316,7 +351,7 @@ async def create_instance(
         ).scalar_one_or_none()
         if existing is not None:
             if now_utc() - ensure_utc(existing.created_at) < IDEMPOTENCY_WINDOW:
-                return existing
+                return existing, False
             # 窗口外同一键按新单处理:先释放键位(唯一约束 (user_id, idempotency_key))
             existing.idempotency_key = None
             await session.flush()
@@ -389,7 +424,7 @@ async def create_instance(
                 )
             ).scalar_one_or_none()
             if raced is not None:
-                return raced
+                return raced, False
             raise
         if disk_id_validated is not None:
             from app.modules.orchestrator import disks as disks_service
@@ -419,7 +454,7 @@ async def create_instance(
             http_status=http_status.HTTP_409_CONFLICT,
         ) from exc
     logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
-    return instance
+    return instance, True
 
 
 async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
@@ -445,11 +480,55 @@ async def list_instances(session: AsyncSession, user_id: int) -> list[Instance]:
     )
 
 
+async def list_instances_page(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    status: str | None = None,
+    name: str | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+):
+    """用户端实例列表:降序(最新在前)游标分页 + status 精确/name 模糊过滤。
+
+    name 同时匹配 uuid 前缀(照 admin_list_instances 的 q 语义),与资金流水/账单
+    同一套分页语义;released 终态永不出列表。
+    """
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+    from app.modules.orchestrator.schemas import InstanceOut
+
+    lim = clamp_limit(limit)
+    stmt = (
+        select(Instance)
+        .where(Instance.user_id == user_id, Instance.status != sm_def.RELEASED)
+        .order_by(Instance.id.desc())
+        .limit(lim + 1)
+    )
+    if status is not None:
+        stmt = stmt.where(Instance.status == status)
+    name = (name or "").strip()
+    if name:
+        # uuid 前缀可走索引;实例名是短串,量级由 limit 兜住;
+        # LIKE 元字符转义:name 里的 %/_ 按字面匹配,不当通配符
+        stmt = stmt.where(
+            Instance.name.ilike(f"%{like_escape(name)}%", escape="\\")
+            | Instance.uuid.like(f"{like_escape(name)}%", escape="\\")
+        )
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(Instance.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    return Page[InstanceOut](
+        items=[InstanceOut.model_validate(i) for i in page_items], next_cursor=next_cursor
+    )
+
+
 async def list_events(
     session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
     """实例事件时间线:降序(最新在前)游标分页,与资金流水/账单同一套分页语义。"""
-    from app.core.pagination import Page, clamp_limit, decode_cursor_int, encode_cursor
+    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
     from app.modules.orchestrator.schemas import InstanceEventOut
 
     lim = clamp_limit(limit)
@@ -463,9 +542,9 @@ async def list_events(
     if last_id is not None:
         stmt = stmt.where(InstanceEvent.id < last_id)
     rows = list((await session.execute(stmt)).scalars())
-    next_cursor = encode_cursor(rows[lim - 1].id) if len(rows) > lim else None
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
     return Page[InstanceEventOut](
-        items=[InstanceEventOut.model_validate(e) for e in rows[:lim]], next_cursor=next_cursor
+        items=[InstanceEventOut.model_validate(e) for e in page_items], next_cursor=next_cursor
     )
 
 
@@ -518,6 +597,17 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
     recovered = instance.status == sm_def.FAILED
     if instance.status != sm_def.STOPPED and not recovered:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
+    # 实例盘钉在原节点(TopoLVM node affinity):节点失联(Missing)时开机会 Pending 到
+    # 超时转 failed,前置拦截给可执行说明。台账无该行(巡检未覆盖/测试集群)一律放行,
+    # 交调度器裁决(与软准入口径一致);NotReady 属瞬时态,不拦
+    if instance.node_name:
+        node = await nodes_service.get_node_spec(session, instance.node_name)
+        if node is not None and node.status == "Missing":
+            raise AppError(
+                ErrorCode.INSTANCE_INVALID_TRANSITION,
+                key="orchestrator.nodeUnreachable",
+                http_status=409,
+            )
     await _require_cluster_for_tier(
         session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
     )
@@ -526,8 +616,13 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
     if recovered:
         # 故障恢复:failed → stopped(复用同一块实例盘)→ 走正常开机链路
         await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
-        await _rebind_data_disk(session, instance)
+    # 所有开机路径统一校验数据盘挂载:盘已删则放弃挂载点(实例照常开),
+    # 盘处于非 active(deleting/grace/frozen)即拒绝并提示,防止挂到擦除中的目录
+    await _rebind_data_disk(session, instance)
     await transition(session, instance, sm_def.STARTING, reason="user_start", actor="user")
+    # 新一轮就绪观察从零起算:陈旧 unready_since(上次失联 episode 的残留)会把
+    # 新 running 段的计费截断到过去时刻,也会让 reconciler 的宽限判定立即超时
+    instance.unready_since = None
     enqueue(session, "instance.start", {"instance_id": instance.id})
     await session.commit()
     return instance
@@ -577,95 +672,6 @@ async def release_instance(
     return instance
 
 
-# ---------- 端口池 ----------
-
-
-async def ensure_port(session: AsyncSession, instance: Instance) -> int:
-    """分配一个 SSH NodePort。已分配则原样返回(幂等)。
-
-    端口池 30000–32767 与 K8s NodePort 同段,集群其它对象会硬占其中某些端口,两道防护:
-    `ssh_port_excluded` 预先跳过已知占用;`blocked` 由 handle_create 在运行期撞占后标记。
-    """
-    settings = get_settings()
-    mine = (
-        await session.execute(
-            select(PortAllocation).where(PortAllocation.instance_id == instance.id)
-        )
-    ).scalar_one_or_none()
-    if mine is not None:
-        return mine.port
-    free = (
-        await session.execute(
-            select(PortAllocation)
-            .where(PortAllocation.instance_id.is_(None), PortAllocation.blocked.is_(False))
-            .order_by(PortAllocation.port)
-            .limit(1)
-            .with_for_update(skip_locked=True)
-        )
-    ).scalar_one_or_none()
-    if free is not None:
-        free.instance_id = instance.id
-        await session.flush()
-        return free.port
-    max_port = (await session.execute(select(func.max(PortAllocation.port)))).scalar_one()
-    next_port = settings.ssh_port_range_start if max_port is None else max_port + 1
-    while next_port in settings.ssh_port_excluded:
-        next_port += 1
-    if next_port > settings.ssh_port_range_end:
-        raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
-    alloc = PortAllocation(port=next_port, instance_id=instance.id)
-    session.add(alloc)
-    await session.flush()
-    return next_port
-
-
-async def block_port(sm: Any, port: int, *, reason: str, expected_instance_id: int | None) -> None:
-    """把一个被集群其它对象占用的端口标记为不可分配。独立事务提交(调用方那笔要回滚)。
-
-    调用方须先 rollback 再调本函数,否则未提交的同端口 PortAllocation 会锁死这笔事务。
-    防迟到的占用报告覆盖活分配:仅当该端口空闲、或正分配给发起本次报告的实例
-    (expected_instance_id,重启换端口自愈路径)时才落 blocked;已分配给其它实例的
-    端口说明报告已过时,跳过不破坏在用归属。
-    """
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-    condition = PortAllocation.instance_id.is_(None)
-    if expected_instance_id is not None:
-        condition = condition | (PortAllocation.instance_id == expected_instance_id)
-    async with sm() as session:
-        await session.execute(
-            pg_insert(PortAllocation)
-            .values(port=port, instance_id=None, blocked=True)
-            .on_conflict_do_update(
-                index_elements=["port"],
-                set_={"blocked": True, "instance_id": None},
-                where=condition,
-            )
-        )
-        await session.commit()
-    logger.error("ssh_port_blocked", port=port, reason=reason)
-
-
-async def free_port(session: AsyncSession, instance_id: int) -> None:
-    await session.execute(
-        update(PortAllocation)
-        .where(PortAllocation.instance_id == instance_id)
-        .values(instance_id=None)
-    )
-
-
-async def active_gpu_counts_by_sku(session: AsyncSession) -> dict[int, int]:
-    """活跃实例按 SKU 的 GPU 张数合计(口径与用户配额一致:creating/starting/running)。"""
-    from sqlalchemy import func
-
-    rows = await session.execute(
-        select(Instance.sku_id, func.coalesce(func.sum(Instance.gpu_count), 0))
-        .where(Instance.status.in_((sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING)))
-        .group_by(Instance.sku_id)
-    )
-    return {sku_id: int(total) for sku_id, total in rows.all()}
-
-
 # ---------- K8s spec 构造 ----------
 
 
@@ -683,6 +689,9 @@ def build_pod_spec(
     )
     if instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
+    # N 卡实例收 N 倍价,CPU/内存必须同步放大(Guaranteed QoS 下 CPU 是硬限,
+    # 否则多卡被单份 CPU 饿死、节点侧资源被低估占用);系统盘不随卡数放大。
+    gpu_n = max(1, instance.gpu_count)
     return InstancePodSpec(
         namespace=instance.k8s_namespace,
         name=instance.uuid,
@@ -690,8 +699,8 @@ def build_pod_spec(
         gpu_resources=gpu_req.resources,
         runtime_class=gpu_req.runtime_class,
         host_users=gpu_req.host_users,
-        vcpu=instance.spec["vcpu"],
-        mem_gb=instance.spec["mem_gb"],
+        vcpu=instance.spec["vcpu"] * gpu_n,
+        mem_gb=instance.spec["mem_gb"] * gpu_n,
         disk_gb=instance.spec["disk_gb"],
         ssh_node_port=instance.ssh_port,
         jupyter_host=f"{instance.uuid}.{settings.jupyter_domain_suffix}",
@@ -757,6 +766,58 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
     return instance
 
 
+# ---------- 容器日志(F5) ----------
+# 「请求路径绝不直接调 K8s」的例外:只读、用户在线等结果,走 outbox 语义不通。
+# 代价由三道闸兜住:owner 校验、20/h/user 限流、K8s 读 5s 超时(real 侧 _request_timeout)。
+
+LOGS_MAX_TAIL_LINES = 2000
+LOGS_MAX_SINCE_SECONDS = 86400
+
+
+async def read_instance_logs(
+    session: AsyncSession,
+    user_id: int,
+    uuid: str,
+    *,
+    tail_lines: int,
+    since_seconds: int | None,
+) -> "InstanceLogsOut":
+    """读取实例容器日志(只读;不记审计,记 superdl_instance_logs_total{outcome})。
+
+    owner 校验(非属主 404,不暴露存在性);仅 running/stopping 可取(其余状态 Pod 已删,
+    409 给明确文案);超上限参数按上限截断而非 422(tail_lines≤2000、since_seconds≤86400)。
+    """
+    from app.modules.orchestrator.schemas import InstanceLogsOut
+
+    instance = await get_instance(session, user_id, uuid)
+    if instance.status not in (sm_def.RUNNING, sm_def.STOPPING):
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="orchestrator.logsNeedsRunning",
+            http_status=http_status.HTTP_409_CONFLICT,
+        )
+    await check_rate_limit(f"instance-logs:{user_id}", max_attempts=20, window_seconds=3600.0)
+    tail = min(tail_lines, LOGS_MAX_TAIL_LINES)
+    since = min(since_seconds, LOGS_MAX_SINCE_SECONDS) if since_seconds is not None else None
+    try:
+        # +1 行探路:拿回的行数超过 tail 即知前面还有,truncated 标记由此而来
+        raw = await get_orchestrator().read_instance_logs(
+            instance.k8s_namespace, instance.uuid, tail_lines=tail + 1, since_seconds=since
+        )
+    except Exception as exc:
+        INSTANCE_LOGS_TOTAL.labels(outcome="error").inc()
+        logger.warning("instance_logs_read_failed", instance_uuid=uuid, error=str(exc))
+        raise AppError(
+            ErrorCode.INTERNAL,
+            key="orchestrator.logsUnavailable",
+            http_status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from exc
+    INSTANCE_LOGS_TOTAL.labels(outcome="ok").inc()
+    lines = raw.splitlines()
+    truncated = len(lines) > tail
+    return InstanceLogsOut(lines=lines[-tail:] if truncated else lines, truncated=truncated)
+
+
 # ---------- 近似库存 provider(注册进 catalog) ----------
 
 
@@ -781,10 +842,14 @@ async def admin_list_instances(
     user_id: int | None = None,
     q: str | None = None,
     node_name: str | None = None,
-) -> list[Instance]:
-    """管理端实例列表。q 按实例名或 uuid 前缀匹配,node_name 精确。"""
-    # 固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS 对齐(表底给出「已达上限」)
-    stmt = select(Instance).order_by(Instance.id.desc()).limit(200)
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> RawPage[Instance]:
+    """管理端实例列表(游标分页,降序)。q 按实例名或 uuid 前缀匹配,node_name 精确。"""
+    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
+
+    lim = clamp_limit(limit)
+    stmt = select(Instance).order_by(Instance.id.desc()).limit(lim + 1)
     if status_filter:
         stmt = stmt.where(Instance.status == status_filter)
     if user_id:
@@ -793,17 +858,32 @@ async def admin_list_instances(
         stmt = stmt.where(Instance.node_name == node_name)
     q = (q or "").strip()
     if q:
-        # uuid 前缀可走索引;实例名是短串,量级由 limit 兜住
-        stmt = stmt.where(Instance.uuid.like(f"{q}%") | Instance.name.ilike(f"%{q}%"))
-    return list((await session.execute(stmt)).scalars())
+        # uuid 前缀可走索引;实例名是短串,量级由 limit 兜住;
+        # LIKE 元字符转义:q 里的 %/_ 按字面匹配,不当通配符
+        stmt = stmt.where(
+            Instance.uuid.like(f"{like_escape(q)}%", escape="\\")
+            | Instance.name.ilike(f"%{like_escape(q)}%", escape="\\")
+        )
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(Instance.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    return RawPage(items=page_items, next_cursor=next_cursor)
 
 
-async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason: str) -> Instance:
+async def admin_get_instance(session: AsyncSession, instance_uuid: str) -> Instance:
+    """管理端按 uuid 取实例(不限租户);不存在 → 404。"""
     instance = (
         await session.execute(select(Instance).where(Instance.uuid == instance_uuid))
     ).scalar_one_or_none()
     if instance is None:
         raise not_found("实例不存在")
+    return instance
+
+
+async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason: str) -> Instance:
+    instance = await admin_get_instance(session, instance_uuid)
     if instance.status != sm_def.RUNNING:
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.forceStopNeedsRunning"
@@ -827,155 +907,6 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
     )
     await session.commit()
     return instance
-
-
-# ---------- billing 只读接口(事件是计费主依据,经 service 层暴露) ----------
-
-
-async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
-    """结算前先拿实例行锁,再读事件。同事务内重复加锁是 no-op。
-
-    transition() 首步 `UPDATE instances` 持该行写锁到提交,事件 created_at 在拿锁后生成。
-    先拿锁则:在飞的迁移已提交(读得到),或迁移被挡住(其事件落进下一个小时窗口)。
-    锁序 instance → bill_hourly → wallet,与 transition 一致。
-    """
-    await session.execute(
-        select(Instance.id)
-        .where(Instance.id == instance_id)
-        .with_for_update(read=False, key_share=True)
-    )
-
-
-async def billing_events_before(
-    session: AsyncSession, instance_id: int, before: Any
-) -> list[tuple[Any, str | None, str, Any]]:
-    """实例截至某时刻的事件 (created_at, from_status, to_status, event_metadata),按发生序。
-
-    metadata 随行返回:node_lost/pod_lost 的退出边带 unready_since,结算据此把
-    计费截断到 Pod 首次不可用时点(平台责任时段不向用户计费)。
-    """
-    return list(
-        (
-            await session.execute(
-                select(
-                    InstanceEvent.created_at,
-                    InstanceEvent.from_status,
-                    InstanceEvent.to_status,
-                    InstanceEvent.event_metadata,
-                )
-                .where(
-                    InstanceEvent.instance_id == instance_id,
-                    InstanceEvent.created_at < before,
-                )
-                .order_by(InstanceEvent.id)
-            )
-        )
-        .tuples()
-        .all()
-    )
-
-
-async def billing_candidates(
-    session: AsyncSession, window_start: Any, window_end: Any
-) -> list[tuple[int, int, Any, int]]:
-    """小时结算候选:(instance_id, user_id, price_hourly, gpu_count)。
-
-    候选 = 当前 running 的实例 ∪ 自窗口起点以来离开过 running 的实例。
-    完备性论证:「窗口末仍在 running」= 现在仍 running ∪ 窗口末之后才离开 running;
-    每个已结束的 running 区间都有一条 from_status='running' 的离开事件。
-    两条腿都走索引(instances.status / instance_events.created_at)。
-    """
-    running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
-    exited = (
-        select(InstanceEvent.instance_id.label("iid"))
-        .where(
-            InstanceEvent.from_status == sm_def.RUNNING,
-            InstanceEvent.created_at >= window_start,
-        )
-        .distinct()
-    )
-    candidates = [row[0] for row in (await session.execute(union(running_now, exited))).all()]
-    if not candidates:
-        return []
-    return list(
-        (
-            await session.execute(
-                select(
-                    Instance.id, Instance.user_id, Instance.price_hourly, Instance.gpu_count
-                ).where(Instance.id.in_(candidates))
-            )
-        )
-        .tuples()
-        .all()
-    )
-
-
-async def instance_locations(
-    session: AsyncSession, instance_ids: Iterable[int]
-) -> dict[int, tuple[str, str, str | None]]:
-    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。按 id 精确取,不走列表截断。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (
-        (
-            await session.execute(
-                select(Instance.id, Instance.k8s_namespace, Instance.uuid, Instance.spec).where(
-                    Instance.id.in_(ids)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    return {iid: (ns, uuid, (spec or {}).get("tier")) for iid, ns, uuid, spec in rows}
-
-
-async def instance_hourly_prices(
-    session: AsyncSession, instance_ids: Iterable[int]
-) -> dict[int, Any]:
-    """对账用:instance_id → 单价 × 卡数(元/时)。按 id 精确取,不受列表截断影响。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (
-        (
-            await session.execute(
-                select(Instance.id, Instance.price_hourly, Instance.gpu_count).where(
-                    Instance.id.in_(ids)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    return {iid: as_amount(price * count) for iid, price, count in rows}
-
-
-async def instance_names(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
-    """账单展示用:instance_id → 实例名(释放后行保留,改名跟当前名)。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (
-        (await session.execute(select(Instance.id, Instance.name).where(Instance.id.in_(ids))))
-        .tuples()
-        .all()
-    )
-    return dict(rows)
-
-
-async def list_running_instances_by_user(session: AsyncSession) -> dict[int, list[Instance]]:
-    """欠费巡检用:user_id → running 实例列表。"""
-    rows = (
-        (await session.execute(select(Instance).where(Instance.status == sm_def.RUNNING)))
-        .scalars()
-        .all()
-    )
-    by_user: dict[int, list[Instance]] = {}
-    for inst in rows:
-        by_user.setdefault(inst.user_id, []).append(inst)
-    return by_user
 
 
 async def arrears_stop(session: AsyncSession, instance: Instance) -> None:
@@ -1049,91 +980,3 @@ async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str)
     if rows:
         logger.warning("tenant_frozen_instances_stopped", user_id=user_id, count=len(rows))
     return len(rows)
-
-
-async def list_instances_by_status(session: AsyncSession, status: str) -> list[Instance]:
-    return list(
-        (await session.execute(select(Instance).where(Instance.status == status))).scalars()
-    )
-
-
-# ---------- 数据盘门面(billing/巡检经此访问,模块边界) ----------
-
-
-async def billable_disks(session: AsyncSession) -> list[Any]:
-    from app.modules.orchestrator import disks as disks_service
-
-    return await disks_service.list_billable_disks(session)
-
-
-async def arrears_chain_disk_user_ids(session: AsyncSession) -> list[int]:
-    from app.modules.orchestrator import disks as disks_service
-
-    return await disks_service.list_arrears_chain_user_ids(session)
-
-
-async def disks_arrears_transition(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
-    from app.modules.orchestrator import disks as disks_service
-
-    return await disks_service.arrears_transition_disks(session, user_id, in_arrears)
-
-
-async def instance_disk_stats_by_user(
-    session: AsyncSession, user_ids: list[int] | None = None
-) -> dict[int, dict[str, int]]:
-    """管理端租户表:user_id → {instances, disk_gb}。user_ids 给定则只聚合这些用户。"""
-    inst_stmt = (
-        select(Instance.user_id, func.count())
-        .where(Instance.status != sm_def.RELEASED)
-        .group_by(Instance.user_id)
-    )
-    disk_stmt = (
-        select(DataDisk.user_id, func.coalesce(func.sum(DataDisk.size_gb), 0))
-        .where(DataDisk.status != "deleted")
-        .group_by(DataDisk.user_id)
-    )
-    if user_ids is not None:
-        inst_stmt = inst_stmt.where(Instance.user_id.in_(user_ids))
-        disk_stmt = disk_stmt.where(DataDisk.user_id.in_(user_ids))
-    inst_rows = (await session.execute(inst_stmt)).tuples().all()
-    disk_rows = (await session.execute(disk_stmt)).tuples().all()
-    stats: dict[int, dict[str, int]] = {}
-    for uid, n in inst_rows:
-        stats.setdefault(uid, {"instances": 0, "disk_gb": 0})["instances"] = int(n)
-    for uid, gb in disk_rows:
-        stats.setdefault(uid, {"instances": 0, "disk_gb": 0})["disk_gb"] = int(gb)
-    return stats
-
-
-async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
-    """超卖报表:各池已售算力份额(等效整卡数)。共享档按 gpu_cores_pct 折算。"""
-    rows = (
-        (
-            await session.execute(
-                select(Instance).where(
-                    Instance.status.in_((sm_def.RUNNING, sm_def.STARTING, sm_def.CREATING))
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    by_pool: dict[str, float] = {}
-    for inst in rows:
-        pool = inst.spec["pool_label"]
-        share = inst.gpu_count * (inst.spec["gpu_cores_pct"] / 100.0)
-        by_pool[pool] = by_pool.get(pool, 0.0) + share
-    return by_pool
-
-
-async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
-    """实例 → 池标签(不限状态,已释放实例也算:超卖报表按池聚合近 24h 利用率用)。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars()
-    return {inst.id: inst.spec["pool_label"] for inst in rows}
-
-
-async def cluster_nodes() -> list[Any]:
-    return await get_orchestrator().list_nodes()

@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, text, update
 
-from app.core.timeutil import day_floor, now_utc
+from app.core.timeutil import billing_day_floor, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillHourly, Wallet
 from app.modules.billing.reconcile import reconcile_funds
@@ -76,12 +76,12 @@ class TestBillsVsConsume:
                 BillHourly(
                     instance_id=1,
                     user_id=1,
-                    hour_start=day_floor(now_utc()) - timedelta(hours=5),
+                    hour_start=billing_day_floor(now_utc()) - timedelta(hours=5),
                     seconds_used=3600,
                     unit_price=Decimal("1.0000"),
                     gpu_count=1,
                     amount=Decimal("1.00"),
-                    created_at=day_floor(now_utc()) - timedelta(hours=5),
+                    created_at=billing_day_floor(now_utc()) - timedelta(hours=5),
                 )
             )
             await session.commit()

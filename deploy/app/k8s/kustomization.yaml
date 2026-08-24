@@ -1,0 +1,24 @@
+# 发布单点(P1-37):镜像 tag 只在本文件 images 的 newTag 占位(CHANGE_TAG),
+# 由 scripts/release.sh 一步替换后 `kubectl apply -k`;禁止手改各清单里的 tag、禁止 latest。
+# 10-migrate-job.yaml 故意不入 resources:Job 不可 apply 复用(name 带 tag 后缀、
+# backoffLimit: 0),由 release.sh 在滚动前单独 create + wait(顺序铁律见该文件头注释)。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 00-namespace-config.yaml
+  - 01-rbac.yaml
+  - 02-api.yaml
+  - 03-worker.yaml
+  - 04-ingress.yaml
+  - 05-cert-manager.yaml
+  - 06-pg-backup.yaml
+  - 07-frontends.yaml
+  - 08-monitoring.yaml
+  - 09-networkpolicy.yaml
+images:
+  - name: ghcr.io/OWNER/superdl-api
+    newTag: CHANGE_TAG   # release.sh 替换为本次 v* tag;OWNER 随仓库 owner 一次替换
+  - name: ghcr.io/OWNER/superdl-web
+    newTag: CHANGE_TAG
+  - name: ghcr.io/OWNER/superdl-admin
+    newTag: CHANGE_TAG

@@ -19,6 +19,7 @@ from fastapi.responses import PlainTextResponse
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import unauthorized
+from app.core.http import client_ip
 from app.core.ratelimit import check_rate_limit
 from app.modules.nodes import service
 from app.modules.nodes.schemas import (
@@ -45,7 +46,7 @@ def _served_script() -> str:
 
 
 def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    return client_ip(request) or "unknown"
 
 
 def _bearer_token(authorization: str | None) -> str:
@@ -80,7 +81,7 @@ async def enroll_bootstrap(
         os_info=body.os_info,
         gpus=body.gpus,
         gpu_details=body.gpu_details,
-        client_ip=request.client.host if request.client else None,
+        client_ip=client_ip(request),
     )
     return BootstrapOut(
         pool=enrollment.pool,

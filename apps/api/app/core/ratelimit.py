@@ -58,3 +58,30 @@ async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(max(1, retry_after))},
         )
+
+
+# 只读预检:不命中不建行、不计数,专供昂贵校验(如 bcrypt)之前的廉价准入
+_BLOCKED_SQL = text("""
+    SELECT hits,
+        GREATEST(
+            0, CEIL(EXTRACT(EPOCH FROM (window_start + make_interval(secs => :window) - now())))
+        )::int AS retry_after
+    FROM rate_limit_counters
+    WHERE key = :key AND window_start > now() - make_interval(secs => :window)
+""")
+
+
+async def ensure_not_rate_limited(key: str, *, max_attempts: int, window_seconds: float) -> None:
+    """已达上限的键直接 429(不计数)。与 check_rate_limit 的口径对齐:
+    现有 hits ≥ max_attempts 时,下一次计数判定必然超限。"""
+    async with get_sessionmaker()() as session:
+        row = (
+            await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
+        ).one_or_none()
+    if row is not None and row.hits >= max_attempts:
+        raise AppError(
+            ErrorCode.RATE_LIMITED,
+            key="common.rateLimited",
+            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+            headers={"Retry-After": str(max(1, row.retry_after))},
+        )

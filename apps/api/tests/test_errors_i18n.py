@@ -59,7 +59,9 @@ def test_export_script_matches_checked_in_catalog(tmp_path: Path) -> None:
     mod_any: Any = mod  # 动态加载的模块,pyright 不认其属性; ruff 禁常量 setattr
     mod_any.OUT = out
     mod_any.main()
-    checked_in = (repo / "packages" / "ui" / "locales" / "zh-CN" / "errors.json").read_text()
-    assert out.read_text() == checked_in, (
+    checked_in = (repo / "packages" / "ui" / "locales" / "zh-CN" / "errors.json").read_text(
+        encoding="utf-8"
+    )
+    assert out.read_text(encoding="utf-8") == checked_in, (
         "core/messages.py 与 errors.json 漂移:跑 export_error_messages.py 并提交"
     )

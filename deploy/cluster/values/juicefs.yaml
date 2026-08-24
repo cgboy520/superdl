@@ -1,9 +1,13 @@
 # JuiceFS CSI(JuiceFS 1.4.x LTS)。
 # 后端用云 OSS 或自建 SeaweedFS 4.4x。
 # 凭据零明文:预建 Secret,values 只引用。
+# 元数据引擎用 PostgreSQL(P0-13,弃用 Redis):
+#   - 独立 database(juicefs_meta)+ 独立最小授权账号(juicefs,仅该库权限,禁止复用超管);
+#   - 复用平台 PG 备份体系(WAL 归档 + 每日备份,见 runbooks/pg-backup-restore.md);
+#   - 新装集群直接 PG;存量 Redis 引擎集群按 runbooks/juicefs-meta-migration.md 迁移。
 #   kubectl -n kube-system create secret generic superdl-juicefs-secret \
 #     --from-literal=name=superdl-data \
-#     --from-literal=metaurl='redis://:<password>@redis-sentinel:26379/1' \
+#     --from-literal=metaurl='postgres://juicefs:<password>@<pg-host>:5432/juicefs_meta?sslmode=require' \
 #     --from-literal=storage=oss \
 #     --from-literal=bucket='https://<bucket>.<oss-endpoint>' \
 #     --from-literal=access-key=<ak> --from-literal=secret-key=<sk>

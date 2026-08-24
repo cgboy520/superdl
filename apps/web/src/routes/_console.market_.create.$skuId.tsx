@@ -281,6 +281,8 @@ function CreatePage() {
 
       <BillingModeCard />
 
+      <Alert type="info" showIcon title={t("copy.instanceDiskLocalNotice")} />
+
       <Card title={t("create.selectedSpec")} extra={<Link to="/market">{t("create.changeSpec")}</Link>}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Table<SkuMarketOut>
@@ -290,11 +292,24 @@ function CreatePage() {
             columns={columns}
             pagination={false}
           />
+          {/* 卡数选择受 available_count 约束(P2-23):无库存档位禁用 + 提示 */}
           <ChipRow
             label={t("market.chipGpuCount")}
             value={gpuCount}
             onChange={setGpuCount}
-            options={gpuOptions.map((n) => ({ value: n, label: t("market.cardsUnit", { count: n }) }))}
+            options={gpuOptions.map((n) => ({
+              value: n,
+              label: t("market.cardsUnit", { count: n }),
+              disabled: n > (sku.available_count ?? 0),
+              disabledReason: t("copy.noStockForGpuCount"),
+            }))}
+            extra={
+              gpuCount > (sku.available_count ?? 0) ? (
+                <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                  {t("copy.noStockForGpuCount")}
+                </Typography.Text>
+              ) : undefined
+            }
           />
         </Space>
       </Card>

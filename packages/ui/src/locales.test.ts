@@ -6,11 +6,17 @@ import enUS from "../locales/en-US/shared.json";
 import errorsZh from "../locales/zh-CN/errors.json";
 import zhCN from "../locales/zh-CN/shared.json";
 import {
+  announcementStatusMap,
   diskStatusMap,
   imageCacheStatusMap,
   instanceStatusMap,
+  invoiceStatusMap,
   nodeEnrollStatusMap,
+  payoutChannelMap,
+  refundStatusMap,
   skuTierMap,
+  ticketCategoryMap,
+  ticketStatusMap,
 } from "./status";
 
 function flatten(obj: Record<string, unknown>, prefix = ""): Map<string, string> {
@@ -29,7 +35,7 @@ const zhFlat = flatten(zhCN);
 const enFlat = flatten(enUS);
 
 const usedKeys: string[] = [];
-for (const map of [instanceStatusMap, skuTierMap, imageCacheStatusMap, nodeEnrollStatusMap, diskStatusMap]) {
+for (const map of [instanceStatusMap, skuTierMap, imageCacheStatusMap, nodeEnrollStatusMap, diskStatusMap, refundStatusMap, payoutChannelMap, invoiceStatusMap, ticketStatusMap, ticketCategoryMap, announcementStatusMap]) {
   for (const meta of Object.values<Record<string, unknown>>(map)) {
     for (const field of ["labelKey", "hintKey"]) {
       const v = meta[field];

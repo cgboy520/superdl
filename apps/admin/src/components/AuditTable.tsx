@@ -1,12 +1,12 @@
 /** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
-import { Button, DatePicker, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AUDIT_DEFAULT_LIMIT, type AuditRow, useAuditLog } from "../api";
+import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, useAuditLog } from "../api";
 import { ListCapNote } from "./ListCapNote";
 
 /** detail 摘要:优先显示 reason,其次 before→after,最后回落原始 JSON。 */
@@ -23,14 +23,20 @@ function detailSummary(detail: Record<string, unknown> | null | undefined): stri
   return parts.length ? parts.join(" · ") : JSON.stringify(detail);
 }
 
-export function AuditTable() {
-  const { t } = useTranslation();
-  const [actorType, setActorType] = useState<string | undefined>();
-  const [actorId, setActorId] = useState("");
-  const [q, setQ] = useState("");
+export function AuditTable({
+  initial,
+}: {
+  /** 路由 search 预筛(跳审计链接);非受控输入框经 defaultValue 落值。 */
+  initial?: { actor_type?: string; actor_id?: string; q?: string };
+}) {
+  const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
+  const [actorType, setActorType] = useState<string | undefined>(initial?.actor_type);
+  const [actorId, setActorId] = useState(initial?.actor_id ?? "");
+  const [q, setQ] = useState(initial?.q ?? "");
   const [limit, setLimit] = useState<number>(AUDIT_DEFAULT_LIMIT);
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
-  const audit = useAuditLog({
+  const filters = {
     ...(actorType ? { actor_type: actorType } : {}),
     ...(actorId ? { actor_id: actorId } : {}),
     ...(q ? { q } : {}),
@@ -38,8 +44,26 @@ export function AuditTable() {
     ...(range?.[0] ? { since: range[0].toISOString() } : {}),
     ...(range?.[1] ? { until: range[1].toISOString() } : {}),
     limit,
-  });
+  };
+  const audit = useAuditLog(filters);
   const rows: AuditRow[] = audit.data?.pages.flatMap((p) => p) ?? [];
+  const [exporting, setExporting] = useState(false);
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
+      const r = await exportAuditCsv(filters, -new Date().getTimezoneOffset(), lang);
+      if (r === "truncated") {
+        message.warning(t("common.csvTruncated"));
+      } else {
+        message.success(t("common.csvExported"));
+      }
+    } catch {
+      message.error(t("common.csvExportFailed"));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <>
@@ -60,12 +84,14 @@ export function AuditTable() {
         allowClear
         placeholder={t("audit.actorIdPlaceholder")}
         style={{ width: 150 }}
+        defaultValue={initial?.actor_id}
         onSearch={setActorId}
       />
       <Input.Search
         allowClear
         placeholder={t("audit.keywordPlaceholder")}
         style={{ width: 200 }}
+        defaultValue={initial?.q}
         onSearch={setQ}
       />
       <DatePicker.RangePicker
@@ -81,6 +107,9 @@ export function AuditTable() {
           label: t("audit.limitOption", { count: v }),
         }))}
       />
+      <Button onClick={() => void doExport()} loading={exporting}>
+        {t("common.exportCsv")}
+      </Button>
       </Space>
       <Table<AuditRow>
         scroll={{ x: 900 }}
@@ -114,8 +143,22 @@ export function AuditTable() {
             dataIndex: "detail",
             render: (d: Record<string, unknown> | null) => {
               const text = detailSummary(d);
+              // 长 JSON 一行截断 + 悬浮看全文;完整结构化仍在下方展开行
               return text ? (
-                <Typography.Text style={{ color: adminColors.textSecondary }}>{text}</Typography.Text>
+                <Tooltip title={text}>
+                  <Typography.Text
+                    style={{
+                      color: adminColors.textSecondary,
+                      display: "block",
+                      maxWidth: 320,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {text}
+                  </Typography.Text>
+                </Tooltip>
               ) : (
                 "-"
               );

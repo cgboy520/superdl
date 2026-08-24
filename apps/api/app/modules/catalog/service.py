@@ -132,12 +132,18 @@ def _checked_price(value: Decimal) -> Decimal:
     另设可入账下限:入账按 2 位小数 ROUND_HALF_EVEN,单卡满 1 小时不足 ¥0.005
     (即 4 位时价 < 0.0051,注意 0.0050 恰是 tie,HALF_EVEN 也舍为 0)的 SKU 会
     全程计 ¥0.00 —— 上架即免费,必须拦在上架/改价时。
+
+    按小时计费的 SKU 强制 2 位语义(price == as_amount(price)):4 位单价逐小时
+    独立舍入会产生单向漂移(1.2345 满月 720h 少收 ¥3.24;0.0051 被按 0.01/时近翻倍
+    收取),4 位精度只留给数据盘 GB·月价。
     """
     price = as_price(value)
     if price <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
     if as_amount(price) <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceBelowBillable")
+    if price != as_amount(price):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceHourlyTwoDecimals")
     return price
 
 

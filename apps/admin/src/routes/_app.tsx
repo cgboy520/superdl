@@ -4,6 +4,7 @@ import {
   AuditOutlined,
   CloudDownloadOutlined,
   ClusterOutlined,
+  CustomerServiceOutlined,
   DeploymentUnitOutlined,
   DashboardOutlined,
   LogoutOutlined,
@@ -25,7 +26,7 @@ import { Badge, Dropdown, Layout, Menu, Popover, Space, Tag, Typography, theme }
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
 
-import { type AlertRow, fetchAdminMe, useAlerts } from "../api";
+import { type AlertRow, fetchAdminMe, useAlertUnreadCount, useAlerts } from "../api";
 import { LangSwitcher } from "../components/LangSwitcher";
 import { type MenuKey, canSeeMenu } from "../lib/menu";
 import { authStore, useAuth } from "../stores/auth";
@@ -58,6 +59,7 @@ const MENU = [
   { key: "/images", icon: <CloudDownloadOutlined />, labelKey: "menu.images" },
   { key: "/tenants", icon: <TeamOutlined />, labelKey: "menu.tenants" },
   { key: "/finance", icon: <PayCircleOutlined />, labelKey: "menu.finance" },
+  { key: "/tickets", icon: <CustomerServiceOutlined />, labelKey: "menu.tickets" },
   { key: "/audit", icon: <AuditOutlined />, labelKey: "menu.audit" },
   { key: "/platform", icon: <ApiOutlined />, labelKey: "menu.platform" },
   { key: "/settings", icon: <SettingOutlined />, labelKey: "menu.settings" },
@@ -72,10 +74,10 @@ const ROLE_LABEL = {
 
 function AlertBell() {
   const { t } = useTranslation();
-  const { data } = useAlerts({ refetchInterval: 30_000 });
+  const { data } = useAlerts(undefined, { refetchInterval: 30_000 });
+  // 角标 = 未确认告警数(F8:独立计数端点,不再用当页长度推算)
+  const { data: unread } = useAlertUnreadCount({ refetchInterval: 30_000 });
   const alerts: AlertRow[] = data ?? [];
-  // 角标按「最近 24 小时」计数:按自然日计数会在跨零点瞬间归零,掩盖昨夜未处理的告警
-  const recent = alerts.filter((a) => dayjs(a.created_at).isAfter(dayjs().subtract(24, "hour")));
   return (
     <Popover
       placement="bottomRight"
@@ -91,8 +93,8 @@ function AlertBell() {
               <Badge
                 color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
                 text={
-                  <Typography.Text style={{ fontSize: 13 }}>
-                    {a.title} · {dayjs(a.created_at).format("HH:mm")}
+                  <Typography.Text style={{ fontSize: 13 }} delete={a.acked_at != null}>
+                    {a.title} · {dayjs(a.created_at).format("MM-DD HH:mm")}
                   </Typography.Text>
                 }
               />
@@ -104,7 +106,7 @@ function AlertBell() {
         </div>
       }
     >
-      <Badge count={recent.length} size="small" title={t("shell.alertsBadgeHint")}>
+      <Badge count={unread?.count ?? 0} size="small" title={t("shell.alertsBadgeHint")}>
         <AlertOutlined style={{ fontSize: 18, color: adminColors.alertAccent, cursor: "pointer" }} />
       </Badge>
     </Popover>

@@ -19,9 +19,12 @@ import { Route as ConsoleInstancesRouteImport } from './routes/_console.instance
 import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
 import { Route as ConsoleSettingsRouteImport } from './routes/_console.settings'
 import { Route as ConsoleStorageRouteImport } from './routes/_console.storage'
+import { Route as ConsoleSupportRouteImport } from './routes/_console.support'
+import { Route as LegalDeletionNoticeRouteImport } from './routes/legal.deletion-notice'
 import { Route as LegalPrivacyRouteImport } from './routes/legal.privacy'
 import { Route as LegalTermsRouteImport } from './routes/legal.terms'
 import { Route as ConsoleInstancesUuidRouteImport } from './routes/_console.instances_.$uuid'
+import { Route as ConsoleSupportTicketIdRouteImport } from './routes/_console.support_.$ticketId'
 import { Route as ConsoleMarketCreateSkuIdRouteImport } from './routes/_console.market_.create.$skuId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -73,6 +76,16 @@ const ConsoleStorageRoute = ConsoleStorageRouteImport.update({
   path: '/storage',
   getParentRoute: () => ConsoleRoute,
 } as any)
+const ConsoleSupportRoute = ConsoleSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const LegalDeletionNoticeRoute = LegalDeletionNoticeRouteImport.update({
+  id: '/legal/deletion-notice',
+  path: '/legal/deletion-notice',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
   id: '/legal/privacy',
   path: '/legal/privacy',
@@ -86,6 +99,11 @@ const LegalTermsRoute = LegalTermsRouteImport.update({
 const ConsoleInstancesUuidRoute = ConsoleInstancesUuidRouteImport.update({
   id: '/instances_/$uuid',
   path: '/instances/$uuid',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleSupportTicketIdRoute = ConsoleSupportTicketIdRouteImport.update({
+  id: '/support_/$ticketId',
+  path: '/support/$ticketId',
   getParentRoute: () => ConsoleRoute,
 } as any)
 const ConsoleMarketCreateSkuIdRoute =
@@ -105,9 +123,12 @@ export interface FileRoutesByFullPath {
   '/market': typeof ConsoleMarketRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
+  '/support': typeof ConsoleSupportRoute
+  '/legal/deletion-notice': typeof LegalDeletionNoticeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
+  '/support/$ticketId': typeof ConsoleSupportTicketIdRoute
   '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRoutesByTo {
@@ -120,9 +141,12 @@ export interface FileRoutesByTo {
   '/market': typeof ConsoleMarketRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
+  '/support': typeof ConsoleSupportRoute
+  '/legal/deletion-notice': typeof LegalDeletionNoticeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/instances/$uuid': typeof ConsoleInstancesUuidRoute
+  '/support/$ticketId': typeof ConsoleSupportTicketIdRoute
   '/market/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRoutesById {
@@ -137,9 +161,12 @@ export interface FileRoutesById {
   '/_console/market': typeof ConsoleMarketRoute
   '/_console/settings': typeof ConsoleSettingsRoute
   '/_console/storage': typeof ConsoleStorageRoute
+  '/_console/support': typeof ConsoleSupportRoute
+  '/legal/deletion-notice': typeof LegalDeletionNoticeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/_console/instances_/$uuid': typeof ConsoleInstancesUuidRoute
+  '/_console/support_/$ticketId': typeof ConsoleSupportTicketIdRoute
   '/_console/market_/create/$skuId': typeof ConsoleMarketCreateSkuIdRoute
 }
 export interface FileRouteTypes {
@@ -154,9 +181,12 @@ export interface FileRouteTypes {
     | '/market'
     | '/settings'
     | '/storage'
+    | '/support'
+    | '/legal/deletion-notice'
     | '/legal/privacy'
     | '/legal/terms'
     | '/instances/$uuid'
+    | '/support/$ticketId'
     | '/market/create/$skuId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -169,9 +199,12 @@ export interface FileRouteTypes {
     | '/market'
     | '/settings'
     | '/storage'
+    | '/support'
+    | '/legal/deletion-notice'
     | '/legal/privacy'
     | '/legal/terms'
     | '/instances/$uuid'
+    | '/support/$ticketId'
     | '/market/create/$skuId'
   id:
     | '__root__'
@@ -185,9 +218,12 @@ export interface FileRouteTypes {
     | '/_console/market'
     | '/_console/settings'
     | '/_console/storage'
+    | '/_console/support'
+    | '/legal/deletion-notice'
     | '/legal/privacy'
     | '/legal/terms'
     | '/_console/instances_/$uuid'
+    | '/_console/support_/$ticketId'
     | '/_console/market_/create/$skuId'
   fileRoutesById: FileRoutesById
 }
@@ -196,6 +232,7 @@ export interface RootRouteChildren {
   ConsoleRoute: typeof ConsoleRouteWithChildren
   HelpRoute: typeof HelpRoute
   LoginRoute: typeof LoginRoute
+  LegalDeletionNoticeRoute: typeof LegalDeletionNoticeRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalTermsRoute: typeof LegalTermsRoute
 }
@@ -272,6 +309,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleStorageRouteImport
       parentRoute: typeof ConsoleRoute
     }
+    '/_console/support': {
+      id: '/_console/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof ConsoleSupportRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/legal/deletion-notice': {
+      id: '/legal/deletion-notice'
+      path: '/legal/deletion-notice'
+      fullPath: '/legal/deletion-notice'
+      preLoaderRoute: typeof LegalDeletionNoticeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/legal/privacy': {
       id: '/legal/privacy'
       path: '/legal/privacy'
@@ -293,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleInstancesUuidRouteImport
       parentRoute: typeof ConsoleRoute
     }
+    '/_console/support_/$ticketId': {
+      id: '/_console/support_/$ticketId'
+      path: '/support/$ticketId'
+      fullPath: '/support/$ticketId'
+      preLoaderRoute: typeof ConsoleSupportTicketIdRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
     '/_console/market_/create/$skuId': {
       id: '/_console/market_/create/$skuId'
       path: '/market/create/$skuId'
@@ -310,7 +368,9 @@ interface ConsoleRouteChildren {
   ConsoleMarketRoute: typeof ConsoleMarketRoute
   ConsoleSettingsRoute: typeof ConsoleSettingsRoute
   ConsoleStorageRoute: typeof ConsoleStorageRoute
+  ConsoleSupportRoute: typeof ConsoleSupportRoute
   ConsoleInstancesUuidRoute: typeof ConsoleInstancesUuidRoute
+  ConsoleSupportTicketIdRoute: typeof ConsoleSupportTicketIdRoute
   ConsoleMarketCreateSkuIdRoute: typeof ConsoleMarketCreateSkuIdRoute
 }
 
@@ -321,7 +381,9 @@ const ConsoleRouteChildren: ConsoleRouteChildren = {
   ConsoleMarketRoute: ConsoleMarketRoute,
   ConsoleSettingsRoute: ConsoleSettingsRoute,
   ConsoleStorageRoute: ConsoleStorageRoute,
+  ConsoleSupportRoute: ConsoleSupportRoute,
   ConsoleInstancesUuidRoute: ConsoleInstancesUuidRoute,
+  ConsoleSupportTicketIdRoute: ConsoleSupportTicketIdRoute,
   ConsoleMarketCreateSkuIdRoute: ConsoleMarketCreateSkuIdRoute,
 }
 
@@ -333,6 +395,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConsoleRoute: ConsoleRouteWithChildren,
   HelpRoute: HelpRoute,
   LoginRoute: LoginRoute,
+  LegalDeletionNoticeRoute: LegalDeletionNoticeRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalTermsRoute: LegalTermsRoute,
 }

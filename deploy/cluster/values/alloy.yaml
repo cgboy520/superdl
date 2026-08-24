@@ -1,0 +1,82 @@
+# Grafana Alloy 日志采集(P1-32):promtail 的官方继任者
+# (promtail 2026-03-02 EOL 停支持,官方迁移路径即 Alloy;
+# 原 promtail kubernetes_sd 采集由 discovery.kubernetes + loki.source.kubernetes 等价实现)。
+# chart 版本钉在 ../helmfile.yaml.gotmpl。
+alloy:
+  configMap:
+    content: |
+      // ── 集群容器日志(原 promtail kubernetes_sd 等价):全命名空间 Pod ──
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      // 与 promtail 默认标签收敛对齐:namespace/pod/container/app
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+      }
+
+      loki.source.kubernetes "pod_logs" {
+        targets    = discovery.relabel.pod_logs.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      // ── 控制面 apiserver 审计日志(rke2/k3s server 节点宿主机文件,
+      //    路径见 ../rke2/server-config.yaml 与 ../k3s/server-config.yaml 的
+      //    audit-log-path;卷挂载见本文件 alloy.mounts.extra)──
+      local.file_match "apiserver_audit" {
+        path_targets = [{
+          __path__   = "/host-logs/rancher/*/server/logs/audit.log",
+          job        = "kube-apiserver-audit",
+          component  = "kube-apiserver",
+        }]
+        sync_period = "10s"
+      }
+
+      loki.source.file "apiserver_audit" {
+        targets    = local.file_match.apiserver_audit.targets
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
+        }
+      }
+  # 资源出处:采集 agent 每节点一只,对齐 kps-light 中 node-exporter 量级(20m/32Mi)
+  # 上留一倍余量;日志洪峰靠 Loki 侧摄入限流兜底,agent 先不放开内存。
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+  mounts:
+    extra:
+      # 控制面审计日志目录(rke2/k3s 同在 /var/lib/rancher 下;GPU 节点无此目录,
+      # DirectoryOrCreate 建空目录无妨,file_match 自然无目标)
+      - name: rancher-logs
+        mountPath: /host-logs/rancher
+        readOnly: true
+controller:
+  # DaemonSet(默认)每节点一只;控制面节点的 apiserver 审计文件也要采,
+  # 须容忍 server 侧 taint(full 档 CriticalAddonsOnly;标准 control-plane 污点)
+  tolerations:
+    - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+    - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
+  volumes:
+    extra:
+      - name: rancher-logs
+        hostPath: {path: /var/lib/rancher, type: DirectoryOrCreate}

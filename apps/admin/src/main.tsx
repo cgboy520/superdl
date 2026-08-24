@@ -1,4 +1,4 @@
-import { configureApiClient } from "@superdl/api-client";
+import { configureApiClient, requestAdminTokenRefresh } from "@superdl/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import React from "react";
@@ -7,11 +7,22 @@ import ReactDOM from "react-dom/client";
 import "./global.css";
 import "./i18n";
 import { routeTree } from "./routeTree.gen";
-import { authStore } from "./stores/auth";
+import { authStore, readAdminToken } from "./stores/auth";
 
 configureApiClient({
   baseUrl: "",
-  getToken: () => authStore.getState().accessToken,
+  // 读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
+  getToken: () => readAdminToken(),
+  // 静默续期(Web Locks 跨标签页互斥在 mutator 内):滑动换发 access token,
+  // 活跃管理员不因 1h TTL 被踢;12h 绝对会话上限在服务端
+  refreshToken: async () => {
+    const token = readAdminToken();
+    if (!token) return false;
+    const renewed = await requestAdminTokenRefresh(token);
+    if (!renewed) return false;
+    authStore.getState().setToken(renewed.access_token);
+    return true;
+  },
   onUnauthorized: () => {
     authStore.getState().logout();
     if (!window.location.pathname.startsWith("/login")) {

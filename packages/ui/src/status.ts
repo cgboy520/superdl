@@ -62,7 +62,8 @@ export type SkuTier = "dedicated" | "mig" | "shared_std" | "shared_eco";
 
 export const skuTierMap = {
   dedicated: { labelKey: "shared:status.tier.dedicated", color: "#4F46E5" },
-  mig: { labelKey: "shared:status.tier.mig", color: "#0891B2" },
+  // cyan 档取深:#0891B2 白字仅 3.7:1 不达标;#0E7490 ≈5.4:1(WCAG AA)
+  mig: { labelKey: "shared:status.tier.mig", color: "#0E7490" },
   shared_std: { labelKey: "shared:status.tier.shared_std", color: statusColors.green },
   shared_eco: { labelKey: "shared:status.tier.shared_eco", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_eco" },
 } as const satisfies Record<SkuTier, { labelKey: string; color: string; hintKey?: string }>;
@@ -128,6 +129,70 @@ export const paymentChannelMap = {
   mock: { labelKey: "shared:status.channel.mock" },
 } as const satisfies Record<PaymentChannel, { labelKey: string }>;
 
+/** 退款单状态(与 refund_requests.status 严格一致) */
+export type RefundStatus = "pending" | "approved" | "rejected" | "paid" | "cancelled";
+
+export const refundStatusMap = {
+  pending: { labelKey: "shared:status.refund.pending", color: statusColors.blue },
+  approved: { labelKey: "shared:status.refund.approved", color: statusColors.orange },
+  rejected: { labelKey: "shared:status.refund.rejected", color: statusColors.red },
+  paid: { labelKey: "shared:status.refund.paid", color: statusColors.green },
+  cancelled: { labelKey: "shared:status.refund.cancelled", color: statusColors.gray },
+} as const satisfies Record<RefundStatus, { labelKey: string; color: string }>;
+
+/** 退款线下打款渠道(与 schemas.PayoutChannel 严格一致) */
+export type PayoutChannel = "offline" | "alipay_transfer" | "wechat_transfer";
+
+export const payoutChannelMap = {
+  offline: { labelKey: "shared:status.payoutChannel.offline" },
+  alipay_transfer: { labelKey: "shared:status.payoutChannel.alipay_transfer" },
+  wechat_transfer: { labelKey: "shared:status.payoutChannel.wechat_transfer" },
+} as const satisfies Record<PayoutChannel, { labelKey: string }>;
+
+/** 发票申请状态(与 invoice_requests.status 严格一致) */
+export type InvoiceStatus = "submitted" | "issued" | "rejected";
+
+export const invoiceStatusMap = {
+  submitted: { labelKey: "shared:status.invoice.submitted", color: statusColors.blue },
+  issued: { labelKey: "shared:status.invoice.issued", color: statusColors.green },
+  rejected: { labelKey: "shared:status.invoice.rejected", color: statusColors.red },
+} as const satisfies Record<InvoiceStatus, { labelKey: string; color: string }>;
+
+/** 工单状态(与 tickets.status 严格一致);用户/管理端共用同一套中性文案 */
+export type TicketStatus = "open" | "pending_staff" | "pending_user" | "resolved" | "closed";
+
+export const ticketStatusMap = {
+  open: { labelKey: "shared:status.ticket.open", color: statusColors.blue, badge: "processing" },
+  pending_staff: { labelKey: "shared:status.ticket.pending_staff", color: statusColors.orange, badge: "warning" },
+  pending_user: { labelKey: "shared:status.ticket.pending_user", color: statusColors.orange, badge: "warning" },
+  resolved: { labelKey: "shared:status.ticket.resolved", color: statusColors.green, badge: "success" },
+  closed: { labelKey: "shared:status.ticket.closed", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<TicketStatus, StatusMeta>;
+export type TicketStatusMeta = (typeof ticketStatusMap)[TicketStatus];
+
+/** 工单分类(与 tickets.category 严格一致) */
+export type TicketCategory = "instance" | "billing" | "data" | "account" | "other";
+
+export const ticketCategoryMap = {
+  instance: { labelKey: "shared:status.ticketCategory.instance" },
+  billing: { labelKey: "shared:status.ticketCategory.billing" },
+  data: { labelKey: "shared:status.ticketCategory.data" },
+  account: { labelKey: "shared:status.ticketCategory.account" },
+  other: { labelKey: "shared:status.ticketCategory.other" },
+} as const satisfies Record<TicketCategory, { labelKey: string }>;
+
+/** 注销申请状态(与 account_deletion_requests.status 严格一致) */
+export type DeletionStatus = "pending" | "approved" | "completed" | "rejected" | "cancelled";
+
+export const deletionStatusMap = {
+  pending: { labelKey: "shared:status.deletion.pending", color: statusColors.orange, badge: "warning" },
+  approved: { labelKey: "shared:status.deletion.approved", color: statusColors.blue, badge: "processing" },
+  completed: { labelKey: "shared:status.deletion.completed", color: statusColors.gray, badge: "default" },
+  rejected: { labelKey: "shared:status.deletion.rejected", color: statusColors.red, badge: "error" },
+  cancelled: { labelKey: "shared:status.deletion.cancelled", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<DeletionStatus, StatusMeta>;
+export type DeletionStatusMeta = (typeof deletionStatusMap)[DeletionStatus];
+
 export type DiskStatus = "active" | "grace" | "frozen" | "deleting" | "deleted";
 
 export const diskStatusMap = {
@@ -138,3 +203,12 @@ export const diskStatusMap = {
   deleted: { labelKey: "shared:status.disk.deleted", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<DiskStatus, StatusMeta>;
 export type DiskStatusMeta = (typeof diskStatusMap)[DiskStatus];
+
+/** 公告状态(与 announcements.status 严格一致) */
+export type AnnouncementStatus = "published" | "revoked";
+
+export const announcementStatusMap = {
+  published: { labelKey: "shared:status.announcement.published", color: statusColors.green, badge: "success" },
+  revoked: { labelKey: "shared:status.announcement.revoked", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<AnnouncementStatus, StatusMeta>;
+export type AnnouncementStatusMeta = (typeof announcementStatusMap)[AnnouncementStatus];

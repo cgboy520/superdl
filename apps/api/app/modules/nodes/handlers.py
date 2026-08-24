@@ -1,24 +1,35 @@
 """nodes 模块 outbox 任务处理器。K8s 副作用在这里发生,全部幂等。"""
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.k8s import get_orchestrator
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, outbox_handler
+from app.modules.nodes.models import NodeSpec
 
 logger = get_logger(__name__)
 
 
 @outbox_handler("node.cordon")
 async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
-    """cordon/uncordon(payload: node_name, unschedulable, reason)。
-    幂等:重复 patch 同值无副作用;节点不存在时 K8s 报 404,退避重试后进死信。"""
+    """cordon/uncordon:执行台账里的期望态(desired_unschedulable),不是 payload。
+
+    outbox 多 lane 并发领取 + 失败退避会让执行乱序:先发的 cordon 重试晚于后发的
+    uncordon 成功时,按 payload 执行会把节点打回 cordoned(与管理员最终意图相反)。
+    期望态只有最新一份,乱序重试是幂等收敛。节点不存在时 K8s 报 404,退避重试后进死信。
+    """
     node_name = task.payload["node_name"]
-    unschedulable = task.payload["unschedulable"]
-    await get_orchestrator().set_node_unschedulable(node_name, unschedulable)
+    row = (
+        await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
+    ).scalar_one_or_none()
+    if row is None or row.desired_unschedulable is None:
+        logger.warning("node_cordon_no_desired_state", node=node_name, task_id=task.id)
+        return  # 无期望态(台账未收录/行被清理):不重放陈旧 payload
+    await get_orchestrator().set_node_unschedulable(node_name, row.desired_unschedulable)
     logger.info(
         "node_cordon_applied",
         node=node_name,
-        unschedulable=unschedulable,
+        unschedulable=row.desired_unschedulable,
         reason=task.payload.get("reason"),
     )

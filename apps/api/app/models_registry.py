@@ -9,10 +9,12 @@ from app.modules.account import models as account_models
 from app.modules.adminapi import models as adminapi_models
 from app.modules.billing import models as billing_models
 from app.modules.catalog import models as catalog_models
+from app.modules.legal import models as legal_models
 from app.modules.metering import models as metering_models
 from app.modules.nodes import models as nodes_models
 from app.modules.notify import models as notify_models
 from app.modules.orchestrator import models as orchestrator_models
+from app.modules.tickets import models as tickets_models
 
 __all__ = [
     "Base",
@@ -21,6 +23,7 @@ __all__ = [
     "audit",
     "billing_models",
     "catalog_models",
+    "legal_models",
     "metering_models",
     "nodes_models",
     "notify_models",
@@ -29,6 +32,7 @@ __all__ = [
     "platform_config",
     "policies",
     "ratelimit",
+    "tickets_models",
 ]
 
 
@@ -71,7 +75,7 @@ _EXTRA_CHECKS: list[tuple[CheckConstraint, str]] = [
     (
         CheckConstraint(
             "ref_type IS NULL OR ref_type IN"
-            " ('bill_hourly', 'bill_daily_disk', 'order', 'adjustment')",
+            " ('bill_hourly', 'bill_daily_disk', 'order', 'adjustment', 'refund_request')",
             name="ref_type",
         ),
         "balance_ledger",

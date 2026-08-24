@@ -6,6 +6,7 @@ import { Button, Grid, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
+import { dedupAvailableTotal } from "../../lib/inventory";
 import { useSkus } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
 
@@ -43,7 +44,7 @@ export function HeroSection() {
     (min, s) => (min === null || Number(s.price_hourly) < Number(min) ? s.price_hourly : min),
     null,
   );
-  const freeCards = (skus ?? []).reduce((sum, s) => sum + (s.available_count ?? 0), 0);
+  const freeCards = dedupAvailableTotal(skus ?? []);
 
   return (
     <section

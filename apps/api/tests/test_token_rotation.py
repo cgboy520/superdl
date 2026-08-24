@@ -56,21 +56,41 @@ class TestRefreshRotation:
 
     async def test_concurrent_refresh_treated_as_retry(self, client: AsyncClient):
         """并发刷新(多标签页/客户端重试)同 jti 撞单:宽限窗内按正常轮换处理,
-        两路都拿到新对,不得误判泄露撤销全部会话。"""
+        两路拿到同一对新 token(不为同一旧 token 另开第二条有效链),不得误判泄露。
+
+        屏障对齐起跑线:两路刷新同一时刻到达轮换闸,不依赖调度器碰巧交错。"""
         data = await register(client, "13800000098")
-        a, b = await asyncio.gather(
-            _refresh(client, data["refresh_token"]), _refresh(client, data["refresh_token"])
-        )
+        gate = asyncio.Barrier(3)
+
+        async def refresh():
+            await gate.wait()
+            return await _refresh(client, data["refresh_token"])
+
+        a, b, _ = await asyncio.gather(refresh(), refresh(), gate.wait())
         assert a.status_code == 200, a.text
         assert b.status_code == 200, b.text
-        # 两路各自拿到可用的新 token 对;任一路继续轮换都不应被判重放
-        for pair in (a.json(), b.json()):
-            me = await client.get(
-                "/api/v1/me", headers={"Authorization": f"Bearer {pair['access_token']}"}
-            )
-            assert me.status_code == 200
-        nxt = await _refresh(client, a.json()["refresh_token"])
+        # 重放回同一对 token:两路的 access/refresh 完全一致
+        assert a.json()["refresh_token"] == b.json()["refresh_token"]
+        assert a.json()["access_token"] == b.json()["access_token"]
+        pair = a.json()
+        me = await client.get(
+            "/api/v1/me", headers={"Authorization": f"Bearer {pair['access_token']}"}
+        )
+        assert me.status_code == 200
+        nxt = await _refresh(client, pair["refresh_token"])
         assert nxt.status_code == 200
+
+    async def test_grace_replay_does_not_fork_chain(self, client: AsyncClient):
+        """宽限窗内多次重放同一旧 token:每路都回同一对,不产生第二条长期有效链。"""
+        data = await register(client, "13800000099")
+        first = (await _refresh(client, data["refresh_token"])).json()
+        for _ in range(3):
+            replay = await _refresh(client, data["refresh_token"])
+            assert replay.status_code == 200
+            assert replay.json()["refresh_token"] == first["refresh_token"]
+            assert replay.json()["access_token"] == first["access_token"]
+        # 唯一有效链继续轮换照常
+        assert (await _refresh(client, first["refresh_token"])).status_code == 200
 
 
 class TestLogout:

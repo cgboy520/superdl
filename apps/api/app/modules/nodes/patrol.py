@@ -72,6 +72,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         "labeled": 0,
         "label_failed": 0,
         "probe_ok": 0,
+        "cordon_converged": 0,
     }
     async with (
         sm() as lock_session,
@@ -172,4 +173,28 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                     row.label_synced = True
                     await session.commit()
             counts["labeled"] += 1
+
+        # ---- D:cordon 期望态收敛(实际调度态与台账期望不符即重放,逐节点独立 try) ----
+        async with sm() as session:
+            desired_rows = list(
+                (
+                    await session.execute(
+                        select(NodeSpec).where(NodeSpec.desired_unschedulable.is_not(None))
+                    )
+                ).scalars()
+            )
+        actual = {n.name: n.status for n in nodes}
+        for row in desired_rows:
+            actual_cordoned = actual.get(row.node_name) == "Cordoned"
+            if actual.get(row.node_name) is None or actual_cordoned == row.desired_unschedulable:
+                continue
+            try:
+                await orch.set_node_unschedulable(row.node_name, bool(row.desired_unschedulable))
+            except Exception:
+                logger.warning("node_cordon_converge_failed", node=row.node_name)
+                continue
+            counts["cordon_converged"] += 1
+            logger.info(
+                "node_cordon_converged", node=row.node_name, unschedulable=row.desired_unschedulable
+            )
     return counts

@@ -59,9 +59,24 @@ class InstanceAccessOut(BaseModel):
     jupyter_url: str
 
 
+class InstanceLogsOut(BaseModel):
+    """容器日志(F5):按行切分;truncated=True 表示日志量超过 tail_lines,只回了末尾段。"""
+
+    lines: list[str]
+    truncated: bool
+
+
 class InstanceRename(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 
 
 class AdminForceStopRequest(BaseModel):
     reason: str = Field(min_length=2, max_length=256)
+
+
+class PortPoolStatsOut(BaseModel):
+    """SSH 端口池水位(管理端)。blocked=被集群其它对象撞占的端口,周期复检会放回。"""
+
+    total: int
+    assigned: int
+    blocked: int
