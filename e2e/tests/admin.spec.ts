@@ -24,12 +24,13 @@ const SEED_ADMIN = {
   password: process.env.SUPERDL_ADMIN_PASSWORD ?? "admin123-dev",
 };
 
+// antd 给恰好两个汉字的按钮自动插空格(登录 → "登 录"),两字按钮一律用 /^X\s*Y$/ 匹配。
 /** 登录 → 首登强制绑定 TOTP:读取页面手动密钥,现算动态码完成绑定;返回密钥供后续登录。 */
 async function loginAndBindMfa(page: Page, username: string, password: string): Promise<string> {
   await page.goto(`${ADMIN}/login`);
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: /^登\s*录$/ }).click();
   // 绑定页:二维码 + 手动录入密钥(code 元素全页唯一)
   const secretEl = page.locator("code").first();
   await expect(secretEl).toBeVisible({ timeout: 15_000 });
@@ -50,7 +51,7 @@ async function loginWithMfa(page: Page, username: string, password: string, secr
   await page.goto(`${ADMIN}/login`);
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: /^登\s*录$/ }).click();
   await fillTotp(page.getByPlaceholder("6 位动态码"), secret);
   await page.getByRole("button", { name: "验证并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
@@ -86,7 +87,22 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户", async ({ pag
   const adminSecret = await loginAndBindMfa(page, SEED_ADMIN.username, SEED_ADMIN.password);
   const adminToken = await readToken(page);
 
-  // ── 2. 调账发起(admin 经 UI)────────────────────────────────────────
+  // ── 2. 复核人 finance 建号(经 API,理由入审计)──────────────────────
+  // 必须早于调账发起:服务端拒绝「发起后才创建的账号」当第二人
+  // (adminapi/service.py 的 adjustReviewerTooNew,防自建第二账号绕复核)
+  const financeName = `fin-e2e-${String(Date.now()).slice(-6)}`;
+  const created = await request.post(`${API}/api/admin/v1/admins`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+    data: {
+      username: financeName,
+      password: "finance-e2e-pass1",
+      role: "finance",
+      reason: "e2e 双人复核",
+    },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+
+  // ── 3. 调账发起(admin 经 UI)────────────────────────────────────────
   await page.goto(`${ADMIN}/finance`);
   await page.getByRole("tab", { name: /调账/ }).click();
   await page.getByRole("button", { name: "发起调账" }).click();
@@ -103,40 +119,27 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户", async ({ pag
   const adjRow = page.locator(".ant-table-row", { hasText: "e2e 冒烟调账" });
   await expect(adjRow.getByText("待复核")).toBeVisible({ timeout: 10_000 });
   // 自复核禁手(双人制衡):发起人行的「通过」必须禁用
-  await expect(adjRow.getByRole("button", { name: "通过" })).toBeDisabled();
+  await expect(adjRow.getByRole("button", { name: /^通\s*过$/ })).toBeDisabled();
 
-  // ── 3. 复核人:finance 账号(经 API 建号,理由入审计)─────────────────
-  const financeName = `fin-e2e-${String(Date.now()).slice(-6)}`;
-  const created = await request.post(`${API}/api/admin/v1/admins`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-    data: {
-      username: financeName,
-      password: "finance-e2e-pass1",
-      role: "finance",
-      reason: "e2e 双人复核",
-    },
-  });
-  expect(created.status(), await created.text()).toBe(201);
-
-  // finance 首登同样强制绑定 TOTP;绑定后进调账页复核
+  // ── 4. 复核人 finance 首登同样强制绑定 TOTP;绑定后进调账页复核 ────────
   await loginAndBindMfa(page, financeName, "finance-e2e-pass1");
   await page.goto(`${ADMIN}/finance`);
   await page.getByRole("tab", { name: /调账/ }).click();
   const reviewRow = page.locator(".ant-table-row", { hasText: "e2e 冒烟调账" });
-  await reviewRow.getByRole("button", { name: "通过" }).click();
+  await reviewRow.getByRole("button", { name: /^通\s*过$/ }).click();
   const reviewModal = page.locator(".ant-modal", { hasText: "通过调账(二次确认)" });
-  await reviewModal.getByRole("button", { name: "通过" }).click();
+  await reviewModal.getByRole("button", { name: /^通\s*过$/ }).click();
   await expect(page.getByText("复核完成")).toBeVisible({ timeout: 10_000 });
   await expect(
     page.locator(".ant-table-row", { hasText: "e2e 冒烟调账" }).getByText("已生效"),
   ).toBeVisible({ timeout: 10_000 });
 
-  // ── 4. 冻结租户(ops 写权限;seed admin 经已绑定 TOTP 重新登录)────────
+  // ── 5. 冻结租户(ops 写权限;seed admin 经已绑定 TOTP 重新登录)────────
   await loginWithMfa(page, SEED_ADMIN.username, SEED_ADMIN.password, adminSecret);
   await page.goto(`${ADMIN}/tenants`);
   const tenantRow = page.locator(".ant-table-row", { hasText: maskedPhone });
   await expect(tenantRow).toBeVisible({ timeout: 15_000 });
-  await tenantRow.getByRole("button", { name: "冻结" }).click();
+  await tenantRow.getByRole("button", { name: /^冻\s*结$/ }).click();
   const reasonModal = page.locator(".ant-modal", { hasText: "冻结租户" });
   await reasonModal.locator("textarea").fill("e2e 冒烟冻结");
   await reasonModal.getByRole("button", { name: "下一步" }).click();
