@@ -270,7 +270,7 @@ jobs:
           pnpm --filter @superdl/e2e test:e2e
       - name: Dump logs on failure
         if: failure()
-        run: tail -80 /tmp/api.log /tmp/worker.log
+        run: tail -n 80 /tmp/api.log /tmp/worker.log
 
   # k8s 清单 schema 校验(kubeconform):deploy/app/k8s 全部清单过 k8s OpenAPI schema。
   # (compose.yaml 是 docker-compose 格式,非 k8s 清单,不在 kubeconform 适用范围)
