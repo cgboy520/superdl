@@ -9,15 +9,13 @@ prod 下配置完整性由 Settings 校验把关。
 
 import json
 from typing import Protocol
-from uuid import uuid4
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.aliyun import rpc_signed_params
+from app.core.aliyun import rpc_call
 from app.core.logging import get_logger
 from app.core.ratelimit import check_rate_limit
-from app.core.timeutil import now_utc
 
 logger = get_logger(__name__)
 
@@ -76,45 +74,27 @@ class AliyunSmsChannel:
         self._sign_name = sign_name
         self._transport = transport  # 测试注入 MockTransport
 
-    def signed_params(
-        self,
-        phone: str,
-        template: str,
-        params: dict[str, str],
-        *,
-        nonce: str,
-        timestamp: str,
-    ) -> dict[str, str]:
-        return rpc_signed_params(
-            {
-                "Action": "SendSms",
-                "PhoneNumbers": phone,
-                "RegionId": "cn-hangzhou",
-                "SignName": self._sign_name,
-                "TemplateCode": template,
-                "TemplateParam": json.dumps(params, ensure_ascii=False, separators=(",", ":")),
-                "Version": "2017-05-25",
-            },
-            access_key_id=self._ak,
-            access_key_secret=self._secret,
-            nonce=nonce,
-            timestamp=timestamp,
-        )
+    def request_params(self, phone: str, template: str, params: dict[str, str]) -> dict[str, str]:
+        """SendSms 业务参数(公共参数与签名由 core/aliyun 补齐)。"""
+        return {
+            "Action": "SendSms",
+            "PhoneNumbers": phone,
+            "RegionId": "cn-hangzhou",
+            "SignName": self._sign_name,
+            "TemplateCode": template,
+            "TemplateParam": json.dumps(params, ensure_ascii=False, separators=(",", ":")),
+            "Version": "2017-05-25",
+        }
 
     async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
-        signed = self.signed_params(
-            phone,
-            template,
-            params,
-            nonce=uuid4().hex,
-            timestamp=now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        body = await rpc_call(
+            self.ENDPOINT,
+            self.request_params(phone, template, params),
+            access_key_id=self._ak,
+            access_key_secret=self._secret,
+            transport=self._transport,
+            error_cls=SmsError,
         )
-        try:
-            async with httpx.AsyncClient(timeout=10, transport=self._transport) as client:
-                resp = await client.post(self.ENDPOINT, data=signed)
-            body = resp.json()
-        except Exception as exc:
-            raise SmsError(f"sms request failed: {exc}") from exc
         if body.get("Code") != "OK":
             raise SmsError(f"sms rejected: {body.get('Code')} {body.get('Message')}")
 

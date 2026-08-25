@@ -15,7 +15,7 @@ from app.core.config import get_settings
 from app.core.crypto import hash_sms_code
 from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
-from app.core.logging import get_logger
+from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import (
@@ -42,11 +42,14 @@ from app.modules.account.models import (
     User,
     UserQuotaOverride,
 )
-from app.modules.account.realname import mask_company_name, mask_id_name, mask_phone
+from app.modules.account.realname import mask_company_name, mask_id_name
 from app.modules.account.schemas import AdminDeletionRequestOut, TokenPair, UserOut
 from app.modules.account.sshkey_util import parse_public_key
 
 logger = get_logger(__name__)
+
+# 手机号脱敏只有 core/logging 一份实现;adminapi 经 account.service 取用,这里保留同名门面
+mask_phone = mask_phone_value
 
 MOCK_SMS_CODE = "123456"
 
@@ -148,8 +151,8 @@ async def send_sms_code(
         # 渠道失败:作废刚落库的验证码
         row.used_at = now_utc()
         await session.commit()
-        # 手机号明文不进集中日志(Loki 180 天 PII 面);logging 管道另有全局兜底
-        logger.error("sms_send_failed", phone=mask_phone(phone), error=str(exc))
+        # 手机号由 logging._mask_sensitive_processor 按键名打码(前 3 后 4),不在这里重复
+        logger.error("sms_send_failed", phone=phone, error=str(exc))
         raise AppError(
             ErrorCode.SMS_SEND_FAILED,
             key="account.smsSendFailed",
@@ -832,7 +835,7 @@ def _deletion_out(
     return AdminDeletionRequestOut(
         id=req.id,
         user_id=req.user_id,
-        phone_masked=mask_phone(user.phone),
+        phone_masked=mask_phone_value(user.phone),
         status=req.status,
         reason=req.reason,
         requested_at=req.requested_at,

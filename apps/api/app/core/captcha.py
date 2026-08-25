@@ -9,14 +9,12 @@
 """
 
 from typing import Protocol
-from uuid import uuid4
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.aliyun import rpc_signed_params
+from app.core.aliyun import rpc_call
 from app.core.logging import get_logger
-from app.core.timeutil import now_utc
 
 logger = get_logger(__name__)
 
@@ -62,35 +60,25 @@ class AliyunCaptchaChannel:
         self._scene_id = scene_id
         self._transport = transport  # 测试注入 MockTransport
 
-    def signed_params(
-        self, captcha_verify_param: str, *, nonce: str, timestamp: str
-    ) -> dict[str, str]:
-        return rpc_signed_params(
-            {
-                "Action": "VerifyIntelligentCaptcha",
-                "Version": "2023-03-05",
-                # 服务端强制写入场景:防前端被篡改到其它场景(阿里云官方建议)
-                "SceneId": self._scene_id,
-                "CaptchaVerifyParam": captcha_verify_param,
-            },
-            access_key_id=self._ak,
-            access_key_secret=self._secret,
-            nonce=nonce,
-            timestamp=timestamp,
-        )
+    def request_params(self, captcha_verify_param: str) -> dict[str, str]:
+        """VerifyIntelligentCaptcha 业务参数(公共参数与签名由 core/aliyun 补齐)。"""
+        return {
+            "Action": "VerifyIntelligentCaptcha",
+            "Version": "2023-03-05",
+            # 服务端强制写入场景:防前端被篡改到其它场景(阿里云官方建议)
+            "SceneId": self._scene_id,
+            "CaptchaVerifyParam": captcha_verify_param,
+        }
 
     async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
-        signed = self.signed_params(
-            captcha_verify_param,
-            nonce=uuid4().hex,
-            timestamp=now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        body = await rpc_call(
+            self.ENDPOINT,
+            self.request_params(captcha_verify_param),
+            access_key_id=self._ak,
+            access_key_secret=self._secret,
+            transport=self._transport,
+            error_cls=CaptchaError,
         )
-        try:
-            async with httpx.AsyncClient(timeout=10, transport=self._transport) as client:
-                resp = await client.post(self.ENDPOINT, data=signed)
-            body = resp.json()
-        except Exception as exc:
-            raise CaptchaError(f"captcha request failed: {exc}") from exc
         # Code 为请求级结果(Success/OK 兼容);人机判定在 Result.VerifyResult
         if body.get("Code") not in ("Success", "OK"):
             raise CaptchaError(f"captcha rejected: {body.get('Code')} {body.get('Message')}")

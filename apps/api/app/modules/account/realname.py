@@ -8,13 +8,11 @@ PIPL 约束:身份证号不落明文,只存脱敏展示串(前 4 + 后 2);
 """
 
 from typing import Protocol
-from uuid import uuid4
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.aliyun import rpc_signed_params
-from app.core.timeutil import now_utc
+from app.core.aliyun import rpc_call
 
 
 class RealNameError(RuntimeError):
@@ -50,39 +48,27 @@ class AliyunRealNameProvider:
         self._secret = access_key_secret
         self._transport = transport  # 测试注入 MockTransport
 
-    def signed_params(
-        self, name: str, id_number: str, phone: str, *, nonce: str, timestamp: str
-    ) -> dict[str, str]:
-        return rpc_signed_params(
-            {
-                "Action": "Mobile3MetaSimpleVerify",
-                "Version": "2019-03-07",
-                "RegionId": "cn-hangzhou",
-                "ParamType": "normal",
-                "UserName": name,
-                "IdentifyNum": id_number,
-                "Mobile": phone,
-            },
-            access_key_id=self._ak,
-            access_key_secret=self._secret,
-            nonce=nonce,
-            timestamp=timestamp,
-        )
+    def request_params(self, name: str, id_number: str, phone: str) -> dict[str, str]:
+        """Mobile3MetaSimpleVerify 业务参数(公共参数与签名由 core/aliyun 补齐)。"""
+        return {
+            "Action": "Mobile3MetaSimpleVerify",
+            "Version": "2019-03-07",
+            "RegionId": "cn-hangzhou",
+            "ParamType": "normal",
+            "UserName": name,
+            "IdentifyNum": id_number,
+            "Mobile": phone,
+        }
 
     async def verify(self, name: str, id_number: str, phone: str) -> bool:
-        signed = self.signed_params(
-            name,
-            id_number,
-            phone,
-            nonce=uuid4().hex,
-            timestamp=now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        body = await rpc_call(
+            self.ENDPOINT,
+            self.request_params(name, id_number, phone),
+            access_key_id=self._ak,
+            access_key_secret=self._secret,
+            transport=self._transport,
+            error_cls=RealNameError,
         )
-        try:
-            async with httpx.AsyncClient(timeout=10, transport=self._transport) as client:
-                resp = await client.post(self.ENDPOINT, data=signed)
-            body = resp.json()
-        except Exception as exc:
-            raise RealNameError(f"realname request failed: {exc}") from exc
         if body.get("Code") != "200":
             raise RealNameError(f"realname rejected: {body.get('Code')} {body.get('Message')}")
         biz_code = (body.get("ResultObject") or {}).get("BizCode")
@@ -125,8 +111,3 @@ def mask_company_name(name: str) -> str:
     if len(name) <= 4:
         return name[0] + "*" * (len(name) - 1)
     return f"{name[:2]}{'*' * (len(name) - 4)}{name[-2:]}"
-
-
-def mask_phone(phone: str) -> str:
-    """手机号脱敏(单一定义点):前 3 + 后 4;短串退化为全掩(防前后段重叠泄露全量)。"""
-    return phone[:3] + "****" + phone[-4:] if len(phone) >= 7 else "***"

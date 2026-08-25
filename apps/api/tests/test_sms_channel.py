@@ -5,6 +5,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.core.aliyun import rpc_signed_params
 from app.core.sms import AliyunSmsChannel, SmsError, set_sms_channel
 
 
@@ -23,10 +24,10 @@ class TestAliyunSignature:
     def test_signature_snapshot(self):
         """RPC V1 签名锚点:排序 / RFC3986 编码 / HMAC-SHA1 任一变动都会破坏此值。"""
         ch = AliyunSmsChannel("testid", "testsecret", "SuperDL")
-        p = ch.signed_params(
-            "13800000000",
-            "SMS_123",
-            {"code": "654321"},
+        p = rpc_signed_params(
+            ch.request_params("13800000000", "SMS_123", {"code": "654321"}),
+            access_key_id="testid",
+            access_key_secret="testsecret",
             nonce="fixed-nonce",
             timestamp="2026-08-19T12:00:00Z",
         )
