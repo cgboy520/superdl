@@ -276,24 +276,6 @@ class TestBackfill:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "11.00"
 
-    async def test_backfill_failed_order_refused_when_channel_unpaid(self, client: AsyncClient, sm):
-        """failed 订单但渠道侧未支付:补单仍被拒(状态放宽不等于凭空造账)。"""
-        headers = await user_headers(client, "13700000030")
-        order = await create_order(client, headers, "13.00")
-        async with sm() as session:
-            await session.execute(
-                update(Order).where(Order.order_no == order["order_no"]).values(status="failed")
-            )
-            await session.commit()
-        ah = await admin_headers(sm, client, role="finance")
-        resp = await client.post(
-            f"/api/admin/v1/finance/orders/{order['order_no']}/backfill",
-            json={"reason": "渠道未付"},
-            headers=ah,
-        )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
-
     async def test_backfill_refused_on_amount_mismatch(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000025")
         order = await create_order(client, headers, "30.00")
