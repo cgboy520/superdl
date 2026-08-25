@@ -138,8 +138,6 @@ async def test_full_lifecycle_drill(client, sm, fake):
     await reconcile_once(sm)
     events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()["items"]
     assert events[0]["to_status"] == "released"
-    # 擦盘标记与实际行为一致(lvremove + issue_discards=1,NVMe TRIM)
-    assert events[0]["event_metadata"]["disk_wipe"] == "lvremove(issue_discards=1)"
 
     disks = (await client.get("/api/v1/disks", headers=h)).json()
     assert disks[0]["status"] == "active" and disks[0]["mounted_instance_id"] is None

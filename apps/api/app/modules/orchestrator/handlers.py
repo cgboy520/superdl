@@ -112,14 +112,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
             # 优雅删除期内对象仍在 etcd,同名重建必撞 409。
             # 抛错回滚:实例留在 stopping,由 outbox 退避重试续跑。
             raise RuntimeError(f"pod {instance.uuid} still terminating; restart resumes on retry")
-        await transition(
-            session,
-            instance,
-            sm_def.STOPPED,
-            reason="restart",
-            actor="system",
-            metadata={"restart": True},
-        )
+        await transition(session, instance, sm_def.STOPPED, reason="restart", actor="system")
         # 尾账与 stopped 边先单独落库:后续建 Pod 撞 NodePortTaken 会 rollback 本事务,
         # 不分开提交会把已完成的迁移和尾账一起回滚掉(尾账丢失 = 少计停机前费用)
         await session.commit()
@@ -147,14 +140,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                 dedup_key=f"restart_no_balance:{instance.id}",
             )
             return
-        await transition(
-            session,
-            instance,
-            sm_def.STARTING,
-            reason="restart",
-            actor="system",
-            metadata={"restart": True},
-        )
+        await transition(session, instance, sm_def.STARTING, reason="restart", actor="system")
         instance.unready_since = None  # 新一轮就绪观察从零起算(同 start_instance)
         # STARTING 先落库再建 Pod:建 Pod 期间 DB 已是 starting,泄漏回收对在途状态
         # 有宽限,不会在「DB stopped + Pod 已建」窗口把实例当泄漏强删

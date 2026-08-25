@@ -631,14 +631,7 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
     await _require_cluster_for_tier(
         session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
     )
-    await transition(
-        session,
-        instance,
-        sm_def.STOPPING,
-        reason="restart",
-        actor="user",
-        metadata={"restart": True},
-    )
+    await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
     enqueue(session, "instance.restart", {"instance_id": instance.id})
     await session.commit()
     return instance
@@ -749,14 +742,7 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
     instance.jupyter_token = _encode_token(secrets.token_urlsafe(24), instance_uuid=instance.uuid)
     # 需要重建 Pod 才生效(env 注入);running 时走 restart 流程
     if instance.status == sm_def.RUNNING:
-        await transition(
-            session,
-            instance,
-            sm_def.STOPPING,
-            reason="restart",
-            actor="user",
-            metadata={"restart": True, "token_reset": True},
-        )
+        await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
         enqueue(session, "instance.restart", {"instance_id": instance.id})
     await session.commit()
     return instance
@@ -905,14 +891,7 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 
 async def arrears_stop(session: AsyncSession, instance: Instance) -> None:
     """欠费停机(巡检调用,actor=system)。同事务落事件+outbox。"""
-    await transition(
-        session,
-        instance,
-        sm_def.STOPPING,
-        reason="arrears_stop",
-        actor="system",
-        metadata={"hint": "余额耗尽自动关机"},
-    )
+    await transition(session, instance, sm_def.STOPPING, reason="arrears_stop", actor="system")
     enqueue(session, "instance.stop", {"instance_id": instance.id})
 
 
@@ -934,14 +913,7 @@ async def unfreeze_instance(session: AsyncSession, instance: Instance) -> None:
 
 
 async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
-    await transition(
-        session,
-        instance,
-        sm_def.RELEASING,
-        reason="arrears_reclaim",
-        actor="system",
-        metadata={"hint": "冻结 72 小时到期回收(数据盘不受影响)"},
-    )
+    await transition(session, instance, sm_def.RELEASING, reason="arrears_reclaim", actor="system")
     instance.frozen_deadline = None
     enqueue(session, "instance.release", {"instance_id": instance.id})
 
@@ -962,14 +934,7 @@ async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str)
         ).scalars()
     )
     for inst in rows:
-        await transition(
-            session,
-            inst,
-            sm_def.STOPPING,
-            reason=reason,
-            actor="admin",
-            metadata={"hint": "账号被冻结,实例已停机"},
-        )
+        await transition(session, inst, sm_def.STOPPING, reason=reason, actor="admin")
         enqueue(session, "instance.stop", {"instance_id": inst.id})
     if rows:
         logger.warning("tenant_frozen_instances_stopped", user_id=user_id, count=len(rows))

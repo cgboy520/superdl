@@ -427,14 +427,12 @@ class TestRelease:
         instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
 
-        # 事件含擦盘标记(lvremove + issue_discards=1,NVMe TRIM,与 TopoLVM 节点 lvm.conf 一致),
-        # 且盘真的被销毁了(P1-9 两阶段:盘删除走 instance.disk_cleanup outbox,drain 后落终态)
+        # 盘真的被销毁了(P1-9 两阶段:盘删除走 instance.disk_cleanup outbox,drain 后落终态)
         await drain(sm)
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]  # 降序:items[0] 是最新事件
         assert events[0]["to_status"] == "released"
-        assert events[0]["event_metadata"]["disk_wipe"] == "lvremove(issue_discards=1)"
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
 
         # 端口回池

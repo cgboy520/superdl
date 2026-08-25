@@ -285,7 +285,6 @@ async def _reconcile_instances(
                             sm_def.FAILED,
                             reason="schedule_timeout",
                             actor="system",
-                            metadata={"hint": "调度或拉取镜像超时,未产生任何费用"},
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
@@ -438,12 +437,7 @@ async def _reconcile_instances(
                 elif instance.status == sm_def.RELEASING:
                     if not st.exists:
                         await transition(
-                            session,
-                            instance,
-                            sm_def.RELEASED,
-                            reason="released",
-                            actor="system",
-                            metadata={"disk_wipe": "lvremove(issue_discards=1)"},
+                            session, instance, sm_def.RELEASED, reason="released", actor="system"
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
@@ -784,7 +778,6 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                         sm_def.RELEASING,
                         reason="failed_retention_reclaim",
                         actor="system",
-                        metadata={"hint": "失败实例超过保留期,自动释放"},
                     )
                     enqueue(session, "instance.release", {"instance_id": fresh.id})
                     await notify_service.notify(
@@ -808,12 +801,7 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                     if fresh is None or fresh.status != sm_def.STOPPED:
                         continue
                     await transition(
-                        session,
-                        fresh,
-                        sm_def.RELEASING,
-                        reason="retention_reclaim",
-                        actor="system",
-                        metadata={"hint": "停机超过保留期,自动释放"},
+                        session, fresh, sm_def.RELEASING, reason="retention_reclaim", actor="system"
                     )
                     enqueue(session, "instance.release", {"instance_id": fresh.id})
                     await notify_service.notify(
