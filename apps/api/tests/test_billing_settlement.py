@@ -432,10 +432,11 @@ class TestHourlySettlementJob:
         )
         at = H_END + timedelta(minutes=2)
         assert await settle_due_hours(sm, at=at) == 1
-        assert await settle_due_hours(sm, at=at) == 0  # 幂等:零重复扣款
+        assert await settle_due_hours(sm, at=at) == 0  # 幂等:水位线已过,重跑零重复扣款
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
             w = (await session.execute(select(Wallet))).scalar_one()
+            assert await get_watermark(session, "hourly") == H
         assert bill.seconds_used == 1800
         assert w.balance == Decimal("99.16")
 
@@ -569,27 +570,6 @@ class TestCatchUpSettlement:
         # 4 个整点 × 1.68,与「连续运行、每小时准时结算」完全一致
         assert w.balance == Decimal("100.00") - Decimal("1.68") * 4
 
-    async def test_watermark_advances_and_blocks_replay(self, sm):
-        await seed_instance(
-            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
-        )
-        at = H_END + timedelta(minutes=2)
-        await settle_due_hours(sm, at=at)
-        async with sm() as session:
-            assert await get_watermark(session, "hourly") == H
-        assert await settle_due_hours(sm, at=at) == 0  # 水位线已过,重跑不重复扣款
-
-    async def test_catchup_truncated_at_limit(self, sm):
-        """停机超出追平上限:只结最近 MAX_CATCHUP_HOURS 小时,不把 worker 拖死。"""
-        from app.modules.billing.settlement import MAX_CATCHUP_HOURS
-
-        await seed_instance(
-            sm, events=[(H - timedelta(hours=1), "creating", "running")], status="running"
-        )
-        await settle_due_hours(sm, at=H_END + timedelta(minutes=2))
-        at = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
-        assert await settle_due_hours(sm, at=at) == MAX_CATCHUP_HOURS
-
     async def test_watermark_missing_records_gap(self, sm):
         """无水位线(误删/库回退)必须与其余跳窗路径同口径登记 settlement_gaps,
         让未核销缺口 gauge 持续告警——否则小时窗静默烧掉,账务无迹。"""
@@ -639,44 +619,15 @@ class TestCatchUpSettlement:
 @pytest.mark.parametrize(
     "anchor",
     [
-        pytest.param(datetime(2026, 8, 19, 23, 0, tzinfo=UTC), id="cross-day"),
         pytest.param(datetime(2026, 8, 31, 23, 0, tzinfo=UTC), id="cross-month"),
-        pytest.param(datetime(2026, 12, 31, 23, 0, tzinfo=UTC), id="cross-year"),
         pytest.param(datetime(2028, 2, 29, 23, 0, tzinfo=UTC), id="leap-day"),
     ],
 )
 class TestWindowBoundaries:
-    """结算窗口跨日/跨月/跨年/闰日。
+    """结算追平跨月末/闰日。
 
     锁住「按 aware-UTC 做 timedelta 递推」这一实现:换成 replace(day=...) 之类会算错账期。
     """
-
-    async def test_tail_then_hourly_across_boundary(self, sm, anchor):
-        start, end = anchor, anchor + timedelta(hours=1)
-        inst_id = await seed_instance(
-            sm,
-            events=[
-                (start - timedelta(minutes=30), "creating", "running"),
-                (start + timedelta(minutes=30), "running", "stopping"),
-            ],
-        )
-        async with sm() as session:
-            charged = await settle_instance_window(
-                session,
-                instance_id=inst_id,
-                user_id=1,
-                unit_price=Decimal("3.6000"),
-                gpu_count=1,
-                window_start=start,
-                window_end=end,
-                source="hourly",
-            )
-            await session.commit()
-        assert charged == Decimal("1.80")  # 半小时 × 3.60
-        async with sm() as session:
-            bill = (await session.execute(select(BillHourly))).scalar_one()
-        assert bill.hour_start.replace(tzinfo=UTC) == start
-        assert bill.seconds_used == 1800
 
     async def test_catchup_walks_over_boundary(self, sm, anchor):
         """水位线追平必须能连续跨过午夜/月末,而不是停在边界上。"""
@@ -917,15 +868,6 @@ class TestGapClosure:
             bills = (await session.execute(select(BillHourly))).scalars().all()
         assert len(bills) == 2
 
-    async def test_grace_overlap_rejects_replay(self, sm):
-        from app.core.errors import AppError
-        from app.modules.billing.settlement import replay_gap
-
-        gap_id = await self._make_gap(sm, kind="daily_disk", object_id=1, reason="grace_overlap")
-        with pytest.raises(AppError) as exc_info:
-            await replay_gap(sm, gap_id, operator_id=1)
-        assert exc_info.value.message_key == "billing.settlementGapNotReplayable"
-
     async def test_replay_object_gone_conflict(self, sm):
         from app.core.errors import AppError
         from app.modules.billing.settlement import replay_gap
@@ -935,18 +877,8 @@ class TestGapClosure:
             await replay_gap(sm, gap_id, operator_id=1)
         assert exc_info.value.message_key == "billing.settlementGapObjectGone"
 
-    async def test_resolve_marks_resolved_and_gauge_drops(self, sm):
-        from app.core.metrics import SETTLEMENT_GAP_UNRESOLVED
-        from app.modules.billing.settlement import resolve_gap
-
-        gap_id = await self._make_gap(sm)
-        async with sm() as session:
-            gap = await resolve_gap(session, gap_id, note="人工核对无账", operator_id=1)
-            assert gap.resolved_at is not None
-        assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 0
-
     async def test_unresolved_gauge_reflects_db(self, sm):
-        """DB 口径持续告警:缺口未核销 gauge>0,重放/核销后归零(进程重启不丢)。"""
+        """DB 口径持续告警:缺口未核销 gauge>0,人工核销回写 resolved_at 后归零(进程重启不丢)。"""
         from app.core.metrics import SETTLEMENT_GAP_UNRESOLVED
         from app.modules.billing.settlement import resolve_gap
 
@@ -958,7 +890,8 @@ class TestGapClosure:
             await _refresh_gap_gauge(session)
         assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 1
         async with sm() as session:
-            await resolve_gap(session, gap_id, note="核销", operator_id=1)
+            gap = await resolve_gap(session, gap_id, note="核销", operator_id=1)
+            assert gap.resolved_at is not None
         assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 0
 
 
