@@ -144,15 +144,6 @@ class TestWipeDiskContract:
             _mark_job_succeeded(backend.real, ns, _wipe_job_name(sub))
             await backend.impl.wipe_disk(ns, sub)  # 完成:清理 Job 并返回
 
-    async def test_fail_next_wipe_injection(self) -> None:
-        """fail_next_wipe:一次性失败注入;重试走正常路径成功(outbox 退避语义)。"""
-        fake = FakeOrchestrator()
-        fake.fail_next_wipe = True
-        with pytest.raises(RuntimeError, match="injected"):
-            await fake.wipe_disk("tenant-conf", "confw-inj")
-        await fake.wipe_disk("tenant-conf", "confw-inj")
-        assert fake.wiped_disks == [("tenant-conf", "confw-inj")]
-
 
 class TestDiskQuotaContract:
     """set/delete_disk_quota:幂等(重放到同值不报错);进行中抛错;完成返回。"""
@@ -177,21 +168,6 @@ class TestDiskQuotaContract:
                 await backend.impl.delete_disk_quota(sub)
             _mark_job_succeeded(backend.real, platform_ns, _quota_job_name(sub, False))
             await backend.impl.delete_disk_quota(sub)  # 完成返回
-
-    async def test_fail_next_quota_and_delete_injection(self) -> None:
-        """fail_next_quota / fail_next_delete:一次性失败注入后重试成功。"""
-        fake = FakeOrchestrator()
-        fake.fail_next_quota = True
-        with pytest.raises(RuntimeError, match="injected"):
-            await fake.set_disk_quota("confq-inj", 10)
-        await fake.set_disk_quota("confq-inj", 10)
-        assert fake.disk_quotas["confq-inj"] == 10
-
-        fake.fail_next_delete = True
-        with pytest.raises(RuntimeError, match="injected"):
-            await fake.delete_disk_quota("confq-inj")
-        await fake.delete_disk_quota("confq-inj")
-        assert "confq-inj" not in fake.disk_quotas
 
 
 class TestAvailableGpusContract:

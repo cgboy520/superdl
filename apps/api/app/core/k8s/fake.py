@@ -1,7 +1,8 @@
 """内存态 FakeOrchestrator:dev/test 默认后端。
 
-行为可注入:auto_ready(Pod 立即 Ready)、fail_create(下次创建失败)、
-kill_pod / inject_pod(reconciler 场景)。容量按 pool 配置,近似库存=容量-已用。
+行为可注入:auto_ready(Pod 立即 Ready)、graceful_delete(优雅删除期)、
+kill_pod / mark_unready / inject_leaked_pod(reconciler 场景)、
+fail_next_quota / fail_next_logs / fail_probe(单次失败注入)。容量按 pool 配置。
 """
 
 from dataclasses import dataclass, field
@@ -22,10 +23,7 @@ from app.core.k8s.base import (
     derive_distro,
 )
 
-
-def _wipe_job_name(subpath: str) -> str:
-    """与 real._wipe_disk_sync 同款的 Job 名。"""
-    return f"wipe-{subpath[-40:]}".lower()
+_FAKE_K8S_VERSION = "v1.36.2+rke2r1"  # 探测默认健康 RKE2
 
 
 @dataclass
@@ -41,7 +39,6 @@ class _FakePod:
 @dataclass
 class FakeOrchestrator:
     auto_ready: bool = True
-    fail_next_create: bool = False
     # 模拟真实 K8s 的优雅删除:对象在 etcd 里再留 terminationGracePeriodSeconds,期间
     # read 仍 200、phase 仍 Running。默认关,复现「删了又立刻同名重建」的时序问题时打开。
     graceful_delete: bool = False
@@ -53,20 +50,13 @@ class FakeOrchestrator:
     # 实例盘 PVC:(ns, name) -> 盘标记。独立于 Pod 生命周期,只有释放/回收才删;
     # 标记值用于断言「还是原来那块盘」。
     instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
-    # 统计(测试断言用)
-    create_calls: int = 0
-    delete_calls: int = 0
-    disk_delete_calls: int = 0
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
     # 数据盘目录配额:subpath -> capacity_gb;fail_next_quota 注入一次下发失败
     disk_quotas: dict[str, int] = field(default_factory=dict)
     fail_next_quota: bool = False
-    fail_next_delete: bool = False  # delete_disk_quota 一次性失败注入
     # 擦除异步语义:auto_wipe=False 时 wipe_disk 进入「进行中」(抛错,对齐真实 Job),
-    # finish_wipe 标记完成后调用返回;fail_next_wipe 注入一次性失败
+    # finish_wipe 标记完成后调用返回
     auto_wipe: bool = True
-    fail_next_wipe: bool = False
-    wipe_pending: set[tuple[str, str]] = field(default_factory=set)
     wipe_completed: set[tuple[str, str]] = field(default_factory=set)
     # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels。独立于 self.pods:
     # Job Pod 不是实例(无 InstancePodSpec/NodePort),但 real 里它带 MANAGED_LABEL
@@ -74,14 +64,11 @@ class FakeOrchestrator:
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
-    prewarm_calls: list[tuple[str, str]] = field(default_factory=list)
     auto_prewarm: bool = True
-    fail_next_prewarm: bool = False
     # 注入节点:追加在合成节点之后
     extra_nodes: list = field(default_factory=list)
     unlabeled_nodes: list = field(default_factory=list)  # include_unlabeled 时附加
     node_labels: dict[str, dict[str, str]] = field(default_factory=dict)  # set_node_labels 落点
-    node_gfd_labels: dict[str, str] = field(default_factory=dict)  # 模拟 GFD 标签
     # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
     # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
@@ -93,11 +80,9 @@ class FakeOrchestrator:
     # per-instance 敏感 env 的「Secret」(对齐 real 的 instance_env_secret_name 生命周期):
     # 测试据此断言 token 不落 Pod spec,而是走 secretKeyRef
     instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
-    # 能力探测:默认健康 RKE2;fail_probe 模拟断连,probe_override 全量覆盖
-    probe_k8s_version: str = "v1.36.2+rke2r1"
+    # 能力探测:默认健康 RKE2;fail_probe 模拟断连
     probe_hami_ready: bool = True
     fail_probe: bool = False
-    probe_override: ClusterProbe | None = None
     # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
     fail_next_logs: bool = False
     log_calls: list[tuple[str, str, int, int | None]] = field(default_factory=list)
@@ -106,8 +91,6 @@ class FakeOrchestrator:
         self.namespaces.add(namespace)
 
     async def probe_cluster(self) -> ClusterProbe:
-        if self.probe_override is not None:
-            return self.probe_override
         if self.fail_probe:
             return ClusterProbe(api_reachable=False, error="fake: connection refused")
         pools: dict[str, int] = {}
@@ -116,8 +99,8 @@ class FakeOrchestrator:
             pools[key] = pools.get(key, 0) + 1
         return ClusterProbe(
             api_reachable=True,
-            k8s_version=self.probe_k8s_version,
-            distro=derive_distro(self.probe_k8s_version),
+            k8s_version=_FAKE_K8S_VERSION,
+            distro=derive_distro(_FAKE_K8S_VERSION),
             hami_ready=self.probe_hami_ready,
             dcgm_present=True,
             kps_present=True,
@@ -129,9 +112,6 @@ class FakeOrchestrator:
         )
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
-        if self.fail_next_wipe:
-            self.fail_next_wipe = False
-            raise RuntimeError("fake: wipe_disk failed (injected)")
         key = (namespace, subpath)
         if key in self.wipe_completed:
             # 真实语义:Job 已成功 → 清理并返回(擦除只记录这一次)
@@ -143,19 +123,16 @@ class FakeOrchestrator:
             return
         # 进行中:抛错交 outbox 退避重试(对齐 real._run_managed_job_sync);
         # 同时登记 wipe Job 的 Pod(real 里 Job 创建后 Pod 即存在直至成功清理)
-        self.wipe_pending.add(key)
-        job_name = _wipe_job_name(subpath)
-        self.job_pods[(namespace, f"{job_name}-fake")] = {
+        self.job_pods[(namespace, f"wipe-{subpath}")] = {
             MANAGED_LABEL: "true",
-            JOB_NAME_LABEL: job_name,
+            JOB_NAME_LABEL: f"wipe-{subpath}",
         }
         raise RuntimeError(f"fake: wipe in progress: {subpath}")
 
     def finish_wipe(self, namespace: str, subpath: str) -> None:
         """测试注入:擦除作业完成;下次 wipe_disk 调用清理并返回成功。"""
-        self.wipe_pending.discard((namespace, subpath))
         self.wipe_completed.add((namespace, subpath))
-        self.job_pods.pop((namespace, f"{_wipe_job_name(subpath)}-fake"), None)
+        self.job_pods.pop((namespace, f"wipe-{subpath}"), None)
 
     async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
         if self.fail_next_quota:
@@ -164,19 +141,12 @@ class FakeOrchestrator:
         self.disk_quotas[subpath] = capacity_gb
 
     async def delete_disk_quota(self, subpath: str) -> None:
-        if self.fail_next_delete:
-            self.fail_next_delete = False
-            raise RuntimeError("fake: delete_disk_quota failed (injected)")
         self.disk_quotas.pop(subpath, None)
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        if self.fail_next_create:
-            self.fail_next_create = False
-            raise RuntimeError("fake: create_instance failed (injected)")
         if spec.ssh_node_port in self.external_node_ports:
             # 对齐 real:apiserver 422 "provided port is already allocated" 的归一化
             raise NodePortTaken(spec.ssh_node_port)
-        self.create_calls += 1
         key = (spec.namespace, spec.name)
         if spec.secret_env:
             self.instance_secrets[key] = dict(spec.secret_env)
@@ -194,7 +164,6 @@ class FakeOrchestrator:
         self.endpoints.add(key)
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        self.delete_calls += 1
         if self.graceful_delete and not force:
             pod = self.pods.get((namespace, name))
             if pod is not None:
@@ -221,7 +190,6 @@ class FakeOrchestrator:
         self.external_node_ports.add(port)
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        self.disk_delete_calls += 1
         self.instance_disks.pop((namespace, name), None)
 
     async def get_status(self, namespace: str, name: str) -> PodStatus:
@@ -297,10 +265,6 @@ class FakeOrchestrator:
     # ---------- 预热 ----------
 
     async def prewarm_image(self, node_name: str, image_ref: str) -> None:
-        if self.fail_next_prewarm:
-            self.fail_next_prewarm = False
-            raise RuntimeError("fake: prewarm_image failed (injected)")
-        self.prewarm_calls.append((node_name, image_ref))
         # setdefault = 幂等:已有 Job(任意状态)不重建
         self.prewarm_jobs.setdefault(
             (node_name, image_ref), "succeeded" if self.auto_prewarm else "running"
@@ -361,7 +325,6 @@ class FakeOrchestrator:
                     vcpu=64,
                     mem_gb=512,
                     disk_gb=2048,
-                    gpu_model_label=self.node_gfd_labels.get(name, ""),
                     model_label_current=self.node_labels.get(name, {}).get(
                         GPU_MODEL_NODE_LABEL, ""
                     ),
@@ -381,7 +344,7 @@ class FakeOrchestrator:
                 vcpu=n.vcpu,
                 mem_gb=n.mem_gb,
                 disk_gb=n.disk_gb,
-                gpu_model_label=n.gpu_model_label or self.node_gfd_labels.get(n.name, ""),
+                gpu_model_label=n.gpu_model_label,
                 model_label_current=n.model_label_current
                 or self.node_labels.get(n.name, {}).get(GPU_MODEL_NODE_LABEL, ""),
             )
