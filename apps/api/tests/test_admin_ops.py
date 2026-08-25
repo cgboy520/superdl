@@ -1138,44 +1138,6 @@ class TestAdminInstanceEvents:
         assert resp.status_code == 404
 
 
-class TestOutboxTasksFullQuery:
-    """outbox 全量查询:不限死信;status 与 payload.instance_id 过滤正确。"""
-
-    async def test_status_and_instance_id_filters(self, client: AsyncClient, sm):
-        async with sm() as session:
-            t1 = OutboxTask(type="instance.create", payload={"instance_id": 111}, status="pending")
-            t2 = OutboxTask(
-                type="instance.stop",
-                payload={"instance_id": 222},
-                status="dead",
-                retries=5,
-                last_error="boom",
-            )
-            t3 = OutboxTask(type="notify.sms", payload={"phone": "136****0001"}, status="done")
-            session.add_all([t1, t2, t3])
-            await session.commit()
-
-        ah = await admin_headers(sm, client, role="readonly")
-        all_rows = (await client.get("/api/admin/v1/outbox/tasks", headers=ah)).json()
-        assert [r["id"] for r in all_rows] == [t3.id, t2.id, t1.id]  # id 倒序,全量不限死信
-        assert {r["status"] for r in all_rows} == {"pending", "dead", "done"}
-
-        pending = (
-            await client.get("/api/admin/v1/outbox/tasks", params={"status": "pending"}, headers=ah)
-        ).json()
-        assert [r["id"] for r in pending] == [t1.id]
-
-        by_instance = (
-            await client.get("/api/admin/v1/outbox/tasks", params={"instance_id": 222}, headers=ah)
-        ).json()
-        assert [r["id"] for r in by_instance] == [t2.id]
-        assert by_instance[0]["status"] == "dead"
-        # payload 无 instance_id 键的行不得命中
-        assert (
-            await client.get("/api/admin/v1/outbox/tasks", params={"instance_id": 999}, headers=ah)
-        ).json() == []
-
-
 class TestAdminListPagination:
     """五个管理端列表端点的游标分页(Page 包装 + next_cursor 走查)与筛选参数。"""
 

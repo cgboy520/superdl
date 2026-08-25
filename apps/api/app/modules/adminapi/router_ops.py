@@ -25,7 +25,6 @@ from app.modules.adminapi.schemas import (
     AnnouncementResultOut,
     AuditLogOut,
     DeadTaskOut,
-    OutboxTaskOut,
     OutboxTaskStatusOut,
     OverviewOut,
     PlatformConfigItemOut,
@@ -449,43 +448,6 @@ async def admin_revoke_announcement(
 
 
 # ---------- outbox 死信(角色:ops) ----------
-
-
-@router.get("/outbox/tasks", dependencies=[require_roles("ops", "finance", "readonly")])
-async def admin_list_outbox_tasks(
-    session: DbSession,
-    status: str | None = None,
-    instance_id: int | None = None,
-) -> list[OutboxTaskOut]:
-    """outbox 全量查询(排障):不限死信(死信专用视图仍是 /outbox/dead)。
-
-    status 精确过滤;instance_id 匹配 payload.instance_id(编排类任务都带)。
-    固定截断 200(前端 ListCapNote 提示),按 id 倒序。
-    """
-    from sqlalchemy import select as sa_select
-
-    from app.core.outbox import OutboxTask
-
-    stmt = sa_select(OutboxTask).order_by(OutboxTask.id.desc()).limit(200)
-    if status:
-        stmt = stmt.where(OutboxTask.status == status)
-    if instance_id is not None:
-        # JSONB 文本比较:无该键的行得到 NULL 自然排除;数值与字符串两种形态都按文本命中
-        stmt = stmt.where(OutboxTask.payload["instance_id"].astext == str(instance_id))
-    rows = (await session.execute(stmt)).scalars().all()
-    return [
-        OutboxTaskOut(
-            id=r.id,
-            type=r.type,
-            status=r.status,
-            payload=r.payload,
-            retries=r.retries,
-            last_error=r.last_error,
-            created_at=r.created_at.isoformat(),
-            updated_at=r.updated_at.isoformat(),
-        )
-        for r in rows
-    ]
 
 
 @router.get("/outbox/dead", dependencies=[require_roles("ops", "readonly")])

@@ -46,7 +46,6 @@
 | `GET/PUT /api/admin/v1/tenants/{user_id}/quota` | 读全角色,写 ops | 用户级配额覆盖(留空 = 该维走 policy → env 默认链) |
 | `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行 |
 | `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环 |
-| `GET /api/admin/v1/outbox/tasks` | ops(读含 readonly) | outbox 全量排障视图,固定截断 200 |
 | `GET /api/admin/v1/nodes/port-pool` | ops/readonly | SSH 端口池水位 `{total, assigned, blocked}`;blocked = 被集群其它对象撞占(周期复检自动放回),持续上涨要查孤儿端点 |
 | `GET /api/admin/v1/audit?actor_type=&actor_id=&q=&since=&until=` `/audit/export` | readonly/ops/finance | 审计检索(actor / 动作前缀 / 时间区间,游标向前翻页);export 为流式 CSV,筛选口径同,行数硬上限 + 截断标记行,导出动作本身落一条检索审计(只记筛选参数) |
 

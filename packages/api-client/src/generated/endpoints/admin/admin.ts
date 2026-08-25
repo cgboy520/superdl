@@ -46,7 +46,6 @@ import type {
   AdminListInvoicesApiAdminV1InvoicesGetParams,
   AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
-  AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,
   AdminListRefundsApiAdminV1RefundsGetParams,
   AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,
   AdminListTenantsApiAdminV1TenantsGetParams,
@@ -114,7 +113,6 @@ import type {
   OrderVerifyOut,
   OutboxDiscardRequest,
   OutboxRetryRequest,
-  OutboxTaskOut,
   OutboxTaskStatusOut,
   OversellPoolOut,
   OverviewOut,
@@ -7121,117 +7119,6 @@ export function useAdminListDeadTasksApiAdminV1OutboxDeadGet<TData = Awaited<Ret
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminListDeadTasksApiAdminV1OutboxDeadGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetUrl = (params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/admin/v1/outbox/tasks?${stringifiedParams}` : `/api/admin/v1/outbox/tasks`
-}
-
-/**
- * outbox 全量查询(排障):不限死信(死信专用视图仍是 /outbox/dead)。
- *
- * status 精确过滤;instance_id 匹配 payload.instance_id(编排类任务都带)。
- * 固定截断 200(前端 ListCapNote 提示),按 id 倒序。
- * @summary Admin List Outbox Tasks
- */
-export const adminListOutboxTasksApiAdminV1OutboxTasksGet = async (params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskOut[]> => {
-
-  return customFetch<OutboxTaskOut[]>(getAdminListOutboxTasksApiAdminV1OutboxTasksGetUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryKey = (params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,) => {
-    return [
-    `/api/admin/v1/outbox/tasks`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>> = ({ signal }) => adminListOutboxTasksApiAdminV1OutboxTasksGet(params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AdminListOutboxTasksApiAdminV1OutboxTasksGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>>
-export type AdminListOutboxTasksApiAdminV1OutboxTasksGetQueryError = HTTPValidationError
-
-
-export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
- params: undefined |  AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>,
-          TError,
-          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
- params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>,
-          TError,
-          Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
- params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Admin List Outbox Tasks
- */
-
-export function useAdminListOutboxTasksApiAdminV1OutboxTasksGet<TData = Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError = HTTPValidationError>(
- params?: AdminListOutboxTasksApiAdminV1OutboxTasksGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListOutboxTasksApiAdminV1OutboxTasksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAdminListOutboxTasksApiAdminV1OutboxTasksGetQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

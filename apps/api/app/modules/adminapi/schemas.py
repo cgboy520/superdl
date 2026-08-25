@@ -428,19 +428,6 @@ class DeadTaskOut(BaseModel):
     updated_at: str
 
 
-class OutboxTaskOut(BaseModel):
-    """outbox 全量查询(排障):不限死信,带 status;固定截断 200。"""
-
-    id: int
-    type: str
-    status: str
-    payload: dict
-    retries: int
-    last_error: str | None
-    created_at: str
-    updated_at: str
-
-
 class OutboxTaskStatusOut(BaseModel):
     id: int
     status: str

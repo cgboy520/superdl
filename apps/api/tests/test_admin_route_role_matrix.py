@@ -95,7 +95,6 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/orders": _FIN_RO,
     "GET /api/admin/v1/orders/export": _FIN_RO,
     "GET /api/admin/v1/outbox/dead": _OPS_RO,
-    "GET /api/admin/v1/outbox/tasks": _ANY_READ,
     "POST /api/admin/v1/outbox/{task_id}/discard": _OPS,
     "POST /api/admin/v1/outbox/{task_id}/retry": _OPS,
     "GET /api/admin/v1/overview": _ANY_READ,
