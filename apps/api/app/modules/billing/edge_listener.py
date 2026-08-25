@@ -3,6 +3,7 @@
 由 wire_modules() 注册到 orchestrator 的 transition 监听器,尾账与状态迁移原子提交。
 """
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,22 +31,17 @@ async def on_instance_transition(
         return
     at = ensure_utc(event.created_at)
     detail_extra = None
-    if event.reason in _TRUNCATE_REASONS and instance.unready_since is not None:
-        unready_at = ensure_utc(instance.unready_since)
-        # 健全性:早于本次进入 running 的 unready_since 是上次失联 episode 的残留,
-        # 不参与截断——否则几天前的记录会把整段计费截断到过去时刻(本小时计 0 秒)
-        from app.modules.orchestrator.service import last_entered_status_at
-
-        entered_running = await last_entered_status_at(session, instance.id, RUNNING)
-        stale = entered_running is not None and unready_at < ensure_utc(entered_running)
-        if not stale and unready_at < at:
+    meta = event.event_metadata or {}
+    if event.reason in _TRUNCATE_REASONS and meta.get("unready_since"):
+        # 与 settlement._billing_view 同口径:截断到 Pod 首次 not-ready 时刻。窗口末必须
+        # 在此自行取截断时刻——本次退出边(created_at == 窗口末)不在 billing_events_before
+        # (严格 < 窗口末)的返回里,重建层看不到它的 metadata;整点/追平结算能看到,
+        # 因此不会把宽限期秒数再补回来。unready_since 只在当前 running 段内由 reconciler
+        # 写入(每条进入 running 的路径先清零),不存在上次失联残留的可能
+        unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
+        if unready_at < at:
             at = unready_at
-            # 截断依据留进 bills_hourly.detail(事件重建层另有同口径截断,见
-            # settlement._billing_view:整点结算不会把宽限期秒数再补回来)
-            detail_extra = {
-                "truncated_at": unready_at.isoformat(),
-                "truncate_reason": event.reason,
-            }
+            detail_extra = {"truncated_at": meta["unready_since"], "truncate_reason": event.reason}
     charged = await settle_instance_window(
         session,
         instance_id=instance.id,

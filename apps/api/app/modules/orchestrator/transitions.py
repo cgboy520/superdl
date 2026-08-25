@@ -4,11 +4,10 @@
 """
 
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any, cast
 
 from fastapi import status as http_status
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import CursorResult, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
@@ -67,21 +66,3 @@ async def transition(
     for listener in _transition_listeners:
         await listener(session, instance, event)
     return event
-
-
-async def last_entered_status_at(
-    session: AsyncSession, instance_id: int, to_status: str
-) -> datetime | None:
-    """最近一次进入某状态的事件时刻(无则 None)。
-    计费边监听器据此识别 unready_since 是否为上次失联 episode 的残留。"""
-    return (
-        await session.execute(
-            select(InstanceEvent.created_at)
-            .where(
-                InstanceEvent.instance_id == instance_id,
-                InstanceEvent.to_status == to_status,  # 退出边(to_status≠目标)天然被排除
-            )
-            .order_by(InstanceEvent.id.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()

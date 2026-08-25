@@ -74,19 +74,15 @@ def _billing_view(
     node_lost/pod_lost 的退出边带 metadata.unready_since(Pod 首次 not-ready 时刻):
     判定前的宽限观察期实例已不可用,属平台责任时段,计费截断到该时刻而非判定时刻。
     截断写在事件重建层,尾账/整点/追平三条结算路径口径天然一致(整点重算不会把
-    尾账已截断的秒数再补回来)。
+    尾账已截断的秒数再补回来)。unready_since 只在当前 running 段内由 reconciler 写入
+    (每条进入 running 的路径都先清零),不会早于本段的进入时刻。
     """
     out: list[tuple[datetime, str | None, str]] = []
-    running_entry: datetime | None = None
     for created_at, from_status, to_status, meta in events:
         ts = ensure_utc(created_at)
-        if to_status == RUNNING:
-            running_entry = ts
         if from_status == RUNNING and meta and meta.get("unready_since"):
             unready_at = ensure_utc(datetime.fromisoformat(str(meta["unready_since"])))
-            # 早于本次进入 running 的 unready_since 是上次失联的残留,不参与截断
-            stale = running_entry is not None and unready_at < running_entry
-            if not stale and unready_at < ts:
+            if unready_at < ts:
                 ts = unready_at
         out.append((ts, from_status, to_status))
     return out

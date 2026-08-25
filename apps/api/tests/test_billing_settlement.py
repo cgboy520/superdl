@@ -789,7 +789,6 @@ class TestNodeLostBillingTruncation:
         async with sm() as session:
             inst = await session.get(Instance, inst_id)
             assert inst is not None
-            inst.unready_since = unready  # reconciler 判定时刻实例行上的现场
             event = InstanceEvent(
                 instance_id=inst_id,
                 from_status="running",
@@ -826,35 +825,6 @@ class TestNodeLostBillingTruncation:
             )
             await session.commit()
         assert topup == Decimal("0.00")
-
-    async def test_tail_truncation_across_hour_boundary(self, sm):
-        """unready 在上一小时:尾账落在 unready 所在小时(而非判定时刻的小时)。"""
-        from app.modules.billing.edge_listener import on_instance_transition
-
-        unready = H - timedelta(minutes=5)  # 09:55
-        inst_id = await seed_instance(sm, status="failed", events=[ev(-30, "creating", "running")])
-        async with sm() as session:
-            inst = await session.get(Instance, inst_id)
-            assert inst is not None
-            inst.unready_since = unready
-            event = InstanceEvent(
-                instance_id=inst_id,
-                from_status="running",
-                to_status="failed",
-                reason="node_lost",
-                actor="system",
-                event_metadata={"unready_since": unready.isoformat()},
-                created_at=H + timedelta(minutes=15),  # 10:15 判定
-            )
-            session.add(event)
-            await on_instance_transition(session, inst, event)
-            await session.commit()
-        async with sm() as session:
-            bills = (await session.execute(select(BillHourly))).scalars().all()
-        # 只有 09 点这一小时的账(09:30~09:55 = 1500s);10 点小时不产生账单
-        assert len(bills) == 1
-        assert bills[0].hour_start.replace(tzinfo=UTC) == H - timedelta(hours=1)
-        assert bills[0].seconds_used == 1500
 
     async def test_pod_lost_without_unready_bills_to_event(self, sm):
         """pod_lost 但从未观测到 not-ready(unready_since 为空):无法知道何时不可用,

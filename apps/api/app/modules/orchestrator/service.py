@@ -120,9 +120,6 @@ from app.modules.orchestrator.transitions import (
     TransitionListener as TransitionListener,
 )
 from app.modules.orchestrator.transitions import (
-    last_entered_status_at as last_entered_status_at,
-)
-from app.modules.orchestrator.transitions import (
     register_transition_listener as register_transition_listener,
 )
 from app.modules.orchestrator.transitions import (
