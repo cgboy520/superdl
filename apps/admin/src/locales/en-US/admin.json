@@ -416,6 +416,7 @@
       "iommu": "IOMMU",
       "joined": "Joined",
       "nouveau": "Disable nouveau",
+      "nvidiaToolkit": "NVIDIA container toolkit",
       "nvmeVg": "NVMe VG",
       "precheck": "Preflight",
       "reboot": "Reboot",

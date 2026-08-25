@@ -411,6 +411,7 @@ export default interface Resources {
         "iommu": "IOMMU",
         "joined": "已加入",
         "nouveau": "禁用 nouveau",
+        "nvidiaToolkit": "NVIDIA 容器工具包",
         "nvmeVg": "NVMe VG",
         "precheck": "环境检查",
         "reboot": "重启生效",
