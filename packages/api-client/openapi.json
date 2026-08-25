@@ -7504,12 +7504,6 @@
             "title": "Refresh Token",
             "type": "string"
           },
-          "token_type": {
-            "const": "bearer",
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
-          },
           "user": {
             "$ref": "#/components/schemas/UserOut"
           }
