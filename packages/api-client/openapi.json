@@ -7896,7 +7896,7 @@
     },
     "/api/admin/v1/adjustments/{adjustment_id}/review": {
       "post": {
-        "description": "复核调账(approve 即生效):审计行与生效同事务(write_audit_sync,P1-8)。",
+        "description": "复核调账(approve 即生效):审计行与生效同事务(write_audit_sync)。",
         "operationId": "admin_review_adjustment_api_admin_v1_adjustments__adjustment_id__review_post",
         "parameters": [
           {
@@ -9296,7 +9296,7 @@
     },
     "/api/admin/v1/finance/orders/{order_no}/backfill": {
       "post": {
-        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态\n(X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync,P1-8)。",
+        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态\n(X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync)。",
         "operationId": "admin_backfill_order_api_admin_v1_finance_orders__order_no__backfill_post",
         "parameters": [
           {
@@ -12230,7 +12230,7 @@
     },
     "/api/admin/v1/refunds/{refund_id}/payout": {
       "post": {
-        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。\n审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚(P1-8)。",
+        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。\n审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。",
         "operationId": "admin_payout_refund_api_admin_v1_refunds__refund_id__payout_post",
         "parameters": [
           {

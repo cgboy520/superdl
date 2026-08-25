@@ -407,7 +407,7 @@ export const getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost
 }
 
 /**
- * 复核调账(approve 即生效):审计行与生效同事务(write_audit_sync,P1-8)。
+ * 复核调账(approve 即生效):审计行与生效同事务(write_audit_sync)。
  * @summary Admin Review Adjustment
  */
 export const adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost = async (adjustmentId: number,
@@ -3110,7 +3110,7 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
 
 /**
  * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
- * (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync,P1-8)。
+ * (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync)。
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
@@ -8509,7 +8509,7 @@ export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl = (refun
 
 /**
  * 登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
- * 审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚(P1-8)。
+ * 审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。
  * @summary Admin Payout Refund
  */
 export const adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost = async (refundId: number,

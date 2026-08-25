@@ -210,7 +210,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "cluster",
         "str",
         pattern=r"https://[0-9A-Za-z.\-\[\]:]+:\d{1,5}",
-        hint="HA 集群填控制面 VIP(P0-1):RKE2 形如 https://<vip>:9345;k3s 单 server 填 https://<server-ip>:6443",
+        hint="HA 集群填控制面 VIP:RKE2 形如 https://<vip>:9345;k3s 单 server 填 https://<server-ip>:6443",
     ),
     "cluster_join_token": SettingSpec(
         "cluster",
