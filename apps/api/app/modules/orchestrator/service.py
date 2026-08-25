@@ -575,8 +575,8 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
 async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
     """(重新)占用数据盘标记。failed 恢复开机时:失败边缘已解挂(detach),盘若还在就重新占用;
     盘已被用户删掉则放弃挂载点(系统盘数据仍在,实例照常能开)。
-    FOR UPDATE 锁盘行(P2,对齐 attach_for_instance 纪律):否则恢复开机与 delete_disk
-    并发时同样存在「边挂边擦」窗口。"""
+    FOR UPDATE 锁盘行:否则恢复开机与 delete_disk 并发时存在「边挂边擦」窗口。
+    挂载校验(active / 配额已下发 / 未挂他处)与创建时同一入口 attach_for_instance,不另抄一份。"""
     if instance.data_disk_id is None:
         return
     disk = await session.get(DataDisk, instance.data_disk_id, with_for_update=True)
@@ -584,14 +584,9 @@ async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
         instance.data_disk_id = None
         await session.flush()
         return
-    if disk.mounted_instance_id == instance.id:
-        return
-    if disk.status != "active":
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
-    if disk.mounted_instance_id is not None:
-        raise AppError(ErrorCode.DISK_IN_USE, key="disks.mountedElsewhere")
-    disk.mounted_instance_id = instance.id
-    await session.flush()
+    from app.modules.orchestrator import disks as disks_service
+
+    await disks_service.attach_for_instance(session, instance.user_id, disk.id, instance.id)
 
 
 async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:

@@ -179,6 +179,47 @@ class TestFailedRecovery:
         assert ("failed", "stopped") in chain
         assert ("stopped", "starting") in chain
 
+    async def test_start_from_failed_rejects_unsynced_disk(self, client, sm, fake):
+        """failed 恢复开机走与创建同一道挂载门禁:数据盘配额未下发(quota_synced=false)→ 409,
+        实例留在 failed(挂了 = 恢复开机绕过配额门禁,挂上创建时会被拒的盘)。"""
+        from tests.test_disks import create_disk
+
+        headers, user_id, key_id = await create_user_with_key(client, "13900000109")
+        await fund_wallet(sm, user_id, "500.00")
+        sku_id = await create_test_sku(sm)
+        disk = await create_disk(client, headers)
+        await drain(sm)  # 配额下发完成后才可挂载
+        resp = await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "img",
+                "ssh_key_ids": [key_id],
+                "data_disk_id": disk["id"],
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 202, resp.text
+        uuid = resp.json()["uuid"]
+        ns = f"tenant-{user_id}"
+        await drain(sm)
+        fake.mark_ready(ns, uuid)
+        await reconcile_once(sm)
+        fake.kill_pod(ns, uuid)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "failed"
+        # 扩容:配额重下发前 quota_synced 回落 false(不 drain,任务在途)
+        resp = await client.patch(
+            f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["quota_synced"] is False
+
+        resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["message_key"] == "disks.quotaNotSynced"
+        assert (await get_instance(client, headers, uuid))["status"] == "failed"
+
     async def test_release_from_stuck_stopping(self, client, sm, fake):
         """关机悬挂时用户可直接释放(stopping → releasing 边;挂了 = 悬挂实例永远删不掉)。"""
         headers, uuid, _user_id = await _provision_running(client, sm, fake, "13900000102")
