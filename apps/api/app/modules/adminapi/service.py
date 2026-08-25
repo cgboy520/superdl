@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
-from app.core.logging import get_logger
+from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import Page
 from app.core.ratelimit import RateLimitCounter, check_rate_limit, ensure_not_rate_limited
 from app.core.security import (
@@ -733,7 +733,7 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
     running_by_user = await orchestrator_service.list_running_instances_by_user(session)
     return {
         "user_id": user.id,
-        "phone_masked": account_service.mask_phone(user.phone),
+        "phone_masked": mask_phone_value(user.phone),
         "status": user.status,
         "balance": format(balance, "f"),
         "running_instances": len(running_by_user.get(user_id, [])),

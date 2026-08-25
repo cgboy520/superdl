@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import mark_audited_read, set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError
+from app.core.logging import mask_phone_value
 from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.modules.account.schemas import AdminDeletionReject, AdminDeletionRequestOut
@@ -64,7 +65,7 @@ async def admin_list_tenants(
     from app.modules.billing import service as billing_service
 
     if q:
-        masked = account_service.mask_phone(q)
+        masked = mask_phone_value(q)
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
     page = await account_service.admin_list_users(
         session, q=q, status=status, cursor=cursor, limit=limit
@@ -102,7 +103,7 @@ async def admin_list_tenants(
         out.append(
             TenantOut(
                 id=u.id,
-                phone_masked=account_service.mask_phone(u.phone),
+                phone_masked=mask_phone_value(u.phone),
                 status=u.status,
                 balance=format(balances.get(u.id, 0), "f"),
                 total_consumed=format(consumed.get(u.id, 0), "f"),

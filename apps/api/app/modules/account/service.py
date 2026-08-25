@@ -49,7 +49,6 @@ from app.modules.account.sshkey_util import parse_public_key
 logger = get_logger(__name__)
 
 # 手机号脱敏只有 core/logging 一份实现;adminapi 经 account.service 取用,这里保留同名门面
-mask_phone = mask_phone_value
 
 MOCK_SMS_CODE = "123456"
 
