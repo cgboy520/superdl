@@ -271,12 +271,12 @@ additionalPrometheusRulesMap:
           - alert: GPUXidCriticalError
             expr: increase(DCGM_FI_DEV_XID_ERRORS{xid=~"48|63|64|79|94|95"}[5m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.node }}):自动 cordon + 补偿 SOP"}
+            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.node }}):自动 cordon + 补偿 SOP", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: GPUHighTemperature
             expr: DCGM_FI_DEV_GPU_TEMP > 85
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.node }})"}
+            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.node }})", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: NodeGPUUnavailable
             expr: (kube_node_status_capacity{resource="nvidia_com_gpu"} > 0) and on(node) (kube_node_status_condition{condition="Ready",status="true"} == 0)
             for: 2m
@@ -290,12 +290,12 @@ additionalPrometheusRulesMap:
           - alert: JuiceFSMountFailed
             expr: increase(juicefs_mount_errors_total[10m]) > 0
             labels: {severity: critical}
-            annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响"}
+            annotations: {summary: "JuiceFS 挂载失败,数据盘可用性受影响", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-存储"}
           - alert: HamiSchedulerDown
             expr: absent(up{job="hami-scheduler"} == 1)
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝"}
+            annotations: {summary: "HAMi scheduler 指标缺失:共享池调度器可能不可用,新建共享档实例将被拒绝", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#c-hami-共享池"}
   # 证书过期预警:指标来自 cert-manager ServiceMonitor(values/cert-manager.yaml);
   # 覆盖 api/console/admin 入口证书与租户 Jupyter 泛域名证书。
   superdl-certmanager:
@@ -305,16 +305,16 @@ additionalPrometheusRulesMap:
           - alert: CertExpiringSoon
             expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 7 * 24 * 3600
             labels: {severity: warning}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})7 天内到期:查 cert-manager 续签"}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})7 天内到期:查 cert-manager 续签", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: CertExpiringCritical
             expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 2 * 24 * 3600
             labels: {severity: critical}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})48 小时内到期:立即人工介入"}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})48 小时内到期:立即人工介入", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
           - alert: CertManagerMetricsMissing
             expr: absent(certmanager_certificate_expiration_timestamp_seconds)
             for: 1h
             labels: {severity: warning}
-            annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警"}
+            annotations: {summary: "cert-manager 指标缺失 1 小时:ServiceMonitor/组件异常,证书过期将无预警", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
   # 平台自身业务指标。抓取接线:deploy/app/k8s/08-monitoring.yaml
   # (API 走 ServiceMonitor + SUPERDL_METRICS_TOKEN Bearer;worker 走 PodMonitor)
   superdl-platform:
@@ -350,7 +350,7 @@ additionalPrometheusRulesMap:
             expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"5.."}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.05
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "API 5xx 率 >5% 持续 5 分钟"}
+            annotations: {summary: "API 5xx 率 >5% 持续 5 分钟", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
           - alert: PaymentClosedOrderRescued
             expr: increase(superdl_payment_closed_order_rescued_total[1h]) > 0
             labels: {severity: warning}
@@ -358,7 +358,7 @@ additionalPrometheusRulesMap:
           - alert: OutboxTaskTimeout
             expr: increase(superdl_outbox_task_timeout_total[30m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队"}
+            annotations: {summary: "outbox 有任务被执行超时中断:队列全局串行,队头卡死会让全部编排请求排队", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md"}
           # 以心跳 Gauge 判定存活:带 label 的 Counter 首次 inc 前无序列,不能用 absent
           - alert: WorkerDown
             expr: (time() - max(superdl_worker_heartbeat_timestamp_seconds)) > 120 or absent(superdl_worker_heartbeat_timestamp_seconds)
@@ -369,12 +369,12 @@ additionalPrometheusRulesMap:
             expr: kube_job_status_failed{namespace="superdl", job_name=~"pg-backup-daily-.*"} > 0
             for: 5m
             labels: {severity: critical}
-            annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理"}
+            annotations: {summary: "PG 每日备份 Job 失败:资金库 RPO 正在拉长,立即处理", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           - alert: PgBackupStale
             expr: (time() - max(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})) > 100800 or absent(kube_job_status_completion_time{namespace="superdl", job_name=~"pg-backup-daily-.*"})
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)"}
+            annotations: {summary: "PG 备份超 28h 无成功记录(CronJob 未跑或历史被清)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/pg-backup-restore.md"}
           # 资金/结算/巡检/查单/编排收尾的硬告警(指标定义见 apps/api/app/core/metrics.py)
           - alert: FundReconcileMismatch
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
@@ -418,4 +418,4 @@ additionalPrometheusRulesMap:
             expr: certmanager_certificate_ready_status{condition="False"} == 1
             for: 10m
             labels: {severity: warning}
-            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver"}
+            annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
