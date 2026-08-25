@@ -28,7 +28,7 @@ from app.core.config import get_settings
 from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import spec_to_gpu_request
-from app.core.gpu_models import canonical_gpu_model, model_matches
+from app.core.gpu_models import canonical_gpu_model
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
@@ -125,7 +125,7 @@ from app.modules.orchestrator.transitions import (
 
 if TYPE_CHECKING:
     from app.modules.catalog.models import Sku
-    from app.modules.nodes.service import GpuModelAggregate
+    from app.modules.nodes.models import NodeSpec
     from app.modules.orchestrator.schemas import InstanceLogsOut
 
 logger = get_logger(__name__)
@@ -265,25 +265,22 @@ async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) 
 # ---------- 容量估算((池, 型号) 双维度,数据源是节点台账而非请求路径直连 K8s) ----------
 
 
-def _sku_free_capacity(sku: "Sku", aggregates: list["GpuModelAggregate"]) -> tuple[int | None, int]:
-    """该 SKU 的近似可分配量:返回 (匹配桶的 Ready 空闲卡合计, 折算后可售实例数)。
+def _sku_free_capacity(sku: "Sku", specs: list["NodeSpec"]) -> tuple[int | None, int]:
+    """该 SKU 的近似可分配量:返回 (匹配台账行的 Ready 空闲卡合计, 折算后可售实例数)。
 
-    第一项为 None 表示台账无此池×型号数据。台账(node_specs)只统计 Ready 节点:
-    NotReady/Cordoned/Missing 不卖。共享档按算力份额折算可售实例数(超卖生效在调度层)。
+    第一项为 None 表示台账无此池×型号数据。只有 Ready 节点的空闲卡计入:
+    NotReady/Cordoned/Missing 不卖。共享档按算力份额折算可售实例数(超卖生效在调度层),
+    (池, 型号) 匹配与每卡可售数都走 nodes/catalog 的公共口径,与管理端容量预览同一份算法。
     """
-    wanted = canonical_gpu_model(sku.gpu_model)
-    matching = [
-        a
-        for a in aggregates
-        if a.pool_label == sku.pool_label and model_matches(wanted, a.gpu_model)
-    ]
+    matching = nodes_service.matching_specs(
+        specs, sku.pool_label, canonical_gpu_model(sku.gpu_model)
+    )
     if not matching:
         return None, 0
-    free = sum(a.ready_gpu_free for a in matching)
-    if sku.tier in _SHARED_TIERS:
-        per_gpu = max(1, int(100 * float(sku.oversell_cores)) // max(1, sku.gpu_cores_pct))
-        return free, free * per_gpu
-    return free, free
+    free = sum(max(0, s.gpu_count - s.gpu_used) for s in matching if s.status == "Ready")
+    return free, free * catalog_service.sellable_per_gpu(
+        sku.tier, sku.gpu_cores_pct, sku.oversell_cores
+    )
 
 
 async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int) -> None:
@@ -292,8 +289,8 @@ async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int
     台账 60s 粒度,只是近似:无数据(巡检未覆盖/全新集群)一律放行,交调度器裁决;
     放行后仍可能调度超时转 failed,本判断只挡「确定卖不出去」的单。
     """
-    aggregates = await nodes_service.gpu_model_aggregates(session)
-    matching_free, sellable = _sku_free_capacity(sku, aggregates)
+    specs = await nodes_service.list_node_specs(session)
+    matching_free, sellable = _sku_free_capacity(sku, specs)
     if matching_free is None:
         return
     if sellable < gpu_count:
@@ -808,8 +805,8 @@ async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> d
     聚合 Ready 节点空闲卡;请求路径不碰 K8s,台账一次查询供全部 SKU。
     台账无该池×型号数据 → 0(与市场页「无货」语义一致)。
     """
-    aggregates = await nodes_service.gpu_model_aggregates(session)
-    return {sku.id: _sku_free_capacity(sku, aggregates)[1] for sku in skus}
+    specs = await nodes_service.list_node_specs(session)
+    return {sku.id: _sku_free_capacity(sku, specs)[1] for sku in skus}
 
 
 # ---------- 管理端 ----------

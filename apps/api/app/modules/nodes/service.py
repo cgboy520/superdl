@@ -12,6 +12,7 @@
 
 import hashlib
 import secrets
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.gpu_models import model_matches
 from app.core.k8s.base import (
     INSTANCE_DISK_STORAGE_CLASS,
     JUICEFS_STORAGE_CLASS,
@@ -427,9 +429,23 @@ async def get_node_spec(session: AsyncSession, node_name: str) -> NodeSpec | Non
 
 
 async def ready_specs(session: AsyncSession) -> list[NodeSpec]:
-    """Ready 节点(上架校验/容量预览口径)。"""
+    """Ready 节点(上架校验/容量列口径)。"""
     rows = (await session.execute(select(NodeSpec).where(NodeSpec.status == "Ready"))).scalars()
     return list(rows)
+
+
+def matching_specs(
+    specs: Iterable[NodeSpec], pool_label: str, wanted_model: str | None
+) -> list[NodeSpec]:
+    """台账里「池 × canonical 型号」匹配的行,不看状态。
+
+    上架硬校验、市场库存、创建软准入、管理端容量列/容量预览都只经这一处判「同一物理池」;
+    wanted_model 为 None(未识别型号)恒不匹配。Ready 口径由调用方决定:
+    ready_specs() 只取 Ready,容量预览/软准入还要看非 Ready 行(有节点但不可售)。
+    """
+    return [
+        s for s in specs if s.pool_label == pool_label and model_matches(wanted_model, s.gpu_model)
+    ]
 
 
 async def gpu_model_aggregates(session: AsyncSession) -> list["GpuModelAggregate"]:

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
-from app.core.gpu_models import canonical_gpu_model, model_matches
+from app.core.gpu_models import canonical_gpu_model
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.schemas import (
@@ -47,9 +47,7 @@ async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
         item = SkuAdminOut.model_validate(sku)
         wanted = canonical_gpu_model(sku.gpu_model)
         item.capacity_gpus = sum(
-            sp.gpu_count
-            for sp in specs
-            if sp.pool_label == sku.pool_label and model_matches(wanted, sp.gpu_model)
+            sp.gpu_count for sp in nodes_service.matching_specs(specs, sku.pool_label, wanted)
         )
         if item.capacity_gpus:
             # 已售名义算力(卡×pct/100)对物理与对可售(×超卖)的两个比值,2 位小数
@@ -82,11 +80,9 @@ async def sku_capacity_preview(
     wanted = canonical_gpu_model(gpu_model)
     if wanted is None:
         warnings.append(CapacityWarningOut(code="unrecognized_model", params={"model": gpu_model}))
-    specs = [
-        sp
-        for sp in await nodes_service.list_node_specs(session)
-        if sp.pool_label == pool_label and model_matches(wanted, sp.gpu_model)
-    ]
+    specs = nodes_service.matching_specs(
+        await nodes_service.list_node_specs(session), pool_label, wanted
+    )
     ready = [sp for sp in specs if sp.status == "Ready"]
     ready_gpus = sum(sp.gpu_count for sp in ready)
     if not ready:
@@ -102,16 +98,12 @@ async def sku_capacity_preview(
                 code="vram_exceeds_node", params={"vram_gb": vram_gb, "node_vram_gb": max_vram}
             )
         )
-    if tier in ("shared_std", "shared_eco") and gpu_cores_pct > 0:
-        per_gpu = int(Decimal(100) * oversell_cores // Decimal(gpu_cores_pct))
-        est = ready_gpus * per_gpu
-    else:
-        est = ready_gpus
     return CapacityPreviewOut(
         matching_nodes=len(specs),
         ready_gpus=ready_gpus,
         total_gpus=sum(sp.gpu_count for sp in specs),
-        est_instances=est,
+        est_instances=ready_gpus
+        * catalog_service.sellable_per_gpu(tier, gpu_cores_pct, oversell_cores),
         warnings=warnings,
     )
 

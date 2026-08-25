@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.gpu_models import canonical_gpu_model, model_matches
+from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
 from app.core.money import as_amount, as_price
 from app.core.outbox import enqueue
@@ -24,6 +24,20 @@ from app.modules.catalog.schemas import (
 )
 
 logger = get_logger(__name__)
+
+SHARED_TIERS = ("shared_std", "shared_eco")
+
+
+def sellable_per_gpu(tier: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
+    """每张物理卡可售实例数:共享档 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal 整除,
+    至少 1),独享/MIG 档恒 1。
+
+    市场库存、创建软准入、管理端容量预览共用这一份口径:float 路径会把 100 × 1.15 算成
+    114.999…,同一 SKU 在市场页与管理端相差一台。
+    """
+    if tier not in SHARED_TIERS:
+        return 1
+    return max(1, int(Decimal(100) * oversell_cores // max(1, gpu_cores_pct)))
 
 
 async def skus_signature(session: AsyncSession) -> tuple[object, ...]:
@@ -245,7 +259,7 @@ async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
 
     wanted = canonical_gpu_model(sku.gpu_model)
     specs = await nodes_service.ready_specs(session)
-    if any(s.pool_label == sku.pool_label and model_matches(wanted, s.gpu_model) for s in specs):
+    if nodes_service.matching_specs(specs, sku.pool_label, wanted):
         return
     raise AppError(
         ErrorCode.SKU_NOT_SELLABLE,

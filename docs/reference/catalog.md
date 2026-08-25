@@ -26,6 +26,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 - SKU 业务唯一键 `(gpu_model, tier, mig_profile, gpu_cores_pct)` 唯一约束(NULLS NOT DISTINCT,非 mig 档 mig_profile 为 NULL 也判重),重复创建 409。
 - 近似库存按 (池, canonical 型号) 双维度估:数据源是节点台账 `node_specs`(巡检 60s 写,只算 Ready 节点空闲卡),请求路径不直连 K8s;provider 一次批量计算全部 SKU,缓存按「台账签名 (行数, max(updated_at)) + 覆盖 sku 集合」命中(签名变即重算,与 platform_config 同一失效模式),single-flight 合并刷新,故障回退陈旧值。
 - 创建路径软准入:台账明确该 (池,型号) 可分配量不足 → 409 `NO_CAPACITY`,台账无数据一律放行。不做库存预占,库存是近似值(台账 60s 巡检粒度),最终以调度结果为准。
+- 共享档每卡可售实例数 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋,只在 `catalog/service.py::sellable_per_gpu` 一处按 Decimal 整除(独享/MIG 恒 1);(池, canonical 型号) 匹配只在 `nodes/service.py::matching_specs` 一处。市场库存、创建软准入、管理端容量列与容量预览共用这两份口径,不得各算各的。
 - 超卖参数是纯定价参数,不下发调度;显存超卖 >1.2 由前端二次确认。
 - 上架为硬校验(可 force 覆盖),创建与编辑为软校验(容量预览警示,可保存)。
 - off 架 SKU 用户端不可见;readonly 角色全站只读,finance 不能改 SKU。

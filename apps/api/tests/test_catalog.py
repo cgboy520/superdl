@@ -174,6 +174,17 @@ class TestMarket:
         assert resp.json()[0]["available_count"] == 7  # 陈旧值兜底
 
 
+class TestSellablePerGpu:
+    def test_decimal_floor_division(self):
+        """每卡可售数必须走 Decimal 整除:float 会把 100×1.15 算成 114.999…→ 22,
+        同一 SKU 市场库存与管理端容量预览各差一台(挂了 = 两处口径再次分叉)。"""
+        from app.modules.catalog.service import sellable_per_gpu
+
+        assert sellable_per_gpu("shared_std", 5, Decimal("1.15")) == 23
+        assert sellable_per_gpu("shared_eco", 50, Decimal("1.50")) == 3
+        assert sellable_per_gpu("dedicated", 100, Decimal("1.50")) == 1  # 非共享档不折算
+
+
 class TestAdminSku:
     async def test_admin_crud(self, client: AsyncClient, sm):
         headers = await admin_headers(sm, client)
