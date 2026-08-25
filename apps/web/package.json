@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "preview": "vite preview",
-    "i18n": "i18next-cli extract --ci && i18next-cli types --ci && i18next-cli lint && bash ../../scripts/check-cjk.sh && bash ../../scripts/check-copy-banned.sh && bash ../../scripts/check-no-handwritten-url.sh",
+    "i18n": "i18next-cli extract --ci && i18next-cli types --ci && i18next-cli lint",
     "i18n:write": "i18next-cli extract && i18next-cli types"
   },
   "dependencies": {

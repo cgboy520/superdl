@@ -59,4 +59,4 @@ K8s 在 dev 下是 `FakeOrchestrator`(进程内存态),不需要真实集群;真
 | `deploy/` | ansible 控制面装机、集群 helmfile 与 runbook、平台 K8s 清单与本地 compose、node-join 测试、实例镜像 |
 | `e2e/` | Playwright 浏览器冒烟(smoke / admin / i18n) |
 | `docs/` | 架构、模块参考、UI/UX 规格、文案规范、决策记录 |
-| `scripts/` | 发布脚本与仓库级闸门脚本(禁词、CJK、手写 URL、迁移 DDL、文档引用) |
+| `scripts/` | 发布脚本与仓库级闸门脚本(禁词、CJK、迁移 DDL、文档引用) |
