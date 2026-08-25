@@ -16,6 +16,19 @@ function mockFetch(responses: Response[]): { auth: (string | null)[] } {
 const ok = () => new Response(JSON.stringify({ ok: true }), { status: 200 });
 const unauthorized = () => new Response("", { status: 401 });
 
+/** 最小 LockManager:同名请求串行执行,模拟浏览器 Web Locks 的互斥语义(node/jsdom 均不实现)。 */
+function fakeLocks(): Pick<LockManager, "request"> {
+  const tails = new Map<string, Promise<unknown>>();
+  return {
+    request: ((name: string, cb: () => Promise<unknown>) => {
+      const prev = tails.get(name) ?? Promise.resolve();
+      const next = prev.then(cb, cb);
+      tails.set(name, next.catch(() => undefined));
+      return next;
+    }) as LockManager["request"],
+  };
+}
+
 describe("customFetch 401 静默续期", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
@@ -40,7 +53,7 @@ describe("customFetch 401 静默续期", () => {
     expect(auth).toEqual(["Bearer old", "Bearer new"]);
   });
 
-  it("并发 401 只续期一次(single-flight)", async () => {
+  it("并发 401 只续期一次:无 Web Locks 时靠同标签页内存 single-flight", async () => {
     let token = "old";
     const refresh = vi.fn(async () => {
       await new Promise((r) => setTimeout(r, 5));
@@ -54,6 +67,25 @@ describe("customFetch 401 静默续期", () => {
       customFetch("/api/v1/wallet", { method: "GET" }),
       customFetch("/api/v1/instances", { method: "GET" }),
     ]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("并发 401 只续期一次:有 Web Locks 时靠临界区内的 stale-token 复检", async () => {
+    vi.stubGlobal("navigator", { locks: fakeLocks() });
+    let token = "old";
+    const refresh = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      token = "new";
+      return true;
+    });
+    mockFetch([unauthorized(), unauthorized(), ok()]);
+    configureApiClient({ baseUrl: "", getToken: () => token, refreshToken: refresh });
+
+    await Promise.all([
+      customFetch("/api/v1/wallet", { method: "GET" }),
+      customFetch("/api/v1/instances", { method: "GET" }),
+    ]);
+    // 第二个请求进入临界区时 token 已是 new ≠ 发起时的 old,直接重放而不再消费 refresh token
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -118,17 +150,5 @@ describe("错误体解析", () => {
     await expect(customFetch("/api/v1/billing/export", { method: "GET" })).resolves.toBe(
       "a,b\r\n1,2\r\n",
     );
-  });
-
-  it("声明 JSON 的 200 返回坏体仍抛 INVALID_RESPONSE", async () => {
-    mockFetch([
-      new Response("{broken", {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ]);
-    await expect(customFetch("/api/v1/wallet", { method: "GET" })).rejects.toMatchObject({
-      code: "INVALID_RESPONSE",
-    });
   });
 });

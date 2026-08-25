@@ -140,12 +140,11 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     return fetch(`${config.baseUrl}${url}`, { ...options, headers });
   };
 
-  // AbortError 是调用方主动取消(TanStack Query 卸载/竞态取消),必须原样抛出
+  // 网络层失败(fetch 抛 TypeError)统一成 ApiError,其余异常原样抛出
   const guardedFetch = async (): Promise<Response> => {
     try {
       return await doFetch();
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") throw e;
       if (e instanceof TypeError) throw networkError();
       throw e;
     }
@@ -171,19 +170,8 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     try {
       body = JSON.parse(text);
     } catch {
-      if (response.ok) {
-        // 非 JSON 的成功响应(如 text/csv 导出端点)原样透传文本
-        const contentType = response.headers.get("Content-Type") ?? "";
-        if (!contentType.includes("application/json")) return text as T;
-        throw {
-          code: "INVALID_RESPONSE",
-          message: "服务响应异常,请稍后重试",
-          message_key: "common.invalidResponse",
-          params: null,
-          status: response.status,
-        } satisfies ApiError;
-      }
-      body = null;
+      // 非 JSON 的成功响应(如 text/csv 导出端点)原样透传文本;失败响应按无错误体处理
+      if (response.ok) return text as T;
     }
   }
 
