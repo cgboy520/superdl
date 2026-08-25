@@ -45,14 +45,7 @@ K8s 在 dev 下是 `FakeOrchestrator`(进程内存态),不需要真实集群;真
 
 ## 闸门
 
-按改动范围跑,完整清单在 [CLAUDE.md](CLAUDE.md)「提交约定」:
-
-```bash
-cd apps/api && uv run ruff format . && uv run ruff check . && uv run pyright && uv run lint-imports && uv run pytest   # 后端(pytest 需 Docker)
-pnpm lint && pnpm typecheck && pnpm test && pnpm i18n                                                                # 前端
-python3 scripts/check-docs-links.py                                                                                  # 文档引用
-pnpm --filter @superdl/e2e test:e2e        # 浏览器冒烟:需 API + worker 在跑;SUPERDL_ADMIN_E2E=1 时再跑管理端用例
-```
+按改动范围跑,红了不提交。命令清单只有一份:见 [CLAUDE.md](CLAUDE.md)「常用命令」与「提交约定」。
 
 ## 工程结构
 
