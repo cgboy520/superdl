@@ -140,12 +140,14 @@ export const useInstancePages = (params?: { status?: string; name?: string }) =>
     isTransientInstanceStatus(i.status),
   );
   useEffect(() => {
-    const key = ["instances", "pages", { status, name }];
+    // 变量名避开 `key`:i18next-cli 会把字符串数组常量按变量名跨文件共享,
+    // 叫 key 会让 billing.tsx 里 t(MAP[key]) 的解析被这里的值污染而漏提键
+    const pagesKey = ["instances", "pages", { status, name }];
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
       try {
         const first = await listInstancesApiV1InstancesGet({ status, name, limit: 20 });
-        queryClient.setQueryData<InfiniteData<PageInstanceOut>>(key, (old) => {
+        queryClient.setQueryData<InfiniteData<PageInstanceOut>>(pagesKey, (old) => {
           if (!old || old.pages.length === 0) return old;
           const [head, ...rest] = old.pages;
           // 首页条目整体替换;next_cursor 保持翻页链不变(渲染层按 uuid 去重覆盖重叠)
