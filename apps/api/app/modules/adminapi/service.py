@@ -495,7 +495,7 @@ async def create_adjustment(
     idempotency_key: str | None = None,
 ) -> tuple["AdminAdjustment", bool]:
     """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。
-    幂等加固(P2):作用域 (发起人,租户,键);同键重放比对请求体指纹,不一致 409
+    幂等键作用域为 (发起人,租户,键);同键重放比对请求体指纹,不一致 409
     (对齐 Stripe 惯例)——弱键跨租户/跨金额复用从「静默错单」变「显式拒绝」。"""
     import hashlib
 

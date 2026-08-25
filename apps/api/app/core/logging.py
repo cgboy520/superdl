@@ -36,8 +36,8 @@ _PHONE_VALUE_RE = re.compile(r"^1\d{10}$")
 
 
 def mask_phone_value(value: str) -> str:
-    """手机号打码(前3后4):138****5678。core 层工具,供日志点与 core/sms 使用
-    (modules 层的 realname.mask_phone 语义一致;core 不反向依赖 modules)。"""
+    """手机号打码(前3后4):138****5678。全仓唯一的打码实现:日志处理器、core/sms
+    与 modules 层(实名、管理端租户列表)都直接用它。"""
     if _PHONE_VALUE_RE.match(value):
         return value[:3] + "****" + value[-4:]
     return "******"

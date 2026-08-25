@@ -46,7 +46,7 @@ react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd
 | TopoLVM | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
 | cert-manager + acme-dns / ingress-nginx | 泛域名证书(DNS01 经 acme-dns 中转,集群内凭据只能改 `_acme-challenge` TXT)与 Jupyter 北向入口 |
 
-GPU 资源申请统一经 `app/core/gpu_adapter` 抽象:当前用 device-plugin 语法,切 DRA 只改这一层。
+GPU 资源申请的 device-plugin 语法集中在 `app/core/gpu_adapter`;切 DRA 还需改 PodSpec 的 resourceClaims(`core/k8s/real.py`),不止这一层。
 
 ## 3. 模块化单体
 
@@ -70,7 +70,7 @@ apps/api/app/
 ```
 
 模块之间只许 import 对方的 `service.py` 与 `schemas.py`,禁止跨模块 import 其他文件或跨模块查表;
-唯一例外是 `account/deps.py`(全站鉴权依赖)。import-linter 契约逐文件列举强制。
+唯一例外是 `account/deps.py`(全站鉴权依赖)。import-linter 以通配契约强制(`app.modules.** -> app.modules.*.service|schemas`)。
 
 对外契约 OpenAPI-first:FastAPI schema 导出 `openapi.json`,orval 生成 `packages/api-client`。用户 API
 `/api/v1/*` 与管理 API `/api/admin/v1/*` 物理分离,独立 JWT audience、限流与审计动作前缀。

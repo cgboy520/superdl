@@ -4,7 +4,7 @@ JuiceFS 子路径数据盘:独立生命周期、配额、扩容与日结。表�
 
 ## 数据模型
 
-- `data_disks`:uuid、user_id、name、size_gb、juicefs_subpath、status(active/grace/frozen/deleting/deleted)、expires_at?、mounted_instance_id?、quota_synced(目录配额已下发到集群)
+- `data_disks`:uuid、user_id、name、size_gb、juicefs_subpath、status(active/grace/frozen/deleting/deleted)、mounted_instance_id?、quota_synced(目录配额已下发到集群)
 
 ## 契约
 

@@ -51,7 +51,8 @@ class Instance(Base):
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    frozen_deadline: Mapped[datetime | None]  # 冻结回收倒计时(72h)
+    # 冻结回收截止:进入 frozen 时按策略 freeze_grace_hours 写入(见 billing/patrol.py)
+    frozen_deadline: Mapped[datetime | None]
     # running 实例 Pod 首次 not-ready 的时刻;持续超过宽限即判节点失联(见 reconciler)。
     # 节点失联时 Pod 停在 phase=Running 而 Ready 转 False,只能看这个字段。
     unready_since: Mapped[datetime | None]
