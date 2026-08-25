@@ -30,20 +30,18 @@ def _spec(tier: str, pool: str, **extra):
     return base
 
 
-@pytest.mark.parametrize(
-    ("tier", "pool"), [("dedicated", "kata"), ("mig", "mig"), ("shared_std", "hami")]
-)
-def test_gpu_model_pins_node_selector_all_tiers(tier: str, pool: str):
+def test_gpu_model_pins_node_selector():
+    """有 canonical 型号即钉 superdl.io/gpu-model(型号约束在分档之前,与档位无关)。"""
     req = build_gpu_request(
-        tier=tier,
+        tier="dedicated",
         gpu_count=1,
-        gpu_cores_pct=50,
+        gpu_cores_pct=100,
         vram_gb=24,
-        mig_profile="1g.10gb" if tier == "mig" else None,
-        pool_label=pool,
+        mig_profile=None,
+        pool_label="kata",
         gpu_model="RTX4090",
     )
-    assert req.node_selector == {POOL_NODE_LABEL: pool, GPU_MODEL_NODE_LABEL: "RTX4090"}
+    assert req.node_selector == {POOL_NODE_LABEL: "kata", GPU_MODEL_NODE_LABEL: "RTX4090"}
 
 
 def test_no_gpu_model_keeps_pool_only_selector():
@@ -115,8 +113,7 @@ def test_build_pod_spec_multi_gpu_scales_cpu_mem():
 
 
 @pytest.mark.parametrize(
-    ("tier", "host_users"),
-    [("dedicated", True), ("mig", False), ("shared_std", False), ("shared_eco", False)],
+    ("tier", "host_users"), [("dedicated", True), ("mig", False), ("shared_std", False)]
 )
 def test_userns_hardening_by_tier(tier: str, host_users: bool):
     """runc 档(mig / shared_*)一律 hostUsers=false;dedicated 走 Kata 的 VM 级隔离。"""

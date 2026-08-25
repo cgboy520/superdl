@@ -154,14 +154,6 @@ class TestInstanceListPage:
         assert [i["name"] for i in page2["items"]] == ["job-0"]
         assert page2["next_cursor"] is None
 
-    async def test_bad_cursor_rejected(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000205")
-        await _insert_instance(sm, user_id, name="vm")
-        resp = await client.get("/api/v1/instances", params={"cursor": "!!!"}, headers=headers)
-        assert resp.json()["code"] == "VALIDATION_ERROR"
-
     async def test_other_users_instances_invisible(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):

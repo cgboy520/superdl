@@ -5,12 +5,12 @@
 只影响 get_orchestrator,这里直接构造 RealOrchestrator,互不干扰)。
 
 覆盖单测(fake 后端)够不着的两条安全路径:
-- 租户 namespace 的默认 NetworkPolicy:东西向默认拒,仅放行 ingress-nginx → Jupyter 8888;
-  出方向白名单公网 + DNS,禁访私网/云元数据网段
+- 租户 namespace 的引导件经 apiserver 落库(PSA 标签、NetworkPolicy、配额、共享 PVC);
+  NetPol 的结构在 test_k8s_real_units 离线钉死,这里只验 apiserver 接受 endPort/except
 - 实例盘生命周期:删除实例不动盘,仅显式 delete_instance_disk(释放/回收)才删盘
 
-kind 默认 CNI(kindnet)不执行 NetworkPolicy,隔离断言落在对象规约(apiserver 落库的内容)
-而非实际流量;功能性流量隔离由集群交付的 Cilium 保证,不在此冒烟范围。
+kind 默认 CNI(kindnet)不执行 NetworkPolicy,断言落在对象规约而非实际流量;
+功能性流量隔离由集群交付的 Cilium 保证,不在此冒烟范围。
 JuiceFS/TopoLVM 在 kind 不存在,PVC 停留 Pending 属预期 —— 冒烟只验证对象生命周期。
 """
 
@@ -29,13 +29,7 @@ from app.core.k8s.base import (
     instance_disk_pvc_name,
     jupyter_service_name,
 )
-from app.core.k8s.real import (
-    EGRESS_BLOCKED_TCP_PORTS,
-    INGRESS_NAMESPACE,
-    MANAGED_LABEL,
-    PRIVATE_CIDRS,
-    RealOrchestrator,
-)
+from app.core.k8s.real import MANAGED_LABEL, PRIVATE_CIDRS, RealOrchestrator
 
 pytestmark = [
     pytest.mark.real_k8s,
@@ -108,58 +102,16 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert ns.metadata.labels["pod-security.kubernetes.io/enforce"] == "baseline"
     assert ns.metadata.labels["pod-security.kubernetes.io/audit"] == "restricted"
 
+    # NetPol 经 apiserver 落库:只验集群接受 endPort 区间与 ipBlock.except(旧版本 / 部分
+    # CNI 会拒收或丢弃这两项),规约结构由 test_k8s_real_units 离线钉死
     netpol: Any = orch.net.read_namespaced_network_policy("tenant-default", namespace)
     spec = netpol.spec
     assert spec is not None and set(spec.policy_types) == {"Ingress", "Egress"}
-
-    # 入方向:ingress-nginx → Jupyter 8888(北向)+ 0.0.0.0/0 → SSH 22(NodePort 显式放行,
-    # 不依赖「NodePort 不过 NetworkPolicy」的 CNI 隐式行为),其余东西向默认拒
-    assert spec.ingress is not None and len(spec.ingress) == 2
-    jupyter_rule, ssh_rule = spec.ingress
-    assert jupyter_rule.ports is not None
-    assert [(p.protocol, p.port) for p in jupyter_rule.ports] == [("TCP", 8888)]
-    assert jupyter_rule._from is not None and len(jupyter_rule._from) == 1
-    peer = jupyter_rule._from[0]
-    assert peer.namespace_selector is not None
-    assert peer.namespace_selector.match_labels == {
-        "kubernetes.io/metadata.name": INGRESS_NAMESPACE
-    }
-    assert ssh_rule.ports is not None
-    assert [(p.protocol, p.port) for p in ssh_rule.ports] == [("TCP", 22)]
-    assert ssh_rule._from is not None and ssh_rule._from[0].ip_block is not None
-    assert ssh_rule._from[0].ip_block.cidr == "0.0.0.0/0"
-
-    # 出方向:DNS(收敛到 CoreDNS Pod)+ 公网 TCP(端口黑名单)+ 公网 UDP,其余默认拒
     assert spec.egress is not None and len(spec.egress) == 3
-    dns_rule = spec.egress[0]
-    assert dns_rule.to is not None and len(dns_rule.to) == 1
-    dns_peer = dns_rule.to[0]
-    assert dns_peer.namespace_selector is not None
-    assert dns_peer.namespace_selector.match_labels == {
-        "kubernetes.io/metadata.name": "kube-system"
-    }
-    assert dns_peer.pod_selector is not None
-    assert dns_peer.pod_selector.match_labels == {"k8s-app": "kube-dns"}
-    assert dns_rule.ports is not None
-    assert {(p.protocol, p.port) for p in dns_rule.ports} == {("UDP", 53), ("TCP", 53)}
-
-    tcp_rule, udp_rule = spec.egress[1], spec.egress[2]
-    for rule in (tcp_rule, udp_rule):
-        assert rule.to is not None and rule.to[0].ip_block is not None
-        assert rule.to[0].ip_block.cidr == "0.0.0.0/0"
-        assert set(rule.to[0].ip_block._except or []) == set(PRIVATE_CIDRS)
-    # TCP 端口区间必须恰好覆盖 1-65535 扣除黑名单
-    assert tcp_rule.ports is not None
-    blocked = set(EGRESS_BLOCKED_TCP_PORTS)
-    covered: set[int] = set()
-    for p in tcp_rule.ports:
-        assert p.protocol == "TCP"
-        lo, hi = int(p.port), int(p.end_port or p.port)
-        covered.update(range(lo, hi + 1))
-    assert covered == set(range(1, 65536)) - blocked
-    assert udp_rule.ports is not None
-    # UDP 白名单收敛:仅 53(DNS 兜底)/443(QUIC),全端口放行 = 反射放大源
-    assert {(p.protocol, p.port) for p in udp_rule.ports} == {("UDP", 53), ("UDP", 443)}
+    tcp_rule = spec.egress[1]
+    assert tcp_rule.ports is not None and any(p.end_port for p in tcp_rule.ports)
+    assert tcp_rule.to is not None and tcp_rule.to[0].ip_block is not None
+    assert set(tcp_rule.to[0].ip_block._except or []) == set(PRIVATE_CIDRS)
 
     # 配额兜底(对象数 + 资源总量)与共享数据盘 PVC 就位(Pending 即可,kind 无对应 SC)
     quota: Any = orch.core.read_namespaced_resource_quota("tenant-quota", namespace)

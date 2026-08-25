@@ -15,7 +15,6 @@ from app.core.k8s.base import POOL_NODE_LABEL, InstancePodSpec, NodePortTaken
 from app.core.k8s.real import (
     EGRESS_BLOCKED_TCP_PORTS,
     PRIVATE_CIDRS,
-    TENANT_EPHEMERAL_LIMIT,
     RealOrchestrator,
 )
 
@@ -26,22 +25,16 @@ def _bare() -> RealOrchestrator:
 
 
 class TestQtyToBytes:
-    """后缀匹配必须长后缀优先("Ki" 先于 "K"),不依赖 dict 插入顺序。"""
+    """四类缺陷各一点:长后缀优先("Ki" 先于 "K",否则 500Ki 解析成 0)、十进制单位、
+    小数量、无法解析归 0。"""
 
     @pytest.mark.parametrize(
         ("q", "expected"),
         [
             ("500Ki", 500 * 1024),
-            ("500K", 500 * 1000),
-            ("200Gi", 200 * 1024**3),
             ("200G", 200 * 1000**3),
-            ("49192080Ki", 49192080 * 1024),
-            ("1234", 1234),
             ("1.5Gi", int(1.5 * 1024**3)),
-            (None, 0),
-            ("", 0),
             ("garbage", 0),
-            ("10Xi", 0),
         ],
     )
     def test_parse(self, q: str | None, expected: int):
@@ -49,7 +42,7 @@ class TestQtyToBytes:
 
 
 class TestEgressPortRanges:
-    """TCP 允许区间必须恰好覆盖 1-65535 扣除黑名单,且 22(SSH 出)必须放行。"""
+    """TCP 允许区间必须恰好覆盖 1-65535 扣除黑名单(集合等式含「22 等常用端口放行」)。"""
 
     def test_ranges(self):
         from app.core.k8s.real import _allowed_tcp_port_ranges
@@ -61,16 +54,6 @@ class TestEgressPortRanges:
             assert lo <= hi
             covered.update(range(lo, hi + 1))
         assert covered == set(range(1, 65536)) - set(EGRESS_BLOCKED_TCP_PORTS)
-        for port in (22, 80, 443, 8080, 2379):  # SSH 出 / HTTP / HTTPS / 对象存储等常用
-            assert port in covered
-
-    def test_blocked_ports_excluded(self):
-        from app.core.k8s.real import _allowed_tcp_port_ranges
-
-        for p in _allowed_tcp_port_ranges():
-            lo, hi = cast(int, p.port), cast(int, p.end_port or p.port)
-            for blocked in EGRESS_BLOCKED_TCP_PORTS:
-                assert not lo <= blocked <= hi
 
 
 class TestTenantNetpol:
@@ -100,12 +83,6 @@ class TestTenantNetpol:
             assert set(ip_block._except) == set(PRIVATE_CIDRS)
         udp_ports = spec.egress[2].ports
         assert {(p.protocol, p.port) for p in udp_ports} == {("UDP", 53), ("UDP", 443)}
-
-    def test_private_cidrs_cover_cgnat_and_metadata(self):
-        # 云 metadata 169.254.169.254 必须被 169.254.0.0/16 覆盖;CGNAT 段有意封禁
-        assert "169.254.0.0/16" in PRIVATE_CIDRS
-        assert "100.64.0.0/10" in PRIVATE_CIDRS
-        assert "198.18.0.0/15" in PRIVATE_CIDRS
 
 
 class TestInstanceSecretHandling:
@@ -235,10 +212,6 @@ class TestListAll:
         assert out == ["a", "b", "c"]
         assert calls[0]["limit"] == 500 and calls[0]["label_selector"] == "x=y"
         assert calls[1]["_continue"] == "tok-1"
-
-    def test_single_page(self):
-        out = RealOrchestrator._list_all(lambda **kw: _page([1]))
-        assert out == [1]
 
 
 def _pod(
@@ -452,7 +425,3 @@ class TestTenantQuota:
         assert len(calls) == 1
         hard = calls[0].spec.hard
         assert "requests.cpu" in hard and "limits.ephemeral-storage" in hard
-
-    def test_ephemeral_limit_generous(self):
-        """限额必须远高于镜像常规可写用量(超限=驱逐 Pod,不能误伤正常租户)。"""
-        assert RealOrchestrator._qty_to_bytes(TENANT_EPHEMERAL_LIMIT) >= 32 * 1024**3

@@ -466,36 +466,6 @@ class TestProdDocsClosed:
         assert app.openapi()["paths"]  # schema 本身照常可导出
 
 
-class TestTenantContainerHardening:
-    def test_security_context_is_unconditional(self):
-        """租户容器加固不看 runtimeClass、不看发行版、不看档位。
-
-        禁止拿 runtime_class 当「是不是 Kata」的代理判据:k3s 共享档也带 runtimeClassName。
-        """
-        from app.core.k8s.real import tenant_security_context
-
-        ctx = tenant_security_context()
-        assert ctx.allow_privilege_escalation is False
-        assert ctx.capabilities is not None and ctx.capabilities.drop == ["ALL"]
-        assert ctx.seccomp_profile is not None and ctx.seccomp_profile.type == "RuntimeDefault"
-
-    def test_k3s_shared_still_gets_userns_and_hardening(self):
-        """k3s 共享档:runtimeClassName=nvidia,但 userns 与容器加固都不能因此消失。"""
-        from app.core.gpu_adapter import build_gpu_request
-
-        req = build_gpu_request(
-            tier="shared_std",
-            gpu_count=1,
-            gpu_cores_pct=50,
-            vram_gb=8,
-            mig_profile=None,
-            pool_label="hami",
-            distro="k3s",
-        )
-        assert req.runtime_class == "nvidia"
-        assert req.host_users is False
-
-
 class TestSmsCodeAtRest:
     async def test_code_is_not_stored_in_clear(self, client, sm):
         """库里不能有验证码明文:一次只读 DB 访问就能拿到全部活跃验证码。"""

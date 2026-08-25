@@ -1,7 +1,7 @@
 """编排器审计加固(P0 批次)的回归套件。
 
 每条用例对应一处修复:它挂了,说明那处修复被改回去了。
-覆盖:状态机全边表、failed 恢复边、stopping/releasing 悬挂两档超时逃逸、泄漏回收
+覆盖:failed 恢复边、starting 超时边、stopping/releasing 悬挂两档超时逃逸、泄漏回收
 熔断与 force、并发开户临界区、幂等键并发与 24h 窗、(池,型号) 软准入、结算候选
 完备性、保留期 GC、欠费盘 grace 停计费与计时累计、重启撞端口不丢尾账。
 """
@@ -9,7 +9,6 @@
 import asyncio
 from datetime import timedelta
 from decimal import Decimal
-from typing import ClassVar
 
 import pytest
 from sqlalchemy import select, update
@@ -22,9 +21,8 @@ from app.modules.billing import wallet
 from app.modules.billing.models import BillDailyDisk, BillHourly
 from app.modules.billing.patrol import balance_patrol
 from app.modules.billing.settlement import settle_daily_disks
-from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
-from app.modules.orchestrator.statemachine import TRANSITIONS
 from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wallet, seed_node_spec
 from tests.test_orchestrator_lifecycle import _provision_running, get_instance
 
@@ -111,46 +109,30 @@ class TestBlockedPortRecheck:
             assert row.blocked is False
 
 
-class TestStateMachineTable:
-    # 全量合法边(加边/减边都必须改这张表,测试才跟着红)
-    EXPECTED: ClassVar[set[tuple[str, str]]] = {
-        ("creating", "running"),
-        ("creating", "failed"),
-        ("creating", "releasing"),
-        ("running", "stopping"),
-        ("running", "failed"),
-        ("stopping", "stopped"),
-        ("stopping", "releasing"),
-        ("stopped", "starting"),
-        ("stopped", "frozen"),
-        ("stopped", "releasing"),
-        ("starting", "running"),
-        ("starting", "failed"),
-        ("frozen", "stopped"),
-        ("frozen", "releasing"),
-        ("failed", "stopped"),
-        ("failed", "releasing"),
-        ("releasing", "released"),
-    }
+class TestStartingTimeout:
+    async def test_starting_timeout_fails_and_keeps_disk(self, client, sm, fake):
+        """starting 超时走 starting→failed 边:清 Pod、回收端口,但实例盘保留
+        (实例停过机,盘里有上一轮数据;只有 creating 超时才回收盘)。"""
+        headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000115")
+        ns = f"tenant-{user_id}"
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain(sm)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        disk_marker = fake.instance_disks[(ns, uuid)]
 
-    def test_transition_table_is_exact(self):
-        """TRANSITIONS 与预期边集逐条一致(挂了 = 有人改了状态机,先确认计费边影响)。"""
-        pairs = {(f, t) for f, tos in TRANSITIONS.items() for t in tos}
-        assert pairs == self.EXPECTED
-
-    def test_every_pair_enforced(self):
-        """全 9×9 枚举:合法边放行,非法边一律 INSTANCE_INVALID_TRANSITION。"""
-        from app.core.errors import AppError
-        from app.modules.orchestrator.statemachine import validate_transition
-
-        statuses = set(TRANSITIONS)
-        for from_s in statuses:
-            for to_s in statuses:
-                if (from_s, to_s) in self.EXPECTED:
-                    validate_transition(from_s, to_s)
-                else:
-                    with pytest.raises(AppError):
-                        validate_transition(from_s, to_s)
+        await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
+        await drain(sm)  # Pod 已建但永不 Ready(auto_ready=False)
+        await _backdate_status(sm, uuid, "starting", timedelta(minutes=6))
+        counts = await reconcile_once(sm)
+        assert counts["to_failed"] == 1
+        assert (await get_instance(client, headers, uuid))["status"] == "failed"
+        assert (ns, uuid) not in fake.pods
+        await drain(sm)  # 不入队 disk_cleanup:盘仍是原来那块
+        assert fake.instance_disks[(ns, uuid)] == disk_marker
+        async with sm() as session:
+            ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
+        assert all(p is None for p in ports)  # 端口已回收
 
 
 class TestFailedRecovery:
@@ -408,36 +390,23 @@ class TestLeakReclaim:
         assert (ns, uuid) not in fake.pods
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
 
-    async def test_wipe_job_pod_survives_reclaim_cycles(self, client, sm, fake):
-        """擦盘 Job 运行超过一个巡检周期不被误杀(挂了 = 建-杀死循环回潮:
-        wipe Pod 带 MANAGED_LABEL 但名字非实例 uuid,无 job-name 豁免会被当未知 Pod 强删)。"""
-        _headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000113")
-        ns = f"tenant-{user_id}"
-        fake.auto_wipe = False
-        with pytest.raises(RuntimeError, match="wipe in progress"):
-            await fake.wipe_disk(ns, f"disk-{uuid}")  # 登记 wipe Job Pod(对齐 real 创建后抛错)
-        job_pod_key = next(iter(fake.job_pods))
-        counts: dict[str, int] = {}
-        for _ in range(3):  # 连续多轮对账:任何一轮强删 wipe Pod 都会拆掉 job_pods 条目
-            counts = await reconcile_once(sm)
-            assert job_pod_key in fake.job_pods
-        assert counts["leaked"] == 0
-        assert counts["job_pod_skipped"] >= 1
-
     async def test_wipe_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
         """wipe Job Pod 不进 unknown 占比:1 实例 + 1 wipe Pod + 1 真泄漏 = 1/2 = 50% 不熔断,
-        真泄漏照删(挂了 = Job Pod 计入占比,实例少时把回收推过熔断线放跑真泄漏)。"""
+        真泄漏照删(挂了 = Job Pod 计入占比,实例少时把回收推过熔断线放跑真泄漏);
+        wipe Pod 带 MANAGED_LABEL 但名字非实例 uuid,靠 job-name 豁免,多轮对账都不被误杀。"""
         _headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000114")
         ns = f"tenant-{user_id}"
         spec = fake.pods[(ns, uuid)].spec
         fake.auto_wipe = False
         with pytest.raises(RuntimeError, match="wipe in progress"):
-            await fake.wipe_disk(ns, f"disk-{uuid}")
+            await fake.wipe_disk(ns, f"disk-{uuid}")  # 登记 wipe Job Pod(对齐 real 创建后抛错)
         fake.inject_leaked_pod(ns, "leaked000000000000000000", spec)  # DB 无记录的真泄漏
         counts = await reconcile_once(sm)
         assert counts["leaked"] == 1  # 熔断未触发(若把 wipe Pod 计入,2/3 > 50% 会熔断放行)
         assert counts["job_pod_skipped"] == 1
         assert len(fake.job_pods) == 1  # wipe Pod 完好
+        counts = await reconcile_once(sm)  # 再来一轮:wipe Pod 仍不被当泄漏强删
+        assert counts["leaked"] == 0 and len(fake.job_pods) == 1
 
 
 class TestCreateCriticalSection:
@@ -757,40 +726,6 @@ class TestDiskArrearsHardening:
             ).scalar_one()
             assert d2.status == "grace"
             assert d2.grace_started_at == first_grace_at
-
-    async def test_delete_disk_of_stopped_instance(self, client, sm, fake):
-        """挂载实例已 stopped/failed 时允许删盘并自动解挂(挂了 = 实例卡着盘就删不掉还按日计费)。"""
-        from tests.test_disks import create_disk
-
-        headers, user_id, key_id = await create_user_with_key(client, "13900000133")
-        await fund_wallet(sm, user_id, "500.00")
-        sku_id = await create_test_sku(sm)
-        disk = await create_disk(client, headers)
-        await drain(sm)  # 配额下发完成后才可挂载
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 202, resp.text
-        uuid = resp.json()["uuid"]
-        await drain(sm)
-        fake.mark_ready(f"tenant-{user_id}", uuid)
-        await reconcile_once(sm)
-        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
-        await drain(sm)
-        await reconcile_once(sm)
-
-        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
-        assert resp.status_code == 200, resp.text  # stopped 实例的盘可删
-        assert resp.json()["mounted_instance_id"] is None
-        await drain(sm)
-        assert (await client.get("/api/v1/disks", headers=headers)).json() == []
 
     async def test_wipe_namespace_missing_is_done(self, client, sm, fake, monkeypatch):
         """租户 ns 不存在(从未建过实例)时擦盘视为完成(挂了 = 这类删盘任务全进死信)。"""

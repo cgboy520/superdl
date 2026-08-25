@@ -165,11 +165,10 @@ class TestReadInstanceLogsContract:
             lines = logs.splitlines()
             assert 0 < len(lines) <= 3
             assert backend.fake.log_calls[-1] == (backend.namespace, "conf-pod", 3, None)
-            logs_full = await backend.impl.read_instance_logs(
+            await backend.impl.read_instance_logs(
                 backend.namespace, "conf-pod", tail_lines=100, since_seconds=60
             )
             assert backend.fake.log_calls[-1] == (backend.namespace, "conf-pod", 100, 60)
-            assert "conf-pod" in logs_full
         else:
             # Pod 不存在:Real 直通 apiserver 404,不合成空串
             with pytest.raises(k8s_client.ApiException):

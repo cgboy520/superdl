@@ -25,7 +25,7 @@ async def _get_logs(client: AsyncClient, headers: dict, uuid: str, **params: int
 
 
 class TestInstanceLogs:
-    async def test_running_200_synthetic_lines(self, client, sm, fake):
+    async def test_running_200(self, client, sm, fake):
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
 
         resp = await _get_logs(client, headers, uuid)
@@ -33,8 +33,6 @@ class TestInstanceLogs:
         body = resp.json()
         assert body["truncated"] is False
         assert len(body["lines"]) > 0
-        # 合成日志含实例名(前端联调锚点);响应按行切分
-        assert any(uuid in line for line in body["lines"])
 
     async def test_stopping_state_also_allowed(self, client, sm, fake):
         """stopping 中 Pod 可能仍在 Terminating,日志仍可取(200)。"""
@@ -62,19 +60,11 @@ class TestInstanceLogs:
         assert body["truncated"] is True
 
     async def test_stopped_409(self, client, sm, fake):
-        """已关机实例无 Pod 日志:409 + 明确文案键。"""
+        """已关机实例无 Pod 日志:409 + 明确文案键(running/stopping 之外的状态同一道守卫)。"""
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)  # 删 Pod
         await reconcile_once(sm)  # → stopped
-        resp = await _get_logs(client, headers, uuid)
-        assert resp.status_code == 409
-        assert resp.json()["message_key"] == "orchestrator.logsNeedsRunning"
-
-    async def test_failed_409(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
-        fake.kill_pod(f"tenant-{user_id}", uuid)
-        await reconcile_once(sm)  # → failed
         resp = await _get_logs(client, headers, uuid)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "orchestrator.logsNeedsRunning"

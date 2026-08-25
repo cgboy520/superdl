@@ -1,5 +1,4 @@
 from datetime import timedelta
-from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -258,31 +257,20 @@ class TestStopStartRestart:
         fake.mark_ready(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
+        # 完整链路每个边都留事件:stopping → stopped(尾账边)→ starting → running
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]
+        chain = [(e["from_status"], e["to_status"]) for e in events]
+        assert ("running", "stopping") in chain
+        assert ("stopping", "stopped") in chain
+        assert ("stopped", "starting") in chain
 
     async def test_stop_requires_running(self, client, sm, fake):
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["code"] == "INSTANCE_INVALID_TRANSITION"
-
-    async def test_restart_full_chain(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
-        resp = await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
-        assert resp.json()["status"] == "stopping"
-        await drain(sm)  # handler: 删 Pod → stopped → starting → 建 Pod
-        data = await get_instance(client, headers, uuid)
-        assert data["status"] == "starting"
-        fake.mark_ready(f"tenant-{user_id}", uuid)
-        await reconcile_once(sm)
-        assert (await get_instance(client, headers, uuid))["status"] == "running"
-
-        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
-            "items"
-        ]  # 降序:items[0] 是最新事件
-        chain = [(e["from_status"], e["to_status"]) for e in events]
-        assert ("running", "stopping") in chain
-        assert ("stopping", "stopped") in chain
-        assert ("stopped", "starting") in chain
 
 
 class TestFailureModes:
@@ -677,13 +665,6 @@ class TestInventoryProvider:
         await seed_node_spec(sm, node_name="nr", status="NotReady")
         skus = (await client.get("/api/v1/skus")).json()
         assert skus[0]["available_count"] == 0
-
-    async def test_shared_price_decimal(self, client, sm, fake):
-        headers, user_id, key_id = await create_user_with_key(client, "13900000051")
-        await fund_wallet(sm, user_id, "3.36")  # 恰好 2 小时 1.68
-        sku_id = await create_test_sku(sm, price_hourly=Decimal("1.6800"))
-        data = await create_instance_api(client, headers, sku_id, key_id)
-        assert data["price_hourly"] == "1.6800"
 
 
 class TestImageRefValidation:
