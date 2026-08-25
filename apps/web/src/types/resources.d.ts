@@ -368,12 +368,6 @@ export default interface Resources {
       "invoiceTitlePlaceholder": "个人姓名或企业全称",
       "invoiceTitleTypeCompany": "企业",
       "invoiceTitleTypePersonal": "个人",
-      "ledgerType": {
-        "adjust": "调账",
-        "consume": "消费",
-        "recharge": "充值",
-        "refund": "退款"
-      },
       "loadMore": "加载更多",
       "mockChannel": "模拟支付(开发环境)",
       "mockPayNow": "模拟支付成功(开发环境)",

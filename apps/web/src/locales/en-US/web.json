@@ -48,12 +48,6 @@
     "invoiceTitlePlaceholder": "Personal name or company legal name",
     "invoiceTitleTypeCompany": "Company",
     "invoiceTitleTypePersonal": "Personal",
-    "ledgerType": {
-      "adjust": "Adjustment",
-      "consume": "Spend",
-      "recharge": "Top-up",
-      "refund": "Refund"
-    },
     "loadMore": "Load more",
     "mockChannel": "Mock payment (dev)",
     "mockPayNow": "Simulate payment success (dev)",

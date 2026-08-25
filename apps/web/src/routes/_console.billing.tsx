@@ -14,7 +14,7 @@ import {
   type RefundOut,
   type RefundableOrderOut,
 } from "@superdl/api-client";
-import { addAmounts, compareAmounts, formatDateTime, idemKeyOf, invoiceStatusMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
+import { addAmounts, compareAmounts, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
@@ -87,14 +87,6 @@ export const Route = createFileRoute("/_console/billing")({
   },
   component: BillingPage,
 });
-
-const LEDGER_TYPE = {
-  recharge: { labelKey: "billing.ledgerType.recharge", color: "green" },
-  consume: { labelKey: "billing.ledgerType.consume", color: "blue" },
-  refund: { labelKey: "billing.ledgerType.refund", color: "orange" },
-  adjust: { labelKey: "billing.ledgerType.adjust", color: "purple" },
-} as const;
-type LedgerTypeKey = keyof typeof LEDGER_TYPE;
 
 const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
 
@@ -381,7 +373,7 @@ function HourlyBillsTable({ month, tzOffsetMinutes }: { month: string; tzOffsetM
 }
 
 function LedgerTable() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();
   const { data, isLoading, isError, refetch, isFetchingNextPage, hasNextPage, fetchNextPage } =
     useLedgerPages(20);
@@ -407,7 +399,7 @@ function LedgerTable() {
           {
             title: t("billing.colType"),
             render: (_, r) => {
-              const meta = LEDGER_TYPE[r.type as LedgerTypeKey] as (typeof LEDGER_TYPE)[LedgerTypeKey] | undefined;
+              const meta = metaOf(ledgerTypeMap, r.type);
               return <Tag color={meta?.color ?? "default"}>{meta ? t(meta.labelKey) : r.type}</Tag>;
             },
           },
