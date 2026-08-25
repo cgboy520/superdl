@@ -35,9 +35,9 @@ class NodeEnrollment(Base):
     node_name: Mapped[str | None] = mapped_column(String(253))  # bootstrap 上报
     reported_ip: Mapped[str | None] = mapped_column(String(64))
     os_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    gpu_info: Mapped[list[Any] | None] = mapped_column(
+    gpu_info: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSONB
-    )  # 全卡清单 [{name,memory_mib}] 或旧格式名称列表
+    )  # 全卡清单 [{name, memory_mib?}]
     expires_at: Mapped[datetime]
     last_report_at: Mapped[datetime | None]  # 心跳:对账器判失联
     joined_at: Mapped[datetime | None]

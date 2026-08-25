@@ -179,17 +179,15 @@ load_distro() {
 
 # ---------- 步骤实现 ----------
 step_bootstrap() {
-  local hostname kernel arch os_release gpus gpu_details payload
+  local hostname kernel arch os_release gpu_details payload
   hostname="$(hostname)"
   kernel="$(uname -r)"
   arch="$(uname -m)"
   # shellcheck disable=SC1091  # 运行期 source 目标机文件
   os_release="$(. /etc/os-release && echo "$PRETTY_NAME")"
-  # 型号优先取 nvidia-smi,取不到退回 lspci。nvidia-smi 无驱动时返回非零,
-  # 必须由 { ... || true; } 兜住,否则 pipefail 会中断整段采集。
-  gpus="$({ nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true; } | head -8 | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
-  [[ "$gpus" == "[]" ]] && gpus="$(lspci 2>/dev/null | grep -i 'nvidia' | sed 's/.*: //' | head -8 | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
-  # 全卡清单(名称+显存 MiB):台账显存口径;nvidia-smi 不可用时为 [],服务端回落默认表
+  # 全卡清单 [{name, memory_mib}]:优先 nvidia-smi(带显存,台账显存口径)。nvidia-smi 无驱动时
+  # 返回非零,必须由 { ... || true; } 兜住,否则 pipefail 会中断整段采集;取不到退回 lspci
+  # 名称(无显存,巡检按型号默认表补)
   gpu_details="$({ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || true; } | head -8 | python3 -c '
 import json, sys
 out = []
@@ -202,13 +200,13 @@ for line in sys.stdin:
         entry["memory_mib"] = int(parts[1])
     out.append(entry)
 print(json.dumps(out))')"
+  [[ "$gpu_details" == "[]" ]] && gpu_details="$({ lspci 2>/dev/null | grep -i 'nvidia' || true; } | sed 's/.*: //' | head -8 | python3 -c 'import json,sys; print(json.dumps([{"name": l.strip()} for l in sys.stdin if l.strip()]))')"
   # 驱动/CUDA 版本不在此采集:首装此时驱动未加载,统一在收尾上报(collect_driver_versions)
-  payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$gpus" "$gpu_details" <<'PYEOF'
+  payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$gpu_details" <<'PYEOF'
 import json, sys
 print(json.dumps({"hostname": sys.argv[1],
                   "os_info": {"os_release": sys.argv[2], "kernel": sys.argv[3], "arch": sys.argv[4]},
-                  "gpus": json.loads(sys.argv[5]),
-                  "gpu_details": json.loads(sys.argv[6])}))
+                  "gpu_details": json.loads(sys.argv[5])}))
 PYEOF
 )"
   curl -fsS -m 15 --retry 2 --config "$STATE_DIR/curl.conf" \

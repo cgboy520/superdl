@@ -4,13 +4,12 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import type { BootstrapRequestGpuDetails } from './bootstrapRequestGpuDetails';
+import type { BootstrapRequestGpuDetailsItem } from './bootstrapRequestGpuDetailsItem';
 import type { BootstrapRequestOsInfo } from './bootstrapRequestOsInfo';
 
 export interface BootstrapRequest {
-  gpu_details?: BootstrapRequestGpuDetails;
   /** @maxItems 16 */
-  gpus?: string[];
+  gpu_details?: BootstrapRequestGpuDetailsItem[];
   /**
      * @minLength 1
      * @maxLength 253

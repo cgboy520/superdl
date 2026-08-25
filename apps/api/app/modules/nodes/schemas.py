@@ -53,9 +53,9 @@ class EnrollmentCommandOut(BaseModel):
 class BootstrapRequest(BaseModel):
     hostname: str = Field(min_length=1, max_length=253, pattern=HOSTNAME_PATTERN)
     os_info: dict[str, Any] = Field(default_factory=dict)  # {os_release, kernel, arch}
-    gpus: list[str] = Field(default_factory=list, max_length=16)  # lspci/nvidia-smi 摘要
-    # 全卡清单(名称+显存 MiB,台账显存口径)。旧脚本不带此字段,服务端回落 gpus
-    gpu_details: list[dict[str, Any]] | None = Field(default=None, max_length=16)
+    # 全卡清单 [{name, memory_mib?}]:nvidia-smi 可用时带显存(台账显存口径);
+    # 无驱动时脚本以 lspci 名称回落(无 memory_mib,巡检按型号默认表补显存)
+    gpu_details: list[dict[str, Any]] = Field(default_factory=list, max_length=16)
 
 
 class BootstrapOut(BaseModel):

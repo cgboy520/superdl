@@ -75,7 +75,6 @@ async def enroll_bootstrap(
         token,
         hostname=body.hostname,
         os_info=body.os_info,
-        gpus=body.gpus,
         gpu_details=body.gpu_details,
         client_ip=client_ip(request),
     )

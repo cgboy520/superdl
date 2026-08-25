@@ -28,18 +28,11 @@ logger = get_logger(__name__)
 MISSING_RETENTION = timedelta(days=7)  # Missing 超此时长删行
 
 
-def _gpu_entry_name(entry: Any) -> str:
-    """gpu_info 条目兼容两种形态:旧 str(型号名)/ 新 dict{name, memory_mib}。"""
-    if isinstance(entry, dict):
-        return str(entry.get("name") or "")
-    return str(entry or "")
-
-
-def _gpu_entry_vram_gb(entry: Any) -> int:
-    if isinstance(entry, dict):
-        mib = entry.get("memory_mib")
-        if isinstance(mib, (int, float)) and mib > 0:
-            return round(float(mib) / 1024)
+def _gpu_entry_vram_gb(entry: dict[str, Any]) -> int:
+    """gpu_info 条目 {name, memory_mib?} 的显存 GB;lspci 回落条目无 memory_mib → 0(按默认表补)。"""
+    mib = entry.get("memory_mib")
+    if isinstance(mib, (int, float)) and mib > 0:
+        return round(float(mib) / 1024)
     return 0
 
 
@@ -52,10 +45,9 @@ async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
         if not r.node_name:
             continue
         gpu_info = r.gpu_info or []
-        first = gpu_info[0] if gpu_info else None
         os_info = r.os_info or {}
         out[r.node_name] = {
-            "raw": _gpu_entry_name(first),
+            "raw": str(gpu_info[0].get("name") or "") if gpu_info else "",
             "vram_gb": max((_gpu_entry_vram_gb(e) for e in gpu_info), default=0),
             "driver_version": str(os_info.get("driver_version") or "") or None,
             "cuda_version": str(os_info.get("cuda_version") or "") or None,

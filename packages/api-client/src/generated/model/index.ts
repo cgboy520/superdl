@@ -85,7 +85,7 @@ export * from './billSummaryItem';
 export * from './billSummaryOut';
 export * from './bootstrapOut';
 export * from './bootstrapRequest';
-export * from './bootstrapRequestGpuDetails';
+export * from './bootstrapRequestGpuDetailsItem';
 export * from './bootstrapRequestOsInfo';
 export * from './capacityPreviewOut';
 export * from './capacityWarningOut';

@@ -297,6 +297,8 @@ EOF
   [ "$(cat "$SUPERDL_JOIN_STATE_DIR/reboot_count")" = "1" ]
   [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
   grep -q '"phase":"reboot","state":"rebooting"' "$CURL_LOG"
+  # 无驱动时全卡清单退回 lspci 名称,仍是 [{name}] 同一形态(无显存字段)
+  grep -q '"gpu_details": \[{"name": "NVIDIA Corporation AD102 RTX4090"}\]' "$CURL_LOG"
 }
 
 @test "管道执行的重启断点:从 API 重拉自身并校验 bootstrap 下发的指纹" {

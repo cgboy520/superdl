@@ -176,7 +176,7 @@ class TestEnrollmentStateMachine:
                 token,
                 hostname="gpu-node-7",
                 os_info={"os_release": "Ubuntu 24.04"},
-                gpus=["RTX 4090"],
+                gpu_details=[{"name": "RTX 4090"}],
                 client_ip="10.0.0.77",
             )
             assert row.status == "installing"
@@ -188,7 +188,12 @@ class TestEnrollmentStateMachine:
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await nodes_service.bootstrap(
-                    session, token, hostname="gpu-node-7", os_info={}, gpus=[], client_ip=None
+                    session,
+                    token,
+                    hostname="gpu-node-7",
+                    os_info={},
+                    gpu_details=[],
+                    client_ip=None,
                 )
             assert exc.value.http_status == 404
 
@@ -203,13 +208,23 @@ class TestEnrollmentStateMachine:
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await nodes_service.bootstrap(
-                    session, token2, hostname="other-host", os_info={}, gpus=[], client_ip=None
+                    session,
+                    token2,
+                    hostname="other-host",
+                    os_info={},
+                    gpu_details=[],
+                    client_ip=None,
                 )
             assert exc.value.http_status == 409
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await nodes_service.bootstrap(
-                    session, token2, hostname="expected-host", os_info={}, gpus=[], client_ip=None
+                    session,
+                    token2,
+                    hostname="expected-host",
+                    os_info={},
+                    gpu_details=[],
+                    client_ip=None,
                 )
             assert exc.value.http_status == 404
 
@@ -234,7 +249,7 @@ class TestEnrollmentStateMachine:
             )
         async with sm() as session:
             _row, _cfg, progress = await nodes_service.bootstrap(
-                session, token, hostname="gpu-ttl-1", os_info={}, gpus=[], client_ip=None
+                session, token, hostname="gpu-ttl-1", os_info={}, gpu_details=[], client_ip=None
             )
             assert progress is not None
         async with sm() as session:
@@ -263,7 +278,7 @@ class TestEnrollmentStateMachine:
             )
         async with sm() as session:
             _r, _c, progress = await nodes_service.bootstrap(
-                session, token, hostname="mig-node-1", os_info={}, gpus=[], client_ip=None
+                session, token, hostname="mig-node-1", os_info={}, gpu_details=[], client_ip=None
             )
             assert progress is not None
         # 消费后的注册令牌不能再上报进度(只能由窄权限 progress 令牌上报)
@@ -299,7 +314,7 @@ class TestEnrollmentStateMachine:
             )
         async with sm() as session:
             _r2, _c2, progress2 = await nodes_service.bootstrap(
-                session, token2, hostname="hami-node-9", os_info={}, gpus=[], client_ip=None
+                session, token2, hostname="hami-node-9", os_info={}, gpu_details=[], client_ip=None
             )
             assert progress2 is not None
         async with sm() as session:
@@ -361,7 +376,7 @@ class TestEnrollRouterAnonymous:
             json={
                 "hostname": "gpu-a3-01",
                 "os_info": {"os_release": "Ubuntu 24.04", "kernel": "6.8", "arch": "x86_64"},
-                "gpus": ["NVIDIA RTX4090"],
+                "gpu_details": [{"name": "NVIDIA RTX4090"}],
             },
             headers=bearer,
         )

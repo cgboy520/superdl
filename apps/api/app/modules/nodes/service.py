@@ -316,9 +316,8 @@ async def bootstrap(
     *,
     hostname: str,
     os_info: dict[str, Any],
-    gpus: list[str],
+    gpu_details: list[dict[str, Any]],
     client_ip: str | None,
-    gpu_details: list[dict[str, Any]] | None = None,
 ) -> tuple[NodeEnrollment, dict[str, str], str]:
     """令牌换装机参数。返回 (enrollment, cluster 最小配置, progress 令牌)。
 
@@ -343,7 +342,7 @@ async def bootstrap(
     row.node_name = hostname
     row.reported_ip = client_ip
     row.os_info = os_info
-    row.gpu_info = gpu_details if gpu_details else gpus  # 新脚本全卡清单优先,旧脚本回落名称列表
+    row.gpu_info = gpu_details
     row.last_report_at = now_utc()
     progress_token, row.progress_token_hash = _new_token(PROGRESS_TOKEN_PREFIX)
     transition_enrollment(row, "installing", phase="bootstrap")
@@ -538,11 +537,8 @@ async def derive_node_distro(session: AsyncSession, cfg: dict[str, str]) -> str:
 HAMI_GATE_MAX_AGE = timedelta(minutes=10)  # 能力缓存陈旧窗:超时视为未知,拒绝下发
 
 
-async def require_hami_ready(session: AsyncSession) -> None:
-    """shared 档下发门禁:调度器缺位即时报错,而非等 Pod Pending 超时。
-
-    缓存缺失/陈旧一律拒绝(巡检 60s 一轮,陈旧即 worker 停摆)。
-    """
+async def _fresh_cluster_status(session: AsyncSession) -> ClusterStatus:
+    """下发门禁共用的能力缓存读取:缺失/陈旧一律 409(巡检 60s 一轮,陈旧即 worker 停摆)。"""
     row = await get_cluster_status(session)
     if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:
         raise AppError(
@@ -551,6 +547,12 @@ async def require_hami_ready(session: AsyncSession) -> None:
             http_status=http_status.HTTP_409_CONFLICT,
             detail={"reason": "probe_stale" if row else "no_probe"},
         )
+    return row
+
+
+async def require_hami_ready(session: AsyncSession) -> None:
+    """shared 档下发门禁:调度器缺位即时报错,而非等 Pod Pending 超时。"""
+    row = await _fresh_cluster_status(session)
     if not row.hami_ready:
         raise AppError(
             ErrorCode.CLUSTER_NOT_READY,
@@ -565,14 +567,7 @@ async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool
 
     按名核对 ClusterStatus.storage_classes 里实例盘/数据盘各自的 SC。
     """
-    row = await get_cluster_status(session)
-    if row is None or now_utc() - row.probed_at > HAMI_GATE_MAX_AGE:
-        raise AppError(
-            ErrorCode.CLUSTER_NOT_READY,
-            key="nodes.clusterNotReady",
-            http_status=http_status.HTTP_409_CONFLICT,
-            detail={"reason": "probe_stale" if row else "no_probe"},
-        )
+    row = await _fresh_cluster_status(session)
     present = set(row.storage_classes or ())
     required = [INSTANCE_DISK_STORAGE_CLASS]
     if with_data_disk:

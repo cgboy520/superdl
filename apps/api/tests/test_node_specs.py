@@ -113,7 +113,6 @@ async def test_enrollment_report_wins_over_gfd(sm, fake):
             token,
             hostname="fake-hami-node-1",
             os_info={"os_release": "Ubuntu 24.04"},
-            gpus=[],
             gpu_details=[{"name": "NVIDIA A100-SXM4-80GB", "memory_mib": 81920}],
             client_ip=None,
         )

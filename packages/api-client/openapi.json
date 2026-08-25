@@ -1828,27 +1828,12 @@
       "BootstrapRequest": {
         "properties": {
           "gpu_details": {
-            "anyOf": [
-              {
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "maxItems": 16,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gpu Details"
-          },
-          "gpus": {
             "items": {
-              "type": "string"
+              "additionalProperties": true,
+              "type": "object"
             },
             "maxItems": 16,
-            "title": "Gpus",
+            "title": "Gpu Details",
             "type": "array"
           },
           "hostname": {
