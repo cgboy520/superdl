@@ -28,12 +28,12 @@
 
 ## 规则与不变量
 
-- 用户端与管理端 JWT audience 隔离(`user` / `admin`);user token 访问管理端 API 一律 403。
+- 用户端与管理端 JWT audience 隔离(`SUPERDL_JWT_USER_AUDIENCE` / `SUPERDL_JWT_ADMIN_AUDIENCE`,默认 `superdl:user` / `superdl:admin`;issuer `SUPERDL_JWT_ISSUER` 默认 `superdl`);user token 访问管理端 API 一律 403。
 - refresh token 一次性消费:jti 落 `used_refresh_tokens`,重放视为泄露并撤销该用户全部在外 token。**宽限窗**:同 jti 在 10s 内被重复消费视为并发重试,按正常轮换补发新对,不触发撤销。
 - `users.token_version` 是撤销闸,递增即令已签发 token 全部失效;冻结用户同步递增。所有 `token_version` 读-改-写(改密/冻结/refresh 重放撤销/logout-all)必须带行锁(`with_for_update`)。
 - 登录限流只计失败,四层桶:`user-login:{ip}:{phone}` 5 次/5 分钟与 `user-login-acct:{phone}` 10 次/15 分钟(成功即清零),`user-login-ip:{ip}` 60 次/时与 `user-login-acct-daily:{phone}` 30 次/日(只计失败、不清零)。注册与找回密码各 5 次/5 分钟(IP+手机号),实名核验 5 次/时/用户。全部限额汇总见 [limits.md](./limits.md)。
 - 密码字段在 schema 层按 **UTF-8 字节数 ≤72** 校验(bcrypt 上限,不能按字符数);管理端口令在服务层同标拦截。
-- 验证码失败计次 `attempts` ≥5 即作废(置 `used_at`,持久化在 DB,不可只存进程内);同 phone 重复发码有递增退避(连续未消费第 N 条的间隔为基础间隔 ×2^(N-1),60s 起、封顶 480s),报 `SMS_TOO_FREQUENT`。
+- 验证码失败计次 `attempts` ≥5 即作废(置 `used_at`,持久化在 DB,不可只存进程内);同 phone 重复发码有递增退避(连续未消费第 N 条的间隔为基础间隔 ×2^(N-1),基础间隔 `SUPERDL_SMS_SEND_INTERVAL_SECONDS` 默认 60s、封顶 480s),报 `SMS_TOO_FREQUENT`。
 - 发码限流:尝试按 IP(20/h);手机号 10 次/日配额按「验证码被消费」计,同号轰炸由递增退避兜底。计数落 PG,见 [security.md](./security.md)。
 - 短信发送失败时必须作废已落库的验证码并返 502,不留下可用码。
 - 公钥须为 ssh-ed25519 / ssh-rsa / ecdsa-*;唯一性按 (user_id, fingerprint),同用户指纹重复报 `SSH_KEY_DUPLICATE`,非法公钥报 `SSH_KEY_INVALID`;删除为硬删除,删后可重添。

@@ -103,7 +103,7 @@ max_connections ≥ (api 副本 + worker 副本) × (db_pool_size + max_overflow
 
 ## 管理端访问边界
 
-管理端 API 在公网 api 域下不可达(API 侧边缘收口:Host 非 admin 域一律 404);
+管理端 API 在公网 api 域下不可达(API 侧边缘收口 `SUPERDL_EDGE_GUARD_ENABLED`:Host 非 admin 域一律 404;默认仅 prod 启用,以非 prod 名复用本清单的类生产环境须显式 true,见 `docs/reference/security.md`);
 `admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
 生产必须再叠加一层网络边界——`app/k8s/04-ingress.yaml` 的 `superdl-admin` Ingress
 **默认启用**源 IP 白名单注解(`CHANGE_ME_OFFICE_CIDR/32` 占位,preflight 强制校验已替换),

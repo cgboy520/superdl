@@ -17,7 +17,7 @@
 | SSH 公钥 | 不限;同用户指纹唯一 | — | `ssh_keys` |
 | 容器临时存储 | 请求 2Gi,上限 64Gi | — | `core/k8s/real.py` |
 
-集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台带 SSH 的实例(`SUPERDL_SSH_PORT_RANGE_*`)。
+集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台带 SSH 的实例(`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;运行期撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。
 
 ## 计费与回收时钟
 

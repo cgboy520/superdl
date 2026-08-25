@@ -13,9 +13,9 @@
 | `GET /api/admin/v1/platform-config` | admin | 分组配置项(来源 env/override、脱敏预览) |
 | `PUT /api/admin/v1/platform-config` | admin | `{updates, reason}`;校验格式/枚举/prod 禁 mock;空串 = 清除覆盖 |
 | `POST /api/admin/v1/platform-config/test-sms` | admin | `{phone}`,走当前生效渠道实发验证码 |
-| `GET /api/v1/site-config` | 匿名 | `{icp_number, police_record_number, payment_channels}` |
+| `GET /api/v1/site-config` | 匿名 | `{icp_number, police_record_number, company_name, company_address, company_phone, business_license_url, support_email, support_wechat, payment_channels}`:页脚 / 帮助页 / 充值弹窗动态渲染,留空即不展示 |
 
-配置组:payment(渠道能力见 [payment.md](./payment.md))、sms 与 real-name、icp、cluster(键面见 [nodes.md](./nodes.md))、observability(见 [observability.md](./observability.md))。
+配置组(`SettingGroup`):payment_wechat / payment_alipay(渠道能力见 [payment.md](./payment.md))、sms、real_name、captcha、compliance(备案号 `icp_number` / `police_record_number` + 经营主体公示 `company_name` / `company_address` / `company_phone` / `business_license_url`,《电子商务法》第十五条,页脚展示)、support(客服联系方式 `support_email` / `support_wechat`,页脚与帮助页展示)、cluster(键面见 [nodes.md](./nodes.md))、observability(`grafana_url` 外链、`oncall_phone` 值班手机号,见 [observability.md](./observability.md))。每个键与 `Settings` 同名字段一一对应,env 即默认值层。
 
 `Settings` 相关键:`config_encryption_key`、`real_name_provider`、`real_name_access_key_id`、`real_name_access_key_secret`、`payment_wechat_enabled`、`payment_alipay_enabled`、`wechat_public_key`、`wechat_public_key_id`、`icp_number`、`police_record_number`。
 
