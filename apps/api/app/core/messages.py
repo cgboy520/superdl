@@ -144,7 +144,6 @@ MESSAGES: dict[str, str] = {
     "common.forbidden": "无权访问",
     "common.httpError": "请求失败({status})",
     "common.internal": "服务器内部错误,请稍后重试",
-    "common.invalidResponse": "服务响应异常,请稍后重试",
     "common.methodNotAllowed": "该接口不支持此请求方法",
     "common.networkError": "网络连接失败,请检查网络后重试",
     "common.notFound": "资源不存在",

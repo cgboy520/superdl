@@ -112,7 +112,6 @@
     "forbidden": "You do not have access",
     "httpError": "Request failed ({{status}})",
     "internal": "Internal server error — try again later",
-    "invalidResponse": "Unexpected server response. Try again later.",
     "methodNotAllowed": "This endpoint does not support the request method",
     "networkError": "Network connection failed. Check your connection and try again.",
     "notFound": "Resource not found",

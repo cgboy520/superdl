@@ -946,7 +946,6 @@ export default interface Resources {
       "forbidden": "无权访问",
       "httpError": "请求失败({{status}})",
       "internal": "服务器内部错误,请稍后重试",
-      "invalidResponse": "服务响应异常,请稍后重试",
       "methodNotAllowed": "该接口不支持此请求方法",
       "networkError": "网络连接失败,请检查网络后重试",
       "notFound": "资源不存在",
