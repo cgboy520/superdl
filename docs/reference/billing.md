@@ -23,6 +23,7 @@
 | `GET /api/v1/bills/hourly` | user | 小时账单,游标分页(含 instance_name 展示冗余,非对账字段) |
 | `GET /api/v1/bills/summary` | user | 消费概览与成本归因 |
 | `GET /api/v1/bills/daily-summary?date=YYYY-MM-DD&tz_offset_minutes=480` | user | 本地日界折 UTC 聚合小时账单(按实例)+ 当日数据盘日账 |
+| `GET /api/v1/billing/export?dataset=hourly\|ledger&month=YYYY-MM&tz_offset_minutes=480&lang=` | user | 小时账单 / 收支明细 CSV(流式);month 仅作用于 hourly;行数硬上限,触顶时在文件末尾写 `#SUPERDL_EXPORT_TRUNCATED#` 标记行,前端据以提示已截断 |
 
 ## 规则与不变量
 

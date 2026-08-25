@@ -13,6 +13,7 @@
 |---|---|---|
 | `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离;全角色强制 TOTP(未绑定发绑定票 10 分钟、已绑定发二要素票 5 分钟) |
 | `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废 |
+| `POST /api/admin/v1/me/mfa/recovery-codes` | 全角色(本人) | 重新生成恢复码,旧码全部作废,明文仅此一次返回;进审计 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由都调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |
 | `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、池级 GPU 台账(含非 Ready 段)、节点 Ready/Missing 计数 |
 | `/` 运营总览 | 全角色 | KPI 行(接 /overview 精确计数,含节点健康卡)+ 「实际超卖率 vs 真实利用率」双曲线(60%/85% 辅助线)+ GPU 池占用条(含未就绪段)+ 告警流 + 收入 KPI + 死信卡(重放/忽略都需原因) |
@@ -20,10 +21,12 @@
 | `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览)+ 从集群资源创建 + 容量预览 |
 | `GET /api/admin/v1/skus/{sku_id}/impact` | ops/finance/readonly | 改价影响面(只读):活跃实例数/涉及用户数/占用卡数 |
 | `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;驱逐重调度为占位按钮,未开放);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
+| `POST /api/admin/v1/tenants/{user_id}/freeze` `/unfreeze` | ops | `{reason}` 必填;冻结与 status 变更同事务对该用户全部实例下发停机(经 outbox),响应回显 `instances_stopped`(creating/starting 由巡检收敛,不计入);解冻不自动开机,站内信告知用户手动开机 |
+| `POST /api/admin/v1/instances/{uuid}/force-stop` | ops | `{reason}` 必填;仅 running(其余 409),下发关机并结算尾账 |
 | `GET /api/admin/v1/tenants/{user_id}/adjust-context` | ops/finance/readonly | 调账前置上下文(只读,敏感读落审计):掩码手机号/当前余额/近 3 条流水/在跑台数;不存在 → 404 |
 | `/finance` 财务对账 | finance 可写 | 日对账卡(diff% >2% 标红)+ 充值流水 + 小时账单 + 调账(发起回显租户上下文,不存在的租户前端禁提交+后端 404;单笔绝对值上限 `ADJUST_MAX_ABS`;复核框列出租户/余额/调账后余额/发起人/原因)+ 异常清单 |
 | `/images` `/cluster` `/tickets` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
-| `GET /api/admin/v1/tenants/{user_id}/ledger` `/bills` | ops/finance/readonly | 游标分页;与用户端同一函数(`billing.wallet.ledger_page` / `hourly_bills_page`) |
+| `GET /api/admin/v1/tenants/{user_id}/ledger` `/bills` `/ledger/export` | ops/finance/readonly | 游标分页;与用户端同一函数(`billing.wallet.ledger_page` / `hourly_bills_page`);`/ledger/export` 为流式 CSV,行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/outbox/dead` `POST .../{task_id}/retry` `/discard` | ops(读含 readonly) | 死信列表、重放(需原因)、忽略(需原因) |
 | `POST /api/admin/v1/announcements` | ops | 公告群发 |
 | `GET/POST /api/admin/v1/admins` `PATCH .../{admin_id}` `POST .../{admin_id}/reset-password` | admin | 管理员账号 CRUD;改角色/停用/重置密码即 token_version+1 |
@@ -31,6 +34,9 @@
 | `GET/PUT /api/admin/v1/policies` | 读 ops/finance/readonly,写 ops | 策略参数在线化,落 `policy_overrides` |
 | `GET /api/admin/v1/reports/revenue` `/reports/oversell` | ops/finance/readonly | 收入报表、超卖率报表 |
 | `GET /api/admin/v1/finance/anomalies` | finance/readonly | 丢回调/关单/负余额异常清单 |
+| `GET /api/admin/v1/orders?status=&order_no=&user_id=&day=` `/orders/export` | finance/readonly | 充值订单列表;export 为流式 CSV,筛选口径一致,行数硬上限 + 截断标记行 |
+| `GET /api/admin/v1/finance/settlement-gaps?kind=&reason=&unresolved=` | finance/readonly | 结算缺口列表(游标分页,默认只看未核销;口径见 [billing.md](./billing.md)) |
+| `POST /api/admin/v1/finance/settlement-gaps/{gap_id}/replay` `/resolve` | finance | replay 重放该窗口的幂等入账原语(人工触发,不自动改账),成功回写 resolved_at,grace_overlap / 对象已不存在 409;resolve 为人工核销不重放,`{note}` 必填 |
 | `POST /api/admin/v1/finance/orders/{order_no}/verify` `/backfill` | finance | 渠道核验与补单 |
 | `POST /api/admin/v1/adjustments` `/{adjustment_id}/review` | finance 发起,复核双人 | 调账双管理员复核 |
 | `GET /api/admin/v1/refunds` `POST .../{refund_id}/review` `/payout` `/cancel` | finance/admin | 退款审批与登记打款分人:审批不动钱包,登记打款成功才负向核销 |
@@ -41,6 +47,8 @@
 | `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行 |
 | `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环 |
 | `GET /api/admin/v1/outbox/tasks` | ops(读含 readonly) | outbox 全量排障视图,固定截断 200 |
+| `GET /api/admin/v1/nodes/port-pool` | ops/readonly | SSH 端口池水位 `{total, assigned, blocked}`;blocked = 被集群其它对象撞占(周期复检自动放回),持续上涨要查孤儿端点 |
+| `GET /api/admin/v1/audit?actor_type=&actor_id=&q=&since=&until=` `/audit/export` | readonly/ops/finance | 审计检索(actor / 动作前缀 / 时间区间,游标向前翻页);export 为流式 CSV,筛选口径同,行数硬上限 + 截断标记行,导出动作本身落一条检索审计(只记筛选参数) |
 
 ## 规则与不变量
 

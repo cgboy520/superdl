@@ -13,6 +13,8 @@
 |---|---|---|
 | `GET /api/v1/notifications?unread=&cursor=&limit=` | user | 列表,降序(最新在前)游标分页 |
 | `POST /api/v1/notifications/{notification_id}/read` | user | 标记已读 → 204 |
+| `GET /api/v1/notifications/unread-count` | user | 未读数(顶栏角标轮询):DB count,与列表分页解耦 |
+| `POST /api/v1/notifications/read-all` | user | 全部已读(幂等)→ 204 |
 | `POST /api/v1/webhooks/alertmanager` | Bearer token | GPU XID 致命告警 → 通知受影响租户 + 进管理端告警流 |
 
 ## 规则与不变量

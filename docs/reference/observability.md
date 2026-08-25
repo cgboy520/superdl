@@ -7,7 +7,8 @@
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
 | `GET /metrics` | Bearer `SUPERDL_METRICS_TOKEN` | Prometheus 抓取 |
-| `GET /readyz` | 匿名 | 探 DB |
+| `GET /healthz` | 匿名 | liveness:进程活着即 200,不探依赖;不进 openapi |
+| `GET /readyz` | 匿名 | readiness:探 DB 并比对 `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)/ 库从未迁移(503 `never_migrated`)时新 Pod 不接流量;不进 openapi |
 | `GET /api/admin/v1/nodes/{node_name}/metrics?range=1h\|6h\|24h` | ops/readonly | `{available, gpus:[{index, util:[[ts,v]], mem_used_mb, temp}], xid_count_24h}`;断源 `available=false` 且返 200 |
 | `GET /api/admin/v1/alerts` | ops/finance/readonly | 告警流,条目关联节点/实例内部链接 |
 | platform-config `observability` 组 | admin | 键 `grafana_url`(str,`https?://` pattern,可空) |

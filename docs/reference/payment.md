@@ -5,6 +5,8 @@
 ## 数据模型
 
 - `orders`:order_no 唯一、user_id、type(recharge)、amount numeric(14,2) >0、channel(wechat/alipay/mock)、channel_txn_id 唯一?、status(pending/paid/closed/failed)、idempotency_key(与 user_id 联合唯一)、qr_url、paid_at、expires_at、发票字段预留(invoice_*)
+- `refund_requests`:refund_no 唯一、user_id、order_no(原充值订单)、amount numeric(12,2) >0、reason、status(pending/approved/paid/rejected/cancelled)、review_by/review_at/review_comment、payout_channel(offline/alipay_transfer/wechat_transfer)/payout_ref/payout_at、idempotency_key(与 user_id 联合唯一);部分唯一索引保证同一订单同时至多一条活跃(pending/approved/paid)申请
+- `invoice_requests`:user_id、period(YYYY-MM,北京月界)、title_type(personal/company)、title、tax_id?、email、amount numeric(12,2)(服务端按账期计算)、status(submitted/issued/rejected)、invoice_no?、reject_reason?、issued_by/issued_at、idempotency_key(与 user_id 联合唯一);部分唯一索引保证同一 (user_id, period) 至多一条非 rejected 申请
 
 ## 契约
 
@@ -15,6 +17,12 @@
 | `POST /api/v1/webhooks/wechatpay` | 渠道验签 | 验签 → channel_txn_id 幂等 → 事务{order.paid + 钱包入账 + ledger} |
 | `POST /api/v1/webhooks/alipay` | 渠道验签 | 同上;应答体为纯文本 `success` |
 | `POST /api/v1/webhooks/mock` | 仅 dev/test | 直接标记支付成功 |
+| `GET /api/v1/wallet/refunds/eligible-orders` | user | 退款表单候选集:最近 50 笔充值订单逐单标注 `refundable` 与 `max_amount`(= min(订单额, 当前余额));不可申请的给 `reason_code`(not_paid / already_applied / invoiced / no_balance) |
+| `POST /api/v1/wallet/refunds` | user | `{order_no, amount, reason}` + Idempotency-Key → 201;重放回既有单(200 + `X-Idempotent-Replay`);订单非 paid / 已渠道冲正 / 所属账期已开票 / 已有活跃申请均 409;amount 上限 = min(订单额, 当前余额) |
+| `GET /api/v1/wallet/refunds` | user | 本人退款单,降序游标分页 |
+| `GET /api/v1/billing/invoices/eligible` | user | 各账期可开票额度(仅 amount > 0 的已结束账期,申请弹窗数据源) |
+| `POST /api/v1/billing/invoices` | user | `{period, title_type, title, tax_id?, email}` + Idempotency-Key → 201;amount 由服务端按账期计算,客户端提交的金额无效;同账期已有非 rejected 申请 409 |
+| `GET /api/v1/billing/invoices` | user | 本人发票申请,降序游标分页 |
 
 ## 规则与不变量
 
@@ -31,5 +39,6 @@
 - 查单 poller 每 2 分钟收敛丢回调(advisory lock 1007),不扫 closed 单;单笔入账失败(金额/渠道不符、唯一约束冲突)记 `superdl_payment_recover_failed_total` 后跳过,不中断整轮;残余窗口由异常清单 + 人工补单兜底。
 - 人工补单为渠道核验制:服务端实时查渠道(锁外查询、显式超时 15s,落账前行锁内复核状态),已支付且金额一致才入账;pending / closed / failed 单均可补,渠道是唯一事实源。支持 Idempotency-Key:同键重放且已入账则回当前状态而非 409(落 `orders.backfill_idempotency_key`)。见 [admin.md](./admin.md)。
 - 渠道凭据与开关在管理端配置,不入代码与 K8s Secret 之外的任何位置,见 [platform-config.md](./platform-config.md)。
-- 不做渠道原路退款:退款单审批通过不动钱包,财务登记打款成功才同事务负向核销(审批与打款分人)。
+- 不做渠道原路退款。退款闭环:用户申请 → finance 审批(不动钱包)→ 第二管理员登记线下打款(`payout_by ≠ review_by`,应用层 409 + DB CHECK 双保险)→ 同事务钱包负向核销(ledger type=refund,带 balance_after);打款时在钱包行锁内复核余额 ≥ 退款额,不足 409,可取消该单(余额不动)。
 - 已开票(issued)账期的 paid 订单不可申请退款,须先红冲。
+- 发票按账期合并开具,一自然月一张,仅可申请早于当前北京月的账期;可开票额 = 该账期 paid 充值(不含渠道冲正)− 已打款退款 − 在途退款 − 已申请/已开票额,只由服务端计算;开票(填发票号)时行锁内按当前口径重算,申请到开票之间发生退款即 409 驳回重申;驳回后同账期可重新申请。
