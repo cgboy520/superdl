@@ -51,46 +51,42 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
     instance.pod_name = instance.uuid
 
 
-@outbox_handler("instance.create")
-async def handle_create(session: AsyncSession, task: OutboxTask) -> None:
+async def _provision(session: AsyncSession, task: OutboxTask, expected: str) -> None:
+    """create/start 同体:建 Pod/Service/Ingress;状态推进交给 reconciler
+    (Pod Ready → running / 超时 → failed)。"""
     instance = await _load(session, task)
-    if instance is None:
-        return
-    if instance.status != sm_def.CREATING:
+    if instance is None or instance.status != expected:
         return  # 已失败/已推进,幂等跳过
     await _create_with_port_recovery(session, instance)
-    # 建 Pod 耗时可能跨过 creating 超时:FOR UPDATE 重读,已被 reconciler 推进
-    # (超时 failed + 端口已回收)则回滚本事务——failed 实例不能占端口;
-    # 已建出的 Pod 由泄漏回收收敛
+    # 建 Pod 耗时可能跨过超时线:FOR UPDATE 重读,已被 reconciler 推进(超时 failed +
+    # 端口已回收)则回滚本事务——failed 实例不能占端口;已建出的 Pod 由泄漏回收收敛
     fresh = await session.get(Instance, instance.id, with_for_update=True)
-    if fresh is None or fresh.status != sm_def.CREATING:
+    if fresh is None or fresh.status != expected:
         await session.rollback()
-        return
-    # 状态推进交给 reconciler(Pod Ready → running / 超时 → failed)
+
+
+@outbox_handler("instance.create")
+async def handle_create(session: AsyncSession, task: OutboxTask) -> None:
+    await _provision(session, task, sm_def.CREATING)
 
 
 @outbox_handler("instance.start")
 async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
+    await _provision(session, task, sm_def.STARTING)
+
+
+async def _delete_pod(session: AsyncSession, task: OutboxTask, expected: str) -> None:
+    """stop/release 同体:删 Pod/Service/Ingress;后续边(stopped 的尾账 / released 的
+    端口回收与实例盘回收入队)由 reconciler 观察到 Pod 消失后完成。"""
     instance = await _load(session, task)
-    if instance is None:
+    if instance is None or instance.status != expected:
         return
-    if instance.status != sm_def.STARTING:
-        return
-    await _create_with_port_recovery(session, instance)
-    fresh = await session.get(Instance, instance.id, with_for_update=True)
-    if fresh is None or fresh.status != sm_def.STARTING:
-        await session.rollback()
-        return
+    await get_orchestrator().delete_instance(instance.k8s_namespace, instance.uuid)
 
 
 @outbox_handler("instance.stop")
 async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
-    instance = await _load(session, task)
-    if instance is None or instance.status != sm_def.STOPPING:
-        return
-    orch = get_orchestrator()
-    await orch.delete_instance(instance.k8s_namespace, instance.uuid)
-    # reconciler 观察到 Pod 消失 → stopped(尾账在计费边监听器触发)
+    await _delete_pod(session, task, sm_def.STOPPING)
 
 
 # 重启要跨过 Pod 的优雅删除期(terminationGracePeriodSeconds=30),期间靠抛错退避重试;
@@ -153,14 +149,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("instance.release")
 async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
-    instance = await _load(session, task)
-    if instance is None:
-        return
-    if instance.status != sm_def.RELEASING:
-        return
-    orch = get_orchestrator()
-    await orch.delete_instance(instance.k8s_namespace, instance.uuid)
-    # releasing → released 由 reconciler 在确认 Pod 消失后完成(含擦盘事件与端口回收)
+    await _delete_pod(session, task, sm_def.RELEASING)
 
 
 # 等 Pod 消失再删实例盘:预算 12×30s ≈ 1.5h,覆盖长 Terminating
