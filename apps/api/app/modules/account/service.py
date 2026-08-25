@@ -315,7 +315,7 @@ async def login(
     await _clear_login_failures(f"user-login:{client_ip or '-'}:{phone}")
     # 异常登录通知:账号桶在窗口内有失败记录而本次成功——疑似被撞库,通知本人;
     # 随后清零账号桶(正常用户的预算不被攻击者的失败计数拖垮)
-    if user is not None and password is not None:
+    if password is not None:
         acct_hits = await read_hits(f"user-login-acct:{phone}", window_seconds=900.0)
         if acct_hits > 0:
             from app.modules.notify import service as notify_service
