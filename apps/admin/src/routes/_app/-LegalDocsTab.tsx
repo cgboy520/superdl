@@ -39,7 +39,7 @@ const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;
 const LOCALES = ["zh-CN", "en-US"] as const;
 
 /** 行级 diff 统计(LCS):发布确认弹窗展示 +added/−removed。 */
-export function diffStats(oldText: string, newText: string): { added: number; removed: number } {
+function diffStats(oldText: string, newText: string): { added: number; removed: number } {
   const a = oldText.split("\n");
   const b = newText.split("\n");
   const m = a.length;
