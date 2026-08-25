@@ -33,7 +33,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pyright
       - run: uv run lint-imports
-      - run: uv run pytest --cov=app --cov-report=term
+      - run: uv run pytest
       # schema diff 双保险之一:单测基建走 create_all(见 tests/conftest.py),
       # 它与迁移链的一致性由此步把关 —— upgrade head 后 alembic check 以 Base.metadata
       # 为基准做 autogenerate diff,模型 ≠ 迁移即非零退出。不必另造 create_all vs
