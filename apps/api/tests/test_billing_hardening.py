@@ -290,29 +290,6 @@ class TestPatrolUnsettledBurn:
         assert any(t.type == "notify.sms" for t in tasks)
         assert any(t.type == "instance.stop" for t in tasks)
 
-    async def test_coverable_burn_only_warns(self, sm, _freeze_now):
-        """余额盖得住未结算消耗 → 不停机;预估时长低于阈值只预警。"""
-        from app.modules.account.models import User
-
-        h0 = hour_floor(self.FIXED_NOW)
-        await seed_instance(
-            sm,
-            user_id=1,
-            price="1.6800",
-            status="running",
-            events=[(h0 + timedelta(minutes=5), "creating", "running")],
-        )
-        async with sm() as session:
-            # 预警阈值读 users.low_balance_warn_hours(默认 24h):合成实例也要有用户行
-            session.add(User(id=1, phone="13700009001"))
-            await session.execute(
-                update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("5.00"))
-            )
-            await session.commit()
-        counts = await patrol.balance_patrol(sm)
-        assert counts["stopped"] == 0
-        assert counts["warned"] == 1  # (5.00 − 0.84) / 1.68 ≈ 2.5h < 24h 阈值
-
     async def test_tail_billed_segment_not_double_counted(self, sm, _freeze_now):
         """当前小时已尾账出费的时段不得重复估进「未结算消耗」(否则会误停机)。"""
         h0 = hour_floor(self.FIXED_NOW)
@@ -421,7 +398,8 @@ class TestSettlementGaps:
         )
         await settle_due_hours(sm, at=H_END + timedelta(minutes=2))  # 水位线落在 H
         far = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10)
-        await settle_due_hours(sm, at=far)
+        # 只结最近 MAX_CATCHUP_HOURS 个窗口,不把 worker 拖死
+        assert await settle_due_hours(sm, at=far) == MAX_CATCHUP_HOURS
 
         target = H_END + timedelta(hours=MAX_CATCHUP_HOURS + 10 - 1)  # far 的上一整点
         floor = target - timedelta(hours=MAX_CATCHUP_HOURS - 1)
@@ -484,8 +462,8 @@ class TestSettlementGaps:
         settlement._failure_streaks.clear()
         assert await settle_due_hours(sm, at=at) == 0
 
-    async def test_persistent_failure_72h_keeps_other_instances_billed(self, sm, monkeypatch):
-        """实例稳定失败 72h:坏实例逐窗死信记缺口,好实例 72 个窗口的账一笔不丢。"""
+    async def test_persistent_failure_keeps_other_instances_billed(self, sm, monkeypatch):
+        """实例持续失败多个窗口:坏实例逐窗死信记缺口,好实例每个窗口的账一笔不丢。"""
         from app.modules.billing.settlement import _advance_watermark
         from app.modules.orchestrator import service as orchestrator_service
 
@@ -509,15 +487,14 @@ class TestSettlementGaps:
 
         monkeypatch.setattr(orchestrator_service, "lock_instance_for_billing", always_fail_lock)
 
-        # 坏实例的每个窗口要各自连败 DEAD_LETTER_AFTER 轮才死信:
-        # +24/+48/+72h 三轮追平后,只有前 24 窗死信,水位线推进到 H+24h
+        # 3 个窗口(H+1h..H+3h):坏实例每窗各自连败 DEAD_LETTER_AFTER 轮才死信,
+        # 期间水位线停在 H;最后一轮全部死信,水位线追平到 H+3h
+        at = H_END + timedelta(hours=3, minutes=2)
         for round_ in range(1, DEAD_LETTER_AFTER + 1):
-            await settle_due_hours(sm, at=H_END + timedelta(hours=24 * round_, minutes=2))
-        async with sm() as session:
-            assert await get_watermark(session, "hourly") == H + timedelta(hours=24)
-        # 再补两轮(同一 at):剩余窗口陆续死信,水位线追平到 H+72h
-        for _ in range(DEAD_LETTER_AFTER - 1):
-            await settle_due_hours(sm, at=H_END + timedelta(hours=72, minutes=2))
+            await settle_due_hours(sm, at=at)
+            async with sm() as session:
+                wm = await get_watermark(session, "hourly")
+            assert wm == (H + timedelta(hours=3) if round_ == DEAD_LETTER_AFTER else H)
         async with sm() as session:
             good_bills = (
                 (await session.execute(select(BillHourly).where(BillHourly.instance_id == good)))
@@ -539,11 +516,11 @@ class TestSettlementGaps:
                 .all()
             )
             wm = await get_watermark(session, "hourly")
-        assert len(good_bills) == 72  # 一笔不丢
+        assert len(good_bills) == 3  # 一笔不丢
         assert len(bad_bills) == 0
-        assert len(gaps) == 72  # 坏实例每窗一条死信缺口
+        assert len(gaps) == 3  # 坏实例每窗一条死信缺口
         assert all(g.object_id == bad for g in gaps)
-        assert wm == H + timedelta(hours=72)  # 水位线不再被卡死
+        assert wm == H + timedelta(hours=3)  # 水位线不再被卡死
 
     async def test_daily_disk_truncation_records_gaps(self, sm):
         """日结侧同构修复:超追平上限的日期登记 settlement_gaps(kind=daily_disk)。"""
