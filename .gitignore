@@ -32,4 +32,8 @@ dist/
 playwright-report/
 test-results/
 
+# 本地 UX 审计截图与网络日志(代理跑 Playwright 产出,不入库)
+/ux-audit/
+/audit-landing.png
+
 # Generated (packages/api-client/src is orval output, committed; openapi.json is exported artifact, committed)

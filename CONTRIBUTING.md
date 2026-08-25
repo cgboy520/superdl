@@ -13,7 +13,6 @@
 | Node.js | 24(`.node-version`) | 前端 |
 | pnpm | 11(`package.json` `packageManager`,建议 `corepack enable`) | 前端 |
 | shellcheck、bats | 任意 | 只在改 `node-join.sh` 时需要 |
-| go-task | 可选 | `Taskfile.yml` 是命令清单,不装也能直接跑底层命令 |
 
 ## 上手
 
