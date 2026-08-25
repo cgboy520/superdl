@@ -12,7 +12,7 @@
 追平设计:结算窗口由 settlement_watermarks 水位线推进而非只结上一个窗口,worker 停机
 跨过整点/日结时刻时漏掉的窗口下一轮自动补上。水位线被越过但账未结清的窗口一律登记
 settlement_gaps(追平截断 catchup_truncated / 单对象连续失败死信 dead_letter),
-并计 SETTLEMENT_GAP_TOTAL 单调计数 —— 缺口不自愈、可告警,由补结任务或人工处理。
+未核销数经 SETTLEMENT_GAP_UNRESOLVED(DB 口径)持续告警 —— 缺口不自愈,由补结任务或人工处理。
 """
 
 from collections.abc import Awaitable, Callable
@@ -29,7 +29,6 @@ from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
     SETTLEMENT_FAILED_TOTAL,
-    SETTLEMENT_GAP_TOTAL,
     SETTLEMENT_GAP_UNRESOLVED,
     SETTLEMENT_LAG,
 )
@@ -314,7 +313,7 @@ async def _record_gaps(
     object_id: int,
     reason: str,
 ) -> None:
-    """缺口登记(幂等,独立事务):同一 (kind, window, object) 只留一行;指标单调不降。"""
+    """缺口登记(幂等,独立事务):同一 (kind, window, object) 只留一行;告警走 DB 口径 gauge。"""
     if not windows:
         return
     async with sm() as session:
@@ -325,7 +324,6 @@ async def _record_gaps(
                 .on_conflict_do_nothing(index_elements=["kind", "window_start", "object_id"])
             )
         await session.commit()
-    SETTLEMENT_GAP_TOTAL.labels(kind=kind, reason=reason).inc(len(windows))
 
 
 async def _refresh_gap_gauge(session: AsyncSession) -> None:
@@ -420,7 +418,7 @@ async def _catchup_settle(
     """追平主循环(小时/日结共用):水位线 → 截断记缺口 → 逐窗结算 → 连续推进水位线 → lag。
 
     水位线只能连续推进:某窗有未解决失败即停在它之前,下轮重试(入账幂等,不重扣);
-    截断与死信的跳窗都登记 settlement_gaps,SETTLEMENT_GAP_TOTAL 单调不降(告警不自愈)。
+    截断与死信的跳窗都登记 settlement_gaps(告警按未核销缺口数持续判,不自愈)。
     """
     settled = 0
     async with (

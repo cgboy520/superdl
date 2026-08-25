@@ -21,7 +21,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger, setup_logging
-from app.core.metrics import SCHEDULED_TICK_DURATION, WORKER_HEARTBEAT_TS
+from app.core.metrics import WORKER_HEARTBEAT_TS
 from app.core.outbox import process_one, reap_stuck_running
 from app.core.timeutil import now_utc
 
@@ -160,7 +160,7 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
 def _timed_job(
     job_id: str, fn: Callable[..., Awaitable[Any]], period_seconds: float
 ) -> Callable[..., Awaitable[Any]]:
-    """包一层耗时观测:单轮耗时进 Histogram;超过周期 80% 打 warning。
+    """包一层耗时观测:单轮超过周期 80% 打 warning。
 
     APScheduler 的 coalesce/misfire 会静默丢弃整轮,耗时逼近周期是唯一可观测前兆。
     """
@@ -171,7 +171,6 @@ def _timed_job(
             return await fn(*args)
         finally:
             elapsed = time.monotonic() - started
-            SCHEDULED_TICK_DURATION.labels(job=job_id).observe(elapsed)
             if elapsed > 0.8 * period_seconds:
                 logger.warning(
                     "scheduled_tick_slow",

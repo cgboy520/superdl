@@ -814,8 +814,7 @@ export const getGetInstanceLogsApiV1InstancesUuidLogsGetUrl = (uuid: string,
  * 容器日志。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。
  *
  * 仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按
- * 2000 截断;since_seconds 可选、超 86400 按 86400 截断。不记审计;记
- * superdl_instance_logs_total{outcome}。
+ * 2000 截断;since_seconds 可选、超 86400 按 86400 截断。不记审计。
  * @summary Get Instance Logs
  */
 export const getInstanceLogsApiV1InstancesUuidLogsGet = async (uuid: string,

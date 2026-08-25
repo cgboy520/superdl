@@ -29,7 +29,7 @@
 
 - 计费主依据是 `instance_events` 的 running↔非 running 边;Prometheus 指标只做展示与对账,永不参与计费,监控全挂时结算照常。
 - 小时结算(每小时 :02,advisory lock):由 `settlement_watermarks` 水位线驱动,从上次已结窗口追平到上一整点(停机跨整点下一轮自动补);每实例按事件重建窗口 running 秒数,`UNIQUE(instance_id, hour_start)` 幂等 upsert,秒数单调递增时只补差价。重复执行与并发执行必须零重复扣款。
-- 追平截断(超 72h/14d 上限)与单对象连续失败(3 轮)死信,跳窗前一律登记 `settlement_gaps` 并计 `superdl_settlement_gap_total`(单调不降,告警按 increase 判,不自愈)。
+- 追平截断(超 72h/14d 上限)与单对象连续失败(3 轮)死信,跳窗前一律登记 `settlement_gaps`(未核销数经 `superdl_settlement_gap_unresolved` 持续告警,不自愈)。
 - 尾账:stop/release 时对当前小时已用秒数立即入账,靠同一 UNIQUE 键保持幂等。
 - 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 的时刻(事件 `metadata.unready_since`),宽限观察期不计费;截断在事件重建层(`settlement._billing_view`)生效,尾账/整点/追平三路径同口径,`bills_hourly.detail` 留 `truncated_at` / `truncate_reason` 依据。pod_unready(节点正常)不截断。
 - 无水位线行只结最近窗口,落 `{kind}_watermark_missing` 告警日志:非首次部署出现即水位线行被误删或库回退,更早窗口需人工补结。

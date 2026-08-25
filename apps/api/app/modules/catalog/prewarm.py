@@ -11,13 +11,12 @@
 
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import get_orchestrator
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import PREWARM_FAILED_TOTAL, PREWARM_NODES
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.policies import get_effective_policies
 from app.core.timeutil import now_utc
@@ -67,7 +66,6 @@ async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
 
         ref_by_id = await _plan(sm, known_nodes, target_nodes, counts)
         await _converge_pulling(sm, ref_by_id, counts)
-        await _refresh_metrics(sm)
     if any(counts.values()):
         logger.info("prewarm_patrol", **counts)
     return counts
@@ -168,7 +166,6 @@ async def _converge_pulling(
                     row.status = "failed"
                     row.last_error = status.message or "prewarm job failed"
                     await orch.delete_prewarm_job(row.node_name, ref)  # 重试时重建
-                    PREWARM_FAILED_TOTAL.labels(image_ref=ref).inc()
                     counts["failed"] += 1
                 elif status.state == "absent":
                     # Job 被 TTL 清理或创建丢失:回 pending 重派
@@ -183,18 +180,3 @@ async def _converge_pulling(
                 await session.commit()
         except Exception:
             logger.exception("prewarm_converge_error", row_id=row_id)
-
-
-async def _refresh_metrics(sm: async_sessionmaker[AsyncSession]) -> None:
-    """全量刷新覆盖 Gauge(clear 防已删镜像/状态残留陈旧序列)。"""
-    async with sm() as session:
-        rows = (
-            await session.execute(
-                select(PlatformImage.image_ref, ImageNodeCache.status, func.count())
-                .join(ImageNodeCache, ImageNodeCache.image_id == PlatformImage.id)
-                .group_by(PlatformImage.image_ref, ImageNodeCache.status)
-            )
-        ).all()
-    PREWARM_NODES.clear()
-    for image_ref, status, count in rows:
-        PREWARM_NODES.labels(image_ref=image_ref, status=status).set(count)

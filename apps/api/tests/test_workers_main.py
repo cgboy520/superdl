@@ -2,8 +2,6 @@
 
 from typing import Any
 
-from prometheus_client import REGISTRY
-
 from app.workers.main import _metrics_wsgi_app, _timed_job
 
 
@@ -102,20 +100,6 @@ class TestWorkerMetricsAuth:
 
 
 class TestTimedJob:
-    async def test_observes_duration_histogram(self):
-        before = REGISTRY.get_sample_value(
-            "superdl_scheduled_tick_duration_seconds_count", {"job": "t_fast"}
-        )
-
-        async def fast() -> int:
-            return 1
-
-        assert await _timed_job("t_fast", fast, 60.0)() == 1
-        after = REGISTRY.get_sample_value(
-            "superdl_scheduled_tick_duration_seconds_count", {"job": "t_fast"}
-        )
-        assert (after or 0) == (before or 0) + 1
-
     async def test_slow_tick_warns(self):
         """单轮耗时超过周期 80% 必须打 warning(coalesce/misfire 静默丢轮的前兆)。
         用 structlog 事件捕获而非 capsys:日志管道在套件早期已绑定原始 stdout,
@@ -130,18 +114,3 @@ class TestTimedJob:
         with capture_logs() as logs:
             await _timed_job("t_slow", slow, 0.01)()  # 周期 10ms,必然超 80%
         assert any(e.get("event") == "scheduled_tick_slow" for e in logs)
-
-    async def test_exception_still_observed(self):
-        import pytest
-
-        async def boom() -> None:
-            raise RuntimeError("x")
-
-        with pytest.raises(RuntimeError):
-            await _timed_job("t_boom", boom, 60.0)()
-        assert (
-            REGISTRY.get_sample_value(
-                "superdl_scheduled_tick_duration_seconds_count", {"job": "t_boom"}
-            )
-            == 1
-        )

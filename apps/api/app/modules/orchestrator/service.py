@@ -31,7 +31,6 @@ from app.core.gpu_adapter import spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model, model_matches
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
-from app.core.metrics import INSTANCE_LOGS_TOTAL
 from app.core.money import as_amount
 from app.core.outbox import enqueue
 from app.core.pagination import RawPage
@@ -792,7 +791,7 @@ async def read_instance_logs(
     tail_lines: int,
     since_seconds: int | None,
 ) -> "InstanceLogsOut":
-    """读取实例容器日志(只读;不记审计,记 superdl_instance_logs_total{outcome})。
+    """读取实例容器日志(只读;不记审计)。
 
     owner 校验(非属主 404,不暴露存在性);仅 running/stopping 可取(其余状态 Pod 已删,
     409 给明确文案);超上限参数按上限截断而非 422(tail_lines≤2000、since_seconds≤86400)。
@@ -815,14 +814,12 @@ async def read_instance_logs(
             instance.k8s_namespace, instance.uuid, tail_lines=tail + 1, since_seconds=since
         )
     except Exception as exc:
-        INSTANCE_LOGS_TOTAL.labels(outcome="error").inc()
         logger.warning("instance_logs_read_failed", instance_uuid=uuid, error=str(exc))
         raise AppError(
             ErrorCode.INTERNAL,
             key="orchestrator.logsUnavailable",
             http_status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
         ) from exc
-    INSTANCE_LOGS_TOTAL.labels(outcome="ok").inc()
     lines = raw.splitlines()
     truncated = len(lines) > tail
     return InstanceLogsOut(lines=lines[-tail:] if truncated else lines, truncated=truncated)

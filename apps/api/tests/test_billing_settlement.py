@@ -592,7 +592,7 @@ class TestCatchUpSettlement:
 
     async def test_watermark_missing_records_gap(self, sm):
         """无水位线(误删/库回退)必须与其余跳窗路径同口径登记 settlement_gaps,
-        保持 SETTLEMENT_GAP_TOTAL 单调可告警——否则小时窗静默烧掉,账务无迹。"""
+        让未核销缺口 gauge 持续告警——否则小时窗静默烧掉,账务无迹。"""
         from app.modules.billing.models import SettlementGap
 
         await seed_instance(

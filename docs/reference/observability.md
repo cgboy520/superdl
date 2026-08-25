@@ -13,7 +13,7 @@
 | `GET /api/admin/v1/alerts` | ops/finance/readonly | 告警流,条目关联节点/实例内部链接 |
 | platform-config `observability` 组 | admin | 键 `grafana_url`(str,`https?://` pattern,可空)、`oncall_phone`(值班手机号:critical 平台告警额外经 outbox `notify.sms` 直发短信,留空不启用) |
 
-业务指标在 `app/core/metrics.py`:死信、结算失败、结算缺口(`superdl_settlement_gap_total`,单调不降,告警按 `increase` 判)、巡检分阶段失败、泄漏 Pod、回调金额不符、查单收敛与其单笔失败、HTTP 直方图(用完整路由模板)。
+业务指标在 `app/core/metrics.py`:死信、任务超时、结算失败与落后、未核销结算缺口(`superdl_settlement_gap_unresolved`,DB 口径 gauge,告警按 >0 持续 15 分钟判)、资金账实差异、巡检分阶段失败、泄漏 Pod 与熔断、悬挂实例、节点失联、回调金额不符、关单后入账、渠道反向通知、查单收敛单笔失败、JuiceFS 配额死信、审计写失败、worker 心跳、HTTP 直方图(用完整路由模板)。每个指标都有对应告警规则(`deploy/cluster/values/kps.yaml`),没有消费方的指标不保留。
 
 ## 规则与不变量
 
@@ -21,7 +21,7 @@
 - 日志:structlog 管道 + stdlib 桥接(ProcessorFormatter,第三方库日志同一格式);prod=JSON、dev/test=Console;级别 `SUPERDL_LOG_LEVEL`(默认 INFO);outbox payload 带 `_request_id`,worker 执行时回填日志上下文,API 请求与异步执行可按同一 id 串联(Loki 查询式见 runbook)。
 - worker 自起 `/metrics` 端口(默认 9000,`SUPERDL_WORKER_METRICS_PORT`,与 API 同一 `SUPERDL_METRICS_TOKEN` Bearer 门禁):结算失败、死信、泄漏回收等指标产生在 worker 进程内。
 - 抓取配置 `deploy/app/k8s/08-monitoring.yaml` = API ServiceMonitor(Bearer)+ worker PodMonitor(同样须带 Bearer 凭据)。
-- 定时任务单轮耗时进 `superdl_scheduled_tick_duration_seconds`(按 job 区分);单轮超过周期 80% 时 worker 打 warning。
+- 定时任务单轮超过周期 80% 时 worker 打 warning(`scheduled_tick_slow`;APScheduler coalesce/misfire 静默丢轮的前兆)。
 - WorkerDown 告警按心跳 Gauge 判定,不用 `absent()`(带 label 的 Counter 在首次 inc 前没有序列)。
 - worker 支持 SIGTERM 优雅停机并写心跳文件(K8s exec 探针据此判活)。
 - worker 心跳由独立协程触碰,不挂在 outbox 循环上。

@@ -1,6 +1,7 @@
 """业务指标(prometheus_client)。/metrics 暴露,kps 侧配套告警规则。
 
-命名遵循 superdl_<domain>_<event>_total。
+命名遵循 superdl_<domain>_<event>_total。每个指标都要有消费方(deploy/cluster/values/kps.yaml
+的告警规则或管理端);没人看的指标不保留。
 """
 
 from prometheus_client import Counter, Gauge, Histogram
@@ -26,11 +27,6 @@ FUND_RECONCILE_MISMATCH_TOTAL = Counter(
     "资金账实核对发现的差异数(wallet_ledger:余额≠流水累计;bill_consume:出账≠消费流水)",
     ["kind"],
 )
-SETTLEMENT_GAP_TOTAL = Counter(
-    "superdl_settlement_gap_total",
-    "结算缺口登记次数(catchup_truncated/dead_letter;单调不降,告警按 increase 判)",
-    ["kind", "reason"],
-)
 SETTLEMENT_GAP_UNRESOLVED = Gauge(
     "superdl_settlement_gap_unresolved",
     "未核销结算缺口数(DB 口径;结算任务每轮刷新,告警按 >0 持续判,缺口不自愈)",
@@ -53,11 +49,6 @@ INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",
     "因节点失联(Pod 持续 not-ready)被判定停止的实例数",
 )
-INSTANCE_LOGS_TOTAL = Counter(
-    "superdl_instance_logs_total",
-    "实例容器日志读取次数(outcome=ok/error,仅计真正打到 K8s 的读取)",
-    ["outcome"],
-)
 RECONCILE_STUCK_INSTANCES = Gauge(
     "superdl_reconcile_stuck_instances",
     "悬挂实例数(进入 stopping/releasing 超过第一档超时仍未收敛)",
@@ -67,14 +58,6 @@ RECONCILE_LEAK_ABORTED_TOTAL = Counter(
     "superdl_reconcile_leak_aborted_total",
     "泄漏回收因未知 Pod 占比超阈被熔断中止的轮数(单调不降,告警按 increase 判)",
 )
-PREWARM_NODES = Gauge(
-    "superdl_prewarm_nodes",
-    "每镜像×状态的节点数(预热覆盖;巡检末尾全量刷新)",
-    ["image_ref", "status"],
-)
-PREWARM_FAILED_TOTAL = Counter(
-    "superdl_prewarm_failed_total", "镜像预热拉取失败次数", ["image_ref"]
-)
 AUDIT_WRITE_FAILED_TOTAL = Counter(
     "superdl_audit_write_failed_total",
     "审计行写入失败次数(fail-open 独立 session 路径;资金域动作为同事务同步审计,不受影响)",
@@ -82,32 +65,18 @@ AUDIT_WRITE_FAILED_TOTAL = Counter(
 PAYMENT_CALLBACK_MISMATCH_TOTAL = Counter(
     "superdl_payment_callback_mismatch_total", "支付回调金额与订单不符次数"
 )
-PAYMENT_LOST_CALLBACK_RECOVERED_TOTAL = Counter(
-    "superdl_payment_lost_callback_recovered_total", "查单 poller 收敛的丢回调订单数"
-)
 PAYMENT_CLOSED_ORDER_RESCUED_TOTAL = Counter(
     "superdl_payment_closed_order_rescued_total",
     "关单后有效成功回调自动入账数(非零 = 本地关单早于渠道侧过期)",
 )
-PAYMENT_CALLBACK_DROPPED_TOTAL = Counter(
-    "superdl_payment_callback_dropped_total",
-    "非 pending 且不可救回状态上被丢弃的支付回调数(status 为订单当时状态;"
-    "failed 上到达的成功回调会被 rescue 路径拦截,不记入此指标)",
-    ["status"],
-)
 PAYMENT_CHANNEL_REVERSED_TOTAL = Counter(
     "superdl_payment_channel_reversed_total",
-    "已入账订单收到渠道关单/退款类通知的次数(不自动冲账,人工核销;非零即需介入)",
+    "已入账订单收到渠道关单/退款类通知的次数(不自动冲账,人工核销;告警 PaymentChannelReversed)",
 )
 # WorkerDown 告警据此判活:带 label 的 Counter 在首次 inc 前无序列,absent() 不可用
 WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",
-)
-SCHEDULED_TICK_DURATION = Histogram(
-    "superdl_scheduled_tick_duration_seconds",
-    "定时任务单轮耗时(秒);单轮超过周期 80% 时 worker 另打 warning 日志",
-    ["job"],
 )
 HTTP_REQUEST_DURATION = Histogram(
     "superdl_http_request_duration_seconds",

@@ -380,17 +380,13 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_fund_reconcile_mismatch_total[5m]) > 0
             labels: {severity: critical}
             annotations: {summary: "资金账实不平({{ $labels.kind }}):余额与流水不一致,先冻结出账再人工核对"}
-          - alert: SettlementGapRecorded
-            expr: increase(superdl_settlement_gap_total[5m]) > 0
-            labels: {severity: critical}
-            annotations: {summary: "结算缺口登记({{ $labels.kind }}/{{ $labels.reason }}):有账期追不平,按缺口清单人工补结算"}
-          # DB 口径持续告警:缺口核销前一直挂(一次性 increase 告警被淹没/进程重启归零都不漏),
+          # DB 口径持续告警:缺口核销前一直挂(进程重启归零也不漏),登记即算,
           # 管理端「财务 › 结算缺口」重放或人工核销闭环后自愈
           - alert: SettlementGapUnresolved
             expr: max(superdl_settlement_gap_unresolved) > 0
-            for: 1h
+            for: 15m
             labels: {severity: critical}
-            annotations: {summary: "未核销结算缺口 {{ $value }} 条({{ $labels.kind }})持续超 1 小时:管理端财务 › 结算缺口处理"}
+            annotations: {summary: "未核销结算缺口 {{ $value }} 条({{ $labels.kind }})持续超 15 分钟:管理端财务 › 结算缺口处理"}
           # 审计留痕缺口:fail-open 路径写失败必须立即曝光(资金域出金为同事务同步审计,不走此路径)
           - alert: AuditWriteFailed
             expr: increase(superdl_audit_write_failed_total[5m]) > 0
@@ -404,6 +400,14 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_payment_recover_failed_total[15m]) > 0
             labels: {severity: warning}
             annotations: {summary: "查单收敛单笔入账失败({{ $labels.error }}):整轮不中断,该笔需人工核对入账"}
+          - alert: PaymentChannelReversed
+            expr: increase(superdl_payment_channel_reversed_total[15m]) > 0
+            labels: {severity: warning}
+            annotations: {summary: "已入账订单收到渠道关单/退款类通知:平台不自动冲账,财务异常清单人工核销"}
+          - alert: JuiceFSQuotaFailed
+            expr: increase(superdl_juicefs_quota_failed_total[15m]) > 0
+            labels: {severity: warning}
+            annotations: {summary: "数据盘 JuiceFS 配额下发进入死信(reconciler 周期重派):配额未生效期间盘容量不被强制,查 disk-ops worker 日志与 juicefs-metaurl 密钥"}
           # 悬挂实例是 Gauge(当前滞留数,非单调),不能用 increase:>0 持续 15 分钟即告警
           - alert: ReconcileStuckInstances
             expr: max(superdl_reconcile_stuck_instances) > 0

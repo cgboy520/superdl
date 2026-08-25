@@ -1,8 +1,7 @@
-"""容器日志端点:200/截断/状态闸/IDOR/限流/失败注入与 outcome metric。"""
+"""容器日志端点:200/截断/状态闸/IDOR/限流/失败注入。"""
 
 import pytest
 from httpx import AsyncClient
-from prometheus_client import REGISTRY
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
@@ -21,18 +20,13 @@ def fake():
     set_orchestrator(None)
 
 
-def _metric(outcome: str) -> float:
-    return REGISTRY.get_sample_value("superdl_instance_logs_total", {"outcome": outcome}) or 0.0
-
-
 async def _get_logs(client: AsyncClient, headers: dict, uuid: str, **params: int):
     return await client.get(f"/api/v1/instances/{uuid}/logs", headers=headers, params=params)
 
 
 class TestInstanceLogs:
-    async def test_running_200_synthetic_lines_and_metric_ok(self, client, sm, fake):
+    async def test_running_200_synthetic_lines(self, client, sm, fake):
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
-        before = _metric("ok")
 
         resp = await _get_logs(client, headers, uuid)
         assert resp.status_code == 200, resp.text
@@ -41,7 +35,6 @@ class TestInstanceLogs:
         assert len(body["lines"]) > 0
         # 合成日志含实例名(前端联调锚点);响应按行切分
         assert any(uuid in line for line in body["lines"])
-        assert _metric("ok") == before + 1
 
     async def test_stopping_state_also_allowed(self, client, sm, fake):
         """stopping 中 Pod 可能仍在 Terminating,日志仍可取(200)。"""
@@ -110,10 +103,9 @@ class TestInstanceLogs:
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"
 
-    async def test_k8s_failure_uniform_error_and_metric(self, client, sm, fake):
-        """K8s 侧读取异常 → 统一错误体(503)+ outcome=error 递增、ok 不变。"""
+    async def test_k8s_failure_uniform_error(self, client, sm, fake):
+        """K8s 侧读取异常 → 统一错误体(503)。"""
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
-        ok_before, err_before = _metric("ok"), _metric("error")
         fake.fail_next_logs = True
 
         resp = await _get_logs(client, headers, uuid)
@@ -121,5 +113,3 @@ class TestInstanceLogs:
         body = resp.json()
         assert body["code"] == "INTERNAL"
         assert body["message_key"] == "orchestrator.logsUnavailable"
-        assert _metric("error") == err_before + 1
-        assert _metric("ok") == ok_before
