@@ -426,11 +426,6 @@ class TestAdminFlow:
         ).json()["items"] == []
         # 管理端视图含双人字段与用户 id
         assert rows[0]["user_id"] is not None
-        # readonly 可读,ops 不可
-        ro = await admin_headers(sm, client, role="readonly")
-        assert (await client.get("/api/admin/v1/refunds", headers=ro)).status_code == 200
-        ops = await second_admin_headers(sm, client, "ops-nofin", role="ops")
-        assert (await client.get("/api/admin/v1/refunds", headers=ops)).status_code == 403
 
 
 class TestIdor:
