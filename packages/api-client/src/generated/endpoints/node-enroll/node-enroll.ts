@@ -60,7 +60,8 @@ export const getEnrollBootstrapApiV1NodeEnrollBootstrapPostUrl = () => {
 }
 
 /**
- * 令牌换装机参数(含 RKE2 join token,仅经本响应体下发)。支持脚本重跑/重启续跑。
+ * 令牌换装机参数(含 join token,仅经本响应体下发)。注册令牌一次性:首跑即消费并换发
+ * progress 令牌,脚本重跑/重启续跑只用后者上报,不再 bootstrap。
  * @summary Enroll Bootstrap
  */
 export const enrollBootstrapApiV1NodeEnrollBootstrapPost = async (bootstrapRequest: BootstrapRequest,

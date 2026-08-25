@@ -283,18 +283,6 @@ EOF
   [ ! -e "$SUPERDL_JOIN_STATE_DIR/token" ]
 }
 
-@test "旧服务端不下发 progress_token:全程沿用注册令牌" {
-  python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
-import json
-print(json.dumps({"pool":"hami","hostname_expected":None,"k8s_distro":"rke2","install_mirror":"cn",
-  "rke2_version":"v1.36.2+rke2r1","rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
-  "driver_version":"580","nvme_devices":[],"registries_yaml":""}))
-PYEOF
-  run_script
-  [ "$status" -eq 0 ]
-  grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
-}
-
 @test "驱动未就绪触发重启断点:装驱动+写 oneshot+progress 令牌 0600+systemctl reboot,rke2 尚未配置" {
   export NVIDIA_OK=0
   run_script

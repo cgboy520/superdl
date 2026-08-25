@@ -42,9 +42,6 @@ logger = get_logger(__name__)
 TOKEN_PREFIX = "sdln_"
 PROGRESS_TOKEN_PREFIX = "sdlp_"
 TERMINAL_STATUSES = frozenset({"joined", "failed", "expired", "revoked"})
-# 允许 bootstrap 的状态:pending 首跑;installing/rebooting 仅限存量旧行
-# (未签发过 progress 令牌)重跑/重启续跑;新行首次 bootstrap 后注册令牌即被消费
-BOOTSTRAP_STATUSES = frozenset({"pending", "installing", "rebooting"})
 REGENERATABLE_STATUSES = frozenset({"pending", "expired", "failed"})
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -306,23 +303,13 @@ async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
 
 
 async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnrollment:
-    """progress 令牌(进度上报用)。兼容存量:未签发过 progress 令牌的行仍认注册令牌
-    (那些节点盘上只有注册令牌)。"""
+    """progress 令牌(进度上报用):只按 progress_token_hash 取行,注册令牌不能上报。"""
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     row = (
         await session.execute(
             select(NodeEnrollment).where(NodeEnrollment.progress_token_hash == token_hash)
         )
     ).scalar_one_or_none()
-    if row is None:
-        row = (
-            await session.execute(
-                select(NodeEnrollment).where(
-                    NodeEnrollment.token_hash == token_hash,
-                    NodeEnrollment.progress_token_hash.is_(None),
-                )
-            )
-        ).scalar_one_or_none()
     return await _check_usable(session, row)
 
 
@@ -335,20 +322,18 @@ async def bootstrap(
     gpus: list[str],
     client_ip: str | None,
     gpu_details: list[dict[str, Any]] | None = None,
-) -> tuple[NodeEnrollment, dict[str, str], str | None]:
-    """令牌换装机参数。返回 (enrollment, cluster 最小配置, progress 令牌|None)。
+) -> tuple[NodeEnrollment, dict[str, str], str]:
+    """令牌换装机参数。返回 (enrollment, cluster 最小配置, progress 令牌)。
 
-    注册令牌一次性:pending 首跑即消费(换发仅可上报进度的 progress 令牌),
-    此后任何令牌都不能再 bootstrap;存量旧行(progress_token_hash 为空)
-    保持可重复 bootstrap 以兼容重启续跑。
+    注册令牌一次性:只有 pending 行能 bootstrap,首跑即消费(换发仅可上报进度的
+    progress 令牌并迁 installing),此后任何令牌都不能再 bootstrap;重跑/重启续跑只用
+    progress 令牌上报。
     """
     row = await _resolve_token(session, token)
-    if row.status not in BOOTSTRAP_STATUSES or row.progress_token_hash is not None:
+    if row.status != "pending":
         raise not_found()
-    if row.hostname is None:
-        # 新签发默认绑定:首次 bootstrap 把上报主机名锁进登记,后续不符即 failed
-        row.hostname = hostname
-    elif row.hostname != hostname:
+    if row.hostname != hostname:
+        # 签发时已绑定期望主机名:上报不符即 failed,被盗令牌不能在别的机器换出 join token
         transition_enrollment(
             row, "failed", error=f"主机名不符:期望 {row.hostname},实际上报 {hostname}(防令牌串用)"
         )
@@ -358,23 +343,13 @@ async def bootstrap(
             key="nodes.hostnameMismatch",
             http_status=http_status.HTTP_409_CONFLICT,
         )
-    if row.reported_ip and client_ip and row.reported_ip != client_ip:
-        # 换 IP 重跑常见(多网卡/NAT),不硬拒,只留审计信号
-        logger.warning(
-            "node_enrollment_ip_changed",
-            enrollment_id=row.id,
-            old=row.reported_ip,
-            new=client_ip,
-        )
     row.node_name = hostname
     row.reported_ip = client_ip
     row.os_info = os_info
     row.gpu_info = gpu_details if gpu_details else gpus  # 新脚本全卡清单优先,旧脚本回落名称列表
     row.last_report_at = now_utc()
-    progress_token: str | None = None
-    if row.status == "pending":
-        progress_token, row.progress_token_hash = _new_token(PROGRESS_TOKEN_PREFIX)
-        transition_enrollment(row, "installing", phase="bootstrap")
+    progress_token, row.progress_token_hash = _new_token(PROGRESS_TOKEN_PREFIX)
+    transition_enrollment(row, "installing", phase="bootstrap")
     cfg = _narrow_cluster_config(await get_effective_platform_config(session))
     await session.commit()
     await session.refresh(row)
@@ -409,7 +384,7 @@ async def report_progress(
     elif row.status == "rebooting" and state in ("running", "ok"):
         # oneshot 续跑后的第一条进度:回到 installing
         transition_enrollment(row, "installing", phase=phase)
-    if phase in ("agent_start", "rke2_start") and state == "ok" and row.status == "installing":
+    if phase == "agent_start" and state == "ok" and row.status == "installing":
         transition_enrollment(row, "joining", phase=phase)
     await session.commit()
     await session.refresh(row)

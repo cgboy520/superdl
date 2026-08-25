@@ -71,7 +71,8 @@ async def enroll_bootstrap(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> BootstrapOut:
-    """令牌换装机参数(含 RKE2 join token,仅经本响应体下发)。支持脚本重跑/重启续跑。"""
+    """令牌换装机参数(含 join token,仅经本响应体下发)。注册令牌一次性:首跑即消费并换发
+    progress 令牌,脚本重跑/重启续跑只用后者上报,不再 bootstrap。"""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=30, window_seconds=60)
     token = _bearer_token(authorization)
     enrollment, cfg, progress_token = await service.bootstrap(

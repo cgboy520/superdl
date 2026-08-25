@@ -71,8 +71,8 @@ class BootstrapOut(BaseModel):
     nvme_devices: list[str]
     registries_yaml: str  # 镜像缓存 mirror 配置正文(可空串)
     install_mirror: str = "cn"  # 装机安装源:cn=rancher 国内镜像 / official
-    # 首次 bootstrap 换发的窄权限令牌(仅 /progress 上报);旧行重复 bootstrap 时为 None
-    progress_token: str | None = None
+    # 首次 bootstrap 换发的窄权限令牌(仅 /progress 上报),此后上报与断点续跑只用它
+    progress_token: str
     script_sha256: str  # 当前下发脚本的指纹:重启续跑重拉自身时校验,防中途替换
 
 

@@ -216,14 +216,9 @@ PYEOF
     -d "$payload" "$API_BASE/api/v1/node-enroll/bootstrap" -o "$STATE_DIR/bootstrap.json"
   chmod 600 "$STATE_DIR/bootstrap.json"
   # 注册令牌一次性:服务端已消费并换发 progress 令牌,此后上报与续跑只用它
-  # (服务端不下发该字段时回落注册令牌)
-  local progress
-  progress="$(cfg_get progress_token)"
-  if [[ -n "$progress" ]]; then
-    printf '%s' "$progress" > "$STATE_DIR/token"
-    chmod 600 "$STATE_DIR/token"
-    use_token_file "$STATE_DIR/token"
-  fi
+  printf '%s' "$(cfg_get progress_token)" > "$STATE_DIR/token"
+  chmod 600 "$STATE_DIR/token"
+  use_token_file "$STATE_DIR/token"
   echo "-- bootstrap 完成: pool=$(cfg_get pool) rke2=$(cfg_get rke2_version)"
 }
 
@@ -418,9 +413,7 @@ maybe_reboot() {
     fi
   fi
   chmod 700 "$STATE_DIR/node-join.sh"
-  # 断点续跑用令牌:正常为窄权限 progress 令牌,缺失时回落注册令牌
-  printf '%s' "$TOKEN" > "$STATE_DIR/token"
-  chmod 600 "$STATE_DIR/token"
+  # 断点续跑用的 progress 令牌已由 step_bootstrap 落在 $STATE_DIR/token(0600)
   cat > "$ETC_DIR/systemd/system/${RESUME_UNIT}.service" <<EOF
 [Unit]
 Description=SuperDL node join resume
@@ -545,8 +538,8 @@ elif marker completed; then
   echo "本节点已完成加入,无需操作;如需从头重装:--force 并使用管理端新签发的令牌"
   exit 0
 fi
-if marker bootstrap && [[ -f "$STATE_DIR/token" ]]; then
-  # 断点续跑:注册令牌已被消费(再 bootstrap 也是 404),只用 progress 令牌上报
+if marker bootstrap; then
+  # 断点续跑:注册令牌已被消费(再 bootstrap 也是 404),只用盘上的 progress 令牌上报
   use_token_file "$STATE_DIR/token"
 else
   use_token_file "$TOKEN_FILE"

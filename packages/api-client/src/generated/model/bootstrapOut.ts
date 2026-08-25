@@ -15,7 +15,7 @@ export interface BootstrapOut {
   k8s_distro: string;
   nvme_devices: string[];
   pool: string;
-  progress_token?: string | null;
+  progress_token: string;
   registries_yaml: string;
   rke2_join_token: string;
   rke2_server_url: string;

@@ -1,6 +1,5 @@
 """节点注册(管理侧 + 状态机):令牌生命周期、角色矩阵、审计不落 token。"""
 
-import hashlib
 from datetime import timedelta
 
 import pytest
@@ -193,31 +192,6 @@ class TestEnrollmentStateMachine:
                 )
             assert exc.value.http_status == 404
 
-        # 存量兼容:升级前创建的旧行(progress_token_hash 为空)仍可重复 bootstrap(重启续跑)
-        async with sm() as session:
-            _e3, token3 = await nodes_service.create_enrollment(
-                session,
-                EnrollmentCreate(pool="hami", hostname="legacy-node"),
-                created_by=1,
-                idempotency_key=None,
-            )
-        async with sm() as session:
-            await nodes_service.bootstrap(
-                session, token3, hostname="legacy-node", os_info={}, gpus=[], client_ip=None
-            )
-            await session.execute(
-                update(NodeEnrollment)
-                .where(NodeEnrollment.token_hash == hashlib.sha256(token3.encode()).hexdigest())
-                .values(progress_token_hash=None)  # 模拟升级前旧行
-            )
-            await session.commit()
-        async with sm() as session:
-            row3, _cfg3, progress3 = await nodes_service.bootstrap(
-                session, token3, hostname="legacy-node", os_info={}, gpus=[], client_ip=None
-            )
-            assert row3.status == "installing"
-            assert progress3 is None  # 旧行重复 bootstrap 不再换发,行为同升级前
-
         # 主机名不符 → failed + 409,令牌随即作废(后续统一 404)
         async with sm() as session:
             _e2, token2 = await nodes_service.create_enrollment(
@@ -305,7 +279,7 @@ class TestEnrollmentStateMachine:
                     session, token, phase="driver", state="ok", message=None
                 )
             assert exc.value.http_status == 404
-        # 需要重启 → rebooting;续跑第一条进度 → installing;rke2_start ok → joining
+        # 需要重启 → rebooting;续跑第一条进度 → installing;agent_start ok → joining
         async with sm() as session:
             row = await nodes_service.report_progress(
                 session, progress, phase="reboot", state="rebooting", message=None
@@ -318,7 +292,7 @@ class TestEnrollmentStateMachine:
             assert row.status == "installing"
         async with sm() as session:
             row = await nodes_service.report_progress(
-                session, progress, phase="rke2_start", state="ok", message=None
+                session, progress, phase="agent_start", state="ok", message=None
             )
             assert row.status == "joining"
         # 失败上报 → failed 落 error;终态后再上报 → 404
@@ -421,8 +395,8 @@ class TestEnrollRouterAnonymous:
             )
         ).status_code == 404
 
-        # 进度推进:rke2_start ok → joining;管理端列表可见且无 token
-        for phase, state in [("driver", "ok"), ("rke2_install", "ok"), ("rke2_start", "ok")]:
+        # 进度推进:agent_start ok → joining;管理端列表可见且无 token
+        for phase, state in [("driver", "ok"), ("agent_install", "ok"), ("agent_start", "ok")]:
             resp = await client.post(
                 "/api/v1/node-enroll/progress",
                 json={"phase": phase, "state": state},
@@ -495,7 +469,7 @@ class TestEnrollReconciler:
             progress_bearer = {"Authorization": f"Bearer {boot.json()['progress_token']}"}
             await client.post(
                 "/api/v1/node-enroll/progress",
-                json={"phase": "rke2_start", "state": "ok"},
+                json={"phase": "agent_start", "state": "ok"},
                 headers=progress_bearer,
             )
 

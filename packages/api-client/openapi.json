@@ -1797,15 +1797,8 @@
             "type": "string"
           },
           "progress_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Progress Token"
+            "title": "Progress Token",
+            "type": "string"
           },
           "registries_yaml": {
             "title": "Registries Yaml",
@@ -1838,6 +1831,7 @@
           "driver_version",
           "nvme_devices",
           "registries_yaml",
+          "progress_token",
           "script_sha256"
         ],
         "title": "BootstrapOut",
@@ -15747,7 +15741,7 @@
     },
     "/api/v1/node-enroll/bootstrap": {
       "post": {
-        "description": "令牌换装机参数(含 RKE2 join token,仅经本响应体下发)。支持脚本重跑/重启续跑。",
+        "description": "令牌换装机参数(含 join token,仅经本响应体下发)。注册令牌一次性:首跑即消费并换发\nprogress 令牌,脚本重跑/重启续跑只用后者上报,不再 bootstrap。",
         "operationId": "enroll_bootstrap_api_v1_node_enroll_bootstrap_post",
         "parameters": [
           {
