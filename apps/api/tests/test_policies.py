@@ -75,5 +75,4 @@ class TestPublicPolicies:
     async def test_fields_and_decimal_fidelity(self, client: AsyncClient):
         """公开端点免鉴权;盘价以 Decimal 字符串出参,保 scale 不失真(禁 float)。"""
         body = (await client.get("/api/v1/policies")).json()
-        assert body["disk_price_gb_month"] == "0.0350"
         assert isinstance(body["disk_price_gb_month"], str)

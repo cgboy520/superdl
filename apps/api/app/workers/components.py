@@ -42,7 +42,8 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.DISK_OPS: frozenset({"disk.quota", "disk.wipe"}),
 }
 
-# 定时任务 id → 组件(全量清单快照见 tests/test_workers_main.py)
+# 定时任务 id → 组件(与 workers/main.register_scheduled_jobs 的注册清单由
+# tests/test_workers_components.py 双向锁定)
 COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.CORE: frozenset(
         {

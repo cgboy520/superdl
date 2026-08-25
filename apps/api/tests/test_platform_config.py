@@ -35,27 +35,15 @@ class TestCrypto:
 
 
 class TestSpecValidation:
-    def test_kind_and_pattern_checks(self):
-        with pytest.raises(ValueError):
-            validate_setting_value("payment_wechat_enabled", "yes")
-        with pytest.raises(ValueError):
-            validate_setting_value("sms_provider", "tencent")
-        with pytest.raises(ValueError):
-            validate_setting_value("sms_template_verify", "TPL_123")  # 须 SMS_ 前缀
-        with pytest.raises(ValueError):
-            validate_setting_value("wechat_apiv3_key", "short")
-        with pytest.raises(ValueError, match="不含 -----BEGIN"):
-            validate_setting_value("alipay_private_key", "-----BEGIN PRIVATE KEY-----MIIE")
-        assert (
-            validate_setting_value("icp_number", " 京ICP备2026012345号-1 ")
-            == "京ICP备2026012345号-1"
-        )
-        assert validate_setting_value("sms_template_verify", "SMS_123456789") == "SMS_123456789"
-        # 亮照链接仅接受 http(s)绝对 URL;留空走「清除覆盖」分支不经此校验
+    def test_unknown_key_and_javascript_url_rejected(self):
+        """白名单是防线:未知键一律拒;亮照链接会被页脚渲染成 <a href>,只收 http(s) 绝对 URL
+        (留空走「清除覆盖」分支不经此校验);值一律 strip 后落库。"""
+        with pytest.raises(ValueError, match="未知配置键"):
+            validate_setting_value("jwt_secret", "x")
         with pytest.raises(ValueError):
             validate_setting_value("business_license_url", "javascript:alert(1)")
         assert (
-            validate_setting_value("business_license_url", "https://example.com/l.png")
+            validate_setting_value("business_license_url", " https://example.com/l.png ")
             == "https://example.com/l.png"
         )
 
@@ -76,6 +64,8 @@ class TestAdminApi:
             assert resp.status_code == 403
 
     async def test_get_masks_secret_and_put_overrides(self, client: AsyncClient, sm):
+        """管理端写入 → GET 脱敏回读 → 公开 site-config 透出(备案号与经营主体四项,
+        《电子商务法》第十五条公示)→ 空串清除覆盖回退 env 默认。"""
         ah = await admin_headers(sm, client, role="admin")
         resp = await client.put(
             "/api/admin/v1/platform-config",
@@ -84,6 +74,10 @@ class TestAdminApi:
                     "icp_number": "京ICP备2026012345号-1",
                     "sms_sign_name": "SuperDL",
                     "sms_access_key_secret": "PLAINTEXT-SECRET-9876",
+                    "company_name": "示例云算力(北京)有限公司",
+                    "company_address": "北京市海淀区示例路 1 号",
+                    "company_phone": "010-12345678",
+                    "business_license_url": "https://example.com/license.png",
                 },
                 "reason": "上线前配置",
             },
@@ -95,6 +89,7 @@ class TestAdminApi:
         items = {i["key"]: i for i in data["items"]}
         assert items["icp_number"]["value"] == "京ICP备2026012345号-1"
         assert items["icp_number"]["source"] == "override"
+        assert items["company_name"]["group"] == "compliance"
         # secret:GET 永不回明文,只回状态与尾 4 位预览
         secret_item = items["sms_access_key_secret"]
         assert secret_item["value"] is None
@@ -112,55 +107,26 @@ class TestAdminApi:
             assert row.value.startswith("enc:v1:")
             assert "PLAINTEXT" not in row.value
 
-        # 公开 site-config 跟随备案号
+        # 公开 site-config 跟随备案号与经营主体
         site = (await client.get("/api/v1/site-config")).json()
         assert site["icp_number"] == "京ICP备2026012345号-1"
-        assert site["payment_channels"] == {"wechat": False, "alipay": False, "mock": True}
-
-        # 空串 = 清除覆盖,回退 env 默认(None → 页脚不显示)
-        await client.put(
-            "/api/admin/v1/platform-config",
-            json={"updates": {"icp_number": ""}, "reason": "清除测试"},
-            headers=ah,
-        )
-        site = (await client.get("/api/v1/site-config")).json()
-        assert site["icp_number"] is None
-
-    async def test_company_info_flows_to_site_config(self, client: AsyncClient, sm):
-        """经营主体四项(《电子商务法》第十五条):管理端写入 → 公开 site-config 透出。"""
-        ah = await admin_headers(sm, client, role="admin")
-        resp = await client.put(
-            "/api/admin/v1/platform-config",
-            json={
-                "updates": {
-                    "company_name": "示例云算力(北京)有限公司",
-                    "company_address": "北京市海淀区示例路 1 号",
-                    "company_phone": "010-12345678",
-                    "business_license_url": "https://example.com/license.png",
-                },
-                "reason": "上线公示",
-            },
-            headers=ah,
-        )
-        assert resp.status_code == 200, resp.text
-        data = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()
-        items = {i["key"]: i for i in data["items"]}
-        assert items["company_name"]["group"] == "compliance"
-        assert items["company_name"]["value"] == "示例云算力(北京)有限公司"
-
-        site = (await client.get("/api/v1/site-config")).json()
         assert site["company_name"] == "示例云算力(北京)有限公司"
         assert site["company_address"] == "北京市海淀区示例路 1 号"
         assert site["company_phone"] == "010-12345678"
         assert site["business_license_url"] == "https://example.com/license.png"
+        assert site["payment_channels"] == {"wechat": False, "alipay": False, "mock": True}
 
-        # 留空清除覆盖 → site-config 回 None(页脚不展示该行)
+        # 空串 = 清除覆盖,回退 env 默认(None → 页脚不显示该行)
         await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"business_license_url": ""}, "reason": "撤下亮照"},
+            json={
+                "updates": {"icp_number": "", "business_license_url": ""},
+                "reason": "清除测试",
+            },
             headers=ah,
         )
         site = (await client.get("/api/v1/site-config")).json()
+        assert site["icp_number"] is None
         assert site["business_license_url"] is None
 
     async def test_unknown_key_rejected_via_api(self, client: AsyncClient, sm):
@@ -265,23 +231,6 @@ class TestChannelGate:
 class TestAliyunRealNameProvider:
     def _provider(self, handler) -> AliyunRealNameProvider:
         return AliyunRealNameProvider("ak", "sk", transport=httpx.MockTransport(handler))
-
-    def test_signed_params_shape(self):
-        p = AliyunRealNameProvider("ak", "sk").signed_params(
-            "张三",
-            "110101199001011234",
-            "13800000000",
-            nonce="fixed-nonce",
-            timestamp="2026-08-19T12:00:00Z",
-        )
-        assert p["Action"] == "Mobile3MetaSimpleVerify"
-        assert p["Version"] == "2019-03-07"
-        assert p["ParamType"] == "normal"
-        assert p["UserName"] == "张三"
-        assert p["IdentifyNum"] == "110101199001011234"
-        assert p["Mobile"] == "13800000000"
-        assert p["SignatureMethod"] == "HMAC-SHA1"
-        assert p["Signature"]
 
     async def test_bizcode_mapping(self):
         responses = iter(

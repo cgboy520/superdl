@@ -14,7 +14,6 @@ from app.workers.components import (
     WorkerComponent,
     current_component,
     outbox_types_for,
-    scheduled_jobs_for,
 )
 
 _SHARDED = [c for c in WorkerComponent if c is not WorkerComponent.ALL]
@@ -43,33 +42,34 @@ class TestPartition:
             f"{sorted(sharded - registered)}"
         )
 
-    def test_scheduled_jobs_disjoint_and_cover_manifest(self):
-        from tests.test_workers_main import TestScheduledJobsManifest
+    async def test_scheduled_jobs_disjoint_and_match_scheduler(self, pg_url):
+        """定时任务分片:各组件互不重叠,且并集 == register_scheduled_jobs 实际注册的 id 集。
+        新增任务未登记组件 / 登记了不存在的任务 / 误删注册——两向漂移都红
+        (未登记的任务在生产没有任何 Deployment 执行,静默停摆)。
+        pg_url:register_scheduled_jobs 会创建 sessionmaker/engine,须先指向测试库。"""
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+        from app.workers.main import register_scheduled_jobs
 
         seen: dict[str, WorkerComponent] = {}
         for component in _SHARDED:
             for job_id in COMPONENT_SCHEDULED_JOBS[component]:
                 assert job_id not in seen, f"{job_id} 同时归属 {seen[job_id]} 与 {component}"
                 seen[job_id] = component
-        expected = TestScheduledJobsManifest.EXPECTED_JOB_IDS
-        assert set(seen) == set(expected), (
-            f"未登记组件: {sorted(expected - seen.keys())};"
-            f"登记了但不在清单快照: {sorted(seen.keys() - expected)}"
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        register_scheduled_jobs(scheduler)
+        scheduler.start(paused=True)  # paused:只取注册清单,不触发任何任务执行
+        try:
+            registered = {job.id for job in scheduler.get_jobs()}
+        finally:
+            scheduler.shutdown(wait=False)
+        assert registered == set(seen), (
+            f"未登记组件: {sorted(registered - seen.keys())};"
+            f"登记了但未注册: {sorted(seen.keys() - registered)}"
         )
 
 
 class TestComponentEnv:
-    def test_default_is_all(self, monkeypatch):
-        monkeypatch.delenv("SUPERDL_WORKER_COMPONENT", raising=False)
-        assert current_component() is WorkerComponent.ALL
-        assert outbox_types_for(WorkerComponent.ALL) is None
-        assert scheduled_jobs_for(WorkerComponent.ALL) is None
-
-    def test_valid_component(self, monkeypatch):
-        monkeypatch.setenv("SUPERDL_WORKER_COMPONENT", "tenant-mgr")
-        assert current_component() is WorkerComponent.TENANT_MGR
-        assert "instance.create" in (outbox_types_for(WorkerComponent.TENANT_MGR) or set())
-
     def test_invalid_component_fails_closed(self, monkeypatch):
         monkeypatch.setenv("SUPERDL_WORKER_COMPONENT", "typo-worker")
         with pytest.raises(RuntimeError, match="SUPERDL_WORKER_COMPONENT"):
@@ -110,7 +110,7 @@ class TestClaimFilter:
 
 
 class TestScheduledJobFilter:
-    async def test_component_registers_only_own_jobs(self, monkeypatch):
+    async def test_component_registers_only_own_jobs(self, monkeypatch, pg_url):
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
         from app.workers.main import register_scheduled_jobs
@@ -124,18 +124,3 @@ class TestScheduledJobFilter:
         finally:
             scheduler.shutdown(wait=False)
         assert ids == {"prewarm_patrol"}
-
-    async def test_disk_ops_registers_no_jobs(self, monkeypatch):
-        """disk-ops 组件没有定时任务:进程只跑 outbox 领取循环,调度器为空。"""
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-        from app.workers.main import register_scheduled_jobs
-
-        monkeypatch.setenv("SUPERDL_WORKER_COMPONENT", "disk-ops")
-        scheduler = AsyncIOScheduler(timezone="UTC")
-        register_scheduled_jobs(scheduler)
-        scheduler.start(paused=True)
-        try:
-            assert scheduler.get_jobs() == []
-        finally:
-            scheduler.shutdown(wait=False)

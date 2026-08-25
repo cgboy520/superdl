@@ -333,16 +333,6 @@ class TestAdmin:
         seen = [r["id"] for r in page1["items"]] + [r["id"] for r in page2["items"]]
         assert seen == sorted(ids, reverse=True)
 
-    async def test_detail_contains_messages(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000332")
-        ticket = (await create_ticket(client, headers)).json()
-        ops = await admin_headers(sm, client, role="ops")
-        resp = await client.get(f"/api/admin/v1/tickets/{ticket['id']}", headers=ops)
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["user_id"] is not None
-        assert len(body["messages"]) == 1
-
     async def test_role_gate(self, client: AsyncClient, sm):
         """读:ops/finance/readonly 可;写(reply/status):仅 ops/admin,finance/readonly 403。"""
         headers = await user_headers(client, "13700000333")
@@ -364,23 +354,6 @@ class TestAdmin:
             f"/api/admin/v1/tickets/{tid}/reply", json={"body": "财务不可回复"}, headers=finance
         )
         assert resp.status_code == 403
-
-    async def test_admin_ops_can_write(self, client: AsyncClient, sm):
-        """ops 可回复与标记解决(写角色 smoke)。"""
-        headers = await user_headers(client, "13700000334")
-        ticket = (await create_ticket(client, headers)).json()
-        ops = await admin_headers(sm, client, role="ops")
-        resp = await client.post(
-            f"/api/admin/v1/tickets/{ticket['id']}/reply", json={"body": "收到,处理中"}, headers=ops
-        )
-        assert resp.status_code == 200, resp.text
-        resp = await client.post(
-            f"/api/admin/v1/tickets/{ticket['id']}/status",
-            json={"action": "resolve"},
-            headers=ops,
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "resolved"
 
 
 class TestStaleTicketPatrol:

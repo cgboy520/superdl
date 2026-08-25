@@ -1,49 +1,9 @@
-"""worker 入口组件:metrics Bearer 门禁与定时任务耗时观测(不启动整个 worker 进程)。"""
+"""worker 入口组件:metrics Bearer 门禁与定时任务耗时观测(不启动整个 worker 进程)。
+定时任务注册清单由 test_workers_components 与组件分片表双向锁定。"""
 
 from typing import Any
 
 from app.workers.main import _metrics_wsgi_app, _timed_job
-
-
-class TestScheduledJobsManifest:
-    """register_scheduled_jobs 任务清单快照:新增任务未登记/误删任务
-    未同步本断言即红 —— 防静默丢任务(结算/对账/巡检停摆无人发现)。"""
-
-    EXPECTED_JOB_IDS = frozenset(
-        {
-            "outbox_reaper",
-            "reconciler",
-            "hourly_settlement",
-            "daily_disk_settlement",
-            "fund_reconcile",
-            "usage_aggregation",
-            "close_expired_orders",
-            "payment_reconcile",
-            "cleanup_expired_rows",
-            "balance_patrol",
-            "prewarm_patrol",
-            "node_spec_patrol",
-            "node_enroll_reconciler",
-            "ticket_stale_patrol",
-        }
-    )
-
-    async def test_registered_jobs_manifest(self):
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-        from app.workers.main import register_scheduled_jobs
-
-        scheduler = AsyncIOScheduler(timezone="UTC")
-        register_scheduled_jobs(scheduler)
-        scheduler.start(paused=True)  # paused:只取注册清单,不触发任何任务执行
-        try:
-            ids = {job.id for job in scheduler.get_jobs()}
-        finally:
-            scheduler.shutdown(wait=False)
-        assert ids == self.EXPECTED_JOB_IDS, (
-            f"定时任务清单漂移:新增未登记 {sorted(ids - self.EXPECTED_JOB_IDS)};"
-            f"丢失 {sorted(self.EXPECTED_JOB_IDS - ids)}"
-        )
 
 
 def _call_wsgi(app: Any, authorization: str | None) -> tuple[str, bytes]:

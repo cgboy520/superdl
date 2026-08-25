@@ -85,25 +85,10 @@ class TestBusinessMetrics:
 
 
 class TestUnhandledException:
-    async def test_uniform_500_body(self, sm):
-        from app.main import create_app
-
-        app = create_app()
-
-        @app.get("/boom", include_in_schema=False)
-        async def boom() -> dict:  # pyright: ignore[reportUnusedFunction]
-            raise RuntimeError("kaboom")
-
-        transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            resp = await c.get("/boom")
-        assert resp.status_code == 500
-        assert resp.json()["code"] == "INTERNAL"
-        assert "kaboom" not in resp.text  # 不泄露内部细节
-
     async def test_500_keeps_security_headers_and_request_id(self, sm):
-        """500 在中间件链内层渲染(Uniform500):安全响应头与 x-request-id 必须还在——
-        这是最需要对外的凭单排障响应。若退回 ServerErrorMiddleware 渲染则两皆丢。"""
+        """未捕获异常 → 统一 500 错误体且不泄露内部细节;500 在中间件链内层渲染(Uniform500):
+        安全响应头与 x-request-id 必须还在——这是最需要对外的凭单排障响应。
+        若退回 ServerErrorMiddleware 渲染则两皆丢。"""
         from app.main import create_app
 
         app = create_app()
@@ -116,6 +101,8 @@ class TestUnhandledException:
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             resp = await c.get("/boom2", headers={"X-Request-ID": "gw-boom-1"})
         assert resp.status_code == 500
+        assert resp.json()["code"] == "INTERNAL"
+        assert "kaboom" not in resp.text  # 不泄露内部细节
         assert resp.headers["x-request-id"] == "gw-boom-1"
         assert resp.headers["x-content-type-options"] == "nosniff"
         assert resp.json()["request_id"] == "gw-boom-1"

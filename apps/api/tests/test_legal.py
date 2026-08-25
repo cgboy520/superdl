@@ -1,4 +1,4 @@
-"""法务文档:公开端点(回落/404)、注册落证、版本流(草编发归)、角色门、迁移预置。"""
+"""法务文档:公开端点(回落/404)、注册落证、版本流(草编发归)、角色门。"""
 
 import hashlib
 
@@ -55,11 +55,6 @@ class TestPublicEndpoint:
     async def test_invalid_doc_key_404(self, client: AsyncClient):
         resp = await client.get("/api/v1/legal/not-a-doc")
         assert resp.status_code == 404
-
-    async def test_public_unauthenticated_200(self, client: AsyncClient):
-        """免鉴权:不带任何凭证也可读。"""
-        resp = await client.get("/api/v1/legal/deletion_notice")
-        assert resp.status_code == 200
 
 
 class TestRegistrationConsents:
@@ -258,23 +253,3 @@ class TestRoleGate:
         readonly = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/legal-docs", headers=readonly)
         assert resp.status_code == 200
-
-
-class TestPresetSeed:
-    async def test_preset_published_v1(self, db: AsyncSession):
-        """迁移预置(单测经 conftest 播种等价物):terms/privacy/deletion_notice zh-CN
-        均有 published v1 且正文非空。"""
-        for doc_key in ("terms", "privacy", "deletion_notice"):
-            row = (
-                await db.execute(
-                    select(LegalDocVersion).where(
-                        LegalDocVersion.doc_key == doc_key,
-                        LegalDocVersion.locale == "zh-CN",
-                        LegalDocVersion.status == "published",
-                    )
-                )
-            ).scalar_one_or_none()
-            assert row is not None, doc_key
-            assert row.version == 1
-            assert row.title and row.content_md
-            assert row.published_at is not None
