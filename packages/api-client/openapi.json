@@ -5494,10 +5494,6 @@
             "title": "Freeze Grace Hours",
             "type": "integer"
           },
-          "low_balance_warn_hours_default": {
-            "title": "Low Balance Warn Hours Default",
-            "type": "integer"
-          },
           "real_name_required_for_recharge": {
             "default": false,
             "title": "Real Name Required For Recharge",
@@ -5510,8 +5506,7 @@
           "disk_max_gb",
           "disk_grace_days",
           "disk_frozen_days",
-          "freeze_grace_hours",
-          "low_balance_warn_hours_default"
+          "freeze_grace_hours"
         ],
         "title": "PoliciesOut",
         "type": "object"

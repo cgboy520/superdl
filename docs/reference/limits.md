@@ -24,7 +24,7 @@
 | 项 | 默认 | 承载 |
 |---|---|---|
 | 开户前余额须覆盖的小时数 | 1h | 策略 `afford_cover_hours`(1~24) |
-| 低余额预警阈值 | 预估可用 <24h | 策略 `low_balance_warn_hours`(1~168);用户可在 1~168h 内自设 |
+| 低余额预警阈值 | 预估可用 <24h | 只存 `users.low_balance_warn_hours`(用户在 1~168h 内自设,默认 24);不设平台级策略键 |
 | 欠费冻结到回收 | 72h | 策略 `freeze_grace_hours`(1~720) |
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |

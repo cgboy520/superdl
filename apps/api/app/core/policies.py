@@ -30,7 +30,6 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "disk_grace_days": ("int", Decimal(1), Decimal(365)),
     "disk_frozen_days": ("int", Decimal(1), Decimal(365)),
     "freeze_grace_hours": ("int", Decimal(1), Decimal(720)),
-    "low_balance_warn_hours": ("int", Decimal(1), Decimal(168)),
     "afford_cover_hours": ("int", Decimal(1), Decimal(24)),
     "prewarm_min_coverage_pct": ("int", Decimal(1), Decimal(100)),
     "prewarm_recheck_hours": ("int", Decimal(1), Decimal(168)),
@@ -49,7 +48,6 @@ class EffectivePolicies:
     disk_grace_days: int
     disk_frozen_days: int
     freeze_grace_hours: int
-    low_balance_warn_hours: int
     afford_cover_hours: int
     prewarm_min_coverage_pct: int
     prewarm_recheck_hours: int
@@ -88,7 +86,6 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
         disk_grace_days=int(eff["disk_grace_days"]),
         disk_frozen_days=int(eff["disk_frozen_days"]),
         freeze_grace_hours=int(eff["freeze_grace_hours"]),
-        low_balance_warn_hours=int(eff["low_balance_warn_hours"]),
         afford_cover_hours=int(eff["afford_cover_hours"]),
         prewarm_min_coverage_pct=int(eff["prewarm_min_coverage_pct"]),
         prewarm_recheck_hours=int(eff["prewarm_recheck_hours"]),

@@ -292,6 +292,8 @@ class TestPatrolUnsettledBurn:
 
     async def test_coverable_burn_only_warns(self, sm, _freeze_now):
         """余额盖得住未结算消耗 → 不停机;预估时长低于阈值只预警。"""
+        from app.modules.account.models import User
+
         h0 = hour_floor(self.FIXED_NOW)
         await seed_instance(
             sm,
@@ -301,6 +303,8 @@ class TestPatrolUnsettledBurn:
             events=[(h0 + timedelta(minutes=5), "creating", "running")],
         )
         async with sm() as session:
+            # 预警阈值读 users.low_balance_warn_hours(默认 24h):合成实例也要有用户行
+            session.add(User(id=1, phone="13700009001"))
             await session.execute(
                 update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("5.00"))
             )

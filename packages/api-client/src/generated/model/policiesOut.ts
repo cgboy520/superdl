@@ -15,6 +15,5 @@ export interface PoliciesOut {
   disk_min_gb: number;
   disk_price_gb_month: string;
   freeze_grace_hours: number;
-  low_balance_warn_hours_default: number;
   real_name_required_for_recharge?: boolean;
 }

@@ -52,7 +52,6 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         disk_grace_days=p.disk_grace_days,
         disk_frozen_days=p.disk_frozen_days,
         freeze_grace_hours=p.freeze_grace_hours,
-        low_balance_warn_hours_default=p.low_balance_warn_hours,
         real_name_required_for_recharge=cfg["real_name_required_for_recharge"] == "true",
     )
 

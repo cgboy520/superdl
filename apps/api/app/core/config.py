@@ -91,7 +91,6 @@ class Settings(BaseSettings):
 
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
-    low_balance_warn_hours: int = 24  # 预估可用时长低于此值预警
     # 开户前燃烧率校验:余额须覆盖「在途+新增」实例的这么多小时消耗(护栏,非预占)
     afford_cover_hours: int = 1
     creating_timeout_seconds: int = 300  # creating 超时 → failed 退款

@@ -57,7 +57,12 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
   disk_grace_days: { label: "欠费宽限(数据盘)", unit: "天", hint: "宽限到期转冻结" },
   disk_frozen_days: { label: "冻结保留(数据盘)", unit: "天", hint: "冻结到期回收擦除" },
   freeze_grace_hours: { label: "欠费冻结时长(实例)", unit: "小时", hint: "冻结到期回收实例盘" },
-  low_balance_warn_hours: { label: "默认余额预警阈值", unit: "小时" },
+  afford_cover_hours: { label: "开户前余额须覆盖小时数", unit: "小时", hint: "余额须覆盖在途+新增实例的消耗,护栏非预占" },
+  max_instances_per_user: { label: "每用户实例数上限", unit: "台", hint: "用户级覆盖优先于本项" },
+  max_gpus_per_user: { label: "每用户 GPU 总数上限", unit: "卡", hint: "用户级覆盖优先于本项" },
+  max_disks_per_user: { label: "每用户数据盘数上限", unit: "块", hint: "用户级覆盖优先于本项" },
+  prewarm_min_coverage_pct: { label: "镜像预热覆盖率门槛", unit: "%", hint: "节点覆盖率达标才标记已预热" },
+  prewarm_recheck_hours: { label: "预热复检窗口", unit: "小时", hint: "cached 节点多久复检一次" },
 };
 
 function PoliciesTab() {

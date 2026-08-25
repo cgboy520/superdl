@@ -152,7 +152,9 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     await session.commit()
                 elif burn_per_hour > 0:
                     est_hours = float(effective / burn_per_hour)
-                    if est_hours < thresholds.get(user_id, 24):
+                    # 阈值只存 users.low_balance_warn_hours(NOT NULL,默认 24,用户自设);
+                    # 用户行只匿名化不删,巡检到的每个 user_id 必有阈值行
+                    if est_hours < thresholds[user_id]:
                         await notify_service.send_low_balance_warning(
                             session, user_id, est_hours=est_hours, balance=format(balance, "f")
                         )
