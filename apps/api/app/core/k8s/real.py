@@ -122,6 +122,12 @@ TENANT_EPHEMERAL_REQUEST = "2Gi"
 TENANT_EPHEMERAL_LIMIT = "64Gi"
 
 
+def _check_subpath(subpath: str) -> None:
+    """JuiceFS 子路径只许单段目录名:它会拼进 rm -rf 与 quota --path,拒绝 /、.. 与空串。"""
+    if "/" in subpath or ".." in subpath or not subpath:
+        raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+
+
 def _allowed_tcp_port_ranges() -> list["client.V1NetworkPolicyPort"]:
     """1-65535 扣除黑名单端口后的允许区间(endPort 需 K8s 1.21+,Cilium 支持)。"""
     ports: list[client.V1NetworkPolicyPort] = []
@@ -823,8 +829,7 @@ class RealOrchestrator:
 
     def _wipe_disk_sync(self, namespace: str, subpath: str) -> None:
         """租户 ns 内起 Job 挂 JuiceFS PVC 删除子目录。幂等:见 _run_managed_job_sync。"""
-        if "/" in subpath or ".." in subpath or not subpath:
-            raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+        _check_subpath(subpath)
         container = self._batch_container(
             "wipe", "busybox:1.36", ["rm", "-rf", f"/data/{subpath}"], env=[]
         )
@@ -859,8 +864,7 @@ class RealOrchestrator:
         密码不进 argv:shell 内把 metaurl 拆成「无密码 URL(argv)+ META_PASSWORD(env)」,
         juicefs v1.0+ 官方机制;否则全租户共享文件系统的元数据引擎凭据会出现在
         /proc/<pid>/cmdline(节点上任何进程可读)。"""
-        if "/" in subpath or ".." in subpath or not subpath:
-            raise ValueError(f"illegal juicefs subpath: {subpath!r}")
+        _check_subpath(subpath)
         # 密码拆分在容器内 shell 完成(env 不进 /proc cmdline);metaurl 密码段约定不含 @
         split = (
             'export META_PASSWORD="$(printf \'%s\' "$JUICEFS_METAURL"'
