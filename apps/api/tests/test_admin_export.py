@@ -10,8 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
 from app.core.timeutil import now_utc
-from app.modules.adminapi import export as admin_export
-from app.modules.billing import export as billing_export
 from tests.helpers import fund_wallet
 from tests.test_account_auth import register
 from tests.test_admin_ops import second_admin_headers
@@ -76,7 +74,7 @@ class TestOrdersExport:
 
     async def test_truncation_marker(self, client: AsyncClient, sm, monkeypatch):
         await _make_orders(sm, count=3)
-        monkeypatch.setattr(billing_export, "EXPORT_MAX_ROWS", 2)
+        monkeypatch.setattr(csvexport, "EXPORT_MAX_ROWS", 2)
         fin = await second_admin_headers(sm, client, "fin-exp-cap")
         text = (await client.get("/api/admin/v1/orders/export", headers=fin)).text
         lines = [line for line in text.splitlines() if line.startswith("SDL-")]
@@ -134,7 +132,7 @@ class TestAuditExport:
     async def test_truncation_marker(self, client: AsyncClient, sm, monkeypatch):
         h = await admin_headers(sm, client)
         await register(client, "13688880003")
-        monkeypatch.setattr(admin_export, "EXPORT_MAX_ROWS", 1)
+        monkeypatch.setattr(csvexport, "EXPORT_MAX_ROWS", 1)
         text = (await client.get("/api/admin/v1/audit/export", headers=h)).text
         assert text.splitlines()[-1].startswith(csvexport.TRUNCATED_MARKER)
 

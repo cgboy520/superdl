@@ -8,7 +8,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
-from app.modules.billing import export as billing_export
 from app.modules.billing.models import BillHourly
 from tests.helpers import create_user_with_key, fund_wallet
 
@@ -126,7 +125,7 @@ class TestHourlyExport:
     ):
         headers, user_id, _ = await create_user_with_key(client, "13900000304")
         await _seed_hourly(sm, user_id, [_hour(2026, 8, 1, h) for h in range(4)])
-        monkeypatch.setattr(billing_export, "EXPORT_MAX_ROWS", 2)
+        monkeypatch.setattr(csvexport, "EXPORT_MAX_ROWS", 2)
         resp = await client.get(
             "/api/v1/billing/export",
             params={"dataset": "hourly", "month": "2026-08"},

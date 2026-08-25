@@ -4,16 +4,25 @@
   或 - 开头且非纯数字)置 ' 文本化;
 - 金额列保持 numeric 字符串原样,不做任何浮点运算;
 - 时间按调用方时区偏移折算成墙钟并带 (UTC+x) 后缀,与 packages/ui formatDateTime 同口径;
-- 单响应行数硬上限:触顶在文件末尾写截断标记行(前端据标记给「已截断」提示)。
+- 单响应行数硬上限:触顶在文件末尾写截断标记行(前端据标记给「已截断」提示);
+- stream_rows 是各业务导出共用的流式骨架(按 id 降序批拉 + 上限 + 截断探测),
+  业务模块只提供过滤后的 select、列定义与行映射。
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import Select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 EXPORT_MAX_ROWS = 50_000
 TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#"
+# 单次导出批拉粒度
+EXPORT_BATCH = 1_000
 
 _FORMULA_LEAD = frozenset("=+@\t\r")
 _PLAIN_NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
@@ -48,3 +57,39 @@ def fmt_ts(ts: datetime, offset_minutes: int) -> str:
 
 def fmt_money(value: Decimal) -> str:
     return format(value, "f")
+
+
+async def stream_rows(
+    session: AsyncSession,
+    stmt: Select[Any],
+    id_col: InstrumentedAttribute[int],
+    row_fn: Callable[[Any], Sequence[object]],
+    headers: Sequence[str],
+    *,
+    truncated_note: str,
+) -> AsyncIterator[str]:
+    """流式 CSV 骨架:BOM + 表头,按 id 降序(最新在前)分批拉 stmt 的 ORM 行,
+    单响应最多 EXPORT_MAX_ROWS 行;每批多取一行探测是否仍有剩余,触顶且有剩余即在
+    文件末尾写截断标记行(truncated_note 用 {limit} 占位上限)。stmt 只带过滤条件,
+    排序/游标/limit 由本函数施加。
+    """
+    yield "\ufeff" + csv_line(headers)  # BOM:防 Excel 中文乱码
+    sent = 0
+    last_id: int | None = None
+    while True:
+        want = min(EXPORT_BATCH, EXPORT_MAX_ROWS - sent)
+        batch_stmt = stmt.order_by(id_col.desc()).limit(want + 1)  # 多取一行判是否还有剩余
+        if last_id is not None:
+            batch_stmt = batch_stmt.where(id_col < last_id)
+        rows = list((await session.execute(batch_stmt)).scalars())
+        more = len(rows) > want
+        rows = rows[:want]
+        for r in rows:
+            yield csv_line(row_fn(r))
+        sent += len(rows)
+        if not more:
+            return
+        if sent >= EXPORT_MAX_ROWS:
+            yield f"{TRUNCATED_MARKER} {truncated_note.format(limit=EXPORT_MAX_ROWS)}\r\n"
+            return
+        last_id = getattr(rows[-1], id_col.key)
