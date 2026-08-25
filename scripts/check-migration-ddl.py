@@ -14,6 +14,9 @@
   本迁移内 create_table 新建表上的索引豁免——空表建索引零成本)
 - alter_column(type_=...) 或裸 SQL ALTER ... TYPE(列类型变更重写整表;
   字符串同族长度调整豁免——varchar 扩长是零重写元数据操作)
+- create_index(postgresql_concurrently=True) 或裸 SQL 带 CONCURRENTLY 却不在
+  `with op.get_context().autocommit_block():` 块内(alembic/env.py 整轮单事务,
+  CREATE INDEX CONCURRENTLY 在事务块内直接报错,升级会卡死在这一步)
 
 用法: python3 scripts/check-migration-ddl.py <迁移文件>...
 """
@@ -26,6 +29,7 @@ MARKER = "# ddl-risk: reviewed"
 ADD_CONSTRAINT_RE = re.compile(r"\bADD\s+CONSTRAINT\b", re.IGNORECASE)
 NOT_VALID_RE = re.compile(r"\bNOT\s+VALID\b", re.IGNORECASE)
 ALTER_TYPE_RE = re.compile(r"\bALTER\s+(TYPE\b|TABLE\b[^;]*\bTYPE\b)", re.IGNORECASE)
+CONCURRENTLY_RE = re.compile(r"\bCONCURRENTLY\b", re.IGNORECASE)
 
 
 def _attr_name(node: ast.AST) -> str:
@@ -46,6 +50,31 @@ def _upgrade_calls(tree: ast.Module) -> list[ast.Call]:
     return []
 
 
+def _autocommit_call_ids(tree: ast.Module) -> set[int]:
+    """upgrade() 里 `with op.get_context().autocommit_block():` 块内全部 Call 节点的 id。"""
+    ids: set[int] = set()
+    for node in tree.body:
+        if not (isinstance(node, ast.FunctionDef) and node.name == "upgrade"):
+            continue
+        for w in ast.walk(node):
+            if isinstance(w, ast.With) and any(
+                isinstance(item.context_expr, ast.Call)
+                and _attr_name(item.context_expr.func).endswith("autocommit_block")
+                for item in w.items
+            ):
+                ids.update(id(c) for c in ast.walk(w) if isinstance(c, ast.Call))
+    return ids
+
+
+def _has_concurrently(call: ast.Call) -> bool:
+    return any(
+        kw.arg == "postgresql_concurrently"
+        and isinstance(kw.value, ast.Constant)
+        and kw.value.value is True
+        for kw in call.keywords
+    )
+
+
 def check_file(path: str) -> list[str]:
     with open(path, encoding="utf-8") as f:
         source = f.read()
@@ -58,6 +87,7 @@ def check_file(path: str) -> list[str]:
 
     findings: list[str] = []
     calls = _upgrade_calls(tree)
+    autocommit_ids = _autocommit_call_ids(tree)
     # 本迁移内新建的表:create_table 之后的 create_index 是空表建索引(零成本),
     # 不算「在线建索引锁写」;只对既有表上的索引要求 CONCURRENTLY。
     new_tables = {
@@ -89,15 +119,16 @@ def check_file(path: str) -> list[str]:
         elif (
             short == "create_index"
             and not _index_on_new_table(call, new_tables)
-            and not any(
-                kw.arg == "postgresql_concurrently"
-                and isinstance(kw.value, ast.Constant)
-                and kw.value.value is True
-                for kw in call.keywords
-            )
+            and not _has_concurrently(call)
         ):
             findings.append(
                 f"{path}:{call.lineno}: create_index 未带 postgresql_concurrently=True(在线建索引锁写)"
+            )
+        elif short == "create_index" and _has_concurrently(call) and id(call) not in autocommit_ids:
+            findings.append(
+                f"{path}:{call.lineno}: create_index(postgresql_concurrently=True) 必须放在"
+                " `with op.get_context().autocommit_block():` 内(env.py 整轮单事务,"
+                "CONCURRENTLY 在事务块内直接报错)"
             )
         elif short == "execute":
             for arg in call.args:
@@ -109,6 +140,11 @@ def check_file(path: str) -> list[str]:
                 if ALTER_TYPE_RE.search(sql):
                     findings.append(
                         f"{path}:{call.lineno}: 裸 SQL ALTER TYPE/ALTER ... TYPE 列类型变更,拆窗口进行"
+                    )
+                if CONCURRENTLY_RE.search(sql) and id(call) not in autocommit_ids:
+                    findings.append(
+                        f"{path}:{call.lineno}: 裸 SQL CONCURRENTLY 必须放在"
+                        " `with op.get_context().autocommit_block():` 内(事务块内直接报错)"
                     )
     return findings
 

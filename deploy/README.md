@@ -55,7 +55,7 @@
   `with op.get_context().autocommit_block():` 里(`alembic/env.py` 整轮单事务,
   `CREATE INDEX CONCURRENTLY` 不能在事务块内执行,裸写会在升级时直接报错);这类迁移
   独立成文件,接受失去跨迁移原子性。本迁移内新建表上的索引不受此限(空表建索引零成本,
-  门禁脚本已豁免)。锁表型 DDL(ALTER TYPE、表重写)一律拆窗口,不得在在线迁移里做。
+  门禁脚本已豁免;不在 autocommit_block 内的 CONCURRENTLY 也由门禁拦下)。锁表型 DDL(ALTER TYPE、表重写)一律拆窗口,不得在在线迁移里做。
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 
