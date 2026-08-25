@@ -12,7 +12,7 @@
 - 启动校验只管 provider 选择,不查渠道凭据齐全性:短信 / 验证码 / 实名凭据可经平台配置中心在线录入,运行期渠道工厂(`app/core/sms.py`、`app/core/captcha.py`)缺凭据即 fail-closed,管理端 `test-sms` 可验。`alertmanager_token` 未配与 `prometheus_url` 仍指向本地只在 lifespan 打 WARNING(webhook 端点未配 token 本就拒收,指标子系统优雅降级)。`k8s_backend=real` 不要求 `environment=prod`:真实集群的暴露面由部署拓扑决定,实机验证需要 dev + real(决策见 `docs/decisions.md`「安全」)。
 - 首个管理员由 `apps/api/scripts/seed_dev.py` 创建(`ensure_bootstrap_admin`:`admin_users` 为空时才建,口令 ≥12 字符、≤72 字节),没有启动期引导变量;幽灵 `SUPERDL_*` 环境变量(不命中任何字段)启动打 WARNING 但不 fail。
 - 限流计数落 PG(`rate_limit_counters`),不用进程内计数;429 响应带 `Retry-After`(窗口剩余秒数,DB 侧计算),401 统一带 `WWW-Authenticate: Bearer`。
-- 统一错误体覆盖框架层异常:路由 404/405 等 StarletteHTTPException 也渲染 `{code, message, message_key, params, detail}`(405 用 `METHOD_NOT_ALLOWED`/`common.methodNotAllowed`);未捕获异常(500)由审计中间件先落 `result=500` 审计行再交由兜底 handler。
+- 统一错误体覆盖框架层异常:路由 404/405 等 StarletteHTTPException 也渲染 `{code, message, message_key, params, detail}`(405 用 `METHOD_NOT_ALLOWED`/`common.methodNotAllowed`);未捕获异常由内层 `Uniform500Middleware` 渲染成 500 响应,审计中间件按响应状态码落 `result=500` 审计行。
 - 安全响应头由纯 ASGI 中间件统一注入;`/metrics` 须 Bearer 鉴权(见 [observability.md](./observability.md))。
 - 边缘收口中间件(`app/core/edge_guard.py`):`/api/admin/*` 仅放行 Host 命中 `admin_host` 的请求,其余 404;`/metrics` 带 `X-Forwarded-For`(经 ingress 进入)一律 404,集群内直刮不带该头,与 Bearer 双闸并存。prod 恒开、无开关:`environment` 只有 dev / test / prod 三值,类生产环境(staging)也以 `prod` 运行(独立 secrets),收口随之生效;dev / test 无 ingress,不启用。
 - 短信渠道走 `app/core/sms.py` 的 Protocol + 工厂(mock / 阿里云 dysmsapi RPC 签名),不在业务代码里直连渠道 SDK;mock 渠道落日志时验证码(code)打码。

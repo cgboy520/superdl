@@ -54,13 +54,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        try:
-            response = await call_next(request)
-        except Exception:
-            # 未捕获异常由外层 ServerErrorMiddleware 兜底成 500 统一错误体;
-            # 这里先按 result=500 落一条审计再原样上抛(否则 500 反而没有留痕)
-            await _write_audit_row(request, 500)
-            raise
+        # 未捕获异常由内层 Uniform500Middleware 渲染成 500 响应(main.py 的中间件顺序),
+        # 到这里已是普通响应:按状态码落行,500 同样留痕
+        response = await call_next(request)
         await _write_audit_row(request, response.status_code)
         return response
 
