@@ -12,6 +12,7 @@ import {
   useInstances,
   useNotifications,
   useRefundableOrders,
+  useUnreadCount,
   useWallet,
 } from "../api/queries";
 import { DataErrorAlert, moneyOr } from "../components/QueryState";
@@ -84,7 +85,9 @@ function Overview() {
   const walletQ = useWallet();
   const { data: instances } = instancesQ;
   const { data: wallet } = walletQ;
+  // 未读列表只用于余额告警/公告横幅;未读数走轻端点(与顶栏角标同一缓存)
   const { data: unread } = useNotifications({ unread: true });
+  const { data: unreadCount } = useUnreadCount();
   const { date, tzOffsetMinutes } = localToday();
   const dailyQ = useDailySummary(date, tzOffsetMinutes);
   const { data: daily } = dailyQ;
@@ -154,7 +157,7 @@ function Overview() {
         </Col>
         <Col xs={12} lg={6}>
           <Card>
-            <Statistic title={t("dashboard.unread")} value={unread ? unread.items.length : "—"} />
+            <Statistic title={t("dashboard.unread")} value={unreadCount ? unreadCount.unread_count : "—"} />
           </Card>
         </Col>
       </Row>
