@@ -10,6 +10,7 @@
 import asyncio
 import hashlib
 import math
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -27,7 +28,6 @@ from app.core.k8s.base import (
     InstancePodSpec,
     NodeInfo,
     NodePortTaken,
-    PodListEntry,
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
@@ -67,12 +67,34 @@ def tenant_security_context() -> "client.V1SecurityContext":
     )
 
 
-def _is_not_found(exc: client.ApiException) -> bool:
-    return exc.status == 404
-
-
 def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
+
+
+def _ignore(fn: Callable[[], Any], *statuses: int) -> Any:
+    """执行一次 K8s 调用,吞掉指定 HTTP 状态的 ApiException(幂等语义:create 的 409 =
+    已存在,delete/read 的 404 = 不存在),其余照抛。被吞时返回 None。"""
+    try:
+        return fn()
+    except client.ApiException as exc:
+        if exc.status not in statuses:
+            raise
+        return None
+
+
+def _create_or_patch(create: Callable[[], Any], patch: Callable[[], Any]) -> None:
+    """幂等下发:create 撞 409(已存在)即 patch 收敛——加固/标签演进必须覆盖存量对象。"""
+    try:
+        create()
+    except client.ApiException as exc:
+        if not _is_conflict(exc):
+            raise
+        patch()
+
+
+def _ready_condition(obj: Any) -> bool:
+    """Pod / Node 的 status.conditions 里 Ready 是否为 True。"""
+    return any(c.type == "Ready" and c.status == "True" for c in (obj.status.conditions or []))
 
 
 def _is_node_port_taken(exc: client.ApiException) -> bool:
@@ -196,15 +218,12 @@ class RealOrchestrator:
 
     def _ensure_namespace_sync(self, namespace: str) -> None:
         labels = {MANAGED_LABEL: "true", **TENANT_NS_PSA_LABELS}
-        try:
-            self.core.create_namespace(
-                client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels))
-            )
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
-            # 既有 ns 也要补标:create 只发生一次,标签演进靠 patch 收敛存量租户
-            self.core.patch_namespace(namespace, {"metadata": {"labels": labels}})
+        ns = client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels))
+        # 既有 ns 也要补标:create 只发生一次,标签演进靠 patch 收敛存量租户
+        _create_or_patch(
+            lambda: self.core.create_namespace(ns),
+            lambda: self.core.patch_namespace(namespace, {"metadata": {"labels": labels}}),
+        )
         self._ensure_default_netpol_sync(namespace)
         self._ensure_quota_sync(namespace)
         self._ensure_juicefs_pvc_sync(namespace)
@@ -289,26 +308,20 @@ class RealOrchestrator:
 
     def _ensure_default_netpol_sync(self, namespace: str) -> None:
         policy = self._tenant_netpol(namespace)
-        try:
-            self.net.create_namespaced_network_policy(namespace, policy)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
-            # 已存在则 patch 收敛:策略加固必须覆盖存量租户 ns
-            self.net.patch_namespaced_network_policy("tenant-default", namespace, policy)
+        _create_or_patch(
+            lambda: self.net.create_namespaced_network_policy(namespace, policy),
+            lambda: self.net.patch_namespaced_network_policy("tenant-default", namespace, policy),
+        )
 
     def _ensure_quota_sync(self, namespace: str) -> None:
         quota = client.V1ResourceQuota(
             metadata=client.V1ObjectMeta(name="tenant-quota", namespace=namespace),
             spec=client.V1ResourceQuotaSpec(hard=dict(TENANT_QUOTA)),
         )
-        try:
-            self.core.create_namespaced_resource_quota(namespace, quota)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
-            # 已存在则 patch 收敛(硬限演进要覆盖存量 ns)
-            self.core.patch_namespaced_resource_quota("tenant-quota", namespace, quota)
+        _create_or_patch(
+            lambda: self.core.create_namespaced_resource_quota(namespace, quota),
+            lambda: self.core.patch_namespaced_resource_quota("tenant-quota", namespace, quota),
+        )
 
     def _ensure_juicefs_pvc_sync(self, namespace: str) -> None:
         """每租户 namespace 一只共享 JuiceFS PVC(数据盘 subPath 挂载的底座)。
@@ -323,11 +336,7 @@ class RealOrchestrator:
                 resources=client.V1VolumeResourceRequirements(requests={"storage": "10Ti"}),
             ),
         )
-        try:
-            self.core.create_namespaced_persistent_volume_claim(namespace, pvc)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
+        _ignore(lambda: self.core.create_namespaced_persistent_volume_claim(namespace, pvc), 409)
 
     # ---------- instance ----------
 
@@ -358,12 +367,12 @@ class RealOrchestrator:
             ),
             string_data=spec.secret_env,
         )
-        try:
-            self.core.create_namespaced_secret(spec.namespace, secret)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
-            self.core.patch_namespaced_secret(name, spec.namespace, {"stringData": spec.secret_env})
+        _create_or_patch(
+            lambda: self.core.create_namespaced_secret(spec.namespace, secret),
+            lambda: self.core.patch_namespaced_secret(
+                name, spec.namespace, {"stringData": spec.secret_env}
+            ),
+        )
 
     def _ensure_instance_disk_sync(self, spec: InstancePodSpec) -> None:
         """实例盘 PVC。已存在即跳过,重新开机复用同一只盘,不按新容量重建。
@@ -382,11 +391,9 @@ class RealOrchestrator:
                 ),
             ),
         )
-        try:
-            self.core.create_namespaced_persistent_volume_claim(spec.namespace, pvc)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
+        _ignore(
+            lambda: self.core.create_namespaced_persistent_volume_claim(spec.namespace, pvc), 409
+        )
 
     def _create_pod_sync(self, spec: InstancePodSpec) -> None:
         requests = {
@@ -520,11 +527,7 @@ class RealOrchestrator:
             if not (_is_conflict(exc) or _is_node_port_taken(exc)):
                 raise
             self._reconcile_ssh_service_conflict_sync(spec, exc)
-        try:
-            self.core.create_namespaced_service(spec.namespace, jupyter_svc)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
+        _ignore(lambda: self.core.create_namespaced_service(spec.namespace, jupyter_svc), 409)
 
     def _reconcile_ssh_service_conflict_sync(
         self, spec: InstancePodSpec, create_exc: "client.ApiException"
@@ -606,11 +609,7 @@ class RealOrchestrator:
                 ],
             ),
         )
-        try:
-            self.net.create_namespaced_ingress(spec.namespace, ingress)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
+        _ignore(lambda: self.net.create_namespaced_ingress(spec.namespace, ingress), 409)
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
         await self._run(self._delete_instance_sync, namespace, name, force)
@@ -625,42 +624,39 @@ class RealOrchestrator:
             lambda: self.core.delete_namespaced_secret(instance_env_secret_name(name), namespace),
             lambda: self.net.delete_namespaced_ingress(name, namespace),
         ):
-            try:
-                deleter()
-            except client.ApiException as exc:
-                if not _is_not_found(exc):
-                    raise
+            _ignore(deleter, 404)
 
     async def delete_instance_disk(self, namespace: str, name: str) -> None:
         await self._run(self._delete_instance_disk_sync, namespace, name)
 
     def _delete_instance_disk_sync(self, namespace: str, name: str) -> None:
-        try:
-            self.core.delete_namespaced_persistent_volume_claim(
+        _ignore(
+            lambda: self.core.delete_namespaced_persistent_volume_claim(
                 instance_disk_pvc_name(name), namespace
-            )
-        except client.ApiException as exc:
-            if not _is_not_found(exc):
-                raise
+            ),
+            404,
+        )
 
     async def get_status(self, namespace: str, name: str) -> PodStatus:
         return await self._run(self._get_status_sync, namespace, name)
 
     def _get_status_sync(self, namespace: str, name: str) -> PodStatus:
-        try:
-            pod: Any = self.core.read_namespaced_pod(name, namespace)
-        except client.ApiException as exc:
-            if _is_not_found(exc):
-                return PodStatus(exists=False)
-            raise
-        conditions = pod.status.conditions or []
-        ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
+        pod: Any = _ignore(lambda: self.core.read_namespaced_pod(name, namespace), 404)
+        if pod is None:
+            return PodStatus(exists=False)
+        return self._pod_status(pod)
+
+    @staticmethod
+    def _pod_status(pod: Any) -> PodStatus:
         return PodStatus(
             exists=True,
-            ready=ready,
+            ready=_ready_condition(pod),
             phase=pod.status.phase or "Unknown",
             node_name=pod.spec.node_name,
             deleting=pod.metadata.deletion_timestamp is not None,
+            namespace=pod.metadata.namespace,
+            name=pod.metadata.name,
+            labels=dict(pod.metadata.labels or {}),
         )
 
     async def read_instance_logs(
@@ -684,30 +680,13 @@ class RealOrchestrator:
             kwargs["since_seconds"] = since_seconds
         return cast(str, self.core.read_namespaced_pod_log(name, namespace, **kwargs))
 
-    async def list_instance_pods(self) -> list[PodListEntry]:
+    async def list_instance_pods(self) -> list[PodStatus]:
         return await self._run(self._list_instance_pods_sync)
 
-    def _list_instance_pods_sync(self) -> list[PodListEntry]:
+    def _list_instance_pods_sync(self) -> list[PodStatus]:
         pods = self._list_all(self.core.list_pod_for_all_namespaces, label_selector=MANAGED_LABEL)
         prefix = self.settings.k8s_namespace_prefix
-        out: list[PodListEntry] = []
-        for p in pods:
-            if not p.metadata.namespace.startswith(prefix):
-                continue
-            conditions = p.status.conditions or []
-            ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
-            out.append(
-                PodListEntry(
-                    namespace=p.metadata.namespace,
-                    name=p.metadata.name,
-                    ready=ready,
-                    phase=p.status.phase or "Unknown",
-                    node_name=p.spec.node_name,
-                    deleting=p.metadata.deletion_timestamp is not None,
-                    labels=dict(p.metadata.labels or {}),
-                )
-            )
-        return out
+        return [self._pod_status(p) for p in pods if p.metadata.namespace.startswith(prefix)]
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
         return await self._run(self._list_instance_endpoints_sync)
@@ -757,13 +736,9 @@ class RealOrchestrator:
         pod_labels: dict[str, str],
     ) -> None:
         """受管 Job 生命周期(幂等):已成功 → 清理并返回;进行中 → 抛错交 outbox 退避重试;
-        失败 → 删 Job 重建;不存在 → 创建并抛错等下轮。wipe/quota/prewarm 共用。"""
-        try:
-            existing: Any = self.batch.read_namespaced_job(job_name, namespace)
-        except client.ApiException as exc:
-            if not _is_not_found(exc):
-                raise
-            existing = None
+        失败 → 删 Job 重建;不存在 → 创建并抛错等下轮。wipe/quota 共用
+        (预热 Job 创建后不等完成,由巡检收敛,见 _prewarm_image_sync)。"""
+        existing: Any = _ignore(lambda: self.batch.read_namespaced_job(job_name, namespace), 404)
         if existing is not None:
             if (existing.status.succeeded or 0) >= 1:
                 self.batch.delete_namespaced_job(
@@ -796,16 +771,12 @@ class RealOrchestrator:
                 ),
             ),
         )
-        try:
-            self.batch.create_namespaced_job(namespace, job)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
+        _ignore(lambda: self.batch.create_namespaced_job(namespace, job), 409)
         raise RuntimeError(f"job created, awaiting completion: {job_name}")
 
     @staticmethod
     def _batch_container(name: str, image: str, command: list[str], env: list[Any]) -> Any:
-        """一次性 Job 容器基座:资源声明(租户 ns 的 ResourceQuota 要求)+ 安全上下文。"""
+        """一次性 Job 容器基座(wipe/quota/prewarm 共用):资源声明 + 租户同款安全上下文。"""
         return client.V1Container(
             name=name,
             image=image,
@@ -817,11 +788,7 @@ class RealOrchestrator:
                 requests={"cpu": "10m", "memory": "16Mi", "ephemeral-storage": "16Mi"},
                 limits={"cpu": "100m", "memory": "64Mi", "ephemeral-storage": "64Mi"},
             ),
-            security_context=client.V1SecurityContext(
-                allow_privilege_escalation=False,
-                capabilities=client.V1Capabilities(drop=["ALL"]),
-                seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
-            ),
+            security_context=tenant_security_context(),
         )
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
@@ -1037,8 +1004,7 @@ class RealOrchestrator:
         out: list[NodeInfo] = []
         for node in nodes:
             labels = node.metadata.labels or {}
-            conditions = node.status.conditions or []
-            ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
+            ready = _ready_condition(node)
             cordoned = bool(node.spec.unschedulable)
             total = self._physical_gpu_amount(node)
             cap = node.status.capacity or {}
@@ -1107,8 +1073,10 @@ class RealOrchestrator:
             errors.append(f"storageclasses: {exc.status}")
         pools: dict[str, int] = {}
         try:
-            for node in self._list_nodes_sync(True):
-                key = node.pool_label if node.pool_label != "unknown" else "unlabeled"
+            # 只数池标签,不走 _list_nodes_sync(它还会全量 LIST Pod 算已用份额,探测用不上;
+            # 节点巡检同一轮紧接着就会 list_nodes)
+            for node in self._list_all(self.core.list_node):
+                key = (node.metadata.labels or {}).get(POOL_NODE_LABEL, "unlabeled")
                 pools[key] = pools.get(key, 0) + 1
         except client.ApiException as exc:
             errors.append(f"nodes: {exc.status}")
@@ -1149,12 +1117,11 @@ class RealOrchestrator:
         """nodeName 定点起拉取 Job,创建后即返回(不等待,大镜像拉取可达数十分钟,
         完成态由 prewarm_patrol 巡检经 get_prewarm_status 收敛)。已存在同名 Job 则跳过。"""
         job_name = self._prewarm_job_name(node_name, image_ref)
-        try:
-            self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE)
+        if _ignore(lambda: self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE), 404):
             return  # 幂等:任意状态的既有 Job 都交巡检收敛
-        except client.ApiException as exc:
-            if not _is_not_found(exc):
-                raise
+        # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
+        container = self._batch_container("prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[])
+        container.image_pull_policy = "IfNotPresent"
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=job_name,
@@ -1174,45 +1141,23 @@ class RealOrchestrator:
                         automount_service_account_token=False,
                         # 容忍一切污点:预热须覆盖 cordon/维护中的节点
                         tolerations=[client.V1Toleration(operator="Exists")],
-                        containers=[
-                            client.V1Container(
-                                name="prewarm",
-                                image=image_ref,
-                                # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
-                                command=["/bin/sh", "-c", "true"],
-                                image_pull_policy="IfNotPresent",
-                                resources=client.V1ResourceRequirements(
-                                    requests={"cpu": "10m", "memory": "16Mi"},
-                                    limits={"cpu": "100m", "memory": "64Mi"},
-                                ),
-                                security_context=client.V1SecurityContext(
-                                    allow_privilege_escalation=False,
-                                    capabilities=client.V1Capabilities(drop=["ALL"]),
-                                    seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
-                                ),
-                            )
-                        ],
+                        containers=[container],
                     ),
                 ),
             ),
         )
-        try:
-            self.batch.create_namespaced_job(PLATFORM_NAMESPACE, job)
-        except client.ApiException as exc:
-            if not _is_conflict(exc):
-                raise
+        _ignore(lambda: self.batch.create_namespaced_job(PLATFORM_NAMESPACE, job), 409)
 
     async def get_prewarm_status(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
         return await self._run(self._get_prewarm_status_sync, node_name, image_ref)
 
     def _get_prewarm_status_sync(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
         job_name = self._prewarm_job_name(node_name, image_ref)
-        try:
-            job: Any = self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE)
-        except client.ApiException as exc:
-            if _is_not_found(exc):
-                return PrewarmJobStatus(state="absent")
-            raise
+        job: Any = _ignore(
+            lambda: self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE), 404
+        )
+        if job is None:
+            return PrewarmJobStatus(state="absent")
         if (job.status.succeeded or 0) >= 1:
             return PrewarmJobStatus(state="succeeded")
         if (job.status.failed or 0) >= 1:
@@ -1242,10 +1187,9 @@ class RealOrchestrator:
 
     def _delete_prewarm_job_sync(self, node_name: str, image_ref: str) -> None:
         job_name = self._prewarm_job_name(node_name, image_ref)
-        try:
-            self.batch.delete_namespaced_job(
+        _ignore(
+            lambda: self.batch.delete_namespaced_job(
                 job_name, PLATFORM_NAMESPACE, propagation_policy="Background"
-            )
-        except client.ApiException as exc:
-            if not _is_not_found(exc):
-                raise
+            ),
+            404,
+        )

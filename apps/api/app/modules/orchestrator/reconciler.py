@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.k8s import PodStatus, get_orchestrator
-from app.core.k8s.base import JOB_NAME_LABEL, PodListEntry
+from app.core.k8s.base import JOB_NAME_LABEL
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
@@ -208,31 +208,17 @@ async def _escalate_stuck(
         logger.warning(f"{status}_stuck_requeued", instance_id=instance.id, age_seconds=age_s)
 
 
+_MISSING_POD = PodStatus(exists=False)
+
+
 def _statuses_from_listing(
-    rows: list[tuple[int, str, str, str, Any]], listing: list[PodListEntry]
+    rows: list[tuple[int, str, str, str, Any]], listing: list[PodStatus]
 ) -> list[PodStatus]:
     """全量 LIST 即状态源:与 get_status 同口径(ready/phase/node_name/deleting),
     逐实例单查(有界并发 8)在对账高峰会占满 RealOrchestrator 的 8 线程执行器,
-    让建/删 Pod 排队——N 次 GET 降为 0。stopping/releasing 只需存在性。"""
+    让建/删 Pod 排队——N 次 GET 降为 0。"""
     by_key = {(e.namespace, e.name): e for e in listing}
-    out: list[PodStatus] = []
-    for _id, status, ns, uuid, _created in rows:
-        entry = by_key.get((ns, uuid))
-        if entry is None:
-            out.append(PodStatus(exists=False))
-        elif status in (sm_def.STOPPING, sm_def.RELEASING):
-            out.append(PodStatus(exists=True))
-        else:
-            out.append(
-                PodStatus(
-                    exists=True,
-                    ready=entry.ready,
-                    phase=entry.phase,
-                    node_name=entry.node_name,
-                    deleting=entry.deleting,
-                )
-            )
-    return out
+    return [by_key.get((ns, uuid), _MISSING_POD) for _id, _status, ns, uuid, _created in rows]
 
 
 async def _node_readiness() -> dict[str, bool] | None:

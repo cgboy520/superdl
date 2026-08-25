@@ -17,7 +17,6 @@ from app.core.k8s.base import (
     ClusterProbe,
     InstancePodSpec,
     NodePortTaken,
-    PodListEntry,
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
@@ -201,6 +200,8 @@ class FakeOrchestrator:
             phase=pod.phase,
             node_name=pod.node_name,
             deleting=pod.deleting,
+            namespace=namespace,
+            name=name,
         )
 
     async def read_instance_logs(
@@ -225,27 +226,27 @@ class FakeOrchestrator:
         ]
         return "\n".join(lines[-tail_lines:])
 
-    async def list_instance_pods(self) -> list[PodListEntry]:
+    async def list_instance_pods(self) -> list[PodStatus]:
         entries = [
-            PodListEntry(
-                namespace=ns,
-                name=name,
+            PodStatus(
+                exists=True,
                 ready=pod.ready,
                 phase=pod.phase,
                 node_name=pod.node_name,
                 deleting=pod.deleting,
+                namespace=ns,
+                name=name,
                 labels=dict(pod.labels),
             )
             for (ns, name), pod in self.pods.items()
         ]
         entries.extend(
-            PodListEntry(
-                namespace=ns,
-                name=name,
-                ready=False,
+            PodStatus(
+                exists=True,
                 phase="Running",
                 node_name="fake-node-1",
-                deleting=False,
+                namespace=ns,
+                name=name,
                 labels=dict(labels),
             )
             for (ns, name), labels in self.job_pods.items()

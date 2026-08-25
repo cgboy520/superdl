@@ -77,26 +77,21 @@ class NodePortTaken(Exception):
 
 @dataclass(frozen=True)
 class PodStatus:
+    """Pod 状态:get_status 单查与 list_instance_pods 全量 LIST 同一形状。
+
+    LIST 条目还带归属(namespace/name)与 labels:reconciler 以全量 LIST 替代逐实例
+    get_status(读放大控制);泄漏回收据 labels 豁免受管 Job(wipe/quota)的子孙 Pod——
+    它们带 MANAGED_LABEL 会被 LIST 命中,但名字不是实例 uuid,无 labels 无法与真泄漏区分。
+    """
+
     exists: bool
     ready: bool = False
     phase: str = "Unknown"  # Pending / Running / Succeeded / Failed / Unknown
     node_name: str | None = None
     # deletionTimestamp 已设 = Terminating:read 仍 200、phase 仍 Running,判活必须看这个字段
     deleting: bool = False
-
-
-@dataclass(frozen=True)
-class PodListEntry:
-    """全量 LIST 的 Pod 状态条目:reconciler 以此替代逐实例 get_status(读放大控制)。"""
-
-    namespace: str
-    name: str
-    ready: bool
-    phase: str
-    node_name: str | None
-    deleting: bool
-    # Pod labels:泄漏回收据此豁免受管 Job(wipe/quota)的 Pod——它们带 MANAGED_LABEL
-    # 会被 LIST 命中,但名字不是实例 uuid,无 labels 无法与真泄漏区分
+    namespace: str = ""
+    name: str = ""
     labels: dict[str, str] = field(default_factory=dict)
 
 
@@ -173,7 +168,7 @@ class K8sOrchestrator(Protocol):
         """
         ...
 
-    async def list_instance_pods(self) -> list["PodListEntry"]:
+    async def list_instance_pods(self) -> list[PodStatus]:
         """全量列出租户实例 Pod 状态(reconciler 每轮一次,替代逐实例 get_status)。"""
         ...
 
