@@ -16,7 +16,7 @@
   复查只会把它打成死胡同(只能取消,再申请又被已开票拦下)。
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -27,7 +27,7 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
-from app.core.timeutil import BILLING_DAY_OFFSET, now_utc
+from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
 from app.modules.billing.schemas import AdminInvoiceOut, InvoiceEligibleOut, InvoiceOut
 from app.modules.notify import service as notify_service
@@ -51,21 +51,10 @@ def current_beijing_period() -> str:
     return beijing_period(now_utc())
 
 
-def _period_range_utc(period: str) -> tuple[datetime, datetime]:
-    """账期(北京自然月)对应的 UTC [start, end) 窗口。period 已按契约 YYYY-MM 校验。"""
-    local_start = datetime.strptime(period, "%Y-%m").replace(tzinfo=UTC)
-    local_end = (
-        local_start.replace(year=local_start.year + 1, month=1)
-        if local_start.month == 12
-        else local_start.replace(month=local_start.month + 1)
-    )
-    return local_start - BILLING_DAY_OFFSET, local_end - BILLING_DAY_OFFSET
-
-
 async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
     """该用户该账期(北京月界)已支付充值订单总额(不含已被渠道冲正的订单——
     冲正意味着钱已被渠道划回,对其开票等于为未收到的款纳税)。"""
-    start, end = _period_range_utc(period)
+    start, end = billing_month_range(period)
     total = (
         await session.execute(
             select(func.coalesce(func.sum(Order.amount), 0)).where(
@@ -89,7 +78,7 @@ async def _period_refund_sum(session: AsyncSession, user_id: int, period: str) -
     打款时间:按打款时间归属会让退款在 pending→paid 跨月时从订单账期挪走,订单账期
     重算即可全额开票,打款账期又被扣一次。
     """
-    start, end = _period_range_utc(period)
+    start, end = billing_month_range(period)
     total = (
         await session.execute(
             select(func.coalesce(func.sum(RefundRequest.amount), 0))

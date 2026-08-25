@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+from app.core.errors import AppError, ErrorCode
+
 
 def now_utc() -> datetime:
     return datetime.now(UTC)
@@ -28,7 +30,8 @@ def day_floor(dt: datetime) -> datetime:
 
 # 计费日界按北京时间(UTC+8):面向中国用户,「3 月 1 日」的盘费应覆盖北京 3/1 全天,
 # 而非 UTC 日(北京 3/1 08:00 – 3/2 08:00)
-BILLING_DAY_OFFSET = timedelta(hours=8)
+BILLING_TZ_OFFSET_MINUTES = 480
+BILLING_DAY_OFFSET = timedelta(minutes=BILLING_TZ_OFFSET_MINUTES)
 
 
 def billing_day_floor(dt: datetime) -> datetime:
@@ -36,6 +39,27 @@ def billing_day_floor(dt: datetime) -> datetime:
     dt = ensure_utc(dt)
     shifted = (dt + BILLING_DAY_OFFSET).replace(hour=0, minute=0, second=0, microsecond=0)
     return shifted - BILLING_DAY_OFFSET
+
+
+def billing_month_range(
+    month: str, *, tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES
+) -> tuple[datetime, datetime]:
+    """YYYY-MM 本地自然月对应的 UTC [start, end) 窗口(默认北京时间,即发票账期口径)。
+
+    月窗口按本地月初/次月初切,与日账单同口径(按 UTC 切会让日账单加总 ≠ 月账单);
+    格式非法报 VALIDATION_ERROR(billing.badMonthFormat)。
+    """
+    try:
+        local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badMonthFormat") from exc
+    local_end = (
+        local_start.replace(year=local_start.year + 1, month=1)
+        if local_start.month == 12
+        else local_start.replace(month=local_start.month + 1)
+    )
+    offset = timedelta(minutes=tz_offset_minutes)
+    return local_start - offset, local_end - offset
 
 
 def prev_hour_range(dt: datetime) -> tuple[datetime, datetime]:

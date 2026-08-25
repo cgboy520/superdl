@@ -12,6 +12,7 @@ from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
+from app.core.timeutil import billing_month_range
 from app.modules.account.deps import CurrentUser
 from app.modules.billing import export as billing_export
 from app.modules.billing import invoices, payment_service, refunds, wallet
@@ -51,21 +52,6 @@ async def get_policies(session: DbSession) -> PoliciesOut:
     )
 
 
-def _parse_month(month: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
-    """月窗口按本地月初/次月初切,与日账单同口径(按 UTC 切会让日账单加总 ≠ 月账单)。"""
-    try:
-        local_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
-    except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badMonthFormat") from exc
-    local_end = (
-        local_start.replace(year=local_start.year + 1, month=1)
-        if local_start.month == 12
-        else local_start.replace(month=local_start.month + 1)
-    )
-    offset = timedelta(minutes=tz_offset_minutes)
-    return local_start - offset, local_end - offset
-
-
 @router.get("/wallet")
 async def get_wallet(user: CurrentUser, session: DbSession) -> WalletOut:
     w = await wallet.get_or_create_wallet(session, user.id)
@@ -97,7 +83,9 @@ async def list_hourly_bills(
         session,
         user.id,
         instance_id=instance_id,
-        month_range=_parse_month(month, tz_offset_minutes) if month is not None else None,
+        month_range=billing_month_range(month, tz_offset_minutes=tz_offset_minutes)
+        if month is not None
+        else None,
         cursor=cursor,
         limit=limit,
     )
@@ -108,7 +96,7 @@ async def bill_summary(
     user: CurrentUser, session: DbSession, month: str, tz_offset_minutes: int = TzOffset
 ) -> BillSummaryOut:
     """月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。"""
-    start, end = _parse_month(month, tz_offset_minutes)
+    start, end = billing_month_range(month, tz_offset_minutes=tz_offset_minutes)
     s = await wallet.consumption_summary(session, user.id, start, end)
     return BillSummaryOut(
         month=month, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items
@@ -153,7 +141,9 @@ async def export_billing(
         stream = billing_export.stream_hourly_csv(
             session,
             user.id,
-            month_range=_parse_month(month, tz_offset_minutes) if month is not None else None,
+            month_range=billing_month_range(month, tz_offset_minutes=tz_offset_minutes)
+            if month is not None
+            else None,
             tz_offset_minutes=tz_offset_minutes,
             lang=lang,
         )

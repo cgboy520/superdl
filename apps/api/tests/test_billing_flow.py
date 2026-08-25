@@ -1,5 +1,6 @@
 """计费与编排的集成:尾账(计费边同事务)与欠费链路(预警→停机→冻结→回收→解冻)。"""
 
+import asyncio
 from datetime import timedelta
 from decimal import Decimal
 
@@ -31,36 +32,22 @@ def fake():
 
 
 class TestWalletFirstCreate:
-    async def test_insert_race_safe_swallows_unique_conflict(self, sm):
-        """钱包首建并发兜底(SAVEPOINT):嵌套事务内撞 user_id 唯一约束只回退嵌套段,
-        外层事务不受污染,重查拿到既有行,后续写照常提交。"""
-        async with sm() as s1:
-            w = await wallet.get_or_create_wallet(s1, 424242)
-            await s1.commit()
-        assert w.user_id == 424242
+    async def test_concurrent_first_credit_creates_single_row(self, sm):
+        """无钱包行的用户被并发入账:首建撞 user_id 唯一约束不抛错、不污染外层事务,
+        只留一行且每笔入账都落账(挂了 = 并发首建 500,或负方事务被撞键污染丢掉一笔)。"""
+        gate = asyncio.Barrier(5)
 
-        async with sm() as s2:
-            # 模拟并发负方:外层事务先有别的工作,再撞首建冲突——必须不外溢成整事务回滚
-            await wallet._insert_wallet_race_safe(s2, 424242)
-            w2 = await wallet.lock_wallet(s2, 424242)
-            assert w2.id == w.id
-            w2.balance = Decimal("9.99")
-            await s2.commit()  # 外层事务仍能提交
+        async def credit_once() -> None:
+            await gate.wait()
+            async with sm() as s:
+                await wallet.credit(s, 424242, Decimal("10.00"), type_="recharge")
+                await s.commit()
 
-        async with sm() as s3:
-            w3 = (await s3.execute(select(Wallet).where(Wallet.user_id == 424242))).scalar_one()
-            assert w3.balance == Decimal("9.99")
-
-    async def test_get_or_create_returns_existing_after_race(self, sm):
-        """get_or_create 在「先查无、插入撞键」后重查返回胜出方(不抛 IntegrityError)。"""
-        async with sm() as s1:
-            await wallet.get_or_create_wallet(s1, 424243)
-            await s1.commit()
-        async with sm() as s2:
-            await wallet._insert_wallet_race_safe(s2, 424243)  # 撞键被吞
-            w = await wallet.get_or_create_wallet(s2, 424243)
-            assert w.user_id == 424243
-            await s2.commit()
+        await asyncio.gather(*(credit_once() for _ in range(4)), gate.wait())
+        async with sm() as s:
+            rows = (await s.execute(select(Wallet).where(Wallet.user_id == 424242))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].balance == Decimal("40.00")
 
 
 async def backdate_running_event(

@@ -19,7 +19,7 @@ from app.modules.account import service as account_service
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly
 from app.modules.billing.settlement import (
-    bill_amount_window,
+    bill_amount,
     get_watermark,
     running_seconds_in_window,
 )
@@ -104,7 +104,10 @@ async def _unsettled_burn(
         )
     ).scalar_one()
     unsettled_seconds = max(0, seconds - billed)
-    return bill_amount_window(inst.price_hourly, inst.gpu_count, unsettled_seconds)
+    # 多小时估算口径(永不入账):上限放宽到 31 天,越界同样报错不截断
+    return bill_amount(
+        inst.price_hourly, inst.gpu_count, unsettled_seconds, max_seconds=31 * 24 * 3600
+    )
 
 
 async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:

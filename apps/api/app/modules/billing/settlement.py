@@ -128,18 +128,13 @@ def running_seconds_in_window(
     return q
 
 
-def bill_amount(unit_price: Decimal, gpu_count: int, seconds: int) -> Decimal:
-    """入账 2 位 HALF_EVEN。seconds ∈ [0, 3600](单整点小时窗口);越界即窗口计算有 bug,报错不截断。"""
-    if not 0 <= seconds <= 3600:
-        raise ValueError(f"seconds out of range: {seconds}")
-    raw = as_price(unit_price) * Decimal(gpu_count) * Decimal(seconds) / Decimal(3600)
-    return as_amount(raw)
-
-
-def bill_amount_window(unit_price: Decimal, gpu_count: int, seconds: int) -> Decimal:
-    """多小时窗口的估算口径(巡检停机判据用,永不入账):与 bill_amount 同公式,
-    seconds 上限放宽到 31 天,越界同样报错不截断。入账一律走 bill_amount 逐窗。"""
-    if not 0 <= seconds <= 31 * 24 * 3600:
+def bill_amount(
+    unit_price: Decimal, gpu_count: int, seconds: int, *, max_seconds: int = 3600
+) -> Decimal:
+    """入账 2 位 HALF_EVEN。seconds ∈ [0, max_seconds](默认单整点小时窗口);越界即窗口计算
+    有 bug,报错不截断。max_seconds 只供巡检的多小时估算口径放宽(估算永不入账),
+    入账一律逐窗按默认上限。"""
+    if not 0 <= seconds <= max_seconds:
         raise ValueError(f"seconds out of range: {seconds}")
     raw = as_price(unit_price) * Decimal(gpu_count) * Decimal(seconds) / Decimal(3600)
     return as_amount(raw)
@@ -505,6 +500,20 @@ def _hourly_attempt(
     return attempt
 
 
+async def _hourly_window_attempts(
+    sm: async_sessionmaker[AsyncSession], window_start: datetime, window_end: datetime
+) -> list[tuple[int, SettleAttempt]]:
+    """构造一个小时窗口内全部计费候选实例的入账闭包(整点结算与整窗重放共用)。"""
+    from app.modules.orchestrator import service as orchestrator_service
+
+    async with sm() as session:
+        instances = await orchestrator_service.billing_candidates(session, window_start, window_end)
+    return [
+        (inst_id, _hourly_attempt(inst_id, user_id, price, gpu_count, window_start, window_end))
+        for inst_id, user_id, price, gpu_count in instances
+    ]
+
+
 async def settle_due_hours(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
@@ -514,21 +523,12 @@ async def settle_due_hours(
     某小时内有实例结算失败时水位线停在它之前(下一轮重试),后续小时照常结算——
     入账是幂等的,重复结算不会重扣;连续失败超限的 (实例, 小时) 死信进 settlement_gaps。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     if await _clock_skew_exceeded(sm):
         return 0
     target_start, _ = prev_hour_range(at or now_utc())
 
     async def settle_window(window_start: datetime, window_end: datetime) -> tuple[int, list[int]]:
-        async with sm() as session:
-            instances = await orchestrator_service.billing_candidates(
-                session, window_start, window_end
-            )
-        attempts = [
-            (inst_id, _hourly_attempt(inst_id, user_id, price, gpu_count, window_start, window_end))
-            for inst_id, user_id, price, gpu_count in instances
-        ]
+        attempts = await _hourly_window_attempts(sm, window_start, window_end)
         return await _settle_window_objects(
             sm, kind="hourly", window_start=window_start, attempts=attempts
         )
@@ -838,14 +838,7 @@ async def replay_gap(
                 )
                 await session.commit()
         else:
-            async with sm() as session:
-                instances = await orchestrator_service.billing_candidates(
-                    session, window_start, window_end
-                )
-            attempts = [
-                (iid, _hourly_attempt(iid, uid, price, gc, window_start, window_end))
-                for iid, uid, price, gc in instances
-            ]
+            attempts = await _hourly_window_attempts(sm, window_start, window_end)
             await _settle_window_objects(
                 sm, kind="hourly", window_start=window_start, attempts=attempts
             )

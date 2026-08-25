@@ -260,8 +260,6 @@ async def admin_list_refunds(
     limit: int | None = None,
 ) -> Page[AdminRefundOut]:
     """退款单列表(游标分页,降序)。day_range 为 [start, end) 的 created_at 窗口。"""
-    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
-
     lim = clamp_limit(limit)
     stmt = select(RefundRequest).order_by(RefundRequest.id.desc()).limit(lim + 1)
     if status:
