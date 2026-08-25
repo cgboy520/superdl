@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, useAuditLog } from "../api";
-import { ListCapNote } from "./ListCapNote";
+import { LoadMoreButton } from "./LoadMore";
 
 /** detail 摘要:优先显示 reason,其次 before→after,最后回落原始 JSON。 */
 function detailSummary(detail: Record<string, unknown> | null | undefined): string {
@@ -175,19 +175,11 @@ export function AuditTable({
           ),
         }}
       />
-      {audit.hasNextPage && (
-        <Button
-          block
-          size="small"
-          style={{ marginTop: 8 }}
-          loading={audit.isFetchingNextPage}
-          onClick={() => void audit.fetchNextPage()}
-        >
-          {t("common.loadMore")}
-        </Button>
-      )}
-      {/* 单页满额 = 还有更早的记录;可继续翻页或用筛选缩小范围 */}
-      {audit.hasNextPage && <ListCapNote rows={limit} cap={limit} />}
+      <LoadMoreButton
+        visible={Boolean(audit.hasNextPage)}
+        loading={audit.isFetchingNextPage}
+        onClick={() => void audit.fetchNextPage()}
+      />
     </>
   );
 }

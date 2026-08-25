@@ -47,6 +47,7 @@ import {
   useTenantLedger,
   useTenantQuota,
 } from "../../api";
+import { LoadMoreButton } from "../../components/LoadMore";
 import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormat } from "../../lib/format";
@@ -203,17 +204,11 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
           { title: t("tenants.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
         ]}
       />
-      {bills.hasNextPage && (
-        <Button
-          block
-          size="small"
-          style={{ marginTop: 8 }}
-          loading={bills.isFetchingNextPage}
-          onClick={() => void bills.fetchNextPage()}
-        >
-          {t("common.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={Boolean(bills.hasNextPage)}
+        loading={bills.isFetchingNextPage}
+        onClick={() => void bills.fetchNextPage()}
+      />
     </>
   );
 }
@@ -284,17 +279,11 @@ function LedgerTab({ userId }: { userId: number }) {
           { title: t("tenants.colRemark"), dataIndex: "remark", ellipsis: true },
         ]}
       />
-      {ledger.hasNextPage && (
-        <Button
-          block
-          size="small"
-          style={{ marginTop: 8 }}
-          loading={ledger.isFetchingNextPage}
-          onClick={() => void ledger.fetchNextPage()}
-        >
-          {t("common.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={Boolean(ledger.hasNextPage)}
+        loading={ledger.isFetchingNextPage}
+        onClick={() => void ledger.fetchNextPage()}
+      />
     </>
   );
 }
@@ -343,17 +332,11 @@ function OrdersTab({ userId }: { userId: number }) {
           { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
-      {orders.hasNextPage && (
-        <Button
-          block
-          size="small"
-          style={{ marginTop: 8 }}
-          loading={orders.isFetchingNextPage}
-          onClick={() => void orders.fetchNextPage()}
-        >
-          {t("common.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={Boolean(orders.hasNextPage)}
+        loading={orders.isFetchingNextPage}
+        onClick={() => void orders.fetchNextPage()}
+      />
     </>
   );
 }
@@ -565,17 +548,11 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
           { title: t("tenants.events.colActor"), dataIndex: "actor", width: 90 },
         ]}
       />
-      {events.hasNextPage && (
-        <Button
-          block
-          size="small"
-          style={{ marginTop: 8 }}
-          loading={events.isFetchingNextPage}
-          onClick={() => void events.fetchNextPage()}
-        >
-          {t("common.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={Boolean(events.hasNextPage)}
+        loading={events.isFetchingNextPage}
+        onClick={() => void events.fetchNextPage()}
+      />
     </>
   );
 }
