@@ -34,6 +34,11 @@ LOGIN_WINDOW_SECONDS = 300.0
 # 阈值放宽到 30/时,别误伤办公网 NAT 出口共享同一 IP 的多名管理员
 LOGIN_IP_MAX_ATTEMPTS = 30
 LOGIN_IP_WINDOW_SECONDS = 3600.0
+# 纯账号桶:撞库可以换 IP,但换不了目标账号;15 分钟窗成功即清零,日窗只计失败不清零
+LOGIN_ACCT_MAX_ATTEMPTS = 10
+LOGIN_ACCT_WINDOW_SECONDS = 900.0
+LOGIN_ACCT_DAILY_MAX_ATTEMPTS = 30
+LOGIN_ACCT_DAILY_WINDOW_SECONDS = 86400.0
 
 # 与 AdminCreateRequest.password 的 min_length 对齐(引导口令不经 schema,需自查)
 PASSWORD_MIN_LENGTH = 12
@@ -73,6 +78,23 @@ def _check_password_bytes(password: str) -> None:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation")
 
 
+def _login_buckets(client_ip: str | None, username: str) -> list[tuple[str, int, float, bool]]:
+    """四层登录桶 (键, 上限, 窗口秒, 成功即清零),全部只计失败。IP 桶与日桶不清零:
+    口令喷洒不会产生成功登录,清零只会给持续撞库者续命。每次调用重读阈值常量(测试可 monkeypatch)。"""
+    ip = client_ip or "-"
+    return [
+        (f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS, False),
+        (f"admin-login:{ip}:{username}", LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS, True),
+        (f"admin-login-acct:{username}", LOGIN_ACCT_MAX_ATTEMPTS, LOGIN_ACCT_WINDOW_SECONDS, True),
+        (
+            f"admin-login-acct-daily:{username}",
+            LOGIN_ACCT_DAILY_MAX_ATTEMPTS,
+            LOGIN_ACCT_DAILY_WINDOW_SECONDS,
+            False,
+        ),
+    ]
+
+
 async def _clear_login_failures(key: str) -> None:
     """登录成功清零该桶的失败计数(独立事务,不随业务 session 回滚)。"""
     async with get_sessionmaker()() as session:
@@ -87,45 +109,15 @@ async def login(
     admin = (
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
+    buckets = _login_buckets(client_ip, username)
     # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不再付哈希成本
-    await ensure_not_rate_limited(
-        f"admin-login-ip:{client_ip or '-'}",
-        max_attempts=LOGIN_IP_MAX_ATTEMPTS,
-        window_seconds=LOGIN_IP_WINDOW_SECONDS,
-    )
-    await ensure_not_rate_limited(
-        f"admin-login:{client_ip or '-'}:{username}",
-        max_attempts=LOGIN_MAX_ATTEMPTS,
-        window_seconds=LOGIN_WINDOW_SECONDS,
-    )
-    # 纯账号维度:撞库可以换 IP,但换不了目标账号(叠加 P1-13 前的免 MFA 角色时,
-    # 这是管理端口令喷洒的唯一纵深;账号级 15 分钟窗 + 日窗阶梯锁定)
-    await ensure_not_rate_limited(
-        f"admin-login-acct:{username}", max_attempts=10, window_seconds=900.0
-    )
-    await ensure_not_rate_limited(
-        f"admin-login-acct-daily:{username}", max_attempts=30, window_seconds=86400.0
-    )
+    for key, max_attempts, window, _ in buckets:
+        await ensure_not_rate_limited(key, max_attempts=max_attempts, window_seconds=window)
     password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
     if admin is None or not password_ok:
-        # 只在失败后计数:成功登录不消耗配额
-        await check_rate_limit(
-            f"admin-login-ip:{client_ip or '-'}",
-            max_attempts=LOGIN_IP_MAX_ATTEMPTS,
-            window_seconds=LOGIN_IP_WINDOW_SECONDS,
-        )
-        await check_rate_limit(
-            f"admin-login:{client_ip or '-'}:{username}",
-            max_attempts=LOGIN_MAX_ATTEMPTS,
-            window_seconds=LOGIN_WINDOW_SECONDS,
-        )
-        # 账号维度同计:换 IP 也逃不掉目标账号的锁定
-        await check_rate_limit(
-            f"admin-login-acct:{username}", max_attempts=10, window_seconds=900.0
-        )
-        await check_rate_limit(
-            f"admin-login-acct-daily:{username}", max_attempts=30, window_seconds=86400.0
-        )
+        # 只在失败后计数,四层同计:换 IP 逃不掉账号桶,换账号逃不掉 IP 桶
+        for key, max_attempts, window, _ in buckets:
+            await check_rate_limit(key, max_attempts=max_attempts, window_seconds=window)
         logger.warning("admin_login_failed", username=username, ip=client_ip)
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
     if admin.status != "active":
@@ -134,9 +126,10 @@ async def login(
             key="adminapi.userDisabled",
             http_status=status.HTTP_403_FORBIDDEN,
         )
-    # 凭据正确即清零该账号桶的失败计数(IP 桶不清:口令喷洒不会产生成功登录)
-    await _clear_login_failures(f"admin-login:{client_ip or '-'}:{username}")
-    await _clear_login_failures(f"admin-login-acct:{username}")
+    # 凭据正确即清零「成功即清零」的桶(IP 桶与日桶不清)
+    for key, _, _, clear_on_success in buckets:
+        if clear_on_success:
+            await _clear_login_failures(key)
     # 未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
     if admin.totp_enabled:
         return MfaChallengeOut(status="mfa_required", ticket=_mfa_ticket(admin, setup=False)), admin
