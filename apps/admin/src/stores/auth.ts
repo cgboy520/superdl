@@ -7,7 +7,6 @@ import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 
 const TOKEN_KEY = "superdl.admin.accessToken";
-const ADMIN_KEY = "superdl.admin.info";
 
 export interface AdminInfo {
   id: number;
@@ -26,34 +25,21 @@ interface AuthState {
   logout: () => void;
 }
 
-function loadAdmin(): AdminInfo | null {
-  try {
-    const raw = localStorage.getItem(ADMIN_KEY);
-    return raw ? (JSON.parse(raw) as AdminInfo) : null;
-  } catch {
-    return null;
-  }
-}
-
+// 管理员身份只放内存:每次进入受保护路由都经 /me 校准(_app.tsx beforeLoad),落盘既无人读也会过期
 export const authStore = createStore<AuthState>()((set) => ({
   accessToken: localStorage.getItem(TOKEN_KEY),
-  admin: loadAdmin(),
+  admin: null,
   login: (accessToken, admin) => {
     localStorage.setItem(TOKEN_KEY, accessToken);
-    localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
     set({ accessToken, admin });
   },
   setToken: (accessToken) => {
     localStorage.setItem(TOKEN_KEY, accessToken);
     set({ accessToken });
   },
-  setAdmin: (admin) => {
-    localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
-    set({ admin });
-  },
+  setAdmin: (admin) => set({ admin }),
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(ADMIN_KEY);
     set({ accessToken: null, admin: null });
   },
 }));
