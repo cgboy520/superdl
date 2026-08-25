@@ -31,7 +31,7 @@ async def get_site_config(session: DbSession) -> SiteConfigOut:
         payment_channels=PaymentChannelsOut(
             wechat=cfg["payment_wechat_enabled"] == "true",
             alipay=cfg["payment_alipay_enabled"] == "true",
-            mock=s.payment_mock and s.environment != "prod",
+            mock=s.payment_mock,
         ),
     )
 

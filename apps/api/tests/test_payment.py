@@ -405,19 +405,18 @@ class TestChannelFactory:
             assert c3 is not c1
 
 
-class TestMockChannelProdGuard:
-    async def test_mock_channel_refused_in_prod(self, client, sm, monkeypatch):
-        """安全:生产环境 mock 渠道无条件拒绝(即使 payment_mock 误开)。"""
+class TestMockChannelGuard:
+    async def test_mock_channel_refused_when_disabled(self, sm, monkeypatch):
+        """payment_mock=false 时无验签的 mock 渠道不可用(prod 下 payment_mock 必为 false 由
+        Settings 校验保证,渠道层只看这一个开关)。"""
         from app.core.config import get_settings
         from app.core.errors import AppError
         from app.modules.billing.payment_channels import get_channel
 
-        settings = get_settings()
-        monkeypatch.setattr(settings, "environment", "prod")
-        monkeypatch.setattr(settings, "payment_mock", True)
+        monkeypatch.setattr(get_settings(), "payment_mock", False)
         import pytest as _pytest
 
         async with sm() as session:
             with _pytest.raises(AppError) as exc:
                 await get_channel("mock", session)
-        assert exc.value.code == "PAYMENT_CHANNEL_ERROR"
+        assert exc.value.message_key == "billing.mockDevOnly"

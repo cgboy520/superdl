@@ -27,16 +27,16 @@ async def _guard(request: Request) -> None:
     )
 
 
-# mock 回调仅在非生产环境注册(生产环境该路由 404;渠道层还有第二道校验);
-# prod 镜像构建期再直接剔除 webhooks_mock 模块(Dockerfile EXCLUDE_MOCK=1),
-# 配置(环境变量)与产物(文件不存在)双重保障,互不依赖
+# mock 回调路由仅非 prod 注册(prod 下该路径 404;渠道层 get_channel 还按 payment_mock 拒绝)
 if get_settings().environment != "prod":
-    try:
-        from app.modules.billing import webhooks_mock
 
-        router.include_router(webhooks_mock.router)
-    except ImportError:
-        pass  # prod 镜像已剔除 mock 模块
+    @router.post("/webhooks/mock")
+    async def mock_webhook(request: Request, session: DbSession) -> dict[str, str]:
+        """dev/test 专用:模拟支付成功回调。"""
+        channel = await get_channel("mock", session)
+        result = await channel.parse_callback(dict(request.headers), await request.body())
+        status = await payment_service.handle_callback(session, "mock", result)
+        return {"status": status}
 
 
 @router.post("/webhooks/wechatpay")

@@ -474,8 +474,8 @@ _real_channel_cache: dict[str, tuple[tuple[str, ...], PaymentChannel]] = {}
 async def get_channel(name: str, session: AsyncSession) -> PaymentChannel:
     settings = get_settings()
     if name == "mock":
-        # 生产环境无条件拒绝 mock(无验签渠道)
-        if settings.environment == "prod" or not settings.payment_mock:
+        # 无验签渠道只在显式开启时可用;prod 下 payment_mock 必为 false 由 Settings 校验保证
+        if not settings.payment_mock:
             raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.mockDevOnly")
         return MockChannel()
     if name not in ("wechat", "alipay"):
