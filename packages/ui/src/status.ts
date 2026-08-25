@@ -44,10 +44,9 @@ export const instanceStatusMap = {
   // 中性文案:创建失败与运行中故障共用此状态(精确原因看事件时间线)
   failed: { labelKey: "shared:status.instance.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<InstanceStatus, StatusMeta>;
-export type InstanceStatusMeta = (typeof instanceStatusMap)[InstanceStatus];
 
 /** 过渡态(有后台流程在推进):列表/详情页据此决定是否高频轮询。 */
-export const TRANSIENT_INSTANCE_STATUSES: readonly string[] = [
+const TRANSIENT_INSTANCE_STATUSES: readonly string[] = [
   "creating",
   "starting",
   "stopping",
@@ -67,7 +66,6 @@ export const skuTierMap = {
   shared_std: { labelKey: "shared:status.tier.shared_std", color: statusColors.green },
   shared_eco: { labelKey: "shared:status.tier.shared_eco", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_eco" },
 } as const satisfies Record<SkuTier, { labelKey: string; color: string; hintKey?: string }>;
-export type SkuTierMeta = (typeof skuTierMap)[SkuTier];
 
 /** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */
 export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";
@@ -78,7 +76,6 @@ export const imageCacheStatusMap = {
   cached: { labelKey: "shared:status.imageCache.cached", color: statusColors.green, badge: "success" },
   failed: { labelKey: "shared:status.imageCache.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<ImageCacheStatus, StatusMeta>;
-export type ImageCacheStatusMeta = (typeof imageCacheStatusMap)[ImageCacheStatus];
 
 /** 节点注册/加入状态(与 node_enrollments.status 严格一致) */
 export type NodeEnrollStatus =
@@ -101,7 +98,6 @@ export const nodeEnrollStatusMap = {
   expired: { labelKey: "shared:status.nodeEnroll.expired", color: statusColors.orange, badge: "warning" },
   revoked: { labelKey: "shared:status.nodeEnroll.revoked", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<NodeEnrollStatus, StatusMeta>;
-export type NodeEnrollStatusMeta = (typeof nodeEnrollStatusMap)[NodeEnrollStatus];
 
 export type LedgerType = "recharge" | "consume" | "refund" | "adjust";
 
@@ -168,7 +164,6 @@ export const ticketStatusMap = {
   resolved: { labelKey: "shared:status.ticket.resolved", color: statusColors.green, badge: "success" },
   closed: { labelKey: "shared:status.ticket.closed", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<TicketStatus, StatusMeta>;
-export type TicketStatusMeta = (typeof ticketStatusMap)[TicketStatus];
 
 /** 工单分类(与 tickets.category 严格一致) */
 export type TicketCategory = "instance" | "billing" | "data" | "account" | "other";
@@ -191,7 +186,6 @@ export const deletionStatusMap = {
   rejected: { labelKey: "shared:status.deletion.rejected", color: statusColors.red, badge: "error" },
   cancelled: { labelKey: "shared:status.deletion.cancelled", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<DeletionStatus, StatusMeta>;
-export type DeletionStatusMeta = (typeof deletionStatusMap)[DeletionStatus];
 
 export type DiskStatus = "active" | "grace" | "frozen" | "deleting" | "deleted";
 
@@ -202,7 +196,6 @@ export const diskStatusMap = {
   deleting: { labelKey: "shared:status.disk.deleting", color: statusColors.red, badge: "error" },
   deleted: { labelKey: "shared:status.disk.deleted", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<DiskStatus, StatusMeta>;
-export type DiskStatusMeta = (typeof diskStatusMap)[DiskStatus];
 
 /** 公告状态(与 announcements.status 严格一致) */
 export type AnnouncementStatus = "published" | "revoked";
@@ -211,4 +204,3 @@ export const announcementStatusMap = {
   published: { labelKey: "shared:status.announcement.published", color: statusColors.green, badge: "success" },
   revoked: { labelKey: "shared:status.announcement.revoked", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<AnnouncementStatus, StatusMeta>;
-export type AnnouncementStatusMeta = (typeof announcementStatusMap)[AnnouncementStatus];

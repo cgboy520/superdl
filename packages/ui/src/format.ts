@@ -5,7 +5,7 @@
  */
 
 /** 本包量词/单位文案用到的 key 全集(值在 locales 下两语言的 shared.json,由 locales.test 守护)。 */
-export type SharedFormatKey =
+type SharedFormatKey =
   | "shared:format.perHour"
   | "shared:format.duration.zero"
   | "shared:format.duration.lessThanMinute"
@@ -197,7 +197,7 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
   };
 }
 
-/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
+/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。仅 formatDateTime 与其测试使用。 */
 export function tzSuffix(d: Date = new Date()): string {
   const offsetMin = -d.getTimezoneOffset(); // getTimezoneOffset 以西为正,取反成 UTC 以东为正
   const sign = offsetMin >= 0 ? "+" : "-";

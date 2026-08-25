@@ -201,5 +201,3 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
   }
   return body as T;
 };
-
-export default customFetch;

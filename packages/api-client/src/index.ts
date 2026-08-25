@@ -1,6 +1,5 @@
 export {
   configureApiClient,
-  customFetch,
   isApiError,
   requestAdminTokenRefresh,
   requestTokenRefresh,
