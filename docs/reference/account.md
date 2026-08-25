@@ -4,10 +4,10 @@
 
 ## 数据模型
 
-- `users`:phone 唯一、password_hash(可空,主走验证码)、status(active/frozen)、low_balance_warn_hours、token_version、verification_status、实名/企业/发票字段(id_name/id_number/company_*/invoice_title,可空)
+- `users`:phone 唯一、password_hash(可空,主走验证码)、status(active/frozen)、low_balance_warn_hours、token_version、verification_status、实名字段(id_name/id_number,可空)
 - `ssh_keys`:user_id、name、public_key、fingerprint(SHA256,唯一)
 - `sms_codes`:phone、code_hash(带密钥摘要,非明文)、purpose(register/login)、expires_at、used_at、attempts
-- `used_refresh_tokens`:jti(PK)、user_id、expires_at、used_at
+- `used_refresh_tokens`:jti(PK)、expires_at、used_at
 
 ## 契约
 

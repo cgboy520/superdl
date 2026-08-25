@@ -59,7 +59,6 @@ async def _period_paid_sum(session: AsyncSession, user_id: int, period: str) -> 
         await session.execute(
             select(func.coalesce(func.sum(Order.amount), 0)).where(
                 Order.user_id == user_id,
-                Order.type == "recharge",
                 Order.status == "paid",
                 Order.channel_reversed_at.is_(None),
                 Order.paid_at >= start,
@@ -158,7 +157,6 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
                 select(period_col)
                 .where(
                     Order.user_id == user_id,
-                    Order.type == "recharge",
                     Order.status == "paid",
                     Order.paid_at.is_not(None),
                 )

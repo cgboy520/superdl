@@ -21,13 +21,10 @@ class Wallet(Base):
     """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。"""
 
     __tablename__ = "wallets"
-    __table_args__ = (CheckConstraint("frozen_amount >= 0", name="frozen_nonneg"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(unique=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
-    # 恒为 0.00:创建时不做预占(以 K8s 调度结果为准),当前没有任何路径写它
-    frozen_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
@@ -170,9 +167,6 @@ class Order(Base):
     # 渠道侧对已入账订单的关单/退款通知到达时刻(不自动冲账,人工核销;异常清单分桶依据)
     channel_reversed_at: Mapped[datetime | None]
     expires_at: Mapped[datetime]
-    # 发票字段预留
-    invoice_title: Mapped[str | None] = mapped_column(String(128))
-    invoice_tax_id: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

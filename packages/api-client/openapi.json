@@ -6886,17 +6886,6 @@
             "title": "Balance",
             "type": "string"
           },
-          "company_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Company Name"
-          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -7514,16 +7503,10 @@
           "balance": {
             "title": "Balance",
             "type": "string"
-          },
-          "frozen_amount": {
-            "description": "预留字段:冻结预占未实现,恒为 \"0.00\"",
-            "title": "Frozen Amount",
-            "type": "string"
           }
         },
         "required": [
-          "balance",
-          "frozen_amount"
+          "balance"
         ],
         "title": "WalletOut",
         "type": "object"

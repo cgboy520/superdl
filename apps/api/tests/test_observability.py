@@ -123,9 +123,7 @@ class TestCleanup:
                 )
             )
             session.add(
-                UsedRefreshToken(
-                    jti="deadbeef" * 4, user_id=1, expires_at=now_utc() - timedelta(hours=1)
-                )
+                UsedRefreshToken(jti="deadbeef" * 4, expires_at=now_utc() - timedelta(hours=1))
             )
             await session.commit()
             # created_at 由 server_default 生成,需回拨越过 7 天窗口

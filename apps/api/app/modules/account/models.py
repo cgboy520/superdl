@@ -20,12 +20,9 @@ class User(Base):
     low_balance_warn_hours: Mapped[int] = mapped_column(default=24)  # 余额预警阈值(用户可设)
     token_version: Mapped[int] = mapped_column(default=0)  # 撤销闸:+1 即失效全部在外 token
     verification_status: Mapped[str] = mapped_column(String(16), default="unverified")
-    # 实名与企业/开票字段
+    # 实名字段
     id_name: Mapped[str | None] = mapped_column(String(64))
     id_number: Mapped[str | None] = mapped_column(String(32))
-    company_name: Mapped[str | None] = mapped_column(String(128))
-    company_tax_id: Mapped[str | None] = mapped_column(String(32))
-    invoice_title: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     @property
@@ -66,8 +63,7 @@ class UsedRefreshToken(Base):
     __tablename__ = "used_refresh_tokens"
 
     jti: Mapped[str] = mapped_column(String(32), primary_key=True)
-    # 读取只按 jti 主键;清理按 expires_at;user_id 无查询使用,不建索引
-    user_id: Mapped[int]
+    # 读取只按 jti 主键;清理按 expires_at
     expires_at: Mapped[datetime] = mapped_column(index=True)  # 过期即可清理
     used_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # 首消费事务登记的轮换结果:宽限窗内同 jti 重放须回同一对 token(不另开有效链);

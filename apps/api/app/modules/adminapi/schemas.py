@@ -137,7 +137,6 @@ class TenantOut(BaseModel):
     # 实名信息透出:readonly 角色脱敏;ops/finance/admin 明文(敏感读,响应含实名字段即落审计)
     verification_status: str = "unverified"
     id_name: str | None = None
-    company_name: str | None = None
 
 
 class TenantQuotaOut(BaseModel):

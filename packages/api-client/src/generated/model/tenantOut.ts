@@ -7,7 +7,6 @@
 
 export interface TenantOut {
   balance: string;
-  company_name?: string | null;
   created_at: string;
   disk_gb: number;
   id: number;

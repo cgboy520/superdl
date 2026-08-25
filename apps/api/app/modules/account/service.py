@@ -42,7 +42,7 @@ from app.modules.account.models import (
     User,
     UserQuotaOverride,
 )
-from app.modules.account.realname import mask_company_name, mask_id_name
+from app.modules.account.realname import mask_id_name
 from app.modules.account.schemas import AdminDeletionRequestOut, TokenPair, UserOut
 from app.modules.account.sshkey_util import parse_public_key
 
@@ -401,7 +401,6 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
             pg_insert(UsedRefreshToken)
             .values(
                 jti=jti,
-                user_id=user.id,
                 expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
             )
             .on_conflict_do_nothing(index_elements=["jti"])
@@ -460,7 +459,6 @@ async def logout(session: AsyncSession, refresh_token: str) -> None:
         pg_insert(UsedRefreshToken)
         .values(
             jti=str(payload.get("jti", "")),
-            user_id=user_id,
             expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
         )
         .on_conflict_do_nothing(index_elements=["jti"])
@@ -731,15 +729,11 @@ async def set_quota_override(
     return row
 
 
-def realname_view(user: User, *, masked: bool) -> tuple[str, str | None, str | None]:
+def realname_view(user: User, *, masked: bool) -> tuple[str, str | None]:
     """实名信息透出:masked=True(readonly)脱敏;False 明文(调用方须对本次敏感读落审计)。"""
     if not masked:
-        return user.verification_status, user.id_name, user.company_name
-    return (
-        user.verification_status,
-        mask_id_name(user.id_name) if user.id_name else None,
-        mask_company_name(user.company_name) if user.company_name else None,
-    )
+        return user.verification_status, user.id_name
+    return user.verification_status, mask_id_name(user.id_name) if user.id_name else None
 
 
 # ---------- 账号注销 ----------
@@ -995,9 +989,6 @@ async def approve_deletion(
     user.phone = f"del:{user.id}:{hashlib.sha256(user.phone.encode()).hexdigest()[:12]}"
     user.id_name = None
     user.id_number = None
-    user.company_name = None
-    user.company_tax_id = None
-    user.invoice_title = None
     user.verification_status = "unverified"
     user.token_version += 1
     user.status = "deleted"

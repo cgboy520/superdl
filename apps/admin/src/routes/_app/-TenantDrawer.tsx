@@ -107,11 +107,6 @@ export function TenantDrawer({
                 {t("tenants.colIdName")}:<b>{tenant.id_name}</b>
               </span>
             )}
-            {tenant.company_name && (
-              <span>
-                {t("tenants.colCompany")}:<b>{tenant.company_name}</b>
-              </span>
-            )}
           </Space>
           <Tabs
             items={[

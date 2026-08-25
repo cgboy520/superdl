@@ -701,7 +701,6 @@ export default interface Resources {
       "colAmount": "金额",
       "colBalance": "余额",
       "colBalanceAfter": "余额快照",
-      "colCompany": "企业",
       "colCreatedAt": "注册时间",
       "colDisk": "数据盘",
       "colHour": "计费小时",

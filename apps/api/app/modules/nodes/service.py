@@ -270,7 +270,6 @@ async def request_cordon(
     ).scalar_one_or_none()
     if row is not None:
         row.desired_unschedulable = unschedulable
-        row.desired_at = now_utc()
     enqueue(
         session,
         "node.cordon",

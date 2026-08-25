@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `wallets`:user_id 唯一、balance numeric(14,2)、frozen_amount numeric(14,2)(预留字段,冻结预占未实现,恒 0)
+- `wallets`:user_id 唯一、balance numeric(14,2)
 - `balance_ledger`:user_id、type(recharge/consume/refund/adjust)、amount 带符号 numeric(14,2)、balance_after、ref_type/ref_id —— 追加式
 - `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count、amount numeric(14,2)、UNIQUE(instance_id, hour_start)
 - `bills_daily_disk`:disk_id、day、size_gb、unit_price、amount、UNIQUE(disk_id, day)

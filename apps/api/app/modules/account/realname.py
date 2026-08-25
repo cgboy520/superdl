@@ -102,12 +102,3 @@ def mask_id_name(name: str) -> str:
     if len(name) <= 1:
         return "*"
     return name[0] + "*" * (len(name) - 1)
-
-
-def mask_company_name(name: str) -> str:
-    """企业名脱敏(管理端 readonly 角色):留前 2 + 后 2;短名退化为只留首字。"""
-    if len(name) <= 1:
-        return "*"
-    if len(name) <= 4:
-        return name[0] + "*" * (len(name) - 1)
-    return f"{name[:2]}{'*' * (len(name) - 4)}{name[-2:]}"

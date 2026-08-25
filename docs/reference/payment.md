@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `orders`:order_no 唯一、user_id、type(recharge)、amount numeric(14,2) >0、channel(wechat/alipay/mock)、channel_txn_id 唯一?、status(pending/paid/closed/failed)、idempotency_key(与 user_id 联合唯一)、qr_url、paid_at、expires_at、发票字段预留(invoice_*)
+- `orders`:order_no 唯一、user_id、type(recharge)、amount numeric(14,2) >0、channel(wechat/alipay/mock)、channel_txn_id 唯一?、status(pending/paid/closed/failed)、idempotency_key(与 user_id 联合唯一)、qr_url、paid_at、expires_at
 - `refund_requests`:refund_no 唯一、user_id、order_no(原充值订单)、amount numeric(12,2) >0、reason、status(pending/approved/paid/rejected/cancelled)、review_by/review_at/review_comment、payout_channel(offline/alipay_transfer/wechat_transfer)/payout_ref/payout_at、idempotency_key(与 user_id 联合唯一);部分唯一索引保证同一订单同时至多一条活跃(pending/approved/paid)申请
 - `invoice_requests`:user_id、period(YYYY-MM,北京月界)、title_type(personal/company)、title、tax_id?、email、amount numeric(12,2)(服务端按账期计算)、status(submitted/issued/rejected)、invoice_no?、reject_reason?、issued_by/issued_at、idempotency_key(与 user_id 联合唯一);部分唯一索引保证同一 (user_id, period) 至多一条非 rejected 申请
 

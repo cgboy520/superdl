@@ -95,10 +95,8 @@ async def admin_list_tenants(
     out = []
     for u in users:
         st = stats.get(u.id, {"instances": 0, "disk_gb": 0})
-        verification_status, id_name, company_name = account_service.realname_view(
-            u, masked=mask_realname
-        )
-        if not mask_realname and (u.id_name or u.company_name):
+        verification_status, id_name = account_service.realname_view(u, masked=mask_realname)
+        if not mask_realname and u.id_name:
             realname_hits += 1
         out.append(
             TenantOut(
@@ -112,7 +110,6 @@ async def admin_list_tenants(
                 created_at=u.created_at.isoformat(),
                 verification_status=verification_status,
                 id_name=id_name,
-                company_name=company_name,
             )
         )
     if realname_hits:

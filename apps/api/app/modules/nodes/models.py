@@ -77,7 +77,6 @@ class NodeSpec(Base):
     status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
     # cordon 期望态:管理端操作写入,handler/巡检按它收敛(outbox 乱序重试不读 payload)
     desired_unschedulable: Mapped[bool | None]
-    desired_at: Mapped[datetime | None]
     last_seen: Mapped[datetime]  # 最近一次 K8s 可见
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -102,6 +101,5 @@ class ClusterStatus(Base):
     kata_runtimeclass: Mapped[bool] = mapped_column(default=False)
     storage_classes: Mapped[list[str] | None] = mapped_column(JSONB)
     pools: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 池→节点数
-    detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 扩展位:runtime_classes 等
     error: Mapped[str | None] = mapped_column(Text)
     probed_at: Mapped[datetime]

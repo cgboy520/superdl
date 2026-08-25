@@ -9,8 +9,6 @@ from app.core.money import MoneyOut
 
 class WalletOut(BaseModel):
     balance: MoneyOut
-    # 冻结预占未实现(见 models.Wallet 注释),字段保留仅为契约兼容
-    frozen_amount: MoneyOut = Field(description='预留字段:冻结预占未实现,恒为 "0.00"')
 
     model_config = {"from_attributes": True}
 

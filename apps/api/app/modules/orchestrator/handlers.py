@@ -48,7 +48,6 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
             expected_instance_id=instance_id,
         )
         raise
-    instance.pod_name = instance.uuid
 
 
 async def _provision(session: AsyncSession, task: OutboxTask, expected: str) -> None:

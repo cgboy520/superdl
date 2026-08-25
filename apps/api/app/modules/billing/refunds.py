@@ -205,7 +205,7 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
         (
             await session.execute(
                 select(Order)
-                .where(Order.user_id == user_id, Order.type == "recharge")
+                .where(Order.user_id == user_id)
                 .order_by(Order.id.desc())
                 .limit(REFUNDABLE_ORDERS_CAP)
             )

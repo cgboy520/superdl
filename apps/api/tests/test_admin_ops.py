@@ -896,12 +896,11 @@ class TestTenantRealnameExposure:
         uid = data["user"]["id"]
         async with sm() as session:
             user = await account_service.get_user(session, uid)
-            user.company_name = "北京示例科技有限公司"
             await account_service.submit_real_name(session, user, "张三", "110101199001011234")
         return uid
 
     async def test_readonly_sees_masked_and_no_audit(self, client, sm, fake):
-        """readonly:姓名留姓掩名、企业名留首尾;脱敏响应不落实名读审计(防列表页写放大)。"""
+        """readonly:姓名留姓掩名;脱敏响应不落实名读审计(防列表页写放大)。"""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
@@ -910,7 +909,6 @@ class TestTenantRealnameExposure:
         me = next(t for t in rows if t["id"] == uid)
         assert me["verification_status"] == "verified"
         assert me["id_name"] == "张*"
-        assert me["company_name"] == "北京******公司"
         async with sm() as session:
             hits = (
                 (
@@ -933,7 +931,6 @@ class TestTenantRealnameExposure:
         me = next(t for t in rows if t["id"] == uid)
         assert me["verification_status"] == "verified"
         assert me["id_name"] == "张三"
-        assert me["company_name"] == "北京示例科技有限公司"
         async with sm() as session:
             hits = (
                 (

@@ -244,7 +244,7 @@ class TestApproveGuards:
 class TestApproveSuccess:
     async def test_anonymization_and_token_revocation(self, client: AsyncClient, sm):
         headers, user_id, _ = await create_user_with_key(client, PHONE)
-        # 实名/企业字段(直接落库,绕开实名渠道)
+        # 实名字段(直接落库,绕开实名渠道)
         async with sm() as session:
             await session.execute(
                 update(User)
@@ -252,9 +252,6 @@ class TestApproveSuccess:
                 .values(
                     id_name="张三",
                     id_number="1101************12",
-                    company_name="示例公司",
-                    company_tax_id="91110000TEST",
-                    invoice_title="示例公司",
                     verification_status="verified",
                 )
             )
@@ -285,9 +282,6 @@ class TestApproveSuccess:
             assert PHONE not in user.phone
             assert user.id_name is None
             assert user.id_number is None
-            assert user.company_name is None
-            assert user.company_tax_id is None
-            assert user.invoice_title is None
             assert user.verification_status == "unverified"
             assert user.status == "deleted"
 
