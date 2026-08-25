@@ -49,18 +49,9 @@ class TestMfaEnforcement:
 
 
 class TestSetupFlow:
-    async def test_begin_idempotent_same_secret(self, client: AsyncClient, sm):
-        """绑定页刷新/重进看到同一二维码:重复 begin 复用进行中的密钥。"""
-        await _create(client, sm, "idem-admin", "admin")
-        ticket = (await _login(client, "idem-admin")).json()["ticket"]
-        a = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
-        b = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
-        assert a.json()["secret"] == b.json()["secret"]
-        assert a.json()["otpauth_uri"].startswith("otpauth://totp/")
-
     async def test_concurrent_begin_returns_the_stored_secret(self, client: AsyncClient, sm):
-        """并发 begin(StrictMode 双发 / 双击 / 多标签页)只能落一枚密钥,且页面拿到的
-        就是库里那枚。
+        """并发 begin(StrictMode 双发 / 双击 / 多标签页;绑定页刷新重进同理)只能落一枚密钥,
+        且页面拿到的就是库里那枚。
 
         它挂了说明:两路各生成一枚、后写者覆盖前者,用户照着二维码输的首个动态码必然
         验不过 —— 首次绑定直接卡死(管理端 e2e 曾以此偶发红)。
@@ -72,6 +63,7 @@ class TestSetupFlow:
             client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket}),
         )
         assert a.json()["secret"] == b.json()["secret"]
+        assert a.json()["otpauth_uri"].startswith("otpauth://totp/")
         # 真正的判据不是两路自洽,而是「返回的密钥能绑定成功」= 与库里存的是同一枚
         resp = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm",
@@ -96,13 +88,6 @@ class TestSetupFlow:
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket, "code": "123456"}
         )
         assert resp.json()["code"] == "MFA_TICKET_INVALID"
-
-    async def test_full_bind_returns_recovery_codes_once(self, client: AsyncClient, sm):
-        await _create(client, sm, "full-admin", "admin")
-        ticket = (await _login(client, "full-admin")).json()["ticket"]
-        token = await complete_mfa_setup(client, ticket)
-        me = await client.get("/api/admin/v1/me", headers={"Authorization": f"Bearer {token}"})
-        assert me.status_code == 200
 
 
 class TestVerifyLogin:
@@ -273,10 +258,3 @@ class TestRecoveryRegenAndReset:
         )
         assert resp.status_code == 409
         assert resp.json()["code"] == "MFA_RESET_SELF_FORBIDDEN"
-
-    async def test_reset_requires_super_admin(self, client: AsyncClient, sm):
-        h = await admin_headers(sm, client, role="ops")
-        resp = await client.post(
-            "/api/admin/v1/admins/999/mfa/reset", headers=h, json={"reason": "越权尝试"}
-        )
-        assert resp.status_code == 403

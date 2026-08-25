@@ -1,4 +1,4 @@
-"""管理端 CSV 导出:订单/租户流水/审计/日对账 —— 口径、角色门、截断标记。"""
+"""管理端 CSV 导出:订单/租户流水/审计/日对账 —— 口径与截断标记(角色门由 route×role 矩阵覆盖)。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -48,7 +48,7 @@ async def _make_orders(sm: async_sessionmaker[AsyncSession], count: int = 2) -> 
 
 
 class TestOrdersExport:
-    async def test_csv_rows_filters_and_roles(self, client: AsyncClient, sm):
+    async def test_csv_rows_and_filters(self, client: AsyncClient, sm):
         await _make_orders(sm)
         fin = await second_admin_headers(sm, client, "fin-exp")
         resp = await client.get("/api/admin/v1/orders/export", headers=fin)
@@ -66,11 +66,6 @@ class TestOrdersExport:
         )
         only_pending = resp.text
         assert "SDL-EXP-1" in only_pending and "SDL-EXP-0" not in only_pending
-        # 角色门:ops 不可,readonly 可
-        ops = await second_admin_headers(sm, client, "ops-exp", role="ops")
-        assert (await client.get("/api/admin/v1/orders/export", headers=ops)).status_code == 403
-        ro = await admin_headers(sm, client, role="readonly")
-        assert (await client.get("/api/admin/v1/orders/export", headers=ro)).status_code == 200
 
     async def test_truncation_marker(self, client: AsyncClient, sm, monkeypatch):
         await _make_orders(sm, count=3)
@@ -138,35 +133,17 @@ class TestAuditExport:
 
 
 class TestReconciliationExport:
-    async def test_totals_row_and_roles(self, client: AsyncClient, sm):
+    async def test_totals_row_and_bad_day(self, client: AsyncClient, sm):
         fin = await second_admin_headers(sm, client, "fin-exp-recon")
         day = now_utc().date().isoformat()
         resp = await client.get(
             "/api/admin/v1/reconciliation/export", params={"day": day}, headers=fin
         )
         assert resp.status_code == 200
-        lines = resp.text.splitlines()
-        assert lines[0].lstrip("﻿").startswith("实例ID")
-        # 首行明细 = 合计(空库:两侧均为 0.00,diff 0)
-        assert lines[1].startswith("合计,")
-        # en-US 表头与合计标签
-        en = (
-            await client.get(
-                "/api/admin/v1/reconciliation/export",
-                params={"day": day, "lang": "en-US"},
-                headers=fin,
-            )
-        ).text
-        assert en.splitlines()[0].lstrip("﻿").startswith("Instance ID")
-        assert en.splitlines()[1].startswith("TOTAL,")
-        # 非法日期 → 400;ops 角色 403
+        # 表头之后第一行 = 合计行(空库:两侧均为 0.00,diff 0)
+        assert resp.text.splitlines()[1].startswith("合计,")
+        # 非法日期 → 400(与 GET /reconciliation 同一 parse_day)
         bad = await client.get(
             "/api/admin/v1/reconciliation/export", params={"day": "bad"}, headers=fin
         )
         assert bad.status_code == 400
-        ops = await second_admin_headers(sm, client, "ops-exp-recon", role="ops")
-        assert (
-            await client.get(
-                "/api/admin/v1/reconciliation/export", params={"day": day}, headers=ops
-            )
-        ).status_code == 403

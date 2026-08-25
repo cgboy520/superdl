@@ -201,52 +201,20 @@ class TestAdminAccounts:
         )
         assert resp.json()["code"] == "LOGIN_FAILED"
 
-    async def test_cannot_lock_yourself_or_the_platform_out(
+    async def test_cannot_disable_or_demote_yourself(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
+        """自停用/自降权一律 409:最常见的一键把自己锁在门外。
+        (没有「最后一个超管」保护:另一位超管可以停用你,常备第二个超管是运维纪律。)"""
         h = await admin_headers(sm, client)
         me = (await client.get("/api/admin/v1/me", headers=h)).json()
-        # 自己停用自己:最常见的一键锁死
-        resp = await client.patch(
-            f"/api/admin/v1/admins/{me['id']}",
-            json={"status": "disabled", "reason": "手滑"},
-            headers=h,
-        )
-        assert resp.status_code == 409
-        assert resp.json()["message_key"] == "adminapi.cannotChangeSelf"
-        # 由另一个超管来停用最后一个超管:同样要挡(否则平台再也进不去管理台)
-        other = await client.post(
-            "/api/admin/v1/admins",
-            json={"username": "root2", "password": STRONG, "role": "admin", "reason": "备用超管"},
-            headers=h,
-        )
-        h2 = await login_headers(client, "root2", STRONG)
-        assert (
-            await client.patch(
-                f"/api/admin/v1/admins/{me['id']}",
-                json={"status": "disabled", "reason": "清理"},
-                headers=h2,
-            )
-        ).status_code == 200  # 还剩 root2,可以停
-        last = await client.patch(
-            f"/api/admin/v1/admins/{other.json()['id']}",
-            json={"role": "readonly", "reason": "降权"},
-            headers=h2,
-        )
-        assert last.status_code == 409
-        assert last.json()["message_key"] == "adminapi.cannotChangeSelf"
-
-    async def test_non_admin_roles_cannot_manage_accounts(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        h_ops = await admin_headers(sm, client, role="ops")
-        assert (await client.get("/api/admin/v1/admins", headers=h_ops)).status_code == 403
-        resp = await client.post(
-            "/api/admin/v1/admins",
-            json={"username": "x1", "password": STRONG, "role": "ops", "reason": "提权"},
-            headers=h_ops,
-        )
-        assert resp.status_code == 403
+        for body in (
+            {"status": "disabled", "reason": "手滑"},
+            {"role": "readonly", "reason": "降权"},
+        ):
+            resp = await client.patch(f"/api/admin/v1/admins/{me['id']}", json=body, headers=h)
+            assert resp.status_code == 409, body
+            assert resp.json()["message_key"] == "adminapi.cannotChangeSelf"
 
     async def test_require_roles_no_arg_has_own_message(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
