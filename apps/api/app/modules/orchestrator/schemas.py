@@ -4,6 +4,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.core.money import MoneyOut
+from app.modules.orchestrator import statemachine as sm_def
+
+# 非终态清单(released 是唯一终态,历史行无界):状态机是唯一事实源,这里只做跨模块导出
+# (模块边界只放行 service/schemas;管理端总览按它逐状态计数)
+NON_TERMINAL_STATUSES: tuple[str, ...] = tuple(sm_def.TRANSITIONS)
 
 
 class InstanceCreate(BaseModel):

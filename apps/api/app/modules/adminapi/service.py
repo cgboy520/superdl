@@ -22,6 +22,7 @@ from app.core.security import (
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
 from app.modules.adminapi.schemas import AdjustmentOut, MfaChallengeOut
+from app.modules.orchestrator.schemas import NON_TERMINAL_STATUSES
 
 logger = get_logger(__name__)
 
@@ -57,19 +58,6 @@ RECOVERY_CODE_COUNT = 10
 
 # 单笔调账绝对值上限:超出走对公/线下流程,不进双人复核(防手滑多敲零)
 ADJUST_MAX_ABS = Decimal("100000.00")
-
-# 总览「实例分状态计数」覆盖的非终态(released 历史行无界,不装全表)。
-# 口径唯一事实源是 orchestrator/statemachine.py;模块边界只放行 service/schemas,此处按值对齐。
-OVERVIEW_INSTANCE_STATUSES = (
-    "creating",
-    "starting",
-    "running",
-    "stopping",
-    "stopped",
-    "frozen",
-    "releasing",
-    "failed",
-)
 
 
 def _check_password_bytes(password: str) -> None:
@@ -682,7 +670,7 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     from app.modules.orchestrator import service as orchestrator_service
 
     status_counts: dict[str, int] = {}
-    for st in OVERVIEW_INSTANCE_STATUSES:
+    for st in NON_TERMINAL_STATUSES:
         status_counts[st] = len(await orchestrator_service.list_instances_by_status(session, st))
 
     consumed = await billing_service.consumed_by_user(session)
