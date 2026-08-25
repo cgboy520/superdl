@@ -3,3 +3,4 @@ export * from "./status";
 export * from "./format";
 export * from "./apiError";
 export * from "./gpuSpecs";
+export * from "./localeParity";
