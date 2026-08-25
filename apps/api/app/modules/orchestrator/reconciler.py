@@ -264,8 +264,6 @@ async def _reconcile_instances(
                 instance = await session.get(Instance, instance_id)
                 if instance is None or instance.status != row_status:
                     continue
-                if instance.status not in ACTIVE_STATUSES:
-                    continue
 
                 if instance.status in (sm_def.CREATING, sm_def.STARTING):
                     ready = st.exists and st.ready
@@ -562,12 +560,16 @@ async def _reclaim_leaked_pods(
         # Pod 应该存在的状态:creating/starting/running
         if db_status in (sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING):
             continue
-        if db_status in (sm_def.STOPPING, sm_def.RELEASING, sm_def.STOPPED, sm_def.FAILED):
+        if instance is not None and db_status in (
+            sm_def.STOPPING,
+            sm_def.RELEASING,
+            sm_def.STOPPED,
+            sm_def.FAILED,
+        ):
             # 在途删除与 restart 建 Pod 窗口(DB stopped/failed、Pod 已建)都给宽限;
             # 超时由本函数强删(与主对账同阈值)
             grace = release_grace if db_status == sm_def.RELEASING else stop_grace
-            age = now_utc() - entered_at.get(instance.id, ensure_utc(instance.created_at))  # type: ignore[union-attr]
-            if age <= grace:
+            if now_utc() - entered_at[instance.id] <= grace:
                 continue
         logger.error("leaked_pod_reclaimed", namespace=ns, pod=name, db_status=db_status)
         RECONCILE_LEAKED_TOTAL.inc()
@@ -602,10 +604,8 @@ async def _reclaim_leaked_pods(
         inst = ep_by_uuid.get(name)
         if inst is not None and inst.status in ACTIVE_STATUSES:
             continue
-        if inst is not None:
-            age = now_utc() - ep_entered.get(inst.id, ensure_utc(inst.created_at))
-            if age <= stop_grace:
-                continue
+        if inst is not None and now_utc() - ep_entered[inst.id] <= stop_grace:
+            continue
         logger.error(
             "leaked_endpoint_reclaimed",
             namespace=ns,
@@ -771,7 +771,7 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
         entered_at = await _entered_status_map(session, instances)
 
     for instance in instances:
-        age = now - entered_at.get(instance.id, ensure_utc(instance.created_at))
+        age = now - entered_at[instance.id]
         try:
             if instance.status == sm_def.FAILED and age > fail_after:
                 async with sm() as session:

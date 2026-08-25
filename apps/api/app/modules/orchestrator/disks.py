@@ -290,7 +290,7 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
             await session.execute(
                 select(DataDisk).where(
                     DataDisk.user_id == user_id,
-                    DataDisk.status.in_(("active", "grace", "frozen")),
+                    DataDisk.status.in_(ARREARS_CHAIN_STATUSES),
                 )
             )
         ).scalars()
@@ -313,15 +313,11 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
             disk.grace_ended_at = None  # 新一段宽限开始,上一段区间作废
             changed += 1
         elif disk.status == "grace" and disk.grace_started_at is not None:
-            from datetime import timedelta
-
             if now - disk.grace_started_at > timedelta(days=policies.disk_grace_days):
                 disk.status = "frozen"
                 disk.frozen_started_at = now
                 changed += 1
         elif disk.status == "frozen" and disk.frozen_started_at is not None:
-            from datetime import timedelta
-
             if now - disk.frozen_started_at > timedelta(days=policies.disk_frozen_days):
                 disk.status = "deleting"
                 enqueue(session, "disk.wipe", {"disk_id": disk.id})

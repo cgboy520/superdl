@@ -358,7 +358,7 @@ async def create_instance(
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
     await _require_cluster_for_tier(session, sku.tier, with_data_disk=data_disk_id is not None)
-    if gpu_count < 1 or gpu_count > sku.max_gpus_per_instance:
+    if gpu_count > sku.max_gpus_per_instance:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="orchestrator.gpuCountRange",
