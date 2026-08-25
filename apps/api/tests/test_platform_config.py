@@ -322,55 +322,7 @@ class TestAliyunRealNameProvider:
         assert isinstance(provider, AliyunRealNameProvider)
 
 
-class TestEffectiveConfigCache:
-    async def test_repeat_read_served_from_cache_without_decrypt(self, sm, monkeypatch):
-        """缓存命中时不再全量解密(AES-GCM 是短信/充值/页载密集路径上的主要开销)。"""
-        from app.core.platform_config import (
-            get_effective_platform_config,
-            set_platform_settings,
-        )
-
-        async with sm() as session:
-            await set_platform_settings(
-                session, {"sms_access_key_secret": "CACHE-TEST-SECRET"}, updated_by=None
-            )
-            await session.commit()
-        async with sm() as session:
-            cfg = await get_effective_platform_config(session)
-        assert cfg["sms_access_key_secret"] == "CACHE-TEST-SECRET"
-
-        def _boom(*args: object, **kwargs: object) -> str:
-            raise AssertionError("缓存命中不应再解密")
-
-        monkeypatch.setattr(crypto, "decrypt_str", _boom)
-        async with sm() as session:
-            cfg2 = await get_effective_platform_config(session)
-        assert cfg2["sms_access_key_secret"] == "CACHE-TEST-SECRET"
-
-    async def test_cache_invalidates_on_write(self, sm):
-        """写覆盖/清除后立刻读到新值:失效签名由写入侧显式 bump 的 updated_at 驱动。"""
-        from app.core.platform_config import (
-            get_effective_platform_config,
-            set_platform_settings,
-        )
-
-        async with sm() as session:
-            assert (await get_effective_platform_config(session))["icp_number"] == ""
-        async with sm() as session:
-            await set_platform_settings(
-                session, {"icp_number": "京ICP备2026011111号-1"}, updated_by=None
-            )
-            await session.commit()
-        async with sm() as session:
-            assert (await get_effective_platform_config(session))[
-                "icp_number"
-            ] == "京ICP备2026011111号-1"
-        async with sm() as session:
-            await set_platform_settings(session, {"icp_number": ""}, updated_by=None)
-            await session.commit()
-        async with sm() as session:
-            assert (await get_effective_platform_config(session))["icp_number"] == ""
-
+class TestEffectiveConfig:
     async def test_corrupt_secret_row_falls_back_to_env(self, sm):
         """单行密文损坏(主密钥换错/手工改库)只让该键回落 env,不得拖垮整份配置。"""
         from app.core.platform_config import PlatformSetting, get_effective_platform_config

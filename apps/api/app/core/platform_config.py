@@ -301,19 +301,6 @@ def _env_layer() -> dict[str, str]:
     return {key: _env_default(key) for key in SETTING_SPECS}
 
 
-# 生效配置进程内缓存(读路径调用密集,不每次全表读 + 全量 AES-GCM 解密)。
-# 失效签名 =(行数, max(updated_at), env 默认值层指纹):
-# 改值 bump updated_at,增删动行数,env 变更动指纹。
-_config_cache: tuple[tuple[object, ...], dict[str, str]] | None = None
-
-
-async def _config_signature(session: AsyncSession) -> tuple[object, ...]:
-    count, max_updated = (
-        await session.execute(select(func.count(), func.max(PlatformSetting.updated_at)))
-    ).one()
-    return (count, max_updated, tuple(_env_layer().values()))
-
-
 def _decrypt_row(key: str, value: str, *, aad: str) -> str | None:
     """单行解密;密文损坏(主密钥换错/手工改库)返回 None 让调用方回落 env,
     不得拖垮整份配置(prod lifespan 也走这里)。"""
@@ -325,31 +312,22 @@ def _decrypt_row(key: str, value: str, *, aad: str) -> str | None:
 
 
 async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]:
-    """生效配置全量映射(secret 已解密,仅进程内使用,严禁整体入日志/响应)。"""
-    global _config_cache
-    signature = await _config_signature(session)
-    if _config_cache is not None and _config_cache[0] == signature:
-        return dict(_config_cache[1])
+    """生效配置全量映射(secret 已解密,仅进程内使用,严禁整体入日志/响应)。
+
+    每次直接全量读:表只有几十行,一趟 SELECT + 少量 AES-GCM 解密是微秒级,
+    不做进程内缓存(缓存的失效签名本身也要一趟查询)。
+    """
     eff = _env_layer()
-    rows = {r.key: r for r in (await session.execute(select(PlatformSetting))).scalars()}
-    for key, row in rows.items():
-        spec = SETTING_SPECS.get(key)
+    for row in (await session.execute(select(PlatformSetting))).scalars():
+        spec = SETTING_SPECS.get(row.key)
         if spec is None:
             continue  # 不在白名单内的键忽略
         if spec.kind == "secret":
-            if (plain := _decrypt_row(key, row.value, aad=key)) is not None:
-                eff[key] = plain
+            if (plain := _decrypt_row(row.key, row.value, aad=row.key)) is not None:
+                eff[row.key] = plain
         else:
-            eff[key] = row.value
-    # 以本次全量读自身的快照重算签名,保证缓存内容与签名自洽
-    # (快捷签名查询与全量读之间可能隔着其他事务的提交)
-    built_signature = (
-        len(rows),
-        max((r.updated_at for r in rows.values() if r.updated_at is not None), default=None),
-        signature[2],
-    )
-    _config_cache = (built_signature, eff)
-    return dict(eff)
+            eff[row.key] = row.value
+    return eff
 
 
 async def set_platform_settings(
@@ -370,7 +348,7 @@ async def set_platform_settings(
             .values(key=key, value=value, updated_by=updated_by)
             .on_conflict_do_update(
                 index_elements=["key"],
-                # updated_at 显式 bump:既让管理端看到真实更新时间,也驱动读缓存失效
+                # updated_at 显式 bump:onupdate 只在 ORM 路径生效,upsert 语句要自己写
                 set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )
