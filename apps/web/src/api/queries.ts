@@ -39,7 +39,6 @@ import type {
   InstanceLogsOut,
   InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
-  ListSkusApiV1SkusGetParams,
   PageBillHourlyOut,
   PageInstanceEventOut,
   PageInstanceOut,
@@ -66,32 +65,17 @@ interface QueryOpts<T = unknown> {
         state: { data: T | undefined; status: "pending" | "error" | "success" };
       }) => number | false | undefined);
   retry?: number | boolean;
+  staleTime?: number;
 }
 
-/**
- * queryKey 归一化:undefined 与 {} 视为同一查询,剔除值为 undefined 的参数,键序不影响缓存身份。
- */
-function normalizeKey(key: unknown[]): unknown[] {
-  return key.map((part) => {
-    if (part === undefined) return null;
-    if (part !== null && typeof part === "object" && !Array.isArray(part)) {
-      const entries = Object.entries(part as Record<string, unknown>)
-        .filter(([, v]) => v !== undefined)
-        .sort(([a], [b]) => a.localeCompare(b));
-      return entries.length ? Object.fromEntries(entries) : null;
-    }
-    return part;
-  });
-}
-
+// queryKey 不做归一化:TanStack hashKey 已按键名排序并忽略 undefined 值,「无参数」统一写成 null 即可。
 function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts<NoInfer<T>>) {
   return useQuery<T, ApiError>({
-    queryKey: normalizeKey(key),
+    queryKey: key,
     queryFn: fn,
     ...opts,
   });
 }
-
 
 
 export const useMe = (opts?: QueryOpts) => useApiQuery(["me"], () => meApiV1MeGet(), opts);
@@ -100,14 +84,14 @@ export const useMyDeletionRequest = (opts?: QueryOpts) =>
   useApiQuery(["deletion-request"], () => getDeletionRequestApiV1MeDeletionRequestGet(), opts);
 export const useWallet = (opts?: QueryOpts) => useApiQuery(["wallet"], () => getWalletApiV1WalletGet(), opts);
 export const useNotifications = (params?: { unread?: boolean }, opts?: QueryOpts) =>
-  useApiQuery(["notifications", params], () => listNotificationsApiV1NotificationsGet(params), opts);
+  useApiQuery(["notifications", params ?? null], () => listNotificationsApiV1NotificationsGet(params), opts);
 /** 未读角标轻端点(P2):30s 轮询只拿 count,与列表分页解耦(旧口径=已加载页未读数,偏低)。 */
 export const useUnreadCount = (opts?: QueryOpts) =>
   useApiQuery(["notifications", "unread-count"], () => unreadCountApiV1NotificationsUnreadCountGet(), opts);
 /** 通知弹层游标分页:「加载更多」向下翻页。 */
 export const useNotificationPages = (params?: { unread?: boolean }) =>
   useInfiniteQuery<PageNotificationOut, ApiError, InfiniteData<PageNotificationOut>, unknown[], string | undefined>({
-    queryKey: normalizeKey(["notifications", "pages", params]),
+    queryKey: ["notifications", "pages", params ?? null],
     initialPageParam: undefined,
     queryFn: ({ pageParam }) =>
       listNotificationsApiV1NotificationsGet({
@@ -117,8 +101,7 @@ export const useNotificationPages = (params?: { unread?: boolean }) =>
       }),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-export const useSkus = (params?: ListSkusApiV1SkusGetParams, opts?: QueryOpts) =>
-  useApiQuery(["skus", params], () => listSkusApiV1SkusGet(params), opts);
+export const useSkus = (opts?: QueryOpts) => useApiQuery(["skus"], () => listSkusApiV1SkusGet(), opts);
 export const useImages = () => useApiQuery(["images"], () => listImagesApiV1ImagesGet());
 export const useSshKeys = () => useApiQuery(["ssh-keys"], () => listSshKeysApiV1SshKeysGet());
 export const useDisks = (opts?: QueryOpts) => useApiQuery(["disks"], () => listDisksApiV1DisksGet(), opts);
@@ -145,7 +128,7 @@ export const useInstancePages = (params?: { status?: string; name?: string }) =>
     unknown[],
     string | undefined
   >({
-    queryKey: normalizeKey(["instances", "pages", { status, name }]),
+    queryKey: ["instances", "pages", { status, name }],
     queryFn: ({ pageParam }) =>
       listInstancesApiV1InstancesGet({ status, name, cursor: pageParam, limit: 20 }),
     initialPageParam: undefined,
@@ -157,7 +140,7 @@ export const useInstancePages = (params?: { status?: string; name?: string }) =>
     isTransientInstanceStatus(i.status),
   );
   useEffect(() => {
-    const key = normalizeKey(["instances", "pages", { status, name }]);
+    const key = ["instances", "pages", { status, name }];
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
       try {
@@ -227,7 +210,7 @@ export const useInstanceMetrics = (
 /** 小时账单游标分页(费用中心/实例详情账单 Tab「加载更多」)。 */
 export const useHourlyBillPages = (params?: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">) =>
   useInfiniteQuery<PageBillHourlyOut, ApiError, InfiniteData<PageBillHourlyOut>, unknown[], string | undefined>({
-    queryKey: normalizeKey(["bills", "pages", params]),
+    queryKey: ["bills", "pages", params ?? null],
     queryFn: ({ pageParam }) =>
       listHourlyBillsApiV1BillsHourlyGet({ ...params, cursor: pageParam, limit: 50 }),
     initialPageParam: undefined,
@@ -246,15 +229,14 @@ export const useBillSummary = (month: string, tzOffsetMinutes: number) =>
   useApiQuery(["bill-summary", month, tzOffsetMinutes], () =>
     billSummaryApiV1BillsSummaryGet({ month, tz_offset_minutes: tzOffsetMinutes }),
   );
-/** 策略常量(盘价/回收天数等):公开端点,常量性质给长缓存。 */
+/** 策略常量(盘价/回收天数等):公开端点,常量性质,5 分钟内不重取。 */
 export const usePolicies = () =>
-  useApiQuery(["policies"], () => getPoliciesApiV1PoliciesGet(), { retry: 1 });
+  useApiQuery(["policies"], () => getPoliciesApiV1PoliciesGet(), { staleTime: 5 * 60_000 });
 /** 站点公开配置(备案号/可用支付渠道):公开端点,页脚与充值弹窗消费。 */
-export const useSiteConfig = () =>
-  useApiQuery(["site-config"], () => getSiteConfigApiV1SiteConfigGet(), { retry: 1 });
+export const useSiteConfig = () => useApiQuery(["site-config"], () => getSiteConfigApiV1SiteConfigGet());
 /** 法务文档:公开端点,按界面语言取当前 published 版(en-US 缺失服务端回落 zh-CN)。 */
 export const useLegalDoc = (docKey: string, lang: string) =>
-  useApiQuery(["legal-doc", docKey, lang], () => getLegalDocApiV1LegalDocKeyGet(docKey, { lang }), { retry: 1 });
+  useApiQuery(["legal-doc", docKey, lang], () => getLegalDocApiV1LegalDocKeyGet(docKey, { lang }));
 /** 实例列表 sparkline 批量摘要:断源时 available=false(200),独立于 5s 实例轮询。 */
 export const useMetricsSummary = (opts?: QueryOpts) =>
   useApiQuery(["metrics-summary"], () => instancesMetricsSummaryApiV1MetricsInstancesGet(), opts);

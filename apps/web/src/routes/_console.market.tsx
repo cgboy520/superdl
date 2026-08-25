@@ -44,7 +44,7 @@ function MarketPage() {
     isLoading,
     isError,
     refetch,
-  } = useSkus({}, { refetchInterval: 30_000 });
+  } = useSkus({ refetchInterval: 30_000 });
   // 计费规则的冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
 

@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
+import { dedupAvailableByModel } from "../../lib/inventory";
 import { useSkus } from "../../api/queries";
 import { TierTag } from "../../components/common";
 import { useIsLoggedIn } from "../../stores/auth";
@@ -31,12 +32,13 @@ export function PricingSection() {
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [tab, setTab] = useState<"dedicated" | "shared">("dedicated");
-  const { data: skus, isLoading, isError } = useSkus({}, { refetchInterval: 60_000 });
+  const { data: skus, isLoading, isError } = useSkus({ refetchInterval: 60_000 });
 
   const groups = useMemo<ModelGroup[]>(() => {
     const inTab = (skus ?? []).filter((s) =>
       tab === "dedicated" ? s.tier === "dedicated" : s.tier !== "dedicated",
     );
+    const freeByModel = dedupAvailableByModel(inTab);
     const byModel = new Map<string, SkuMarketOut[]>();
     for (const s of inTab) {
       const list = byModel.get(s.gpu_model) ?? [];

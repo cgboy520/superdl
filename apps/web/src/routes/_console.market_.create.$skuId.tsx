@@ -64,7 +64,7 @@ function CreatePage() {
   const navigate = useNavigate();
   const { message } = App.useApp();
 
-  const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus({});
+  const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus();
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
 
   const imagesQ = useImages();

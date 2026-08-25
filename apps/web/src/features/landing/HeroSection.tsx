@@ -38,7 +38,7 @@ export function HeroSection() {
   const { formatHourlyPrice } = useFormat();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
-  const { data: skus } = useSkus({}, { refetchInterval: 60_000 });
+  const { data: skus } = useSkus({ refetchInterval: 60_000 });
 
   const minPrice = (skus ?? []).reduce<string | null>(
     (min, s) => (min === null || Number(s.price_hourly) < Number(min) ? s.price_hourly : min),
