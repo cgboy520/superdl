@@ -32,7 +32,7 @@
 - 令牌只走 `sdln_` 前缀 256-bit 随机串,只存 sha256;无效/过期/吊销/终态一律返 404,不区分原因。progress 令牌 `sdlp_` 前缀同规格。
 - token 不进 URL、不进命令行参数:生成命令经 stdin 把 token 写入 `/run/superdl-join.token`(0600),脚本只认 `--token-file`;curl 一律 `--config` 注入 Authorization 头。集群 server URL 与 join token 不进脚本,由脚本凭 token `POST /bootstrap` 换取。
 - 注册令牌一次性:首次 bootstrap(pending→installing)即消费并换发窄权限 progress 令牌(仅可 /progress,换发/吊销/轮换注册令牌时同步作废);重复 bootstrap 一律 404;脚本重跑/重启续跑只用盘上的 progress 令牌上报。
-- 令牌绝对过期:expires_at 对一切非终态生效(progress 只刷新 last_report_at,不延长截止),过期即落 expired 并 404;对账器同步清扫。
+- 令牌绝对过期:expires_at 对一切非终态生效(progress 只刷新 last_report_at,不延长截止),过期即 404,请求路径不迁移状态;落 expired 由对账器(30s)清扫。
 - bootstrap 下发配置收窄到 cluster 组 6 键(server_url/join_token/agent_version/driver_version/install_mirror/registries_yaml),全量生效配置(含解密后的支付私钥等)不出注册链路。
 - 签发令牌时必填期望主机名,bootstrap 上报主机名不符即置 failed 并 409(被盗令牌不能在别的机器换出 join token)。
 - 对账器(30s,advisory lock 1009)判定 joined 的唯一依据是 K8s 中该 node_name 出现且 Ready 且池标签匹配;池标签不符 → failed;2h 无心跳 → failed。读取走 `FOR UPDATE SKIP LOCKED`,与请求路径并发吊销/上报不互相覆盖。

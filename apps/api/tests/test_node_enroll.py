@@ -222,7 +222,8 @@ class TestEnrollmentStateMachine:
             EnrollmentCreate.model_validate({"pool": "hami"})
 
     async def test_absolute_expiry_kills_inflight_token(self, sm) -> None:
-        """令牌绝对过期:installing 也受 expires_at 约束(心跳不续命),过期落 expired 后 404。"""
+        """令牌绝对过期:installing 也受 expires_at 约束(心跳不续命),过期即 404;
+        落 expired 由对账器清扫(TestEnrollReconciler)。"""
         await set_cluster_config(sm)
         async with sm() as session:
             _e, token = await nodes_service.create_enrollment(
@@ -250,13 +251,6 @@ class TestEnrollmentStateMachine:
                     session, progress, phase="driver", state="ok", message=None
                 )
             assert exc.value.http_status == 404
-        async with sm() as session:
-            row = (
-                await session.execute(
-                    select(NodeEnrollment).where(NodeEnrollment.node_name == "gpu-ttl-1")
-                )
-            ).scalar_one()
-            assert row.status == "expired"
 
     async def test_progress_drives_status(self, sm) -> None:
         await set_cluster_config(sm)

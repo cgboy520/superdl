@@ -282,13 +282,10 @@ async def request_cordon(
 # ---------- 匿名侧(令牌即鉴权;统一 404 防探测) ----------
 
 
-async def _check_usable(session: AsyncSession, row: NodeEnrollment | None) -> NodeEnrollment:
-    """公共闸门:无效/终态/过期一律 404。过期为绝对截止(不随心跳续命),顺带落 expired。"""
-    if row is None or row.status in TERMINAL_STATUSES:
-        raise not_found()
-    if row.expires_at < now_utc():
-        transition_enrollment(row, "expired")
-        await session.commit()
+def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
+    """公共闸门:无效/终态/过期一律 404。过期为绝对截止(不随心跳续命);
+    落 expired 由对账器(30s)清扫,请求路径只拒不迁移。"""
+    if row is None or row.status in TERMINAL_STATUSES or row.expires_at < now_utc():
         raise not_found()
     return row
 
@@ -299,7 +296,7 @@ async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
     row = (
         await session.execute(select(NodeEnrollment).where(NodeEnrollment.token_hash == token_hash))
     ).scalar_one_or_none()
-    return await _check_usable(session, row)
+    return _check_usable(row)
 
 
 async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnrollment:
@@ -310,7 +307,7 @@ async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnro
             select(NodeEnrollment).where(NodeEnrollment.progress_token_hash == token_hash)
         )
     ).scalar_one_or_none()
-    return await _check_usable(session, row)
+    return _check_usable(row)
 
 
 async def bootstrap(
