@@ -15,7 +15,7 @@
 经 Ingress 从集群外 GET `/readyz`,任一步失败即非零退出(第 4 步取不到域名时跳过并提示)。禁止绕过脚本手改各清单 tag。
 
 1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库;字段清单 `app/k8s/00-namespace-config.yaml` 非密 + `app/secrets.example.yaml` 密,prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准)
-2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息自动生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr(api 镜像经 `EXCLUDE_MOCK=1` 剔除 mock 支付回调模块)
+2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息自动生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr(api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册)
 3. `scripts/release.sh vX.Y.Z`:
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`——**必须先于滚动**;`/readyz` 会比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都会在这一关现形;
    - 第 2 步 `kubectl apply -k`(image transformer 把 `CHANGE_TAG` 换成本次 tag);
@@ -60,7 +60,7 @@
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 
-- [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404(mock 端点已在产物中剔除)
+- [ ] `curl -s https://<api-domain>/api/v1/webhooks/mock -X POST` 返回 404(mock 回调路由仅非 prod 注册)
 - [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404(管理端 API 不经公网 api 域暴露)
 - [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401(不带集群内 Bearer 不得取到指标)
 - [ ] Alertmanager critical 告警端到端实测一次(钉钉 + 值班手机短信都到人)

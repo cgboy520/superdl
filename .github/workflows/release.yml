@@ -33,8 +33,6 @@ jobs:
           - name: api
             context: apps/api
             dockerfile: apps/api/Dockerfile
-            # prod 发布产物剔除 mock 支付回调模块(配置之外的双保险)
-            build_args: EXCLUDE_MOCK=1
           - name: web
             context: .
             dockerfile: deploy/app/frontend.Dockerfile
