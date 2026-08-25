@@ -104,35 +104,23 @@ export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), { ...o, invalidates: [] });
 
 /**
- * 登出:调后端撤销 refresh token(一次性消费位),再清本地并整页刷新。
- * 后端对无效 token 也回 204;请求失败不阻断本地登出。
+ * 登出:current = 撤销本设备 refresh token(一次性消费位);all = 服务端撤销该账号全部会话
+ * (token_version+1)。之后清本地并整页刷新;后端对无效 token 也回 204,请求失败不阻断本地登出。
  */
 export function useLogout() {
-  return useCallback(async () => {
-    const rt = readTokens().refreshToken;
+  return useCallback(async (scope: "current" | "all" = "current") => {
     try {
-      if (rt) await logoutApiV1AuthLogoutPost({ refresh_token: rt });
+      if (scope === "all") {
+        await logoutAllApiV1AuthLogoutAllPost();
+      } else {
+        const rt = readTokens().refreshToken;
+        if (rt) await logoutApiV1AuthLogoutPost({ refresh_token: rt });
+      }
     } catch {
       // 登出是尽力而为:本地清理不依赖远端结果
     }
     authStore.getState().logout();
     // 整页刷新:清干净全部内存态(查询缓存由 main.tsx 的 token 变更订阅兜底清理)
-    window.location.assign("/login");
-  }, []);
-}
-
-/**
- * 登出全部设备:服务端撤销该账号全部会话(token_version+1),再清本地并整页刷新。
- * 请求失败不阻断本地登出。
- */
-export function useLogoutAll() {
-  return useCallback(async () => {
-    try {
-      await logoutAllApiV1AuthLogoutAllPost();
-    } catch {
-      // 同单端登出:尽力而为,本地清理不依赖远端结果
-    }
-    authStore.getState().logout();
     window.location.assign("/login");
   }, []);
 }

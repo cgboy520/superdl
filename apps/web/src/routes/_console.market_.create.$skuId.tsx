@@ -4,7 +4,7 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, diskDailyEstimate, formatSizeGb, idemKeyOf, mulPrice } from "@superdl/ui";
+import { compareAmounts, diskDailyEstimate, formatSizeGb, GPU_COUNT_STEPS, idemKeyOf, mulPrice } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -267,7 +267,7 @@ function CreatePage() {
   };
 
   const gpuOptions = Array.from({ length: sku.max_gpus_per_instance }, (_, i) => i + 1).filter(
-    (n) => [1, 2, 4, 8].includes(n) || n === sku.max_gpus_per_instance,
+    (n) => GPU_COUNT_STEPS.includes(n) || n === sku.max_gpus_per_instance,
   );
 
   const columns = skuColumns({ fmt, t });

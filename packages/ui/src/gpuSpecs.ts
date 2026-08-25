@@ -28,6 +28,9 @@ export const gpuSpecs: Record<string, GpuSpec> = {
   V100: { label: "V100", vramGb: 32, fp32Tflops: 15.7, fp16Tflops: 125, arch: "Volta" },
 };
 
+/** 可选卡数档位(市场筛选 chip 与创建页卡数选择共用);SKU 上限不在档位内时创建页额外补一档。 */
+export const GPU_COUNT_STEPS: readonly number[] = [1, 2, 4, 8];
+
 /** 型号串归一查询:去空格/连字符,大写;查不到返回 undefined(调用方自行隐藏该行)。 */
 export function getGpuSpec(model: string | null | undefined): GpuSpec | undefined {
   if (!model) return undefined;

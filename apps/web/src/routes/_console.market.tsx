@@ -3,7 +3,7 @@
  * CTA 即库存,售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
  */
 
-import { mulPrice, skuTierMap } from "@superdl/ui";
+import { GPU_COUNT_STEPS, mulPrice, skuTierMap } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
@@ -24,7 +24,6 @@ export const Route = createFileRoute("/_console/market")({
 });
 
 const ALL = "";
-const GPU_COUNTS = [1, 2, 4, 8];
 
 function MarketPage() {
   const { t } = useTranslation(["web", "shared"]);
@@ -106,7 +105,7 @@ function MarketPage() {
             label={t("market.chipGpuCount")}
             value={gpuCount}
             onChange={setGpuCount}
-            options={GPU_COUNTS.map((n) => ({ value: n, label: String(n) }))}
+            options={GPU_COUNT_STEPS.map((n) => ({ value: n, label: String(n) }))}
           />
           <Table<SkuMarketOut>
             size="middle"

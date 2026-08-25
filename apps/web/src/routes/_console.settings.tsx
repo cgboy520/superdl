@@ -27,7 +27,6 @@ import {
   useCreateDeletionRequest,
   useDeleteSshKey,
   useLogout,
-  useLogoutAll,
   useResetPassword,
   useSubmitRealName,
 } from "../api/mutations";
@@ -53,7 +52,6 @@ function SettingsPage() {
   const [form] = Form.useForm();
   const [pwdOpen, setPwdOpen] = useState(false);
   const logout = useLogout();
-  const logoutAll = useLogoutAll();
 
   const addKey = useAddSshKey({
     onSuccess: () => {
@@ -170,7 +168,7 @@ function SettingsPage() {
             <Popconfirm
               title={t("settings.logoutAllConfirm")}
               okText={t("settings.logoutAll")}
-              onConfirm={() => void logoutAll()}
+              onConfirm={() => void logout("all")}
             >
               <Button danger>{t("settings.logoutAll")}</Button>
             </Popconfirm>
@@ -260,7 +258,7 @@ function PasswordModal({
 function DeletionZone({ phone }: { phone: string }) {
   const { t } = useTranslation(["web", "shared"]);
   const { message } = App.useApp();
-  const { formatDaysLeft } = useFormat();
+  const { formatDaysUntil } = useFormat();
   const reqQ = useMyDeletionRequest();
   const req = reqQ.data;
   const [open, setOpen] = useState(false);
@@ -278,7 +276,8 @@ function DeletionZone({ phone }: { phone: string }) {
 
   const pending = req?.status === "pending";
   const statusMeta = req ? metaOf(deletionStatusMap, req.status) : undefined;
-  const countdown = pending ? formatDaysLeft(req.requested_at, 7) : null;
+  // 冷静期截止由服务端给出(cooldown_ends_at),前端不再自行加 7 天
+  const countdown = pending ? formatDaysUntil(req.cooldown_ends_at) : null;
 
   return (
     <Space orientation="vertical" size={8} style={{ width: "100%" }}>

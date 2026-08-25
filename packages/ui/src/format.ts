@@ -116,8 +116,17 @@ export function formatReclaimCountdown(deadline: string | Date, t: SharedT, now:
   return t("shared:format.countdown.reclaimMinutes", { count: Math.max(1, Math.floor(ms / 60_000)) });
 }
 
+/** 天级倒计时:截止时刻 → "剩 X 天" / "今日到期" / "已到期"(服务端已给出截止时刻时用)。 */
+export function formatDaysUntil(deadline: string | Date, t: SharedT, now: Date = new Date()): string {
+  const end = typeof deadline === "string" ? new Date(deadline) : deadline;
+  const ms = end.getTime() - now.getTime();
+  if (ms <= 0) return t("shared:format.daysLeft.expired");
+  const days = Math.floor(ms / 86_400_000);
+  return days === 0 ? t("shared:format.daysLeft.dueToday") : t("shared:format.daysLeft.count", { count: days });
+}
+
 /**
- * 天级倒计时:起点 + 天数 → "剩 X 天" / "今日到期" / "已到期"(存储宽限/冻结列用)。
+ * 天级倒计时:起点 + 天数(存储宽限/冻结列用)。
  * 返回 null 表示起点缺失(调用方自行兜底)。
  */
 export function formatDaysLeft(
@@ -127,11 +136,7 @@ export function formatDaysLeft(
   now: Date = new Date(),
 ): string | null {
   if (!startedAt) return null;
-  const deadline = new Date(startedAt).getTime() + totalDays * 86_400_000;
-  const ms = deadline - now.getTime();
-  if (ms <= 0) return t("shared:format.daysLeft.expired");
-  const days = Math.floor(ms / 86_400_000);
-  return days === 0 ? t("shared:format.daysLeft.dueToday") : t("shared:format.daysLeft.count", { count: days });
+  return formatDaysUntil(new Date(new Date(startedAt).getTime() + totalDays * 86_400_000), t, now);
 }
 
 /** 应用侧经 useFormat() 一次绑定 t/locale 后使用的格式化件集合。 */
@@ -142,6 +147,7 @@ export interface Formatters {
   formatDuration(seconds: number): string;
   formatCountdown(deadline: string | Date, now?: Date): string;
   formatReclaimCountdown(deadline: string | Date, now?: Date): string;
+  formatDaysUntil(deadline: string | Date, now?: Date): string;
   formatDaysLeft(startedAt: string | null | undefined, totalDays: number, now?: Date): string | null;
 }
 
@@ -153,6 +159,7 @@ export function makeFormatters(t: SharedT, locale: string): Formatters {
     formatDuration: (seconds) => formatDuration(seconds, t),
     formatCountdown: (deadline, now) => formatCountdown(deadline, t, now),
     formatReclaimCountdown: (deadline, now) => formatReclaimCountdown(deadline, t, now),
+    formatDaysUntil: (deadline, now) => formatDaysUntil(deadline, t, now),
     formatDaysLeft: (startedAt, totalDays, now) => formatDaysLeft(startedAt, totalDays, t, now),
   };
 }
