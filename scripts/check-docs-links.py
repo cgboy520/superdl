@@ -5,7 +5,7 @@
 带到不存在的地方。文档与代码同提交是本仓规范(CLAUDE.md「提交约定」),本脚本把
 「引用未随改动更新」变成闸门,而不是靠人记得。
 
-检查范围:仓库内全部 *.md(排除 node_modules/.venv/.git/dist/generated)。
+检查范围:仓库内全部 *.md(排除 node_modules/.venv/.git/.claude/dist/generated;.claude 下是代理 worktree,不属本仓)。
 检查两类引用:
 1. Markdown 链接 `[text](target)`:target 非 http(s)/mailto/纯锚点时,按所在文件目录解析,
    去掉 `#anchor` 后必须存在。
@@ -35,7 +35,7 @@ import sys
 import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-EXCLUDE_DIRS = {"node_modules", ".venv", ".git", "dist", "generated", ".turbo", ".pytest_cache"}
+EXCLUDE_DIRS = {"node_modules", ".venv", ".git", ".claude", "dist", "generated", ".turbo", ".pytest_cache"}
 
 TOP_LEVEL = ("apps", "packages", "deploy", "docs", "e2e", "scripts", ".github")
 API_LOCAL = ("app", "alembic", "tests", "scripts")

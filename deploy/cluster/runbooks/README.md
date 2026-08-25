@@ -30,7 +30,7 @@
 | OutboxTaskDead | 编排任务进死信 | 管理端总览死信卡:看原因后重放或忽略(需原因) | `docs/reference/orchestrator.md` |
 | OutboxTaskTimeout | outbox 任务执行超时 | 查 worker 日志中卡住的任务类型 | [loki-logging.md](./loki-logging.md) 查询 3 |
 | SettlementFailed / SettlementLagging | 结算失败 / 水位线落后 | 查 worker 日志失败实例;结算幂等可重跑 | `docs/reference/billing.md` |
-| SettlementGapRecorded / SettlementGapUnresolved | 结算缺口登记 / 超 1h 未核销 | 管理端 财务 › 结算缺口:重放或人工核销 | `docs/reference/billing.md` |
+| SettlementGapUnresolved | 结算缺口超 15 分钟未核销(DB 口径 gauge) | 管理端 财务 › 结算缺口:重放或人工核销 | `docs/reference/billing.md` |
 | PaymentCallbackMismatch | 回调金额与订单不符 | 财务异常清单核对;疑似攻击时保留报文 | `docs/reference/payment.md` |
 | PaymentClosedOrderRescued | 关单后回调自动入账 | 核对本地关单 TTL 与渠道过期是否同步 | `docs/reference/payment.md` |
 | PaymentRecoverFailed | 查单收敛单笔入账失败 | 按 error 标签人工核对该笔 | `docs/reference/payment.md` |
