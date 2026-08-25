@@ -71,7 +71,6 @@
 | 发码(尝试) | IP | 20 次/时 | |
 | 发码(消费) | 手机号 | 10 次/日 | 按验证码被消费计 |
 | 发码(平台) | 全局 | 1000 次/时,5000 次/日 | `core/sms.py` |
-| 验证码配置读取 | IP | 120 次/分 | `/auth/captcha-config` |
 | 管理端登录 | IP+账号 / 账号 | 5 次/5min / 10 次/15min | 只计失败,成功清零 |
 | 管理端登录 | IP / 账号日窗 | 30 次/时 / 30 次/日 | 只计失败,不清零 |
 | 管理端 TOTP 校验 | 账号 | 5 次/10min | |
@@ -80,7 +79,6 @@
 | Alertmanager webhook | IP | 120 次/分;报文 ≤1 MiB;≤500 条;字符串截 1024 | `notify/router.py` |
 | 节点注册脚本 / bootstrap / progress | IP | 30 / 30 / 60 次/分 | `nodes/enroll_router.py` |
 | 工单创建 | 用户 | 5 次/时 | |
-| 法务文档公开读 | IP | 120 次/分 | |
 | 实例日志 | 用户 | 20 次/时;tail 默认 200、≤2000 行;since ≤86400s;K8s 读 5s 超时 | `orchestrator/service.py` |
 | 指标批量端点 | 用户 | 前 20 台 running 实例 | `metering/service.py` |
 

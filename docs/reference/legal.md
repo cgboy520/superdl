@@ -11,7 +11,7 @@
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `GET /api/v1/legal/{doc_key}?lang=` | 匿名(IP 限流 120 次/分) | 当前 published 版;en-US 缺失回落 zh-CN 且 `fallback=true`;doc_key 非法或无 published 均 404 |
+| `GET /api/v1/legal/{doc_key}?lang=` | 匿名 | 当前 published 版;en-US 缺失回落 zh-CN 且 `fallback=true`;doc_key 非法或无 published 均 404 |
 | `GET /api/admin/v1/legal-docs` | ops/finance/readonly(admin 恒可) | 总览:doc_key × locale 状态格(当前 published + 最新 draft,均空 = 缺失) |
 | `GET /api/admin/v1/legal-docs/{doc_key}/versions?locale=` | 同上 | 版本历史(version 倒序) |
 | `POST /api/admin/v1/legal-docs/{doc_key}/versions` | 仅 admin | `{locale}`:基于当前 published 复制出新 draft(version = max+1);该语言无 published 时以 zh-CN published 为底稿;每 (doc_key, locale) 同时只允许一个 draft(409) |

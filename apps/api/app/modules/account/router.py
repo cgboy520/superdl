@@ -47,14 +47,10 @@ class CaptchaConfigOut(BaseModel):
 
 
 @router.get("/auth/captcha-config")
-async def captcha_config(session: DbSession, request: Request) -> CaptchaConfigOut:
+async def captcha_config(session: DbSession) -> CaptchaConfigOut:
     """验证码 2.0 客户端初始化配置(免鉴权;泄漏面无敏感——prefix/scene_id 本就写进前端 JS)。"""
     from app.core.platform_config import get_effective_platform_config
-    from app.core.ratelimit import check_rate_limit
 
-    await check_rate_limit(
-        f"captcha-config:{client_ip(request) or '-'}", max_attempts=120, window_seconds=60.0
-    )
     cfg = await get_effective_platform_config(session)
     return CaptchaConfigOut(
         provider=cfg["captcha_provider"],
