@@ -93,10 +93,10 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
         )
         await session.commit()
     # 法务文档预置:单测走 create_all 不含迁移数据,等价「迁移已跑」显式播种
-    from app.modules.legal import service as legal_service
+    from tests.legal_preset import seed_preset_docs
 
     async with smaker() as session:
-        await legal_service.seed_preset_docs(session)
+        await seed_preset_docs(session)
         await session.commit()
     yield smaker
 

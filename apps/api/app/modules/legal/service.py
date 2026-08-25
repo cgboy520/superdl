@@ -14,7 +14,6 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.legal.models import LegalDocVersion, UserConsent
-from app.modules.legal.preset import PRESET_DOCS
 from app.modules.legal.schemas import (
     LegalDocCellOut,
     LegalDocVersionBrief,
@@ -23,7 +22,8 @@ from app.modules.legal.schemas import (
 
 logger = get_logger(__name__)
 
-VALID_DOC_KEYS: tuple[str, ...] = tuple(doc_key for doc_key, _, _ in PRESET_DOCS)
+# 预置正文由迁移内联写入(published v1);键面在此登记,新增文档要先加迁移
+VALID_DOC_KEYS: tuple[str, ...] = ("terms", "privacy", "deletion_notice")
 SUPPORTED_LOCALES: tuple[str, ...] = ("zh-CN", "en-US")
 DEFAULT_LOCALE = "zh-CN"
 # 注册必勾落证的两份文档
@@ -87,36 +87,6 @@ async def record_registration_consents(
         session.add(
             UserConsent(user_id=user_id, doc_key=doc_key, version=row.version, client_ip=client_ip)
         )
-
-
-async def seed_preset_docs(session: AsyncSession) -> None:
-    """预置 published v1(terms/privacy/deletion_notice,zh-CN)。已有任意版本即跳过。"""
-    for doc_key, title, content_md in PRESET_DOCS:
-        exists = (
-            await session.execute(
-                select(LegalDocVersion.id)
-                .where(
-                    LegalDocVersion.doc_key == doc_key,
-                    LegalDocVersion.locale == DEFAULT_LOCALE,
-                )
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
-            continue
-        session.add(
-            LegalDocVersion(
-                doc_key=doc_key,
-                locale=DEFAULT_LOCALE,
-                version=1,
-                title=title,
-                content_md=content_md,
-                status="published",
-                effective_note="系统预置",
-                published_at=now_utc(),
-            )
-        )
-    await session.flush()
 
 
 # ---------- 管理端 ----------

@@ -23,7 +23,7 @@
 
 ## 规则与不变量
 
-- 预置内容:首个迁移把 terms / privacy / deletion_notice 的 zh-CN 正文作为 published v1 写入(`legal/preset.py` 与迁移内联同文快照,迁移须自洽);测试基建经 `seed_preset_docs` 播种同一份。
+- 预置内容:首个迁移把 terms / privacy / deletion_notice 的 zh-CN 正文作为 published v1 内联写入,迁移是唯一事实源;`service.VALID_DOC_KEYS` 只登记键面。单测走 create_all 不含迁移数据,`apps/api/tests/legal_preset.py` 保存同文快照供 conftest 播种。
 - 注册必勾条款:注册成功同事务按当时 zh-CN published 版本落 terms 与 privacy 各一条 `user_consents`(含 client_ip);前后端都强校验勾选。
 - 「每 (doc_key, locale) 至多一条 published」由部分唯一索引兜底并发发布;发布与归档都是行内状态迁移,不删行。
 - 所有管理端写操作过审计中间件;正文变更以 sha256 留痕,不把全文写进审计。

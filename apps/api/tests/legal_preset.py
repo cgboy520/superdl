@@ -1,9 +1,15 @@
-"""预置法务文档:迁移把下列正文作为 published v1 写入(迁移文件内联同文快照,
-迁移须自洽);测试基建(conftest)经 seed_preset_docs 播种同一份内容。
+"""测试用法务预置文档:与迁移 20260823_cd2abcccda26 内联写入的 published v1 同文。
 
-terms/privacy 正文来自用户端原静态页(apps/web/src/routes/legal.terms.tsx /
-legal.privacy.tsx)的 markdown 化;deletion_notice 与账号注销弹窗说明同源。
+生产事实源是迁移;单测走 create_all 不含迁移数据,conftest 经 seed_preset_docs 播种等价物。
+terms/privacy 正文来自用户端原静态页的 markdown 化;deletion_notice 与账号注销弹窗说明同源。
 """
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.timeutil import now_utc
+from app.modules.legal.models import LegalDocVersion
+from app.modules.legal.service import DEFAULT_LOCALE
 
 TERMS_TITLE = "SuperDL 用户协议"
 TERMS_MD = """\
@@ -88,3 +94,33 @@ PRESET_DOCS: list[tuple[str, str, str]] = [
     ("privacy", PRIVACY_TITLE, PRIVACY_MD),
     ("deletion_notice", DELETION_NOTICE_TITLE, DELETION_NOTICE_MD),
 ]
+
+
+async def seed_preset_docs(session: AsyncSession) -> None:
+    """预置 published v1(terms/privacy/deletion_notice,zh-CN)。已有任意版本即跳过。"""
+    for doc_key, title, content_md in PRESET_DOCS:
+        exists = (
+            await session.execute(
+                select(LegalDocVersion.id)
+                .where(
+                    LegalDocVersion.doc_key == doc_key,
+                    LegalDocVersion.locale == DEFAULT_LOCALE,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            continue
+        session.add(
+            LegalDocVersion(
+                doc_key=doc_key,
+                locale=DEFAULT_LOCALE,
+                version=1,
+                title=title,
+                content_md=content_md,
+                status="published",
+                effective_note="系统预置",
+                published_at=now_utc(),
+            )
+        )
+    await session.flush()
