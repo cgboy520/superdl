@@ -113,15 +113,3 @@ export async function requestCaptchaToken(): Promise<string> {
     document.getElementById(TRIGGER_ID)?.click(); // 拉起验证码弹窗;关闭弹窗=放弃(用户可重试)
   });
 }
-
-/** 测试/开发辅助:重置模块缓存(仅测试环境使用)。 */
-export function _resetCaptchaModule(): void {
-  if (pendingTimer) {
-    clearTimeout(pendingTimer);
-    pendingTimer = null;
-  }
-  configPromise = null;
-  sdkReady = null;
-  sdkInitialized = false;
-  pendingResolve = null;
-}
