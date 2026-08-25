@@ -94,22 +94,32 @@ class TestNotifySmsBestEffort:
             assert row.type == "balance_warn"
 
 
-class TestMockChannelRedaction:
-    async def test_code_masked_in_log(self, monkeypatch):
-        """mock 渠道落日志时验证码打码:日志被集中采集后,明文码等于绕过一切防盗。"""
-        from app.core import sms as sms_module
+class TestLogRedaction:
+    def test_mask_sensitive_processor(self):
+        """全局日志兜底打码(命名约定防线,mock 短信落日志也靠它):phone 前3后4,
+        code/token/secret 整体打码,dict 值(如 params)逐内层键同款;日志被集中采集后,
+        明文验证码等于绕过一切防盗。"""
+        import logging
 
-        captured: dict = {}
+        from app.core.logging import _mask_sensitive_processor
 
-        class _Capture:
-            def info(self, event: str, **kwargs) -> None:
-                captured.update(kwargs)
-
-        monkeypatch.setattr(sms_module, "logger", _Capture())
-        await sms_module.MockSmsChannel().send(
-            "13800000000", "SMS_123", {"code": "123456", "title": "余额预警"}
+        out = _mask_sensitive_processor(
+            logging.getLogger("t"),
+            "info",
+            {
+                "event": "mock_sms_sent",
+                "phone": "13800000000",
+                "access_token": "eyJabc.def",
+                "client_secret": "s3cret",
+                "params": {"code": "123456", "title": "余额预警"},
+                "template": "SMS_123",
+            },
         )
-        assert captured["params"] == {"code": "******", "title": "余额预警"}
+        assert out["phone"] == "138****0000"
+        assert out["access_token"] == "******"
+        assert out["client_secret"] == "******"
+        assert out["params"] == {"code": "******", "title": "余额预警"}
+        assert out["template"] == "SMS_123"
 
 
 class TestPlatformQuota:
