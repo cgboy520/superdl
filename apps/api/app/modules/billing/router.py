@@ -1,16 +1,13 @@
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
-from app.core.money import as_amount
 from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.core.platform_config import get_effective_platform_config
@@ -18,10 +15,8 @@ from app.core.policies import get_effective_policies
 from app.modules.account.deps import CurrentUser
 from app.modules.billing import export as billing_export
 from app.modules.billing import invoices, payment_service, refunds, wallet
-from app.modules.billing.models import BillDailyDisk, BillHourly
 from app.modules.billing.schemas import (
     BillHourlyOut,
-    BillSummaryItem,
     BillSummaryOut,
     DailySummaryOut,
     InvoiceCreate,
@@ -114,43 +109,9 @@ async def bill_summary(
 ) -> BillSummaryOut:
     """月度汇总 + 按实例成本归因(消费概览环图数据源)。窗口按本地月界切。"""
     start, end = _parse_month(month, tz_offset_minutes)
-    gpu_rows = (
-        (
-            await session.execute(
-                select(
-                    BillHourly.instance_id,
-                    func.sum(BillHourly.amount),
-                    func.sum(BillHourly.seconds_used),
-                )
-                .where(
-                    BillHourly.user_id == user.id,
-                    BillHourly.hour_start >= start,
-                    BillHourly.hour_start < end,
-                )
-                .group_by(BillHourly.instance_id)
-            )
-        )
-        .tuples()
-        .all()
-    )
-    disk_total = (
-        await session.execute(
-            select(func.coalesce(func.sum(BillDailyDisk.amount), 0)).where(
-                BillDailyDisk.user_id == user.id,
-                BillDailyDisk.day >= start,
-                BillDailyDisk.day < end,
-            )
-        )
-    ).scalar_one()
-    items = [
-        BillSummaryItem(
-            instance_id=iid, total_amount=amount or Decimal("0.00"), total_seconds=int(secs or 0)
-        )
-        for iid, amount, secs in gpu_rows
-    ]
-    gpu_total = sum((i.total_amount for i in items), Decimal("0.00"))
+    s = await wallet.consumption_summary(session, user.id, start, end)
     return BillSummaryOut(
-        month=month, gpu_total=gpu_total, disk_total=Decimal(disk_total), items=items
+        month=month, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items
     )
 
 
@@ -168,45 +129,8 @@ async def bill_daily_summary(
     except ValueError as exc:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badDateFormat") from exc
     start = local_midnight - timedelta(minutes=tz_offset_minutes)
-    end = start + timedelta(days=1)
-    gpu_rows = (
-        (
-            await session.execute(
-                select(
-                    BillHourly.instance_id,
-                    func.sum(BillHourly.amount),
-                    func.sum(BillHourly.seconds_used),
-                )
-                .where(
-                    BillHourly.user_id == user.id,
-                    BillHourly.hour_start >= start,
-                    BillHourly.hour_start < end,
-                )
-                .group_by(BillHourly.instance_id)
-            )
-        )
-        .tuples()
-        .all()
-    )
-    disk_total = (
-        await session.execute(
-            select(func.coalesce(func.sum(BillDailyDisk.amount), 0)).where(
-                BillDailyDisk.user_id == user.id,
-                BillDailyDisk.day >= start,
-                BillDailyDisk.day < end,
-            )
-        )
-    ).scalar_one()
-    items = [
-        BillSummaryItem(
-            instance_id=iid, total_amount=amount or Decimal("0.00"), total_seconds=int(secs or 0)
-        )
-        for iid, amount, secs in gpu_rows
-    ]
-    gpu_total = sum((i.total_amount for i in items), Decimal("0.00"))
-    return DailySummaryOut(
-        date=date, gpu_total=gpu_total, disk_total=as_amount(Decimal(disk_total)), items=items
-    )
+    s = await wallet.consumption_summary(session, user.id, start, start + timedelta(days=1))
+    return DailySummaryOut(date=date, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items)
 
 
 @router.get(

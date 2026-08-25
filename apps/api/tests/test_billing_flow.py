@@ -284,6 +284,14 @@ class TestBillingApiEdges:
             )
         ).json()
         assert len(bills["items"]) == 1
+        # 月度汇总按实例归因并补实例名(消费概览环图按名展示,缺名会回落成 #id)
+        summary = (
+            await client.get("/api/v1/bills/summary", params={"month": month}, headers=headers)
+        ).json()
+        assert [(i["instance_id"], i["instance_name"]) for i in summary["items"]] == [
+            (inst["id"], inst["name"])
+        ]
+        assert summary["gpu_total"] == bills["items"][0]["amount"]
 
         resp = await client.get(
             "/api/v1/bills/hourly", params={"month": "2026/08"}, headers=headers

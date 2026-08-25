@@ -4,17 +4,19 @@
 本文件函数不 commit —— 由调用方把余额变动放进业务事务。
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount, disk_daily_charge
 from app.core.pagination import RawPage
-from app.modules.billing.models import BalanceLedger, Order, Wallet
+from app.modules.billing.models import BalanceLedger, BillDailyDisk, BillHourly, Order, Wallet
+from app.modules.billing.schemas import BillSummaryItem
 
 
 async def _insert_wallet_race_safe(session: AsyncSession, user_id: int) -> None:
@@ -285,6 +287,68 @@ async def hourly_bills_page(
         out.instance_name = names.get(r.instance_id)
         items.append(out)
     return Page[BillHourlyOut](items=items, next_cursor=next_cursor)
+
+
+@dataclass(frozen=True)
+class ConsumptionSummary:
+    gpu_total: Decimal
+    disk_total: Decimal
+    items: list[BillSummaryItem]
+
+
+async def consumption_summary(
+    session: AsyncSession, user_id: int, start: datetime, end: datetime
+) -> ConsumptionSummary:
+    """[start, end) 窗口内的消费汇总:GPU 时费按实例归因 + 数据盘日费合计。
+
+    月度汇总与当日消费两个端点共用同一口径(窗口边界由端点按本地日/月界折算);
+    items 补实例名(释放后行保留,改名跟当前名)供消费概览环图按名展示。
+    """
+    from app.modules.orchestrator import service as orchestrator_service
+
+    gpu_rows = (
+        (
+            await session.execute(
+                select(
+                    BillHourly.instance_id,
+                    func.sum(BillHourly.amount),
+                    func.sum(BillHourly.seconds_used),
+                )
+                .where(
+                    BillHourly.user_id == user_id,
+                    BillHourly.hour_start >= start,
+                    BillHourly.hour_start < end,
+                )
+                .group_by(BillHourly.instance_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    disk_total = (
+        await session.execute(
+            select(func.coalesce(func.sum(BillDailyDisk.amount), 0)).where(
+                BillDailyDisk.user_id == user_id,
+                BillDailyDisk.day >= start,
+                BillDailyDisk.day < end,
+            )
+        )
+    ).scalar_one()
+    names = await orchestrator_service.instance_names(session, [iid for iid, _a, _s in gpu_rows])
+    items = [
+        BillSummaryItem(
+            instance_id=iid,
+            instance_name=names.get(iid),
+            total_amount=as_amount(Decimal(amount or 0)),
+            total_seconds=int(secs or 0),
+        )
+        for iid, amount, secs in gpu_rows
+    ]
+    return ConsumptionSummary(
+        gpu_total=sum((i.total_amount for i in items), Decimal("0.00")),
+        disk_total=as_amount(Decimal(disk_total)),
+        items=items,
+    )
 
 
 async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Decimal]:
