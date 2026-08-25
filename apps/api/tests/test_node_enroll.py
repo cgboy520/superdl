@@ -396,8 +396,7 @@ class TestEnrollRouterAnonymous:
                 json={"phase": phase, "state": state},
                 headers=progress_bearer,
             )
-            assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "joining"
+            assert resp.status_code == 204, resp.text
         rows = (await client.get("/api/admin/v1/node-enrollments?active=true", headers=ah)).json()
         assert rows[0]["status"] == "joining" and rows[0]["node_name"] == "gpu-a3-01"
         assert token not in str(rows) and body["progress_token"] not in str(rows)

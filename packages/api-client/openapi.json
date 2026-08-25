@@ -1765,17 +1765,6 @@
             "title": "Driver Version",
             "type": "string"
           },
-          "hostname_expected": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname Expected"
-          },
           "install_mirror": {
             "default": "cn",
             "title": "Install Mirror",
@@ -1823,7 +1812,6 @@
         },
         "required": [
           "pool",
-          "hostname_expected",
           "k8s_distro",
           "rke2_version",
           "rke2_server_url",
@@ -5587,19 +5575,6 @@
           "enqueued"
         ],
         "title": "PrewarmEnqueuedOut",
-        "type": "object"
-      },
-      "ProgressAck": {
-        "properties": {
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "ProgressAck",
         "type": "object"
       },
       "ProgressRequest": {
@@ -15801,6 +15776,7 @@
     },
     "/api/v1/node-enroll/progress": {
       "post": {
+        "description": "进度上报。无响应体:脚本不读响应,状态以管理端「待加入节点」列表为准。",
         "operationId": "enroll_progress_api_v1_node_enroll_progress_post",
         "parameters": [
           {
@@ -15831,14 +15807,7 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProgressAck"
-                }
-              }
-            },
+          "204": {
             "description": "Successful Response"
           },
           "422": {

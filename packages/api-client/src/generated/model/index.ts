@@ -230,7 +230,6 @@ export * from './policyUpdateRequest';
 export * from './policyUpdateRequestUpdates';
 export * from './portPoolStatsOut';
 export * from './prewarmEnqueuedOut';
-export * from './progressAck';
 export * from './progressRequest';
 export * from './progressRequestState';
 export * from './realNameRequest';

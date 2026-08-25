@@ -22,12 +22,7 @@ from app.core.errors import unauthorized
 from app.core.http import client_ip
 from app.core.ratelimit import check_rate_limit
 from app.modules.nodes import service
-from app.modules.nodes.schemas import (
-    BootstrapOut,
-    BootstrapRequest,
-    ProgressAck,
-    ProgressRequest,
-)
+from app.modules.nodes.schemas import BootstrapOut, BootstrapRequest, ProgressRequest
 
 router = APIRouter(tags=["node-enroll"])
 
@@ -86,7 +81,6 @@ async def enroll_bootstrap(
     )
     return BootstrapOut(
         pool=enrollment.pool,
-        hostname_expected=enrollment.hostname,
         k8s_distro=await service.derive_node_distro(session, cfg),
         rke2_version=cfg["cluster_agent_version"],
         rke2_server_url=cfg["cluster_server_url"],
@@ -100,16 +94,17 @@ async def enroll_bootstrap(
     )
 
 
-@router.post("/node-enroll/progress")
+@router.post("/node-enroll/progress", status_code=204)
 async def enroll_progress(
     body: ProgressRequest,
     session: DbSession,
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
-) -> ProgressAck:
+) -> None:
+    """进度上报。无响应体:脚本不读响应,状态以管理端「待加入节点」列表为准。"""
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=60, window_seconds=60)
     token = _bearer_token(authorization)
-    enrollment = await service.report_progress(
+    await service.report_progress(
         session,
         token,
         phase=body.phase,
@@ -118,4 +113,3 @@ async def enroll_progress(
         driver_version=body.driver_version,
         cuda_version=body.cuda_version,
     )
-    return ProgressAck(status=enrollment.status)

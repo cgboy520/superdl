@@ -62,7 +62,6 @@ class BootstrapOut(BaseModel):
     """装机参数下发 —— 含 join token 明文,仅经 Bearer POST 响应体,严禁入日志。"""
 
     pool: str
-    hostname_expected: str | None
     k8s_distro: str  # rke2 | k3s,平台探测派生
     rke2_version: str
     rke2_server_url: str
@@ -84,7 +83,3 @@ class ProgressRequest(BaseModel):
     # bootstrap 时采不到;服务端写进登记快照 os_info,巡检据此填台账 driver/cuda 列
     driver_version: str | None = Field(default=None, max_length=32)
     cuda_version: str | None = Field(default=None, max_length=16)
-
-
-class ProgressAck(BaseModel):
-    status: str  # 服务端视角的 enrollment 状态(脚本可据此提前退出)

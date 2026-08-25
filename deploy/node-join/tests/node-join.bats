@@ -39,7 +39,6 @@ import json, sys
 distro = sys.argv[2]
 data = {
     "pool": sys.argv[1],
-    "hostname_expected": None,
     "rke2_version": "v1.36.2+rke2r1" if distro == "rke2" else "v1.36.3+k3s1",
     "rke2_server_url": "https://10.0.0.10:9345" if distro == "rke2" else "https://10.0.0.10:6443",
     "rke2_join_token": "K10fixture::server:secret",
@@ -389,7 +388,7 @@ RKESHIM
 @test "loop 兜底须显式登记(nvme_devices=loop:80G):建 loop VG + 写开机重建 unit" {
   python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json
-print(json.dumps({"pool":"hami","hostname_expected":None,"k8s_distro":"rke2","install_mirror":"cn",
+print(json.dumps({"pool":"hami","k8s_distro":"rke2","install_mirror":"cn",
   "rke2_version":"v1.36.2+rke2r1","rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
   "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":"","progress_token":"sdlp_fixturetoken"}))
 PYEOF

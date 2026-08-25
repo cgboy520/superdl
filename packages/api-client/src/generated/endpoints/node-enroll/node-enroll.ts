@@ -25,7 +25,6 @@ import type {
   EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders,
   EnrollProgressApiV1NodeEnrollProgressPostHeaders,
   HTTPValidationError,
-  ProgressAck,
   ProgressRequest
 } from '../../model';
 
@@ -168,12 +167,13 @@ export const getEnrollProgressApiV1NodeEnrollProgressPostUrl = () => {
 }
 
 /**
+ * 进度上报。无响应体:脚本不读响应,状态以管理端「待加入节点」列表为准。
  * @summary Enroll Progress
  */
 export const enrollProgressApiV1NodeEnrollProgressPost = async (progressRequest: ProgressRequest,
-    headers?: EnrollProgressApiV1NodeEnrollProgressPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<ProgressAck> => {
+    headers?: EnrollProgressApiV1NodeEnrollProgressPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<ProgressAck>(getEnrollProgressApiV1NodeEnrollProgressPostUrl(),
+  return customFetch<void>(getEnrollProgressApiV1NodeEnrollProgressPostUrl(),
   {
     ...options,
     method: 'POST',
