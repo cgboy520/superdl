@@ -99,12 +99,14 @@ max_connections ≥ (api 副本 + worker 副本) × (db_pool_size + max_overflow
 
 仓库只定义 full/light 双档。自建 staging:复制 `cluster/environments/full.yaml` 为
 `staging.yaml`,叠加层把副本数降到 1、域名换 `*.staging.example.com`、关 SMTP 第二通道;
-`app/k8s/` 侧用 kustomize overlay 或独立 secrets + ConfigMap 注入
-`SUPERDL_ENVIRONMENT=staging`。staging 的 PG 同样适用上节备份要求。
+`app/k8s/` 侧用 kustomize overlay 或独立 secrets + ConfigMap,**仍以
+`SUPERDL_ENVIRONMENT=prod` 运行**(`environment` 只接受 dev/test/prod,没有 staging 值),
+只是 secrets/ConfigMap/域名独立于生产;管理端边缘收口在 prod 恒开,没有也不需要单独的开关。
+staging 的 PG 同样适用上节备份要求。
 
 ## 管理端访问边界
 
-管理端 API 在公网 api 域下不可达(API 侧边缘收口 `SUPERDL_EDGE_GUARD_ENABLED`:Host 非 admin 域一律 404;默认仅 prod 启用,以非 prod 名复用本清单的类生产环境须显式 true,见 `docs/reference/security.md`);
+管理端 API 在公网 api 域下不可达(API 侧边缘收口:prod 下 Host 非 admin 域一律 404,恒开、无开关,见 `docs/reference/security.md`);
 `admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
 生产必须再叠加一层网络边界——`app/k8s/04-ingress.yaml` 的 `superdl-admin` Ingress
 **默认启用**源 IP 白名单注解(`CHANGE_ME_OFFICE_CIDR/32` 占位,preflight 强制校验已替换),
