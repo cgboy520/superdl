@@ -125,10 +125,7 @@ export function LegalDocsTab() {
           locale={selected.locale}
           docLabel={docLabel(selected.docKey)}
           writable={writable}
-          onChanged={() => {
-            void qc.invalidateQueries({ queryKey: overview.queryKey });
-            void overview.refetch();
-          }}
+          onChanged={() => void qc.invalidateQueries({ queryKey: overview.queryKey })}
           errText={errText}
         />
       ) : (

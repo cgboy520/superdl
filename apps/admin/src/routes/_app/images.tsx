@@ -110,14 +110,11 @@ function ImagesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: images, refetch, queryKey } = useAdminImages({ refetchInterval: 15_000 });
+  const { data: images, queryKey } = useAdminImages({ refetchInterval: 15_000 });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
   const [form] = Form.useForm<ImageFormValues>();
 
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey });
-    void refetch();
-  };
+  const refresh = () => void qc.invalidateQueries({ queryKey });
   const create = useCreateImage({
     mutation: {
       onSuccess: () => {

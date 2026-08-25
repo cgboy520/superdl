@@ -108,7 +108,7 @@ function SkusPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: skus, refetch, queryKey } = useAdminSkus();
+  const { data: skus, queryKey } = useAdminSkus();
   // 聚合端点只放 ops/readonly:finance 可看 SKU 页但拉它会 403,按角色关停查询
   const { data: aggregates } = useGpuModelAggregates({
     enabled: canWriteOps(role) || role === "readonly",
@@ -124,10 +124,7 @@ function SkusPage() {
     [aggregates],
   );
 
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey });
-    void refetch();
-  };
+  const refresh = () => void qc.invalidateQueries({ queryKey });
   const create = useCreateSku({
     mutation: {
       onSuccess: () => {
