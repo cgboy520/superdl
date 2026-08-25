@@ -1,5 +1,5 @@
-# 本地开发环境。mock 短信与 mock 支付由 API 自身提供
-# (SUPERDL_SMS_PROVIDER=mock / SUPERDL_PAYMENT_MOCK=true,dev 默认开启)。
+# 本地开发依赖:只起 PostgreSQL 18。API 与 worker 在宿主机用 uv 运行(见 CLAUDE.md「常用命令」),
+# mock 短信与 mock 支付由 API 自身提供(SUPERDL_SMS_PROVIDER=mock / SUPERDL_PAYMENT_MOCK=true,dev 默认开启)。
 name: superdl
 
 services:
@@ -10,8 +10,7 @@ services:
       POSTGRES_PASSWORD: superdl
       POSTGRES_DB: superdl
     ports:
-      # 仅绑回环:compose 里是弱口令 dev 库,绑 0.0.0.0 会被同网段直连;
-      # 容器网络内 api/worker 走 postgres:5432,不受本行影响。
+      # 仅绑回环:compose 里是弱口令 dev 库,绑 0.0.0.0 会被同网段直连;宿主机的 API/worker 走 127.0.0.1:5432。
       - "127.0.0.1:5432:5432"
     volumes:
       # postgres:18 的数据目录约定:挂载 /var/lib/postgresql(内含版本子目录)
@@ -21,32 +20,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
-  api:
-    profiles: ["full"]
-    build:
-      context: ../../apps/api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    environment:
-      SUPERDL_ENVIRONMENT: dev
-      SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@postgres:5432/superdl
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  worker:
-    profiles: ["full"]
-    build:
-      context: ../../apps/api
-    command: python -m app.workers.main
-    environment:
-      SUPERDL_ENVIRONMENT: dev
-      SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@postgres:5432/superdl
-    depends_on:
-      postgres:
-        condition: service_healthy
 
 volumes:
   pgdata:
