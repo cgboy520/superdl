@@ -10,7 +10,7 @@
 
 - `Settings._validate_prod` 在 prod 下 fail-fast,任一项不合格即拒绝启动(API 与 worker 同一份校验,这份清单就是生产必配项清单;部署模板见 `deploy/app/k8s/00-namespace-config.yaml` 非密与 `deploy/app/secrets.example.yaml` 密):jwt_secret 仍为开发默认或不足 32 字符;access token TTL >1h 或 refresh TTL >7d;`sms_provider=mock`;`k8s_backend=fake`;`payment_mock=true`;database_url 仍为本地默认;cors_origins 含 localhost;ssh_host / jupyter_domain_suffix / public_base_url / admin_host 仍为 example.com 占位;`bootstrap_admin_password` 已设置(一次性 dev 引导变量,初始化后必须删除);`real_name_required_for_recharge=true` 而 `real_name_provider=mock`(mock 恒过;未开强制实名时 mock 无害,不拦);`captcha_provider=mock`;`payment_alipay_enabled=true` 而 `alipay_seller_id` 缺失;`image_allowed_registries` 为空(空 = 不限制镜像来源);metrics_token 未配;config_encryption_key 缺失或非 32 字节 urlsafe-base64。
 - 启动校验只管 provider 选择,不查渠道凭据齐全性:短信 / 验证码 / 实名凭据可经平台配置中心在线录入,运行期渠道工厂(`app/core/sms.py`、`app/core/captcha.py`)缺凭据即 fail-closed,管理端 `test-sms` 可验。`alertmanager_token` 未配与 `prometheus_url` 仍指向本地只在 lifespan 打 WARNING(webhook 端点未配 token 本就拒收,指标子系统优雅降级)。`k8s_backend=real` 不要求 `environment=prod`:真实集群的暴露面由部署拓扑决定,实机验证需要 dev + real(决策见 `docs/decisions.md`「安全」)。
-- 启动引导管理员仅 `environment=dev` 生效,口令长度 ≥12(与管理端创建约束对齐);幽灵 `SUPERDL_*` 环境变量(不命中任何字段或别名)启动打 WARNING 但不 fail。
+- 启动引导管理员仅 `environment=dev` 生效,口令长度 ≥12(与管理端创建约束对齐);幽灵 `SUPERDL_*` 环境变量(不命中任何字段)启动打 WARNING 但不 fail。
 - 限流计数落 PG(`rate_limit_counters`),不用进程内计数;429 响应带 `Retry-After`(窗口剩余秒数,DB 侧计算),401 统一带 `WWW-Authenticate: Bearer`。
 - 统一错误体覆盖框架层异常:路由 404/405 等 StarletteHTTPException 也渲染 `{code, message, message_key, params, detail}`(405 用 `METHOD_NOT_ALLOWED`/`common.methodNotAllowed`);未捕获异常(500)由审计中间件先落 `result=500` 审计行再交由兜底 handler。
 - 安全响应头由纯 ASGI 中间件统一注入;`/metrics` 须 Bearer 鉴权(见 [observability.md](./observability.md))。

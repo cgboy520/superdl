@@ -24,7 +24,7 @@
 - `SETTING_SPECS` 是白名单:未知键一律拒绝,防管理端提权。取值为 env 默认 + DB 覆盖,读路径一次轻查询。
 - 生效配置有进程内缓存(`get_effective_platform_config`):失效签名为 `(行数, max(updated_at), env 默认值层指纹)`——写入侧 upsert 显式 bump `updated_at`,增删动行数;单行密文解密失败只让该键回落 env 默认并打 error,不拖垮整份配置。
 - 敏感项(私钥/APIv3 密钥/AccessKeySecret)以 AES-256-GCM 加密落库(`app/core/crypto.py`),AAD 绑定行的键名。
-- 因 AAD 绑定键名,直接改行键名会静默毁掉密文:改名必须走 `LEGACY_KEY_ALIASES` 回落 —— 旧行以旧 key 做 AAD 解密、写新键后删旧行。
+- 因 AAD 绑定键名,直接 UPDATE 行键名会静默毁掉密文:secret 键改名须由迁移按旧 key 解密后以新 key 重加密写入(或让运营重新录入),不做读侧别名回落。
 - 主密钥 `SUPERDL_CONFIG_ENCRYPTION_KEY` 只走 env,prod 下 fail-fast 必配。
 - 读取接口只回配置状态与尾 4 位预览,永不回明文;审计 detail 只落键名与 reason,不落值。
 - 凭据不下放 ops:平台配置三端点仅 `admin` 角色;ops 生成注册命令时由服务端代读,永不见明文。

@@ -260,15 +260,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
 }
 
 
-# 旧键读回落:secret 的 AES-GCM AAD=行 key,直接 UPDATE 键名会毁掉密文,
-# 只能按旧行原键解密;写新键后同事务删旧行(见 set_platform_settings)。
-LEGACY_KEY_ALIASES: dict[str, str] = {
-    "cluster_join_token": "rke2_join_token",
-    "cluster_server_url": "rke2_server_url",  # 明文行,别名兜未跑迁移的库
-    "cluster_agent_version": "rke2_version",
-}
-
-
 def validate_setting_value(key: str, value: str) -> str:
     """校验并归一化(strip)。未知键/格式不符抛 ValueError(调用方转 AppError)。"""
     spec = SETTING_SPECS.get(key)
@@ -344,21 +335,12 @@ async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]
     for key, row in rows.items():
         spec = SETTING_SPECS.get(key)
         if spec is None:
-            continue  # 不在白名单内的键忽略(含改名后的遗留行,由别名回落处理)
+            continue  # 不在白名单内的键忽略
         if spec.kind == "secret":
             if (plain := _decrypt_row(key, row.value, aad=key)) is not None:
                 eff[key] = plain
         else:
             eff[key] = row.value
-    for new_key, old_key in LEGACY_KEY_ALIASES.items():
-        if new_key not in rows and old_key in rows:
-            spec = SETTING_SPECS[new_key]
-            if spec.kind == "secret":
-                plain = _decrypt_row(new_key, rows[old_key].value, aad=old_key)
-                if plain is not None:
-                    eff[new_key] = plain
-            else:
-                eff[new_key] = rows[old_key].value
     # 以本次全量读自身的快照重算签名,保证缓存内容与签名自洽
     # (快捷签名查询与全量读之间可能隔着其他事务的提交)
     built_signature = (
@@ -379,10 +361,6 @@ async def set_platform_settings(
             raise ValueError(f"未知配置键:{key}")
         if raw.strip() == "":
             await session.execute(delete(PlatformSetting).where(PlatformSetting.key == key))
-            if key in LEGACY_KEY_ALIASES:  # 清除时连旧行一起删,防遗留行借别名复活
-                await session.execute(
-                    delete(PlatformSetting).where(PlatformSetting.key == LEGACY_KEY_ALIASES[key])
-                )
             continue
         value = validate_setting_value(key, raw)
         if SETTING_SPECS[key].kind == "secret":
@@ -396,10 +374,6 @@ async def set_platform_settings(
                 set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )
-        if key in LEGACY_KEY_ALIASES:  # 写新删旧:此后不再走别名回落
-            await session.execute(
-                delete(PlatformSetting).where(PlatformSetting.key == LEGACY_KEY_ALIASES[key])
-            )
     await _check_prod_real_name_combination(session, updates)
 
 

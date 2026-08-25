@@ -550,7 +550,6 @@ class TestGhostEnvKeys:
 
         env = {
             "SUPERDL_JWT_SECRET": "x",  # 合法键
-            "SUPERDL_RKE2_VERSION": "v1",  # AliasChoices 别名键
             "SUPERDL_JWT_SECERT": "typo",  # 拼写错误
             "SUPERDL_OLD_REMOVED_KEY": "y",  # 改名残留
             "DATABASE_URL": "z",  # 非本前缀,不管

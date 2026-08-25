@@ -3,7 +3,7 @@ from collections.abc import Mapping
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
@@ -119,19 +119,10 @@ class Settings(BaseSettings):
     prewarm_recheck_hours: int = 24  # cached 复检窗口
 
     # 集群接入(节点一键加入;env 为默认值层,生产经管理端「平台配置·集群接入」录入)
-    cluster_server_url: str = Field(
-        default="",
-        validation_alias=AliasChoices("SUPERDL_CLUSTER_SERVER_URL", "SUPERDL_RKE2_SERVER_URL"),
-    )
+    cluster_server_url: str = ""
     # secret:平台配置中心 AES-GCM 加密存 DB 覆盖层
-    cluster_join_token: str = Field(
-        default="",
-        validation_alias=AliasChoices("SUPERDL_CLUSTER_JOIN_TOKEN", "SUPERDL_RKE2_JOIN_TOKEN"),
-    )
-    cluster_agent_version: str = Field(  # 装机脚本钉死的 K8s agent 版本
-        default="v1.36.2+rke2r1",
-        validation_alias=AliasChoices("SUPERDL_CLUSTER_AGENT_VERSION", "SUPERDL_RKE2_VERSION"),
-    )
+    cluster_join_token: str = ""
+    cluster_agent_version: str = "v1.36.2+rke2r1"  # 装机脚本钉死的 K8s agent 版本
     node_driver_version: str = "580"
     node_registries_yaml: str = ""
     node_install_mirror: Literal["cn", "official"] = "cn"  # 装机安装源(国内默认走镜像)
@@ -279,15 +270,12 @@ def get_settings() -> Settings:
 
 
 def unknown_superdl_env_keys(env: Mapping[str, str] | None = None) -> list[str]:
-    """扫描 SUPERDL_ 前缀环境变量,返回不命中任何 Settings 字段/别名的键。
+    """扫描 SUPERDL_ 前缀环境变量,返回不命中任何 Settings 字段的键。
 
     幽灵键(拼写错误、改名残留)会被 pydantic 静默忽略,配置者以为生效其实没有;
     启动时打 WARNING 即可,不 fail(兼容滚动发版期间新旧键并存)。
     """
     source = os.environ if env is None else env
     known = {f"SUPERDL_{name.upper()}" for name in Settings.model_fields}
-    for f in Settings.model_fields.values():
-        if isinstance(f.validation_alias, AliasChoices):
-            known.update(str(choice).upper() for choice in f.validation_alias.choices)
     # pydantic-settings 默认大小写不敏感,统一按大写比对
     return sorted(k for k in source if k.startswith("SUPERDL_") and k.upper() not in known)

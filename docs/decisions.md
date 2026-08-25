@@ -66,7 +66,8 @@
   保留这个默认(未迁移集群仍正确),不为托管仓地址新增配置键。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
-- **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`(旧名保留别名),发行版由平台探测 gitVersion 派生。
+- **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何
+  生产库,旧名别名(env `SUPERDL_RKE2_*` 与 DB 旧键读回落)服务对象为零,已删除不再保留。
 - **不引 Sentry 类 SaaS。** 未捕获异常统一 500 留痕并经 Loki / Prometheus 告警,少一个外部依赖与数据出境面。
 - **管理端监控自绘,Grafana 只作外链。** 不做 iframe 嵌入,`grafana_url` 未配置只显示一行提示。
 - **告警 `runbook_url` 只加在有专属 runbook 的规则上。** 其余告警的第一步写在 summary 与 `deploy/cluster/runbooks/README.md` 索引表里,不为每条告警生造一页。
