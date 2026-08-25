@@ -32,6 +32,15 @@ data:
   SUPERDL_SSH_HOST: "ssh1.superdl.example.com"
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
+  # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求(占位域名会被拒绝启动)
+  SUPERDL_ADMIN_HOST: "admin.superdl.example.com"
+  # 创建实例可用的镜像来源白名单(JSON 列表,仓库前缀);prod 不允许为空
+  SUPERDL_IMAGE_ALLOWED_REGISTRIES: '["registry.superdl.local/"]'
+  # 人机校验(阿里云验证码 2.0):prod 下 provider 不得为 mock;scene_id / prefix 是客户端初始化用的公开信息,
+  # AccessKey 对在 ../secrets.example.yaml
+  SUPERDL_CAPTCHA_PROVIDER: "aliyun"
+  SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"
+  SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
   # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。
   # 默认值是 RKE2/k3s 的 Pod CIDR(请求经 ingress-nginx / 前端 nginx 转发,源地址是其 Pod IP)。
   # 集群 Pod CIDR 不同按实际改;禁止写 "*",等于允许伪造源 IP。
