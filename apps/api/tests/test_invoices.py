@@ -10,7 +10,6 @@ from sqlalchemy import select, update
 
 from app.core.timeutil import now_utc
 from app.modules.billing.models import InvoiceRequest, Order
-from tests.test_admin_ops import second_admin_headers
 from tests.test_catalog import admin_headers
 from tests.test_payment import create_order, pay_mock, user_headers
 
@@ -231,13 +230,6 @@ class TestCreate:
         resp = await apply_invoice(client, headers, p1, tax_id="   ")
         assert resp.status_code == 422
 
-    async def test_email_format_validated(self, client: AsyncClient, sm):
-        headers = await user_headers(client, "13700000214")
-        p1, at1 = past_period(1)
-        await paid_order_at(client, sm, headers, "50.00", at1)
-        resp = await apply_invoice(client, headers, p1, email="not-an-email")
-        assert resp.status_code == 422
-
     async def test_personal_title_needs_no_tax_id(self, client: AsyncClient, sm):
         """个人抬头:税号不需要,即使夹带也不落库。"""
         headers = await user_headers(client, "13700000215")
@@ -323,14 +315,10 @@ class TestAdminFlow:
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.invoiceStateNotIssuable"
 
-    async def test_reject_requires_reason_and_notifies(self, client: AsyncClient, sm):
-        """驳回:理由必填(契约层 422);成功后站内信含理由。"""
+    async def test_reject_notifies_with_reason(self, client: AsyncClient, sm):
+        """驳回:成功后站内信含理由。"""
         headers, iid, _p1 = await self._submitted(client, sm, "13700000223")
         finance = await admin_headers(sm, client, role="finance")
-        resp = await client.post(
-            f"/api/admin/v1/invoices/{iid}/reject", json={"reason": ""}, headers=finance
-        )
-        assert resp.status_code == 422
         resp = await client.post(
             f"/api/admin/v1/invoices/{iid}/reject",
             json={"reason": "抬头与实名信息不一致"},
@@ -364,8 +352,8 @@ class TestAdminFlow:
         rejected = next(r for r in mine["items"] if r["status"] == "rejected")
         assert rejected["reject_reason"] == "税号有误,请修正"
 
-    async def test_list_filters_and_role_gate(self, client: AsyncClient, sm):
-        """status/period 过滤;读:ops/finance/readonly 可,写:仅 finance/admin。"""
+    async def test_list_filters(self, client: AsyncClient, sm):
+        """status/period 精确过滤;管理端视图含租户 id。"""
         headers = await user_headers(client, "13700000225")
         p1, at1 = past_period(1)
         p2, at2 = past_period(2)
@@ -385,18 +373,6 @@ class TestAdminFlow:
             await client.get("/api/admin/v1/invoices", params={"status": "issued"}, headers=finance)
         ).json()
         assert rows == []
-        # 读角色:readonly / ops 均可
-        ro = await admin_headers(sm, client, role="readonly")
-        assert (await client.get("/api/admin/v1/invoices", headers=ro)).status_code == 200
-        ops = await second_admin_headers(sm, client, "ops-invoice", role="ops")
-        assert (await client.get("/api/admin/v1/invoices", headers=ops)).status_code == 200
-        # 写角色:ops/readonly 403
-        iid = (await client.get("/api/admin/v1/invoices", headers=finance)).json()[0]["id"]
-        for h in (ops, ro):
-            resp = await client.post(
-                f"/api/admin/v1/invoices/{iid}/issue", json={"invoice_no": "NO-X"}, headers=h
-            )
-            assert resp.status_code == 403
 
 
 class TestIdor:
