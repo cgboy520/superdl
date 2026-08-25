@@ -497,15 +497,18 @@ async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
     return await session.get(ClusterStatus, 1)
 
 
-REGISTRY_NODEPORT = 30500  # 集群内 registry 的 NodePort(deploy/cluster/registry/)
+# 历史上集群内自建 registry 的 NodePort:该仓已退役、清单已从仓库删除,端口上已无服务。
+# 平台默认生成的 registries.yaml 仍指向它(决策:不为托管仓地址新增配置键),已迁托管仓的
+# 集群必须在平台配置填 node_registries_yaml 覆盖,见 docs/decisions.md「镜像仓迁托管仓」
+REGISTRY_NODEPORT = 30500
 
 
 def render_registries_yaml(cfg: dict[str, str]) -> str:
     """平台生成节点 registries.yaml:server_url 解析 host + NodePort 常量。
 
-    node_registries_yaml 有值 = 高级覆盖优先;server_url 未配置返回空串(脚本跳过)。
-    与 deploy/cluster/rke2/registries.yaml 模板同源:mirrors "*" 声明 Spegel P2P,
-    registry.superdl.local 指向集群内 registry。
+    node_registries_yaml 有值 = 高级覆盖优先(托管仓模板见 deploy/cluster/rke2/registries.yaml);
+    server_url 未配置返回空串(脚本跳过)。默认正文只声明 mirrors "*"(Spegel P2P)与
+    registry.superdl.local → 历史集群内 registry 端口,生产必须用覆盖值指向托管仓。
     """
     override = (cfg.get("node_registries_yaml") or "").strip()
     if override:
