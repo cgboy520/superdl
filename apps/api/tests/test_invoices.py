@@ -1,6 +1,8 @@
 """发票闭环:eligible 口径/服务端算额/幂等/开票与驳回/IDOR/退款联动。"""
 
+import asyncio
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -461,7 +463,7 @@ class TestRefundLinkage:
 
 
 class TestDoubleSpendGate:
-    """票款双重兑现闸(P1-1):在途退款预扣 + 开票重算 + 打款复查,三件套互为兜底。"""
+    """票款双重兑现闸(两道):在途退款预扣 + 开票重算;申请退款与开票经发票行锁串行。"""
 
     async def test_pending_refund_withheld_from_eligible_and_create(self, client: AsyncClient, sm):
         """在途(pending)退款按订单账期预扣:eligible 预览与 create 算额同步减少
@@ -514,9 +516,11 @@ class TestDoubleSpendGate:
         assert resp.status_code == 201
         assert resp.json()["amount"] == "30.00"
 
-    async def test_payout_blocked_after_invoice_issued(self, client: AsyncClient, sm):
-        """退款审批后、打款前账期发票被另一财务开具:payout 复查命中 issued → 409
-        (挂了 = 票已开又打款退款,平台为已退回的款纳税)。"""
+    async def test_payout_succeeds_after_invoice_issued_with_refund_withheld(
+        self, client: AsyncClient, sm
+    ):
+        """先申请退款 → 开票(票额已扣该笔在途退款)→ 登记打款成功,账期无剩余可开
+        (挂了 = 打款侧又按「账期已开票」拦下:已预扣的退款只能取消,再申请被已开票拒,资金死胡同)。"""
         from tests.test_refunds import finance_pair
 
         headers = await user_headers(client, "13700000245")
@@ -536,19 +540,67 @@ class TestDoubleSpendGate:
             headers=reviewer,
         )
         assert resp.status_code == 200
-        # 审批后另一财务开具该账期发票(在途退款已预扣,可开 20)
-        iid = (await apply_invoice(client, headers, p1)).json()["id"]
+        # 审批后另一财务开具该账期发票:在途退款已预扣,票额 20
+        resp = await apply_invoice(client, headers, p1)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["amount"] == "20.00"
         resp = await client.post(
-            f"/api/admin/v1/invoices/{iid}/issue",
+            f"/api/admin/v1/invoices/{resp.json()['id']}/issue",
             json={"invoice_no": "NO-GATE-1"},
             headers=reviewer,
         )
         assert resp.status_code == 200, resp.text
-        # 打款被复查拦下
         resp = await client.post(
             f"/api/admin/v1/refunds/{rid}/payout",
             json={"channel": "offline", "ref": "OFF-GATE"},
             headers=payer,
         )
-        assert resp.status_code == 409
-        assert resp.json()["message_key"] == "billing.refundInvoiceIssued"
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "paid"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "20.00"
+
+    async def test_refund_apply_serializes_with_issue(self, client: AsyncClient, sm):
+        """申请退款对账期活跃发票行 FOR UPDATE:开票事务持锁期间申请阻塞,开票提交后申请
+        看到 issued 被拒(挂了 = 申请与开票交错提交,退款既未从票额扣除又能打款,票款双重兑现)。"""
+        from app.core.errors import AppError
+        from app.modules.billing import refunds
+
+        headers = await user_headers(client, "13700000246")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        iid = (await apply_invoice(client, headers, p1)).json()["id"]
+        async with sm() as session:
+            uid = (
+                await session.execute(
+                    select(Order.user_id).where(Order.order_no == order["order_no"])
+                )
+            ).scalar_one()
+        async with sm() as issuing, sm() as applying:
+            req = (
+                await issuing.execute(
+                    select(InvoiceRequest).where(InvoiceRequest.id == iid).with_for_update()
+                )
+            ).scalar_one()  # 开票事务持锁(重算进行中)
+            task = asyncio.create_task(
+                refunds.create_refund(
+                    applying,
+                    uid,
+                    order_no=order["order_no"],
+                    amount=Decimal("20.00"),
+                    reason="部分退款",
+                    idempotency_key=None,
+                )
+            )
+            try:
+                await asyncio.sleep(0.3)
+                assert not task.done()  # 被开票事务的行锁挡住
+                req.status = "issued"
+                req.invoice_no = "NO-RACE"
+                await issuing.commit()
+                with pytest.raises(AppError) as exc:
+                    await task
+                assert exc.value.message_key == "billing.refundInvoiceIssued"
+            finally:
+                if not task.done():
+                    task.cancel()

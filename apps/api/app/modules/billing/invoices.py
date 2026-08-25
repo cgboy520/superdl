@@ -8,10 +8,12 @@
   还可能变,不当月开票)。
 - 同一 (user_id, period) 仅一条非 rejected 申请(部分唯一索引兜底并发);
   rejected 后同账期可重新申请。
-- 与退款联动(双向闸,并发时必有一侧先撞):
-  已开票(issued)账期的 paid 订单不可申请退款/登记打款,须先红冲
-  (见 refunds._order_has_issued_invoice 与 payout_refund 复查);
-  开票(issue_invoice)行锁内按当前口径重算金额,申请到开票之间发生退款即 409 驳回重申。
+- 与退款联动(两道闸):
+  已开票(issued)账期的 paid 订单不可申请退款,须先红冲(refunds._order_has_issued_invoice,
+  申请时对该账期的活跃申请行 FOR UPDATE,与本模块 issue_invoice 的行锁串行);
+  开票(issue_invoice)行锁内按当前口径重算金额(在途退款已预扣),申请到开票之间发生退款
+  即 409 驳回重申。登记打款不再复查账期是否已开票:能走到打款的退款早已从票额里扣掉,
+  复查只会把它打成死胡同(只能取消,再申请又被已开票拦下)。
 """
 
 from datetime import UTC, datetime
@@ -387,7 +389,7 @@ async def issue_invoice(
         )
     # 行锁内按当前口径重算:申请到开票之间若发生退款(申请/打款),可开票额已变,
     # 按旧额开票后用户再拿退款 = 票款双重兑现;不符即 409,驳回由用户按新额重新申请
-    # (与 payout_refund 的发票复查互为双向闸,并发时必有一侧先撞)
+    # (create_refund 对本行 FOR UPDATE:在途退款要么已计入本次重算,要么在锁后看到 issued 被拒)
     paid = await _period_paid_sum(session, req.user_id, req.period)
     refunded = await _period_refunded_sum(session, req.user_id, req.period)
     pending_refund = await _period_pending_refund_sum(session, req.user_id, req.period)

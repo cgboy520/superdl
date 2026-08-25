@@ -126,41 +126,6 @@ class TestSyncAudit:
         assert rows[0].result == 200
 
 
-class TestDoubleSpendGate:
-    """票款双重兑现闸的打款侧(P1-1):审批到打款之间发票被开具,payout 复查拦截。"""
-
-    async def test_payout_blocked_by_invoice_issued_after_approve(self, client, sm):
-        from tests.test_invoices import apply_invoice, paid_order_at, past_period
-
-        headers = await user_headers(client, "13700000162")
-        p1, at1 = past_period(1)
-        order = await paid_order_at(client, sm, headers, "50.00", at1)
-        rid = (await apply_refund(client, headers, order["order_no"], "30.00")).json()["id"]
-        reviewer = await admin_headers(sm, client, role="finance")
-        payer = await second_admin_headers(sm, client, "finance-payer-c")
-        resp = await client.post(
-            f"/api/admin/v1/refunds/{rid}/review",
-            json={"approve": True, "comment": "同意"},
-            headers=reviewer,
-        )
-        assert resp.status_code == 200
-        # 审批后另一财务开具该账期发票
-        iid = (await apply_invoice(client, headers, p1)).json()["id"]
-        resp = await client.post(
-            f"/api/admin/v1/invoices/{iid}/issue",
-            json={"invoice_no": "NO-PAYOUT-GATE"},
-            headers=reviewer,
-        )
-        assert resp.status_code == 200, resp.text
-        resp = await client.post(
-            f"/api/admin/v1/refunds/{rid}/payout",
-            json={"channel": "offline", "ref": "OFF-GATE2"},
-            headers=payer,
-        )
-        assert resp.status_code == 409
-        assert resp.json()["message_key"] == "billing.refundInvoiceIssued"
-
-
 class TestApply:
     async def test_create_success_and_no_format(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000101")

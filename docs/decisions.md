@@ -23,7 +23,9 @@
   与停机判据 `effective <= 0` 自洽,由 `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。
 - **计费只认事件流水,指标只做对账。** 见 `architecture.md` §4 与 `reference/billing.md`:Prometheus 全挂结算照常。
 - **不做渠道原路退款。** 退款单审批不动钱包,财务登记打款成功才负向核销,审批与打款分人;见 `reference/payment.md`。
-- **票款双重兑现闸。** 已开票账期的订单不可退款,在途退款预扣 + 开票重算 + 打款复查三件套互为兜底;
+- **票款双重兑现闸只有两道。** 申请退款时拒已开票账期(并对该账期的活跃发票申请行加锁,与开票串行);
+  开票时行锁内按当前口径(在途退款预扣)重算、不符即驳回重申。曾经的第三道「登记打款时复查账期是否已开票」已去掉:
+  能走到打款的退款在开票时就已从票额扣除,复查只会把它打成死胡同(只能取消,再申请又被已开票拦下,且无红冲端点)。
   见 `reference/payment.md`、`apps/api/tests/test_invoices.py`。
 - **出金与入账的审计同事务。** 审计行写失败即出金失败回滚——宁可不出金,不可无留痕(`write_audit_sync`)。
 - **结算缺口只登记不自愈。** 追平截断 / 死信 / 水位线丢失一律落 `settlement_gaps` 并持续告警,由人工重放或核销;

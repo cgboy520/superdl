@@ -35,28 +35,34 @@ ACTIVE_STATUSES = ("pending", "approved", "paid")
 REFUNDABLE_ORDERS_CAP = 50
 
 
-async def _order_has_issued_invoice(session: AsyncSession, order: Order) -> bool:
+async def _order_has_issued_invoice(
+    session: AsyncSession, order: Order, *, lock: bool = False
+) -> bool:
     """发票联动:该订单所属用户、订单 paid 账期(北京时间)存在 status='issued' 的
     发票申请即视为「该账期已开票」——已开票账期的订单不可退,须先红冲
     (服务层抛 billing.refundInvoiceIssued,文案引导联系客服)。
 
     仅拦截 issued:submitted(申请中)不拦截——开票完成前退款仍是自由出口。
+    lock=True(申请退款时用):对该账期的活跃申请行 FOR UPDATE,与 issue_invoice 的
+    行锁串行——要么本次申请等开票提交后看到 issued 被拒,要么开票重算时已能看到
+    本笔在途退款并扣除。没有这道锁,申请与开票交错提交会让退款既不从票额扣除又能打款。
     """
     if order.paid_at is None:
         return False
     period = invoices.beijing_period(order.paid_at)
-    issued_id = (
-        await session.execute(
-            select(InvoiceRequest.id)
-            .where(
-                InvoiceRequest.user_id == order.user_id,
-                InvoiceRequest.period == period,
-                InvoiceRequest.status == "issued",
-            )
-            .limit(1)
+    stmt = (
+        select(InvoiceRequest.status)
+        .where(
+            InvoiceRequest.user_id == order.user_id,
+            InvoiceRequest.period == period,
+            InvoiceRequest.status.in_(invoices.ACTIVE_STATUSES),
         )
-    ).scalar_one_or_none()
-    return issued_id is not None
+        .limit(1)
+    )
+    if lock:
+        stmt = stmt.with_for_update()
+    status = (await session.execute(stmt)).scalar_one_or_none()
+    return status == "issued"
 
 
 async def _active_refund_of_order(session: AsyncSession, order_no: str) -> RefundRequest | None:
@@ -122,7 +128,7 @@ async def create_refund(
     # 冲正只打标记不动余额(支付侧策略),出金口必须在此拦截
     if order.channel_reversed_at is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
-    if await _order_has_issued_invoice(session, order):
+    if await _order_has_issued_invoice(session, order, lock=True):
         raise AppError(ErrorCode.CONFLICT, key="billing.refundInvoiceIssued", http_status=409)
     if await _active_refund_of_order(session, order_no) is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundAlreadyApplied", http_status=409)
@@ -336,10 +342,8 @@ async def payout_refund(
     ).scalar_one_or_none()
     if order is not None and order.channel_reversed_at is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
-    # 审批到打款之间账期发票可能已被另一财务开具:已开票账期再打款退款 = 票款不符资损
-    # (开票侧 issue_invoice 有金额重算闸,与本复查互为双向闸,并发时必有一侧先撞)
-    if order is not None and await _order_has_issued_invoice(session, order):
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundInvoiceIssued", http_status=409)
+    # 不复查账期是否已开票:能走到打款的退款在开票重算时已从票额扣除(申请时拒已开票账期
+    # 并与开票串行),再拦只会把它打成死胡同(只能取消,再申请又被已开票拦下)
     # 钱包行锁内再校验:审批后用户可能已消费,余额不足坚决不出金(不允许负余额核销)
     locked = await wallet.lock_wallet(session, req.user_id)
     if locked.balance < req.amount:
