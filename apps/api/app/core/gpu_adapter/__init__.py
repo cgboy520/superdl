@@ -86,7 +86,7 @@ def spec_to_gpu_request(
     hami_use_gputype: bool = False,
     distro: str | None = None,
 ) -> GpuRequest:
-    """从实例的 SKU 快照构造。存量快照无 gpu_model_selector 键 → 天然不加型号约束。"""
+    """从实例的 SKU 快照构造(gpu_model_selector 为 None = 不钉型号)。"""
     return build_gpu_request(
         tier=spec["tier"],
         gpu_count=gpu_count,

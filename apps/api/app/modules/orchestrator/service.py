@@ -150,7 +150,7 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
         "disk_gb": sku.disk_gb,
         "pool_label": sku.pool_label,
         "cuda_max": sku.cuda_max,
-        # canonical 型号 → Pod nodeSelector(未识别型号存 None = 不钉);存量快照无此键
+        # canonical 型号 → Pod nodeSelector(未识别型号存 None = 不钉)
         "gpu_model_selector": canonical_gpu_model(sku.gpu_model),
     }
 

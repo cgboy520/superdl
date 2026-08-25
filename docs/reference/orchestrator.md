@@ -44,7 +44,7 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 - SSH 仅密钥登录(公钥注入 authorized_keys),禁用密码;连接串形如 `ssh root@ssh1.<域名> -p 3xxxx`。
 - SSH host key 持久化在实例盘(`/root/.ssh/host_keys`),Pod 重建指纹不变;jupyter 由 entrypoint 守护循环拉起(不做 PID 1),连续秒退 5 次才让 Pod 失败收敛。
 - JupyterLab 走 `<instance-uuid>.app.<域名>` 泛域名 Ingress 按 host 路由到实例 Service(IngressClass 由 `SUPERDL_INGRESS_CLASS_NAME` 指定,默认 `nginx`;未标 default 的 IngressClass 不会自动接管)。token 由控制面生成、AES-GCM 密文落库、注入 Pod env;access 端点签发一次性 bootstrap 票据(HMAC 密钥=token 本体,单次、60s),镜像内 `/superdl-bootstrap` handler 核销后种第一方 cookie,token 不出现在 URL;`?token=` stock 登录为回落通道。实例镜像须先于控制面发布:镜像内的 bootstrap handler 是票据流的前提。
-- 型号 nodeSelector 由 spec 快照的 `gpu_model_selector` 键决定:快照无此键的存量实例 start 时不带该 selector。
+- 型号 nodeSelector 由 spec 快照的 `gpu_model_selector` 键决定(未识别型号存 None,不钉型号)。
 - shared 档 create/start/restart 三入口读集群能力缓存做 HAMi 门禁,未就绪直接报 `CLUSTER_NOT_READY`,见 [nodes.md](./nodes.md)。
 - 每用户实例数与 GPU 数配额由 config 控制。
 - 实例释放后触发擦盘任务;数据盘生命周期独立,见 [disks.md](./disks.md)。

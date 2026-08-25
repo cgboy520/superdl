@@ -59,13 +59,6 @@ def test_no_gpu_model_keeps_pool_only_selector():
     assert req.annotations == {}
 
 
-def test_legacy_snapshot_without_selector_key_unaffected():
-    """存量实例快照没有 gpu_model_selector 键 → 不加型号约束(重启/重建不变更调度)。"""
-    req = spec_to_gpu_request(_spec("shared_std", "hami"), 1)
-    assert GPU_MODEL_NODE_LABEL not in req.node_selector
-    assert req.annotations == {}
-
-
 def test_snapshot_selector_pins_model():
     req = spec_to_gpu_request(_spec("dedicated", "kata", gpu_model_selector="H100-80G"), 2)
     assert req.node_selector[GPU_MODEL_NODE_LABEL] == "H100-80G"
