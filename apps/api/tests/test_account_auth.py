@@ -108,14 +108,14 @@ class TestRegister:
         assert ok.status_code == 201, ok.text
 
     async def test_password_weak_blacklist(self, client: AsyncClient):
-        """弱口令黑名单(Top 20,不区分大小写):满足长度仍 422;改密路径同表拦截。"""
+        """弱口令黑名单(不区分大小写):满足长度仍 422;改密路径同表拦截。"""
         await send_code(client, "13800000075", "register")
         weak = await client.post(
             "/api/v1/auth/register",
             json={
                 "phone": "13800000075",
                 "sms_code": "123456",
-                "password": "Password123",  # 黑名单(大小写不敏感)
+                "password": "Password1234",  # 12 位、在黑名单(大小写不敏感)
                 "accept_terms": True,
             },
         )

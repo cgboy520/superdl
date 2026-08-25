@@ -14,26 +14,18 @@ def _within_bcrypt_limit(v: str) -> str:
     return v
 
 
-# 常见弱口令黑名单(Top 20,不区分大小写)。含 <12 位条目属纵深防御:
-# 它们先被 min_length 拦,黑名单兜住「满足长度但人尽皆知」的口令
+# 常见弱口令黑名单(不区分大小写):只收 ≥12 位的条目,更短的口令已被 min_length 拦下
 WEAK_PASSWORDS = frozenset(
     {
-        "123456789",
-        "1234567890",
         "111111111111",
         "123123123123",
         "123456789012",
         "012345678901",
-        "password",
-        "password1",
-        "password123",
         "password1234",
         "passw0rd1234",
-        "p@ssw0rd123",
         "qwerty123456",
         "qwertyuiop12",
         "1q2w3e4r5t6y",
-        "admin123456",
         "admin1234567",
         "root12345678",
         "abc123456789",
