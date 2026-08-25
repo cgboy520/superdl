@@ -92,16 +92,13 @@ export function AdminsTab() {
     {
       title: t("admins.colMfa"),
       key: "mfa",
-      render: (_: unknown, row: AdminAccountOut) => {
-        // admin/finance 强制 TOTP;其余角色不启用,列显灰
-        const required = row.role === "admin" || row.role === "finance";
-        if (!required) return <Tag>{t("admins.mfaNotRequired")}</Tag>;
-        return row.totp_enabled ? (
+      // 后端对四个角色一律强制 TOTP,此列只区分已绑定/待绑定
+      render: (_: unknown, row: AdminAccountOut) =>
+        row.totp_enabled ? (
           <Tag color={adminColors.positive}>{t("admins.mfaBound")}</Tag>
         ) : (
           <Tag color="gold">{t("admins.mfaUnbound")}</Tag>
-        );
-      },
+        ),
     },
     {
       title: t("admins.colCreatedAt"),
