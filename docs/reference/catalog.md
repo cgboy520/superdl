@@ -11,7 +11,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `GET /api/v1/skus?tier=&gpu_model=` | 匿名 | 仅 on 架;含 available_count(签名失效进程内缓存,批量一次计算;源是节点台账) |
+| `GET /api/v1/skus?tier=&gpu_model=` | 匿名 | 仅 on 架;含 available_count(每请求按节点台账直接算,全部 SKU 批量一次) |
 | `GET /api/v1/images` | 匿名 | 平台镜像目录;`is_prewarmed` 为计算值 |
 | `GET /api/admin/v1/skus` | ops/finance/readonly | SkuAdminOut 含 `capacity_gpus / sold_share / actual_oversell` |
 | `POST /api/admin/v1/skus` | ops | 创建 |
@@ -24,7 +24,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 - SKU 变更只影响新实例:实例落库时快照 `price_hourly` 与规格,存量实例不随改价变动。
 - SKU 业务唯一键 `(gpu_model, tier, mig_profile, gpu_cores_pct)` 唯一约束(NULLS NOT DISTINCT,非 mig 档 mig_profile 为 NULL 也判重),重复创建 409。
-- 近似库存按 (池, canonical 型号) 双维度估:数据源是节点台账 `node_specs`(巡检 60s 写,只算 Ready 节点空闲卡),请求路径不直连 K8s;provider 一次批量计算全部 SKU,缓存按「台账签名 (行数, max(updated_at)) + 覆盖 sku 集合」命中(签名变即重算,与 platform_config 同一失效模式),single-flight 合并刷新,故障回退陈旧值。
+- 近似库存按 (池, canonical 型号) 双维度估:数据源是节点台账 `node_specs`(巡检 60s 写,只算 Ready 节点空闲卡),请求路径不直连 K8s;provider 一次批量计算全部 SKU,每请求直接算、不缓存(台账几十行,一次 SELECT + Python 循环)。
 - 创建路径软准入:台账明确该 (池,型号) 可分配量不足 → 409 `NO_CAPACITY`,台账无数据一律放行。不做库存预占,库存是近似值(台账 60s 巡检粒度),最终以调度结果为准。
 - 共享档每卡可售实例数 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋,只在 `catalog/service.py::sellable_per_gpu` 一处按 Decimal 整除(独享/MIG 恒 1);(池, canonical 型号) 匹配只在 `nodes/service.py::matching_specs` 一处。市场库存、创建软准入、管理端容量列与容量预览共用这两份口径,不得各算各的。
 - 超卖参数是纯定价参数,不下发调度;显存超卖 >1.2 由前端二次确认。

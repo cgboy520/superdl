@@ -16064,7 +16064,7 @@
     },
     "/api/v1/skus": {
       "get": {
-        "description": "算力市场:仅在架 SKU,含近似库存(签名失效缓存)。未登录可访问。",
+        "description": "算力市场:仅在架 SKU,含近似库存(每请求按节点台账直接算)。未登录可访问。",
         "operationId": "list_skus_api_v1_skus_get",
         "parameters": [
           {

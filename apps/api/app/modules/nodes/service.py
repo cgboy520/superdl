@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import status as http_status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -395,15 +395,6 @@ async def list_node_specs(session: AsyncSession) -> list[NodeSpec]:
     """全量台账(含 Missing/未打标),管理端节点页数据源。"""
     rows = (await session.execute(select(NodeSpec).order_by(NodeSpec.node_name))).scalars()
     return list(rows)
-
-
-async def node_specs_signature(session: AsyncSession) -> tuple[object, ...]:
-    """台账失效签名(与 platform_config 缓存同一模式:行数 + max(updated_at))。
-    廉价查询,供 catalog 近似库存缓存每次调用先验签名再决定是否重算。"""
-    count, max_updated = (
-        await session.execute(select(func.count(), func.max(NodeSpec.updated_at)))
-    ).one()
-    return (count, max_updated)
 
 
 async def get_node_spec(session: AsyncSession, node_name: str) -> NodeSpec | None:

@@ -40,16 +40,6 @@ def sellable_per_gpu(tier: str, gpu_cores_pct: int, oversell_cores: Decimal) -> 
     return max(1, int(Decimal(100) * oversell_cores // max(1, gpu_cores_pct)))
 
 
-async def skus_signature(session: AsyncSession) -> tuple[object, ...]:
-    """SKU 失效签名(近似库存缓存签名的组成部分,P2):行数 + max(updated_at)。
-    SKU 改 型号/池/上下架必须触发库存重算——签名只看台账时,
-    旧 counts 会按 sku_id 继续命中,市场页展示过期库存。"""
-    count, max_updated = (
-        await session.execute(select(func.count(), func.max(Sku.updated_at)))
-    ).one()
-    return (count, max_updated)
-
-
 async def list_market_skus(
     session: AsyncSession, tier: str | None = None, gpu_model: str | None = None
 ) -> list[SkuMarketOut]:
@@ -214,7 +204,6 @@ async def admin_update_sku(
         )
     await session.commit()
     await session.refresh(sku)
-    inventory.clear_cache()
     return sku, before
 
 

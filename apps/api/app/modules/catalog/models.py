@@ -42,7 +42,7 @@ class Sku(Base):
     cuda_max: Mapped[str | None] = mapped_column(String(16))  # 支持的最高 CUDA 版本
     status: Mapped[str] = mapped_column(String(8), default="off", index=True)  # on / off
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # 近似库存缓存签名(行数, max(updated_at))的数据源(P2):SKU 变更必须触发库存重算
+    # 变更时间,onupdate 自动刷新;无业务读取,留作审计线索
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 

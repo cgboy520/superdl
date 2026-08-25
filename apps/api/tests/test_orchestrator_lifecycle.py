@@ -647,9 +647,6 @@ class TestAdminOps:
 class TestInventoryProvider:
     async def test_market_inventory_reflects_fake_capacity(self, client, sm, fake):
         """市场库存按 (池, canonical 型号) 从节点台账估算(请求路径不碰 K8s)。"""
-        from app.modules.catalog import inventory
-
-        inventory.clear_cache()
         await create_test_sku(sm)  # hami 池,50% 算力,超卖 1.5
         await seed_node_spec(sm)  # 台账:hami 池 32 张 RTX4090 全空闲
         skus = (await client.get("/api/v1/skus")).json()
@@ -658,9 +655,6 @@ class TestInventoryProvider:
 
     async def test_market_inventory_excludes_not_ready_nodes(self, client, sm, fake):
         """台账里 NotReady / Cordoned 节点的卡不计入可售库存(防止卖出调度不上的卡)。"""
-        from app.modules.catalog import inventory
-
-        inventory.clear_cache()
         await create_test_sku(sm)
         await seed_node_spec(sm, node_name="nr", status="NotReady")
         skus = (await client.get("/api/v1/skus")).json()

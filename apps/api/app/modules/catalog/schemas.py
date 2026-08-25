@@ -47,7 +47,7 @@ class SkuMarketOut(BaseModel):
     cuda_max: str | None
     # 池标签:同一 (pool, model) 物理池上的互斥档位可售数不可相加(前端按组取 max 展示)
     pool_label: str
-    available_count: int = 0  # 近似库存(签名失效缓存),service 填充
+    available_count: int = 0  # 近似库存(节点台账口径,每请求直接算),service 填充
 
     model_config = {"from_attributes": True}
 

@@ -4,7 +4,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.adminapi.service import create_admin
-from app.modules.catalog import inventory
 from app.modules.catalog.models import PlatformImage, Sku
 
 
@@ -65,7 +64,6 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
             )
         )
         await session.commit()
-    inventory.clear_cache()
 
 
 async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
@@ -122,56 +120,6 @@ class TestMarket:
         resp = await client.get("/api/v1/skus")
         prices = [s["price_hourly"] for s in resp.json()]
         assert "1.6800" in prices  # 字符串且保留 4 位 scale
-
-    async def test_inventory_cached_while_signature_unchanged(
-        self, client: AsyncClient, sm, monkeypatch
-    ):
-        """签名(台账行数/max(updated_at))未变时不重复计算;签名变化立即触发重算。"""
-        await seed_skus(sm)
-        calls = {"n": 0}
-
-        async def counting_provider(_session, skus):
-            calls["n"] += 1
-            return {s.id: 5 for s in skus}
-
-        monkeypatch.setattr(inventory, "_provider", counting_provider)
-        inventory.clear_cache()
-        await client.get("/api/v1/skus")
-        first = calls["n"]
-        assert first == 1  # 批量接口:一次调用算完全部 SKU,不是每 SKU 一次
-        await client.get("/api/v1/skus")
-        assert calls["n"] == first  # 签名未变不重复计算
-        data = (await client.get("/api/v1/skus")).json()
-        assert all(s["available_count"] == 5 for s in data)
-        # 台账写入(签名变化)→ 下一次查询立即重算,不等任何 TTL
-        from tests.helpers import seed_node_spec
-
-        await seed_node_spec(sm, node_name="node-sig-1")
-        await client.get("/api/v1/skus")
-        assert calls["n"] == first + 1
-
-    async def test_inventory_stale_on_provider_error(self, client: AsyncClient, sm, monkeypatch):
-        """台账查询故障且有旧快照:市场页展示陈旧库存而不是 500(/skus 免登录无限流)。"""
-        await seed_skus(sm)
-        calls = {"n": 0}
-
-        async def flaky_provider(_session, skus):
-            calls["n"] += 1
-            if calls["n"] > 1:
-                raise RuntimeError("seeded ledger failure")
-            return {s.id: 7 for s in skus}
-
-        monkeypatch.setattr(inventory, "_provider", flaky_provider)
-        inventory.clear_cache()
-        assert (await client.get("/api/v1/skus")).json()[0]["available_count"] == 7
-        assert inventory._cache is not None
-        # 拨动签名触发重算(等价台账巡检写入),provider 故障 → 陈旧值兜底
-        from tests.helpers import seed_node_spec
-
-        await seed_node_spec(sm, node_name="node-stale-1")
-        resp = await client.get("/api/v1/skus")
-        assert resp.status_code == 200
-        assert resp.json()[0]["available_count"] == 7  # 陈旧值兜底
 
 
 class TestSellablePerGpu:
