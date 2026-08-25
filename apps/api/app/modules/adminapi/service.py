@@ -19,7 +19,7 @@ from app.core.security import (
     hash_password_sync,
     verify_password,
 )
-from app.core.timeutil import now_utc
+from app.core.timeutil import ensure_utc, now_utc
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
 from app.modules.adminapi.schemas import AdjustmentOut, MfaChallengeOut
 
@@ -161,7 +161,7 @@ async def renew_access_token(session: AsyncSession, token: str) -> str:
     if now_utc() - issued_at > timedelta(seconds=SESSION_MAX_SECONDS):
         raise unauthorized("会话已达 12 小时上限,请重新登录")
     admin = await session.get(AdminUser, int(payload["sub"]))
-    if admin is None or admin.status != "active" or payload.get("ver", 0) != admin.token_version:
+    if admin is None or admin.status != "active" or payload.get("ver") != admin.token_version:
         raise unauthorized()
     return create_token(
         str(admin.id),
@@ -191,7 +191,7 @@ async def _admin_from_ticket(
     except AppError as exc:
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid") from exc
     admin = await session.get(AdminUser, int(payload["sub"]))
-    if admin is None or admin.status != "active" or payload.get("ver", 0) != admin.token_version:
+    if admin is None or admin.status != "active" or payload.get("ver") != admin.token_version:
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     return admin
 
@@ -286,8 +286,7 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
     # populate_existing 不可省:_admin_from_ticket 已把该行读进 identity map,
     # 不强制重读则 get() 直接返回缓存实例,锁拿到了却看的是加锁前的旧值
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
-    if locked is None:  # 票据校验后被删:与票据失效同等处理
-        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    assert locked is not None  # 同一事务刚按票据加载过该行;AdminUser 无删除路径
     if locked.totp_secret is None:
         secret = pyotp.random_base32()
         locked.totp_secret = encrypt_str(secret, aad=f"totp:{locked.id}")
@@ -308,8 +307,7 @@ async def confirm_totp_setup(
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     # 行锁内匹配+防重放推进:绑定阶段重放同一首码会重复签发 token 并重置恢复码
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
-    if locked is None:
-        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    assert locked is not None  # 同上:行锁重读只为拿新值,不会读空
     matched = _match_totp_timestep(_decrypt_totp_secret(locked), code)
     if matched is None or not _accept_totp_step(locked, matched):
         await _count_mfa_attempt(admin.id)
@@ -336,8 +334,7 @@ async def verify_mfa_login(
     # 行锁内验证:timestep 推进/恢复码作废必须与「是否已用」的判定原子化,
     # 否则并发重放同一码双双通过(RFC 6238 §5.2 要求同一步只接受一次)
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
-    if locked is None:
-        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    assert locked is not None  # 同上:行锁重读只为拿新值,不会读空
     ok = False
     used_recovery = False
     if code.isdigit() and len(code) == 6:
@@ -509,12 +506,8 @@ async def create_adjustment(
     (对齐 Stripe 惯例)——弱键跨租户/跨金额复用从「静默错单」变「显式拒绝」。"""
     import hashlib
 
-    from sqlalchemy.exc import IntegrityError
-
-    from app.core.errors import AppError, ErrorCode
     from app.core.money import as_amount
     from app.modules.account import service as account_service
-    from app.modules.adminapi.models import AdminAdjustment
 
     amount = as_amount(Decimal(str(amount)))
     fingerprint = hashlib.sha256(f"{user_id}|{amount}|{reason}".encode()).hexdigest()
@@ -530,9 +523,7 @@ async def create_adjustment(
             )
         ).scalar_one_or_none()
         if existing is not None:
-            if existing.request_fingerprint is not None and (
-                existing.request_fingerprint != fingerprint
-            ):
+            if existing.request_fingerprint != fingerprint:
                 raise AppError(
                     ErrorCode.CONFLICT,
                     key="adminapi.idempotencyKeyMismatch",
@@ -559,31 +550,9 @@ async def create_adjustment(
         request_fingerprint=fingerprint,
     )
     session.add(adj)
-    try:
-        await session.commit()
-    except IntegrityError:
-        # 并发同幂等键:唯一约束兜底,回滚后回查胜出方按重放返回(参照充值订单同款写法)
-        await session.rollback()
-        if idempotency_key is None:
-            raise  # 无幂等键不会撞唯一约束,原样上抛
-        raced = (
-            await session.execute(
-                select(AdminAdjustment).where(
-                    AdminAdjustment.created_by == created_by,
-                    AdminAdjustment.user_id == user_id,
-                    AdminAdjustment.idempotency_key == idempotency_key,
-                )
-            )
-        ).scalar_one_or_none()
-        if raced is None:
-            raise  # 撞的是别的约束(理论不到达),原样上抛
-        if raced.request_fingerprint is not None and raced.request_fingerprint != fingerprint:
-            raise AppError(
-                ErrorCode.CONFLICT,
-                key="adminapi.idempotencyKeyMismatch",
-                http_status=409,
-            ) from None
-        return raced, False
+    # 并发同键撞 uq_admin_adjustments_idem_scope 由唯一约束兜底(500),不回查:
+    # 与其它 check-then-insert 路径同一立场,重试即命中上面的重放分支
+    await session.commit()
     await session.refresh(adj)
     return adj, True
 
@@ -599,9 +568,6 @@ async def review_adjustment(
 ):
     """双人复核:复核人不得是发起人,且须为调账发起前已存在的账号;通过即生效(钱包+流水,同事务)。
     audit_writer:同步审计钩子(P1-8),approve 分支最终 commit 前调用,写失败即整体回滚。"""
-    from app.core.errors import AppError, ErrorCode, not_found
-    from app.core.timeutil import ensure_utc, now_utc
-    from app.modules.adminapi.models import AdminAdjustment
     from app.modules.billing import service as billing_service
 
     # 行锁:并发复核时后到者等锁,看到非 pending 即 409

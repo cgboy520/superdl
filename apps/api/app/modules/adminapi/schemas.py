@@ -21,7 +21,6 @@ class AdminOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-ADMIN_ROLES = ("admin", "ops", "finance", "readonly")
 AdminRole = Literal["admin", "ops", "finance", "readonly"]
 
 
