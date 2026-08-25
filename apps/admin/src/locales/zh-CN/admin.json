@@ -126,10 +126,7 @@
     "unknown": "发生未知错误"
   },
   "finance": {
-    "adjustApproved": "已生效",
     "adjustCreated": "调账单已发起,等待第二位管理员复核",
-    "adjustPending": "待复核",
-    "adjustRejected": "已驳回",
     "amountLabel": "金额(正=补偿入账,负=扣减)",
     "amountPlaceholder": "如 25.50 或 -10.00",
     "anomalyChannelReversed": "渠道反转",
@@ -596,11 +593,8 @@
       "publishDone": "已发布 v{{version}}",
       "saved": "草稿已保存",
       "saveDraft": "保存草稿",
-      "statusArchived": "已归档",
-      "statusDraft": "草稿",
       "statusDraftV": "v{{version}} 草稿",
-      "statusPublished": "已发布 v{{version}}",
-      "statusPublishedTag": "已发布"
+      "statusPublished": "已发布 v{{version}}"
     },
     "opsOnlyAnnounce": "仅运维/超管可发布公告",
     "opsOnlyPolicies": "仅运维/超管可调整策略",

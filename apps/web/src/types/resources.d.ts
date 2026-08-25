@@ -214,6 +214,11 @@ export default interface Resources {
       "perHour": "{{price}}/时"
     },
     "status": {
+      "adjustment": {
+        "approved": "已生效",
+        "pending": "待复核",
+        "rejected": "已驳回"
+      },
       "announcement": {
         "published": "已发布",
         "revoked": "已撤回"
@@ -264,6 +269,11 @@ export default interface Resources {
         "consume": "消费",
         "recharge": "充值",
         "refund": "退款"
+      },
+      "legalDoc": {
+        "archived": "已归档",
+        "draft": "草稿",
+        "published": "已发布"
       },
       "nodeEnroll": {
         "expired": "已过期",

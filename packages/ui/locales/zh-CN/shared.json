@@ -124,6 +124,16 @@
     },
     "tierHint": {
       "shared_eco": "性能可能波动"
+    },
+    "adjustment": {
+      "pending": "待复核",
+      "approved": "已生效",
+      "rejected": "已驳回"
+    },
+    "legalDoc": {
+      "draft": "草稿",
+      "published": "已发布",
+      "archived": "已归档"
     }
   }
 }

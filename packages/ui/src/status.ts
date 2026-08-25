@@ -125,6 +125,24 @@ export const paymentChannelMap = {
   mock: { labelKey: "shared:status.channel.mock" },
 } as const satisfies Record<PaymentChannel, { labelKey: string }>;
 
+/** 调账单状态(与后端调账单 status 严格一致;管理端财务页用) */
+export type AdjustmentStatus = "pending" | "approved" | "rejected";
+
+export const adjustmentStatusMap = {
+  pending: { labelKey: "shared:status.adjustment.pending", color: statusColors.blue },
+  approved: { labelKey: "shared:status.adjustment.approved", color: statusColors.green },
+  rejected: { labelKey: "shared:status.adjustment.rejected", color: statusColors.red },
+} as const satisfies Record<AdjustmentStatus, { labelKey: string; color: string }>;
+
+/** 法务文档版本状态(与后端法务文档版本 status 严格一致;管理端法务 Tab 用) */
+export type LegalDocStatus = "draft" | "published" | "archived";
+
+export const legalDocStatusMap = {
+  draft: { labelKey: "shared:status.legalDoc.draft", color: statusColors.orange },
+  published: { labelKey: "shared:status.legalDoc.published", color: statusColors.green },
+  archived: { labelKey: "shared:status.legalDoc.archived", color: statusColors.gray },
+} as const satisfies Record<LegalDocStatus, { labelKey: string; color: string }>;
+
 /** 退款单状态(与 refund_requests.status 严格一致) */
 export type RefundStatus = "pending" | "approved" | "rejected" | "paid" | "cancelled";
 

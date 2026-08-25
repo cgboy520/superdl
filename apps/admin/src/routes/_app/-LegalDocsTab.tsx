@@ -1,7 +1,7 @@
 /** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史。
  * 写操作仅 admin;发布确认弹窗带与现版的行级 diff 统计(+/−)。 */
 
-import { adminColors, formatDateTime } from "@superdl/ui";
+import { adminColors, formatDateTime, legalDocStatusMap, metaOf } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -14,7 +14,6 @@ import {
   Popconfirm,
   Space,
   Table,
-  Tag,
   Tooltip,
   Typography,
 } from "antd";
@@ -32,6 +31,7 @@ import {
   type LegalDocVersion,
 } from "../../api";
 import { LegalMarkdown } from "../../components/LegalMarkdown";
+import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
 import { useAdminRole } from "../../stores/auth";
 
@@ -52,17 +52,6 @@ function diffStats(oldText: string, newText: string): { added: number; removed: 
   }
   const lcs = dp[0]![0]!;
   return { added: n - lcs, removed: m - lcs };
-}
-
-function StatusTag_({ status }: { status: string }) {
-  const { t } = useTranslation();
-  const meta: Record<string, { color: string; label: string }> = {
-    draft: { color: "gold", label: t("settings.legal.statusDraft") },
-    published: { color: "green", label: t("settings.legal.statusPublishedTag") },
-    archived: { color: "default", label: t("settings.legal.statusArchived") },
-  };
-  const m = meta[status] ?? { color: "default", label: status };
-  return <Tag color={m.color}>{m.label}</Tag>;
 }
 
 export function LegalDocsTab() {
@@ -164,7 +153,7 @@ function CellEditor({
   onChanged: () => void;
   errText: (e: unknown, fallback: string) => string;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
   const qc = useQueryClient();
   const versionsQ = useLegalDocVersions(docKey, locale);
@@ -345,7 +334,10 @@ function CellEditor({
                     title: t("settings.legal.colStatus"),
                     dataIndex: "status",
                     width: 100,
-                    render: (s: string) => <StatusTag_ status={s} />,
+                    render: (s: string) => {
+                      const m = metaOf(legalDocStatusMap, s);
+                      return <StatusTag color={m?.color}>{m ? t(m.labelKey) : s}</StatusTag>;
+                    },
                   },
                   {
                     title: t("settings.legal.colCreatedAt"),

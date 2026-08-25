@@ -125,6 +125,16 @@
     },
     "tierHint": {
       "shared_eco": "Performance may fluctuate"
+    },
+    "adjustment": {
+      "pending": "Pending review",
+      "approved": "Effective",
+      "rejected": "Rejected"
+    },
+    "legalDoc": {
+      "draft": "Draft",
+      "published": "Published",
+      "archived": "Archived"
     }
   }
 }

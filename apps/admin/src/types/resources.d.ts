@@ -128,10 +128,7 @@ export default interface Resources {
       "unknown": "发生未知错误"
     },
     "finance": {
-      "adjustApproved": "已生效",
       "adjustCreated": "调账单已发起,等待第二位管理员复核",
-      "adjustPending": "待复核",
-      "adjustRejected": "已驳回",
       "amountLabel": "金额(正=补偿入账,负=扣减)",
       "amountPlaceholder": "如 25.50 或 -10.00",
       "anomalyChannelReversed": "渠道反转",
@@ -598,11 +595,8 @@ export default interface Resources {
         "publishDone": "已发布 v{{version}}",
         "saveDraft": "保存草稿",
         "saved": "草稿已保存",
-        "statusArchived": "已归档",
-        "statusDraft": "草稿",
         "statusDraftV": "v{{version}} 草稿",
-        "statusPublished": "已发布 v{{version}}",
-        "statusPublishedTag": "已发布"
+        "statusPublished": "已发布 v{{version}}"
       },
       "opsOnlyAnnounce": "仅运维/超管可发布公告",
       "opsOnlyPolicies": "仅运维/超管可调整策略",
@@ -1052,6 +1046,11 @@ export default interface Resources {
       "perHour": "{{price}}/时"
     },
     "status": {
+      "adjustment": {
+        "approved": "已生效",
+        "pending": "待复核",
+        "rejected": "已驳回"
+      },
       "announcement": {
         "published": "已发布",
         "revoked": "已撤回"
@@ -1102,6 +1101,11 @@ export default interface Resources {
         "consume": "消费",
         "recharge": "充值",
         "refund": "退款"
+      },
+      "legalDoc": {
+        "archived": "已归档",
+        "draft": "草稿",
+        "published": "已发布"
       },
       "nodeEnroll": {
         "expired": "已过期",

@@ -128,10 +128,7 @@
     "unknown": "An unexpected error occurred"
   },
   "finance": {
-    "adjustApproved": "Effective",
     "adjustCreated": "Adjustment created — awaiting a second administrator's review",
-    "adjustPending": "Pending review",
-    "adjustRejected": "Rejected",
     "amountLabel": "Amount (positive = credit, negative = debit)",
     "amountPlaceholder": "e.g. 25.50 or -10.00",
     "anomalyChannelReversed": "Channel reversal",
@@ -610,11 +607,8 @@
       "publishDone": "Published v{{version}}",
       "saved": "Draft saved",
       "saveDraft": "Save draft",
-      "statusArchived": "Archived",
-      "statusDraft": "Draft",
       "statusDraftV": "Draft v{{version}}",
-      "statusPublished": "Published v{{version}}",
-      "statusPublishedTag": "Published"
+      "statusPublished": "Published v{{version}}"
     },
     "opsOnlyAnnounce": "Ops/super admin only",
     "opsOnlyPolicies": "Ops/super admin only",

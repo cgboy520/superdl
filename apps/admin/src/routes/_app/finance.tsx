@@ -1,4 +1,4 @@
-import { addAmounts, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import { addAmounts, adjustmentStatusMap, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -351,11 +351,7 @@ function AdjustmentsTab() {
           style={{ width: 150 }}
           value={status}
           onChange={setStatus}
-          options={[
-            { value: "pending", label: t("finance.adjustPending") },
-            { value: "approved", label: t("finance.adjustApproved") },
-            { value: "rejected", label: t("finance.adjustRejected") },
-          ]}
+          options={Object.entries(adjustmentStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
         />
         <InputNumber
           min={1}
@@ -407,17 +403,10 @@ function AdjustmentsTab() {
           {
             title: t("finance.colStatus"),
             dataIndex: "status",
-            render: (v: string) => (
-              <Tag color={{ pending: "blue", approved: "green", rejected: "red" }[v]}>
-                {(
-                  {
-                    pending: t("finance.adjustPending"),
-                    approved: t("finance.adjustApproved"),
-                    rejected: t("finance.adjustRejected"),
-                  } as Record<string, string>
-                )[v] ?? v}
-              </Tag>
-            ),
+            render: (v: string) => {
+              const m = metaOf(adjustmentStatusMap, v);
+              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+            },
           },
           { title: t("finance.colCreatedBy"), dataIndex: "created_by", width: 80 },
           {
