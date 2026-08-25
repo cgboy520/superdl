@@ -24,9 +24,6 @@ _PLAIN_FAMILIES = frozenset(
 _NOISE = frozenset({"NVIDIA", "CORPORATION", "GEFORCE", "TESLA", "QUADRO", "GRAPHICS", "DEVICE"})
 _FORM = frozenset({"SXM", "SXM2", "SXM4", "SXM5", "PCIE", "NVL", "HBM2", "HBM2E", "HBM3", "OEM"})
 
-# 全串兜底表:实机遇到规则覆盖不了的原始串时在此登记(优先级最高)
-OVERRIDES: dict[str, str] = {}
-
 # 常见卡型默认单卡显存(GB):bootstrap 未上报 memory.total 时的兜底,未知=0
 DEFAULT_VRAM_GB: dict[str, int] = {
     "RTX3090": 24,
@@ -59,8 +56,6 @@ def canonical_gpu_model(raw: str | None) -> str | None:
     if not raw:
         return None
     text = raw.strip()
-    if text in OVERRIDES:
-        return OVERRIDES[text]
     # lspci 剥壳:取方括号内容
     m = re.search(r"\[([^\]]+)\]", text)
     if m:

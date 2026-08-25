@@ -1,6 +1,6 @@
-"""型号归一化穷举:五种来源格式 → canonical;匹配语义;兜底表。"""
+"""型号归一化穷举:五种来源格式 → canonical;匹配语义。"""
 
-from app.core.gpu_models import OVERRIDES, canonical_gpu_model, model_matches
+from app.core.gpu_models import canonical_gpu_model, model_matches
 
 
 class TestCanonical:
@@ -36,13 +36,6 @@ class TestCanonical:
         assert canonical_gpu_model("Moore Threads MTT S4000") is None
         assert canonical_gpu_model("") is None
         assert canonical_gpu_model(None) is None
-
-    def test_overrides_win(self):
-        OVERRIDES["Weird Vendor Card 9000"] = "RTX4090"
-        try:
-            assert canonical_gpu_model("Weird Vendor Card 9000") == "RTX4090"
-        finally:
-            OVERRIDES.pop("Weird Vendor Card 9000")
 
 
 class TestMatch:
