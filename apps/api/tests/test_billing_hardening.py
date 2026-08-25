@@ -339,7 +339,6 @@ class TestPatrolUnsettledBurn:
                     unit_price=Decimal("1.6800"),
                     gpu_count=1,
                     amount=Decimal("0.28"),
-                    detail={"charged": True},
                 )
             )
             await session.execute(
@@ -399,7 +398,6 @@ class TestPatrolUnsettledBurn:
                         unit_price=Decimal("1.6800"),
                         gpu_count=1,
                         amount=Decimal("1.68"),
-                        detail={"charged": True},
                     )
                 )
             await session.execute(
@@ -592,7 +590,7 @@ class TestReconcileAttribution:
                 unit_price=Decimal("1.6800"),
                 gpu_count=1,
                 amount=Decimal("1.40"),  # 补差价后的当前值
-                detail={"charged": True, "topped_up": True},
+                detail={"topped_up": True},
                 created_at=yesterday_23h + timedelta(minutes=30),  # 首笔尾账在昨天写入
             )
             session.add(bill)
@@ -734,7 +732,6 @@ class TestRevenueAttribution:
                 unit_price=Decimal("1.6800"),
                 gpu_count=1,
                 amount=Decimal("1.68"),
-                detail={"charged": True},
                 created_at=today_00_30,  # 次小时 :02 才入账
             )
             session.add(bill)

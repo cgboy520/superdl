@@ -154,9 +154,10 @@ async def upsert_hour_bill(
 ) -> Decimal:
     """幂等入账原语。返回本次实际扣款金额(0 = 无新增)。
 
-    - 无账单行 → 插入 + 全额扣款
-    - 已有行且 seconds 增长 → 更新行 + 扣差价(同小时先尾账后续跑的场景)
+    - 无账单行 → 插入(RETURNING 判定新行,与 charge_disk_day 同款)+ 全额扣款
+    - 已有行且 seconds 增长 → 行锁内更新 + 扣差价(同小时先尾账后续跑的场景)
     - seconds 未增长 → no-op(重放安全)
+    账单行只由本函数写入且与扣款同事务,已存在的行即已入账,不另设标记。
     detail_extra:入账依据的附加留痕(如失联截断的 unready_since),合并进 detail。
     调用方负责 commit。
     """
@@ -166,30 +167,33 @@ async def upsert_hour_bill(
     amount = bill_amount(unit_price, gpu_count, seconds)
     extra = detail_extra or {}
 
-    await session.execute(
-        pg_insert(BillHourly)
-        .values(
-            instance_id=instance_id,
-            user_id=user_id,
-            hour_start=hour_start,
-            seconds_used=seconds,
-            unit_price=unit_price,
-            gpu_count=gpu_count,
-            amount=amount,
-            detail={"source": source, **extra},
-        )
-        .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
-    )
-    row = (
+    inserted = (
         await session.execute(
-            select(BillHourly)
-            .where(BillHourly.instance_id == instance_id, BillHourly.hour_start == hour_start)
-            .with_for_update()
+            pg_insert(BillHourly)
+            .values(
+                instance_id=instance_id,
+                user_id=user_id,
+                hour_start=hour_start,
+                seconds_used=seconds,
+                unit_price=unit_price,
+                gpu_count=gpu_count,
+                amount=amount,
+                detail={"source": source, **extra},
+            )
+            .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
+            .returning(BillHourly.id)
         )
-    ).scalar_one()
-
-    already_charged = bool(row.detail and row.detail.get("charged"))
-    if already_charged:
+    ).scalar_one_or_none()
+    if inserted is not None:
+        row_id, charged = inserted, amount
+    else:
+        row = (
+            await session.execute(
+                select(BillHourly)
+                .where(BillHourly.instance_id == instance_id, BillHourly.hour_start == hour_start)
+                .with_for_update()
+            )
+        ).scalar_one()
         if seconds <= row.seconds_used:
             return Decimal("0.00")
         delta = as_amount(amount - row.amount)
@@ -198,12 +202,7 @@ async def upsert_hour_bill(
         row.seconds_used = seconds
         row.amount = amount
         row.detail = {**(row.detail or {}), "source": source, **extra, "topped_up": True}
-        charged = delta
-    else:
-        row.seconds_used = max(row.seconds_used, seconds)
-        row.amount = bill_amount(unit_price, gpu_count, row.seconds_used)
-        row.detail = {**(row.detail or {}), "source": source, **extra, "charged": True}
-        charged = row.amount
+        row_id, charged = row.id, delta
 
     if charged <= 0:
         return Decimal("0.00")  # 秒数过少舍入为 0:留账单行(0.00),不产生扣款
@@ -213,7 +212,7 @@ async def upsert_hour_bill(
         charged,
         type_="consume",
         ref_type="bill_hourly",
-        ref_id=str(row.id),
+        ref_id=str(row_id),
         remark=f"实例 GPU 时费({source})",
         allow_negative=True,  # 结算扣款允许透支
     )
