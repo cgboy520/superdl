@@ -93,7 +93,7 @@ export default interface Resources {
       "refundStateNotReviewable": "退款单状态 {{status}} 不可审批",
       "settlementGapNotFound": "结算缺口不存在",
       "settlementGapNotReplayable": "该缺口类型({{reason}})不支持重放:请人工核查后核销",
-      "settlementGapObjectGone": "缺口关联对象(id={{objectId}})已不存在,无法重放:请人工核查后核销",
+      "settlementGapObjectGone": "缺口关联对象(id={{objectId}})已不存在,请人工核查后核销",
       "unknownChannel": "未知支付渠道:{{name}}",
       "wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
       "wechatCallbackVerifyFailed": "微信回调验签失败",
