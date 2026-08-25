@@ -5,7 +5,7 @@
  * - 管理员账号:建号/改角色/停用/重置密码 + 自助改密
  */
 
-import { adminColors, announcementStatusMap, formatDateTime, metaOf } from "@superdl/ui";
+import { adminColors, announcementStatusMap, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -42,7 +42,6 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormDraft } from "../../lib/formDraft";
-import { idemKeyOf } from "../../lib/idemKey";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/settings")({

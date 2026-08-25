@@ -408,6 +408,7 @@ export function useNodes() {
   return useQuery({
     queryKey: ["admin", "nodes"],
     queryFn: () => adminListNodesApiAdminV1NodesGet(),
+    refetchInterval: 30_000,
   });
 }
 
@@ -439,7 +440,11 @@ export function useImageNodes(imageId: number, options?: { refetchInterval?: num
 
 export function useOversellReport() {
   const queryKey = ["admin", "oversell"] as const;
-  const q = useQuery({ queryKey, queryFn: () => oversellReportApiAdminV1ReportsOversellGet() });
+  const q = useQuery({
+    queryKey,
+    queryFn: () => oversellReportApiAdminV1ReportsOversellGet(),
+    refetchInterval: 60_000,
+  });
   return { ...q, queryKey };
 }
 
@@ -624,6 +629,7 @@ export function useSettlementGaps(
   const queryKey = ["admin", "settlement-gaps", params] as const;
   const q = useInfiniteQuery({
     queryKey,
+    refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet({
@@ -661,6 +667,7 @@ export function useTickets(
   const queryKey = ["admin", "tickets", params] as const;
   const q = useInfiniteQuery({
     queryKey,
+    refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       adminListTicketsApiAdminV1TicketsGet({
@@ -1065,6 +1072,7 @@ export function useAnomalies() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminPaymentAnomaliesApiAdminV1FinanceAnomaliesGet(),
+    refetchInterval: 60_000,
   });
   return { ...q, queryKey };
 }
@@ -1075,6 +1083,7 @@ export function useDeadTasks(options?: { enabled?: boolean }) {
     queryKey,
     queryFn: () => adminListDeadTasksApiAdminV1OutboxDeadGet(),
     enabled: options?.enabled ?? true,
+    refetchInterval: 60_000,
   });
   return { ...q, queryKey };
 }
@@ -1084,6 +1093,7 @@ export function useRevenueReport() {
   return useQuery({
     queryKey: ["admin", "revenue", tz],
     queryFn: () => revenueReportApiAdminV1ReportsRevenueGet({ tz_offset_minutes: tz }),
+    refetchInterval: 60_000,
   });
 }
 
@@ -1179,8 +1189,7 @@ export function usePlatformConfig() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
-    // 表单页必须禁用全局 60s 轮询,否则编辑中的表单会被刷新覆盖
-    refetchInterval: false,
+    // 表单页:不轮询(全局本就不设 refetchInterval),并关掉焦点重取,编辑中的表单不被刷新覆盖
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -1261,6 +1270,7 @@ export function useOverview() {
   const q = useQuery({
     queryKey,
     queryFn: () => adminOverviewApiAdminV1OverviewGet(),
+    refetchInterval: 60_000,
   });
   return { ...q, queryKey };
 }
