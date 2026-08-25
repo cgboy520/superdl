@@ -183,7 +183,7 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     if row is None:
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
     expected = hash_sms_code(phone, purpose, code)
-    if row.attempts >= MAX_SMS_CODE_ATTEMPTS or not secrets.compare_digest(row.code_hash, expected):
+    if not secrets.compare_digest(row.code_hash, expected):
         row.attempts += 1
         if row.attempts >= MAX_SMS_CODE_ATTEMPTS:
             # 达上限即作废:否则 used_at 恒空,这条已烧毁的码会被反复选中
