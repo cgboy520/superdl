@@ -50,6 +50,7 @@ import {
 import { LoadMoreButton } from "../../components/LoadMore";
 import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
+import { useCsvExport } from "../../lib/csvExport";
 import { useFormat } from "../../lib/format";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -214,28 +215,11 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
 }
 
 function LedgerTab({ userId }: { userId: number }) {
-  const { t, i18n } = useTranslation(["admin", "shared"]);
+  const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
-  const { message } = App.useApp();
   const ledger = useTenantLedger(userId);
   const ledgerRows = ledger.data?.pages.flatMap((p) => p.items) ?? [];
-  const [exporting, setExporting] = useState(false);
-  const doExport = async () => {
-    setExporting(true);
-    try {
-      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
-      const r = await exportTenantLedgerCsv(userId, -new Date().getTimezoneOffset(), lang);
-      if (r === "truncated") {
-        message.warning(t("common.csvTruncated"));
-      } else {
-        message.success(t("common.csvExported"));
-      }
-    } catch {
-      message.error(t("common.csvExportFailed"));
-    } finally {
-      setExporting(false);
-    }
-  };
+  const { doExport, exporting } = useCsvExport((tz, lang) => exportTenantLedgerCsv(userId, tz, lang));
 
   return (
     <>

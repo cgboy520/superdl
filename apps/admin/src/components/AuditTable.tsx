@@ -1,12 +1,13 @@
 /** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
-import { App, Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, useAuditLog } from "../api";
+import { useCsvExport } from "../lib/csvExport";
 import { LoadMoreButton } from "./LoadMore";
 
 /** detail 摘要:优先显示 reason,其次 before→after,最后回落原始 JSON。 */
@@ -29,8 +30,7 @@ export function AuditTable({
   /** 路由 search 预筛(跳审计链接);非受控输入框经 defaultValue 落值。 */
   initial?: { actor_type?: string; actor_id?: string; q?: string };
 }) {
-  const { t, i18n } = useTranslation();
-  const { message } = App.useApp();
+  const { t } = useTranslation();
   const [actorType, setActorType] = useState<string | undefined>(initial?.actor_type);
   const [actorId, setActorId] = useState(initial?.actor_id ?? "");
   const [q, setQ] = useState(initial?.q ?? "");
@@ -47,23 +47,7 @@ export function AuditTable({
   };
   const audit = useAuditLog(filters);
   const rows: AuditRow[] = audit.data?.pages.flatMap((p) => p) ?? [];
-  const [exporting, setExporting] = useState(false);
-  const doExport = async () => {
-    setExporting(true);
-    try {
-      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
-      const r = await exportAuditCsv(filters, -new Date().getTimezoneOffset(), lang);
-      if (r === "truncated") {
-        message.warning(t("common.csvTruncated"));
-      } else {
-        message.success(t("common.csvExported"));
-      }
-    } catch {
-      message.error(t("common.csvExportFailed"));
-    } finally {
-      setExporting(false);
-    }
-  };
+  const { doExport, exporting } = useCsvExport((tz, lang) => exportAuditCsv(filters, tz, lang));
 
   return (
     <>

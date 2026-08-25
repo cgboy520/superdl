@@ -59,6 +59,7 @@ import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { LoadMoreButton } from "../../components/LoadMore";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "../../lib/apiError";
+import { useCsvExport } from "../../lib/csvExport";
 import { useFormDraft } from "../../lib/formDraft";
 import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
@@ -72,29 +73,14 @@ export const Route = createFileRoute("/_app/finance")({
 });
 
 function ReconciliationCard() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const { message } = App.useApp();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report } = useReconciliation(day.format("YYYY-MM-DD"));
   const diffHigh = report != null && report.diff_pct > 2;
-  const [exporting, setExporting] = useState(false);
-  const doExport = async () => {
-    setExporting(true);
-    try {
-      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
-      const r = await exportReconciliationCsv(day.format("YYYY-MM-DD"), lang);
-      if (r === "truncated") {
-        message.warning(t("common.csvTruncated"));
-      } else {
-        message.success(t("common.csvExported"));
-      }
-    } catch {
-      message.error(t("common.csvExportFailed"));
-    } finally {
-      setExporting(false);
-    }
-  };
+  const { doExport, exporting } = useCsvExport((_tz, lang) =>
+    exportReconciliationCsv(day.format("YYYY-MM-DD"), lang),
+  );
 
   return (
     <Card
@@ -152,9 +138,8 @@ function ReconciliationCard() {
 }
 
 function OrdersTab() {
-  const { t, i18n } = useTranslation(["admin", "shared"]);
+  const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
-  const { message } = App.useApp();
   const [status, setStatus] = useState<string | undefined>();
   const [orderNo, setOrderNo] = useState("");
   const [day, setDay] = useState<Dayjs | null>(null);
@@ -165,23 +150,7 @@ function OrdersTab() {
   };
   const q = useOrders(params);
   const orders: OrderRow[] = q.data?.pages.flatMap((p) => p.items) ?? [];
-  const [exporting, setExporting] = useState(false);
-  const doExport = async () => {
-    setExporting(true);
-    try {
-      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
-      const r = await exportOrdersCsv(params, -new Date().getTimezoneOffset(), lang);
-      if (r === "truncated") {
-        message.warning(t("common.csvTruncated"));
-      } else {
-        message.success(t("common.csvExported"));
-      }
-    } catch {
-      message.error(t("common.csvExportFailed"));
-    } finally {
-      setExporting(false);
-    }
-  };
+  const { doExport, exporting } = useCsvExport((tz, lang) => exportOrdersCsv(params, tz, lang));
   return (
     <>
       <Space wrap style={{ marginBottom: 12 }}>
