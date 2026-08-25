@@ -35,7 +35,9 @@ configureApiClient({
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: true, refetchInterval: 60_000, staleTime: 10_000 },
+    // 不设全局轮询:需要轮询的查询各自声明 refetchInterval(api.ts 内或页面传入),
+    // 否则 infinite 列表会被全页重拉、表单页会被刷新覆盖
+    queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 10_000 },
   },
 });
 
