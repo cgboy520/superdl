@@ -2,9 +2,9 @@
 
 钱包余额与 `balance_ledger` 都在此库,恢复演练每季度一次。
 
-> **上线前强制项(公众生产闸)**：逻辑备份层 RPO=24h 不满足资金库要求,分钟级 RPO 必须
-> 二者其一——① 托管 PG：书面确认 PITR 与保留策略已开(preflight 以
-> `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记);② 自建 cnpg 档：启用 `cnpg.enabled` 且
+> **上线前强制项(公众生产闸)**:逻辑备份层 RPO=24h 不满足资金库要求,分钟级 RPO 必须
+> 二者其一——① 托管 PG:书面确认 PITR 与保留策略已开(preflight 以
+> `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记);② 自建 cnpg 档:启用 `cnpg.enabled` 且
 > preflight 全绿(S3 归档无占位符、ScheduledBackup 在跑)。首次切流前必须按本文件
 > 「恢复步骤」+「PITR 抽检」完整演练一次并填 RTO 记录表。
 
