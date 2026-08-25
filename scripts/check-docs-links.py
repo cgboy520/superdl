@@ -15,6 +15,8 @@
    (apps/packages/deploy/docs/e2e/scripts/.github)或 apps/api 内部目录
    (app/alembic/tests/scripts)的 token。路径可带通配符(glob)。
    不含 `/` 的短名、URL、命令行片段不在检查范围。
+3. 告警规则(`deploy/**/*.yaml`)里的 `runbook_url`:GitHub blob URL 映射回仓库路径,文件必须存在;
+   带 `#锚点` 时锚点必须对得上目标文件的某个标题(按 GitHub 的 slug 规则)。只在全仓模式(无文件参数)检查。
 
 放行:含 `<`/`>`/`{`/`}`/`$` 的占位路径(如 `deploy/k8s/<file>`)不检查。
 
@@ -30,6 +32,7 @@ import glob
 import os
 import re
 import sys
+import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 EXCLUDE_DIRS = {"node_modules", ".venv", ".git", "dist", "generated", ".turbo", ".pytest_cache"}
@@ -41,6 +44,11 @@ LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 CODE_RE = re.compile(r"`([^`\n]+)`")
 PATH_LIKE_RE = re.compile(r"^[A-Za-z0-9_.@*-]+(?:/[A-Za-z0-9_.@*-]+)*/?$")
 PLACEHOLDER_CHARS = set("<>{}$")
+# runbook_url: "https://github.com/<owner>/<repo>/blob/<ref>/<仓库路径>#<锚点>"
+RUNBOOK_URL_RE = re.compile(
+    r'runbook_url:\s*"?https?://github\.com/[^/\s"]+/[^/\s"]+/blob/[^/\s"]+/([^\s"#]+)(?:#([^\s"]+))?'
+)
+HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 
 
 def iter_markdown_files() -> list[str]:
@@ -111,11 +119,55 @@ def check_file(path: str) -> list[str]:
     return findings
 
 
+def github_slug(heading: str) -> str:
+    """GitHub 标题锚点:小写,去标点(保留字母数字含 CJK、空格、连字符、下划线),空格转连字符。"""
+    text = re.sub(r"[^\w\s-]", "", heading.strip().lower())
+    return re.sub(r"\s+", "-", text)
+
+
+def heading_slugs(md_path: str) -> set[str]:
+    slugs: set[str] = set()
+    with open(md_path, encoding="utf-8") as f:
+        for line in f:
+            m = HEADING_RE.match(line)
+            if m:
+                slugs.add(github_slug(m.group(1)))
+    return slugs
+
+
+def check_runbook_urls(deploy_dir: str = os.path.join(ROOT, "deploy")) -> list[str]:
+    """告警规则里的 runbook_url:目标文件必须存在,锚点必须对得上标题。返回错误列表。"""
+    findings: list[str] = []
+    for dirpath, _dirnames, filenames in os.walk(deploy_dir):
+        for name in sorted(filenames):
+            if not name.endswith((".yaml", ".yml")):
+                continue
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, ROOT)
+            with open(path, encoding="utf-8") as f:
+                for lineno, line in enumerate(f, 1):
+                    for m in RUNBOOK_URL_RE.finditer(line):
+                        repo_path, anchor = m.group(1), m.group(2)
+                        target = os.path.join(ROOT, repo_path)
+                        if not os.path.isfile(target):
+                            findings.append(f"{rel}:{lineno}: runbook_url 目标不存在:{repo_path}")
+                            continue
+                        if anchor:
+                            anchor = urllib.parse.unquote(anchor)
+                            if anchor not in heading_slugs(target):
+                                findings.append(
+                                    f"{rel}:{lineno}: runbook_url 锚点不存在:#{anchor}(目标 {repo_path})"
+                                )
+    return findings
+
+
 def main(argv: list[str]) -> int:
     files = [os.path.abspath(a) for a in argv[1:]] or iter_markdown_files()
     findings: list[str] = []
     for path in files:
         findings.extend(check_file(path))
+    if len(argv) == 1:
+        findings.extend(check_runbook_urls())
     if not findings:
         print(f"文档引用检查通过({len(files)} 个文件)")
         return 0

@@ -44,7 +44,7 @@ pnpm --filter @superdl/e2e test:e2e      # 浏览器冒烟:需 API+worker 在跑
 bash -n apps/api/app/modules/nodes/assets/node-join.sh && shellcheck apps/api/app/modules/nodes/assets/node-join.sh
 bats deploy/node-join/tests              # PATH shim 伪造系统命令,不碰真实系统
 python3 scripts/check-migration-ddl.py apps/api/alembic/versions/<新迁移>.py
-python3 scripts/check-docs-links.py      # 文档相对链接与反引号路径必须存在
+python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径与告警 runbook_url 必须存在
 ```
 
 ## 硬性规范(违反即返工)
