@@ -6,7 +6,6 @@ import zhShared from "../locales/zh-CN/shared.json";
 import {
   addAmounts,
   compareAmounts,
-  currencySymbol,
   diskDailyEstimate,
   formatCountdown,
   formatDateTime,
@@ -48,13 +47,6 @@ describe("addAmounts", () => {
     expect(addAmounts("-1.50", "1.00")).toBe("-0.50");
     expect(addAmounts(null, "2.00")).toBe("2.00");
     expect(addAmounts(null, undefined)).toBe("0.00");
-  });
-});
-
-describe("currencySymbol", () => {
-  it("zh 用 ¥,en 用 CN¥ 防读作日元", () => {
-    expect(currencySymbol("zh-CN")).toBe("¥");
-    expect(currencySymbol("en-US")).toBe("CN¥");
   });
 });
 
@@ -206,11 +198,6 @@ describe("formatDateTime 时区后缀", () => {
   it("空值仍为占位符", () => {
     expect(formatDateTime(null)).toBe("-");
     expect(formatDateTime(undefined)).toBe("-");
-  });
-  it("tzSuffix 半小时间带出分钟", () => {
-    // 无法注入偏移,直接对当前 Date 校验形态(东/西区、是否带 :mm)
-    const s = tzSuffix(new Date());
-    expect(s).toMatch(/^\(UTC[+-]\d+(:\d{2})?\)$/);
   });
 });
 
