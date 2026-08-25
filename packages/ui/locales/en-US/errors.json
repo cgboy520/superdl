@@ -102,7 +102,6 @@
   "catalog": {
     "imageRefExists": "This image_ref already exists",
     "prewarmDisabled": "Prewarming is disabled for this image — enable it first",
-    "priceBelowBillable": "Hourly price too low: one full hour on 1 GPU works out below CN¥0.01 and would always round to 0 at 2-decimal billing (effectively free) — set at least 0.01 CNY/hour",
     "priceHourlyTwoDecimals": "Hourly-billed specs allow at most 2 decimal places (billed per hour at 2 decimals — more digits cause rounding drift); 4-digit precision is only for data-disk GB-month prices",
     "priceTooSmall": "Unit price too small: it rounds to 0 at 0.0001 CNY/hour",
     "skuBusinessKeyExists": "A SKU with the same model, tier, MIG profile and cores share already exists — edit that one instead",

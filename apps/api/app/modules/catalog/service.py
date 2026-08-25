@@ -153,19 +153,14 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
 def _checked_price(value: Decimal) -> Decimal:
     """单价统一走 money.as_price(4 位);量化后为 0 直接拒绝(numeric(12,4) 会静默舍成免费)。
 
-    另设可入账下限:入账按 2 位小数 ROUND_HALF_EVEN,单卡满 1 小时不足 ¥0.005
-    (即 4 位时价 < 0.0051,注意 0.0050 恰是 tie,HALF_EVEN 也舍为 0)的 SKU 会
-    全程计 ¥0.00 —— 上架即免费,必须拦在上架/改价时。
-
     按小时计费的 SKU 强制 2 位语义(price == as_amount(price)):4 位单价逐小时
     独立舍入会产生单向漂移(1.2345 满月 720h 少收 ¥3.24;0.0051 被按 0.01/时近翻倍
-    收取),4 位精度只留给数据盘 GB·月价。
+    收取),4 位精度只留给数据盘 GB·月价。0.0001~0.0099 这类入账恒被舍成 ¥0.00 的
+    「免费价」同样不满足 2 位语义,一并拦在上架/改价时。
     """
     price = as_price(value)
     if price <= 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceTooSmall")
-    if as_amount(price) <= 0:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceBelowBillable")
     if price != as_amount(price):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.priceHourlyTwoDecimals")
     return price
@@ -208,12 +203,10 @@ async def admin_update_sku(
         if old != value:
             before[field] = str(old) if isinstance(old, Decimal) else old
         setattr(sku, field, value)
-    # 在售期间改 型号/池 同样过硬校验(P2):否则在售 SKU 可被改成指向无 Ready 节点的
-    # 型号×池,用户创建路径才被拦——售卖侧先失败,体验与库存口径都受损
-    sellable_fields_changed = sku.status == "on" and (
-        ("pool_label" in before) or ("gpu_model" in before)
-    )
-    if (turning_on or sellable_fields_changed) and not force:
+    # 在售期间改池同样过硬校验(型号不可改,SkuUpdate 无该字段):否则在售 SKU 可被改成
+    # 指向无 Ready 节点的池,用户创建路径才被拦——售卖侧先失败,体验与库存口径都受损
+    pool_changed_on_sale = sku.status == "on" and "pool_label" in before
+    if (turning_on or pool_changed_on_sale) and not force:
         await _ensure_sellable(session, sku)
     if "price_hourly" in before:
         await _alert_large_price_change(
@@ -228,9 +221,7 @@ async def admin_update_sku(
 async def _alert_large_price_change(
     session: AsyncSession, sku: Sku, old: Decimal, new: Decimal, reason: str
 ) -> None:
-    """大幅改价落一条管理端告警,不阻断。"""
-    if old <= 0:
-        return
+    """大幅改价落一条管理端告警,不阻断(old 经 _checked_price 落库,恒 > 0)。"""
     ratio = abs(new - old) / old
     if ratio < PRICE_CHANGE_ALERT_RATIO:
         return

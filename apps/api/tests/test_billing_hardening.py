@@ -793,22 +793,7 @@ class TestSmsOutbox:
 
 
 class TestPriceFloor:
-    """时价折算满 1 小时不足 ¥0.01 的 SKU 恒免费,上架/改价必须拦。"""
-
-    def test_sub_half_cent_price_rejected(self):
-        from app.modules.catalog.service import _checked_price
-
-        with pytest.raises(AppError) as exc:
-            _checked_price(Decimal("0.0049"))
-        assert exc.value.message_key == "catalog.priceBelowBillable"
-
-    def test_half_cent_tie_rejected(self):
-        """0.0050 恰是分位 tie,ROUND_HALF_EVEN 向偶舍为 0.00 —— 同样免费,必须拒。"""
-        from app.modules.catalog.service import _checked_price
-
-        with pytest.raises(AppError) as exc:
-            _checked_price(Decimal("0.0050"))
-        assert exc.value.message_key == "catalog.priceBelowBillable"
+    """时价必须满足 2 位小数语义:入账恒舍成 ¥0.00 的「免费价」与会漂移的 4 位价都拦在上架/改价。"""
 
     def test_min_billable_price_accepted(self):
         from app.modules.catalog.service import _checked_price
