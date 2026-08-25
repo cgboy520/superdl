@@ -11,13 +11,8 @@ export interface SkuAvailabilityLike {
 
 /** 全局可售上限(去重后):首页/CTA 横幅的对外数字。 */
 export function dedupAvailableTotal(skus: readonly SkuAvailabilityLike[]): number {
-  const byGroup = new Map<string, number>();
-  for (const s of skus) {
-    const key = `${s.pool_label ?? ""}${s.gpu_model}`;
-    byGroup.set(key, Math.max(byGroup.get(key) ?? 0, s.available_count ?? 0));
-  }
   let total = 0;
-  for (const v of byGroup.values()) total += v;
+  for (const v of dedupAvailableByModel(skus).values()) total += v;
   return total;
 }
 

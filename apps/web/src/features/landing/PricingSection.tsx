@@ -1,6 +1,6 @@
 /**
- * GPU 价格墙:实时 /skus 数据(公开端点);按型号分组取代表 SKU(组内最低价;库存取组内
- * 最大值 —— 同池互斥档位的可售数不可相加),CTA 即库存。卡片列数随宽度自适应。
+ * GPU 价格墙:实时 /skus 数据(公开端点);按型号分组取代表 SKU(组内最低价;库存口径见
+ * lib/inventory:同 (池, 型号) 互斥档位取 max、跨池求和),CTA 即库存。卡片列数随宽度自适应。
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
@@ -22,7 +22,7 @@ interface ModelGroup {
   model: string;
   representative: SkuMarketOut; // 展示用:组内最低价
   rentTarget: SkuMarketOut; // CTA 用:有货最低价,全组无货回落 representative
-  available: number; // 组内最大近似库存(同池互斥不可求和)
+  available: number; // 组内可售数(同 (池, 型号) 取 max,跨池求和)
   tiers: string[]; // 组内覆盖的档位(型号下多档展示)
 }
 
@@ -54,7 +54,7 @@ export function PricingSection() {
         model,
         representative,
         rentTarget,
-        available: Math.max(...list.map((s) => s.available_count ?? 0)),
+        available: freeByModel.get(model) ?? 0,
         tiers: [...new Set(list.map((s) => s.tier))],
       });
     }
