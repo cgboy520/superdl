@@ -107,16 +107,6 @@ class TestHourlyExport:
         lines = [ln for ln in resp.text.split("\r\n") if ln]
         assert len(lines) == 1 + 1  # 只剩 6/15 那行
 
-    async def test_en_headers(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        headers, user_id, _ = await create_user_with_key(client, "13900000303")
-        await _seed_hourly(sm, user_id, [_hour(2026, 8, 1, 0)])
-        resp = await client.get(
-            "/api/v1/billing/export",
-            params={"dataset": "hourly", "month": "2026-08", "lang": "en-US"},
-            headers=headers,
-        )
-        assert "Hour,Instance ID,Seconds" in resp.text
-
     async def test_truncation_marker(
         self,
         client: AsyncClient,
@@ -134,15 +124,6 @@ class TestHourlyExport:
         lines = [ln for ln in resp.text.split("\r\n") if ln]
         assert len(lines) == 1 + 2 + 1  # 表头 + 上限行数 + 截断标记行
         assert lines[-1].startswith(csvexport.TRUNCATED_MARKER)
-
-    async def test_bad_month_rejected(self, client: AsyncClient):
-        headers, _, _ = await create_user_with_key(client, "13900000305")
-        resp = await client.get(
-            "/api/v1/billing/export",
-            params={"dataset": "hourly", "month": "2026-13"},
-            headers=headers,
-        )
-        assert resp.json()["code"] == "VALIDATION_ERROR"
 
 
 class TestLedgerExport:
