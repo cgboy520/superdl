@@ -24,9 +24,6 @@
       "cache": false,
       "persistent": true
     },
-    "generate": {
-      "cache": false
-    },
     "i18n": {}
   }
 }
