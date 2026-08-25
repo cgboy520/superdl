@@ -1,15 +1,15 @@
 # Runbook 索引
 
-值班处置手册。每份 runbook 的结构:触发条件 → 处置步骤(带判据)→ 验收 / 演练。
+值班处置手册与集群运维 SOP,按「类型」区分:**事件处置**(触发条件 → 处置步骤(带判据)→ 验收 / 演练)、**SOP**(一次性或周期性操作流程)、**清单**(逐项勾选的验证与发布检查)、**参考**(查询方式与口径)。新增事件处置类 runbook 照该结构写,并在对应告警规则上加 `runbook_url`。
 
-| 文件 | 场景 |
-|---|---|
-| [gpu-fault-sop.md](./gpu-fault-sop.md) | GPU Xid 致命错误:隔离 → 停机结算 → 通知 → 补偿 → 回归 |
-| [pg-backup-restore.md](./pg-backup-restore.md) | 资金库备份分层、逻辑备份恢复、季度演练与 RTO 记录 |
-| [image-prewarm.md](./image-prewarm.md) | 托管镜像仓迁移、平台镜像发布、Spegel P2P 与预热 |
-| [acme-dns.md](./acme-dns.md) | 泛域名证书 DNS01(acme-dns)部署、凭据轮换与回滚 |
-| [loki-logging.md](./loki-logging.md) | 日志留存口径、LogQL 排障查询、采集自检 |
-| [cluster-validation.md](./cluster-validation.md) | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
+| 文件 | 类型 | 场景 |
+|---|---|---|
+| [gpu-fault-sop.md](./gpu-fault-sop.md) | 事件处置 | GPU Xid 致命错误:隔离 → 停机结算 → 通知 → 补偿 → 回归 |
+| [pg-backup-restore.md](./pg-backup-restore.md) | 事件处置 + SOP | 资金库备份分层、逻辑备份恢复、季度演练与 RTO 记录 |
+| [image-prewarm.md](./image-prewarm.md) | SOP | 托管镜像仓迁移、平台镜像发布、Spegel P2P 与预热 |
+| [acme-dns.md](./acme-dns.md) | SOP | 泛域名证书 DNS01(acme-dns)部署、凭据轮换与回滚 |
+| [loki-logging.md](./loki-logging.md) | 参考 | 日志留存口径、LogQL 排障查询、采集自检 |
+| [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
 
 发布与回滚在 [`../../README.md`](../../README.md);集群装机与 token 轮换在 [`../README.md`](../README.md)。
 
