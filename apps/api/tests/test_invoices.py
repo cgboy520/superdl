@@ -126,17 +126,13 @@ class TestEligible:
 
 
 class TestRefundDeduction:
-    """F1↔F2 口径:当期已打款退款从当期可开票额扣除(净实收),
-    否则用户在渠道侧拿回钱后平台仍按全额开票纳税,形成资损。"""
+    """退款从订单支付账期的可开票额扣除(净实收口径):已打款与在途同口径,归属只看订单
+    paid_at——否则用户拿回钱后平台仍按全额开票纳税,或退款跨月打款后被挪出订单账期形成双重兑现。"""
 
-    async def _refund_paid(
-        self, client, sm, headers, order_no: str, amount: str, payout_at
-    ) -> None:
-        """走完整退款流(申请→审批→打款),并把 payout_at 钉到指定时刻(构造账期归属)。"""
-        from app.modules.billing.models import RefundRequest
-        from tests.test_refunds import apply_refund, finance_pair
+    async def _approve_and_payout(self, client, sm, rid: int) -> tuple[dict, dict]:
+        """审批 + 登记打款(打款落在当前账期,总晚于历史账期的订单)。返回 (审批人, 打款人) 头。"""
+        from tests.test_refunds import finance_pair
 
-        rid = (await apply_refund(client, headers, order_no, amount)).json()["id"]
         reviewer, payer = await finance_pair(sm, client)
         resp = await client.post(
             f"/api/admin/v1/refunds/{rid}/review",
@@ -150,17 +146,19 @@ class TestRefundDeduction:
             headers=payer,
         )
         assert resp.status_code == 200, resp.text
-        async with sm() as session:
-            await session.execute(
-                update(RefundRequest).where(RefundRequest.id == rid).values(payout_at=payout_at)
-            )
-            await session.commit()
+        return reviewer, payer
+
+    async def _refund_paid(self, client, sm, headers, order_no: str, amount: str) -> None:
+        from tests.test_refunds import apply_refund
+
+        rid = (await apply_refund(client, headers, order_no, amount)).json()["id"]
+        await self._approve_and_payout(client, sm, rid)
 
     async def test_refund_reduces_eligible_amount(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000204")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
-        await self._refund_paid(client, sm, headers, order["order_no"], "20.00", at1)
+        await self._refund_paid(client, sm, headers, order["order_no"], "20.00")
         rows = await eligible(client, headers)
         assert [(r["period"], r["amount"]) for r in rows] == [(p1, "30.00")]
 
@@ -169,21 +167,36 @@ class TestRefundDeduction:
         headers = await user_headers(client, "13700000205")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
-        await self._refund_paid(client, sm, headers, order["order_no"], "50.00", at1)
+        await self._refund_paid(client, sm, headers, order["order_no"], "50.00")
         assert await eligible(client, headers) == []
         resp = await apply_invoice(client, headers, p1)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.invoiceNothingToBill"
 
-    async def test_refund_in_other_period_not_deducted(self, client: AsyncClient, sm):
-        """退款打款落在别的账期:只扣打款所在账期,不误伤订单账期。"""
+    async def test_pending_to_paid_across_months_keeps_order_period(self, client, sm):
+        """P1 订单的退款:pending 时从 P1 预扣,在之后的账期打款后仍从 P1 扣(不随打款时间挪走),
+        期间按预扣额申请的发票开票重算一致。挂了 = 已打款退款按 payout_at 归期:P1 重算变大 →
+        开票 409 → 驳回重申后 P1 全额开票,而打款账期又被扣一次(票款双重兑现)。"""
+        from tests.test_refunds import apply_refund
+
         headers = await user_headers(client, "13700000206")
         p1, at1 = past_period(1)
-        _p2, at2 = past_period(2)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
-        await self._refund_paid(client, sm, headers, order["order_no"], "20.00", at2)
-        rows = await eligible(client, headers)
-        assert [(r["period"], r["amount"]) for r in rows] == [(p1, "50.00")]
+        rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
+        assert [(r["period"], r["amount"]) for r in await eligible(client, headers)] == [
+            (p1, "30.00")
+        ]
+        resp = await apply_invoice(client, headers, p1)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["amount"] == "30.00"
+        reviewer, _payer = await self._approve_and_payout(client, sm, rid)  # 打款在当前账期
+        assert await eligible(client, headers) == []  # 30 已申请 + 20 已退 = 50,P1 无剩余
+        resp = await client.post(
+            f"/api/admin/v1/invoices/{resp.json()['id']}/issue",
+            json={"invoice_no": "NO-CROSS-MONTH"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
 
 
 class TestCreate:
@@ -559,6 +572,7 @@ class TestDoubleSpendGate:
         assert resp.json()["status"] == "paid"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "20.00"
+        assert await eligible(client, headers) == []  # 20 已开票 + 30 已退(本月打款),P1 无剩余
 
     async def test_refund_apply_serializes_with_issue(self, client: AsyncClient, sm):
         """申请退款对账期活跃发票行 FOR UPDATE:开票事务持锁期间申请阻塞,开票提交后申请
