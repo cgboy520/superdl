@@ -884,7 +884,6 @@ export default interface Resources {
       "realNameNote": "按监管要求完成三要素核验(姓名 + 身份证号 + 账号手机号);信息仅用于核验,身份证号只保存脱敏形态。",
       "realNamePlaceholder": "真实姓名",
       "savePassword": "保存新密码",
-      "saved": "已保存",
       "sshCard": "SSH 公钥",
       "submitVerify": "提交核验",
       "title": "账户设置",

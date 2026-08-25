@@ -11,7 +11,6 @@ import {
   Card,
   Form,
   Input,
-  InputNumber,
   Modal,
   Popconfirm,
   Skeleton,
@@ -20,7 +19,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import {
   useAddSshKey,
@@ -30,15 +29,14 @@ import {
   useLogout,
   useLogoutAll,
   useResetPassword,
-  useSendSmsCode,
-  useSetWarnThreshold,
   useSubmitRealName,
 } from "../api/mutations";
 import { useMe, useMyDeletionRequest, useSshKeys } from "../api/queries";
 import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
-import { requestCaptchaToken } from "../lib/captcha";
+import { WarnThresholdField } from "../components/WarnThresholdField";
 import { useFormat } from "../lib/format";
 import { requireAuth } from "../lib/guard";
+import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/_console/settings")({
@@ -53,7 +51,6 @@ function SettingsPage() {
   const { data: me } = meQ;
   const { data: keys, isLoading, isError, refetch } = useSshKeys();
   const [form] = Form.useForm();
-  const [warnHours, setWarnHours] = useState<number>();
   const [pwdOpen, setPwdOpen] = useState(false);
   const logout = useLogout();
   const logoutAll = useLogoutAll();
@@ -65,7 +62,6 @@ function SettingsPage() {
     },
   });
   const delKey = useDeleteSshKey();
-  const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("settings.saved")) });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -151,30 +147,7 @@ function SettingsPage() {
       </Card>
 
       <Card title={t("settings.notifyCard")}>
-        <Space>
-          <Typography.Text>{t("settings.warnThresholdLabel")}</Typography.Text>
-          <InputNumber
-            min={1}
-            max={168}
-            aria-label={t("settings.warnThresholdLabel")}
-            value={warnHours ?? me?.low_balance_warn_hours}
-            onChange={(v) => setWarnHours(v ?? undefined)}
-            onPressEnter={() => {
-              const v = warnHours ?? me?.low_balance_warn_hours;
-              if (v != null) setThreshold.mutate(v);
-            }}
-          />
-          <Button
-            loading={setThreshold.isPending}
-            onClick={() => {
-              const v = warnHours ?? me?.low_balance_warn_hours;
-              if (v != null) setThreshold.mutate(v);
-            }}
-          >
-            {t("billing.save")}
-          </Button>
-          <Typography.Text type="secondary">{t("settings.warnThresholdHint")}</Typography.Text>
-        </Space>
+        <WarnThresholdField />
       </Card>
 
       <RealNameCard
@@ -229,29 +202,7 @@ function PasswordModal({
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [form] = Form.useForm<{ sms_code: string; new_password: string }>();
-  const [countdown, setCountdown] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  // 倒计时递减只走 updater 纯函数;清零与卸载的清 timer 都在 effect 里(StrictMode 双调安全)
-  useEffect(() => {
-    if (countdown <= 0 && timer.current) {
-      clearInterval(timer.current);
-      timer.current = null;
-    }
-  }, [countdown]);
-  useEffect(
-    () => () => {
-      if (timer.current) clearInterval(timer.current);
-    },
-    [],
-  );
-  const sendCode = useSendSmsCode({
-    onSuccess: () => {
-      message.success(t("settings.codeSent"));
-      if (timer.current) clearInterval(timer.current);
-      setCountdown(60);
-      timer.current = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
-    },
-  });
+  const sms = useSmsCode("reset_password", t("settings.codeSent"));
   const reset = useResetPassword({
     onSuccess: (data) => {
       const pair = data as TokenPair;
@@ -289,22 +240,8 @@ function PasswordModal({
               autoComplete="one-time-code"
               aria-label={t("settings.codePlaceholder")}
             />
-            <Button
-              disabled={countdown > 0}
-              loading={sendCode.isPending}
-              onClick={() => {
-                // 人机校验先行(P1-17,与登录页同一闸门);SDK 不可用提示刷新
-                void (async () => {
-                  try {
-                    const captcha_token = await requestCaptchaToken();
-                    sendCode.mutate({ phone, purpose: "reset_password", captcha_token });
-                  } catch {
-                    message.error(t("login.captchaUnavailable"));
-                  }
-                })();
-              }}
-            >
-              {countdown > 0 ? `${countdown}s` : t("settings.getCode")}
+            <Button disabled={sms.countdown > 0} loading={sms.sending} onClick={() => sms.send(phone)}>
+              {sms.countdown > 0 ? `${sms.countdown}s` : t("settings.getCode")}
             </Button>
           </Space.Compact>
         </Form.Item>

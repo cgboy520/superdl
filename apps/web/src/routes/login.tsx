@@ -9,13 +9,13 @@ import type { TokenPair } from "@superdl/api-client";
 import { brand } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, Typography } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
-import { useLogin, useRegister, useResetPassword, useSendSmsCode } from "../api/mutations";
+import { useLogin, useRegister, useResetPassword } from "../api/mutations";
 import { BrandLogo } from "../components/layout/BrandLogo";
 import { LangSwitcher } from "../components/layout/LangSwitcher";
-import { requestCaptchaToken } from "../lib/captcha";
+import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
@@ -94,24 +94,7 @@ function LoginPage() {
   const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
   const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
-  const [countdown, setCountdown] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [form] = Form.useForm();
-
-  useEffect(
-    () => () => {
-      if (timer.current) clearInterval(timer.current);
-    },
-    [],
-  );
-
-  // 倒计时归零时清 timer(updater 保持纯函数,StrictMode 双调安全)
-  useEffect(() => {
-    if (countdown <= 0 && timer.current) {
-      clearInterval(timer.current);
-      timer.current = null;
-    }
-  }, [countdown]);
 
   const onLoggedIn = (data: unknown) => {
     const pair = data as TokenPair;
@@ -123,16 +106,10 @@ function LoginPage() {
     }
   };
 
-  const sendCode = useSendSmsCode({
-    onSuccess: () => {
-      message.success(t("login.codeSent"));
-      if (timer.current) clearInterval(timer.current);
-      setCountdown(60);
-      timer.current = setInterval(() => {
-        setCountdown((c) => (c > 0 ? c - 1 : 0));
-      }, 1000);
-    },
-  });
+  const sms = useSmsCode(
+    mode === "register" ? "register" : mode === "reset" ? "reset_password" : "login",
+    t("login.codeSent"),
+  );
   const login = useLogin({ onSuccess: onLoggedIn });
   const register = useRegister({ onSuccess: onLoggedIn });
   const resetPassword = useResetPassword({
@@ -234,30 +211,13 @@ function LoginPage() {
                     aria-label={t("login.smsPlaceholder")}
                   />
                   <Button
-                    disabled={countdown > 0}
-                    loading={sendCode.isPending}
+                    disabled={sms.countdown > 0}
+                    loading={sms.sending}
                     onClick={() => {
-                      void form.validateFields(["phone"]).then(async ({ phone }) => {
-                        // 人机校验先行(P1-17):拿到一次性 token 才发码;SDK 不可用提示刷新
-                        try {
-                          const captcha_token = await requestCaptchaToken();
-                          sendCode.mutate({
-                            phone,
-                            purpose:
-                              mode === "register"
-                                ? "register"
-                                : mode === "reset"
-                                  ? "reset_password"
-                                  : "login",
-                            captcha_token,
-                          });
-                        } catch {
-                          message.error(t("login.captchaUnavailable"));
-                        }
-                      });
+                      void form.validateFields(["phone"]).then(({ phone }) => sms.send(phone));
                     }}
                   >
-                    {countdown > 0 ? `${countdown}s` : t("login.getCode")}
+                    {sms.countdown > 0 ? `${sms.countdown}s` : t("login.getCode")}
                   </Button>
                 </Space.Compact>
               </Form.Item>

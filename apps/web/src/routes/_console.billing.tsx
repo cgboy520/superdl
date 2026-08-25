@@ -46,8 +46,9 @@ import EChart from "../components/EChart";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
-import { useCreateInvoice, useCreateRecharge, useCreateRefund, useMockPay, useSetWarnThreshold } from "../api/mutations";
+import { useCreateInvoice, useCreateRecharge, useCreateRefund, useMockPay } from "../api/mutations";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
+import { WarnThresholdField } from "../components/WarnThresholdField";
 import {
   useBillSummary,
   useDailySummary,
@@ -839,7 +840,6 @@ function BillingPage() {
   const navigate = useNavigate();
   const { tab, month: monthParam } = Route.useSearch();
   const [rechargeOpen, setRechargeOpen] = useState(false);
-  const [warnHours, setWarnHours] = useState<number>();
   const activeTab: BillingTab = tab ?? "bills";
   const [exporting, setExporting] = useState(false);
   const walletQ = useWallet({ refetchInterval: 10_000 });
@@ -857,11 +857,6 @@ function BillingPage() {
   const { data: summary } = summaryQ;
   const dailyQ = useDailySummary(date, tzOffsetMinutes);
   const { data: daily } = dailyQ;
-  const setThreshold = useSetWarnThreshold({ onSuccess: () => message.success(t("billing.thresholdSaved")) });
-
-  const saveThreshold = (v: number | undefined) => {
-    if (v != null) setThreshold.mutate(v); // 范围校验在 InputNumber min/max 与后端 ge/le
-  };
 
   const setSearch = (patch: { tab?: BillingTab; month?: string }) =>
     void navigate({
@@ -942,28 +937,7 @@ function BillingPage() {
                 {t("billing.recharge")}
               </Button>
             </Space>
-            <Space style={{ marginTop: 12 }}>
-              <Typography.Text type="secondary">{t("settings.warnThresholdLabel")}</Typography.Text>
-              <InputNumber
-                size="small"
-                min={1}
-                max={168}
-                aria-label={t("settings.warnThresholdLabel")}
-                value={warnHours ?? me?.low_balance_warn_hours}
-                onChange={(v) => setWarnHours(v ?? undefined)}
-                onPressEnter={() => saveThreshold(warnHours ?? me?.low_balance_warn_hours)}
-              />
-              <Button
-                size="small"
-                loading={setThreshold.isPending}
-                onClick={() => saveThreshold(warnHours ?? me?.low_balance_warn_hours)}
-              >
-                {t("billing.save")}
-              </Button>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("settings.warnThresholdHint")}
-              </Typography.Text>
-            </Space>
+            <WarnThresholdField size="small" style={{ marginTop: 12 }} />
           </Card>
         </Col>
         <Col xs={24} lg={12}>

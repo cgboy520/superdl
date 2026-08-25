@@ -574,7 +574,6 @@
     "realNameNameRule": "Enter the name matching the ID card",
     "realNameNote": "Regulations require three-factor verification (name + ID number + account phone); used for verification only, the ID number is stored masked.",
     "realNamePlaceholder": "Full name",
-    "saved": "Saved",
     "savePassword": "Save new password",
     "sshCard": "SSH keys",
     "submitVerify": "Submit",
