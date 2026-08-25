@@ -341,12 +341,7 @@ async def login(
             )
             await session.commit()  # 通知落库(password 路径此前无提交点)
         await _clear_login_failures(f"user-login-acct:{phone}")
-    if user.status == "deleted":
-        raise AppError(
-            ErrorCode.UNAUTHORIZED,
-            key="account.accountDeleted",
-            http_status=status.HTTP_401_UNAUTHORIZED,
-        )
+    # 已注销账号的 phone 已改写为 del:…,按手机号查不到,不必再判 deleted(持凭证路径见 deps/refresh)
     if user.status == "frozen":
         raise AppError(
             ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
@@ -377,12 +372,6 @@ async def reset_password(
     ).scalar_one_or_none()
     if user is None:
         raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
-    if user.status == "deleted":
-        raise AppError(
-            ErrorCode.UNAUTHORIZED,
-            key="account.accountDeleted",
-            http_status=status.HTTP_401_UNAUTHORIZED,
-        )
     if user.status == "frozen":
         raise AppError(
             ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
