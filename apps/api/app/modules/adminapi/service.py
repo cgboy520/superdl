@@ -424,15 +424,15 @@ async def create_admin(session: AsyncSession, username: str, password: str, role
 
 
 async def ensure_bootstrap_admin(session: AsyncSession, password: str) -> None:
-    """启动引导:**表为空时**创建首个 admin 账号,之后自动失效。"""
+    """首个管理员引导(scripts/seed_dev.py 调用):**表为空时**创建 admin 账号,之后自动失效。"""
     existing = (await session.execute(select(AdminUser).limit(1))).scalar_one_or_none()
     if existing is not None:
         return
-    # 引导口令不经请求 schema,长度须与 AdminCreateRequest 同标准;不合规宁可启动失败
+    # 引导口令不经请求 schema,长度须与 AdminCreateRequest 同标准;不合规宁可报错退出
     if len(password) < PASSWORD_MIN_LENGTH or len(password.encode()) > PASSWORD_MAX_BYTES:
         raise RuntimeError(
             f"引导口令不合规:须 ≥{PASSWORD_MIN_LENGTH} 字符且 UTF-8 编码后 "
-            f"≤{PASSWORD_MAX_BYTES} 字节,请修正 SUPERDL_BOOTSTRAP_ADMIN_PASSWORD"
+            f"≤{PASSWORD_MAX_BYTES} 字节,请修正 SUPERDL_SEED_ADMIN_PASSWORD"
         )
     await create_admin(session, "admin", password, "admin")
     logger.warning(

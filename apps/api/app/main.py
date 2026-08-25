@@ -30,26 +30,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             keys=unknown_keys,
             hint="这些 SUPERDL_* 变量不匹配任何配置项,将被忽略;请核对拼写",
         )
-    # 一次性引导:仅 dev,配置了口令且 admin_users 为空时创建首个超管
-    if settings.bootstrap_admin_password:
-        if settings.environment != "dev":
-            log.warning(
-                "bootstrap_admin_skipped",
-                environment=settings.environment,
-                hint="SUPERDL_BOOTSTRAP_ADMIN_PASSWORD 仅 dev 生效(prod 由配置校验直接拒启动)",
-            )
-        else:
-            if len(settings.bootstrap_admin_password) < 12:
-                raise RuntimeError(
-                    "SUPERDL_BOOTSTRAP_ADMIN_PASSWORD 口令长度至少 12 位"
-                    "(与管理端创建管理员的约束一致);这是一次性引导变量,首个管理员创建成功后"
-                    "请立即从环境变量中删除"
-                )
-            from app.core.db import get_sessionmaker
-            from app.modules.adminapi.service import ensure_bootstrap_admin
-
-            async with get_sessionmaker()() as session:
-                await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
     if settings.environment == "prod":
         # 非阻断项只打告警,不 fail-fast:webhook 端点未配 token 本就拒收(notify/router.py),
         # 指标子系统按设计优雅降级(计费不依赖 Prometheus)

@@ -31,9 +31,6 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
-    # 启动引导管理员:仅当显式设置本项且 environment=dev 时,在无任何管理员的库里创建 admin 账号
-    bootstrap_admin_password: str | None = None
-
     # 短信:dev/test 用 mock(验证码固定 + 落日志);aliyun 凭据与模板码经环境变量注入
     sms_provider: Literal["mock", "aliyun"] = "mock"
     sms_code_ttl_seconds: int = 300
@@ -218,11 +215,6 @@ class Settings(BaseSettings):
         for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url", "admin_host"):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
-        if self.bootstrap_admin_password is not None:
-            problems.append(
-                "bootstrap_admin_password 仅限 dev 一次性引导:请先用它在 dev 环境初始化首个管理员,"
-                "再从生产环境变量中删除该变量(prod 管理员经管理端账号页维护)"
-            )
         # mock 实名对非 0000 结尾恒过:只有开着充值强制实名时才形同虚设;未开时 mock 无害。
         # 经平台配置在线打开开关时由 platform_config._check_prod_real_name_combination 同口径拦
         if self.real_name_required_for_recharge and self.real_name_provider == "mock":

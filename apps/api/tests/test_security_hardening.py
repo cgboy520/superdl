@@ -163,16 +163,6 @@ class TestAccountLevelLock:
         assert await read_hits("user-login-acct:13800000082", window_seconds=900.0) == 0
 
 
-class TestNoDefaultBootstrapAdmin:
-    def test_bootstrap_password_defaults_to_none(self, monkeypatch):
-        from app.core.config import Settings
-
-        monkeypatch.delenv("SUPERDL_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
-        # _env_file=None:只验代码默认值,不受本地 dev .env 影响
-        s = Settings(_env_file=None, environment="dev")  # type: ignore[call-arg]
-        assert s.bootstrap_admin_password is None
-
-
 class TestEnvironmentFailClosed:
     def test_environment_is_required(self, monkeypatch):
         """SUPERDL_ENVIRONMENT 无默认:缺失即拒绝启动(fail-closed)。"""
@@ -245,16 +235,6 @@ class TestProdConfigValidation:
         assert s.environment == "prod"
         assert s.real_name_provider == "mock"
         assert s.sms_access_key_id is None
-
-    def test_prod_rejects_bootstrap_admin_password(self):
-        """引导口令是一次性 dev 工具:带进 prod 说明运维忘了删,启动即拒并给出正确做法。"""
-        import pytest
-        from pydantic import ValidationError
-
-        from app.core.config import Settings
-
-        with pytest.raises(ValidationError, match="bootstrap_admin_password"):
-            Settings(**self._complete_prod_kwargs(), bootstrap_admin_password="bootstrap-123")
 
     def test_prod_rejects_mock_realname_when_required(self):
         """充值强制实名 + mock 渠道 = 实名形同虚设(mock 核验恒过),prod 必拒;
@@ -562,7 +542,7 @@ class TestGhostEnvKeys:
 
 class TestBootstrapAdminGate:
     async def test_bootstrap_password_policy_at_service_layer(self, sm):
-        """服务层自查(不经 lifespan):过短/超 72 字节都拒,合规才建号。"""
+        """seed_dev 走的引导入口自查口令:过短/超 72 字节都拒,合规才建号。"""
         import pytest
         from sqlalchemy import select
 
@@ -579,56 +559,6 @@ class TestBootstrapAdminGate:
             await ensure_bootstrap_admin(session, "l0ng-enough-pass")
             admins = (await session.execute(select(AdminUser))).scalars().all()
         assert [a.username for a in admins] == ["admin"]
-
-    async def test_bootstrap_creates_admin_in_dev(self, client: AsyncClient, sm, monkeypatch):
-        """dev + 口令 → 创建首管并可登录;口令是一次性变量,建完即应删除。"""
-        from app.core.config import get_settings
-        from app.main import create_app, lifespan
-
-        settings = get_settings()
-        monkeypatch.setattr(settings, "environment", "dev", raising=False)
-        monkeypatch.setattr(
-            settings, "bootstrap_admin_password", "bootstrap-pass-123", raising=False
-        )
-        async with lifespan(create_app()):
-            pass
-        resp = await client.post(
-            "/api/admin/v1/auth/login",
-            json={"username": "admin", "password": "bootstrap-pass-123"},
-        )
-        assert resp.status_code == 200
-
-    async def test_bootstrap_skipped_outside_dev(self, sm, monkeypatch):
-        """非 dev 环境带引导口令:跳过创建(prod 在配置校验层已直接拒启动)。"""
-        from sqlalchemy import select
-
-        from app.core.config import get_settings
-        from app.main import create_app, lifespan
-        from app.modules.adminapi.models import AdminUser
-
-        # conftest 已把 environment 钉为 test
-        monkeypatch.setattr(
-            get_settings(), "bootstrap_admin_password", "bootstrap-pass-123", raising=False
-        )
-        async with lifespan(create_app()):
-            pass
-        async with sm() as session:
-            rows = (await session.execute(select(AdminUser))).scalars().all()
-        assert rows == []
-
-    async def test_bootstrap_short_password_rejected(self, sm, monkeypatch):
-        """弱口令引导拒绝启动(与管理端创建管理员的 min_length=12 对齐)。"""
-        import pytest
-
-        from app.core.config import get_settings
-        from app.main import create_app, lifespan
-
-        settings = get_settings()
-        monkeypatch.setattr(settings, "environment", "dev", raising=False)
-        monkeypatch.setattr(settings, "bootstrap_admin_password", "short", raising=False)
-        with pytest.raises(RuntimeError, match="12"):
-            async with lifespan(create_app()):
-                pass
 
 
 class TestUnifiedErrorBodyForHttpException:
