@@ -8,7 +8,53 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import outbox
 from app.modules.billing import service as billing_service
+
+
+async def drain(
+    sm: async_sessionmaker[AsyncSession],
+    *,
+    limit: int = 100,
+    task_types: frozenset[str] | None = None,
+) -> int:
+    """连续处理 outbox 直到队列空(或到 limit),返回处理个数。
+
+    只是测试驱动手段:生产 worker 关停不做冲刷(SIGTERM 直接停在跑任务,遗留 running
+    由 reaper 超时打回 pending)。失败任务静默滑进重试;要断言「全部成功」用 drain_strict。
+    """
+    n = 0
+    while n < limit and await outbox.process_one(sm, task_types=task_types):
+        n += 1
+    return n
+
+
+class OutboxDrainError(RuntimeError):
+    """drain_strict 冲刷到未成功的任务(dead 或退避回 pending),携带 (done, failed) 计数。"""
+
+    def __init__(self, done_count: int, failed_count: int) -> None:
+        self.done_count = done_count
+        self.failed_count = failed_count
+        super().__init__(f"outbox drain 未全成功: done={done_count}, failed={failed_count}")
+
+
+async def drain_strict(
+    sm: async_sessionmaker[AsyncSession], *, limit: int = 100
+) -> tuple[int, int]:
+    """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功
+    (dead,或失败退避回 pending 等下轮)即抛 OutboxDrainError。"""
+    done = failed = 0
+    while done + failed < limit:
+        result = await outbox._process_one(sm)
+        if result is None:
+            break
+        if result == "done":
+            done += 1
+        else:
+            failed += 1
+    if failed:
+        raise OutboxDrainError(done, failed)
+    return done, failed
 
 
 def gen_ed25519_key(comment: str = "t@test") -> str:

@@ -11,10 +11,9 @@ from sqlalchemy import select
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import drain
 from app.modules.billing.models import BalanceLedger
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, gen_ed25519_key, seed_node_spec
+from tests.helpers import create_test_sku, drain, gen_ed25519_key, seed_node_spec
 
 
 @pytest.fixture

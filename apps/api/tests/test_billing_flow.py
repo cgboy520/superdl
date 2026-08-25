@@ -10,13 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import drain
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, Wallet
 from app.modules.billing.patrol import balance_patrol
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
+from tests.helpers import drain
 from tests.test_orchestrator_lifecycle import _provision_running, get_instance
 
 pytestmark = pytest.mark.usefixtures("fake")

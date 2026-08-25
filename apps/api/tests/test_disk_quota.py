@@ -8,9 +8,9 @@ from sqlalchemy import select, update
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain
+from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
-from tests.helpers import create_user_with_key, fund_wallet
+from tests.helpers import create_user_with_key, drain, fund_wallet
 from tests.test_disks import create_disk
 
 pytestmark = pytest.mark.usefixtures("fake")

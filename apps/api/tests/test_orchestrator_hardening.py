@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 
 from app.core.k8s import NodePortTaken, set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import RUNNING_TIMEOUT, OutboxTask, drain
+from app.core.outbox import RUNNING_TIMEOUT, OutboxTask
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BillDailyDisk, BillHourly
@@ -25,7 +25,7 @@ from app.modules.billing.settlement import settle_daily_disks
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
 from app.modules.orchestrator.statemachine import TRANSITIONS
-from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
+from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wallet, seed_node_spec
 from tests.test_orchestrator_lifecycle import _provision_running, get_instance
 
 pytestmark = pytest.mark.usefixtures("fake")

@@ -8,11 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain, drain_strict
+from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
+from tests.helpers import (
+    create_test_sku,
+    create_user_with_key,
+    drain,
+    drain_strict,
+    fund_wallet,
+    seed_node_spec,
+)
 
 pytestmark = pytest.mark.usefixtures("fake")
 

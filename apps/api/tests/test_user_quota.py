@@ -4,8 +4,8 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import get_settings
-from app.core.outbox import drain
 from app.modules.orchestrator.reconciler import reconcile_once
+from tests.helpers import drain
 from tests.test_orchestrator_lifecycle import (
     create_test_sku,
     create_user_with_key,

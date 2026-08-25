@@ -6,8 +6,8 @@ from prometheus_client import REGISTRY
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import drain
 from app.modules.orchestrator.reconciler import reconcile_once
+from tests.helpers import drain
 from tests.test_orchestrator_lifecycle import _provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")

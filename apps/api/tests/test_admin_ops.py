@@ -12,14 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain
+from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
 from app.modules.adminapi import service as admin_service
 from app.modules.adminapi.service import create_admin
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_user_with_key
+from tests.helpers import create_user_with_key, drain
 from tests.test_account_auth import register
 from tests.test_catalog import admin_headers
 from tests.test_orchestrator_lifecycle import _provision_running

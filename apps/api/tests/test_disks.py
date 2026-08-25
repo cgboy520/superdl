@@ -9,7 +9,6 @@ from sqlalchemy import select, update
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.money import disk_daily_charge
-from app.core.outbox import drain
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_day_floor, now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillDailyDisk
@@ -17,7 +16,7 @@ from app.modules.billing.patrol import balance_patrol
 from app.modules.billing.settlement import settle_daily_disks
 from app.modules.orchestrator.models import DataDisk
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, create_user_with_key, fund_wallet
+from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wallet
 
 pytestmark = pytest.mark.usefixtures("fake")
 

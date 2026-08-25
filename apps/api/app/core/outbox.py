@@ -161,7 +161,10 @@ async def _process_one(
     worker_id: str = "worker-0",
     task_types: frozenset[str] | None = None,
 ) -> Outcome | None:
-    """领取并执行一个任务。返回执行结局;无任务可领返回 None。"""
+    """领取并执行一个任务。返回执行结局;无任务可领返回 None。
+
+    结局粒度只给 tests/helpers 的冲刷驱动用(断言「全部成功」而非「被处理」);
+    worker 循环走 process_one 只关心有没有任务。"""
     async with sm() as session:
         task = await _claim_one(session, worker_id, task_types)
     if task is None:
@@ -275,52 +278,6 @@ async def process_one(
 ) -> bool:
     """领取并执行一个任务。返回是否有任务被处理。"""
     return await _process_one(sm, worker_id, task_types) is not None
-
-
-async def drain(
-    sm: async_sessionmaker[AsyncSession],
-    *,
-    limit: int = 100,
-    task_types: frozenset[str] | None = None,
-) -> int:
-    """连续处理直到队列空(或到 limit)。仅测试用:worker 关停不做冲刷
-    (SIGTERM 直接停在跑任务,遗留 running 由 reaper 超时打回 pending)。"""
-    n = 0
-    while n < limit and await process_one(sm, task_types=task_types):
-        n += 1
-    return n
-
-
-class OutboxDrainError(RuntimeError):
-    """drain_strict 冲刷到未成功的任务(dead 或退避回 pending),携带 (done, failed) 计数。"""
-
-    def __init__(self, done_count: int, failed_count: int) -> None:
-        self.done_count = done_count
-        self.failed_count = failed_count
-        super().__init__(f"outbox drain 未全成功: done={done_count}, failed={failed_count}")
-
-
-async def drain_strict(
-    sm: async_sessionmaker[AsyncSession], *, limit: int = 100
-) -> tuple[int, int]:
-    """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功
-    (dead,或失败退避回 pending 等下轮)即抛 OutboxDrainError。
-
-    drain 只报告「处理了几个」,失败任务会静默滑进重试;测试需要断言
-    「队列不仅被处理而且全部成功」时换用本函数。
-    """
-    done = failed = 0
-    while done + failed < limit:
-        outcome = await _process_one(sm)
-        if outcome is None:
-            break
-        if outcome == "done":
-            done += 1
-        else:
-            failed += 1
-    if failed:
-        raise OutboxDrainError(done, failed)
-    return done, failed
 
 
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:

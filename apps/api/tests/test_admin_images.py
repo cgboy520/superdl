@@ -6,9 +6,10 @@ from sqlalchemy import select
 from app.core.audit import AuditLog
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
-from app.core.outbox import OutboxTask, drain
+from app.core.outbox import OutboxTask
 from app.modules.catalog.models import ImageNodeCache
 from app.modules.catalog.prewarm import prewarm_patrol
+from tests.helpers import drain
 from tests.test_catalog import admin_headers
 
 pytestmark = pytest.mark.usefixtures("fake")

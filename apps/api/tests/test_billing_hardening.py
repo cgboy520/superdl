@@ -758,9 +758,10 @@ class TestSmsOutbox:
     """短信经 outbox 异步投递,业务事务里不做网络调用。"""
 
     async def test_notify_enqueues_sms_and_handler_sends(self, client, sm):
-        from app.core.outbox import OutboxTask, drain
+        from app.core.outbox import OutboxTask
         from app.core.sms import set_sms_channel
         from app.modules.notify import service as notify_service
+        from tests.helpers import drain
         from tests.test_account_auth import register
 
         sent: list[dict] = []

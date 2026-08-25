@@ -685,8 +685,8 @@ class TestNodeCordon:
     async def test_cordon_via_outbox_and_uncordon(self, client, sm) -> None:
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
-        from app.core.outbox import drain, drain_strict
         from app.modules.nodes.patrol import node_spec_patrol
+        from tests.helpers import drain, drain_strict
 
         fake = FakeOrchestrator()
         set_orchestrator(fake)
@@ -751,8 +751,8 @@ class TestNodeCordon:
         即便先发的 cordon 后执行,最终也收敛到 uncordon(管理员最后意图)。"""
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
-        from app.core.outbox import drain
         from app.modules.nodes.patrol import node_spec_patrol
+        from tests.helpers import drain
 
         fake = FakeOrchestrator()
         set_orchestrator(fake)

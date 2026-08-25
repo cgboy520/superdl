@@ -6,14 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import outbox
 from app.core.outbox import (
-    OutboxDrainError,
     OutboxTask,
-    drain_strict,
     enqueue,
     process_one,
     reap_stuck_running,
 )
 from app.core.timeutil import now_utc
+from tests.helpers import OutboxDrainError, drain_strict
 
 
 async def test_enqueue_same_transaction_rollback(sm: async_sessionmaker[AsyncSession]):
