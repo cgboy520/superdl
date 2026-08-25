@@ -4,7 +4,7 @@
  */
 
 import { type DiskOut } from "@superdl/api-client";
-import { colorPrimary, diskDailyEstimate, formatDateTime, formatSizeGb, statusColors } from "@superdl/ui";
+import { colorPrimary, diskDailyEstimate, formatDateTime, formatSizeGb, idemKeyOf, statusColors } from "@superdl/ui";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -185,26 +185,17 @@ function StoragePage() {
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
 
-  const [diskKeys] = useState(() => new Map<string, string>());
+  // 幂等键按「提交序号 + 盘名 + 容量」派生:响应丢失后重提不会多出一块盘,改了参数即另一块盘;
+  // 建成了才递增序号,下一块同名同容量的盘是新单
+  const [submitSeq, setSubmitSeq] = useState(0);
   const createDisk = useCreateDisk({
     onSuccess: () => {
       message.success(t("storage.created"));
       setCreateOpen(false);
       form.resetFields();
-      diskKeys.clear(); // 建成了才作废这批键,下一块盘重新分配
+      setSubmitSeq((s) => s + 1);
     },
   });
-  // 幂等键按「盘名 + 容量」派生:响应丢失后重提不会多出一块盘;
-  // 改了参数即另一块盘,键随之改变
-  const diskIdempotencyKey = (name: string, sizeGb: number): string => {
-    const seed = `${name}|${sizeGb}`;
-    let k = diskKeys.get(seed);
-    if (k === undefined) {
-      k = crypto.randomUUID();
-      diskKeys.set(seed, k);
-    }
-    return k;
-  };
   const expand = useExpandDisk({
     onSuccess: () => {
       message.success(t("storage.expanded"));
@@ -328,7 +319,7 @@ function StoragePage() {
           onFinish={(v: { name: string; size_gb: number }) =>
             createDisk.mutate({
               body: v,
-              idempotencyKey: diskIdempotencyKey(v.name, v.size_gb),
+              idempotencyKey: idemKeyOf("disk", [submitSeq, v.name, v.size_gb]),
             })
           }
         >

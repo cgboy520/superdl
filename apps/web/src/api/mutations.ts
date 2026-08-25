@@ -187,7 +187,7 @@ export const useMockPay = (o?: { onSuccess?: () => void }) =>
       mockWebhookApiV1WebhooksMockPost({ body: JSON.stringify(vars) }),
     { ...o, invalidates: ["wallet", "recharge", "ledger"] },
   );
-/** 申请退款:必须带幂等键(表单每次打开/重开生成新 UUID,重放返回既有单)。 */
+/** 申请退款:必须带幂等键(按表单快照派生,重放返回既有单)。 */
 export const useCreateRefund = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RefundCreate; idempotencyKey: string }) =>
@@ -265,7 +265,7 @@ export const useMarkAllNotificationsRead = () =>
   });
 
 // ---------- tickets ----------
-/** 新建工单:必须带幂等键(弹窗每次打开生成新 UUID,重放返回既有单)。 */
+/** 新建工单:必须带幂等键(按表单快照派生,重放返回既有单)。 */
 export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: TicketCreate; idempotencyKey: string }) =>

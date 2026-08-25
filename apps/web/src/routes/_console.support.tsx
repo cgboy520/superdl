@@ -3,7 +3,7 @@
  * 新建工单走 Modal(分类/关联实例可选/主题/内容),详情为独立对话页。
  */
 
-import { formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import { formatDateTime, idemKeyOf, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -104,12 +104,12 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
   const navigate = useNavigate();
   const [form] = Form.useForm<TicketCreate>();
   const { data: instances } = useInstances();
-  // 每次成功提交后换新幂等键;同一键重放返回既有单(双击/重试安全)
-  const [idem, setIdem] = useState(() => crypto.randomUUID());
+  // 幂等键按「提交序号 + 表单快照」派生:同一键重放返回既有单(双击/重试安全),成功后序号 +1 即新单
+  const [submitSeq, setSubmitSeq] = useState(0);
   const create = useCreateTicket({
     onSuccess: (ticket) => {
       message.success(t("support.created"));
-      setIdem(crypto.randomUUID());
+      setSubmitSeq((s) => s + 1);
       form.resetFields();
       onClose();
       void navigate({ to: "/support/$ticketId", params: { ticketId: String(ticket.id) } });
@@ -126,7 +126,16 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
       okButtonProps={{ loading: create.isPending }}
       onOk={async () => {
         const values = await form.validateFields();
-        create.mutate({ body: values, idempotencyKey: idem });
+        create.mutate({
+          body: values,
+          idempotencyKey: idemKeyOf("ticket", [
+            submitSeq,
+            values.category,
+            values.instance_uuid ?? null,
+            values.subject,
+            values.body,
+          ]),
+        });
       }}
     >
       <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>

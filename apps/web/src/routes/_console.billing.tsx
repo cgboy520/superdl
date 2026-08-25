@@ -14,7 +14,7 @@ import {
   type RefundOut,
   type RefundableOrderOut,
 } from "@superdl/api-client";
-import { addAmounts, compareAmounts, formatDateTime, invoiceStatusMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
+import { addAmounts, compareAmounts, formatDateTime, idemKeyOf, invoiceStatusMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
@@ -131,18 +131,9 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   // 金额必须按字符串走(InputNumber stringMode),禁止经二进制浮点
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
-  // 幂等键按 (amount, channel) 派生(照创建页模式):响应丢失后重提不会再开一单;
-  // 改了金额/渠道即另一单,键随之改变;下单成功即作废该键,下一单重新分配
-  const [idemKeys] = useState(() => new Map<string, string>());
-  const rechargeIdemKey = (amt: string, ch: string): string => {
-    const seed = `${amt}|${ch}`;
-    let k = idemKeys.get(seed);
-    if (k === undefined) {
-      k = crypto.randomUUID();
-      idemKeys.set(seed, k);
-    }
-    return k;
-  };
+  // 幂等键按「下单序号 + (amount, channel)」派生:响应丢失后重提不会再开一单,
+  // 改了金额/渠道即另一单;下单成功后序号 +1,下一笔同额同渠道是新订单
+  const [orderSeq, setOrderSeq] = useState(0);
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
   // 中断找回:订单号落 sessionStorage,支付中途关窗/刷新后重开可恢复轮询
   const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
@@ -167,8 +158,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
       setOrder(o);
       setResumedNo(o.order_no);
       sessionStorage.setItem(PENDING_ORDER_KEY, o.order_no);
-      // 下单成功即作废该 (amount, channel) 的键:下一笔同额同渠道是新订单
-      idemKeys.delete(`${amount}|${channel}`);
+      setOrderSeq((s) => s + 1);
     },
   });
   const mockPay = useMockPay({ onSuccess: () => message.success(t("billing.mockPaySent")) });
@@ -280,7 +270,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             onClick={() =>
               create.mutate({
                 body: { amount, channel },
-                idempotencyKey: rechargeIdemKey(amount, channel),
+                idempotencyKey: idemKeyOf("recharge", [orderSeq, amount, channel]),
               })
             }
           >
@@ -473,15 +463,15 @@ function RefundTab() {
   const [orderNo, setOrderNo] = useState<string>();
   const [amount, setAmount] = useState("0");
   const [reason, setReason] = useState("");
-  // 每次成功提交后换新幂等键;同一键重放返回既有单(双击/重试安全)
-  const [idem, setIdem] = useState(() => crypto.randomUUID());
+  // 幂等键按「提交序号 + 表单快照」派生:同一键重放返回既有单(双击/重试安全),成功后序号 +1 即新单
+  const [submitSeq, setSubmitSeq] = useState(0);
   const selected = orders.find((o) => o.order_no === orderNo);
   const create = useCreateRefund({
     onSuccess: () => {
       message.success(t("billing.refundCreated"));
       setOrderNo(undefined);
       setReason("");
-      setIdem(crypto.randomUUID());
+      setSubmitSeq((s) => s + 1);
     },
   });
   const refunds = useRefundPages(20);
@@ -491,7 +481,7 @@ function RefundTab() {
     if (!selected || reason.trim().length < 2) return;
     create.mutate({
       body: { order_no: selected.order_no, amount, reason: reason.trim() },
-      idempotencyKey: idem,
+      idempotencyKey: idemKeyOf("refund", [submitSeq, selected.order_no, amount, reason.trim()]),
     });
   };
 
@@ -642,8 +632,8 @@ function InvoiceApplyModal({
   const [title, setTitle] = useState("");
   const [taxId, setTaxId] = useState("");
   const [email, setEmail] = useState("");
-  // 每次成功提交后换新幂等键;同一键重放返回既有单(双击/重试安全)
-  const [idem, setIdem] = useState(() => crypto.randomUUID());
+  // 幂等键按「提交序号 + 表单快照」派生:同一键重放返回既有单(双击/重试安全),成功后序号 +1 即新单
+  const [submitSeq, setSubmitSeq] = useState(0);
   const create = useCreateInvoice({
     onSuccess: () => {
       message.success(t("billing.invoiceCreated"));
@@ -651,7 +641,7 @@ function InvoiceApplyModal({
       setTitle("");
       setTaxId("");
       setEmail("");
-      setIdem(crypto.randomUUID());
+      setSubmitSeq((s) => s + 1);
       onClose();
     },
   });
@@ -680,7 +670,14 @@ function InvoiceApplyModal({
             tax_id: titleType === "company" ? taxId.trim() : null,
             email: email.trim(),
           },
-          idempotencyKey: idem,
+          idempotencyKey: idemKeyOf("invoice", [
+            submitSeq,
+            period,
+            titleType,
+            title.trim(),
+            titleType === "company" ? taxId.trim() : null,
+            email.trim(),
+          ]),
         });
       }}
     >

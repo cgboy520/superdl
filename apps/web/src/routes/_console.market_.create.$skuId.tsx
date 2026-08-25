@@ -4,7 +4,7 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, diskDailyEstimate, formatSizeGb, mulPrice } from "@superdl/ui";
+import { compareAmounts, diskDailyEstimate, formatSizeGb, idemKeyOf, mulPrice } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -90,8 +90,8 @@ function CreatePage() {
   const [ecoChecked, setEcoChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
-  // 参数快照 → 幂等键;只在提交时读写,不参与渲染。
-  const [idemKeys] = useState(() => new Map<string, string>());
+  // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
+  const [formNonce] = useState(() => crypto.randomUUID());
 
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
@@ -199,21 +199,18 @@ function CreatePage() {
     setSubmitting(true);
     // 幂等键由本次提交的参数派生,失败时不轮换:响应丢失后重提不会开出第二台;
     // 参数变了键随之变,不会被上一次的结果遮住
-    const seed = JSON.stringify([
+    const idempotencyKey = idemKeyOf("inst", [
+      formNonce,
       sku.id,
       gpuCount,
       imageRef ?? "",
-      [...keyIds].sort((a, b) => a - b),
+      [...keyIds].sort((a, b) => a - b).join(","),
       name || null,
       diskMode,
       existingDiskId ?? null,
-      diskMode === "new" ? [newDiskName.trim(), newDiskGb] : null,
+      diskMode === "new" ? newDiskName.trim() : null,
+      diskMode === "new" ? newDiskGb : null,
     ]);
-    let idempotencyKey = idemKeys.get(seed);
-    if (idempotencyKey === undefined) {
-      idempotencyKey = crypto.randomUUID(); // 后端列是 varchar(64),保持 UUID 形态
-      idemKeys.set(seed, idempotencyKey);
-    }
     try {
       let diskId: number | null = diskMode === "existing" ? (existingDiskId ?? null) : null;
       if (diskMode === "new") {

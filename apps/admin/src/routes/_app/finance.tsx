@@ -1,4 +1,4 @@
-import { addAmounts, adminColors, formatDateTime, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import { addAmounts, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -61,7 +61,6 @@ import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormDraft } from "../../lib/formDraft";
 import { useFormat } from "../../lib/format";
-import { idemKeyOf } from "../../lib/idemKey";
 import { AuditTable } from "../../components/AuditTable";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
