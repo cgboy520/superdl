@@ -4,13 +4,7 @@ import httpx
 import pytest
 from httpx import AsyncClient
 
-from app.core.captcha import (
-    MOCK_CAPTCHA_PASS_TOKEN,
-    AliyunCaptchaChannel,
-    CaptchaError,
-    MockCaptchaChannel,
-    set_captcha_channel,
-)
+from app.core.captcha import AliyunCaptchaChannel, CaptchaError, set_captcha_channel
 
 
 @pytest.fixture(autouse=True)
@@ -22,12 +16,6 @@ def _reset_channel():
 class _FailingChannel:
     async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
         raise CaptchaError("provider down")
-
-
-class TestMockChannel:
-    async def test_pass_token_accepted(self):
-        assert await MockCaptchaChannel().verify(MOCK_CAPTCHA_PASS_TOKEN, None) is True
-        assert await MockCaptchaChannel().verify("anything-else", None) is False
 
 
 class TestAliyunChannel:

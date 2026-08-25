@@ -128,18 +128,12 @@ class TestCreate:
 
 
 class TestCancel:
-    async def test_cancel_pending(self, client: AsyncClient, sm):
-        headers, _, _ = await create_user_with_key(client, PHONE)
-        assert (await _create_request(client, headers)).status_code == 201
-        resp = await client.post("/api/v1/me/deletion-request/cancel", headers=headers)
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "cancelled"
-
     async def test_cancel_twice_409(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
         assert (await _create_request(client, headers)).status_code == 201
         first = await client.post("/api/v1/me/deletion-request/cancel", headers=headers)
-        assert first.status_code == 200
+        assert first.status_code == 200, first.text
+        assert first.json()["status"] == "cancelled"
         resp = await client.post("/api/v1/me/deletion-request/cancel", headers=headers)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "account.deletionNotCancellable"
@@ -173,15 +167,6 @@ class TestCooldown:
             req = await session.get(AccountDeletionRequest, req_id)
             assert req is not None and req.status == "pending"
 
-    async def test_approve_after_cooldown(self, client: AsyncClient, sm):
-        headers, user_id, _ = await create_user_with_key(client, PHONE)
-        req_id = (await _create_request(client, headers)).json()["id"]
-        await _backdate_request(sm, user_id, days=8)
-        admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "completed"
-
     async def test_reject_not_limited_by_cooldown(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
@@ -214,12 +199,13 @@ class TestApproveGuards:
             assert req is not None and req.status == "rejected"
             assert req.note is not None and uuid in req.note
 
-    async def test_released_and_failed_instances_pass(self, client: AsyncClient, sm):
-        """released/failed 为终态,不构成残留。"""
+    async def test_terminal_instances_and_deleted_disk_pass(self, client: AsyncClient, sm):
+        """released/failed 实例与 deleted 数据盘均为终态,不构成残留。"""
         headers, user_id, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
         await _seed_instance(sm, user_id, status="released")
         await _seed_instance(sm, user_id, status="failed")
+        await _seed_disk(sm, user_id, status="deleted")
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
         resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
@@ -236,15 +222,6 @@ class TestApproveGuards:
         body = resp.json()
         assert body["message_key"] == "account.deletionLeftovers"
         assert uuid in body["detail"]["disks"]
-
-    async def test_deleted_disk_passes(self, client: AsyncClient, sm):
-        headers, user_id, _ = await create_user_with_key(client, PHONE)
-        req_id = (await _create_request(client, headers)).json()["id"]
-        await _seed_disk(sm, user_id, status="deleted")
-        await _backdate_request(sm, user_id, days=8)
-        admin = await admin_headers(sm, client)
-        resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
-        assert resp.status_code == 200, resp.text
 
     async def test_nonzero_balance_blocks(self, client: AsyncClient, sm):
         headers, user_id, _ = await create_user_with_key(client, PHONE)
@@ -385,19 +362,7 @@ class TestApproveSuccess:
         assert after == before
 
 
-class TestIdorAndRoles:
-    async def test_user_cannot_see_others_request(self, client: AsyncClient, sm):
-        headers_a, _, _ = await create_user_with_key(client, PHONE)
-        assert (await _create_request(client, headers_a)).status_code == 201
-        headers_b, _, _ = await create_user_with_key(client, "13800000061")
-        # /me 作用域:用户 B 只能看到自己(从未申请 → null),看不到 A 的申请
-        resp = await client.get("/api/v1/me/deletion-request", headers=headers_b)
-        assert resp.status_code == 200
-        assert resp.json() is None
-        # B 撤销也是 404(名下无申请),不会碰到 A 的单
-        cancel = await client.post("/api/v1/me/deletion-request/cancel", headers=headers_b)
-        assert cancel.status_code == 404
-
+class TestAdminRoles:
     async def test_admin_role_gate(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]

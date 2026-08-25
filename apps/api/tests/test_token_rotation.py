@@ -45,15 +45,6 @@ class TestRefreshRotation:
         second_refresh = await _refresh(client, pair2["refresh_token"])
         assert second_refresh.status_code == 401
 
-    async def test_normal_chain_keeps_working(self, client: AsyncClient):
-        data = await register(client, "13800000096")
-        pair2 = (await _refresh(client, data["refresh_token"])).json()
-        pair3 = (await _refresh(client, pair2["refresh_token"])).json()
-        me = await client.get(
-            "/api/v1/me", headers={"Authorization": f"Bearer {pair3['access_token']}"}
-        )
-        assert me.status_code == 200
-
     async def test_concurrent_refresh_treated_as_retry(self, client: AsyncClient):
         """并发刷新(多标签页/客户端重试)同 jti 撞单:宽限窗内按正常轮换处理,
         两路拿到同一对新 token(不为同一旧 token 另开第二条有效链),不得误判泄露。

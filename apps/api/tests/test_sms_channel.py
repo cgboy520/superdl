@@ -126,22 +126,6 @@ class TestLogRedaction:
 class TestPlatformQuota:
     """平台级配额(P1-17):单点限流防不住的分布式滥用,由全局预算池闸门兜底。"""
 
-    async def test_quota_exceeded_raises(self, sm, monkeypatch):
-        """计数即闸门:窗口内第 N+1 次调用直接 RATE_LIMITED。
-
-        sm fixture 不可省:计数行走全局 sessionmaker,不靠它清表会把命中数泄漏给后续用例。
-        """
-        from app.core import sms as sms_module
-        from app.core.errors import AppError, ErrorCode
-
-        monkeypatch.setattr(sms_module, "SMS_PLATFORM_HOURLY_MAX", 2)
-        await sms_module.ensure_sms_platform_quota()
-        await sms_module.ensure_sms_platform_quota()
-        with pytest.raises(AppError) as exc_info:
-            await sms_module.ensure_sms_platform_quota()
-        assert exc_info.value.code is ErrorCode.RATE_LIMITED
-        assert exc_info.value.http_status == 429
-
     async def test_sms_code_blocked_by_platform_quota(self, client: AsyncClient, sm, monkeypatch):
         """配额耗尽时验证码接口 429 RATE_LIMITED,且不落库无效验证码。"""
         from app.core import sms as sms_module

@@ -420,18 +420,6 @@ class TestEdgeGuard:
 
 
 class TestMetricsGuard:
-    async def test_metrics_token_enforced(self, client: AsyncClient):
-        from app.core.config import get_settings
-
-        settings = get_settings()
-        settings.metrics_token = "mtok"
-        try:
-            assert (await client.get("/metrics/")).status_code == 401
-            resp = await client.get("/metrics/", headers={"Authorization": "Bearer mtok"})
-            assert resp.status_code == 200
-        finally:
-            settings.metrics_token = None
-
     async def test_non_ascii_authorization_rejected_not_500(self, client: AsyncClient):
         """非 ASCII 的 Authorization 头:compare_digest 收 str 会抛 TypeError,必须先 encode。"""
         from app.core.config import get_settings

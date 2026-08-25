@@ -32,6 +32,13 @@ class TestSshKeys:
         assert resp.status_code == 204
         resp = await client.get("/api/v1/ssh-keys", headers=headers)
         assert resp.json() == []
+        # 删除是硬删除:删过的指纹可直接重新添加(无恢复语义)
+        resp = await client.post(
+            "/api/v1/ssh-keys",
+            json={"name": "laptop-2", "public_key": ED25519_KEY},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
 
     async def test_duplicate_fingerprint(self, client: AsyncClient):
         headers = await auth_client(client)
@@ -75,17 +82,3 @@ class TestSshKeys:
                 "/api/v1/ssh-keys", json={"name": "k", "public_key": ED25519_KEY}, headers=h
             )
             assert resp.status_code == 201, resp.text
-
-    async def test_delete_then_readd_same_key(self, client: AsyncClient):
-        """删除是硬删除:删过的指纹可直接重新添加(无恢复语义)。"""
-        headers = await auth_client(client)
-        resp = await client.post(
-            "/api/v1/ssh-keys", json={"name": "k", "public_key": ED25519_KEY}, headers=headers
-        )
-        key_id = resp.json()["id"]
-        resp = await client.delete(f"/api/v1/ssh-keys/{key_id}", headers=headers)
-        assert resp.status_code == 204
-        resp = await client.post(
-            "/api/v1/ssh-keys", json={"name": "k2", "public_key": ED25519_KEY}, headers=headers
-        )
-        assert resp.status_code == 201, resp.text

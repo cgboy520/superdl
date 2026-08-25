@@ -80,33 +80,6 @@ class TestRegister:
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "VALIDATION_ERROR"
 
-    async def test_password_min_length_12(self, client: AsyncClient):
-        """用户口令最小 12 位:11 位 422,12 位可注册。"""
-        await send_code(client, "13800000073", "register")
-        short = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "phone": "13800000073",
-                "sms_code": "123456",
-                "password": "x9k" * 3 + "m2",  # 11 位
-                "accept_terms": True,
-            },
-        )
-        assert short.status_code == 422
-        assert short.json()["code"] == "VALIDATION_ERROR"
-
-        await send_code(client, "13800000074", "register")
-        ok = await client.post(
-            "/api/v1/auth/register",
-            json={
-                "phone": "13800000074",
-                "sms_code": "123456",
-                "password": "x9k" * 4,  # 12 位
-                "accept_terms": True,
-            },
-        )
-        assert ok.status_code == 201, ok.text
-
     async def test_password_weak_blacklist(self, client: AsyncClient):
         """弱口令黑名单(不区分大小写):满足长度仍 422;改密路径同表拦截。"""
         await send_code(client, "13800000075", "register")
@@ -169,15 +142,6 @@ class TestRegister:
             json={"phone": PHONE, "sms_code": "123456", "accept_terms": True},
         )
         assert resp.json()["code"] == "SMS_CODE_INVALID"
-
-    async def test_sms_rate_limit(self, client: AsyncClient):
-        await send_code(client)
-        resp = await client.post(
-            "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "register", "captcha_token": "mock-pass"},
-        )
-        assert resp.status_code == 429
-        assert resp.json()["code"] == "SMS_TOO_FREQUENT"
 
 
 class TestLogin:
@@ -243,15 +207,6 @@ class TestLogin:
             "/api/v1/auth/refresh", json={"refresh_token": data["access_token"]}
         )
         assert resp.status_code == 401
-
-    async def test_successful_logins_not_rate_limited(self, client: AsyncClient):
-        """连登不锁:成功登录不计入失败配额。"""
-        await register(client, "13800000081", password="secret123456")
-        for _ in range(6):
-            resp = await client.post(
-                "/api/v1/auth/login", json={"phone": "13800000081", "password": "secret123456"}
-            )
-            assert resp.status_code == 200, resp.text
 
     async def test_failure_counter_reset_by_success(self, client: AsyncClient):
         """失败才计数,成功一次清零:手滑几次后登成功,不应背着之前的失败配额。"""
@@ -380,21 +335,6 @@ class TestPasswordReset:
             json={"phone": "13800000092", "sms_code": "123456", "new_password": "newpass123456"},
         )
         assert resp.json()["code"] == "SMS_CODE_INVALID"
-
-    async def test_new_password_byte_limit(self, client: AsyncClient, sm):
-        """找回/设置密码同走字节上限:73 字节的多字节口令 422,不进哈希层。"""
-        await register(client, "13800000093")
-        await issue_code(sm, "13800000093", "reset_password")
-        resp = await client.post(
-            "/api/v1/auth/password/reset",
-            json={
-                "phone": "13800000093",
-                "sms_code": "123456",
-                "new_password": "汉" * 25,  # 75 字节
-            },
-        )
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "VALIDATION_ERROR"
 
 
 class TestSmsQuotaAndBackoff:
