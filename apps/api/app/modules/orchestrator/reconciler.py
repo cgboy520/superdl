@@ -67,7 +67,6 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         "gc_released": 0,
         "ports_unblocked": 0,
         "wipe_redriven": 0,
-        "quota_enqueued": 0,
         "quota_redriven": 0,
     }
     async with sm() as lock_session, try_advisory_lock(lock_session, LockKey.RECONCILER) as got:
@@ -685,16 +684,13 @@ async def _redrive_dead_disk_wipes(
     counts["wipe_redriven"] = redriven
 
 
-# 配额对账环每轮补发上限:防存量回填/大面积失败时单轮刷屏 Job 创建
-_QUOTA_ENQUEUE_CAP_PER_ROUND = 50
-
-
 async def _reconcile_disk_quotas(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """JuiceFS 目录配额对账:
-    a) quota_synced=false 且无在途 disk.quota 任务的盘补发任务(存量回填 + 失败自愈);
-    b) 死信 disk.quota 超 1 小时重派并计指标(配额未强制是计费完整性与防滥用缺口)。
+    """disk.quota 死信超 1 小时重派并计指标(配额未强制是计费完整性与防滥用缺口)。
+
+    只看死信,不按 quota_synced=false 补发:配额任务与建盘/扩容同事务入队,不存在漏网盘;
+    按标记补发会把管理端人工 discarded 的死信每轮复活,人工忽略即失效。
     """
     from app.core.metrics import JUICEFS_QUOTA_FAILED_TOTAL
     from app.modules.orchestrator.models import DataDisk
@@ -712,25 +708,6 @@ async def _reconcile_disk_quotas(
             ).all()
             if r[0] and r[0].isdigit()
         }
-        unsynced = list(
-            (
-                await session.execute(
-                    select(DataDisk).where(
-                        DataDisk.quota_synced.is_(False),
-                        DataDisk.status.notin_(("deleting", "deleted")),
-                    )
-                )
-            ).scalars()
-        )
-        enqueued = 0
-        for disk in unsynced:
-            if enqueued >= _QUOTA_ENQUEUE_CAP_PER_ROUND:
-                break
-            if disk.id in in_flight_ids:
-                continue
-            enqueue(session, "disk.quota", {"disk_id": disk.id})
-            enqueued += 1
-
         redriven = 0
         dead_cutoff = now_utc() - timedelta(hours=1)
         dead = list(
@@ -754,11 +731,9 @@ async def _reconcile_disk_quotas(
             enqueue(session, "disk.quota", {"disk_id": disk_id})
             JUICEFS_QUOTA_FAILED_TOTAL.inc()
             redriven += 1
-        if enqueued or redriven:
-            await session.commit()
         if redriven:
+            await session.commit()
             logger.warning("disk_quota_redriven", count=redriven)
-    counts["quota_enqueued"] = enqueued
     counts["quota_redriven"] = redriven
 
 

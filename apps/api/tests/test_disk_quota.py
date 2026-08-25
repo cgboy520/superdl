@@ -1,4 +1,4 @@
-"""数据盘 JuiceFS 目录配额:创建/扩容下发、失败自愈与对账回填、删盘摘除。"""
+"""数据盘 JuiceFS 目录配额:创建/扩容下发、失败自愈与死信重派、删盘摘除。"""
 
 from datetime import timedelta
 
@@ -90,34 +90,38 @@ class TestQuotaFailureAndReconcile:
             assert row.quota_synced is True
             assert fake.disk_quotas[row.juicefs_subpath] == 100
 
-    async def test_reconciler_backfills_unsynced(self, client: AsyncClient, sm, fake):
-        """存量/漏网盘(quota_synced=false 且无在途任务)由对账环补发。"""
-        from app.modules.orchestrator.models import DataDisk
+    async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake):
+        """管理端人工 discarded 的 disk.quota 不会被对账环复活:reconciler 只重派 dead,
+        不按 quota_synced=false 补发(挂了 = 人工忽略失效,死信每轮被重新入队)。"""
         from app.modules.orchestrator.reconciler import reconcile_once
 
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
-        disk = await create_disk(client, headers, size_gb=100)
-        # 模拟存量盘:清掉在途任务并落 quota_synced=false
+        await create_disk(client, headers, size_gb=100)  # 配额任务在途,盘 quota_synced=false
         async with sm() as session:
             await session.execute(
-                update(OutboxTask).where(OutboxTask.type == "disk.quota").values(status="done")
-            )
-            await session.execute(
-                update(DataDisk).where(DataDisk.uuid == disk["uuid"]).values(quota_synced=False)
+                update(OutboxTask)
+                .where(OutboxTask.type == "disk.quota")
+                .values(status="discarded", updated_at=now_utc() - timedelta(hours=2))
             )
             await session.commit()
         counts = await reconcile_once(sm)
-        assert counts["quota_enqueued"] == 1
-        await drain(sm)
+        assert counts["quota_redriven"] == 0
         async with sm() as session:
-            row = (
-                await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
-            ).scalar_one()
-            assert row.quota_synced is True
+            statuses = (
+                (
+                    await session.execute(
+                        select(OutboxTask.status).where(OutboxTask.type == "disk.quota")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert statuses == ["discarded"]  # 未补发新任务
+        assert fake.disk_quotas == {}
 
     async def test_reconciler_redrives_dead_quota(self, client: AsyncClient, sm, fake):
-        """死信超 1 小时的配额任务被重派(每轮补发上限外的也下轮再来)。"""
+        """死信超 1 小时的配额任务被重派(无在途同盘任务时补发一条)。"""
         from app.modules.orchestrator.models import DataDisk
         from app.modules.orchestrator.reconciler import reconcile_once
 

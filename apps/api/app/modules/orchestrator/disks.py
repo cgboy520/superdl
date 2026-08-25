@@ -177,8 +177,8 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
         disk.price_gb_month, disk.size_gb
     )
     await billing_service.assert_can_afford(session, user_id, additional_daily_disk=delta_daily)
-    # size_gb 是计费与逻辑口径;同步重下发 JuiceFS 目录配额(失败留 quota_synced=false,
-    # reconciler 对账环持续重派,新容量最终必然强制)
+    # size_gb 是计费与逻辑口径;同步重下发 JuiceFS 目录配额(失败留 quota_synced=false:
+    # outbox 退避重试,死信再由 reconciler 重派,新容量最终必然强制)
     disk.size_gb = new_size_gb
     disk.quota_synced = False
     enqueue(session, "disk.quota", {"disk_id": disk.id})
