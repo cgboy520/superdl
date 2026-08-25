@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import csvexport
 from app.modules.billing import export as billing_export
 from app.modules.billing.models import BillHourly
 from tests.helpers import create_user_with_key, fund_wallet
@@ -36,26 +37,26 @@ async def _seed_hourly(
 
 
 class TestEscaping:
-    """与前端 lib/csv.ts 同一套规则的镜像单测(无 DB)。"""
+    """CSV 转义/时区后缀原语(app.core.csvexport,用户端与管理端导出共用)的纯单测(无 DB)。"""
 
     def test_formula_lead_prefixed(self):
-        assert billing_export.csv_line(["=1+1"]) == "'=1+1\r\n"
-        assert billing_export.csv_line(["@who"]) == "'@who\r\n"
+        assert csvexport.csv_line(["=1+1"]) == "'=1+1\r\n"
+        assert csvexport.csv_line(["@who"]) == "'@who\r\n"
         # 纯数字负数金额不受影响;非纯数字的 - 前导按文本化
-        assert billing_export.csv_line(["-12.30"]) == "-12.30\r\n"
-        assert billing_export.csv_line(["-2+3"]) == "'-2+3\r\n"
+        assert csvexport.csv_line(["-12.30"]) == "-12.30\r\n"
+        assert csvexport.csv_line(["-2+3"]) == "'-2+3\r\n"
 
     def test_comma_quote_newline_quoted(self):
-        assert billing_export.csv_line(['a,"b"\nc']) == '"a,""b""\nc"\r\n'
+        assert csvexport.csv_line(['a,"b"\nc']) == '"a,""b""\nc"\r\n'
 
     def test_none_empty(self):
-        assert billing_export.csv_line([None, "x"]) == ",x\r\n"
+        assert csvexport.csv_line([None, "x"]) == ",x\r\n"
 
     def test_utc_suffix(self):
-        assert billing_export.utc_suffix(480) == "(UTC+8)"
-        assert billing_export.utc_suffix(-300) == "(UTC-5)"
-        assert billing_export.utc_suffix(345) == "(UTC+5:45)"
-        assert billing_export.utc_suffix(0) == "(UTC+0)"
+        assert csvexport.utc_suffix(480) == "(UTC+8)"
+        assert csvexport.utc_suffix(-300) == "(UTC-5)"
+        assert csvexport.utc_suffix(345) == "(UTC+5:45)"
+        assert csvexport.utc_suffix(0) == "(UTC+0)"
 
 
 class TestHourlyExport:
@@ -91,7 +92,7 @@ class TestHourlyExport:
             "2026-08-01 04:00 (UTC+8)",
         }
         assert lines[1].endswith(",1,3600,1.6800,1,1.68")
-        assert billing_export.TRUNCATED_MARKER not in text
+        assert csvexport.TRUNCATED_MARKER not in text
 
     async def test_month_excludes_outside_rows(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -133,7 +134,7 @@ class TestHourlyExport:
         )
         lines = [ln for ln in resp.text.split("\r\n") if ln]
         assert len(lines) == 1 + 2 + 1  # 表头 + 上限行数 + 截断标记行
-        assert lines[-1].startswith(billing_export.TRUNCATED_MARKER)
+        assert lines[-1].startswith(csvexport.TRUNCATED_MARKER)
 
     async def test_bad_month_rejected(self, client: AsyncClient):
         headers, _, _ = await create_user_with_key(client, "13900000305")

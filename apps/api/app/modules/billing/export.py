@@ -9,19 +9,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# 兼容既有引用(tests / 管理端导出模块):原语上移 app.core.csvexport 后在此再导出
-from app.core.csvexport import (  # noqa: F401
-    EXPORT_MAX_ROWS,
-    TRUNCATED_MARKER,
-    csv_line,
-    utc_suffix,
-)
-from app.core.csvexport import (
-    fmt_money as _money,
-)
-from app.core.csvexport import (
-    fmt_ts as _fmt_ts,
-)
+from app.core.csvexport import EXPORT_MAX_ROWS, TRUNCATED_MARKER, csv_line, fmt_money, fmt_ts
 
 # 单次导出批拉粒度
 _BATCH = 1_000
@@ -120,12 +108,12 @@ async def stream_hourly_csv(
         for r in rows:
             yield csv_line(
                 [
-                    _fmt_ts(r.hour_start, tz_offset_minutes),
+                    fmt_ts(r.hour_start, tz_offset_minutes),
                     r.instance_id,
                     r.seconds_used,
-                    _money(r.unit_price),
+                    fmt_money(r.unit_price),
                     r.gpu_count,
-                    _money(r.amount),
+                    fmt_money(r.amount),
                 ]
             )
         sent += len(rows)
@@ -179,10 +167,10 @@ async def stream_ledger_csv(
         for r in rows:
             yield csv_line(
                 [
-                    _fmt_ts(r.created_at, tz_offset_minutes),
+                    fmt_ts(r.created_at, tz_offset_minutes),
                     labels.get(r.type, r.type),
-                    _money(r.amount),
-                    _money(r.balance_after),
+                    fmt_money(r.amount),
+                    fmt_money(r.balance_after),
                     f"{r.ref_type}:{r.ref_id or ''}" if r.ref_type else "",
                     r.remark or "",
                 ]
@@ -242,11 +230,11 @@ async def stream_admin_orders_csv(
                 [
                     r.order_no,
                     r.user_id,
-                    _money(r.amount),
+                    fmt_money(r.amount),
                     channel_labels.get(r.channel, r.channel),
                     status_labels.get(r.status, r.status),
-                    _fmt_ts(r.paid_at, tz_offset_minutes) if r.paid_at else "",
-                    _fmt_ts(r.created_at, tz_offset_minutes),
+                    fmt_ts(r.paid_at, tz_offset_minutes) if r.paid_at else "",
+                    fmt_ts(r.created_at, tz_offset_minutes),
                 ]
             )
         sent += len(rows)

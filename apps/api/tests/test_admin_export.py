@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core import csvexport
 from app.core.timeutil import now_utc
 from app.modules.adminapi import export as admin_export
 from app.modules.billing import export as billing_export
@@ -80,7 +81,7 @@ class TestOrdersExport:
         text = (await client.get("/api/admin/v1/orders/export", headers=fin)).text
         lines = [line for line in text.splitlines() if line.startswith("SDL-")]
         assert len(lines) == 2  # 触顶只出前 N 行
-        assert text.splitlines()[-1].startswith(billing_export.TRUNCATED_MARKER)
+        assert text.splitlines()[-1].startswith(csvexport.TRUNCATED_MARKER)
 
 
 class TestTenantLedgerExport:
@@ -93,7 +94,7 @@ class TestTenantLedgerExport:
         assert resp.status_code == 200
         text = resp.text
         assert "充值" in text and "66.00" in text and "test-fund" in text
-        assert billing_export.TRUNCATED_MARKER not in text
+        assert csvexport.TRUNCATED_MARKER not in text
         # 管理端导出与用户端导出同一数据源:行数一致
         user_headers = {"Authorization": f"Bearer {data['access_token']}"}
         mine_resp = await client.get("/api/v1/billing/export?dataset=ledger", headers=user_headers)
@@ -115,7 +116,7 @@ class TestAuditExport:
         assert resp.status_code == 200
         text = resp.text
         assert "tenant-search:" in text
-        assert admin_export.TRUNCATED_MARKER not in text
+        assert csvexport.TRUNCATED_MARKER not in text
         # 过滤口径与 GET /audit 一致:actor_type=user 时刚才那条 admin 检索不得出现
         by_user = (
             await client.get("/api/admin/v1/audit/export", params={"actor_type": "user"}, headers=h)
@@ -135,7 +136,7 @@ class TestAuditExport:
         await register(client, "13688880003")
         monkeypatch.setattr(admin_export, "EXPORT_MAX_ROWS", 1)
         text = (await client.get("/api/admin/v1/audit/export", headers=h)).text
-        assert text.splitlines()[-1].startswith(admin_export.TRUNCATED_MARKER)
+        assert text.splitlines()[-1].startswith(csvexport.TRUNCATED_MARKER)
 
 
 class TestReconciliationExport:
