@@ -454,6 +454,19 @@ function PlatformConfigPage() {
             ),
           },
           {
+            key: "captcha",
+            label: t("platform.tabCaptcha"),
+            children: (
+              <GroupPanel
+                group="captcha"
+                items={groupItems("captcha")}
+                draft={draft}
+                setDraft={setDraft}
+                disabled={disabled}
+              />
+            ),
+          },
+          {
             key: "real_name",
             label: t("platform.tabRealName"),
             children: (

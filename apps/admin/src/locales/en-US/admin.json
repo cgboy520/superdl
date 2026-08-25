@@ -538,6 +538,7 @@
     "sourceEnv": "env default",
     "sourceUnset": "Not set",
     "tabAlipay": "Alipay",
+    "tabCaptcha": "Captcha (Aliyun)",
     "tabCluster": "Cluster access",
     "tabCompliance": "Compliance",
     "tabObservability": "Observability",

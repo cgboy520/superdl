@@ -528,6 +528,7 @@ export default interface Resources {
       "sourceEnv": "env 默认",
       "sourceUnset": "未配置",
       "tabAlipay": "支付宝",
+      "tabCaptcha": "人机校验(阿里云)",
       "tabCluster": "集群接入",
       "tabCompliance": "合规备案",
       "tabObservability": "可观测性",
