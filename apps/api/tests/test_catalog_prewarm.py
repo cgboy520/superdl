@@ -226,7 +226,7 @@ class TestPrewarmLifecycle:
             NodeInfo(
                 name="sick-node",
                 pool_label="hami",
-                gpu_model="RTX4090",
+                gpu_model_label="RTX4090",
                 gpu_total=8,
                 gpu_used=0,
                 status="NotReady",

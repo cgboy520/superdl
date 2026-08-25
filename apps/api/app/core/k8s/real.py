@@ -1046,7 +1046,6 @@ class RealOrchestrator:
                 NodeInfo(
                     name=node.metadata.name,
                     pool_label=labels.get(POOL_NODE_LABEL, "unknown"),
-                    gpu_model=labels.get("nvidia.com/gpu.product", "GPU"),
                     gpu_total=total,
                     gpu_used=min(total, used_by_node.get(node.metadata.name, 0)),
                     status="Cordoned" if cordoned else ("Ready" if ready else "NotReady"),
@@ -1123,7 +1122,6 @@ class RealOrchestrator:
             gpu_operator_present=gpu_operator,
             kata_runtimeclass="kata-qemu" in runtime_classes,
             storage_classes=storage_classes,
-            runtime_classes=runtime_classes,
             pools=pools,
             error="; ".join(errors) or None,
         )

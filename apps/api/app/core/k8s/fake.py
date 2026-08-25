@@ -107,7 +107,6 @@ class FakeOrchestrator:
             gpu_operator_present=True,
             kata_runtimeclass=True,
             storage_classes=(JUICEFS_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
-            runtime_classes=("kata-qemu", "nvidia"),
             pools=pools,
         )
 
@@ -316,13 +315,13 @@ class FakeOrchestrator:
                 NodeInfo(
                     name=name,
                     pool_label=pool,
-                    gpu_model=models.get(pool, "GPU"),
                     gpu_total=cap,
                     gpu_used=used,
                     status="Ready",
                     vcpu=64,
                     mem_gb=512,
                     disk_gb=2048,
+                    gpu_model_label=models.get(pool, ""),
                     model_label_current=self.node_labels.get(name, {}).get(
                         GPU_MODEL_NODE_LABEL, ""
                     ),
@@ -335,7 +334,6 @@ class FakeOrchestrator:
             NodeInfo(
                 name=n.name,
                 pool_label=n.pool_label,
-                gpu_model=n.gpu_model,
                 gpu_total=n.gpu_total,
                 gpu_used=n.gpu_used,
                 status="Cordoned" if n.name in self.cordoned_nodes else n.status,

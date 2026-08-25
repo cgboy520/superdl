@@ -508,7 +508,7 @@ class TestEnrollReconciler:
                 NodeInfo(
                     name="gpu-b1-02",
                     pool_label="hami",
-                    gpu_model="RTX4090",
+                    gpu_model_label="RTX4090",
                     gpu_total=8,
                     gpu_used=0,
                     status="Ready",
@@ -558,7 +558,7 @@ class TestEnrollReconciler:
                 NodeInfo(
                     name="wrong-pool-node",
                     pool_label="hami",
-                    gpu_model="RTX4090",
+                    gpu_model_label="RTX4090",
                     gpu_total=8,
                     gpu_used=0,
                     status="Ready",

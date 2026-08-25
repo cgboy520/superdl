@@ -497,7 +497,6 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
     row.kata_runtimeclass = probe.kata_runtimeclass
     row.storage_classes = list(probe.storage_classes)
     row.pools = dict(probe.pools)
-    row.detail = {"runtime_classes": list(probe.runtime_classes)}
     row.error = probe.error
     row.probed_at = now_utc()
     return row

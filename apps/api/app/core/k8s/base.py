@@ -113,7 +113,6 @@ class ClusterProbe:
     gpu_operator_present: bool = False
     kata_runtimeclass: bool = False  # RuntimeClass kata-qemu 存在
     storage_classes: tuple[str, ...] = ()
-    runtime_classes: tuple[str, ...] = ()
     pools: dict[str, int] = field(default_factory=dict)  # 池→节点数,未打标计 unlabeled
     error: str | None = None
 
@@ -249,7 +248,6 @@ class NodeInfo:
 
     name: str
     pool_label: str
-    gpu_model: str
     gpu_total: int
     gpu_used: int
     status: str  # Ready / NotReady / Cordoned
@@ -257,6 +255,6 @@ class NodeInfo:
     vcpu: int = 0
     mem_gb: int = 0
     disk_gb: int = 0
-    # 台账巡检用:GFD 原文标签与平台 canonical 标签当前值(空串=无)
+    # 台账巡检用:GFD 型号原文标签(nvidia.com/gpu.product)与平台 canonical 标签当前值(空串=无)
     gpu_model_label: str = ""
     model_label_current: str = ""

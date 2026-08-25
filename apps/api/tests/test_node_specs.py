@@ -45,7 +45,6 @@ async def test_unlabeled_node_visible(sm, fake):
         NodeInfo(
             name="rogue-node",
             pool_label="unknown",
-            gpu_model="GPU",
             gpu_total=4,
             gpu_used=0,
             status="Ready",
@@ -66,7 +65,6 @@ async def test_missing_then_removed(sm, fake):
         NodeInfo(
             name="gone-node",
             pool_label="hami",
-            gpu_model="GPU",
             gpu_total=1,
             gpu_used=0,
             status="Ready",

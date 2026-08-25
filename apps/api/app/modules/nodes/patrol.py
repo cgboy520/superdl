@@ -108,7 +108,6 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                 raw = (
                     e.get("raw")
                     or n.gpu_model_label
-                    or (n.gpu_model if n.gpu_model and n.gpu_model != "GPU" else None)
                     or (rows[n.name].gpu_model_raw if n.name in rows else None)
                 )
                 canonical = canonical_gpu_model(raw)
