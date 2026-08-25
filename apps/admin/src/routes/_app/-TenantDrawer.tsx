@@ -4,15 +4,7 @@
  * 抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。
  */
 
-import {
-  adminColors,
-  formatDateTime,
-  instanceStatusMap,
-  ledgerTypeMap,
-  metaOf,
-  orderStatusMap,
-  paymentChannelMap,
-} from "@superdl/ui";
+import { formatDateTime, instanceStatusMap, ledgerTypeMap, metaOf } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -48,6 +40,8 @@ import {
   useTenantQuota,
 } from "../../api";
 import { LoadMoreButton } from "../../components/LoadMore";
+import { useOrderColumns } from "../../components/orderColumns";
+import { SignedAmount } from "../../components/SignedAmount";
 import { StatusTag } from "../../components/StatusTag";
 import { useApiErrorText } from "../../lib/apiError";
 import { useCsvExport } from "../../lib/csvExport";
@@ -249,11 +243,7 @@ function LedgerTab({ userId }: { userId: number }) {
           {
             title: t("tenants.colAmount"),
             dataIndex: "amount",
-            render: (v: string) => (
-              <span style={{ color: v.startsWith("-") ? undefined : adminColors.positive }}>
-                {formatMoney(v)}
-              </span>
-            ),
+            render: (v: string) => <SignedAmount value={v} highlightNegative={false} />,
           },
           {
             title: t("tenants.colBalanceAfter"),
@@ -274,10 +264,9 @@ function LedgerTab({ userId }: { userId: number }) {
 
 /** 订单反查:该租户的充值订单(游标分页,加载更多)。 */
 function OrdersTab({ userId }: { userId: number }) {
-  const { t } = useTranslation(["admin", "shared"]);
-  const { formatMoney } = useFormat();
   const orders = useOrders({ user_id: userId });
   const rows: OrderRow[] = orders.data?.pages.flatMap((p) => p.items) ?? [];
+  const columns = useOrderColumns({ withTenant: false });
 
   return (
     <>
@@ -288,33 +277,7 @@ function OrdersTab({ userId }: { userId: number }) {
         pagination={false}
         scroll={{ y: 420 }}
         dataSource={rows}
-        columns={[
-          { title: t("finance.colOrderNo"), dataIndex: "order_no" },
-          {
-            title: t("tenants.colAmount"),
-            dataIndex: "amount",
-            render: (v: string) => formatMoney(v),
-          },
-          {
-            title: t("finance.colChannel"),
-            dataIndex: "channel",
-            width: 100,
-            render: (v: string) => {
-              const m = metaOf(paymentChannelMap, v);
-              return m ? t(m.labelKey) : v;
-            },
-          },
-          {
-            title: t("tenants.colStatus"),
-            dataIndex: "status",
-            width: 100,
-            render: (v: string) => {
-              const m = metaOf(orderStatusMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
-            },
-          },
-          { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
-        ]}
+        columns={columns}
       />
       <LoadMoreButton
         visible={Boolean(orders.hasNextPage)}

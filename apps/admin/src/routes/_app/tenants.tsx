@@ -32,7 +32,7 @@ import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { LoadMoreButton } from "../../components/LoadMore";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "../../components/StatusTag";
-import { TenantLink } from "../../components/TenantLink";
+import { TenantLink, tenantColumn } from "../../components/TenantLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 import { TenantDrawer } from "./-TenantDrawer";
 
@@ -258,12 +258,7 @@ function InstancesTab() {
         dataSource={instances}
         columns={[
           { title: t("tenants.colInstance"), dataIndex: "name" },
-          {
-            title: t("tenants.colOwner"),
-            dataIndex: "user_id",
-            width: 90,
-            render: (v: number) => <TenantLink id={v} />,
-          },
+          tenantColumn(t("tenants.colOwner"), 90),
           {
             title: t("tenants.colNode"),
             dataIndex: "node_name",

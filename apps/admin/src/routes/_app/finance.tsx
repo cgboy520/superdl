@@ -1,4 +1,4 @@
-import { addAmounts, adjustmentStatusMap, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, paymentChannelMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import { addAmounts, adjustmentStatusMap, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -63,8 +63,11 @@ import { useCsvExport } from "../../lib/csvExport";
 import { useFormDraft } from "../../lib/formDraft";
 import { useFormat } from "../../lib/format";
 import { AuditTable } from "../../components/AuditTable";
+import { useOrderColumns } from "../../components/orderColumns";
+import { RowActionModal } from "../../components/RowActionModal";
+import { SignedAmount } from "../../components/SignedAmount";
 import { StatusTag } from "../../components/StatusTag";
-import { TenantLink } from "../../components/TenantLink";
+import { TenantLink, tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { SettlementGapsTab } from "./-SettlementGapsTab";
 
@@ -139,7 +142,7 @@ function ReconciliationCard() {
 
 function OrdersTab() {
   const { t } = useTranslation(["admin", "shared"]);
-  const { formatMoney } = useFormat();
+  const orderColumns = useOrderColumns({ withTenant: true });
   const [status, setStatus] = useState<string | undefined>();
   const [orderNo, setOrderNo] = useState("");
   const [day, setDay] = useState<Dayjs | null>(null);
@@ -178,33 +181,7 @@ function OrdersTab() {
         rowKey="order_no"
         dataSource={orders}
         loading={q.isLoading}
-        columns={[
-          { title: t("finance.colOrderNo"), dataIndex: "order_no" },
-          {
-            title: t("finance.colTenant"),
-            dataIndex: "user_id",
-            width: 80,
-            render: (v: number) => <TenantLink id={v} />,
-          },
-          { title: t("finance.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
-          {
-            title: t("finance.colChannel"),
-            dataIndex: "channel",
-            render: (v: string) => {
-              const m = metaOf(paymentChannelMap, v);
-              return m ? t(m.labelKey) : v;
-            },
-          },
-          {
-            title: t("finance.colStatus"),
-            dataIndex: "status",
-            render: (v: string) => {
-              const m = metaOf(orderStatusMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
-            },
-          },
-          { title: t("finance.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
-        ]}
+        columns={orderColumns}
       />
       <LoadMoreButton
         visible={Boolean(q.hasNextPage)}
@@ -271,9 +248,7 @@ function ReviewConfirmModal({
           {ctx.data?.status === "frozen" ? ` · ${t("tenants.frozen")}` : ""}
         </Descriptions.Item>
         <Descriptions.Item label={t("finance.colAmount")}>
-          <span style={{ color: adj.amount.startsWith("-") ? adminColors.negative : adminColors.positive }}>
-            {formatMoney(adj.amount)}
-          </span>
+          <SignedAmount value={adj.amount} />
         </Descriptions.Item>
         <Descriptions.Item label={t("finance.ctxBalance")}>
           {ctx.isLoading ? "…" : ctx.data ? formatMoney(ctx.data.balance) : "—"}
@@ -384,20 +359,11 @@ function AdjustmentsTab() {
         dataSource={rows}
         columns={[
           { title: t("finance.colAdjustId"), dataIndex: "id", width: 70 },
-          {
-            title: t("finance.colTenant"),
-            dataIndex: "user_id",
-            width: 80,
-            render: (v: number) => <TenantLink id={v} />,
-          },
+          tenantColumn(t("finance.colTenant")),
           {
             title: t("finance.colAmount"),
             dataIndex: "amount",
-            render: (v: string) => (
-              <span style={{ color: v.startsWith("-") ? adminColors.negative : adminColors.positive }}>
-                {formatMoney(v)}
-              </span>
-            ),
+            render: (v: string) => <SignedAmount value={v} />,
           },
           { title: t("finance.colReason"), dataIndex: "reason", ellipsis: true },
           {
@@ -724,63 +690,41 @@ function PayoutModal({
   onDone: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const errText = useApiErrorText();
   const { formatMoney } = useFormat();
-  const { message } = App.useApp();
   const [form] = Form.useForm<RefundPayout>();
   const payout = usePayoutRefund();
   if (!target) return null;
   return (
-    <Modal
-      open
+    <RowActionModal
       title={t("finance.payoutTitle", { no: target.refund_no })}
       okText={t("finance.payoutOk")}
-      okButtonProps={{ loading: payout.isPending }}
-      onCancel={onClose}
-      onOk={async () => {
-        const values = await form.validateFields();
-        try {
-          await payout.mutateAsync({ refundId: target.id, data: values });
-          message.success(t("finance.payoutDone"));
-          onDone();
-          onClose();
-        } catch (e) {
-          message.error(errText(e, t("finance.payoutFailed")));
-        }
-      }}
+      note={t("finance.payoutNote", {
+        amount: formatMoney(target.amount),
+        reviewer: `#${target.review_by ?? "-"}`,
+      })}
+      form={form}
+      submit={(values) => payout.mutateAsync({ refundId: target.id, data: values })}
+      successText={t("finance.payoutDone")}
+      failText={t("finance.payoutFailed")}
+      onClose={onClose}
+      onDone={onDone}
     >
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-        <Alert
-          type="info"
-          showIcon
-          title={t("finance.payoutNote", {
-            amount: formatMoney(target.amount),
-            reviewer: `#${target.review_by ?? "-"}`,
-          })}
+      <Form.Item name="channel" label={t("finance.payoutChannelLabel")} rules={[{ required: true }]}>
+        <Select
+          options={Object.entries(payoutChannelMap).map(([v, m]) => ({
+            value: v,
+            label: t(m.labelKey),
+          }))}
         />
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="channel"
-            label={t("finance.payoutChannelLabel")}
-            rules={[{ required: true }]}
-          >
-            <Select
-              options={Object.entries(payoutChannelMap).map(([v, m]) => ({
-                value: v,
-                label: t(m.labelKey),
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="ref"
-            label={t("finance.payoutRefLabel")}
-            rules={[{ required: true, min: 2, message: t("finance.payoutRefRule") }]}
-          >
-            <Input placeholder={t("finance.payoutRefPlaceholder")} />
-          </Form.Item>
-        </Form>
-      </Space>
-    </Modal>
+      </Form.Item>
+      <Form.Item
+        name="ref"
+        label={t("finance.payoutRefLabel")}
+        rules={[{ required: true, min: 2, message: t("finance.payoutRefRule") }]}
+      >
+        <Input placeholder={t("finance.payoutRefPlaceholder")} />
+      </Form.Item>
+    </RowActionModal>
   );
 }
 
@@ -841,12 +785,7 @@ function RefundsTab() {
         dataSource={rows}
         columns={[
           { title: t("finance.colRefundNo"), dataIndex: "refund_no", width: 130 },
-          {
-            title: t("finance.colTenant"),
-            dataIndex: "user_id",
-            width: 80,
-            render: (v: number) => <TenantLink id={v} />,
-          },
+          tenantColumn(t("finance.colTenant")),
           { title: t("finance.colOrderNo"), dataIndex: "order_no", width: 190 },
           {
             title: t("finance.colAmount"),
@@ -999,53 +938,35 @@ function IssueInvoiceModal({
   onDone: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const errText = useApiErrorText();
   const { formatMoney } = useFormat();
-  const { message } = App.useApp();
   const [form] = Form.useForm<{ invoice_no: string }>();
   const issue = useIssueInvoice();
   if (!target) return null;
   return (
-    <Modal
-      open
+    <RowActionModal
       title={t("finance.invoiceIssueTitle")}
       okText={t("finance.invoiceIssue")}
-      okButtonProps={{ loading: issue.isPending }}
-      onCancel={onClose}
-      onOk={async () => {
-        const values = await form.validateFields();
-        try {
-          await issue.mutateAsync({ invoiceId: target.id, data: values });
-          message.success(t("finance.invoiceIssued"));
-          onDone();
-          onClose();
-        } catch (e) {
-          message.error(errText(e, t("finance.invoiceIssueFailed")));
-        }
-      }}
+      note={t("finance.invoiceIssueNote", {
+        period: target.period,
+        amount: formatMoney(target.amount),
+        title: target.title,
+        email: target.email,
+      })}
+      form={form}
+      submit={(values) => issue.mutateAsync({ invoiceId: target.id, data: values })}
+      successText={t("finance.invoiceIssued")}
+      failText={t("finance.invoiceIssueFailed")}
+      onClose={onClose}
+      onDone={onDone}
     >
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-        <Alert
-          type="info"
-          showIcon
-          title={t("finance.invoiceIssueNote", {
-            period: target.period,
-            amount: formatMoney(target.amount),
-            title: target.title,
-            email: target.email,
-          })}
-        />
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="invoice_no"
-            label={t("finance.invoiceNoLabel")}
-            rules={[{ required: true, min: 2, message: t("finance.invoiceNoRule") }]}
-          >
-            <Input placeholder={t("finance.invoiceNoPlaceholder")} maxLength={64} />
-          </Form.Item>
-        </Form>
-      </Space>
-    </Modal>
+      <Form.Item
+        name="invoice_no"
+        label={t("finance.invoiceNoLabel")}
+        rules={[{ required: true, min: 2, message: t("finance.invoiceNoRule") }]}
+      >
+        <Input placeholder={t("finance.invoiceNoPlaceholder")} maxLength={64} />
+      </Form.Item>
+    </RowActionModal>
   );
 }
 
@@ -1095,12 +1016,7 @@ function InvoicesTab() {
         dataSource={rows}
         columns={[
           { title: t("finance.colPeriod"), dataIndex: "period", width: 90 },
-          {
-            title: t("finance.colTenant"),
-            dataIndex: "user_id",
-            width: 80,
-            render: (v: number) => <TenantLink id={v} />,
-          },
+          tenantColumn(t("finance.colTenant")),
           {
             title: t("finance.colAmount"),
             dataIndex: "amount",
