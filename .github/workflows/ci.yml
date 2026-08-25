@@ -119,6 +119,15 @@ jobs:
       - run: shellcheck apps/api/app/modules/nodes/assets/node-join.sh
       - run: bats deploy/node-join/tests
 
+  # 文档引用闸门:Markdown 相对链接与反引号仓库路径必须存在(stdlib 零依赖,秒级)。
+  # 它红了说明有文档引用了已改名/删除的文件 —— 文档与代码同提交是提交约定(CLAUDE.md #16)。
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 scripts/check-docs-links.py
+
   security:
     runs-on: ubuntu-latest
     steps:
