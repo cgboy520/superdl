@@ -1,4 +1,6 @@
-"""创建类幂等端点的重放响应约定:重放一律 200 + X-Idempotent-Replay 头(而非 201/202)。"""
+"""HTTP 层小工具:幂等重放响应约定、直连对端 IP、Bearer 常量时间比较。"""
+
+import secrets
 
 from fastapi import Request, Response, status
 
@@ -14,3 +16,11 @@ def mark_idempotent_replay(response: Response) -> None:
 def client_ip(request: Request) -> str | None:
     """直连对端 IP(单一定义点;用于限流键/合规存证,信任边界为直连,不读 X-Forwarded-For)。"""
     return request.client.host if request.client else None
+
+
+def bearer_matches(authorization: str | None, token: str) -> bool:
+    """Authorization 头与期望 Bearer token 的常量时间比较(防计时探测出 token 前缀)。
+
+    先 encode 成 bytes:compare_digest 的 str 入参遇非 ASCII(畸形头)会抛 TypeError。
+    /metrics(API 与 worker)与 Alertmanager webhook 共用。"""
+    return secrets.compare_digest((authorization or "").encode(), f"Bearer {token}".encode())

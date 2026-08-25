@@ -89,22 +89,19 @@ async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) 
 
 def _metrics_wsgi_app(token: str | None) -> Callable[..., Any]:
     """worker /metrics 的 WSGI 应用:与 API 同一 SUPERDL_METRICS_TOKEN Bearer 门禁。"""
-    import secrets
-
     from prometheus_client import make_wsgi_app
+
+    from app.core.http import bearer_matches
 
     inner = make_wsgi_app()
 
     def app(environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
-        if token:
-            authorization = environ.get("HTTP_AUTHORIZATION") or ""
-            # 常量时间比较;先 encode:compare_digest 收 str 遇非 ASCII 会抛 TypeError
-            if not secrets.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
-                start_response(
-                    "401 Unauthorized",
-                    [("Content-Type", "text/plain"), ("WWW-Authenticate", "Bearer")],
-                )
-                return [b"unauthorized"]
+        if token and not bearer_matches(environ.get("HTTP_AUTHORIZATION"), token):
+            start_response(
+                "401 Unauthorized",
+                [("Content-Type", "text/plain"), ("WWW-Authenticate", "Bearer")],
+            )
+            return [b"unauthorized"]
         return inner(environ, start_response)
 
     return app

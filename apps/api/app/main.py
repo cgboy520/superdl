@@ -135,16 +135,13 @@ def create_app() -> FastAPI:
     metrics_app = make_asgi_app()
 
     async def metrics_guard(scope, receive, send):
-        import secrets
-
         from starlette.datastructures import Headers
         from starlette.responses import PlainTextResponse
 
+        from app.core.http import bearer_matches
+
         token = get_settings().metrics_token
-        # 常量时间比较,防计时探测出 token 前缀;
-        # 先 encode:compare_digest 的 str 入参遇非 ASCII(如畸形头)会抛 TypeError
-        authorization = Headers(scope=scope).get("authorization") or ""
-        if token and not secrets.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
+        if token and not bearer_matches(Headers(scope=scope).get("authorization"), token):
             await PlainTextResponse(
                 "unauthorized",
                 status_code=401,

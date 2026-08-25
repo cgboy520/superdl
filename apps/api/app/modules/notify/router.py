@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, Query, Request, Response, status
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode, unauthorized
+from app.core.http import bearer_matches
 from app.core.http import client_ip as http_client_ip
 from app.core.pagination import Page
 from app.core.ratelimit import check_rate_limit
@@ -76,7 +77,6 @@ async def alertmanager_webhook(
 ) -> dict[str, int]:
     """Alertmanager 告警接入。除 test 环境外必须配置并携带 Bearer token。"""
     import json
-    import secrets as _secrets
 
     client_ip = http_client_ip(request)
     await check_rate_limit(
@@ -86,11 +86,7 @@ async def alertmanager_webhook(
     )
     settings = get_settings()
     if settings.alertmanager_token:
-        expected = f"Bearer {settings.alertmanager_token}"
-        # compare_digest 的 str 入参遇非 ASCII 会抛 TypeError:先 encode 成 bytes 再比
-        if authorization is None or not _secrets.compare_digest(
-            authorization.encode(), expected.encode()
-        ):
+        if not bearer_matches(authorization, settings.alertmanager_token):
             raise unauthorized("告警 token 无效")
     elif settings.environment != "test":
         raise unauthorized("必须配置 SUPERDL_ALERTMANAGER_TOKEN 后才能接入告警")
