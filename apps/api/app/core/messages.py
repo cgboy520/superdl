@@ -101,7 +101,6 @@ MESSAGES: dict[str, str] = {
     "billing.orderNotFound": "订单不存在",
     "billing.orderStateNotBackfillable": "订单状态 {status} 不可补单",
     "billing.realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
-    "billing.rechargeAmountRange": "充值金额须在 {min}~{max} 元之间",
     "billing.refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
     "billing.refundAmountExceeded": (
         "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},当前余额 ¥{balance})"

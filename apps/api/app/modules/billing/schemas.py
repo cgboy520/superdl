@@ -77,7 +77,7 @@ class DailySummaryOut(BaseModel):
     items: list[BillSummaryItem]
 
 
-# 充值金额上下限:契约层(pydantic,进 OpenAPI)与服务层同一对常量
+# 充值金额上下限:只在契约层(pydantic,进 OpenAPI)校验一次
 MIN_RECHARGE = Decimal("1.00")
 MAX_RECHARGE = Decimal("50000.00")
 
@@ -85,7 +85,7 @@ MAX_RECHARGE = Decimal("50000.00")
 class RechargeCreate(BaseModel):
     # 先量化后校验会让 1e30 这类值在 as_amount() 抛 InvalidOperation 漏成 500;
     # 契约层边界直接 422,且进 OpenAPI 契约
-    amount: Decimal = Field(gt=0, le=MAX_RECHARGE)
+    amount: Decimal = Field(ge=MIN_RECHARGE, le=MAX_RECHARGE)
     channel: str  # wechat / alipay / mock(dev);必填:渠道须显式选择,不默认兜底
 
 

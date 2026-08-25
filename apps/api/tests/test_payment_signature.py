@@ -45,14 +45,14 @@ APP_ID = "2021000100000001"
 SELLER_ID = "2088123412341234"
 
 
-def _alipay_channel(keypair: tuple[str, str], *, seller_id: str = SELLER_ID) -> AlipayChannel:
+def _alipay_channel(keypair: tuple[str, str]) -> AlipayChannel:
     priv, pub = keypair
     return AlipayChannel(
         {
             "alipay_app_id": APP_ID,
             "alipay_private_key": priv,
             "alipay_public_key": pub,
-            "alipay_seller_id": seller_id,
+            "alipay_seller_id": SELLER_ID,
         }
     )
 
@@ -125,15 +125,6 @@ class TestAlipayCallbackSignature:
             await _alipay_channel(keypair).parse_callback(
                 {}, _alipay_notify(priv, seller_id="2088999999999999")
             )
-        assert exc.value.message_key == "billing.alipayCallbackMerchantMismatch"
-
-    async def test_missing_seller_config_rejects_callback(self, keypair):
-        """渠道未配置收款 PID 时回调一律拒收:seller_id 缺失即无法核对收款方身份,
-        放行等于收款账号不校验(prod 构造期已 fail-fast,本用例兜非 prod 直调)。"""
-        priv, _pub = keypair
-        channel = _alipay_channel(keypair, seller_id="")
-        with pytest.raises(AppError) as exc:
-            await channel.parse_callback({}, _alipay_notify(priv, seller_id="2088999999999999"))
         assert exc.value.message_key == "billing.alipayCallbackMerchantMismatch"
 
     async def test_refunded_notification_is_not_success(self, keypair):

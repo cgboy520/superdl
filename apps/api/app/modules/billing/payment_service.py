@@ -29,7 +29,6 @@ from app.modules.billing.payment_channels import (
     QueryResult,
     get_channel,
 )
-from app.modules.billing.schemas import MAX_RECHARGE, MIN_RECHARGE
 
 logger = get_logger(__name__)
 
@@ -58,13 +57,7 @@ async def create_recharge(
     路由据此回 200 + X-Idempotent-Replay 而非 201。"""
     from app.core.config import get_settings
 
-    amount = as_amount(amount)
-    if not MIN_RECHARGE <= amount <= MAX_RECHARGE:
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            key="billing.rechargeAmountRange",
-            params={"min": MIN_RECHARGE, "max": MAX_RECHARGE},
-        )
+    amount = as_amount(amount)  # 上下限由 RechargeCreate 契约层校验
     cfg = await get_effective_platform_config(session)
     if channel_name in ("wechat", "alipay") and cfg[f"payment_{channel_name}_enabled"] != "true":
         raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")

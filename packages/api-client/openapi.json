@@ -5673,8 +5673,8 @@
           "amount": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
                 "maximum": 50000.0,
+                "minimum": 1.0,
                 "type": "number"
               },
               {

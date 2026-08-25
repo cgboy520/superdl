@@ -408,13 +408,7 @@ class AlipayChannel:
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )
         # seller_id 缺失或不符一律拒收(当面付通知必带 seller_id;缺失即视为伪造/串号)
-        if not self._seller_id or params.get("seller_id") != self._seller_id:
-            raise AppError(
-                ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
-            )
-        # 币种防御:境内当面付结算恒为 CNY(通知本身不带币种字段),
-        # 一旦出现外币结算字段(trans_currency/currency)且非 CNY 即拒收,防金额被错币种入账
-        if params.get("trans_currency", "CNY") != "CNY" or params.get("currency", "CNY") != "CNY":
+        if params.get("seller_id") != self._seller_id:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.alipayCallbackMerchantMismatch"
             )

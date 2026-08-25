@@ -77,7 +77,6 @@
     "orderNotFound": "Order not found",
     "orderStateNotBackfillable": "Order status {{status}} cannot be backfilled",
     "realNameRequiredForRecharge": "Regulations require identity verification before topping up",
-    "rechargeAmountRange": "Top-up amount must be between {{min}} and {{max}} CNY",
     "refundAlreadyApplied": "This order already has an active refund request — do not resubmit",
     "refundAmountExceeded": "Refund amount exceeds the refundable cap CN¥{{max}} (order CN¥{{order}}, current balance CN¥{{balance}})",
     "refundBalanceConsumed": "Balance has since been spent and cannot cover this refund (current CN¥{{balance}}, required CN¥{{amount}}) — cancel the request instead",
