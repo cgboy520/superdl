@@ -64,7 +64,6 @@ export * from './adminTicketOut';
 export * from './adminTicketReply';
 export * from './adminTicketStatusUpdate';
 export * from './adminTicketStatusUpdateAction';
-export * from './adminToken';
 export * from './adminUpdateRequest';
 export * from './adminUpdateRequestRole';
 export * from './adminUpdateRequestStatus';

@@ -38,19 +38,8 @@ def fake():
 async def second_admin_headers(
     sm: async_sessionmaker[AsyncSession], client, username: str, role: str = "finance"
 ) -> dict[str, str]:
-    from tests.test_catalog import complete_mfa_setup
-
-    async with sm() as session:
-        await create_admin(session, username, "pass1234", role)
-    resp = await client.post(
-        "/api/admin/v1/auth/login", json={"username": username, "password": "pass1234"}
-    )
-    body = resp.json()
-    if body["status"] == "ok":
-        token = body["access_token"]
-    else:
-        token = await complete_mfa_setup(client, body["ticket"])  # admin/finance 强制 TOTP
-    return {"Authorization": f"Bearer {token}"}
+    """指定用户名建管理员并登录(默认 finance:调账双人复核需要第二位财务)。"""
+    return await admin_headers(sm, client, role, username=username)
 
 
 async def _make_dead_task(sm) -> int:

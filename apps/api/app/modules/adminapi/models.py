@@ -20,7 +20,7 @@ class AdminUser(Base):
     status: Mapped[str] = mapped_column(String(16), default="active")
     # 撤销闸:停用、改角色、改密都 +1,已签发的 token 立即失效
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
-    # TOTP(admin/finance 强制):secret AES-GCM 加密(aad=f"totp:{id}");
+    # TOTP(全部管理角色强制):secret AES-GCM 加密(aad=f"totp:{id}");
     # recovery 为恢复码 bcrypt 哈希列表,用后作废
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")

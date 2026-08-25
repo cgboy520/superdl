@@ -1,6 +1,7 @@
 """管理端 TOTP MFA:全部管理角色强制绑定,二要素登录,恢复码,重置救援。"""
 
 import asyncio
+from typing import get_args
 
 import pyotp
 import pytest
@@ -8,6 +9,7 @@ from httpx import AsyncClient
 
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
+from app.modules.adminapi.schemas import AdminRole
 from tests.test_catalog import admin_headers, complete_mfa_setup
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -35,23 +37,15 @@ async def _create(client, sm, username: str, role: str) -> None:
 
 
 class TestMfaEnforcement:
-    async def test_admin_role_gets_setup_challenge(self, client: AsyncClient, sm):
-        await _create(client, sm, "mfa-admin", "admin")
-        body = (await _login(client, "mfa-admin")).json()
-        assert body["status"] == "mfa_setup"
-        assert "access_token" not in body
-        assert body["ticket"]
-
-    async def test_finance_role_also_enforced(self, client: AsyncClient, sm):
-        await _create(client, sm, "mfa-fin", "finance")
-        assert (await _login(client, "mfa-fin")).json()["status"] == "mfa_setup"
-
-    async def test_ops_and_readonly_also_enforced(self, client: AsyncClient, sm):
-        """ops(可签节点接入令牌)与 readonly(可导出流水/审计)同样强制绑定 TOTP。"""
-        await _create(client, sm, "mfa-ops", "ops")
-        assert (await _login(client, "mfa-ops")).json()["status"] == "mfa_setup"
-        await _create(client, sm, "mfa-ro", "readonly")
-        assert (await _login(client, "mfa-ro")).json()["status"] == "mfa_setup"
+    async def test_every_role_gets_setup_challenge(self, client: AsyncClient, sm):
+        """登录只回绑定票、不直发 token,契约里的每个角色无一例外
+        (ops 可签节点接入令牌、readonly 可导出流水/审计,免 MFA 即口令泄漏直通车)。"""
+        for role in get_args(AdminRole):
+            await _create(client, sm, f"mfa-{role}", role)
+            body = (await _login(client, f"mfa-{role}")).json()
+            assert body["status"] == "mfa_setup", (role, body)
+            assert "access_token" not in body
+            assert body["ticket"]
 
 
 class TestSetupFlow:

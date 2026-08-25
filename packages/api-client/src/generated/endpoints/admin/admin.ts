@@ -69,7 +69,6 @@ import type {
   AdminTicketOut,
   AdminTicketReply,
   AdminTicketStatusUpdate,
-  AdminToken,
   AdminUpdateRequest,
   AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,
   AlertUnreadCountOut,
@@ -1882,11 +1881,13 @@ export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
 }
 
 /**
+ * 密码校验通过只返回二要素挑战票(全部管理角色强制 TOTP):未绑定发绑定票、已绑定发验证票;
+ * 正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发。
  * @summary Admin Login
  */
-export const adminLoginApiAdminV1AuthLoginPost = async (adminLoginRequest: AdminLoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminToken | MfaChallengeOut> => {
+export const adminLoginApiAdminV1AuthLoginPost = async (adminLoginRequest: AdminLoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaChallengeOut> => {
 
-  return customFetch<AdminToken | MfaChallengeOut>(getAdminLoginApiAdminV1AuthLoginPostUrl(),
+  return customFetch<MfaChallengeOut>(getAdminLoginApiAdminV1AuthLoginPostUrl(),
   {
     ...options,
     method: 'POST',

@@ -82,20 +82,22 @@ async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
 
 
 async def admin_headers(
-    sm: async_sessionmaker[AsyncSession], client: AsyncClient, role: str = "admin"
+    sm: async_sessionmaker[AsyncSession],
+    client: AsyncClient,
+    role: str = "admin",
+    *,
+    username: str | None = None,
 ) -> dict[str, str]:
+    """建管理员(默认用户名 {role}-user)并登录到正式 token:全角色强制 TOTP,
+    登录只回绑定票,走完整绑定流。"""
+    name = username or f"{role}-user"
     async with sm() as session:
-        await create_admin(session, f"{role}-user", "pass1234", role)
+        await create_admin(session, name, "pass1234", role)
     resp = await client.post(
-        "/api/admin/v1/auth/login", json={"username": f"{role}-user", "password": "pass1234"}
+        "/api/admin/v1/auth/login", json={"username": name, "password": "pass1234"}
     )
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    if body["status"] == "ok":
-        token = body["access_token"]
-    else:
-        # admin/finance 强制 TOTP:走完整绑定流拿 token
-        token = await complete_mfa_setup(client, body["ticket"])
+    token = await complete_mfa_setup(client, resp.json()["ticket"])
     return {"Authorization": f"Bearer {token}"}
 
 

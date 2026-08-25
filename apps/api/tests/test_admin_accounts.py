@@ -39,9 +39,7 @@ async def login_headers(client: AsyncClient, username: str, password: str) -> di
     resp = await login(client, username, password)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    if body["status"] == "ok":
-        token = body["access_token"]
-    elif body["status"] == "mfa_setup":
+    if body["status"] == "mfa_setup":
         ticket = body["ticket"]
         begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         assert begin.status_code == 200, begin.text

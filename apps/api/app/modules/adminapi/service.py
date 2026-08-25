@@ -21,7 +21,7 @@ from app.core.security import (
 )
 from app.core.timeutil import now_utc
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
-from app.modules.adminapi.schemas import AdjustmentOut, AdminOut, AdminToken, MfaChallengeOut
+from app.modules.adminapi.schemas import AdjustmentOut, MfaChallengeOut
 
 logger = get_logger(__name__)
 
@@ -42,8 +42,8 @@ PASSWORD_MAX_BYTES = 72
 
 # ---------- TOTP MFA(全部管理角色强制) ----------
 # ops 能签发节点接入令牌(→ 集群 join token → 加恶意节点)、readonly 能导出全部
-# 租户流水与审计——免 MFA 的角色等于给口令泄漏开直通车道,无一例外强制。
-MFA_ROLES = ("admin", "finance", "ops", "readonly")
+# 租户流水与审计——免 MFA 的角色等于给口令泄漏开直通车道,无一例外强制:
+# 登录只签发挑战票,正式 token 只经 confirm_totp_setup / verify_mfa_login 签发。
 MFA_SETUP_TICKET_SECONDS = 600  # 绑定票 10 分钟,一次性用途(typ=mfa_setup)
 MFA_VERIFY_TICKET_SECONDS = 300  # 二要素票 5 分钟
 MFA_MAX_ATTEMPTS = 5  # 同账号 5 次/10min,防在线爆破 6 位码
@@ -82,8 +82,8 @@ async def _clear_login_failures(key: str) -> None:
 
 async def login(
     session: AsyncSession, username: str, password: str, *, client_ip: str | None = None
-) -> tuple[AdminToken | MfaChallengeOut, AdminUser]:
-    """密码校验 → (登录产物, 账号)。高权角色产物为二要素挑战票而非 token。"""
+) -> tuple[MfaChallengeOut, AdminUser]:
+    """密码校验 → (二要素挑战票, 账号)。未绑定 TOTP 发绑定票,已绑定发验证票;不直发 token。"""
     admin = (
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
@@ -137,22 +137,10 @@ async def login(
     # 凭据正确即清零该账号桶的失败计数(IP 桶不清:口令喷洒不会产生成功登录)
     await _clear_login_failures(f"admin-login:{client_ip or '-'}:{username}")
     await _clear_login_failures(f"admin-login-acct:{username}")
-    # 高权角色强制 TOTP:未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
-    if admin.role in MFA_ROLES:
-        if admin.totp_enabled:
-            challenge = MfaChallengeOut(
-                status="mfa_required", ticket=_mfa_ticket(admin, setup=False)
-            )
-        else:
-            challenge = MfaChallengeOut(status="mfa_setup", ticket=_mfa_ticket(admin, setup=True))
-        return challenge, admin
-    token = AdminToken(
-        access_token=create_token(
-            str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
-        ),
-        admin=AdminOut.model_validate(admin),
-    )
-    return token, admin
+    # 未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
+    if admin.totp_enabled:
+        return MfaChallengeOut(status="mfa_required", ticket=_mfa_ticket(admin, setup=False)), admin
+    return MfaChallengeOut(status="mfa_setup", ticket=_mfa_ticket(admin, setup=True)), admin
 
 
 # 静默续期:access 过期后 15 分钟宽限内可换发(401 反应式续期的窗口);

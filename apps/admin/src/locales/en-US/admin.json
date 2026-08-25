@@ -324,7 +324,7 @@
     "mfaDesc": "Two-step verification is enabled on this account. Enter the 6-digit code from your authenticator, or use a recovery code if it is unavailable.",
     "mfaManualKey": "Can't scan? Enter the key manually:",
     "mfaRecoveryPlaceholder": "Recovery code (e.g. XXXXX-XXXXX)",
-    "mfaSetupDesc": "Two-step verification is mandatory for super admins and finance. Scan with an authenticator app (Tencent Authenticator / Microsoft Authenticator, etc.) to add this account.",
+    "mfaSetupDesc": "Two-step verification is mandatory for all administrators. Scan with an authenticator app (Tencent Authenticator / Microsoft Authenticator, etc.) to add this account.",
     "mfaSetupTitle": "Set up two-step verification",
     "mfaTitle": "Two-step verification",
     "mfaUseRecovery": "Authenticator unavailable? Use a recovery code",

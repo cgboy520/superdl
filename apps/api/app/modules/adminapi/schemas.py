@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -61,22 +61,12 @@ class AdminSelfPasswordRequest(BaseModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
-class AdminToken(BaseModel):
-    status: Literal["ok"] = "ok"
-    access_token: str
-    token_type: str = "bearer"
-    admin: AdminOut
-
-
 class MfaChallengeOut(BaseModel):
-    """登录二要素挑战:admin/finance 强制。mfa_setup=首次绑定;mfa_required=已绑定验证。"""
+    """登录响应(全部管理角色强制 TOTP,不直发 token):
+    mfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。"""
 
     status: Literal["mfa_setup", "mfa_required"]
     ticket: str
-
-
-# 登录响应:成功直发 token;需二要素时发短时票据(setup 10min / verify 5min)
-AdminLoginOut = Annotated[AdminToken | MfaChallengeOut, Field(discriminator="status")]
 
 
 class MfaTicketRequest(BaseModel):

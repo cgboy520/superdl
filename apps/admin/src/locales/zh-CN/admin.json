@@ -319,7 +319,7 @@
     "mfaDesc": "该账号已启用两步验证。输入身份验证器中的 6 位动态码;验证器不可用时改用恢复码。",
     "mfaManualKey": "无法扫码?手动录入密钥:",
     "mfaRecoveryPlaceholder": "恢复码(如 XXXXX-XXXXX)",
-    "mfaSetupDesc": "超管与财务角色强制启用两步验证。用身份验证器(腾讯身份验证器 / Microsoft Authenticator 等)扫码添加账号。",
+    "mfaSetupDesc": "全体管理员强制启用两步验证。用身份验证器(腾讯身份验证器 / Microsoft Authenticator 等)扫码添加账号。",
     "mfaSetupTitle": "绑定两步验证",
     "mfaTitle": "两步验证",
     "mfaUseRecovery": "验证器不可用?使用恢复码",

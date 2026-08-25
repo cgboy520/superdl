@@ -9,12 +9,12 @@ from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
     AdminAccountOut,
-    AdminLoginOut,
     AdminLoginRequest,
     AdminOut,
     AdminRefreshOut,
     AdminRefreshRequest,
     AdminSelfPasswordRequest,
+    MfaChallengeOut,
     MfaCodeRequest,
     MfaLoginOut,
     MfaResetRequest,
@@ -30,12 +30,14 @@ router = APIRouter(tags=["admin"])
 @router.post("/auth/login")
 async def admin_login(
     body: AdminLoginRequest, session: DbSession, request: Request
-) -> AdminLoginOut:
-    result, admin = await service.login(
+) -> MfaChallengeOut:
+    """密码校验通过只返回二要素挑战票(全部管理角色强制 TOTP):未绑定发绑定票、已绑定发验证票;
+    正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发。"""
+    challenge, admin = await service.login(
         session, body.username, body.password, client_ip=client_ip(request)
     )
     set_audit_target(request, f"admin:{admin.id}")
-    return result
+    return challenge
 
 
 @router.post("/auth/mfa/setup/begin")

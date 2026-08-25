@@ -7,7 +7,8 @@
 import type { MfaChallengeOutStatus } from './mfaChallengeOutStatus';
 
 /**
- * 登录二要素挑战:admin/finance 强制。mfa_setup=首次绑定;mfa_required=已绑定验证。
+ * 登录响应(全部管理角色强制 TOTP,不直发 token):
+ * mfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。
  */
 export interface MfaChallengeOut {
   status: MfaChallengeOutStatus;

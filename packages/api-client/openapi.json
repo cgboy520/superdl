@@ -1342,34 +1342,6 @@
         "title": "AdminTicketStatusUpdate",
         "type": "object"
       },
-      "AdminToken": {
-        "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
-          },
-          "admin": {
-            "$ref": "#/components/schemas/AdminOut"
-          },
-          "status": {
-            "const": "ok",
-            "default": "ok",
-            "title": "Status",
-            "type": "string"
-          },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "access_token",
-          "admin"
-        ],
-        "title": "AdminToken",
-        "type": "object"
-      },
       "AdminUpdateRequest": {
         "properties": {
           "reason": {
@@ -3834,7 +3806,7 @@
         "type": "object"
       },
       "MfaChallengeOut": {
-        "description": "登录二要素挑战:admin/finance 强制。mfa_setup=首次绑定;mfa_required=已绑定验证。",
+        "description": "登录响应(全部管理角色强制 TOTP,不直发 token):\nmfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。",
         "properties": {
           "status": {
             "enum": [
@@ -8752,6 +8724,7 @@
     },
     "/api/admin/v1/auth/login": {
       "post": {
+        "description": "密码校验通过只返回二要素挑战票(全部管理角色强制 TOTP):未绑定发绑定票、已绑定发验证票;\n正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发。",
         "operationId": "admin_login_api_admin_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -8768,23 +8741,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "discriminator": {
-                    "mapping": {
-                      "mfa_required": "#/components/schemas/MfaChallengeOut",
-                      "mfa_setup": "#/components/schemas/MfaChallengeOut",
-                      "ok": "#/components/schemas/AdminToken"
-                    },
-                    "propertyName": "status"
-                  },
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/AdminToken"
-                    },
-                    {
-                      "$ref": "#/components/schemas/MfaChallengeOut"
-                    }
-                  ],
-                  "title": "Response Admin Login Api Admin V1 Auth Login Post"
+                  "$ref": "#/components/schemas/MfaChallengeOut"
                 }
               }
             },
