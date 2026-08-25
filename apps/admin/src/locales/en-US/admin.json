@@ -492,7 +492,6 @@
     "nodesHealth": "Node health (Ready/total)",
     "nodesMissing_one": "{{count}} missing",
     "nodesMissing_other": "{{count}} missing",
-    "noPermissionData": "Your role cannot view this data",
     "notReady": "Not ready",
     "opsOnly": "Ops/super admin only",
     "oversellChartTitle": "Actual oversell vs real utilization",

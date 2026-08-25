@@ -483,7 +483,6 @@
     "monthRevenue": "本月收入",
     "nodesHealth": "节点健康(Ready/总数)",
     "nodesMissing": "失联 {{count}} 台",
-    "noPermissionData": "当前角色无权查看该数据",
     "notReady": "未就绪",
     "opsOnly": "仅运维/超管可操作",
     "oversellChartTitle": "实际超卖率 vs 真实利用率",

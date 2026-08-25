@@ -483,7 +483,6 @@ export default interface Resources {
       "loadFailed": "取数失败(集群或数据库不可达),下方为空不代表没有数据",
       "lowerThreshold": "回调阈值 85%",
       "monthRevenue": "本月收入",
-      "noPermissionData": "当前角色无权查看该数据",
       "nodesHealth": "节点健康(Ready/总数)",
       "nodesMissing": "失联 {{count}} 台",
       "notReady": "未就绪",

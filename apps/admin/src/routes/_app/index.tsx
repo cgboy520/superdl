@@ -30,7 +30,6 @@ import {
   type DeadTaskRow,
   type OversellRow,
   type OverviewOut,
-  isApiError,
   useAckAlert,
   useAlertUnreadCount,
   useAlerts,
@@ -335,21 +334,18 @@ function AlertStreamCard() {
   );
 }
 
-/** 取数失败要显式说:渲染成「暂无数据」等于把集群不可达伪装成没数据。403 单独提示无权限。 */
-function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+/** 取数失败要显式说:渲染成「暂无数据」等于把集群不可达伪装成没数据(总览端点全角色可读,无 403 分支)。 */
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
-  const forbidden = isApiError(error) && error.status === 403;
   return (
     <Alert
-      type={forbidden ? "info" : "error"}
+      type="error"
       showIcon
-      title={forbidden ? t("overview.noPermissionData") : t("overview.loadFailed")}
+      title={t("overview.loadFailed")}
       action={
-        forbidden ? undefined : (
-          <Button size="small" onClick={onRetry}>
-            {t("overview.retry")}
-          </Button>
-        )
+        <Button size="small" onClick={onRetry}>
+          {t("overview.retry")}
+        </Button>
       }
     />
   );
@@ -358,9 +354,9 @@ function LoadFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const { data: oversell, isError: oversellError, error: oversellErr, refetch: refetchOversell } = useOversellReport();
+  const { data: oversell, isError: oversellError, refetch: refetchOversell } = useOversellReport();
   // 总览聚合:全部精确 COUNT(全角色可读),不从截断列表推算
-  const { data: ov, isError: ovError, error: ovErr, refetch: refetchOv } = useOverview();
+  const { data: ov, isError: ovError, refetch: refetchOv } = useOverview();
   const { data: alertsData } = useAlerts();
   const { data: revenue } = useRevenueReport();
   // 「告警(总)」 = 未确认告警精确计数(独立计数端点;截断的告警流长度会低估)
@@ -455,7 +451,7 @@ function Overview() {
           extra={<Typography.Text type="secondary">{t("overview.oversellHint")}</Typography.Text>}
         >
           {oversellError ? (
-            <LoadFailed error={oversellErr} onRetry={() => void refetchOversell()} />
+            <LoadFailed onRetry={() => void refetchOversell()} />
           ) : oversellRows.length ? (
             <OversellChart rows={oversellRows} />
           ) : (
@@ -464,7 +460,7 @@ function Overview() {
         </Card>
         <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
           {ovError ? (
-            <LoadFailed error={ovErr} onRetry={() => void refetchOv()} />
+            <LoadFailed onRetry={() => void refetchOv()} />
           ) : ov && ov.pools.length ? (
             <PoolOccupancy pools={ov.pools} />
           ) : (
