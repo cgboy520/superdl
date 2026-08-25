@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# SuperDL 发布流水线:迁移 → set image+apply → rollout status → 冒烟,四步任一失败即退。
+# SuperDL 发布流水线:迁移 → set image+apply → rollout status → 经 Ingress 外部冒烟,任一步失败即退。
 #
-# 用法: scripts/release.sh <tag>
+# 用法: [SUPERDL_API_BASE_URL=https://<api-domain>] scripts/release.sh <tag>
 #   tag:ghcr 已推送的发布标签(.github/workflows/release.yml 产物,形如 v1.2.3)。
+#   SUPERDL_API_BASE_URL:可选,第 4 步外部冒烟用的公网 API 基址;缺省读 ConfigMap
+#   superdl-api-config 的 SUPERDL_PUBLIC_BASE_URL,两者都取不到(或仍是占位)则跳过该步并提示。
 #
 # 顺序铁律:迁移 Job 必须先于滚动(expand-only 窗口内「老代码+新 schema」安全,
 # 反序「新代码+旧 schema」会被 /readyz 的 schema_mismatch 拦下,表现为发布卡死)。
@@ -44,38 +46,27 @@ for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-nod
   fi
 done
 
-echo "==> 4/4 冒烟(API /healthz + /readyz,在新 Pod 内容器内直连)"
-POD=""
-for _ in $(seq 1 30); do
-  POD="$(kubectl -n "$NS" get pod -l app=superdl-api \
-    --field-selector=status.phase=Running \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-  [ -n "$POD" ] && break
-  sleep 2
-done
-if [ -z "$POD" ]; then
-  echo "::error::找不到 Running 的 superdl-api Pod,冒烟失败" >&2
-  exit 1
+echo "==> 4/4 冒烟:经 Ingress 从集群外 GET /readyz(DNS/TLS/Ingress 一并验证)"
+# Pod 内的 /healthz、/readyz 不再重复探测:第 3 步 rollout status 只在新 Pod 过 readinessProbe
+# (/readyz,02-api.yaml)后才成功,/healthz 是它的子集。这里验证的是 Pod 之外的链路。
+API_BASE_URL="${SUPERDL_API_BASE_URL:-}"
+if [ -z "$API_BASE_URL" ]; then
+  API_BASE_URL="$(kubectl -n "$NS" get configmap superdl-api-config \
+    -o jsonpath='{.data.SUPERDL_PUBLIC_BASE_URL}' 2>/dev/null || true)"
 fi
-# 容器为 python 镜像,用 urllib 避免依赖 curl/wget;readOnlyRootFilesystem 不影响本命令
-smoke() {
-  kubectl -n "$NS" exec "$POD" -- python -c "
-import sys, urllib.request
-try:
-    with urllib.request.urlopen('http://localhost:8000$1', timeout=5) as r:
-        sys.exit(0 if r.status == 200 else 1)
-except Exception:
-    sys.exit(1)
-"
-}
-if ! smoke /healthz; then
-  echo "::error::/healthz 冒烟失败(Pod=${POD})" >&2
-  exit 1
-fi
-if ! smoke /readyz; then
-  # readyz 含 alembic_version 比对:失败多为第 1 步迁移漏跑/未追平,不回滚,先查迁移 Job
-  echo "::error::/readyz 冒烟失败(schema_mismatch?查 job/superdl-migrate-${TAG} 与 alembic_version)" >&2
-  exit 1
-fi
+case "$API_BASE_URL" in
+  ""|*example.com*)
+    echo "::notice::跳过外部冒烟:未提供 API 域名(设 SUPERDL_API_BASE_URL=https://<api-domain>,或把 ConfigMap superdl-api-config 的 SUPERDL_PUBLIC_BASE_URL 从占位改为真实域名)"
+    ;;
+  *)
+    if ! curl -fsS --max-time 10 "${API_BASE_URL%/}/readyz" >/dev/null; then
+      # Pod 已 Ready 而外部不通 → DNS/TLS/Ingress;readyz 含 alembic_version 比对,
+      # schema_mismatch 多为第 1 步迁移漏跑/未追平,不回滚,先查迁移 Job
+      echo "::error::外部冒烟失败:GET ${API_BASE_URL%/}/readyz(查 DNS/TLS/Ingress;或 job/superdl-migrate-${TAG} 与 alembic_version)" >&2
+      exit 1
+    fi
+    echo "外部冒烟通过:${API_BASE_URL%/}/readyz"
+    ;;
+esac
 
-echo "发布完成:${TAG}(api/worker/web/admin 已滚动,冒烟通过)"
+echo "发布完成:${TAG}(api/worker/web/admin 已滚动)"
