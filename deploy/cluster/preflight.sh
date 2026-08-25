@@ -55,7 +55,8 @@ fi
 
 # 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,
 # 占位符由 ansible / 一键加入脚本落盘时替换,仓库里保留占位符。
-say "== values/ 占位符残留(未替换直接 apply 会让组件起不来)=="
+# kps.yaml 的占位是 Alertmanager webhook token / SMTP / 值班接收端:未替换等于全部告警静默(事故盲区)。
+say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.yaml 未替换则告警静默)=="
 placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
@@ -65,15 +66,6 @@ for f in "${placeholder_files[@]}"; do
     ok "$f"
   fi
 done
-
-say "== 告警通道(告警静默 = 事故盲区,专项红)=="
-# values/kps.yaml 的通用占位符扫描在上方已覆盖,本条给告警通道单独的可读提示:
-# Alertmanager 的 webhook token/SMTP/值班接收端占位未替换时,全部告警规则形同虚设
-if grep -qE 'CHANGE_ME' values/kps.yaml; then
-  miss "values/kps.yaml 告警通道仍有 CHANGE_ME 占位(Alertmanager webhook/SMTP/接收端未配,告警将静默)"
-else
-  ok "values/kps.yaml 告警通道无占位符"
-fi
 
 say "== 应用入口(../app)=="
 app_ingress=../app/k8s/04-ingress.yaml
@@ -104,7 +96,9 @@ else
   if [[ "${SUPERDL_MANAGED_PG_PITR_ACK:-}" == "yes" ]]; then
     ok "托管 PG PITR 已书面确认(SUPERDL_MANAGED_PG_PITR_ACK=yes)"
   else
-    miss "cnpg.enabled=false 且未书面确认托管 PG PITR:确认托管 PG 已开 PITR+保留策略后,以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑;或启用 cnpg 档(environments/$env_name.yaml)"
+    # 提示不阻断:托管 PG 是否已开 PITR 只有其控制台能证明,脚本查不到;书面确认由人核
+    # (runbooks/cluster-validation.md 发布检查单、runbooks/pg-backup-restore.md 上线前强制项)
+    say "  ⚠ cnpg.enabled=false 且未登记托管 PG PITR 确认:确认托管 PG 已开 PITR+保留策略后以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑可消除本提示;或启用 cnpg 档(environments/$env_name.yaml)。提示项,不阻断"
   fi
 fi
 
