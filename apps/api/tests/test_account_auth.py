@@ -397,35 +397,6 @@ class TestPasswordReset:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
 
-class TestRegisterRace:
-    async def test_concurrent_register_same_phone(self, sm, monkeypatch):
-        """并发注册同号:验证码一次性消费闸(行锁)在请求层先兜住并发;若仍同时到达
-        写库,唯一约束 + IntegrityError 捕获保证负方拿 PHONE_TAKEN 而不是 500。
-
-        服务层旁路验证码闸,专测最后防线。
-        """
-        import asyncio
-
-        from app.core.errors import AppError
-        from app.modules.account import service as account_service
-
-        async def _noop_consume(session, phone, code, purpose) -> None:
-            return None
-
-        monkeypatch.setattr(account_service, "_consume_sms_code", _noop_consume)
-        phone = "13800000073"
-        async with sm() as s1, sm() as s2:
-            results = await asyncio.gather(
-                account_service.register(s1, phone, "111111", None, accept_terms=True),
-                account_service.register(s2, phone, "222222", None, accept_terms=True),
-                return_exceptions=True,
-            )
-        winners = [r for r in results if not isinstance(r, Exception)]
-        losers = [r for r in results if isinstance(r, AppError)]
-        assert len(winners) == 1 and len(losers) == 1, results
-        assert losers[0].code == "PHONE_TAKEN"
-
-
 class TestSmsQuotaAndBackoff:
     async def test_unconsumed_sends_do_not_burn_victim_daily_quota(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

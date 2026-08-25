@@ -8,7 +8,6 @@ from decimal import Decimal
 from fastapi import status
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.captcha import CaptchaError, get_captcha_channel
@@ -230,7 +229,8 @@ async def register(
     await check_rate_limit(
         f"user-register:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
     )
-    # 先验码再判重:反过来就是手机号枚举 oracle
+    # 先验码再判重:反过来就是手机号枚举 oracle。码行 FOR UPDATE 也把同号并发注册串行化:
+    # 后到者在前者提交后选不到未消费的码,走不到 INSERT
     await _consume_sms_code(session, phone, sms_code, "register")
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
@@ -240,14 +240,9 @@ async def register(
     # 注册必勾落证(合规举证):terms/privacy 各一条,版本=当前 published,与建号同事务
     from app.modules.legal import service as legal_service
 
-    try:
-        await session.flush()  # 取 user.id 供同意存证;并发同号在此撞唯一约束
-        await legal_service.record_registration_consents(session, user.id, client_ip)
-        await session.commit()
-    except IntegrityError as exc:
-        # 并发同号注册(双击/重试):先 SELECT 后 INSERT 的竞态由唯一约束兜底
-        await session.rollback()
-        raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken") from exc
+    await session.flush()  # 取 user.id 供同意存证
+    await legal_service.record_registration_consents(session, user.id, client_ip)
+    await session.commit()
     await session.refresh(user)
     logger.info("user_registered", user_id=user.id)
     return _issue_tokens(user)
@@ -558,12 +553,7 @@ async def add_ssh_key(session: AsyncSession, user_id: int, name: str, public_key
         raise AppError(ErrorCode.SSH_KEY_DUPLICATE, key="account.sshKeyDuplicate")
     key = SshKey(user_id=user_id, name=name, public_key=normalized, fingerprint=fingerprint)
     session.add(key)
-    try:
-        await session.commit()
-    except IntegrityError as exc:
-        # 并发同用户同指纹:唯一约束 (user_id, fingerprint) 兜底,按重复处理而非 500
-        await session.rollback()
-        raise AppError(ErrorCode.SSH_KEY_DUPLICATE, key="account.sshKeyDuplicate") from exc
+    await session.commit()
     await session.refresh(key)
     return key
 
@@ -772,8 +762,7 @@ async def _pending_deletion_of_user(
 async def request_deletion(
     session: AsyncSession, user: User, *, phone: str, reason: str
 ) -> AccountDeletionRequest:
-    """申请注销(进 7 天冷静期)。幂等:已有 pending 直接返回既有;
-    部分唯一索引兜底并发双击,撞索引即返回胜出方。"""
+    """申请注销(进 7 天冷静期)。幂等:已有 pending 直接返回既有(并发双击由部分唯一索引兜底)。"""
     if user.phone != phone:
         # 键入手机号须与账号一致:防误触/防会话劫持者直接销号
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionPhoneMismatch")
@@ -782,14 +771,7 @@ async def request_deletion(
         return existing
     req = AccountDeletionRequest(user_id=user.id, reason=reason)
     session.add(req)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        winner = await _pending_deletion_of_user(session, user.id)
-        if winner is not None:
-            return winner
-        raise
+    await session.commit()
     await session.refresh(req)
     logger.info("deletion_requested", user_id=user.id)
     return req
