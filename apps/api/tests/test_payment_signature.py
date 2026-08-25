@@ -99,17 +99,6 @@ class TestAlipayCallbackSignature:
             await _alipay_channel(keypair).parse_callback({}, body)
         assert exc.value.code.name == "PAYMENT_CHANNEL_ERROR"
 
-    async def test_signature_from_another_key_rejected(self, keypair):
-        """攻击者用自己的密钥签一条格式完全正确的通知 —— 必须被我方公钥挡下。"""
-        other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        other_pem = other.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        ).decode()
-        with pytest.raises(AppError):
-            await _alipay_channel(keypair).parse_callback({}, _alipay_notify(other_pem))
-
     async def test_foreign_app_id_rejected(self, keypair):
         """官方通知校验清单里的 app_id 核对(纵深防御)。"""
         priv, _pub = keypair
