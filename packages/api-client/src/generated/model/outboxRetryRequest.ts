@@ -8,7 +8,7 @@
 export interface OutboxRetryRequest {
   /**
      * @minLength 2
-     * @maxLength 200
+     * @maxLength 256
      */
   reason: string;
 }

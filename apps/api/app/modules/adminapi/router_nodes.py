@@ -16,6 +16,7 @@ from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
+    REASON_MAX_LENGTH,
     ClusterComponentOut,
     ClusterConfigStateOut,
     ClusterStatusOut,
@@ -98,7 +99,7 @@ async def admin_list_instance_events(
 
 
 class EnrollmentRevokeRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=256)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 class EnrollmentRegenerateRequest(BaseModel):
@@ -330,7 +331,7 @@ async def admin_gpu_model_aggregates(session: DbSession) -> list[GpuModelAggrega
 
 
 class NodeCordonRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=256)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 class NodeCordonOut(BaseModel):

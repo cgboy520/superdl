@@ -57,8 +57,9 @@ _TRUNCATED_NOTE: dict[str, str] = {
 _TOTAL_LABEL = {"zh-CN": "合计", "en-US": "TOTAL"}
 
 
-def _audit_filters(stmt, *, actor_type, actor_id, q, since, until):
-    """与 GET /admin/v1/audit 同一组 where 条件(含 LIKE 元字符转义)。"""
+def audit_filters(stmt, *, actor_type, actor_id, q, since, until):
+    """GET /admin/v1/audit 与审计 CSV 导出共用的 where 条件
+    (含 LIKE 元字符转义:q 里的 %/_ 按字面匹配,不当通配符)。"""
     if actor_type:
         stmt = stmt.where(AuditLog.actor_type == actor_type)
     if actor_id:
@@ -88,7 +89,7 @@ async def stream_audit_csv(
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """审计日志 CSV(降序,最新在前;按 id 批拉直至上限或穷尽,触顶写截断标记行)。"""
-    stmt = _audit_filters(
+    stmt = audit_filters(
         select(AuditLog), actor_type=actor_type, actor_id=actor_id, q=q, since=since, until=until
     )
 

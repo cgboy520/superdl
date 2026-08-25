@@ -1,6 +1,5 @@
 """管理端路由(对账/告警/调账/退款/发票/订单/收入/补单,自 router.py 拆分)。"""
 
-from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Header, Query, Request, Response
@@ -10,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import set_audit_target, write_audit_sync
 from app.core.db import DbSession
-from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
 from app.core.params import TzOffset
@@ -20,6 +18,7 @@ from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang, csv_response, parse_day
 from app.modules.adminapi.schemas import (
+    REASON_MAX_LENGTH,
     AdjustmentOut,
     AdjustmentStatusOut,
     AdminAlertOut,
@@ -53,13 +52,8 @@ router = APIRouter(tags=["admin"])
 @router.get("/reconciliation", dependencies=[require_roles("finance", "readonly")])
 async def reconciliation(session: DbSession, day: str) -> ReconciliationOut:
     """日对账:事件计费 vs 指标估算 + diff%(>2% 列差异实例)。"""
-    from datetime import UTC
-
-    try:
-        d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
-    except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.badDayFormat") from exc
-    report = await metering_service.reconciliation_report(session, d)
+    day_start, _ = parse_day(day)
+    report = await metering_service.reconciliation_report(session, day_start)
     return ReconciliationOut.model_validate(report)
 
 
@@ -74,13 +68,8 @@ async def reconciliation_export(
     session: DbSession, day: str, lang: Literal["zh-CN", "en-US"] = ExportLang
 ) -> StreamingResponse:
     """日对账 CSV:与 GET /reconciliation 同一报告(首行合计 + diff 超阈实例明细)。"""
-    from datetime import UTC
-
-    try:
-        d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=UTC)
-    except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.badDayFormat") from exc
-    report = await metering_service.reconciliation_report(session, d)
+    day_start, _ = parse_day(day)
+    report = await metering_service.reconciliation_report(session, day_start)
     return csv_response(
         admin_export.stream_reconciliation_csv(report, lang=lang),
         f"superdl-reconciliation-{day}.csv",
@@ -476,7 +465,7 @@ async def admin_verify_order(order_no: str, session: DbSession, request: Request
 
 
 class OrderBackfillRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=200)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 @router.post("/finance/orders/{order_no}/backfill", dependencies=[require_roles("finance")])

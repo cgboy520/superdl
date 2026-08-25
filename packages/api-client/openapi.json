@@ -3865,7 +3865,7 @@
       "MfaResetRequest": {
         "properties": {
           "reason": {
-            "maxLength": 200,
+            "maxLength": 256,
             "minLength": 2,
             "title": "Reason",
             "type": "string"
@@ -4398,7 +4398,7 @@
       "OrderBackfillRequest": {
         "properties": {
           "reason": {
-            "maxLength": 200,
+            "maxLength": 256,
             "minLength": 2,
             "title": "Reason",
             "type": "string"
@@ -4470,7 +4470,7 @@
       "OutboxDiscardRequest": {
         "properties": {
           "reason": {
-            "maxLength": 200,
+            "maxLength": 256,
             "minLength": 2,
             "title": "Reason",
             "type": "string"
@@ -4485,7 +4485,7 @@
       "OutboxRetryRequest": {
         "properties": {
           "reason": {
-            "maxLength": 200,
+            "maxLength": 256,
             "minLength": 2,
             "title": "Reason",
             "type": "string"

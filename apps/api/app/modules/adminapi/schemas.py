@@ -23,6 +23,11 @@ class AdminOut(BaseModel):
 
 AdminRole = Literal["admin", "ops", "finance", "readonly"]
 
+# 只含 reason 的高危操作请求体(撤回公告/忽略与重放死信/冻结解冻租户/删镜像/重置 MFA/补单/
+# 停止恢复调度/吊销注册)共用的原因长度上限。不合并成一个 ReasonBody:orval 按 schema 名
+# 生成前端类型,各自的名字有页面在引用。
+REASON_MAX_LENGTH = 256
+
 
 class AdminAccountOut(BaseModel):
     """管理员账号(账号管理列表)。不透出 password_hash / token_version / totp_secret。"""
@@ -105,7 +110,7 @@ class RecoveryCodesOut(BaseModel):
 
 
 class MfaResetRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=200)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 class AdminRefreshRequest(BaseModel):

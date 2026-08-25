@@ -11,6 +11,7 @@ from app.core.gpu_models import canonical_gpu_model
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.schemas import (
+    REASON_MAX_LENGTH,
     AdminImageOut,
     CapacityPreviewOut,
     CapacityWarningOut,
@@ -147,7 +148,7 @@ async def admin_update_sku(
 
 
 class ImageDeleteRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=256)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 def _admin_image_out(img, coverage: dict[int, tuple[int, int, int]]) -> AdminImageOut:

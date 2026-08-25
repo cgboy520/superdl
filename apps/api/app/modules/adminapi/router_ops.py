@@ -6,21 +6,24 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
+from app.core.outbox import OutboxTask
 from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.core.platform_config import get_effective_platform_config
-from app.core.sqlutil import like_escape
+from app.core.timeutil import now_utc
 from app.modules.adminapi import export as admin_export
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang, csv_response
 from app.modules.adminapi.schemas import (
+    REASON_MAX_LENGTH,
     AnnouncementOut,
     AnnouncementResultOut,
     AuditLogOut,
@@ -142,23 +145,15 @@ async def admin_audit_log(
     from app.core.audit import AuditLog
     from app.core.pagination import decode_cursor_int
 
-    stmt = sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)
-    if actor_type:
-        stmt = stmt.where(AuditLog.actor_type == actor_type)
-    if actor_id:
-        stmt = stmt.where(AuditLog.actor_id == actor_id)
-    if q:
-        # 动作/目标关键字。两列都是短串,量级由 limit 兜住;
-        # LIKE 元字符转义:q 里的 %/_ 按字面匹配,不当通配符
-        pattern = f"%{like_escape(q)}%"
-        stmt = stmt.where(
-            AuditLog.action.ilike(pattern, escape="\\")
-            | AuditLog.target.ilike(pattern, escape="\\")
-        )
-    if since:
-        stmt = stmt.where(AuditLog.created_at >= since)
-    if until:
-        stmt = stmt.where(AuditLog.created_at < until)
+    # 筛选条件与审计 CSV 导出同一函数:两处口径不会各自漂移
+    stmt = admin_export.audit_filters(
+        sa_select(AuditLog).order_by(AuditLog.id.desc()).limit(limit),
+        actor_type=actor_type,
+        actor_id=actor_id,
+        q=q,
+        since=since,
+        until=until,
+    )
     last_id = decode_cursor_int(cursor)
     if last_id is not None:
         stmt = stmt.where(AuditLog.id < last_id)
@@ -377,7 +372,7 @@ class AnnouncementCreate(BaseModel):
 
 
 class AnnouncementRevoke(BaseModel):
-    reason: str = Field(min_length=2, max_length=256)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 def _announcement_out(a: Any) -> AnnouncementOut:
@@ -454,8 +449,6 @@ async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
     """死信任务列表:重试耗尽的编排任务在此可见(另有 outbox_dead_total 指标接告警)。"""
     from sqlalchemy import select as sa_select
 
-    from app.core.outbox import OutboxTask
-
     rows = (
         (
             await session.execute(
@@ -483,11 +476,21 @@ async def admin_list_dead_tasks(session: DbSession) -> list[DeadTaskOut]:
 
 
 class OutboxDiscardRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=200)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 class OutboxRetryRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=200)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
+
+
+async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: str) -> OutboxTask:
+    """重放/忽略共用前奏:任务不存在 404;非 dead 状态报 CONFLICT(conflict_key 区分两种文案)。"""
+    task = await session.get(OutboxTask, task_id)
+    if task is None:
+        raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
+    if task.status != "dead":
+        raise AppError(ErrorCode.CONFLICT, key=conflict_key, params={"status": task.status})
+    return task
 
 
 @router.post("/outbox/{task_id}/retry", dependencies=[require_roles("ops")])
@@ -495,18 +498,7 @@ async def admin_retry_dead_task(
     task_id: int, body: OutboxRetryRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
     """重放死信(需原因,与忽略对齐):置回 pending 交还 worker(handler 幂等,重放安全)。"""
-    from app.core.outbox import OutboxTask
-    from app.core.timeutil import now_utc
-
-    task = await session.get(OutboxTask, task_id)
-    if task is None:
-        raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
-    if task.status != "dead":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="adminapi.taskStateNotReplayable",
-            params={"status": task.status},
-        )
+    task = await _load_dead_task(session, task_id, conflict_key="adminapi.taskStateNotReplayable")
     task.status = "pending"
     task.retries = 0
     task.next_retry_at = now_utc()
@@ -524,15 +516,7 @@ async def admin_discard_dead_task(
     task_id: int, body: OutboxDiscardRequest, session: DbSession, request: Request
 ) -> OutboxTaskStatusOut:
     """忽略死信(需原因):确认该任务不再需要执行(如实例已人工处理)。"""
-    from app.core.outbox import OutboxTask
-
-    task = await session.get(OutboxTask, task_id)
-    if task is None:
-        raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
-    if task.status != "dead":
-        raise AppError(
-            ErrorCode.CONFLICT, key="adminapi.taskStateNotIgnorable", params={"status": task.status}
-        )
+    task = await _load_dead_task(session, task_id, conflict_key="adminapi.taskStateNotIgnorable")
     task.status = "discarded"
     await session.commit()
     set_audit_target(request, f"outbox:{task_id}", detail={"reason": body.reason})

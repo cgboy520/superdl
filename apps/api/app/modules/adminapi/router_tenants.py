@@ -18,6 +18,7 @@ from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.router_shared import ExportLang, csv_response
 from app.modules.adminapi.schemas import (
+    REASON_MAX_LENGTH,
     AdjustContextOut,
     TenantOut,
     TenantQuotaOut,
@@ -37,7 +38,7 @@ router = APIRouter(tags=["admin"])
 
 
 class TenantFreezeRequest(BaseModel):
-    reason: str = Field(min_length=2, max_length=256)
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 @router.get("/tenants", dependencies=[require_roles("ops", "finance", "readonly")])
