@@ -30,13 +30,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             keys=unknown_keys,
             hint="这些 SUPERDL_* 变量不匹配任何配置项,将被忽略;请核对拼写",
         )
-    if settings.environment != "prod":
-        # 忘记显式设置 SUPERDL_ENVIRONMENT 的生产部署会以 dev 默认值裸奔:至少留一条醒目告警
-        log.warning(
-            "non_prod_environment",
-            environment=settings.environment,
-            hint="生产部署必须显式设置 SUPERDL_ENVIRONMENT=prod(prod 有配置 fail-fast 校验)",
-        )
     # 一次性引导:仅 dev,配置了口令且 admin_users 为空时创建首个超管
     if settings.bootstrap_admin_password:
         if settings.environment != "dev":
@@ -58,6 +51,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             async with get_sessionmaker()() as session:
                 await ensure_bootstrap_admin(session, settings.bootstrap_admin_password)
     if settings.environment == "prod":
+        # 非阻断项只打告警,不 fail-fast:webhook 端点未配 token 本就拒收(notify/router.py),
+        # 指标子系统按设计优雅降级(计费不依赖 Prometheus)
+        if not settings.alertmanager_token:
+            log.warning(
+                "alertmanager_token_missing",
+                hint="Alertmanager webhook 将一律 401;配 SUPERDL_ALERTMANAGER_TOKEN 后告警才进平台",
+            )
+        if "localhost" in settings.prometheus_url or "127.0.0.1" in settings.prometheus_url:
+            log.warning(
+                "prometheus_url_localhost",
+                prometheus_url=settings.prometheus_url,
+                hint="监控代理仍指向本地默认地址:计费不受影响,但用量面板与对账全空",
+            )
         # cluster 键不做启动 fail-fast(经 DB 覆盖层维护,查 env 会误报):
         # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 兜底
         from app.core.db import get_sessionmaker

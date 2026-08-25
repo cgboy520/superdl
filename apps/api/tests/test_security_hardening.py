@@ -185,38 +185,28 @@ class TestEnvironmentFailClosed:
         with pytest.raises(ValidationError, match="environment"):
             Settings(_env_file=None)  # type: ignore[call-arg]
 
-    def test_real_backend_requires_prod(self):
-        """k8s_backend=real + 非 prod 环境 = 宽松默认(mock 支付/固定短信码)暴露在真实集群。"""
-        import pytest
-        from pydantic import ValidationError
-
+    def test_real_backend_not_bound_to_prod(self):
+        """真实集群不绑定 prod:实机验证需要 dev + real,暴露面由部署拓扑决定而非 environment。"""
         from app.core.config import Settings
 
-        for env in ("dev", "test"):
-            with pytest.raises(ValidationError, match="SUPERDL_ENVIRONMENT=prod"):
-                Settings(_env_file=None, environment=env, k8s_backend="real")  # type: ignore[call-arg]
-
-    def test_fake_backend_allows_dev(self):
-        from app.core.config import Settings
-
-        s = Settings(_env_file=None, environment="dev", k8s_backend="fake")  # type: ignore[call-arg]
-        assert s.environment == "dev"
+        s = Settings(_env_file=None, environment="dev", k8s_backend="real")  # type: ignore[call-arg]
+        assert s.k8s_backend == "real"
 
 
 class TestProdConfigValidation:
     @staticmethod
     def _complete_prod_kwargs() -> dict:
-        """一套能通过 prod 校验的完整配置;各用例在此基础上注入一个坏值。"""
+        """能通过 prod 校验的最小配置;各用例在此基础上注入一个坏值。
+
+        只含 provider 选择与基础设施项:短信/验证码凭据不在启动期校验(可经平台配置中心
+        在线录入),alertmanager_token 与 prometheus_url 只在 lifespan 打 WARNING。
+        """
         return {
             "_env_file": None,  # 运行时参数,stub 未暴露
             "environment": "prod",
             "jwt_secret": "x" * 40,
             "sms_provider": "aliyun",
-            "sms_access_key_id": "ak",
-            "sms_access_key_secret": "sk",
-            "sms_sign_name": "SuperDL",
-            "sms_template_verify": "SMS_1",
-            "sms_template_notice": "SMS_2",
+            "captcha_provider": "aliyun",
             "k8s_backend": "real",
             "payment_mock": False,
             "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
@@ -225,21 +215,9 @@ class TestProdConfigValidation:
             "admin_host": "admin.superdl.cn",
             "jupyter_domain_suffix": "app.superdl.cn",
             "public_base_url": "https://api.superdl.cn",
-            "prometheus_url": "http://kube-prometheus-stack-prometheus.monitoring.svc:9090",
-            "alertmanager_token": "token",
             "metrics_token": "mtoken",
             "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
             "image_allowed_registries": ["registry.superdl.internal/"],
-            # prod 无条件拒绝 mock 实名(与 sms/payment 同口径):基线配置必须是 aliyun
-            "real_name_provider": "aliyun",
-            "real_name_access_key_id": "AKIAIOSFODNN7EXAMPLE",
-            "real_name_access_key_secret": "realname-secret",
-            # 人机校验同口径(P1-17):prod 必须 aliyun 且四项齐全
-            "captcha_provider": "aliyun",
-            "captcha_scene_id": "scene-1",
-            "captcha_prefix": "prefix-1",
-            "captcha_access_key_id": "AKIAIOSFODNN7EXAMPLE",
-            "captcha_access_key_secret": "captcha-secret",
         }
 
     def test_prod_rejects_dev_defaults(self):
@@ -260,21 +238,13 @@ class TestProdConfigValidation:
             assert keyword in msg
 
     def test_prod_accepts_complete_config(self):
+        """最小配置可启动:未开强制实名时 mock 实名无害;凭据齐全性由运行期渠道工厂把关。"""
         from app.core.config import Settings
 
         s = Settings(**self._complete_prod_kwargs())
         assert s.environment == "prod"
-
-    def test_prod_rejects_localhost_prometheus(self):
-        """prometheus_url 保持本地默认会静默失效(计费无恙但面板/对账全空),prod 必拒。"""
-        import pytest as _pytest
-
-        from app.core.config import Settings
-
-        kwargs = self._complete_prod_kwargs()
-        del kwargs["prometheus_url"]  # 回落默认值 http://localhost:9090
-        with _pytest.raises(ValueError, match="prometheus_url"):
-            Settings(**kwargs)
+        assert s.real_name_provider == "mock"
+        assert s.sms_access_key_id is None
 
     def test_prod_rejects_bootstrap_admin_password(self):
         """引导口令是一次性 dev 工具:带进 prod 说明运维忘了删,启动即拒并给出正确做法。"""
@@ -287,28 +257,15 @@ class TestProdConfigValidation:
             Settings(**self._complete_prod_kwargs(), bootstrap_admin_password="bootstrap-123")
 
     def test_prod_rejects_mock_realname_when_required(self):
-        """充值强制实名 + mock 渠道 = 实名形同虚设(mock 核验恒过),prod 必拒。"""
+        """充值强制实名 + mock 渠道 = 实名形同虚设(mock 核验恒过),prod 必拒;
+        经平台配置在线打开开关的同一组合由 platform_config 写入侧拦(见 test_platform_config)。"""
         import pytest
         from pydantic import ValidationError
 
         from app.core.config import Settings
 
         kwargs = self._complete_prod_kwargs()
-        kwargs["real_name_provider"] = "mock"
         kwargs["real_name_required_for_recharge"] = True
-        with pytest.raises(ValidationError, match="real_name_provider"):
-            Settings(**kwargs)
-
-    def test_prod_rejects_mock_realname_unconditionally(self):
-        """mock 核验对非 0000 结尾恒过:即使未开强制实名,prod 也无条件拒绝 mock 渠道
-        (与 sms/payment 同口径——平台配置可在任意时刻在线打开强制开关,不能留后门)。"""
-        import pytest
-        from pydantic import ValidationError
-
-        from app.core.config import Settings
-
-        kwargs = self._complete_prod_kwargs()
-        kwargs["real_name_provider"] = "mock"
         with pytest.raises(ValidationError, match="real_name_provider"):
             Settings(**kwargs)
 
@@ -441,7 +398,7 @@ class TestSecurityHeaders:
 
 
 class TestEdgeGuard:
-    """prod 边缘收口:/api/admin 与 /metrics 不从公网 api 域暴露。"""
+    """prod 边缘收口(恒开,无开关):/api/admin 与 /metrics 不从公网 api 域暴露。"""
 
     async def test_admin_api_hidden_from_public_host(self, client: AsyncClient, monkeypatch):
         from app.core.config import get_settings
@@ -480,27 +437,6 @@ class TestEdgeGuard:
         assert (
             await client.get("/metrics/", headers={"Authorization": "Bearer mtok"})
         ).status_code == 200
-
-    async def test_non_prod_not_guarded(self, client: AsyncClient):
-        # test 环境无 ingress(Host 是 testserver),收口不启用:admin 路由照常到达
-        resp = await client.post(
-            "/api/admin/v1/auth/login", json={"username": "x", "password": "y"}
-        )
-        assert resp.status_code == 400
-
-    async def test_explicit_enable_outside_prod(self, client: AsyncClient, monkeypatch):
-        """staging 类环境(非 prod 名运行)显式开启后,管理端 API 同样不暴露在公网 Host 上。"""
-        from app.core.config import get_settings
-
-        settings = get_settings()
-        monkeypatch.setattr(settings, "edge_guard_enabled", True, raising=False)
-        monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
-        resp = await client.post(
-            "/api/admin/v1/auth/login",
-            json={"username": "x", "password": "y"},
-            headers={"Host": "api.superdl.cn"},
-        )
-        assert resp.status_code == 404
 
 
 class TestMetricsGuard:

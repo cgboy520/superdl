@@ -1,6 +1,6 @@
 # 平台配置中心
 
-渠道凭据与站点合规信息在管理端在线化:资质到位后运营自助录入即生效,不发版、不改 K8s Secret。机制在 `app/core/platform_config.py`。
+渠道凭据与站点合规信息在管理端在线化:资质到位后运营自助录入即生效,不发版、不改 K8s Secret。prod 启动校验只查 provider 选择、不查凭据齐全性,首次上线可先以空凭据启动再在此录入。机制在 `app/core/platform_config.py`。
 
 ## 数据模型
 
@@ -28,7 +28,7 @@
 - 主密钥 `SUPERDL_CONFIG_ENCRYPTION_KEY` 只走 env,prod 下 fail-fast 必配。
 - 读取接口只回配置状态与尾 4 位预览,永不回明文;审计 detail 只落键名与 reason,不落值。
 - 凭据不下放 ops:平台配置三端点仅 `admin` 角色;ops 生成注册命令时由服务端代读,永不见明文。
-- 不入配置中心:`payment_mock`、prod 下 `sms_provider≠mock`、JWT/DB/域名等基础设施配置只走 env 且保留 prod fail-fast;平台配置写入侧同样拒绝 prod 下 `sms_provider=mock`,以及「`real_name_required_for_recharge=true` + `real_name_provider=mock`」组合(与 `Settings._validate_prod` 同口径 fail-closed)。
+- 不入配置中心:`payment_mock`、prod 下 `sms_provider≠mock`、JWT/DB/域名等基础设施配置只走 env 且保留 prod fail-fast;平台配置写入侧同样拒绝 prod 下 `sms_provider=mock` / `captcha_provider=mock`(`prod_forbidden`),以及「`real_name_required_for_recharge=true` + `real_name_provider=mock`」组合(`_check_prod_real_name_combination`,与 `Settings._validate_prod` 同口径:未开强制实名时 mock 无害,不拦;DB 覆盖层上该组合只有这一道闸)。
 - K8s Secret 注入的 env 是默认值层,DB 覆盖仅用于运营自助与轮转。
 - 渠道工厂异步取生效配置:`get_channel(name, session)` / `get_sms_channel(session)` / `get_realname_provider(session)`;微信与支付宝渠道实例按配置指纹缓存(平台证书模式下不重复拉取平台证书)。
 - 备案号由 `site-config` 运行期下发,页脚动态渲染,不进构建期 env。

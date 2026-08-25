@@ -31,11 +31,6 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
-    # 边缘收口(edge_guard):管理端 API 与 /metrics 不从公网 API 域暴露。
-    # 默认 None = 仅 prod 开;复用部署清单的类生产环境(如 staging 以非 prod 名运行)
-    # 必须显式置 true,否则完整管理端 API 只剩 JWT audience 一道闸暴露在公网 API 域上。
-    edge_guard_enabled: bool | None = None
-
     # 启动引导管理员:仅当显式设置本项且 environment=dev 时,在无任何管理员的库里创建 admin 账号
     bootstrap_admin_password: str | None = None
 
@@ -57,7 +52,8 @@ class Settings(BaseSettings):
     disk_frozen_days: int = 30
 
     # 实名认证:充值前强制校验的开关。
-    # provider/凭据与开关均可被平台配置中心(platform_settings)在线覆盖
+    # provider/凭据与开关均可被平台配置中心(platform_settings)在线覆盖;
+    # prod 下只有「开启强制实名 + mock 渠道」才拒(启动校验与 platform_config 写入侧同口径)
     real_name_required_for_recharge: bool = False
     real_name_provider: Literal["mock", "aliyun"] = "mock"
     real_name_access_key_id: str | None = None
@@ -202,19 +198,13 @@ class Settings(BaseSettings):
     alipay_seller_id: str | None = None  # 收款方 PID(2088 开头;prod 启用支付宝时必填)
 
     @model_validator(mode="after")
-    def _fail_closed_real_cluster(self) -> "Settings":
-        """真实集群必须显式 prod:dev/test 的宽松配置(mock 支付、固定短信码、mock webhook)
-        不得与真实编排后端共存——漏配/错配 environment 即拒绝启动。"""
-        if self.k8s_backend == "real" and self.environment != "prod":
-            raise ValueError(
-                f"k8s_backend=real 要求 SUPERDL_ENVIRONMENT=prod(当前 {self.environment});"
-                "真实集群不得以 dev/test 宽松配置运行(mock 支付/固定短信码将暴露)"
-            )
-        return self
-
-    @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
-        """生产配置 fail-fast:开发默认值未改则拒绝启动。"""
+        """生产配置 fail-fast:开发默认值未改则拒绝启动。
+
+        只管 provider 选择与基础设施项,不查渠道凭据齐全性:短信/验证码/实名凭据可经平台配置
+        中心在线录入(DB 覆盖层),运行期渠道工厂(core/sms.py、core/captcha.py)缺凭据即
+        fail-closed。alertmanager_token 缺失与 prometheus_url 指向本地只在 lifespan 打 WARNING。
+        """
         if self.environment != "prod":
             return self
         problems: list[str] = []
@@ -226,14 +216,6 @@ class Settings(BaseSettings):
             problems.append("refresh_token_ttl_seconds 超过 7 天上限(令牌收紧基线)")
         if self.sms_provider == "mock":
             problems.append("sms_provider 不得为 mock(验证码将是固定值)")
-        elif not (
-            self.sms_access_key_id
-            and self.sms_access_key_secret
-            and self.sms_sign_name
-            and self.sms_template_verify
-            and self.sms_template_notice
-        ):
-            problems.append("阿里云短信凭据/签名/模板码不完整(SUPERDL_SMS_*)")
         if self.k8s_backend == "fake":
             problems.append("k8s_backend 不得为 fake")
         if self.payment_mock:
@@ -245,32 +227,21 @@ class Settings(BaseSettings):
         for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url", "admin_host"):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
-        if "localhost" in self.prometheus_url or "127.0.0.1" in self.prometheus_url:
-            problems.append(
-                "prometheus_url 仍为本地默认(监控将静默失效,计费不受影响但对账/面板全空)"
-            )
         if self.bootstrap_admin_password is not None:
             problems.append(
                 "bootstrap_admin_password 仅限 dev 一次性引导:请先用它在 dev 环境初始化首个管理员,"
                 "再从生产环境变量中删除该变量(prod 管理员经管理端账号页维护)"
             )
-        # 与 sms/payment 同口径:prod 无条件拒绝 mock——mock 对非 0000 结尾恒过,
-        # 即使未开强制实名,平台也可能在任何时候经平台配置在线打开强制开关
-        if self.real_name_provider == "mock":
-            problems.append("real_name_provider 不得为 mock(mock 恒过,实名形同虚设;请接阿里云实名)")
-        # 人机校验同口径:/auth/sms-code 是撞库/刷码的头号口子,mock = 无校验门
+        # mock 实名对非 0000 结尾恒过:只有开着充值强制实名时才形同虚设;未开时 mock 无害。
+        # 经平台配置在线打开开关时由 platform_config._check_prod_real_name_combination 同口径拦
+        if self.real_name_required_for_recharge and self.real_name_provider == "mock":
+            problems.append(
+                "real_name_required_for_recharge=true 时 real_name_provider 不得为 mock"
+                "(mock 恒过,实名形同虚设;请接阿里云实名或先关闭充值强制实名)"
+            )
+        # 人机校验:/auth/sms-code 是撞库/刷码的头号口子,mock = 无校验门
         if self.captcha_provider == "mock":
             problems.append("captcha_provider 不得为 mock(短信口子对脚本敞开;请接阿里云验证码 2.0)")
-        elif not (
-            self.captcha_scene_id
-            and self.captcha_prefix
-            and self.captcha_access_key_id
-            and self.captcha_access_key_secret
-        ):
-            problems.append(
-                "阿里云验证码配置不完整(SUPERDL_CAPTCHA_SCENE_ID/PREFIX/ACCESS_KEY_*);"
-                "env 缺失时 DB 覆盖层必须在管理端补齐,否则 /auth/sms-code 全量 502"
-            )
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             # DB 覆盖层也可能已配:env 侧缺失只作 fail-fast 提示的其中一路;
             # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次
@@ -283,8 +254,6 @@ class Settings(BaseSettings):
                 "image_allowed_registries 为空(空=不限制镜像来源,租户可拉任意仓库镜像);"
                 '请配置仓库前缀列表,如 ["registry.superdl.internal/"]'
             )
-        if not self.alertmanager_token:
-            problems.append("alertmanager_token 未配置")
         if not self.metrics_token:
             problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
         if not self.config_encryption_key:

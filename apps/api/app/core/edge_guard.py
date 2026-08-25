@@ -7,9 +7,8 @@
 - /metrics:带 X-Forwarded-For 的请求(经 ingress 进入)一律 404;集群内
   Prometheus 直刮 Pod/Service 不携带该头。Bearer 校验(main.py metrics_guard)
   保持不变,双闸并存。
-启用口径:edge_guard_enabled 显式布尔优先;默认(None)仅 prod 启用。
-复用部署清单的类生产环境(staging 等)必须显式开启——否则管理端 API 只剩
-JWT audience 一道闸暴露在公网 API 域上。本地 dev/test 无 ingress,默认不受影响。
+启用口径:prod 恒开,无开关。environment 只有 dev/test/prod 三值,类生产环境(staging)
+也以 prod 运行(独立 secrets),收口随之生效;本地 dev/test 无 ingress,不启用。
 """
 
 from starlette.datastructures import Headers
@@ -28,12 +27,7 @@ class EdgeGuardMiddleware:
             await self.app(scope, receive, send)
             return
         settings = get_settings()
-        enabled = (
-            settings.environment == "prod"
-            if settings.edge_guard_enabled is None
-            else settings.edge_guard_enabled
-        )
-        if enabled:
+        if settings.environment == "prod":
             path: str = scope.get("path", "")
             headers = Headers(scope=scope)
             if path.startswith("/api/admin"):

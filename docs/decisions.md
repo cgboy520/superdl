@@ -40,6 +40,14 @@
 - **账号级登录锁定。** 撞库可以换 IP,换不了目标账号:账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加。
 - **短信发码前置人机校验。** `/auth/sms-code` 是刷码与撞库的头号口子,prod 强制阿里云验证码 2.0,mock 拒绝启动。
   代价:首次上线前必须先开通验证码服务(资质有 lead time)。
+- **prod 启动校验只管 provider,不管凭据齐全性;真实集群不再绑定 prod。** 背景:启动期曾要求 prod 配齐阿里云短信
+  5 项与验证码 4 项,且 `k8s_backend=real` 强制 `environment=prod`——连真实集群必须先拿齐短信签名、验证码、实名资质,
+  实机验证被资质链阻塞,也与平台配置中心「资质到位后在线录入即生效」自相矛盾。决定:`_validate_prod` 只拒
+  sms / captcha / payment 的 mock provider 与基础设施占位值,凭据齐全性交给运行期渠道工厂 fail-closed
+  (缺凭据是首条短信失败而不是启动失败,管理端 test-sms 可验);实名只在开启充值强制实名时才拒 mock,
+  DB 写入侧 `_check_prod_real_name_combination` 是该组合的唯一守卫;`alertmanager_token` 缺失与 `prometheus_url`
+  指向本地降为启动 WARNING;dev + real 允许共存。后果:真实集群上的暴露面由部署拓扑(ingress / 公网 DNS)决定,
+  不由 environment 决定;边缘收口(`edge_guard`)随之改为 prod 恒开、删掉显式开关,类生产环境一律以 prod 运行。
 
 ## 编排与平台
 

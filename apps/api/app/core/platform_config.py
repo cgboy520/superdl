@@ -137,12 +137,13 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
     ),
     # ---- 实名认证(阿里云实人认证·手机号三要素核验) ----
+    # mock 对非 0000 结尾恒过:不设 prod_forbidden,只拦「开启充值强制实名 + mock」组合
+    # (_check_prod_real_name_combination),未开强制实名时 mock 无害
     "real_name_provider": SettingSpec(
         "real_name",
         "choice",
         choices=("mock", "aliyun"),
-        prod_forbidden=("mock",),
-        hint="生产环境不得切回 mock(mock 对非 0000 结尾恒过,实名形同虚设)",
+        hint="开启充值强制实名时不得为 mock(mock 对非 0000 结尾恒过,实名形同虚设)",
     ),
     "real_name_required_for_recharge": SettingSpec("real_name", "bool"),
     "real_name_access_key_id": SettingSpec(
@@ -403,7 +404,7 @@ async def set_platform_settings(
 
 
 async def _check_prod_real_name_combination(session: AsyncSession, updates: dict[str, str]) -> None:
-    """与 Settings._validate_prod 同口径的写入侧 fail-closed:
+    """与 Settings._validate_prod 同口径的写入侧 fail-closed,也是 DB 覆盖层上该组合的唯一守卫:
 
     prod 下「充值强制实名 + mock 渠道」组合经 DB 覆盖层也要拦住
     (mock 恒过等于实名形同虚设)。实名未启用时 mock 无害,不拦。

@@ -174,6 +174,37 @@ class TestAdminApi:
         assert resp.status_code == 400
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
+    async def test_prod_rejects_forced_realname_with_mock_provider(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """prod 下「充值强制实名 + mock 渠道」组合由 DB 写入侧拦(启动校验只看 env 层):
+        mock 核验恒过,开着强制实名等于没有实名。两个方向都拦;同一批切成 aliyun 则放行。"""
+        from app.core.config import get_settings
+
+        ah = await admin_headers(sm, client, role="admin")
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "prod", raising=False)
+        ah["Host"] = settings.admin_host  # prod 边缘收口只放行 admin 域
+
+        async def put(updates: dict[str, str]):
+            return await client.put(
+                "/api/admin/v1/platform-config",
+                json={"updates": updates, "reason": "合规开启"},
+                headers=ah,
+            )
+
+        resp = await put({"real_name_required_for_recharge": "true"})
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+        assert "real_name_provider" in resp.json()["message"]
+        # 同一批把渠道切成 aliyun:组合终态合法
+        resp = await put(
+            {"real_name_required_for_recharge": "true", "real_name_provider": "aliyun"}
+        )
+        assert resp.status_code == 200, resp.text
+        # 反向:强制实名开着,再把渠道切回 mock 同样被拒
+        assert (await put({"real_name_provider": "mock"})).status_code == 400
+
     async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
         """开关走平台配置:公开 policies 即时跟随,充值门禁即时生效(免重启)。"""
         from tests.test_payment import user_headers
@@ -443,35 +474,3 @@ class TestEffectiveConfigCache:
         async with sm() as session:
             cfg = await get_effective_platform_config(session)  # 不抛
         assert cfg["sms_access_key_secret"] == ""  # env 未设 → 空串
-
-    async def test_prod_write_path_rejects_mock_realname_combo(self, sm, monkeypatch):
-        """prod 下经 DB 覆盖层也不得组合出「强制实名 + mock 渠道」(与启动校验同口径)。"""
-        from app.core.config import get_settings
-        from app.core.platform_config import set_platform_settings
-
-        monkeypatch.setattr(get_settings(), "environment", "prod", raising=False)
-        async with sm() as session:
-            with pytest.raises(ValueError, match="real_name_provider"):
-                await set_platform_settings(
-                    session, {"real_name_required_for_recharge": "true"}, updated_by=None
-                )
-        async with sm() as session:
-            # 同一批把渠道切成 aliyun 则放行(组合终态合法)
-            await set_platform_settings(
-                session,
-                {"real_name_required_for_recharge": "true", "real_name_provider": "aliyun"},
-                updated_by=None,
-            )
-
-    async def test_prod_write_path_rejects_mock_realname_directly(self, sm, monkeypatch):
-        """prod 下 DB 覆盖层直写 real_name_provider=mock 也被拒(prod_forbidden 声明式拦截):
-        与 sms_provider 同口径——mock 对非 0000 结尾恒过,实名形同虚设。"""
-        from app.core.config import get_settings
-        from app.core.platform_config import set_platform_settings
-
-        monkeypatch.setattr(get_settings(), "environment", "prod", raising=False)
-        async with sm() as session:
-            with pytest.raises(ValueError, match="real_name_provider"):
-                await set_platform_settings(
-                    session, {"real_name_provider": "mock"}, updated_by=None
-                )
