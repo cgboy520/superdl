@@ -184,13 +184,8 @@ import { downloadCsv } from "./lib/csv";
 
 export { isApiError } from "@superdl/api-client";
 export type {
-  ApiError,
   EnrollmentCommandOut,
-  EnrollmentCreate,
-  ImageCreate,
-  ImageUpdate,
   AdminInstanceOut,
-  InstanceOut,
   NodeMetricsOut,
   OverviewOut,
   SkuAdminOut,
@@ -212,37 +207,27 @@ export type {
   AdminOrderOut as OrderRow,
   AdminRefundOut as RefundRow,
   AdminSettlementGapOut,
-  AdminTicketDetailOut as TicketDetail,
-  AdminTicketOut as TicketRow,
   AuditLogOut as AuditRow,
   DeadTaskOut as DeadTaskRow,
   NodeOut as NodeRow,
-  OrderVerifyOut as OrderVerifyResult,
   OversellPoolOut as OversellRow,
   PaymentAnomalyOut as AnomalyRow,
   PlatformConfigItemOut as PlatformConfigItem,
-  PoliciesAdminOut as PoliciesAdminView,
   ReconciliationOut as ReconciliationReport,
-  RevenueReportOut as RevenueReport,
   TenantOut as TenantRow,
-  TenantQuotaOut as TenantQuota,
   InstanceEventOut as InstanceEvent,
   GpuModelAggregateOut as GpuModelAggregate,
-  ClusterStatusOut as ClusterStatus,
   ClusterComponentOut as ClusterComponent,
   CapacityWarningOut as CapacityWarning,
-  CapacityPreviewOut as CapacityPreview,
   RefundPayout,
-  RefundReview,
-  RefundCancel,
-  InvoiceIssue,
-  InvoiceReject,
-  SettlementGapResolve,
 } from "@superdl/api-client";
 
 // ---------- 查询 hooks ----------
 
 type MutOpts<TData, TVars> = { mutation?: UseMutationOptions<TData, unknown, TVars> };
+type Fetcher = (...args: never[]) => Promise<unknown>;
+/** 结果类型直接取生成 fetcher 的返回值:页面 onSuccess 拿到的就是契约类型,不必再 as 断言。 */
+type MutOptsOf<F extends Fetcher, TVars> = MutOpts<Awaited<ReturnType<F>>, TVars>;
 
 export function useAdminSkus() {
   const queryKey = ["admin", "skus"] as const;
@@ -260,7 +245,9 @@ export function useClusterStatus() {
   return { ...q, queryKey };
 }
 
-export function useTestClusterConnection(opts?: MutOpts<unknown, void>) {
+export function useTestClusterConnection(
+  opts?: MutOptsOf<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost, void>,
+) {
   return useMutation({
     mutationFn: () => adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
     ...opts?.mutation,
@@ -486,7 +473,9 @@ export function useAlertUnreadCount(options?: { refetchInterval?: number }) {
   });
 }
 
-export function useAckAlert(opts?: MutOpts<unknown, { alertId: number }>) {
+export function useAckAlert(
+  opts?: MutOptsOf<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost, { alertId: number }>,
+) {
   return useMutation({
     mutationFn: (v: { alertId: number }) =>
       adminAckAlertApiAdminV1AlertsAlertIdAckPost(v.alertId),
@@ -554,7 +543,10 @@ export function useRefunds(
 }
 
 export function useReviewRefund(
-  opts?: MutOpts<unknown, { refundId: number; data: RefundReview }>,
+  opts?: MutOptsOf<
+    typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost,
+    { refundId: number; data: RefundReview }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { refundId: number; data: RefundReview }) =>
@@ -564,7 +556,10 @@ export function useReviewRefund(
 }
 
 export function usePayoutRefund(
-  opts?: MutOpts<unknown, { refundId: number; data: RefundPayout }>,
+  opts?: MutOptsOf<
+    typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost,
+    { refundId: number; data: RefundPayout }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { refundId: number; data: RefundPayout }) =>
@@ -574,7 +569,10 @@ export function usePayoutRefund(
 }
 
 export function useCancelRefund(
-  opts?: MutOpts<unknown, { refundId: number; data: RefundCancel }>,
+  opts?: MutOptsOf<
+    typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost,
+    { refundId: number; data: RefundCancel }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { refundId: number; data: RefundCancel }) =>
@@ -594,7 +592,10 @@ export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParam
 }
 
 export function useIssueInvoice(
-  opts?: MutOpts<unknown, { invoiceId: number; data: InvoiceIssue }>,
+  opts?: MutOptsOf<
+    typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost,
+    { invoiceId: number; data: InvoiceIssue }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { invoiceId: number; data: InvoiceIssue }) =>
@@ -604,7 +605,10 @@ export function useIssueInvoice(
 }
 
 export function useRejectInvoice(
-  opts?: MutOpts<unknown, { invoiceId: number; data: InvoiceReject }>,
+  opts?: MutOptsOf<
+    typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost,
+    { invoiceId: number; data: InvoiceReject }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { invoiceId: number; data: InvoiceReject }) =>
@@ -786,7 +790,10 @@ export function useReplyTicket(
 }
 
 export function useUpdateTicketStatus(
-  opts?: MutOpts<unknown, { ticketId: number; data: AdminTicketStatusUpdate }>,
+  opts?: MutOptsOf<
+    typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost,
+    { ticketId: number; data: AdminTicketStatusUpdate }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { ticketId: number; data: AdminTicketStatusUpdate }) =>
@@ -796,7 +803,7 @@ export function useUpdateTicketStatus(
 }
 
 /** 审计检索:游标翻页(响应是数组;满页即还有更早,游标=末行 id 的 base64)。 */
-export type AuditFilters = Omit<AdminAuditLogApiAdminV1AuditGetParams, "cursor">;
+type AuditFilters = Omit<AdminAuditLogApiAdminV1AuditGetParams, "cursor">;
 
 export const AUDIT_DEFAULT_LIMIT = 100;
 
@@ -869,7 +876,7 @@ export function useResetAdminMfa(opts?: MutOpts<AdminAccountOut, { id: number; r
   });
 }
 
-export function useCreateSku(opts?: MutOpts<unknown, { data: SkuCreate }>) {
+export function useCreateSku(opts?: MutOptsOf<typeof adminCreateSkuApiAdminV1SkusPost, { data: SkuCreate }>) {
   return useMutation({
     mutationFn: (v: { data: SkuCreate }) => adminCreateSkuApiAdminV1SkusPost(v.data),
     ...opts?.mutation,
@@ -877,7 +884,10 @@ export function useCreateSku(opts?: MutOpts<unknown, { data: SkuCreate }>) {
 }
 
 export function useUpdateSku(
-  opts?: MutOpts<unknown, { skuId: number; data: SkuUpdate; force?: boolean }>,
+  opts?: MutOptsOf<
+    typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch,
+    { skuId: number; data: SkuUpdate; force?: boolean }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { skuId: number; data: SkuUpdate; force?: boolean }) =>
@@ -926,7 +936,10 @@ export function useRegenerateEnrollment(
 }
 
 export function useRevokeEnrollment(
-  opts?: MutOpts<unknown, { enrollmentId: number; data: EnrollmentRevokeRequest }>,
+  opts?: MutOptsOf<
+    typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost,
+    { enrollmentId: number; data: EnrollmentRevokeRequest }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
@@ -936,7 +949,10 @@ export function useRevokeEnrollment(
 }
 
 export function useCordonNode(
-  opts?: MutOpts<unknown, { nodeName: string; on: boolean; data: NodeCordonRequest }>,
+  opts?: MutOptsOf<
+    typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost,
+    { nodeName: string; on: boolean; data: NodeCordonRequest }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { nodeName: string; on: boolean; data: NodeCordonRequest }) =>
@@ -947,14 +963,21 @@ export function useCordonNode(
   });
 }
 
-export function useCreateImage(opts?: MutOpts<unknown, { data: ImageCreate }>) {
+export function useCreateImage(
+  opts?: MutOptsOf<typeof adminCreateImageApiAdminV1ImagesPost, { data: ImageCreate }>,
+) {
   return useMutation({
     mutationFn: (v: { data: ImageCreate }) => adminCreateImageApiAdminV1ImagesPost(v.data),
     ...opts?.mutation,
   });
 }
 
-export function useUpdateImage(opts?: MutOpts<unknown, { imageId: number; data: ImageUpdate }>) {
+export function useUpdateImage(
+  opts?: MutOptsOf<
+    typeof adminUpdateImageApiAdminV1ImagesImageIdPatch,
+    { imageId: number; data: ImageUpdate }
+  >,
+) {
   return useMutation({
     mutationFn: (v: { imageId: number; data: ImageUpdate }) =>
       adminUpdateImageApiAdminV1ImagesImageIdPatch(v.imageId, v.data),
@@ -963,7 +986,10 @@ export function useUpdateImage(opts?: MutOpts<unknown, { imageId: number; data: 
 }
 
 export function useDeleteImage(
-  opts?: MutOpts<unknown, { imageId: number; data: ImageDeleteRequest }>,
+  opts?: MutOptsOf<
+    typeof adminDeleteImageApiAdminV1ImagesImageIdDelete,
+    { imageId: number; data: ImageDeleteRequest }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { imageId: number; data: ImageDeleteRequest }) =>
@@ -1003,7 +1029,10 @@ export function useUnfreezeTenant() {
 }
 
 export function useCreateAdjustment(
-  opts?: MutOpts<unknown, { data: AdjustmentCreate; idempotencyKey?: string }>,
+  opts?: MutOptsOf<
+    typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost,
+    { data: AdjustmentCreate; idempotencyKey?: string }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { data: AdjustmentCreate; idempotencyKey?: string }) =>
@@ -1016,7 +1045,10 @@ export function useCreateAdjustment(
 }
 
 export function useReviewAdjustment(
-  opts?: MutOpts<unknown, { adjustmentId: number; data: AdjustmentReview }>,
+  opts?: MutOptsOf<
+    typeof adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost,
+    { adjustmentId: number; data: AdjustmentReview }
+  >,
 ) {
   return useMutation({
     mutationFn: (v: { adjustmentId: number; data: AdjustmentReview }) =>
@@ -1257,7 +1289,7 @@ export function useSkuImpact(skuId: number | null) {
 // ---------- CSV 导出(生成 fetcher,文本响应;截断标记见 lib/csv.ts) ----------
 
 /** 服务端 CSV 截断标记(与 apps/api core/csvexport.py TRUNCATED_MARKER 一致)。 */
-export const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
+const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
 
 async function downloadCsvText(filename: string, text: string): Promise<"ok" | "truncated"> {
   downloadCsv(filename, text);
