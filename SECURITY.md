@@ -2,7 +2,8 @@
 
 ## 报告漏洞
 
-- 通过 GitHub 的私密漏洞报告(仓库 **Security → Report a vulnerability**)提交,不要开公开 issue,不要在 PR / 提交信息里描述。
+- 仓库当前为私有(见 `docs/decisions.md`「私有仓库,不放 LICENSE」),GitHub 的私密漏洞报告(Report a vulnerability)只对公开仓库开放。私有阶段:协作者直接私信维护者,或在仓库内开 issue 并加 `security` 标签(私有仓的 issue 仅协作者可见);不要在 PR / 提交信息里描述漏洞细节。
+- 转公开前先在 Settings → Code security 启用 Private vulnerability reporting,并把上一条改为「Security → Report a vulnerability」。
 - 请附:影响的组件(api / web / admin / deploy / node-join.sh / 实例镜像)、复现步骤、影响面判断。凭据、租户数据请脱敏。
 - 收到后会先确认并给出处置方向,修复随下一次 `main` 提交发布。本项目不设漏洞赏金。
 
