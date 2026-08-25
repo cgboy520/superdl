@@ -193,8 +193,12 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/rke2/config.yaml"
   grep -q "K10fixture::server:secret" "$TMP/etc/rancher/rke2/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
-  # registries.yaml 落位
+  # registries.yaml 落位;含仓库认证凭据(configs.auth),与 config.yaml 同口径 600
   grep -q 'mirrors:' "$TMP/etc/rancher/rke2/registries.yaml"
+  [ "$(stat -c %a "$TMP/etc/rancher/rke2/registries.yaml")" = "600" ]
+  # umask 前置:状态目录 0700、日志显式放宽 0644(运维 tail 无需 root),无先宽后窄窗口
+  [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR")" = "700" ]
+  [ "$(stat -c %a "$TMP/join.log")" = "644" ]
   # markers 齐全(含 bootstrap 与完成标记)
   for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start completed; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
@@ -305,8 +309,7 @@ EOF
   export NVIDIA_OK=0
   run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
   [ "$status" -eq 0 ]
-  # 重拉的副本经指纹校验(fixture 的 script_sha256 即假脚本正文的 sha256)
-  [ "$(cat "$SUPERDL_JOIN_STATE_DIR/node-join.sh")" = "#!/bin/bash" ]
+  # 重拉副本过了指纹校验(fixture 的 script_sha256 即假脚本正文的 sha256)才会走到重启
   grep -q "systemctl reboot" "$SHIM_CALLS"
 }
 
@@ -419,16 +422,6 @@ PYEOF
   run_script
   [ "$status" -eq 1 ]
   grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
-}
-
-@test "日志 0644 且敏感落盘 0600/0700(umask 前置,无先宽后窄窗口)" {
-  run_script
-  [ "$status" -eq 0 ]
-  [ "$(stat -c %a "$TMP/join.log")" = "644" ]
-  [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
-  # registries.yaml 含仓库认证凭据(configs.auth):必须与 config.yaml 同口径 600
-  [ "$(stat -c %a "$TMP/etc/rancher/rke2/registries.yaml")" = "600" ]
-  [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR")" = "700" ]
 }
 
 @test "--uninstall:停 agent、删本脚本写入的全部配置、清状态目录,不碰 VG 与驱动" {

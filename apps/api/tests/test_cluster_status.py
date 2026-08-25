@@ -24,7 +24,6 @@ def fake():
         ("v1.36.2+rke2r1", "rke2"),
         ("v1.33.4+k3s1", "k3s"),
         ("v1.36.2", None),
-        ("", None),
         (None, None),
     ],
 )

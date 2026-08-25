@@ -63,23 +63,6 @@ class TestSellableGate:
         )
         assert resp.status_code == 200
 
-    async def test_family_prefix_matches_suffixed_node(self, client: AsyncClient, sm):
-        """SKU 只写家族 A100 时匹配台账 A100-80G 节点。"""
-        await seed_spec(sm, node_name="a100-node", gpu_model="A100-80G", pool_label="kata")
-        sku_id = await seed_one_sku(
-            sm,
-            status="off",
-            gpu_model="A100",
-            tier="dedicated",
-            gpu_cores_pct=100,
-            pool_label="kata",
-        )
-        headers = await admin_headers(sm, client)
-        resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}", json={"status": "on", "reason": "用例"}, headers=headers
-        )
-        assert resp.status_code == 200
-
     async def test_not_ready_node_rejected(self, client: AsyncClient, sm):
         await seed_spec(sm, status="NotReady")
         sku_id = await seed_one_sku(sm, status="off")

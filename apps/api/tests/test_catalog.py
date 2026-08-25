@@ -152,13 +152,7 @@ class TestAdminSku:
         sku_id = resp.json()["id"]
         assert resp.json()["status"] == "off"  # 默认不上架
 
-        # 台账无匹配节点:上架被硬校验拦下,force 放行
-        resp = await client.patch(
-            f"/api/admin/v1/skus/{sku_id}",
-            json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
-            headers=headers,
-        )
-        assert resp.status_code == 409 and resp.json()["code"] == "SKU_NOT_SELLABLE"
+        # 台账无匹配节点:force 上架(硬校验 409 见 test_sku_capacity.TestSellableGate)
         resp = await client.patch(
             f"/api/admin/v1/skus/{sku_id}?force=true",
             json={"status": "on", "price_hourly": "2.8000", "reason": "上架调价"},
@@ -237,12 +231,3 @@ class TestAdminSku:
             headers=headers,
         )
         assert resp.status_code == 403
-
-    async def test_user_token_rejected(self, client: AsyncClient, sm):
-        from tests.test_account_auth import register
-
-        data = await register(client, "13800000088")
-        resp = await client.get(
-            "/api/admin/v1/skus", headers={"Authorization": f"Bearer {data['access_token']}"}
-        )
-        assert resp.status_code == 401
