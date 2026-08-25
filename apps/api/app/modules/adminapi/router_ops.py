@@ -389,7 +389,6 @@ def _announcement_out(a: Any) -> AnnouncementOut:
         reached=a.reached,
         created_by=a.created_by,
         created_at=a.created_at.isoformat(),
-        revoked_by=a.revoked_by,
         revoked_at=a.revoked_at.isoformat() if a.revoked_at else None,
         revoke_reason=a.revoke_reason,
     )

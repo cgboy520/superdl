@@ -13,5 +13,4 @@ export interface MfaLoginOut {
   access_token: string;
   admin: AdminOut;
   recovery_codes_left?: number | null;
-  token_type?: string;
 }

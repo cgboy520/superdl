@@ -13,7 +13,6 @@ export interface AnnouncementOut {
   reached: number;
   revoke_reason?: string | null;
   revoked_at?: string | null;
-  revoked_by?: number | null;
   status: string;
   title: string;
 }

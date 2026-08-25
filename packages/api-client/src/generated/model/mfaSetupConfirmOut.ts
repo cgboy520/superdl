@@ -13,5 +13,4 @@ export interface MfaSetupConfirmOut {
   access_token: string;
   admin: AdminOut;
   recovery_codes: string[];
-  token_type?: string;
 }

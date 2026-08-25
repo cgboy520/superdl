@@ -7,7 +7,6 @@
 
 export interface OversellPoolOut {
   oversell_ratio: number;
-  physical_gpus: number;
   pool: string;
   sold_share: number;
   util_avg_24h: number | null;

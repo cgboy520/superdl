@@ -88,7 +88,6 @@ class MfaSetupConfirmOut(BaseModel):
     """绑定成功:恢复码仅此一次返回,10 个,须离线保存。"""
 
     access_token: str
-    token_type: str = "bearer"
     admin: AdminOut
     recovery_codes: list[str]
 
@@ -97,7 +96,6 @@ class MfaLoginOut(BaseModel):
     """二要素验证通过。用了恢复码时 recovery_codes_left 骤减,≤2 提示重新生成。"""
 
     access_token: str
-    token_type: str = "bearer"
     admin: AdminOut
     recovery_codes_left: int | None = None
 
@@ -116,7 +114,6 @@ class AdminRefreshRequest(BaseModel):
 
 class AdminRefreshOut(BaseModel):
     access_token: str
-    token_type: str = "bearer"
 
 
 # ---------- 管理端响应模型 ----------
@@ -282,7 +279,6 @@ class PrewarmEnqueuedOut(BaseModel):
 
 class OversellPoolOut(BaseModel):
     pool: str
-    physical_gpus: int
     sold_share: float
     oversell_ratio: float
     util_avg_24h: float | None
@@ -332,7 +328,6 @@ class AnnouncementOut(BaseModel):
     reached: int
     created_by: int
     created_at: str
-    revoked_by: int | None = None
     revoked_at: str | None = None
     revoke_reason: str | None = None
 

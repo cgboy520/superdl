@@ -7,5 +7,4 @@
 
 export interface AdminRefreshOut {
   access_token: string;
-  token_type?: string;
 }

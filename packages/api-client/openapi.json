@@ -877,11 +877,6 @@
           "access_token": {
             "title": "Access Token",
             "type": "string"
-          },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
           }
         },
         "required": [
@@ -1468,17 +1463,6 @@
               }
             ],
             "title": "Revoked At"
-          },
-          "revoked_by": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revoked By"
           },
           "status": {
             "title": "Status",
@@ -3869,11 +3853,6 @@
               }
             ],
             "title": "Recovery Codes Left"
-          },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
           }
         },
         "required": [
@@ -3914,11 +3893,6 @@
             },
             "title": "Recovery Codes",
             "type": "array"
-          },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
           }
         },
         "required": [
@@ -4547,10 +4521,6 @@
             "title": "Oversell Ratio",
             "type": "number"
           },
-          "physical_gpus": {
-            "title": "Physical Gpus",
-            "type": "integer"
-          },
           "pool": {
             "title": "Pool",
             "type": "string"
@@ -4573,7 +4543,6 @@
         },
         "required": [
           "pool",
-          "physical_gpus",
           "sold_share",
           "oversell_ratio",
           "util_avg_24h"
@@ -12133,7 +12102,7 @@
     },
     "/api/admin/v1/reports/oversell": {
       "get": {
-        "description": "超卖报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。",
+        "description": "超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。",
         "operationId": "oversell_report_api_admin_v1_reports_oversell_get",
         "responses": {
           "200": {

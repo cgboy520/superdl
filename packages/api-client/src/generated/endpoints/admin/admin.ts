@@ -8613,7 +8613,7 @@ export const getOversellReportApiAdminV1ReportsOversellGetUrl = () => {
 }
 
 /**
- * 超卖报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。
+ * 超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。
  * @summary Oversell Report
  */
 export const oversellReportApiAdminV1ReportsOversellGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OversellPoolOut[]> => {

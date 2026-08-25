@@ -360,7 +360,6 @@ class TestNodesAndReports:
         ah = await admin_headers(sm, client, role="finance")
         report = (await client.get("/api/admin/v1/reports/oversell", headers=ah)).json()
         hami = next(r for r in report if r["pool"] == "hami")
-        assert hami["physical_gpus"] == 32
         assert hami["sold_share"] == 0.5
         assert hami["oversell_ratio"] == round(0.5 / 32, 3)
 

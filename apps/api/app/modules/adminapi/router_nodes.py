@@ -372,7 +372,7 @@ async def admin_uncordon_node(
 
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])
 async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
-    """超卖报表:各池 物理容量 / 已售份额 / 实际超卖率 / 近 24h 真实利用率。"""
+    """超卖报表:各池 已售份额 / 实际超卖率(已售 ÷ Ready 物理卡数)/ 近 24h 真实利用率。"""
     # 台账口径(node_specs,Ready 节点),不直连 K8s:集群不可达时报表仍可用
     nodes = await nodes_service.list_node_specs(session)
     physical: dict[str, int] = {}
@@ -398,7 +398,6 @@ async def oversell_report(session: DbSession) -> list[OversellPoolOut]:
         out.append(
             OversellPoolOut(
                 pool=pool,
-                physical_gpus=total,
                 sold_share=sold_share,
                 oversell_ratio=round(sold_share / total, 3) if total else 0.0,
                 util_avg_24h=round(util_sum[pool] / hours, 1) if hours else None,
