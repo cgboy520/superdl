@@ -10,7 +10,7 @@ from app.core.pagination import Page
 from app.core.ratelimit import check_rate_limit
 from app.modules.account.deps import CurrentUser
 from app.modules.notify import service
-from app.modules.notify.schemas import NotificationOut
+from app.modules.notify.schemas import NotificationOut, UnreadCountOut
 
 router = APIRouter(tags=["notify"])
 
@@ -35,6 +35,13 @@ async def list_notifications(
     return await service.list_notifications(
         session, user.id, unread_only=unread, cursor=cursor, limit=limit
     )
+
+
+@router.get("/notifications/unread-count")
+async def unread_count(user: CurrentUser, session: DbSession) -> UnreadCountOut:
+    """未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦
+    (此前角标 = 已加载页的未读数,未读超过一页时偏低)。"""
+    return UnreadCountOut(unread_count=await service.unread_count(session, user.id))
 
 
 @router.post("/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)

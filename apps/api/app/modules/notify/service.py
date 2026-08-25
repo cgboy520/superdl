@@ -295,6 +295,25 @@ async def list_notifications(
     )
 
 
+async def unread_count(session: AsyncSession, user_id: int) -> int:
+    """未读站内信条数(顶栏角标):DB count,与列表游标分页解耦(P2)。"""
+    from sqlalchemy import func
+
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.user_id == user_id,
+                    Notification.status == "published",
+                    Notification.read_at.is_(None),
+                )
+            )
+        ).scalar_one()
+    )
+
+
 async def mark_read(session: AsyncSession, user_id: int, notification_id: int) -> None:
     row = await session.get(Notification, notification_id)
     if row is not None and row.user_id == user_id and row.read_at is None:

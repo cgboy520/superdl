@@ -82,7 +82,13 @@ from app.modules.orchestrator.queries import (
     deletion_leftovers as deletion_leftovers,
 )
 from app.modules.orchestrator.queries import (
+    disk_billing_snapshot as disk_billing_snapshot,
+)
+from app.modules.orchestrator.queries import (
     disks_arrears_transition as disks_arrears_transition,
+)
+from app.modules.orchestrator.queries import (
+    instance_billing_snapshot as instance_billing_snapshot,
 )
 from app.modules.orchestrator.queries import (
     instance_disk_stats_by_user as instance_disk_stats_by_user,
@@ -572,10 +578,12 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
 
 async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
     """(重新)占用数据盘标记。failed 恢复开机时:失败边缘已解挂(detach),盘若还在就重新占用;
-    盘已被用户删掉则放弃挂载点(系统盘数据仍在,实例照常能开)。"""
+    盘已被用户删掉则放弃挂载点(系统盘数据仍在,实例照常能开)。
+    FOR UPDATE 锁盘行(P2,对齐 attach_for_instance 纪律):否则恢复开机与 delete_disk
+    并发时同样存在「边挂边擦」窗口。"""
     if instance.data_disk_id is None:
         return
-    disk = await session.get(DataDisk, instance.data_disk_id)
+    disk = await session.get(DataDisk, instance.data_disk_id, with_for_update=True)
     if disk is None or disk.status == "deleted":
         instance.data_disk_id = None
         await session.flush()

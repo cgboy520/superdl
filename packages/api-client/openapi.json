@@ -773,7 +773,7 @@
       "AdminLoginRequest": {
         "properties": {
           "password": {
-            "maxLength": 64,
+            "maxLength": 128,
             "minLength": 1,
             "title": "Password",
             "type": "string"
@@ -1094,6 +1094,60 @@
           "new_password"
         ],
         "title": "AdminSelfPasswordRequest",
+        "type": "object"
+      },
+      "AdminSettlementGapOut": {
+        "description": "管理端结算缺口视图:水位线被越过但账未结清的窗口留痕。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "object_id": {
+            "title": "Object Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "window_start",
+          "object_id",
+          "reason",
+          "resolved_at",
+          "created_at"
+        ],
+        "title": "AdminSettlementGapOut",
         "type": "object"
       },
       "AdminTicketDetailOut": {
@@ -4832,6 +4886,60 @@
         "title": "Page[AdminRefundOut]",
         "type": "object"
       },
+      "Page_AdminSettlementGapOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminSettlementGapOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AdminSettlementGapOut]",
+        "type": "object"
+      },
+      "Page_AdminTicketOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminTicketOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AdminTicketOut]",
+        "type": "object"
+      },
       "Page_BillHourlyOut_": {
         "properties": {
           "items": {
@@ -6064,6 +6172,22 @@
           "yesterday_signups"
         ],
         "title": "RevenueReportOut",
+        "type": "object"
+      },
+      "SettlementGapResolve": {
+        "description": "人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。",
+        "properties": {
+          "note": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "SettlementGapResolve",
         "type": "object"
       },
       "SiteConfigOut": {
@@ -7430,6 +7554,20 @@
         "title": "TokenPair",
         "type": "object"
       },
+      "UnreadCountOut": {
+        "description": "未读角标轻端点(P2):顶栏 30s 轮询用,不拉通知列表全页。",
+        "properties": {
+          "unread_count": {
+            "title": "Unread Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread_count"
+        ],
+        "title": "UnreadCountOut",
+        "type": "object"
+      },
       "UpdatedKeysOut": {
         "properties": {
           "updated": {
@@ -7758,6 +7896,7 @@
     },
     "/api/admin/v1/adjustments/{adjustment_id}/review": {
       "post": {
+        "description": "复核调账(approve 即生效):审计行与生效同事务(write_audit_sync,P1-8)。",
         "operationId": "admin_review_adjustment_api_admin_v1_adjustments__adjustment_id__review_post",
         "parameters": [
           {
@@ -9157,7 +9296,7 @@
     },
     "/api/admin/v1/finance/orders/{order_no}/backfill": {
       "post": {
-        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态\n(X-Idempotent-Replay 头区分)。",
+        "description": "人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态\n(X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync,P1-8)。",
         "operationId": "admin_backfill_order_api_admin_v1_finance_orders__order_no__backfill_post",
         "parameters": [
           {
@@ -9272,6 +9411,230 @@
           }
         ],
         "summary": "Admin Verify Order",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/settlement-gaps": {
+      "get": {
+        "description": "缺口列表(游标分页,降序):默认只看未核销——缺口闭环前需要持续曝光,\n配套持续告警 superdl_settlement_gap_unresolved(DB 口径)。",
+        "operationId": "admin_list_settlement_gaps_api_admin_v1_finance_settlement_gaps_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "hourly",
+                    "daily_disk"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unresolved",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Unresolved",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AdminSettlementGapOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Settlement Gaps",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/settlement-gaps/{gap_id}/replay": {
+      "post": {
+        "description": "重放缺口窗口的幂等入账原语(人工触发,不自动改账):成功回写 resolved_at。\ngrace_overlap 缺口拒重放(409,走人工核销);对象已不存在 409(同样走人工核销)。",
+        "operationId": "admin_replay_settlement_gap_api_admin_v1_finance_settlement_gaps__gap_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gap_id",
+            "required": true,
+            "schema": {
+              "title": "Gap Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSettlementGapOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Replay Settlement Gap",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/settlement-gaps/{gap_id}/resolve": {
+      "post": {
+        "description": "人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。",
+        "operationId": "admin_resolve_settlement_gap_api_admin_v1_finance_settlement_gaps__gap_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "gap_id",
+            "required": true,
+            "schema": {
+              "title": "Gap Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementGapResolve"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSettlementGapOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Resolve Settlement Gap",
         "tags": [
           "admin"
         ]
@@ -11867,7 +12230,7 @@
     },
     "/api/admin/v1/refunds/{refund_id}/payout": {
       "post": {
-        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。",
+        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。\n审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚(P1-8)。",
         "operationId": "admin_payout_refund_api_admin_v1_refunds__refund_id__payout_post",
         "parameters": [
           {
@@ -12990,7 +13353,7 @@
     },
     "/api/admin/v1/tickets": {
       "get": {
-        "description": "工单列表(固定截断 200)。status/category 精确过滤。",
+        "description": "工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。",
         "operationId": "admin_list_tickets_api_admin_v1_tickets_get",
         "parameters": [
           {
@@ -13024,6 +13387,71 @@
               ],
               "title": "Category"
             }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ticket_no",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ticket No"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
           }
         ],
         "responses": {
@@ -13031,11 +13459,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AdminTicketOut"
-                  },
-                  "title": "Response Admin List Tickets Api Admin V1 Tickets Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/Page_AdminTicketOut_"
                 }
               }
             },
@@ -15540,6 +15964,33 @@
           }
         ],
         "summary": "Mark All Read",
+        "tags": [
+          "notify"
+        ]
+      }
+    },
+    "/api/v1/notifications/unread-count": {
+      "get": {
+        "description": "未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦\n(此前角标 = 已加载页的未读数,未读超过一页时偏低)。",
+        "operationId": "unread_count_api_v1_notifications_unread_count_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unread Count",
         "tags": [
           "notify"
         ]

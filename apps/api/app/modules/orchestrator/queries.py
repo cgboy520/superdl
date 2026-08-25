@@ -300,6 +300,41 @@ async def cluster_nodes() -> list[Any]:
 # ---------- 数据盘门面(billing/巡检经此访问,模块边界) ----------
 
 
+async def instance_billing_snapshot(
+    session: AsyncSession, instance_id: int
+) -> tuple[int, int, Any, int] | None:
+    """单实例计费快照:(id, user_id, price_hourly, gpu_count);不存在返回 None。
+    缺口重放按 object_id 精确取价(结算缺口的补结必须是当时落库的快照价,非 SKU 现价)。"""
+    return (
+        (
+            await session.execute(
+                select(
+                    Instance.id, Instance.user_id, Instance.price_hourly, Instance.gpu_count
+                ).where(Instance.id == instance_id)
+            )
+        )
+        .tuples()
+        .one_or_none()
+    )
+
+
+async def disk_billing_snapshot(
+    session: AsyncSession, disk_id: int
+) -> tuple[int, int, Any, int] | None:
+    """单盘计费快照:(id, user_id, price_gb_month, size_gb);不存在返回 None(缺口重放用)。"""
+    return (
+        (
+            await session.execute(
+                select(
+                    DataDisk.id, DataDisk.user_id, DataDisk.price_gb_month, DataDisk.size_gb
+                ).where(DataDisk.id == disk_id)
+            )
+        )
+        .tuples()
+        .one_or_none()
+    )
+
+
 async def billable_disks(session: AsyncSession) -> list[Any]:
     from app.modules.orchestrator import disks as disks_service
 

@@ -210,6 +210,55 @@ class TestAdminSku:
         market = (await client.get("/api/v1/skus")).json()
         assert any(s["id"] == sku_id for s in market)
 
+    async def test_on_sale_sku_pool_change_also_validated(self, client: AsyncClient, sm):
+        """在售 SKU 改 型号/池 同样过 sellable 硬校验(P2):无台账匹配的池方向 409,
+        force 放行(挂了 = 在售 SKU 可被改成指向无 Ready 节点的池,用户创建才失败)。"""
+        from tests.helpers import seed_node_spec
+
+        await seed_node_spec(sm, pool_label="mig", gpu_model="H100")
+        headers = await admin_headers(sm, client)
+        body = {
+            "name": "H100 · MIG 在售",
+            "gpu_model": "H100",
+            "tier": "mig",
+            "mig_profile": "1g.10gb",
+            "vram_gb": 10,
+            "pool_label": "mig",
+            "vcpu": 8,
+            "mem_gb": 32,
+            "price_hourly": "2.5000",
+        }
+        resp = await client.post("/api/admin/v1/skus", json=body, headers=headers)
+        sku_id = resp.json()["id"]
+        # 台账有 mig × H100 Ready:直接上架成功(无需 force)
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "上架"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        # 在售改 pool_label=kata(台账无 kata Ready)→ 409
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"pool_label": "kata", "reason": "迁池"},
+            headers=headers,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "SKU_NOT_SELLABLE"
+        # force 放行;改其他字段(价格)不受校验影响
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}?force=true",
+            json={"pool_label": "kata", "reason": "迁池"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"price_hourly": "2.6000", "reason": "调价"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+
     async def test_readonly_cannot_write(self, client: AsyncClient, sm):
         headers = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/skus", headers=headers)

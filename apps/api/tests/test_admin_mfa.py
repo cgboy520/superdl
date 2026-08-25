@@ -123,6 +123,8 @@ class TestVerifyLogin:
         assert body["status"] == "mfa_required"
 
     async def test_totp_login_success(self, client: AsyncClient, sm):
+        import time
+
         import pyotp
 
         await _create(client, sm, "totp-admin", "admin")
@@ -137,11 +139,12 @@ class TestVerifyLogin:
         codes = confirm.json()["recovery_codes"]
         assert len(codes) == 10
 
-        # 重新登录:TOTP 直过
+        # 重新登录:TOTP 直过(绑定已用当前步,登录用下一枚——valid_window=1 接受相邻步;
+        # 真实用户绑定与重登录间隔远大于 30s,不会遇到同码场景)
         ticket2 = (await _login(client, "totp-admin")).json()["ticket"]
         resp = await client.post(
             "/api/admin/v1/auth/login/mfa",
-            json={"ticket": ticket2, "code": pyotp.TOTP(secret).now()},
+            json={"ticket": ticket2, "code": pyotp.TOTP(secret).at(int(time.time()) + 30)},
         )
         assert resp.status_code == 200
         assert resp.json()["recovery_codes_left"] is None
@@ -159,10 +162,36 @@ class TestVerifyLogin:
         )
         assert reuse.json()["code"] == "MFA_CODE_INVALID"
 
+    async def test_same_totp_code_replay_rejected(self, client: AsyncClient, sm):
+        """防重放(RFC 6238 §5.2):同一枚动态码第二次验证即拒,窗口内不能批量领 token
+        (挂了 = 截获一枚码可在约 90s 窗口内无限重放,MFA 形同虚设)。"""
+        import pyotp
+
+        await _create(client, sm, "replay-admin", "admin")
+        ticket = (await _login(client, "replay-admin")).json()["ticket"]
+        begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
+        secret = begin.json()["secret"]
+        code = pyotp.TOTP(secret).now()
+        confirm = await client.post(
+            "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
+        )
+        assert confirm.status_code == 200
+        # 同码重放:绑定路径与登录路径都必须拒
+        again = await client.post(
+            "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
+        )
+        assert again.json()["code"] == "MFA_CODE_INVALID"
+        ticket2 = (await _login(client, "replay-admin")).json()["ticket"]
+        replay = await client.post(
+            "/api/admin/v1/auth/login/mfa", json={"ticket": ticket2, "code": code}
+        )
+        assert replay.json()["code"] == "MFA_CODE_INVALID"
+
     async def test_mfa_rate_limited_after_5_failures(self, client: AsyncClient, sm):
-        await self._bound_admin(client, sm, "brute-admin")
+        await self._bound_admin(client, sm, "brute-admin")  # 绑定成功验证计 1 次配额
         ticket = (await _login(client, "brute-admin")).json()["ticket"]
-        for _ in range(5):
+        # 成功也计配额(防窗口内批量领 token):5 次/10min 中绑定已耗 1,剩 4 次失败配额
+        for _ in range(4):
             resp = await client.post(
                 "/api/admin/v1/auth/login/mfa", json={"ticket": ticket, "code": "000000"}
             )

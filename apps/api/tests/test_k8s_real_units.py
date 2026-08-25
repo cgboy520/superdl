@@ -293,8 +293,18 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._physical_gpu_amount(node) == 2
 
     def test_no_gfd_label_falls_back_to_allocatable(self):
-        node = self._node(allocatable_gpu=8, gfd_count=None)
+        """非切分池(kata)缺 GFD 标签:allocatable 即物理数,原样采用。"""
+        node = SimpleNamespace(
+            metadata=SimpleNamespace(name="kata-n1", labels={POOL_NODE_LABEL: "kata"}),
+            status=SimpleNamespace(allocatable={"nvidia.com/gpu": "8"}),
+        )
         assert RealOrchestrator._physical_gpu_amount(node) == 8
+
+    def test_hami_pool_missing_gfd_label_refused(self):
+        """hami 池(切分池)缺 GFD 标签:拒纳管计 0(P2 硬校验)——按 allocatable 原样
+        会把物理卡数虚高 deviceSplitCount 倍直接超卖。"""
+        node = self._node(allocatable_gpu=80, gfd_count=None)
+        assert RealOrchestrator._physical_gpu_amount(node) == 0
 
     def test_occupancy_by_gpucores(self):
         # 1 虚卡 × 50% 算力 = 0.5 物理卡当量

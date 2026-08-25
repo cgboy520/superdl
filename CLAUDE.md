@@ -59,6 +59,11 @@ docker compose -f deploy/app/compose.yaml up -d      # PG18 + mock 短信/支付
 12. **文案**：用户可见文案的单一事实源是后端 `core/messages.py` 与两端 locales JSON；zh-CN 与 en-US 必须同时提交，风格见 `docs/copy-style-guide.md`。
 13. **测试**：每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是：金额与舍入、透支、结算幂等（「重复执行零重复扣款」）、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考，不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`，浏览器冒烟在 `e2e/tests/`（smoke / admin / i18n）。
 14. **密钥/凭据不入 git**：只经环境变量或平台配置中心注入；deploy 模板一律 `CHANGE_ME` 占位（`deploy/app/secrets.example.yaml`）。
+15. **大表迁移规范**（新迁移必守；存量迁移属禁改清单不回改）：
+    - CHECK 约束一律 `NOT VALID` 创建 + 独立迁移 `VALIDATE CONSTRAINT`（对齐 `20260823_38fe91299a8b_refund_requests.py` 惯例），避免全表校验锁写；
+    - 大表（bills_hourly/balance_ledger/audit_log/instance_events 及随时间单调增长表）新建索引评估 `op.get_context().autocommit_block()` + `CREATE INDEX CONCURRENTLY`；注意 `env.py` 默认整 run 单事务，CONCURRENTLY 与单事务互斥——启用 autocommit_block 时该迁移必须独立成文件且接受失去跨迁移原子性；
+    - 加列只加可空列或带 server_default 的列（PG 11+ 非易失 default 不重写表）；
+    - 存量库升级窗口预案：生产升级前在预演库执行同版本迁移并记录各迁移耗时,大表迁移安排在低峰窗（见 deploy/cluster/runbooks/pg-backup-restore.md 的演练节奏）。
 
 ## 禁改清单
 

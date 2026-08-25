@@ -2,9 +2,15 @@
 
 用法(需 PG 已迁移):cd apps/api && uv run python scripts/seed_dev.py
 幂等:已存在同名数据则跳过。
+环境闸:仅 dev/test 可跑——本脚本直调 ensure_bootstrap_admin,绕过生产配置校验,
+误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行。
+管理员口令:默认 secrets 随机生成且仅本次打印;CI/演示需固定口令时显式设
+SUPERDL_SEED_ADMIN_PASSWORD(CI 一次性隔离环境,弱口令可接受)。
 """
 
 import asyncio
+import os
+import secrets
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -13,8 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 允许 scripts/ 
 
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.logging import setup_logging
+from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.service import ensure_bootstrap_admin
 from app.modules.catalog.models import PlatformImage, Sku
 
@@ -92,6 +100,14 @@ IMAGES = [
 
 async def main() -> None:
     setup_logging()
+    settings = get_settings()
+    if settings.environment not in ("dev", "test"):
+        print(  # noqa: T201
+            "refused: seed_dev 仅允许 dev/test 环境"
+            f"(当前 SUPERDL_ENVIRONMENT={settings.environment})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     sm = get_sessionmaker()
     async with sm() as session:
         for data in SKUS:
@@ -115,8 +131,17 @@ async def main() -> None:
                     )
                 )
         await session.commit()
-        await ensure_bootstrap_admin(session, "admin123-dev")
-    print("seed done: 4 SKU / 4 镜像 / admin(admin123-dev)")  # noqa: T201
+        has_admin = (
+            await session.execute(select(AdminUser.id).limit(1))
+        ).scalar_one_or_none() is not None
+        if has_admin:
+            print("seed done: 4 SKU / 4 镜像 / admin 已存在(未改动)")  # noqa: T201
+            return
+        password = os.environ.get("SUPERDL_SEED_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
+        await ensure_bootstrap_admin(session, password)
+        print(  # noqa: T201
+            f"seed done: 4 SKU / 4 镜像 / admin({password})——口令仅本次显示,请立即保存"
+        )
 
 
 if __name__ == "__main__":

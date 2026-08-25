@@ -14,6 +14,10 @@
   vars:
     cluster_distro: rke2            # rke2(full 档)/ k3s(light 档)
     rke2_channel: latest
+    # 安装器 sha256 pin(与 node-join.sh 同一信任模型:先落盘、校验、再执行,不裸 curl|sh)。
+    # 上游安装器更新会校验失败,核对上游后同步更新本值与 node-join.sh 的 PIN_*_CN。
+    rke2_installer_sha256: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
+    k3s_installer_sha256: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
     # 控制面敏感值(etcd 快照上传凭据、agent token):一律经 group_vars/servers.yml
     # (不入 git)或 -e 注入;留空则渲染残留 CHANGE_ME,assert 直接拦截(不装半残控制面)
     etcd_snapshot_bucket: ""
@@ -105,19 +109,51 @@
         mode: "0600"
       notify: restart-server
 
+    # 不裸 curl|sh:先落盘、sha256 校验、再执行(与 node-join.sh 同一信任模型)
+    - name: 已安装探测(幂等短路:已装则跳过下载/校验/安装)
+      stat:
+        path: "{{ '/etc/systemd/system/rke2-server.service' if cluster_distro == 'rke2' else '/etc/systemd/system/k3s.service' }}"
+      register: server_installed
+
+    - name: 下载 rke2 安装器
+      get_url:
+        url: https://rancher-mirror.rancher.cn/rke2/install.sh
+        dest: /tmp/rke2-install.sh
+        mode: "0700"
+      register: rke2_installer_dl
+      when: cluster_distro == 'rke2' and not server_installed.stat.exists
+
+    - name: 校验 rke2 安装器 sha256
+      command: sha256sum -c -
+      args:
+        stdin: "{{ rke2_installer_sha256 }}  /tmp/rke2-install.sh"
+      when: cluster_distro == 'rke2' and rke2_installer_dl.changed
+
     - name: 安装 rke2 server(幂等:已装跳过)
       shell: >
-        curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh
-        | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh -
+        INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh /tmp/rke2-install.sh
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/rke2-server.service
       when: cluster_distro == 'rke2'
 
+    - name: 下载 k3s 安装器
+      get_url:
+        url: https://rancher-mirror.rancher.cn/k3s/k3s-install.sh
+        dest: /tmp/k3s-install.sh
+        mode: "0700"
+      register: k3s_installer_dl
+      when: cluster_distro == 'k3s' and not server_installed.stat.exists
+
+    - name: 校验 k3s 安装器 sha256
+      command: sha256sum -c -
+      args:
+        stdin: "{{ k3s_installer_sha256 }}  /tmp/k3s-install.sh"
+      when: cluster_distro == 'k3s' and k3s_installer_dl.changed
+
     - name: 安装 k3s server(幂等:已装跳过)
       shell: >
-        curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh
-        | INSTALL_K3S_MIRROR=cn sh -s - server
+        INSTALL_K3S_MIRROR=cn sh /tmp/k3s-install.sh -s - server
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/k3s.service
@@ -210,13 +246,33 @@
       when: "'mig' in group_names or 'hami' in group_names or 'kata' in group_names"
       notify: restart-rke2
 
+    # pvcreate 前硬检查(P2):设备必须存在且为空盘(wipefs 无签名),防误格有数据的盘
     - name: 创建 TopoLVM VG(实例盘本地 NVMe)
       shell: |
         set -e
         vgs superdl-nvme >/dev/null 2>&1 && exit 0
+        for dev in {{ nvme_devices | join(' ') }}; do
+          [[ -b "$dev" ]] || { echo "NVMe 设备不存在:$dev(登记有误)" >&2; exit 1; }
+          if wipefs -n "$dev" 2>/dev/null | grep -q .; then
+            echo "$dev 上已有签名(非空盘),拒绝 pvcreate" >&2
+            exit 1
+          fi
+        done
         pvcreate {{ nvme_devices | join(' ') }}
         vgcreate superdl-nvme {{ nvme_devices | join(' ') }}
       args: {executable: /bin/bash}
+      when: nvme_devices is defined
+
+    # 实例盘擦除语义(P0-3):lvremove 对 extent 发 NVMe TRIM;TopoLVM lvmd 容器内
+    # 另有 ConfigMap 注入,此处保证宿主机直接执行 LVM 时同语义(双保险,幂等)
+    - name: lvm.conf 开 issue_discards(实例盘销毁发 NVMe TRIM)
+      blockinfile:
+        path: /etc/lvm/lvm.conf
+        marker: "# {mark} superdl:实例盘销毁发 NVMe TRIM(跨租户数据残留防护)"
+        block: |
+          devices {
+              issue_discards = 1
+          }
       when: nvme_devices is defined
 
     # 必须一次渲染到位:先 copy 占位符文件再 replace 的写法非幂等(replace 每轮都判定

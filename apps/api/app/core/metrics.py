@@ -31,6 +31,11 @@ SETTLEMENT_GAP_TOTAL = Counter(
     "结算缺口登记次数(catchup_truncated/dead_letter;单调不降,告警按 increase 判)",
     ["kind", "reason"],
 )
+SETTLEMENT_GAP_UNRESOLVED = Gauge(
+    "superdl_settlement_gap_unresolved",
+    "未核销结算缺口数(DB 口径;结算任务每轮刷新,告警按 >0 持续判,缺口不自愈)",
+    ["kind"],
+)
 PATROL_FAILED_TOTAL = Counter(
     "superdl_patrol_failed_total", "余额巡检各环节异常次数(按阶段区分)", ["stage"]
 )
@@ -69,6 +74,10 @@ PREWARM_NODES = Gauge(
 )
 PREWARM_FAILED_TOTAL = Counter(
     "superdl_prewarm_failed_total", "镜像预热拉取失败次数", ["image_ref"]
+)
+AUDIT_WRITE_FAILED_TOTAL = Counter(
+    "superdl_audit_write_failed_total",
+    "审计行写入失败次数(fail-open 独立 session 路径;资金域动作为同事务同步审计,不受影响)",
 )
 PAYMENT_CALLBACK_MISMATCH_TOTAL = Counter(
     "superdl_payment_callback_mismatch_total", "支付回调金额与订单不符次数"

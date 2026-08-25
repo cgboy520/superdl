@@ -106,6 +106,7 @@
     "goRent": "去租用",
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
     "jupyter": "JupyterLab",
+    "loadMore": "加载更多",
     "requestFailed": "请求失败",
     "retry": "重试"
   },

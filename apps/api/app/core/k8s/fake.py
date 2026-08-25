@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from app.core.k8s.base import (
     GPU_MODEL_NODE_LABEL,
     INSTANCE_DISK_STORAGE_CLASS,
+    JOB_NAME_LABEL,
     JUICEFS_STORAGE_CLASS,
+    MANAGED_LABEL,
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
@@ -21,6 +23,11 @@ from app.core.k8s.base import (
 )
 
 
+def _wipe_job_name(subpath: str) -> str:
+    """与 real._wipe_disk_sync 同款的 Job 名。"""
+    return f"wipe-{subpath[-40:]}".lower()
+
+
 @dataclass
 class _FakePod:
     spec: InstancePodSpec
@@ -28,6 +35,7 @@ class _FakePod:
     phase: str = "Running"
     node_name: str = "fake-node-1"
     deleting: bool = False  # Terminating:deletionTimestamp 已设,对象仍在
+    labels: dict[str, str] = field(default_factory=lambda: {MANAGED_LABEL: "true"})
 
 
 @dataclass
@@ -60,6 +68,10 @@ class FakeOrchestrator:
     fail_next_wipe: bool = False
     wipe_pending: set[tuple[str, str]] = field(default_factory=set)
     wipe_completed: set[tuple[str, str]] = field(default_factory=set)
+    # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels。独立于 self.pods:
+    # Job Pod 不是实例(无 InstancePodSpec/NodePort),但 real 里它带 MANAGED_LABEL
+    # 会被全量 LIST 命中——不登记则测试复现不了「泄漏回收误杀擦盘 Job」的场景
+    job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
     prewarm_calls: list[tuple[str, str]] = field(default_factory=list)
@@ -129,14 +141,21 @@ class FakeOrchestrator:
         if self.auto_wipe:
             self.wiped_disks.append(key)
             return
-        # 进行中:抛错交 outbox 退避重试(对齐 real._run_managed_job_sync)
+        # 进行中:抛错交 outbox 退避重试(对齐 real._run_managed_job_sync);
+        # 同时登记 wipe Job 的 Pod(real 里 Job 创建后 Pod 即存在直至成功清理)
         self.wipe_pending.add(key)
+        job_name = _wipe_job_name(subpath)
+        self.job_pods[(namespace, f"{job_name}-fake")] = {
+            MANAGED_LABEL: "true",
+            JOB_NAME_LABEL: job_name,
+        }
         raise RuntimeError(f"fake: wipe in progress: {subpath}")
 
     def finish_wipe(self, namespace: str, subpath: str) -> None:
         """测试注入:擦除作业完成;下次 wipe_disk 调用清理并返回成功。"""
         self.wipe_pending.discard((namespace, subpath))
         self.wipe_completed.add((namespace, subpath))
+        self.job_pods.pop((namespace, f"{_wipe_job_name(subpath)}-fake"), None)
 
     async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
         if self.fail_next_quota:
@@ -240,7 +259,7 @@ class FakeOrchestrator:
         return "\n".join(lines[-tail_lines:])
 
     async def list_instance_pods(self) -> list[PodListEntry]:
-        return [
+        entries = [
             PodListEntry(
                 namespace=ns,
                 name=name,
@@ -248,9 +267,23 @@ class FakeOrchestrator:
                 phase=pod.phase,
                 node_name=pod.node_name,
                 deleting=pod.deleting,
+                labels=dict(pod.labels),
             )
             for (ns, name), pod in self.pods.items()
         ]
+        entries.extend(
+            PodListEntry(
+                namespace=ns,
+                name=name,
+                ready=False,
+                phase="Running",
+                node_name="fake-node-1",
+                deleting=False,
+                labels=dict(labels),
+            )
+            for (ns, name), labels in self.job_pods.items()
+        )
+        return entries
 
     async def available_gpus(self, pool_label: str) -> int:
         cap = self.pool_capacity.get(pool_label, 0)

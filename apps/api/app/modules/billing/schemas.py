@@ -246,4 +246,27 @@ class InvoiceIssue(BaseModel):
 
 
 class InvoiceReject(BaseModel):
-    reason: str = Field(min_length=2, max_length=256)  # 驳回理由(站内信告知用户)
+    reason: str = Field(min_length=2, max_length=256)
+
+
+# ---------- 结算缺口(管理端) ----------
+
+
+class AdminSettlementGapOut(BaseModel):
+    """管理端结算缺口视图:水位线被越过但账未结清的窗口留痕。"""
+
+    id: int
+    kind: str  # hourly / daily_disk
+    window_start: datetime  # 缺口窗口起点(小时/自然日)
+    object_id: int  # 实例/盘 id;0 = 整窗(截断/水位线丢失)
+    reason: str  # catchup_truncated / dead_letter / watermark_missing / grace_overlap
+    resolved_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SettlementGapResolve(BaseModel):
+    """人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。"""
+
+    note: str = Field(min_length=2, max_length=256)  # 核销说明(审计留痕)

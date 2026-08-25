@@ -132,6 +132,12 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     unsettled += await _unsettled_burn(session, inst, now, settled_through)
                 effective = as_amount(balance - unsettled)
                 if effective <= 0:
+                    # 锁内二次读(P2):无锁粗筛到提交停机之间,用户可能刚完成充值
+                    # (credit 与本锁互斥)。不重读会按旧余额误停机——锁内确认仍为
+                    # 非正才真正执行停机链
+                    locked = await wallet.lock_wallet(session, user_id)
+                    effective = as_amount(locked.balance - unsettled)
+                if effective <= 0:
                     for inst in instances:
                         fresh = await orchestrator_service.get_instance(session, user_id, inst.uuid)
                         if fresh.status == "running":

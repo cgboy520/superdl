@@ -1,5 +1,5 @@
-# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁为 lvremove(不清零 extent)。
-# 需要「擦盘」语义时在 agent 节点 lvm.conf 开 issue_discards=1(NVMe discard 性能代价需实测)。
+# TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁为 lvremove,经 issue_discards=1
+# 对 extent 发 NVMe TRIM(擦除语义,P0-3;大 LV 实测耗时记录见 runbooks/cluster-validation.md D 节)。
 # 实例盘 PVC 由平台自管生命周期(<instance-uuid>-root,只在释放/回收时删)。
 # reclaimPolicy 显式写死,不取 chart 默认值。
 storageClasses:
@@ -16,3 +16,14 @@ lvmd:
       volume-group: superdl-nvme      # 装机基线创建的 VG
       default: true
       spare-gb: 50
+  # lvmd 直接调 LVM CLI、读容器内 /etc/lvm/lvm.conf:ConfigMap 注入 issue_discards=1
+  # (manifest 见 ../topolvm/lvm-config.configmap.yaml,由 helmfile presync hook 应用;
+  # 宿主机侧 node-join.sh/ansible 同款写入作双保险,覆盖运维手工 LVM 操作)
+  volumes:
+    - name: lvm-config
+      configMap:
+        name: topolvm-lvm-config
+  volumeMounts:
+    - name: lvm-config
+      mountPath: /etc/lvm/lvm.conf
+      subPath: lvm.conf

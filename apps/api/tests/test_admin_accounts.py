@@ -54,9 +54,15 @@ async def login_headers(client: AsyncClient, username: str, password: str) -> di
         assert confirm.status_code == 200, confirm.text
         token = confirm.json()["access_token"]
     else:  # mfa_required:已绑定账号的二要素登录
+        # 防重放后同一枚码只能用一次:绑定已用当前步,登录用下一枚(valid_window=1 接受)
+        import time
+
         verify = await client.post(
             "/api/admin/v1/auth/login/mfa",
-            json={"ticket": body["ticket"], "code": pyotp.TOTP(_TOTP_SECRETS[username]).now()},
+            json={
+                "ticket": body["ticket"],
+                "code": pyotp.TOTP(_TOTP_SECRETS[username]).at(int(time.time()) + 30),
+            },
         )
         assert verify.status_code == 200, verify.text
         token = verify.json()["access_token"]
@@ -88,6 +94,26 @@ class TestAdminAccounts:
 
         # 新建的账号能登录
         assert (await login(client, "finance01", STRONG)).status_code == 200
+
+    async def test_long_password_create_then_login(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """65~72 字符口令:创建(字节校验 ≤72B 放行)后能登录(挂了 = 登录上限 64 <
+        创建上限,该区间口令的管理员被 422 永久锁死;>72 字节由 _check_password_bytes 拦在创建侧)。"""
+        h = await admin_headers(sm, client)
+        long_pw = "Lp" + "x9" * 34  # 70 字符 = 70 字节,创建放行、旧登录上限(64)会锁死
+        resp = await client.post(
+            "/api/admin/v1/admins",
+            json={
+                "username": "longpw01",
+                "password": long_pw,
+                "role": "readonly",
+                "reason": "长口令回归",
+            },
+            headers=h,
+        )
+        assert resp.status_code == 201, resp.text
+        assert (await login(client, "longpw01", long_pw)).status_code == 200
 
     async def test_username_conflict_is_409_not_500(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

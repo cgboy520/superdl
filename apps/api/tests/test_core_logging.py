@@ -90,3 +90,32 @@ def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
     assert "evt_with_traceback" in out
     assert "boom-marker" in out  # 异常消息/栈帧进入渲染输出
     assert "ValueError" in out
+
+
+def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
+    """PII/凭据全局兜底(P1-13):phone/id_number/token/secret/password/code 键名命中即打码
+    (挂了 = 新增日志点忘脱敏,手机号/凭据明文进 Loki 180 天)。"""
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    setup_logging()
+
+    get_logger("t.mask").info(
+        "evt_mask",
+        phone="13800001111",
+        id_number="110101199001011234",
+        token="sdln_secret-token",
+        params={"code": "123456", "note": "keep"},
+        unrelated="13800002222",  # 键名不命中:不打码(防误伤业务值)
+    )
+
+    out = buf.getvalue()
+    assert "138****1111" in out
+    assert "13800001111" not in out
+    assert "110101199001011234" not in out
+    assert "sdln_secret-token" not in out
+    assert "123456" not in out  # 嵌套 dict 的 code 键同样打码
+    assert "keep" in out
+    assert "13800002222" in out  # 键名不命中原样保留

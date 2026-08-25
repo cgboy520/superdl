@@ -1,4 +1,4 @@
-/** 工单:status/category 筛选 + 详情抽屉(对话流 + 回复 + 标记解决/关闭)。
+/** 工单:status/category 筛选 + user_id/ticket_no 检索(游标分页)+ 详情抽屉(对话流 + 回复 + 标记解决/关闭)。
  * 读:全管理角色;写:ops/admin(canWriteOps),其余角色按钮置灰(后端 403 兜底)。
  */
 
@@ -13,6 +13,7 @@ import {
   Card,
   Drawer,
   Input,
+  InputNumber,
   Popconfirm,
   Select,
   Space,
@@ -32,7 +33,7 @@ import {
   useTickets,
   useUpdateTicketStatus,
 } from "../../api";
-import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
+import { LoadMoreButton } from "../../components/LoadMore";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
 import { useApiErrorText } from "../../lib/apiError";
@@ -224,11 +225,16 @@ function TicketsPage() {
   const writable = canWriteOps(role);
   const [status, setStatus] = useState<string | undefined>();
   const [category, setCategory] = useState<string | undefined>();
-  const { data, isLoading } = useTickets({
-    ...(status ? { status } : {}),
-    ...(category ? { category } : {}),
-  });
-  const rows: AdminTicketOut[] = data ?? [];
+  const [userId, setUserId] = useState<number | null>(null);
+  const [ticketNo, setTicketNo] = useState<string>("");
+  const { data, isLoading, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useTickets({
+      ...(status ? { status } : {}),
+      ...(category ? { category } : {}),
+      ...(userId != null ? { user_id: userId } : {}),
+      ...(ticketNo.trim() ? { ticket_no: ticketNo.trim() } : {}),
+    });
+  const rows: AdminTicketOut[] = (data?.pages ?? []).flatMap((p) => p.items);
   const [openId, setOpenId] = useState<number | null>(null);
 
   return (
@@ -236,6 +242,22 @@ function TicketsPage() {
       title={t("tickets.title")}
       extra={
         <Space wrap>
+          <InputNumber
+            placeholder={t("tickets.filterUserId")}
+            style={{ width: 130 }}
+            value={userId}
+            onChange={(v) => setUserId(v)}
+            min={1}
+            precision={0}
+            controls={false}
+          />
+          <Input.Search
+            allowClear
+            placeholder={t("tickets.filterTicketNo")}
+            style={{ width: 180 }}
+            value={ticketNo}
+            onChange={(e) => setTicketNo(e.target.value)}
+          />
           <Select
             allowClear
             placeholder={t("tickets.filterStatus")}
@@ -266,6 +288,12 @@ function TicketsPage() {
         rowKey="id"
         loading={isLoading}
         dataSource={rows}
+        pagination={false}
+        locale={{
+          emptyText: isError ? (
+            <Typography.Link onClick={() => void refetch()}>{t("common.retry")}</Typography.Link>
+          ) : undefined,
+        }}
         onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}
         columns={[
           { title: t("tickets.colTicketNo"), dataIndex: "ticket_no", width: 140 },
@@ -303,7 +331,11 @@ function TicketsPage() {
           { title: t("tickets.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
         ]}
       />
-      <ListCapNote rows={rows.length} cap={LIST_CAPS.tickets} />
+      <LoadMoreButton
+        visible={!!hasNextPage}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
+      />
       <TicketDrawer ticketId={openId} onClose={() => setOpenId(null)} writable={writable} />
     </Card>
   );

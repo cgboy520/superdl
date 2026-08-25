@@ -26,6 +26,16 @@ from app.modules.catalog.schemas import (
 logger = get_logger(__name__)
 
 
+async def skus_signature(session: AsyncSession) -> tuple[object, ...]:
+    """SKU 失效签名(近似库存缓存签名的组成部分,P2):行数 + max(updated_at)。
+    SKU 改 型号/池/上下架必须触发库存重算——签名只看台账时,
+    旧 counts 会按 sku_id 继续命中,市场页展示过期库存。"""
+    count, max_updated = (
+        await session.execute(select(func.count(), func.max(Sku.updated_at)))
+    ).one()
+    return (count, max_updated)
+
+
 async def list_market_skus(
     session: AsyncSession, tier: str | None = None, gpu_model: str | None = None
 ) -> list[SkuMarketOut]:
@@ -184,7 +194,12 @@ async def admin_update_sku(
         if old != value:
             before[field] = str(old) if isinstance(old, Decimal) else old
         setattr(sku, field, value)
-    if turning_on and not force:
+    # 在售期间改 型号/池 同样过硬校验(P2):否则在售 SKU 可被改成指向无 Ready 节点的
+    # 型号×池,用户创建路径才被拦——售卖侧先失败,体验与库存口径都受损
+    sellable_fields_changed = sku.status == "on" and (
+        ("pool_label" in before) or ("gpu_model" in before)
+    )
+    if (turning_on or sellable_fields_changed) and not force:
         await _ensure_sellable(session, sku)
     if "price_hourly" in before:
         await _alert_large_price_change(

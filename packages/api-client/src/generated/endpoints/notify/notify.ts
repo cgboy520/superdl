@@ -24,7 +24,8 @@ import type {
   AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders,
   HTTPValidationError,
   ListNotificationsApiV1NotificationsGetParams,
-  PageNotificationOut
+  PageNotificationOut,
+  UnreadCountOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -247,6 +248,108 @@ export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<Retu
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getMarkAllReadApiV1NotificationsReadAllPostQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getUnreadCountApiV1NotificationsUnreadCountGetUrl = () => {
+
+
+
+
+  return `/api/v1/notifications/unread-count`
+}
+
+/**
+ * 未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦
+ * (此前角标 = 已加载页的未读数,未读超过一页时偏低)。
+ * @summary Unread Count
+ */
+export const unreadCountApiV1NotificationsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<UnreadCountOut> => {
+
+  return customFetch<UnreadCountOut>(getUnreadCountApiV1NotificationsUnreadCountGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getUnreadCountApiV1NotificationsUnreadCountGetQueryKey = () => {
+    return [
+    `/api/v1/notifications/unread-count`
+    ] as const;
+    }
+
+
+export const getUnreadCountApiV1NotificationsUnreadCountGetQueryOptions = <TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getUnreadCountApiV1NotificationsUnreadCountGetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>> = ({ signal }) => unreadCountApiV1NotificationsUnreadCountGet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type UnreadCountApiV1NotificationsUnreadCountGetQueryResult = NonNullable<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>>
+export type UnreadCountApiV1NotificationsUnreadCountGetQueryError = unknown
+
+
+export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>,
+          TError,
+          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>,
+          TError,
+          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Unread Count
+ */
+
+export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getUnreadCountApiV1NotificationsUnreadCountGetQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

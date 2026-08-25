@@ -21,6 +21,7 @@ from app.core.k8s.base import (
     INSTANCE_DISK_STORAGE_CLASS,
     JUICEFS_PVC_NAME,
     JUICEFS_STORAGE_CLASS,
+    MANAGED_LABEL,
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
@@ -34,9 +35,9 @@ from app.core.k8s.base import (
     instance_env_secret_name,
     jupyter_service_name,
 )
+from app.core.logging import get_logger
 
 INSTANCE_LABEL = "superdl.io/instance"
-MANAGED_LABEL = "superdl.io/managed"
 PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
 INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPolicy 放行来源)
 PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
@@ -153,6 +154,9 @@ class _TimeoutApi:
             return attr(*args, **kwargs)
 
         return call
+
+
+logger = get_logger(__name__)
 
 
 class RealOrchestrator:
@@ -694,6 +698,7 @@ class RealOrchestrator:
                     phase=p.status.phase or "Unknown",
                     node_name=p.spec.node_name,
                     deleting=p.metadata.deletion_timestamp is not None,
+                    labels=dict(p.metadata.labels or {}),
                 )
             )
         return out
@@ -913,7 +918,9 @@ class RealOrchestrator:
     def _physical_gpu_amount(node: Any) -> int:
         """节点物理卡数。HAMi device-plugin 把 allocatable nvidia.com/gpu 放大为
         物理 × deviceSplitCount(默认 10):物理口径以 GFD 标签 nvidia.com/gpu.count 为准;
-        无该标签(未切分池)按 allocatable 原样。"""
+        无该标签(未切分池)按 allocatable 原样。
+        hami 池(切分池)缺 GFD 标签属异常(GFD 未上报/标签被清):按 allocatable 原样会
+        把物理卡数虚高一个数量级直接超卖——拒纳管(计 0)并告警,待 GFD 恢复自动回归。"""
         labels = node.metadata.labels or {}
         gfd = labels.get("nvidia.com/gpu.count")
         allocatable = RealOrchestrator._gpu_amount(node.status.allocatable)
@@ -921,6 +928,14 @@ class RealOrchestrator:
             physical = int(gfd)
             if 0 < physical < allocatable:
                 return physical
+        if labels.get(POOL_NODE_LABEL) == "hami" and allocatable > 0:
+            logger.error(
+                "hami_node_missing_gfd_label",
+                node=node.metadata.name,
+                allocatable=allocatable,
+                hint="切分池节点缺 nvidia.com/gpu.count:按 0 纳管防超卖,查 GFD 与节点标签",
+            )
+            return 0
         return allocatable
 
     @staticmethod

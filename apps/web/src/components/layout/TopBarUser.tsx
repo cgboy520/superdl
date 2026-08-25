@@ -18,17 +18,19 @@ import { useTranslation } from "react-i18next";
 import { useFormat } from "../../lib/format";
 import { moneyOr, TableErrorEmpty } from "../QueryState";
 import { useLogout, useMarkAllNotificationsRead, useMarkNotificationRead } from "../../api/mutations";
-import { useMe, useNotifications, useWallet } from "../../api/queries";
+import { useMe, useNotificationPages, useUnreadCount, useWallet } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
 
 const WHITE = { color: "#fff" } as const;
 
 function NotificationBell() {
   const { t } = useTranslation();
-  // 单查询合并:角标未读数与列表同源(30s 轮询),不双发 unread/all 两份查询
-  const allQ = useNotifications({}, { refetchInterval: 30_000 });
-  const { data: all } = allQ;
-  const unreadCount = (all?.items ?? []).filter((n) => !n.read_at).length;
+  // 角标 = unread-count 轻端点(P2):与列表分页解耦,未读超过一页也准确;
+  // 弹层列表走游标分页,底部「加载更多」向下翻页
+  const countQ = useUnreadCount({ refetchInterval: 30_000 });
+  const pagesQ = useNotificationPages();
+  const items = (pagesQ.data?.pages ?? []).flatMap((p) => p.items);
+  const unreadCount = countQ.data?.unread_count ?? 0;
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
   return (
@@ -36,10 +38,10 @@ function NotificationBell() {
       trigger="click"
       placement="bottomRight"
       content={
-        allQ.isError ? (
+        pagesQ.isError ? (
           // 失败绝不渲染成「无通知」
           <div style={{ width: 360 }}>
-            <TableErrorEmpty onRetry={() => void allQ.refetch()} />
+            <TableErrorEmpty onRetry={() => void pagesQ.refetch()} />
           </div>
         ) : (
           <div style={{ width: 360 }}>
@@ -56,7 +58,7 @@ function NotificationBell() {
             </div>
             <List
               style={{ maxHeight: 420, overflow: "auto" }}
-              dataSource={all?.items ?? []}
+              dataSource={items}
               locale={{ emptyText: t("topbar.noNotifications") }}
               renderItem={(n) => (
                 <List.Item
@@ -79,12 +81,22 @@ function NotificationBell() {
                 </List.Item>
               )}
             />
+            {pagesQ.hasNextPage && (
+              <Button
+                block
+                size="small"
+                loading={pagesQ.isFetchingNextPage}
+                onClick={() => void pagesQ.fetchNextPage()}
+              >
+                {t("common.loadMore")}
+              </Button>
+            )}
           </div>
         )
       }
     >
       {/* 失败态 ≠ 0 角标:查询失败显示告警标记,未读数未知绝不显示 0 */}
-      {allQ.isError ? (
+      {countQ.isError ? (
         <Badge
           size="small"
           count={<ExclamationCircleFilled style={{ color: "#faad14" }} />}

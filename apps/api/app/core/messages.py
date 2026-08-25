@@ -45,6 +45,9 @@ MESSAGES: dict[str, str] = {
     "adminapi.announcementAlreadyRevoked": "公告已撤回,无需重复操作",
     "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
     "adminapi.adjustReviewerTooNew": "复核账号在调账发起后才创建,不构成双人复核",
+    "adminapi.idempotencyKeyMismatch": (
+        "同一幂等键对应了不同的请求内容(金额/租户/事由不一致),已按冲突拒绝——如需新调账请更换幂等键"
+    ),
     "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
     "adminapi.adminUsernameTaken": "该用户名已存在",
     "adminapi.cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
@@ -83,6 +86,10 @@ MESSAGES: dict[str, str] = {
         "(当前 ¥{balance}),请先充值"
     ),
     "billing.invoiceNothingToBill": "账期 {period} 没有可开票金额(无已支付充值或已全部申请)",
+    "billing.invoiceAmountStale": (
+        "可开票金额已变动(当前可开 ¥{expected},申请额 ¥{requested}):"
+        "账期内发生了退款,请驳回该申请并通知用户按新金额重新提交"
+    ),
     "billing.invoiceNotFound": "发票申请不存在",
     "billing.invoicePeriodAlreadyApplied": "账期 {period} 已有申请中或已开票的发票,请勿重复提交",
     "billing.invoicePeriodNotOpen": "账期 {period} 尚未结束:当月账期请于次月 1 日后再申请",
@@ -112,6 +119,9 @@ MESSAGES: dict[str, str] = {
     "billing.refundStateNotCancellable": "退款单状态 {status} 不可取消",
     "billing.refundStateNotPayable": "退款单状态 {status} 不可登记打款",
     "billing.refundStateNotReviewable": "退款单状态 {status} 不可审批",
+    "billing.settlementGapNotFound": "结算缺口不存在",
+    "billing.settlementGapNotReplayable": "该缺口类型({reason})不支持重放:请人工核查后核销",
+    "billing.settlementGapObjectGone": "缺口关联对象(id={objectId})已不存在,请人工核查后核销",
     "billing.unknownChannel": "未知支付渠道:{name}",
     "billing.wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
     "billing.wechatCallbackVerifyFailed": "微信回调验签失败",

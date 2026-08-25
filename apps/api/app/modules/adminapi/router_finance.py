@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import set_audit_target
+from app.core.audit import set_audit_target, write_audit_sync
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
@@ -34,11 +34,13 @@ from app.modules.adminapi.schemas import (
 from app.modules.billing.schemas import (
     AdminInvoiceOut,
     AdminRefundOut,
+    AdminSettlementGapOut,
     InvoiceIssue,
     InvoiceReject,
     RefundCancel,
     RefundPayout,
     RefundReview,
+    SettlementGapResolve,
 )
 from app.modules.metering import service as metering_service
 
@@ -220,14 +222,16 @@ async def admin_review_adjustment(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
+    """复核调账(approve 即生效):审计行与生效同事务(write_audit_sync,P1-8)。"""
+    set_audit_target(request, f"adjustment:{adjustment_id}", detail={"approve": body.approve})
     adj = await service.review_adjustment(
         session,
         adjustment_id,
         approve=body.approve,
         reviewer_id=admin.id,
         comment=body.comment,
+        audit_writer=lambda s: write_audit_sync(request, s),
     )
-    set_audit_target(request, f"adjustment:{adj.id}", detail={"approve": body.approve})
     return AdjustmentStatusOut(id=adj.id, status=adj.status)
 
 
@@ -280,16 +284,22 @@ async def admin_payout_refund(
     request: Request,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
-    """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。"""
+    """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
+    审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚(P1-8)。"""
     from app.modules.billing import service as billing_service
 
-    req = await billing_service.payout_refund(
-        session, refund_id, channel=body.channel, ref=body.ref, operator_id=admin.id
-    )
     set_audit_target(
         request,
-        f"refund:{req.id}",
-        detail={"refund_no": req.refund_no, "channel": body.channel, "ref": body.ref},
+        f"refund:{refund_id}",
+        detail={"channel": body.channel, "ref": body.ref},
+    )
+    req = await billing_service.payout_refund(
+        session,
+        refund_id,
+        channel=body.channel,
+        ref=body.ref,
+        operator_id=admin.id,
+        audit_writer=lambda s: write_audit_sync(request, s),
     )
     return AdminRefundOut.model_validate(req)
 
@@ -479,15 +489,75 @@ async def admin_backfill_order(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> OrderBackfillOut:
     """人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
-    (X-Idempotent-Replay 头区分)。"""
+    (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync,P1-8)。"""
     from app.modules.billing import service as billing_service
 
+    set_audit_target(request, f"order:{order_no}", detail={"reason": body.reason})
     order, replayed = await billing_service.backfill_order(
-        session, order_no, idempotency_key=idempotency_key
+        session,
+        order_no,
+        idempotency_key=idempotency_key,
+        audit_writer=lambda s: write_audit_sync(request, s),
     )
     if replayed:
         mark_idempotent_replay(response)
-    set_audit_target(
-        request, f"order:{order_no}", detail={"reason": body.reason, "amount": str(order.amount)}
-    )
     return OrderBackfillOut(order_no=order.order_no, status=order.status)
+
+
+# ---------- 结算缺口(水位线被越过但账未结清的窗口留痕;角色:finance 读/写) ----------
+
+
+@router.get("/finance/settlement-gaps", dependencies=[require_roles("finance", "readonly")])
+async def admin_list_settlement_gaps(
+    session: DbSession,
+    kind: Literal["hourly", "daily_disk"] | None = None,
+    reason: str | None = None,
+    unresolved: bool = True,
+    cursor: str | None = None,
+    limit: int | None = Query(default=None, le=100),
+) -> Page[AdminSettlementGapOut]:
+    """缺口列表(游标分页,降序):默认只看未核销——缺口闭环前需要持续曝光,
+    配套持续告警 superdl_settlement_gap_unresolved(DB 口径)。"""
+    from app.modules.billing import service as billing_service
+
+    return await billing_service.admin_list_gaps(
+        session, kind=kind, reason=reason, unresolved_only=unresolved, cursor=cursor, limit=limit
+    )
+
+
+@router.post("/finance/settlement-gaps/{gap_id}/replay")
+async def admin_replay_settlement_gap(
+    gap_id: int,
+    request: Request,
+    admin: AdminUser = require_roles("finance"),
+) -> AdminSettlementGapOut:
+    """重放缺口窗口的幂等入账原语(人工触发,不自动改账):成功回写 resolved_at。
+    grace_overlap 缺口拒重放(409,走人工核销);对象已不存在 409(同样走人工核销)。"""
+    from app.core.db import get_sessionmaker
+    from app.modules.billing import service as billing_service
+
+    out = await billing_service.replay_gap(get_sessionmaker(), gap_id, operator_id=admin.id)
+    set_audit_target(
+        request,
+        f"settlement_gap:{gap_id}",
+        detail={"action": "replay", "kind": out.kind, "reason": out.reason},
+    )
+    return out
+
+
+@router.post("/finance/settlement-gaps/{gap_id}/resolve")
+async def admin_resolve_settlement_gap(
+    gap_id: int,
+    body: SettlementGapResolve,
+    session: DbSession,
+    request: Request,
+    admin: AdminUser = require_roles("finance"),
+) -> AdminSettlementGapOut:
+    """人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。"""
+    from app.modules.billing import service as billing_service
+
+    gap = await billing_service.resolve_gap(session, gap_id, note=body.note, operator_id=admin.id)
+    set_audit_target(
+        request, f"settlement_gap:{gap_id}", detail={"action": "resolve", "note": body.note}
+    )
+    return AdminSettlementGapOut.model_validate(gap)

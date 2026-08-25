@@ -2,14 +2,16 @@
 
 关键不变量:
 - 金额只由服务端计算:某账期可开票额 = Σ(该账期 paid 充值订单,不含渠道冲正)
-  − Σ(该账期已打款退款) − Σ(该账期 submitted + issued 申请)。
-  客户端只提交账期与抬头,提交金额无效。
+  − Σ(该账期已打款退款) − Σ(该账期在途 pending/approved 退款,按关联订单 paid_at 归属)
+  − Σ(该账期 submitted + issued 申请)。客户端只提交账期与抬头,提交金额无效。
 - 按账期合并开具,一个自然月一张;仅可申请 < 当前北京月的账期(本月 paid 订单
   还可能变,不当月开票)。
 - 同一 (user_id, period) 仅一条非 rejected 申请(部分唯一索引兜底并发);
   rejected 后同账期可重新申请。
-- 与退款联动:已开票(issued)账期的 paid 订单不可申请退款,须先红冲
-  (见 refunds._order_has_issued_invoice)。
+- 与退款联动(双向闸,并发时必有一侧先撞):
+  已开票(issued)账期的 paid 订单不可申请退款/登记打款,须先红冲
+  (见 refunds._order_has_issued_invoice 与 payout_refund 复查);
+  开票(issue_invoice)行锁内按当前口径重算金额,申请到开票之间发生退款即 409 驳回重申。
 """
 
 from datetime import UTC, datetime
@@ -89,6 +91,28 @@ async def _period_refunded_sum(session: AsyncSession, user_id: int, period: str)
                 RefundRequest.status == "paid",
                 RefundRequest.payout_at >= start,
                 RefundRequest.payout_at < end,
+            )
+        )
+    ).scalar_one()
+    return Decimal(total)
+
+
+async def _period_pending_refund_sum(session: AsyncSession, user_id: int, period: str) -> Decimal:
+    """该账期在途(pending/approved)退款申请总额,按关联订单 paid_at 归属账期。
+
+    发票按订单支付账期开具:在途退款审批/打款完成即抵扣该账期净实收,不预扣则
+    「先申请退款 → 再申请发票 → 开票 → 打款」时序下发票与退款双重兑现(资损)。
+    """
+    start, end = _period_range_utc(period)
+    total = (
+        await session.execute(
+            select(func.coalesce(func.sum(RefundRequest.amount), 0))
+            .join(Order, RefundRequest.order_no == Order.order_no)
+            .where(
+                RefundRequest.user_id == user_id,
+                RefundRequest.status.in_(("pending", "approved")),
+                Order.paid_at >= start,
+                Order.paid_at < end,
             )
         )
     ).scalar_one()
@@ -191,8 +215,26 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
         .tuples()
         .all()
     )
+    # 在途退款按关联订单 paid_at 归账期预扣(与 create_invoice 同口径,预览=申请)
+    pending_refund_rows = (
+        (
+            await session.execute(
+                select(period_col, func.sum(RefundRequest.amount))
+                .join(Order, RefundRequest.order_no == Order.order_no)
+                .where(
+                    RefundRequest.user_id == user_id,
+                    RefundRequest.status.in_(("pending", "approved")),
+                    Order.paid_at.is_not(None),
+                )
+                .group_by(period_col)
+            )
+        )
+        .tuples()
+        .all()
+    )
     active_map = {p: Decimal(a) for p, a in active_rows}
     refunded_map = {p: Decimal(a) for p, a in refunded_rows}
+    pending_refund_map = {p: Decimal(a) for p, a in pending_refund_rows}
     current = current_beijing_period()
     out: list[InvoiceEligibleOut] = []
     for period, paid_sum in paid_rows:
@@ -201,6 +243,7 @@ async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceE
         remaining = as_amount(
             Decimal(paid_sum)
             - refunded_map.get(period, Decimal("0"))
+            - pending_refund_map.get(period, Decimal("0"))
             - active_map.get(period, Decimal("0"))
         )
         if remaining > 0:
@@ -240,10 +283,14 @@ async def create_invoice(
             params={"period": period},
             http_status=409,
         )
-    # 金额服务端计算(客户端提交金额无效):Σpaid − Σ已打款退款 − Σ(submitted+issued)
+    # 金额服务端计算(客户端提交金额无效):
+    # Σpaid − Σ已打款退款 − Σ在途退款(防票款双重兑现) − Σ(submitted+issued)
     paid = await _period_paid_sum(session, user_id, period)
     refunded = await _period_refunded_sum(session, user_id, period)
-    amount = as_amount(paid - refunded - await _period_active_sum(session, user_id, period))
+    pending_refund = await _period_pending_refund_sum(session, user_id, period)
+    amount = as_amount(
+        paid - refunded - pending_refund - await _period_active_sum(session, user_id, period)
+    )
     if amount <= 0:
         raise AppError(
             ErrorCode.CONFLICT,
@@ -329,13 +376,28 @@ async def _get_for_update(session: AsyncSession, invoice_id: int) -> InvoiceRequ
 async def issue_invoice(
     session: AsyncSession, invoice_id: int, *, invoice_no: str, operator_id: int
 ) -> InvoiceRequest:
-    """开票(行锁内状态迁移):回填发票号 + 操作人,站内信告知用户。"""
+    """开票(行锁内状态迁移):金额重算闸 + 回填发票号 + 操作人,站内信告知用户。"""
     req = await _get_for_update(session, invoice_id)
     if req.status != "submitted":
         raise AppError(
             ErrorCode.CONFLICT,
             key="billing.invoiceStateNotIssuable",
             params={"status": req.status},
+            http_status=409,
+        )
+    # 行锁内按当前口径重算:申请到开票之间若发生退款(申请/打款),可开票额已变,
+    # 按旧额开票后用户再拿退款 = 票款双重兑现;不符即 409,驳回由用户按新额重新申请
+    # (与 payout_refund 的发票复查互为双向闸,并发时必有一侧先撞)
+    paid = await _period_paid_sum(session, req.user_id, req.period)
+    refunded = await _period_refunded_sum(session, req.user_id, req.period)
+    pending_refund = await _period_pending_refund_sum(session, req.user_id, req.period)
+    active = await _period_active_sum(session, req.user_id, req.period)
+    current = as_amount(paid - refunded - pending_refund - (active - req.amount))
+    if current != req.amount:
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="billing.invoiceAmountStale",
+            params={"expected": format(current, "f"), "requested": format(req.amount, "f")},
             http_status=409,
         )
     req.status = "issued"

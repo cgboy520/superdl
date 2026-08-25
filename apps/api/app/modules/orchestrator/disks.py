@@ -188,7 +188,18 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
 
 async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
     """删除(前端多级防护后调用)。挂载中禁止;进入 deleting,由 outbox 擦除后置 deleted。"""
-    disk = await get_disk(session, user_id, uuid)
+    # FOR UPDATE 锁盘行(对齐 attach_for_instance 纪律,P2):否则并发 attach/delete
+    # 存在「边挂边擦」窗口——attach 锁内看到 active 完成挂载,delete 无锁改 deleting,
+    # 擦盘 Job 会与新挂 Pod 并发读写同一 subPath
+    disk = (
+        await session.execute(
+            select(DataDisk)
+            .where(DataDisk.uuid == uuid, DataDisk.user_id == user_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if disk is None or disk.status == "deleted":
+        raise not_found("数据盘不存在")
     if disk.mounted_instance_id is not None:
         # 挂载实例已停机/冻结/失败(Pod 不在)时放行并自动解挂
         inst = await session.get(Instance, disk.mounted_instance_id)

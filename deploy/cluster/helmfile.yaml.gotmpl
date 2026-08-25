@@ -23,10 +23,6 @@ repositories:
     url: https://topolvm.github.io/topolvm
   - name: jetstack
     url: https://charts.jetstack.io
-  # cert-manager 的阿里云 DNS01 solver(泛域名证书签发)
-  # TODO(上线前确认):仓库地址以当时官方 README 为准,若迁移到主流替代仓库需同步改这里
-  - name: cert-manager-webhook-alidns
-    url: https://wjw465150.github.io/cert-manager-webhook-alidns
   - name: ingress-nginx
     url: https://kubernetes.github.io/ingress-nginx
   - name: cloudnative-pg
@@ -91,6 +87,12 @@ releases:
     chart: topolvm/topolvm
     version: "17.0.0"
     values: [values/topolvm.yaml]
+    hooks:
+      # lvmd 挂载的 lvm.conf ConfigMap(issue_discards=1,P0-3)必须先于 chart 存在
+      - events: ["presync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "topolvm/lvm-config.configmap.yaml"]
 
   - name: cert-manager
     condition: certManager.enabled
@@ -101,18 +103,12 @@ releases:
     set:
       - name: crds.enabled
         value: "true"
-
-  # alidns DNS01 solver:letsencrypt-dns ClusterIssuer 的 webhook 落点
-  # (deploy/app/k8s/05-cert-manager.yaml 的 groupName=acme.superdl 须与 values 一致);
-  # 凭据 alidns-credentials 不代建,apply 前手工建(见 values 内注释与 preflight 检查)
-  - name: cert-manager-webhook-alidns
-    condition: certManager.enabled
-    namespace: cert-manager
-    chart: cert-manager-webhook-alidns/cert-manager-webhook-alidns
-    # TODO(上线前必须钉死):helm search repo cert-manager-webhook-alidns --versions
-    # 取最新稳定版替换,禁止浮动;chart 名以仓库 index.yaml 实际为准
-    version: "0.1.0"
-    values: [values/cert-manager-webhook-alidns.yaml]
+    hooks:
+      # acme-dns(RFC2136 DNS01 中转,P1-6)与 cert-manager 同 ns,先于此 chart 落地
+      - events: ["presync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "acme-dns.yaml"]
 
   - name: ingress-nginx
     condition: ingressNginx.enabled

@@ -8,7 +8,7 @@
 export interface AdminLoginRequest {
   /**
      * @minLength 1
-     * @maxLength 64
+     * @maxLength 128
      */
   password: string;
   /**

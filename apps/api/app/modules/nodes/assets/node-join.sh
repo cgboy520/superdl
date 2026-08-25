@@ -317,6 +317,8 @@ step_nvme_vg() {
       "未登记 NVMe 设备:跳过实例盘 VG(superdl-nvme),不自动兜底。该节点暂无 TopoLVM 本地实例盘;新建带 NVMe 登记的注册令牌并 --force 重跑即可补齐。"
     return 0
   fi
+  # VG 新建与已存在(重跑/补装)都保证 lvm.conf 落地;不新增 phase(后端契约不变)
+  step_lvm_discards
   if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG 已存在,跳过"; return 0; fi
   # 真实块设备原样用;loop:<GB> 是登记时的显式选择(无专用盘的测试兜底)
   local dev size pvs=()
@@ -329,11 +331,37 @@ step_nvme_vg() {
       _write_loop_unit
       echo "-- 按登记选择:用 loop 文件做实例盘(${size}G,仅测试,非专用盘性能)"
     else
+      # pvcreate 前硬检查(P2):设备必须存在且为空盘(无文件系统/RAID/分区签名)。
+      # 登记错设备时 wipefs 能发现签名——宁可入群失败,不可误格有数据的盘
+      if [[ ! -b "$dev" ]]; then
+        echo "!! NVMe 设备不存在:$dev(登记信息有误?管理端核对节点 NVMe 登记)" >&2
+        return 1
+      fi
+      if wipefs -n "$dev" 2>/dev/null | grep -q .; then
+        echo "!! $dev 上已有签名(非空盘),拒绝 pvcreate:" >&2
+        wipefs -n "$dev" >&2
+        echo "!! 确认为空后先 wipefs -a $dev 再重跑;数据盘误登记请改登记信息" >&2
+        return 1
+      fi
       pvs+=("$dev")
     fi
   done
   pvcreate -f "${pvs[@]}"
   vgcreate superdl-nvme "${pvs[@]}"
+}
+
+# 实例盘擦除语义(P0-3):lvremove 对 extent 发 NVMe TRIM。TopoLVM lvmd 容器内
+# 由 ConfigMap 注入(见 deploy/cluster/topolvm/lvm-config.configmap.yaml),此处保证
+# 宿主机直接执行 LVM 时同语义(双保险)。幂等:已含 issue_discards 配置则跳过;
+# 追加独立 devices 段,LVM 同键重复段后者生效,与既有配置合并安全。
+step_lvm_discards() {
+  local conf="$ETC_DIR/lvm/lvm.conf"
+  if grep -q "^[[:space:]]*issue_discards[[:space:]]*=" "$conf" 2>/dev/null; then
+    echo "-- lvm.conf 已含 issue_discards,跳过"
+    return 0
+  fi
+  mkdir -p "$ETC_DIR/lvm"
+  printf '\n# superdl:实例盘销毁发 NVMe TRIM(跨租户数据残留防护)\ndevices {\n    issue_discards = 1\n}\n' >> "$conf"
 }
 
 _write_loop_unit() {

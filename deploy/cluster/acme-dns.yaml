@@ -1,0 +1,116 @@
+# acme-dns(RFC2136 DNS01 中转,P1-6):替代个人仓 cert-manager-webhook-alidns。
+# 信任模型:全域 RAM DNS 凭据 → acme-dns 账户凭据(仅可更新 _acme-challenge 子域 TXT)。
+# 一次性配置(公网 NS/CNAME 委托 + 账户注册 + TSIG secret + digest 钉死)见
+# runbooks/acme-dns.md;占位符(CHANGE_ME/example.com)由 preflight.sh 强制扫描。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acme-dns-config
+  namespace: cert-manager
+data:
+  config.cfg: |
+    [general]
+    listen = "0.0.0.0:53"
+    protocol = "both"
+    domain = "auth.superdl.example.com"
+    nsname = "ns1.auth.superdl.example.com"
+    nsadmin = "ops.superdl.example.com"
+    records = [
+        "auth.superdl.example.com. A CHANGE_ME_ACME_DNS_LB_IP",
+        "auth.superdl.example.com. NS ns1.auth.superdl.example.com.",
+      ]
+    debug = false
+    [database]
+    engine = "sqlite3"
+    connection = "/var/lib/acme-dns/acme-dns.db"
+    [api]
+    # 注册/更新 API 仅集群内可达(ClusterIP,与 cert-manager 同 ns):
+    # cert-manager 的 acme-dns 模式经该 HTTP API 更新 TXT(非 RFC2136 协议本身);
+    # 接口本身要 username/password 凭据,不暴露公网
+    listen = "0.0.0.0:8080"
+    tls = "none"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: acme-dns-data
+  namespace: cert-manager
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: topolvm-provisioner
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acme-dns
+  namespace: cert-manager
+  labels:
+    app: acme-dns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # RWO PVC 不支持滚动
+  selector:
+    matchLabels:
+      app: acme-dns
+  template:
+    metadata:
+      labels:
+        app: acme-dns
+    spec:
+      containers:
+        - name: acme-dns
+          # digest 钉死(preflight 扫 CHANGE_ME 拦截);升版本走变更评审
+          image: joohoi/acme-dns:v1.0@sha256:CHANGE_ME_ACME_DNS_DIGEST
+          ports:
+            - {containerPort: 53, protocol: UDP}
+            - {containerPort: 53, protocol: TCP}
+          volumeMounts:
+            - {name: config, mountPath: /etc/acme-dns}
+            - {name: data, mountPath: /var/lib/acme-dns}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          readinessProbe:
+            tcpSocket: {port: 53}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: acme-dns-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: acme-dns-data
+---
+# 公网 DNS 入口:Let's Encrypt 验证服务器沿 _acme-challenge CNAME 委托链查询的落点。
+# 该 Service 的 EXTERNAL-IP 即 config.cfg records 里 A 记录要填的地址。
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-dns
+  namespace: cert-manager
+spec:
+  type: LoadBalancer
+  selector:
+    app: acme-dns
+  ports:
+    - {name: dns-udp, port: 53, protocol: UDP}
+    - {name: dns-tcp, port: 53, protocol: TCP}
+---
+# 注册/更新 API 的集群内入口(cert-manager acme-dns 模式经此更新 TXT;账户注册经
+# kubectl exec/port-forward 调用)。ClusterIP 不出集群,与公网 53 分 Service 隔离。
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-dns-api
+  namespace: cert-manager
+spec:
+  type: ClusterIP
+  selector:
+    app: acme-dns
+  ports:
+    - {name: api, port: 8080, protocol: TCP, targetPort: 8080}

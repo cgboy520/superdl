@@ -1,7 +1,9 @@
 """审计:所有写操作(POST/PUT/PATCH/DELETE)由中间件统一落 audit_log。
 
 actor 由鉴权依赖写入 request.state.audit_actor;管理端动作带 "admin." 前缀。
-审计走独立 session,不并入业务事务(业务失败也留痕)。
+默认走独立 session(fail-open,业务失败也留痕,审计失败不拖垮业务);
+资金域出金动作(退款打款/调账复核/人工补单)改用 write_audit_sync 与业务同事务:
+审计写失败即业务失败回滚——宁可不出金,不可无留痕。
 """
 
 from collections.abc import Awaitable, Callable
@@ -11,11 +13,13 @@ from typing import Any
 from fastapi import Request, Response
 from sqlalchemy import String, func
 from sqlalchemy.dialects.postgresql import INET, JSONB
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.db import Base, get_sessionmaker
 from app.core.logging import get_logger
+from app.core.metrics import AUDIT_WRITE_FAILED_TOTAL
 
 logger = get_logger(__name__)
 
@@ -65,6 +69,8 @@ async def _write_audit_row(request: Request, result: int) -> None:
     # 默认只审计写操作;敏感读端点显式调 mark_audited_read 后也落一行
     if request.method not in AUDIT_METHODS and not getattr(request.state, "audit_force", False):
         return
+    if getattr(request.state, "audit_synced", False):
+        return  # 同步审计已随业务事务落库(资金域 write_audit_sync),防双写
     path = request.url.path
     if path.startswith(AUDIT_EXCLUDE_PREFIXES):
         return
@@ -87,8 +93,34 @@ async def _write_audit_row(request: Request, result: int) -> None:
             )
             await session.commit()
     except Exception:
-        # 审计失败不得影响业务响应
+        # 审计失败不得影响业务响应;但必须可告警(失败即留痕缺口,资金域已改同步审计)
+        AUDIT_WRITE_FAILED_TOTAL.inc()
         logger.exception("audit_write_failed", path=path)
+
+
+async def write_audit_sync(request: Request, session: AsyncSession, *, result: int = 200) -> None:
+    """资金域关键动作的同步审计:与业务同一事务写入(审计失败即业务失败回滚)。
+
+    在业务 service 的最终 commit 前调用(经 service 的 audit_writer 钩子传入);
+    写后置 audit_synced 标志,中间件的通用审计行跳过本请求,避免双写。
+    """
+    actor: AuditActor | None = getattr(request.state, "audit_actor", None)
+    target: str | None = getattr(request.state, "audit_target", None)
+    detail: dict[str, Any] | None = getattr(request.state, "audit_detail", None)
+    path = request.url.path
+    action_prefix = "admin." if path.startswith("/api/admin/") else ""
+    session.add(
+        AuditLog(
+            actor_type=actor.actor_type if actor else "anonymous",
+            actor_id=actor.actor_id if actor else None,
+            action=f"{action_prefix}{request.method} {path}",
+            target=target,
+            ip=request.client.host if request.client else None,
+            result=result,
+            detail=detail,
+        )
+    )
+    request.state.audit_synced = True
 
 
 def set_audit_target(request: Request, target: str, detail: dict[str, Any] | None = None) -> None:

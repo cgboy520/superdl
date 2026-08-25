@@ -2,6 +2,7 @@
 
 import asyncio
 import secrets
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from decimal import Decimal
 
@@ -307,7 +308,10 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
 
 
 async def backfill_order(
-    session: AsyncSession, order_no: str, idempotency_key: str | None = None
+    session: AsyncSession,
+    order_no: str,
+    idempotency_key: str | None = None,
+    audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> tuple[Order, bool]:
     """管理端人工补单:仅当渠道侧核验为已支付且金额一致才入账,closed/failed 订单同样可补。
 
@@ -395,6 +399,8 @@ async def backfill_order(
         ref_id=order.order_no,
         remark=f"{order.channel} 充值(人工补单)",
     )
+    if audit_writer is not None:
+        await audit_writer(session)  # 同步审计:与入账同事务,写失败即回滚(P1-8)
     await session.commit()
     logger.info("order_backfilled", order_no=order.order_no, amount=str(order.amount))
     return order, False

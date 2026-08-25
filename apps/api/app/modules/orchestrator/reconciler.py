@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.k8s import PodStatus, get_orchestrator
-from app.core.k8s.base import PodListEntry
+from app.core.k8s.base import JOB_NAME_LABEL, PodListEntry
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
@@ -60,6 +60,7 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         "to_stopped": 0,
         "to_released": 0,
         "leaked": 0,
+        "job_pod_skipped": 0,
         "delete_requeued": 0,
         "force_deleted": 0,
         "gc_warned": 0,
@@ -257,6 +258,9 @@ async def _reconcile_instances(
     for (instance_id, row_status, _ns, _uuid), st in zip(rows, statuses, strict=True):
         # 每实例独立事务:单个失败不拖垮整轮
         try:
+            # K8s 清理动作在 commit 后执行(P1-9 两阶段):事务内只做状态迁移/标记/enqueue,
+            # DB 行锁不跨 K8s RT(读超时 30s);动作失败仅记日志,重试/兜底语义见各分支
+            post_commit: list[tuple[str, Any]] = []
             async with sm() as session:
                 instance = await session.get(Instance, instance_id)
                 if instance is None or instance.status != row_status:
@@ -287,24 +291,24 @@ async def _reconcile_instances(
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
-                        # delete_instance 404 容错:Pod 已消失时也照常调,
-                        # 顺带清掉可能残留的 Service/Ingress(防孤儿端点占 NodePort)
-                        await orch.delete_instance(instance.k8s_namespace, instance.uuid)
+                        # delete_instance 404 容错:顺带清可能残留的 Service/Ingress(防孤儿端点
+                        # 占 NodePort)。事务外执行;失败由泄漏回收宽限期后强删兜底
+                        ns, uuid = instance.k8s_namespace, instance.uuid
+                        post_commit.append(
+                            (
+                                "delete_instance",
+                                lambda ns=ns, uuid=uuid: orch.delete_instance(ns, uuid),
+                            )
+                        )
                         if first_boot:
                             # creating 超时的盘从未承载数据,回收不留孤儿 LV;
                             # starting 超时不删盘(实例停过机,盘里有上一轮数据)。
-                            # Pod 仍 Terminating 时删 PVC 会挂住 LV 回收(pvc-protection):
-                            # 交 outbox 等 Pod 消失后再删
-                            if st.exists:
-                                enqueue(
-                                    session,
-                                    "instance.disk_cleanup",
-                                    {"instance_id": instance.id},
-                                )
-                            else:
-                                await orch.delete_instance_disk(
-                                    instance.k8s_namespace, instance.uuid
-                                )
+                            # 统一交 outbox:handler 等 Pod 消失再删(pvc-protection 语义)
+                            enqueue(
+                                session,
+                                "instance.disk_cleanup",
+                                {"instance_id": instance.id},
+                            )
                         counts["to_failed"] += 1
                         logger.warning("instance_schedule_timeout", instance_id=instance.id)
                         # 对齐 node_lost:创建失败必须主动告知(未计费),不是等用户刷新发现
@@ -353,10 +357,17 @@ async def _reconcile_instances(
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
-                        # 失联节点上的 Pod 只有强删才会从 etcd 消失;
-                        # 404 容错,无条件调用以连带清理孤儿 Service/Ingress
-                        await orch.delete_instance(
-                            instance.k8s_namespace, instance.uuid, force=lost == "node_lost"
+                        # 失联节点上的 Pod 只有强删才会从 etcd 消失;404 容错,连带清孤儿端点。
+                        # 事务外执行(P1-9);失败由泄漏回收宽限期后强删兜底
+                        ns, uuid = instance.k8s_namespace, instance.uuid
+                        force = lost == "node_lost"
+                        post_commit.append(
+                            (
+                                "delete_instance",
+                                lambda ns=ns, uuid=uuid, force=force: orch.delete_instance(
+                                    ns, uuid, force=force
+                                ),
+                            )
                         )
                         counts["to_failed"] += 1
                         if lost == "node_lost":
@@ -396,15 +407,21 @@ async def _reconcile_instances(
                     else:
                         age = now_utc() - await _entered_status_at(session, instance)
                         if age > stop_timeout * 2:
-                            await orch.delete_instance(
-                                instance.k8s_namespace, instance.uuid, force=True
-                            )
-                            counts["force_deleted"] += 1
-                            logger.error(
-                                "stopping_force_deleted",
-                                instance_id=instance.id,
-                                age_seconds=int(age.total_seconds()),
-                            )
+                            # 事务外强删(P1-9):实例仍 STOPPING(ACTIVE),失败下轮本分支重试
+                            ns, uuid = instance.k8s_namespace, instance.uuid
+
+                            async def _force_stop(
+                                ns=ns, uuid=uuid, iid=instance.id, age_s=int(age.total_seconds())
+                            ):
+                                await orch.delete_instance(ns, uuid, force=True)
+                                counts["force_deleted"] += 1
+                                logger.error(
+                                    "stopping_force_deleted",
+                                    instance_id=iid,
+                                    age_seconds=age_s,
+                                )
+
+                            post_commit.append(("force_delete_instance", _force_stop))
                         elif age > stop_timeout:
                             stuck[sm_def.STOPPING] += 1
                             if await _reenqueue_delete(session, "instance.stop", instance.id):
@@ -423,25 +440,32 @@ async def _reconcile_instances(
                             sm_def.RELEASED,
                             reason="released",
                             actor="system",
-                            metadata={"disk_wipe": "lvremove(未清零)"},
+                            metadata={"disk_wipe": "lvremove(issue_discards=1)"},
                         )
                         await free_port(session, instance.id)
                         await detach_for_instance(session, instance.id)
-                        # 释放是实例盘唯一的销毁时点;Pod 已确认消失,PVC 不会被 pvc-protection 挂住
-                        await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
+                        # 释放是实例盘唯一的销毁时点:统一交 outbox(handler 等 Pod 消失再删,
+                        # at-least-once + 死信重派兜底,P1-9 事务内零 K8s 调用)
+                        enqueue(session, "instance.disk_cleanup", {"instance_id": instance.id})
                         counts["to_released"] += 1
                     else:
                         age = now_utc() - await _entered_status_at(session, instance)
                         if age > release_timeout * 2:
-                            await orch.delete_instance(
-                                instance.k8s_namespace, instance.uuid, force=True
-                            )
-                            counts["force_deleted"] += 1
-                            logger.error(
-                                "releasing_force_deleted",
-                                instance_id=instance.id,
-                                age_seconds=int(age.total_seconds()),
-                            )
+                            # 事务外强删(P1-9):实例仍 RELEASING(ACTIVE),失败下轮本分支重试
+                            ns, uuid = instance.k8s_namespace, instance.uuid
+
+                            async def _force_release(
+                                ns=ns, uuid=uuid, iid=instance.id, age_s=int(age.total_seconds())
+                            ):
+                                await orch.delete_instance(ns, uuid, force=True)
+                                counts["force_deleted"] += 1
+                                logger.error(
+                                    "releasing_force_deleted",
+                                    instance_id=iid,
+                                    age_seconds=age_s,
+                                )
+
+                            post_commit.append(("force_delete_instance", _force_release))
                         elif age > release_timeout:
                             stuck[sm_def.RELEASING] += 1
                             if await _reenqueue_delete(session, "instance.release", instance.id):
@@ -453,6 +477,18 @@ async def _reconcile_instances(
                             )
 
                 await session.commit()
+            # 事务已提交(状态迁移/标记/enqueue 落库):K8s 清理在锁外执行。
+            # 失败仅记日志不中断:FAILED/RELEASED 实例的 Pod 残留由泄漏回收兜底,
+            # STOPPING/RELEASING 的强删失败下轮同分支重试,盘删除走 outbox 重派
+            for action_label, action in post_commit:
+                try:
+                    await action()
+                except Exception:
+                    logger.exception(
+                        "reconcile_k8s_cleanup_failed",
+                        action=action_label,
+                        instance_id=instance_id,
+                    )
         except Exception:
             logger.exception("reconcile_instance_failed", instance_id=instance_id)
 
@@ -466,15 +502,18 @@ async def _reclaim_leaked_pods(
     """K8s 里存在、但 DB 已终态/无记录的 Pod → 强删(宽限期内的在途删除不动)。
 
     强删(force=True)是有意的:泄漏 Pod 在白送算力,失联节点上优雅删除永远完不成。
-    熔断:未知(DB 无记录)Pod 占比超阈,说明 LIST 结果与 DB 大面积不一致
-    (接错集群/标签漂移),中止本轮并告警,而不是按陌生对象清单批量强删。
+    豁免:带 batch.kubernetes.io/job-name 标签的 Pod 是受管 Job(wipe/quota)的子孙,
+    名字不是实例 uuid、DB 必然无记录——误删会让擦盘「建-杀死」循环;Job 泄漏由
+    ttl_seconds_after_finished=3600 兜底,不属本函数职责。
+    熔断:未知(DB 无记录、且非 Job 子孙)Pod 占比超阈,说明 LIST 结果与 DB 大面积
+    不一致(接错集群/标签漂移),中止本轮并告警,而不是按陌生对象清单批量强删。
     """
     settings = get_settings()
     orch = get_orchestrator()
     entries = await orch.list_instance_pods()
-    pods = [(e.namespace, e.name) for e in entries]
+    pods = [(e.namespace, e.name, e.labels) for e in entries]
     async with sm() as session:
-        uuids = [name for _ns, name in pods]
+        uuids = [name for _ns, name, _labels in pods]
         instances = (
             list(
                 (await session.execute(select(Instance).where(Instance.uuid.in_(uuids)))).scalars()
@@ -493,12 +532,15 @@ async def _reclaim_leaked_pods(
         entered_at = await _entered_status_map(session, in_flight)
 
     if pods:
-        unknown = [p for p in pods if p[1] not in by_uuid]
-        if unknown and len(unknown) / len(pods) > settings.leak_reclaim_abort_ratio:
+        # Job 子孙 Pod 既不计入 unknown 分子也不计入分母:单租户删盘场景下
+        # wipe Pod 会把 unknown 占比推向熔断线,反而放跑真泄漏 Pod
+        managed = [p for p in pods if JOB_NAME_LABEL not in p[2]]
+        unknown = [p for p in managed if p[1] not in by_uuid]
+        if unknown and len(unknown) / len(managed) > settings.leak_reclaim_abort_ratio:
             RECONCILE_LEAK_ABORTED_TOTAL.inc()
             logger.error(
                 "leak_reclaim_aborted",
-                total=len(pods),
+                total=len(managed),
                 unknown=len(unknown),
                 ratio=settings.leak_reclaim_abort_ratio,
             )
@@ -506,7 +548,10 @@ async def _reclaim_leaked_pods(
 
     stop_grace = timedelta(seconds=settings.stopping_timeout_seconds) * 2
     release_grace = timedelta(seconds=settings.releasing_timeout_seconds) * 2
-    for ns, name in pods:
+    for ns, name, labels in pods:
+        if JOB_NAME_LABEL in labels:
+            counts["job_pod_skipped"] += 1
+            continue
         instance = by_uuid.get(name)
         db_status = instance.status if instance is not None else None
         # Pod 应该存在的状态:creating/starting/running

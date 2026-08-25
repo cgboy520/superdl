@@ -39,6 +39,29 @@ AM_PAYLOAD = {
 
 
 class TestBalanceWarnNotification:
+    async def test_unread_count_endpoint(self, client, sm, fake):
+        """未读数轻端点(P2):DB count 与列表分页解耦,标记已读后减少。"""
+        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        async with sm() as session:
+            for i in range(3):
+                session.add(
+                    Notification(
+                        user_id=user_id,
+                        type="instance",
+                        title=f"通知{i}",
+                        content="x",
+                        dedup_key=f"t-unread:{user_id}:{i}",
+                    )
+                )
+            await session.commit()
+        resp = await client.get("/api/v1/notifications/unread-count", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["unread_count"] == 3
+        first = (await client.get("/api/v1/notifications", headers=headers)).json()["items"][0]
+        await client.post(f"/api/v1/notifications/{first['id']}/read", headers=headers)
+        resp = await client.get("/api/v1/notifications/unread-count", headers=headers)
+        assert resp.json()["unread_count"] == 2
+
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
         headers, _uuid, user_id = await _provision_running(client, sm, fake)
         from decimal import Decimal

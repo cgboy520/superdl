@@ -66,6 +66,7 @@ import { AuditTable } from "../../components/AuditTable";
 import { StatusTag } from "../../components/StatusTag";
 import { TenantLink } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
+import { SettlementGapsTab } from "./-SettlementGapsTab";
 
 export const Route = createFileRoute("/_app/finance")({
   component: FinancePage,
@@ -1254,6 +1255,7 @@ function FinancePage() {
             { key: "refunds", label: t("finance.tabRefunds"), children: <RefundsTab /> },
             { key: "invoices", label: t("finance.tabInvoices"), children: <InvoicesTab /> },
             { key: "adjustments", label: t("finance.tabAdjustments"), children: <AdjustmentsTab /> },
+            { key: "gaps", label: t("finance.tabSettlementGaps"), children: <SettlementGapsTab /> },
             {
               key: "anomalies",
               label: (

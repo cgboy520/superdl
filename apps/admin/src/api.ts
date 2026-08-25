@@ -67,6 +67,9 @@ import {
   adminListInvoicesApiAdminV1InvoicesGet,
   adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost,
   adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost,
+  adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet,
+  adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost,
+  adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost,
   adminGetTicketApiAdminV1TicketsTicketIdGet,
   adminListDeletionRequestsApiAdminV1DeletionRequestsGet,
   adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost,
@@ -111,9 +114,11 @@ import type {
   AdminListInvoicesApiAdminV1InvoicesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminListRefundsApiAdminV1RefundsGetParams,
+  AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,
   AdminListTenantsApiAdminV1TenantsGetParams,
   AdminListTicketsApiAdminV1TicketsGetParams,
   AdminOrdersExportApiAdminV1OrdersExportGetParams,
+  AdminSettlementGapOut,
   AdminTicketDetailOut,
   AdminTicketReply,
   AdminTicketStatusUpdate,
@@ -162,6 +167,7 @@ import type {
   MfaSetupConfirmOut,
   MfaSetupOut,
   RecoveryCodesOut,
+  SettlementGapResolve,
   SkuCreate,
   SkuUpdate,
   TenantFreezeRequest,
@@ -206,6 +212,7 @@ export type {
   AdminInvoiceOut as InvoiceRow,
   AdminOrderOut as OrderRow,
   AdminRefundOut as RefundRow,
+  AdminSettlementGapOut,
   AdminTicketDetailOut as TicketDetail,
   AdminTicketOut as TicketRow,
   AuditLogOut as AuditRow,
@@ -231,6 +238,7 @@ export type {
   RefundCancel,
   InvoiceIssue,
   InvoiceReject,
+  SettlementGapResolve,
 } from "@superdl/api-client";
 
 // ---------- 查询 hooks ----------
@@ -606,12 +614,58 @@ export function useRejectInvoice(
   });
 }
 
-/** 工单列表。status/category 服务端过滤。 */
-export function useTickets(params?: AdminListTicketsApiAdminV1TicketsGetParams) {
-  const queryKey = ["admin", "tickets", params] as const;
-  const q = useQuery({
+/** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true(未核销持续曝光)。 */
+export function useSettlementGaps(
+  params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
+) {
+  const queryKey = ["admin", "settlement-gaps", params] as const;
+  const q = useInfiniteQuery({
     queryKey,
-    queryFn: () => adminListTicketsApiAdminV1TicketsGet(params),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet({
+        ...params,
+        limit: 50,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+  return { ...q, queryKey };
+}
+
+export function useReplaySettlementGap(opts?: MutOpts<AdminSettlementGapOut, { gapId: number }>) {
+  return useMutation({
+    mutationFn: (v: { gapId: number }) =>
+      adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost(v.gapId),
+    ...opts?.mutation,
+  });
+}
+
+export function useResolveSettlementGap(
+  opts?: MutOpts<AdminSettlementGapOut, { gapId: number; data: SettlementGapResolve }>,
+) {
+  return useMutation({
+    mutationFn: (v: { gapId: number; data: SettlementGapResolve }) =>
+      adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
+    ...opts?.mutation,
+  });
+}
+
+/** 工单列表(游标分页,P2):status/category 过滤,user_id/ticket_no 检索。 */
+export function useTickets(
+  params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">,
+) {
+  const queryKey = ["admin", "tickets", params] as const;
+  const q = useInfiniteQuery({
+    queryKey,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      adminListTicketsApiAdminV1TicketsGet({
+        ...params,
+        limit: 50,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   return { ...q, queryKey };
 }

@@ -26,6 +26,7 @@ import {
   listMyTicketsApiV1TicketsGet,
   getMyTicketApiV1TicketsTicketIdGet,
   listNotificationsApiV1NotificationsGet,
+  unreadCountApiV1NotificationsUnreadCountGet,
   listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet,
   listSkusApiV1SkusGet,
   listSshKeysApiV1SshKeysGet,
@@ -44,6 +45,7 @@ import type {
   PageInstanceOut,
   PageInvoiceOut,
   PageLedgerEntryOut,
+  PageNotificationOut,
   PageRefundOut,
   PageTicketOut,
   RechargeOut,
@@ -99,6 +101,22 @@ export const useMyDeletionRequest = (opts?: QueryOpts) =>
 export const useWallet = (opts?: QueryOpts) => useApiQuery(["wallet"], () => getWalletApiV1WalletGet(), opts);
 export const useNotifications = (params?: { unread?: boolean }, opts?: QueryOpts) =>
   useApiQuery(["notifications", params], () => listNotificationsApiV1NotificationsGet(params), opts);
+/** 未读角标轻端点(P2):30s 轮询只拿 count,与列表分页解耦(旧口径=已加载页未读数,偏低)。 */
+export const useUnreadCount = (opts?: QueryOpts) =>
+  useApiQuery(["notifications", "unread-count"], () => unreadCountApiV1NotificationsUnreadCountGet(), opts);
+/** 通知弹层游标分页:「加载更多」向下翻页。 */
+export const useNotificationPages = (params?: { unread?: boolean }) =>
+  useInfiniteQuery<PageNotificationOut, ApiError, InfiniteData<PageNotificationOut>, unknown[], string | undefined>({
+    queryKey: normalizeKey(["notifications", "pages", params]),
+    initialPageParam: undefined,
+    queryFn: ({ pageParam }) =>
+      listNotificationsApiV1NotificationsGet({
+        ...params,
+        limit: 20,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
 export const useSkus = (params?: ListSkusApiV1SkusGetParams, opts?: QueryOpts) =>
   useApiQuery(["skus", params], () => listSkusApiV1SkusGet(params), opts);
 export const useImages = () => useApiQuery(["images"], () => listImagesApiV1ImagesGet());

@@ -256,16 +256,16 @@ class TestIdor:
 
 class TestAdmin:
     async def test_filters(self, client: AsyncClient, sm):
-        """status/category 精确过滤。"""
+        """status/category 精确过滤(Page 响应:items 为当前页)。"""
         headers = await user_headers(client, "13700000331")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         t2 = (await create_ticket(client, headers, category="billing", subject="扣费有疑问")).json()
         ops = await admin_headers(sm, client, role="ops")
-        rows = (await client.get("/api/admin/v1/tickets", headers=ops)).json()
+        rows = (await client.get("/api/admin/v1/tickets", headers=ops)).json()["items"]
         assert {r["id"] for r in rows} == {t1["id"], t2["id"]}
         rows = (
             await client.get("/api/admin/v1/tickets", params={"category": "billing"}, headers=ops)
-        ).json()
+        ).json()["items"]
         assert [r["id"] for r in rows] == [t2["id"]]
         # 标记 t1 解决后按 status 过滤
         resp = await client.post(
@@ -274,12 +274,64 @@ class TestAdmin:
         assert resp.status_code == 200
         rows = (
             await client.get("/api/admin/v1/tickets", params={"status": "resolved"}, headers=ops)
-        ).json()
+        ).json()["items"]
         assert [r["id"] for r in rows] == [t1["id"]]
         rows = (
             await client.get("/api/admin/v1/tickets", params={"status": "open"}, headers=ops)
-        ).json()
+        ).json()["items"]
         assert [r["id"] for r in rows] == [t2["id"]]
+
+    async def test_search_by_user_id_and_ticket_no(self, client: AsyncClient, sm):
+        """user_id/ticket_no 检索(P2):替代固定截断 200 的翻找式定位。"""
+        headers = await user_headers(client, "13700000335")
+        t1 = (await create_ticket(client, headers, category="instance")).json()
+        t2 = (await create_ticket(client, headers, category="billing", subject="账单咨询")).json()
+        other = await user_headers(client, "13700000336")
+        t3 = (await create_ticket(client, other, category="account", subject="注销咨询")).json()
+        ops = await admin_headers(sm, client, role="ops")
+        # user_id 检索
+        uid = (await client.get("/api/v1/me", headers=headers)).json()["id"]
+        rows = (
+            await client.get("/api/admin/v1/tickets", params={"user_id": uid}, headers=ops)
+        ).json()["items"]
+        assert {r["id"] for r in rows} == {t1["id"], t2["id"]}
+        # ticket_no 精确检索
+        rows = (
+            await client.get(
+                "/api/admin/v1/tickets", params={"ticket_no": t3["ticket_no"]}, headers=ops
+            )
+        ).json()["items"]
+        assert [r["id"] for r in rows] == [t3["id"]]
+        # 组合检索:user_id + category
+        rows = (
+            await client.get(
+                "/api/admin/v1/tickets",
+                params={"user_id": uid, "category": "billing"},
+                headers=ops,
+            )
+        ).json()["items"]
+        assert [r["id"] for r in rows] == [t2["id"]]
+
+    async def test_cursor_pagination(self, client: AsyncClient, sm):
+        """游标分页:limit 截断 + next_cursor 续页不重不漏。"""
+        headers = await user_headers(client, "13700000337")
+        ids = [
+            (await create_ticket(client, headers, subject=f"第{i}个问题")).json()["id"]
+            for i in range(3)
+        ]
+        ops = await admin_headers(sm, client, role="ops")
+        page1 = (await client.get("/api/admin/v1/tickets", params={"limit": 2}, headers=ops)).json()
+        assert len(page1["items"]) == 2
+        assert page1["next_cursor"]
+        page2 = (
+            await client.get(
+                "/api/admin/v1/tickets",
+                params={"limit": 2, "cursor": page1["next_cursor"]},
+                headers=ops,
+            )
+        ).json()
+        seen = [r["id"] for r in page1["items"]] + [r["id"] for r in page2["items"]]
+        assert seen == sorted(ids, reverse=True)
 
     async def test_detail_contains_messages(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000332")

@@ -95,6 +95,9 @@ class PodListEntry:
     phase: str
     node_name: str | None
     deleting: bool
+    # Pod labels:泄漏回收据此豁免受管 Job(wipe/quota)的 Pod——它们带 MANAGED_LABEL
+    # 会被 LIST 命中,但名字不是实例 uuid,无 labels 无法与真泄漏区分
+    labels: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -237,6 +240,11 @@ GPU_MODEL_NODE_LABEL = (
     "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
 )
 POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定死;kata / hami / mig 分池铁律)
+# 平台受管对象标签:实例 Pod/Service/Ingress/受管 Job 均打此标,全量 LIST 的过滤依据
+MANAGED_LABEL = "superdl.io/managed"
+# K8s 控制器自动打在 Job 子孙 Pod 上的标签:泄漏回收的豁免依据
+# (Job 泄漏由 ttl_seconds_after_finished 兜底,不属"未知 Pod 强删"范围)
+JOB_NAME_LABEL = "batch.kubernetes.io/job-name"
 
 
 @dataclass(frozen=True)

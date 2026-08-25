@@ -881,3 +881,197 @@ class TestNodeLostBillingTruncation:
             bill = (await session.execute(select(BillHourly))).scalar_one()
         assert bill.seconds_used == 900  # 不截断
         assert bill.detail is not None and "truncated_at" not in bill.detail
+
+
+class TestGapClosure:
+    """结算缺口闭环(P1-2):登记 → 管理端可见 → 重放补结/人工核销 → resolved_at 回写。
+    挂了 = 缺口只进不出,截断窗口永久漏收。"""
+
+    async def _make_gap(
+        self, sm, *, kind="hourly", window_start=H, object_id=0, reason="dead_letter"
+    ) -> int:
+        from app.modules.billing.models import SettlementGap
+
+        async with sm() as session:
+            gap = SettlementGap(
+                kind=kind, window_start=window_start, object_id=object_id, reason=reason
+            )
+            session.add(gap)
+            await session.commit()
+            return int(gap.id)
+
+    async def test_replay_single_hourly_gap_settles_and_resolves(self, sm):
+        from app.modules.billing.settlement import replay_gap
+
+        inst_id = await seed_instance(
+            sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
+        )
+        gap_id = await self._make_gap(sm, object_id=inst_id)
+        out = await replay_gap(sm, gap_id, operator_id=1)
+        assert out.resolved_at is not None
+        async with sm() as session:
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+            w = (await session.execute(select(Wallet))).scalar_one()
+        assert bill.hour_start == H and bill.seconds_used == 1800
+        assert bill.detail.get("gap_id") == gap_id  # 重放留痕
+        assert w.balance == Decimal("100.00") - Decimal("0.84")
+
+    async def test_replay_is_idempotent_no_double_charge(self, sm):
+        from app.modules.billing.settlement import replay_gap
+
+        inst_id = await seed_instance(
+            sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
+        )
+        gap_id = await self._make_gap(sm, object_id=inst_id)
+        await replay_gap(sm, gap_id, operator_id=1)
+        again = await replay_gap(sm, gap_id, operator_id=1)  # 已核销直接返回
+        assert again.resolved_at is not None
+        async with sm() as session:
+            w = (await session.execute(select(Wallet))).scalar_one()
+        assert w.balance == Decimal("100.00") - Decimal("0.84")  # 只扣一次
+
+    async def test_replay_whole_window_gap_covers_all_candidates(self, sm):
+        """object_id=0 的整窗缺口(catchup_truncated):对该窗全量候选重放。"""
+        from app.modules.billing.settlement import replay_gap
+
+        await seed_instance(
+            sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
+        )
+        await seed_instance(
+            sm, user_id=2, events=[ev(-30, "creating", "running")], status="running"
+        )
+        gap_id = await self._make_gap(sm, object_id=0, reason="catchup_truncated")
+        out = await replay_gap(sm, gap_id, operator_id=1)
+        assert out.resolved_at is not None
+        async with sm() as session:
+            bills = (await session.execute(select(BillHourly))).scalars().all()
+        assert len(bills) == 2
+
+    async def test_grace_overlap_rejects_replay(self, sm):
+        from app.core.errors import AppError
+        from app.modules.billing.settlement import replay_gap
+
+        gap_id = await self._make_gap(sm, kind="daily_disk", object_id=1, reason="grace_overlap")
+        with pytest.raises(AppError) as exc_info:
+            await replay_gap(sm, gap_id, operator_id=1)
+        assert exc_info.value.message_key == "billing.settlementGapNotReplayable"
+
+    async def test_replay_object_gone_conflict(self, sm):
+        from app.core.errors import AppError
+        from app.modules.billing.settlement import replay_gap
+
+        gap_id = await self._make_gap(sm, object_id=999999)
+        with pytest.raises(AppError) as exc_info:
+            await replay_gap(sm, gap_id, operator_id=1)
+        assert exc_info.value.message_key == "billing.settlementGapObjectGone"
+
+    async def test_resolve_marks_resolved_and_gauge_drops(self, sm):
+        from app.core.metrics import SETTLEMENT_GAP_UNRESOLVED
+        from app.modules.billing.settlement import resolve_gap
+
+        gap_id = await self._make_gap(sm)
+        async with sm() as session:
+            gap = await resolve_gap(session, gap_id, note="人工核对无账", operator_id=1)
+            assert gap.resolved_at is not None
+        assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 0
+
+    async def test_unresolved_gauge_reflects_db(self, sm):
+        """DB 口径持续告警:缺口未核销 gauge>0,重放/核销后归零(进程重启不丢)。"""
+        from app.core.metrics import SETTLEMENT_GAP_UNRESOLVED
+        from app.modules.billing.settlement import resolve_gap
+
+        gap_id = await self._make_gap(sm)
+        async with sm() as session:
+            # 任意 session 触发刷新(结算任务每轮末同款调用)
+            from app.modules.billing.settlement import _refresh_gap_gauge
+
+            await _refresh_gap_gauge(session)
+        assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 1
+        async with sm() as session:
+            await resolve_gap(session, gap_id, note="核销", operator_id=1)
+        assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 0
+
+
+class TestGapEndpoints:
+    """管理端缺口端点:列表过滤 + 角色门槛 + 重放/核销写审计。"""
+
+    async def test_list_replay_resolve_flow(self, client, sm):
+        from app.modules.billing.models import SettlementGap
+        from tests.test_catalog import admin_headers
+
+        inst_id = await seed_instance(
+            sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
+        )
+        async with sm() as session:
+            session.add(
+                SettlementGap(
+                    kind="hourly", window_start=H, object_id=inst_id, reason="dead_letter"
+                )
+            )
+            session.add(
+                SettlementGap(
+                    kind="daily_disk",
+                    window_start=H,
+                    object_id=1,
+                    reason="grace_overlap",
+                )
+            )
+            await session.commit()
+        finance = await admin_headers(sm, client, role="finance")
+        rows = (await client.get("/api/admin/v1/finance/settlement-gaps", headers=finance)).json()
+        assert len(rows["items"]) == 2
+        # kind 过滤 + unresolved 默认
+        rows = (
+            await client.get(
+                "/api/admin/v1/finance/settlement-gaps",
+                params={"kind": "hourly"},
+                headers=finance,
+            )
+        ).json()
+        assert len(rows["items"]) == 1
+        gid = rows["items"][0]["id"]
+        # 重放:入账 + resolved_at 回写
+        resp = await client.post(
+            f"/api/admin/v1/finance/settlement-gaps/{gid}/replay", headers=finance
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["resolved_at"] is not None
+        # grace_overlap 拒重放 → 人工核销
+        gid2 = (
+            await client.get(
+                "/api/admin/v1/finance/settlement-gaps",
+                params={"kind": "daily_disk"},
+                headers=finance,
+            )
+        ).json()["items"][0]["id"]
+        resp = await client.post(
+            f"/api/admin/v1/finance/settlement-gaps/{gid2}/replay", headers=finance
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.settlementGapNotReplayable"
+        resp = await client.post(
+            f"/api/admin/v1/finance/settlement-gaps/{gid2}/resolve",
+            json={"note": "grace 期间有意不计费,确认无账"},
+            headers=finance,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["resolved_at"] is not None
+        # 全部核销后默认列表为空
+        rows = (await client.get("/api/admin/v1/finance/settlement-gaps", headers=finance)).json()
+        assert rows["items"] == []
+
+    async def test_readonly_can_list_cannot_write(self, client, sm):
+        from tests.test_catalog import admin_headers
+
+        ro = await admin_headers(sm, client, role="readonly")
+        assert (
+            await client.get("/api/admin/v1/finance/settlement-gaps", headers=ro)
+        ).status_code == 200
+        resp = await client.post("/api/admin/v1/finance/settlement-gaps/1/replay", headers=ro)
+        assert resp.status_code == 403
+        resp = await client.post(
+            "/api/admin/v1/finance/settlement-gaps/1/resolve",
+            json={"note": "x"},
+            headers=ro,
+        )
+        assert resp.status_code == 403

@@ -9,7 +9,8 @@ from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
 
 class AdminLoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=64)
+    # 与创建/重置同标准(128):更短的登录上限会把 65~128 字符口令的管理员永久锁在门外
+    password: str = Field(min_length=1, max_length=128)
 
 
 class AdminOut(BaseModel):

@@ -19,6 +19,7 @@ from app.modules.adminapi.service import create_admin
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
+from tests.helpers import create_user_with_key
 from tests.test_account_auth import register
 from tests.test_catalog import admin_headers
 from tests.test_orchestrator_lifecycle import _provision_running
@@ -160,6 +161,42 @@ class TestAdjustments:
             headers=ro,
         )
         assert resp.status_code == 403
+
+    async def test_idempotency_scope_and_fingerprint(self, client, sm, fake):
+        """幂等键加固(P2):同键同体重放 → replay;同键异体 → 409 指纹不符;
+        同键同体跨租户 → 各开各的单(作用域含 user_id,弱键跨租户不再误判重放)。"""
+        _h1, _u1, user1 = await _provision_running(client, sm, fake)
+        _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
+        finance = await second_admin_headers(sm, client, "fin-idem")
+        body = {"user_id": user1, "amount": "10.00", "reason": "补偿一"}
+
+        r1 = await client.post(
+            "/api/admin/v1/adjustments", json=body, headers={**finance, "Idempotency-Key": "k-1"}
+        )
+        assert r1.status_code == 201, r1.text
+        # 同键同体重放 → 200 + 重放头,同一单
+        r2 = await client.post(
+            "/api/admin/v1/adjustments", json=body, headers={**finance, "Idempotency-Key": "k-1"}
+        )
+        assert r2.status_code == 200
+        assert r2.headers["x-idempotent-replay"] == "true"
+        assert r2.json()["id"] == r1.json()["id"]
+        # 同键异体(金额不同)→ 409 指纹不符
+        r3 = await client.post(
+            "/api/admin/v1/adjustments",
+            json={**body, "amount": "20.00"},
+            headers={**finance, "Idempotency-Key": "k-1"},
+        )
+        assert r3.status_code == 409
+        assert r3.json()["message_key"] == "adminapi.idempotencyKeyMismatch"
+        # 同键同体跨租户 → 新单(作用域 (发起人,租户,键))
+        r4 = await client.post(
+            "/api/admin/v1/adjustments",
+            json={**body, "user_id": u2id},
+            headers={**finance, "Idempotency-Key": "k-1"},
+        )
+        assert r4.status_code == 201, r4.text
+        assert r4.json()["id"] != r1.json()["id"]
 
     async def test_concurrent_review_single_credit(self, client, sm, fake):
         """两名复核人并发 approve 同一单:行锁保证只入账一次。"""

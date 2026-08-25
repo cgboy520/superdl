@@ -47,6 +47,120 @@ async def finance_pair(sm, client: AsyncClient) -> tuple[dict, dict]:
     return reviewer, payer
 
 
+class TestSyncAudit:
+    """出金同步审计(P1-8):审计写失败即出金失败回滚;成功时审计与业务同事务,中间件不双写。"""
+
+    async def _approved_refund(self, client, sm, phone: str, payer_name: str) -> tuple[dict, int]:
+        headers = await user_headers(client, phone)
+        order = await paid_order(client, headers)
+        rid = (await apply_refund(client, headers, order["order_no"], "30.00")).json()["id"]
+        reviewer = await admin_headers(sm, client, role="finance")
+        payer = await second_admin_headers(sm, client, payer_name)
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
+        return payer, rid
+
+    async def test_audit_writer_failure_rolls_back_payout(self, client, sm, monkeypatch):
+        """审计写失败 → 出金整体回滚:500、钱包未扣、退款单仍 approved
+        (宁可不出金,不可无留痕);故障消除后重试成功。"""
+        from app.modules.adminapi import router_finance
+
+        payer, rid = await self._approved_refund(client, sm, "13700000160", "finance-payer-a")
+
+        async def boom(request, session, *, result=200):
+            raise RuntimeError("audit write failed (injected)")
+
+        monkeypatch.setattr(router_finance, "write_audit_sync", boom)
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-AUDIT"},
+            headers=payer,
+        )
+        assert resp.status_code == 500
+        async with sm() as session:
+            req = await session.get(RefundRequest, rid)
+            entries = (
+                (await session.execute(select(BalanceLedger).where(BalanceLedger.type == "refund")))
+                .scalars()
+                .all()
+            )
+        assert req is not None and req.status == "approved"  # 未置 paid
+        assert entries == []  # 负向调账已随回滚撤销
+        monkeypatch.undo()
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-AUDIT"},
+            headers=payer,
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_payout_audit_single_row_same_transaction(self, client, sm):
+        """成功出金:审计行与业务同事务(恰好一条,中间件不双写);detail 含渠道/凭证。"""
+        from app.core.audit import AuditLog
+
+        payer, rid = await self._approved_refund(client, sm, "13700000161", "finance-payer-b")
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-SYNC"},
+            headers=payer,
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog).where(
+                            AuditLog.action == f"admin.POST /api/admin/v1/refunds/{rid}/payout"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1  # 同事务一行,audit_synced 标志使中间件未双写
+        assert rows[0].detail == {"channel": "offline", "ref": "OFF-SYNC"}
+        assert rows[0].result == 200
+
+
+class TestDoubleSpendGate:
+    """票款双重兑现闸的打款侧(P1-1):审批到打款之间发票被开具,payout 复查拦截。"""
+
+    async def test_payout_blocked_by_invoice_issued_after_approve(self, client, sm):
+        from tests.test_invoices import apply_invoice, paid_order_at, past_period
+
+        headers = await user_headers(client, "13700000162")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        rid = (await apply_refund(client, headers, order["order_no"], "30.00")).json()["id"]
+        reviewer = await admin_headers(sm, client, role="finance")
+        payer = await second_admin_headers(sm, client, "finance-payer-c")
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200
+        # 审批后另一财务开具该账期发票
+        iid = (await apply_invoice(client, headers, p1)).json()["id"]
+        resp = await client.post(
+            f"/api/admin/v1/invoices/{iid}/issue",
+            json={"invoice_no": "NO-PAYOUT-GATE"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-GATE2"},
+            headers=payer,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.refundInvoiceIssued"
+
+
 class TestApply:
     async def test_create_success_and_no_format(self, client: AsyncClient, sm):
         headers = await user_headers(client, "13700000101")

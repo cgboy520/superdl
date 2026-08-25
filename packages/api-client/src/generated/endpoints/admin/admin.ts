@@ -48,6 +48,7 @@ import type {
   AdminListOrdersApiAdminV1OrdersGetParams,
   AdminListOutboxTasksApiAdminV1OutboxTasksGetParams,
   AdminListRefundsApiAdminV1RefundsGetParams,
+  AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,
   AdminListTenantsApiAdminV1TenantsGetParams,
   AdminListTicketsApiAdminV1TicketsGetParams,
   AdminLoginRequest,
@@ -60,6 +61,7 @@ import type {
   AdminRefundOut,
   AdminResetPasswordRequest,
   AdminSelfPasswordRequest,
+  AdminSettlementGapOut,
   AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
   AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,
@@ -121,6 +123,8 @@ import type {
   PageAdminInstanceOut,
   PageAdminOrderOut,
   PageAdminRefundOut,
+  PageAdminSettlementGapOut,
+  PageAdminTicketOut,
   PageBillHourlyOut,
   PageInstanceEventOut,
   PageLedgerEntryOut,
@@ -141,6 +145,7 @@ import type {
   RefundReview,
   RevenueReportApiAdminV1ReportsRevenueGetParams,
   RevenueReportOut,
+  SettlementGapResolve,
   SkuAdminOut,
   SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
   SkuCreate,
@@ -402,6 +407,7 @@ export const getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost
 }
 
 /**
+ * 复核调账(approve 即生效):审计行与生效同事务(write_audit_sync,P1-8)。
  * @summary Admin Review Adjustment
  */
 export const adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost = async (adjustmentId: number,
@@ -3104,7 +3110,7 @@ export const getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl 
 
 /**
  * 人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
- * (X-Idempotent-Replay 头区分)。
+ * (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync,P1-8)。
  * @summary Admin Backfill Order
  */
 export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = async (orderNo: string,
@@ -3299,6 +3305,325 @@ export function useAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost<TDat
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getAdminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPostQueryOptions(orderNo,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetUrl = (params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/finance/settlement-gaps?${stringifiedParams}` : `/api/admin/v1/finance/settlement-gaps`
+}
+
+/**
+ * 缺口列表(游标分页,降序):默认只看未核销——缺口闭环前需要持续曝光,
+ * 配套持续告警 superdl_settlement_gap_unresolved(DB 口径)。
+ * @summary Admin List Settlement Gaps
+ */
+export const adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet = async (params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminSettlementGapOut> => {
+
+  return customFetch<PageAdminSettlementGapOut>(getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetQueryKey = (params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,) => {
+    return [
+    `/api/admin/v1/finance/settlement-gaps`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetQueryOptions = <TData = Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError = HTTPValidationError>(params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>> = ({ signal }) => adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetQueryResult = NonNullable<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>>
+export type AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetQueryError = HTTPValidationError
+
+
+export function useAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGet<TData = Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError = HTTPValidationError>(
+ params: undefined |  AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGet<TData = Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError = HTTPValidationError>(
+ params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>,
+          TError,
+          Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGet<TData = Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError = HTTPValidationError>(
+ params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin List Settlement Gaps
+ */
+
+export function useAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGet<TData = Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError = HTTPValidationError>(
+ params?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostUrl = (gapId: number,) => {
+
+
+
+
+  return `/api/admin/v1/finance/settlement-gaps/${gapId}/replay`
+}
+
+/**
+ * 重放缺口窗口的幂等入账原语(人工触发,不自动改账):成功回写 resolved_at。
+ * grace_overlap 缺口拒重放(409,走人工核销);对象已不存在 409(同样走人工核销)。
+ * @summary Admin Replay Settlement Gap
+ */
+export const adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost = async (gapId: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminSettlementGapOut> => {
+
+  return customFetch<AdminSettlementGapOut>(getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostUrl(gapId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostQueryKey = (gapId: number,) => {
+    return [
+    'POST', `/api/admin/v1/finance/settlement-gaps/${gapId}/replay`
+    ] as const;
+    }
+
+
+export const getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostQueryOptions = <TData = Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError = HTTPValidationError>(gapId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostQueryKey(gapId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>> = ({ signal }) => adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost(gapId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: gapId !== null && gapId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostQueryResult = NonNullable<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>>
+export type AdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostQueryError = HTTPValidationError
+
+
+export function useAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost<TData = Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError = HTTPValidationError>(
+ gapId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost<TData = Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError = HTTPValidationError>(
+ gapId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>,
+          TError,
+          Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost<TData = Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError = HTTPValidationError>(
+ gapId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Replay Settlement Gap
+ */
+
+export function useAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost<TData = Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError = HTTPValidationError>(
+ gapId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPostQueryOptions(gapId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+export const getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostUrl = (gapId: number,) => {
+
+
+
+
+  return `/api/admin/v1/finance/settlement-gaps/${gapId}/resolve`
+}
+
+/**
+ * 人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填。
+ * @summary Admin Resolve Settlement Gap
+ */
+export const adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost = async (gapId: number,
+    settlementGapResolve: SettlementGapResolve, options?: Parameters<typeof customFetch>[1]): Promise<AdminSettlementGapOut> => {
+
+  return customFetch<AdminSettlementGapOut>(getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostUrl(gapId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(settlementGapResolve)
+  }
+);}
+
+
+
+
+
+export const getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostQueryKey = (gapId: number,
+    settlementGapResolve?: SettlementGapResolve,) => {
+    return [
+    'POST', `/api/admin/v1/finance/settlement-gaps/${gapId}/resolve`, settlementGapResolve
+    ] as const;
+    }
+
+
+export const getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostQueryOptions = <TData = Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError = HTTPValidationError>(gapId: number,
+    settlementGapResolve: SettlementGapResolve, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostQueryKey(gapId,settlementGapResolve);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>> = ({ signal }) => adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(gapId,settlementGapResolve, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: gapId !== null && gapId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostQueryResult = NonNullable<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>>
+export type AdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostQueryError = HTTPValidationError
+
+
+export function useAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost<TData = Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError = HTTPValidationError>(
+ gapId: number,
+    settlementGapResolve: SettlementGapResolve, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost<TData = Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError = HTTPValidationError>(
+ gapId: number,
+    settlementGapResolve: SettlementGapResolve, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>,
+          TError,
+          Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost<TData = Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError = HTTPValidationError>(
+ gapId: number,
+    settlementGapResolve: SettlementGapResolve, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Admin Resolve Settlement Gap
+ */
+
+export function useAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost<TData = Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError = HTTPValidationError>(
+ gapId: number,
+    settlementGapResolve: SettlementGapResolve, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostQueryOptions(gapId,settlementGapResolve,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -8184,6 +8509,7 @@ export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl = (refun
 
 /**
  * 登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
+ * 审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚(P1-8)。
  * @summary Admin Payout Refund
  */
 export const adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost = async (refundId: number,
@@ -10134,12 +10460,12 @@ export const getAdminListTicketsApiAdminV1TicketsGetUrl = (params?: AdminListTic
 }
 
 /**
- * 工单列表(固定截断 200)。status/category 精确过滤。
+ * 工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。
  * @summary Admin List Tickets
  */
-export const adminListTicketsApiAdminV1TicketsGet = async (params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketOut[]> => {
+export const adminListTicketsApiAdminV1TicketsGet = async (params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminTicketOut> => {
 
-  return customFetch<AdminTicketOut[]>(getAdminListTicketsApiAdminV1TicketsGetUrl(params),
+  return customFetch<PageAdminTicketOut>(getAdminListTicketsApiAdminV1TicketsGetUrl(params),
   {
     ...options,
     method: 'GET'

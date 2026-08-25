@@ -252,6 +252,8 @@ jobs:
         env:
           SUPERDL_ENVIRONMENT: dev
           SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
+          # seed_dev.py 环境闸后默认随机口令;CI 一次性隔离库显式固定,与 e2e 默认对齐
+          SUPERDL_SEED_ADMIN_PASSWORD: admin123-dev
         run: |
           uv sync --frozen
           uv run alembic upgrade head

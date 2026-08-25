@@ -15,7 +15,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.aliyun import rpc_signed_params
-from app.core.logging import get_logger
+from app.core.logging import get_logger, mask_phone_value
 from app.core.ratelimit import check_rate_limit
 from app.core.timeutil import now_utc
 
@@ -54,9 +54,12 @@ class SmsChannel(Protocol):
 
 class MockSmsChannel:
     async def send(self, phone: str, template: str, params: dict[str, str]) -> None:
-        # 验证码明文不落日志(日志可能被集中采集):code 打码;mock 验证码本就是固定值,不影响联调
+        # 验证码/手机号明文不落日志(日志可能被集中采集,Loki 180 天 PII 面):
+        # code 打码,phone 前3后4;mock 验证码本就是固定值,不影响联调
         safe_params = {k: ("******" if k == "code" else v) for k, v in params.items()}
-        logger.info("mock_sms_sent", phone=phone, template=template, params=safe_params)
+        logger.info(
+            "mock_sms_sent", phone=mask_phone_value(phone), template=template, params=safe_params
+        )
 
 
 class AliyunSmsChannel:

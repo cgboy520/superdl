@@ -1,3 +1,8 @@
+# 【已废弃,迁移完成后删除本目录】集群内私有镜像仓库(P1-7 决定迁托管仓:
+# 阿里云 ACR 企业版优先,Harbor 备选;mirror endpoint 见 ../rke2/registries.yaml,
+# 迁移流程见 ../runbooks/image-prewarm.md「托管仓迁移」节)。
+# 以下为过渡期存量配置,仅未迁移集群使用。
+#
 # 集群内私有镜像仓库:registry.superdl.local 的真实落点。
 # 哑仓库(无 UI/扫描/租户),只服务平台镜像的 push(运维经 kubectl port-forward)与
 # pull(节点 registries.yaml mirror 到 ClusterIP)。

@@ -384,6 +384,18 @@ additionalPrometheusRulesMap:
             expr: increase(superdl_settlement_gap_total[5m]) > 0
             labels: {severity: critical}
             annotations: {summary: "结算缺口登记({{ $labels.kind }}/{{ $labels.reason }}):有账期追不平,按缺口清单人工补结算"}
+          # DB 口径持续告警:缺口核销前一直挂(一次性 increase 告警被淹没/进程重启归零都不漏),
+          # 管理端「财务 › 结算缺口」重放或人工核销闭环后自愈
+          - alert: SettlementGapUnresolved
+            expr: max(superdl_settlement_gap_unresolved) > 0
+            for: 1h
+            labels: {severity: critical}
+            annotations: {summary: "未核销结算缺口 {{ $value }} 条({{ $labels.kind }})持续超 1 小时:管理端财务 › 结算缺口处理"}
+          # 审计留痕缺口:fail-open 路径写失败必须立即曝光(资金域出金为同事务同步审计,不走此路径)
+          - alert: AuditWriteFailed
+            expr: increase(superdl_audit_write_failed_total[5m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "审计行写入失败:fail-open 路径的操作可能无留痕,立即查 DB 与审计写路径"}
           - alert: PatrolFailed
             expr: increase(superdl_patrol_failed_total[15m]) > 0
             labels: {severity: critical}

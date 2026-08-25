@@ -37,16 +37,26 @@ check_secret() { # <ns> <name> <用途>
 check_secret kube-system superdl-juicefs-secret "JuiceFS 元数据/对象存储凭据"
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
-check_secret cert-manager alidns-credentials "cert-manager alidns DNS01 solver 凭据(泛域名证书签发)"
-check_secret registry registry-htpasswd "私有镜像仓库 htpasswd 凭据(不落 git,建法见 registry/registry.yaml 头注释)"
+check_secret cert-manager acme-dns-account "acme-dns 账户凭据(RFC2136 DNS01,建法见 runbooks/acme-dns.md)"
 if [[ "$env_name" == "full" ]]; then
   check_secret monitoring grafana-admin "Grafana 管理员口令(light 档关 Grafana,不需要)"
 fi
 
-# 只查 helmfile apply 直接消费的 values/;rke2/*.yaml 是分发模板,占位符由 ansible /
-# 一键加入脚本落盘时替换,仓库里保留占位符。
+say "== 托管镜像仓(P1-7:registry.superdl.local → ACR/Harbor https)=="
+# 自建 registry(registry/)已废弃:节点 registries.yaml 的 mirror 指向托管仓,
+# 地址与拉取凭据必须替换,否则节点无法 pull 平台镜像
+if grep -q 'CHANGE_ME_REGISTRY_HOST' rke2/registries.yaml; then
+  miss "rke2/registries.yaml mirror 仍是 CHANGE_ME_REGISTRY_HOST 占位(替换为 ACR/Harbor 真实地址)"
+elif grep -qE 'CHANGE_ME_REGISTRY_(USERNAME|PASSWORD)' rke2/registries.yaml; then
+  miss "rke2/registries.yaml 拉取凭据仍是 CHANGE_ME 占位(ACR 独立访问凭据或 Harbor 机器人账户)"
+else
+  ok "rke2/registries.yaml 托管仓地址与凭据已替换"
+fi
+
+# 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,
+# 占位符由 ansible / 一键加入脚本落盘时替换,仓库里保留占位符。
 say "== values/ 占位符残留(未替换直接 apply 会让组件起不来)=="
-placeholder_files=(values/cilium.yaml values/kps.yaml registry/registry.yaml)
+placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
   if grep -qE '<server-ip>|CHANGE_ME|example\.com' "$f"; then
@@ -56,19 +66,13 @@ for f in "${placeholder_files[@]}"; do
   fi
 done
 
-say "== registry 私有镜像仓库 =="
-# 占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,凭据禁止再落 git
-leaked_hash='$2y$05$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW'
-if [[ -f registry/registry.yaml ]] && grep -qF "$leaked_hash" registry/registry.yaml; then
-  miss "registry/registry.yaml 含已泄漏的 htpasswd hash 字面值(部署时手工建 Secret,见该文件头注释)"
+say "== 告警通道(告警静默 = 事故盲区,专项红)=="
+# values/kps.yaml 的通用占位符扫描在上方已覆盖,本条给告警通道单独的可读提示:
+# Alertmanager 的 webhook token/SMTP/值班接收端占位未替换时,全部告警规则形同虚设
+if grep -qE 'CHANGE_ME' values/kps.yaml; then
+  miss "values/kps.yaml 告警通道仍有 CHANGE_ME 占位(Alertmanager webhook/SMTP/接收端未配,告警将静默)"
 else
-  ok "registry/registry.yaml 无已知泄漏 hash"
-fi
-# 入方向边界:NetworkPolicy 必须在集群内存在(ipBlock 示例段按真实网段启用后 apply)
-if kubectl -n registry get networkpolicy registry-default-deny >/dev/null 2>&1; then
-  ok "NetworkPolicy registry/registry-default-deny 已存在"
-else
-  miss "NetworkPolicy registry/registry-default-deny 不存在(registry.yaml 的 ipBlock 示例段按真实节点/运维网段启用后 apply;缺失则仓库入方向无边界)"
+  ok "values/kps.yaml 告警通道无占位符"
 fi
 
 say "== 应用入口(../app)=="
@@ -78,6 +82,29 @@ if [[ -f "$app_ingress" ]]; then
     miss "$app_ingress 管理端白名单仍是 CHANGE_ME_OFFICE_CIDR 占位(替换为办公网/跳板机出口 CIDR)"
   else
     ok "$app_ingress 管理端白名单已配真实网段"
+  fi
+fi
+
+say "== 资金库 PITR(实际 RPO 保障:cnpg 档或托管 PG 书面确认,二者其一)=="
+# 逻辑备份(pg_dump 每日)RPO=24h,分钟级 RPO 只能靠 WAL 连续归档(cnpg)或托管 PG PITR
+if grep -qE '^\s*cnpg:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  # 自建 cnpg 档:S3 归档占位符必须替换 + 集群内 ScheduledBackup 在跑
+  if grep -qE 'CHANGE_ME' values/cnpg-cluster.yaml; then
+    miss "values/cnpg-cluster.yaml 仍有 CHANGE_ME 占位(S3 endpoint/bucket/region 未替换,PITR 不会真正工作)"
+  else
+    ok "values/cnpg-cluster.yaml S3 归档配置已替换"
+  fi
+  sb_count=$(kubectl -n superdl get scheduledbackup --no-headers 2>/dev/null | grep -c . || true)
+  if [[ "$sb_count" -ge 1 ]]; then
+    ok "ScheduledBackup 在跑($sb_count 条)"
+  else
+    miss "superdl 命名空间无 ScheduledBackup(cnpg-cluster apply 后应自动生成;缺失则每日备份未在跑)"
+  fi
+else
+  if [[ "${SUPERDL_MANAGED_PG_PITR_ACK:-}" == "yes" ]]; then
+    ok "托管 PG PITR 已书面确认(SUPERDL_MANAGED_PG_PITR_ACK=yes)"
+  else
+    miss "cnpg.enabled=false 且未书面确认托管 PG PITR:确认托管 PG 已开 PITR+保留策略后,以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑;或启用 cnpg 档(environments/$env_name.yaml)"
   fi
 fi
 
@@ -153,17 +180,9 @@ check_sc() { # <sc 名称> <用途>
     miss "StorageClass $1 不存在($2)"
   fi
 }
-check_sc topolvm-provisioner "实例盘/监控组件存储(full+light 均为强制依赖)"
+check_sc topolvm-provisioner "实例盘/监控组件/acme-dns 存储(full+light 均为强制依赖)"
 if [[ "$env_name" == "full" ]]; then
-  check_sc superdl-juicefs "共享数据盘/监控栈/registry 存储"
-else
-  # light 无 JuiceFS:registry.yaml 的 SC 必须已改回本地 SC,否则 registry PVC 永不绑定
-  registry_sc=$(grep -E '^\s*storageClassName:' registry/registry.yaml | head -1 | awk '{print $2}')
-  if [[ "$registry_sc" == "superdl-juicefs" ]]; then
-    miss "registry/registry.yaml storageClassName=superdl-juicefs 在 light 档永不绑定(改回 topolvm-provisioner,见该文件 PVC 注释)"
-  elif [[ -n "$registry_sc" ]]; then
-    check_sc "$registry_sc" "registry 镜像仓库存储"
-  fi
+  check_sc superdl-juicefs "共享数据盘/监控栈存储"
 fi
 
 if [[ "$env_name" == "light" ]]; then

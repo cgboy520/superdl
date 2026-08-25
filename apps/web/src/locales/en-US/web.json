@@ -106,6 +106,7 @@
     "goRent": "Rent now",
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
     "jupyter": "JupyterLab",
+    "loadMore": "Load more",
     "requestFailed": "Request failed",
     "retry": "Retry"
   },

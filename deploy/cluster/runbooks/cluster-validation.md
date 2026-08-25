@@ -36,8 +36,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 ## D. 存储
 
-- [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线
-- [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;当前删除路径为 lvremove(未清零),如需擦盘语义先在节点开 issue_discards=1 再验收
+- [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线;writeback 已关闭(P1-10),fio 顺序写对比实测(开/关 writeback 各一轮)记录于此:____
+- [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;lvmd 容器 `/etc/lvm/lvm.conf` 已含 `issue_discards = 1`(P0-3 落地后),大 LV(≥500Gi)`lvremove` 实测耗时记录于此:____
 - [ ] 数据盘目录硬配额:建一块 1GB 测试盘,挂实例写超 1GB(`dd if=/dev/zero of=/root/data/fill bs=1M count=1200`)必须在配额处被拒(EDQUOT/No space);管理端死信页无 disk.quota 死信,Prometheus 查 `superdl_juicefs_quota_failed_total` 为 0;删盘后 `juicefs quota ls $METAURL` 无残留条目
 
 ## E. 监控与告警
@@ -86,3 +86,9 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] k3s kube-router NetworkPolicy 对租户 Egress 黑名单与 Cilium 等效
 - [ ] RKE2 / k3s 的 cn 镜像源可用
 - [ ] 集群能力探测(probe)所需 RBAC 在 RKE2 与 k3s 上均足够
+
+## J. 发布检查单(每次上线)
+
+- [ ] **CSP 与第三方 SDK 域核对**:staging 用真实 aliyun captcha provider 走通 注册/登录/找回密码 全链路(发码 → 弹窗验证 → 收码),浏览器控制台无 CSP 违规报告;若有新增域,先切 `Content-Security-Policy-Report-Only` 收敛清单再 enforce(见 `deploy/app/security-headers-web-csp.conf` 注释)
+- [ ] admin 站响应头含 `X-Robots-Tag: noindex, nofollow`,web 站 CSP 含 `o.alicdn.com` 与 `*.captcha-open.aliyuncs.com`
+- [ ] 资金库 PITR:托管 PG 书面确认已开(设 `SUPERDL_MANAGED_PG_PITR_ACK`)或 cnpg 档启用且预检全绿(见 `preflight.sh`)

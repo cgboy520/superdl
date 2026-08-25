@@ -15,5 +15,7 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine@sha256:65e3e85dbaed8ba248841d9d58a8
 ARG APP=web
 COPY deploy/app/nginx.${APP}.conf /etc/nginx/conf.d/default.conf
 COPY deploy/app/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY deploy/app/security-headers-web-csp.conf /etc/nginx/snippets/security-headers-web-csp.conf
+COPY deploy/app/security-headers-admin-csp.conf /etc/nginx/snippets/security-headers-admin-csp.conf
 COPY --from=build /repo/apps/${APP}/dist /usr/share/nginx/html
 EXPOSE 8080

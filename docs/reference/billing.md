@@ -9,7 +9,7 @@
 - `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count、amount numeric(14,2)、UNIQUE(instance_id, hour_start)
 - `bills_daily_disk`:disk_id、day、size_gb、unit_price、amount、UNIQUE(disk_id, day)
 - `settlement_watermarks`:key(PK)、settled_through、updated_at —— 结算水位线,漏掉的时段由后续轮次追平
-- `settlement_gaps`:kind、window_start、object_id、reason、resolved_at —— 结算缺口登记(追平截断 catchup_truncated / 单对象连续失败死信 dead_letter),UNIQUE(kind, window_start, object_id);水位线被越过但账未结清的窗口一律留痕,由补结任务或人工处理
+- `settlement_gaps`:kind、window_start、object_id、reason、resolved_at —— 结算缺口登记(追平截断 catchup_truncated / 单对象连续失败死信 dead_letter / 水位线丢失 watermark_missing / 宽限期重叠 grace_overlap),UNIQUE(kind, window_start, object_id);水位线被越过但账未结清的窗口一律留痕。闭环:管理端「财务 › 结算缺口」列表 + 人工重放(幂等入账原语,成功回写 resolved_at;grace_overlap 拒重放走人工核销)+ DB 口径持续告警 `superdl_settlement_gap_unresolved`(缺口不自愈,不自动补结)
 - `reconcile_checkpoints`:user_id(PK)、last_ledger_id、balance_after、updated_at —— 资金核对的增量游标(链式校验断点续扫)
 - `policy_overrides`:策略参数在线覆盖层,`GET /api/v1/policies` 读生效值
 
@@ -35,6 +35,7 @@
 - 退款:creating 失败全额退;该实例未产生 running 时段即无账,预检冻结不落账。
 - 开户前校验(`assert_can_afford`):余额 ≥ (在途 running 实例时费 + 新增时费) × `afford_cover_hours`(默认 1h)+ (在途盘日费 + 新增盘日费) × `disk_grace_days`;在钱包 FOR UPDATE 锁内统计,与资源创建同事务。不足报 `INSUFFICIENT_BALANCE`(文案含在途资源预计消耗)。
 - 欠费链路(5min 巡检):预估可用时长 <24h → 预警;余额 − 当前小时未结算实时估算消耗 ≤ 0 → 停机 → frozen(72h)→ releasing。实时估算与结算同口径:事件重建秒数 − 已出账秒数。
+- **余额归零语义(已评审决策,勿改判据)**:余额恰好 0.00 即进入停机→冻结→回收链(冻结判据为 `balance > 0: continue`,0.00 不满足放行)。依据:0.00 用户已无支付能力,停机后其停止实例继续免费占用实例盘是不合理成本;改 `>= 0` 放行会让零余额用户永久免费占盘。该行为有边界测试锁定(`test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims`),与停机判据 `effective <= 0` 自洽。冻结通知文案区分「余额耗尽/欠费」列入 P2 排期。
 - 钱包更新必须 `SELECT ... FOR UPDATE`,且同事务写 `balance_ledger`(带 balance_after 快照)。
 - 金额全链路 Decimal:单价 4 位小数,入账 2 位小数,ROUND_HALF_EVEN;0 秒不出账。SKU 时价须使单卡满 1 小时至少入账 ¥0.01(4 位时价 ≥ 0.0051,0.0050 恰为 tie 向偶舍 0),否则上架/改价拒绝。
 - 营收报表(revenue_summary)按账单归属期(hour_start/day)切窗,不按扣款入账时间(ledger.created_at)。

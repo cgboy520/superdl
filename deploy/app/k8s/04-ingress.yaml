@@ -6,6 +6,11 @@ metadata:
   namespace: superdl
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-dns
+    # 边缘层限流(单 IP,纵深防御;应用层固定窗口限流不变,见 core/ratelimit.py):
+    # 正常用户单页 API 并发远低于此,只挡爆破/洪水。admin 面另有白名单,不在此列
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-rpm: "600"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
 spec:
   ingressClassName: nginx
   tls:

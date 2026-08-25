@@ -1,26 +1,26 @@
 # /etc/rancher/rke2/registries.yaml —— 分发到全部节点(server + agent),改动后重启 rke2 服务生效
 # 作用:①声明参与 Spegel P2P 共享的仓库(embedded-registry,见 server-config.yaml)
-#      ②把 registry.superdl.local 指到集群内 registry(deploy/cluster/registry/,ClusterIP 5000)
+#      ②把 registry.superdl.local 指到托管镜像仓(P1-7:阿里云 ACR 企业版或 Harbor,https)
 # 分发途径:存量节点走 ansible(../../ansible/site.yml);新节点由管理端一键加入脚本落位
 mirrors:
   "*": {}                    # 所有仓库参与 P2P:任一节点已缓存的镜像,其余节点内网互拉(latest tag 除外)
   registry.superdl.local:
     endpoint:
-      - "http://<registry-cluster-ip>:5000"   # registry Service 的 ClusterIP;
-                                              # ClusterIP 分配后稳定不变,kube-proxy 全节点编程,节点 host 网络
-                                              # (containerd)可达。查法:kubectl -n registry get svc registry
-# endpoint 显式 http(集群内网明文),不涉 TLS 校验,无需 configs.tls 块。
-# registry 已开 htpasswd 认证(deploy/cluster/registry/registry.yaml):节点 pull 凭据在
-# 下面 configs 块配置——启用步骤:①去掉注释 ②把 CHANGE_ME 换成与 htpasswd 一致的口令
-# ③重启 rke2-agent/k3s-agent。仓库未开认证前配上凭据也不影响匿名访问,可先铺节点再开认证。
-# configs:
-#   registry.superdl.local:
-#     auth:
-#       username: ops
-#       password: CHANGE_ME   # 与 registry-htpasswd Secret 中该用户的明文口令一致
-# 租户 Pod 的 Egress NetworkPolicy 已禁全部私网段(app/core/k8s/real.py PRIVATE_CIDRS),
-# ClusterIP 段与 Pod 网段均在其内,租户实例无法触达 registry。
-#
-# 新节点注意:本文件由平台按模板自动生成下发(管理端·平台配置·集群接入的
-# node_registries_yaml,留空=内置模板)。开启认证后,须把含上面 configs.auth 的完整模板
-# 粘进该配置项,否则新节点无法 pull(内置模板跟进前的手工兜底)。
+      # 托管仓地址(ACR 企业版:<instance>-registry.cn-<region>.cr.aliyuncs.com;Harbor:harbor.<域>)。
+      # 替换 CHANGE_ME_REGISTRY_HOST 为真实主机名(不含 scheme 时默认 https;显式 https 更清楚)。
+      # 原集群内自建 registry(deploy/cluster/registry/,明文 http)已废弃,迁移流程见
+      # runbooks/image-prewarm.md「托管仓迁移」节。
+      - "https://CHANGE_ME_REGISTRY_HOST"
+# 托管仓拉取凭据:节点 pull 用。ACR 用独立访问凭据(非主账号 AK);Harbor 用机器人账户。
+# CHANGE_ME_REGISTRY_PASSWORD 替换后须同步 管理端·平台配置·集群接入 的 node_registries_yaml
+# (DB 覆盖层)——新节点的 registries.yaml 由平台按该模板生成下发,不更新则新节点无法 pull。
+configs:
+  registry.superdl.local:
+    auth:
+      username: CHANGE_ME_REGISTRY_USERNAME
+      password: CHANGE_ME_REGISTRY_PASSWORD
+# 托管仓迁移说明(P1-7):
+# - 镜像引用主机名不变(registry.superdl.local 为逻辑名,经本 mirror 解析),seed/测试/前端占位均无需改;
+# - 托管仓自带 TLS/扫描/权限,原「明文 http + htpasswd + NetworkPolicy 收窄」的残余风险整体消除;
+# - 租户 Pod 的 Egress NetworkPolicy 已禁全部私网段(app/core/k8s/real.py PRIVATE_CIDRS),
+#   托管仓为公网/专网地址时须确认租户 Egress 白名单不含该地址(防租户直拉平台镜像面)。

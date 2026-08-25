@@ -190,13 +190,15 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
 # 等 Pod 消失再删实例盘:预算 12×30s ≈ 1.5h,覆盖长 Terminating
 @outbox_handler("instance.disk_cleanup", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) -> None:
-    """first_boot 失败实例的实例盘延迟回收(creating 超时且 Pod 仍 Terminating 时入队)。
+    """实例盘延迟回收(first_boot 失败的 FAILED 实例 / 释放收尾的 RELEASED 实例入队)。
 
     delete_instance_disk 的前置条件是 Pod 已消失(pvc-protection 会挂起 LV 回收);
-    Pod 还在就抛错退避重试。死信后由 reconciler 的死信重派兜底。"""
+    Pod 还在就抛错退避重试。死信后由 reconciler 的死信重派兜底。
+    RELEASED 由 reconciler 释放分支统一入队(P1-9):事务内只做状态迁移,盘删除走
+    at-least-once,失败可重派,不会残留孤儿 LV。"""
     instance = await _load(session, task)
-    if instance is None or instance.status != sm_def.FAILED:
-        return  # 已被释放/恢复等路径推进,无需再清
+    if instance is None or instance.status not in (sm_def.FAILED, sm_def.RELEASED):
+        return  # 已被恢复等路径推进,无需再清
     orch = get_orchestrator()
     st = await orch.get_status(instance.k8s_namespace, instance.uuid)
     if st.exists:

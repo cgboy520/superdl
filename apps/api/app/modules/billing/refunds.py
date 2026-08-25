@@ -6,8 +6,11 @@
 - 打款强制双人:payout_by ≠ review_by(应用层 409 + DB CHECK 双保险)。
 - 打款时在钱包行锁内再校验余额 ≥ 退款额:审批后用户可能已消费,不足则 409,
   管理端可取消该单(余额不动)。
+- 出金动作的审计行与业务同事务(audit_writer 钩子,commit 前调用):
+  审计写失败即出金失败回滚——宁可不出金,不可无留痕(P1-8)。
 """
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
 
@@ -311,8 +314,10 @@ async def payout_refund(
     channel: str,
     ref: str,
     operator_id: int,
+    audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> RefundRequest:
-    """登记打款:唯一出金点。同事务完成钱包负向调账 + 状态置 paid + 回写 wallet_entry_id。"""
+    """登记打款:唯一出金点。同事务完成钱包负向调账 + 状态置 paid + 回写 wallet_entry_id。
+    audit_writer:同步审计钩子(P1-8),最终 commit 前调用,写失败即整体回滚。"""
     req = await _get_for_update(session, refund_id)
     if req.status != "approved":
         raise AppError(
@@ -331,6 +336,10 @@ async def payout_refund(
     ).scalar_one_or_none()
     if order is not None and order.channel_reversed_at is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
+    # 审批到打款之间账期发票可能已被另一财务开具:已开票账期再打款退款 = 票款不符资损
+    # (开票侧 issue_invoice 有金额重算闸,与本复查互为双向闸,并发时必有一侧先撞)
+    if order is not None and await _order_has_issued_invoice(session, order):
+        raise AppError(ErrorCode.CONFLICT, key="billing.refundInvoiceIssued", http_status=409)
     # 钱包行锁内再校验:审批后用户可能已消费,余额不足坚决不出金(不允许负余额核销)
     locked = await wallet.lock_wallet(session, req.user_id)
     if locked.balance < req.amount:
@@ -356,6 +365,8 @@ async def payout_refund(
     req.payout_by = operator_id
     req.payout_at = now_utc()
     req.wallet_entry_id = entry.id
+    if audit_writer is not None:
+        await audit_writer(session)  # 同步审计:与出金同事务,写失败即回滚不出金
     await session.commit()
     logger.info("refund_paid", refund_no=req.refund_no, channel=channel)
     return req

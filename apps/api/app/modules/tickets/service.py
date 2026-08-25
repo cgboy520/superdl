@@ -43,9 +43,6 @@ MAX_OPEN_TICKETS = 10
 CREATE_RATE_LIMIT = 5  # 次/小时
 CREATE_RATE_WINDOW = 3600.0
 
-# 管理端列表固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.tickets 对齐
-ADMIN_LIST_CAP = 200
-
 
 async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetime) -> list[Ticket]:
     """滞留工单:pending_staff(等客服回复)且最后更新时间早于阈值。供滞留巡检告警。"""
@@ -278,16 +275,34 @@ async def close_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> T
 
 
 async def admin_list_tickets(
-    session: AsyncSession, status: str | None = None, category: str | None = None
-) -> list[AdminTicketOut]:
-    """工单列表(固定截断)。status/category 精确过滤。"""
-    stmt = select(Ticket).order_by(Ticket.id.desc()).limit(ADMIN_LIST_CAP)
+    session: AsyncSession,
+    status: str | None = None,
+    category: str | None = None,
+    *,
+    user_id: int | None = None,
+    ticket_no: str | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> Page[AdminTicketOut]:
+    """工单列表(游标分页,降序,P2):status/category 精确过滤,user_id/ticket_no 检索。"""
+    lim = clamp_limit(limit)
+    stmt = select(Ticket).order_by(Ticket.id.desc()).limit(lim + 1)
     if status:
         stmt = stmt.where(Ticket.status == status)
     if category:
         stmt = stmt.where(Ticket.category == category)
-    rows = (await session.execute(stmt)).scalars()
-    return [AdminTicketOut.model_validate(r) for r in rows]
+    if user_id is not None:
+        stmt = stmt.where(Ticket.user_id == user_id)
+    if ticket_no:
+        stmt = stmt.where(Ticket.ticket_no == ticket_no.strip())
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(Ticket.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    return Page[AdminTicketOut](
+        items=[AdminTicketOut.model_validate(r) for r in page_items], next_cursor=next_cursor
+    )
 
 
 async def _get_for_update(session: AsyncSession, ticket_id: int) -> Ticket:

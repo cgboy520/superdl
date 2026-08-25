@@ -24,10 +24,17 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import AppError, ErrorCode
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
-from app.core.metrics import SETTLEMENT_FAILED_TOTAL, SETTLEMENT_GAP_TOTAL, SETTLEMENT_LAG
+from app.core.metrics import (
+    SETTLEMENT_FAILED_TOTAL,
+    SETTLEMENT_GAP_TOTAL,
+    SETTLEMENT_GAP_UNRESOLVED,
+    SETTLEMENT_LAG,
+)
 from app.core.money import as_amount, as_price, disk_daily_charge
+from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
 from app.core.timeutil import (
     BILLING_DAY_OFFSET,
     billing_day_floor,
@@ -38,6 +45,7 @@ from app.core.timeutil import (
 )
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, SettlementGap, SettlementWatermark
+from app.modules.billing.schemas import AdminSettlementGapOut
 
 logger = get_logger(__name__)
 
@@ -320,6 +328,25 @@ async def _record_gaps(
     SETTLEMENT_GAP_TOTAL.labels(kind=kind, reason=reason).inc(len(windows))
 
 
+async def _refresh_gap_gauge(session: AsyncSession) -> None:
+    """未核销缺口 Gauge 全量刷新(DB 口径):结算任务每轮末与重放/核销后调用,
+    保证 worker 重启后告警持续(缺口不自愈,必须重放或人工核销闭环)。"""
+    rows = (
+        (
+            await session.execute(
+                select(SettlementGap.kind, func.count())
+                .where(SettlementGap.resolved_at.is_(None))
+                .group_by(SettlementGap.kind)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    counts = dict(rows)
+    for kind in ("hourly", "daily_disk"):
+        SETTLEMENT_GAP_UNRESOLVED.labels(kind=kind).set(counts.get(kind, 0))
+
+
 SettleAttempt = Callable[[AsyncSession], Awaitable[Decimal]]
 
 
@@ -449,6 +476,7 @@ async def _catchup_settle(
             window_start = window_end
         async with sm() as session:
             done_through = await get_watermark(session, kind)
+            await _refresh_gap_gauge(session)
         lag = (
             0.0
             if done_through is None
@@ -632,6 +660,57 @@ def _disk_attempt(
     return attempt
 
 
+async def _billable_disk_rows(
+    session: AsyncSession,
+) -> list[tuple[int, int, Decimal, int, datetime, datetime | None, datetime | None]]:
+    """当前可计费盘的入账参数行(日结与整窗重放共用)。"""
+    from app.modules.orchestrator import service as orchestrator_service
+
+    disks = await orchestrator_service.billable_disks(session)
+    return [
+        (
+            d.id,
+            d.user_id,
+            d.price_gb_month,
+            d.size_gb,
+            ensure_utc(d.created_at),
+            ensure_utc(d.grace_started_at) if d.grace_started_at else None,
+            ensure_utc(d.grace_ended_at) if d.grace_ended_at else None,
+        )
+        for d in disks
+    ]
+
+
+async def _daily_disk_window_attempts(
+    sm: async_sessionmaker[AsyncSession],
+    disk_rows: list[tuple[int, int, Decimal, int, datetime, datetime | None, datetime | None]],
+    window_start: datetime,
+    window_end: datetime,
+) -> list[tuple[int, SettleAttempt]]:
+    """构造一天窗口内全部盘的入账闭包(created/grace 过滤口径与日结/整窗重放共用)。"""
+    attempts: list[tuple[int, SettleAttempt]] = []
+    for disk_id, user_id, price, size_gb, created_at, grace_started, grace_ended in disk_rows:
+        if created_at >= window_end:
+            continue  # 该日之后创建的盘不出账
+        if grace_started is not None:
+            # 追平跨过 grace 的日子按「grace 不计费」跳过区间内部日(登记缺口人工核查)。
+            # 边界日(进入/恢复当日)照常出账:进入时已结清、恢复日应计;UNIQUE(disk_id, day)
+            # 幂等兜底,不会重复扣款
+            g_start = billing_day_floor(grace_started)
+            g_end = billing_day_floor(grace_ended) if grace_ended is not None else None
+            if g_start < window_start and (g_end is None or window_start < g_end):
+                await _record_gaps(
+                    sm,
+                    kind="daily_disk",
+                    windows=[window_start],
+                    object_id=disk_id,
+                    reason="grace_overlap",
+                )
+                continue
+        attempts.append((disk_id, _disk_attempt(disk_id, user_id, price, size_gb, window_start)))
+    return attempts
+
+
 async def settle_daily_disks(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
@@ -640,8 +719,6 @@ async def settle_daily_disks(
     返回本轮实际扣款的「盘×日」数。停机跨过 00:10 的日子由水位线在下一轮补上;
     截断/死信的跳窗登记 settlement_gaps。
     """
-    from app.modules.orchestrator import service as orchestrator_service
-
     if await _clock_skew_exceeded(sm):
         return 0
     target_day = billing_day_floor(at or now_utc()) - timedelta(days=1)  # 结算昨日(北京日界)
@@ -655,41 +732,8 @@ async def settle_daily_disks(
         if disk_rows is None:
             # 首个窗口才拉盘清单(此时已持 advisory lock),轮内不变
             async with sm() as session:
-                disks = await orchestrator_service.billable_disks(session)
-                disk_rows = [
-                    (
-                        d.id,
-                        d.user_id,
-                        d.price_gb_month,
-                        d.size_gb,
-                        ensure_utc(d.created_at),
-                        ensure_utc(d.grace_started_at) if d.grace_started_at else None,
-                        ensure_utc(d.grace_ended_at) if d.grace_ended_at else None,
-                    )
-                    for d in disks
-                ]
-        attempts = []
-        for disk_id, user_id, price, size_gb, created_at, grace_started, grace_ended in disk_rows:
-            if created_at >= window_end:
-                continue  # 该日之后创建的盘不出账
-            if grace_started is not None:
-                # 追平跨过 grace 的日子按「grace 不计费」跳过区间内部日(登记缺口人工核查)。
-                # 边界日(进入/恢复当日)照常出账:进入时已结清、恢复日应计;UNIQUE(disk_id, day)
-                # 幂等兜底,不会重复扣款
-                g_start = billing_day_floor(grace_started)
-                g_end = billing_day_floor(grace_ended) if grace_ended is not None else None
-                if g_start < window_start and (g_end is None or window_start < g_end):
-                    await _record_gaps(
-                        sm,
-                        kind="daily_disk",
-                        windows=[window_start],
-                        object_id=disk_id,
-                        reason="grace_overlap",
-                    )
-                    continue
-            attempts.append(
-                (disk_id, _disk_attempt(disk_id, user_id, price, size_gb, window_start))
-            )
+                disk_rows = await _billable_disk_rows(session)
+        attempts = await _daily_disk_window_attempts(sm, disk_rows, window_start, window_end)
         return await _settle_window_objects(
             sm, kind="daily_disk", window_start=window_start, attempts=attempts
         )
@@ -704,3 +748,175 @@ async def settle_daily_disks(
         floor_fn=billing_day_floor,
         settle_window=settle_window,
     )
+
+
+# ---------- 结算缺口闭环(管理端:查询 / 重放 / 人工核销) ----------
+
+
+async def admin_list_gaps(
+    session: AsyncSession,
+    *,
+    kind: str | None = None,
+    reason: str | None = None,
+    unresolved_only: bool = True,
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> Page[AdminSettlementGapOut]:
+    """缺口列表(游标分页,降序)。默认只看未核销(缺口闭环前需要持续曝光)。"""
+    lim = clamp_limit(limit)
+    stmt = select(SettlementGap).order_by(SettlementGap.id.desc()).limit(lim + 1)
+    if kind:
+        stmt = stmt.where(SettlementGap.kind == kind)
+    if reason:
+        stmt = stmt.where(SettlementGap.reason == reason)
+    if unresolved_only:
+        stmt = stmt.where(SettlementGap.resolved_at.is_(None))
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(SettlementGap.id < last_id)
+    rows = list((await session.execute(stmt)).scalars())
+    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    return Page[AdminSettlementGapOut](
+        items=[AdminSettlementGapOut.model_validate(r) for r in page_items],
+        next_cursor=next_cursor,
+    )
+
+
+async def replay_gap(
+    sm: async_sessionmaker[AsyncSession],
+    gap_id: int,
+    *,
+    operator_id: int,
+) -> AdminSettlementGapOut:
+    """重放缺口窗口的幂等入账原语,成功回写 resolved_at。
+
+    - dead_letter(object_id>0):按 (kind, window, object) 精确补结(实例/盘行取价快照);
+    - catchup_truncated / watermark_missing(object_id=0,整窗):对该窗全量候选重放
+      (daily_disk 整窗按当前可计费盘口径:已删除盘的当日账不在其列,残留差异人工核销);
+    - grace_overlap:欠费宽限期有意不计费,拒绝重放(409,走人工核销出口)。
+    入账原语全部幂等(UNIQUE + 秒数单调补差):重放安全,重复调用只补不重扣;
+    不自动重放(自动改账违反资金审慎),由管理端人工触发。
+    返回 schema 而非 ORM 行:本函数自建 session,ORM 出作用域即 detached。
+    """
+    from app.modules.orchestrator import service as orchestrator_service
+
+    async with sm() as session:
+        gap = await session.get(SettlementGap, gap_id, with_for_update=True)
+        if gap is None:
+            raise AppError(
+                ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404
+            )
+        if gap.resolved_at is not None:
+            return AdminSettlementGapOut.model_validate(gap)  # 幂等:已核销直接返回
+        if gap.reason == "grace_overlap":
+            raise AppError(
+                ErrorCode.CONFLICT,
+                key="billing.settlementGapNotReplayable",
+                params={"reason": gap.reason},
+                http_status=409,
+            )
+        kind, window_start, object_id = gap.kind, ensure_utc(gap.window_start), gap.object_id
+
+    if kind == "hourly":
+        window_end = window_start + timedelta(hours=1)
+        if object_id:
+            async with sm() as session:
+                row = await orchestrator_service.instance_billing_snapshot(session, object_id)
+            if row is None:
+                raise AppError(
+                    ErrorCode.CONFLICT,
+                    key="billing.settlementGapObjectGone",
+                    params={"objectId": str(object_id)},
+                    http_status=409,
+                )
+            inst_id, user_id, price, gpu_count = row
+            async with sm() as session:
+                await settle_instance_window(
+                    session,
+                    instance_id=inst_id,
+                    user_id=user_id,
+                    unit_price=price,
+                    gpu_count=gpu_count,
+                    window_start=window_start,
+                    window_end=window_end,
+                    source="gap_replay",
+                    detail_extra={"gap_id": gap_id, "replayed_by": operator_id},
+                )
+                await session.commit()
+        else:
+            async with sm() as session:
+                instances = await orchestrator_service.billing_candidates(
+                    session, window_start, window_end
+                )
+            attempts = [
+                (iid, _hourly_attempt(iid, uid, price, gc, window_start, window_end))
+                for iid, uid, price, gc in instances
+            ]
+            await _settle_window_objects(
+                sm, kind="hourly", window_start=window_start, attempts=attempts
+            )
+    elif kind == "daily_disk":
+        day = billing_day_floor(window_start)
+        if object_id:
+            async with sm() as session:
+                disk_row = await orchestrator_service.disk_billing_snapshot(session, object_id)
+                if disk_row is None:
+                    raise AppError(
+                        ErrorCode.CONFLICT,
+                        key="billing.settlementGapObjectGone",
+                        params={"objectId": str(object_id)},
+                        http_status=409,
+                    )
+                disk_id, disk_user_id, disk_price, disk_size = disk_row
+                await charge_disk_day(
+                    session,
+                    disk_id=disk_id,
+                    user_id=disk_user_id,
+                    price_gb_month=disk_price,
+                    size_gb=disk_size,
+                    day=day,
+                )
+                await session.commit()
+        else:
+            async with sm() as session:
+                disk_rows = await _billable_disk_rows(session)
+            attempts = await _daily_disk_window_attempts(
+                sm, disk_rows, day, day + timedelta(days=1)
+            )
+            await _settle_window_objects(sm, kind="daily_disk", window_start=day, attempts=attempts)
+    else:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation")
+
+    # 重放完成:回写 resolved_at(行锁内;并发重放天然幂等)
+    async with sm() as session:
+        gap = await session.get(SettlementGap, gap_id, with_for_update=True)
+        if gap is None:
+            raise AppError(
+                ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404
+            )
+        if gap.resolved_at is None:
+            gap.resolved_at = now_utc()
+            await session.commit()
+            logger.info("settlement_gap_replayed", gap_id=gap_id, operator_id=operator_id)
+        out = AdminSettlementGapOut.model_validate(gap)
+        await _refresh_gap_gauge(session)
+    return out
+
+
+async def resolve_gap(
+    session: AsyncSession,
+    gap_id: int,
+    *,
+    note: str,
+    operator_id: int,
+) -> SettlementGap:
+    """人工核销(不重放):对象已不存在/grace_overlap 确认无账时的出口。说明必填,写审计。"""
+    gap = await session.get(SettlementGap, gap_id, with_for_update=True)
+    if gap is None:
+        raise AppError(ErrorCode.NOT_FOUND, key="billing.settlementGapNotFound", http_status=404)
+    if gap.resolved_at is None:
+        gap.resolved_at = now_utc()
+        await session.commit()
+        logger.info("settlement_gap_resolved", gap_id=gap_id, operator_id=operator_id, note=note)
+    await _refresh_gap_gauge(session)
+    return gap

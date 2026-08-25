@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Numeric, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +25,9 @@ class AdminUser(Base):
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     totp_recovery: Mapped[list[str] | None] = mapped_column(JSONB)
+    # TOTP 防重放(RFC 6238 §5.2):已通过验证的最大 timestep(30s 步长),
+    # 行锁内单调推进;≤ 此步的码一律拒绝。NULL = 从未成功验证过
+    last_totp_timestep: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -32,8 +35,14 @@ class AdminAdjustment(Base):
     """调账单:发起 → 第二管理员复核 → 生效。全程留痕。"""
 
     __tablename__ = "admin_adjustments"
-    # 幂等键:响应丢失后重试不会开出第二张调账单(与充值订单同款的 (发起人, 键) 口径)
-    __table_args__ = (UniqueConstraint("created_by", "idempotency_key"),)
+    # 幂等键:响应丢失后重试不会开出第二张调账单。
+    # 作用域 (发起人, 租户, 键)——弱键(如按日期生成)跨租户复用不会被误判重放(P2);
+    # 同键重放须过 request_fingerprint 比对,不一致 409(对齐 Stripe 惯例)
+    __table_args__ = (
+        UniqueConstraint(
+            "created_by", "user_id", "idempotency_key", name="uq_admin_adjustments_idem_scope"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(index=True)
@@ -45,5 +54,7 @@ class AdminAdjustment(Base):
     reviewed_by: Mapped[int | None]
     review_comment: Mapped[str | None] = mapped_column(String(256))
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 请求体 SHA256(user_id|amount|reason):同键重放比对用,防弱键冲突静默错单
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     reviewed_at: Mapped[datetime | None]

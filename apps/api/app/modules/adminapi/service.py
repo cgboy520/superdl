@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -213,7 +214,8 @@ async def _check_mfa_rate(admin_id: int) -> None:
     )
 
 
-async def _count_mfa_failure(admin_id: int) -> None:
+async def _count_mfa_attempt(admin_id: int) -> None:
+    """消耗一次 MFA 窗口配额。成功也计:只记失败时,窗口内截获一枚码可无限重放领 token。"""
     await check_rate_limit(
         f"admin-mfa:{admin_id}", max_attempts=MFA_MAX_ATTEMPTS, window_seconds=MFA_WINDOW_SECONDS
     )
@@ -224,6 +226,32 @@ def _decrypt_totp_secret(admin: AdminUser) -> str:
 
     assert admin.totp_secret is not None  # 调用方保证(totp_enabled 或 setup 已开始)
     return decrypt_str(admin.totp_secret, aad=f"totp:{admin.id}")
+
+
+def _match_totp_timestep(secret: str, code: str, *, window: int = 1) -> int | None:
+    """手动窗口匹配:返回匹配的 timestep(30s 步长),不匹配返回 None。
+    替代 pyotp verify(valid_window=1):防重放需要知道匹配的具体步,据此拒绝已用步。"""
+    import time
+
+    import pyotp
+
+    totp = pyotp.TOTP(secret)
+    now_step = int(time.time() // 30)
+    for offset in range(-window, window + 1):
+        step = now_step + offset
+        if totp.at(step * 30) == code:
+            return step
+    return None
+
+
+def _accept_totp_step(locked: AdminUser, matched_step: int) -> bool:
+    """防重放闸(RFC 6238 §5.2,行锁内调用):matched_step 必须大于已通过的最大步,
+    通过则单调推进;同一动态码在窗口内重放第二次即被拒。"""
+    last = locked.last_totp_timestep
+    if last is not None and matched_step <= last:
+        return False
+    locked.last_totp_timestep = matched_step
+    return True
 
 
 def _gen_plain_recovery_codes() -> list[str]:
@@ -286,53 +314,62 @@ async def confirm_totp_setup(
     session: AsyncSession, ticket: str, code: str
 ) -> tuple[str, AdminUser, list[str]]:
     """校验首个动态码 → 启用 + 发恢复码(明文仅本次) → 签发正式 token。"""
-    import pyotp
-
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
     await _check_mfa_rate(admin.id)
     if admin.totp_secret is None:  # 未 begin 直接 confirm
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
-    if not pyotp.TOTP(_decrypt_totp_secret(admin)).verify(code, valid_window=1):
-        await _count_mfa_failure(admin.id)
+    # 行锁内匹配+防重放推进:绑定阶段重放同一首码会重复签发 token 并重置恢复码
+    locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
+    if locked is None:
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    matched = _match_totp_timestep(_decrypt_totp_secret(locked), code)
+    if matched is None or not _accept_totp_step(locked, matched):
+        await _count_mfa_attempt(admin.id)
         logger.warning("mfa_bind_failed", admin_id=admin.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
+    await _count_mfa_attempt(admin.id)  # 成功也计配额:窗口内批量领 token 的兜底
     plain = _gen_plain_recovery_codes()
-    admin.totp_recovery = await _hash_recovery_codes(plain)
-    admin.totp_enabled = True
+    locked.totp_recovery = await _hash_recovery_codes(plain)
+    locked.totp_enabled = True
     await session.commit()
     logger.info("mfa_bound", admin_id=admin.id)
     token = create_token(
-        str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
+        str(locked.id), "admin", token_type="access", extra={"ver": locked.token_version}
     )
-    return token, admin, plain
+    return token, locked, plain
 
 
 async def verify_mfa_login(
     session: AsyncSession, ticket: str, code: str
 ) -> tuple[str, AdminUser, int | None]:
     """二要素验证:6 位 TOTP,或恢复码(用后作废)。返回 (token, admin, 剩余恢复码数)。"""
-    import pyotp
-
     admin = await _admin_from_ticket(session, ticket, expected="mfa_ticket")
     await _check_mfa_rate(admin.id)
+    # 行锁内验证:timestep 推进/恢复码作废必须与「是否已用」的判定原子化,
+    # 否则并发重放同一码双双通过(RFC 6238 §5.2 要求同一步只接受一次)
+    locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
+    if locked is None:
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     ok = False
     used_recovery = False
     if code.isdigit() and len(code) == 6:
-        ok = pyotp.TOTP(_decrypt_totp_secret(admin)).verify(code, valid_window=1)
+        matched = _match_totp_timestep(_decrypt_totp_secret(locked), code)
+        ok = matched is not None and _accept_totp_step(locked, matched)
     else:
-        used_recovery = ok = await _consume_recovery_code(admin, code.strip().lower())
+        used_recovery = ok = await _consume_recovery_code(locked, code.strip().lower())
     if not ok:
-        await _count_mfa_failure(admin.id)
+        await _count_mfa_attempt(admin.id)
         logger.warning("mfa_verify_failed", admin_id=admin.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
+    await _count_mfa_attempt(admin.id)  # 成功也计配额:窗口内批量领 token 的兜底
+    await session.commit()  # timestep 推进 / 恢复码作废落库
     if used_recovery:
-        await session.commit()  # 作废落库
         logger.info("mfa_recovery_used", admin_id=admin.id)
     token = create_token(
-        str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
+        str(locked.id), "admin", token_type="access", extra={"ver": locked.token_version}
     )
-    left = len(admin.totp_recovery or []) if used_recovery else None
-    return token, admin, left
+    left = len(locked.totp_recovery or []) if used_recovery else None
+    return token, locked, left
 
 
 async def regenerate_recovery_codes(session: AsyncSession, admin: AdminUser) -> list[str]:
@@ -479,7 +516,11 @@ async def create_adjustment(
     created_by: int,
     idempotency_key: str | None = None,
 ) -> tuple["AdminAdjustment", bool]:
-    """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。"""
+    """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。
+    幂等加固(P2):作用域 (发起人,租户,键);同键重放比对请求体指纹,不一致 409
+    (对齐 Stripe 惯例)——弱键跨租户/跨金额复用从「静默错单」变「显式拒绝」。"""
+    import hashlib
+
     from sqlalchemy.exc import IntegrityError
 
     from app.core.errors import AppError, ErrorCode
@@ -487,21 +528,32 @@ async def create_adjustment(
     from app.modules.account import service as account_service
     from app.modules.adminapi.models import AdminAdjustment
 
+    amount = as_amount(Decimal(str(amount)))
+    fingerprint = hashlib.sha256(f"{user_id}|{amount}|{reason}".encode()).hexdigest()
+
     if idempotency_key:
         existing = (
             await session.execute(
                 select(AdminAdjustment).where(
                     AdminAdjustment.created_by == created_by,
+                    AdminAdjustment.user_id == user_id,
                     AdminAdjustment.idempotency_key == idempotency_key,
                 )
             )
         ).scalar_one_or_none()
         if existing is not None:
+            if existing.request_fingerprint is not None and (
+                existing.request_fingerprint != fingerprint
+            ):
+                raise AppError(
+                    ErrorCode.CONFLICT,
+                    key="adminapi.idempotencyKeyMismatch",
+                    http_status=409,
+                )
             return existing, False  # 幂等重放:返回已受理的调账单,不重复开单
 
     # 用户必须存在:否则复核通过时 wallet 会为幽灵 user_id 凭空建钱包并入账
     await account_service.get_user(session, user_id)
-    amount = as_amount(Decimal(str(amount)))
     if amount == 0:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="adminapi.adjustNotZero")
     if abs(amount) > ADJUST_MAX_ABS:
@@ -516,6 +568,7 @@ async def create_adjustment(
         reason=reason,
         created_by=created_by,
         idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
     )
     session.add(adj)
     try:
@@ -524,17 +577,24 @@ async def create_adjustment(
         # 并发同幂等键:唯一约束兜底,回滚后回查胜出方按重放返回(参照充值订单同款写法)
         await session.rollback()
         if idempotency_key is None:
-            raise  # 无幂等键不会撞 (created_by, idempotency_key) 约束,原样上抛
+            raise  # 无幂等键不会撞唯一约束,原样上抛
         raced = (
             await session.execute(
                 select(AdminAdjustment).where(
                     AdminAdjustment.created_by == created_by,
+                    AdminAdjustment.user_id == user_id,
                     AdminAdjustment.idempotency_key == idempotency_key,
                 )
             )
         ).scalar_one_or_none()
         if raced is None:
             raise  # 撞的是别的约束(理论不到达),原样上抛
+        if raced.request_fingerprint is not None and raced.request_fingerprint != fingerprint:
+            raise AppError(
+                ErrorCode.CONFLICT,
+                key="adminapi.idempotencyKeyMismatch",
+                http_status=409,
+            ) from None
         return raced, False
     await session.refresh(adj)
     return adj, True
@@ -547,8 +607,10 @@ async def review_adjustment(
     approve: bool,
     reviewer_id: int,
     comment: str | None,
+    audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ):
-    """双人复核:复核人不得是发起人,且须为调账发起前已存在的账号;通过即生效(钱包+流水,同事务)。"""
+    """双人复核:复核人不得是发起人,且须为调账发起前已存在的账号;通过即生效(钱包+流水,同事务)。
+    audit_writer:同步审计钩子(P1-8),approve 分支最终 commit 前调用,写失败即整体回滚。"""
     from app.core.errors import AppError, ErrorCode, not_found
     from app.core.timeutil import ensure_utc, now_utc
     from app.modules.adminapi.models import AdminAdjustment
@@ -603,6 +665,8 @@ async def review_adjustment(
             remark=f"调账:{adj.reason}",
             allow_negative=True,  # 冲正金额不受当前余额封顶
         )
+    if audit_writer is not None:
+        await audit_writer(session)  # 同步审计:与生效同事务,写失败即回滚
     await session.commit()
     return adj
 

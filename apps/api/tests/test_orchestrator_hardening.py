@@ -254,6 +254,7 @@ class TestStuckEscape:
         counts = await reconcile_once(sm)
         assert counts["to_released"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "released"
+        await drain(sm)  # disk_cleanup outbox:实例盘销毁(P1-9 两阶段)
         assert (ns, uuid) not in fake.instance_disks  # 实例盘已销毁
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
@@ -339,6 +340,37 @@ class TestLeakReclaim:
         assert counts["leaked"] == 1
         assert (ns, uuid) not in fake.pods
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+
+    async def test_wipe_job_pod_survives_reclaim_cycles(self, client, sm, fake):
+        """擦盘 Job 运行超过一个巡检周期不被误杀(挂了 = 建-杀死循环回潮:
+        wipe Pod 带 MANAGED_LABEL 但名字非实例 uuid,无 job-name 豁免会被当未知 Pod 强删)。"""
+        _headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000113")
+        ns = f"tenant-{user_id}"
+        fake.auto_wipe = False
+        with pytest.raises(RuntimeError, match="wipe in progress"):
+            await fake.wipe_disk(ns, f"disk-{uuid}")  # 登记 wipe Job Pod(对齐 real 创建后抛错)
+        job_pod_key = next(iter(fake.job_pods))
+        counts: dict[str, int] = {}
+        for _ in range(3):  # 连续多轮对账:任何一轮强删 wipe Pod 都会拆掉 job_pods 条目
+            counts = await reconcile_once(sm)
+            assert job_pod_key in fake.job_pods
+        assert counts["leaked"] == 0
+        assert counts["job_pod_skipped"] >= 1
+
+    async def test_wipe_job_pod_not_counted_in_breaker_ratio(self, client, sm, fake):
+        """wipe Job Pod 不进 unknown 占比:1 实例 + 1 wipe Pod + 1 真泄漏 = 1/2 = 50% 不熔断,
+        真泄漏照删(挂了 = Job Pod 计入占比,实例少时把回收推过熔断线放跑真泄漏)。"""
+        _headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000114")
+        ns = f"tenant-{user_id}"
+        spec = fake.pods[(ns, uuid)].spec
+        fake.auto_wipe = False
+        with pytest.raises(RuntimeError, match="wipe in progress"):
+            await fake.wipe_disk(ns, f"disk-{uuid}")
+        fake.inject_leaked_pod(ns, "leaked000000000000000000", spec)  # DB 无记录的真泄漏
+        counts = await reconcile_once(sm)
+        assert counts["leaked"] == 1  # 熔断未触发(若把 wipe Pod 计入,2/3 > 50% 会熔断放行)
+        assert counts["job_pod_skipped"] == 1
+        assert len(fake.job_pods) == 1  # wipe Pod 完好
 
 
 class TestCreateCriticalSection:
@@ -486,6 +518,7 @@ class TestRetentionGC:
         assert any("失败实例已自动释放" in n["title"] for n in notes)
         await drain(sm)
         await reconcile_once(sm)
+        await drain(sm)  # disk_cleanup outbox:实例盘销毁(P1-9 两阶段)
         assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):

@@ -23,7 +23,12 @@ from app.modules.billing.refunds import (
     refundable_orders,
     review_refund,
 )
-from app.modules.billing.settlement import settle_disk_pending_days
+from app.modules.billing.settlement import (
+    admin_list_gaps,
+    replay_gap,
+    resolve_gap,
+    settle_disk_pending_days,
+)
 from app.modules.billing.wallet import (
     admin_list_orders,
     assert_can_afford,
@@ -41,6 +46,7 @@ from app.modules.billing.wallet import (
 )
 
 __all__ = [
+    "admin_list_gaps",
     "admin_list_invoices",
     "admin_list_orders",
     "admin_list_refunds",
@@ -67,6 +73,8 @@ __all__ = [
     "payout_refund",
     "refundable_orders",
     "reject_invoice",
+    "replay_gap",
+    "resolve_gap",
     "revenue_summary",
     "review_refund",
     "settle_disk_pending_days",

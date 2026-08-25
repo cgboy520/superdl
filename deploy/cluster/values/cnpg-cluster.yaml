@@ -1,7 +1,8 @@
 # cnpg-cluster(cloudnative-pg/cluster chart):平台库(钱包/账本)进 K8s 的唯一受支持
 # 形态(deploy/README.md「生产数据库要求」)——3 实例 + S3 持续 WAL 归档(RPO 分钟级)
 # + 每日定时基础备份;禁止单实例上生产。仅 environments/<档>.yaml 置 cnpg.enabled=true 时安装。
-# 键名以 helmfile 所钉 chart 版本为准(TODO 见 helmfile.yaml.gotmpl,apply 前 helm template 验证)。
+# 键名已对照所钉 chart cluster-v0.8.1 模板逐一核验(backups.* / cluster.monitoring /
+# scheduledBackups[].method);升版时以新版模板为准,先 helm template 验证。
 version:
   postgresql: "18"            # 与 dev/test、备份镜像(postgres:18)对齐
 cluster:
@@ -46,5 +47,8 @@ backups:
   retentionPolicy: "30d"      # 对象存储侧另配生命周期(低频/归档层),同 06-pg-backup.yaml 头注释
   scheduledBackups:
     - name: daily-basebackup
-      schedule: "30 18 * * *"   # 每日 02:30 北京(与逻辑备份 CronJob 同刻;负载冲突再错峰)
+      # CNPG schedule 遵循 Go cron 规范:首字段是秒(6 字段,非 Unix 5 字段)——
+      # 写 5 字段会被整体错位解析,备份静默不按预期触发
+      schedule: "0 30 18 * * *"   # 每日 02:30 北京(与逻辑备份 CronJob 同刻;负载冲突再错峰)
+      method: barmanObjectStore   # chart 模板无条件渲染 method,缺省会产出 null 字段
       backupOwnerReference: self

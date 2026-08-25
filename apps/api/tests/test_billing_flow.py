@@ -210,6 +210,39 @@ class TestArrearsChain:
         # 实例不受影响
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
+    async def test_arrears_stop_rereads_balance_in_lock(self, client, sm, fake, monkeypatch):
+        """停机判定前锁内二次读余额(P2):无锁粗筛为负,锁内读到「窗口内」刚充值的
+        余额 → 不误停机(挂了 = 读余额到提交停机之间充值的竞态窗口复现)。"""
+        from app.modules.billing import patrol as patrol_mod
+
+        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        async with sm() as session:
+            balance = await wallet.get_balance(session, user_id)
+            await wallet.debit(
+                session, user_id, balance, type_="adjust", remark="drain", allow_negative=True
+            )
+            await session.commit()
+
+        # 模拟竞态窗口:无锁 get_balance 看到旧值 0;随后充值落库,锁内 lock_wallet 读到真值
+        async def stale_get_balance(session, uid):
+            return Decimal("0.00")
+
+        monkeypatch.setattr(patrol_mod.wallet, "get_balance", stale_get_balance)
+        async with sm() as session:
+            await wallet.credit(session, user_id, Decimal("50.00"), type_="recharge")
+            await session.commit()
+        counts = await balance_patrol(sm)
+        assert counts["stopped"] == 0  # 锁内读到 50,不停机
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+        # 对照:锁内真值仍为负时照常停机(monkeypatch 恢复后,余额被扣光)
+        async with sm() as session:
+            await wallet.debit(
+                session, user_id, Decimal("50.00"), type_="adjust", allow_negative=True
+            )
+            await session.commit()
+        counts = await balance_patrol(sm)
+        assert counts["stopped"] == 1
+
 
 class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm, fake):

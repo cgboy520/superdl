@@ -151,7 +151,8 @@ async def send_sms_code(
         # 渠道失败:作废刚落库的验证码
         row.used_at = now_utc()
         await session.commit()
-        logger.error("sms_send_failed", phone=phone, error=str(exc))
+        # 手机号明文不进集中日志(Loki 180 天 PII 面);logging 管道另有全局兜底
+        logger.error("sms_send_failed", phone=mask_phone(phone), error=str(exc))
         raise AppError(
             ErrorCode.SMS_SEND_FAILED,
             key="account.smsSendFailed",

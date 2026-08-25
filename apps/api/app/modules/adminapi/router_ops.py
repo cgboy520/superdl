@@ -11,6 +11,7 @@ from app.core.audit import mark_audited_read, set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
+from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.sqlutil import like_escape
@@ -60,12 +61,26 @@ async def admin_overview(session: DbSession) -> OverviewOut:
 
 @router.get("/tickets", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_tickets(
-    session: DbSession, status: str | None = None, category: str | None = None
-) -> list[AdminTicketOut]:
-    """工单列表(固定截断 200)。status/category 精确过滤。"""
+    session: DbSession,
+    status: str | None = None,
+    category: str | None = None,
+    user_id: int | None = None,
+    ticket_no: str | None = None,
+    cursor: str | None = None,
+    limit: int | None = Query(default=None, le=100),
+) -> Page[AdminTicketOut]:
+    """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
     from app.modules.tickets import service as tickets_service
 
-    return await tickets_service.admin_list_tickets(session, status=status, category=category)
+    return await tickets_service.admin_list_tickets(
+        session,
+        status=status,
+        category=category,
+        user_id=user_id,
+        ticket_no=ticket_no,
+        cursor=cursor,
+        limit=limit,
+    )
 
 
 @router.get("/tickets/{ticket_id}", dependencies=[require_roles("ops", "finance", "readonly")])

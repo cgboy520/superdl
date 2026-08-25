@@ -458,3 +458,97 @@ class TestRefundLinkage:
         )
         assert resp.status_code == 409  # 已有活跃退款申请,而非发票拦截
         assert resp.json()["message_key"] == "billing.refundAlreadyApplied"
+
+
+class TestDoubleSpendGate:
+    """票款双重兑现闸(P1-1):在途退款预扣 + 开票重算 + 打款复查,三件套互为兜底。"""
+
+    async def test_pending_refund_withheld_from_eligible_and_create(self, client: AsyncClient, sm):
+        """在途(pending)退款按订单账期预扣:eligible 预览与 create 算额同步减少
+        (挂了 = 先退款申请再申请发票,净实收不足仍按全额开票)。"""
+        headers = await user_headers(client, "13700000243")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        resp = await client.post(
+            "/api/v1/wallet/refunds",
+            json={"order_no": order["order_no"], "amount": "20.00", "reason": "部分退款"},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text  # pending(未审批未打款)
+        assert [(r["period"], r["amount"]) for r in await eligible(client, headers)] == [
+            (p1, "30.00")
+        ]
+        resp = await apply_invoice(client, headers, p1)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["amount"] == "30.00"
+
+    async def test_issue_recalculates_and_rejects_stale_amount(self, client: AsyncClient, sm):
+        """申请到开票之间发生在途退款:issue 行锁内重算不符 → 409 invoiceAmountStale
+        (挂了 = 按申请时快照全额开票,用户再拿退款即双重兑现)。"""
+        headers = await user_headers(client, "13700000244")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        iid = (await apply_invoice(client, headers, p1)).json()["id"]  # amount=50 submitted
+        resp = await client.post(
+            "/api/v1/wallet/refunds",
+            json={"order_no": order["order_no"], "amount": "20.00", "reason": "部分退款"},
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        finance = await admin_headers(sm, client, role="finance")
+        resp = await client.post(
+            f"/api/admin/v1/invoices/{iid}/issue",
+            json={"invoice_no": "NO-STALE-1"},
+            headers=finance,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.invoiceAmountStale"
+        # 驳回后用户按新额(30)重新申请,可正常开具
+        resp = await client.post(
+            f"/api/admin/v1/invoices/{iid}/reject",
+            json={"reason": "账期内发生退款,金额变动"},
+            headers=finance,
+        )
+        assert resp.status_code == 200
+        resp = await apply_invoice(client, headers, p1, idem="inv-reapply")
+        assert resp.status_code == 201
+        assert resp.json()["amount"] == "30.00"
+
+    async def test_payout_blocked_after_invoice_issued(self, client: AsyncClient, sm):
+        """退款审批后、打款前账期发票被另一财务开具:payout 复查命中 issued → 409
+        (挂了 = 票已开又打款退款,平台为已退回的款纳税)。"""
+        from tests.test_refunds import finance_pair
+
+        headers = await user_headers(client, "13700000245")
+        p1, at1 = past_period(1)
+        order = await paid_order_at(client, sm, headers, "50.00", at1)
+        rid = (
+            await client.post(
+                "/api/v1/wallet/refunds",
+                json={"order_no": order["order_no"], "amount": "30.00", "reason": "部分退款"},
+                headers=headers,
+            )
+        ).json()["id"]
+        reviewer, payer = await finance_pair(sm, client)
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200
+        # 审批后另一财务开具该账期发票(在途退款已预扣,可开 20)
+        iid = (await apply_invoice(client, headers, p1)).json()["id"]
+        resp = await client.post(
+            f"/api/admin/v1/invoices/{iid}/issue",
+            json={"invoice_no": "NO-GATE-1"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
+        # 打款被复查拦下
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-GATE"},
+            headers=payer,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.refundInvoiceIssued"

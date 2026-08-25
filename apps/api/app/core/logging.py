@@ -5,12 +5,16 @@
   两端输出格式一致(prod=JSON,dev/test=Console),且同样合并 contextvars
   (request_id 绑定见 observability 中间件)。
 - 级别统一由 SUPERDL_LOG_LEVEL 控制(默认 INFO;structlog 过滤与 root level 同源)。
+- PII/凭据全局兜底:_mask_sensitive_processor 按字段名打码
+  (phone/id_number/token/secret/password/code),防新增日志点漏脱敏(P1-13)。
 """
 
 import logging
+import re
 import sys
 
 import structlog
+from structlog.typing import EventDict, WrappedLogger
 
 from app.core.config import get_settings
 
@@ -26,6 +30,42 @@ _LEVELS = {
     "CRITICAL": logging.CRITICAL,
 }
 
+# 敏感字段名(命中即打码):手机号/证件号/令牌/密钥/口令/验证码
+_SENSITIVE_KEY_RE = re.compile(r"(phone|id_number|token|secret|password|code)", re.IGNORECASE)
+_PHONE_VALUE_RE = re.compile(r"^1\d{10}$")
+
+
+def mask_phone_value(value: str) -> str:
+    """手机号打码(前3后4):138****5678。core 层工具,供日志点与 core/sms 使用
+    (modules 层的 realname.mask_phone 语义一致;core 不反向依赖 modules)。"""
+    if _PHONE_VALUE_RE.match(value):
+        return value[:3] + "****" + value[-4:]
+    return "******"
+
+
+def _mask_value(key: str, value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    if "phone" in key.lower():
+        return mask_phone_value(value)
+    return "******"
+
+
+def _mask_sensitive_processor(
+    logger: WrappedLogger, method: str, event_dict: EventDict
+) -> EventDict:
+    """PII/凭据全局兜底打码(命名约定防线):键名命中 phone/id_number/token/secret/
+    password/code 的值——phone 按前3后4打码,其余整体 ******(防长凭据部分可辨)。
+    dict 值(如 params)外层键名不参与判定,逐内层键同款检查;非字符串值不动。"""
+    for key, value in event_dict.items():
+        if _SENSITIVE_KEY_RE.search(key):
+            event_dict[key] = _mask_value(key, value)
+        elif isinstance(value, dict):
+            event_dict[key] = {
+                k: _mask_value(k, v) if _SENSITIVE_KEY_RE.search(k) else v for k, v in value.items()
+            }
+    return event_dict
+
 
 def setup_logging() -> None:
     settings = get_settings()
@@ -34,6 +74,7 @@ def setup_logging() -> None:
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
+        _mask_sensitive_processor,  # 渲染前兜底:structlog 侧与 stdlib 桥接侧共用
     ]
     if settings.environment == "prod":
         renderer: structlog.typing.Processor = structlog.processors.JSONRenderer()
