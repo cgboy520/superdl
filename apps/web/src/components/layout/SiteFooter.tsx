@@ -1,8 +1,4 @@
-/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。
- * 备案号走后端 site-config(管理端·平台配置在线维护),VITE_ICP_NUMBER 仅作构建期兜底。 */
-
-const ICP_FALLBACK = import.meta.env.VITE_ICP_NUMBER as string | undefined;
-
+/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号等走后端 site-config(管理端·平台配置在线维护)。 */
 
 import { Link } from "@tanstack/react-router";
 import { theme, Typography } from "antd";
@@ -30,18 +26,14 @@ function FooterCol({
       </Typography.Text>
       {links.map((l) => (
         <div key={l.label} style={{ marginBottom: 8 }}>
-          {l.to ? (
-            isInternal(l.to) ? (
-              <Link to={l.to} style={{ color: token.colorTextSecondary }}>
-                {l.label}
-              </Link>
-            ) : (
-              <a href={l.to} style={{ color: token.colorTextSecondary }}>
-                {l.label}
-              </a>
-            )
+          {isInternal(l.to) ? (
+            <Link to={l.to} style={{ color: token.colorTextSecondary }}>
+              {l.label}
+            </Link>
           ) : (
-            <Typography.Text type="secondary">{l.label}</Typography.Text>
+            <a href={l.to} style={{ color: token.colorTextSecondary }}>
+              {l.label}
+            </a>
           )}
         </div>
       ))}
@@ -53,7 +45,7 @@ export function SiteFooter() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
   const { data: site } = useSiteConfig();
-  const icp = site?.icp_number ?? ICP_FALLBACK;
+  const icp = site?.icp_number;
   const police = site?.police_record_number;
   // 经营主体公示(《电子商务法》第十五条):留空的项不展示
   const companyName = site?.company_name;
