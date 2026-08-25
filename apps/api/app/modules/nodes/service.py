@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import model_matches
+from app.core.idempotency import find_replay
 from app.core.k8s.base import (
     INSTANCE_DISK_STORAGE_CLASS,
     JUICEFS_STORAGE_CLASS,
@@ -149,14 +150,13 @@ async def create_enrollment(
     (token 只存哈希,无法复读原值)。"""
     await require_cluster_config(session)
     if idempotency_key:
-        existing = (
-            await session.execute(
-                select(NodeEnrollment).where(
-                    NodeEnrollment.created_by == created_by,
-                    NodeEnrollment.idempotency_key == idempotency_key,
-                )
-            )
-        ).scalar_one_or_none()
+        existing = await find_replay(
+            session,
+            NodeEnrollment,
+            owner_col=NodeEnrollment.created_by,
+            owner_id=created_by,
+            key=idempotency_key,
+        )
         if existing is not None:
             # 与 regenerate 同守卫:进行中的令牌被重放轮换会掐断正在装机的脚本
             if existing.status not in REGENERATABLE_STATUSES:

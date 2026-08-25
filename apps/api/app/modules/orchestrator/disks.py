@@ -8,11 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
 from app.core.policies import get_effective_policies
-from app.core.timeutil import ensure_utc, now_utc
+from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.nodes import service as nodes_service
@@ -23,9 +24,6 @@ logger = get_logger(__name__)
 BILLABLE_STATUSES = ("active",)  # grace(欠费宽限)停计费,frozen 不计费
 # 欠费链路上的全部状态,巡检口径用这一组(见 list_arrears_chain_user_ids)
 ARREARS_CHAIN_STATUSES = ("active", "grace", "frozen")
-
-# 幂等键有效期:窗口内重放返回既有盘;窗口外同一键按新单处理
-IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 
 async def create_disk(
@@ -38,19 +36,16 @@ async def create_disk(
     """创建数据盘。返回 (盘, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
     if idempotency_key:
         # 幂等键:响应丢失后重试不会开出第二块盘
-        existing = (
-            await session.execute(
-                select(DataDisk).where(
-                    DataDisk.user_id == user_id, DataDisk.idempotency_key == idempotency_key
-                )
-            )
-        ).scalar_one_or_none()
+        existing = await find_replay(
+            session,
+            DataDisk,
+            owner_col=DataDisk.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+            window=IDEMPOTENCY_WINDOW,
+        )
         if existing is not None:
-            if now_utc() - ensure_utc(existing.created_at) < IDEMPOTENCY_WINDOW:
-                return existing, False
-            # 窗口外同一键按新单处理:先释放键位(唯一约束 (user_id, idempotency_key))
-            existing.idempotency_key = None
-            await session.flush()
+            return existing, False
     # JuiceFS SC 缺位时先拦下,不放出挂不上却按日计费的盘
     await nodes_service.require_storage_classes(session, with_data_disk=True)
     policies = await get_effective_policies(session)
@@ -98,12 +93,16 @@ async def create_disk(
             # 并发同幂等键:对方已落库,回滚后按重放返回既有盘(不多开一块)
             await session.rollback()
             raced = (
-                await session.execute(
-                    select(DataDisk).where(
-                        DataDisk.user_id == user_id, DataDisk.idempotency_key == idempotency_key
-                    )
+                await find_replay(
+                    session,
+                    DataDisk,
+                    owner_col=DataDisk.user_id,
+                    owner_id=user_id,
+                    key=idempotency_key,
                 )
-            ).scalar_one_or_none()
+                if idempotency_key
+                else None
+            )
             if raced is not None:
                 return raced, False
             raise

@@ -14,7 +14,6 @@ import hmac
 import re
 import secrets
 import time
-from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -29,6 +28,7 @@ from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
+from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
@@ -36,7 +36,7 @@ from app.core.outbox import enqueue
 from app.core.pagination import RawPage
 from app.core.ratelimit import check_rate_limit
 from app.core.sqlutil import like_escape
-from app.core.timeutil import ensure_utc, now_utc
+from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
@@ -129,9 +129,6 @@ if TYPE_CHECKING:
     from app.modules.orchestrator.schemas import InstanceLogsOut
 
 logger = get_logger(__name__)
-
-# 幂等键有效期:窗口内重放返回既有资源;窗口外同一键按新单处理
-IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
@@ -336,19 +333,16 @@ async def create_instance(
     """创建实例(202 异步)。返回 (实例, created):created=False = 幂等重放,
     路由据此回 200 + X-Idempotent-Replay 而非 202。"""
     if idempotency_key:
-        existing = (
-            await session.execute(
-                select(Instance).where(
-                    Instance.user_id == user_id, Instance.idempotency_key == idempotency_key
-                )
-            )
-        ).scalar_one_or_none()
+        existing = await find_replay(
+            session,
+            Instance,
+            owner_col=Instance.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+            window=IDEMPOTENCY_WINDOW,
+        )
         if existing is not None:
-            if now_utc() - ensure_utc(existing.created_at) < IDEMPOTENCY_WINDOW:
-                return existing, False
-            # 窗口外同一键按新单处理:先释放键位(唯一约束 (user_id, idempotency_key))
-            existing.idempotency_key = None
-            await session.flush()
+            return existing, False
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
     await _require_cluster_for_tier(session, sku.tier, with_data_disk=data_disk_id is not None)
@@ -411,12 +405,16 @@ async def create_instance(
             # 并发同幂等键:对方已落库,回滚后按重放返回既有实例(不多开一台)
             await session.rollback()
             raced = (
-                await session.execute(
-                    select(Instance).where(
-                        Instance.user_id == user_id, Instance.idempotency_key == idempotency_key
-                    )
+                await find_replay(
+                    session,
+                    Instance,
+                    owner_col=Instance.user_id,
+                    owner_id=user_id,
+                    key=idempotency_key,
                 )
-            ).scalar_one_or_none()
+                if idempotency_key
+                else None
+            )
             if raced is not None:
                 return raced, False
             raise

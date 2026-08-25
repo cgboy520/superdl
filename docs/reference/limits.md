@@ -38,7 +38,7 @@
 | 单对象结算连续失败 | 3 轮进死信缺口 | 同上 `DEAD_LETTER_AFTER` |
 | 充值单有效期 | 2h | env `recharge_order_ttl_seconds` |
 | 查单 poller 扫描窗 | 60s ~ 48h 内的 pending / failed 单,每轮 50 条 | `billing/payment_service.py` |
-| 创建类幂等键窗口 | 24h(实例 / 数据盘;窗外同键按新单) | `orchestrator/service.py` `IDEMPOTENCY_WINDOW` |
+| 创建类幂等键窗口 | 24h(实例 / 数据盘;窗外同键按新单) | `core/idempotency.py` `IDEMPOTENCY_WINDOW`(`find_replay` 供各创建入口共用) |
 | 镜像预热覆盖率门槛 / 复检 | 90% / 24h | 策略 `prewarm_min_coverage_pct` / `prewarm_recheck_hours` |
 | Jupyter 一次性票据 | 60s | env `jupyter_ticket_ttl_seconds` |
 | 账号注销冷静期 | 7 天 | `account/service.py` |

@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.idempotency import find_replay
 from app.core.logging import get_logger
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
 from app.core.ratelimit import check_rate_limit
@@ -57,19 +58,6 @@ async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetim
     )
 
 
-async def _get_by_idempotency_key(
-    session: AsyncSession, user_id: int, idempotency_key: str
-) -> Ticket | None:
-    return (
-        await session.execute(
-            select(Ticket).where(
-                Ticket.user_id == user_id,
-                Ticket.idempotency_key == idempotency_key,
-            )
-        )
-    ).scalar_one_or_none()
-
-
 async def _next_daily_seq(session: AsyncSession, prefix: str) -> int:
     count = (
         await session.execute(select(func.count()).where(Ticket.ticket_no.like(f"{prefix}-%")))
@@ -103,7 +91,9 @@ async def create_ticket(
     """创建工单(首条消息同单落)。幂等:Idempotency-Key 重放返回既有单(不耗限流配额)。
     返回 (工单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
     if idempotency_key:
-        existing = await _get_by_idempotency_key(session, user_id, idempotency_key)
+        existing = await find_replay(
+            session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
+        )
         if existing is not None:
             return existing, False  # 幂等重放
 
@@ -144,7 +134,9 @@ async def create_ticket(
         except IntegrityError:
             await session.rollback()
             if idempotency_key:
-                winner = await _get_by_idempotency_key(session, user_id, idempotency_key)
+                winner = await find_replay(
+                    session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
+                )
                 if winner is not None:
                     return winner, False  # 同键并发:返回胜出方的单
             continue  # 按 ticket_no 序列撞车处理:重试下一序列

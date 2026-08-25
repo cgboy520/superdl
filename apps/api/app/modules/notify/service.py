@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.idempotency import find_replay
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.platform_config import get_effective_platform_config
@@ -147,16 +148,6 @@ _ANNOUNCEMENT_CHUNK = 1000
 ANNOUNCEMENT_LIST_CAP = 200
 
 
-async def _announcement_by_idempotency_key(
-    session: AsyncSession, idempotency_key: str
-) -> Announcement | None:
-    return (
-        await session.execute(
-            select(Announcement).where(Announcement.idempotency_key == idempotency_key)
-        )
-    ).scalar_one_or_none()
-
-
 async def publish_announcement(
     session: AsyncSession, *, title: str, content: str, created_by: int, idempotency_key: str | None
 ) -> tuple[int, bool]:
@@ -171,7 +162,9 @@ async def publish_announcement(
     from app.modules.account.service import list_active_user_ids
 
     if idempotency_key:
-        existing = await _announcement_by_idempotency_key(session, idempotency_key)
+        existing = await find_replay(
+            session, Announcement, owner_col=None, owner_id=None, key=idempotency_key
+        )
         if existing is not None:
             return existing.reached, False  # 幂等重放
 
@@ -189,7 +182,9 @@ async def publish_announcement(
         await session.rollback()
         # 同键并发:返回胜出方的公告(唯一约束兜底)
         if idempotency_key:
-            winner = await _announcement_by_idempotency_key(session, idempotency_key)
+            winner = await find_replay(
+                session, Announcement, owner_col=None, owner_id=None, key=idempotency_key
+            )
             if winner is not None:
                 return winner.reached, False
         raise

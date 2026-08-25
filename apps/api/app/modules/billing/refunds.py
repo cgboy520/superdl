@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.idempotency import find_replay
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
@@ -76,19 +77,6 @@ async def _active_refund_of_order(session: AsyncSession, order_no: str) -> Refun
     ).scalar_one_or_none()
 
 
-async def _get_by_idempotency_key(
-    session: AsyncSession, user_id: int, idempotency_key: str
-) -> RefundRequest | None:
-    return (
-        await session.execute(
-            select(RefundRequest).where(
-                RefundRequest.user_id == user_id,
-                RefundRequest.idempotency_key == idempotency_key,
-            )
-        )
-    ).scalar_one_or_none()
-
-
 async def _next_daily_seq(session: AsyncSession, prefix: str) -> int:
     count = (
         await session.execute(
@@ -110,7 +98,13 @@ async def create_refund(
     """用户申请退款。幂等:Idempotency-Key 重放返回既有单(唯一约束兜底并发)。
     返回 (退款单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
     if idempotency_key:
-        existing = await _get_by_idempotency_key(session, user_id, idempotency_key)
+        existing = await find_replay(
+            session,
+            RefundRequest,
+            owner_col=RefundRequest.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+        )
         if existing is not None:
             return existing, False  # 幂等重放
 
@@ -166,7 +160,13 @@ async def create_refund(
         except IntegrityError:
             await session.rollback()
             if idempotency_key:
-                winner = await _get_by_idempotency_key(session, user_id, idempotency_key)
+                winner = await find_replay(
+                    session,
+                    RefundRequest,
+                    owner_col=RefundRequest.user_id,
+                    owner_id=user_id,
+                    key=idempotency_key,
+                )
                 if winner is not None:
                     return winner, False  # 同键并发:返回胜出方的单
             if await _active_refund_of_order(session, order_no) is not None:

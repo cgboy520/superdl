@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.idempotency import find_replay
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
@@ -132,19 +133,6 @@ async def _active_of_period(
     ).scalar_one_or_none()
 
 
-async def _get_by_idempotency_key(
-    session: AsyncSession, user_id: int, idempotency_key: str
-) -> InvoiceRequest | None:
-    return (
-        await session.execute(
-            select(InvoiceRequest).where(
-                InvoiceRequest.user_id == user_id,
-                InvoiceRequest.idempotency_key == idempotency_key,
-            )
-        )
-    ).scalar_one_or_none()
-
-
 async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceEligibleOut]:
     """各账期可开票额度预览:有 paid 订单的已结束账期逐期按 _period_billable_amount 计算
     (预览 = 申请 = 开票重算同一组 helper),仅返回 > 0 的账期,倒序。"""
@@ -192,7 +180,13 @@ async def create_invoice(
     """申请开票。幂等:Idempotency-Key 重放返回既有单(唯一约束兜底并发)。
     返回 (申请单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
     if idempotency_key:
-        existing = await _get_by_idempotency_key(session, user_id, idempotency_key)
+        existing = await find_replay(
+            session,
+            InvoiceRequest,
+            owner_col=InvoiceRequest.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+        )
         if existing is not None:
             return existing, False  # 幂等重放
 
@@ -238,7 +232,13 @@ async def create_invoice(
     except IntegrityError:
         await session.rollback()
         if idempotency_key:
-            winner = await _get_by_idempotency_key(session, user_id, idempotency_key)
+            winner = await find_replay(
+                session,
+                InvoiceRequest,
+                owner_col=InvoiceRequest.user_id,
+                owner_id=user_id,
+                key=idempotency_key,
+            )
             if winner is not None:
                 return winner, False  # 同键并发:返回胜出方的单
         # 撞的是部分唯一索引(并发重复申请同一账期)

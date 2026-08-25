@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.idempotency import find_replay
 from app.core.logging import get_logger
 from app.core.metrics import (
     PAYMENT_CALLBACK_MISMATCH_TOTAL,
@@ -64,13 +65,9 @@ async def create_recharge(
     channel = await get_channel(channel_name, session)
 
     if idempotency_key:
-        existing = (
-            await session.execute(
-                select(Order).where(
-                    Order.user_id == user_id, Order.idempotency_key == idempotency_key
-                )
-            )
-        ).scalar_one_or_none()
+        existing = await find_replay(
+            session, Order, owner_col=Order.user_id, owner_id=user_id, key=idempotency_key
+        )
         if existing is not None:
             if existing.status == "pending" and not existing.qr_url:
                 return await _attach_payment(session, existing, channel), False  # 补拉支付码
@@ -93,13 +90,9 @@ async def create_recharge(
         await session.rollback()
         if idempotency_key is None:
             raise  # 无幂等键不会撞 (user_id, idempotency_key) 约束,原样上抛
-        existing = (
-            await session.execute(
-                select(Order).where(
-                    Order.user_id == user_id, Order.idempotency_key == idempotency_key
-                )
-            )
-        ).scalar_one_or_none()
+        existing = await find_replay(
+            session, Order, owner_col=Order.user_id, owner_id=user_id, key=idempotency_key
+        )
         if existing is None:
             raise exc  # 撞的是别的唯一约束(理论不到达),原样上抛
         if existing.status == "pending" and not existing.qr_url:
