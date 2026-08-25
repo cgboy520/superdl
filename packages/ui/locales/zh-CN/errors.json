@@ -2,7 +2,6 @@
   "account": {
     "accountDeleted": "账号已注销",
     "captchaChannelError": "人机校验服务暂不可用,请稍后重试",
-    "captchaRequired": "请先完成人机校验",
     "captchaVerifyFailed": "人机校验未通过,请重新完成验证后再试",
     "credentialRequired": "需提供验证码或密码",
     "deletionBalanceRemaining": "余额 ¥{{balance}} 尚未提现:请先经退款流程提现,到账后再执行注销",

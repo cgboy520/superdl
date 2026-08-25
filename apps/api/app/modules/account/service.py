@@ -82,7 +82,7 @@ async def send_sms_code(
     purpose: str,
     *,
     client_ip: str | None = None,
-    captcha_token: str | None = None,
+    captcha_token: str,
 ) -> None:
     settings = get_settings()
     # 发送尝试只按 IP 限流;手机号日配额在消费侧计(见 SMS_CONSUME_DAILY_MAX)。
@@ -91,8 +91,6 @@ async def send_sms_code(
     )
     # 人机校验(P1-17):分布式脚本可轮换 IP/号码池绕过全部单点限流,
     # 行为验证码是唯一纵深。闸门 fail-closed:渠道故障一律 502,宁停服务不放轰炸。
-    if captcha_token is None:
-        raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
     try:
         captcha_ok = await (await get_captcha_channel(session)).verify(captcha_token, client_ip)
     except CaptchaError as exc:

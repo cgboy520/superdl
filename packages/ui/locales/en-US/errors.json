@@ -16,7 +16,6 @@
     "smsCodeInvalid": "SMS code is wrong or expired",
     "smsSendFailed": "Failed to send SMS — try again later",
     "smsTooFrequent": "Too frequent — retry in {{seconds}} seconds",
-    "captchaRequired": "Please complete the human verification first",
     "captchaVerifyFailed": "Human verification failed — complete it again and retry",
     "captchaChannelError": "Human verification service is temporarily unavailable — try again later",
     "sshKeyDuplicate": "This public key was already added",

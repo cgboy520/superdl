@@ -6864,16 +6864,10 @@
       "SmsCodeRequest": {
         "properties": {
           "captcha_token": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Captcha Token"
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Captcha Token",
+            "type": "string"
           },
           "phone": {
             "description": "中国大陆手机号",
@@ -6893,7 +6887,8 @@
         },
         "required": [
           "phone",
-          "purpose"
+          "purpose",
+          "captcha_token"
         ],
         "title": "SmsCodeRequest",
         "type": "object"

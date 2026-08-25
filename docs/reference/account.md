@@ -13,7 +13,7 @@
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/v1/auth/sms-code` | 匿名+限流 | `{phone, purpose}` → 204;mock 渠道固定码 123456 并落日志 |
+| `POST /api/v1/auth/sms-code` | 匿名+限流 | `{phone, purpose, captcha_token}` → 204(人机校验 token 必填,缺失 422;mock 渠道放行串 `mock-pass`);mock 短信渠道固定码 123456 并落日志 |
 | `POST /api/v1/auth/register` | 匿名 | `{phone, sms_code, password?}` → `{access_token, refresh_token, user}`;条款勾选前后端强校验 |
 | `POST /api/v1/auth/login` | 匿名 | `{phone, sms_code \| password}`;冻结用户报 `USER_FROZEN` |
 | `POST /api/v1/auth/password/reset` | 匿名 | 验证码重置密码 |

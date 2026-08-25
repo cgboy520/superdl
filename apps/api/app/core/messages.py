@@ -32,7 +32,6 @@ MESSAGES: dict[str, str] = {
     "account.smsCodeInvalid": "验证码错误或已过期",
     "account.smsSendFailed": "短信发送失败,请稍后重试",
     "account.smsTooFrequent": "发送过于频繁,请 {seconds} 秒后再试",
-    "account.captchaRequired": "请先完成人机校验",
     "account.captchaVerifyFailed": "人机校验未通过,请重新完成验证后再试",
     "account.captchaChannelError": "人机校验服务暂不可用,请稍后重试",
     "account.sshKeyDuplicate": "该公钥已添加过",

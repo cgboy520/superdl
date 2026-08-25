@@ -70,13 +70,6 @@ class TestAliyunChannel:
 
 
 class TestSmsCodeGate:
-    async def test_missing_token_rejected(self, client: AsyncClient):
-        resp = await client.post(
-            "/api/v1/auth/sms-code", json={"phone": "13800000095", "purpose": "register"}
-        )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "CAPTCHA_REQUIRED"
-
     async def test_wrong_token_rejected(self, client: AsyncClient):
         resp = await client.post(
             "/api/v1/auth/sms-code",

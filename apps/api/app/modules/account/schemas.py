@@ -47,8 +47,8 @@ PasswordStr = Annotated[str, AfterValidator(_password_strength)]
 class SmsCodeRequest(BaseModel):
     phone: str = PhoneStr
     purpose: Literal["register", "login", "reset_password"]
-    # 人机校验(验证码 2.0 的 CaptchaVerifyParam;mock 渠道为固定放行串 "mock-pass")
-    captcha_token: str | None = Field(default=None, max_length=4096)
+    # 人机校验(验证码 2.0 的 CaptchaVerifyParam;mock 渠道为固定放行串 "mock-pass");缺失即 422
+    captcha_token: str = Field(min_length=1, max_length=4096)
 
 
 class RegisterRequest(BaseModel):
