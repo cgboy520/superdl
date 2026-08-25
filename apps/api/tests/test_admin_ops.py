@@ -347,9 +347,6 @@ class TestTenantAggregations:
             assert set(balances) == {id1}
             consumed = await billing_service.consumed_by_user(session, [id2])
             assert set(consumed) == {id2} and consumed[id2] == Decimal("3.00")
-        # 不传 user_ids 保持全量口径(总览付费租户计数在用)
-        async with sm() as session:
-            assert id1 in await orchestrator_service.instance_disk_stats_by_user(session)
 
 
 class TestNodesAndReports:

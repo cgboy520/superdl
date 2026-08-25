@@ -78,74 +78,44 @@ async def billing_candidates(
         .distinct()
     )
     candidates = [row[0] for row in (await session.execute(union(running_now, exited))).all()]
-    if not candidates:
+    return [_billing_row(i) for i in await instances_by_ids(session, candidates)]
+
+
+def _billing_row(i: Instance) -> tuple[int, int, Any, int]:
+    return (i.id, i.user_id, i.price_hourly, i.gpu_count)
+
+
+async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -> list[Instance]:
+    """按 id 精确取实例(不限状态,不走列表截断);下面各投影都从这一份取。"""
+    ids = list(instance_ids)
+    if not ids:
         return []
-    return list(
-        (
-            await session.execute(
-                select(
-                    Instance.id, Instance.user_id, Instance.price_hourly, Instance.gpu_count
-                ).where(Instance.id.in_(candidates))
-            )
-        )
-        .tuples()
-        .all()
-    )
+    return list((await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars())
 
 
 async def instance_locations(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, tuple[str, str, str | None]]:
-    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。按 id 精确取,不走列表截断。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (
-        (
-            await session.execute(
-                select(Instance.id, Instance.k8s_namespace, Instance.uuid, Instance.spec).where(
-                    Instance.id.in_(ids)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    return {iid: (ns, uuid, (spec or {}).get("tier")) for iid, ns, uuid, spec in rows}
+    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。"""
+    return {
+        i.id: (i.k8s_namespace, i.uuid, (i.spec or {}).get("tier"))
+        for i in await instances_by_ids(session, instance_ids)
+    }
 
 
 async def instance_hourly_prices(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, Any]:
-    """对账用:instance_id → 单价 × 卡数(元/时)。按 id 精确取,不受列表截断影响。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (
-        (
-            await session.execute(
-                select(Instance.id, Instance.price_hourly, Instance.gpu_count).where(
-                    Instance.id.in_(ids)
-                )
-            )
-        )
-        .tuples()
-        .all()
-    )
-    return {iid: as_amount(price * count) for iid, price, count in rows}
+    """对账用:instance_id → 单价 × 卡数(元/时)。"""
+    return {
+        i.id: as_amount(i.price_hourly * i.gpu_count)
+        for i in await instances_by_ids(session, instance_ids)
+    }
 
 
 async def instance_names(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
     """账单展示用:instance_id → 实例名(释放后行保留,改名跟当前名)。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (
-        (await session.execute(select(Instance.id, Instance.name).where(Instance.id.in_(ids))))
-        .tuples()
-        .all()
-    )
-    return dict(rows)
+    return {i.id: i.name for i in await instances_by_ids(session, instance_ids)}
 
 
 async def list_running_instances_by_user(session: AsyncSession) -> dict[int, list[Instance]]:
@@ -168,22 +138,21 @@ async def list_instances_by_status(session: AsyncSession, status: str) -> list[I
 
 
 async def instance_disk_stats_by_user(
-    session: AsyncSession, user_ids: list[int] | None = None
+    session: AsyncSession, user_ids: list[int]
 ) -> dict[int, dict[str, int]]:
-    """管理端租户表:user_id → {instances, disk_gb}。user_ids 给定则只聚合这些用户。"""
+    """管理端租户表:user_id → {instances, disk_gb},只聚合给定(本页)用户,不做全表 GROUP BY。"""
+    if not user_ids:
+        return {}
     inst_stmt = (
         select(Instance.user_id, func.count())
-        .where(Instance.status != sm_def.RELEASED)
+        .where(Instance.status != sm_def.RELEASED, Instance.user_id.in_(user_ids))
         .group_by(Instance.user_id)
     )
     disk_stmt = (
         select(DataDisk.user_id, func.coalesce(func.sum(DataDisk.size_gb), 0))
-        .where(DataDisk.status != "deleted")
+        .where(DataDisk.status != "deleted", DataDisk.user_id.in_(user_ids))
         .group_by(DataDisk.user_id)
     )
-    if user_ids is not None:
-        inst_stmt = inst_stmt.where(Instance.user_id.in_(user_ids))
-        disk_stmt = disk_stmt.where(DataDisk.user_id.in_(user_ids))
     inst_rows = (await session.execute(inst_stmt)).tuples().all()
     disk_rows = (await session.execute(disk_stmt)).tuples().all()
     stats: dict[int, dict[str, int]] = {}
@@ -285,11 +254,7 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
 
 async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, str]:
     """实例 → 池标签(不限状态,已释放实例也算:超卖报表按池聚合近 24h 利用率用)。"""
-    ids = list(instance_ids)
-    if not ids:
-        return {}
-    rows = (await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars()
-    return {inst.id: inst.spec["pool_label"] for inst in rows}
+    return {i.id: i.spec["pool_label"] for i in await instances_by_ids(session, instance_ids)}
 
 
 # ---------- 数据盘门面(billing/巡检经此访问,模块边界) ----------
@@ -300,17 +265,8 @@ async def instance_billing_snapshot(
 ) -> tuple[int, int, Any, int] | None:
     """单实例计费快照:(id, user_id, price_hourly, gpu_count);不存在返回 None。
     缺口重放按 object_id 精确取价(结算缺口的补结必须是当时落库的快照价,非 SKU 现价)。"""
-    return (
-        (
-            await session.execute(
-                select(
-                    Instance.id, Instance.user_id, Instance.price_hourly, Instance.gpu_count
-                ).where(Instance.id == instance_id)
-            )
-        )
-        .tuples()
-        .one_or_none()
-    )
+    rows = await instances_by_ids(session, [instance_id])
+    return _billing_row(rows[0]) if rows else None
 
 
 async def disk_billing_snapshot(
