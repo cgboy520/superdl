@@ -4,23 +4,7 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
 import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
-import type {
-  HTTPValidationError,
   ImageOut,
   ListSkusApiV1SkusGetParams,
   SiteConfigOut,
@@ -28,26 +12,6 @@ import type {
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getListImagesApiV1ImagesGetUrl = () => {
 
@@ -74,83 +38,6 @@ export const listImagesApiV1ImagesGet = async ( options?: Parameters<typeof cust
 );}
 
 
-
-
-
-export const getListImagesApiV1ImagesGetQueryKey = () => {
-    return [
-    `/api/v1/images`
-    ] as const;
-    }
-
-
-export const getListImagesApiV1ImagesGetQueryOptions = <TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListImagesApiV1ImagesGetQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>> = ({ signal }) => listImagesApiV1ImagesGet({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListImagesApiV1ImagesGetQueryResult = NonNullable<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>>
-export type ListImagesApiV1ImagesGetQueryError = unknown
-
-
-export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>,
-          TError,
-          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>,
-          TError,
-          Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List Images
- */
-
-export function useListImagesApiV1ImagesGet<TData = Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listImagesApiV1ImagesGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListImagesApiV1ImagesGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getGetSiteConfigApiV1SiteConfigGetUrl = () => {
 
 
@@ -173,83 +60,6 @@ export const getSiteConfigApiV1SiteConfigGet = async ( options?: Parameters<type
 
   }
 );}
-
-
-
-
-
-export const getGetSiteConfigApiV1SiteConfigGetQueryKey = () => {
-    return [
-    `/api/v1/site-config`
-    ] as const;
-    }
-
-
-export const getGetSiteConfigApiV1SiteConfigGetQueryOptions = <TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetSiteConfigApiV1SiteConfigGetQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>> = ({ signal }) => getSiteConfigApiV1SiteConfigGet({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetSiteConfigApiV1SiteConfigGetQueryResult = NonNullable<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>>
-export type GetSiteConfigApiV1SiteConfigGetQueryError = unknown
-
-
-export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>,
-          TError,
-          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>,
-          TError,
-          Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get Site Config
- */
-
-export function useGetSiteConfigApiV1SiteConfigGet<TData = Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSiteConfigApiV1SiteConfigGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetSiteConfigApiV1SiteConfigGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getListSkusApiV1SkusGetUrl = (params?: ListSkusApiV1SkusGetParams,) => {
@@ -281,82 +91,5 @@ export const listSkusApiV1SkusGet = async (params?: ListSkusApiV1SkusGetParams, 
 
   }
 );}
-
-
-
-
-
-export const getListSkusApiV1SkusGetQueryKey = (params?: ListSkusApiV1SkusGetParams,) => {
-    return [
-    `/api/v1/skus`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListSkusApiV1SkusGetQueryOptions = <TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListSkusApiV1SkusGetQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>> = ({ signal }) => listSkusApiV1SkusGet(params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListSkusApiV1SkusGetQueryResult = NonNullable<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>>
-export type ListSkusApiV1SkusGetQueryError = HTTPValidationError
-
-
-export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
- params: undefined |  ListSkusApiV1SkusGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>,
-          TError,
-          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
- params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>,
-          TError,
-          Awaited<ReturnType<typeof listSkusApiV1SkusGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
- params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List Skus
- */
-
-export function useListSkusApiV1SkusGet<TData = Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError = HTTPValidationError>(
- params?: ListSkusApiV1SkusGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSkusApiV1SkusGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListSkusApiV1SkusGetQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 

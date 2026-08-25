@@ -4,48 +4,12 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
-import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
 import type {
   GetLegalDocApiV1LegalDocKeyGetParams,
-  HTTPValidationError,
   LegalDocOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getGetLegalDocApiV1LegalDocKeyGetUrl = (docKey: string,
     params?: GetLegalDocApiV1LegalDocKeyGetParams,) => {
@@ -79,88 +43,5 @@ export const getLegalDocApiV1LegalDocKeyGet = async (docKey: string,
 
   }
 );}
-
-
-
-
-
-export const getGetLegalDocApiV1LegalDocKeyGetQueryKey = (docKey: string,
-    params?: GetLegalDocApiV1LegalDocKeyGetParams,) => {
-    return [
-    `/api/v1/legal/${docKey}`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getGetLegalDocApiV1LegalDocKeyGetQueryOptions = <TData = Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError = HTTPValidationError>(docKey: string,
-    params?: GetLegalDocApiV1LegalDocKeyGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetLegalDocApiV1LegalDocKeyGetQueryKey(docKey,params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>> = ({ signal }) => getLegalDocApiV1LegalDocKeyGet(docKey,params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: docKey !== null && docKey !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetLegalDocApiV1LegalDocKeyGetQueryResult = NonNullable<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>>
-export type GetLegalDocApiV1LegalDocKeyGetQueryError = HTTPValidationError
-
-
-export function useGetLegalDocApiV1LegalDocKeyGet<TData = Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError = HTTPValidationError>(
- docKey: string,
-    params: undefined |  GetLegalDocApiV1LegalDocKeyGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>,
-          TError,
-          Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLegalDocApiV1LegalDocKeyGet<TData = Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError = HTTPValidationError>(
- docKey: string,
-    params?: GetLegalDocApiV1LegalDocKeyGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>,
-          TError,
-          Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLegalDocApiV1LegalDocKeyGet<TData = Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError = HTTPValidationError>(
- docKey: string,
-    params?: GetLegalDocApiV1LegalDocKeyGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get Legal Doc
- */
-
-export function useGetLegalDocApiV1LegalDocKeyGet<TData = Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError = HTTPValidationError>(
- docKey: string,
-    params?: GetLegalDocApiV1LegalDocKeyGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLegalDocApiV1LegalDocKeyGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetLegalDocApiV1LegalDocKeyGetQueryOptions(docKey,params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 

@@ -37,7 +37,7 @@ uv run python scripts/export_error_messages.py   # 改了 core/messages.py 后�
 # 前端(仓库根)
 pnpm install
 pnpm dev / build / lint / typecheck / test / i18n
-pnpm api-client                          # orval 重新生成 TanStack Query hooks
+pnpm api-client                          # orval 重新生成 fetcher 与 model 类型
 pnpm --filter @superdl/e2e test:e2e      # 浏览器冒烟:需 API+worker 在跑;SUPERDL_ADMIN_E2E=1 再跑管理端用例
 
 # 脚本与文档
@@ -55,11 +55,11 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 4. **钱包更新必须 `SELECT ... FOR UPDATE`** 且同事务写 `balance_ledger`(带 balance_after 快照)。
 5. **计费主依据是 `instance_events`**(running↔非 running 的边),Prometheus 指标只做展示与对账,不参与计费。
 6. **模块边界**:`app/modules/*` 之间只许 import 对方的 `service.py` 与 `schemas.py`,禁止跨模块 import 其他文件或跨模块查表;唯一例外是 `account/deps.py`(`CurrentUser` 为全站鉴权依赖)。import-linter 强制,新增文件默认受约束。
-7. **API 契约**:OpenAPI-first。改了路由/schema 必须重新导出 openapi.json 并跑 `pnpm api-client`;前端禁止手写 fetch,一律用生成的 hooks。
+7. **API 契约**:OpenAPI-first。改了路由/schema 必须重新导出 openapi.json 并跑 `pnpm api-client`;前端禁止手写 fetch,一律用生成的 fetcher(两端在 `apps/web/src/api/*.ts` / `apps/admin/src/api.ts` 自建 TanStack Query hooks)。
 8. **统一错误体** `{code, message, message_key, params, detail, request_id}`(`app/core/errors.py` 的 AppError);创建类 POST 支持 `Idempotency-Key`。
 9. **所有写操作过审计中间件**;管理端 API 与用户端 API 物理分离(独立 JWT audience:`user` / `admin`)。
 10. **状态机迁移**只能通过 `orchestrator/service.py` 的 transition 函数(同事务写 instance_events),禁止直接 UPDATE status。
-11. **前端**:antd 6 原生组件自封装,不引 pro-components;服务端状态全走 TanStack Query;文案与状态映射集中在 `packages/ui`。
+11. **前端**:antd 6 原生组件自封装,不引 pro-components;服务端状态全走 TanStack Query(hooks 在两端 api 层自建,包生成的 fetcher);文案与状态映射集中在 `packages/ui`。
 12. **文案**:用户可见文案的单一事实源是后端 `core/messages.py` 与两端 locales JSON;zh-CN 与 en-US 必须同时提交,风格见 `docs/copy-style-guide.md`。
 13. **测试**:每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是:金额与舍入、透支、结算幂等(「重复执行零重复扣款」)、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考,不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`,浏览器冒烟在 `e2e/tests/`(smoke / admin / i18n)。
 14. **密钥/凭据不入 git**:只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME` 占位(`deploy/app/secrets.example.yaml`)。prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准。

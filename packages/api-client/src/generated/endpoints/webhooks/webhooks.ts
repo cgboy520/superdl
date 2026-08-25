@@ -4,47 +4,12 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
-import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
 import type {
   MockWebhookApiV1WebhooksMockPost200,
   WechatpayWebhookApiV1WebhooksWechatpayPost200
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getAlipayWebhookApiV1WebhooksAlipayPostUrl = () => {
 
@@ -67,83 +32,6 @@ export const alipayWebhookApiV1WebhooksAlipayPost = async ( options?: Parameters
 
   }
 );}
-
-
-
-
-
-export const getAlipayWebhookApiV1WebhooksAlipayPostQueryKey = () => {
-    return [
-    'POST', `/api/v1/webhooks/alipay`
-    ] as const;
-    }
-
-
-export const getAlipayWebhookApiV1WebhooksAlipayPostQueryOptions = <TData = Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAlipayWebhookApiV1WebhooksAlipayPostQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>> = ({ signal }) => alipayWebhookApiV1WebhooksAlipayPost({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AlipayWebhookApiV1WebhooksAlipayPostQueryResult = NonNullable<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>>
-export type AlipayWebhookApiV1WebhooksAlipayPostQueryError = unknown
-
-
-export function useAlipayWebhookApiV1WebhooksAlipayPost<TData = Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>,
-          TError,
-          Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAlipayWebhookApiV1WebhooksAlipayPost<TData = Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>,
-          TError,
-          Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAlipayWebhookApiV1WebhooksAlipayPost<TData = Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Alipay Webhook
- */
-
-export function useAlipayWebhookApiV1WebhooksAlipayPost<TData = Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alipayWebhookApiV1WebhooksAlipayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAlipayWebhookApiV1WebhooksAlipayPostQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getMockWebhookApiV1WebhooksMockPostUrl = () => {
@@ -170,83 +58,6 @@ export const mockWebhookApiV1WebhooksMockPost = async ( options?: Parameters<typ
 );}
 
 
-
-
-
-export const getMockWebhookApiV1WebhooksMockPostQueryKey = () => {
-    return [
-    'POST', `/api/v1/webhooks/mock`
-    ] as const;
-    }
-
-
-export const getMockWebhookApiV1WebhooksMockPostQueryOptions = <TData = Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getMockWebhookApiV1WebhooksMockPostQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>> = ({ signal }) => mockWebhookApiV1WebhooksMockPost({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type MockWebhookApiV1WebhooksMockPostQueryResult = NonNullable<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>>
-export type MockWebhookApiV1WebhooksMockPostQueryError = unknown
-
-
-export function useMockWebhookApiV1WebhooksMockPost<TData = Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>,
-          TError,
-          Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMockWebhookApiV1WebhooksMockPost<TData = Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>,
-          TError,
-          Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMockWebhookApiV1WebhooksMockPost<TData = Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Mock Webhook
- */
-
-export function useMockWebhookApiV1WebhooksMockPost<TData = Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof mockWebhookApiV1WebhooksMockPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getMockWebhookApiV1WebhooksMockPostQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getWechatpayWebhookApiV1WebhooksWechatpayPostUrl = () => {
 
 
@@ -268,82 +79,5 @@ export const wechatpayWebhookApiV1WebhooksWechatpayPost = async ( options?: Para
 
   }
 );}
-
-
-
-
-
-export const getWechatpayWebhookApiV1WebhooksWechatpayPostQueryKey = () => {
-    return [
-    'POST', `/api/v1/webhooks/wechatpay`
-    ] as const;
-    }
-
-
-export const getWechatpayWebhookApiV1WebhooksWechatpayPostQueryOptions = <TData = Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getWechatpayWebhookApiV1WebhooksWechatpayPostQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>> = ({ signal }) => wechatpayWebhookApiV1WebhooksWechatpayPost({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type WechatpayWebhookApiV1WebhooksWechatpayPostQueryResult = NonNullable<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>>
-export type WechatpayWebhookApiV1WebhooksWechatpayPostQueryError = unknown
-
-
-export function useWechatpayWebhookApiV1WebhooksWechatpayPost<TData = Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>,
-          TError,
-          Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useWechatpayWebhookApiV1WebhooksWechatpayPost<TData = Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>,
-          TError,
-          Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useWechatpayWebhookApiV1WebhooksWechatpayPost<TData = Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Wechatpay Webhook
- */
-
-export function useWechatpayWebhookApiV1WebhooksWechatpayPost<TData = Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof wechatpayWebhookApiV1WebhooksWechatpayPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getWechatpayWebhookApiV1WebhooksWechatpayPostQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 

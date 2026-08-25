@@ -4,50 +4,14 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
-import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
 import type {
   CreateDiskApiV1DisksPostHeaders,
   DiskCreate,
   DiskExpand,
-  DiskOut,
-  HTTPValidationError
+  DiskOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getListDisksApiV1DisksGetUrl = () => {
 
@@ -70,83 +34,6 @@ export const listDisksApiV1DisksGet = async ( options?: Parameters<typeof custom
 
   }
 );}
-
-
-
-
-
-export const getListDisksApiV1DisksGetQueryKey = () => {
-    return [
-    `/api/v1/disks`
-    ] as const;
-    }
-
-
-export const getListDisksApiV1DisksGetQueryOptions = <TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListDisksApiV1DisksGetQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>> = ({ signal }) => listDisksApiV1DisksGet({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListDisksApiV1DisksGetQueryResult = NonNullable<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>>
-export type ListDisksApiV1DisksGetQueryError = unknown
-
-
-export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>,
-          TError,
-          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>,
-          TError,
-          Awaited<ReturnType<typeof listDisksApiV1DisksGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List Disks
- */
-
-export function useListDisksApiV1DisksGet<TData = Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listDisksApiV1DisksGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListDisksApiV1DisksGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getCreateDiskApiV1DisksPostUrl = () => {
@@ -173,88 +60,6 @@ export const createDiskApiV1DisksPost = async (diskCreate: DiskCreate,
 );}
 
 
-
-
-
-export const getCreateDiskApiV1DisksPostQueryKey = (diskCreate?: DiskCreate,) => {
-    return [
-    'POST', `/api/v1/disks`, diskCreate
-    ] as const;
-    }
-
-
-export const getCreateDiskApiV1DisksPostQueryOptions = <TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(diskCreate: DiskCreate,
-    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getCreateDiskApiV1DisksPostQueryKey(diskCreate);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>> = ({ signal }) => createDiskApiV1DisksPost(diskCreate,headers, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type CreateDiskApiV1DisksPostQueryResult = NonNullable<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>>
-export type CreateDiskApiV1DisksPostQueryError = HTTPValidationError
-
-
-export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate,
-    headers: undefined |  CreateDiskApiV1DisksPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createDiskApiV1DisksPost>>,
-          TError,
-          Awaited<ReturnType<typeof createDiskApiV1DisksPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate,
-    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createDiskApiV1DisksPost>>,
-          TError,
-          Awaited<ReturnType<typeof createDiskApiV1DisksPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate,
-    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Create Disk
- */
-
-export function useCreateDiskApiV1DisksPost<TData = Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError = HTTPValidationError>(
- diskCreate: DiskCreate,
-    headers?: CreateDiskApiV1DisksPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createDiskApiV1DisksPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getCreateDiskApiV1DisksPostQueryOptions(diskCreate,headers,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getDeleteDiskApiV1DisksUuidDeleteUrl = (uuid: string,) => {
 
 
@@ -277,83 +82,6 @@ export const deleteDiskApiV1DisksUuidDelete = async (uuid: string, options?: Par
 
   }
 );}
-
-
-
-
-
-export const getDeleteDiskApiV1DisksUuidDeleteQueryKey = (uuid: string,) => {
-    return [
-    'DELETE', `/api/v1/disks/${uuid}`
-    ] as const;
-    }
-
-
-export const getDeleteDiskApiV1DisksUuidDeleteQueryOptions = <TData = Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError = HTTPValidationError>(uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getDeleteDiskApiV1DisksUuidDeleteQueryKey(uuid);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>> = ({ signal }) => deleteDiskApiV1DisksUuidDelete(uuid, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type DeleteDiskApiV1DisksUuidDeleteQueryResult = NonNullable<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>>
-export type DeleteDiskApiV1DisksUuidDeleteQueryError = HTTPValidationError
-
-
-export function useDeleteDiskApiV1DisksUuidDelete<TData = Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError = HTTPValidationError>(
- uuid: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>,
-          TError,
-          Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useDeleteDiskApiV1DisksUuidDelete<TData = Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError = HTTPValidationError>(
- uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>,
-          TError,
-          Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useDeleteDiskApiV1DisksUuidDelete<TData = Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError = HTTPValidationError>(
- uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Delete Disk
- */
-
-export function useDeleteDiskApiV1DisksUuidDelete<TData = Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError = HTTPValidationError>(
- uuid: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof deleteDiskApiV1DisksUuidDelete>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getDeleteDiskApiV1DisksUuidDeleteQueryOptions(uuid,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getExpandDiskApiV1DisksUuidPatchUrl = (uuid: string,) => {
@@ -379,88 +107,5 @@ export const expandDiskApiV1DisksUuidPatch = async (uuid: string,
     body: JSON.stringify(diskExpand)
   }
 );}
-
-
-
-
-
-export const getExpandDiskApiV1DisksUuidPatchQueryKey = (uuid: string,
-    diskExpand?: DiskExpand,) => {
-    return [
-    'PATCH', `/api/v1/disks/${uuid}`, diskExpand
-    ] as const;
-    }
-
-
-export const getExpandDiskApiV1DisksUuidPatchQueryOptions = <TData = Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError = HTTPValidationError>(uuid: string,
-    diskExpand: DiskExpand, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getExpandDiskApiV1DisksUuidPatchQueryKey(uuid,diskExpand);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>> = ({ signal }) => expandDiskApiV1DisksUuidPatch(uuid,diskExpand, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: uuid !== null && uuid !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ExpandDiskApiV1DisksUuidPatchQueryResult = NonNullable<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>>
-export type ExpandDiskApiV1DisksUuidPatchQueryError = HTTPValidationError
-
-
-export function useExpandDiskApiV1DisksUuidPatch<TData = Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError = HTTPValidationError>(
- uuid: string,
-    diskExpand: DiskExpand, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>,
-          TError,
-          Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExpandDiskApiV1DisksUuidPatch<TData = Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError = HTTPValidationError>(
- uuid: string,
-    diskExpand: DiskExpand, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>,
-          TError,
-          Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useExpandDiskApiV1DisksUuidPatch<TData = Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError = HTTPValidationError>(
- uuid: string,
-    diskExpand: DiskExpand, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Expand Disk
- */
-
-export function useExpandDiskApiV1DisksUuidPatch<TData = Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError = HTTPValidationError>(
- uuid: string,
-    diskExpand: DiskExpand, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof expandDiskApiV1DisksUuidPatch>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getExpandDiskApiV1DisksUuidPatchQueryOptions(uuid,diskExpand,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 

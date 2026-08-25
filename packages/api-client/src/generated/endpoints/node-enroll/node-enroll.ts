@@ -4,51 +4,15 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
-import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
 import type {
   BootstrapOut,
   BootstrapRequest,
   EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders,
   EnrollProgressApiV1NodeEnrollProgressPostHeaders,
-  HTTPValidationError,
   ProgressRequest
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getEnrollBootstrapApiV1NodeEnrollBootstrapPostUrl = () => {
 
@@ -76,88 +40,6 @@ export const enrollBootstrapApiV1NodeEnrollBootstrapPost = async (bootstrapReque
 );}
 
 
-
-
-
-export const getEnrollBootstrapApiV1NodeEnrollBootstrapPostQueryKey = (bootstrapRequest?: BootstrapRequest,) => {
-    return [
-    'POST', `/api/v1/node-enroll/bootstrap`, bootstrapRequest
-    ] as const;
-    }
-
-
-export const getEnrollBootstrapApiV1NodeEnrollBootstrapPostQueryOptions = <TData = Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError = HTTPValidationError>(bootstrapRequest: BootstrapRequest,
-    headers?: EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getEnrollBootstrapApiV1NodeEnrollBootstrapPostQueryKey(bootstrapRequest);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>> = ({ signal }) => enrollBootstrapApiV1NodeEnrollBootstrapPost(bootstrapRequest,headers, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type EnrollBootstrapApiV1NodeEnrollBootstrapPostQueryResult = NonNullable<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>>
-export type EnrollBootstrapApiV1NodeEnrollBootstrapPostQueryError = HTTPValidationError
-
-
-export function useEnrollBootstrapApiV1NodeEnrollBootstrapPost<TData = Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError = HTTPValidationError>(
- bootstrapRequest: BootstrapRequest,
-    headers: undefined |  EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>,
-          TError,
-          Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useEnrollBootstrapApiV1NodeEnrollBootstrapPost<TData = Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError = HTTPValidationError>(
- bootstrapRequest: BootstrapRequest,
-    headers?: EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>,
-          TError,
-          Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useEnrollBootstrapApiV1NodeEnrollBootstrapPost<TData = Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError = HTTPValidationError>(
- bootstrapRequest: BootstrapRequest,
-    headers?: EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Enroll Bootstrap
- */
-
-export function useEnrollBootstrapApiV1NodeEnrollBootstrapPost<TData = Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError = HTTPValidationError>(
- bootstrapRequest: BootstrapRequest,
-    headers?: EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollBootstrapApiV1NodeEnrollBootstrapPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getEnrollBootstrapApiV1NodeEnrollBootstrapPostQueryOptions(bootstrapRequest,headers,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getEnrollProgressApiV1NodeEnrollProgressPostUrl = () => {
 
 
@@ -183,88 +65,6 @@ export const enrollProgressApiV1NodeEnrollProgressPost = async (progressRequest:
 );}
 
 
-
-
-
-export const getEnrollProgressApiV1NodeEnrollProgressPostQueryKey = (progressRequest?: ProgressRequest,) => {
-    return [
-    'POST', `/api/v1/node-enroll/progress`, progressRequest
-    ] as const;
-    }
-
-
-export const getEnrollProgressApiV1NodeEnrollProgressPostQueryOptions = <TData = Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError = HTTPValidationError>(progressRequest: ProgressRequest,
-    headers?: EnrollProgressApiV1NodeEnrollProgressPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getEnrollProgressApiV1NodeEnrollProgressPostQueryKey(progressRequest);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>> = ({ signal }) => enrollProgressApiV1NodeEnrollProgressPost(progressRequest,headers, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type EnrollProgressApiV1NodeEnrollProgressPostQueryResult = NonNullable<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>>
-export type EnrollProgressApiV1NodeEnrollProgressPostQueryError = HTTPValidationError
-
-
-export function useEnrollProgressApiV1NodeEnrollProgressPost<TData = Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError = HTTPValidationError>(
- progressRequest: ProgressRequest,
-    headers: undefined |  EnrollProgressApiV1NodeEnrollProgressPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>,
-          TError,
-          Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useEnrollProgressApiV1NodeEnrollProgressPost<TData = Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError = HTTPValidationError>(
- progressRequest: ProgressRequest,
-    headers?: EnrollProgressApiV1NodeEnrollProgressPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>,
-          TError,
-          Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useEnrollProgressApiV1NodeEnrollProgressPost<TData = Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError = HTTPValidationError>(
- progressRequest: ProgressRequest,
-    headers?: EnrollProgressApiV1NodeEnrollProgressPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Enroll Progress
- */
-
-export function useEnrollProgressApiV1NodeEnrollProgressPost<TData = Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError = HTTPValidationError>(
- progressRequest: ProgressRequest,
-    headers?: EnrollProgressApiV1NodeEnrollProgressPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof enrollProgressApiV1NodeEnrollProgressPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getEnrollProgressApiV1NodeEnrollProgressPostQueryOptions(progressRequest,headers,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getGetJoinScriptApiV1NodeEnrollScriptGetUrl = () => {
 
 
@@ -287,82 +87,5 @@ export const getJoinScriptApiV1NodeEnrollScriptGet = async ( options?: Parameter
 
   }
 );}
-
-
-
-
-
-export const getGetJoinScriptApiV1NodeEnrollScriptGetQueryKey = () => {
-    return [
-    `/api/v1/node-enroll/script`
-    ] as const;
-    }
-
-
-export const getGetJoinScriptApiV1NodeEnrollScriptGetQueryOptions = <TData = Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetJoinScriptApiV1NodeEnrollScriptGetQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>> = ({ signal }) => getJoinScriptApiV1NodeEnrollScriptGet({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetJoinScriptApiV1NodeEnrollScriptGetQueryResult = NonNullable<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>>
-export type GetJoinScriptApiV1NodeEnrollScriptGetQueryError = unknown
-
-
-export function useGetJoinScriptApiV1NodeEnrollScriptGet<TData = Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>,
-          TError,
-          Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetJoinScriptApiV1NodeEnrollScriptGet<TData = Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>,
-          TError,
-          Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetJoinScriptApiV1NodeEnrollScriptGet<TData = Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get Join Script
- */
-
-export function useGetJoinScriptApiV1NodeEnrollScriptGet<TData = Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getJoinScriptApiV1NodeEnrollScriptGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetJoinScriptApiV1NodeEnrollScriptGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 

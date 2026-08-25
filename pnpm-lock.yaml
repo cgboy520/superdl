@@ -217,9 +217,6 @@ importers:
 
   packages/api-client:
     devDependencies:
-      '@tanstack/react-query':
-        specifier: ^5.101.4
-        version: 5.101.4(react@19.2.8)
       orval:
         specifier: ^8.24.0
         version: 8.24.0(prettier@3.9.6)(typescript@5.9.3)

@@ -9,8 +9,9 @@ export default defineConfig({
       mode: "tags-split",
       target: "src/generated/endpoints",
       schemas: "src/generated/model",
-      client: "react-query",
-      httpClient: "fetch",
+      // 只生成裸 fetcher 与 model 类型,不生成 TanStack Query hooks:
+      // 两端在各自的 api 层(apps/web/src/api/*.ts、apps/admin/src/api.ts)用 useQuery/useMutation 包 fetcher。
+      client: "fetch",
       clean: true,
       indexFiles: true,
       // 把 spec 的 header 参数(Idempotency-Key 等)生成进函数签名,免调用方手搓 options.headers
@@ -22,11 +23,6 @@ export default defineConfig({
         },
         fetch: {
           includeHttpResponseReturnType: false,
-        },
-        // 不开 query.useMutation:否则无参 GET 会被生成为 useMutation 变体
-        query: {
-          useQuery: true,
-          signal: true,
         },
       },
     },

@@ -15,6 +15,10 @@
 - **命令清单只有一份。** `Taskfile.yml` 已删除(`task` 本地未装、CI 不用、内容已落后):常用命令以 CLAUDE.md 为准,README 只放快速开始。
 - **私有仓库,不放 LICENSE。** 仓库在 GitHub 为 PRIVATE,默认保留全部权利;若要转公开或对外交付,先定许可证再开。
 - **release notes 不手维护。** 打 tag 用 `gh release create --generate-notes`,提交信息已按 `feat:`/`fix:` 前缀写,自动生成即够用;不设 CHANGELOG 文件。
+- **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用 `client: "fetch"`;两端在各自的 api 层
+  (`apps/web/src/api/*.ts`、`apps/admin/src/api.ts`)用 useQuery/useMutation 包 fetcher,查询键、失效域与轮询策略都在那里定义。
+  曾经生成的 hooks 与 QueryKey/QueryOptions 占生成物六成、两端零引用,还把 `@tanstack/react-query` 拖成 api-client 的 peer 依赖。
+  后果:`pnpm api-client` 重生成只影响 fetcher 签名与 model 类型;不要再把 `client` 改回 `react-query` 或加 `query` 块。
 
 ## 计费与资金
 

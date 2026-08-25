@@ -4,51 +4,15 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
-import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
 import type {
   AlertmanagerWebhookApiV1WebhooksAlertmanagerPost200,
   AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders,
-  HTTPValidationError,
   ListNotificationsApiV1NotificationsGetParams,
   PageNotificationOut,
   UnreadCountOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getListNotificationsApiV1NotificationsGetUrl = (params?: ListNotificationsApiV1NotificationsGetParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -81,83 +45,6 @@ export const listNotificationsApiV1NotificationsGet = async (params?: ListNotifi
 );}
 
 
-
-
-
-export const getListNotificationsApiV1NotificationsGetQueryKey = (params?: ListNotificationsApiV1NotificationsGetParams,) => {
-    return [
-    `/api/v1/notifications`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListNotificationsApiV1NotificationsGetQueryOptions = <TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListNotificationsApiV1NotificationsGetQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>> = ({ signal }) => listNotificationsApiV1NotificationsGet(params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListNotificationsApiV1NotificationsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>>
-export type ListNotificationsApiV1NotificationsGetQueryError = HTTPValidationError
-
-
-export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
- params: undefined |  ListNotificationsApiV1NotificationsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>,
-          TError,
-          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
- params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>,
-          TError,
-          Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
- params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List Notifications
- */
-
-export function useListNotificationsApiV1NotificationsGet<TData = Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError = HTTPValidationError>(
- params?: ListNotificationsApiV1NotificationsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNotificationsApiV1NotificationsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListNotificationsApiV1NotificationsGetQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getMarkAllReadApiV1NotificationsReadAllPostUrl = () => {
 
 
@@ -180,83 +67,6 @@ export const markAllReadApiV1NotificationsReadAllPost = async ( options?: Parame
 
   }
 );}
-
-
-
-
-
-export const getMarkAllReadApiV1NotificationsReadAllPostQueryKey = () => {
-    return [
-    'POST', `/api/v1/notifications/read-all`
-    ] as const;
-    }
-
-
-export const getMarkAllReadApiV1NotificationsReadAllPostQueryOptions = <TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getMarkAllReadApiV1NotificationsReadAllPostQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>> = ({ signal }) => markAllReadApiV1NotificationsReadAllPost({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type MarkAllReadApiV1NotificationsReadAllPostQueryResult = NonNullable<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>>
-export type MarkAllReadApiV1NotificationsReadAllPostQueryError = unknown
-
-
-export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>,
-          TError,
-          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>,
-          TError,
-          Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Mark All Read
- */
-
-export function useMarkAllReadApiV1NotificationsReadAllPost<TData = Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markAllReadApiV1NotificationsReadAllPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getMarkAllReadApiV1NotificationsReadAllPostQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getUnreadCountApiV1NotificationsUnreadCountGetUrl = () => {
@@ -284,83 +94,6 @@ export const unreadCountApiV1NotificationsUnreadCountGet = async ( options?: Par
 );}
 
 
-
-
-
-export const getUnreadCountApiV1NotificationsUnreadCountGetQueryKey = () => {
-    return [
-    `/api/v1/notifications/unread-count`
-    ] as const;
-    }
-
-
-export const getUnreadCountApiV1NotificationsUnreadCountGetQueryOptions = <TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getUnreadCountApiV1NotificationsUnreadCountGetQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>> = ({ signal }) => unreadCountApiV1NotificationsUnreadCountGet({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type UnreadCountApiV1NotificationsUnreadCountGetQueryResult = NonNullable<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>>
-export type UnreadCountApiV1NotificationsUnreadCountGetQueryError = unknown
-
-
-export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>,
-          TError,
-          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>,
-          TError,
-          Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Unread Count
- */
-
-export function useUnreadCountApiV1NotificationsUnreadCountGet<TData = Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError = unknown>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof unreadCountApiV1NotificationsUnreadCountGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getUnreadCountApiV1NotificationsUnreadCountGetQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getMarkReadApiV1NotificationsNotificationIdReadPostUrl = (notificationId: number,) => {
 
 
@@ -382,83 +115,6 @@ export const markReadApiV1NotificationsNotificationIdReadPost = async (notificat
 
   }
 );}
-
-
-
-
-
-export const getMarkReadApiV1NotificationsNotificationIdReadPostQueryKey = (notificationId: number,) => {
-    return [
-    'POST', `/api/v1/notifications/${notificationId}/read`
-    ] as const;
-    }
-
-
-export const getMarkReadApiV1NotificationsNotificationIdReadPostQueryOptions = <TData = Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError = HTTPValidationError>(notificationId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getMarkReadApiV1NotificationsNotificationIdReadPostQueryKey(notificationId);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>> = ({ signal }) => markReadApiV1NotificationsNotificationIdReadPost(notificationId, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: notificationId !== null && notificationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type MarkReadApiV1NotificationsNotificationIdReadPostQueryResult = NonNullable<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>>
-export type MarkReadApiV1NotificationsNotificationIdReadPostQueryError = HTTPValidationError
-
-
-export function useMarkReadApiV1NotificationsNotificationIdReadPost<TData = Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError = HTTPValidationError>(
- notificationId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>,
-          TError,
-          Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMarkReadApiV1NotificationsNotificationIdReadPost<TData = Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError = HTTPValidationError>(
- notificationId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>,
-          TError,
-          Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useMarkReadApiV1NotificationsNotificationIdReadPost<TData = Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError = HTTPValidationError>(
- notificationId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Mark Read
- */
-
-export function useMarkReadApiV1NotificationsNotificationIdReadPost<TData = Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError = HTTPValidationError>(
- notificationId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof markReadApiV1NotificationsNotificationIdReadPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getMarkReadApiV1NotificationsNotificationIdReadPostQueryOptions(notificationId,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostUrl = () => {
@@ -483,82 +139,5 @@ export const alertmanagerWebhookApiV1WebhooksAlertmanagerPost = async (headers?:
 
   }
 );}
-
-
-
-
-
-export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryKey = () => {
-    return [
-    'POST', `/api/v1/webhooks/alertmanager`
-    ] as const;
-    }
-
-
-export const getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryOptions = <TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>> = ({ signal }) => alertmanagerWebhookApiV1WebhooksAlertmanagerPost(headers, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryResult = NonNullable<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>>
-export type AlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryError = HTTPValidationError
-
-
-export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
- headers: undefined |  AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>,
-          TError,
-          Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
- headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>,
-          TError,
-          Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
- headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Alertmanager Webhook
- */
-
-export function useAlertmanagerWebhookApiV1WebhooksAlertmanagerPost<TData = Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError = HTTPValidationError>(
- headers?: AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof alertmanagerWebhookApiV1WebhooksAlertmanagerPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAlertmanagerWebhookApiV1WebhooksAlertmanagerPostQueryOptions(headers,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 

@@ -22,7 +22,7 @@
 
 ## 规则与不变量
 
-- 服务端状态全走 TanStack Query + 生成 hooks,禁止手写 fetch;文案与状态映射走 `packages/ui`;antd 6 原生组件自封装,不引 pro-components。
+- 服务端状态全走 TanStack Query,请求一律用生成的 fetcher(hooks 在 `api/queries.ts` / `api/mutations.ts` 自建),禁止手写 fetch;文案与状态映射走 `packages/ui`;antd 6 原生组件自封装,不引 pro-components。
 - 401 由 mutator 静默续期并重放(single-flight);续期失败才跳登录并带回跳。
 - 查询失败不得伪装成数据:统一走 `components/QueryState.tsx` 的表格错误态与页级横幅,金额未就绪显示 `—`,详情页加载失败为错误横幅 + 重试而非整页白屏。
 - 余额与金额比较走 `compareAmounts`(BigInt),盘费日估算走 `ui.diskDailyEstimate`,前端不做 float 运算。

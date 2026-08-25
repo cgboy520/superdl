@@ -4,24 +4,8 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
-import {
-  useQuery
-} from '@tanstack/react-query';
-import type {
-  DataTag,
-  DefinedInitialDataOptions,
-  DefinedUseQueryResult,
-  QueryClient,
-  QueryFunction,
-  QueryKey,
-  UndefinedInitialDataOptions,
-  UseQueryOptions,
-  UseQueryResult
-} from '@tanstack/react-query';
-
 import type {
   CreateTicketApiV1TicketsPostHeaders,
-  HTTPValidationError,
   ListMyTicketsApiV1TicketsGetParams,
   PageTicketOut,
   TicketCreate,
@@ -32,26 +16,6 @@ import type {
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
-
-
-type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
-
-const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
-  const result = { queryKey } as T & { queryKey: K };
-  for (const key of Object.keys(query)) {
-    // The explicit queryKey always wins, matching the previous
-    // `{ ...query, queryKey }` spread where it was set last.
-    if (key === 'queryKey') continue;
-    Object.defineProperty(result, key, {
-      enumerable: true,
-      configurable: true,
-      get: () => (query as Record<string, unknown>)[key],
-    });
-  }
-  return result;
-};
 
 export const getListMyTicketsApiV1TicketsGetUrl = (params?: ListMyTicketsApiV1TicketsGetParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -84,83 +48,6 @@ export const listMyTicketsApiV1TicketsGet = async (params?: ListMyTicketsApiV1Ti
 );}
 
 
-
-
-
-export const getListMyTicketsApiV1TicketsGetQueryKey = (params?: ListMyTicketsApiV1TicketsGetParams,) => {
-    return [
-    `/api/v1/tickets`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getListMyTicketsApiV1TicketsGetQueryOptions = <TData = Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError = HTTPValidationError>(params?: ListMyTicketsApiV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListMyTicketsApiV1TicketsGetQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>> = ({ signal }) => listMyTicketsApiV1TicketsGet(params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListMyTicketsApiV1TicketsGetQueryResult = NonNullable<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>>
-export type ListMyTicketsApiV1TicketsGetQueryError = HTTPValidationError
-
-
-export function useListMyTicketsApiV1TicketsGet<TData = Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError = HTTPValidationError>(
- params: undefined |  ListMyTicketsApiV1TicketsGetParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>,
-          TError,
-          Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListMyTicketsApiV1TicketsGet<TData = Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError = HTTPValidationError>(
- params?: ListMyTicketsApiV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>,
-          TError,
-          Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListMyTicketsApiV1TicketsGet<TData = Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError = HTTPValidationError>(
- params?: ListMyTicketsApiV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List My Tickets
- */
-
-export function useListMyTicketsApiV1TicketsGet<TData = Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError = HTTPValidationError>(
- params?: ListMyTicketsApiV1TicketsGetParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMyTicketsApiV1TicketsGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListMyTicketsApiV1TicketsGetQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getCreateTicketApiV1TicketsPostUrl = () => {
 
 
@@ -187,88 +74,6 @@ export const createTicketApiV1TicketsPost = async (ticketCreate: TicketCreate,
 );}
 
 
-
-
-
-export const getCreateTicketApiV1TicketsPostQueryKey = (ticketCreate?: TicketCreate,) => {
-    return [
-    'POST', `/api/v1/tickets`, ticketCreate
-    ] as const;
-    }
-
-
-export const getCreateTicketApiV1TicketsPostQueryOptions = <TData = Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError = HTTPValidationError>(ticketCreate: TicketCreate,
-    headers?: CreateTicketApiV1TicketsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getCreateTicketApiV1TicketsPostQueryKey(ticketCreate);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>> = ({ signal }) => createTicketApiV1TicketsPost(ticketCreate,headers, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type CreateTicketApiV1TicketsPostQueryResult = NonNullable<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>>
-export type CreateTicketApiV1TicketsPostQueryError = HTTPValidationError
-
-
-export function useCreateTicketApiV1TicketsPost<TData = Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError = HTTPValidationError>(
- ticketCreate: TicketCreate,
-    headers: undefined |  CreateTicketApiV1TicketsPostHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>,
-          TError,
-          Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useCreateTicketApiV1TicketsPost<TData = Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError = HTTPValidationError>(
- ticketCreate: TicketCreate,
-    headers?: CreateTicketApiV1TicketsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>,
-          TError,
-          Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useCreateTicketApiV1TicketsPost<TData = Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError = HTTPValidationError>(
- ticketCreate: TicketCreate,
-    headers?: CreateTicketApiV1TicketsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Create Ticket
- */
-
-export function useCreateTicketApiV1TicketsPost<TData = Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError = HTTPValidationError>(
- ticketCreate: TicketCreate,
-    headers?: CreateTicketApiV1TicketsPostHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof createTicketApiV1TicketsPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getCreateTicketApiV1TicketsPostQueryOptions(ticketCreate,headers,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getGetMyTicketApiV1TicketsTicketIdGetUrl = (ticketId: number,) => {
 
 
@@ -291,83 +96,6 @@ export const getMyTicketApiV1TicketsTicketIdGet = async (ticketId: number, optio
 
   }
 );}
-
-
-
-
-
-export const getGetMyTicketApiV1TicketsTicketIdGetQueryKey = (ticketId: number,) => {
-    return [
-    `/api/v1/tickets/${ticketId}`
-    ] as const;
-    }
-
-
-export const getGetMyTicketApiV1TicketsTicketIdGetQueryOptions = <TData = Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError = HTTPValidationError>(ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetMyTicketApiV1TicketsTicketIdGetQueryKey(ticketId);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>> = ({ signal }) => getMyTicketApiV1TicketsTicketIdGet(ticketId, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: ticketId !== null && ticketId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetMyTicketApiV1TicketsTicketIdGetQueryResult = NonNullable<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>>
-export type GetMyTicketApiV1TicketsTicketIdGetQueryError = HTTPValidationError
-
-
-export function useGetMyTicketApiV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
- ticketId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>,
-          TError,
-          Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetMyTicketApiV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
- ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>,
-          TError,
-          Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetMyTicketApiV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
- ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Get My Ticket
- */
-
-export function useGetMyTicketApiV1TicketsTicketIdGet<TData = Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError = HTTPValidationError>(
- ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyTicketApiV1TicketsTicketIdGet>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetMyTicketApiV1TicketsTicketIdGetQueryOptions(ticketId,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
 export const getCloseTicketApiV1TicketsTicketIdClosePostUrl = (ticketId: number,) => {
@@ -394,83 +122,6 @@ export const closeTicketApiV1TicketsTicketIdClosePost = async (ticketId: number,
 );}
 
 
-
-
-
-export const getCloseTicketApiV1TicketsTicketIdClosePostQueryKey = (ticketId: number,) => {
-    return [
-    'POST', `/api/v1/tickets/${ticketId}/close`
-    ] as const;
-    }
-
-
-export const getCloseTicketApiV1TicketsTicketIdClosePostQueryOptions = <TData = Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError = HTTPValidationError>(ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getCloseTicketApiV1TicketsTicketIdClosePostQueryKey(ticketId);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>> = ({ signal }) => closeTicketApiV1TicketsTicketIdClosePost(ticketId, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: ticketId !== null && ticketId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type CloseTicketApiV1TicketsTicketIdClosePostQueryResult = NonNullable<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>>
-export type CloseTicketApiV1TicketsTicketIdClosePostQueryError = HTTPValidationError
-
-
-export function useCloseTicketApiV1TicketsTicketIdClosePost<TData = Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError = HTTPValidationError>(
- ticketId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>,
-          TError,
-          Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useCloseTicketApiV1TicketsTicketIdClosePost<TData = Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError = HTTPValidationError>(
- ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>,
-          TError,
-          Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useCloseTicketApiV1TicketsTicketIdClosePost<TData = Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError = HTTPValidationError>(
- ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Close Ticket
- */
-
-export function useCloseTicketApiV1TicketsTicketIdClosePost<TData = Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError = HTTPValidationError>(
- ticketId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof closeTicketApiV1TicketsTicketIdClosePost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getCloseTicketApiV1TicketsTicketIdClosePostQueryOptions(ticketId,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 export const getAppendMessageApiV1TicketsTicketIdMessagesPostUrl = (ticketId: number,) => {
 
 
@@ -494,88 +145,5 @@ export const appendMessageApiV1TicketsTicketIdMessagesPost = async (ticketId: nu
     body: JSON.stringify(ticketMessageCreate)
   }
 );}
-
-
-
-
-
-export const getAppendMessageApiV1TicketsTicketIdMessagesPostQueryKey = (ticketId: number,
-    ticketMessageCreate?: TicketMessageCreate,) => {
-    return [
-    'POST', `/api/v1/tickets/${ticketId}/messages`, ticketMessageCreate
-    ] as const;
-    }
-
-
-export const getAppendMessageApiV1TicketsTicketIdMessagesPostQueryOptions = <TData = Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError = HTTPValidationError>(ticketId: number,
-    ticketMessageCreate: TicketMessageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAppendMessageApiV1TicketsTicketIdMessagesPostQueryKey(ticketId,ticketMessageCreate);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>> = ({ signal }) => appendMessageApiV1TicketsTicketIdMessagesPost(ticketId,ticketMessageCreate, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: ticketId !== null && ticketId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AppendMessageApiV1TicketsTicketIdMessagesPostQueryResult = NonNullable<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>>
-export type AppendMessageApiV1TicketsTicketIdMessagesPostQueryError = HTTPValidationError
-
-
-export function useAppendMessageApiV1TicketsTicketIdMessagesPost<TData = Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError = HTTPValidationError>(
- ticketId: number,
-    ticketMessageCreate: TicketMessageCreate, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>,
-          TError,
-          Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAppendMessageApiV1TicketsTicketIdMessagesPost<TData = Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError = HTTPValidationError>(
- ticketId: number,
-    ticketMessageCreate: TicketMessageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>,
-          TError,
-          Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAppendMessageApiV1TicketsTicketIdMessagesPost<TData = Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError = HTTPValidationError>(
- ticketId: number,
-    ticketMessageCreate: TicketMessageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Append Message
- */
-
-export function useAppendMessageApiV1TicketsTicketIdMessagesPost<TData = Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError = HTTPValidationError>(
- ticketId: number,
-    ticketMessageCreate: TicketMessageCreate, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof appendMessageApiV1TicketsTicketIdMessagesPost>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAppendMessageApiV1TicketsTicketIdMessagesPostQueryOptions(ticketId,ticketMessageCreate,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
 
 
