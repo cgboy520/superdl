@@ -119,6 +119,17 @@ async def _period_active_sum(session: AsyncSession, user_id: int, period: str) -
     return Decimal(total)
 
 
+async def _period_billable_amount(
+    session: AsyncSession, user_id: int, period: str, *, excluding: Decimal = Decimal("0")
+) -> Decimal:
+    """账期当前可开票额 = Σpaid − Σ退款(已打款 + 在途) − Σ(submitted + issued 已占用)。
+    预览 / 申请 / 开票重算三处同一口径;excluding 为开票重算时从已占用额里剔除的本单金额。"""
+    paid = await _period_paid_sum(session, user_id, period)
+    refunded = await _period_refund_sum(session, user_id, period)
+    active = await _period_active_sum(session, user_id, period)
+    return as_amount(paid - refunded - (active - excluding))
+
+
 async def _active_of_period(
     session: AsyncSession, user_id: int, period: str
 ) -> InvoiceRequest | None:
@@ -147,73 +158,36 @@ async def _get_by_idempotency_key(
 
 
 async def eligible_periods(session: AsyncSession, user_id: int) -> list[InvoiceEligibleOut]:
-    """各账期可开票额度预览:Σpaid − Σ(submitted+issued),仅返回 > 0 且已结束的账期。"""
+    """各账期可开票额度预览:有 paid 订单的已结束账期逐期按 _period_billable_amount 计算
+    (预览 = 申请 = 开票重算同一组 helper),仅返回 > 0 的账期,倒序。"""
     # 按北京月分组:timezone() 显式指定 Asia/Shanghai(=固定 +8,无夏令时),
     # 不受会话 TimeZone 设置影响
     period_col = func.to_char(func.timezone("Asia/Shanghai", Order.paid_at), "YYYY-MM")
-    paid_rows = (
+    periods = (
         (
             await session.execute(
-                select(period_col, func.sum(Order.amount))
+                select(period_col)
                 .where(
                     Order.user_id == user_id,
                     Order.type == "recharge",
                     Order.status == "paid",
-                    Order.channel_reversed_at.is_(None),  # 同 _period_paid_sum:冲正单不可开
                     Order.paid_at.is_not(None),
                 )
                 .group_by(period_col)
+                .order_by(period_col.desc())
             )
         )
-        .tuples()
+        .scalars()
         .all()
     )
-    active_rows = (
-        (
-            await session.execute(
-                select(InvoiceRequest.period, func.sum(InvoiceRequest.amount))
-                .where(
-                    InvoiceRequest.user_id == user_id,
-                    InvoiceRequest.status.in_(ACTIVE_STATUSES),
-                )
-                .group_by(InvoiceRequest.period)
-            )
-        )
-        .tuples()
-        .all()
-    )
-    # 退款(已打款 + 在途)按关联订单 paid_at 归账期扣除(与 _period_refund_sum 同口径,预览=申请)
-    refund_rows = (
-        (
-            await session.execute(
-                select(period_col, func.sum(RefundRequest.amount))
-                .join(Order, RefundRequest.order_no == Order.order_no)
-                .where(
-                    RefundRequest.user_id == user_id,
-                    RefundRequest.status.in_(REFUND_WITHHELD_STATUSES),
-                    Order.paid_at.is_not(None),
-                )
-                .group_by(period_col)
-            )
-        )
-        .tuples()
-        .all()
-    )
-    active_map = {p: Decimal(a) for p, a in active_rows}
-    refund_map = {p: Decimal(a) for p, a in refund_rows}
     current = current_beijing_period()
     out: list[InvoiceEligibleOut] = []
-    for period, paid_sum in paid_rows:
+    for period in periods:
         if period >= current:
             continue  # 当月账期不可开:paid 订单还可能变
-        remaining = as_amount(
-            Decimal(paid_sum)
-            - refund_map.get(period, Decimal("0"))
-            - active_map.get(period, Decimal("0"))
-        )
+        remaining = await _period_billable_amount(session, user_id, period)
         if remaining > 0:
             out.append(InvoiceEligibleOut(period=period, amount=remaining))
-    out.sort(key=lambda item: item.period, reverse=True)
     return out
 
 
@@ -250,9 +224,7 @@ async def create_invoice(
         )
     # 金额服务端计算(客户端提交金额无效):
     # Σpaid − Σ退款(已打款 + 在途,防票款双重兑现) − Σ(submitted+issued)
-    paid = await _period_paid_sum(session, user_id, period)
-    refunded = await _period_refund_sum(session, user_id, period)
-    amount = as_amount(paid - refunded - await _period_active_sum(session, user_id, period))
+    amount = await _period_billable_amount(session, user_id, period)
     if amount <= 0:
         raise AppError(
             ErrorCode.CONFLICT,
@@ -350,10 +322,7 @@ async def issue_invoice(
     # 行锁内按当前口径重算:申请到开票之间若发生退款(申请/打款),可开票额已变,
     # 按旧额开票后用户再拿退款 = 票款双重兑现;不符即 409,驳回由用户按新额重新申请
     # (create_refund 对本行 FOR UPDATE:在途退款要么已计入本次重算,要么在锁后看到 issued 被拒)
-    paid = await _period_paid_sum(session, req.user_id, req.period)
-    refunded = await _period_refund_sum(session, req.user_id, req.period)
-    active = await _period_active_sum(session, req.user_id, req.period)
-    current = as_amount(paid - refunded - (active - req.amount))
+    current = await _period_billable_amount(session, req.user_id, req.period, excluding=req.amount)
     if current != req.amount:
         raise AppError(
             ErrorCode.CONFLICT,

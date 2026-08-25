@@ -137,6 +137,30 @@ async def get_order(session: AsyncSession, user_id: int, order_no: str) -> Order
     return order
 
 
+async def _credit_paid_order(
+    session: AsyncSession, order: Order, *, channel_txn_id: str, remark: str
+) -> None:
+    """订单置 paid + 钱包入账(同事务,不 commit;回调与人工补单共用)。
+
+    先 flush 再入账:订单行上的唯一约束(channel_txn_id 同一渠道流水只入账一次、
+    backfill_idempotency_key)冲突在此显式抛 IntegrityError,而不是等 wallet.credit 内的
+    SELECT 触发 autoflush 时漏成 500。
+    """
+    order.status = "paid"
+    order.channel_txn_id = channel_txn_id
+    order.paid_at = now_utc()
+    await session.flush()
+    await wallet.credit(
+        session,
+        order.user_id,
+        order.amount,
+        type_="recharge",
+        ref_type="order",
+        ref_id=order.order_no,
+        remark=remark,
+    )
+
+
 async def handle_callback(session: AsyncSession, channel_name: str, result: CallbackResult) -> str:
     """处理支付回调。返回 'ok'(含重放)或抛错。重放回调不重复入账。"""
     order = (
@@ -182,18 +206,8 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
         await session.commit()
         return "ok"
 
-    # channel_txn_id 唯一约束兜底:同一渠道流水号只可能入账一次
-    order.status = "paid"
-    order.channel_txn_id = result.channel_txn_id
-    order.paid_at = now_utc()
-    await wallet.credit(
-        session,
-        order.user_id,
-        order.amount,
-        type_="recharge",
-        ref_type="order",
-        ref_id=order.order_no,
-        remark=f"{channel_name} 充值",
+    await _credit_paid_order(
+        session, order, channel_txn_id=result.channel_txn_id, remark=f"{channel_name} 充值"
     )
     await session.commit()
     if rescued:
@@ -296,6 +310,22 @@ async def verify_order(session: AsyncSession, order_no: str) -> dict:
     }
 
 
+def _is_backfill_replay(order: Order, idempotency_key: str | None) -> bool:
+    """补单状态检查(锁外预检与锁内复核同一段):已入账且同键 → True(幂等重放);
+    已入账异键 → 409;不可补的状态 → 409;可补 → False。"""
+    if order.status == "paid":
+        if idempotency_key is not None and order.backfill_idempotency_key == idempotency_key:
+            return True
+        raise AppError(ErrorCode.CONFLICT, key="billing.orderAlreadyPaid")
+    if order.status not in ("pending", "closed", "failed"):
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="billing.orderStateNotBackfillable",
+            params={"status": order.status},
+        )
+    return False
+
+
 async def backfill_order(
     session: AsyncSession,
     order_no: str,
@@ -316,16 +346,8 @@ async def backfill_order(
     ).scalar_one_or_none()
     if order is None:
         raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
-    if order.status == "paid":
-        if idempotency_key is not None and order.backfill_idempotency_key == idempotency_key:
-            return order, True  # 同键重放:本单已由本次补单入账,按当前状态返回
-        raise AppError(ErrorCode.CONFLICT, key="billing.orderAlreadyPaid")
-    if order.status not in ("pending", "closed", "failed"):
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.orderStateNotBackfillable",
-            params={"status": order.status},
-        )
+    if _is_backfill_replay(order, idempotency_key):
+        return order, True  # 同键重放:本单已由本次补单入账,按当前状态返回
     channel = await get_channel(order.channel, session)
     result = await _query_with_timeout(channel, order)
     if result.status != "paid" or not result.channel_txn_id or result.amount is None:
@@ -344,26 +366,18 @@ async def backfill_order(
     order = (
         await session.execute(select(Order).where(Order.order_no == order_no).with_for_update())
     ).scalar_one()
-    if order.status == "paid":
-        if idempotency_key is not None and order.backfill_idempotency_key == idempotency_key:
-            return order, True  # 并发同键补单已胜出:按幂等重放返回
-        raise AppError(ErrorCode.CONFLICT, key="billing.orderAlreadyPaid")
-    if order.status not in ("pending", "closed", "failed"):
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.orderStateNotBackfillable",
-            params={"status": order.status},
-        )
-    order.status = "paid"
-    order.channel_txn_id = result.channel_txn_id
+    if _is_backfill_replay(order, idempotency_key):
+        return order, True  # 并发同键补单已胜出:按幂等重放返回
     order.backfill_idempotency_key = idempotency_key
-    order.paid_at = now_utc()
     try:
-        # backfill_idempotency_key 唯一约束兜底(先于入账 flush 校验:
-        # 若等 wallet.credit 内 SELECT 触发 autoflush,冲突会漏成 500)
-        await session.flush()
+        await _credit_paid_order(
+            session,
+            order,
+            channel_txn_id=result.channel_txn_id,
+            remark=f"{order.channel} 充值(人工补单)",
+        )
     except IntegrityError as exc:
-        # 同键被并发用到另一笔订单,回查持键方后按 409 表态
+        # backfill_idempotency_key 唯一约束兜底:同键被并发用到另一笔订单,回查持键方后按 409 表态
         await session.rollback()
         if idempotency_key is not None:
             holder = (
@@ -379,15 +393,6 @@ async def backfill_order(
                     http_status=409,
                 ) from exc
         raise
-    await wallet.credit(
-        session,
-        order.user_id,
-        order.amount,
-        type_="recharge",
-        ref_type="order",
-        ref_id=order.order_no,
-        remark=f"{order.channel} 充值(人工补单)",
-    )
     if audit_writer is not None:
         await audit_writer(session)  # 同步审计:与入账同事务,写失败即回滚(P1-8)
     await session.commit()
