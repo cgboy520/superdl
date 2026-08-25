@@ -71,7 +71,8 @@ class NodeSpec(Base):
     vcpu: Mapped[int] = mapped_column(default=0)
     mem_gb: Mapped[int] = mapped_column(default=0)
     disk_gb: Mapped[int] = mapped_column(default=0)
-    driver_version: Mapped[str | None] = mapped_column(String(32))  # 装机登记兜底
+    # 装机脚本收尾上报(nvidia-smi)→ 登记快照 os_info → 巡检落表;节点未经本平台装机则为空
+    driver_version: Mapped[str | None] = mapped_column(String(32))
     cuda_version: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), index=True)  # Ready/NotReady/Cordoned/Missing
     # cordon 期望态:管理端操作写入,handler/巡检按它收敛(outbox 乱序重试不读 payload)

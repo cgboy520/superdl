@@ -90,25 +90,45 @@ async def test_missing_then_removed(sm, fake):
         ).scalar_one_or_none() is None
 
 
-async def test_enrollment_fallback_wins_over_gfd(sm, fake):
-    """装机登记(nvidia-smi 全卡清单)优先于 GFD 标签;显存取卡清单最大值。"""
-    # 直接落一行 joined 登记(绕过完整注册流程)
-    from app.modules.nodes.models import NodeEnrollment
+async def test_enrollment_report_wins_over_gfd(sm, fake):
+    """装机登记(bootstrap 的 nvidia-smi 全卡清单 + 收尾上报的驱动/CUDA 版本)优先于 GFD 标签;
+    显存取卡清单最大值。版本走 report_progress → 登记快照 → 巡检落台账整条链:
+    挂了 = 管理端节点页驱动/CUDA 两列恒空。"""
+    from app.modules.nodes import service
+    from app.modules.nodes.reconciler import reconcile_enrollments_once
+    from app.modules.nodes.schemas import EnrollmentCreate
+    from tests.test_node_enroll import set_cluster_config
 
+    await set_cluster_config(sm)
     async with sm() as session:
-        session.add(
-            NodeEnrollment(
-                token_hash="x" * 64,
-                pool="hami",
-                status="joined",
-                node_name="fake-hami-node-1",
-                gpu_info=[{"name": "NVIDIA A100-SXM4-80GB", "memory_mib": 81920}],
-                os_info={"driver_version": "580.65", "cuda_version": "12.8"},
-                expires_at=datetime.now(UTC) + timedelta(hours=1),
-                created_by=1,
-            )
+        _e, token = await service.create_enrollment(
+            session,
+            EnrollmentCreate(pool="hami", hostname="fake-hami-node-1"),
+            created_by=1,
+            idempotency_key=None,
         )
-        await session.commit()
+    async with sm() as session:
+        _row, _cfg, progress = await service.bootstrap(
+            session,
+            token,
+            hostname="fake-hami-node-1",
+            os_info={"os_release": "Ubuntu 24.04"},
+            gpus=[],
+            gpu_details=[{"name": "NVIDIA A100-SXM4-80GB", "memory_mib": 81920}],
+            client_ip=None,
+        )
+        assert progress is not None
+    async with sm() as session:
+        await service.report_progress(
+            session,
+            progress,
+            phase="waiting_node",
+            state="ok",
+            message=None,
+            driver_version="580.65",
+            cuda_version="12.8",
+        )
+    await reconcile_enrollments_once(sm)  # fake 集群里该节点 Ready 且池匹配 → joined
     await node_spec_patrol(sm)
     async with sm() as session:
         row = (
@@ -116,4 +136,4 @@ async def test_enrollment_fallback_wins_over_gfd(sm, fake):
         ).scalar_one()
     assert row.gpu_model == "A100-80G"
     assert row.vram_gb == 80
-    assert row.driver_version == "580.65"
+    assert row.driver_version == "580.65" and row.cuda_version == "12.8"

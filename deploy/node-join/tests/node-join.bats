@@ -85,6 +85,8 @@ EOF
 #!/usr/bin/env bash
 [[ "$NVIDIA_OK" == "1" ]] || exit 1
 if [[ "$*" == *"name,memory.total"* ]]; then echo "NVIDIA GeForce RTX 4090, 24564"; exit 0; fi
+# 无参数 = 概览表头(脚本从中取 CUDA 版本)
+if [[ $# -eq 0 ]]; then echo "| NVIDIA-SMI 580.65.06    Driver Version: 580.65.06    CUDA Version: 12.8 |"; exit 0; fi
 echo "580.65.06"
 EOF
   cat > "$TMP/bin/dpkg" <<'EOF'
@@ -207,6 +209,8 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
   # bootstrap 上报全卡清单(名称+显存 MiB)
   grep -q '"gpu_details": \[{"name": "NVIDIA GeForce RTX 4090", "memory_mib": 24564}\]' "$CURL_LOG"
+  # 驱动/CUDA 版本在驱动已加载的收尾上报附带(首装需重启,bootstrap 时采不到)
+  grep -q '"phase":"waiting_node","state":"ok".*"driver_version":"580.65.06","cuda_version":"12.8"' "$CURL_LOG"
 }
 
 @test "令牌全程不进进程 argv;完成后 bootstrap.json 与令牌落盘即清" {

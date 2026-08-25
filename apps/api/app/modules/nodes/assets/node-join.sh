@@ -35,6 +35,8 @@ FORCE=0
 UNINSTALL=0
 CURRENT_PHASE="init"
 NEED_REBOOT=0
+DRIVER_VERSION=""
+CUDA_VERSION=""
 
 # k3s/rke2 安装器 sha256 pin(固定 URL + 校验后执行,替代裸 curl|sh;与 NVIDIA 源 GPG
 # 验证同一信任模型)。上游安装器更新会校验失败并按 failed 上报,需核对上游后更新 pin。
@@ -125,13 +127,24 @@ use_token_file() { # use_token_file <path>
 
 report() { # report <phase> <state> [message]
   local phase="$1" state="$2" message="${3:-}"
-  local msg_json
+  local msg_json extra=""
   # json_escape 失败(python3 缺失等)不得让 ERR trap 在 on_error 里递归
   msg_json="$(printf '%s' "$message" | json_escape || true)"
+  # 驱动/CUDA 版本只在 collect_driver_versions 之后有值(收尾上报附带,巡检落台账)
+  if [[ -n "$DRIVER_VERSION" ]]; then extra+=",\"driver_version\":\"$DRIVER_VERSION\""; fi
+  if [[ -n "$CUDA_VERSION" ]]; then extra+=",\"cuda_version\":\"$CUDA_VERSION\""; fi
   curl -fsS -m 10 --retry 2 --config "$STATE_DIR/curl.conf" \
     -H "Content-Type: application/json" \
-    -d "{\"phase\":\"$phase\",\"state\":\"$state\",\"message\":$msg_json}" \
+    -d "{\"phase\":\"$phase\",\"state\":\"$state\",\"message\":$msg_json$extra}" \
     "$API_BASE/api/v1/node-enroll/progress" >/dev/null || true
+}
+
+collect_driver_versions() {
+  # 驱动版本只有内核模块加载后才取得到:首装要经一次重启,bootstrap 时采不到;
+  # 装机收尾时采集并随 waiting_node 上报,巡检把它落进节点台账。只留数字与点,便于直接拼 JSON
+  DRIVER_VERSION="$({ nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true; } | head -1 | tr -cd '0-9.')"
+  # 兼容 "CUDA Version: 12.8" 与新驱动的 "CUDA UMD Version: 13.3"
+  CUDA_VERSION="$({ nvidia-smi 2>/dev/null || true; } | sed -n 's/.*CUDA[^:]*Version: \([0-9.]*\).*/\1/p' | head -1)"
 }
 
 on_error() {
@@ -166,7 +179,7 @@ load_distro() {
 
 # ---------- 步骤实现 ----------
 step_bootstrap() {
-  local hostname kernel arch os_release gpus gpu_details driver cuda payload
+  local hostname kernel arch os_release gpus gpu_details payload
   hostname="$(hostname)"
   kernel="$(uname -r)"
   arch="$(uname -m)"
@@ -189,16 +202,13 @@ for line in sys.stdin:
         entry["memory_mib"] = int(parts[1])
     out.append(entry)
 print(json.dumps(out))')"
-  driver="$({ nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true; } | head -1)"
-  # 兼容 "CUDA Version: 12.8" 与新驱动的 "CUDA UMD Version: 13.3"
-  cuda="$({ nvidia-smi 2>/dev/null || true; } | sed -n 's/.*CUDA[^:]*Version: \([0-9.]*\).*/\1/p' | head -1)"
-  payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$driver" "$cuda" "$gpus" "$gpu_details" <<'PYEOF'
+  # 驱动/CUDA 版本不在此采集:首装此时驱动未加载,统一在收尾上报(collect_driver_versions)
+  payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$gpus" "$gpu_details" <<'PYEOF'
 import json, sys
 print(json.dumps({"hostname": sys.argv[1],
-                  "os_info": {"os_release": sys.argv[2], "kernel": sys.argv[3], "arch": sys.argv[4],
-                              "driver_version": sys.argv[5], "cuda_version": sys.argv[6]},
-                  "gpus": json.loads(sys.argv[7]),
-                  "gpu_details": json.loads(sys.argv[8])}))
+                  "os_info": {"os_release": sys.argv[2], "kernel": sys.argv[3], "arch": sys.argv[4]},
+                  "gpus": json.loads(sys.argv[5]),
+                  "gpu_details": json.loads(sys.argv[6])}))
 PYEOF
 )"
   curl -fsS -m 15 --retry 2 --config "$STATE_DIR/curl.conf" \
@@ -512,6 +522,7 @@ step_agent_start() {
 
 finalize() {
   CURRENT_PHASE="waiting_node"
+  collect_driver_versions
   report waiting_node ok "${AGENT_UNIT%.service} 已启动,等待平台对账确认节点 Ready(管理端「待加入节点」可见进度)"
   if systemctl is-enabled --quiet "${RESUME_UNIT}.service" 2>/dev/null; then
     systemctl disable "${RESUME_UNIT}.service" || true

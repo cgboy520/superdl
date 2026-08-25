@@ -109,6 +109,12 @@ async def enroll_progress(
     await check_rate_limit(f"node-enroll:{_client_ip(request)}", max_attempts=60, window_seconds=60)
     token = _bearer_token(authorization)
     enrollment = await service.report_progress(
-        session, token, phase=body.phase, state=body.state, message=body.message
+        session,
+        token,
+        phase=body.phase,
+        state=body.state,
+        message=body.message,
+        driver_version=body.driver_version,
+        cuda_version=body.cuda_version,
     )
     return ProgressAck(status=enrollment.status)

@@ -7,6 +7,8 @@
 import type { ProgressRequestState } from './progressRequestState';
 
 export interface ProgressRequest {
+  cuda_version?: string | null;
+  driver_version?: string | null;
   message?: string | null;
   /**
      * @minLength 1

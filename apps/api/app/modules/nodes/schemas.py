@@ -80,6 +80,10 @@ class ProgressRequest(BaseModel):
     phase: str = Field(min_length=1, max_length=32)
     state: Literal["running", "ok", "failed", "rebooting"]
     message: str | None = Field(default=None, max_length=2000)
+    # 驱动/CUDA 版本:脚本在驱动已加载的收尾上报(waiting_node)附带——首装要经一次重启,
+    # bootstrap 时采不到;服务端写进登记快照 os_info,巡检据此填台账 driver/cuda 列
+    driver_version: str | None = Field(default=None, max_length=32)
+    cuda_version: str | None = Field(default=None, max_length=16)
 
 
 class ProgressAck(BaseModel):

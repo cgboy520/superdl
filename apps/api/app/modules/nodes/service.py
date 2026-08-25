@@ -382,13 +382,26 @@ async def bootstrap(
 
 
 async def report_progress(
-    session: AsyncSession, token: str, *, phase: str, state: str, message: str | None
+    session: AsyncSession,
+    token: str,
+    *,
+    phase: str,
+    state: str,
+    message: str | None,
+    driver_version: str | None = None,
+    cuda_version: str | None = None,
 ) -> NodeEnrollment:
     row = await _resolve_progress_token(session, token)
     if row.status == "pending":
         raise not_found()  # 未 bootstrap 就上报进度:非法序列,按无效令牌处理
     row.phase = phase
     row.last_report_at = now_utc()
+    versions = {
+        k: v for k, v in (("driver_version", driver_version), ("cuda_version", cuda_version)) if v
+    }
+    if versions:
+        # 脚本只在驱动已加载的收尾上报带版本;并进登记快照,巡检据此填台账 driver/cuda 列
+        row.os_info = {**(row.os_info or {}), **versions}
     if state == "failed":
         transition_enrollment(row, "failed", phase=phase, error=message or f"{phase} 失败")
     elif state == "rebooting":

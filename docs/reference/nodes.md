@@ -16,7 +16,7 @@
 |---|---|---|
 | `GET /api/v1/node-enroll/script` | 匿名+限流 | 静态脚本,仅替换 `__API_BASE__`,内容零密钥 |
 | `POST /api/v1/node-enroll/bootstrap` | Bearer 注册令牌(一次性) | 上报 hostname/os/`gpu_details:[{name, memory_mib}]` → 回 pool/发行版/agent 版本/server_url/join_token/驱动版本/nvme/registries_yaml + `progress_token`(首跑换发) + `script_sha256`(重拉脚本指纹);首跑即消费注册令牌,之后任何令牌 bootstrap 均 404;按 IP 限流 |
-| `POST /api/v1/node-enroll/progress` | Bearer progress 令牌 | `{phase, state: running\|ok\|failed\|rebooting, message?}` 推进 phase/status/error/心跳;存量旧行(未签发 progress 令牌)仍认注册令牌 |
+| `POST /api/v1/node-enroll/progress` | Bearer progress 令牌 | `{phase, state: running\|ok\|failed\|rebooting, message?, driver_version?, cuda_version?}` 推进 phase/status/error/心跳;版本字段并进登记快照 `os_info`,巡检据此填台账 driver/cuda 列(脚本在驱动已加载的收尾上报 `waiting_node` 附带:首装要经重启,bootstrap 时采不到);存量旧行(未签发 progress 令牌)仍认注册令牌 |
 | `GET /api/admin/v1/node-enrollments` | ops/readonly | `?active=true` 排除 revoked、超 24h 的 joined、超 7d 的 expired |
 | `POST /api/admin/v1/node-enrollments` | ops | 响应含 token 明文与完整命令,仅此一次;Idempotency-Key 重放轮换该行 token 而不建新行(仅 pending/expired/failed,进行中 409,同 regenerate 守卫);cluster 组未配 server_url/join_token → 409 |
 | `POST .../{enrollment_id}/regenerate` | ops | 仅 pending/expired/failed:换新 token 与有效期,状态回 pending |
