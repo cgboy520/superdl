@@ -253,15 +253,6 @@ class FakeOrchestrator:
         )
         return entries
 
-    async def available_gpus(self, pool_label: str) -> int:
-        cap = self.pool_capacity.get(pool_label, 0)
-        used = sum(
-            int(p.spec.gpu_resources.get("nvidia.com/gpu", "0"))
-            for p in self.pods.values()
-            if p.spec.node_selector.get(POOL_NODE_LABEL) == pool_label
-        )
-        return max(0, cap - used)
-
     # ---------- 预热 ----------
 
     async def prewarm_image(self, node_name: str, image_ref: str) -> None:
@@ -312,7 +303,14 @@ class FakeOrchestrator:
         models = {"kata": "RTX4090", "hami": "RTX4090", "mig": "H100"}
         nodes = []
         for pool, cap in self.pool_capacity.items():
-            used = cap - await self.available_gpus(pool)
+            used = min(
+                cap,
+                sum(
+                    int(p.spec.gpu_resources.get("nvidia.com/gpu", "0"))
+                    for p in self.pods.values()
+                    if p.spec.node_selector.get(POOL_NODE_LABEL) == pool
+                ),
+            )
             name = f"fake-{pool}-node-1"
             nodes.append(
                 NodeInfo(

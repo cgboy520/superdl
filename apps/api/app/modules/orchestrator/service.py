@@ -72,9 +72,6 @@ from app.modules.orchestrator.queries import (
     billing_events_before as billing_events_before,
 )
 from app.modules.orchestrator.queries import (
-    cluster_nodes as cluster_nodes,
-)
-from app.modules.orchestrator.queries import (
     deletion_leftover_counts as deletion_leftover_counts,
 )
 from app.modules.orchestrator.queries import (

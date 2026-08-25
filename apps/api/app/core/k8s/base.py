@@ -201,10 +201,6 @@ class K8sOrchestrator(Protocol):
         """删盘前摘除目录配额(无配额记录视为成功)。幂等;失败抛异常。"""
         ...
 
-    async def available_gpus(self, pool_label: str) -> int:
-        """池内近似可租卡数(近似库存;创建以调度结果为准)。"""
-        ...
-
     async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
         """节点视图。include_unlabeled=True 时包含未打池标签的节点(台账巡检用);
         默认仅带 superdl.io/pool 标签的节点。"""

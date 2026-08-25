@@ -54,7 +54,7 @@ metadata:
   name: superdl-disk-ops
   namespace: superdl
 ---
-# 只读面:与 app/core/k8s/real.py 的 probe_cluster / available_gpus 一一对应
+# 只读面:与 app/core/k8s/real.py 的 probe_cluster / list_nodes 一一对应
 # (VersionApi 走 /version 非资源路径,认证用户默认可读,无需授权)。
 # 绑定对象:API(集群页探测/市场近似库存)与 node-mgr(节点巡检阶段 A 跑 probe_cluster);
 # tenant-mgr 的 reconciler 只需要下方编排面里的 pods/services 读,不再给宽读。

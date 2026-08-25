@@ -10,7 +10,6 @@ from typing import Any
 from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.k8s import get_orchestrator
 from app.core.money import as_amount
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
@@ -291,10 +290,6 @@ async def pool_by_instance(session: AsyncSession, instance_ids: Iterable[int]) -
         return {}
     rows = (await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars()
     return {inst.id: inst.spec["pool_label"] for inst in rows}
-
-
-async def cluster_nodes() -> list[Any]:
-    return await get_orchestrator().list_nodes()
 
 
 # ---------- 数据盘门面(billing/巡检经此访问,模块边界) ----------

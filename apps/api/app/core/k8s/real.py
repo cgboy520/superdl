@@ -907,7 +907,7 @@ class RealOrchestrator:
             pod_labels={"app": "superdl-disk-quota"},
         )
 
-    # ---------- 库存与节点 ----------
+    # ---------- 节点 ----------
 
     @staticmethod
     def _gpu_amount(resources: dict[str, Any] | None) -> int:
@@ -952,17 +952,6 @@ class RealOrchestrator:
             return whole * int(cores) / 100.0
         return float(whole)
 
-    async def available_gpus(self, pool_label: str) -> int:
-        return await self._run(self._available_gpus_sync, pool_label)
-
-    def _available_gpus_sync(self, pool_label: str) -> int:
-        nodes = self._list_all(
-            self.core.list_node, label_selector=f"{POOL_NODE_LABEL}={pool_label}"
-        )
-        total = sum(self._physical_gpu_amount(n) for n in nodes)
-        used = self._used_gpus_by_pool().get(pool_label, 0)
-        return max(0, total - used)
-
     @staticmethod
     def _list_all(list_fn: Any, **kwargs: Any) -> list[Any]:
         """分页拉满全量:官方客户端默认不翻页,对象超过单页上限会被静默截断。"""
@@ -978,33 +967,9 @@ class RealOrchestrator:
             if not cont:
                 return items
 
-    def _used_gpus_by_pool(self) -> dict[str, int]:
-        """全部受管 Pod 一次拉取,按池聚合已用份额(物理卡当量:整卡/MIG 按 1,
-        HAMi 按 gpucores 折算后向上取整,不低估占用)。
-
-        无 nodeSelector 的 Pod(存量实例/异常路径)不能跳过:按 spec.nodeName
-        所在节点的池标签保守归账,否则已用量被低估、库存虚高超卖。
-        """
-        pods = self._list_all(
-            self.core.list_pod_for_all_namespaces,
-            label_selector=MANAGED_LABEL,
-            field_selector="status.phase!=Failed",
-        )
-        nodes = self._list_all(self.core.list_node)
-        node_pool = {n.metadata.name: (n.metadata.labels or {}).get(POOL_NODE_LABEL) for n in nodes}
-        used: dict[str, float] = {}
-        for pod in pods:
-            pool = (pod.spec.node_selector or {}).get(POOL_NODE_LABEL)
-            if pool is None:
-                pool = node_pool.get(pod.spec.node_name or "")
-            if pool is None:  # 未调度且无 selector:无法归池,只能跳过
-                continue
-            for c in pod.spec.containers:
-                limits = (c.resources and c.resources.limits) or {}
-                used[pool] = used.get(pool, 0.0) + self._pod_gpu_occupancy(limits)
-        return {pool: math.ceil(v) for pool, v in used.items()}
-
     def _used_gpus_by_node(self) -> dict[str, int]:
+        """全部受管 Pod 一次拉取,按节点聚合已用份额(物理卡当量:整卡/MIG 按 1,
+        HAMi 按 gpucores 折算后向上取整,不低估占用)。未调度的 Pod 无节点可归,跳过。"""
         pods = self._list_all(
             self.core.list_pod_for_all_namespaces,
             label_selector=MANAGED_LABEL,

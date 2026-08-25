@@ -2,7 +2,7 @@
 
 真实集群行为由 test_k8s_real_smoke.py(SUPERDL_TEST_KUBECONFIG 门控)覆盖;
 这里钉死「不需要集群就能验证」的逻辑:单位换算、端口区间、NetPol 结构、
-分页、库存保守归账、Service 409/422 核对。
+分页、节点容量与已用份额归账、Service 409/422 核对。
 """
 
 from types import SimpleNamespace
@@ -260,16 +260,13 @@ def _pod(
     )
 
 
-def _orch_with(pods: list[Any], nodes: list[Any]) -> RealOrchestrator:
+def _orch_with(pods: list[Any]) -> RealOrchestrator:
     """挂 CoreStub 的裸 RealOrchestrator(不连集群)。"""
     orch = _bare()
 
     class CoreStub:
         def list_pod_for_all_namespaces(self, **kwargs: Any) -> Any:
             return _page(pods)
-
-        def list_node(self, **kwargs: Any) -> Any:
-            return _page(nodes)
 
     orch.core = cast(Any, CoreStub())
     return orch
@@ -324,38 +321,14 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._pod_gpu_occupancy({"nvidia.com/gpu": "1"}) == 1.0
         assert RealOrchestrator._pod_gpu_occupancy({"nvidia.com/mig-1g.10gb": "2"}) == 2.0
 
-    def test_used_pool_ceil_after_share_sum(self):
-        nodes = [
-            SimpleNamespace(metadata=SimpleNamespace(name="n1", labels={POOL_NODE_LABEL: "hami"}))
-        ]
+    def test_used_by_node_ceils_after_share_sum(self):
+        """份额先求和再向上取整(0.5 + 0.3 = 0.8 → 1),不低估占用;未调度 Pod 无节点可归。"""
         pods = [
             _pod(pool="hami", node_name="n1", gpu=1, cores=50),
             _pod(pool="hami", node_name="n1", gpu=1, cores=30),
+            _pod(pool=None, node_name=None, gpu=9),
         ]
-        # 0.5 + 0.3 = 0.8 → 向上取整 1(不低估占用)
-        assert _orch_with(pods, nodes)._used_gpus_by_pool() == {"hami": 1}
-
-
-class TestUsedGpusByPool:
-    """无 nodeSelector 的 Pod 必须按 nodeName 所在节点保守归池,否则库存虚高超卖。"""
-
-    def test_selectorless_pod_counted_by_node(self):
-        nodes = [
-            SimpleNamespace(metadata=SimpleNamespace(name="n1", labels={POOL_NODE_LABEL: "hami"}))
-        ]
-        pods = [
-            _pod(pool="kata", node_name="n2", gpu=1),
-            _pod(pool=None, node_name="n1", gpu=2),  # 无 selector:按节点归 hami
-            _pod(pool=None, node_name=None, gpu=9),  # 未调度:无法归池,跳过
-        ]
-        assert _orch_with(pods, nodes)._used_gpus_by_pool() == {"kata": 1, "hami": 2}
-
-    def test_all_selectorless_cluster_not_overcounted(self):
-        nodes = [
-            SimpleNamespace(metadata=SimpleNamespace(name="n1", labels={POOL_NODE_LABEL: "mig"}))
-        ]
-        pods = [_pod(pool=None, node_name="n1", gpu=1)]
-        assert _orch_with(pods, nodes)._used_gpus_by_pool() == {"mig": 1}
+        assert _orch_with(pods)._used_gpus_by_node() == {"n1": 1}
 
 
 def _api_exc(status: int, body: str = "") -> k8s_client.ApiException:

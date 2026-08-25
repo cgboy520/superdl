@@ -18,11 +18,7 @@ from typing import Any
 import pytest
 from kubernetes import client as k8s_client
 
-from app.core.k8s.base import (
-    POOL_NODE_LABEL,
-    InstancePodSpec,
-    K8sOrchestrator,
-)
+from app.core.k8s.base import K8sOrchestrator
 from app.core.k8s.fake import FakeOrchestrator
 
 
@@ -100,24 +96,6 @@ def _mark_job_succeeded(real: Any, namespace: str, name: str) -> None:
     real.batch.patch_namespaced_job_status(name, namespace, {"status": {"succeeded": 1}})
 
 
-def _spec(namespace: str, pool: str, gpu_resources: dict[str, str]) -> InstancePodSpec:
-    name = f"conf-{uuid.uuid4().hex[:12]}"
-    return InstancePodSpec(
-        namespace=namespace,
-        name=name,
-        image="registry.invalid/conf:0",
-        gpu_resources=gpu_resources,
-        runtime_class=None,
-        host_users=True,
-        vcpu=1,
-        mem_gb=1,
-        disk_gb=1,
-        ssh_node_port=31998,
-        jupyter_host=f"{name}.app.example.invalid",
-        node_selector={POOL_NODE_LABEL: pool},
-    )
-
-
 # ---------- 契约用例(双后端同跑) ----------
 
 
@@ -168,27 +146,6 @@ class TestDiskQuotaContract:
                 await backend.impl.delete_disk_quota(sub)
             _mark_job_succeeded(backend.real, platform_ns, _quota_job_name(sub, False))
             await backend.impl.delete_disk_quota(sub)  # 完成返回
-
-
-class TestAvailableGpusContract:
-    """available_gpus 归池口径:非负 int;未知池归 0;占用按池扣减、释放归还。"""
-
-    async def test_pool_accounting(self, backend: Backend) -> None:
-        kata = await backend.impl.available_gpus("kata")
-        assert isinstance(kata, int) and kata >= 0
-        assert await backend.impl.available_gpus("no-such-pool") == 0  # 未知池归 0
-        if backend.kind == "fake":
-            assert backend.fake is not None
-            capacity = backend.fake.pool_capacity["kata"]
-            assert kata == capacity
-            # 占用归池:kata 池起 2 卡实例 → kata 可用 -2,hami 不受影响;删除后归还
-            spec = _spec(backend.namespace, "kata", {"nvidia.com/gpu": "2"})
-            await backend.impl.create_instance(spec)
-            assert await backend.impl.available_gpus("kata") == capacity - 2
-            assert await backend.impl.available_gpus("hami") == backend.fake.pool_capacity["hami"]
-            await backend.impl.delete_instance(backend.namespace, spec.name, force=True)
-            assert await backend.impl.available_gpus("kata") == capacity
-        # Real:kind 无打池标签节点,各池可用恒 0(上面已断言非负与未知池口径)
 
 
 class TestReadInstanceLogsContract:
