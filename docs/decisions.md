@@ -60,10 +60,10 @@
 - **实例盘销毁带 TRIM。** TopoLVM lvmd `issue_discards=1`,`lvremove` 对 extent 发 NVMe TRIM;大 LV 实测耗时记录在
   `deploy/cluster/runbooks/cluster-validation.md` D 节。
 - **JuiceFS 关闭 writeback。** 数据盘一致性优先于顺序写性能;fio 对比记录同上。
-- **镜像仓迁托管仓。** 集群内自建 registry(明文 http + htpasswd)废弃,`registry.superdl.local` 保留为逻辑名,
-  节点 mirror 到 ACR / Harbor;见 `deploy/cluster/runbooks/image-prewarm.md`。过渡期残留:平台默认生成的
-  registries.yaml 仍指向 NodePort 30500,已迁移集群靠 `node_registries_yaml` 覆盖(`reference/nodes.md`);
-  保留这个默认(未迁移集群仍正确),不为托管仓地址新增配置键。
+- **镜像仓迁托管仓。** 集群内自建 registry(明文 http + htpasswd)退役,清单已从仓库删除(未迁移集群为零);
+  `registry.superdl.local` 保留为逻辑名,节点 mirror 到 ACR / Harbor;见 `deploy/cluster/runbooks/image-prewarm.md`。
+  平台默认生成的 registries.yaml 仍指向历史 NodePort 30500(已无服务在该端口),集群必须在平台配置填
+  `node_registries_yaml` 覆盖(`reference/nodes.md`);不为托管仓地址新增配置键。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

@@ -9,7 +9,7 @@ mirrors:
     endpoint:
       # 托管仓地址(ACR 企业版:<instance>-registry.cn-<region>.cr.aliyuncs.com;Harbor:harbor.<域>)。
       # 替换 CHANGE_ME_REGISTRY_HOST 为真实主机名(不含 scheme 时默认 https;显式 https 更清楚)。
-      # 原集群内自建 registry(deploy/cluster/registry/,明文 http)已废弃,迁移流程见
+      # 集群内自建 registry(明文 http)已退役、清单已删除;接入流程见
       # runbooks/image-prewarm.md「托管仓迁移」节。
       - "https://CHANGE_ME_REGISTRY_HOST"
 # 托管仓拉取凭据:节点 pull 用。ACR 用独立访问凭据(非主账号 AK);Harbor 用机器人账户。

@@ -68,7 +68,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 ## G. 镜像缓存与预热
 
 - [ ] Spegel P2P:node-A `crictl pull` 某钉版本镜像后,node-B 拉同镜像秒级完成
-- [ ] 集群内 registry:匿名 push/pull 返回 401;带凭据(`--dest-creds ops:…`)push 与节点侧 pull 均通
+- [ ] 托管仓:节点侧 `crictl pull registry.superdl.local/<镜像>` 经 registries.yaml 的 mirror + 凭据拉取成功;匿名 pull 被拒
 - [ ] 预热 Job 在 kata/hami/mig 三池均可落(tolerations Exists)
 - [ ] kubelet 镜像 GC 后,按 `prewarm_recheck_hours` 复检自动重拉
 - [ ] 20GB 级镜像在 `activeDeadlineSeconds=1800` 内拉完

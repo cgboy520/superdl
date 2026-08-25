@@ -55,8 +55,8 @@ regexes = [
   '''"(?:new_)?password": "(?:newpass|qwerty)123456"''',
 ]
 
-# registry 占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,禁止再以任何形式入库
-# (凭据改为部署时手工建 Secret,见 deploy/cluster/registry/registry.yaml 头注释)
+# 已退役的集群内 registry 占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,禁止再以任何形式入库
+# (registry 清单已从仓库删除;规则保留,防止该 hash 以任何文件形式回流)
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
 description = "已泄漏的 registry htpasswd bcrypt hash"

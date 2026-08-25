@@ -53,8 +53,8 @@ kubectl -n monitoring create secret generic grafana-admin \
    `registry.superdl.local` 只是镜像引用里的逻辑名,由节点 `registries.yaml` mirror 到托管仓。
    替换 `rke2/registries.yaml` 的 `CHANGE_ME_REGISTRY_HOST/USERNAME/PASSWORD`(preflight 强制校验)
    → 分发全节点 → 把同一份模板填进管理端「平台配置 · 集群接入」的 `node_registries_yaml`
-   (平台默认生成的 registries.yaml 仍指向过渡期集群内 registry 的 NodePort 30500,不填覆盖则新节点拉不到镜像)。
-   镜像发布、迁移与凭据轮换 SOP:`runbooks/image-prewarm.md`。集群内自建 registry(`registry/`)已废弃,仅未迁移集群过渡使用。
+   (平台默认生成的 registries.yaml 仍指向历史上集群内 registry 的 NodePort 30500——该服务已不存在,不填覆盖则新节点拉不到镜像)。
+   镜像发布、托管仓接入与凭据轮换 SOP:`runbooks/image-prewarm.md`。集群内自建 registry 已退役,清单已从仓库删除。
 5. **Kata**(dedicated 档):`kata/` 下 kata-deploy(仅 kata 池节点)+
    `kubectl apply -f kata/kata-runtimeclass.yaml`
 6. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入

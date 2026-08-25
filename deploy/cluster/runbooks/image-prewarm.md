@@ -3,31 +3,18 @@
 三层结构:
 
 1. **Spegel P2P**(RKE2 `embedded-registry: true` + 全节点 `registries.yaml`)——任一节点已缓存的镜像,其余节点内网互拉。
-2. **托管镜像仓**(阿里云 ACR 企业版优先,Harbor 备选)——`registry.superdl.local` 经节点 mirror 解析到托管仓 https,平台镜像权威源;原集群内自建 registry(`registry/registry.yaml`)已废弃。
+2. **托管镜像仓**(阿里云 ACR 企业版优先,Harbor 备选)——`registry.superdl.local` 经节点 mirror 解析到托管仓 https,平台镜像权威源;集群内自建 registry 已退役(清单已从仓库删除)。
 3. **平台预热**(管理端「镜像与预热」页 + worker 巡检)——每镜像×每节点拉取 Job,覆盖率实时可见。
 
 ## 托管仓迁移(一次性)
 
 1. **开通托管仓**:ACR 企业版实例(选与集群同地域/专网可达)或 Harbor(helm 部署,自带 TLS)。
    建独立拉取凭据(ACR 访问凭据 / Harbor 机器人账户,仅 pull 权限)。
-2. **批量 mirror 存量镜像**(运维机,skopeo):
-   ```bash
-   kubectl -n registry port-forward svc/registry 5000:5000 &
-   for repo in $(curl -su ops:'<旧口令>' http://127.0.0.1:5000/v2/_catalog | jq -r '.repositories[]'); do
-     for tag in $(curl -su ops:'<旧口令>' "http://127.0.0.1:5000/v2/$repo/tags/list" | jq -r '.tags[]'); do
-       skopeo copy --src-tls-verify=false --src-creds ops:"<旧口令>" \
-         --dest-creds "<托管仓凭据>" \
-         "docker://127.0.0.1:5000/$repo:$tag" "docker://<托管仓地址>/$repo:$tag"
-     done
-   done
-   ```
-3. **切换 mirror**:`rke2/registries.yaml` 的 `CHANGE_ME_REGISTRY_HOST/USERNAME/PASSWORD`
+2. **配置 mirror**:`rke2/registries.yaml` 的 `CHANGE_ME_REGISTRY_HOST/USERNAME/PASSWORD`
    替换为真实值 → 分发全节点(管理端平台配置 `node_registries_yaml` 同步更新,节点侧由 node-join.sh 落位)
-   → 滚动重启 agent。镜像引用主机名不变(`registry.superdl.local` 逻辑名),业务无感。
-4. **验证**:任一节点 `crictl pull registry.superdl.local/pytorch:2.9.0-cu128` 成功;
-   管理端预热页覆盖率恢复正常;`./preflight.sh <env>` 托管仓段全绿。
-5. **退役自建 registry**:`kubectl delete -f registry/registry.yaml`;
-   确认全部节点 mirror 已切换后删除 `deploy/cluster/registry/` 目录(仓内已标废弃)。
+   → 滚动重启 agent。镜像引用主机名固定为 `registry.superdl.local`(逻辑名),换仓不改引用。
+3. **验证**:任一节点 `crictl pull registry.superdl.local/pytorch:2.9.0-cu128` 成功;
+   管理端预热页覆盖率正常;`./preflight.sh <env>` 托管仓段全绿。
 
 ## 平台镜像发布 SOP(托管仓)
 

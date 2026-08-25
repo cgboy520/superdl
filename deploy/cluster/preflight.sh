@@ -43,7 +43,7 @@ if [[ "$env_name" == "full" ]]; then
 fi
 
 say "== 托管镜像仓(P1-7:registry.superdl.local → ACR/Harbor https)=="
-# 自建 registry(registry/)已废弃:节点 registries.yaml 的 mirror 指向托管仓,
+# 集群内自建 registry 已退役(清单已删除):节点 registries.yaml 的 mirror 指向托管仓,
 # 地址与拉取凭据必须替换,否则节点无法 pull 平台镜像
 if grep -q 'CHANGE_ME_REGISTRY_HOST' rke2/registries.yaml; then
   miss "rke2/registries.yaml mirror 仍是 CHANGE_ME_REGISTRY_HOST 占位(替换为 ACR/Harbor 真实地址)"
