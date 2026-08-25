@@ -28,7 +28,7 @@ import { useTranslation } from "react-i18next";
 
 import { type AlertRow, fetchAdminMe, useAlertUnreadCount, useAlerts } from "../api";
 import { LangSwitcher } from "../components/LangSwitcher";
-import { type MenuKey, canSeeMenu } from "../lib/menu";
+import { type MenuKey, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
 import { authStore, useAuth } from "../stores/auth";
 
 export const Route = createFileRoute("/_app")({
@@ -64,13 +64,6 @@ const MENU = [
   { key: "/platform", icon: <ApiOutlined />, labelKey: "menu.platform" },
   { key: "/settings", icon: <SettingOutlined />, labelKey: "menu.settings" },
 ] as const satisfies readonly { key: MenuKey; icon: unknown; labelKey: string }[];
-
-const ROLE_LABEL = {
-  admin: "roles.admin",
-  ops: "roles.ops",
-  finance: "roles.finance",
-  readonly: "roles.readonly",
-} as const;
 
 function AlertBell() {
   const { t } = useTranslation();
@@ -183,7 +176,7 @@ function AppLayout() {
                 <Typography.Text>{admin?.username ?? "-"}</Typography.Text>
                 <Tag>
                   {(() => {
-                    const roleKey = metaOf(ROLE_LABEL, admin?.role ?? "");
+                    const roleKey = metaOf(ROLE_LABEL_KEY, admin?.role ?? "");
                     return roleKey ? t(roleKey) : admin?.role;
                   })()}
                 </Tag>

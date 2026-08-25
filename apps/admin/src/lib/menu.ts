@@ -8,6 +8,14 @@ export const ALL_ROLES = ["admin", "ops", "finance", "readonly"] as const;
 
 export type Role = (typeof ALL_ROLES)[number];
 
+/** 角色 → 文案键(顶栏角色 Tag 与管理员账号页共用;值在 admin.json roles.*) */
+export const ROLE_LABEL_KEY = {
+  admin: "roles.admin",
+  ops: "roles.ops",
+  finance: "roles.finance",
+  readonly: "roles.readonly",
+} as const satisfies Record<Role, string>;
+
 export const MENU_ROLES = {
   "/": ALL_ROLES,
   "/nodes": ["admin", "ops", "readonly"], // finance 无 /nodes 权限

@@ -19,19 +19,10 @@ import {
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
 import { useApiErrorText } from "../../lib/apiError";
+import { ALL_ROLES, ROLE_LABEL_KEY, type Role } from "../../lib/menu";
 import { useAuth } from "../../stores/auth";
 
-const ROLES = ["admin", "ops", "finance", "readonly"] as const;
-type AdminRole = (typeof ROLES)[number];
 const MIN_PASSWORD = 12;
-
-// 角色文案复用 roles.* 目录(与顶栏角色 Tag 同源)
-const ROLE_LABEL_KEY = {
-  admin: "roles.admin",
-  ops: "roles.ops",
-  finance: "roles.finance",
-  readonly: "roles.readonly",
-} as const satisfies Record<AdminRole, string>;
 
 function roleColor(role: string): string {
   if (role === "admin") return adminColors.critical;
@@ -51,7 +42,7 @@ export function AdminsTab() {
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminAccountOut | null>(null);
   const [selfOpen, setSelfOpen] = useState(false);
-  const [createForm] = Form.useForm<{ username: string; password: string; role: AdminRole; reason: string }>();
+  const [createForm] = Form.useForm<{ username: string; password: string; role: Role; reason: string }>();
   const [pwdForm] = Form.useForm<{ password: string; reason: string }>();
   const [selfForm] = Form.useForm<{ current_password: string; new_password: string }>();
 
@@ -77,7 +68,7 @@ export function AdminsTab() {
       title: t("admins.colRole"),
       dataIndex: "role",
       key: "role",
-      render: (role: AdminRole) => <Tag color={roleColor(role)}>{t(ROLE_LABEL_KEY[role])}</Tag>,
+      render: (role: Role) => <Tag color={roleColor(role)}>{t(ROLE_LABEL_KEY[role])}</Tag>,
     },
     {
       title: t("admins.colStatus"),
@@ -118,10 +109,10 @@ export function AdminsTab() {
             <Select
               size="small"
               style={{ width: 110 }}
-              value={row.role as AdminRole}
+              value={row.role as Role}
               disabled={!isSuperAdmin || isSelf}
-              options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
-              onChange={(role: AdminRole) => {
+              options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
+              onChange={(role: Role) => {
                 // 改角色必须带 reason:审计只记新值,不带原因就答不出「从什么改成什么」
                 // 用 App.useApp() 的 modal 实例:静态 Modal.confirm 拿不到深色主题 token
                 modal.confirm({
@@ -285,7 +276,7 @@ export function AdminsTab() {
             <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Form.Item name="role" label={t("admins.colRole")} initialValue="ops" rules={[{ required: true }]}>
-            <Select options={ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))} />
+            <Select options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))} />
           </Form.Item>
           <Form.Item name="reason" label={t("admins.reason")} rules={[{ required: true, min: 2, max: 200 }]}>
             <Input.TextArea rows={2} placeholder={t("admins.reasonPlaceholder")} />
