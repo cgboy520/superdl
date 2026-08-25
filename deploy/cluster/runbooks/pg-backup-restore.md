@@ -12,7 +12,7 @@
 
 | 层 | 手段 | RPO |
 |---|---|---|
-| 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → 对象存储(上传后 restore 冒烟校验要害表行数,失败即 Job Failed 告警) | 24h |
+| 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → 对象存储(上传后 restore 冒烟:pg_restore 成功且要害表可查询即通过,行数只打印不判定;失败即 Job Failed 告警) | 24h |
 | 连续归档 | CloudNativePG barmanObjectStore S3 WAL 归档 + 每日基础备份(`values/cnpg-cluster.yaml`,cnpg 档);托管 PG 时用 RDS 自动备份 + PITR | 分钟级 |
 | 集群元数据 | RKE2 etcd 快照(每 6h,留 12 份,`rke2/server-config.yaml`) | 6h |
 
