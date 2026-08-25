@@ -16,7 +16,7 @@
 
 ## 规则与不变量
 
-- request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体。异常告警经日志栈承接(决策 不引 sentry 依赖;Loki 查询/告警见 `deploy/cluster/runbooks/loki-logging.md`)。
+- request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体。异常告警经日志栈承接(不引 Sentry 类 SaaS,理由见 `docs/decisions.md`;Loki 查询/告警见 `deploy/cluster/runbooks/loki-logging.md`)。
 - 日志:structlog 管道 + stdlib 桥接(ProcessorFormatter,第三方库日志同一格式);prod=JSON、dev/test=Console;级别 `SUPERDL_LOG_LEVEL`(默认 INFO);outbox payload 带 `_request_id`,worker 执行时回填日志上下文,API 请求与异步执行可按同一 id 串联(Loki 查询式见 runbook)。
 - worker 自起 `/metrics` 端口(默认 9000,`SUPERDL_WORKER_METRICS_PORT`,与 API 同一 `SUPERDL_METRICS_TOKEN` Bearer 门禁):结算失败、死信、泄漏回收等指标产生在 worker 进程内。
 - 抓取配置 `deploy/app/k8s/08-monitoring.yaml` = API ServiceMonitor(Bearer)+ worker PodMonitor(同样须带 Bearer 凭据)。

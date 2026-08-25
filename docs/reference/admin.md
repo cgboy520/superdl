@@ -11,7 +11,7 @@
 
 | 路由/端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离;admin/finance 强制 TOTP,未绑定发绑定票、已绑定发二要素票 |
+| `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离;全角色强制 TOTP(未绑定发绑定票 10 分钟、已绑定发二要素票 5 分钟) |
 | `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由都调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |
 | `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、池级 GPU 台账(含非 Ready 段)、节点 Ready/Missing 计数 |
@@ -45,7 +45,7 @@
 ## 规则与不变量
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
-- 管理端登录限流只计失败:账号桶 `admin-login:{ip}:{username}` 5 次/5 分钟(成功清零),纯 IP 桶 `admin-login-ip:{ip}` 30 次/时(只计失败、不清零)。
+- 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 5 次/5 分钟与 `admin-login-acct:{username}` 10 次/15 分钟(成功即清零),`admin-login-ip:{ip}` 30 次/时与 `admin-login-acct-daily:{username}` 30 次/日(只计失败、不清零;账号维桶让换 IP 的口令喷洒也逃不掉)。TOTP 校验 `admin-mfa:{admin_id}` 5 次/10 分钟。全部限额汇总见 [limits.md](./limits.md)。
 - readonly 全站只读;finance 只在财务区可写。
 - 调账复核必须以 `with_for_update` 行锁读取:并发复核的后到者见非 pending 即返 409,保证恰一次入账、ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号。
 - 调账发起与人工补单均支持 Idempotency-Key(调账落 `(created_by, idempotency_key)` 唯一约束;补单落 `orders.backfill_idempotency_key`,同键重放回当前状态而非 409)。

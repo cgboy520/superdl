@@ -1,7 +1,7 @@
 # acme-dns（RFC2136 DNS01 中转）部署与轮换 Runbook
 
 泛域名证书（`*.app.superdl.example.com`）的 DNS01 挑战路径。替代原个人仓
-`cert-manager-webhook-alidns`（P1-6）：cert-manager 内置 RFC2136 solver → acme-dns
+`cert-manager-webhook-alidns`：cert-manager 内置 RFC2136 solver → acme-dns
 （凭据仅可更新 `_acme-challenge` 子域 TXT）→ 主域 DNS 一次性 CNAME 委托。
 
 ## 架构与信任模型

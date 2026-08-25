@@ -1,7 +1,7 @@
 # SuperDL 架构参考
 
 GPU 算力租赁平台的架构事实:技术栈、模块边界、数据模型、核心流程与硬约束。
-各模块的接口契约见 [`reference/`](./reference/),UI/UX 规格见 [`ui-ux-spec.md`](./ui-ux-spec.md)。
+各模块的接口契约见 [`reference/`](./reference/),UI/UX 规格见 [`ui-ux-spec.md`](./ui-ux-spec.md),文档地图与维护约定见 [`README.md`](./README.md)。
 
 ## 1. 系统上下文
 
@@ -44,7 +44,7 @@ react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd
 | kube-prometheus-stack | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
 | JuiceFS CSI | 数据盘;后端云 OSS 或自建 SeaweedFS |
 | TopoLVM | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
-| cert-manager / ingress-nginx | 泛域名证书与 Jupyter 北向入口 |
+| cert-manager + acme-dns / ingress-nginx | 泛域名证书(DNS01 经 acme-dns 中转,集群内凭据只能改 `_acme-challenge` TXT)与 Jupyter 北向入口 |
 
 GPU 资源申请统一经 `app/core/gpu_adapter` 抽象:当前用 device-plugin 语法,切 DRA 只改这一层。
 
@@ -85,7 +85,7 @@ apps/api/app/
 `creating` 超时未调度 → 失败退款。reconciler 不得关闭。
 
 worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、支付查单与超时关单、
-镜像预热巡检、节点规格巡检与入网 reconciler、数据保洁。定时任务一律先抢 pg advisory lock,多副本下单实例执行。
+镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。定时任务一律先抢 pg advisory lock,多副本下单实例执行。
 
 ## 5. 接入层
 

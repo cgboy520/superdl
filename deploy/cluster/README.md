@@ -29,7 +29,7 @@ kubectl -n monitoring create secret generic grafana-admin \
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml
    systemctl enable --now rke2-server
    ```
-   **控制面 HA(公众生产强制,单 server 禁止对外开放;P0-1)**:3 台 server 堆叠 etcd
+   **控制面 HA(公众生产强制,单 server 禁止对外开放)**:3 台 server 堆叠 etcd
    (奇数台法定人数) + 控制面 VIP(kube-vip/keepalived/SLB 任一)。ansible 在
    `group_vars/servers.yml` 定义 `api_vip` + `server_ips`(奇数台 ≥3)即自动渲染
    tls-san(apiserver 证书覆盖 VIP 与全部 server IP,模板内注释块保持不动);
@@ -49,10 +49,12 @@ kubectl -n monitoring create secret generic grafana-admin \
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    (首次上线可先 [Audit] 观察一周再改回 [Deny],见该文件头注释;Audit 期间 preflight 该项会报缺)
-4. **内部镜像仓库**:先手工建 htpasswd Secret(凭据不落 git,命令见 `registry/registry.yaml`
-   头注释),再 `kubectl apply -f registry/registry.yaml`(已开 htpasswd 认证;
-   NetworkPolicy ipBlock 示例段按真实节点/运维网段取消注释后一并 apply;
-   节点 pull 凭据与滚动顺序 SOP:`runbooks/image-prewarm.md`)
+4. **镜像仓(托管仓)**:平台镜像的权威源是阿里云 ACR 企业版或 Harbor(自带 TLS/认证/扫描);
+   `registry.superdl.local` 只是镜像引用里的逻辑名,由节点 `registries.yaml` mirror 到托管仓。
+   替换 `rke2/registries.yaml` 的 `CHANGE_ME_REGISTRY_HOST/USERNAME/PASSWORD`(preflight 强制校验)
+   → 分发全节点 → 把同一份模板填进管理端「平台配置 · 集群接入」的 `node_registries_yaml`
+   (平台默认生成的 registries.yaml 仍指向过渡期集群内 registry 的 NodePort 30500,不填覆盖则新节点拉不到镜像)。
+   镜像发布、迁移与凭据轮换 SOP:`runbooks/image-prewarm.md`。集群内自建 registry(`registry/`)已废弃,仅未迁移集群过渡使用。
 5. **Kata**(dedicated 档):`kata/` 下 kata-deploy(仅 kata 池节点)+
    `kubectl apply -f kata/kata-runtimeclass.yaml`
 6. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入
@@ -83,7 +85,7 @@ kubectl -n monitoring create secret generic grafana-admin \
 
 ## 路径 B:light(k3s 单机/小规模)
 
-> **定位边界(P0-1)**:light 档控制面即单点(单 server,etcd 与业务同机),只适用于
+> **定位边界**:light 档控制面即单点(单 server,etcd 与业务同机),只适用于
 > 内网试点/演示/开发联调;**禁止作为公众生产对外开放**——公众生产一律走路径 A
 > (3 server 堆叠 etcd + VIP)。管理端「集群」页对 light 档常驻「轻量集群」黄条即是此提示。
 

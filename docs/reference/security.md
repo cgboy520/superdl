@@ -8,7 +8,7 @@
 
 ## 规则与不变量
 
-- `Settings._validate_prod` 在 prod 下 fail-fast,任一项不合格即拒绝启动:jwt_secret 仍为开发默认或不足 32 字符、`sms_provider=mock` 或阿里云短信凭据/签名/模板不全、`k8s_backend=fake`、`payment_mock=true`、database_url 仍为本地默认、cors_origins 含 localhost、ssh_host/jupyter_domain_suffix/public_base_url 仍为占位域名、prometheus_url 指向本地、alertmanager_token 未配、metrics_token 未配、config_encryption_key 缺失或非 32 字节 urlsafe-base64、`bootstrap_admin_password` 已设置(一次性 dev 引导变量,初始化后必须删除)、`real_name_required_for_recharge=true` 而 `real_name_provider=mock`、`image_allowed_registries` 为空(空 = 不限制镜像来源)。
+- `Settings._validate_prod` 在 prod 下 fail-fast,任一项不合格即拒绝启动(API 与 worker 同一份校验,这份清单就是生产必配项清单;部署模板见 `deploy/app/k8s/00-namespace-config.yaml` 非密与 `deploy/app/secrets.example.yaml` 密):jwt_secret 仍为开发默认或不足 32 字符;access token TTL >1h 或 refresh TTL >7d;`sms_provider=mock` 或阿里云短信凭据/签名/模板不全;`k8s_backend=fake`;`payment_mock=true`;database_url 仍为本地默认;cors_origins 含 localhost;ssh_host / jupyter_domain_suffix / public_base_url / admin_host 仍为 example.com 占位;prometheus_url 指向本地;`bootstrap_admin_password` 已设置(一次性 dev 引导变量,初始化后必须删除);`real_name_provider=mock`(mock 恒过,不论是否开启强制实名);`captcha_provider=mock` 或阿里云验证码四项(scene_id / prefix / AccessKey 对)不全;`payment_alipay_enabled=true` 而 `alipay_seller_id` 缺失;`image_allowed_registries` 为空(空 = 不限制镜像来源);alertmanager_token / metrics_token 未配;config_encryption_key 缺失或非 32 字节 urlsafe-base64。另一条独立校验:`k8s_backend=real` 要求 `environment=prod`,真实集群不得以 dev/test 宽松配置运行。
 - 启动引导管理员仅 `environment=dev` 生效,口令长度 ≥12(与管理端创建约束对齐);非 prod 启动打 WARNING;幽灵 `SUPERDL_*` 环境变量(不命中任何字段或别名)启动打 WARNING 但不 fail。
 - 限流计数落 PG(`rate_limit_counters`),不用进程内计数;429 响应带 `Retry-After`(窗口剩余秒数,DB 侧计算),401 统一带 `WWW-Authenticate: Bearer`。
 - 统一错误体覆盖框架层异常:路由 404/405 等 StarletteHTTPException 也渲染 `{code, message, message_key, params, detail}`(405 用 `METHOD_NOT_ALLOWED`/`common.methodNotAllowed`);未捕获异常(500)由审计中间件先落 `result=500` 审计行再交由兜底 handler。
@@ -23,22 +23,9 @@
 - 密钥与凭据不入 git,只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME` 占位。
 - Secret 模板放 `deploy/app/secrets.example.yaml`,不得放在整目录 apply 路径下。
 
-## 限流覆盖矩阵
+## 限流分层
 
-两层纵深:边缘层(ingress-nginx 单 IP 兜底)只挡洪水,精细化全在应用层(PG 固定窗口,多副本共享)。
-
-| 路径/动作 | 边缘层(单 IP) | 应用层 |
-|---|---|---|
-| 全部 API(`04-ingress.yaml`) | 20 rps / 600 rpm / 20 conn | — |
-| 登录/注册/找回密码 | 同上 | 手机号+IP 双维(`account/service.py`) |
-| 短信验证码发送 | 同上 | 同号 60s + 平台日上限(`core/sms.py`) |
-| 图形/滑块验证码 | 同上 | 按场景固定窗口 |
-| 管理端登录 + MFA | 白名单 ingress(无边缘限流) | 账号维 5 次/10min(成功也计,防窗口内批量领 token) |
-| 支付/退款回调(`webhooks/*`) | 同上 | 按订单/渠道窗口(`webhooks_router.py`) |
-| 节点注册/进度上报 | 同上 | 按令牌窗口(`nodes/enroll_router.py`) |
-| 工单/通知/法务公开端点 | 同上 | 按用户窗口(工单 113、法务 120 次/分) |
-
-豁免记录:管理面(admin host)不配边缘限流——已有源 IP 白名单作为更强边界。
+两层纵深:边缘层(ingress-nginx,`deploy/app/k8s/04-ingress.yaml`)对公网 API 域按单 IP 兜底 20 rps / 600 rpm / 20 并发连接,只挡洪水;精细化限流全在应用层(`app/core/ratelimit.py`,PG 固定窗口计数,多副本共享,429 带 `Retry-After`)。管理面(admin host)不配边缘限流——源 IP 白名单是更强的边界。各端点的应用层限额以模块文档为准,汇总表见 [limits.md](./limits.md)。
 
 ## 已接受取舍(评审在案,勿再单独立项)
 

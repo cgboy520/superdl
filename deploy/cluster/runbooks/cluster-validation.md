@@ -36,8 +36,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 ## D. 存储
 
-- [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线;writeback 已关闭(P1-10),fio 顺序写对比实测(开/关 writeback 各一轮)记录于此:____
-- [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;lvmd 容器 `/etc/lvm/lvm.conf` 已含 `issue_discards = 1`(P0-3 落地后),大 LV(≥500Gi)`lvremove` 实测耗时记录于此:____
+- [ ] JuiceFS:两 Pod 挂同一 subPath 读写一致;`juicefs bench` 记录基线;writeback 已关闭,fio 顺序写对比实测(开/关 writeback 各一轮)记录于此:____
+- [ ] TopoLVM:PVC 创建/删除后 `lvs` 无残留;lvmd 容器 `/etc/lvm/lvm.conf` 已含 `issue_discards = 1`,大 LV(≥500Gi)`lvremove` 实测耗时记录于此:____
 - [ ] 数据盘目录硬配额:建一块 1GB 测试盘,挂实例写超 1GB(`dd if=/dev/zero of=/root/data/fill bs=1M count=1200`)必须在配额处被拒(EDQUOT/No space);管理端死信页无 disk.quota 死信,Prometheus 查 `superdl_juicefs_quota_failed_total` 为 0;删盘后 `juicefs quota ls $METAURL` 无残留条目
 
 ## E. 监控与告警

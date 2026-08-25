@@ -35,7 +35,7 @@
 - 退款:creating 失败全额退;该实例未产生 running 时段即无账,预检冻结不落账。
 - 开户前校验(`assert_can_afford`):余额 ≥ (在途 running 实例时费 + 新增时费) × `afford_cover_hours`(默认 1h)+ (在途盘日费 + 新增盘日费) × `disk_grace_days`;在钱包 FOR UPDATE 锁内统计,与资源创建同事务。不足报 `INSUFFICIENT_BALANCE`(文案含在途资源预计消耗)。
 - 欠费链路(5min 巡检):预估可用时长 <24h → 预警;余额 − 当前小时未结算实时估算消耗 ≤ 0 → 停机 → frozen(72h)→ releasing。实时估算与结算同口径:事件重建秒数 − 已出账秒数。
-- **余额归零语义(已评审决策,勿改判据)**:余额恰好 0.00 即进入停机→冻结→回收链(冻结判据为 `balance > 0: continue`,0.00 不满足放行)。依据:0.00 用户已无支付能力,停机后其停止实例继续免费占用实例盘是不合理成本;改 `>= 0` 放行会让零余额用户永久免费占盘。该行为有边界测试锁定(`test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims`),与停机判据 `effective <= 0` 自洽。冻结通知文案区分「余额耗尽/欠费」列入 P2 排期。
+- 余额恰好 0.00 即进入停机→冻结→回收链(冻结判据 `balance > 0` 才放行,与停机判据 `effective <= 0` 自洽);边界测试 `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。为何不是 `>= 0`:见 [../decisions.md](../decisions.md)「余额归零即回收」。
 - 钱包更新必须 `SELECT ... FOR UPDATE`,且同事务写 `balance_ledger`(带 balance_after 快照)。
 - 金额全链路 Decimal:单价 4 位小数,入账 2 位小数,ROUND_HALF_EVEN;0 秒不出账。SKU 时价须使单卡满 1 小时至少入账 ¥0.01(4 位时价 ≥ 0.0051,0.0050 恰为 tie 向偶舍 0),否则上架/改价拒绝。
 - 营收报表(revenue_summary)按账单归属期(hour_start/day)切窗,不按扣款入账时间(ledger.created_at)。

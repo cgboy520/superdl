@@ -26,5 +26,5 @@
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
-- 私有仓库已迁托管仓（P1-7：阿里云 ACR 企业版优先，Harbor 备选）：`registry.superdl.local` 仍为镜像引用逻辑名，节点 registries.yaml mirror 到托管仓 https endpoint；托管仓自带 TLS/扫描/权限。原集群内自建 registry（deploy/cluster/registry/，明文 http+htpasswd）已废弃，迁移流程见 deploy/cluster/runbooks/image-prewarm.md「托管仓迁移」节。
+- 平台镜像仓是托管仓(阿里云 ACR 企业版优先,Harbor 备选):`registry.superdl.local` 仍为镜像引用逻辑名,节点 registries.yaml mirror 到托管仓 https endpoint;托管仓自带 TLS/扫描/权限。原集群内自建 registry(`deploy/cluster/registry/`,明文 http+htpasswd)已废弃,迁移流程见 `deploy/cluster/runbooks/image-prewarm.md`「托管仓迁移」节;已迁移集群必须在平台配置填 `node_registries_yaml` 覆盖,见 [nodes.md](./nodes.md)。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。

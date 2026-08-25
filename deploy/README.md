@@ -14,7 +14,7 @@
 (kustomize,tag 单点在 `app/k8s/kustomization.yaml` 的 `images`)→ rollout status →
 冒烟(`/healthz`+`/readyz`),四步任一失败即非零退出。禁止绕过脚本手改各清单 tag。
 
-1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库)
+1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库;字段清单 `app/k8s/00-namespace-config.yaml` 非密 + `app/secrets.example.yaml` 密,prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准)
 2. 打 tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr(api 镜像经 `EXCLUDE_MOCK=1` 剔除 mock 支付回调模块)
 3. `scripts/release.sh vX.Y.Z`:
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`——**必须先于滚动**;`/readyz` 会比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都会在这一关现形;
@@ -26,7 +26,7 @@
 
 - **应用回滚**(向后兼容窗口内,迁移只增不删,无需回滚库):
   `kubectl -n superdl rollout undo deploy/superdl-api deploy/superdl-worker deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm deploy/superdl-worker-disk-ops deploy/superdl-web deploy/superdl-admin`
-  (worker 组件集群(P1-18)共 5 个 Deployment,回滚必须成组;或 `scripts/release.sh <上一 tag>` 重放一遍——迁移 Job 对已追平的库是 no-op)。
+  (worker 组件集群共 5 个 Deployment,回滚必须成组;或 `scripts/release.sh <上一 tag>` 重放一遍——迁移 Job 对已追平的库是 no-op)。
 - **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型,见下节——正常
   流程下这类迁移要分两个发布窗口,窗口之间禁止回滚越过边界)。回滚前
   `git log <上一 tag>..<当前 tag> -- apps/api/alembic/versions/` 确认只有 expand 类迁移。
@@ -43,7 +43,7 @@
   禁止回滚越过 A 的边界。
 - 闸门:CI「迁移危险 DDL 检查」(`scripts/check-migration-ddl.py`)拦 drop/rename/
   非空列无默认/非 CONCURRENTLY 索引/ALTER TYPE;确属 contract 窗口 B 的迁移,在文件内
-  标注 `# ddl-risk: reviewed` 并在 MR 说明窗口安排。
+  标注 `# ddl-risk: reviewed` 并在提交说明里写明窗口安排。
 - **大表迁移替代流程(三步法)**,以「大表加非空列」为例:
   1. **加列带默认**:`add_column(..., nullable=True)`(PG ≥ 11 下 `server_default` 加列
      也是 O(1) 元数据操作,但写入语义以可空 + 代码双写最稳);
@@ -51,8 +51,11 @@
      迁移 Job 有 `statement_timeout=60s` 与 `lock_timeout=3s`,单批必须远小于此);
   3. **校验后收口**:核对回填完整 → 下一窗口 `alter_column(nullable=False)` 或补
      CHECK NOT VALID → VALIDATE CONSTRAINT。
-  索引一律 `postgresql_concurrently=True`(迁移内需 `op.execute("COMMIT")` 或
-  非事务迁移上下文);锁表型 DDL(ALTER TYPE、表重写)一律拆窗口,不得在在线迁移里做。
+  既有表上建索引一律 `postgresql_concurrently=True`,且必须放在
+  `with op.get_context().autocommit_block():` 里(`alembic/env.py` 整轮单事务,
+  `CREATE INDEX CONCURRENTLY` 不能在事务块内执行,裸写会在升级时直接报错);这类迁移
+  独立成文件,接受失去跨迁移原子性。本迁移内新建表上的索引不受此限(空表建索引零成本,
+  门禁脚本已豁免)。锁表型 DDL(ALTER TYPE、表重写)一律拆窗口,不得在在线迁移里做。
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 
@@ -101,7 +104,7 @@ max_connections ≥ (api 副本 + worker 副本) × (db_pool_size + max_overflow
 ## 管理端访问边界
 
 管理端 API 在公网 api 域下不可达(API 侧边缘收口:Host 非 admin 域一律 404);
-`admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(admin/finance 强制)。
+`admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
 生产必须再叠加一层网络边界——`app/k8s/04-ingress.yaml` 的 `superdl-admin` Ingress
 **默认启用**源 IP 白名单注解(`CHANGE_ME_OFFICE_CIDR/32` 占位,preflight 强制校验已替换),
 填办公网/跳板机出口 CIDR;VPN 或身份感知代理(oauth2-proxy 等)可替代之。

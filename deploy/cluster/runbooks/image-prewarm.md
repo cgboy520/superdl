@@ -3,7 +3,7 @@
 三层结构:
 
 1. **Spegel P2P**(RKE2 `embedded-registry: true` + 全节点 `registries.yaml`)——任一节点已缓存的镜像,其余节点内网互拉。
-2. **托管镜像仓**(P1-7:阿里云 ACR 企业版优先,Harbor 备选)——`registry.superdl.local` 经节点 mirror 解析到托管仓 https,平台镜像权威源;原集群内自建 registry(`registry/registry.yaml`)已废弃。
+2. **托管镜像仓**(阿里云 ACR 企业版优先,Harbor 备选)——`registry.superdl.local` 经节点 mirror 解析到托管仓 https,平台镜像权威源;原集群内自建 registry(`registry/registry.yaml`)已废弃。
 3. **平台预热**(管理端「镜像与预热」页 + worker 巡检)——每镜像×每节点拉取 Job,覆盖率实时可见。
 
 ## 托管仓迁移(一次性)

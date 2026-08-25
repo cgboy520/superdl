@@ -41,4 +41,4 @@ docker push <registry>/miniconda:26.5.3
 # 之后在 管理端 · 镜像与预热 中登记该 image_ref,并按需开启预热
 ```
 
-生产 registry 见 `deploy/cluster/registry/`(集群内 registry + Spegel P2P 分发)。
+推送到托管镜像仓、在管理端登记与预热的 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`(托管仓 + Spegel P2P 节点间分发;集群内自建 registry 已废弃)。
