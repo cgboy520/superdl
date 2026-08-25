@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 平台镜像 entrypoint(契约见 ../README.md):注入公钥 → 起 sshd → 守护 JupyterLab。
+# 平台镜像 entrypoint(契约见 README.md):注入公钥 → 起 sshd → 守护 JupyterLab。
 # Jupyter 必须绑 0.0.0.0,否则 Service/Ingress 打不通。
 set -euo pipefail
 
@@ -38,7 +38,7 @@ done
 /usr/sbin/sshd
 
 # JupyterLab:0.0.0.0:8888,token 由平台注入。
-# Origin 校验必须留着,禁止 allow_origin='*'(契约见 ../README.md)。
+# Origin 校验必须留着,禁止 allow_origin='*'(契约见 README.md)。
 # 平台注入本实例自己的域名(JUPYTER_ALLOW_ORIGIN);未注入则用 Jupyter 默认同源校验。
 origin_args=()
 if [[ -n "${JUPYTER_ALLOW_ORIGIN:-}" ]]; then

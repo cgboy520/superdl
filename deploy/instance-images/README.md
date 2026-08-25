@@ -20,22 +20,29 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 
 ## 构建与推送
 
-各镜像目录结构完全一致:基座不同,`entrypoint.sh` 与 `superdl_jupyter_auth.py` 三份逐字节一致。基座 digest 钉在各自 Dockerfile。挑对应目录构建:
+三个镜像共用本目录同一份 `Dockerfile`、`entrypoint.sh` 与 `superdl_jupyter_auth.py`
+(各只有一份,没有需要人工保持一致的副本);差异只有基座(`--build-arg BASE_IMAGE`,
+digest 钉在下面的构建命令里,浮动 tag 会在重建时静默换基座)与 miniconda 基座不带
+JupyterLab 需补装(`--build-arg JUPYTERLAB_VERSION`)。构建上下文就是本目录:
 
 ```bash
-# pytorch:quay.io/jupyter/pytorch-notebook(cuda12)
-cd deploy/instance-images/pytorch
-docker build -t <registry>/pytorch:2.9.0-cu128 .
+cd deploy/instance-images
+
+# pytorch:quay.io/jupyter/pytorch-notebook(cuda12,自带 conda + PyTorch + JupyterLab)
+docker build -t <registry>/pytorch:2.9.0-cu128 \
+  --build-arg BASE_IMAGE=quay.io/jupyter/pytorch-notebook:cuda12-latest@sha256:85ab930435b7afc06396e2949a4fe508d027a7980a319bec6a92f827578e5343 .
 docker push <registry>/pytorch:2.9.0-cu128
 
-# tensorflow:quay.io/jupyter/tensorflow-notebook(cuda)
-cd ../tensorflow
-docker build -t <registry>/tensorflow:2.21.0-cuda .
+# tensorflow:quay.io/jupyter/tensorflow-notebook(cuda,自带 conda + TensorFlow + JupyterLab)
+docker build -t <registry>/tensorflow:2.21.0-cuda \
+  --build-arg BASE_IMAGE=quay.io/jupyter/tensorflow-notebook:cuda-latest@sha256:fc4c5b03dfbaa5d358375810a7b721bfcbe65ba1983a6829bc09297d334f0d63 .
 docker push <registry>/tensorflow:2.21.0-cuda
 
-# miniconda:continuumio/miniconda3 + JupyterLab(不预装 DL 框架,用户自建环境)
-cd ../miniconda
-docker build -t <registry>/miniconda:26.5.3 .
+# miniconda:continuumio/miniconda3(干净 conda 基座,不预装 DL 框架,用户自建环境;
+# 基座无 JupyterLab,构建时按 JUPYTERLAB_VERSION 补装——它是平台契约的入口)
+docker build -t <registry>/miniconda:26.5.3 \
+  --build-arg BASE_IMAGE=continuumio/miniconda3:26.5.3-1@sha256:1808b31ef43e9c521cde5884ba4df9ec26d8d503a314cea787590f8550358a63 \
+  --build-arg JUPYTERLAB_VERSION=4.6.3 .
 docker push <registry>/miniconda:26.5.3
 
 # 之后在 管理端 · 镜像与预热 中登记该 image_ref,并按需开启预热
