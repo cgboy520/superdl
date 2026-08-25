@@ -51,21 +51,12 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
     instance.pod_name = instance.uuid
 
 
-async def _backfill_missing_port(session: AsyncSession, instance: Instance) -> None:
-    """状态已推进但端口未落库(K8s 建 Pod 成功后提交被回滚)的补救:
-    不补则 /access 500,restart 的 build_pod_spec 也会 RuntimeError。"""
-    if instance.ssh_port is None:
-        instance.ssh_port = await ensure_port(session, instance)
-        logger.warning("ssh_port_backfilled", instance_id=instance.id)
-
-
 @outbox_handler("instance.create")
 async def handle_create(session: AsyncSession, task: OutboxTask) -> None:
     instance = await _load(session, task)
     if instance is None:
         return
     if instance.status != sm_def.CREATING:
-        await _backfill_missing_port(session, instance)
         return  # 已失败/已推进,幂等跳过
     await _create_with_port_recovery(session, instance)
     # 建 Pod 耗时可能跨过 creating 超时:FOR UPDATE 重读,已被 reconciler 推进
@@ -84,7 +75,6 @@ async def handle_start(session: AsyncSession, task: OutboxTask) -> None:
     if instance is None:
         return
     if instance.status != sm_def.STARTING:
-        await _backfill_missing_port(session, instance)
         return
     await _create_with_port_recovery(session, instance)
     fresh = await session.get(Instance, instance.id, with_for_update=True)

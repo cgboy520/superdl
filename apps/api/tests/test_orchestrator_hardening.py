@@ -234,6 +234,32 @@ class TestFailedRecovery:
         assert counts["to_released"] == 1
 
 
+class TestReadyWithoutPort:
+    async def test_ready_pod_without_port_not_promoted(self, client, sm, fake):
+        """Pod 已 Ready 但 ssh_port 未落库:不推进 running(/access 与重启都依赖端口,
+        补发的端口未必等于 Service 已建的 nodePort),留在 creating 等超时转 failed 清理。"""
+        headers, user_id, key_id = await create_user_with_key(client, "13900000110")
+        await fund_wallet(sm, user_id)
+        sku_id = await create_test_sku(sm)
+        resp = await _raw_create(client, headers, sku_id, key_id)
+        uuid = resp.json()["uuid"]
+        await drain(sm)  # 建 Pod + 端口落库
+        async with sm() as session:
+            await session.execute(
+                update(Instance).where(Instance.uuid == uuid).values(ssh_port=None)
+            )
+            await session.commit()
+        fake.mark_ready(f"tenant-{user_id}", uuid)
+        counts = await reconcile_once(sm)
+        assert counts["to_running"] == 0
+        assert (await get_instance(client, headers, uuid))["status"] == "creating"
+        # 超时兜底:转 failed 并清理 Pod
+        await _backdate_status(sm, uuid, "creating", timedelta(minutes=6))
+        counts = await reconcile_once(sm)
+        assert counts["to_failed"] == 1
+        assert (f"tenant-{user_id}", uuid) not in fake.pods
+
+
 class TestStuckEscape:
     async def test_stopping_two_tier_escape(self, client, sm, fake):
         """stopping 悬挂:一档超时重发删除任务,二档超时 force 强删后正常收敛 stopped。

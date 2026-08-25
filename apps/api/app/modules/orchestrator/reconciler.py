@@ -268,7 +268,8 @@ async def _reconcile_instances(
                     continue
 
                 if instance.status in (sm_def.CREATING, sm_def.STARTING):
-                    if st.exists and st.ready:
+                    ready = st.exists and st.ready
+                    if ready and instance.ssh_port is not None:
                         instance.node_name = st.node_name
                         await transition(
                             session,
@@ -324,6 +325,11 @@ async def _reconcile_instances(
                             severity="warning",
                             dedup_key=f"schedule_timeout:{instance.id}",
                         )
+                    elif ready:
+                        # Pod 已 Ready 但端口未落库(建 Pod 后 handler 事务被回滚):不推进 running
+                        # ——/access 与重启都依赖 ssh_port,且补发的端口未必等于 Service 已建的
+                        # nodePort;留在原状态等超时转 failed 清理
+                        logger.warning("instance_ready_without_port", instance_id=instance.id)
 
                 elif instance.status == sm_def.RUNNING:
                     node_not_ready = (
