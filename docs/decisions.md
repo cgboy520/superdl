@@ -12,6 +12,9 @@
 - **本地闸门是事实源,CI 是复跑。** 闸门按改动范围跑,红了不提交。CI 另有几项只在 CI 跑的检查
   (依赖漏洞、gitleaks、kubeconform、kind 冒烟),本地不强求。
 - **不设覆盖率阈值。** 用例必须能回答「它挂了说明什么坏了」;为覆盖率补的测试不回答这个问题。
+- **命令清单只有一份。** `Taskfile.yml` 已删除(`task` 本地未装、CI 不用、内容已落后):常用命令以 CLAUDE.md 为准,README 只放快速开始。
+- **私有仓库,不放 LICENSE。** 仓库在 GitHub 为 PRIVATE,默认保留全部权利;若要转公开或对外交付,先定许可证再开。
+- **release notes 不手维护。** 打 tag 用 `gh release create --generate-notes`,提交信息已按 `feat:`/`fix:` 前缀写,自动生成即够用;不设 CHANGELOG 文件。
 
 ## 计费与资金
 
@@ -51,12 +54,14 @@
 - **JuiceFS 关闭 writeback。** 数据盘一致性优先于顺序写性能;fio 对比记录同上。
 - **镜像仓迁托管仓。** 集群内自建 registry(明文 http + htpasswd)废弃,`registry.superdl.local` 保留为逻辑名,
   节点 mirror 到 ACR / Harbor;见 `deploy/cluster/runbooks/image-prewarm.md`。过渡期残留:平台默认生成的
-  registries.yaml 仍指向 NodePort 30500,已迁移集群靠 `node_registries_yaml` 覆盖(`reference/nodes.md`)。
+  registries.yaml 仍指向 NodePort 30500,已迁移集群靠 `node_registries_yaml` 覆盖(`reference/nodes.md`);
+  保留这个默认(未迁移集群仍正确),不为托管仓地址新增配置键。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`(旧名保留别名),发行版由平台探测 gitVersion 派生。
 - **不引 Sentry 类 SaaS。** 未捕获异常统一 500 留痕并经 Loki / Prometheus 告警,少一个外部依赖与数据出境面。
 - **管理端监控自绘,Grafana 只作外链。** 不做 iframe 嵌入,`grafana_url` 未配置只显示一行提示。
+- **告警 `runbook_url` 只加在有专属 runbook 的规则上。** 其余告警的第一步写在 summary 与 `deploy/cluster/runbooks/README.md` 索引表里,不为每条告警生造一页。
 
 ## 评审编号索引
 
