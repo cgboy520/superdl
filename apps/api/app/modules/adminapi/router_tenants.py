@@ -11,6 +11,7 @@ from app.core.audit import mark_audited_read, set_audit_target
 from app.core.db import DbSession
 from app.core.errors import AppError
 from app.core.logging import mask_phone_value
+from app.core.money import as_amount
 from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.modules.account.schemas import AdminDeletionReject, AdminDeletionRequestOut
@@ -103,8 +104,8 @@ async def admin_list_tenants(
                 id=u.id,
                 phone_masked=mask_phone_value(u.phone),
                 status=u.status,
-                balance=format(balances.get(u.id, 0), "f"),
-                total_consumed=format(consumed.get(u.id, 0), "f"),
+                balance=format(as_amount(balances.get(u.id, 0)), "f"),
+                total_consumed=format(as_amount(consumed.get(u.id, 0)), "f"),
                 instances=st["instances"],
                 disk_gb=st["disk_gb"],
                 created_at=u.created_at.isoformat(),

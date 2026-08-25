@@ -259,15 +259,18 @@ class TestAdjustments:
 
 class TestTenantAggregations:
     async def test_tenant_rows_carry_own_aggregates(self, client, sm, fake):
-        """租户列表每行的余额/累计消费/实例数是该租户自己的聚合值,手机号只回掩码。
+        """租户列表每行的余额/累计消费/实例数是该租户自己的聚合值,手机号只回掩码;
+        无钱包/无消费的租户金额也按 2 位小数字符串出参。
 
-        挂了 = 按 user 分组的三个聚合键值错位(如 GROUP BY 漏 user_id),客服看到的是别人的账。
+        挂了 = 按 user 分组的三个聚合键值错位(如 GROUP BY 漏 user_id),客服看到的是别人的账;
+        或缺省金额没走 as_amount 渲染成 "0.000000" 之类的非账面形态。
         """
         from app.modules.billing import service as billing_service
         from tests.helpers import fund_wallet
 
         _headers, _uuid, id1 = await _provision_running(client, sm, fake, "13600000061")
         id2 = (await register(client, "13600000062"))["user"]["id"]
+        id3 = (await register(client, "13600000063"))["user"]["id"]  # 从未充值:无钱包行
         await fund_wallet(sm, id2, "20.00")
         async with sm() as session:
             await billing_service.debit(
@@ -280,9 +283,10 @@ class TestTenantAggregations:
         by_id = {t["id"]: t for t in rows}
         assert by_id[id1]["phone_masked"] == "136****0061"
         assert by_id[id1]["instances"] == 1 and by_id[id1]["balance"] == "100.00"
-        assert Decimal(by_id[id1]["total_consumed"]) == 0
+        assert by_id[id1]["total_consumed"] == "0.00"
         assert by_id[id2]["instances"] == 0 and by_id[id2]["balance"] == "17.00"
         assert by_id[id2]["total_consumed"] == "3.00"
+        assert by_id[id3]["balance"] == "0.00" and by_id[id3]["total_consumed"] == "0.00"
 
 
 class TestNodesAndReports:
