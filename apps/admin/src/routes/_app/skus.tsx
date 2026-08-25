@@ -39,6 +39,7 @@ import {
 import { useFormat } from "../../lib/format";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormDraft } from "../../lib/formDraft";
+import { POOL_LABEL_KEY } from "../../lib/pools";
 import { StatusTag } from "../../components/StatusTag";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -532,11 +533,7 @@ function SkusPage() {
             <Form.Item name="pool_label" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
               <Select
                 disabled={isNew}
-                options={[
-                  { value: "kata", label: t("nodes.poolKata") },
-                  { value: "hami", label: t("nodes.poolHami") },
-                  { value: "mig", label: t("nodes.poolMig") },
-                ]}
+                options={Object.entries(POOL_LABEL_KEY).map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
               />
             </Form.Item>
             <Form.Item

@@ -1,4 +1,5 @@
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
+import { metaOf } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, App, Badge, Button, Card, Col, Row, Space, Tag, Tooltip, Typography } from "antd";
@@ -12,6 +13,7 @@ import {
 import dayjs from "dayjs";
 
 import { useApiErrorText } from "../../lib/apiError";
+import { POOL_LABEL_KEY } from "../../lib/pools";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/cluster")({
@@ -26,12 +28,6 @@ const COMPONENT_LABEL = {
   kata_runtimeclass: "cluster.comp.kataRuntimeclass",
   storage: "cluster.comp.storage",
 } as const satisfies Record<ClusterComponent["key"], string>;
-
-const POOL_LABEL: Record<string, string> = {
-  kata: "nodes.poolKata",
-  hami: "nodes.poolHami",
-  mig: "nodes.poolMig",
-};
 
 function ClusterPage() {
   const { t } = useTranslation(["admin", "shared"]);
@@ -174,10 +170,10 @@ function ClusterPage() {
                 {Object.entries(data?.pools ?? {})
                   .filter(([k]) => k !== "unlabeled")
                   .map(([pool, count]) => {
-                    const labelKey = POOL_LABEL[pool];
+                    const labelKey = metaOf(POOL_LABEL_KEY, pool);
                     return (
                       <Tag key={pool} color="cyan">
-                        {labelKey ? t(labelKey as never) : pool} · {count}
+                        {labelKey ? t(labelKey) : pool} · {count}
                       </Tag>
                     );
                   })}

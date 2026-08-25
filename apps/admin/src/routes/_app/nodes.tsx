@@ -40,6 +40,7 @@ import {
 } from "../../api";
 import { useApiErrorText } from "../../lib/apiError";
 import { useFormDraft } from "../../lib/formDraft";
+import { POOL_LABEL_KEY } from "../../lib/pools";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -329,11 +330,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
           />
           <Form.Item name="pool" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
             <Select
-              options={[
-                { value: "kata", label: t("nodes.poolKata") },
-                { value: "hami", label: t("nodes.poolHami") },
-                { value: "mig", label: t("nodes.poolMig") },
-              ]}
+              options={Object.entries(POOL_LABEL_KEY).map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
             />
           </Form.Item>
           <Form.Item
