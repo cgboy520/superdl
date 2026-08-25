@@ -10,7 +10,7 @@ apps/web       用户控制台(Vite + React 19 + antd 6,浅色)
 apps/admin     管理控制台(同栈,深色 NOC 风)
 packages/api-client  orval 从 openapi.json 生成(禁止手改 src/generated)
 packages/ui    主题 token、状态徽标映射、金额/时长格式化、共享文案
-deploy/        ansible 装机基线 / cluster helmfile 与 runbook / app K8s 清单与本地 compose / node-join 测试 / 实例镜像
+deploy/        ansible 控制面装机 / cluster helmfile 与 runbook / app K8s 清单与本地 compose / node-join 测试 / 实例镜像
 e2e/           Playwright 浏览器冒烟
 docs/          架构、模块参考、UI/UX 规格、文案规范、决策记录
 scripts/       发布脚本与仓库级闸门脚本

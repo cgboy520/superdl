@@ -3,7 +3,7 @@
 | 目录 | 内容 |
 |---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/Ingress-TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
-| `ansible/` | 装机基线(存量机器批量)+ 初始控制面([servers] 组 rke2/k3s server 安装):NVIDIA 驱动与 container toolkit / 内核参数(IOMMU、userns,变更后自动重启验证)/ NVMe VG / registries.yaml 分发。新节点首选管理端「添加节点」一键加入,本目录用于存量机器批量处理 |
+| `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server 安装:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点一律走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
 | `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;`cluster/admission/` 为准入策略(非 helm release,发布流程内单独 `kubectl apply`,preflight 强制校验 Deny 生效) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。

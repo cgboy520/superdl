@@ -22,7 +22,7 @@
    done
    ```
 3. **切换 mirror**:`rke2/registries.yaml` 的 `CHANGE_ME_REGISTRY_HOST/USERNAME/PASSWORD`
-   替换为真实值 → 分发全节点(ansible/管理端平台配置 `node_registries_yaml` 同步更新)
+   替换为真实值 → 分发全节点(管理端平台配置 `node_registries_yaml` 同步更新,节点侧由 node-join.sh 落位)
    → 滚动重启 agent。镜像引用主机名不变(`registry.superdl.local` 逻辑名),业务无感。
 4. **验证**:任一节点 `crictl pull registry.superdl.local/pytorch:2.9.0-cu128` 成功;
    管理端预热页覆盖率恢复正常;`./preflight.sh <env>` 托管仓段全绿。

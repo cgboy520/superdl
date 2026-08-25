@@ -106,7 +106,7 @@ kubectl -n monitoring create secret generic grafana-admin \
      + Loki/Alloy 日志栈(默认开,资源收紧见 `values/light/loki-light.yaml`;
      盘紧可在 `environments/light.yaml` 关);
      Cilium/gpu-operator 不装;**TopoLVM 必开**(每个租户 Pod 都要挂实例盘;
-     需先由 ansible 基线建出 VG `superdl-nvme`);JuiceFS 可选(只有数据盘用),
+     VG `superdl-nvme` 由 node-join.sh 建出);JuiceFS 可选(只有数据盘用),
      要数据盘时在 `environments/light.yaml` 打开。
 4. **GPU 节点**:同 full 第 6 步(单机时 server 本机跑 node-join 亦可)。
 5. 能力边界:仅共享档 SKU;dedicated/mig 上架会被硬校验拦下;管理端「集群」页

@@ -81,7 +81,7 @@
 | 编号 | 主题 | 现存于 |
 |---|---|---|
 | P0-1 | 控制面 HA + 平台组件 infra 标签选址 + light 档禁公众生产 | `deploy/cluster/rke2/server-config.yaml`、`deploy/app/k8s/02-api.yaml` 等清单注释 |
-| P0-3 | 实例盘销毁 TRIM(TopoLVM `issue_discards`) | `deploy/cluster/topolvm/lvm-config.configmap.yaml`、`deploy/ansible/site.yml` |
+| P0-3 | 实例盘销毁 TRIM(TopoLVM `issue_discards`) | `deploy/cluster/topolvm/lvm-config.configmap.yaml`、`apps/api/app/modules/nodes/assets/node-join.sh` |
 | P1-1 | 票款双重兑现闸 | `apps/api/tests/test_invoices.py`、`apps/api/tests/test_refunds.py` |
 | P1-2 | 结算缺口闭环 | `apps/api/tests/test_billing_settlement.py` |
 | P1-6 | acme-dns 替代 alidns webhook | `deploy/cluster/acme-dns.yaml`、`deploy/app/k8s/05-cert-manager.yaml` |

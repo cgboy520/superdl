@@ -18,7 +18,7 @@ lvmd:
       spare-gb: 50
   # lvmd 直接调 LVM CLI、读容器内 /etc/lvm/lvm.conf:ConfigMap 注入 issue_discards=1
   # (manifest 见 ../topolvm/lvm-config.configmap.yaml,由 helmfile presync hook 应用;
-  # 宿主机侧 node-join.sh/ansible 同款写入作双保险,覆盖运维手工 LVM 操作)
+  # 宿主机侧 node-join.sh 同款写入作双保险,覆盖运维手工 LVM 操作)
   volumes:
     - name: lvm-config
       configMap:
