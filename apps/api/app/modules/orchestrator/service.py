@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.crypto import decrypt_str, encrypt_str, is_encrypted
+from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model, model_matches
@@ -179,10 +179,8 @@ def _encode_token(plaintext: str, *, instance_uuid: str) -> str:
 
 
 def _token_plain(instance: Instance) -> str:
-    """读出明文:enc:v1: 前缀走解密;存量明文行(加密上线前创建)原样返回。"""
-    if is_encrypted(instance.jupyter_token):
-        return decrypt_str(instance.jupyter_token, aad=f"jupyter-token:{instance.uuid}")
-    return instance.jupyter_token
+    """读出明文(落库形态只有密文,见 _encode_token)。"""
+    return decrypt_str(instance.jupyter_token, aad=f"jupyter-token:{instance.uuid}")
 
 
 def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:

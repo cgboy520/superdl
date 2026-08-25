@@ -220,7 +220,7 @@ class TestGateWiring:
     async def test_build_pod_spec_with_cluster_reads_distro(self, sm, fake):
         from app.core.k8s.base import ClusterProbe
         from app.modules.orchestrator.models import Instance
-        from app.modules.orchestrator.service import build_pod_spec_with_cluster
+        from app.modules.orchestrator.service import _encode_token, build_pod_spec_with_cluster
 
         async with sm() as session:
             await service.save_cluster_probe(
@@ -235,7 +235,7 @@ class TestGateWiring:
             sku_id=1,
             gpu_count=1,
             image_ref="img:x",
-            jupyter_token="t",
+            jupyter_token=_encode_token("t", instance_uuid="i-rt"),
             ssh_port=30022,
             authorized_keys=[],
             k8s_namespace="tenant-1",

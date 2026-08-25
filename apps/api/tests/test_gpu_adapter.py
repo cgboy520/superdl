@@ -11,7 +11,7 @@ from app.core.gpu_adapter import (
 )
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL
 from app.modules.orchestrator.models import Instance
-from app.modules.orchestrator.service import build_pod_spec
+from app.modules.orchestrator.service import _encode_token, build_pod_spec
 
 
 def _spec(tier: str, pool: str, **extra):
@@ -93,7 +93,7 @@ def _instance(spec: dict) -> Instance:
         spec=spec,
         gpu_count=1,
         ssh_port=30022,
-        jupyter_token="tok",
+        jupyter_token=_encode_token("tok", instance_uuid="i-test"),
         authorized_keys=[],
         data_disk_id=None,
         k8s_namespace="tenant-1",
