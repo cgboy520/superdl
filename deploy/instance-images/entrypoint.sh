@@ -14,6 +14,56 @@ export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
 export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-/root/.jupyter}"
 mkdir -p "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" /root/.cache
 
+# CUDA 前向兼容库(/usr/local/cuda*/compat)排在 LD_LIBRARY_PATH 前面时,进程加载的是镜像自带的
+# 旧 libcuda,而不是容器运行时注入的宿主驱动库;宿主驱动更新时 cuInit 直接失败,框架看到 0 张卡
+# (PaddlePaddle 官方镜像即如此,实测 device_count=0、run_check 回落 CPU)。compat 只有在宿主驱动
+# 比镜像 CUDA 老时才有用,所以先探测:能 cuInit 就原样不动,失败才摘 compat 再探,仍失败就还原
+# (说明不是这个原因,别把可用配置改坏)。
+cuda_init_ok() {
+  python - <<'PYCHK' >/dev/null 2>&1
+import ctypes, sys
+try:
+    sys.exit(0 if ctypes.CDLL("libcuda.so.1").cuInit(0) == 0 else 1)
+except Exception:
+    sys.exit(1)
+PYCHK
+}
+if [[ -n "${LD_LIBRARY_PATH:-}" ]] && ! cuda_init_ok; then
+  ld_orig="$LD_LIBRARY_PATH"
+  ld_kept=""
+  IFS=':' read -r -a ld_parts <<< "$LD_LIBRARY_PATH"
+  for ld_p in "${ld_parts[@]}"; do
+    if [[ "${ld_p%/}" == */compat ]]; then continue; fi
+    ld_kept="${ld_kept:+$ld_kept:}$ld_p"
+  done
+  if [[ "$ld_kept" != "$ld_orig" ]]; then
+    export LD_LIBRARY_PATH="$ld_kept"
+    if cuda_init_ok; then
+      echo "info: 已从 LD_LIBRARY_PATH 摘除 CUDA compat 目录(宿主驱动比镜像新,compat 会让 cuInit 失败)" >&2
+    else
+      export LD_LIBRARY_PATH="$ld_orig"
+    fi
+  fi
+fi
+
+# sshd 不把自己的环境透传给用户会话:PATH / LD_LIBRARY_PATH 必须显式落盘,否则 ssh 进实例后
+# python、conda、jupyter、nvcc 全不在 PATH(实测)。/etc/environment 经 PAM 生效(覆盖
+# `ssh host <cmd>` 这类非交互会话),/etc/profile.d 覆盖登录 shell;只写下面这几个白名单变量,
+# JUPYTER_TOKEN 等敏感值绝不落盘(镜像层与实例盘都不留)。
+{
+  echo "PATH=$PATH"
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"; fi
+  if [[ -n "${CUDA_HOME:-}" ]]; then echo "CUDA_HOME=$CUDA_HOME"; fi
+} > /etc/environment
+{
+  echo "export PATH=\"$PATH\""
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then echo "export LD_LIBRARY_PATH=\"$LD_LIBRARY_PATH\""; fi
+  if [[ -n "${CUDA_HOME:-}" ]]; then echo "export CUDA_HOME=\"$CUDA_HOME\""; fi
+  # conda activate 需要 conda.sh;有 conda 的镜像顺带在登录 shell 里就绪
+  if [[ -f /opt/conda/etc/profile.d/conda.sh ]]; then echo '. /opt/conda/etc/profile.d/conda.sh'; fi
+} > /etc/profile.d/superdl-env.sh
+chmod 644 /etc/environment /etc/profile.d/superdl-env.sh
+
 # SSH 公钥(平台经 env 注入,多行)
 if [[ -n "${AUTHORIZED_KEYS:-}" ]]; then
   mkdir -p /root/.ssh

@@ -14,6 +14,8 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 | Jupyter 进程 | 守护循环拉起(不用 exec 当 PID 1),连续秒退 5 次才放弃 |
 | Jupyter Origin | 读环境变量 `JUPYTER_ALLOW_ORIGIN`(本实例域名)作为 `ServerApp.allow_origin`;**禁止写死 `'*'`** —— cookie 会话下等于放行跨站 WebSocket 在用户实例内执行代码 |
 | Jupyter 套件 | 每个镜像必装:`jupyterlab` / `jupyter-ai` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel`(少了 ipykernel 实例里没有 Python 内核) |
+| CUDA compat | 启动时探测 `cuInit`:失败才从 `LD_LIBRARY_PATH` 摘掉 `*/compat`(镜像自带的旧 libcuda 会盖过宿主驱动库,宿主驱动更新时框架看到 0 张卡);仍失败则还原 |
+| SSH 会话环境 | entrypoint 把 `PATH` / `LD_LIBRARY_PATH` / `CUDA_HOME` 写进 `/etc/environment`(PAM,覆盖非交互 `ssh host cmd`)与 `/etc/profile.d/superdl-env.sh`(登录 shell);**禁止把 `JUPYTER_TOKEN` 等敏感值写进去** |
 | SSH host key | 首次生成后持久化到实例盘(`/root/.ssh/host_keys`),`/etc/ssh` 下为符号链接;否则 Pod 重建即变指纹 |
 | SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)写入 `~/.ssh/authorized_keys`,sshd 监听 `22`,仅密钥登录 |
 | 工作目录 | 用户数据放 `/root`(实例盘挂载点);数据盘挂 `/root/data` |
@@ -95,7 +97,9 @@ docker build -t $REG/tensorflow:2.14.1-cu118-py311 \
   --build-arg BASE_IMAGE=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py311_26.5.3-2-Linux-x86_64.sh \
   --build-arg JUPYTER_PACKAGES="$JUP" \
-  --build-arg FRAMEWORK_PIP="tensorflow[and-cuda]==2.14.1" .
+  --build-arg FRAMEWORK_PIP="tensorflow==2.14.1" .
+# TF 2.14 不能用 [and-cuda]:该 extra 钉了 tensorrt==8.5.3.1,此包已从 PyPI 下架,装不上;
+# TF 2.14 官方要求 CUDA 11.8 + cuDNN 8.7,基座(cudnn8.9)自带,直接用系统 CUDA。
 
 # ---- PaddlePaddle(厂商基座,只补平台契约层;基座自带 python3.10 与 paddle)----
 PADDLE=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle
@@ -105,25 +109,34 @@ for pair in "cu130:3.3.1-gpu-cuda13.0-cudnn9.13" "cu129:3.3.1-gpu-cuda12.9-cudnn
 done
 ```
 
-推送前自检(三步,缺一不可):
+推送前自检(四步,缺一不可;`deploy/instance-images` 下任何文件改动后重建都要重跑):
 
 ```bash
 IMG=$REG/pytorch:2.13.0-cu132-py313
 # ① 扩展能在目标基座的 jupyter_server 上 import
 docker run --rm --entrypoint python $IMG -c "import sys; sys.path.insert(0,'/opt/superdl'); import superdl_jupyter_auth; print('ok')"
-# ② Jupyter 套件齐全(4 个模块 + 内核)
-docker run --rm --entrypoint bash $IMG -lc 'python -c "import jupyter_ai, jupyter_resource_usage, ipykernel"; jupyter labextension list 2>&1 | grep -ci "language-pack\|jupyter-ai\|resource-usage"'
-# ③ 用镜像自己的 entrypoint 起一次,入场 URL 对坏票据回 403(404 = 扩展没加载;容器秒退 = 启动参数错)
-docker run -d --name jcheck -e JUPYTER_TOKEN=selfcheck -p 127.0.0.1:18888:8888 $IMG && sleep 20 \
-  && curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'   # 期望 403
+# ② Jupyter 套件齐全:4 个模块 + 内核都在,且 jupyter_ai / resource-usage 的 server 扩展是 enabled
+docker run --rm --entrypoint bash $IMG -lc 'pip list | grep -iE "jupyterlab |jupyter_ai|jupyter-resource-usage|language-pack|ipykernel"; jupyter server extension list 2>&1 | grep -cE "jupyter_ai_router|jupyter_resource_usage"'
+# ③ 起一次,验三件事:坏票据 403(404 = 扩展没加载;容器秒退 = 启动参数错)、
+#    入场票据 302 落 /lab(不是 /tree)、语言包里有 zh_CN
+docker run -d --name jcheck -e JUPYTER_TOKEN=selfcheck -p 127.0.0.1:18888:8888 $IMG && sleep 20
+curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'   # 期望 403
+TIK=$(python3 -c 'import hmac,hashlib,time;e=str(int(time.time())+60);print(f"code=c0&exp={e}&sig="+hmac.new(b"selfcheck",f"c0.{e}".encode(),hashlib.sha256).hexdigest())')
+curl -s -o /dev/null -D - -c /tmp/jar "http://127.0.0.1:18888/superdl-bootstrap?$TIK" | grep -i '^location:'  # 期望 /lab
+curl -s -b /tmp/jar 'http://127.0.0.1:18888/lab/api/translations/' | head -c 120                            # 期望含 zh_CN
 docker rm -f jcheck
+# ④ 推送
 docker push $IMG
 ```
 
 GPU 可用性只能在有卡的节点上验(本机构建机无卡):推送并在管理端登记后,建一台实例跑
 `python -c "import torch;print(torch.cuda.is_available())"` / `tf.config.list_physical_devices('GPU')` / `paddle.utils.run_check()`。
 
-之后在 管理端 · 镜像与预热 中登记 image_ref,并按需开启预热。**tag 不可变**:改了本目录任何文件都换新 tag
-重推(节点 `imagePullPolicy=IfNotPresent`,同名 tag 不会重拉),再在管理端改 image_ref。
+之后在 管理端 · 镜像与预热 中登记 image_ref,并按需开启预热。**同名 tag 可以重推**(不搞 `-rN` 后缀):
+改了本目录任何文件,重跑上面的构建 + 自检 + push 覆盖原 tag 即可,目录里的 image_ref 不用动。
+唯一要记住的一步:**重推后在管理端对该镜像点一次「立即预热」**——节点侧实例 Pod 是 `imagePullPolicy=IfNotPresent`
+(开机不依赖仓库可达),只有预热 Job 用 `Always`(`app/core/k8s/real.py::_prewarm_image_sync`),
+靠它把节点缓存刷到新 digest;不点也会在 `prewarm_recheck_hours`(默认 24h)复检时自动刷新。
+已在跑的实例仍是旧镜像,重启/重建后生效。
 
 推送到托管镜像仓、在管理端登记与预热的 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`(托管仓 + Spegel P2P 节点间分发;集群内自建 registry 已退役)。

@@ -89,6 +89,13 @@
   `superdl-registry-pull` 按指纹写入 superdl 与各租户 ns(`ensure_pull_secret`,指纹相同跳过),Pod / Job 以 `imagePullSecrets`
   引用;节点 registries.yaml 只留 Spegel / CA / 代理缓存 mirror。后果:轮换 = 配置中心保存新 Secret;换 Harbor 域名要 SQL
   批量改 `images.image_ref`(实例快照是历史值,不改);测试里的 `registry.superdl.local/...` 只是不透明串,不再有语义。
+- **平台镜像的 tag 可以同名重推,预热 Job 改用 `imagePullPolicy: Always`。** 背景:原规则是「tag 不可变」——
+  改了 `deploy/instance-images/` 任何文件都要换 `-rN` 新 tag 重推、再改目录里的 image_ref,理由是节点侧
+  `IfNotPresent` 不会重拉同名 tag。代价是每修一个字都在仓库里留一代垃圾 tag、目录 ref 跟着漂,发布心智负担明显。
+  决定:取消不可变约束,tag 只表达「框架版本 + CUDA 线 + Python」;把「让节点缓存等于当前 image_ref」的职责收敛到
+  预热 Job(`_prewarm_image_sync` 用 `Always`,digest 没变不重传层),实例 Pod 仍是 `IfNotPresent`——开机不依赖仓库可达。
+  后果:重推后要在管理端点一次「立即预热」(或等 `prewarm_recheck_hours` 复检)才刷新节点缓存;已在跑的实例不受影响,
+  重建后生效。默认镜像矩阵与选版规则见 `deploy/instance-images/README.md`。
 - **light 单机的 server 兼 GPU 节点走同一条 node-join 命令,脚本按「server 服务在运行」切换路径。** 背景:light 档
   单机时 server 就是唯一的 GPU 节点,而 node-join 原本无条件写 agent config、装 agent,在 server 本机执行会覆盖 server
   配置并装出第二个 k3s 单元;手工打标签又拿不到装机登记(gpu_info / 驱动版本),台账型号只能靠 GFD。决定:不另开
