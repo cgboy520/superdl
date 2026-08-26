@@ -249,6 +249,8 @@ export * from './refundPayout';
 export * from './refundPayoutChannel';
 export * from './refundReview';
 export * from './registerRequest';
+export * from './registryTestOut';
+export * from './registryTestOutStep';
 export * from './revenueReportApiAdminV1ReportsRevenueGetParams';
 export * from './revenueReportOut';
 export * from './settlementGapResolve';

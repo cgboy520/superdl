@@ -101,6 +101,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/platform-config": _ADMIN_ONLY,
     "PUT /api/admin/v1/platform-config": _ADMIN_ONLY,
     "POST /api/admin/v1/platform-config/test-sms": _ADMIN_ONLY,
+    "POST /api/admin/v1/platform-config/test-registry": _ADMIN_ONLY,
     "GET /api/admin/v1/policies": _ANY_READ,
     "PUT /api/admin/v1/policies": _OPS,
     "GET /api/admin/v1/reconciliation": _FIN_RO,

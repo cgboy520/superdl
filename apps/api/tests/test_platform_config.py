@@ -268,6 +268,67 @@ class TestAliyunRealNameProvider:
         assert isinstance(provider, AliyunRealNameProvider)
 
 
+class TestRegistrySpecsAndProbeEndpoint:
+    def test_registry_key_validation(self):
+        """host 不带 scheme、机器人名带 robot$ 前缀、代理映射逐行 <上游>=<项目>:
+        格式错在录入时就拒。"""
+        assert (
+            validate_setting_value("registry_host", " harbor.example.com:8443 ")
+            == "harbor.example.com:8443"
+        )
+        with pytest.raises(ValueError):
+            validate_setting_value("registry_host", "https://harbor.example.com")
+        assert (
+            validate_setting_value("registry_robot_name", "robot$superdl+pull")
+            == "robot$superdl+pull"
+        )
+        with pytest.raises(ValueError):
+            validate_setting_value("registry_robot_name", "admin")
+        assert (
+            validate_setting_value("registry_proxy_projects", "docker.io=dockerhub\nghcr.io=ghcr")
+            == "docker.io=dockerhub\nghcr.io=ghcr"
+        )
+        with pytest.raises(ValueError):
+            validate_setting_value("registry_proxy_projects", "docker.io")
+        with pytest.raises(ValueError):
+            validate_setting_value("registry_ca_pem", "not a pem")
+
+    async def test_probe_endpoint_requires_host_then_reports_probe(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        from app.core.registry import HarborProbe
+        from app.modules.adminapi import router_ops
+
+        ah = await admin_headers(sm, client, role="admin")
+        resp = await client.post("/api/admin/v1/platform-config/test-registry", headers=ah)
+        assert resp.status_code == 400  # 未填 host:不发探测
+
+        async def fake_probe(**kwargs):
+            assert kwargs["host"] == "harbor.example.com" and kwargs["project"] == "superdl"
+            return HarborProbe(True, "done", "ok", "v2.12.0", 3)
+
+        monkeypatch.setattr(router_ops, "probe_harbor", fake_probe)
+        await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"registry_host": "harbor.example.com"}, "reason": "接入 Harbor"},
+            headers=ah,
+        )
+        resp = await client.post("/api/admin/v1/platform-config/test-registry", headers=ah)
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {
+            "ok": True,
+            "step": "done",
+            "detail": "ok",
+            "harbor_version": "v2.12.0",
+            "repositories": 3,
+        }
+        # 非 admin 角色不可探测(凭据不下放 ops)
+        ops = await admin_headers(sm, client, role="ops")
+        assert (
+            await client.post("/api/admin/v1/platform-config/test-registry", headers=ops)
+        ).status_code == 403
+
+
 class TestConfigWarnings:
     def test_rules_by_switch_and_credentials(self):
         """每条规则一例:挂了说明配置页红牌 / 启动告警与实际风险漂移
@@ -275,8 +336,29 @@ class TestConfigWarnings:
         from app.core.platform_config import SETTING_SPECS, compute_config_warnings
 
         base = dict.fromkeys(SETTING_SPECS, "")
-        base.update(captcha_enabled="false", admin_mfa_enabled="true", real_name_enabled="false")
+        base.update(
+            captcha_enabled="false",
+            admin_mfa_enabled="true",
+            real_name_enabled="false",
+            registry_host="harbor.example.com",  # Harbor 地址自动进白名单,不触发规则 6
+        )
         assert compute_config_warnings(base, "test") == []
+        # 镜像仓库规则:填了机器人未填 Secret → error;prod 下无白名单且无 Harbor 地址 → warning
+        robot_only = dict(base, registry_robot_name="robot$superdl+pull")
+        assert [(w.key, w.level) for w in compute_config_warnings(robot_only, "test")] == [
+            ("registry_robot_name", "error")
+        ]
+        no_registry = dict(
+            base,
+            registry_host="",
+            captcha_enabled="true",
+            captcha_scene_id="s",
+            captcha_access_key_id="LTAI5tTESTTESTTEST",
+            captcha_access_key_secret="k",
+        )
+        assert [(w.key, w.level) for w in compute_config_warnings(no_registry, "prod")] == [
+            ("image_allowed_registries", "warning")
+        ]
         assert [(w.key, w.level) for w in compute_config_warnings(base, "prod")] == [
             ("captcha_enabled", "error")
         ]

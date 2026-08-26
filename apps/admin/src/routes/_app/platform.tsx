@@ -32,6 +32,7 @@ import {
   isApiError,
   type PlatformConfigItem,
   usePlatformConfig,
+  useTestRegistry,
   useTestSms,
   useUpdatePlatformConfig,
 } from "../../api";
@@ -86,8 +87,15 @@ const FIELD_LABELS: Record<string, string> = {
   cluster_join_token: "Join Token",
   cluster_agent_version: "Agent 版本(装机脚本钉死)",
   node_driver_version: "NVIDIA 驱动主版本",
-  node_registries_yaml: "registries.yaml(镜像缓存 mirror)",
+  node_registries_yaml: "registries.yaml(高级覆盖)",
   node_install_mirror: "装机安装源",
+  registry_host: "Harbor 地址",
+  registry_project: "平台镜像项目",
+  registry_robot_name: "机器人账户",
+  registry_robot_secret: "机器人 Secret",
+  registry_ca_pem: "CA 证书 PEM(自签时)",
+  registry_proxy_projects: "代理缓存项目(每行 上游=项目)",
+  image_allowed_registries: "镜像来源白名单(每行一个前缀)",
 };
 
 const FIELD_EXTRA: Record<string, string> = {
@@ -123,6 +131,10 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 const GROUP_INTRO: Record<string, string> = {
+  registry:
+    "Harbor 是平台镜像与租户实例镜像的权威源:在 Harbor 建平台项目(默认 superdl)与仅 Pull + List Repository 权限的机器人账户,填入地址、项目、机器人与 Secret;" +
+    "自签证书粘贴 CA(node-join 落节点 + 平台探测用)。拉取凭据不落节点:worker 在建 Pod / 预热前把 Secret superdl-registry-pull 按指纹写入 superdl 与各租户 ns," +
+    "轮换只需在此保存新 Secret。Docker Hub 等公网镜像可经 Harbor 代理缓存项目加速(每行 上游=项目,项目设 public)。保存后用下方「测试连接」验证。",
   security:
     "安全功能的运行期开关:关闭即跳过对应校验,开启前先在各渠道页填齐凭据(凭据缺失时该功能 fail-closed 报 502)。" +
     "生产环境允许关闭,但等于放弃该道纵深,保存时必须写明原因(进审计)。",
@@ -358,6 +370,36 @@ function SmsTestCard({ disabled }: { disabled: boolean }) {
   );
 }
 
+function RegistryTestCard({ disabled }: { disabled: boolean }) {
+  const { t } = useTranslation();
+  const errText = useApiErrorText();
+  const { message } = App.useApp();
+  const test = useTestRegistry({
+    mutation: { onError: (e) => message.error(errText(e, t("platform.sendFailed"))) },
+  });
+  const r = test.data;
+  return (
+    <Card size="small" title={t("platform.testRegistryTitle")}>
+      <Space orientation="vertical" size={8}>
+        <Button type="primary" disabled={disabled} loading={test.isPending} onClick={() => test.mutate()}>
+          {t("platform.testRegistryRun")}
+        </Button>
+        {r && (
+          <Typography.Text style={{ color: r.ok ? adminColors.positive : adminColors.negative }}>
+            {r.ok
+              ? t("platform.registryOk", {
+                  version: r.harbor_version ? `(Harbor ${r.harbor_version})` : "",
+                  repos: r.repositories ?? "?",
+                })
+              : t("platform.registryFailed", { step: r.step, detail: r.detail })}
+          </Typography.Text>
+        )}
+        <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{t("platform.testRegistryNote")}</div>
+      </Space>
+    </Card>
+  );
+}
+
 type Group = PlatformConfigItem["group"];
 type ConfigWarning = { key: string; level: "error" | "warning"; message: string };
 
@@ -368,7 +410,7 @@ const NAV = [
     labelKey: "platform.navChannels",
     groups: ["captcha", "sms", "real_name", "payment_wechat", "payment_alipay"],
   },
-  { labelKey: "platform.navInfra", groups: ["cluster", "observability"] },
+  { labelKey: "platform.navInfra", groups: ["registry", "cluster", "observability"] },
   { labelKey: "platform.navSite", groups: ["compliance", "support"] },
 ] as const satisfies readonly { labelKey: string; groups: readonly Group[] }[];
 const GROUP_LABEL_KEY = {
@@ -378,6 +420,7 @@ const GROUP_LABEL_KEY = {
   real_name: "platform.tabRealName",
   payment_wechat: "platform.tabWechat",
   payment_alipay: "platform.tabAlipay",
+  registry: "platform.tabRegistry",
   cluster: "platform.tabCluster",
   observability: "platform.tabObservability",
   compliance: "platform.tabCompliance",
@@ -668,7 +711,13 @@ function PlatformConfigPage() {
         draft={draft}
         setDraft={setDraft}
         disabled={disabled}
-        extraContent={active === "sms" ? <SmsTestCard disabled={disabled} /> : undefined}
+        extraContent={
+          active === "sms" ? (
+            <SmsTestCard disabled={disabled} />
+          ) : active === "registry" ? (
+            <RegistryTestCard disabled={disabled} />
+          ) : undefined
+        }
       />
     );
 

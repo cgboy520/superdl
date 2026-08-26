@@ -75,6 +75,13 @@
   `registry.superdl.local` 保留为逻辑名,节点 mirror 到 ACR / Harbor;见 `deploy/cluster/runbooks/image-prewarm.md`。
   平台默认生成的 registries.yaml 仍指向历史 NodePort 30500(已无服务在该端口),集群必须在平台配置填
   `node_registries_yaml` 覆盖(`reference/nodes.md`);不为托管仓地址新增配置键。
+  **已被下一条「镜像仓库定为 Harbor」取代**:仓库地址、项目、机器人账户与 CA 收进平台配置 `registry` 组。
+- **镜像仓库定为 Harbor,接入参数入配置中心。** 背景:托管仓「ACR 优先、Harbor 备选」的两可表述让仓库地址与拉取凭据只能靠
+  `node_registries_yaml` 手填整段文本(明文落库、每台节点各一份、轮换要碰全部 GPU 节点)。决定:Harbor 是第一方——
+  `registry_host / registry_project / registry_robot_name / registry_robot_secret(加密)/ registry_ca_pem / registry_proxy_projects`
+  与镜像来源白名单 `image_allowed_registries` 都在平台配置·镜像仓库组,管理端「测试连接」按生效配置探测 Harbor API;
+  平台自身镜像(api/web/admin)的仓库地址在部署侧(CI 与清单占位),不能依赖 DB。后果:白名单不再是 prod 启动硬闸(Harbor 地址自动放行,
+  为空只给配置告警);拉取凭据的托管方式与逻辑名去留见「编排与平台」后续条目。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

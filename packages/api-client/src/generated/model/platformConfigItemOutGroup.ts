@@ -18,5 +18,6 @@ export const PlatformConfigItemOutGroup = {
   compliance: 'compliance',
   support: 'support',
   cluster: 'cluster',
+  registry: 'registry',
   observability: 'observability',
 } as const;

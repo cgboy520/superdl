@@ -18,6 +18,7 @@ import {
   adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost,
   adminGpuModelAggregatesApiAdminV1ClusterGpuModelsGet,
   adminGetPoliciesApiAdminV1PoliciesGet,
+  adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost,
   adminTestSmsApiAdminV1PlatformConfigTestSmsPost,
   adminUpdatePlatformConfigApiAdminV1PlatformConfigPut,
   adminListDeadTasksApiAdminV1OutboxDeadGet,
@@ -1203,6 +1204,15 @@ export function useUpdatePlatformConfig(
   return useMutation({
     mutationFn: (v: { data: PlatformConfigUpdateRequest }) =>
       adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(v.data),
+    ...opts?.mutation,
+  });
+}
+
+export function useTestRegistry(
+  opts?: MutOptsOf<typeof adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost, void>,
+) {
+  return useMutation({
+    mutationFn: () => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost(),
     ...opts?.mutation,
   });
 }

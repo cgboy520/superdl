@@ -2006,6 +2006,28 @@
             "title": "Prometheus Url Set",
             "type": "boolean"
           },
+          "registry_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registry Host"
+          },
+          "registry_project": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registry Project"
+          },
           "server_url_set": {
             "title": "Server Url Set",
             "type": "boolean"
@@ -2015,7 +2037,9 @@
           "server_url_set",
           "join_token_set",
           "prometheus_url_set",
-          "grafana_url"
+          "grafana_url",
+          "registry_host",
+          "registry_project"
         ],
         "title": "ClusterConfigStateOut",
         "type": "object"
@@ -5189,6 +5213,7 @@
               "compliance",
               "support",
               "cluster",
+              "registry",
               "observability"
             ],
             "title": "Group",
@@ -6061,6 +6086,59 @@
           "sms_code"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RegistryTestOut": {
+        "description": "Harbor 连通性探测结果:step 指出失败发生在哪一步(health=DNS/TLS/CA 或 Harbor 自检,\nproject=机器人鉴权/权限/项目存在性)。",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "harbor_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harbor Version"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "repositories": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repositories"
+          },
+          "step": {
+            "enum": [
+              "health",
+              "project",
+              "done"
+            ],
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "step",
+          "detail",
+          "harbor_version",
+          "repositories"
+        ],
+        "title": "RegistryTestOut",
         "type": "object"
       },
       "RevenueReportOut": {
@@ -11646,6 +11724,33 @@
           }
         ],
         "summary": "Admin Update Platform Config",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/platform-config/test-registry": {
+      "post": {
+        "description": "按当前生效镜像仓库配置探测 Harbor:health(DNS/TLS/CA)→ 机器人鉴权读平台项目仓库列表。\n只读、有限流、过审计(detail 只落 host)。",
+        "operationId": "admin_test_registry_api_admin_v1_platform_config_test_registry_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Test Registry",
         "tags": [
           "admin"
         ]

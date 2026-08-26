@@ -206,7 +206,7 @@ class TestProdConfigValidation:
             "public_base_url": "https://api.superdl.cn",
             "metrics_token": "mtoken",
             "config_encryption_key": base64.urlsafe_b64encode(b"k" * 32).decode(),
-            "image_allowed_registries": ["registry.superdl.internal/"],
+            "image_allowed_registries": "registry.superdl.internal/",
         }
 
     def test_prod_rejects_dev_defaults(self):
@@ -255,18 +255,6 @@ class TestProdConfigValidation:
             )
         kwargs["real_name_enabled"] = True
         assert Settings(**kwargs).real_name_required_for_recharge is True
-
-    def test_prod_rejects_empty_image_allowed_registries(self):
-        """空白名单 = 租户可拉任意仓库镜像(把任意镜像引进集群),prod 必须显式配置。"""
-        import pytest
-        from pydantic import ValidationError
-
-        from app.core.config import Settings
-
-        kwargs = self._complete_prod_kwargs()
-        del kwargs["image_allowed_registries"]
-        with pytest.raises(ValidationError, match="image_allowed_registries"):
-            Settings(**kwargs)
 
     def test_prod_alipay_enabled_requires_seller_id(self):
         """prod 启用支付宝但缺收款方 PID:回调无法核对收款账号,启动即拒。"""

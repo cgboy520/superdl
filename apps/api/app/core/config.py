@@ -84,9 +84,17 @@ class Settings(BaseSettings):
     support_email: str | None = None
     support_wechat: str | None = None  # 企微/微信客服号或群二维码说明
 
-    # 创建实例可用的镜像来源白名单(仓库前缀列表)。空 = 不限制;
-    # 配置后只放行平台镜像目录内的引用与这些前缀,如 ["registry.superdl.internal/"]
-    image_allowed_registries: list[str] = []
+    # 镜像仓库(Harbor):全部可被平台配置中心覆盖(env 为默认值层),机器人 Secret 经配置中心加密落库。
+    # 拉取凭据由平台生成 K8s Secret(core/registry.PULL_SECRET_NAME)下发到 superdl 与各租户 ns
+    registry_host: str = ""
+    registry_project: str = "superdl"
+    registry_robot_name: str = ""
+    registry_robot_secret: str = ""
+    registry_ca_pem: str = ""
+    registry_proxy_projects: str = ""
+    # 创建实例可用的镜像来源白名单:换行/逗号分隔的仓库前缀,空 = 不限制;生效白名单另含 Harbor 地址,
+    # 平台镜像目录内的引用恒放行(core/registry.effective_image_allowlist)
+    image_allowed_registries: str = ""
 
     # 每用户配额;K8s ResourceQuota 是集群侧兜底
     max_instances_per_user: int = 10
@@ -237,11 +245,6 @@ class Settings(BaseSettings):
             problems.append(
                 "payment_alipay_enabled=true 时 alipay_seller_id 必填"
                 "(收款方 PID,2088 开头;缺失则回调无法核对收款账号)"
-            )
-        if not self.image_allowed_registries:
-            problems.append(
-                "image_allowed_registries 为空(空=不限制镜像来源,租户可拉任意仓库镜像);"
-                '请配置仓库前缀列表,如 ["registry.superdl.internal/"]'
             )
         if not self.metrics_token:
             problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")

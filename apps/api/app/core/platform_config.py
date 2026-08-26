@@ -19,6 +19,7 @@ from app.core import crypto
 from app.core.config import get_settings
 from app.core.db import Base
 from app.core.logging import get_logger
+from app.core.registry import effective_image_allowlist
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,7 @@ SettingGroup = Literal[
     "compliance",
     "support",
     "cluster",
+    "registry",
     "observability",
 ]
 SettingKind = Literal["str", "text", "bool", "choice", "secret"]
@@ -253,6 +255,59 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         choices=("cn", "official"),
         hint="装机安装源:cn=国内镜像(rancher-mirror.rancher.cn),official=官方源",
     ),
+    # ---- 镜像仓库(Harbor):平台镜像与租户实例镜像的权威源;拉取凭据由平台托管为 K8s Secret ----
+    "registry_host": SettingSpec(
+        "registry",
+        "str",
+        pattern=r"[a-z0-9.-]+(?::\d{1,5})?",
+        max_len=253,
+        hint="Harbor 访问地址,不带 scheme,如 harbor.example.com(内网自签证书时同时填 CA)",
+    ),
+    "registry_project": SettingSpec(
+        "registry",
+        "str",
+        pattern=r"[a-z0-9]+(?:[._-][a-z0-9]+)*",
+        max_len=255,
+        hint="平台镜像所在的 Harbor 项目(默认 superdl):租户实例镜像与预热 Job 均从这里拉",
+    ),
+    "registry_robot_name": SettingSpec(
+        "registry",
+        "str",
+        pattern=r"robot\$[A-Za-z0-9._+-]+",
+        max_len=255,
+        hint="机器人账户(项目级 robot$<项目>+<名> 或系统级 robot$<名>),至少授予 Pull Repository + "
+        "List Repository;项目为 public 可留空",
+    ),
+    "registry_robot_secret": SettingSpec(
+        "registry",
+        "secret",
+        max_len=256,
+        hint="机器人账户 Secret;轮换时先在此保存新值、待新建 Pod 拉取成功后再在 Harbor 撤销旧值",
+    ),
+    "registry_ca_pem": SettingSpec(
+        "registry",
+        "text",
+        must_contain="-----BEGIN CERTIFICATE-----",
+        max_len=16384,
+        hint="自签/私有 CA 时粘贴 PEM:node-join 落到节点并写 containerd tls.ca_file,"
+        "平台探测 Harbor API 也据此校验;公信证书留空",
+    ),
+    "registry_proxy_projects": SettingSpec(
+        "registry",
+        "text",
+        pattern=r"(?:[a-z0-9.-]+=[a-z0-9]+(?:[._-][a-z0-9]+)*\n?)*",
+        max_len=2048,
+        hint="Harbor 代理缓存:每行 <上游>=<代理项目>,如 docker.io=dockerhub、ghcr.io=ghcr"
+        "(项目须先在 Harbor 建好并设 public);节点 containerd 对该上游做 mirror,拉不到回落上游",
+    ),
+    "image_allowed_registries": SettingSpec(
+        "registry",
+        "text",
+        pattern=r"(?:[a-z0-9][a-z0-9.\-:/_]*\n?)*",
+        max_len=4096,
+        hint="创建实例的镜像来源白名单,每行一个仓库前缀(如 docker.io/);留空 = 不限制;"
+        "Harbor 地址自动放行,平台镜像目录内的引用恒放行",
+    ),
     # ---- 可观测性(管理端自绘为主;Grafana 仅作可选深挖外链,不做 iframe) ----
     "grafana_url": SettingSpec(
         "observability",
@@ -322,6 +377,26 @@ def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[Co
                 "real_name_enabled",
                 "error",
                 "实名认证已开启但阿里云实人认证凭据不全,用户提交将一律 502",
+            )
+        )
+    if (
+        cfg.get("registry_host")
+        and cfg.get("registry_robot_name")
+        and not cfg.get("registry_robot_secret")
+    ):
+        out.append(
+            ConfigWarning(
+                "registry_robot_name",
+                "error",
+                "镜像仓库已填机器人账户但未填 Secret:私有项目的镜像拉取将失败",
+            )
+        )
+    if prod and not effective_image_allowlist(cfg):
+        out.append(
+            ConfigWarning(
+                "image_allowed_registries",
+                "warning",
+                "生产环境镜像来源白名单为空且未配 Harbor 地址:租户可把任意仓库的镜像拉进集群",
             )
         )
     return out

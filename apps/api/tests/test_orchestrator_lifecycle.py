@@ -686,7 +686,7 @@ class TestImageRefValidation:
         sku_id = await create_test_sku(sm)
         settings = get_settings()
         monkeypatch.setattr(
-            settings, "image_allowed_registries", ["registry.superdl.local/"], raising=False
+            settings, "image_allowed_registries", "registry.superdl.local/", raising=False
         )
         resp = await client.post(
             "/api/v1/instances",

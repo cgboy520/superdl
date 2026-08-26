@@ -428,6 +428,17 @@ class SmsTestOut(BaseModel):
     provider: str
 
 
+class RegistryTestOut(BaseModel):
+    """Harbor 连通性探测结果:step 指出失败发生在哪一步(health=DNS/TLS/CA 或 Harbor 自检,
+    project=机器人鉴权/权限/项目存在性)。"""
+
+    ok: bool
+    step: Literal["health", "project", "done"]
+    detail: str
+    harbor_version: str | None
+    repositories: int | None
+
+
 class AnnouncementResultOut(BaseModel):
     reached: int
 
@@ -510,6 +521,9 @@ class ClusterConfigStateOut(BaseModel):
     join_token_set: bool
     prometheus_url_set: bool
     grafana_url: str | None
+    # 镜像仓库地址与平台项目(非密):镜像页新建表单的默认前缀,ops/readonly 可读
+    registry_host: str | None
+    registry_project: str | None
 
 
 class ClusterStatusOut(BaseModel):

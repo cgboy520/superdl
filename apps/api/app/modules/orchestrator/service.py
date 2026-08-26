@@ -34,7 +34,9 @@ from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.outbox import enqueue
 from app.core.pagination import RawPage
+from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit
+from app.core.registry import effective_image_allowlist
 from app.core.sqlutil import like_escape
 from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
@@ -206,12 +208,12 @@ _IMAGE_REF_RE = re.compile(
 async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
     """镜像引用校验:先形态,再来源。
 
-    来源白名单默认关。配置 SUPERDL_IMAGE_ALLOWED_REGISTRIES 后只放行平台镜像目录内的
-    引用与白名单前缀;这是唯一的镜像来源闸门。
+    来源白名单默认关(平台配置·镜像仓库 image_allowed_registries,Harbor 地址自动放行);
+    配置后只放行平台镜像目录内的引用与白名单前缀;这是唯一的镜像来源闸门。
     """
     if not _IMAGE_REF_RE.match(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
-    allowed = get_settings().image_allowed_registries
+    allowed = effective_image_allowlist(await get_effective_platform_config(session))
     if not allowed:
         return
     if any(image_ref.startswith(prefix) for prefix in allowed):

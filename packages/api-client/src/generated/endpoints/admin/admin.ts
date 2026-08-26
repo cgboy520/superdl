@@ -125,6 +125,7 @@ import type {
   RefundCancel,
   RefundPayout,
   RefundReview,
+  RegistryTestOut,
   RevenueReportApiAdminV1ReportsRevenueGetParams,
   RevenueReportOut,
   SettlementGapResolve,
@@ -1983,6 +1984,31 @@ export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platf
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(platformConfigUpdateRequest)
+  }
+);}
+
+
+export const getAdminTestRegistryApiAdminV1PlatformConfigTestRegistryPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/platform-config/test-registry`
+}
+
+/**
+ * 按当前生效镜像仓库配置探测 Harbor:health(DNS/TLS/CA)→ 机器人鉴权读平台项目仓库列表。
+ * 只读、有限流、过审计(detail 只落 host)。
+ * @summary Admin Test Registry
+ */
+export const adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<RegistryTestOut> => {
+
+  return customFetch<RegistryTestOut>(getAdminTestRegistryApiAdminV1PlatformConfigTestRegistryPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 

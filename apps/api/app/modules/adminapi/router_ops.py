@@ -17,6 +17,7 @@ from app.core.outbox import OutboxTask
 from app.core.pagination import Page
 from app.core.params import TzOffset
 from app.core.platform_config import get_effective_platform_config
+from app.core.registry import probe_harbor
 from app.core.timeutil import now_utc
 from app.modules.adminapi import export as admin_export
 from app.modules.adminapi import service
@@ -35,6 +36,7 @@ from app.modules.adminapi.schemas import (
     PlatformConfigOut,
     PlatformConfigWarningOut,
     PoliciesAdminOut,
+    RegistryTestOut,
     SmsTestOut,
     UpdatedKeysOut,
 )
@@ -369,6 +371,33 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
         ) from exc
     set_audit_target(request, f"test-sms:{body.phone}")
     return SmsTestOut(ok=True, provider=cfg["sms_provider"])
+
+
+@router.post("/platform-config/test-registry", dependencies=[require_roles()])
+async def admin_test_registry(session: DbSession, request: Request) -> RegistryTestOut:
+    """按当前生效镜像仓库配置探测 Harbor:health(DNS/TLS/CA)→ 机器人鉴权读平台项目仓库列表。
+    只读、有限流、过审计(detail 只落 host)。"""
+    from app.core.ratelimit import check_rate_limit
+
+    await check_rate_limit("admin:test-registry", max_attempts=10, window_seconds=3600.0)
+    cfg = await get_effective_platform_config(session)
+    if not cfg["registry_host"]:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "请先填写并保存 Harbor 地址(registry_host)")
+    probe = await probe_harbor(
+        host=cfg["registry_host"],
+        project=cfg["registry_project"] or "superdl",
+        robot=cfg["registry_robot_name"],
+        secret=cfg["registry_robot_secret"],
+        ca_pem=cfg["registry_ca_pem"],
+    )
+    set_audit_target(request, f"test-registry:{cfg['registry_host']}")
+    return RegistryTestOut(
+        ok=probe.ok,
+        step=probe.step,
+        detail=probe.detail,
+        harbor_version=probe.harbor_version,
+        repositories=probe.repositories,
+    )
 
 
 # ---------- 公告(角色:读 ops/finance/readonly,写 ops) ----------

@@ -27,6 +27,7 @@ import {
   type ImageNodeRow,
   type ImageRow,
   useAdminImages,
+  useClusterStatus,
   useCreateImage,
   useDeleteImage,
   useImageNodes,
@@ -112,6 +113,11 @@ function ImagesPage() {
   const qc = useQueryClient();
   const { data: images, queryKey } = useAdminImages({ refetchInterval: 15_000 });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
+  // 新建镜像的默认仓库前缀:Harbor 地址与平台项目来自平台配置(经集群状态透出,ops 可读)
+  const { data: cluster } = useClusterStatus();
+  const registryPrefix = cluster?.config.registry_host
+    ? `${cluster.config.registry_host}/${cluster.config.registry_project ?? "superdl"}/`
+    : "harbor.example.com/superdl/";
   const [form] = Form.useForm<ImageFormValues>();
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
@@ -155,7 +161,7 @@ function ImagesPage() {
       form.setFieldsValue({
         sort: 0,
         prewarm_enabled: true,
-        image_ref: "registry.superdl.local/",
+        image_ref: registryPrefix,
       });
     } else {
       form.setFieldsValue(img);
@@ -335,7 +341,7 @@ function ImagesPage() {
               },
             ]}
           >
-            <Input placeholder="registry.superdl.local/pytorch:2.9.0-cu128" />
+            <Input placeholder={`${registryPrefix}pytorch:2.9.0-cu128`} />
           </Form.Item>
           <Form.Item name="sort" label={t("images.sortLabel")}>
             <InputNumber min={0} max={9999} style={{ width: "100%" }} />

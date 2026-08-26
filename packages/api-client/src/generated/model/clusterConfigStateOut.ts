@@ -12,5 +12,7 @@ export interface ClusterConfigStateOut {
   grafana_url: string | null;
   join_token_set: boolean;
   prometheus_url_set: boolean;
+  registry_host: string | null;
+  registry_project: string | null;
   server_url_set: boolean;
 }

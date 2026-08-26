@@ -292,6 +292,8 @@ async def _cluster_status_out(session: DbSession) -> ClusterStatusOut:
             join_token_set=bool(cfg.get("cluster_join_token")),
             prometheus_url_set=prom_set,
             grafana_url=cfg.get("grafana_url") or None,
+            registry_host=cfg.get("registry_host") or None,
+            registry_project=cfg.get("registry_project") or None,
         ),
         error=row.error if row else None,
     )
