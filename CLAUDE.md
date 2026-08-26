@@ -22,7 +22,8 @@ scripts/       发布脚本与仓库级闸门脚本
 # 后端(在 apps/api 下;需先 docker compose -f deploy/app/compose.yaml up -d)
 uv sync                                  # 安装依赖
 uv run alembic upgrade head              # 迁移
-uv run python scripts/seed_dev.py        # dev 种子:SKU / 镜像 / 管理员(口令只打印一次)
+uv run python scripts/seed_dev.py        # dev 种子:SKU / 镜像 / 管理员(口令只打印一次;仅 dev/test)
+uv run python scripts/bootstrap_admin.py # prod 首个管理员(admin_users 为空时才建,口令只打印一次)
 uv run uvicorn app.main:app --reload     # 启动 API
 uv run python -m app.workers.main        # 启动 worker(outbox + 定时任务)
 uv run ruff format . && uv run ruff check --fix .

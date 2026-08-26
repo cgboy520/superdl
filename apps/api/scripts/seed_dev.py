@@ -3,7 +3,7 @@
 用法(需 PG 已迁移):cd apps/api && uv run python scripts/seed_dev.py
 幂等:已存在同名数据则跳过。
 环境闸:仅 dev/test 可跑——本脚本直调 ensure_bootstrap_admin,绕过生产配置校验,
-误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行。
+误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行(prod 的首个管理员用 scripts/bootstrap_admin.py)。
 管理员口令:默认 secrets 随机生成且仅本次打印;CI/演示需固定口令时显式设
 SUPERDL_SEED_ADMIN_PASSWORD(CI 一次性隔离环境,弱口令可接受)。
 """

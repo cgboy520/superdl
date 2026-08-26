@@ -21,7 +21,8 @@
    - 第 2 步 `kubectl kustomize` 渲染后把 `CHANGE_IMAGE_PREFIX` / `CHANGE_TAG` 换成 Harbor 项目前缀与本次 tag 再 apply;
    - 第 3 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不再重复探测);
    - 第 4 步经 Ingress 从集群外 `curl -fsS https://<api-domain>/readyz`,多验 DNS/TLS/Ingress 一层:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。任一步失败即退、按下方回滚指引处理。
-4. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
+4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(prod 可跑;`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
+5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
 ### 回滚指引
 
