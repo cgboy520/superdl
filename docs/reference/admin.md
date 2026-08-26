@@ -11,7 +11,7 @@
 
 | 路由/端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离;全角色强制 TOTP,响应只有挑战票 `{status: mfa_setup | mfa_required, ticket}`(未绑定发绑定票 10 分钟、已绑定发二要素票 5 分钟),正式 token 由 `/auth/mfa/setup/confirm` 或 `/auth/login/mfa` 签发 |
+| `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离。安全策略 `admin_mfa_enabled`(默认开)开启时全角色强制 TOTP,响应为挑战票 `{status: mfa_setup | mfa_required, ticket}`(未绑定发绑定票 10 分钟、已绑定发二要素票 5 分钟),正式 token 由 `/auth/mfa/setup/confirm` 或 `/auth/login/mfa` 签发;关闭时密码校验通过即 `{status: ok, access_token, admin}`(已绑定者也不挑战,审计 detail 记 `login_without_mfa`),重新开启即恢复 |
 | `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废 |
 | `POST /api/admin/v1/me/mfa/recovery-codes` | 全角色(本人) | 重新生成恢复码,旧码全部作废,明文仅此一次返回;进审计 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由都调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |

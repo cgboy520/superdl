@@ -166,11 +166,16 @@ function LoginPage() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
   const { message } = App.useApp();
+  const finishLogin = useFinishLogin();
   const [challenge, setChallenge] = useState<{ status: "mfa_setup" | "mfa_required"; ticket: string } | null>(null);
   const login = useAdminLogin({
     mutation: {
-      // 登录只回二要素挑战票(全角色强制 TOTP),正式 token 由 setup/confirm 或 login/mfa 签发
-      onSuccess: (data) => setChallenge({ status: data.status, ticket: data.ticket }),
+      // 安全策略开启两步验证时只回挑战票(正式 token 由 setup/confirm 或 login/mfa 签发);
+      // 关闭时直接拿到 token(status=ok)
+      onSuccess: (data) => {
+        if (data.status === "ok") finishLogin(data.access_token, data.admin);
+        else setChallenge({ status: data.status, ticket: data.ticket });
+      },
       onError: (e) => {
         message.error(errText(e, t("login.failed")));
       },

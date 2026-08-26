@@ -43,6 +43,7 @@ export const Route = createFileRoute("/_app/platform")({
 
 // i18n-exempt(至 GROUP_INTRO 为止):中国渠道(微信/支付宝/阿里云/工信部)字段名与操作指引,决策不译
 const FIELD_LABELS: Record<string, string> = {
+  admin_mfa_enabled: "启用管理端两步验证(TOTP)",
   captcha_enabled: "启用人机验证(阿里云验证码 2.0)",
   captcha_scene_id: "场景 ID",
   captcha_prefix: "身份标(prefix)",
@@ -89,6 +90,8 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const FIELD_EXTRA: Record<string, string> = {
+  admin_mfa_enabled:
+    "开:全角色首登强制绑定并二要素登录;关:密码即登录,已绑定者也不再校验(重新开启即恢复)。生产环境关闭 = 放弃口令泄漏的最后一道纵深",
   captcha_enabled:
     "开启后用户端「获取验证码」先弹阿里云滑块,请先在「人机校验」页填齐凭据;生产环境关闭 = 发码接口只剩 IP/手机号限流",
   oncall_phone: "critical 平台告警经阿里云短信直发该手机号(不依赖平台自身可用性);留空即关闭",

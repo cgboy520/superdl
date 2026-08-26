@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     jwt_admin_audience: str = "superdl:admin"
     access_token_ttl_seconds: int = 3600
     refresh_token_ttl_seconds: int = 7 * 24 * 3600
+    # 管理端两步验证(TOTP)总开关:开 = 全角色强制绑定并二要素登录;关 = 密码校验通过即签发 token
+    # (已绑定者也不再挑战,重新开启即恢复)。可被平台配置中心覆盖;prod 关闭不拒启动,只给告警
+    admin_mfa_enabled: bool = True
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 

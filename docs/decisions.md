@@ -40,7 +40,8 @@
 - 安全取舍(token 存 localStorage、固定窗口限流、用户端无 2FA、仅 +86、双人制衡残余等)集中在
   `reference/security.md`「已接受取舍」,评审在案,勿再单独立项。
 - **管理端全角色强制 TOTP。** 早期只对 admin/finance 强制,ops/readonly 免 MFA 时账号级锁定是口令喷洒的唯一纵深;
-  现已全角色强制,登录限流四层桶保留为纵深(`reference/admin.md`)。
+  现已全角色强制,登录限流四层桶保留为纵深(`reference/admin.md`)。后果:强制与否收成安全策略开关 `admin_mfa_enabled`
+  (默认开),只有全员开 / 全员关两档——按账号 opt-in 需要自助绑定入口,收益不抵复杂度;关闭是运营决定,配置中心告警 + 审计 reason。
 - **日志 PII / 凭据全局脱敏。** `app/core/logging.py` 按键名(phone / id_number / token / secret / password / code)兜底打码,
   防新增日志点漏脱敏。
 - **账号级登录锁定。** 撞库可以换 IP,换不了目标账号:账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加。

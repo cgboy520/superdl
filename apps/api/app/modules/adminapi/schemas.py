@@ -66,11 +66,19 @@ class AdminSelfPasswordRequest(BaseModel):
 
 
 class MfaChallengeOut(BaseModel):
-    """登录响应(全部管理角色强制 TOTP,不直发 token):
+    """登录响应·挑战分支(安全策略 admin_mfa_enabled 开启时,不直发 token):
     mfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。"""
 
     status: Literal["mfa_setup", "mfa_required"]
     ticket: str
+
+
+class AdminLoginTokenOut(BaseModel):
+    """登录响应·直发分支(安全策略 admin_mfa_enabled 关闭时):密码校验通过即签发 access token。"""
+
+    status: Literal["ok"]  # 必填:前端按 status 判别联合类型(可选字段无法收窄)
+    access_token: str
+    admin: AdminOut
 
 
 class MfaTicketRequest(BaseModel):

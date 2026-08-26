@@ -161,7 +161,6 @@ import type {
   RefundReview,
   AdminForceStopRequest,
   AdminLoginRequest,
-  MfaChallengeOut,
   MfaLoginOut,
   MfaSetupConfirmOut,
   MfaSetupOut,
@@ -836,7 +835,9 @@ export function useAuditLog(filters: AuditFilters) {
 // ---------- 变更 hooks ----------
 
 /** 登录只返回二要素挑战票(全角色强制 TOTP);正式 token 经 useMfaSetupConfirm / useMfaVerify。 */
-export function useAdminLogin(opts?: MutOpts<MfaChallengeOut, { data: AdminLoginRequest }>) {
+export function useAdminLogin(
+  opts?: MutOptsOf<typeof adminLoginApiAdminV1AuthLoginPost, { data: AdminLoginRequest }>,
+) {
   return useMutation({
     mutationFn: (v: { data: AdminLoginRequest }) => adminLoginApiAdminV1AuthLoginPost(v.data),
     ...opts?.mutation,

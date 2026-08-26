@@ -18,6 +18,7 @@
     "enable": "Enable",
     "enableConfirm": "Re-enable {{name}} so the account can log in again",
     "mfaBound": "Bound",
+    "mfaDisabledTag": "Disabled (security policy)",
     "mfaUnbound": "Pending",
     "needSecondAdmin": "Only one active super admin",
     "needSecondAdminDetail": "Balance adjustments require a second reviewer — with a single account no adjustment can ever be approved. Create a second admin and have everyone use their own account (the audit trail is per account).",

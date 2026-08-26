@@ -1,6 +1,7 @@
 /**
  * 管理端冒烟:登录 → 首登强制 MFA 绑定(TOTP 由 e2e 现算,不开服务端测试后门)
- * → 二要素登录 → 调账双人复核(发起:seed admin;复核:finance,经 API 建号)→ 冻结租户。
+ * → 二要素登录 → 调账双人复核(发起:seed admin;复核:finance,经 API 建号)→ 冻结租户
+ * → 安全策略关闭两步验证(新管理员密码即登录)→ 重新开启(回到强制绑定)。
  *
  * 门控(无浏览器 CI 环境默认跳过;本地可跑):
  *   SUPERDL_ADMIN_E2E=1 pnpm --filter @superdl/e2e exec playwright test admin
@@ -78,7 +79,7 @@ async function registerTenant(request: APIRequestContext, phone: string): Promis
   return data.user.id;
 }
 
-test("管理端冒烟:MFA → 调账双人复核 → 冻结租户", async ({ page, request }) => {
+test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验证开关", async ({ page, request }) => {
   test.setTimeout(300_000);
   const phone = `137${String(Date.now()).slice(-8)}`;
   const maskedPhone = `${phone.slice(0, 3)}****${phone.slice(-4)}`;
@@ -150,4 +151,39 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户", async ({ pag
     timeout: 15_000,
   });
   await expect(tenantRow.getByText("已冻结")).toBeVisible({ timeout: 15_000 });
+
+  // ── 6. 安全策略·两步验证开关:关闭 → 新管理员密码即登录;重新开启 → 回到强制绑定 ──
+  const setMfa = (enabled: boolean) =>
+    request.put(`${API}/api/admin/v1/platform-config`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      data: { updates: { admin_mfa_enabled: enabled ? "true" : "false" }, reason: "e2e 两步验证开关" },
+    });
+  const opsName = `ops-e2e-${String(Date.now()).slice(-6)}`;
+  const opsCreated = await request.post(`${API}/api/admin/v1/admins`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+    data: { username: opsName, password: "ops-e2e-pass-1234", role: "ops", reason: "e2e 开关用例" },
+  });
+  expect(opsCreated.status(), await opsCreated.text()).toBe(201);
+  const off = await setMfa(false);
+  expect(off.status(), await off.text()).toBe(200);
+  try {
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`${ADMIN}/login`);
+    await page.getByLabel("用户名").fill(opsName);
+    await page.getByLabel("密码").fill("ops-e2e-pass-1234");
+    await page.getByRole("button", { name: /^登\s*录$/ }).click();
+    // 开关关闭:不出绑定页,直接进入控制台
+    await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
+    await expect(page.locator("code")).toHaveCount(0);
+  } finally {
+    const on = await setMfa(true);
+    expect(on.status(), await on.text()).toBe(200);
+  }
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(`${ADMIN}/login`);
+  await page.getByLabel("用户名").fill(opsName);
+  await page.getByLabel("密码").fill("ops-e2e-pass-1234");
+  await page.getByRole("button", { name: /^登\s*录$/ }).click();
+  // 重新开启:未绑定账号回到首登强制绑定页(手动密钥 code 元素)
+  await expect(page.locator("code").first()).toBeVisible({ timeout: 15_000 });
 });

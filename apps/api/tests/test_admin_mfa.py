@@ -1,4 +1,5 @@
-"""管理端 TOTP MFA:全部管理角色强制绑定,二要素登录,恢复码,重置救援。"""
+"""管理端 TOTP MFA:安全策略 admin_mfa_enabled(默认开)下全部管理角色强制绑定,二要素登录,
+恢复码,重置救援;关闭时全员密码即登录。"""
 
 import asyncio
 from typing import get_args
@@ -46,6 +47,37 @@ class TestMfaEnforcement:
             assert body["status"] == "mfa_setup", (role, body)
             assert "access_token" not in body
             assert body["ticket"]
+
+    async def test_switch_off_skips_mfa_for_everyone_and_on_restores(self, client: AsyncClient, sm):
+        """安全策略 admin_mfa_enabled=false:未绑定者与已绑定者都直发 token(status=ok);
+        重新开启后已绑定者回到二要素、未绑定者回到绑定票——挂了说明开关没接到登录路径,
+        或关闭后已绑定者仍被挑战(与「关 = 全员免」的契约不符)。"""
+        from sqlalchemy import delete
+
+        from app.core.platform_config import PlatformSetting
+
+        await _create(client, sm, "sw-bound", "admin")
+        await _create(client, sm, "sw-unbound", "ops")
+        await complete_mfa_setup(client, (await _login(client, "sw-bound")).json()["ticket"])
+
+        async with sm() as session:
+            session.add(PlatformSetting(key="admin_mfa_enabled", value="false"))
+            await session.commit()
+        for name in ("sw-bound", "sw-unbound"):
+            body = (await _login(client, name)).json()
+            assert body["status"] == "ok", (name, body)
+            me = await client.get(
+                "/api/admin/v1/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+            )
+            assert me.status_code == 200 and me.json()["username"] == name
+
+        async with sm() as session:
+            await session.execute(
+                delete(PlatformSetting).where(PlatformSetting.key == "admin_mfa_enabled")
+            )
+            await session.commit()
+        assert (await _login(client, "sw-bound")).json()["status"] == "mfa_required"
+        assert (await _login(client, "sw-unbound")).json()["status"] == "mfa_setup"
 
 
 class TestSetupFlow:

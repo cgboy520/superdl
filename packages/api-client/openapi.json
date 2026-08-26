@@ -792,6 +792,30 @@
         "title": "AdminLoginRequest",
         "type": "object"
       },
+      "AdminLoginTokenOut": {
+        "description": "登录响应·直发分支(安全策略 admin_mfa_enabled 关闭时):密码校验通过即签发 access token。",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "admin": {
+            "$ref": "#/components/schemas/AdminOut"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "access_token",
+          "admin"
+        ],
+        "title": "AdminLoginTokenOut",
+        "type": "object"
+      },
       "AdminOrderOut": {
         "properties": {
           "amount": {
@@ -3790,7 +3814,7 @@
         "type": "object"
       },
       "MfaChallengeOut": {
-        "description": "登录响应(全部管理角色强制 TOTP,不直发 token):\nmfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。",
+        "description": "登录响应·挑战分支(安全策略 admin_mfa_enabled 开启时,不直发 token):\nmfa_setup=首次绑定(绑定票 10min);mfa_required=已绑定验证(二要素票 5min)。",
         "properties": {
           "status": {
             "enum": [
@@ -8630,7 +8654,7 @@
     },
     "/api/admin/v1/auth/login": {
       "post": {
-        "description": "密码校验通过只返回二要素挑战票(全部管理角色强制 TOTP):未绑定发绑定票、已绑定发验证票;\n正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发。",
+        "description": "密码校验。安全策略 admin_mfa_enabled 开启(默认)时只返回二要素挑战票:未绑定发绑定票、\n已绑定发验证票,正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;\n关闭时直接返回 {status: ok, access_token, admin}。",
         "operationId": "admin_login_api_admin_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -8647,7 +8671,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MfaChallengeOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MfaChallengeOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminLoginTokenOut"
+                    }
+                  ],
+                  "title": "Response Admin Login Api Admin V1 Auth Login Post"
                 }
               }
             },

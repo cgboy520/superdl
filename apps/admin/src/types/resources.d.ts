@@ -20,6 +20,7 @@ export default interface Resources {
       "enable": "启用",
       "enableConfirm": "重新启用「{{name}}」,该账号可再次登录",
       "mfaBound": "已绑定",
+      "mfaDisabledTag": "已关闭(安全策略)",
       "mfaUnbound": "待绑定",
       "needSecondAdmin": "当前只有一个可用的超级管理员",
       "needSecondAdminDetail": "调账必须由第二位管理员复核 —— 只有一个账号时,任何调账单都无法通过复核。请先建出第二位管理员,并让每个人用自己的账号操作(审计按账号追溯)。",

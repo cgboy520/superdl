@@ -11,6 +11,7 @@ from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import Page
+from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import RateLimitCounter, check_rate_limit, ensure_not_rate_limited
 from app.core.security import (
     create_token,
@@ -21,7 +22,12 @@ from app.core.security import (
 )
 from app.core.timeutil import ensure_utc, now_utc
 from app.modules.adminapi.models import AdminAdjustment, AdminUser
-from app.modules.adminapi.schemas import AdjustmentOut, MfaChallengeOut
+from app.modules.adminapi.schemas import (
+    AdjustmentOut,
+    AdminLoginTokenOut,
+    AdminOut,
+    MfaChallengeOut,
+)
 from app.modules.orchestrator.schemas import NON_TERMINAL_STATUSES
 
 logger = get_logger(__name__)
@@ -46,10 +52,11 @@ PASSWORD_MIN_LENGTH = 12
 # bcrypt 上限 72 字节;schema 的 max_length 按字符计,多字节口令会绕过
 PASSWORD_MAX_BYTES = 72
 
-# ---------- TOTP MFA(全部管理角色强制) ----------
+# ---------- TOTP MFA(安全策略 admin_mfa_enabled,默认开,全部管理角色一视同仁) ----------
 # ops 能签发节点接入令牌(→ 集群 join token → 加恶意节点)、readonly 能导出全部
-# 租户流水与审计——免 MFA 的角色等于给口令泄漏开直通车道,无一例外强制:
-# 登录只签发挑战票,正式 token 只经 confirm_totp_setup / verify_mfa_login 签发。
+# 租户流水与审计——免 MFA 的角色等于给口令泄漏开直通车道,开关只有全员开/全员关两档:
+# 开启时登录只签发挑战票,正式 token 只经 confirm_totp_setup / verify_mfa_login 签发;
+# 关闭时密码校验通过即签发(已绑定者也不挑战,重新开启即恢复;不做按账号 opt-in)。
 MFA_SETUP_TICKET_SECONDS = 600  # 绑定票 10 分钟,一次性用途(typ=mfa_setup)
 MFA_VERIFY_TICKET_SECONDS = 300  # 二要素票 5 分钟
 MFA_MAX_ATTEMPTS = 5  # 同账号 5 次/10min,防在线爆破 6 位码
@@ -92,8 +99,9 @@ async def _clear_login_failures(key: str) -> None:
 
 async def login(
     session: AsyncSession, username: str, password: str, *, client_ip: str | None = None
-) -> tuple[MfaChallengeOut, AdminUser]:
-    """密码校验 → (二要素挑战票, 账号)。未绑定 TOTP 发绑定票,已绑定发验证票;不直发 token。"""
+) -> tuple[MfaChallengeOut | AdminLoginTokenOut, AdminUser]:
+    """密码校验 → (响应, 账号)。安全策略 admin_mfa_enabled 开启:未绑定 TOTP 发绑定票、
+    已绑定发验证票,不直发 token;关闭:直接签发 access token(status=ok)。"""
     admin = (
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
@@ -118,6 +126,15 @@ async def login(
     for key, _, _, clear_on_success in buckets:
         if clear_on_success:
             await _clear_login_failures(key)
+    # 安全策略关闭两步验证:密码即登录(已绑定者也不挑战;重新开启即恢复二要素)
+    cfg = await get_effective_platform_config(session)
+    if cfg["admin_mfa_enabled"] != "true":
+        token = create_token(
+            str(admin.id), "admin", token_type="access", extra={"ver": admin.token_version}
+        )
+        return AdminLoginTokenOut(
+            status="ok", access_token=token, admin=AdminOut.model_validate(admin)
+        ), admin
     # 未绑定 → 绑定票(10min);已绑定 → 二要素票(5min)
     if admin.totp_enabled:
         return MfaChallengeOut(status="mfa_required", ticket=_mfa_ticket(admin, setup=False)), admin

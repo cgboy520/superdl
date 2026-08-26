@@ -10,6 +10,7 @@ from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
     AdminAccountOut,
     AdminLoginRequest,
+    AdminLoginTokenOut,
     AdminOut,
     AdminRefreshOut,
     AdminRefreshRequest,
@@ -30,14 +31,18 @@ router = APIRouter(tags=["admin"])
 @router.post("/auth/login")
 async def admin_login(
     body: AdminLoginRequest, session: DbSession, request: Request
-) -> MfaChallengeOut:
-    """密码校验通过只返回二要素挑战票(全部管理角色强制 TOTP):未绑定发绑定票、已绑定发验证票;
-    正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发。"""
-    challenge, admin = await service.login(
+) -> MfaChallengeOut | AdminLoginTokenOut:
+    """密码校验。安全策略 admin_mfa_enabled 开启(默认)时只返回二要素挑战票:未绑定发绑定票、
+    已绑定发验证票,正式 access token 由 /auth/mfa/setup/confirm 或 /auth/login/mfa 签发;
+    关闭时直接返回 {status: ok, access_token, admin}。"""
+    result, admin = await service.login(
         session, body.username, body.password, client_ip=client_ip(request)
     )
-    set_audit_target(request, f"admin:{admin.id}")
-    return challenge
+    if isinstance(result, AdminLoginTokenOut):
+        set_audit_target(request, f"admin:{admin.id}", detail={"action": "login_without_mfa"})
+    else:
+        set_audit_target(request, f"admin:{admin.id}")
+    return result
 
 
 @router.post("/auth/mfa/setup/begin")

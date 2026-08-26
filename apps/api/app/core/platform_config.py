@@ -68,6 +68,12 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
         "关闭 = 不做人机校验,发码口子只剩 IP/手机号限流",
     ),
+    "admin_mfa_enabled": SettingSpec(
+        "security",
+        "bool",
+        hint="开 = 管理端全角色强制 TOTP 两步验证(首登绑定);关 = 密码即登录,已绑定者也不再校验;"
+        "生产环境关闭属高危运营动作",
+    ),
     "real_name_enabled": SettingSpec(
         "security",
         "bool",

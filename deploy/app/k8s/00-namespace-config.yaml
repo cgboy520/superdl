@@ -41,6 +41,8 @@ data:
   SUPERDL_CAPTCHA_ENABLED: "true"
   # 实名认证开关(默认值层;资质与凭据到位后在 管理端·平台配置·安全策略 打开,再视合规要求开「充值前强制实名」)
   SUPERDL_REAL_NAME_ENABLED: "false"
+  # 管理端两步验证(TOTP)总开关(默认值层;关闭属高危运营动作,管理端·平台配置·安全策略可切换)
+  SUPERDL_ADMIN_MFA_ENABLED: "true"
   SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"
   SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
   # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。

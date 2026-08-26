@@ -12,6 +12,7 @@ import {
   useAdminAccounts,
   useChangeOwnPassword,
   useCreateAdminAccount,
+  usePlatformConfig,
   useRegenerateRecoveryCodes,
   useResetAdminMfa,
   useResetAdminPassword,
@@ -38,6 +39,9 @@ export function AdminsTab() {
   const { admin: me, logout } = useAuth();
   const isSuperAdmin = me?.role === "admin";
   const { data, queryKey, isLoading } = useAdminAccounts();
+  // 安全策略 admin_mfa_enabled(仅超管可读;读不到按「开启」处理,不误标)
+  const mfaEnabled =
+    usePlatformConfig().data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !== "false";
 
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminAccountOut | null>(null);
@@ -81,9 +85,14 @@ export function AdminsTab() {
       ),
     },
     {
-      title: t("admins.colMfa"),
+      title: (
+        <Space size={6}>
+          {t("admins.colMfa")}
+          {!mfaEnabled && <Tag color="orange">{t("admins.mfaDisabledTag")}</Tag>}
+        </Space>
+      ),
       key: "mfa",
-      // 后端对四个角色一律强制 TOTP,此列只区分已绑定/待绑定
+      // 开关开启时四个角色一律强制 TOTP;关闭时列头标「已关闭」,行内仍只区分已绑定/待绑定
       render: (_: unknown, row: AdminAccountOut) =>
         row.totp_enabled ? (
           <Tag color={adminColors.positive}>{t("admins.mfaBound")}</Tag>
