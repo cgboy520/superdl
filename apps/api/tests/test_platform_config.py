@@ -268,6 +268,54 @@ class TestAliyunRealNameProvider:
         assert isinstance(provider, AliyunRealNameProvider)
 
 
+class TestConfigWarnings:
+    def test_rules_by_switch_and_credentials(self):
+        """每条规则一例:挂了说明配置页红牌 / 启动告警与实际风险漂移
+        (开关关了没人提醒、开了没凭据在 502 却显示正常)。"""
+        from app.core.platform_config import SETTING_SPECS, compute_config_warnings
+
+        base = dict.fromkeys(SETTING_SPECS, "")
+        base.update(captcha_enabled="false", admin_mfa_enabled="true", real_name_enabled="false")
+        assert compute_config_warnings(base, "test") == []
+        assert [(w.key, w.level) for w in compute_config_warnings(base, "prod")] == [
+            ("captcha_enabled", "error")
+        ]
+        on = dict(base, captcha_enabled="true", admin_mfa_enabled="false", real_name_enabled="true")
+        keys = {(w.key, w.level) for w in compute_config_warnings(on, "prod")}
+        assert keys == {
+            ("captcha_enabled", "error"),
+            ("admin_mfa_enabled", "warning"),
+            ("real_name_enabled", "error"),
+        }
+        full = dict(
+            on,
+            captcha_scene_id="scene",
+            captcha_access_key_id="LTAI5tTESTTESTTEST",
+            captcha_access_key_secret="sk",
+            real_name_access_key_id="LTAI5tTESTTESTTEST",
+            real_name_access_key_secret="sk",
+        )
+        assert [w.key for w in compute_config_warnings(full, "prod")] == ["admin_mfa_enabled"]
+        assert compute_config_warnings(dict(full, admin_mfa_enabled="true"), "prod") == []
+
+    async def test_api_exposes_warnings(self, client: AsyncClient, sm):
+        """开启人机验证而未录凭据:GET /platform-config 的 warnings 立即带 error 级提示。"""
+        ah = await admin_headers(sm, client, role="admin")
+        assert (await client.get("/api/admin/v1/platform-config", headers=ah)).json()[
+            "warnings"
+        ] == []
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"captcha_enabled": "true"}, "reason": "先开开关"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        warnings = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()[
+            "warnings"
+        ]
+        assert [(w["key"], w["level"]) for w in warnings] == [("captcha_enabled", "error")]
+
+
 class TestEffectiveConfig:
     async def test_corrupt_secret_row_falls_back_to_env(self, sm):
         """单行密文损坏(主密钥换错/手工改库)只让该键回落 env,不得拖垮整份配置。"""

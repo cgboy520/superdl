@@ -1,5 +1,6 @@
 /**
- * 平台配置:安全策略开关 / 微信支付 / 支付宝 / 阿里云短信 / 人机验证 / 实名认证 / 合规备案 / 集群接入。
+ * 平台配置:左侧分组导航(安全 / 第三方渠道 / 基础设施 / 站点信息)+ 顶部服务端配置风险告警 + 右侧分组表单。
+ * 安全策略页是开关行(开关 / 依赖凭据状态 / 风险);其余分组沿用字段表单。
  * 仅超级管理员可读写;env 为默认值层,DB 覆盖即时生效(免重启发版)。
  * secret 类永不回显明文:只显示"已配置 + 尾 4 位",输入留空 = 保持不变。
  */
@@ -15,11 +16,11 @@ import {
   Card,
   Form,
   Input,
+  Menu,
   Modal,
   Select,
   Space,
   Switch,
-  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -357,6 +358,233 @@ function SmsTestCard({ disabled }: { disabled: boolean }) {
   );
 }
 
+type Group = PlatformConfigItem["group"];
+type ConfigWarning = { key: string; level: "error" | "warning"; message: string };
+
+/** 左侧分组导航:业务分组 → 配置组;顺序即展示顺序(新增配置组必须归入某个分组,否则 TS 报缺键)。 */
+const NAV = [
+  { labelKey: "platform.navSecurity", groups: ["security"] },
+  {
+    labelKey: "platform.navChannels",
+    groups: ["captcha", "sms", "real_name", "payment_wechat", "payment_alipay"],
+  },
+  { labelKey: "platform.navInfra", groups: ["cluster", "observability"] },
+  { labelKey: "platform.navSite", groups: ["compliance", "support"] },
+] as const satisfies readonly { labelKey: string; groups: readonly Group[] }[];
+const GROUP_LABEL_KEY = {
+  security: "platform.tabSecurity",
+  captcha: "platform.tabCaptcha",
+  sms: "platform.tabSms",
+  real_name: "platform.tabRealName",
+  payment_wechat: "platform.tabWechat",
+  payment_alipay: "platform.tabAlipay",
+  cluster: "platform.tabCluster",
+  observability: "platform.tabObservability",
+  compliance: "platform.tabCompliance",
+  support: "platform.tabSupport",
+} as const satisfies Record<Group, string>;
+/** 安全开关的依赖凭据(在别的分组录入)与「须先开启」的前置开关。 */
+const SWITCH_DEPS: Record<string, { keys: string[]; group: Group }> = {
+  captcha_enabled: {
+    keys: ["captcha_scene_id", "captcha_access_key_id", "captcha_access_key_secret"],
+    group: "captcha",
+  },
+  real_name_enabled: {
+    keys: ["real_name_access_key_id", "real_name_access_key_secret"],
+    group: "real_name",
+  },
+};
+const SWITCH_REQUIRES: Record<string, string> = {
+  real_name_required_for_recharge: "real_name_enabled",
+};
+// i18n-exempt:关闭安全开关时弹窗复述的风险(与 FIELD_EXTRA 同约定,决策不译)
+const RISK_OFF: Record<string, string> = {
+  captcha_enabled: "关闭后 /auth/sms-code 不做人机校验,仅剩 IP/手机号限流",
+  admin_mfa_enabled: "关闭后管理端仅凭口令即可登录,已绑定的 TOTP 也不再校验",
+  real_name_enabled: "关闭后用户无法完成实名;若「充值前强制实名」开着,保存会被拒绝",
+  real_name_required_for_recharge: "关闭后未实名用户可以充值与开通实例",
+};
+
+/** 导航项状态点:红 = 有 error 告警,琥珀 = warning,绿 = 开关已开,青 = 有覆盖/已配凭据,灰 = 未配置。 */
+function groupDotColor(
+  group: Group,
+  items: PlatformConfigItem[],
+  warnings: ConfigWarning[],
+  byKey: Map<string, PlatformConfigItem>,
+): string {
+  const ws = warnings.filter((w) => byKey.get(w.key)?.group === group);
+  if (ws.some((w) => w.level === "error")) return adminColors.negative;
+  if (ws.length > 0) return adminColors.alertAccent;
+  const own = items.filter((i) => i.group === group);
+  if (own.some((i) => i.kind === "bool" && i.value === "true")) return adminColors.positive;
+  if (own.some((i) => i.source === "override" || (i.kind === "secret" && i.configured))) {
+    return adminColors.dataAccent;
+  }
+  return adminColors.textMuted;
+}
+
+function NavLabel({ color, text }: { color: string; text: string }) {
+  return (
+    <Space size={8}>
+      <span
+        style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: color }}
+      />
+      {text}
+    </Space>
+  );
+}
+
+function SwitchRow({
+  item,
+  draft,
+  setDraft,
+  disabled,
+  byKey,
+  warnings,
+  onGoTo,
+}: {
+  item: PlatformConfigItem;
+  draft: Record<string, string>;
+  setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  disabled: boolean;
+  byKey: Map<string, PlatformConfigItem>;
+  warnings: ConfigWarning[];
+  onGoTo: (group: Group) => void;
+}) {
+  const { t } = useTranslation();
+  const effective = (draft[item.key] ?? item.value ?? "false") === "true";
+  const deps = SWITCH_DEPS[item.key];
+  const missing = deps ? deps.keys.filter((k) => !byKey.get(k)?.configured) : [];
+  const requires = SWITCH_REQUIRES[item.key];
+  const requiresOn = requires ? (draft[requires] ?? byKey.get(requires)?.value) === "true" : true;
+  const risks = warnings.filter((w) => w.key === item.key);
+  return (
+    <div style={{ border: `1px solid ${adminColors.divider}`, borderRadius: 6, padding: "12px 16px" }}>
+      <Space align="start" size={16} style={{ width: "100%" }}>
+        <Switch
+          checked={effective}
+          disabled={disabled}
+          onChange={(checked) => setDraft((d) => ({ ...d, [item.key]: checked ? "true" : "false" }))}
+        />
+        <Space orientation="vertical" size={4}>
+          <Space size={8} wrap>
+            <Typography.Text strong>{FIELD_LABELS[item.key] ?? item.key}</Typography.Text>
+            <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
+            {item.updated_at && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t("platform.updatedAt", { time: formatDateTime(item.updated_at) })}
+              </Typography.Text>
+            )}
+            {item.source === "override" && draft[item.key] === undefined && (
+              <Button
+                size="small"
+                type="link"
+                disabled={disabled}
+                onClick={() => setDraft((d) => ({ ...d, [item.key]: "" }))}
+              >
+                {t("platform.clearOverride")}
+              </Button>
+            )}
+            {draft[item.key] === "" && item.source === "override" && (
+              <Tag color="orange">{t("platform.clearOverrideTag")}</Tag>
+            )}
+          </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {[FIELD_EXTRA[item.key], item.hint].filter(Boolean).join(";")}
+          </Typography.Text>
+          {deps && (
+            <Space size={4}>
+              <Typography.Text
+                style={{
+                  fontSize: 12,
+                  color: missing.length > 0 ? adminColors.alertAccent : adminColors.positive,
+                }}
+              >
+                {missing.length > 0
+                  ? t("platform.depsMissing", {
+                      keys: missing.map((k) => FIELD_LABELS[k] ?? k).join("、"),
+                    })
+                  : t("platform.depsOk")}
+              </Typography.Text>
+              {missing.length > 0 && (
+                <Button size="small" type="link" onClick={() => onGoTo(deps.group)}>
+                  {t("platform.goTo")}「{t(GROUP_LABEL_KEY[deps.group])}」
+                </Button>
+              )}
+            </Space>
+          )}
+          {requires && !requiresOn && (
+            <Typography.Text style={{ fontSize: 12, color: adminColors.alertAccent }}>
+              {t("platform.needsSwitch", { label: FIELD_LABELS[requires] ?? requires })}
+            </Typography.Text>
+          )}
+          {risks.map((w) => (
+            <Typography.Text
+              key={w.message}
+              style={{
+                fontSize: 12,
+                color: w.level === "error" ? adminColors.negative : adminColors.alertAccent,
+              }}
+            >
+              {w.message}
+            </Typography.Text>
+          ))}
+        </Space>
+      </Space>
+    </div>
+  );
+}
+
+function SecurityPanel({
+  items,
+  draft,
+  setDraft,
+  disabled,
+  byKey,
+  warnings,
+  onGoTo,
+}: {
+  items: PlatformConfigItem[];
+  draft: Record<string, string>;
+  setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  disabled: boolean;
+  byKey: Map<string, PlatformConfigItem>;
+  warnings: ConfigWarning[];
+  onGoTo: (group: Group) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%", maxWidth: 760 }}>
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: "guide",
+            label: t("platform.configGuide"),
+            children: (
+              <Typography.Paragraph style={{ marginBottom: 0 }}>
+                {GROUP_INTRO.security}
+              </Typography.Paragraph>
+            ),
+          },
+        ]}
+      />
+      {items.map((item) => (
+        <SwitchRow
+          key={item.key}
+          item={item}
+          draft={draft}
+          setDraft={setDraft}
+          disabled={disabled}
+          byKey={byKey}
+          warnings={warnings}
+          onGoTo={onGoTo}
+        />
+      ))}
+    </Space>
+  );
+}
+
 function PlatformConfigPage() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
@@ -367,6 +595,7 @@ function PlatformConfigPage() {
   const { data, queryKey, isLoading, isError, error } = usePlatformConfig();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [reasonOpen, setReasonOpen] = useState(false);
+  const [active, setActive] = useState<Group>("security");
   const [reasonForm] = Form.useForm<{ reason: string }>();
 
   const update = useUpdatePlatformConfig({
@@ -383,6 +612,7 @@ function PlatformConfigPage() {
   });
 
   const items = data?.items ?? [];
+  const warnings: ConfigWarning[] = data?.warnings ?? [];
   const byKey = new Map(items.map((i) => [i.key, i]));
   const changed = Object.entries(draft).filter(([k, v]) => {
     const item = byKey.get(k);
@@ -391,6 +621,7 @@ function PlatformConfigPage() {
     if (item.kind === "secret") return true;
     return v !== (item.value ?? "");
   });
+  const riskyOff = changed.filter(([k, v]) => k in RISK_OFF && v === "false");
 
   if (isError) {
     return (
@@ -408,8 +639,38 @@ function PlatformConfigPage() {
     );
   }
 
-  const groupItems = (g: PlatformConfigItem["group"]) => items.filter((i) => i.group === g);
   const disabled = !isAdmin;
+  const menuItems = NAV.map((n) => ({
+    type: "group" as const,
+    label: t(n.labelKey),
+    children: n.groups.map((g) => ({
+      key: g,
+      label: (
+        <NavLabel color={groupDotColor(g, items, warnings, byKey)} text={t(GROUP_LABEL_KEY[g])} />
+      ),
+    })),
+  }));
+  const panel =
+    active === "security" ? (
+      <SecurityPanel
+        items={items.filter((i) => i.group === "security")}
+        draft={draft}
+        setDraft={setDraft}
+        disabled={disabled}
+        byKey={byKey}
+        warnings={warnings}
+        onGoTo={setActive}
+      />
+    ) : (
+      <GroupPanel
+        group={active}
+        items={items.filter((i) => i.group === active)}
+        draft={draft}
+        setDraft={setDraft}
+        disabled={disabled}
+        extraContent={active === "sms" ? <SmsTestCard disabled={disabled} /> : undefined}
+      />
+    );
 
   return (
     <Card
@@ -427,141 +688,39 @@ function PlatformConfigPage() {
         </Tooltip>
       }
     >
-      <Tabs
-        items={[
-          {
-            key: "security",
-            label: t("platform.tabSecurity"),
-            children: (
-              <GroupPanel
-                group="security"
-                items={groupItems("security")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "payment_wechat",
-            label: t("platform.tabWechat"),
-            children: (
-              <GroupPanel
-                group="payment_wechat"
-                items={groupItems("payment_wechat")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "payment_alipay",
-            label: t("platform.tabAlipay"),
-            children: (
-              <GroupPanel
-                group="payment_alipay"
-                items={groupItems("payment_alipay")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "sms",
-            label: t("platform.tabSms"),
-            children: (
-              <GroupPanel
-                group="sms"
-                items={groupItems("sms")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-                extraContent={<SmsTestCard disabled={disabled} />}
-              />
-            ),
-          },
-          {
-            key: "captcha",
-            label: t("platform.tabCaptcha"),
-            children: (
-              <GroupPanel
-                group="captcha"
-                items={groupItems("captcha")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "real_name",
-            label: t("platform.tabRealName"),
-            children: (
-              <GroupPanel
-                group="real_name"
-                items={groupItems("real_name")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "compliance",
-            label: t("platform.tabCompliance"),
-            children: (
-              <GroupPanel
-                group="compliance"
-                items={groupItems("compliance")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "support",
-            label: t("platform.tabSupport"),
-            children: (
-              <GroupPanel
-                group="support"
-                items={groupItems("support")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "cluster",
-            label: t("platform.tabCluster"),
-            children: (
-              <GroupPanel
-                group="cluster"
-                items={groupItems("cluster")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-          {
-            key: "observability",
-            label: t("platform.tabObservability"),
-            children: (
-              <GroupPanel
-                group="observability"
-                items={groupItems("observability")}
-                draft={draft}
-                setDraft={setDraft}
-                disabled={disabled}
-              />
-            ),
-          },
-        ]}
-      />
+      {warnings.length > 0 && (
+        <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
+          {warnings.map((w) => (
+            <Alert
+              key={`${w.key}:${w.message}`}
+              type={w.level}
+              showIcon
+              title={w.message}
+              action={
+                <Button
+                  size="small"
+                  onClick={() => {
+                    const g = byKey.get(w.key)?.group;
+                    if (g) setActive(g);
+                  }}
+                >
+                  {t("platform.goTo")}
+                </Button>
+              }
+            />
+          ))}
+        </Space>
+      )}
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        <Menu
+          mode="inline"
+          selectedKeys={[active]}
+          items={menuItems}
+          onClick={(e) => setActive(e.key as Group)}
+          style={{ width: 220, flex: "none", background: "transparent" }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>{panel}</div>
+      </div>
       <Modal
         title={t("platform.confirmTitle")}
         open={reasonOpen}
@@ -583,6 +742,18 @@ function PlatformConfigPage() {
               </div>
             );
           })}
+          {riskyOff.length > 0 && (
+            <Alert
+              type="error"
+              showIcon
+              title={t("platform.riskOffTitle")}
+              description={riskyOff.map(([k]) => (
+                <div key={k}>
+                  {FIELD_LABELS[k] ?? k}:{RISK_OFF[k]}
+                </div>
+              ))}
+            />
+          )}
           <Alert
             type="warning"
             showIcon

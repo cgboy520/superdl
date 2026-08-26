@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target
+from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
@@ -32,6 +33,7 @@ from app.modules.adminapi.schemas import (
     OverviewOut,
     PlatformConfigItemOut,
     PlatformConfigOut,
+    PlatformConfigWarningOut,
     PoliciesAdminOut,
     SmsTestOut,
     UpdatedKeysOut,
@@ -276,9 +278,11 @@ async def admin_update_policies(
 
 @router.get("/platform-config", dependencies=[require_roles()])
 async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
-    """分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。"""
+    """分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 服务端计算的配置风险 warnings。
+    secret 永不回明文,只回尾 4 位预览。"""
     from app.core.platform_config import (
         SETTING_SPECS,
+        compute_config_warnings,
         list_platform_overrides,
         secret_preview,
     )
@@ -303,7 +307,11 @@ async def admin_get_platform_config(session: DbSession) -> PlatformConfigOut:
                 updated_at=row.updated_at.isoformat() if row is not None else None,
             )
         )
-    return PlatformConfigOut(items=items)
+    warnings = [
+        PlatformConfigWarningOut(key=w.key, level=w.level, message=w.message)
+        for w in compute_config_warnings(eff, get_settings().environment)
+    ]
+    return PlatformConfigOut(items=items, warnings=warnings)
 
 
 class PlatformConfigUpdateRequest(BaseModel):

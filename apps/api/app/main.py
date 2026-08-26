@@ -47,7 +47,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # cluster 键不做启动 fail-fast(经 DB 覆盖层维护,查 env 会误报):
         # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 兜底
         from app.core.db import get_sessionmaker
-        from app.core.platform_config import get_effective_platform_config
+        from app.core.platform_config import (
+            compute_config_warnings,
+            get_effective_platform_config,
+        )
 
         async with get_sessionmaker()() as session:
             cfg = await get_effective_platform_config(session)
@@ -57,6 +60,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 "cluster_config_missing",
                 keys=missing,
                 hint="管理端「平台配置 · 集群接入」录入;加节点将被 409 拦截",
+            )
+        # 安全开关允许在 prod 关闭(运营决定),但启动日志与管理端配置页都要看得见
+        for w in compute_config_warnings(cfg, settings.environment):
+            (log.error if w.level == "error" else log.warning)(
+                "config_warning", key=w.key, hint=w.message
             )
     yield
     # Prometheus 代理客户端是全局单例(连接池),进程退出前显式关闭

@@ -412,8 +412,15 @@ class PlatformConfigItemOut(BaseModel):
     updated_at: str | None
 
 
+class PlatformConfigWarningOut(BaseModel):
+    key: str
+    level: Literal["error", "warning"]
+    message: str
+
+
 class PlatformConfigOut(BaseModel):
     items: list[PlatformConfigItemOut]
+    warnings: list[PlatformConfigWarningOut]
 
 
 class SmsTestOut(BaseModel):

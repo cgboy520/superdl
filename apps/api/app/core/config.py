@@ -155,6 +155,9 @@ class Settings(BaseSettings):
 
     # 告警接入
     alertmanager_token: str | None = None
+    # 可观测性(平台配置 observability 组的 env 默认值层):Grafana 外链、critical 告警值班手机号
+    grafana_url: str = ""
+    oncall_phone: str = ""
 
     # /metrics 抓取鉴权(Prometheus scrape 配置同一 Bearer;prod 必配)
     metrics_token: str | None = None

@@ -217,6 +217,8 @@ export * from './platformConfigItemOutSource';
 export * from './platformConfigOut';
 export * from './platformConfigUpdateRequest';
 export * from './platformConfigUpdateRequestUpdates';
+export * from './platformConfigWarningOut';
+export * from './platformConfigWarningOutLevel';
 export * from './policiesAdminOut';
 export * from './policiesAdminOutEffective';
 export * from './policiesAdminOutOverrides';

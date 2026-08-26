@@ -5,6 +5,7 @@ adminapi 只回配置状态与尾 4 位预览,永不回明文。
 """
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
@@ -267,6 +268,63 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="值班手机号:critical 告警短信直发;留空则不启用",
     ),
 }
+
+
+@dataclass(frozen=True)
+class ConfigWarning:
+    """配置风险(服务端计算):管理端配置页顶部红牌与 prod lifespan 启动日志共用同一份规则。"""
+
+    key: str  # 关联配置键(前端据此定位分组导航)
+    level: Literal["error", "warning"]
+    message: str  # 运营文案,与 hint 同为 i18n-exempt
+
+
+def _all(cfg: Mapping[str, str], *keys: str) -> bool:
+    return all(cfg.get(k) for k in keys)
+
+
+def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[ConfigWarning]:
+    """安全开关与凭据的组合风险。开关允许在 prod 关闭(运营决定),但必须看得见:
+    这里的每一条都对应一种「功能看起来在、其实在裸奔或在 502」的状态。"""
+    prod = environment == "prod"
+    out: list[ConfigWarning] = []
+    if prod and cfg.get("captcha_enabled") != "true":
+        out.append(
+            ConfigWarning(
+                "captcha_enabled",
+                "error",
+                "生产环境人机验证已关闭:/auth/sms-code 对脚本敞开,仅剩 IP/手机号限流",
+            )
+        )
+    if cfg.get("captcha_enabled") == "true" and not _all(
+        cfg, "captcha_scene_id", "captcha_access_key_id", "captcha_access_key_secret"
+    ):
+        out.append(
+            ConfigWarning(
+                "captcha_enabled",
+                "error",
+                "人机验证已开启但阿里云验证码凭据/场景不全,发码将一律 502",
+            )
+        )
+    if prod and cfg.get("admin_mfa_enabled") != "true":
+        out.append(
+            ConfigWarning(
+                "admin_mfa_enabled",
+                "warning",
+                "生产环境管理端两步验证已关闭:口令泄漏即可登录管理端",
+            )
+        )
+    if cfg.get("real_name_enabled") == "true" and not _all(
+        cfg, "real_name_access_key_id", "real_name_access_key_secret"
+    ):
+        out.append(
+            ConfigWarning(
+                "real_name_enabled",
+                "error",
+                "实名认证已开启但阿里云实人认证凭据不全,用户提交将一律 502",
+            )
+        )
+    return out
 
 
 def validate_setting_value(key: str, value: str) -> str:

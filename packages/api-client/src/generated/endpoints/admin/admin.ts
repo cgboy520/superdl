@@ -1947,7 +1947,8 @@ export const getAdminGetPlatformConfigApiAdminV1PlatformConfigGetUrl = () => {
 }
 
 /**
- * 分组配置项:生效值 + 来源(env 默认/DB 覆盖)。secret 永不回明文,只回尾 4 位预览。
+ * 分组配置项:生效值 + 来源(env 默认/DB 覆盖)+ 服务端计算的配置风险 warnings。
+ * secret 永不回明文,只回尾 4 位预览。
  * @summary Admin Get Platform Config
  */
 export const adminGetPlatformConfigApiAdminV1PlatformConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<PlatformConfigOut> => {

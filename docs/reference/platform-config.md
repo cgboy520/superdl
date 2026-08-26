@@ -10,7 +10,7 @@
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `GET /api/admin/v1/platform-config` | admin | 分组配置项(来源 env/override、脱敏预览) |
+| `GET /api/admin/v1/platform-config` | admin | 分组配置项(来源 env/override、脱敏预览)+ `warnings`(服务端计算的配置风险 `{key, level: error|warning, message}`,与 prod lifespan 启动日志共用 `compute_config_warnings`:prod 关人机验证 / 关管理端两步验证、开人机验证或实名而凭据不全) |
 | `PUT /api/admin/v1/platform-config` | admin | `{updates, reason}`;校验格式/枚举/prod 禁 mock;空串 = 清除覆盖 |
 | `POST /api/admin/v1/platform-config/test-sms` | admin | `{phone}`,走当前生效渠道实发验证码 |
 | `GET /api/v1/site-config` | 匿名 | `{icp_number, police_record_number, company_name, company_address, company_phone, business_license_url, support_email, support_wechat, payment_channels}`:页脚 / 帮助页 / 充值弹窗动态渲染,留空即不展示 |

@@ -25,7 +25,7 @@
 | `POST /api/admin/v1/instances/{uuid}/force-stop` | ops | `{reason}` 必填;仅 running(其余 409),下发关机并结算尾账 |
 | `GET /api/admin/v1/tenants/{user_id}/adjust-context` | ops/finance/readonly | 调账前置上下文(只读,敏感读落审计):掩码手机号/当前余额/近 3 条流水/在跑台数;不存在 → 404 |
 | `/finance` 财务对账 | finance 可写 | 日对账卡(diff% >2% 标红)+ 充值流水 + 小时账单 + 调账(发起回显租户上下文,不存在的租户前端禁提交+后端 404;单笔绝对值上限 `ADJUST_MAX_ABS`;复核框列出租户/余额/调账后余额/发起人/原因)+ 异常清单 |
-| `/images` `/cluster` `/tickets` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
+| `/images` `/cluster` `/tickets` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置(左侧分组导航:安全 / 第三方渠道 / 基础设施 / 站点信息;顶部服务端配置风险告警;安全策略页为开关行)、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
 | `GET /api/admin/v1/tenants/{user_id}/ledger` `/bills` `/ledger/export` | ops/finance/readonly | 游标分页;与用户端同一函数(`billing.wallet.ledger_page` / `hourly_bills_page`);`/ledger/export` 为流式 CSV,行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/outbox/dead` `POST .../{task_id}/retry` `/discard` | ops(读含 readonly) | 死信列表、重放(需原因)、忽略(需原因) |
 | `POST /api/admin/v1/announcements` | ops | 公告群发 |
