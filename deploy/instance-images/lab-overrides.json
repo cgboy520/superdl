@@ -1,0 +1,9 @@
+{
+  "@jupyterlab/translation-extension:plugin": {
+    "locale": "zh_CN"
+  },
+  "@jupyterlab/apputils-extension:notification": {
+    "fetchNews": "false",
+    "checkForUpdates": false
+  }
+}

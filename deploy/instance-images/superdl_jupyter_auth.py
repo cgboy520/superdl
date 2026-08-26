@@ -70,7 +70,7 @@ class SuperDLBootstrapHandler(JupyterHandler):
         self.set_cookie(
             COOKIE_NAME, token, secure=True, httponly=True, samesite="lax", path="/"
         )
-        self.redirect(url_path_join(self.base_url, "tree"))
+        self.redirect(url_path_join(self.base_url, "lab"))
 
 
 def _user_from_cookie(provider: _BaseIdentityProvider, handler: JupyterHandler):

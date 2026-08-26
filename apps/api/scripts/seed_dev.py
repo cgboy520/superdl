@@ -3,7 +3,8 @@
 用法(需 PG 已迁移):cd apps/api && uv run python scripts/seed_dev.py
 幂等:已存在同名数据则跳过。
 环境闸:仅 dev/test 可跑——本脚本直调 ensure_bootstrap_admin,绕过生产配置校验,
-误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行(prod 的首个管理员用 scripts/bootstrap_admin.py)。
+误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行
+(prod 的首个管理员用 scripts/bootstrap_admin.py)。
 管理员口令:默认 secrets 随机生成且仅本次打印;CI/演示需固定口令时显式设
 SUPERDL_SEED_ADMIN_PASSWORD(CI 一次性隔离环境,弱口令可接受)。
 """
@@ -38,7 +39,7 @@ SKUS = [
         "mem_gb": 64,
         "price_hourly": Decimal("3.9900"),
         "max_gpus_per_instance": 8,
-        "cuda_max": "12.8",
+        "cuda_max": "13.2",
         "status": "on",
     },
     {
@@ -53,7 +54,7 @@ SKUS = [
         "mem_gb": 32,
         "price_hourly": Decimal("2.5000"),
         "max_gpus_per_instance": 1,
-        "cuda_max": "12.8",
+        "cuda_max": "13.2",
         "status": "on",
     },
     {
@@ -69,7 +70,7 @@ SKUS = [
         "mem_gb": 32,
         "price_hourly": Decimal("1.6800"),
         "max_gpus_per_instance": 1,
-        "cuda_max": "12.8",
+        "cuda_max": "13.2",
         "status": "on",
     },
     {
@@ -85,17 +86,97 @@ SKUS = [
         "mem_gb": 24,
         "price_hourly": Decimal("0.9900"),
         "max_gpus_per_instance": 1,
-        "cuda_max": "12.8",
+        "cuda_max": "13.2",
         "status": "on",
     },
 ]
 
 IMAGES = [
-    # image_ref 存 Harbor 全限定名(<host>/<项目>/<名>:<tag>);dev 用 Fake 编排不真拉取
-    ("PyTorch", "2.9.0", "3.12", "12.8", "harbor.example.com/superdl/pytorch:2.9.0-cu128"),
-    ("PyTorch", "2.7.1", "3.11", "12.4", "harbor.example.com/superdl/pytorch:2.7.1-cu124"),
-    ("TensorFlow", "2.20", "3.12", "12.8", "harbor.example.com/superdl/tensorflow:2.20-cu128"),
-    ("Miniconda", "24.7", "3.12", "12.8", "harbor.example.com/superdl/miniconda:24.7-cu128"),
+    # 平台默认镜像目录:选版规则与构建命令见 deploy/instance-images/README.md
+    # (框架取「最新稳定版 + 最后一个支持 CUDA 11.8 的稳定版」;CUDA 三条线 13.2 / 12.9 / 11.8;
+    #  Python 取该框架支持的最高版本)。dev 用 Fake 编排不真拉取,image_ref 存 Harbor 全限定名。
+    # (framework, framework_version, python, cuda, image_ref, sort)
+    (
+        "PyTorch",
+        "2.13.0",
+        "3.13",
+        "13.2",
+        "harbor.example.com/superdl/pytorch:2.13.0-cu132-py313",
+        0,
+    ),
+    (
+        "PyTorch",
+        "2.13.0",
+        "3.13",
+        "12.9",
+        "harbor.example.com/superdl/pytorch:2.13.0-cu129-py313",
+        1,
+    ),
+    ("PyTorch", "2.7.1", "3.13", "11.8", "harbor.example.com/superdl/pytorch:2.7.1-cu118-py313", 2),
+    (
+        "TensorFlow",
+        "2.21.0",
+        "3.13",
+        "12.9",
+        "harbor.example.com/superdl/tensorflow:2.21.0-cu129-py313",
+        0,
+    ),
+    (
+        "TensorFlow",
+        "2.14.1",
+        "3.11",
+        "11.8",
+        "harbor.example.com/superdl/tensorflow:2.14.1-cu118-py311",
+        1,
+    ),
+    (
+        "Miniconda",
+        "26.5.3",
+        "3.13",
+        "13.2",
+        "harbor.example.com/superdl/miniconda:26.5.3-cu132-py313",
+        0,
+    ),
+    (
+        "Miniconda",
+        "26.5.3",
+        "3.13",
+        "12.9",
+        "harbor.example.com/superdl/miniconda:26.5.3-cu129-py313",
+        1,
+    ),
+    (
+        "Miniconda",
+        "26.5.3",
+        "3.13",
+        "11.8",
+        "harbor.example.com/superdl/miniconda:26.5.3-cu118-py313",
+        2,
+    ),
+    (
+        "PaddlePaddle",
+        "3.3.1",
+        "3.10",
+        "13.0",
+        "harbor.example.com/superdl/paddle:3.3.1-cu130-py310",
+        0,
+    ),
+    (
+        "PaddlePaddle",
+        "3.3.1",
+        "3.10",
+        "12.9",
+        "harbor.example.com/superdl/paddle:3.3.1-cu129-py310",
+        1,
+    ),
+    (
+        "PaddlePaddle",
+        "3.3.1",
+        "3.10",
+        "11.8",
+        "harbor.example.com/superdl/paddle:3.3.1-cu118-py310",
+        2,
+    ),
 ]
 
 
@@ -117,7 +198,7 @@ async def main() -> None:
             ).scalar_one_or_none()
             if exists is None:
                 session.add(Sku(**data))
-        for fw, ver, py, cuda, ref in IMAGES:
+        for fw, ver, py, cuda, ref, sort in IMAGES:
             exists = (
                 await session.execute(select(PlatformImage).where(PlatformImage.image_ref == ref))
             ).scalar_one_or_none()
@@ -129,6 +210,7 @@ async def main() -> None:
                         python_version=py,
                         cuda_version=cuda,
                         image_ref=ref,
+                        sort=sort,
                     )
                 )
         await session.commit()
@@ -136,12 +218,15 @@ async def main() -> None:
             await session.execute(select(AdminUser.id).limit(1))
         ).scalar_one_or_none() is not None
         if has_admin:
-            print("seed done: 4 SKU / 4 镜像 / admin 已存在(未改动)")  # noqa: T201
+            print(  # noqa: T201
+                f"seed done: {len(SKUS)} SKU / {len(IMAGES)} 镜像 / admin 已存在(未改动)"
+            )
             return
         password = os.environ.get("SUPERDL_SEED_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
         await ensure_bootstrap_admin(session, password)
         print(  # noqa: T201
-            f"seed done: 4 SKU / 4 镜像 / admin({password})——口令仅本次显示,请立即保存"
+            f"seed done: {len(SKUS)} SKU / {len(IMAGES)} 镜像 / "
+            f"admin({password})——口令仅本次显示,请立即保存"
         )
 
 

@@ -31,8 +31,8 @@
 # 1. 运维机 push(push 权限机器人)
 docker login harbor.<域> -u 'robot$superdl+push'
 skopeo copy --dest-creds 'robot$superdl+push:<secret>' \
-  docker://<上游镜像> docker://harbor.<域>/superdl/pytorch:2.9.0-cu128
-# 2. 管理端「镜像与预热」新建条目:image_ref 默认前缀已按配置填好,补 pytorch:2.9.0-cu128
+  docker://<上游镜像> docker://harbor.<域>/superdl/pytorch:2.13.0-cu132-py313
+# 2. 管理端「镜像与预热」新建条目:image_ref 默认前缀已按配置填好,补 pytorch:2.13.0-cu132-py313
 # 3. 等巡检铺开(≤60s 发现节点),页面看每节点覆盖率;失败行有错误原因,可一键重试
 ```
 

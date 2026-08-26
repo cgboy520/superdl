@@ -37,6 +37,15 @@ for kt in rsa ecdsa ed25519; do
 done
 /usr/sbin/sshd
 
+# JupyterLab 默认设置(界面中文 + 关掉外网新闻拉取):落到 app settings 目录,
+# 用户在「设置 · 语言」里改的是自己的 user settings,优先级更高,不会被这里覆盖。
+# app dir 问 jupyterlab 自己要(pip 装到 /usr/local 时它不等于 sys.prefix/share/jupyter/lab)
+lab_settings_dir="$(python -c 'from jupyterlab.commands import get_app_dir; import os; print(os.path.join(get_app_dir(), "settings"))' 2>/dev/null || true)"
+if [[ -n "$lab_settings_dir" && -f /opt/superdl/lab-overrides.json ]]; then
+  mkdir -p "$lab_settings_dir"
+  cp -f /opt/superdl/lab-overrides.json "$lab_settings_dir/overrides.json" || true
+fi
+
 # JupyterLab:0.0.0.0:8888,token 由平台注入。
 # Origin 校验必须留着,禁止 allow_origin='*'(契约见 README.md)。
 # 平台注入本实例自己的域名(JUPYTER_ALLOW_ORIGIN);未注入则用 Jupyter 默认同源校验。
@@ -75,6 +84,8 @@ while true; do
     --allow-root \
     --ServerApp.root_dir=/root \
     --ServerApp.token="$JUPYTER_TOKEN" \
+    --ServerApp.default_url=/lab \
+    --ResourceUseDisplay.track_cpu_percent=True \
     "${origin_args[@]}" \
     "${ext_args[@]}" \
     --ServerApp.trust_xheaders=True &
