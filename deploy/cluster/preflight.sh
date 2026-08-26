@@ -57,6 +57,11 @@ say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.
 placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
+  # cilium 只在 full 档装(light 用 k3s 内置 flannel):未启用时它的占位符与本环境无关
+  if [[ "$f" == values/cilium.yaml ]] && ! grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+    ok "$f 不适用(environments/$env_name.yaml cilium.enabled=false)"
+    continue
+  fi
   # 只扫有效行:文件头注释本身会提到 CHANGE_ME/example.com,不算残留
   if grep -vE '^\s*#' "$f" | grep -qE '<server-ip>|CHANGE_ME|example\.com'; then
     miss "$f 仍有 <server-ip>/CHANGE_ME/example.com 占位符未替换"
