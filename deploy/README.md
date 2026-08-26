@@ -10,15 +10,15 @@
 
 ## 生产发布流程(deploy/app/k8s)
 
-发布走 `scripts/release.sh <tag>` 一个入口:迁移 Job → set image+apply
-(kustomize,tag 单点在 `app/k8s/kustomization.yaml` 的 `images`)→ rollout status →
+发布走 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>` 一个入口:迁移 Job → set image+apply
+(kustomize 渲染后替换清单占位 `CHANGE_IMAGE_PREFIX`(Harbor 项目前缀)与 `CHANGE_TAG`)→ rollout status →
 经 Ingress 从集群外 GET `/readyz`,任一步失败即非零退出(第 4 步取不到域名时跳过并提示)。禁止绕过脚本手改各清单 tag。
 
-1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 等 Secret(值不入库;字段清单 `app/k8s/00-namespace-config.yaml` 非密 + `app/secrets.example.yaml` 密,prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准)
-2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息自动生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 ghcr(api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册)
-3. `scripts/release.sh vX.Y.Z`:
+1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)等 Secret(值不入库;字段清单 `app/k8s/00-namespace-config.yaml` 非密 + `app/secrets.example.yaml` 密,prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准)
+2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息自动生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME`(push 机器人)/ `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl;api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册)
+3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`:
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`——**必须先于滚动**;`/readyz` 会比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都会在这一关现形;
-   - 第 2 步 `kubectl apply -k`(image transformer 把 `CHANGE_TAG` 换成本次 tag);
+   - 第 2 步 `kubectl kustomize` 渲染后把 `CHANGE_IMAGE_PREFIX` / `CHANGE_TAG` 换成 Harbor 项目前缀与本次 tag 再 apply;
    - 第 3 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不再重复探测);
    - 第 4 步经 Ingress 从集群外 `curl -fsS https://<api-domain>/readyz`,多验 DNS/TLS/Ingress 一层:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。任一步失败即退、按下方回滚指引处理。
 4. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`

@@ -14,9 +14,10 @@ spec:
       labels: {app: superdl-web}
     spec:
       automountServiceAccountToken: false   # 纯静态托管 + 反代,不访问 K8s API
-      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
-      # imagePullSecrets:
-      #   - {name: superdl-ghcr-pull}
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据按指纹覆写
+      # (docs/reference/images.md);项目 public 时 Secret 缺失只是 kubelet 告警,不影响拉取
+      imagePullSecrets:
+        - {name: superdl-registry-pull}
       # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod。
       priorityClassName: system-cluster-critical
       nodeSelector:
@@ -46,7 +47,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: web
-          image: ghcr.io/OWNER/superdl-web:CHANGE_TAG
+          image: CHANGE_IMAGE_PREFIX/superdl-web:CHANGE_TAG
           imagePullPolicy: IfNotPresent
           ports:
             - {containerPort: 8080, name: http}
@@ -89,9 +90,10 @@ spec:
       labels: {app: superdl-admin}
     spec:
       automountServiceAccountToken: false   # 纯静态托管 + 反代,不访问 K8s API
-      # GHCR 镜像包为私有时取消注释,并先按 ../secrets.example.yaml 建好 superdl-ghcr-pull;公开镜像无需此项
-      # imagePullSecrets:
-      #   - {name: superdl-ghcr-pull}
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据按指纹覆写
+      # (docs/reference/images.md);项目 public 时 Secret 缺失只是 kubelet 告警,不影响拉取
+      imagePullSecrets:
+        - {name: superdl-registry-pull}
       # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod。
       priorityClassName: system-cluster-critical
       nodeSelector:
@@ -121,7 +123,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: admin
-          image: ghcr.io/OWNER/superdl-admin:CHANGE_TAG
+          image: CHANGE_IMAGE_PREFIX/superdl-admin:CHANGE_TAG
           imagePullPolicy: IfNotPresent
           ports:
             - {containerPort: 8080, name: http}

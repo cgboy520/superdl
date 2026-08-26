@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # SuperDL 发布流水线:迁移 → set image+apply → rollout status → 经 Ingress 外部冒烟,任一步失败即退。
 #
-# 用法: [SUPERDL_API_BASE_URL=https://<api-domain>] scripts/release.sh <tag>
-#   tag:ghcr 已推送的发布标签(.github/workflows/release.yml 产物,形如 v1.2.3)。
+# 用法: SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl [SUPERDL_API_BASE_URL=https://<api-domain>] scripts/release.sh <tag>
+#   tag:Harbor 已推送的发布标签(.github/workflows/release.yml 产物,形如 v1.2.3)。
+#   SUPERDL_IMAGE_PREFIX:必填,Harbor 项目前缀(与 release.yml 的 HARBOR_HOST/HARBOR_PROJECT 一致),
+#   替换各清单里的 CHANGE_IMAGE_PREFIX 占位;tag 替换 CHANGE_TAG。
 #   SUPERDL_API_BASE_URL:可选,第 4 步外部冒烟用的公网 API 基址;缺省读 ConfigMap
 #   superdl-api-config 的 SUPERDL_PUBLIC_BASE_URL,两者都取不到(或仍是占位)则跳过该步并提示。
 #
@@ -12,9 +14,13 @@
 # 迁移只增不删(expand-only),向后兼容窗口内无需回滚库。
 set -euo pipefail
 
-TAG="${1:?用法: scripts/release.sh <tag>(形如 v1.2.3,release.yml 已推送 ghcr 的 tag)}"
+TAG="${1:?用法: SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>(形如 v1.2.3,release.yml 已推送 Harbor 的 tag)}"
+IMAGE_PREFIX="${SUPERDL_IMAGE_PREFIX:?缺 SUPERDL_IMAGE_PREFIX(Harbor 项目前缀,如 harbor.example.com/superdl,与 release.yml 推送目标一致)}"
 K8S_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../deploy/app/k8s" && pwd)"
 NS=superdl
+
+# 清单占位单点:CHANGE_IMAGE_PREFIX(Harbor 项目前缀)与 CHANGE_TAG(本次 tag)
+render() { sed -e "s#CHANGE_IMAGE_PREFIX#${IMAGE_PREFIX}#g" -e "s/CHANGE_TAG/${TAG}/g"; }
 
 case "$TAG" in
   v[0-9]*.[0-9]*.[0-9]*) ;;
@@ -24,16 +30,22 @@ case "$TAG" in
     ;;
 esac
 
+echo "==> 0/4 前置:平台镜像拉取凭据 Secret(Harbor 机器人;首装按 deploy/app/secrets.example.yaml 手建)"
+if ! kubectl -n "$NS" get secret superdl-registry-pull > /dev/null 2>&1; then
+  # 项目 public 时缺它只是 kubelet 告警;private 项目缺它则新 Pod 一律 ImagePullBackOff
+  echo "::warning::Secret ${NS}/superdl-registry-pull 不存在:Harbor 平台项目为 private 时新 Pod 将拉不到镜像" >&2
+fi
+
 echo "==> 1/4 迁移 Job(expand-only,先于滚动)"
-sed "s/CHANGE_TAG/${TAG}/g" "${K8S_DIR}/10-migrate-job.yaml" | kubectl create -f -
+render < "${K8S_DIR}/10-migrate-job.yaml" | kubectl create -f -
 if ! kubectl -n "$NS" wait --for=condition=complete --timeout=300s "job/superdl-migrate-${TAG}"; then
   echo "::error::迁移 Job 未成功,终止发布;日志:" >&2
   kubectl -n "$NS" logs "job/superdl-migrate-${TAG}" --tail=100 >&2 || true
   exit 1
 fi
 
-echo "==> 2/4 set image + apply(tag 单点:kustomization.yaml images 的 CHANGE_TAG → ${TAG})"
-kubectl kustomize "${K8S_DIR}" | sed "s/CHANGE_TAG/${TAG}/g" | kubectl apply -f -
+echo "==> 2/4 set image + apply(清单占位 CHANGE_IMAGE_PREFIX → ${IMAGE_PREFIX},CHANGE_TAG → ${TAG})"
+kubectl kustomize "${K8S_DIR}" | render | kubectl apply -f -
 
 echo "==> 3/4 rollout status"
 # worker 组件集群:同一镜像的 5 个 Deployment 必须全部滚动到位,

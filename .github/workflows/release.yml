@@ -1,9 +1,10 @@
 name: Release
 
-# 一次构建 → 本地 Trivy 扫描(HIGH/CRITICAL 阻断)→ 同一产物推送 ghcr。
+# 一次构建 → 本地 Trivy 扫描(HIGH/CRITICAL 阻断)→ 同一产物推送 Harbor(平台项目,默认 superdl)。
 # 扫描与发布共用同一个 image tar(经 artifact 传递 + image ID 校验),杜绝「扫 A 发 B」。
-# 权限拆分:build-scan 只读、不登录 registry;仅 promote 持 packages: write 并登录。
-# 部署侧按 tag 更新 deploy/app/k8s 镜像并跑迁移 Job。
+# 权限拆分:build-scan 不登录 registry;仅 promote 持 Harbor 推送机器人凭据并登录。
+# 仓库 secrets:HARBOR_HOST / HARBOR_ROBOT_NAME(robot$<项目>+push,Push + Pull)/ HARBOR_ROBOT_SECRET;
+# variables:HARBOR_PROJECT(缺省 superdl)。部署侧 scripts/release.sh 以同一前缀替换清单占位并跑迁移 Job。
 on:
   push:
     tags: ["v*"]
@@ -25,8 +26,7 @@ jobs:
     needs: ci-gates
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      packages: read # 本 job 不推镜像,不持有写凭据
+      contents: read # 本 job 不推镜像,不持有任何 registry 凭据
     strategy:
       matrix:
         include:
@@ -90,8 +90,7 @@ jobs:
     needs: build-scan
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      packages: write # 唯一持有写凭据的 job
+      contents: read # 推送凭据是 Harbor 机器人(仓库 secrets),唯一使用它的 job
     strategy:
       matrix:
         include:
@@ -115,15 +114,15 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/superdl-${{ matrix.name }}
+          images: ${{ secrets.HARBOR_HOST }}/${{ vars.HARBOR_PROJECT || 'superdl' }}/superdl-${{ matrix.name }}
           tags: |
             type=ref,event=tag
             type=sha
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ secrets.HARBOR_HOST }}
+          username: ${{ secrets.HARBOR_ROBOT_NAME }}
+          password: ${{ secrets.HARBOR_ROBOT_SECRET }}
       - name: 打 tag 并推送(内容与扫描产物同源,digest 一致)
         run: |
           tags='${{ steps.meta.outputs.tags }}'
@@ -133,5 +132,5 @@ jobs:
             docker push "$t"
           done <<< "$tags"
       # TODO(供应链加固):对推送后的 digest 做 cosign keyless 签名
-      # (cosign sign ghcr.io/<owner>/superdl-<name>@<digest>,需引入 sigstore/cosign-installer),
+      # (cosign sign <harbor>/<项目>/superdl-<name>@<digest>,需引入 sigstore/cosign-installer),
       # 部署侧再按 digest + 签名做准入校验。
