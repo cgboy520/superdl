@@ -40,17 +40,24 @@ export function totp(secret: string, atMs: number = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
+/** 同一密钥上次提交过的时间步:服务端防重放要求 timestep 单调,同窗内二次提交必被拒。 */
+const lastStepBySecret = new Map<string, number>();
+
 /**
- * 填入当前 TOTP:距时间窗边界 <3s 时先等下一步,防「算完码提交路上跨窗」的边界 flake。
+ * 填入当前 TOTP:距时间窗边界 <3s 时先等下一步,防「算完码提交路上跨窗」的边界 flake;
+ * 同一密钥在同一 30s 窗内已提交过(绑定后紧接着二要素登录)则等到下一窗,防重放守卫误拒。
  */
 export async function fillTotp(
   input: { fill: (v: string) => Promise<unknown>; page: () => { waitForTimeout: (ms: number) => Promise<unknown> } },
   secret: string,
 ): Promise<void> {
-  const now = Date.now();
-  const remain = 30_000 - (now % 30_000);
-  if (remain < 3_000) {
+  let now = Date.now();
+  let remain = 30_000 - (now % 30_000);
+  if (remain < 3_000 || lastStepBySecret.get(secret) === Math.floor(now / 30_000)) {
     await input.page().waitForTimeout(remain + 100);
+    now = Date.now();
+    remain = 30_000 - (now % 30_000);
   }
-  await input.fill(totp(secret));
+  lastStepBySecret.set(secret, Math.floor(now / 30_000));
+  await input.fill(totp(secret, now));
 }
