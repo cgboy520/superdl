@@ -37,7 +37,9 @@ spec:
       - apiGroups: ["*"]
         apiVersions: ["*"]
         resources: ["*"]
-        operations: ["CREATE", "UPDATE", "PATCH", "DELETE"]
+        # VAP 的 operations 只认 CREATE/UPDATE/DELETE/CONNECT/*:PATCH 请求在准入层以 UPDATE 呈现,
+        # 写 "PATCH" 会被 apiserver 拒绝整条策略(binding 建了、policy 缺失 = 静默失效)
+        operations: ["CREATE", "UPDATE", "DELETE"]
         scope: "*"
   matchConditions:
     # 全部平台 SA(api / core worker / tenant-mgr / node-mgr / prewarm / disk-ops;
@@ -162,7 +164,7 @@ spec:
       - apiGroups: [""]
         apiVersions: ["*"]
         resources: ["nodes"]
-        operations: ["UPDATE", "PATCH"]
+        operations: ["UPDATE"]   # PATCH(cordon / label)在准入层即 UPDATE
         scope: "Cluster"
   matchConditions:
     - name: superdl-sa-only
