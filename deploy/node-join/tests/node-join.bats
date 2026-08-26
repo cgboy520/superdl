@@ -108,7 +108,8 @@ EOF
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$SHIM_CALLS"
 case "$1" in
-  is-active) exit 0 ;;
+  # server 单元(k3s.service / rke2-server.service)默认不在跑;SERVER_ACTIVE=1 模拟 server 本机
+  is-active) if [[ "$*" == *k3s.service* || "$*" == *rke2-server.service* ]]; then [[ "${SERVER_ACTIVE:-0}" == "1" ]] && exit 0 || exit 3; fi; exit 0 ;;
   is-enabled) exit 1 ;;
   *) exit 0 ;;
 esac
@@ -276,7 +277,8 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$SHIM_CALLS"
 case "$1" in
-  is-active) exit 0 ;;
+  # server 单元(k3s.service / rke2-server.service)默认不在跑;SERVER_ACTIVE=1 模拟 server 本机
+  is-active) if [[ "$*" == *k3s.service* || "$*" == *rke2-server.service* ]]; then [[ "${SERVER_ACTIVE:-0}" == "1" ]] && exit 0 || exit 3; fi; exit 0 ;;
   is-enabled) exit 1 ;;
   enable) [[ "$*" == *--now* ]] && exit 1; exit 0 ;;
   *) exit 0 ;;
@@ -293,7 +295,8 @@ EOF
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$SHIM_CALLS"
 case "$1" in
-  is-active) exit 0 ;;
+  # server 单元(k3s.service / rke2-server.service)默认不在跑;SERVER_ACTIVE=1 模拟 server 本机
+  is-active) if [[ "$*" == *k3s.service* || "$*" == *rke2-server.service* ]]; then [[ "${SERVER_ACTIVE:-0}" == "1" ]] && exit 0 || exit 3; fi; exit 0 ;;
   is-enabled) exit 1 ;;
   *) exit 0 ;;
 esac
@@ -464,3 +467,63 @@ PYEOF
   ! grep -q "apt-get remove" "$SHIM_CALLS"
   [[ "$output" == *"kubectl delete node"* ]]
 }
+
+@test "server 本机(k3s 在跑):不写 agent config、不装/不起 agent,池标签经 k3s kubectl 打到节点" {
+  _write_fixture hami k3s
+  export SERVER_ACTIVE=1
+  cat > "$TMP/bin/k3s" <<'EOF'
+#!/usr/bin/env bash
+echo "k3s $*" >> "$SHIM_CALLS"
+[[ "$1" == "--version" ]] && echo "k3s version v1.36.3+k3s1"
+exit 0
+EOF
+  chmod +x "$TMP/bin/k3s"
+  run_script
+  [ "$status" -eq 0 ]
+  [ ! -e "$TMP/etc/rancher/k3s/config.yaml" ]
+  grep -q "k3s kubectl label node $(hostname) superdl.io/pool=hami --overwrite" "$SHIM_CALLS"
+  # 驱动版本在打标签前已随 agent_config 上报(对账器判 joined 后上报即 404)
+  grep -q '"phase":"agent_config".*"driver_version":"580.65.06"' "$CURL_LOG"
+  ! grep -q "k3s-install.sh" "$CURL_LOG"
+  ! grep -q "systemctl enable --now k3s-agent.service" "$SHIM_CALLS"
+  # 收尾上报的是 server 单元,且 marker 齐全可重跑直退
+  grep -q "waiting_node" "$CURL_LOG"
+  [[ "$output" == *"节点已启动 k3s"* ]]
+  [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/completed" ]
+}
+
+@test "server 本机 --uninstall:不执行发行版卸载脚本、不删 server 的 config/registries" {
+  export SERVER_ACTIVE=1
+  mkdir -p "$TMP/etc/rancher/k3s"
+  echo "server: config" > "$TMP/etc/rancher/k3s/config.yaml"
+  echo 'mirrors:' > "$TMP/etc/rancher/k3s/registries.yaml"
+  cat > "$TMP/bin/k3s" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "$TMP/bin/k3s"
+  run bash "$SCRIPT" --uninstall
+  [ "$status" -eq 0 ]
+  [ -f "$TMP/etc/rancher/k3s/config.yaml" ]
+  [ -f "$TMP/etc/rancher/k3s/registries.yaml" ]
+  ! grep -q "disable --now k3s-agent.service" "$SHIM_CALLS"
+  [[ "$output" == *"不卸载发行版"* ]]
+}
+
+@test "nvidia-smi 只报通用名(NVIDIA Graphics Device):bootstrap 型号回落 lspci 方括号名,显存沿用 nvidia-smi" {
+  cat > "$TMP/bin/nvidia-smi" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *"name,memory.total"* ]]; then echo "NVIDIA Graphics Device, 65536"; exit 0; fi
+if [[ $# -eq 0 ]]; then echo "| NVIDIA-SMI 610.57.04    Driver Version: 610.57.04    CUDA Version: 13.3 |"; exit 0; fi
+echo "610.57.04"
+EOF
+  cat > "$TMP/bin/lspci" <<'EOF'
+#!/usr/bin/env bash
+echo "01:00.0 3D controller: NVIDIA Corporation GA100 [CMP 170HX] (rev a1)"
+EOF
+  chmod +x "$TMP/bin/nvidia-smi" "$TMP/bin/lspci"
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q '"gpu_details": \[{"name": "CMP 170HX", "memory_mib": 65536}\]' "$CURL_LOG"
+}
+

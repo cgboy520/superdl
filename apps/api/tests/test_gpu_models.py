@@ -27,6 +27,14 @@ class TestCanonical:
             canonical_gpu_model("NVIDIA Corporation GA100 [A100 SXM4 80GB] (rev a1)") == "A100-80G"
         )
 
+    def test_cmp_mining_series(self):
+        """CMP 系列:nvidia-smi 只报通用名(不可归一),型号只能来自 lspci 方括号名或人工 SKU。"""
+        assert canonical_gpu_model("NVIDIA Graphics Device") is None
+        assert canonical_gpu_model("NVIDIA Corporation GA100 [CMP 170HX] (rev a1)") == "CMP170HX"
+        assert canonical_gpu_model("CMP 170HX") == "CMP170HX"
+        assert canonical_gpu_model("CMP170HX") == "CMP170HX"
+        assert canonical_gpu_model("CMP-90HX") == "CMP90HX"
+
     def test_gfd_label(self):
         assert canonical_gpu_model("NVIDIA-GeForce-RTX-4090") == "RTX4090"
         assert canonical_gpu_model("NVIDIA-A100-SXM4-80GB") == "A100-80G"

@@ -103,13 +103,14 @@ kubectl -n monitoring create secret generic grafana-admin \
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    - light = HAMi(钉 k3s 版 scheduler 镜像 + devicePlugin runtimeClassName=nvidia,
-     见 `values/light/hami-light.yaml`)+ kps 精简 + cert-manager + ingress-nginx
+     见 `values/light/hami-light.yaml`)+ GFD(`values/gfd.yaml`,独立 chart 含 NFD,不装 NVIDIA device plugin;
+     平台按 hami 池节点的 `nvidia.com/gpu.count` 取物理卡数,缺它按 0 卡纳管)+ kps 精简 + cert-manager + ingress-nginx
      + Loki/Alloy 日志栈(默认开,资源收紧见 `values/light/loki-light.yaml`;
      盘紧可在 `environments/light.yaml` 关);
      Cilium/gpu-operator 不装;**TopoLVM 必开**(每个租户 Pod 都要挂实例盘;
      VG `superdl-nvme` 由 node-join.sh 建出);JuiceFS 可选(只有数据盘用),
      要数据盘时在 `environments/light.yaml` 打开。
-4. **GPU 节点**:同 full 第 6 步(单机时 server 本机跑 node-join 亦可)。
+4. **GPU 节点**:同 full 第 6 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),须在 `helmfile apply` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
 5. 能力边界:仅共享档 SKU;dedicated/mig 上架会被硬校验拦下;管理端「集群」页
    常驻「轻量集群」黄条与组件体检(含修复命令)。
 

@@ -13,6 +13,9 @@ repositories:
     url: https://helm.cilium.io
   - name: nvidia
     url: https://helm.ngc.nvidia.com/nvidia
+  # GPU Feature Discovery 独立 chart(light 档用;full 档由 gpu-operator 自带 GFD)
+  - name: nvdp
+    url: https://nvidia.github.io/k8s-device-plugin
   - name: hami
     url: https://project-hami.github.io/HAMi
   - name: prometheus-community
@@ -51,6 +54,16 @@ releases:
     # (见 values/gpu-operator.yaml 头注释);升版前复核 release notes 的 labels/ClusterPolicy 字段变化。
     version: "v26.3.3"
     values: [values/gpu-operator.yaml]
+
+  # GFD(仅 light):平台按 hami 池节点的 nvidia.com/gpu.count 标签取物理卡数(HAMi 把 allocatable 放大为
+  # 物理 × 切分数,缺该标签即按 0 纳管防超卖,见 apps/api/app/core/k8s/real.py::_physical_gpu_amount);
+  # light 不装 gpu-operator,GFD 须单独装。chart 自带 NFD 子 chart;不装 NVIDIA device plugin(devicePlugin.enabled=false)
+  - name: gpu-feature-discovery
+    condition: gfd.enabled
+    namespace: gpu-feature-discovery
+    chart: nvdp/gpu-feature-discovery
+    version: "0.20.0"
+    values: [values/gfd.yaml]
 
   - name: hami
     condition: hami.enabled

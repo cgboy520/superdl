@@ -6,6 +6,7 @@
 cilium: {enabled: false}
 gpuOperator: {enabled: false}
 hami: {enabled: true}
+gfd: {enabled: true}   # light 无 gpu-operator,GFD 单独装(hami 池 nvidia.com/gpu.count 标签的来源)
 kps: {enabled: true}
 juicefs: {enabled: false}
 topolvm: {enabled: true}

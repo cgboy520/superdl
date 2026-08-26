@@ -1,0 +1,18 @@
+# GPU Feature Discovery(light 档;chart nvdp/gpu-feature-discovery,含 NFD 子 chart)。
+# 只要 GFD 的节点标签(nvidia.com/gpu.count / gpu.product / gpu.memory 等),不装 NVIDIA device plugin
+# (共享池由 HAMi 接管 nvidia.com/gpu)。k3s 只探测 nvidia 运行时、不设默认,GFD 容器须显式 runtimeClassName。
+devicePlugin:
+  enabled: false
+gfd:
+  enabled: true
+runtimeClassName: nvidia
+# 只跑在共享池节点(light 仅此一池);server 兼跑时同样命中
+nodeSelector:
+  superdl.io/pool: hami
+nfd:
+  enabled: true
+  worker:
+    tolerations:
+      - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+      - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
+      - {key: "nvidia.com/gpu", operator: Equal, value: present, effect: NoSchedule}

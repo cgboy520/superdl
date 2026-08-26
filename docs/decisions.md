@@ -89,6 +89,13 @@
   `superdl-registry-pull` 按指纹写入 superdl 与各租户 ns(`ensure_pull_secret`,指纹相同跳过),Pod / Job 以 `imagePullSecrets`
   引用;节点 registries.yaml 只留 Spegel / CA / 代理缓存 mirror。后果:轮换 = 配置中心保存新 Secret;换 Harbor 域名要 SQL
   批量改 `images.image_ref`(实例快照是历史值,不改);测试里的 `registry.superdl.local/...` 只是不透明串,不再有语义。
+- **light 单机的 server 兼 GPU 节点走同一条 node-join 命令,脚本按「server 服务在运行」切换路径。** 背景:light 档
+  单机时 server 就是唯一的 GPU 节点,而 node-join 原本无条件写 agent config、装 agent,在 server 本机执行会覆盖 server
+  配置并装出第二个 k3s 单元;手工打标签又拿不到装机登记(gpu_info / 驱动版本),台账型号只能靠 GFD。决定:不另开
+  「导入现有节点」入口,node-join 检测到本机 `k3s.service` / `rke2-server.service` 在运行即跳过 agent 三步,池标签经本机
+  kubectl 打到节点对象,驱动版本在打标签前上报(节点已 Ready,标签一落对账器即判 joined 终态);`--uninstall` 在 server
+  本机不执行发行版卸载脚本。后果:server 本机的实例盘 VG 不在 node-join 建时须先于 helmfile 手工建好;nvidia-smi 只报
+  通用名的卡(CMP 系列)型号来自 lspci 方括号名,`canonical_gpu_model` 识别 `CMP<数字>HX`。见 `reference/nodes.md`。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

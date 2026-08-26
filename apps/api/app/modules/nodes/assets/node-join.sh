@@ -67,15 +67,22 @@ if [[ "$UNINSTALL" == "1" ]]; then
   for d in rke2 k3s; do
     if [[ -d "$ETC_DIR/rancher/$d" ]] || command -v "$d" >/dev/null 2>&1; then DISTRO_NAME="$d"; fi
   done
+  # 本机同时是 server(单机 light):agent 相关一律不动——发行版卸载脚本会把整个控制面拆掉,
+  # server 的 config.yaml / registries.yaml 也不属本脚本所有
+  SERVER_HERE=0
+  if [[ "$DISTRO_NAME" == "k3s" ]] && systemctl is-active --quiet k3s.service 2>/dev/null; then SERVER_HERE=1; fi
+  if [[ "$DISTRO_NAME" == "rke2" ]] && systemctl is-active --quiet rke2-server.service 2>/dev/null; then SERVER_HERE=1; fi
   AGENT="${DISTRO_NAME:+${DISTRO_NAME}-agent.service}"
-  if [[ -n "$AGENT" ]]; then
+  if [[ -n "$AGENT" && "$SERVER_HERE" == "0" ]]; then
     systemctl disable --now "$AGENT" 2>/dev/null || true
   fi
-  # 发行版自带卸载脚本(k3s-agent-uninstall.sh / rke2-uninstall.sh)存在即执行
-  if [[ -n "$DISTRO_NAME" ]]; then
+  # 发行版自带卸载脚本(k3s-agent-uninstall.sh / rke2-uninstall.sh)存在即执行;server 本机跳过
+  if [[ -n "$DISTRO_NAME" && "$SERVER_HERE" == "0" ]]; then
     for us in "/usr/local/bin/${DISTRO_NAME}-agent-uninstall.sh" "/usr/local/bin/${DISTRO_NAME}-uninstall.sh"; do
       [[ -x "$us" ]] && { echo "-- 执行 $us"; "$us"; }
     done
+  elif [[ "$SERVER_HERE" == "1" ]]; then
+    echo "-- 本机是 ${DISTRO_NAME} server:不卸载发行版、不动 server 配置;池标签需在平台侧摘除(kubectl label node ... superdl.io/pool-)"
   fi
   # 续跑 oneshot 与 loop 重建 unit
   systemctl disable "${RESUME_UNIT}.service" 2>/dev/null || true
@@ -94,7 +101,7 @@ if [[ "$UNINSTALL" == "1" ]]; then
     rm -f "$ETC_DIR/modprobe.d/blacklist-nouveau.conf"
     update-initramfs -u
   fi
-  if [[ -n "$DISTRO_NAME" ]]; then
+  if [[ -n "$DISTRO_NAME" && "$SERVER_HERE" == "0" ]]; then
     rm -f "$ETC_DIR/rancher/$DISTRO_NAME/config.yaml" "$ETC_DIR/rancher/$DISTRO_NAME/registries.yaml" \
       "$ETC_DIR/rancher/$DISTRO_NAME/harbor-ca.crt"
   fi
@@ -176,6 +183,19 @@ load_distro() {
   DISTRO="$(cfg_get k8s_distro)"
   RANCHER_DIR="$ETC_DIR/rancher/$DISTRO"
   AGENT_UNIT="${DISTRO}-agent.service"
+  SERVER_UNIT="$([[ "$DISTRO" == "k3s" ]] && echo k3s.service || echo rke2-server.service)"
+}
+
+# 本机已是本集群的 server(light 单机:server 兼跑 GPU 负载)。判据是 server 服务在运行:
+# 这种机器不装 agent、不改写 server 的 config.yaml,池标签经本机 kubectl 打到节点对象上
+is_server_node() { systemctl is-active --quiet "$SERVER_UNIT" 2>/dev/null; }
+
+server_kubectl() {
+  if [[ "$DISTRO" == "k3s" ]]; then
+    k3s kubectl "$@"
+  else
+    KUBECONFIG="$RANCHER_DIR/rke2.yaml" "${RKE2_BIN_DIR:-/var/lib/rancher/rke2/bin}/kubectl" "$@"
+  fi
 }
 
 # ---------- 步骤实现 ----------
@@ -201,7 +221,24 @@ for line in sys.stdin:
         entry["memory_mib"] = int(parts[1])
     out.append(entry)
 print(json.dumps(out))')"
-  [[ "$gpu_details" == "[]" ]] && gpu_details="$({ lspci 2>/dev/null | grep -i 'nvidia' || true; } | sed 's/.*: //' | head -8 | python3 -c 'import json,sys; print(json.dumps([{"name": l.strip()} for l in sys.stdin if l.strip()]))')"
+  # 无驱动 → 整体退回 lspci 名称;驱动只报通用名(CMP/工程样卡的 "NVIDIA Graphics Device",
+  # 型号无法归一)→ 名称改用 lspci 方括号内型号,显存仍沿用 nvidia-smi
+  gpu_details="$(python3 - "$gpu_details" "$({ lspci 2>/dev/null | grep -i 'nvidia' || true; } | sed 's/.*: //' | head -8)" <<'PYEOF'
+import json, re, sys
+smi = json.loads(sys.argv[1])
+pci = [l.strip() for l in sys.argv[2].splitlines() if l.strip()]
+if not smi:
+    smi = [{"name": l} for l in pci]
+elif pci:
+    generic = re.compile(r"^NVIDIA\s+Graphics\s+Device$", re.I)
+    for i, entry in enumerate(smi):
+        if generic.match(entry.get("name", "")):
+            raw = pci[i] if i < len(pci) else pci[0]
+            m = re.search(r"\[([^\]]+)\]", raw)
+            entry["name"] = m.group(1) if m else raw
+print(json.dumps(smi))
+PYEOF
+)"
   # 驱动/CUDA 版本不在此采集:首装此时驱动未加载,统一在收尾上报(collect_driver_versions)
   payload="$(python3 - "$hostname" "$os_release" "$kernel" "$arch" "$gpu_details" <<'PYEOF'
 import json, sys
@@ -225,7 +262,9 @@ step_precheck() {
   [[ "$(uname -m)" == "x86_64" ]] || { echo "仅支持 x86_64"; return 1; }
   command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
   command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
-  lspci 2>/dev/null | grep -qi nvidia || { echo "未检测到 NVIDIA GPU"; return 1; }
+  # 不用 grep -q:pipefail 下 grep 命中即退出会让仍在输出的 lspci 收到 SIGPIPE,整条判为失败
+  # (PCI 设备多的多卡机必现);grep 读完全部输出再判定
+  lspci 2>/dev/null | grep -i nvidia >/dev/null || { echo "未检测到 NVIDIA GPU"; return 1; }
   local avail_kb
   avail_kb="$(df --output=avail -k / | tail -1 | tr -d ' ')"
   [[ "$avail_kb" -ge $((50 * 1024 * 1024)) ]] || { echo "/ 分区可用空间不足 50G"; return 1; }
@@ -302,10 +341,14 @@ step_nvidia_toolkit() {
     apt-get update -qq
     apt-get install -y -qq nvidia-container-toolkit
   fi
-  # 若 agent 已在跑(重跑/补装场景),重启一次让 containerd 重新探测 nvidia runtime
+  # 若 agent 已在跑(重跑/补装场景),重启一次让 containerd 重新探测 nvidia runtime;
+  # server 本机同理(单机 light),重启的是 server 服务
   if systemctl is-active --quiet "$AGENT_UNIT" 2>/dev/null; then
     echo "-- $AGENT_UNIT 已运行,重启以探测 nvidia runtime"
     systemctl restart "$AGENT_UNIT"
+  elif is_server_node; then
+    echo "-- 本机是 $SERVER_UNIT,重启以探测 nvidia runtime"
+    systemctl restart "$SERVER_UNIT"
   fi
 }
 
@@ -454,6 +497,17 @@ step_registries() {
 }
 
 step_agent_config() {
+  if is_server_node; then
+    # server 的 config.yaml 不能被 agent 配置覆盖;池标签用本机 kubectl 打到节点对象上
+    # (Node 标签持久在集群数据库里,与 server 启动参数无关),对账器据此判定 joined
+    echo "-- 本机是 $SERVER_UNIT:不写 agent config,池标签直接打到节点 $(hostname)"
+    # 节点早已 Ready:池标签一落,对账器(30s)立即判 joined(终态,之后的上报一律 404),
+    # 所以驱动/CUDA 版本要在打标签之前上报,否则台账永远缺这两列
+    collect_driver_versions
+    report agent_config running "server 本机:先上报驱动版本,再打池标签"
+    server_kubectl label node "$(hostname)" "superdl.io/pool=$(cfg_get pool)" --overwrite
+    return 0
+  fi
   mkdir -p "$RANCHER_DIR"
   cat > "$RANCHER_DIR"/config.yaml <<EOF
 server: $(cfg_get rke2_server_url)
@@ -466,6 +520,10 @@ EOF
 
 step_agent_install() {
   local want mirror url pin
+  if is_server_node; then
+    echo "-- 本机是 $SERVER_UNIT(已在集群内),跳过 agent 安装"
+    return 0
+  fi
   want="$(cfg_get rke2_version)"
   mirror="$(cfg_get install_mirror)"
   if command -v "$DISTRO" >/dev/null 2>&1 && "$DISTRO" --version | grep -q "$want"; then
@@ -515,6 +573,10 @@ step_agent_install() {
 }
 
 step_agent_start() {
+  if is_server_node; then
+    echo "-- 本机是 $SERVER_UNIT,无 agent 可启动"
+    return 0
+  fi
   # rke2-agent / k3s-agent 均为 Type=notify:enable --now 阻塞到就绪,失败非零由 ERR trap 上报
   systemctl enable --now "$AGENT_UNIT"
   echo "-- ${AGENT_UNIT%.service} 已运行"
@@ -523,7 +585,9 @@ step_agent_start() {
 finalize() {
   CURRENT_PHASE="waiting_node"
   collect_driver_versions
-  report waiting_node ok "${AGENT_UNIT%.service} 已启动,等待平台对账确认节点 Ready(管理端「待加入节点」可见进度)"
+  local unit="$AGENT_UNIT"
+  is_server_node && unit="$SERVER_UNIT"
+  report waiting_node ok "${unit%.service} 已启动,等待平台对账确认节点 Ready(管理端「待加入节点」可见进度)"
   if systemctl is-enabled --quiet "${RESUME_UNIT}.service" 2>/dev/null; then
     systemctl disable "${RESUME_UNIT}.service" || true
   fi
@@ -532,7 +596,7 @@ finalize() {
   # 装机完成即清敏感落盘:bootstrap.json(含集群 join token)与令牌文件不再有用
   rm -f "$STATE_DIR/bootstrap.json" "$STATE_DIR/token" "$STATE_DIR/curl.conf"
   mark_done completed
-  echo "==== 完成:节点已启动 ${AGENT_UNIT%.service},加入结果以管理端为准 ===="
+  echo "==== 完成:节点已启动 ${unit%.service},加入结果以管理端为准 ===="
 }
 
 # ---------- 幂等入口与令牌装载 ----------
