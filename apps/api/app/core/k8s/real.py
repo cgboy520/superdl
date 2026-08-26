@@ -1175,11 +1175,11 @@ class RealOrchestrator:
             return  # 幂等:任意状态的既有 Job 都交巡检收敛
         # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
         container = self._batch_container("prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[])
-        # Always:预热 Job 的职责就是「让节点缓存等于当前 image_ref」。平台镜像允许同名 tag 重推
-        # (见 deploy/instance-images/README.md),IfNotPresent 会让节点停在旧 digest;
-        # Always 只多一次 manifest 校验,digest 没变不重传层。
-        # 实例 Pod 仍是 IfNotPresent —— 开机不依赖仓库可达。
-        container.image_pull_policy = "Always"
+        # IfNotPresent:节点开机/预热不依赖仓库可达。注意 Always 救不了「同名 tag 重推」——
+        # k3s 内置 registry(Spegel,registries.yaml 里 mirrors "*")按 tag 解析时会返回节点自己
+        # 缓存的旧 digest,实测 Always 仍拉到旧镜像;正确做法是目录 image_ref 钉 digest
+        # (`<repo>:<tag>@sha256:...`,_IMAGE_REF_RE 已支持),见 deploy/instance-images/README.md。
+        container.image_pull_policy = "IfNotPresent"
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=job_name,

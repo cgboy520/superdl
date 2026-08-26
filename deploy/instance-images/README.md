@@ -132,11 +132,18 @@ docker push $IMG
 GPU 可用性只能在有卡的节点上验(本机构建机无卡):推送并在管理端登记后,建一台实例跑
 `python -c "import torch;print(torch.cuda.is_available())"` / `tf.config.list_physical_devices('GPU')` / `paddle.utils.run_check()`。
 
-之后在 管理端 · 镜像与预热 中登记 image_ref,并按需开启预热。**同名 tag 可以重推**(不搞 `-rN` 后缀):
-改了本目录任何文件,重跑上面的构建 + 自检 + push 覆盖原 tag 即可,目录里的 image_ref 不用动。
-唯一要记住的一步:**重推后在管理端对该镜像点一次「立即预热」**——节点侧实例 Pod 是 `imagePullPolicy=IfNotPresent`
-(开机不依赖仓库可达),只有预热 Job 用 `Always`(`app/core/k8s/real.py::_prewarm_image_sync`),
-靠它把节点缓存刷到新 digest;不点也会在 `prewarm_recheck_hours`(默认 24h)复检时自动刷新。
-已在跑的实例仍是旧镜像,重启/重建后生效。
+登记到镜像目录时,**`image_ref` 必须钉 digest**:
+
+```bash
+# push 之后取 digest,拼成 <repo>:<tag>@sha256:...(平台的 image_ref 形态校验本就支持这种写法)
+docker inspect --format '{{index .RepoDigests 0}}' $IMG          # → <repo>@sha256:...
+echo "$IMG@$(docker inspect --format '{{index .RepoDigests 0}}' $IMG | cut -d@ -f2)"
+```
+
+**tag 是可以覆盖重推的**(不搞 `-rN` 后缀):改了本目录任何文件,重跑构建 + 自检 + push 覆盖同名 tag 即可,
+再把管理端里该镜像的 ref 换成新 digest。为什么不能只按 tag 拉:k3s 内置 registry(Spegel P2P,节点
+`registries.yaml` 的 `mirrors "*"`)按 **tag** 解析时会返回节点自己缓存的旧 digest,`imagePullPolicy: Always`
+也拉不到新镜像(实机实测:Harbor 上已是新 digest,Pod 跑的仍是旧的);按 digest 拉是内容寻址,不会拿错。
+换 ref 后平台会同事务清掉该镜像的节点缓存行并按新 ref 重新预热;已在跑的实例用自己的快照,不受影响。
 
 推送到托管镜像仓、在管理端登记与预热的 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`(托管仓 + Spegel P2P 节点间分发;集群内自建 registry 已退役)。

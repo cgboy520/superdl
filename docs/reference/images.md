@@ -37,8 +37,9 @@
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
-- **平台镜像的同名 tag 允许重推**(不要求 `-rN` 递增):实例 Pod 是 `imagePullPolicy=IfNotPresent`(开机不依赖仓库可达),
-  预热 Job 是 `Always`,所以重推后点一次「立即预热」(或等 `prewarm_recheck_hours` 复检)即可把节点缓存刷到新 digest;
-  已在跑的实例不受影响,重建后生效。构建与自检步骤见 `deploy/instance-images/README.md`。
+- **平台镜像 tag 允许同名重推,但目录 `image_ref` 必须钉 digest**(`<repo>:<tag>@sha256:...`,形态校验本就支持)。
+  按 tag 拉不可靠:k3s 内置 registry(Spegel)按 tag 解析会返回节点缓存的旧 digest,`imagePullPolicy: Always` 也救不回来(实测)。
+  重推后把管理端该镜像的 ref 换成新 digest 即可:`admin_update_image` 同事务清该镜像的 cache 行,巡检按新 ref 重新预热;
+  已在跑的实例用的是自己的快照,不受影响。构建、自检与取 digest 的命令见 `deploy/instance-images/README.md`。
 - 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律存 Harbor 全限定名 `<host>/<项目>/<名>:<tag>`,没有逻辑名。拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 之前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与该租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`,指纹相同不覆写),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户(项目 public)则不生成、不引用。轮换 = 配置中心保存新 Secret,节点不落凭据。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。
