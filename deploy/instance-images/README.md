@@ -45,7 +45,11 @@ docker build -t <registry>/miniconda:26.5.3 \
   --build-arg JUPYTERLAB_VERSION=4.6.3 .
 docker push <registry>/miniconda:26.5.3
 
-# 之后在 管理端 · 镜像与预热 中登记该 image_ref,并按需开启预热
+# 推送前自检:扩展必须能在目标基座的 jupyter_server 上 import(否则入场 URL 一律 404)
+docker run --rm --entrypoint python <registry>/pytorch:2.9.0-cu128 -c "import sys; sys.path.insert(0, '/opt/superdl'); import superdl_jupyter_auth; print('ok')"
+
+# 之后在 管理端 · 镜像与预热 中登记该 image_ref,并按需开启预热。tag 不可变:改了本目录任何文件
+# 都换新 tag 重推(节点 imagePullPolicy=IfNotPresent,同名 tag 不会重拉),再在管理端改 image_ref
 ```
 
 推送到托管镜像仓、在管理端登记与预热的 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`(托管仓 + Spegel P2P 节点间分发;集群内自建 registry 已退役)。

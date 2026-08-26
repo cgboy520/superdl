@@ -50,13 +50,15 @@ fi
 # 鉴权(?token= 依旧可用),不因为扩展问题把实例打死。
 ext_args=()
 export PYTHONPATH="/opt/superdl${PYTHONPATH:+:$PYTHONPATH}"
-if python -c "import superdl_jupyter_auth" 2>/dev/null; then
+# import 失败的原因必须进日志(基类/依赖随 jupyter_server 版本变动时,只剩一句 warn 无从排查)
+if ext_import_err="$(python -c "import superdl_jupyter_auth" 2>&1)"; then
   ext_args+=(
     "--ServerApp.jpserver_extensions={\"superdl_jupyter_auth\": true}"
     "--ServerApp.identity_provider_class=superdl_jupyter_auth.SuperDLIdentityProvider"
   )
 else
-  echo "warn: superdl_jupyter_auth 不可导入,回退 stock token 鉴权" >&2
+  echo "warn: superdl_jupyter_auth 不可导入,回退 stock token 鉴权(入场 URL 将 404):" >&2
+  echo "$ext_import_err" | tail -3 >&2
 fi
 
 # 守护循环而非 exec:jupyter 不做 PID 1,用户误杀或崩溃后自动拉起,不让整台实例转 failed。

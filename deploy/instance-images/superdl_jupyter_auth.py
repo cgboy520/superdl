@@ -15,8 +15,15 @@ import os
 import time
 
 from jupyter_server.auth import User
-from jupyter_server.auth.identity import TokenIdentityProvider
 from jupyter_server.base.handlers import JupyterHandler
+
+# 基类 = jupyter_server 的默认身份提供者(PasswordIdentityProvider,token 鉴权内建于其父类
+# IdentityProvider);jupyter_server 2.x 并没有 TokenIdentityProvider——写错基类会让整个扩展
+# import 失败、entrypoint 静默回落 stock 鉴权,入场 URL 一律 404(实机首次开机才暴露)
+try:
+    from jupyter_server.auth.identity import TokenIdentityProvider as _BaseIdentityProvider
+except ImportError:  # jupyter_server 2.x
+    from jupyter_server.auth.identity import PasswordIdentityProvider as _BaseIdentityProvider
 from jupyter_server.utils import url_path_join
 from tornado import web
 
@@ -66,7 +73,7 @@ class SuperDLBootstrapHandler(JupyterHandler):
         self.redirect(url_path_join(self.base_url, "tree"))
 
 
-def _user_from_cookie(provider: TokenIdentityProvider, handler: JupyterHandler):
+def _user_from_cookie(provider: _BaseIdentityProvider, handler: JupyterHandler):
     """cookie 与 stock token 恒等比较,命中返回与 token 登录等价的最小身份;异常返回 None。"""
     try:
         token = str(provider.token or "")
@@ -79,9 +86,9 @@ def _user_from_cookie(provider: TokenIdentityProvider, handler: JupyterHandler):
 
 
 # jupyter_server 不同版本 get_user 有同步/异步两形,按基类形态适配,避免版本钉死
-if inspect.iscoroutinefunction(TokenIdentityProvider.get_user):
+if inspect.iscoroutinefunction(_BaseIdentityProvider.get_user):
 
-    class SuperDLIdentityProvider(TokenIdentityProvider):
+    class SuperDLIdentityProvider(_BaseIdentityProvider):
         async def get_user(self, handler):  # type: ignore[override]
             user = _user_from_cookie(self, handler)
             if user is not None:
@@ -89,7 +96,7 @@ if inspect.iscoroutinefunction(TokenIdentityProvider.get_user):
             return await super().get_user(handler)
 else:
 
-    class SuperDLIdentityProvider(TokenIdentityProvider):
+    class SuperDLIdentityProvider(_BaseIdentityProvider):
         def get_user(self, handler):  # type: ignore[override]
             user = _user_from_cookie(self, handler)
             if user is not None:
