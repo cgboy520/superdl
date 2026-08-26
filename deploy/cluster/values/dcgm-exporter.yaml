@@ -12,6 +12,7 @@ tolerations:
 serviceMonitor:
   enabled: true      # kps 已开全命名空间 Monitor 发现
   interval: 15s
+  scrapeTimeout: 10s  # chart 默认 25s > interval 时 prometheus-operator 会整个跳过该 ServiceMonitor(实测)
 resources:
   requests: {cpu: 50m, memory: 128Mi}
   limits: {memory: 512Mi}
