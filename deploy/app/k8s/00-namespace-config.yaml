@@ -29,7 +29,8 @@ data:
   SUPERDL_LOG_LEVEL: "INFO"
   # 域名按实际环境改(prod 配置校验会拒绝 example.com 占位)
   SUPERDL_PUBLIC_BASE_URL: "https://api.superdl.example.com"
-  SUPERDL_SSH_HOST: "ssh1.superdl.example.com"
+  # 实例域名 <uuid>.<后缀>:Jupyter 与 SSH 共用(SSH 只靠 NodePort 区分实例,不设单独入口域名);
+  # 泛域名解析到的地址须同时转发 80/443 与 NodePort 30000-32767
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
   # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求(占位域名会被拒绝启动)

@@ -200,7 +200,6 @@ class TestProdConfigValidation:
             "payment_mock": False,
             "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
             "cors_origins": ["https://console.superdl.cn"],
-            "ssh_host": "ssh1.superdl.cn",
             "admin_host": "admin.superdl.cn",
             "jupyter_domain_suffix": "app.superdl.cn",
             "public_base_url": "https://api.superdl.cn",

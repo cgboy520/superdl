@@ -744,10 +744,12 @@ def build_access(instance: Instance) -> dict[str, Any]:
     if instance.status != sm_def.RUNNING:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.accessNeedsRunning")
     token_plain = _token_plain(instance)
+    # SSH 没有主机名语义(只靠 NodePort 区分实例),主机名直接用实例域名,与 Jupyter 同名
+    ssh_host = jupyter_host(instance.uuid, settings)
     return {
-        "ssh_host": settings.ssh_host,
+        "ssh_host": ssh_host,
         "ssh_port": instance.ssh_port,
-        "ssh_command": f"ssh root@{settings.ssh_host} -p {instance.ssh_port}",
+        "ssh_command": f"ssh root@{ssh_host} -p {instance.ssh_port}",
         # 一次性入场票据(单次、60s):浏览器打在实例域名的 bootstrap handler 上,
         # 验签核销后 Set-Cookie 第一方会话 cookie 再跳 Jupyter;token 不出现在 URL。
         "jupyter_url": _new_jupyter_ticket(instance, token_plain),

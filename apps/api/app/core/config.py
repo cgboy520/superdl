@@ -150,7 +150,9 @@ class Settings(BaseSettings):
     k8s_read_timeout_seconds: float = 30.0
     # 租户 Jupyter Ingress 的 IngressClass;未标 default 的 IngressClass 不自动接管,须显式指定
     ingress_class_name: str = "nginx"
-    ssh_host: str = "ssh1.superdl.example.com"
+    # SSH 入口不单独配域名:SSH 协议没有主机名,实例只靠 NodePort 区分,连接串直接用实例自己的域名
+    # (与 Jupyter 同名,见 orchestrator/service.jupyter_host);部署约束:泛域名解析到的地址必须
+    # 同时能转发 ssh_port_range 端口段(单节点即节点本身;多节点为转发该端口段的 LB/VIP)
     # 管理端域名(admin SPA 经该域 nginx 同源反代 /api/admin/);prod 下 /api/admin/*
     # 仅放行 Host 命中本项的请求(公网 api 域不暴露管理端 API)
     admin_host: str = "admin.superdl.example.com"
@@ -240,7 +242,7 @@ class Settings(BaseSettings):
             problems.append("database_url 仍为本地开发默认")
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
             problems.append("cors_origins 含 localhost")
-        for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url", "admin_host"):
+        for name in ("jupyter_domain_suffix", "public_base_url", "admin_host"):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
         if self.payment_alipay_enabled and not self.alipay_seller_id:
