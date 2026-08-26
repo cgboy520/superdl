@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import spec_to_gpu_request
@@ -133,6 +133,13 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
+    """实例 Jupyter 主机名:<jupyter_host_prefix><uuid>.<jupyter_domain_suffix>。
+    Ingress host / 入场 URL / JUPYTER_ALLOW_ORIGIN 三处必须同一口径,只从这里拼。"""
+    s = settings or get_settings()
+    return f"{s.jupyter_host_prefix}{instance_uuid}.{s.jupyter_domain_suffix}"
+
+
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     return {
         "sku_name": sku.name,
@@ -191,7 +198,7 @@ def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
     exp = int(time.time()) + settings.jupyter_ticket_ttl_seconds
     sig = hmac.new(token_plain.encode(), f"{code}.{exp}".encode(), hashlib.sha256).hexdigest()
     return (
-        f"https://{instance.uuid}.{settings.jupyter_domain_suffix}"
+        f"https://{jupyter_host(instance.uuid, settings)}"
         f"/superdl-bootstrap?code={code}&exp={exp}&sig={sig}"
     )
 
@@ -692,10 +699,10 @@ def build_pod_spec(
         mem_gb=instance.spec["mem_gb"] * gpu_n,
         disk_gb=instance.spec["disk_gb"],
         ssh_node_port=instance.ssh_port,
-        jupyter_host=f"{instance.uuid}.{settings.jupyter_domain_suffix}",
+        jupyter_host=jupyter_host(instance.uuid, settings),
         env={
             # 实例自己的域名:镜像据此收敛 Jupyter 的 Origin 校验(防跨站 WebSocket)
-            "JUPYTER_ALLOW_ORIGIN": (f"https://{instance.uuid}.{settings.jupyter_domain_suffix}"),
+            "JUPYTER_ALLOW_ORIGIN": f"https://{jupyter_host(instance.uuid, settings)}",
         },
         # token 走 per-instance Secret(secretKeyRef),不以明文 env 落 Pod spec:
         # spec 会进 etcd/审计快照,任何 pods:get/list 身份(含只读 SA)都能读走

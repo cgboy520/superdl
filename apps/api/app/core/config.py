@@ -160,6 +160,10 @@ class Settings(BaseSettings):
     # 运行期撞到的其它占用由 PortAllocation 标 blocked。
     ssh_port_excluded: set[int] = {30500}  # registry(deploy/cluster/registry/)
     jupyter_domain_suffix: str = "app.superdl.example.com"
+    # 实例 Jupyter 主机名 = <前缀><实例 uuid>.<jupyter_domain_suffix>。前缀默认空;当后缀是与其它业务
+    # 共用的一级域(如为了复用 *.<域> 通配证书——通配只匹配一级标签,盖不住 <uuid>.app.<域>)时,
+    # 用前缀把实例域名从共用域里区分出来(如 superdl-)。DNS 通配仍按整段标签匹配(*.<域>)
+    jupyter_host_prefix: str = ""
 
     # 告警接入
     alertmanager_token: str | None = None
