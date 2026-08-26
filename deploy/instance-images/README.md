@@ -45,8 +45,12 @@ docker build -t <registry>/miniconda:26.5.3 \
   --build-arg JUPYTERLAB_VERSION=4.6.3 .
 docker push <registry>/miniconda:26.5.3
 
-# 推送前自检:扩展必须能在目标基座的 jupyter_server 上 import(否则入场 URL 一律 404)
+# 推送前自检(两步,缺一不可):① 扩展能在目标基座的 jupyter_server 上 import;② 用镜像自己的 entrypoint
+# 起一次,入场 URL 对坏票据回 403(404 = 扩展没加载;容器秒退 = 启动参数错)
 docker run --rm --entrypoint python <registry>/pytorch:2.9.0-cu128 -c "import sys; sys.path.insert(0, '/opt/superdl'); import superdl_jupyter_auth; print('ok')"
+docker run -d --name jcheck -e JUPYTER_TOKEN=selfcheck -p 127.0.0.1:18888:8888 <registry>/pytorch:2.9.0-cu128 && sleep 15 \
+  && curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'   # 期望 403
+docker rm -f jcheck
 
 # 之后在 管理端 · 镜像与预热 中登记该 image_ref,并按需开启预热。tag 不可变:改了本目录任何文件
 # 都换新 tag 重推(节点 imagePullPolicy=IfNotPresent,同名 tag 不会重拉),再在管理端改 image_ref

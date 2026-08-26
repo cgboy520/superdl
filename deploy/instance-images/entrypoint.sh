@@ -52,8 +52,10 @@ ext_args=()
 export PYTHONPATH="/opt/superdl${PYTHONPATH:+:$PYTHONPATH}"
 # import 失败的原因必须进日志(基类/依赖随 jupyter_server 版本变动时,只剩一句 warn 无从排查)
 if ext_import_err="$(python -c "import superdl_jupyter_auth" 2>&1)"; then
+  # jpserver_extensions 是 Dict trait:命令行只认 key=value(JSON 字面量会被当成列表项,
+  # Jupyter 启动即报 "expected a dict, not the list" 退出,守护循环 5 次后放弃——实机首开暴露)
   ext_args+=(
-    "--ServerApp.jpserver_extensions={\"superdl_jupyter_auth\": true}"
+    --ServerApp.jpserver_extensions superdl_jupyter_auth=True
     "--ServerApp.identity_provider_class=superdl_jupyter_auth.SuperDLIdentityProvider"
   )
 else
