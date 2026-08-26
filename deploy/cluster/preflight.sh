@@ -34,7 +34,12 @@ check_secret() { # <ns> <name> <用途>
     miss "$1/$2($3)—— 建法见 README「前置检查」节"
   fi
 }
-check_secret kube-system superdl-juicefs-secret "JuiceFS 元数据/对象存储凭据"
+# JuiceFS 只在 juicefs.enabled=true 的档位需要(light 默认关:无数据盘即无 JuiceFS,凭据也不必存在)
+if grep -qE '^\s*juicefs:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  check_secret kube-system superdl-juicefs-secret "JuiceFS 元数据/对象存储凭据"
+else
+  ok "kube-system/superdl-juicefs-secret 不需要(environments/$env_name.yaml juicefs.enabled=false)"
+fi
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
 check_secret cert-manager acme-dns-account "acme-dns 账户凭据(RFC2136 DNS01,建法见 runbooks/acme-dns.md)"
@@ -52,7 +57,8 @@ say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.
 placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
 for f in "${placeholder_files[@]}"; do
   [[ -f "$f" ]] || continue
-  if grep -qE '<server-ip>|CHANGE_ME|example\.com' "$f"; then
+  # 只扫有效行:文件头注释本身会提到 CHANGE_ME/example.com,不算残留
+  if grep -vE '^\s*#' "$f" | grep -qE '<server-ip>|CHANGE_ME|example\.com'; then
     miss "$f 仍有 <server-ip>/CHANGE_ME/example.com 占位符未替换"
   else
     ok "$f"
