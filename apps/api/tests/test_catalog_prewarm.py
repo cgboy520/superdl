@@ -259,3 +259,39 @@ class TestPrewarmLifecycle:
                 .all()
             )
         assert all(t.payload["node_name"] != "sick-node" for t in tasks)
+
+
+class TestPrewarmPullSecret:
+    async def test_job_references_managed_secret_only_when_robot_configured(
+        self, sm, fake: FakeOrchestrator
+    ) -> None:
+        """预热 Job 与实例 Pod 同一条凭据链:配了机器人才托管 Secret 到平台 ns 并引用,
+        否则不引用(项目 public)。挂了说明预热在私有项目上会一直 ErrImagePull。"""
+        from app.core.config import get_settings
+        from app.core.platform_config import set_platform_settings
+        from app.core.registry import PULL_SECRET_NAME
+
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        await drain(sm)
+        assert set(fake.prewarm_pull_secrets.values()) == {None}
+        assert fake.pull_secrets == {}
+
+        async with sm() as session:
+            await set_platform_settings(
+                session,
+                {
+                    "registry_host": "harbor.example.com",
+                    "registry_robot_name": "robot$superdl+pull",
+                    "registry_robot_secret": "s3cret",
+                },
+                updated_by=None,
+            )
+            await session.commit()
+        image_id = await make_image(sm, ref="harbor.example.com/superdl/tensorflow:2.20-cu128")
+        await prewarm_patrol(sm)
+        await drain(sm)
+        ref = "harbor.example.com/superdl/tensorflow:2.20-cu128"
+        used = {v for (node, r), v in fake.prewarm_pull_secrets.items() if r == ref}
+        assert used == {PULL_SECRET_NAME}, (image_id, fake.prewarm_pull_secrets)
+        assert get_settings().k8s_platform_namespace in fake.pull_secrets

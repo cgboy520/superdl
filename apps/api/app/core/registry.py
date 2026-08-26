@@ -14,10 +14,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # 平台托管的拉取凭据 Secret 名:superdl ns(平台镜像 + 预热 Job)与每个租户 ns 各一份,
 # 内容由配置中心 registry_* 生成,指纹变了才覆写
 PULL_SECRET_NAME = "superdl-registry-pull"
+PULL_SECRET_FINGERPRINT_ANNOTATION = "superdl.io/pull-secret-fingerprint"
 
 
 def dockerconfigjson(host: str, username: str, password: str) -> str:
@@ -57,6 +59,32 @@ def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:
     if host and f"{host}/" not in prefixes:
         prefixes.insert(0, f"{host}/")
     return prefixes
+
+
+async def ensure_registry_pull_secret(session: AsyncSession, namespace: str) -> str | None:
+    """按生效配置在 namespace 托管拉取凭据 Secret:凭据齐全返回 Secret 名(Pod / Job 以
+    imagePullSecrets 引用),未配机器人(项目 public)返回 None。
+
+    只在 worker 侧调用(outbox 建 Pod / 预热 Job 之前),请求路径不碰 K8s;指纹相同时
+    编排层跳过写入,轮换 = 配置中心保存新 Secret,下一次建 Pod 自动覆写,节点不落凭据。
+    """
+    from app.core.k8s import get_orchestrator
+    from app.core.platform_config import get_effective_platform_config
+
+    cfg = await get_effective_platform_config(session)
+    host, robot, secret = (
+        cfg["registry_host"],
+        cfg["registry_robot_name"],
+        cfg["registry_robot_secret"],
+    )
+    if not (host and robot and secret):
+        return None
+    await get_orchestrator().ensure_pull_secret(
+        namespace,
+        dockerconfigjson(host, robot, secret),
+        pull_secret_fingerprint(host, robot, secret),
+    )
+    return PULL_SECRET_NAME
 
 
 def ssl_verify(ca_pem: str) -> ssl.SSLContext | bool:

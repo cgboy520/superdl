@@ -91,10 +91,11 @@ SKUS = [
 ]
 
 IMAGES = [
-    ("PyTorch", "2.9.0", "3.12", "12.8", "registry.superdl.local/pytorch:2.9.0-cu128"),
-    ("PyTorch", "2.7.1", "3.11", "12.4", "registry.superdl.local/pytorch:2.7.1-cu124"),
-    ("TensorFlow", "2.20", "3.12", "12.8", "registry.superdl.local/tensorflow:2.20-cu128"),
-    ("Miniconda", "24.7", "3.12", "12.8", "registry.superdl.local/miniconda:24.7-cu128"),
+    # image_ref 存 Harbor 全限定名(<host>/<项目>/<名>:<tag>);dev 用 Fake 编排不真拉取
+    ("PyTorch", "2.9.0", "3.12", "12.8", "harbor.example.com/superdl/pytorch:2.9.0-cu128"),
+    ("PyTorch", "2.7.1", "3.11", "12.4", "harbor.example.com/superdl/pytorch:2.7.1-cu124"),
+    ("TensorFlow", "2.20", "3.12", "12.8", "harbor.example.com/superdl/tensorflow:2.20-cu128"),
+    ("Miniconda", "24.7", "3.12", "12.8", "harbor.example.com/superdl/miniconda:24.7-cu128"),
 ]
 
 

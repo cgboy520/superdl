@@ -62,6 +62,9 @@ class InstancePodSpec:
     data_disk_subpath: str | None = None  # JuiceFS 子路径(挂 /root/data)
     scheduler_name: str | None = None  # 指定调度器(HAMi 池 = hami-scheduler)
     annotations: dict[str, str] = field(default_factory=dict)  # 如 HAMi use-gputype
+    # 平台托管的镜像拉取凭据 Secret 名(core/registry.PULL_SECRET_NAME);
+    # None = 项目 public / 未配机器人
+    image_pull_secret: str | None = None
 
 
 class NodePortTaken(Exception):
@@ -138,6 +141,14 @@ class K8sOrchestrator(Protocol):
         """创建租户 namespace + 默认拒东西向 NetworkPolicy + ResourceQuota。已存在则跳过。"""
         ...
 
+    async def ensure_pull_secret(
+        self, namespace: str, dockerconfigjson: str, fingerprint: str
+    ) -> None:
+        """在 namespace 写/覆写平台托管的镜像拉取 Secret(kubernetes.io/dockerconfigjson,
+        名字 core/registry.PULL_SECRET_NAME)。annotation 指纹相同即跳过;轮换只改配置中心,
+        下一次建 Pod / 预热前自动覆写,节点不落凭据。幂等。"""
+        ...
+
     async def create_instance(self, spec: InstancePodSpec) -> None:
         """创建 Pod + Service(SSH NodePort)+ Ingress(Jupyter)。已存在则跳过。"""
         ...
@@ -204,9 +215,12 @@ class K8sOrchestrator(Protocol):
         """merge-patch 节点 labels(巡检收敛 superdl.io/gpu-model 用)。幂等。"""
         ...
 
-    async def prewarm_image(self, node_name: str, image_ref: str) -> None:
-        """在指定节点创建镜像预热 Job(nodeName 定点拉取)。创建后即返回不等待,
-        完成态由巡检经 get_prewarm_status 收敛;已存在同名 Job 则跳过(幂等)。"""
+    async def prewarm_image(
+        self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
+    ) -> None:
+        """在指定节点创建镜像预热 Job(nodeName 定点拉取,image_pull_secret 为平台托管的
+        拉取凭据 Secret 名)。创建后即返回不等待,完成态由巡检经 get_prewarm_status 收敛;
+        已存在同名 Job 则跳过(幂等)。"""
         ...
 
     async def get_prewarm_status(self, node_name: str, image_ref: str) -> "PrewarmJobStatus":

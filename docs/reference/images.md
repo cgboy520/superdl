@@ -26,5 +26,5 @@
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
-- 平台镜像仓是托管仓(阿里云 ACR 企业版优先,Harbor 备选):`registry.superdl.local` 仍为镜像引用逻辑名,节点 registries.yaml mirror 到托管仓 https endpoint;托管仓自带 TLS/扫描/权限。原集群内自建 registry(明文 http+htpasswd)已退役、清单已删除,迁移流程见 `deploy/cluster/runbooks/image-prewarm.md`「托管仓迁移」节;已迁移集群必须在平台配置填 `node_registries_yaml` 覆盖,见 [nodes.md](./nodes.md)。
+- 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律存 Harbor 全限定名 `<host>/<项目>/<名>:<tag>`,没有逻辑名。拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 之前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与该租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`,指纹相同不覆写),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户(项目 public)则不生成、不引用。轮换 = 配置中心保存新 Secret,节点不落凭据。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。

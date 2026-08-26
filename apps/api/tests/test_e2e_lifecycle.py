@@ -90,6 +90,8 @@ async def test_full_lifecycle_drill(client, sm, fake):
     pod = fake.pods[(f"tenant-{user_id}", uuid)]
     assert "JUPYTER_TOKEN" not in pod.spec.env
     assert fake.instance_secrets[(f"tenant-{user_id}", uuid)]["JUPYTER_TOKEN"]
+    # 未配 Harbor 机器人(项目 public):不托管拉取凭据、Pod 不引用 imagePullSecrets
+    assert pod.spec.image_pull_secret is None and f"tenant-{user_id}" not in fake.pull_secrets
     fake.mark_ready(f"tenant-{user_id}", uuid)
     await reconcile_once(sm)
     inst = (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()
@@ -163,3 +165,48 @@ async def test_full_lifecycle_drill(client, sm, fake):
     consumed = -sum((e.amount for e in entries if e.type == "consume"), Decimal("0.00"))
     assert Decimal(wallet["balance"]) == Decimal("200.00") - consumed
     assert consumed == Decimal(bills[0]["amount"])
+
+
+async def test_pull_secret_managed_per_tenant_when_registry_configured(client, sm, fake):
+    """配了 Harbor 机器人:建 Pod 前把拉取凭据 Secret 按指纹托管到租户 ns,
+    Pod 以 imagePullSecrets 引用;
+    改 Secret 后指纹变化(轮换靠它触发覆写)。挂了说明私有项目的镜像会拉不下来,或轮换不生效。"""
+    from app.core.platform_config import set_platform_settings
+    from app.core.registry import PULL_SECRET_NAME, pull_secret_fingerprint
+    from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
+
+    async with sm() as session:
+        await set_platform_settings(
+            session,
+            {
+                "registry_host": "harbor.example.com",
+                "registry_robot_name": "robot$superdl+pull",
+                "registry_robot_secret": "s3cret-one",
+            },
+            updated_by=None,
+        )
+        await session.commit()
+    headers, user_id, key_id = await create_user_with_key(client, "13411113333")
+    await fund_wallet(sm, user_id)
+    sku_id = await create_test_sku(sm)
+    await seed_node_spec(sm)
+    resp = await client.post(
+        "/api/v1/instances",
+        json={
+            "sku_id": sku_id,
+            "image_ref": "harbor.example.com/superdl/pytorch:2.9.0-cu128",
+            "ssh_key_ids": [key_id],
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 202, resp.text
+    uuid = resp.json()["uuid"]
+    await drain(sm)
+    ns = f"tenant-{user_id}"
+    assert fake.pods[(ns, uuid)].spec.image_pull_secret == PULL_SECRET_NAME
+    assert fake.pull_secrets[ns] == pull_secret_fingerprint(
+        "harbor.example.com", "robot$superdl+pull", "s3cret-one"
+    )
+    assert fake.pull_secrets[ns] != pull_secret_fingerprint(
+        "harbor.example.com", "robot$superdl+pull", "rotated"
+    )

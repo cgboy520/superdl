@@ -81,7 +81,14 @@
   `registry_host / registry_project / registry_robot_name / registry_robot_secret(加密)/ registry_ca_pem / registry_proxy_projects`
   与镜像来源白名单 `image_allowed_registries` 都在平台配置·镜像仓库组,管理端「测试连接」按生效配置探测 Harbor API;
   平台自身镜像(api/web/admin)的仓库地址在部署侧(CI 与清单占位),不能依赖 DB。后果:白名单不再是 prod 启动硬闸(Harbor 地址自动放行,
-  为空只给配置告警);拉取凭据的托管方式与逻辑名去留见「编排与平台」后续条目。
+  为空只给配置告警);拉取凭据的托管方式与逻辑名去留见下一条。
+- **拉取凭据由平台托管为 imagePullSecrets,`registry.superdl.local` 逻辑名退役。** 背景:逻辑名靠节点 registries.yaml 的
+  mirror + auth 解析,凭据落每台 GPU 节点磁盘,轮换要分发全部节点并重启 agent(GPU 节点不走 ansible);而 kubelet 的
+  imagePullSecrets 按镜像主机名匹配、containerd 不会把它转给 mirror 主机(ParseAuth 校验 ServerAddress),逻辑名与 K8s 原生
+  凭据不可兼得。决定:`image_ref` 存 Harbor 全限定名;worker 在建实例 Pod / 预热 Job 前按生效配置把 dockerconfigjson Secret
+  `superdl-registry-pull` 按指纹写入 superdl 与各租户 ns(`ensure_pull_secret`,指纹相同跳过),Pod / Job 以 `imagePullSecrets`
+  引用;节点 registries.yaml 只留 Spegel / CA / 代理缓存 mirror。后果:轮换 = 配置中心保存新 Secret;换 Harbor 域名要 SQL
+  批量改 `images.image_ref`(实例快照是历史值,不改);测试里的 `registry.superdl.local/...` 只是不透明串,不再有语义。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

@@ -8,6 +8,7 @@ from app.core.k8s import NodePortTaken, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
+from app.core.registry import ensure_registry_pull_secret
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
@@ -34,8 +35,12 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
     orch = get_orchestrator()
     instance.ssh_port = await ensure_port(session, instance)
     await orch.ensure_namespace(instance.k8s_namespace)
+    # Harbor 拉取凭据:按生效配置托管到租户 ns(指纹相同不覆写),未配机器人则 Pod 不引用
+    pull_secret = await ensure_registry_pull_secret(session, instance.k8s_namespace)
     try:
-        await orch.create_instance(await build_pod_spec_with_cluster(session, instance))
+        await orch.create_instance(
+            await build_pod_spec_with_cluster(session, instance, image_pull_secret=pull_secret)
+        )
     except NodePortTaken as exc:
         # 先取 id 再回滚:rollback 后对象过期,访问属性会触发异步上下文外的懒加载
         instance_id = instance.id

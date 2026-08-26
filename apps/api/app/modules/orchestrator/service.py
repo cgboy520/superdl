@@ -660,10 +660,15 @@ async def release_instance(
 
 
 def build_pod_spec(
-    instance: Instance, *, distro: str | None = None, data_disk_subpath: str | None = None
+    instance: Instance,
+    *,
+    distro: str | None = None,
+    data_disk_subpath: str | None = None,
+    image_pull_secret: str | None = None,
 ) -> InstancePodSpec:
     """构造 Pod spec。data_disk_subpath 由调用方从盘记录读出后传入:
-    subPath 的唯一事实源是 `data_disks.juicefs_subpath`,就地重算会与擦除路径对不上。"""
+    subPath 的唯一事实源是 `data_disks.juicefs_subpath`,就地重算会与擦除路径对不上。
+    image_pull_secret 是平台已托管到该 ns 的拉取凭据 Secret 名(core/registry)。"""
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
         instance.spec,
@@ -700,10 +705,13 @@ def build_pod_spec(
         data_disk_subpath=data_disk_subpath,
         scheduler_name=gpu_req.scheduler_name,
         annotations=gpu_req.annotations,
+        image_pull_secret=image_pull_secret,
     )
 
 
-async def build_pod_spec_with_cluster(session: AsyncSession, instance: Instance) -> InstancePodSpec:
+async def build_pod_spec_with_cluster(
+    session: AsyncSession, instance: Instance, *, image_pull_secret: str | None = None
+) -> InstancePodSpec:
     """outbox handler 用:带集群发行版上下文(k3s → shared 档显式 runtimeClassName)
     与数据盘 subPath(从盘记录读,不就地重算)。"""
     row = await nodes_service.get_cluster_status(session)
@@ -713,7 +721,12 @@ async def build_pod_spec_with_cluster(session: AsyncSession, instance: Instance)
         if disk is None:
             raise RuntimeError(f"data disk {instance.data_disk_id} missing for {instance.uuid}")
         subpath = disk.juicefs_subpath
-    return build_pod_spec(instance, distro=row.distro if row else None, data_disk_subpath=subpath)
+    return build_pod_spec(
+        instance,
+        distro=row.distro if row else None,
+        data_disk_subpath=subpath,
+        image_pull_secret=image_pull_secret,
+    )
 
 
 # ---------- 接入信息 ----------

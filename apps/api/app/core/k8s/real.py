@@ -36,11 +36,11 @@ from app.core.k8s.base import (
     jupyter_service_name,
 )
 from app.core.logging import get_logger
+from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NAME
 
 INSTANCE_LABEL = "superdl.io/instance"
 PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
 INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPolicy 放行来源)
-PLATFORM_NAMESPACE = "superdl"  # 平台自身 ns(deploy/app/k8s/00-namespace-config.yaml),预热 Job 落此
 
 # 租户 ns 的 Pod Security Admission 标签。enforce 只到 baseline:平台镜像以 root 运行,
 # restricted 的 runAsNonRoot 会拒绝全部租户 Pod;逃逸面由 kata VM / userns 承担。
@@ -350,6 +350,47 @@ class RealOrchestrator:
         self._create_service_sync(spec)
         self._create_ingress_sync(spec)
 
+    # ---------- 平台托管的镜像拉取凭据 ----------
+
+    async def ensure_pull_secret(
+        self, namespace: str, dockerconfigjson: str, fingerprint: str
+    ) -> None:
+        await self._run(self._ensure_pull_secret_sync, namespace, dockerconfigjson, fingerprint)
+
+    def _ensure_pull_secret_sync(
+        self, namespace: str, dockerconfigjson: str, fingerprint: str
+    ) -> None:
+        """superdl-registry-pull:annotation 指纹相同即跳过(每次建 Pod 前都会调用,
+        不能次次写 etcd);不同(轮换)则 create/patch 覆写,已建 Pod 不受影响。"""
+        existing = _ignore(
+            lambda: self.core.read_namespaced_secret(PULL_SECRET_NAME, namespace), 404
+        )
+        if existing is not None:
+            annotations = existing.metadata.annotations or {}
+            if annotations.get(PULL_SECRET_FINGERPRINT_ANNOTATION) == fingerprint:
+                return
+        secret = client.V1Secret(
+            metadata=client.V1ObjectMeta(
+                name=PULL_SECRET_NAME,
+                namespace=namespace,
+                labels={MANAGED_LABEL: "true"},
+                annotations={PULL_SECRET_FINGERPRINT_ANNOTATION: fingerprint},
+            ),
+            type="kubernetes.io/dockerconfigjson",
+            string_data={".dockerconfigjson": dockerconfigjson},
+        )
+        _create_or_patch(
+            lambda: self.core.create_namespaced_secret(namespace, secret),
+            lambda: self.core.patch_namespaced_secret(
+                PULL_SECRET_NAME,
+                namespace,
+                {
+                    "metadata": {"annotations": {PULL_SECRET_FINGERPRINT_ANNOTATION: fingerprint}},
+                    "stringData": {".dockerconfigjson": dockerconfigjson},
+                },
+            ),
+        )
+
     def _ensure_instance_secret_sync(self, spec: InstancePodSpec) -> None:
         """per-instance 敏感 env 的 Secret(JUPYTER_TOKEN 等)。
 
@@ -456,6 +497,12 @@ class RealOrchestrator:
                 termination_grace_period_seconds=30,
                 automount_service_account_token=False,
                 enable_service_links=False,
+                # 平台托管的 Harbor 拉取凭据(未配机器人 = 项目 public,不引用)
+                image_pull_secrets=(
+                    [client.V1LocalObjectReference(name=spec.image_pull_secret)]
+                    if spec.image_pull_secret
+                    else None
+                ),
                 containers=[
                     client.V1Container(
                         name="workspace",
@@ -1110,14 +1157,21 @@ class RealOrchestrator:
         node_hash = hashlib.sha1(node_name.encode()).hexdigest()[:8]
         return f"prewarm-{ref_hash}-{node_hash}"
 
-    async def prewarm_image(self, node_name: str, image_ref: str) -> None:
-        await self._run(self._prewarm_image_sync, node_name, image_ref)
+    async def prewarm_image(
+        self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
+    ) -> None:
+        await self._run(self._prewarm_image_sync, node_name, image_ref, image_pull_secret)
 
-    def _prewarm_image_sync(self, node_name: str, image_ref: str) -> None:
+    def _prewarm_image_sync(
+        self, node_name: str, image_ref: str, image_pull_secret: str | None
+    ) -> None:
         """nodeName 定点起拉取 Job,创建后即返回(不等待,大镜像拉取可达数十分钟,
         完成态由 prewarm_patrol 巡检经 get_prewarm_status 收敛)。已存在同名 Job 则跳过。"""
         job_name = self._prewarm_job_name(node_name, image_ref)
-        if _ignore(lambda: self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE), 404):
+        if _ignore(
+            lambda: self.batch.read_namespaced_job(job_name, self.settings.k8s_platform_namespace),
+            404,
+        ):
             return  # 幂等:任意状态的既有 Job 都交巡检收敛
         # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
         container = self._batch_container("prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[])
@@ -1125,7 +1179,7 @@ class RealOrchestrator:
         job = client.V1Job(
             metadata=client.V1ObjectMeta(
                 name=job_name,
-                namespace=PLATFORM_NAMESPACE,
+                namespace=self.settings.k8s_platform_namespace,
                 labels={PREWARM_LABEL: "true"},
                 annotations={"superdl.io/node": node_name, "superdl.io/image": image_ref},
             ),
@@ -1139,6 +1193,11 @@ class RealOrchestrator:
                         node_name=node_name,  # 绕过调度器定点拉取
                         restart_policy="Never",
                         automount_service_account_token=False,
+                        image_pull_secrets=(
+                            [client.V1LocalObjectReference(name=image_pull_secret)]
+                            if image_pull_secret
+                            else None
+                        ),
                         # 容忍一切污点:预热须覆盖 cordon/维护中的节点
                         tolerations=[client.V1Toleration(operator="Exists")],
                         containers=[container],
@@ -1146,7 +1205,9 @@ class RealOrchestrator:
                 ),
             ),
         )
-        _ignore(lambda: self.batch.create_namespaced_job(PLATFORM_NAMESPACE, job), 409)
+        _ignore(
+            lambda: self.batch.create_namespaced_job(self.settings.k8s_platform_namespace, job), 409
+        )
 
     async def get_prewarm_status(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
         return await self._run(self._get_prewarm_status_sync, node_name, image_ref)
@@ -1154,7 +1215,8 @@ class RealOrchestrator:
     def _get_prewarm_status_sync(self, node_name: str, image_ref: str) -> PrewarmJobStatus:
         job_name = self._prewarm_job_name(node_name, image_ref)
         job: Any = _ignore(
-            lambda: self.batch.read_namespaced_job(job_name, PLATFORM_NAMESPACE), 404
+            lambda: self.batch.read_namespaced_job(job_name, self.settings.k8s_platform_namespace),
+            404,
         )
         if job is None:
             return PrewarmJobStatus(state="absent")
@@ -1168,7 +1230,7 @@ class RealOrchestrator:
         """失败原因优先取 Pod 容器态(ErrImagePull 等),兜底 Job condition。"""
         try:
             pods: Any = self.core.list_namespaced_pod(
-                PLATFORM_NAMESPACE, label_selector=f"job-name={job_name}"
+                self.settings.k8s_platform_namespace, label_selector=f"job-name={job_name}"
             )
             for pod in pods.items:
                 for cs in pod.status.container_statuses or []:
@@ -1189,7 +1251,7 @@ class RealOrchestrator:
         job_name = self._prewarm_job_name(node_name, image_ref)
         _ignore(
             lambda: self.batch.delete_namespaced_job(
-                job_name, PLATFORM_NAMESPACE, propagation_policy="Background"
+                job_name, self.settings.k8s_platform_namespace, propagation_policy="Background"
             ),
             404,
         )

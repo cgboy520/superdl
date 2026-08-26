@@ -63,6 +63,10 @@ class FakeOrchestrator:
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
+    # 预热 Job 引用的拉取凭据 Secret 名(None = 未配机器人),测试据此断言凭据链路
+    prewarm_pull_secrets: dict[tuple[str, str], str | None] = field(default_factory=dict)
+    # 平台托管的拉取凭据 Secret:ns -> 指纹(对齐 real 的 annotation 语义)
+    pull_secrets: dict[str, str] = field(default_factory=dict)
     auto_prewarm: bool = True
     # 注入节点:追加在合成节点之后
     extra_nodes: list = field(default_factory=list)
@@ -88,6 +92,11 @@ class FakeOrchestrator:
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
+
+    async def ensure_pull_secret(
+        self, namespace: str, dockerconfigjson: str, fingerprint: str
+    ) -> None:
+        self.pull_secrets[namespace] = fingerprint
 
     async def probe_cluster(self) -> ClusterProbe:
         if self.fail_probe:
@@ -255,7 +264,10 @@ class FakeOrchestrator:
 
     # ---------- 预热 ----------
 
-    async def prewarm_image(self, node_name: str, image_ref: str) -> None:
+    async def prewarm_image(
+        self, node_name: str, image_ref: str, *, image_pull_secret: str | None = None
+    ) -> None:
+        self.prewarm_pull_secrets[(node_name, image_ref)] = image_pull_secret
         # setdefault = 幂等:已有 Job(任意状态)不重建
         self.prewarm_jobs.setdefault(
             (node_name, image_ref), "succeeded" if self.auto_prewarm else "running"

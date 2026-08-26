@@ -14,11 +14,13 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.core.k8s import get_orchestrator
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.policies import get_effective_policies
+from app.core.registry import ensure_registry_pull_secret
 from app.core.timeutil import now_utc
 from app.modules.catalog.models import ImageNodeCache, PlatformImage
 
@@ -49,7 +51,11 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
     image = await session.get(PlatformImage, image_id)
     if image is None or not image.prewarm_enabled:
         return  # 行由巡检清理
-    await get_orchestrator().prewarm_image(node_name, image.image_ref)
+    # 预热 Job 落平台 ns:拉取凭据同样由平台托管到该 ns(未配机器人 = 项目 public,不引用)
+    pull_secret = await ensure_registry_pull_secret(session, get_settings().k8s_platform_namespace)
+    await get_orchestrator().prewarm_image(
+        node_name, image.image_ref, image_pull_secret=pull_secret
+    )
     row.status = "pulling"
 
 
