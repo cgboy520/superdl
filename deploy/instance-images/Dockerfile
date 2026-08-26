@@ -57,11 +57,29 @@ RUN if [[ -n "$FRAMEWORK_PIP" ]]; then \
         ${FRAMEWORK_PIP_INDEX:+--index-url ${FRAMEWORK_PIP_INDEX}} ${FRAMEWORK_PIP}; \
     fi
 
+# 平台契约:HOME 一律 /root(实例盘挂载点)。jupyter docker-stacks 系基座默认 HOME=/home/jovyan,
+# 共享池 userns 下那个目录不可写,ssh / kubectl exec 进去会刷 .bash_profile Permission denied。
+ENV HOME=/root
+
 # 平台文件放最后:改 entrypoint / 鉴权扩展 / Lab 默认设置只失效这几层,不触发上面的重装。
 COPY entrypoint.sh /usr/local/bin/superdl-entrypoint.sh
 COPY superdl_jupyter_auth.py /opt/superdl/superdl_jupyter_auth.py
 COPY lab-overrides.json /opt/superdl/lab-overrides.json
 RUN chmod +x /usr/local/bin/superdl-entrypoint.sh
+
+# jupyter docker-stacks 系基座的 /opt/conda 属主是 jovyan(uid 1000)。租户容器以 root 运行但
+# capabilities 全 drop(没有 DAC_OVERRIDE),root 反而写不进去:entrypoint 放 Lab 设置会失败,
+# 用户在实例里 pip install 也会被拒。构建期(有完整能力)归到 root 一次即可。
+ARG CHOWN_CONDA_ROOT=""
+RUN if [[ -n "$CHOWN_CONDA_ROOT" && -d /opt/conda ]]; then chown -R root:root /opt/conda; fi
+
+# Lab 默认设置(界面中文)在构建期就位;entrypoint 里那份是兜底(见其注释)
+RUN app_dir="$(python -c 'from jupyterlab.commands import get_app_dir; print(get_app_dir())' 2>/dev/null || true)"; \
+    if [[ -n "$app_dir" ]]; then \
+      mkdir -p "$app_dir/settings" \
+      && cp /opt/superdl/lab-overrides.json "$app_dir/settings/overrides.json" \
+      && chmod 0644 "$app_dir/settings/overrides.json"; \
+    fi
 
 WORKDIR /root
 EXPOSE 22 8888

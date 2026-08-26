@@ -96,8 +96,12 @@ function CreatePage() {
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
     for (const img of images ?? []) {
+      // CPU 向镜像(如 DataScience)的 cuda_version 不是版本号,直接原样显示,别拼成「CUDA CPU」
+      const cudaLabel = /^\d/.test(img.cuda_version)
+        ? `CUDA ${img.cuda_version}`
+        : img.cuda_version;
       ((((tree[img.framework] ??= {})[img.framework_version] ??= {})[img.python_version] ??= {})[
-        `CUDA ${img.cuda_version}`
+        cudaLabel
       ] = img.image_ref);
     }
     return Object.entries(tree).map(([fw, versions]) => ({

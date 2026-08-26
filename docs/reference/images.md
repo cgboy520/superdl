@@ -20,7 +20,7 @@
 
 ## 默认镜像目录(平台自带)
 
-平台自带 11 个镜像:PyTorch / TensorFlow / Miniconda / PaddlePaddle × CUDA `13.2` `12.9` `11.8` 三条线。
+平台自带 12 个镜像:PyTorch / TensorFlow / Miniconda / PaddlePaddle × CUDA `13.2` `12.9` `11.8` 三条线,外加一个 CPU 向的 DataScience(R + Julia + scipy 全家桶)。
 **选版规则、逐镜像 tag、构建命令与推送前自检**只写在 `deploy/instance-images/README.md` 一处,以它为准;
 `apps/api/scripts/seed_dev.py` 的 `IMAGES` 是同一张表的 dev 种子副本(改镜像矩阵两处同一提交一起改)。
 规则要点:框架只上「最新稳定版 + 最后一个支持 CUDA 11.8 的稳定版」(不收 rc/beta),Python 取该框架

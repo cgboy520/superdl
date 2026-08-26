@@ -14,6 +14,16 @@ export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
 export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-/root/.jupyter}"
 mkdir -p "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" /root/.cache
 
+# 容器运行时(nvidia-container-toolkit)把宿主的 video / render 组作为补充组注入进来,
+# 这些 GID 在镜像的 /etc/group 里没有名字,于是 Jupyter 终端、SSH 里每开一个 shell 都会打
+# "groups: cannot find name for group ID 991"(实测 PID1 的 Groups: 0 44 991)。这里按需补一条
+# 本地命名记录消除噪音——只补名字,不动任何权限,已存在的 GID 不碰。
+for gid in $(id -G); do
+  if ! getent group "$gid" >/dev/null 2>&1; then
+    echo "hostgrp${gid}:x:${gid}:" >> /etc/group
+  fi
+done
+
 # CUDA 前向兼容库(/usr/local/cuda*/compat)排在 LD_LIBRARY_PATH 前面时,进程加载的是镜像自带的
 # 旧 libcuda,而不是容器运行时注入的宿主驱动库;宿主驱动更新时 cuInit 直接失败,框架看到 0 张卡
 # (PaddlePaddle 官方镜像即如此,实测 device_count=0、run_check 回落 CPU)。compat 只有在宿主驱动
@@ -91,9 +101,11 @@ done
 # 用户在「设置 · 语言」里改的是自己的 user settings,优先级更高,不会被这里覆盖。
 # app dir 问 jupyterlab 自己要(pip 装到 /usr/local 时它不等于 sys.prefix/share/jupyter/lab)
 lab_settings_dir="$(python -c 'from jupyterlab.commands import get_app_dir; import os; print(os.path.join(get_app_dir(), "settings"))' 2>/dev/null || true)"
+# 尽力而为:构建期已经放过一份,这里只是兜底。app 目录不可写(基座属主不是 root、
+# 租户容器又 drop 掉了 DAC_OVERRIDE)时绝不能让 set -e 把整台实例弄死——它只是界面语言默认值。
 if [[ -n "$lab_settings_dir" && -f /opt/superdl/lab-overrides.json ]]; then
-  mkdir -p "$lab_settings_dir"
-  cp -f /opt/superdl/lab-overrides.json "$lab_settings_dir/overrides.json" || true
+  { mkdir -p "$lab_settings_dir" \
+    && cp -f /opt/superdl/lab-overrides.json "$lab_settings_dir/overrides.json"; } 2>/dev/null || true
 fi
 
 # JupyterLab:0.0.0.0:8888,token 由平台注入。

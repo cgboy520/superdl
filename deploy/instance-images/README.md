@@ -14,6 +14,7 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 | Jupyter 进程 | 守护循环拉起(不用 exec 当 PID 1),连续秒退 5 次才放弃 |
 | Jupyter Origin | 读环境变量 `JUPYTER_ALLOW_ORIGIN`(本实例域名)作为 `ServerApp.allow_origin`;**禁止写死 `'*'`** —— cookie 会话下等于放行跨站 WebSocket 在用户实例内执行代码 |
 | Jupyter 套件 | 每个镜像必装:`jupyterlab` / `jupyter-ai` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel`(少了 ipykernel 实例里没有 Python 内核) |
+| 补充组命名 | 运行时注入的宿主 video/render 补充组在镜像 `/etc/group` 里无名字,shell 启动会刷 `groups: cannot find name for group ID <gid>`;entrypoint 按需补 `hostgrp<gid>` 记录(只补名字不动权限) |
 | CUDA compat | 启动时探测 `cuInit`:失败才从 `LD_LIBRARY_PATH` 摘掉 `*/compat`(镜像自带的旧 libcuda 会盖过宿主驱动库,宿主驱动更新时框架看到 0 张卡);仍失败则还原 |
 | SSH 会话环境 | entrypoint 把 `PATH` / `LD_LIBRARY_PATH` / `CUDA_HOME` 写进 `/etc/environment`(PAM,覆盖非交互 `ssh host cmd`)与 `/etc/profile.d/superdl-env.sh`(登录 shell);**禁止把 `JUPYTER_TOKEN` 等敏感值写进去** |
 | SSH host key | 首次生成后持久化到实例盘(`/root/.ssh/host_keys`),`/etc/ssh` 下为符号链接;否则 Pod 重建即变指纹 |
@@ -41,6 +42,7 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 | `miniconda:26.5.3-cu118-py313` | —(干净 conda) | 3.13 | 11.8 | `nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04` |
 | `pytorch:2.7.1-cu118-py313` | PyTorch 2.7.1 | 3.13 | 11.8 | ↑ 同线 miniconda |
 | `tensorflow:2.14.1-cu118-py311` | TensorFlow 2.14.1 | 3.11 | 11.8 | CUDA 11.8 基座 + py311 conda(TF 2.14 无 cp313 轮子,不能挂在 py313 父镜像上) |
+| `datascience:2026.08-py313` | 数据科学栈(无框架、无 CUDA):R 4.5.3 + Julia 1.12.7 + pandas/scikit-learn/scipy/matplotlib/seaborn/statsmodels | 3.13 | 无 | `quay.io/jupyter/datascience-notebook`(`latest` 的 digest 快照) |
 | `paddle:3.3.1-cu130-py310` | PaddlePaddle 3.3.1 | 3.10 | 13.0 | `paddlepaddle/paddle:3.3.1-gpu-cuda13.0-cudnn9.13` |
 | `paddle:3.3.1-cu129-py310` | PaddlePaddle 3.3.1 | 3.10 | 12.9 | `paddlepaddle/paddle:3.3.1-gpu-cuda12.9-cudnn9.9` |
 | `paddle:3.3.1-cu118-py310` | PaddlePaddle 3.3.1 | 3.10 | 11.8 | `paddlepaddle/paddle:3.3.1-gpu-cuda11.8-cudnn8.9` |
@@ -100,6 +102,14 @@ docker build -t $REG/tensorflow:2.14.1-cu118-py311 \
   --build-arg FRAMEWORK_PIP="tensorflow==2.14.1" .
 # TF 2.14 不能用 [and-cuda]:该 extra 钉了 tensorrt==8.5.3.1,此包已从 PyPI 下架,装不上;
 # TF 2.14 官方要求 CUDA 11.8 + cuDNN 8.7,基座(cudnn8.9)自带,直接用系统 CUDA。
+
+# ---- DataScience(jupyter docker-stacks 基座,只补平台契约层;CPU 向,无 CUDA)----
+# 上游只有滚动的 latest,构建时钉住当次的 digest;版本号用镜像快照月份,内容见上表
+docker build -t $REG/datascience:2026.08-py313 \
+  --build-arg BASE_IMAGE=quay.io/jupyter/datascience-notebook@sha256:<当次 digest> \
+  --build-arg JUPYTER_PACKAGES="$JUP" --build-arg CHOWN_CONDA_ROOT=1 .
+# CHOWN_CONDA_ROOT:docker-stacks 基座的 /opt/conda 属于 jovyan,而租户容器是 root 且 capabilities 全 drop
+# (无 DAC_OVERRIDE),不归 root 的话 entrypoint 写 Lab 设置会失败、用户 pip install 也会被拒(实测 Pod 直接起不来)
 
 # ---- PaddlePaddle(厂商基座,只补平台契约层;基座自带 python3.10 与 paddle)----
 PADDLE=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle

@@ -154,6 +154,14 @@ IMAGES = [
         2,
     ),
     (
+        "DataScience",
+        "2026.08",
+        "3.13",
+        "CPU",
+        "harbor.example.com/superdl/datascience:2026.08-py313",
+        0,
+    ),
+    (
         "PaddlePaddle",
         "3.3.1",
         "3.10",
