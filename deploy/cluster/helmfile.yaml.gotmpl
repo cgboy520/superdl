@@ -16,6 +16,9 @@ repositories:
   # GPU Feature Discovery 独立 chart(light 档用;full 档由 gpu-operator 自带 GFD)
   - name: nvdp
     url: https://nvidia.github.io/k8s-device-plugin
+  # dcgm-exporter 独立 chart(light 档用;full 档由 gpu-operator 自带)
+  - name: gpu-helm-charts
+    url: https://nvidia.github.io/dcgm-exporter/helm-charts
   - name: hami
     url: https://project-hami.github.io/HAMi
   - name: prometheus-community
@@ -68,6 +71,18 @@ releases:
     chart: nvdp/gpu-feature-discovery
     version: "0.20.0"
     values: [values/gfd.yaml]
+
+  # DCGM exporter(仅 light):管理端节点页/告警规则的节点级 GPU 曲线(DCGM_FI_DEV_GPU_UTIL / FB_USED /
+  # GPU_TEMP / XID,按 Hostname 标签取节点,见 apps/api/app/modules/metering/prom.py)都来自它;
+  # light 不装 gpu-operator,须单独装。共享池容器级曲线另由 HAMi vGPUmonitor 提供
+  - name: dcgm-exporter
+    condition: dcgmExporter.enabled
+    namespace: dcgm-exporter
+    chart: gpu-helm-charts/dcgm-exporter
+    version: "4.8.3"
+    values: [values/dcgm-exporter.yaml]
+    needs: [monitoring/kube-prometheus-stack]   # chart 自带 ServiceMonitor,CRD 来自 kps
+    disableValidationOnInstall: true
 
   - name: hami
     condition: hami.enabled

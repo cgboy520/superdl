@@ -107,6 +107,7 @@ kubectl -n monitoring create secret generic grafana-admin \
      平台按 hami 池节点的 `nvidia.com/gpu.count` 取物理卡数,缺它按 0 卡纳管)+ kps 精简 + cert-manager + ingress-nginx
      + Loki/Alloy 日志栈(默认开,资源收紧见 `values/light/loki-light.yaml`;
      盘紧可在 `environments/light.yaml` 关);
+     + dcgm-exporter(`values/dcgm-exporter.yaml`,节点级 GPU 曲线与 GPU 告警的指标源,full 档由 gpu-operator 自带);
      Cilium/gpu-operator/acme-dns 不装(acme-dns 的 LoadBalancer 53 在 klipper-lb 上会占节点 hostPort 53 并劫持节点自身 DNS,
      租户 Jupyter 泛域名证书改为把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`);**TopoLVM 必开**(每个租户 Pod 都要挂实例盘;
      VG `superdl-nvme` 由 node-join.sh 建出);JuiceFS 可选(只有数据盘用),

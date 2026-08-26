@@ -6,7 +6,8 @@
 cilium: {enabled: false}
 gpuOperator: {enabled: false}
 hami: {enabled: true}
-gfd: {enabled: true}   # light 无 gpu-operator,GFD 单独装(hami 池 nvidia.com/gpu.count 标签的来源)
+gfd: {enabled: true}
+dcgmExporter: {enabled: true}   # 节点级 GPU 曲线/XID 告警的指标源(full 档由 gpu-operator 自带)   # light 无 gpu-operator,GFD 单独装(hami 池 nvidia.com/gpu.count 标签的来源)
 kps: {enabled: true}
 juicefs: {enabled: false}
 topolvm: {enabled: true}

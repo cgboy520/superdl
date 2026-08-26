@@ -53,9 +53,17 @@ prometheus:
           - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
             regex: hami-device-plugin
             action: keep
-          - source_labels: [__meta_kubernetes_pod_container_port_number]
-            regex: "9394"
+          # vGPUmonitor 容器不声明 containerPort(HAMi chart 2.9 实测),按端口号 keep 会把目标全部丢掉;
+          # 只保留每个 Pod 的第一个容器条目并把地址直接拼成 podIP:9394
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            regex: vgpu-monitor
             action: keep
+          - source_labels: [__meta_kubernetes_pod_ip]
+            regex: (.+)
+            replacement: $1:9394
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
 grafana:
   # 管理员口令不落 values,经 Secret 注入(默认 prom-operator 口令必须废弃):
   #   kubectl -n monitoring create secret generic grafana-admin \

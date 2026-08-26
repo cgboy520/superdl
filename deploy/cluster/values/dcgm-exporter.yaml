@@ -1,0 +1,17 @@
+# dcgm-exporter(light 档;chart gpu-helm-charts/dcgm-exporter)。平台节点级 GPU 曲线与 GPU 告警规则
+# (values/kps.yaml superdl-gpu 组)的指标源:DCGM_FI_DEV_GPU_UTIL / FB_USED / GPU_TEMP / XID_ERRORS,
+# 节点维标签 Hostname(prom.py DCGM_NODE_LABEL)须等于 K8s 节点名——实机核对见 runbooks/cluster-validation.md E 节。
+# k3s 只探测 nvidia 运行时、不设默认,容器须显式 runtimeClassName;只跑共享池节点。
+runtimeClassName: nvidia
+nodeSelector:
+  superdl.io/pool: hami
+tolerations:
+  - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+  - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
+  - {key: "nvidia.com/gpu", operator: Exists, effect: NoSchedule}
+serviceMonitor:
+  enabled: true      # kps 已开全命名空间 Monitor 发现
+  interval: 15s
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 512Mi}
