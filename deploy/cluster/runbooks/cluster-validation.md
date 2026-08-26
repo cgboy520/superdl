@@ -58,7 +58,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 - [ ] kata / hami / mig 三池各跑通一次全流程,节点最终 Ready 且池标签正确
 - [ ] kata 池重启断点:重启后 systemd oneshot 自动续跑至完成
-- [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效
+- [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效(Harbor 自签时 `harbor-ca.crt` 同目录 0644,`configs.tls.ca_file` 指向它)
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
 - [ ] server 侧 agent token(非 node-token)录入管理端的引导路径可走通
 - [ ] GPU Operator 工作负载标签就位:kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、
@@ -68,7 +68,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 ## G. 镜像缓存与预热
 
 - [ ] Spegel P2P:node-A `crictl pull` 某钉版本镜像后,node-B 拉同镜像秒级完成
-- [ ] 托管仓:节点侧 `crictl pull registry.superdl.local/<镜像>` 经 registries.yaml 的 mirror + 凭据拉取成功;匿名 pull 被拒
+- [ ] Harbor:管理端「平台配置 · 镜像仓库」测试连接绿;私有项目经引用 `superdl-registry-pull` 的 Pod(预热 Job / 租户实例)拉取成功,节点侧匿名 `crictl pull harbor.<域>/superdl/<镜像>` 被拒;public 代理缓存项目 `crictl pull docker.io/library/alpine:3.20` 经 mirror 命中 Harbor
+- [ ] 轮换:配置中心保存新机器人 Secret → 新建实例 Pod 拉取成功 → 在 Harbor 撤销旧 Secret 后再建一台仍成功
 - [ ] 预热 Job 在 kata/hami/mig 三池均可落(tolerations Exists)
 - [ ] kubelet 镜像 GC 后,按 `prewarm_recheck_hours` 复检自动重拉
 - [ ] 20GB 级镜像在 `activeDeadlineSeconds=1800` 内拉完

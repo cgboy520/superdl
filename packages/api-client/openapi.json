@@ -1773,6 +1773,11 @@
             "title": "Registries Yaml",
             "type": "string"
           },
+          "registry_ca_pem": {
+            "default": "",
+            "title": "Registry Ca Pem",
+            "type": "string"
+          },
           "rke2_join_token": {
             "title": "Rke2 Join Token",
             "type": "string"

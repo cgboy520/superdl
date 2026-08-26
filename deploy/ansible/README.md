@@ -24,6 +24,7 @@ cp inventory.ini.example inventory.ini   # 填真实地址
 #   etcd_s3_access_key / etcd_s3_secret_key(rke2 快照上传凭据,来自密管)
 #   agent_token(openssl rand -hex 32;全 server 同值,录入管理端「平台配置·集群接入」)
 #   api_vip / server_ips(HA:奇数台 ≥3 的 server + VIP,见 site.yml vars 注释)
+#   harbor_ca_pem(Harbor 自签/私有 CA 全文;公信证书留空。拉取凭据不经 ansible,见 deploy/cluster/README.md「镜像仓库」)
 ansible-playbook -i inventory.ini site.yml                          # rke2(full 档)
 ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s    # k3s(light 档)
 ```

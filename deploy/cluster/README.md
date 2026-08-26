@@ -43,18 +43,19 @@ kubectl -n monitoring create secret generic grafana-admin \
    即 server-config.yaml 里 `agent-token` 的值(首装前生成,见该文件注释);
    **禁止**录入 `/var/lib/rancher/rke2/server/node-token`(server token 能拉 server 进 etcd 环;
    轮换与托管见下文「server token 与 agent token」)。
-   registries.yaml 平台自动生成,无需手改。
+   GPU 节点的 registries.yaml 由平台按「平台配置 · 镜像仓库」自动生成;server 节点由 ansible 分发 `rke2/registries.yaml`。
 3. **组件**:`./preflight.sh full && helmfile -e full apply`(含 Loki/Alloy 日志栈,
    审计日志留存与查询见 `runbooks/loki-logging.md`);再 apply 准入策略
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    (首次上线可先 [Audit] 观察一周再改回 [Deny],见该文件头注释;Audit 期间 preflight 该项会报缺)
-4. **镜像仓(托管仓)**:平台镜像的权威源是阿里云 ACR 企业版或 Harbor(自带 TLS/认证/扫描);
-   `registry.superdl.local` 只是镜像引用里的逻辑名,由节点 `registries.yaml` mirror 到托管仓。
-   替换 `rke2/registries.yaml` 的 `CHANGE_ME_REGISTRY_HOST/USERNAME/PASSWORD`(preflight 强制校验)
-   → 分发全节点 → 把同一份模板填进管理端「平台配置 · 集群接入」的 `node_registries_yaml`
-   (平台默认生成的 registries.yaml 仍指向历史上集群内 registry 的 NodePort 30500——该服务已不存在,不填覆盖则新节点拉不到镜像)。
-   镜像发布、托管仓接入与凭据轮换 SOP:`runbooks/image-prewarm.md`。集群内自建 registry 已退役,清单已从仓库删除。
+4. **镜像仓库(Harbor)**:平台镜像与租户实例镜像的权威源,镜像引用一律 Harbor 全限定名。
+   Harbor 侧:建平台项目(默认 `superdl`)、仅 Pull + List Repository 权限的机器人账户、
+   (可选)Docker Hub 等代理缓存项目(设 public)。管理端「平台配置 · 镜像仓库」录入地址 / 项目 /
+   机器人 / 自签 CA / 代理映射并「测试连接」。拉取凭据不落节点:首装按 `../app/secrets.example.yaml`
+   手建 `superdl-registry-pull`(平台自身镜像的 `imagePullSecrets`),之后配置中心录入机器人后由 worker
+   按指纹覆写同名 Secret 并托管到各租户 ns;server 节点的 `registries.yaml`(Spegel / 代理缓存 / CA)
+   由 ansible 分发。镜像发布与凭据轮换 SOP:`runbooks/image-prewarm.md`。
 5. **Kata**(dedicated 档):`kata/` 下 kata-deploy(仅 kata 池节点)+
    `kubectl apply -f kata/kata-runtimeclass.yaml`
 6. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入

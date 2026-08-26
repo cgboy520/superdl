@@ -42,16 +42,8 @@ if [[ "$env_name" == "full" ]]; then
   check_secret monitoring grafana-admin "Grafana 管理员口令(light 档关 Grafana,不需要)"
 fi
 
-say "== 托管镜像仓(P1-7:registry.superdl.local → ACR/Harbor https)=="
-# 集群内自建 registry 已退役(清单已删除):节点 registries.yaml 的 mirror 指向托管仓,
-# 地址与拉取凭据必须替换,否则节点无法 pull 平台镜像
-if grep -q 'CHANGE_ME_REGISTRY_HOST' rke2/registries.yaml; then
-  miss "rke2/registries.yaml mirror 仍是 CHANGE_ME_REGISTRY_HOST 占位(替换为 ACR/Harbor 真实地址)"
-elif grep -qE 'CHANGE_ME_REGISTRY_(USERNAME|PASSWORD)' rke2/registries.yaml; then
-  miss "rke2/registries.yaml 拉取凭据仍是 CHANGE_ME 占位(ACR 独立访问凭据或 Harbor 机器人账户)"
-else
-  ok "rke2/registries.yaml 托管仓地址与凭据已替换"
-fi
+# 镜像仓库(Harbor)不在本脚本校验范围:地址/机器人/CA 在管理端「平台配置 · 镜像仓库」录入并「测试连接」;
+# 平台自身镜像的拉取 Secret superdl-registry-pull 由 scripts/release.sh 发布前校验。
 
 # 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,
 # 占位符由 ansible / 一键加入脚本落盘时替换,仓库里保留占位符。

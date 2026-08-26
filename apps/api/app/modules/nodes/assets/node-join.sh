@@ -95,7 +95,8 @@ if [[ "$UNINSTALL" == "1" ]]; then
     update-initramfs -u
   fi
   if [[ -n "$DISTRO_NAME" ]]; then
-    rm -f "$ETC_DIR/rancher/$DISTRO_NAME/config.yaml" "$ETC_DIR/rancher/$DISTRO_NAME/registries.yaml"
+    rm -f "$ETC_DIR/rancher/$DISTRO_NAME/config.yaml" "$ETC_DIR/rancher/$DISTRO_NAME/registries.yaml" \
+      "$ETC_DIR/rancher/$DISTRO_NAME/harbor-ca.crt"
   fi
   rm -rf "$STATE_DIR"
   echo "==== 卸载完成:agent 已移除,平台侧请记得在集群中删除该节点(kubectl delete node) ===="
@@ -434,13 +435,21 @@ EOF
 }
 
 step_registries() {
-  local content
+  local content ca
   content="$(cfg_get registries_yaml)"
   [[ -n "$content" ]] || { echo "-- registries_yaml 为空,跳过(镜像缓存未配置)"; return 0; }
   mkdir -p "$RANCHER_DIR"
-  printf '%s\n' "$content" > "$RANCHER_DIR"/registries.yaml
-  # 与 config.yaml 同口径 600:文件含仓库认证凭据(configs.auth),644 等于
-  # 把内网仓库口令放给节点上任意本地用户(含租户 Pod 逃逸后的立足点)
+  ca="$(cfg_get registry_ca_pem)"
+  if [[ -n "$ca" ]]; then
+    # Harbor 自签/私有 CA:公钥材料 0644;registries.yaml 里的 ca_file 占位替换为本机发行版目录
+    printf '%s\n' "$ca" > "$RANCHER_DIR"/harbor-ca.crt
+    chmod 644 "$RANCHER_DIR"/harbor-ca.crt
+  else
+    rm -f "$RANCHER_DIR"/harbor-ca.crt
+  fi
+  printf '%s\n' "${content//__RANCHER_DIR__/$RANCHER_DIR}" > "$RANCHER_DIR"/registries.yaml
+  # 与 config.yaml 同口径 600:平台生成正文不含凭据,但高级覆盖可能含仓库配置,
+  # 不放给节点上任意本地用户(含租户 Pod 逃逸后的立足点)
   chmod 600 "$RANCHER_DIR"/registries.yaml
 }
 

@@ -35,7 +35,7 @@ teardown() { rm -rf "$TMP"; }
 
 _write_fixture() { # _write_fixture <pool> [distro] [mirror=cn] [script_sha256];字段与 BootstrapOut 契约一致,必发
   python3 - "$1" "${2:-rke2}" "${3:-}" "${4:-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
-import json, sys
+import json, os, sys
 distro = sys.argv[2]
 data = {
     "pool": sys.argv[1],
@@ -44,7 +44,9 @@ data = {
     "rke2_join_token": "K10fixture::server:secret",
     "driver_version": "580",
     "nvme_devices": [],
-    "registries_yaml": 'mirrors:\n  "*": {}\n',
+    # 平台生成正文(Spegel / Harbor 代理缓存 / CA,不含凭据);CA 用例经 env 注入
+    "registries_yaml": os.environ.get("FIXTURE_REGISTRIES_YAML", 'mirrors:\n  "*": {}\n'),
+    "registry_ca_pem": os.environ.get("FIXTURE_REGISTRY_CA", ""),
     # 首次 bootstrap 换发的窄权限 progress 令牌(仅上报进度)
     "progress_token": "sdlp_fixturetoken",
     "script_sha256": sys.argv[4],
@@ -184,6 +186,25 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   run bash "$SCRIPT" --token-file "$TMP/token"
   [ "$status" -eq 2 ]
   [[ "$output" == *"占位符未替换"* ]]
+}
+
+@test "Harbor 自签 CA:落 harbor-ca.crt(0644),registries.yaml 的 __RANCHER_DIR__ 占位替换为本机目录" {
+  export FIXTURE_REGISTRY_CA=$'-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----'
+  export FIXTURE_REGISTRIES_YAML=$'mirrors:\n  "*": {}\nconfigs:\n  "harbor.example.com":\n    tls:\n      ca_file: "__RANCHER_DIR__/harbor-ca.crt"\n'
+  _write_fixture hami
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q 'BEGIN CERTIFICATE' "$TMP/etc/rancher/rke2/harbor-ca.crt"
+  [ "$(stat -c %a "$TMP/etc/rancher/rke2/harbor-ca.crt")" = "644" ]
+  grep -q "ca_file: \"$TMP/etc/rancher/rke2/harbor-ca.crt\"" "$TMP/etc/rancher/rke2/registries.yaml"
+  ! grep -q '__RANCHER_DIR__' "$TMP/etc/rancher/rke2/registries.yaml"
+}
+
+@test "无 CA:不落 harbor-ca.crt,registries.yaml 只有 Spegel 段" {
+  run_script
+  [ "$status" -eq 0 ]
+  [ ! -f "$TMP/etc/rancher/rke2/harbor-ca.crt" ]
+  ! grep -q 'configs:' "$TMP/etc/rancher/rke2/registries.yaml"
 }
 
 @test "全流程(驱动就绪免重启):写出 rke2 config/registries,marker 齐全,进度上报到位" {
@@ -435,6 +456,7 @@ PYEOF
   [ ! -e "$SUPERDL_JOIN_STATE_DIR" ]
   [ ! -f "$TMP/etc/rancher/rke2/config.yaml" ]
   [ ! -f "$TMP/etc/rancher/rke2/registries.yaml" ]
+  [ ! -f "$TMP/etc/rancher/rke2/harbor-ca.crt" ]
   [ ! -f "$TMP/etc/sysctl.d/99-superdl.conf" ]
   [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
   # 业务数据与驱动不动:绝不出现 vgremove / apt-get remove

@@ -110,7 +110,7 @@
 | P1-1 | 票款双重兑现闸 | `apps/api/tests/test_invoices.py`、`apps/api/tests/test_refunds.py` |
 | P1-2 | 结算缺口闭环 | `apps/api/tests/test_billing_settlement.py` |
 | P1-6 | acme-dns 替代 alidns webhook | `deploy/cluster/acme-dns.yaml`、`deploy/app/k8s/05-cert-manager.yaml` |
-| P1-7 | 镜像仓迁托管仓 | `deploy/cluster/rke2/registries.yaml`、`deploy/cluster/preflight.sh` |
+| P1-7 | 镜像仓迁托管仓(已被「镜像仓库定为 Harbor」取代) | `docs/decisions.md`「编排与平台」 |
 | P1-8 | 出金 / 入账同步审计 | `apps/api/app/modules/billing/refunds.py`、`apps/api/app/modules/adminapi/router_finance.py` |
 | P1-9 | reconciler 两阶段 | `apps/api/app/modules/orchestrator/reconciler.py` |
 | P1-10 | JuiceFS 关 writeback | `deploy/cluster/values/juicefs.yaml` |

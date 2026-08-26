@@ -16,7 +16,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
-from urllib.parse import urlsplit
 
 from fastapi import status as http_status
 from sqlalchemy import select
@@ -34,6 +33,7 @@ from app.core.k8s.base import (
 )
 from app.core.logging import get_logger
 from app.core.platform_config import get_effective_platform_config
+from app.core.registry import parse_proxy_projects
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import ClusterStatus, NodeEnrollment, NodeSpec
 from app.modules.nodes.schemas import EnrollmentCreate
@@ -111,8 +111,9 @@ def enrollment_commands(token: str) -> tuple[str, str]:
     return curl_cmd, wget_cmd
 
 
-# bootstrap 下发所需的最小键面。全量生效配置含支付私钥等解密敏感项,
-# 注册链路只允许这 6 个键出 service 层(防整体漏进响应/日志)。
+# bootstrap 下发所需的最小键面。全量生效配置含支付私钥、Harbor 机器人 Secret 等解密敏感项,
+# 注册链路只允许这 9 个键出 service 层(防整体漏进响应/日志);镜像仓库三键只用于渲染
+# registries.yaml 与落 CA,机器人 Secret 不出注册链路(拉取凭据经 imagePullSecrets 托管)。
 _CLUSTER_CONFIG_KEYS = (
     "cluster_server_url",
     "cluster_join_token",
@@ -120,6 +121,9 @@ _CLUSTER_CONFIG_KEYS = (
     "node_driver_version",
     "node_install_mirror",
     "node_registries_yaml",
+    "registry_host",
+    "registry_ca_pem",
+    "registry_proxy_projects",
 )
 
 
@@ -496,36 +500,44 @@ async def get_cluster_status(session: AsyncSession) -> ClusterStatus | None:
     return await session.get(ClusterStatus, 1)
 
 
-# 历史上集群内自建 registry 的 NodePort:该仓已退役、清单已从仓库删除,端口上已无服务。
-# 平台默认生成的 registries.yaml 仍指向它(决策:不为托管仓地址新增配置键),已迁托管仓的
-# 集群必须在平台配置填 node_registries_yaml 覆盖,见 docs/decisions.md「镜像仓迁托管仓」
-REGISTRY_NODEPORT = 30500
+# Harbor 自签/私有 CA 在节点上的落点:node-join 把 registry_ca_pem 写到 $RANCHER_DIR/harbor-ca.crt,
+# 渲染时用占位符,脚本落盘时按本机发行版目录替换(服务端不猜 /etc/rancher/<rke2|k3s>)
+REGISTRY_CA_PATH_TEMPLATE = "__RANCHER_DIR__/harbor-ca.crt"
 
 
 def render_registries_yaml(cfg: dict[str, str]) -> str:
-    """平台生成节点 registries.yaml:server_url 解析 host + NodePort 常量。
+    """平台生成节点 registries.yaml(RKE2 / k3s 同格式),按平台配置·镜像仓库组:
 
-    node_registries_yaml 有值 = 高级覆盖优先(托管仓模板见 deploy/cluster/rke2/registries.yaml);
-    server_url 未配置返回空串(脚本跳过)。默认正文只声明 mirrors "*"(Spegel P2P)与
-    registry.superdl.local → 历史集群内 registry 端口,生产必须用覆盖值指向托管仓。
+    - `mirrors "*"`:Spegel P2P 覆盖全部仓库(含 Harbor);
+    - `registry_proxy_projects` 每行 <上游>=<Harbor 代理项目>:该上游 mirror + rewrite 到 Harbor
+      代理缓存项目,拉不到时 containerd 回落上游;
+    - `registry_ca_pem` 非空:`configs.<host>.tls.ca_file` 指向 node-join 落盘的 CA。
+    不含任何 auth:拉取凭据由平台托管为 imagePullSecrets(core/registry),节点不落凭据。
+    `node_registries_yaml` 有值 = 高级覆盖,原样下发(明文落库,不得含凭据)。
     """
     override = (cfg.get("node_registries_yaml") or "").strip()
     if override:
         return override
-    server_url = (cfg.get("cluster_server_url") or "").strip()
-    if not server_url:
-        return ""
-    host = urlsplit(server_url).hostname or ""
-    if not host:
-        return ""
-    endpoint_host = f"[{host}]" if ":" in host else host  # IPv6 字面量需括号
-    return (
-        "mirrors:\n"
-        '  "*": {}\n'
-        "  registry.superdl.local:\n"
-        "    endpoint:\n"
-        f'      - "http://{endpoint_host}:{REGISTRY_NODEPORT}"\n'
-    )
+    host = (cfg.get("registry_host") or "").strip()
+    lines = ["mirrors:", '  "*": {}']
+    if host:
+        proxies = parse_proxy_projects(cfg.get("registry_proxy_projects") or "")
+        for upstream, project in proxies.items():
+            lines += [
+                f"  {upstream}:",
+                "    endpoint:",
+                f'      - "https://{host}"',
+                "    rewrite:",
+                f'      "^(.*)$": "{project}/$1"',
+            ]
+        if (cfg.get("registry_ca_pem") or "").strip():
+            lines += [
+                "configs:",
+                f'  "{host}":',
+                "    tls:",
+                f'      ca_file: "{REGISTRY_CA_PATH_TEMPLATE}"',
+            ]
+    return "\n".join(lines) + "\n"
 
 
 async def derive_node_distro(session: AsyncSession, cfg: dict[str, str]) -> str:

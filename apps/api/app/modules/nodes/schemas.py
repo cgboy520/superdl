@@ -68,7 +68,8 @@ class BootstrapOut(BaseModel):
     rke2_join_token: str
     driver_version: str
     nvme_devices: list[str]
-    registries_yaml: str  # 镜像缓存 mirror 配置正文(可空串)
+    registries_yaml: str  # 节点 registries.yaml 正文(Spegel / Harbor 代理缓存 / CA;不含凭据)
+    registry_ca_pem: str = ""  # Harbor 自签/私有 CA(PEM);非空时脚本落 $RANCHER_DIR/harbor-ca.crt
     install_mirror: str = "cn"  # 装机安装源:cn=rancher 国内镜像 / official
     # 首次 bootstrap 换发的窄权限令牌(仅 /progress 上报),此后上报与断点续跑只用它
     progress_token: str

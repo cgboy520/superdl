@@ -34,6 +34,9 @@
     api_vip: ""
     server_ips: []                # 逐台 server IP,如 ["10.0.0.11","10.0.0.12","10.0.0.13"]
     server_hostnames: []          # 可选:主机名 SAN,便于绕过 VIP 直连排障
+    # Harbor 自签/私有 CA(PEM 全文):非空即落 /etc/rancher/<distro>/harbor-ca.crt,
+    # 与 ../cluster/rke2/registries.yaml 的 configs.tls.ca_file 配套;公信证书留空
+    harbor_ca_pem: ""
   tasks:
     - name: rancher 配置目录
       file:
@@ -46,6 +49,23 @@
         src: ../cluster/rke2/audit-policy.yaml   # rke2/k3s 共用同一策略文件
         dest: "/etc/rancher/{{ cluster_distro }}/audit-policy.yaml"
         mode: "0644"
+
+    # server 节点的 registries.yaml(Spegel P2P;Harbor 代理缓存 / CA 段按需打开,与平台配置·镜像仓库一致);
+    # GPU 节点由 node-join.sh 按平台配置自动生成,不经 ansible。不含凭据:拉取凭据经 imagePullSecrets 托管
+    - name: 分发 registries.yaml
+      copy:
+        src: ../cluster/rke2/registries.yaml
+        dest: "/etc/rancher/{{ cluster_distro }}/registries.yaml"
+        mode: "0600"
+      notify: restart-server
+
+    - name: Harbor 自签/私有 CA(harbor_ca_pem 非空才落盘)
+      copy:
+        content: "{{ harbor_ca_pem }}"
+        dest: "/etc/rancher/{{ cluster_distro }}/harbor-ca.crt"
+        mode: "0644"
+      when: harbor_ca_pem | length > 0
+      notify: restart-server
 
     # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘(幂等,
     # 不写「先 copy 占位再 replace」的非幂等两步)。

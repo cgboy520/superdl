@@ -16,6 +16,7 @@ export interface BootstrapOut {
   pool: string;
   progress_token: string;
   registries_yaml: string;
+  registry_ca_pem?: string;
   rke2_join_token: string;
   rke2_server_url: string;
   rke2_version: string;
