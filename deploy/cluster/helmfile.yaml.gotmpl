@@ -127,12 +127,17 @@ releases:
     # 新集群首装必须排在 kps 之后,且首装 diff 不做 API 校验,否则整轮 apply 在 diff 阶段就失败
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
+    {{- if .Values.acmeDns.enabled }}
     hooks:
-      # acme-dns(RFC2136 DNS01 中转,P1-6)与 cert-manager 同 ns,先于此 chart 落地
+      # acme-dns(DNS01 中转,P1-6)与 cert-manager 同 ns,先于此 chart 落地。
+      # 只在 acmeDns.enabled 的档位应用:它的 LoadBalancer 53 端口在 k3s(klipper-lb)上会变成节点 hostPort 53,
+      # 把节点自己发往 127.0.0.53 的查询也劫进 acme-dns(只认 auth 子域,其余 NXDOMAIN),节点从此解析不了任何域名
+      # (Harbor 拉取、节点回连全断,light 首装实测);light 档默认不装,证书走平台侧通配证书
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
         args: ["apply", "-f", "acme-dns.yaml"]
+    {{- end }}
 
   - name: ingress-nginx
     condition: ingressNginx.enabled

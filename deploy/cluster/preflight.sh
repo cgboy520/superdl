@@ -42,7 +42,11 @@ else
 fi
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
-check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
+if grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
+else
+  ok "cert-manager/acme-dns-account 不需要(environments/$env_name.yaml acmeDns.enabled=false:泛域名证书由 superdl/superdl-jupyter-wildcard-tls 手工灌入)"
+fi
 if [[ "$env_name" == "full" ]]; then
   check_secret monitoring grafana-admin "Grafana 管理员口令(light 档关 Grafana,不需要)"
 fi
@@ -60,6 +64,10 @@ for f in "${placeholder_files[@]}"; do
   # cilium 只在 full 档装(light 用 k3s 内置 flannel):未启用时它的占位符与本环境无关
   if [[ "$f" == values/cilium.yaml ]] && ! grep -qE '^\s*cilium:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
     ok "$f 不适用(environments/$env_name.yaml cilium.enabled=false)"
+    continue
+  fi
+  if [[ "$f" == acme-dns.yaml ]] && ! grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+    ok "$f 不适用(environments/$env_name.yaml acmeDns.enabled=false)"
     continue
   fi
   # 只扫有效行:文件头注释本身会提到 CHANGE_ME/example.com,不算残留

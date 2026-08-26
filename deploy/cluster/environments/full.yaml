@@ -7,6 +7,7 @@ kps: {enabled: true}
 juicefs: {enabled: true}
 topolvm: {enabled: true}
 certManager: {enabled: true}
+acmeDns: {enabled: true}   # DNS01 中转(公网 53 经真实 LB 暴露);随 cert-manager presync 应用
 ingressNginx: {enabled: true}
 # 平台库进 K8s(CloudNativePG)时打开;默认关闭 = 用托管 PG(见 deploy/README.md「生产数据库要求」)
 cnpg: {enabled: false}

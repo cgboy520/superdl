@@ -11,6 +11,9 @@ kps: {enabled: true}
 juicefs: {enabled: false}
 topolvm: {enabled: true}
 certManager: {enabled: true}
+# acme-dns 不装:其 LoadBalancer 53 在 k3s klipper-lb 上会占节点 hostPort 53、劫持节点自身 DNS(见 helmfile 注释);
+# light 档租户 Jupyter 泛域名证书用平台侧现成通配证书灌成 superdl/superdl-jupyter-wildcard-tls
+acmeDns: {enabled: false}
 ingressNginx: {enabled: true}
 # 平台库进 K8s(CloudNativePG)时打开;默认关闭 = 用托管 PG(见 deploy/README.md「生产数据库要求」)
 cnpg: {enabled: false}

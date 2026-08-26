@@ -22,6 +22,10 @@ cert-manager(acmeDNS solver)
 
 ## 一次性部署步骤
 
+> 仅 full 档(`environments/full.yaml` `acmeDns.enabled=true`)。k3s light 档不要装:其 Service 的 53 端口会被
+> klipper-lb 实现成节点 hostPort 53,节点自身发往 127.0.0.53 的查询被劫进 acme-dns(只认 auth 子域,其余 NXDOMAIN),
+> Harbor 拉取与节点回连全断(2026-08 实测);light 档把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls` 即可。
+
 1. **替换占位符**(`deploy/cluster/acme-dns.yaml`):
    - `CHANGE_ME_ACME_DNS_DIGEST`:`docker buildx imagetools inspect joohoi/acme-dns:v1.0` 取 digest 钉死
    - `auth.superdl.example.com` → 实际 auth 子域(建议独立子域,勿与业务域混用)
