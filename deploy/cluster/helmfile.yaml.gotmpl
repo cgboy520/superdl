@@ -90,6 +90,9 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/kps-light.yaml
       {{- end }}
+    # chart 的 CRD 在 crds/ 目录(helm install 先装 CRD 再装模板),但 helm diff 只干跑渲染不装 CRD,
+    # 它自己的 Prometheus/Alertmanager/PrometheusRule/ServiceMonitor 在新集群首装的 diff 阶段必然校验失败
+    disableValidationOnInstall: true
 
   - name: juicefs-csi-driver
     condition: juicefs.enabled
@@ -156,6 +159,7 @@ releases:
     version: "0.8.1"
     needs:
       - cnpg-system/cloudnative-pg
+    disableValidationOnInstall: true   # Cluster/ScheduledBackup 的 CRD 来自 operator release,首装 diff 免校验
     values: [values/cnpg-cluster.yaml]
 
   # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
