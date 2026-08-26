@@ -48,11 +48,12 @@ class Settings(BaseSettings):
     disk_grace_days: int = 7
     disk_frozen_days: int = 30
 
-    # 实名认证:充值前强制校验的开关。
-    # provider/凭据与开关均可被平台配置中心(platform_settings)在线覆盖;
-    # prod 下只有「开启强制实名 + mock 渠道」才拒(启动校验与 platform_config 写入侧同口径)
+    # 实名认证(阿里云三要素):real_name_enabled 决定用户能否提交核验(关闭 = 409),
+    # real_name_required_for_recharge 决定充值/开通实例是否强制已实名;两者与凭据均可被
+    # 平台配置中心在线覆盖。不变量(任意环境):required=true ⇒ enabled=true
+    # (_validate_invariants 与 platform_config 写入侧同口径),否则用户永远无法满足强制条件
+    real_name_enabled: bool = False
     real_name_required_for_recharge: bool = False
-    real_name_provider: Literal["mock", "aliyun"] = "mock"
     real_name_access_key_id: str | None = None
     real_name_access_key_secret: str | None = None
 
@@ -185,6 +186,16 @@ class Settings(BaseSettings):
     alipay_seller_id: str | None = None  # 收款方 PID(2088 开头;prod 启用支付宝时必填)
 
     @model_validator(mode="after")
+    def _validate_invariants(self) -> "Settings":
+        """环境无关的组合约束(dev/test 同样拦;平台配置写入侧 _check_real_name_invariant 同口径)。"""
+        if self.real_name_required_for_recharge and not self.real_name_enabled:
+            raise ValueError(
+                "real_name_required_for_recharge=true 需要 real_name_enabled=true"
+                "(实名未开通时用户无法完成实名,充值与开通实例会被永久卡住)"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
         """生产配置 fail-fast:开发默认值未改则拒绝启动。
 
@@ -214,13 +225,6 @@ class Settings(BaseSettings):
         for name in ("ssh_host", "jupyter_domain_suffix", "public_base_url", "admin_host"):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
-        # mock 实名对非 0000 结尾恒过:只有开着充值强制实名时才形同虚设;未开时 mock 无害。
-        # 经平台配置在线打开开关时由 platform_config._check_prod_real_name_combination 同口径拦
-        if self.real_name_required_for_recharge and self.real_name_provider == "mock":
-            problems.append(
-                "real_name_required_for_recharge=true 时 real_name_provider 不得为 mock"
-                "(mock 恒过,实名形同虚设;请接阿里云实名或先关闭充值强制实名)"
-            )
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             # DB 覆盖层也可能已配:env 侧缺失只作 fail-fast 提示的其中一路;
             # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次

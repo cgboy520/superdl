@@ -11,6 +11,7 @@
     "loginFailed": "Wrong phone number or credentials",
     "phoneTaken": "This phone number is already registered — log in instead",
     "realNameChannelError": "Identity verification service is unavailable — try again later",
+    "realNameDisabled": "Identity verification is not available yet",
     "realNameDone": "Identity already verified — no need to resubmit",
     "realNameMismatch": "Identity details do not match carrier records — check and retry",
     "smsCodeInvalid": "SMS code is wrong or expired",

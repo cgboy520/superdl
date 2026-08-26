@@ -1,8 +1,8 @@
 """实名认证 provider seam(三要素核验:姓名 + 身份证号 + 手机号)。
 
-- mock:dev/test 即时通过(可注入失败);
-- aliyun:实人认证·手机号三要素核验简版(Cloudauth 2019-03-07
-  Mobile3MetaSimpleVerify),凭据走平台配置中心(env 为默认值层)。
+能否提交核验由平台配置·安全策略的 `real_name_enabled` 决定(account.service 读开关);
+渠道只有阿里云实人认证·手机号三要素核验简版(Cloudauth 2019-03-07 Mobile3MetaSimpleVerify),
+凭据走平台配置中心(env 为默认值层)。没有 mock 渠道:关闭即 409,测试经 set_realname_provider 注入。
 PIPL 约束:身份证号不落明文,只存脱敏展示串(前 4 + 后 2);
 核验结果即时返回,原文不留存、不进日志。
 """
@@ -23,13 +23,6 @@ class RealNameProvider(Protocol):
     async def verify(self, name: str, id_number: str, phone: str) -> bool:
         """三要素核验。渠道故障抛 RealNameError;核验不一致返回 False。"""
         ...
-
-
-class MockRealNameProvider:
-    """dev/test:默认全部通过;以 '0000' 结尾的身份证号模拟核验不一致。"""
-
-    async def verify(self, name: str, id_number: str, phone: str) -> bool:
-        return not id_number.endswith("0000")
 
 
 class AliyunRealNameProvider:
@@ -79,17 +72,26 @@ class AliyunRealNameProvider:
         raise RealNameError(f"realname unexpected BizCode: {biz_code}")
 
 
+_provider: RealNameProvider | None = None
+
+
+def set_realname_provider(provider: RealNameProvider | None) -> None:
+    """测试注入;传 None 恢复按配置构造。"""
+    global _provider
+    _provider = provider
+
+
 async def get_realname_provider(session: AsyncSession) -> RealNameProvider:
+    if _provider is not None:
+        return _provider
     from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)
-    if cfg["real_name_provider"] == "aliyun":
-        if not (cfg["real_name_access_key_id"] and cfg["real_name_access_key_secret"]):
-            raise RealNameError("阿里云实名认证凭据未配置(管理端·平台配置)")
-        return AliyunRealNameProvider(
-            cfg["real_name_access_key_id"], cfg["real_name_access_key_secret"]
-        )
-    return MockRealNameProvider()
+    if not (cfg["real_name_access_key_id"] and cfg["real_name_access_key_secret"]):
+        raise RealNameError("阿里云实名认证凭据未配置(管理端·平台配置)")
+    return AliyunRealNameProvider(
+        cfg["real_name_access_key_id"], cfg["real_name_access_key_secret"]
+    )
 
 
 def mask_id_number(id_number: str) -> str:

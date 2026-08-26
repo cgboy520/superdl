@@ -15,9 +15,9 @@
 | `POST /api/admin/v1/platform-config/test-sms` | admin | `{phone}`,走当前生效渠道实发验证码 |
 | `GET /api/v1/site-config` | 匿名 | `{icp_number, police_record_number, company_name, company_address, company_phone, business_license_url, support_email, support_wechat, payment_channels}`:页脚 / 帮助页 / 充值弹窗动态渲染,留空即不展示 |
 
-配置组(`SettingGroup`):security(安全策略开关 `captcha_enabled`:开关 ≠ 替身,关闭即跳过对应校验,凭据仍在各渠道组;prod 允许关闭,不设 `prod_forbidden`)、payment_wechat / payment_alipay(渠道能力见 [payment.md](./payment.md))、sms、real_name、captcha、compliance(备案号 `icp_number` / `police_record_number` + 经营主体公示 `company_name` / `company_address` / `company_phone` / `business_license_url`,《电子商务法》第十五条,页脚展示)、support(客服联系方式 `support_email` / `support_wechat`,页脚与帮助页展示)、cluster(键面见 [nodes.md](./nodes.md))、observability(`grafana_url` 外链、`oncall_phone` 值班手机号,见 [observability.md](./observability.md))。每个键与 `Settings` 同名字段一一对应,env 即默认值层。
+配置组(`SettingGroup`):security(安全策略开关 `captcha_enabled` / `real_name_enabled` / `real_name_required_for_recharge`:开关 ≠ 替身,关闭即跳过对应校验,凭据仍在各渠道组;prod 允许关闭,不设 `prod_forbidden`)、payment_wechat / payment_alipay(渠道能力见 [payment.md](./payment.md))、sms、real_name、captcha、compliance(备案号 `icp_number` / `police_record_number` + 经营主体公示 `company_name` / `company_address` / `company_phone` / `business_license_url`,《电子商务法》第十五条,页脚展示)、support(客服联系方式 `support_email` / `support_wechat`,页脚与帮助页展示)、cluster(键面见 [nodes.md](./nodes.md))、observability(`grafana_url` 外链、`oncall_phone` 值班手机号,见 [observability.md](./observability.md))。每个键与 `Settings` 同名字段一一对应,env 即默认值层。
 
-`Settings` 相关键:`config_encryption_key`、`real_name_provider`、`real_name_access_key_id`、`real_name_access_key_secret`、`payment_wechat_enabled`、`payment_alipay_enabled`、`wechat_public_key`、`wechat_public_key_id`、`icp_number`、`police_record_number`。
+`Settings` 相关键:`config_encryption_key`、`real_name_enabled`、`real_name_access_key_id`、`real_name_access_key_secret`、`payment_wechat_enabled`、`payment_alipay_enabled`、`wechat_public_key`、`wechat_public_key_id`、`icp_number`、`police_record_number`。
 
 ## 规则与不变量
 
@@ -28,7 +28,7 @@
 - 主密钥 `SUPERDL_CONFIG_ENCRYPTION_KEY` 只走 env,prod 下 fail-fast 必配。
 - 读取接口只回配置状态与尾 4 位预览,永不回明文;审计 detail 只落键名与 reason,不落值。
 - 凭据不下放 ops:平台配置三端点仅 `admin` 角色;ops 生成注册命令时由服务端代读,永不见明文。
-- 不入配置中心:`payment_mock`、prod 下 `sms_provider≠mock`、JWT/DB/域名等基础设施配置只走 env 且保留 prod fail-fast;平台配置写入侧同样拒绝 prod 下 `sms_provider=mock`(`prod_forbidden`),以及「`real_name_required_for_recharge=true` + `real_name_provider=mock`」组合(`_check_prod_real_name_combination`,与 `Settings._validate_prod` 同口径:未开强制实名时 mock 无害,不拦;DB 覆盖层上该组合只有这一道闸)。
+- 不入配置中心:`payment_mock`、prod 下 `sms_provider≠mock`、JWT/DB/域名等基础设施配置只走 env 且保留 prod fail-fast;平台配置写入侧同样拒绝 prod 下 `sms_provider=mock`(`prod_forbidden`);另有环境无关的不变量 `real_name_required_for_recharge=true ⇒ real_name_enabled=true`(`_check_real_name_invariant`,与 `Settings._validate_invariants` 同口径:实名未开通时用户永远完不成实名)。
 - K8s Secret 注入的 env 是默认值层,DB 覆盖仅用于运营自助与轮转。
 - 渠道工厂异步取生效配置:`get_channel(name, session)` / `get_sms_channel(session)` / `get_realname_provider(session)`;微信与支付宝渠道实例按配置指纹缓存(平台证书模式下不重复拉取平台证书)。
 - 备案号由 `site-config` 运行期下发,页脚动态渲染,不进构建期 env。

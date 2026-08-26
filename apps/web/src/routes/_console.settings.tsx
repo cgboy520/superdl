@@ -17,6 +17,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { useState } from "react";
@@ -30,7 +31,7 @@ import {
   useResetPassword,
   useSubmitRealName,
 } from "../api/mutations";
-import { useMe, useMyDeletionRequest, useSshKeys } from "../api/queries";
+import { useMe, useMyDeletionRequest, usePolicies, useSshKeys } from "../api/queries";
 import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
 import { WarnThresholdField } from "../components/WarnThresholdField";
 import { useFormat } from "../lib/format";
@@ -48,6 +49,7 @@ function SettingsPage() {
   const { message } = App.useApp();
   const meQ = useMe();
   const { data: me } = meQ;
+  const { data: policies } = usePolicies();
   const { data: keys, isLoading, isError, refetch } = useSshKeys();
   const [form] = Form.useForm();
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -150,6 +152,7 @@ function SettingsPage() {
 
       <RealNameCard
         me={me}
+        enabled={policies?.real_name_enabled ?? false}
         loading={meQ.isPending}
         error={meQ.isError}
         onRetry={() => void meQ.refetch()}
@@ -385,14 +388,17 @@ function DeletionZone({ phone }: { phone: string }) {
   );
 }
 
-/** 实名卡四态:未就绪骨架 / 错误可重试(绝不把「没查到」渲染成「未认证」) / 已认证 / 未认证。 */
+/** 实名卡四态:未就绪骨架 / 错误可重试(绝不把「没查到」渲染成「未认证」) / 已认证 / 未认证;
+ *  平台未开通实名(安全策略 real_name_enabled=false)时表单可见但禁用 + 说明(不藏功能)。 */
 function RealNameCard({
   me,
+  enabled,
   loading,
   error,
   onRetry,
 }: {
   me: { verification_status?: string } | undefined;
+  enabled: boolean;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
@@ -426,11 +432,12 @@ function RealNameCard({
       ) : (
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
-            {t("settings.realNameNote")}
+            {enabled ? t("settings.realNameNote") : t("settings.realNameDisabled")}
           </Typography.Text>
           <Form
             form={form}
             layout="inline"
+            disabled={!enabled}
             onFinish={(v) => submit.mutate({ name: v.name, id_number: v.id_number })}
           >
             <Form.Item
@@ -461,9 +468,11 @@ function RealNameCard({
                 maxLength={18}
               />
             </Form.Item>
-            <Button type="primary" htmlType="submit" loading={submit.isPending}>
-              {t("settings.submitVerify")}
-            </Button>
+            <Tooltip title={enabled ? "" : t("settings.realNameDisabled")}>
+              <Button type="primary" htmlType="submit" loading={submit.isPending} disabled={!enabled}>
+                {t("settings.submitVerify")}
+              </Button>
+            </Tooltip>
           </Form>
         </Space>
       )}

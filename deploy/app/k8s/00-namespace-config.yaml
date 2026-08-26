@@ -39,6 +39,8 @@ data:
   # 人机校验(阿里云验证码 2.0):开关 captcha_enabled 可随时在 管理端·平台配置·安全策略 切换(此处只是默认值层);
   # scene_id / prefix 是客户端初始化用的公开信息,AccessKey 对在 ../secrets.example.yaml
   SUPERDL_CAPTCHA_ENABLED: "true"
+  # 实名认证开关(默认值层;资质与凭据到位后在 管理端·平台配置·安全策略 打开,再视合规要求开「充值前强制实名」)
+  SUPERDL_REAL_NAME_ENABLED: "false"
   SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"
   SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
   # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。

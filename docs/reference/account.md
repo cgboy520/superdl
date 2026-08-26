@@ -22,7 +22,7 @@
 | `POST /api/v1/auth/logout-all` | user | 登出全部会话:`token_version+1`,已签发 token 即刻全失效 |
 | `GET /api/v1/me` | user | 用户资料 |
 | `PATCH /api/v1/me/warn-threshold` | user | 余额预警阈值 |
-| `POST /api/v1/me/real-name` | user | 三要素实名 provider seam(阿里云实人 `Mobile3MetaSimpleVerify`,BizCode 1 一致 / 2 不一致 / 3 无记录;dev 默认 mock) |
+| `POST /api/v1/me/real-name` | user | 三要素实名 provider seam(阿里云实人 `Mobile3MetaSimpleVerify`,BizCode 1 一致 / 2 不一致 / 3 无记录);安全策略 `real_name_enabled` 关闭时 409 `REAL_NAME_DISABLED`;无 mock 渠道,测试经 `set_realname_provider` 注入 |
 | `POST /api/v1/me/deletion-request` `GET` `POST .../cancel` | user | 账号注销:键入手机号确认 → 7 天冷静期(期间可撤销)→ 管理端执行 |
 | `GET/POST/DELETE /api/v1/ssh-keys` | user | 公钥 CRUD |
 
@@ -37,7 +37,7 @@
 - 发码限流:尝试按 IP(20/h);手机号 10 次/日配额按「验证码被消费」计,同号轰炸由递增退避兜底。计数落 PG,见 [security.md](./security.md)。
 - 短信发送失败时必须作废已落库的验证码并返 502,不留下可用码。
 - 公钥须为 ssh-ed25519 / ssh-rsa / ecdsa-*;唯一性按 (user_id, fingerprint),同用户指纹重复报 `SSH_KEY_DUPLICATE`,非法公钥报 `SSH_KEY_INVALID`;删除为硬删除,删后可重添。
-- 身份证号只存脱敏值;充值是否强制实名由 `real_name_required_for_recharge` 开关控制。
+- 身份证号只存脱敏值;能否提交实名由 `real_name_enabled` 控制,充值/开通实例是否强制已实名由 `real_name_required_for_recharge` 控制(不变量:后者开启要求前者开启,任意环境,启动与写入侧同口径)。
 - 注册必勾条款,同事务按当前 published 版落 terms/privacy 各一条同意存证。
 - 注销执行为匿名化:手机号哈希化(释放唯一约束,原号可再注册)、身份字段清空、全撤登录态;`balance_ledger` 与账单按法定义务保留。
 - 所有写操作过审计中间件(actor/ip/result)。

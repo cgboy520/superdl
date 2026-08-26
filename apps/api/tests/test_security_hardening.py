@@ -227,17 +227,17 @@ class TestProdConfigValidation:
             assert keyword in msg
 
     def test_prod_accepts_complete_config(self):
-        """最小配置可启动:未开强制实名时 mock 实名无害;凭据齐全性由运行期渠道工厂把关。"""
+        """最小配置可启动:安全开关默认关不影响启动;凭据齐全性由运行期渠道工厂把关。"""
         from app.core.config import Settings
 
         s = Settings(**self._complete_prod_kwargs())
         assert s.environment == "prod"
-        assert s.real_name_provider == "mock"
+        assert s.real_name_enabled is False
         assert s.sms_access_key_id is None
 
-    def test_prod_rejects_mock_realname_when_required(self):
-        """充值强制实名 + mock 渠道 = 实名形同虚设(mock 核验恒过),prod 必拒;
-        经平台配置在线打开开关的同一组合由 platform_config 写入侧拦(见 test_platform_config)。"""
+    def test_required_real_name_without_enabled_rejected_in_any_env(self):
+        """充值强制实名而实名认证未开启 = 用户永远完不成实名,任何环境都拒
+        (经平台配置在线打开的同一组合由 platform_config 写入侧拦,见 test_platform_config)。"""
         import pytest
         from pydantic import ValidationError
 
@@ -245,8 +245,16 @@ class TestProdConfigValidation:
 
         kwargs = self._complete_prod_kwargs()
         kwargs["real_name_required_for_recharge"] = True
-        with pytest.raises(ValidationError, match="real_name_provider"):
+        with pytest.raises(ValidationError, match="real_name_enabled"):
             Settings(**kwargs)
+        with pytest.raises(ValidationError, match="real_name_enabled"):
+            Settings(
+                _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+                environment="dev",
+                real_name_required_for_recharge=True,
+            )
+        kwargs["real_name_enabled"] = True
+        assert Settings(**kwargs).real_name_required_for_recharge is True
 
     def test_prod_rejects_empty_image_allowed_registries(self):
         """空白名单 = 租户可拉任意仓库镜像(把任意镜像引进集群),prod 必须显式配置。"""

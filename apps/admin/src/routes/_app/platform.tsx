@@ -68,7 +68,7 @@ const FIELD_LABELS: Record<string, string> = {
   sms_sign_name: "短信签名名称",
   sms_template_verify: "验证码模板码",
   sms_template_notice: "通知模板码",
-  real_name_provider: "实名核验 Provider",
+  real_name_enabled: "启用实名认证(阿里云三要素核验)",
   real_name_required_for_recharge: "充值前强制实名认证",
   real_name_access_key_id: "AccessKey ID",
   real_name_access_key_secret: "AccessKey Secret",
@@ -95,7 +95,10 @@ const FIELD_EXTRA: Record<string, string> = {
   payment_wechat_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现微信入口",
   payment_alipay_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现支付宝入口",
   wechat_public_key_id: "公钥模式(新注册商户仅支持该模式);与公钥同时填写,留空则走平台证书模式",
-  real_name_required_for_recharge: "《网络安全法》要求;开启后未实名用户无法充值,用户端费用中心出现引导横幅",
+  real_name_enabled:
+    "开启后用户端「账户设置」的实名表单可提交;请先在「实名认证」页填齐凭据(缺失时提交报 502)",
+  real_name_required_for_recharge:
+    "《网络安全法》要求;开启后未实名用户无法充值与开通实例,用户端费用中心出现引导横幅;须先开启实名认证",
   sms_template_verify: "模板需含变量 ${code}",
   sms_template_notice: "模板需含变量 ${title}",
   icp_number: "展示于用户端页脚,链接工信部备案系统(beian.miit.gov.cn)",
@@ -135,7 +138,7 @@ const GROUP_INTRO: Record<string, string> = {
     "建议使用独立 RAM 子账号并仅授权 AliyunDysmsFullAccess。切换 Provider 为「阿里云」后即时生效,可先用下方测试发送验证。",
   real_name:
     "阿里云实人认证 · 手机号三要素核验(简版,Mobile3MetaSimpleVerify):开通「要素核验」服务并授权 RAM 子账号。" +
-    "核验通过即标记已实名;身份证号仅存脱敏串,原文即用即弃。",
+    "核验通过即标记已实名;身份证号仅存脱敏串,原文即用即弃。是否启用与「充值前强制实名」在「安全策略」页切换。",
   captcha:
     "阿里云验证码 2.0(/auth/sms-code 前置人机校验,防分布式脚本刷码):开通验证码 2.0 后," +
     "在控制台「场景管理」新建 Web/H5 场景取场景 ID,「概览」页取身份标;" +

@@ -894,13 +894,26 @@ class TestTenantRealnameExposure:
     """实名透出:readonly 脱敏;ops/finance/admin 明文,且含实名字段的响应落敏感读审计。"""
 
     async def _realname_user(self, client, sm) -> int:
+        """开启安全策略 real_name_enabled 并注入恒过的假渠道,经正式提交路径落脱敏实名字段。"""
+        from app.core.platform_config import PlatformSetting
         from app.modules.account import service as account_service
+        from app.modules.account.realname import set_realname_provider
+
+        class _Pass:
+            async def verify(self, name: str, id_number: str, phone: str) -> bool:
+                return True
 
         data = await register(client, "13655550001")
         uid = data["user"]["id"]
-        async with sm() as session:
-            user = await account_service.get_user(session, uid)
-            await account_service.submit_real_name(session, user, "张三", "110101199001011234")
+        set_realname_provider(_Pass())
+        try:
+            async with sm() as session:
+                session.add(PlatformSetting(key="real_name_enabled", value="true"))
+                await session.commit()
+                user = await account_service.get_user(session, uid)
+                await account_service.submit_real_name(session, user, "张三", "110101199001011234")
+        finally:
+            set_realname_provider(None)
         return uid
 
     async def test_readonly_sees_masked_and_no_audit(self, client, sm, fake):

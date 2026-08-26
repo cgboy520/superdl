@@ -54,8 +54,8 @@
   5 项与验证码 4 项,且 `k8s_backend=real` 强制 `environment=prod`——连真实集群必须先拿齐短信签名、验证码、实名资质,
   实机验证被资质链阻塞,也与平台配置中心「资质到位后在线录入即生效」自相矛盾。决定:`_validate_prod` 只拒
   sms / payment 的 mock provider 与基础设施占位值,凭据齐全性交给运行期渠道工厂 fail-closed
-  (缺凭据是首条短信失败而不是启动失败,管理端 test-sms 可验);实名只在开启充值强制实名时才拒 mock,
-  DB 写入侧 `_check_prod_real_name_combination` 是该组合的唯一守卫;`alertmanager_token` 缺失与 `prometheus_url`
+  (缺凭据是首条短信失败而不是启动失败,管理端 test-sms 可验);实名没有 mock,唯一组合约束
+  `real_name_required_for_recharge ⇒ real_name_enabled` 任意环境生效(启动 `_validate_invariants` 与写入侧 `_check_real_name_invariant` 同口径);`alertmanager_token` 缺失与 `prometheus_url`
   指向本地降为启动 WARNING;dev + real 允许共存。后果:真实集群上的暴露面由部署拓扑(ingress / 公网 DNS)决定,
   不由 environment 决定;边缘收口(`edge_guard`)随之改为 prod 恒开、删掉显式开关,类生产环境一律以 prod 运行。
 

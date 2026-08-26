@@ -140,17 +140,10 @@ class TestAdminApi:
         assert resp.status_code == 400
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
-    async def test_prod_rejects_forced_realname_with_mock_provider(
-        self, client: AsyncClient, sm, monkeypatch
-    ):
-        """prod 下「充值强制实名 + mock 渠道」组合由 DB 写入侧拦(启动校验只看 env 层):
-        mock 核验恒过,开着强制实名等于没有实名。两个方向都拦;同一批切成 aliyun 则放行。"""
-        from app.core.config import get_settings
-
+    async def test_required_real_name_needs_enabled_in_any_env(self, client: AsyncClient, sm):
+        """「充值强制实名」必须伴随「实名认证已开启」,test 环境同样拦(不是 prod 专属):
+        实名未开通时用户永远完不成实名,充值会被永久卡住。两个方向都拦;同一批一起开则放行。"""
         ah = await admin_headers(sm, client, role="admin")
-        settings = get_settings()
-        monkeypatch.setattr(settings, "environment", "prod", raising=False)
-        ah["Host"] = settings.admin_host  # prod 边缘收口只放行 admin 域
 
         async def put(updates: dict[str, str]):
             return await client.put(
@@ -162,14 +155,12 @@ class TestAdminApi:
         resp = await put({"real_name_required_for_recharge": "true"})
         assert resp.status_code == 400, resp.text
         assert resp.json()["code"] == "VALIDATION_ERROR"
-        assert "real_name_provider" in resp.json()["message"]
-        # 同一批把渠道切成 aliyun:组合终态合法
-        resp = await put(
-            {"real_name_required_for_recharge": "true", "real_name_provider": "aliyun"}
-        )
+        assert "real_name_enabled" in resp.json()["message"]
+        # 同一批一起开:组合终态合法
+        resp = await put({"real_name_required_for_recharge": "true", "real_name_enabled": "true"})
         assert resp.status_code == 200, resp.text
-        # 反向:强制实名开着,再把渠道切回 mock 同样被拒
-        assert (await put({"real_name_provider": "mock"})).status_code == 400
+        # 反向:强制实名开着,再关实名认证同样被拒
+        assert (await put({"real_name_enabled": "false"})).status_code == 400
 
     async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
         """开关走平台配置:公开 policies 即时跟随,充值门禁即时生效(免重启)。"""
@@ -177,16 +168,21 @@ class TestAdminApi:
 
         ah = await admin_headers(sm, client, role="admin")
         base = (await client.get("/api/v1/policies")).json()
+        assert base["real_name_enabled"] is False
         assert base["real_name_required_for_recharge"] is False
 
-        await client.put(
+        resp = await client.put(
             "/api/admin/v1/platform-config",
-            json={"updates": {"real_name_required_for_recharge": "true"}, "reason": "合规开启"},
+            json={
+                "updates": {"real_name_enabled": "true", "real_name_required_for_recharge": "true"},
+                "reason": "合规开启",
+            },
             headers=ah,
         )
-        assert (await client.get("/api/v1/policies")).json()[
-            "real_name_required_for_recharge"
-        ] is True
+        assert resp.status_code == 200, resp.text
+        policies = (await client.get("/api/v1/policies")).json()
+        assert policies["real_name_enabled"] is True
+        assert policies["real_name_required_for_recharge"] is True
 
         headers = await user_headers(client, "13700000201")
         resp = await client.post(
@@ -252,13 +248,14 @@ class TestAliyunRealNameProvider:
         with pytest.raises(RealNameError, match="403"):
             await provider.verify("张三", "110101199001011234", "13800000000")
 
-    async def test_factory_switches_by_config(self, client: AsyncClient, sm):
+    async def test_factory_builds_aliyun_from_config(self, client: AsyncClient, sm):
+        """凭据经管理端录入后,工厂按生效配置构造阿里云渠道
+        (无凭据时抛 RealNameError,见 test_realname)。"""
         ah = await admin_headers(sm, client, role="admin")
         await client.put(
             "/api/admin/v1/platform-config",
             json={
                 "updates": {
-                    "real_name_provider": "aliyun",
                     "real_name_access_key_id": "LTAI5tTESTTESTTEST",
                     "real_name_access_key_secret": "sk-test-secret",
                 },

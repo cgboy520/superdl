@@ -5346,6 +5346,11 @@
             "title": "Freeze Grace Hours",
             "type": "integer"
           },
+          "real_name_enabled": {
+            "default": false,
+            "title": "Real Name Enabled",
+            "type": "boolean"
+          },
           "real_name_required_for_recharge": {
             "default": false,
             "title": "Real Name Required For Recharge",

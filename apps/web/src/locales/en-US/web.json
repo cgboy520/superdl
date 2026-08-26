@@ -569,6 +569,7 @@
     "passwordMin": "Password must be at least 12 characters",
     "phoneLine": "Phone: {{phone}}",
     "realNameCard": "Identity verification",
+    "realNameDisabled": "Identity verification is not enabled on this platform yet; once enabled you can complete it here",
     "realNameDone": "Identity verified",
     "realNameDoneNote": "Verification complete; information is stored masked.",
     "realNameNameRule": "Enter the name matching the ID card",

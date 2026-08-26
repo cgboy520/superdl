@@ -558,6 +558,7 @@
     "passwordMin": "密码至少 12 位",
     "phoneLine": "手机号:{{phone}}",
     "realNameCard": "实名认证",
+    "realNameDisabled": "平台暂未开通实名认证,开通后可在此完成三要素核验",
     "realNameDone": "实名认证已完成",
     "realNameDoneNote": "已完成实名认证,信息仅存脱敏形态。",
     "realNameNameRule": "请输入与身份证一致的姓名",

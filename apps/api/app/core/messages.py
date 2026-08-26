@@ -27,6 +27,7 @@ MESSAGES: dict[str, str] = {
     "account.loginFailed": "手机号或凭证错误",
     "account.phoneTaken": "该手机号已注册,请直接登录",
     "account.realNameChannelError": "实名核验服务暂不可用,请稍后重试",
+    "account.realNameDisabled": "实名认证暂未开通",
     "account.realNameDone": "已完成实名认证,无需重复提交",
     "account.realNameMismatch": "实名信息与运营商记录不一致,请核对后重试",
     "account.smsCodeInvalid": "验证码错误或已过期",

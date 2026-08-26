@@ -68,6 +68,17 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
         "关闭 = 不做人机校验,发码口子只剩 IP/手机号限流",
     ),
+    "real_name_enabled": SettingSpec(
+        "security",
+        "bool",
+        hint="开启后用户端「账户设置」可提交三要素核验(凭据在「实名认证」组,缺失即 502);"
+        "关闭 = 提交返 409,不影响已实名用户",
+    ),
+    "real_name_required_for_recharge": SettingSpec(
+        "security",
+        "bool",
+        hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合)",
+    ),
     # ---- 微信支付(APIv3;公钥模式与平台证书模式二选一,新商户仅公钥模式) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
     "wechat_mchid": SettingSpec(
@@ -144,16 +155,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "sms_template_notice": SettingSpec(
         "sms", "str", pattern=r"SMS_[0-9A-Za-z]+", hint="通知模板码,形如 SMS_123456789(变量 title)"
     ),
-    # ---- 实名认证(阿里云实人认证·手机号三要素核验) ----
-    # mock 对非 0000 结尾恒过:不设 prod_forbidden,只拦「开启充值强制实名 + mock」组合
-    # (_check_prod_real_name_combination),未开强制实名时 mock 无害
-    "real_name_provider": SettingSpec(
-        "real_name",
-        "choice",
-        choices=("mock", "aliyun"),
-        hint="开启充值强制实名时不得为 mock(mock 对非 0000 结尾恒过,实名形同虚设)",
-    ),
-    "real_name_required_for_recharge": SettingSpec("real_name", "bool"),
+    # ---- 实名认证(阿里云实人认证·手机号三要素核验;开关在 security 组) ----
     "real_name_access_key_id": SettingSpec(
         "real_name", "str", pattern=r"[0-9A-Za-z]{16,30}", hint="AccessKey ID(建议独立 RAM 子账号)"
     ),
@@ -353,35 +355,28 @@ async def set_platform_settings(
                 set_={"value": value, "updated_by": updated_by, "updated_at": func.now()},
             )
         )
-    await _check_prod_real_name_combination(session, updates)
+    await _check_real_name_invariant(session, updates)
 
 
-async def _check_prod_real_name_combination(session: AsyncSession, updates: dict[str, str]) -> None:
-    """与 Settings._validate_prod 同口径的写入侧 fail-closed,也是 DB 覆盖层上该组合的唯一守卫:
+async def _check_real_name_invariant(session: AsyncSession, updates: dict[str, str]) -> None:
+    """与 Settings._validate_invariants 同口径的写入侧守卫(任意环境):
 
-    prod 下「充值强制实名 + mock 渠道」组合经 DB 覆盖层也要拦住
-    (mock 恒过等于实名形同虚设)。实名未启用时 mock 无害,不拦。
+    real_name_required_for_recharge=true 必须伴随 real_name_enabled=true——实名未开通时
+    用户永远完不成实名,充值与开通实例会被永久卡住。
     """
-    if get_settings().environment != "prod" or not (
-        updates.keys() & {"real_name_provider", "real_name_required_for_recharge"}
-    ):
+    if not (updates.keys() & {"real_name_enabled", "real_name_required_for_recharge"}):
         return
     rows = await list_platform_overrides(session)
-    provider = (
-        rows["real_name_provider"].value
-        if "real_name_provider" in rows
-        else _env_default("real_name_provider")
-    )
-    required = (
-        rows["real_name_required_for_recharge"].value
-        if "real_name_required_for_recharge" in rows
-        else _env_default("real_name_required_for_recharge")
-    )
-    if provider == "mock" and required == "true":
+
+    def effective(key: str) -> str:
+        return rows[key].value if key in rows else _env_default(key)
+
+    if effective("real_name_required_for_recharge") == "true" and (
+        effective("real_name_enabled") != "true"
+    ):
         raise ValueError(
-            "real_name_provider=mock 与 real_name_required_for_recharge=true 不能同时生效"
-            "(mock 渠道核验恒过,等于实名形同虚设):请先接入阿里云实名"
-            "(real_name_access_key_*),或先关闭充值强制实名"
+            "real_name_required_for_recharge=true 需要先开启 real_name_enabled"
+            "(实名未开通时用户无法完成实名,充值与开通实例会被永久卡住)"
         )
 
 

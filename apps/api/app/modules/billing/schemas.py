@@ -63,6 +63,7 @@ class PoliciesOut(BaseModel):
     disk_grace_days: int
     disk_frozen_days: int
     freeze_grace_hours: int
+    real_name_enabled: bool = False  # 用户端实名表单是否可用(安全策略开关)
     real_name_required_for_recharge: bool = False
 
 

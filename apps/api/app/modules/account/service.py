@@ -500,6 +500,14 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
 
     if user.verification_status == "verified":
         raise AppError(ErrorCode.CONFLICT, key="account.realNameDone")
+    cfg = await get_effective_platform_config(session)
+    if cfg["real_name_enabled"] != "true":
+        # 安全策略未开通实名:明确 409,而不是让用户撞到凭据缺失的 502
+        raise AppError(
+            ErrorCode.REAL_NAME_DISABLED,
+            key="account.realNameDisabled",
+            http_status=status.HTTP_409_CONFLICT,
+        )
     await check_rate_limit(f"real-name:{user.id}", max_attempts=5, window_seconds=3600.0)
     try:
         # 取 provider 也可能失败(凭据未配置):与渠道故障同属 502,不能漏成 500
