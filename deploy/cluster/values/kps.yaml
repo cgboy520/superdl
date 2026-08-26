@@ -276,22 +276,25 @@ additionalPrometheusRulesMap:
     groups:
       - name: superdl.gpu
         rules:
+          # DCGM_FI_DEV_XID_ERRORS 是「最近一次 XID 码」的 gauge,没有 xid 标签:按值变化 + 当前值命中致命码判定
           - alert: GPUXidCriticalError
-            expr: increase(DCGM_FI_DEV_XID_ERRORS{xid=~"48|63|64|79|94|95"}[5m]) > 0
+            expr: (changes(DCGM_FI_DEV_XID_ERRORS[5m]) > 0) and (DCGM_FI_DEV_XID_ERRORS == 48 or DCGM_FI_DEV_XID_ERRORS == 63 or DCGM_FI_DEV_XID_ERRORS == 64 or DCGM_FI_DEV_XID_ERRORS == 79 or DCGM_FI_DEV_XID_ERRORS == 94 or DCGM_FI_DEV_XID_ERRORS == 95)
             labels: {severity: critical}
-            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.node }}):自动 cordon + 补偿 SOP", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "GPU Xid 致命错误(节点 {{ $labels.hostname }} 卡 {{ $labels.gpu }}):自动 cordon + 补偿 SOP", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: GPUHighTemperature
             expr: DCGM_FI_DEV_GPU_TEMP > 85
             for: 5m
             labels: {severity: warning}
-            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.node }})", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+            annotations: {summary: "GPU 温度 >85°C 持续 5 分钟({{ $labels.hostname }} 卡 {{ $labels.gpu }})", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
           - alert: NodeGPUUnavailable
             expr: (kube_node_status_capacity{resource="nvidia_com_gpu"} > 0) and on(node) (kube_node_status_condition{condition="Ready",status="true"} == 0)
             for: 2m
             labels: {severity: critical}
             annotations: {summary: "GPU 节点 NotReady:{{ $labels.node }}"}
+          # 共享池饱和:用 HAMi vGPUmonitor 的节点级利用率(只在 hami 池节点上产出,自带 node 标签;
+          # DCGM 序列没有池标签)
           - alert: SharedPoolUtilSaturated
-            expr: avg by (node) (DCGM_FI_DEV_GPU_UTIL{superdl_pool="hami"}) > 95
+            expr: avg by (node) (hami_host_gpu_utilization_ratio) > 95
             for: 30m
             labels: {severity: warning}
             annotations: {summary: "共享池节点持续打满(超卖回调阈值 85% 参考)"}

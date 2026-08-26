@@ -47,8 +47,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] Alertmanager → 平台 webhook:`POST /api/v1/webhooks/alertmanager`(带 Bearer token)出现在管理端告警流
 - [ ] 停 HAMi scheduler → 5 分钟内 HamiSchedulerDown 进管理端告警流
 - [ ] `kubectl -n kube-system get svc hami-scheduler -o yaml`:monitor 端口名与端口(默认 31993/monitor)与 `values/kps.yaml` 的 additionalScrapeConfigs 一致;不一致改 values
-- [ ] Prometheus 里查 `Device_utilization_desc_of_container` / `vGPU_device_memory_usage_in_bytes`:容器维标签为 `podnamespace`/`podname`;不一致只改 `apps/api/app/modules/metering/prom.py` 顶部常量与 HAMI_QUERIES
-- [ ] `DCGM_FI_DEV_GPU_UTIL` 的节点标签为 `Hostname`(gpu-operator 版默认);不一致改 prom.py 的 DCGM_NODE_LABEL
+- [ ] Prometheus 里查 `hami_container_device_utilization_ratio` / `hami_vgpu_memory_used_bytes`(HAMi 2.9 命名;容器维标签 `namespace`/`pod`/`container`):不一致只改 `apps/api/app/modules/metering/prom.py` 顶部常量与 HAMI_QUERIES;vGPUmonitor 容器不声明端口,kps 抓取按容器名 + podIP:9394 拼地址(`values/kps.yaml`)
+- [ ] `DCGM_FI_DEV_GPU_UTIL` 的节点标签为小写 `hostname`(dcgm-exporter 4.x;3.x 为 `Hostname`)且值等于 K8s 节点名;不一致改 prom.py 的 DCGM_NODE_LABEL。注意 XID:DCGM 对不支持的卡型(如 CMP 系列)不产出 `DCGM_FI_DEV_XID_ERRORS`,节点页 XID 计数恒 0、XID 告警不触发
 - [ ] 共享档实例跑负载:用户端详情页 GPU 利用率曲线出数,与 `nvidia-smi` 观测一致
 - [ ] 管理端节点页热力格出真实 util/显存/温度;拔负载后 60s 内回落
 - [ ] `helmfile -e light apply` 后 monitoring 命名空间全部 Pod Running,记录实测占用(目标 Prometheus RSS < 1Gi)

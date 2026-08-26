@@ -10,10 +10,13 @@ import httpx
 from app.core.config import get_settings
 
 # ---- 标签常量:与 dcgm-exporter / HAMi vGPUmonitor 实机形态对齐,如有出入只改这里 ----
-DCGM_NODE_LABEL = "Hostname"  # dcgm-exporter 的节点标签
+# dcgm-exporter 4.x 的节点标签是小写 hostname(3.x 为 Hostname;gpu-operator v26 与独立 chart
+# 均为 4.x)
+DCGM_NODE_LABEL = "hostname"
 DCGM_GPU_LABEL = "gpu"  # dcgm-exporter 的卡序号标签
-HAMI_NS_LABEL = "podnamespace"  # HAMi vGPUmonitor 容器维标签
-HAMI_POD_LABEL = "podname"
+# HAMi 2.9 vGPUmonitor 容器维标签(2.9 起指标全部改为 hami_* 命名,标签 namespace/pod/container)
+HAMI_NS_LABEL = "namespace"
+HAMI_POD_LABEL = "pod"
 
 # 查询模板:{ns}=租户 namespace,{pod}=实例 uuid
 QUERIES = {
@@ -30,24 +33,29 @@ QUERIES = {
 }
 
 # 共享档实例级:HAMi 软切分下 DCGM 的 per-pod 归属不可靠,改用 vGPUmonitor 容器维指标
-# (指标名为 HAMi 默认)。查空时调用方回落 DCGM 模板。
+# (HAMi 2.9 命名:hami_container_device_utilization_ratio 为 0-100 的百分数,
+# hami_vgpu_memory_used_bytes 为字节)。查空时调用方回落 DCGM 模板。
 HAMI_QUERIES = {
     "gpu_util": (
-        'sum(Device_utilization_desc_of_container{{podnamespace="{ns}",podname="{pod}"}})'
+        "sum(hami_container_device_utilization_ratio"
+        f'{{{{{HAMI_NS_LABEL}="{{ns}}",{HAMI_POD_LABEL}="{{pod}}"}}}})'
     ),
     "vram_used_mb": (
-        'sum(vGPU_device_memory_usage_in_bytes{{podnamespace="{ns}",podname="{pod}"}})'
+        f'sum(hami_vgpu_memory_used_bytes{{{{{HAMI_NS_LABEL}="{{ns}}",{HAMI_POD_LABEL}="{{pod}}"}}}})'
         " / 1024 / 1024"
     ),
 }
 
-# 管理端节点级模板:{node} 注入;不聚合,按卡多序列返回(query_range_multi)
+# 管理端节点级模板:{node} 注入;不聚合,按卡多序列返回(query_range_multi)。节点标签从常量派生
+_NODE_SEL = f'{{{{{DCGM_NODE_LABEL}="{{node}}"}}}}'
 NODE_QUERIES = {
-    "util": 'DCGM_FI_DEV_GPU_UTIL{{Hostname="{node}"}}',
-    "mem_used_mb": 'DCGM_FI_DEV_FB_USED{{Hostname="{node}"}}',
-    "temp": 'DCGM_FI_DEV_GPU_TEMP{{Hostname="{node}"}}',
+    "util": f"DCGM_FI_DEV_GPU_UTIL{_NODE_SEL}",
+    "mem_used_mb": f"DCGM_FI_DEV_FB_USED{_NODE_SEL}",
+    "temp": f"DCGM_FI_DEV_GPU_TEMP{_NODE_SEL}",
 }
-NODE_XID_QUERY = 'sum(increase(DCGM_FI_DEV_XID_ERRORS{{Hostname="{node}"}}[24h]))'
+# XID 指标是「最近一次 XID 码」的 gauge(不是计数器):按值变化次数近似 24h 事件数,
+# increase() 会把错误码差值当增量累加成无意义的数
+NODE_XID_QUERY = f"sum(changes(DCGM_FI_DEV_XID_ERRORS{_NODE_SEL}[24h]))"
 
 RANGE_STEPS = {"1h": "60s", "6h": "300s", "24h": "1200s"}
 

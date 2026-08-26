@@ -154,7 +154,7 @@ class TestTierSource:
         prom.set_client(
             prom_mock_routed(
                 {
-                    "Device_utilization_desc_of_container": hami_point,
+                    "hami_container_device_utilization_ratio": hami_point,
                     "DCGM_FI_DEV_GPU_UTIL": dcgm_point,
                 }
             )
