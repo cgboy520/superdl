@@ -1,8 +1,8 @@
 # acme-dns(RFC2136 DNS01 中转)部署与轮换 Runbook
 
 泛域名证书(`*.app.superdl.example.com`)的 DNS01 挑战路径。替代原个人仓
-`cert-manager-webhook-alidns`:cert-manager 内置 RFC2136 solver → acme-dns
-(凭据仅可更新 `_acme-challenge` 子域 TXT)→ 主域 DNS 一次性 CNAME 委托。
+`cert-manager-webhook-alidns`:cert-manager 内置 acmeDNS solver(经 acme-dns 的 HTTP 注册/更新 API
+写 TXT,不是 RFC2136 协议)→ acme-dns(凭据仅可更新自己子域的 TXT)→ 主域 DNS 一次性 CNAME 委托。
 
 ## 架构与信任模型
 
@@ -11,8 +11,8 @@ Let's Encrypt 验证服务器
   └─ 查 _acme-challenge.app.superdl.example.com TXT
       └─ CNAME → <uuid>.auth.superdl.example.com(一次性,主域 DNS 控制台配置)
           └─ NS: auth.superdl.example.com → acme-dns LoadBalancer IP(53,公网)
-cert-manager(RFC2136 solver)
-  └─ TSIG(acmedns.json:username/password/fulldomain)→ acme-dns 动态更新 TXT
+cert-manager(acmeDNS solver)
+  └─ 账户凭据(acmedns.json:username/password/fulldomain/subdomain)→ acme-dns HTTP API 更新 TXT
 ```
 
 - 凭据爆炸半径:acme-dns 账户只能更新自己 fulldomain 的 TXT;主域 RAM 凭据不再进集群。
@@ -42,13 +42,16 @@ cert-manager(RFC2136 solver)
    保存返回的 `username/password/fulldomain`。
 6. **主域 DNS 委托**:`_acme-challenge.app.superdl.example.com CNAME <fulldomain>`
    (`*.app` 泛域名挑战查询的就是 `_acme-challenge.app.<域>`)
-7. **建 TSIG secret**(preflight 强制校验):
+7. **建账户 secret**(preflight 强制校验;JSON 以**被验证的域**为键——泛域名 `*.app.<域>` 的挑战名是 `app.<域>`,
+   值就是注册 API 返回的整个对象):
    ```bash
    kubectl -n cert-manager create secret generic acme-dns-account \
-     --from-literal=acmedns.json='{"<fulldomain>":{"username":"...","password":"...","fulldomain":"<fulldomain>","server":"http://acme-dns-api.cert-manager.svc.cluster.local:8080"}}'
+     --from-literal=acmedns.json='{"app.superdl.example.com":{"username":"...","password":"...","fulldomain":"<fulldomain>","subdomain":"<subdomain>","allowfrom":[]}}'
    ```
-   server 字段是 cert-manager 更新 TXT 时调用的注册 API 地址(acme-dns 模式经 HTTP API,
-   不是 RFC2136 协议),必须指向集群内 `acme-dns-api` Service。
+   cert-manager 更新 TXT 时调用的是 ClusterIssuer `acmeDNS.host` 指向的集群内 `acme-dns-api` Service
+   (HTTP 注册/更新 API,不是 RFC2136 协议),见 `deploy/app/k8s/05-cert-manager.yaml`。
+   注册命令用 `wget`(acme-dns 镜像无 curl):
+   `kubectl -n cert-manager exec deploy/acme-dns -- wget -qO- --header='Content-Type: application/json' --post-data='{"allowfrom":[]}' http://127.0.0.1:8080/register`
 8. 验证:`kubectl describe certificate superdl-jupyter-wildcard -n superdl`
    (Ready=True);`kubectl logs -n cert-manager deploy/cert-manager | grep -i acme`
 

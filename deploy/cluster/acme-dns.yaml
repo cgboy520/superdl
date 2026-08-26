@@ -1,4 +1,4 @@
-# acme-dns(RFC2136 DNS01 中转,P1-6):替代个人仓 cert-manager-webhook-alidns。
+# acme-dns(DNS01 中转,cert-manager 经其 HTTP API 更新 TXT;acmeDNS solver):替代个人仓 cert-manager-webhook-alidns。
 # 信任模型:全域 RAM DNS 凭据 → acme-dns 账户凭据(仅可更新 _acme-challenge 子域 TXT)。
 # 一次性配置(公网 NS/CNAME 委托 + 账户注册 + TSIG secret + digest 钉死)见
 # runbooks/acme-dns.md;占位符(CHANGE_ME/example.com)由 preflight.sh 强制扫描。
@@ -25,10 +25,17 @@ data:
     connection = "/var/lib/acme-dns/acme-dns.db"
     [api]
     # 注册/更新 API 仅集群内可达(ClusterIP,与 cert-manager 同 ns):
-    # cert-manager 的 acme-dns 模式经该 HTTP API 更新 TXT(非 RFC2136 协议本身);
-    # 接口本身要 username/password 凭据,不暴露公网
-    listen = "0.0.0.0:8080"
+    # cert-manager 的 acmeDNS solver 经该 HTTP API 更新 TXT(非 RFC2136 协议本身);
+    # 接口本身要 username/password 凭据,不暴露公网。
+    # 键名是 ip/port(listen 是 [general] 段 DNS 监听的键,写在这里会被忽略,API 落到随机端口)
+    ip = "0.0.0.0"
+    port = "8080"
+    disable_registration = false
     tls = "none"
+    [logconfig]
+    loglevel = "info"
+    logtype = "stdout"
+    logformat = "text"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

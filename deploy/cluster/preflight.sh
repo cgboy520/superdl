@@ -42,7 +42,7 @@ else
 fi
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
-check_secret cert-manager acme-dns-account "acme-dns 账户凭据(RFC2136 DNS01,建法见 runbooks/acme-dns.md)"
+check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
 if [[ "$env_name" == "full" ]]; then
   check_secret monitoring grafana-admin "Grafana 管理员口令(light 档关 Grafana,不需要)"
 fi
