@@ -128,9 +128,14 @@ spec:
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "租户 Pod 必须 automountServiceAccountToken: false"
     # 租户 Pod 一律走 nodeSelector(独享池经标签绑节点):nodeName 是调度器旁路,
-    # 平台创建路径从不设置(real.py 仅 node_selector),出现即异常(安全P0-1)
-    - expression: "!has(object.spec.nodeName)"
-      message: "租户 Pod 禁止指定 spec.nodeName 绕过调度器"
+    # 平台创建路径从不设置(real.py 仅 node_selector),CREATE 时出现即异常(安全P0-1)。
+    # UPDATE 必须放行「已绑定且未变」的 nodeName:调度器 Bind 之后 Pod 天然带 nodeName,
+    # kubelet Allocate 阶段 HAMi device plugin 回写 hami.io/* 注解就是一次 UPDATE,
+    # 一刀切 !has() 会让所有共享档 Pod 在 Allocate 时被拒(UnexpectedAdmissionError,实测)
+    - expression: >-
+        !has(object.spec.nodeName) ||
+        (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName)
+      message: "租户 Pod 禁止指定/改动 spec.nodeName 绕过调度器"
     # RuntimeClass 白名单:kata-qemu(dedicated 档 VM 隔离)与 nvidia(light 档 HAMi
     # devicePlugin 注入)之外皆非法;危险 RuntimeClass 是容器逃逸的直达通道(安全P0-1)
     - expression: >-
@@ -268,6 +273,7 @@ spec:
     # 注意 DaemonSet 控制器建 Pod 自带 nodeName——非豁免 ns 新增 DaemonSet 前须先扩豁免
     - expression: >-
         !has(object.spec.nodeName) ||
+        (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName) ||
         (request.namespace == 'superdl' && has(object.metadata.labels) &&
          'superdl.io/prewarm' in object.metadata.labels &&
          object.metadata.labels['superdl.io/prewarm'] == 'true')
