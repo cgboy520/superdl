@@ -54,6 +54,10 @@ releases:
     # (见 values/gpu-operator.yaml 头注释);升版前复核 release notes 的 labels/ClusterPolicy 字段变化。
     version: "v26.3.3"
     values: [values/gpu-operator.yaml]
+    # values 开了 ServiceMonitor:CRD 来自 kube-prometheus-stack,新集群首装必须排在它之后,
+    # 且首装 diff 不做 API 校验(kind 尚不存在时 helm diff/install 会直接失败)
+    needs: [monitoring/kube-prometheus-stack]
+    disableValidationOnInstall: true
 
   # GFD(仅 light):平台按 hami 池节点的 nvidia.com/gpu.count 标签取物理卡数(HAMi 把 allocatable 放大为
   # 物理 × 切分数,缺该标签即按 0 纳管防超卖,见 apps/api/app/core/k8s/real.py::_physical_gpu_amount);
@@ -116,6 +120,10 @@ releases:
     set:
       - name: crds.enabled
         value: "true"
+    # values 开了 ServiceMonitor(monitoring.coreos.com CRD 由 kube-prometheus-stack 装):
+    # 新集群首装必须排在 kps 之后,且首装 diff 不做 API 校验,否则整轮 apply 在 diff 阶段就失败
+    needs: [monitoring/kube-prometheus-stack]
+    disableValidationOnInstall: true
     hooks:
       # acme-dns(RFC2136 DNS01 中转,P1-6)与 cert-manager 同 ns,先于此 chart 落地
       - events: ["presync"]
@@ -164,6 +172,9 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/loki-light.yaml
       {{- end }}
+    # values 开了 ServiceMonitor:同 cert-manager,排在 kps 之后、首装免校验
+    needs: [monitoring/kube-prometheus-stack]
+    disableValidationOnInstall: true
 
   - name: alloy
     condition: logCollector.enabled
