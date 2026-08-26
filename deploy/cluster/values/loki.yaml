@@ -44,7 +44,7 @@ chunksCache: {enabled: false}
 resultsCache: {enabled: false}
 lokiCanary: {enabled: false}
 gateway: {enabled: false}
-testPod: {enabled: false}
+test: {enabled: false}       # chart 键是 test.enabled(写成 testPod 不生效:test 默认开且要求 canary,渲染直接 fail)
 monitoring:
   serviceMonitor:
     # kps 已开全命名空间 Monitor 发现(serviceMonitorSelectorNilUsesHelmValues: false)

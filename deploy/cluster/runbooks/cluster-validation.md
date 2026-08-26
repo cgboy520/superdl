@@ -31,7 +31,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] 同卡 2 实例(各 50% 算力 / 8G 显存):互相 `nvidia-smi` 只见配额显存
 - [ ] 互扰压测:一实例满载,记录另一实例吞吐衰减 —— 超卖比率取值的数据依据
 - [ ] 显存超限被拒:申请超过 gpumem 的分配应 OOM 在容器内,不影响邻居
-- [ ] HAMi on k3s:`values/light/hami-light.yaml` 的 `kubeScheduler.imageTag` 与集群版本匹配、devicePlugin `runtimeClassName=nvidia` 生效、RuntimeClass `nvidia` 存在
+- [ ] HAMi on k3s:`values/light/hami-light.yaml` 的 `kubeScheduler.image.tag` 与集群版本匹配、devicePlugin `runtimeClassName=nvidia` 生效、RuntimeClass `nvidia` 存在;渲染出的 hami-device-plugin DaemonSet nodeSelector 只有 `superdl.io/pool: hami`(chart 默认 `gpu: "on"` 已用 null 删除)
 - [ ] k3s 上未装 HAMi 时下单共享档:报错明确指出缺件,不是超时或 500
 
 ## D. 存储

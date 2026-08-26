@@ -5,7 +5,9 @@ scheduler:
     gpuSchedulerPolicy: binpack
 devicePlugin:
   runtimeClassName: ""               # 共享池 runc(HAMi 与 Kata 互斥)
-  nodeSelector:
+  # chart 键是 nvidiaNodeSelector(默认 gpu: "on");写成 nodeSelector 会被忽略,插件永远调度不到我们的节点
+  nvidiaNodeSelector:
+    gpu: null                        # 删掉 chart 默认的 gpu: "on"(helm 合并 map 不会覆盖整段,null 才能删键)
     superdl.io/pool: hami            # 只接管 hami 池,与官方 device plugin 互斥
 devices:
   nvidia:
