@@ -37,7 +37,7 @@ export function useSmsCode(purpose: SmsCodeRequest["purpose"], sentText: string)
       timer.current = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
     },
   });
-  /** 人机校验先行:拿到一次性 token 才发码;SDK 不可用提示刷新。 */
+  /** 人机校验先行(安全策略开启时):拿到一次性 token 才发码;关闭时 token 为空直接发码;SDK 不可用提示刷新。 */
   const send = (phone: string): void => {
     void (async () => {
       try {

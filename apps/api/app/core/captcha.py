@@ -1,8 +1,8 @@
-"""人机校验渠道 seam(验证码 2.0;与短信/实名同一 Protocol + 工厂模式)。
+"""人机校验渠道 seam(阿里云验证码 2.0;与短信/实名同一 Protocol + 工厂模式)。
 
-- mock:dev/test 固定放行串 `mock-pass`(对齐 mock 短信码 "123456" 的哲学);
-- aliyun:阿里云验证码 2.0 VerifyIntelligentCaptcha(RPC 签名 V1,version 2023-03-05),
-  凭据与场景走平台配置中心(env SUPERDL_CAPTCHA_* 为默认值层)。
+是否过这道闸由平台配置·安全策略的 `captcha_enabled` 决定(account.service 读开关);
+开启后凭据与场景走平台配置中心(env SUPERDL_CAPTCHA_* 为默认值层)。没有 mock 渠道:
+关闭即跳过,测试经 set_captcha_channel 注入假渠道。
 
 安全语义:校验门 fail-closed——渠道故障(网络/签名/欠费)抛 CaptchaError,调用方
 一律拒绝后续动作(短信口子宁可短时不可用,不向轰炸敞开;告警经统一异常日志上监控)。
@@ -18,10 +18,6 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# mock 放行串:dev/test 联调用(前端 captcha-config 拿到 provider=mock 时直接回传本值,
-# 不加载验证码 SDK);生产 provider 强制 aliyun(config prod 校验与 prod_forbidden 双闸)
-MOCK_CAPTCHA_PASS_TOKEN = "mock-pass"
-
 
 class CaptchaError(RuntimeError):
     """渠道侧故障(网络/签名/欠费/异常响应)。fail-closed:调用方拒绝后续动作。"""
@@ -32,13 +28,6 @@ class CaptchaChannel(Protocol):
         """验签一次通过性校验(CaptchaVerifyParam 一次性,重复调用返 F008)。
         渠道故障抛 CaptchaError;人/机判定不通过返回 False。"""
         ...
-
-
-class MockCaptchaChannel:
-    async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
-        ok = captcha_verify_param == MOCK_CAPTCHA_PASS_TOKEN
-        logger.info("mock_captcha_verify", passed=ok)
-        return ok
 
 
 class AliyunCaptchaChannel:
@@ -103,8 +92,6 @@ async def get_captcha_channel(session: AsyncSession) -> CaptchaChannel:
     from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)
-    if cfg["captcha_provider"] == "mock":
-        return MockCaptchaChannel()
     if not (
         cfg["captcha_access_key_id"]
         and cfg["captcha_access_key_secret"]

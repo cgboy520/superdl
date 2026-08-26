@@ -29,7 +29,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     phone = "13411112222"
     await client.post(
         "/api/v1/auth/sms-code",
-        json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+        json={"phone": phone, "purpose": "register"},
     )
     reg = await client.post(
         "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}

@@ -38,10 +38,10 @@ async def send_sms_code(body: SmsCodeRequest, session: DbSession, request: Reque
 
 
 class CaptchaConfigOut(BaseModel):
-    """前端初始化验证码 SDK 所需的公开信息(身份标/场景非密;provider=mock 时前端
-    直接回传固定放行串,不加载 SDK)。"""
+    """前端初始化验证码 SDK 所需的公开信息(身份标/场景非密)。enabled=false(安全策略
+    captcha_enabled 关闭)时前端不加载 SDK,发码不带 token。"""
 
-    provider: str
+    enabled: bool
     scene_id: str | None
     prefix: str | None
 
@@ -53,7 +53,7 @@ async def captcha_config(session: DbSession) -> CaptchaConfigOut:
 
     cfg = await get_effective_platform_config(session)
     return CaptchaConfigOut(
-        provider=cfg["captcha_provider"],
+        enabled=cfg["captcha_enabled"] == "true",
         scene_id=cfg["captcha_scene_id"] or None,
         prefix=cfg["captcha_prefix"] or None,
     )

@@ -259,7 +259,7 @@ class TestApproveSuccess:
         # 登录拿 refresh token(执行后要验证旧凭证全废)
         await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "login", "captcha_token": "mock-pass"},
+            json={"phone": PHONE, "purpose": "login"},
         )
         login = await client.post("/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"})
         assert login.status_code == 200, login.text
@@ -299,7 +299,7 @@ class TestApproveSuccess:
         # 「账号已注销」文案只出现在持有凭证的 access/refresh 路径(见上两条断言)。
         await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "login", "captcha_token": "mock-pass"},
+            json={"phone": PHONE, "purpose": "login"},
         )
         relogin = await client.post(
             "/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"}
@@ -312,7 +312,7 @@ class TestApproveSuccess:
         await age_sms_codes(sm)
         send = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": PHONE, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": PHONE, "purpose": "register"},
         )
         assert send.status_code == 204, send.text
         reregister = await client.post(

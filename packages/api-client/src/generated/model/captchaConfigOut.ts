@@ -6,11 +6,11 @@
  */
 
 /**
- * 前端初始化验证码 SDK 所需的公开信息(身份标/场景非密;provider=mock 时前端
- * 直接回传固定放行串,不加载 SDK)。
+ * 前端初始化验证码 SDK 所需的公开信息(身份标/场景非密)。enabled=false(安全策略
+ * captcha_enabled 关闭)时前端不加载 SDK,发码不带 token。
  */
 export interface CaptchaConfigOut {
+  enabled: boolean;
   prefix: string | null;
-  provider: string;
   scene_id: string | null;
 }

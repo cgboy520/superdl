@@ -44,12 +44,16 @@
 - **日志 PII / 凭据全局脱敏。** `app/core/logging.py` 按键名(phone / id_number / token / secret / password / code)兜底打码,
   防新增日志点漏脱敏。
 - **账号级登录锁定。** 撞库可以换 IP,换不了目标账号:账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加。
-- **短信发码前置人机校验。** `/auth/sms-code` 是刷码与撞库的头号口子,prod 强制阿里云验证码 2.0,mock 拒绝启动。
-  代价:首次上线前必须先开通验证码服务(资质有 lead time)。
+- **安全功能是开关,不是 mock 提供方。** 背景:人机验证曾以 `captcha_provider=mock` 表达「关闭」,为这个替身要养 mock 渠道、
+  固定放行串 `mock-pass`(前后端各一份)、prod 启动与写入双闸,e2e 也要带串。决定:关掉就是跳过的安全功能(人机验证、实名、管理端 MFA)
+  一律用 `*_enabled` 布尔开关表达(平台配置·安全策略组),删除 mock 提供方;只有流程无它完不成的第三方(短信要有码、支付要有回调、
+  K8s 要有 Pod)各保留唯一一个替身(`sms_provider=mock` / `payment_mock` / `k8s_backend=fake`),prod 照旧拒绝。prod 允许关闭
+  安全开关——那是运营决定,代价是配置中心红牌 + 审计 reason,而不是启动拒绝。后果:`/auth/sms-code` 的 `captcha_token` 变为可选
+  (开启时缺失 400),首次上线可先关人机验证再补资质(不再被验证码资质 lead time 卡住)。
 - **prod 启动校验只管 provider,不管凭据齐全性;真实集群不再绑定 prod。** 背景:启动期曾要求 prod 配齐阿里云短信
   5 项与验证码 4 项,且 `k8s_backend=real` 强制 `environment=prod`——连真实集群必须先拿齐短信签名、验证码、实名资质,
   实机验证被资质链阻塞,也与平台配置中心「资质到位后在线录入即生效」自相矛盾。决定:`_validate_prod` 只拒
-  sms / captcha / payment 的 mock provider 与基础设施占位值,凭据齐全性交给运行期渠道工厂 fail-closed
+  sms / payment 的 mock provider 与基础设施占位值,凭据齐全性交给运行期渠道工厂 fail-closed
   (缺凭据是首条短信失败而不是启动失败,管理端 test-sms 可验);实名只在开启充值强制实名时才拒 mock,
   DB 写入侧 `_check_prod_real_name_combination` 是该组合的唯一守卫;`alertmanager_token` 缺失与 `prometheus_url`
   指向本地降为启动 WARNING;dev + real 允许共存。后果:真实集群上的暴露面由部署拓扑(ingress / 公网 DNS)决定,

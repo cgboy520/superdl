@@ -1,5 +1,5 @@
 /**
- * 平台配置:微信支付 / 支付宝 / 阿里云短信 / 实名认证 / 合规备案 / 集群接入。
+ * 平台配置:安全策略开关 / 微信支付 / 支付宝 / 阿里云短信 / 人机验证 / 实名认证 / 合规备案 / 集群接入。
  * 仅超级管理员可读写;env 为默认值层,DB 覆盖即时生效(免重启发版)。
  * secret 类永不回显明文:只显示"已配置 + 尾 4 位",输入留空 = 保持不变。
  */
@@ -43,6 +43,11 @@ export const Route = createFileRoute("/_app/platform")({
 
 // i18n-exempt(至 GROUP_INTRO 为止):中国渠道(微信/支付宝/阿里云/工信部)字段名与操作指引,决策不译
 const FIELD_LABELS: Record<string, string> = {
+  captcha_enabled: "启用人机验证(阿里云验证码 2.0)",
+  captcha_scene_id: "场景 ID",
+  captcha_prefix: "身份标(prefix)",
+  captcha_access_key_id: "AccessKey ID",
+  captcha_access_key_secret: "AccessKey Secret",
   grafana_url: "Grafana 地址(可选,外链)",
   oncall_phone: "值班手机号(critical 告警短信)",
   payment_wechat_enabled: "启用微信支付渠道",
@@ -84,6 +89,8 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const FIELD_EXTRA: Record<string, string> = {
+  captcha_enabled:
+    "开启后用户端「获取验证码」先弹阿里云滑块,请先在「人机校验」页填齐凭据;生产环境关闭 = 发码接口只剩 IP/手机号限流",
   oncall_phone: "critical 平台告警经阿里云短信直发该手机号(不依赖平台自身可用性);留空即关闭",
   payment_wechat_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现微信入口",
   payment_alipay_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现支付宝入口",
@@ -102,13 +109,16 @@ const FIELD_EXTRA: Record<string, string> = {
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  mock: "mock(仅开发环境)",
+  mock: "开发模式(不发短信,固定码 123456 写日志;仅开发环境)",
   aliyun: "阿里云",
   cn: "国内镜像(rancher-mirror.rancher.cn)",
   official: "官方源",
 };
 
 const GROUP_INTRO: Record<string, string> = {
+  security:
+    "安全功能的运行期开关:关闭即跳过对应校验,开启前先在各渠道页填齐凭据(凭据缺失时该功能 fail-closed 报 502)。" +
+    "生产环境允许关闭,但等于放弃该道纵深,保存时必须写明原因(进审计)。",
   observability:
     "管理端节点页自绘监控曲线,不依赖 Grafana。如需深挖(自定义面板/长程对比),可在此配置 " +
     "Grafana 地址,节点页将出现「在 Grafana 打开」外链(不做 iframe 嵌入)。",
@@ -129,7 +139,7 @@ const GROUP_INTRO: Record<string, string> = {
   captcha:
     "阿里云验证码 2.0(/auth/sms-code 前置人机校验,防分布式脚本刷码):开通验证码 2.0 后," +
     "在控制台「场景管理」新建 Web/H5 场景取场景 ID,「概览」页取身份标;" +
-    "建议独立 RAM 子账号仅授 AliyunYundunAFSFullAccess。生产环境 Provider 必须为「阿里云」。",
+    "建议独立 RAM 子账号仅授 AliyunYundunAFSFullAccess。是否启用在「安全策略」页切换;开启前请先在此填齐凭据。",
   support:
     "客服联系方式展示于用户端页脚与「帮助与支持」页。留空即不展示对应入口 —— " +
     "GPU 租赁的用户教育成本高,没有任何联系方式等于把问题都堵在工单之外。",
@@ -413,6 +423,19 @@ function PlatformConfigPage() {
     >
       <Tabs
         items={[
+          {
+            key: "security",
+            label: t("platform.tabSecurity"),
+            children: (
+              <GroupPanel
+                group="security"
+                items={groupItems("security")}
+                draft={draft}
+                setDraft={setDraft}
+                disabled={disabled}
+              />
+            ),
+          },
           {
             key: "payment_wechat",
             label: t("platform.tabWechat"),

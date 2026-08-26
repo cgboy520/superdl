@@ -32,6 +32,7 @@ class PlatformSetting(Base):
 
 
 SettingGroup = Literal[
+    "security",
     "payment_wechat",
     "payment_alipay",
     "sms",
@@ -60,6 +61,13 @@ class SettingSpec:
 
 # key 与 Settings 同名字段一一对应(env 即默认值层;K8s Secret 注入仍有效)
 SETTING_SPECS: dict[str, SettingSpec] = {
+    # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;prod 关闭不拒启动,只给告警) ----
+    "captcha_enabled": SettingSpec(
+        "security",
+        "bool",
+        hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
+        "关闭 = 不做人机校验,发码口子只剩 IP/手机号限流",
+    ),
     # ---- 微信支付(APIv3;公钥模式与平台证书模式二选一,新商户仅公钥模式) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
     "wechat_mchid": SettingSpec(
@@ -151,13 +159,6 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     ),
     "real_name_access_key_secret": SettingSpec("real_name", "secret", max_len=128),
     # ---- 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸;防分布式脚本刷码) ----
-    "captcha_provider": SettingSpec(
-        "captcha",
-        "choice",
-        choices=("mock", "aliyun"),
-        prod_forbidden=("mock",),
-        hint="生产环境不得切回 mock(无校验,短信口子对脚本敞开)",
-    ),
     "captcha_scene_id": SettingSpec(
         "captcha", "str", max_len=64, hint="场景 ID(控制台·场景管理;服务端验签强制写入防篡改)"
     ),

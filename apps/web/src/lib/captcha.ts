@@ -1,8 +1,8 @@
-/** 人机校验(阿里云验证码 2.0,P1-17)前端接入。
+/** 人机校验(阿里云验证码 2.0)前端接入。
  *
- * 行为按 /auth/captcha-config 的 provider 决定:
- * - mock:dev/test 直返固定放行串 "mock-pass"(与后端 MockCaptchaChannel 对齐),不加载 SDK;
- * - aliyun:动态加载 AliyunCaptcha.js(仅一次),经隐藏触发按钮拉起弹窗验证,
+ * 行为按 /auth/captcha-config 的 enabled 决定(平台配置·安全策略 captcha_enabled):
+ * - 关闭:不加载 SDK,发码请求不带 token;
+ * - 开启:动态加载 AliyunCaptcha.js(仅一次),经隐藏触发按钮拉起弹窗验证,
  *   通过回调 captchaVerifyParam 取得一次性 token 后随业务请求提交。
  *
  * token 一次性且 20 分钟内有效(阿里云约束):每次发码都重新拉起验证,不复用。
@@ -10,7 +10,6 @@
 import { captchaConfigApiV1AuthCaptchaConfigGet } from "@superdl/api-client";
 import type { CaptchaConfigOut } from "@superdl/api-client";
 
-const MOCK_PASS_TOKEN = "mock-pass";
 const SDK_URL = "https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js";
 const TRIGGER_ID = "superdl-aliyun-captcha-trigger";
 const BOX_ID = "superdl-aliyun-captcha-box";
@@ -97,10 +96,11 @@ async function initAliyun(cfg: CaptchaConfigOut): Promise<void> {
   sdkInitialized = true;
 }
 
-/** 获取一次人机校验 token。SDK 加载失败/不可用/验证超时则 reject(调用方提示刷新重试)。 */
-export async function requestCaptchaToken(): Promise<string> {
+/** 获取一次人机校验 token;开关关闭时返回 undefined(发码不带 token)。
+ *  SDK 加载失败/不可用/验证超时则 reject(调用方提示刷新重试)。 */
+export async function requestCaptchaToken(): Promise<string | undefined> {
   const cfg = await getConfig();
-  if (cfg.provider === "mock") return MOCK_PASS_TOKEN;
+  if (!cfg.enabled) return undefined;
   await initAliyun(cfg);
   return new Promise<string>((resolve, reject) => {
     pendingResolve = resolve;

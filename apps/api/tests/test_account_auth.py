@@ -18,7 +18,7 @@ async def send_code(client: AsyncClient, phone: str = PHONE, purpose: str = "reg
     resp = await client.post(
         "/api/v1/auth/sms-code",
         # mock 渠道固定放行串(P1-17 人机校验闸门;与 MOCK_SMS_CODE "123456" 同哲学)
-        json={"phone": phone, "purpose": purpose, "captcha_token": "mock-pass"},
+        json={"phone": phone, "purpose": purpose},
     )
     assert resp.status_code == 204, resp.text
 
@@ -363,7 +363,7 @@ class TestSmsQuotaAndBackoff:
         # 受害者自己请求:不被日配额挡(退避上限 480s,最近一条在 2h 前 → 放行)
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
         # 消费(注册)同样不受那 10 条未消费记录影响
@@ -381,7 +381,7 @@ class TestSmsQuotaAndBackoff:
         await send_code(client, phone)
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "SMS_TOO_FREQUENT"
@@ -397,12 +397,12 @@ class TestSmsQuotaAndBackoff:
             await session.commit()
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 429
         assert 60 < resp.json()["params"]["seconds"] <= 120

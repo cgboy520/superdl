@@ -1,10 +1,11 @@
-"""人机校验(P1-17):mock/aliyun 渠道 seam、/auth/sms-code 前置闸、公开初始化配置。"""
+"""人机校验:阿里云渠道 seam、captcha_enabled 开关下的 /auth/sms-code 前置闸、公开初始化配置。"""
 
 import httpx
 import pytest
 from httpx import AsyncClient
 
 from app.core.captcha import AliyunCaptchaChannel, CaptchaError, set_captcha_channel
+from app.core.platform_config import PlatformSetting
 
 
 @pytest.fixture(autouse=True)
@@ -16,6 +17,18 @@ def _reset_channel():
 class _FailingChannel:
     async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
         raise CaptchaError("provider down")
+
+
+class _RejectingChannel:
+    async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
+        return False
+
+
+async def _set(sm, **rows: str) -> None:
+    async with sm() as session:
+        for key, value in rows.items():
+            session.add(PlatformSetting(key=key, value=value))
+        await session.commit()
 
 
 class TestAliyunChannel:
@@ -58,7 +71,28 @@ class TestAliyunChannel:
 
 
 class TestSmsCodeGate:
-    async def test_wrong_token_rejected(self, client: AsyncClient):
+    async def test_disabled_skips_verification(self, client: AsyncClient, sm):
+        """开关关闭(默认):不带 token 直接发码,渠道根本不被调用——
+        挂了说明「关闭」没有跳过校验,dev/e2e 又得回到放行串时代。"""
+        set_captcha_channel(_FailingChannel())
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000094", "purpose": "register"}
+        )
+        assert resp.status_code == 204, resp.text
+
+    async def test_enabled_requires_token(self, client: AsyncClient, sm):
+        """开关开启:缺 token 即 400 CAPTCHA_REQUIRED——挂了说明开关没接到发码路径。"""
+        await _set(sm, captcha_enabled="true")
+        set_captcha_channel(_RejectingChannel())
+        resp = await client.post(
+            "/api/v1/auth/sms-code", json={"phone": "13800000095", "purpose": "register"}
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "CAPTCHA_REQUIRED"
+
+    async def test_wrong_token_rejected(self, client: AsyncClient, sm):
+        await _set(sm, captcha_enabled="true")
+        set_captcha_channel(_RejectingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": "13800000095", "purpose": "register", "captcha_token": "wrong"},
@@ -72,6 +106,7 @@ class TestSmsCodeGate:
 
         from app.modules.account.models import SmsCode
 
+        await _set(sm, captcha_enabled="true")
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code",
@@ -85,9 +120,24 @@ class TestSmsCodeGate:
             ).scalar_one_or_none()
             assert row is None  # 未落库:闸门在写库之前
 
-    async def test_captcha_config_public(self, client: AsyncClient):
-        """前端初始化配置:免鉴权;mock 环境 scene/prefix 为空(前端据此直传放行串)。"""
+    async def test_enabled_without_credentials_is_fail_closed(self, client: AsyncClient, sm):
+        """开启但凭据未配:按配置构造渠道即失败 → 502,不静默放行。"""
+        await _set(sm, captcha_enabled="true")
+        resp = await client.post(
+            "/api/v1/auth/sms-code",
+            json={"phone": "13800000096", "purpose": "register", "captcha_token": "t"},
+        )
+        assert resp.status_code == 502
+        assert resp.json()["code"] == "CAPTCHA_CHANNEL_ERROR"
+
+    async def test_captcha_config_public(self, client: AsyncClient, sm):
+        """前端初始化配置:免鉴权;开关即时跟随 DB 覆盖(前端据 enabled 决定是否加载 SDK)。"""
         resp = await client.get("/api/v1/auth/captcha-config")
         assert resp.status_code == 200
-        body = resp.json()
-        assert body == {"provider": "mock", "scene_id": None, "prefix": None}
+        assert resp.json() == {"enabled": False, "scene_id": None, "prefix": None}
+        await _set(sm, captcha_enabled="true", captcha_scene_id="scene-1", captcha_prefix="pfx")
+        assert (await client.get("/api/v1/auth/captcha-config")).json() == {
+            "enabled": True,
+            "scene_id": "scene-1",
+            "prefix": "pfx",
+        }

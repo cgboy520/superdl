@@ -83,26 +83,31 @@ async def send_sms_code(
     purpose: str,
     *,
     client_ip: str | None = None,
-    captcha_token: str,
+    captcha_token: str | None = None,
 ) -> None:
     settings = get_settings()
     # 发送尝试只按 IP 限流;手机号日配额在消费侧计(见 SMS_CONSUME_DAILY_MAX)。
     await check_rate_limit(
         f"sms-send-ip:{client_ip or '-'}", max_attempts=20, window_seconds=3600.0
     )
-    # 人机校验(P1-17):分布式脚本可轮换 IP/号码池绕过全部单点限流,
+    cfg = await get_effective_platform_config(session)
+    # 人机校验(安全策略 captcha_enabled):分布式脚本可轮换 IP/号码池绕过全部单点限流,
     # 行为验证码是唯一纵深。闸门 fail-closed:渠道故障一律 502,宁停服务不放轰炸。
-    try:
-        captcha_ok = await (await get_captcha_channel(session)).verify(captcha_token, client_ip)
-    except CaptchaError as exc:
-        logger.error("captcha_channel_error", error=str(exc))
-        raise AppError(
-            ErrorCode.CAPTCHA_CHANNEL_ERROR,
-            key="account.captchaChannelError",
-            http_status=status.HTTP_502_BAD_GATEWAY,
-        ) from exc
-    if not captcha_ok:
-        raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
+    if cfg["captcha_enabled"] == "true":
+        if not captcha_token:
+            raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
+        try:
+            channel = await get_captcha_channel(session)
+            captcha_ok = await channel.verify(captcha_token, client_ip)
+        except CaptchaError as exc:
+            logger.error("captcha_channel_error", error=str(exc))
+            raise AppError(
+                ErrorCode.CAPTCHA_CHANNEL_ERROR,
+                key="account.captchaChannelError",
+                http_status=status.HTTP_502_BAD_GATEWAY,
+            ) from exc
+        if not captcha_ok:
+            raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
     # 平台级闸门:分布式 IP/号码池可绕过单点限流,预算池兜底(计数即准入,不落库无效验证码)
     await ensure_sms_platform_quota()
     # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长;消费一条即归零。
@@ -133,7 +138,6 @@ async def send_sms_code(
                 params={"seconds": math.ceil(required - elapsed)},
                 http_status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-    cfg = await get_effective_platform_config(session)
     code = MOCK_SMS_CODE if cfg["sms_provider"] == "mock" else f"{secrets.randbelow(10**6):06d}"
     row = SmsCode(
         phone=phone,

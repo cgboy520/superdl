@@ -196,7 +196,6 @@ class TestProdConfigValidation:
             "environment": "prod",
             "jwt_secret": "x" * 40,
             "sms_provider": "aliyun",
-            "captcha_provider": "aliyun",
             "k8s_backend": "real",
             "payment_mock": False,
             "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
@@ -290,7 +289,7 @@ class TestSmsCodeBruteForce:
         phone = "13800000088"
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": phone, "purpose": "register"},
         )
         assert resp.status_code == 204
         for _ in range(5):
@@ -321,7 +320,7 @@ class TestSmsCodeBruteForce:
         phone = "13800000090"
         await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": phone, "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": phone, "purpose": "register"},
         )
         async with sm() as session:
             await account_service._consume_sms_code(session, phone, "123456", "register")
@@ -353,13 +352,12 @@ class TestSmsCodeBruteForce:
                 json={
                     "phone": f"138000001{i:02d}",
                     "purpose": "register",
-                    "captcha_token": "mock-pass",
                 },
             )
             assert resp.status_code == 204
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": "13800000199", "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": "13800000199", "purpose": "register"},
         )
         assert resp.status_code == 429
 
@@ -463,7 +461,7 @@ class TestSmsCodeAtRest:
 
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": "13800000777", "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": "13800000777", "purpose": "register"},
         )
         assert resp.status_code == 204, resp.text
         async with sm() as session:

@@ -66,8 +66,8 @@ async function readToken(page: Page): Promise<string> {
 /** 经用户端 API 注册一个租户(mock 短信码固定 123456),返回 user_id。 */
 async function registerTenant(request: APIRequestContext, phone: string): Promise<number> {
   const code = await request.post(`${API}/api/v1/auth/sms-code`, {
-    // mock 验证码渠道的固定放行串(与用户端 lib/captcha.ts 同一契约);缺失即 422
-    data: { phone, purpose: "register", captcha_token: "mock-pass" },
+    // dev 环境安全策略 captcha_enabled 默认关闭:发码不带人机校验 token
+    data: { phone, purpose: "register" },
   });
   expect(code.status(), await code.text()).toBe(204);
   const resp = await request.post(`${API}/api/v1/auth/register`, {

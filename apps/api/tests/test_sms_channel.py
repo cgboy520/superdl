@@ -62,7 +62,7 @@ class TestVerifyCodeSendFailure:
         set_sms_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": "13800000090", "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": "13800000090", "purpose": "register"},
         )
         assert resp.status_code == 502
         assert resp.json()["code"] == "SMS_SEND_FAILED"
@@ -135,7 +135,7 @@ class TestPlatformQuota:
         await sms_module.ensure_sms_platform_quota()  # 占满配额
         resp = await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": "13800000093", "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": "13800000093", "purpose": "register"},
         )
         assert resp.status_code == 429
         assert resp.json()["code"] == "RATE_LIMITED"

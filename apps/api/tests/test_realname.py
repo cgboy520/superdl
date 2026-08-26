@@ -134,7 +134,7 @@ class TestRealName:
     async def test_register_requires_terms(self, client: AsyncClient):
         await client.post(
             "/api/v1/auth/sms-code",
-            json={"phone": "13800000163", "purpose": "register", "captcha_token": "mock-pass"},
+            json={"phone": "13800000163", "purpose": "register"},
         )
         resp = await client.post(
             "/api/v1/auth/register", json={"phone": "13800000163", "sms_code": "123456"}

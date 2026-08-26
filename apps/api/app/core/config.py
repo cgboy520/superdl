@@ -56,9 +56,9 @@ class Settings(BaseSettings):
     real_name_access_key_id: str | None = None
     real_name_access_key_secret: str | None = None
 
-    # 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸;P1-17)
-    # prod 强制 aliyun(见 prod 校验);scene/prefix 为客户端初始化所需公开信息(非密)
-    captcha_provider: Literal["mock", "aliyun"] = "mock"
+    # 人机校验(阿里云验证码 2.0,/auth/sms-code 前置闸)。开关与凭据均可被平台配置中心覆盖:
+    # 关闭 = 跳过校验(prod 关闭不拒启动,由配置中心告警提示);scene/prefix 为客户端初始化公开信息
+    captcha_enabled: bool = False
     captcha_scene_id: str | None = None
     captcha_prefix: str | None = None
     captcha_access_key_id: str | None = None
@@ -221,9 +221,6 @@ class Settings(BaseSettings):
                 "real_name_required_for_recharge=true 时 real_name_provider 不得为 mock"
                 "(mock 恒过,实名形同虚设;请接阿里云实名或先关闭充值强制实名)"
             )
-        # 人机校验:/auth/sms-code 是撞库/刷码的头号口子,mock = 无校验门
-        if self.captcha_provider == "mock":
-            problems.append("captcha_provider 不得为 mock(短信口子对脚本敞开;请接阿里云验证码 2.0)")
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             # DB 覆盖层也可能已配:env 侧缺失只作 fail-fast 提示的其中一路;
             # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次

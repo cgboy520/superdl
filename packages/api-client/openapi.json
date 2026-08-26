@@ -1874,8 +1874,12 @@
         "type": "object"
       },
       "CaptchaConfigOut": {
-        "description": "前端初始化验证码 SDK 所需的公开信息(身份标/场景非密;provider=mock 时前端\n直接回传固定放行串,不加载 SDK)。",
+        "description": "前端初始化验证码 SDK 所需的公开信息(身份标/场景非密)。enabled=false(安全策略\ncaptcha_enabled 关闭)时前端不加载 SDK,发码不带 token。",
         "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "prefix": {
             "anyOf": [
               {
@@ -1886,10 +1890,6 @@
               }
             ],
             "title": "Prefix"
-          },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
           },
           "scene_id": {
             "anyOf": [
@@ -1904,7 +1904,7 @@
           }
         },
         "required": [
-          "provider",
+          "enabled",
           "scene_id",
           "prefix"
         ],
@@ -5156,6 +5156,7 @@
           },
           "group": {
             "enum": [
+              "security",
               "payment_wechat",
               "payment_alipay",
               "sms",
@@ -6748,10 +6749,16 @@
       "SmsCodeRequest": {
         "properties": {
           "captcha_token": {
-            "maxLength": 4096,
-            "minLength": 1,
-            "title": "Captcha Token",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
           },
           "phone": {
             "description": "中国大陆手机号",
@@ -6771,8 +6778,7 @@
         },
         "required": [
           "phone",
-          "purpose",
-          "captcha_token"
+          "purpose"
         ],
         "title": "SmsCodeRequest",
         "type": "object"

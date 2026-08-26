@@ -9,6 +9,7 @@ export type PlatformConfigItemOutGroup = typeof PlatformConfigItemOutGroup[keyof
 
 
 export const PlatformConfigItemOutGroup = {
+  security: 'security',
   payment_wechat: 'payment_wechat',
   payment_alipay: 'payment_alipay',
   sms: 'sms',
