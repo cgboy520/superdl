@@ -31,9 +31,12 @@ async def _load(session: AsyncSession, task: OutboxTask) -> Instance | None:
 
 
 async def _create_with_port_recovery(session: AsyncSession, instance: Instance) -> None:
-    """建 Pod/Service/Ingress;NodePort 被集群其它对象占用时把端口标 blocked 后重试。"""
+    """建 Pod/Service/路由;NodePort 被集群其它对象占用时把端口标 blocked 后重试。"""
     orch = get_orchestrator()
-    instance.ssh_port = await ensure_port(session, instance)
+    # 不开 SSH 的实例不进端口池:端口池只有 30000–32767 一段(与 K8s NodePort 同段),
+    # 是全平台硬上限。给每台对外服务白占一个名额,会让这段在实例数远未到配额时就先耗尽
+    if instance.with_ssh:
+        instance.ssh_port = await ensure_port(session, instance)
     await orch.ensure_namespace(instance.k8s_namespace)
     # Harbor 拉取凭据:按生效配置托管到租户 ns(指纹相同不覆写),未配机器人则 Pod 不引用
     pull_secret = await ensure_registry_pull_secret(session, instance.k8s_namespace)
@@ -56,7 +59,7 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
 
 
 async def _provision(session: AsyncSession, task: OutboxTask, expected: str) -> None:
-    """create/start 同体:建 Pod/Service/Ingress;状态推进交给 reconciler
+    """create/start 同体:建 Pod/Service/路由;状态推进交给 reconciler
     (Pod Ready → running / 超时 → failed)。"""
     instance = await _load(session, task)
     if instance is None or instance.status != expected:

@@ -65,14 +65,16 @@ class TestTenantNetpol:
         spec: Any = policy.spec
         assert set(spec.policy_types) == {"Ingress", "Egress"}
 
-        # 入方向:Jupyter(8888,仅网关数据面 ns)+ SSH(22,NodePort 显式放行)
+        # 入方向:网关数据面 ns(不限端口)+ SSH(22,NodePort 显式放行)
         assert len(spec.ingress) == 2
-        jupyter, ssh = spec.ingress
-        assert [(p.protocol, p.port) for p in jupyter.ports] == [("TCP", 8888)]
-        assert jupyter._from[0].pod_selector is None  # 不放行同 ns 其它 Pod
+        gateway, ssh = spec.ingress
+        # 不限端口是服务型实例的前提:容器端口由用户声明,平台事先不知道是哪个。
+        # 这里若又冒出 ports,说明有人「顺手收紧回 8888」——那会让全部对外服务 502
+        assert gateway.ports is None
+        assert gateway._from[0].pod_selector is None  # 不放行同 ns 其它 Pod
         # 放行来源必须是 Envoy 数据面所在 ns:与 deploy/cluster/helmfile 的 envoy-gateway
         # release namespace 一处写错,全站 Jupyter 502 而对象规约看着一切正常
-        assert jupyter._from[0].namespace_selector.match_labels == {
+        assert gateway._from[0].namespace_selector.match_labels == {
             "kubernetes.io/metadata.name": GATEWAY_DATAPLANE_NAMESPACE
         }
         assert [(p.protocol, p.port) for p in ssh.ports] == [("TCP", 22)]
@@ -451,3 +453,142 @@ class TestTenantQuota:
         assert len(calls) == 1
         hard = calls[0].spec.hard
         assert "requests.cpu" in hard and "limits.ephemeral-storage" in hard
+
+
+class TestServiceWorkloadObjects:
+    """服务型实例(workload_type='service')的对象规约。
+
+    这一组全是「写错不报错、只是行为悄悄变了」的地方 —— 路由挂错 listener 会
+    完全不鉴权、Jupyter Service 多建会让孤儿回收误判、SSH Service 该不建却建了
+    会白占端口池。全部离线可验,不需要集群。
+    """
+
+    def _dev(self, **over: Any) -> InstancePodSpec:
+        base: dict[str, Any] = {
+            "namespace": "tenant-1",
+            "name": "inst-1",
+            "image": "img",
+            "gpu_resources": {},
+            "runtime_class": None,
+            "host_users": True,
+            "vcpu": 1,
+            "mem_gb": 1,
+            "disk_gb": 1,
+            "ssh_node_port": 31234,
+            "jupyter_host": "inst-1.app.example.com",
+        }
+        base.update(over)
+        return InstancePodSpec(**base)
+
+    def _svc(self, **over: Any) -> InstancePodSpec:
+        svc: dict[str, Any] = {
+            "restart_policy": "Always",
+            "service_port": 8000,
+            "service_host": "ep-abc123.svc.example.com",
+            "with_ssh": False,
+            "ssh_node_port": None,
+        }
+        svc.update(over)
+        return self._dev(**svc)
+
+    def test_dev_route_targets_jupyter_listener(self):
+        body = _bare()._httproute_body(self._dev())
+        parent = body["spec"]["parentRefs"][0]
+        assert parent["sectionName"] == "app-https"
+        assert body["spec"]["hostnames"] == ["inst-1.app.example.com"]
+        assert body["spec"]["rules"][0]["backendRefs"] == [{"name": "inst-1-jupyter", "port": 8888}]
+
+    def test_service_route_targets_svc_listener(self):
+        """挂错 listener 是本批最危险的单点:app-https 上没有 extAuth,
+        路由照样通、返回 200,只是**完全不鉴权**,且没有任何报错。"""
+        body = _bare()._httproute_body(self._svc())
+        parent = body["spec"]["parentRefs"][0]
+        assert parent["sectionName"] == "svc-https"
+        assert body["spec"]["hostnames"] == ["ep-abc123.svc.example.com"]
+        assert body["spec"]["rules"][0]["backendRefs"] == [{"name": "inst-1-svc", "port": 8000}]
+
+    def test_service_route_without_host_refuses(self):
+        """service_port 有而 service_host 空:HTTPRoute 会建成无 hostname 的
+        catch-all,把整个 *.svc 泛域名劫持到这一台实例上。宁可创建失败。"""
+        with pytest.raises(RuntimeError, match="service_host"):
+            _bare()._httproute_body(self._svc(service_host=None))
+
+    def _services(self, spec: InstancePodSpec) -> dict[str, Any]:
+        created: dict[str, Any] = {}
+
+        class Core:
+            def create_namespaced_service(self, ns: str, svc: Any) -> None:
+                created[svc.metadata.name] = svc
+
+        orch = _bare()
+        orch.core = cast(Any, Core())
+        orch._create_service_sync(spec)
+        return created
+
+    def test_dev_builds_ssh_and_jupyter_services(self):
+        created = self._services(self._dev())
+        assert set(created) == {"inst-1", "inst-1-jupyter"}
+        assert created["inst-1"].spec.ports[0].node_port == 31234
+
+    def test_service_without_ssh_builds_only_endpoint_service(self):
+        """不开 SSH 就不该建 NodePort Service —— 建了会白占一个端口池名额,
+        而端口池只有 30000–32767 这一段,是硬上限。"""
+        created = self._services(self._svc())
+        assert set(created) == {"inst-1-svc"}
+        assert created["inst-1-svc"].spec.type == "ClusterIP"
+        assert created["inst-1-svc"].spec.ports[0].port == 8000
+
+    def test_service_with_ssh_builds_both_but_no_jupyter(self):
+        created = self._services(self._svc(with_ssh=True, ssh_node_port=31500))
+        assert set(created) == {"inst-1", "inst-1-svc"}
+
+    def test_service_wanting_ssh_without_port_refuses(self):
+        with pytest.raises(RuntimeError, match="node port"):
+            self._services(self._svc(with_ssh=True))
+
+    def _pod(self, spec: InstancePodSpec) -> Any:
+        created: dict[str, Any] = {}
+
+        class Core:
+            def create_namespaced_pod(self, ns: str, pod: Any) -> None:
+                created["pod"] = pod
+
+        orch = _bare()
+        orch.core = cast(Any, Core())
+        orch._create_pod_sync(spec)
+        return created["pod"]
+
+    def test_dev_pod_restart_never_no_probes(self):
+        pod = self._pod(self._dev())
+        assert pod.spec.restart_policy == "Never"
+        c = pod.spec.containers[0]
+        assert c.command is None and c.args is None
+        assert c.startup_probe is None and c.readiness_probe is None
+        assert {p.name for p in c.ports} == {"ssh", "jupyter"}
+
+    def test_service_pod_restart_always_and_command(self):
+        """Always 而非 Never:容器退出时 kubelet 原地重启,Pod 不重建 ——
+        Pod 重建会换名字,而 reconciler 整套都建立在「Pod 名 = 实例 uuid」上。"""
+        pod = self._pod(
+            self._svc(command=("python",), args=("-m", "vllm.entrypoints.openai.api_server"))
+        )
+        assert pod.spec.restart_policy == "Always"
+        c = pod.spec.containers[0]
+        assert c.command == ["python"]
+        assert c.args == ["-m", "vllm.entrypoints.openai.api_server"]
+        # 服务型实例里没有 Jupyter 进程,声明 8888 会让人以为那个端口该通
+        assert {p.name for p in c.ports} == {"svc"}
+
+    def test_health_path_yields_startup_and_readiness(self):
+        """startupProbe 的 failureThreshold 必须远大于 readiness 的:加载大模型权重
+        要十几分钟,只有 readiness 时容器从第一秒起就 not-ready。"""
+        c = self._pod(self._svc(health_path="/health")).spec.containers[0]
+        assert c.startup_probe.http_get.path == "/health"
+        assert c.startup_probe.http_get.port == 8000
+        assert c.readiness_probe.http_get.path == "/health"
+        assert c.startup_probe.failure_threshold > c.readiness_probe.failure_threshold
+        assert c.startup_probe.failure_threshold * c.startup_probe.period_seconds >= 600
+
+    def test_no_health_path_yields_no_probes(self):
+        c = self._pod(self._svc()).spec.containers[0]
+        assert c.startup_probe is None and c.readiness_probe is None

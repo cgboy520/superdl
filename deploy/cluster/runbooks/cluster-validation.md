@@ -107,13 +107,15 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       `gateway.networking.k8s.io/channel` = **experimental**、`bundle-version` = **v1.6.1**。不符即停手 ——
       channel 事后换不回去(safe-upgrades 策略拒绝 standard→experimental),唯一出路是删净 CRD 重装,
       而那会连带删掉集群内全部 Gateway/HTTPRoute(平台三域名 + 全部租户 Jupyter 入口)。`preflight.sh` 同款检查
-- [ ] `kubectl -n superdl get gateway superdl -o yaml`:`Programmed=True`,5 个 listener
-      (`http` / `api-https` / `console-https` / `admin-https` / `app-https`)各自 `Programmed=True`,
-      `attachedRoutes` 与预期条数一致。这也是管理端「集群」页「实例入口(网关)」那一格的判据
+- [ ] `kubectl -n superdl get gateway superdl -o yaml`:`Programmed=True`,6 个 listener
+      (`http` / `api-https` / `console-https` / `admin-https` / `app-https` / `svc-https`)各自
+      `Programmed=True`,`attachedRoutes` 与预期条数一致。这也是管理端「集群」页「实例入口(网关)」那一格的判据
 - [ ] **策略真的挂上了**:`kubectl -n superdl describe securitypolicy superdl-admin-allowlist` /
-      `backendtrafficpolicy superdl-api-ratelimit` / `clienttrafficpolicy superdl-gateway`,
-      三者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
-      apply 照样成功,只是策略静默失效(白名单没了、限流没了),线上看不出异常 —— 这里是唯一线索
+      `securitypolicy superdl-svc-extauth` / `backendtrafficpolicy superdl-api-ratelimit` /
+      `backendtrafficpolicy superdl-svc-ratelimit` / `clienttrafficpolicy superdl-gateway`,
+      五者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
+      apply 照样成功,只是策略静默失效(白名单没了、限流没了、**鉴权没了**),线上看不出异常 ——
+      这里是唯一线索
 - [ ] 三个平台域各 `curl -I https://<域>` 证书链正确;`curl -I http://<域>` 返回 301
 - [ ] **源 IP 真的传到了 Envoy**:白名单网段外的机器访问 `admin.<域>` 应 403,网段内正常。失败先查
       `kubectl -n superdl get envoyproxy superdl-proxy -o jsonpath='{.spec.provider.kubernetes.envoyService.externalTrafficPolicy}'`
@@ -135,6 +137,39 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] Envoy Pod 落在 infra 节点且未被准入策略拦下(`admission/tenant-restrictions.yaml` 的豁免名单含
       `envoy-gateway-system`)。漏改名单时数据面 Deployment 是 EG 动态生成的、仓库里改不到,
       现象只是「Gateway 一直不 Ready」,拒绝信息只在 EG 控制器日志里
+
+### J-1. 服务型实例端点(`svc-https` listener)
+
+- [ ] **服务端泛域名证书已签发**:`kubectl -n superdl get certificate superdl-svc-wildcard` 为 `Ready=True`。
+      长期 False 基本只有一个原因:`*.svc.<域>` 的 acme-dns 前置没做(新账户 + `_acme-challenge.svc.<域>`
+      CNAME 委托 + 往 `acme-dns-account` 的 acmedns.json **追加** `svc.<域>` 这个键,见 `05-cert-manager.yaml`
+      与 `runbooks/acme-dns.md`)。`preflight.sh` 只校验该 secret 存在、不看里面有哪些键,漏了不会告警;
+      证书没签发时 `svc-https` 不 Programmed,**全部服务端点 TLS 直接握手失败,且没有兜底证书**
+- [ ] **合法 Key 通**:`curl -H 'Authorization: Bearer <明文 Key>' https://ep-<slug>.svc.<域>/<容器自己的路径>`
+      返回容器的真实响应。同时用 `-H 'X-API-Key: <明文 Key>'` 再打一遍 —— 两种写法都必须通过。
+      只有 Bearer 通、X-API-Key 一律 401,说明 `headersToExtAuth` 漏了 `x-api-key`
+      (Envoy 默认只发 `:authority`/`:method`/`:path`/`content-length`/`authorization` 五个头给鉴权服务)
+- [ ] **非法 / 已吊销 / 跨用户 Key 一律 401**:乱填一个 Key、用刚吊销的 Key、用 A 用户的 Key 打 B 的端点,
+      三次都必须 401,且响应体是平台统一错误体。⚠ 鉴权服务的 4xx 响应体与响应头是**原样透传**给公网的
+      (Envoy 不截断不过滤),所以顺手确认响应里没有栈、内网主机名与 `Set-Cookie`
+- [ ] **不带 Key 必须 401**,而 `require_api_key=false` 的端点不带 Key 也应 200(需要各造一个端点各打一次)
+- [ ] **控制面挂了不会伪装成「Key 不对」**:临时把 API 副本缩到 0
+      (`kubectl -n superdl scale deploy/superdl-api --replicas=0`,验完立刻恢复),此时打端点应返回 **503**
+      而不是 403。返回 403 说明 `statusOnError` 漏配(EG 默认就是 403),用户会拿着一把好 Key 反复排查
+- [ ] **鉴权回调本身没被边缘收口挡掉**:上面那条恢复后端点立刻恢复 200。若恢复后仍是 503,查
+      `superdl-api` 日志里 `/api/internal/v1/endpoint-auth` 是不是 404 —— 那是 `headersToExtAuth`
+      被人加了 `x-forwarded-for`,触发了 `app/core/edge_guard.py` 对 `/api/internal` 的 404 收口
+- [ ] **平台注入头不可伪造**:客户端自带 `-H 'x-superdl-endpoint: forged' -H 'x-superdl-key-id: 999'`
+      打端点,容器侧收到的必须是鉴权服务给的真值(`headersToBackend` 是覆盖语义)。收到 `forged`
+      说明这两个头没列进 `headersToBackend`,容器基于它做的任何判断都是可伪造的
+- [ ] **端点级限流生效且互不牵连**:对同一端点 `for i in $(seq 40); do curl -s -o /dev/null -w '%{http_code} '
+      -H 'Authorization: Bearer <Key>' https://ep-<slug>.svc.<域>/; done` 出现 429;
+      **同时打另一个端点不受影响**(桶按路由分)。注意本地限流是每 Envoy 实例计数,2 副本时单端点
+      实际上限约为 20/s × 2
+- [ ] **Jupyter 域没有被顺带鉴权**:`app-https` 上的实例 Jupyter 仍按原样(token)可访问 —— 两个 listener
+      的鉴权口径相反,`superdl-svc-extauth` 若误挂到 `app-https`,现象是全部 Jupyter 403/503
+- [ ] 服务端点路由跨 ns 挂载:`kubectl -n tenant-<uuid> get httproute -o yaml` 中服务端点那条的
+      `status.parents[].conditions` 为 `Accepted=True`(不是 `NotAllowedByListeners`)
 
 ## K. 发布检查单(每次上线)
 

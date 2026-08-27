@@ -9,9 +9,11 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.modules.billing.models import BalanceLedger
+from app.modules.orchestrator.models import PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import create_test_sku, drain, gen_ed25519_key, seed_node_spec
 
@@ -210,3 +212,140 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
     assert fake.pull_secrets[ns] != pull_secret_fingerprint(
         "harbor.example.com", "robot$superdl+pull", "rotated"
     )
+
+
+async def test_service_container_drill(client, sm, fake):
+    """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 释放。
+
+    与 test_endpoint_auth.py 的矩阵不重合:那边逐条钉鉴权判据,这里跑的是**一条脚本
+    走完全程**,顺带守住几件只有在整链路里才看得见的事 ——
+    服务型实例不占 SSH 端口池、不建 Jupyter 入口、密文 env 不落 Pod spec、
+    以及全程资金自洽(服务实例与开发机走同一套计费,没有第二条账路)。
+    """
+    phone = "13411113333"
+    await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+    reg = await client.post(
+        "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
+    )
+    h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+    user_id = reg.json()["user"]["id"]
+
+    order = (
+        await client.post(
+            "/api/v1/wallet/recharges", json={"amount": "200.00", "channel": "mock"}, headers=h
+        )
+    ).json()
+    await client.post(
+        "/api/v1/webhooks/mock", json={"order_no": order["order_no"], "amount": "200.00"}
+    )
+
+    sku_id = await create_test_sku(sm)
+    await seed_node_spec(sm)
+
+    # ── 部署服务:不开 SSH、带密文 env、要 API Key ──────────────
+    inst = (
+        await client.post(
+            "/api/v1/instances",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "registry.superdl.local/vllm:v0.6.3",
+                "ssh_key_ids": [],
+                "workload_type": "service",
+                "container_command": ["python"],
+                "container_args": ["-m", "vllm.entrypoints.openai.api_server"],
+                "env": {"MAX_MODEL_LEN": "8192", "HF_TOKEN": "hf_drill_secret"},
+                "env_secret_keys": ["HF_TOKEN"],
+                "service_port": 8000,
+                "health_path": "/health",
+            },
+            headers=h,
+        )
+    ).json()
+    uuid = inst["uuid"]
+    await drain(sm)
+    fake.mark_ready(f"tenant-{user_id}", uuid)
+    await reconcile_once(sm)
+    assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "running"
+
+    # 不占 SSH 端口池:端口段 30000–32767 是全平台硬上限,白占一个名额就少一台带 SSH 的实例
+    async with sm() as session:
+        assigned = (
+            await session.execute(
+                select(PortAllocation).where(PortAllocation.instance_id.is_not(None))
+            )
+        ).scalars()
+        assert list(assigned) == []
+
+    # 密文 env 不落 Pod spec(spec 进 etcd/审计快照,任何 pods:get 身份都读得到)
+    pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
+    assert "hf_drill_secret" not in str(pod_spec.env)
+    assert pod_spec.secret_env["HF_TOKEN"] == "hf_drill_secret"
+    assert pod_spec.env["MAX_MODEL_LEN"] == "8192"
+    # 服务形态:原地重启 + 走服务端口,不建 Jupyter 入口
+    assert pod_spec.restart_policy == "Always"
+    assert pod_spec.service_port == 8000 and pod_spec.with_ssh is False
+
+    # ── 端点与 Key ────────────────────────────────────────────
+    endpoint = (await client.get(f"/api/v1/instances/{uuid}/service", headers=h)).json()
+    slug = endpoint["slug"]
+    assert endpoint["url"].endswith(f"{slug}.{get_settings().service_domain_suffix}")
+    assert endpoint["require_api_key"] is True
+    # 容器配置回显:明文项给值,密文项只给键名
+    assert endpoint["env"] == {"MAX_MODEL_LEN": "8192"}
+    assert endpoint["env_secret_keys"] == ["HF_TOKEN"]
+
+    created = (
+        await client.post(f"/api/v1/instances/{uuid}/api-keys", json={"name": "drill"}, headers=h)
+    ).json()
+    plain = created["key"]
+    assert plain.startswith("sk-")
+    # 明文只此一次:列表接口再也拿不到它
+    listed = (await client.get(f"/api/v1/instances/{uuid}/api-keys", headers=h)).json()
+    assert plain not in str(listed)
+
+    # ── 网关鉴权链路(模拟 Envoy extAuth 回调)────────────────
+    auth_url = "/api/internal/v1/endpoint-auth"
+    host = {"host": f"{slug}.{get_settings().service_domain_suffix}"}
+    ok = await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
+    assert ok.status_code == 200
+    # 平台注入头必须回全:没回的头会被客户端伪造值原样透传给用户容器
+    assert ok.headers["x-superdl-endpoint"] == slug
+    assert ok.headers["x-superdl-key-id"] == str(created["id"])
+
+    # ── 吊销 → 立即 401(网关侧无缓存,吊销即时生效)──────────
+    assert (
+        await client.delete(f"/api/v1/instances/{uuid}/api-keys/{created['id']}", headers=h)
+    ).status_code == 200
+    denied = await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
+    assert denied.status_code == 401
+    assert denied.json()["code"] == "API_KEY_INVALID"
+
+    # ── 关机 → 释放;全程资金自洽 ─────────────────────────────
+    await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)
+    await drain(sm)
+    fake.finish_delete(f"tenant-{user_id}", uuid)
+    await reconcile_once(sm)
+    assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "stopped"
+
+    assert (await client.delete(f"/api/v1/instances/{uuid}", headers=h)).status_code in (200, 202)
+    await drain(sm)
+
+    # 充值 - 消费 = 余额:服务实例与开发机共用同一套计费,没有第二条账路
+    async with sm() as session:
+        entries = list(
+            (
+                await session.execute(
+                    select(BalanceLedger)
+                    .where(BalanceLedger.user_id == user_id)
+                    .order_by(BalanceLedger.id)
+                )
+            ).scalars()
+        )
+    # 流水金额带符号,逐条与 balance_after 快照对齐(与开发机那条演练同一套断言):
+    # 服务实例走的就是这套账,没有第二条账路
+    running = Decimal("0.00")
+    for e in entries:
+        running += e.amount
+        assert e.balance_after == running
+    balance = Decimal((await client.get("/api/v1/wallet", headers=h)).json()["balance"])
+    assert running == balance

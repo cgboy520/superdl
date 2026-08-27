@@ -15,9 +15,12 @@ export interface InstanceOut {
   image_ref: string;
   name: string;
   price_hourly: string;
+  service_slug?: string | null;
   sku_id: number;
   spec: InstanceOutSpec;
   ssh_port: number | null;
   status: string;
   uuid: string;
+  with_ssh: boolean;
+  workload_type: string;
 }

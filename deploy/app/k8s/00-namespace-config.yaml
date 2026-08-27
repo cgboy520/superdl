@@ -32,6 +32,12 @@ data:
   # 实例域名 <uuid>.<后缀>:Jupyter 与 SSH 共用(SSH 只靠 NodePort 区分实例,不设单独入口域名);
   # 泛域名解析到的地址须同时转发 80/443 与 NodePort 30000-32767
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
+  # 服务型实例的对外端点域 <slug>.<后缀>(prod 配置校验同样会拒绝 example.com 占位)。
+  # 必须与 jupyter 后缀是**两个不同的后缀**:Gateway 上是两个独立 listener,
+  # 只有服务这个挂了 SecurityPolicy.extAuth 做 API Key 鉴权。写成同一个后缀,
+  # 两类流量就没法按 hostname 分流,服务端点会落到不鉴权的那个 listener 上 ——
+  # 而且照样通、返回 200,没有任何报错。泛域名解析到网关入口,只需 80/443。
+  SUPERDL_SERVICE_DOMAIN_SUFFIX: "svc.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
   # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求(占位域名会被拒绝启动)
   SUPERDL_ADMIN_HOST: "admin.superdl.example.com"

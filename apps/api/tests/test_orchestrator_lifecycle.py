@@ -1,4 +1,6 @@
 from datetime import timedelta
+from decimal import Decimal
+from typing import Any, cast
 
 import pytest
 from httpx import AsyncClient
@@ -6,6 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import set_orchestrator
+from app.core.k8s.base import PodStatus
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
@@ -759,3 +762,90 @@ class TestImageRefValidation:
             headers=headers,
         )
         assert resp.status_code == 202, resp.text
+
+
+class TestServiceWorkloadUnreadyExemption:
+    """服务型实例持续 not-ready 时**不判故障**(reconciler._running_pod_lost_reason)。
+
+    它挂了说明什么坏了:平台在替用户杀自己的付费实例。服务型实例的 not-ready 判据是
+    用户自己声明的 readinessProbe —— 健康检查路径写错、权重下载失败、进程起不来,
+    全是用户容器的 bug。判成 failed 之后卡还占着、钱照扣,状态却成了故障,
+    而用户改一行重启就好。dev 实例没有这个歧义:它 not-ready 就是 Jupyter 没起来。
+
+    pod_lost(Pod 消失/被驱逐)与 node_lost(节点失联)两支对两种形态一视同仁 ——
+    豁免只针对「节点好好的、就是这个容器不就绪」这一种情形。
+    """
+
+    @staticmethod
+    def _stale_instance(workload_type: str) -> Instance:
+        return Instance(
+            uuid="u1",
+            user_id=1,
+            name="n",
+            sku_id=1,
+            spec={},
+            price_hourly=Decimal("1.0000"),
+            gpu_count=1,
+            image_ref="img",
+            status="running",
+            k8s_namespace="tenant-1",
+            jupyter_token="enc:v1:x",
+            authorized_keys=[],
+            workload_type=workload_type,
+            # 已经超过下面传入的宽限窗
+            unready_since=now_utc() - timedelta(hours=1),
+        )
+
+    @staticmethod
+    async def _reason(
+        instance: Instance, st: PodStatus, *, node_not_ready: bool | None
+    ) -> str | None:
+        from app.modules.orchestrator.reconciler import _running_pod_lost_reason
+
+        class _Session:
+            async def flush(self) -> None: ...
+
+        return await _running_pod_lost_reason(
+            cast(Any, _Session()),
+            instance,
+            st,
+            timedelta(minutes=5),
+            node_not_ready,
+        )
+
+    _UNREADY = PodStatus(exists=True, ready=False, phase="Running", node_name="n1")
+
+    async def test_dev_unready_on_healthy_node_fails(self):
+        reason = await self._reason(
+            self._stale_instance("dev"), self._UNREADY, node_not_ready=False
+        )
+        assert reason == "pod_unready"
+
+    async def test_service_unready_on_healthy_node_survives(self):
+        reason = await self._reason(
+            self._stale_instance("service"), self._UNREADY, node_not_ready=False
+        )
+        assert reason is None
+
+    async def test_service_still_fails_when_node_lost(self):
+        """节点真失联时不豁免:那不是用户容器的问题,而且实例已经不可用了,
+        继续计费才是错的。"""
+        reason = await self._reason(
+            self._stale_instance("service"), self._UNREADY, node_not_ready=True
+        )
+        assert reason == "node_lost"
+
+    async def test_service_still_fails_when_pod_gone(self):
+        reason = await self._reason(
+            self._stale_instance("service"), PodStatus(exists=False), node_not_ready=False
+        )
+        assert reason == "pod_lost"
+
+    async def test_service_still_fails_when_pod_evicted(self):
+        """running 态的删除一定不是我们发起的(被驱逐/被外部删除)。"""
+        reason = await self._reason(
+            self._stale_instance("service"),
+            PodStatus(exists=True, ready=False, phase="Running", deleting=True),
+            node_not_ready=False,
+        )
+        assert reason == "pod_lost"

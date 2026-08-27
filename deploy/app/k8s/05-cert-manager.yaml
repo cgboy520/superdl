@@ -1,5 +1,5 @@
 # cert-manager ClusterIssuer(cert-manager 本体经 helm 安装,见 deploy/cluster/helmfile.yaml.gotmpl)。
-# Jupyter 泛域名(*.app.superdl.example.com)必须 DNS-01。
+# 两张泛域名证书(Jupyter *.app.superdl.example.com、服务端点 *.svc.superdl.example.com)必须 DNS-01。
 # solver = cert-manager 内置 acmeDNS(deploy/cluster/acme-dns.yaml 的集群内 acme-dns 实例,经其 HTTP
 # 注册/更新 API 写 _acme-challenge TXT;替代个人仓 alidns webhook):凭据从「全域 RAM DNS」收窄为
 # 「仅能改自己子域 TXT 的 acme-dns 账户」。一次性公网委托与账户注册见 deploy/cluster/runbooks/acme-dns.md。
@@ -31,9 +31,10 @@ spec:
 # 三张证书写在这里读得见、diff 得出来,比省这几行划算。
 # 04-gateway.yaml 的 certificateRefs 直接引这里产出的 Secret(同 ns,不需要 ReferenceGrant)。
 #
-# 首装顺序:先 apply 本文件、等三张 Certificate Ready(kubectl get certificate -n superdl),
+# 首装顺序:先 apply 本文件、等**全部** Certificate Ready(kubectl get certificate -n superdl),
 # 再切 DNS 到 Gateway。未签发完时对应 listener 不 Programmed,该域 TLS 握手直接失败——
-# 没有原 ingress-nginx default-ssl-certificate 那种兜底(泛域名证书只覆盖 *.app 子域)。
+# 没有原 ingress-nginx default-ssl-certificate 那种兜底(两张泛域名证书各自只覆盖
+# *.app 与 *.svc 子域,互不兜底)。
 #
 # 存量集群升级:原 ingress-shim 生成的同名 Certificate(superdl-*-tls)带指向 Ingress 的
 # ownerReference,删 Ingress 时会被一并回收,但 Secret 不随之删除(未开
@@ -84,3 +85,27 @@ spec:
   issuerRef: {name: letsencrypt-dns, kind: ClusterIssuer}
   dnsNames:
     - "*.app.superdl.example.com"
+---
+# 泛域名证书:服务型实例的对外端点(ep-<slug>.svc.<域>)共用一张,给 04-gateway.yaml 的
+# svc-https listener 用。与 *.app 分开两张,不合并:两者各自要一个 acme-dns 账户与一条 CNAME
+# 委托,合成一张会把两个入口的签发失败绑成一件事(其中一条委托没做好,连 Jupyter 一起没证书)。
+#
+# ⚠ 首装前必须先做这条的 acme-dns 前置,否则本证书永远 Ready=False,svc-https listener 不
+# Programmed,全部服务端点 TLS 握手直接失败(**没有兜底证书**),而平台侧看起来一切正常:
+#   1. 再注册一个 acme-dns 账户(见 cluster/runbooks/acme-dns.md「注册账户」)
+#   2. 主域 DNS 加委托:`_acme-challenge.svc.superdl.example.com CNAME <新 fulldomain>`
+#      (泛域名 *.svc.<域> 的挑战名是 svc.<域>,不是 *.svc.<域>)
+#   3. 往 cert-manager/acme-dns-account 的 acmedns.json **追加一个键** `svc.superdl.example.com`
+#      —— 该 JSON 以**被验证的域**为键,已有的 `app.superdl.example.com` 那项不覆盖它。
+#      preflight.sh 只校验这个 secret 存在、**不校验里面有哪些键**,漏了这一步不会有任何告警,
+#      现象只有 `kubectl -n superdl get certificate superdl-svc-wildcard` 长期 False。
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: superdl-svc-wildcard
+  namespace: superdl
+spec:
+  secretName: superdl-svc-wildcard-tls
+  issuerRef: {name: letsencrypt-dns, kind: ClusterIssuer}
+  dnsNames:
+    - "*.svc.superdl.example.com"

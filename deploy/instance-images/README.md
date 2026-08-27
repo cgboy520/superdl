@@ -4,6 +4,22 @@
 command/args**(见 `app/core/k8s/real.py::_create_pod_sync`),完全依赖镜像自身的
 entrypoint,每个平台镜像必须自行满足下面的契约。
 
+## 服务型容器不受本契约约束
+
+下面这份契约管的是**开发机形态**(`workload_type='dev'`,SSH + JupyterLab)的平台镜像。
+服务型实例(`workload_type='service'`,见 [../../docs/reference/services.md](../../docs/reference/services.md))跑的是
+用户自己的镜像,平台对它**只有一个要求**:在用户声明的 `service_port` 上监听 HTTP,且监听
+`0.0.0.0` 而不是 localhost(只绑 localhost 则 ClusterIP Service 打不通,与下面 Jupyter 那条同因)。
+
+具体地,服务型容器**不需要**:内置 sshd、内置 JupyterLab、`JUPYTER_TOKEN` / `AUTHORIZED_KEYS`
+那套环境变量、`superdl_jupyter_auth` 扩展、Jupyter 套件。**也不需要自己实现 API Key 鉴权** ——
+那是网关的事(`SecurityPolicy.extAuth`),到达容器的请求都已经通过校验。
+可选的两项:声明了 `health_path` 时要在该路径上返回 2xx(它同时是 startupProbe 与 readinessProbe);
+勾了「同时开放 SSH」时才需要 sshd,那时下面 SSH 相关的几条重新适用。
+
+容器可以信任的平台注入头有且只有 `x-superdl-endpoint` 与 `x-superdl-key-id`(网关侧
+`headersToBackend` 白名单,列进去的头一定来自平台);**其余同名头都可能是客户端伪造的**。
+
 ## 平台镜像契约(不满足则实例不可用)
 
 | 约定 | 要求 |

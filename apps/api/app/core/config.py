@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     max_disks_per_user: int = 20  # 数据盘数量上限
     # 单个 GPU 节点让给 CPU 实例的 vCPU 上限(近似库存口径);0 = 不许 CPU 实例落 GPU 节点
     gpu_node_cpu_instance_vcpu_cap: int = 16
+    # 对外服务端点的边缘限流(每端点每秒请求数)。生效在网关的本地令牌桶里,
+    # 改这个值要重新下发 deploy/app/k8s/04-gateway.yaml 的 BackendTrafficPolicy 才生效 ——
+    # 平台侧改配置中心不会自动同步到网关(与其它策略键不同,这一项是「渲染进清单」的)
+    service_endpoint_rps: int = 20
 
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
@@ -167,6 +171,11 @@ class Settings(BaseSettings):
     # 共用的一级域(如为了复用 *.<域> 通配证书——通配只匹配一级标签,盖不住 <uuid>.app.<域>)时,
     # 用前缀把实例域名从共用域里区分出来(如 superdl-)。DNS 通配仍按整段标签匹配(*.<域>)
     jupyter_host_prefix: str = ""
+    # 服务型实例的对外端点后缀:端点主机名 = <slug>.<service_domain_suffix>。
+    # 与 jupyter_domain_suffix 分成两个后缀是刻意的:Gateway 上是两个独立 listener,
+    # 只有服务这个 listener 挂 extAuth 鉴权策略,Jupyter 那个不挂 —— 同后缀就没法
+    # 用 hostname 把两类流量分到不同 listener,只能退化成逐路由挂策略(对象数 O(端点数))
+    service_domain_suffix: str = "svc.superdl.example.com"
 
     # 告警接入
     alertmanager_token: str | None = None
@@ -243,7 +252,12 @@ class Settings(BaseSettings):
             problems.append("database_url 仍为本地开发默认")
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
             problems.append("cors_origins 含 localhost")
-        for name in ("jupyter_domain_suffix", "public_base_url", "admin_host"):
+        for name in (
+            "jupyter_domain_suffix",
+            "service_domain_suffix",
+            "public_base_url",
+            "admin_host",
+        ):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
         if self.payment_alipay_enabled and not self.alipay_seller_id:

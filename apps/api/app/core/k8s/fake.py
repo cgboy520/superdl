@@ -160,7 +160,13 @@ class FakeOrchestrator:
         self.disk_quotas.pop(subpath, None)
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        if spec.ssh_node_port in self.external_node_ports:
+        if spec.with_ssh and spec.ssh_node_port is None:
+            # 对齐 real:_create_service_sync 在这种组合下抛 RuntimeError
+            raise RuntimeError(f"fake: instance {spec.name} wants ssh but has no node port")
+        if spec.service_port is not None and not spec.service_host:
+            # 对齐 real:_httproute_body 缺 hostname 时抛 RuntimeError
+            raise RuntimeError(f"fake: instance {spec.name} has service_port but no service_host")
+        if spec.ssh_node_port is not None and spec.ssh_node_port in self.external_node_ports:
             # 对齐 real:apiserver 422 "provided port is already allocated" 的归一化
             raise NodePortTaken(spec.ssh_node_port)
         key = (spec.namespace, spec.name)
@@ -199,7 +205,9 @@ class FakeOrchestrator:
 
     async def used_node_ports(self) -> set[int]:
         # 与 real 同口径:平台 Pod 占用 + 外部对象占用(不带平台标签的 Service 也算)
-        return {p.spec.ssh_node_port for p in self.pods.values()} | set(self.external_node_ports)
+        return {
+            p.spec.ssh_node_port for p in self.pods.values() if p.spec.ssh_node_port is not None
+        } | set(self.external_node_ports)
 
     def inject_external_port(self, port: int) -> None:
         """测试注入:集群里出现一个非平台对象占用了该 NodePort。"""

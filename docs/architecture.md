@@ -96,7 +96,8 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 |---|---|
 | SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 必须拆成两个 Service:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 随机占走端口池号段 |
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂平台 Gateway 的 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张。路由条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量 |
-| 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,入方向仅放行 Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)到 8888;禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
+| 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权。**鉴权结果无缓存**,控制面是全部端点的同步依赖 —— 见 [reference/services.md](./reference/services.md) |
+| 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,入方向仅放行 Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明,平台事先不知道);禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
 | 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、全局超时与连接兜底三条策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**、apply 照样成功,只是策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;5 个 listener 名因此锁死 |
 
 ## 6. 数据模型
@@ -108,7 +109,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 |---|---|
 | account | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests` |
 | catalog | `skus` `images` `image_node_cache` |
-| orchestrator | `instances` `instance_events` `port_allocations` `data_disks` |
+| orchestrator | `instances` `instance_events` `port_allocations` `data_disks` `service_endpoints` `service_api_keys` |
 | billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
 | metering | `usage_hourly` |
 | nodes | `node_enrollments` `node_specs` `cluster_status` |
@@ -123,6 +124,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 - 支付与创建幂等:`orders.channel_txn_id` / `order_no` 唯一;`orders`、`instances`、`data_disks` 均带
   UNIQUE(user_id, idempotency_key)。
 - `instance_events`、`balance_ledger` 追加式不可改,后者带 `balance_after` 快照。
+- 服务端点凭据只存带密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
 - `skus.oversell_cores` / `oversell_vram` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。
 
 ## 7. 核心流程

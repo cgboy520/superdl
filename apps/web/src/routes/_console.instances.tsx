@@ -41,7 +41,7 @@ import {
   useMetricsSummary,
   usePolicies,
 } from "../api/queries";
-import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
+import { CopyButton, InstanceStatusBadge, TierTag, WorkloadTag } from "../components/common";
 import { moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
@@ -76,28 +76,41 @@ export const Route = createFileRoute("/_console/instances")({
   component: InstancesPage,
 });
 
-/** 展开行(running):SSH/Jupyter 快捷工具,access 仅在展开时拉取。 */
+/**
+ * 展开行(running):SSH / Jupyter / 服务地址快捷工具,access 仅在展开时拉取。
+ * 接入信息的字段随形态出现或缺席(服务型没有 Jupyter,没开 SSH 时连 ssh_command 都没有),
+ * 一律按「拿到什么渲染什么」写,不能假定字段恒有值。
+ */
 function ExpandedTools({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: access, isError } = useInstanceAccess(instance.uuid);
+  const isService = instance.workload_type === "service";
   return (
     <Space size={12} wrap align="center">
       {isError ? (
         <Typography.Text type="secondary">{t("query.loadFailed")}</Typography.Text>
-      ) : access ? (
+      ) : access?.ssh_command ? (
         <CopyButton text={access.ssh_command} label="SSH" />
       ) : null}
-      <Button
-        size="small"
-        icon={<CodeOutlined />}
-        disabled={!access}
-        onClick={() => {
-          if (access) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
-        }}
-      >
-        {t("common.jupyter")}
-      </Button>
+      {access?.endpoint_url && (
+        <CopyButton text={access.endpoint_url} label={t("instances.copyEndpoint")} />
+      )}
+      {/* 服务型实例不建 Jupyter 入口:按钮整个不出,不留一个点了没反应的灰按钮 */}
+      {!isService && (
+        <Button
+          size="small"
+          icon={<CodeOutlined />}
+          disabled={!access?.jupyter_url}
+          onClick={() => {
+            if (access?.jupyter_url) {
+              window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+            }
+          }}
+        >
+          {t("common.jupyter")}
+        </Button>
+      )}
       <Button
         size="small"
         type="link"
@@ -105,13 +118,14 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
           navigate({
             to: "/instances/$uuid",
             params: { uuid: instance.uuid },
-            search: { tab: "metrics" },
+            search: { tab: isService ? "service" : "metrics" },
           })
         }
       >
-        {t("instances.monitorLink")}
+        {isService ? t("instances.serviceLink") : t("instances.monitorLink")}
       </Button>
-      {!access && !isError && (
+      {/* 这句是 Jupyter 专属的:服务型实例没有 Jupyter,挂上去就是句假话 */}
+      {!isService && !access && !isError && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {t("copy.jupyterNeedsRunning")}
         </Typography.Text>
@@ -187,6 +201,47 @@ function UtilCell({
       <GpuSparkline points={item.points} />
       <span style={{ fontSize: 12 }}>{Math.round(item.last ?? 0)}%</span>
     </Space>
+  );
+}
+
+/**
+ * 规格列。服务型实例挂 [服务] 标记 + 端点 slug;slug 直接取自 InstanceOut(列表侧一次批量
+ * 回填),不为它多打一次请求 —— 列表页仍是「不按行数放大接口调用」。
+ */
+function SpecCell({ instance }: { instance: InstanceOut }) {
+  const { t } = useTranslation(["web", "shared"]);
+  return (
+    <Popover
+      content={
+        <Space orientation="vertical" size={2}>
+          <span>{instance.spec["sku_name"] as string}</span>
+          <span>
+            {t("common.hostSpec", {
+              vcpu: (instance.spec["vcpu"] as number) * instance.gpu_count,
+              mem: (instance.spec["mem_gb"] as number) * instance.gpu_count,
+              disk: instance.spec["disk_gb"] as number,
+            })}
+          </span>
+          <span style={{ maxWidth: 360, wordBreak: "break-all" }}>
+            {t("instances.imageLine", { ref: instance.image_ref })}
+          </span>
+          <span>{t("instances.createdAtLine", { time: formatDateTime(instance.created_at) })}</span>
+        </Space>
+      }
+    >
+      <Space>
+        <span>
+          {instance.spec["gpu_model"] as string} × {instance.gpu_count}
+        </span>
+        <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
+        <WorkloadTag workloadType={instance.workload_type} />
+        {instance.service_slug && (
+          <Typography.Text type="secondary" code style={{ fontSize: 12 }}>
+            {instance.service_slug}
+          </Typography.Text>
+        )}
+      </Space>
+    </Popover>
   );
 }
 
@@ -458,33 +513,7 @@ function InstancesPage() {
           },
           {
             title: t("instances.colSpec"),
-            render: (_, r) => (
-              <Popover
-                content={
-                  <Space orientation="vertical" size={2}>
-                    <span>{r.spec["sku_name"] as string}</span>
-                    <span>
-                      {t("common.hostSpec", {
-                        vcpu: (r.spec["vcpu"] as number) * r.gpu_count,
-                        mem: (r.spec["mem_gb"] as number) * r.gpu_count,
-                        disk: r.spec["disk_gb"] as number,
-                      })}
-                    </span>
-                    <span style={{ maxWidth: 360, wordBreak: "break-all" }}>
-                      {t("instances.imageLine", { ref: r.image_ref })}
-                    </span>
-                    <span>{t("instances.createdAtLine", { time: formatDateTime(r.created_at) })}</span>
-                  </Space>
-                }
-              >
-                <Space>
-                  <span>
-                    {r.spec["gpu_model"] as string} × {r.gpu_count}
-                  </span>
-                  <TierTag tier={r.spec["tier"] as string} pool={r.spec["pool_label"] as string} />
-                </Space>
-              </Popover>
-            ),
+            render: (_, r) => <SpecCell instance={r} />,
           },
           {
             title: t("instances.colUtil"),

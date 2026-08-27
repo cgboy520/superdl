@@ -4,21 +4,31 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { InstanceCreateEnv } from './instanceCreateEnv';
+import type { InstanceCreateWorkloadType } from './instanceCreateWorkloadType';
 
 export interface InstanceCreate {
+  container_args?: string[] | null;
+  container_command?: string[] | null;
   data_disk_id?: number | null;
+  env?: InstanceCreateEnv;
+  env_secret_keys?: string[] | null;
   /**
      * @minimum 0
      * @maximum 8
      */
   gpu_count?: number;
+  health_path?: string | null;
   /**
      * @minLength 1
      * @maxLength 256
      */
   image_ref: string;
   name?: string | null;
+  require_api_key?: boolean;
+  service_port?: number | null;
   sku_id: number;
-  /** @minItems 1 */
-  ssh_key_ids: number[];
+  ssh_key_ids?: number[];
+  with_ssh?: boolean;
+  workload_type?: InstanceCreateWorkloadType;
 }

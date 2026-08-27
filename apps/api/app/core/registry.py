@@ -67,6 +67,29 @@ def is_valid_image_ref(image_ref: str) -> bool:
     return bool(_IMAGE_REF_RE.match(image_ref))
 
 
+def is_pinned_image_ref(image_ref: str) -> bool:
+    """引用是否钉死到一个具体版本(带 digest,或带一个不是 latest 的 tag)。
+
+    只对**服务型实例**要求(orchestrator.create_instance)。理由是形态差异,不是洁癖:
+    服务容器的 restartPolicy 是 Always,kubelet 会在容器退出时原地重启 —— 若 tag 可变,
+    某次半夜的 OOM 重启就能让线上服务悄悄换成另一个版本的镜像,而实例状态、事件流水、
+    账单全都看不出任何变化。开发机是 Never + 用户手动重开,不存在这条无人值守的换版路径。
+
+    `:latest` 与不写 tag 是同一件事(不写即隐含 latest),两者一起拒。
+    注意这只挡住了「显式可变」的那一类:`:v1` 这种 tag 同样可以被重新推送,
+    真要绝对可复现只能用 digest —— 那是给用户的建议,不是这里的硬闸。
+    """
+    if not is_valid_image_ref(image_ref):
+        return False
+    if "@sha256:" in image_ref:
+        return True
+    # 冒号可能出现在仓库主机的端口里(registry:5000/img),tag 只看最后一段路径
+    last = image_ref.rsplit("/", 1)[-1]
+    if ":" not in last:
+        return False  # 无 tag = 隐含 latest
+    return last.rsplit(":", 1)[1] != "latest"
+
+
 def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:
     """创建实例的镜像来源白名单:配置行(换行/逗号分隔的仓库前缀)∪ Harbor 地址前缀。
     空列表 = 不限制。平台镜像目录内的引用由调用方另行放行。"""

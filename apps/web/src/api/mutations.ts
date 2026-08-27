@@ -11,6 +11,7 @@ import {
   appendMessageApiV1TicketsTicketIdMessagesPost,
   cancelDeletionRequestApiV1MeDeletionRequestCancelPost,
   closeTicketApiV1TicketsTicketIdClosePost,
+  createApiKeyApiV1InstancesUuidApiKeysPost,
   createDeletionRequestApiV1MeDeletionRequestPost,
   createDiskApiV1DisksPost,
   createInstanceApiV1InstancesPost,
@@ -33,6 +34,7 @@ import {
   renameInstanceApiV1InstancesUuidPatch,
   resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost,
   restartInstanceApiV1InstancesUuidRestartPost,
+  revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete,
   sendSmsCodeApiV1AuthSmsCodePost,
   setWarnThresholdApiV1MeWarnThresholdPatch,
   submitRealNameApiV1MeRealNamePost,
@@ -40,6 +42,7 @@ import {
   stopInstanceApiV1InstancesUuidStopPost,
 } from "@superdl/api-client";
 import type {
+  ApiKeyCreateOut,
   DeletionRequestCreate,
   DiskCreate,
   DiskExpand,
@@ -159,6 +162,22 @@ export const useRenameInstance = () =>
   );
 export const useResetJupyterToken = () =>
   useApiMutation((uuid: string) => resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost(uuid), {
+    invalidates: ["instances"],
+  });
+
+/**
+ * 新建服务访问 Key:响应里的明文 key 是它这辈子唯一一次露面(库里只有 HMAC 摘要),
+ * 调用方必须把它交给一次性展示的成功态,不能顺手丢进缓存或日志。
+ */
+export const useCreateApiKey = (uuid: string, o?: CallerOpts<ApiKeyCreateOut>) =>
+  useApiMutation((name: string) => createApiKeyApiV1InstancesUuidApiKeysPost(uuid, { name }), {
+    ...o,
+    invalidates: ["instances"],
+  });
+/** 吊销 Key:写 revoked_at 不删行,列表仍看得到这把 Key 存在过。 */
+export const useRevokeApiKey = (uuid: string, o?: CallerOpts) =>
+  useApiMutation((keyId: number) => revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete(uuid, keyId), {
+    ...o,
     invalidates: ["instances"],
   });
 

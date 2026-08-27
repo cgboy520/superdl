@@ -137,6 +137,10 @@
       "draft": "Draft",
       "published": "Published",
       "archived": "Archived"
+    },
+    "workload": {
+      "dev": "Dev box",
+      "service": "Service"
     }
   }
 }

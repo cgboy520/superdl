@@ -61,3 +61,16 @@ def hash_sms_code(phone: str, purpose: str, code: str) -> str:
     key = _master_key()
     msg = f"smscode|{phone}|{purpose}|{code}".encode()
     return hmac.new(key, msg, hashlib.sha256).hexdigest()
+
+
+def hash_api_key(key: str) -> str:
+    """服务端点 API Key 的带密钥摘要(HMAC-SHA256,hex)。
+
+    与 hash_sms_code 共用主密钥,靠固定前缀做域分离 —— 两种摘要都存在库里,
+    不分域的话一张表里的摘要可以拿到另一张表去比对。
+    Key 本身是高熵随机串,但无密钥摘要对拿到库 dump 的攻击者仍可离线批量比对
+    (彩虹表意义不大,可并行爆破仍成立),故不用裸 sha256。
+    """
+    import hmac
+
+    return hmac.new(_master_key(), f"service-api-key|{key}".encode(), hashlib.sha256).hexdigest()

@@ -7,26 +7,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-function uniquePhone(): string {
-  return `139${String(Date.now()).slice(-8)}`;
-}
-
-/** 构造合法且指纹唯一的 ed25519 公钥(与后端 blob 校验一致)。 */
-function genEd25519Key(): string {
-  const type = "ssh-ed25519";
-  const typeBytes = new TextEncoder().encode(type);
-  const keyBytes = crypto.getRandomValues(new Uint8Array(32));
-  const blob = new Uint8Array(4 + typeBytes.length + 4 + 32);
-  const dv = new DataView(blob.buffer);
-  dv.setUint32(0, typeBytes.length);
-  blob.set(typeBytes, 4);
-  dv.setUint32(4 + typeBytes.length, 32);
-  blob.set(keyBytes, 8 + typeBytes.length);
-  let bin = "";
-  for (const b of blob) bin += String.fromCharCode(b);
-  const b64 = btoa(bin);
-  return `${type} ${b64} e2e@smoke`;
-}
+import { genEd25519Key, uniquePhone } from "./helpers";
 
 test("全生命周期冒烟", async ({ page }) => {
   test.setTimeout(300_000);
@@ -44,7 +25,10 @@ test("全生命周期冒烟", async ({ page }) => {
 
   // ── 充值 100(mock 渠道)──────────────────────────────────
   await page.goto("/billing");
-  await page.getByRole("button", { name: /^充\s*值$/ }).first().click();
+  await page
+    .getByRole("button", { name: /^充\s*值$/ })
+    .first()
+    .click();
   await page.getByRole("button", { name: "生成支付二维码" }).click();
   await page.getByRole("button", { name: /模拟支付成功/ }).click();
   await expect(page.getByText(/已到账/)).toBeVisible({ timeout: 15_000 });
@@ -96,7 +80,10 @@ test("全生命周期冒烟", async ({ page }) => {
 
   // ── 关机(二次确认)→ 已关机;尾账落账单 ────────────────
   await row.getByRole("button", { name: /^关\s*机$/ }).click();
-  await page.getByRole("button", { name: /^关\s*机$/ }).last().click();
+  await page
+    .getByRole("button", { name: /^关\s*机$/ })
+    .last()
+    .click();
   await expect(row.getByText("已关机")).toBeVisible({ timeout: 90_000 });
 
   await page.goto("/billing");
@@ -105,7 +92,11 @@ test("全生命周期冒烟", async ({ page }) => {
 
   // ── 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失 ──────
   await page.goto("/instances");
-  await page.locator(".ant-table-row").first().getByText(/更\s*多/).click();
+  await page
+    .locator(".ant-table-row")
+    .first()
+    .getByText(/更\s*多/)
+    .click();
   await page.getByText("释放实例", { exact: true }).click();
   // 多级防护两道闸(ui-ux-spec 规则 4):键入实例名 + 勾选清盘知情,缺一红按钮不解锁。
   // placeholder 即实例名,不必把服务端生成的名字再拼一遍

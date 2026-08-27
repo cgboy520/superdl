@@ -24,6 +24,7 @@ from app.core.k8s.base import (
     GATEWAY_NAME,
     GATEWAY_NAMESPACE,
     GATEWAY_PLURAL,
+    GATEWAY_SVC_LISTENER,
     GPU_MODEL_NODE_LABEL,
     HTTPROUTE_PLURAL,
     INSTANCE_DISK_STORAGE_CLASS,
@@ -41,6 +42,7 @@ from app.core.k8s.base import (
     instance_disk_pvc_name,
     instance_env_secret_name,
     jupyter_service_name,
+    service_endpoint_service_name,
 )
 from app.core.logging import get_logger
 from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NAME
@@ -160,6 +162,41 @@ TENANT_EPHEMERAL_REQUEST = "2Gi"
 TENANT_EPHEMERAL_LIMIT = "64Gi"
 
 
+def _container_ports(spec: InstancePodSpec) -> list["client.V1ContainerPort"]:
+    """容器端口声明。
+
+    K8s 里 ports 只是元数据(不声明也能通),但它是 `kubectl describe` 与 Service
+    targetPort 按名引用的依据,写清楚能让排查少一层猜。dev 恒 22+8888;
+    service 只声明用户端口(+ 开了 SSH 时的 22)—— 服务型实例里根本没有 Jupyter 进程,
+    声明 8888 会让人以为那个端口该通。
+    """
+    ports: list[client.V1ContainerPort] = []
+    if spec.with_ssh:
+        ports.append(client.V1ContainerPort(container_port=22, name="ssh"))
+    if spec.service_port is not None:
+        ports.append(client.V1ContainerPort(container_port=spec.service_port, name="svc"))
+    else:
+        ports.append(client.V1ContainerPort(container_port=8888, name="jupyter"))
+    return ports
+
+
+def _health_probe(spec: InstancePodSpec, *, failure_threshold: int) -> "client.V1Probe | None":
+    """health_path 非空时的 httpGet 探针(startup 与 readiness 同一个形状,只差阈值)。
+
+    只有服务型实例会带 health_path。dev 实例不设探针是刻意的:Jupyter 的就绪由
+    reconciler 按 Pod ready 判,而 Pod 无探针时 ready 恒等于「容器已启动」——
+    给 dev 加探针只会让「镜像里没起 Jupyter」这类用户问题被误报成平台故障。
+    """
+    if not spec.health_path or spec.service_port is None:
+        return None
+    return client.V1Probe(
+        http_get=client.V1HTTPGetAction(path=spec.health_path, port=spec.service_port),
+        period_seconds=10,
+        timeout_seconds=3,
+        failure_threshold=failure_threshold,
+    )
+
+
 def _check_subpath(subpath: str) -> None:
     """JuiceFS 子路径只许单段目录名:它会拼进 rm -rf 与 quota --path,拒绝 /、.. 与空串。"""
     if "/" in subpath or ".." in subpath or not subpath:
@@ -247,13 +284,19 @@ class RealOrchestrator:
         self._ensure_juicefs_pvc_sync(namespace)
 
     def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
-        """入方向:默认拒东西向,放行网关数据面到 Jupyter(8888)与 SSH(22);
+        """入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH(22);
         出方向放行公网(除私网/元数据网段):TCP 扣明确滥用途黑名单,UDP 白名单 53/443,+ DNS。
 
         SSH 走 NodePort:DNAT 后是否过 NetworkPolicy 取决于 CNI(Cilium 会过,
         kube-proxy iptables 通常不过),显式放行 22 消除对「NodePort 不过策略」的
         隐式依赖;from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。
-        sshd 仅密钥登录,Jupyter(8888)仍只放行网关数据面来源。
+        sshd 仅密钥登录。
+
+        网关数据面来源不限端口(原先只放 8888):服务型实例的容器端口由用户声明,
+        平台事先不知道是哪个,写死端口就等于只支持 8888 一种服务。放宽的代价可控 ——
+        Envoy 只会打到自己 HTTPRoute 里声明的那个 backend Service 端口,而 HTTPRoute
+        全由平台生成;租户之间的东西向仍然默认拒,放宽不产生租户间可达性。
+        **这是一处刻意的取舍,记在 docs/reference/security.md 的「已接受取舍」。**
         """
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -261,7 +304,8 @@ class RealOrchestrator:
                 pod_selector=client.V1LabelSelector(),
                 policy_types=["Ingress", "Egress"],
                 ingress=[
-                    # 北向:Envoy 数据面 → JupyterLab(8888)。其余东西向一律拒绝。
+                    # 北向:Envoy 数据面 → 租户 Pod,不限端口(见 docstring)。
+                    # 其余东西向一律拒绝。
                     client.V1NetworkPolicyIngressRule(
                         _from=[
                             client.V1NetworkPolicyPeer(
@@ -272,7 +316,6 @@ class RealOrchestrator:
                                 )
                             )
                         ],
-                        ports=[client.V1NetworkPolicyPort(protocol="TCP", port=8888)],
                     ),
                     # SSH NodePort 入流量(见 docstring)
                     client.V1NetworkPolicyIngressRule(
@@ -512,7 +555,8 @@ class RealOrchestrator:
                 scheduler_name=spec.scheduler_name,  # HAMi 池 = hami-scheduler(不赖 webhook)
                 # 仅共享池显式收紧(hostUsers: false 开 userns);独享 Kata 走默认
                 host_users=False if spec.host_users is False else None,
-                restart_policy="Never",
+                # dev 恒 Never(Jupyter 退出即故障);service 用 Always 让 kubelet 原地重启容器
+                restart_policy=spec.restart_policy,
                 node_selector=spec.node_selector or None,
                 termination_grace_period_seconds=30,
                 automount_service_account_token=False,
@@ -529,12 +573,15 @@ class RealOrchestrator:
                         image=spec.image,
                         resources=client.V1ResourceRequirements(limits=limits, requests=requests),
                         env=env,
-                        ports=[
-                            client.V1ContainerPort(container_port=22, name="ssh"),
-                            client.V1ContainerPort(container_port=8888, name="jupyter"),
-                        ],
+                        command=list(spec.command) if spec.command else None,
+                        args=list(spec.args) if spec.args else None,
+                        ports=_container_ports(spec),
                         volume_mounts=mounts,
                         security_context=tenant_security_context(),
+                        # 先过 startup 才开始跑 readiness(kubelet 语义):加载大模型权重的
+                        # 容器十几分钟不响应是正常的,没有 startupProbe 它从第一秒起就 not-ready
+                        startup_probe=_health_probe(spec, failure_threshold=90),
+                        readiness_probe=_health_probe(spec, failure_threshold=3),
                     )
                 ],
                 volumes=volumes,
@@ -553,11 +600,21 @@ class RealOrchestrator:
                 ) from exc
 
     def _create_service_sync(self, spec: InstancePodSpec) -> None:
-        """SSH 走 NodePort(显式端口),Jupyter 走 ClusterIP(网关数据面回源)。
+        """SSH 走 NodePort(显式端口),Jupyter/服务端点走 ClusterIP(网关数据面回源)。
 
-        拆成两个 Service:type=NodePort 会给每个 port 都分配 NodePort,合并会让
-        Jupyter 从 30000–32767 随机取号,撞 SSH 端口池。
+        始终拆成多个 Service:type=NodePort 会给每个 port 都分配 NodePort,合并会让
+        Jupyter/服务端口从 30000–32767 随机取号,撞 SSH 端口池。
+
+        建哪些随形态走 —— dev 是 SSH + Jupyter;service 是(可选 SSH)+ <name>-svc。
+        服务型实例不建 Jupyter Service:建了也没有 HTTPRoute 指向它,只是个永远
+        没人访问的对象,却会让孤儿端点回收的口径变复杂。
         """
+        if spec.service_port is not None:
+            self._create_endpoint_service_sync(spec)
+        if not spec.with_ssh:
+            return
+        if spec.ssh_node_port is None:
+            raise RuntimeError(f"instance {spec.name} wants ssh but has no allocated node port")
         svc = client.V1Service(
             metadata=client.V1ObjectMeta(
                 name=spec.name,
@@ -594,7 +651,28 @@ class RealOrchestrator:
             if not (_is_conflict(exc) or _is_node_port_taken(exc)):
                 raise
             self._reconcile_ssh_service_conflict_sync(spec, exc)
-        _ignore(lambda: self.core.create_namespaced_service(spec.namespace, jupyter_svc), 409)
+        if spec.service_port is None:
+            _ignore(lambda: self.core.create_namespaced_service(spec.namespace, jupyter_svc), 409)
+
+    def _create_endpoint_service_sync(self, spec: InstancePodSpec) -> None:
+        """服务端点的 ClusterIP(网关回源目标)。端口即用户声明的容器端口。"""
+        svc = client.V1Service(
+            metadata=client.V1ObjectMeta(
+                name=service_endpoint_service_name(spec.name),
+                namespace=spec.namespace,
+                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            ),
+            spec=client.V1ServiceSpec(
+                type="ClusterIP",
+                selector={INSTANCE_LABEL: spec.name},
+                ports=[
+                    client.V1ServicePort(
+                        name="svc", port=spec.service_port, target_port=spec.service_port
+                    )
+                ],
+            ),
+        )
+        _ignore(lambda: self.core.create_namespaced_service(spec.namespace, svc), 409)
 
     def _reconcile_ssh_service_conflict_sync(
         self, spec: InstancePodSpec, create_exc: "client.ApiException"
@@ -605,11 +683,17 @@ class RealOrchestrator:
         422 走到这里是因为分配器先于 AlreadyExists 命中:同名 Service 不存在才说明
         端口真被集群其它对象占用,那时才归一化成 NodePortTaken 交编排层换端口。
         """
+        # 只有 SSH 分支会走到这里,而那条分支进来前已经核过端口在位;
+        # 独立断一次是为了让「端口必然已分配」这条不变量在本函数内自证,
+        # 而不是靠调用方的顺序记忆(下面两处 NodePortTaken 都要拿它)
+        port = spec.ssh_node_port
+        if port is None:
+            raise RuntimeError(f"instance {spec.name} ssh service conflict without a node port")
         try:
             existing: Any = self.core.read_namespaced_service(spec.name, spec.namespace)
         except client.ApiException as read_exc:
             if read_exc.status == 404 and _is_node_port_taken(create_exc):
-                raise NodePortTaken(spec.ssh_node_port) from create_exc
+                raise NodePortTaken(port) from create_exc
             raise
         if existing.metadata.deletion_timestamp is not None:
             raise RuntimeError(
@@ -639,20 +723,38 @@ class RealOrchestrator:
         except client.ApiException as patch_exc:
             # 期望端口已被集群其它对象占用:同样归一化成交编排层换端口
             if _is_node_port_taken(patch_exc):
-                raise NodePortTaken(spec.ssh_node_port) from patch_exc
+                raise NodePortTaken(port) from patch_exc
             raise
 
     def _httproute_body(self, spec: InstancePodSpec) -> dict[str, Any]:
-        """租户 Jupyter 的 HTTPRoute。
+        """租户实例的 HTTPRoute:dev 指向 Jupyter,service 指向用户容器端口。
 
         跨 ns 挂载:路由在租户 ns,Gateway 在平台 ns —— 由 listener 的
         allowedRoutes.namespaces.from=Selector 授权(租户 ns 带 MANAGED_LABEL),
         **不需要 ReferenceGrant**(它只管 backendRef 跨 ns,而 backend 与本路由同 ns)。
 
-        sectionName 钉死在 app-https:不写它路由会挂到全部同端口 listener 上,
-        平台自身三个入口的 hostname 会被一起拉进同一份路由表。
+        sectionName 必须写且必须写对:不写路由会挂到全部同端口 listener 上,平台自身三个
+        入口的 hostname 会被一起拉进同一份路由表。两个 listener 的差别不只是域名 ——
+        **只有 svc-https 挂了 SecurityPolicy.extAuth**。把服务路由错挂到 app-https,
+        它照样能通,只是**完全不鉴权**,而且没有任何报错。
         TLS 不在这里出现 —— 证书由 listener 的 certificateRefs 提供(泛域名一张)。
         """
+        if spec.service_port is not None:
+            if not spec.service_host:
+                raise RuntimeError(f"instance {spec.name} has service_port but no service_host")
+            listener, hostname, backend, port = (
+                GATEWAY_SVC_LISTENER,
+                spec.service_host,
+                service_endpoint_service_name(spec.name),
+                spec.service_port,
+            )
+        else:
+            listener, hostname, backend, port = (
+                GATEWAY_APP_LISTENER,
+                spec.jupyter_host,
+                jupyter_service_name(spec.name),
+                8888,
+            )
         return {
             "apiVersion": f"{GATEWAY_API_GROUP}/{GATEWAY_API_VERSION}",
             "kind": "HTTPRoute",
@@ -668,14 +770,14 @@ class RealOrchestrator:
                         "kind": "Gateway",
                         "name": GATEWAY_NAME,
                         "namespace": GATEWAY_NAMESPACE,
-                        "sectionName": GATEWAY_APP_LISTENER,
+                        "sectionName": listener,
                     }
                 ],
-                "hostnames": [spec.jupyter_host],
+                "hostnames": [hostname],
                 "rules": [
                     {
                         "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
-                        "backendRefs": [{"name": jupyter_service_name(spec.name), "port": 8888}],
+                        "backendRefs": [{"name": backend, "port": port}],
                     }
                 ],
             },
@@ -703,6 +805,9 @@ class RealOrchestrator:
             lambda: self.core.delete_namespaced_pod(name, namespace, **pod_kwargs),
             lambda: self.core.delete_namespaced_service(name, namespace),
             lambda: self.core.delete_namespaced_service(jupyter_service_name(name), namespace),
+            lambda: self.core.delete_namespaced_service(
+                service_endpoint_service_name(name), namespace
+            ),
             lambda: self.core.delete_namespaced_secret(instance_env_secret_name(name), namespace),
             lambda: self.custom.delete_namespaced_custom_object(
                 GATEWAY_API_GROUP, GATEWAY_API_VERSION, namespace, HTTPROUTE_PLURAL, name
@@ -785,8 +890,13 @@ class RealOrchestrator:
             if not ns.startswith(prefix):
                 continue
             name = svc.metadata.name
-            # jupyter 副名归并到实例名(<uuid>-jupyter → <uuid>)
-            out.add((ns, name[: -len("-jupyter")] if name.endswith("-jupyter") else name))
+            # 副名归并到实例名(<uuid>-jupyter / <uuid>-svc → <uuid>)。
+            # 不归并的话,服务型实例的 <uuid>-svc 会被孤儿回收当成一个不存在的实例而删掉
+            for suffix in ("-jupyter", "-svc"):
+                if name.endswith(suffix):
+                    name = name[: -len(suffix)]
+                    break
+            out.add((ns, name))
         for route in self._list_all_custom(
             self.custom.list_cluster_custom_object,
             GATEWAY_API_GROUP,

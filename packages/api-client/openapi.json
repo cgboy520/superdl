@@ -601,6 +601,17 @@
             "title": "Price Hourly",
             "type": "string"
           },
+          "service_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Slug"
+          },
           "sku_id": {
             "title": "Sku Id",
             "type": "integer"
@@ -632,6 +643,14 @@
           "uuid": {
             "title": "Uuid",
             "type": "string"
+          },
+          "with_ssh": {
+            "title": "With Ssh",
+            "type": "boolean"
+          },
+          "workload_type": {
+            "title": "Workload Type",
+            "type": "string"
           }
         },
         "required": [
@@ -644,6 +663,8 @@
           "price_hourly",
           "gpu_count",
           "image_ref",
+          "workload_type",
+          "with_ssh",
           "ssh_port",
           "data_disk_id",
           "frozen_deadline",
@@ -1535,6 +1556,137 @@
           "reason"
         ],
         "title": "AnnouncementRevoke",
+        "type": "object"
+      },
+      "ApiKeyCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ApiKeyCreate",
+        "type": "object"
+      },
+      "ApiKeyCreateOut": {
+        "description": "创建响应:明文 key 只在这一次出现,库里只有 HMAC 摘要,关掉就找不回来。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "last_used_at",
+          "revoked_at",
+          "created_at",
+          "key"
+        ],
+        "title": "ApiKeyCreateOut",
+        "type": "object"
+      },
+      "ApiKeyOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "last_used_at",
+          "revoked_at",
+          "created_at"
+        ],
+        "title": "ApiKeyOut",
         "type": "object"
       },
       "AuditLogOut": {
@@ -2917,35 +3069,97 @@
         "type": "object"
       },
       "InstanceAccessOut": {
+        "description": "接入信息:字段随形态出现或缺席,不是「恒有值」的契约。\n\ndev = SSH + Jupyter;service = 端点 URL,开了 SSH 的服务实例两者都有。\n不按形态拆两个端点:前端拿到什么就渲染什么,少一次「先判形态再选接口」的分叉。",
         "properties": {
+          "endpoint_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Url"
+          },
           "jupyter_url": {
-            "title": "Jupyter Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jupyter Url"
           },
           "ssh_command": {
-            "title": "Ssh Command",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Command"
           },
           "ssh_host": {
-            "title": "Ssh Host",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Host"
           },
           "ssh_port": {
-            "title": "Ssh Port",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Port"
           }
         },
-        "required": [
-          "ssh_host",
-          "ssh_port",
-          "ssh_command",
-          "jupyter_url"
-        ],
         "title": "InstanceAccessOut",
         "type": "object"
       },
       "InstanceCreate": {
         "properties": {
+          "container_args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Args"
+          },
+          "container_command": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Command"
+          },
           "data_disk_id": {
             "anyOf": [
               {
@@ -2957,12 +3171,52 @@
             ],
             "title": "Data Disk Id"
           },
+          "env": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          },
+          "env_secret_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Secret Keys"
+          },
           "gpu_count": {
             "default": 1,
             "maximum": 8.0,
             "minimum": 0.0,
             "title": "Gpu Count",
             "type": "integer"
+          },
+          "health_path": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Path"
           },
           "image_ref": {
             "maxLength": 256,
@@ -2982,6 +3236,24 @@
             ],
             "title": "Name"
           },
+          "require_api_key": {
+            "default": true,
+            "title": "Require Api Key",
+            "type": "boolean"
+          },
+          "service_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Port"
+          },
           "sku_id": {
             "title": "Sku Id",
             "type": "integer"
@@ -2990,15 +3262,27 @@
             "items": {
               "type": "integer"
             },
-            "minItems": 1,
             "title": "Ssh Key Ids",
             "type": "array"
+          },
+          "with_ssh": {
+            "default": false,
+            "title": "With Ssh",
+            "type": "boolean"
+          },
+          "workload_type": {
+            "default": "dev",
+            "enum": [
+              "dev",
+              "service"
+            ],
+            "title": "Workload Type",
+            "type": "string"
           }
         },
         "required": [
           "sku_id",
-          "image_ref",
-          "ssh_key_ids"
+          "image_ref"
         ],
         "title": "InstanceCreate",
         "type": "object"
@@ -3199,6 +3483,17 @@
             "title": "Price Hourly",
             "type": "string"
           },
+          "service_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Slug"
+          },
           "sku_id": {
             "title": "Sku Id",
             "type": "integer"
@@ -3226,6 +3521,14 @@
           "uuid": {
             "title": "Uuid",
             "type": "string"
+          },
+          "with_ssh": {
+            "title": "With Ssh",
+            "type": "boolean"
+          },
+          "workload_type": {
+            "title": "Workload Type",
+            "type": "string"
           }
         },
         "required": [
@@ -3238,6 +3541,8 @@
           "price_hourly",
           "gpu_count",
           "image_ref",
+          "workload_type",
+          "with_ssh",
           "ssh_port",
           "data_disk_id",
           "frozen_deadline",
@@ -6182,6 +6487,109 @@
           "yesterday_signups"
         ],
         "title": "RevenueReportOut",
+        "type": "object"
+      },
+      "ServiceEndpointOut": {
+        "description": "对外服务端点视图(仅 workload_type='service' 的实例有)。",
+        "properties": {
+          "container_args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Args"
+          },
+          "container_command": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Command"
+          },
+          "container_port": {
+            "title": "Container Port",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Env",
+            "type": "object"
+          },
+          "env_secret_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Secret Keys",
+            "type": "array"
+          },
+          "health_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Path"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "require_api_key": {
+            "title": "Require Api Key",
+            "type": "boolean"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "url",
+          "container_port",
+          "protocol",
+          "health_path",
+          "require_api_key",
+          "ready",
+          "container_command",
+          "container_args",
+          "env",
+          "env_secret_keys",
+          "created_at"
+        ],
+        "title": "ServiceEndpointOut",
         "type": "object"
       },
       "SettlementGapResolve": {
@@ -14930,6 +15338,7 @@
     },
     "/api/v1/instances/{uuid}/access": {
       "get": {
+        "description": "接入信息。字段按形态出现:dev 给 SSH + Jupyter,service 给端点 URL(开了 SSH 就都有)。",
         "operationId": "get_instance_access_api_v1_instances__uuid__access_get",
         "parameters": [
           {
@@ -14970,6 +15379,171 @@
           }
         ],
         "summary": "Get Instance Access",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/api-keys": {
+      "get": {
+        "description": "访问密钥列表(含已吊销)。不含明文——库里就没有明文。",
+        "operationId": "list_api_keys_api_v1_instances__uuid__api_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyOut"
+                  },
+                  "title": "Response List Api Keys Api V1 Instances  Uuid  Api Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Api Keys",
+        "tags": [
+          "instances"
+        ]
+      },
+      "post": {
+        "description": "新建访问密钥。响应里的 key 是明文,且只在这一次出现。\n\n不收 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与「只存摘要」冲突。",
+        "operationId": "create_api_key_api_v1_instances__uuid__api_keys_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Api Key",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/api-keys/{key_id}": {
+      "delete": {
+        "description": "吊销访问密钥(写 revoked_at,不删行)。重复吊销幂等。",
+        "operationId": "revoke_api_key_api_v1_instances__uuid__api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Api Key",
         "tags": [
           "instances"
         ]
@@ -15281,6 +15855,54 @@
           }
         ],
         "summary": "Restart Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/service": {
+      "get": {
+        "description": "服务端点(仅服务型实例;dev 实例 404)。",
+        "operationId": "get_service_endpoint_api_v1_instances__uuid__service_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceEndpointOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Service Endpoint",
         "tags": [
           "instances"
         ]

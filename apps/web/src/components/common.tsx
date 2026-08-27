@@ -1,7 +1,14 @@
 /** 小件:状态徽标 / 档位标 / 复制按钮。 */
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
-import { diskStatusMap, instanceStatusMap, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
+import {
+  diskStatusMap,
+  instanceStatusMap,
+  metaOf,
+  skuTierMap,
+  skuVariant,
+  workloadTypeMap,
+} from "@superdl/ui";
 import { App, Badge, Button, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -45,6 +52,18 @@ export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) 
   const tag = <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
   // hint(如「性能可能波动」)收进 Tooltip:内联拼进 Tag 不换行,会把表格规格列压爆
   return "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
+}
+
+/**
+ * 实例形态标记。只有服务型实例出标记 —— 开发机是默认形态,给每一行挂一个「开发机」
+ * 徽标只是噪声。
+ */
+export function WorkloadTag({ workloadType }: { workloadType: string }) {
+  const { t } = useTranslation(["web", "shared"]);
+  if (workloadType !== "service") return null;
+  const meta = metaOf(workloadTypeMap, workloadType);
+  if (!meta) return null;
+  return <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
 }
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {

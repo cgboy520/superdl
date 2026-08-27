@@ -41,6 +41,8 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     # 每个 GPU 节点最多让 CPU 实例吃掉多少 vCPU(近似库存口径,见 catalog/service)。
     # 0 = 不许 CPU 实例落 GPU 节点:pool != cpu 的 CPU SKU 一律判无容量。
     "gpu_node_cpu_instance_vcpu_cap": ("int", Decimal(0), Decimal(1024)),
+    # 对外服务端点的边缘限流(每端点每秒请求数)。在网关本地桶生效,不回源平台
+    "service_endpoint_rps": ("int", Decimal(1), Decimal(1000)),
 }
 
 
@@ -60,6 +62,7 @@ class EffectivePolicies:
     max_vcpus_per_user: int
     max_disks_per_user: int
     gpu_node_cpu_instance_vcpu_cap: int
+    service_endpoint_rps: int
 
 
 def validate_policy_value(key: str, value: str) -> str:
@@ -100,6 +103,7 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
         max_vcpus_per_user=int(eff["max_vcpus_per_user"]),
         max_disks_per_user=int(eff["max_disks_per_user"]),
         gpu_node_cpu_instance_vcpu_cap=int(eff["gpu_node_cpu_instance_vcpu_cap"]),
+        service_endpoint_rps=int(eff["service_endpoint_rps"]),
     )
 
 

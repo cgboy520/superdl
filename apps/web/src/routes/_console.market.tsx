@@ -224,24 +224,46 @@ function MarketPage() {
         }
         actions={
           loggedIn ? (
-            <Tooltip title={selected ? undefined : t("market.selectFirst")}>
-              <Button
-                type="primary"
-                size="large"
-                disabled={!selected}
-                onClick={() => {
-                  if (!selected) return;
-                  void navigate({
-                    to: "/market/create/$skuId",
-                    params: { skuId: String(selected.id) },
-                    // CPU 规格不带卡数:创建页按 SKU 的 max_gpus_per_instance=0 提交 gpu_count: 0
-                    search: isCpu ? {} : { gpus: gpuCount },
-                  });
-                }}
-              >
-                {t("market.next")}
-              </Button>
-            </Tooltip>
+            <>
+              {/* 服务形态与开发机走同一条创建流,只是带上 workload=service —— 选规格这一步没有区别,
+                  分成两个入口页会让用户先挑形态再挑卡,而库存约束在卡这一侧 */}
+              <Tooltip title={selected ? t("market.deployServiceHint") : t("market.selectFirst")}>
+                <Button
+                  size="large"
+                  disabled={!selected}
+                  onClick={() => {
+                    if (!selected) return;
+                    void navigate({
+                      to: "/market/create/$skuId",
+                      params: { skuId: String(selected.id) },
+                      search: isCpu
+                        ? { workload: "service" }
+                        : { gpus: gpuCount, workload: "service" },
+                    });
+                  }}
+                >
+                  {t("market.deployService")}
+                </Button>
+              </Tooltip>
+              <Tooltip title={selected ? undefined : t("market.selectFirst")}>
+                <Button
+                  type="primary"
+                  size="large"
+                  disabled={!selected}
+                  onClick={() => {
+                    if (!selected) return;
+                    void navigate({
+                      to: "/market/create/$skuId",
+                      params: { skuId: String(selected.id) },
+                      // CPU 规格不带卡数:创建页按 SKU 的 max_gpus_per_instance=0 提交 gpu_count: 0
+                      search: isCpu ? {} : { gpus: gpuCount },
+                    });
+                  }}
+                >
+                  {t("market.next")}
+                </Button>
+              </Tooltip>
+            </>
           ) : (
             <Button
               type="primary"

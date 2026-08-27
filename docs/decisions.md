@@ -256,6 +256,29 @@
   ⑦一实例一条 HTTPRoute 意味着路由条数随活跃实例线性增长、Envoy 内存跟着涨,light 档的 memory limit 必须实机压过再定。
   见 `deploy/cluster/README.md`、`deploy/app/k8s/04-gateway.yaml`。
 
+- **服务容器是实例的第二种形态,不另立实体。** 背景:用户要把模型跑成对外 API,平台只有「SSH + JupyterLab 开发机」
+  一种商品。可选做法是新建一套 `services` 实体与独立生命周期。决定:加一列 `instances.workload_type`(`dev` / `service`),
+  Pod spec 在 `build_pod_spec` 按形态分叉,其余全部复用 —— 状态机、计费、配额、回收、reconciler、监控、审计一行不改。
+  后果:服务实例天然继承「按 `instance_events` 边计费」「欠费冻结回收」等全部既有不变量;代价是 `instances` 表多了四列
+  对 dev 形态恒为空。见 `reference/services.md`、`reference/orchestrator.md`。
+- **对外服务的鉴权放在网关,不要求用户容器自己实现。** 背景:让用户在容器里自己校验 API Key,等于每个租户重新实现一遍鉴权,
+  且平台无法吊销。可选项三个:Envoy Gateway 的 `apiKeyAuth`(0 往返)、`jwt`(0 往返)、`extAuth`(每请求 1 次回源)。
+  前两个**都表达不了「这把 Key 只能访问它自己那个端点」**——`apiKeyAuth` 是「client-id → key」平铺表,校验通过即放行,
+  租户 A 的 Key 能调租户 B 的服务;`jwt` 的 `audiences` 是策略里的静态列表,写不了「aud 必须等于请求 Host」。
+  要用它们表达归属,只能每端点一条策略 + 一个 Secret,对象数 O(端点数)。决定:用 `extAuth`,一条 SecurityPolicy 挂在
+  `svc-https` listener 上服务全部端点,对象数 O(1),且吊销即时生效。后果见「安全」节:**鉴权结果没有任何缓存**,
+  控制面成为全部对外服务的同步依赖。见 `reference/services.md`。
+- **服务型实例持续 not-ready 不判故障。** 背景:`reconciler` 原本对 running 实例持续 not-ready 超宽限一律判 failed。
+  对开发机是对的(Jupyter 起不来 = 平台侧故障),对服务实例是错的:它的 not-ready 判据是用户自己声明的 readinessProbe,
+  长期不过是用户容器的 bug,而判 failed 之后卡还占着、钱照扣、状态却成了故障。决定:`workload_type='service'` 时跳过
+  `pod_unready` 一支,实例留在 running,就绪与否如实呈现在服务 Tab;`pod_lost` 与 `node_lost` 两支不豁免。
+  配套:服务容器必配 `startupProbe`(15 分钟启动预算),否则加载大模型权重的容器从第一秒起就 not-ready。
+  见 `apps/api/tests/test_orchestrator_lifecycle.py` 的 `TestServiceWorkloadUnreadyExemption`。
+- **迁移门禁补上 alembic 约束 helper。** 背景:`scripts/check-migration-ddl.py` 只扫 `op.execute` 裸 SQL 里的
+  `ADD CONSTRAINT`,而 `op.create_check_constraint` / `create_unique_constraint` / `create_foreign_key` 三个 helper
+  渲染出的就是不带 `NOT VALID` 的 `ADD CONSTRAINT` —— 同样持 ACCESS EXCLUSIVE 全表扫描,只是从 SQL 文本里看不见,
+  于是能静默绕过 `CLAUDE.md` 第 15 条。决定:三个 helper 一并拦,本迁移内 `create_table` 新建的表豁免(空表零成本)。
+
 ## 评审编号索引
 
 历史上的生产就绪评审与安全审查用 `P0-n` / `P1-n` 编号,工作包用 `WPn`;编号的说明文档已随

@@ -204,13 +204,33 @@ MESSAGES: dict[str, str] = {
     "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     # 实例编排
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
+    # 网关 extAuth 回调的统一拒绝文案:它会原样回给服务的调用方(可能是任意第三方),
+    # 所以不区分「密钥错」「已吊销」「不属这个端点」「实例没在跑」——区分了就是探测口子
+    "orchestrator.apiKeyInvalid": "访问密钥无效",
+    "orchestrator.apiKeyNotFound": "访问密钥不存在",
+    "orchestrator.apiKeyQuota": "单个服务的访问密钥已达上限({max} 把),请先吊销不用的密钥",
+    "orchestrator.devWorkloadExtraFields": (
+        "开发机不支持服务容器参数({fields}):要对外发布服务请改用服务型实例"
+    ),
+    "orchestrator.envKeyInvalid": (
+        "环境变量名「{name}」不合法:只能用字母、数字和下划线,且不能以数字开头"
+    ),
+    "orchestrator.envKeyReserved": (
+        "环境变量名「{name}」由平台占用(JUPYTER_ / SUPERDL_ 前缀与 AUTHORIZED_KEYS),请换一个"
+    ),
+    "orchestrator.envSecretKeyUnknown": "标为密文的环境变量「{name}」不在环境变量列表里",
     "orchestrator.forceStopNeedsRunning": "仅运行中的实例可以强制停止",
+    "orchestrator.healthPathSlash": "健康检查路径须以 / 开头",
     "orchestrator.frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
     "orchestrator.cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
     "orchestrator.gpuCountRange": "GPU 数量须在 1~{max} 之间",
     "orchestrator.gpuQuota": "GPU 总数将超过上限({max} 卡),请释放后再创建或联系客服提额",
     "orchestrator.imageRefInvalid": "镜像地址格式不正确,示例:registry.example.com/pytorch:2.9",
     "orchestrator.imageRefNotAllowed": "该镜像仓库未被允许,请使用平台镜像或以下仓库:{registries}",
+    "orchestrator.imageRefNotPinned": (
+        "服务镜像需要指定版本,不能用 latest。请填固定 tag 或 digest,"
+        "示例:registry.example.com/vllm:v0.6.3"
+    ),
     "orchestrator.instanceQuota": "实例数已达上限({max} 台),请释放后再创建或联系客服提额",
     "orchestrator.invalidTransition": "实例当前状态({from})不允许该操作",
     "orchestrator.logsNeedsRunning": (
@@ -228,6 +248,11 @@ MESSAGES: dict[str, str] = {
         "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验"
     ),
     "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
+    "orchestrator.serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
+    "orchestrator.servicePortRequired": "服务型实例必须填写容器监听端口",
+    "orchestrator.servicePortReserved": (
+        "端口 {port} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口"
+    ),
     "orchestrator.sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
     "orchestrator.sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",
     "orchestrator.startNeedsStopped": "仅已关机的实例可以开机",

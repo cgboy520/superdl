@@ -24,6 +24,10 @@ GATEWAY_NAME = "superdl"
 # 租户 Jupyter 专用 listener(*.app.<域名>)。平台自身三个入口挂在各自的 listener 上,
 # 租户路由只许挂这一个:它是唯一开了 allowedRoutes.namespaces.from=Selector 的。
 GATEWAY_APP_LISTENER = "app-https"
+# 服务型实例的对外端点 listener(*.svc.<域名>)。与 app-https 分成两个 listener 是刻意的:
+# 只有这一个挂 SecurityPolicy.extAuth(API Key 鉴权)。同 listener 就没法用 hostname 把
+# 两类流量分开,只能退化成逐路由挂策略 —— 对象数从 O(1) 变成 O(端点数)。
+GATEWAY_SVC_LISTENER = "svc-https"
 # Gateway API 资源坐标(官方客户端无 typed model,一律走 CustomObjectsApi)
 GATEWAY_API_GROUP = "gateway.networking.k8s.io"
 GATEWAY_API_VERSION = "v1"
@@ -37,6 +41,15 @@ def jupyter_service_name(instance_name: str) -> str:
     合成一个 type=NodePort Service 时 K8s 会给 Jupyter 也随机分配 NodePort,撞 SSH 端口池。
     """
     return f"{instance_name}-jupyter"
+
+
+def service_endpoint_service_name(instance_name: str) -> str:
+    """服务型实例的 ClusterIP Service 名(网关回源目标)。
+
+    与 SSH(NodePort,同名于实例)和 Jupyter(<name>-jupyter)三者分开:
+    合成一个 type=NodePort Service 会让 K8s 给每个 port 都分配 NodePort,撞 SSH 端口池。
+    """
+    return f"{instance_name}-svc"
 
 
 def instance_disk_pvc_name(instance_name: str) -> str:
@@ -68,8 +81,9 @@ class InstancePodSpec:
     vcpu: int
     mem_gb: int
     disk_gb: int
-    ssh_node_port: int  # LB/NodePort 端口池分配
-    jupyter_host: str  # <uuid>.app.<域名>,Ingress host 路由
+    # LB/NodePort 端口池分配;None = 该实例不开 SSH(服务型实例默认不占端口池)
+    ssh_node_port: int | None
+    jupyter_host: str  # <uuid>.app.<域名>,HTTPRoute hostname
     env: dict[str, str] = field(default_factory=dict)  # 非敏感环境变量
     # 敏感环境变量(如 JUPYTER_TOKEN):不落 Pod spec(明文 env 会进 etcd/审计日志/
     # 任何 pods:get 身份),由编排层写 per-instance Secret,Pod 以 secretKeyRef 引用
@@ -82,6 +96,22 @@ class InstancePodSpec:
     # 平台托管的镜像拉取凭据 Secret 名(core/registry.PULL_SECRET_NAME);
     # None = 项目 public / 未配机器人
     image_pull_secret: str | None = None
+
+    # ---- 服务型实例(workload_type='service')。dev 形态全取默认值,行为逐字不变 ----
+    # Never = 容器退出即 Pod 终态(dev:Jupyter 挂了就该判故障);
+    # Always = kubelet 原地重启容器、Pod 不重建 —— 服务要的就是这个,而且它保住了
+    # reconciler 的「Pod 名恒等于实例 uuid」假设(重建 Pod 会换名字,那套全塌)
+    restart_policy: str = "Never"
+    command: tuple[str, ...] | None = None  # 覆盖镜像 ENTRYPOINT;None = 用镜像自带
+    args: tuple[str, ...] | None = None
+    service_port: int | None = None  # 非空 → 建 <name>-svc ClusterIP + 服务 HTTPRoute
+    service_host: str | None = None  # <slug>.svc.<域名>,服务 HTTPRoute 的 hostname
+    # 非空 → 挂 readinessProbe + startupProbe(httpGet)。
+    # startupProbe 不是可选项:只有 readiness 时,加载大模型权重的容器在
+    # 启动阶段就被判 not-ready,而 not-ready 会触发 reconciler 的可用性判定。
+    health_path: str | None = None
+    # False → 不建 SSH NodePort Service(服务型实例默认如此,不占端口池)
+    with_ssh: bool = True
 
 
 class NodePortTaken(Exception):
@@ -175,11 +205,17 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        """创建 Pod + Service(SSH NodePort)+ HTTPRoute(Jupyter)。已存在则跳过。"""
+        """创建 Pod + Service + HTTPRoute。已存在则跳过。
+
+        建哪些对象随形态走:dev 建 SSH NodePort + Jupyter ClusterIP + Jupyter HTTPRoute;
+        service 按 with_ssh 决定要不要 SSH,建 <name>-svc ClusterIP + 服务 HTTPRoute,
+        不建 Jupyter 的任何对象。
+        """
         ...
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        """删除该实例的 Pod/Service/HTTPRoute。**不动实例盘**,盘必须活过关机
+        """删除该实例的 Pod/Service/HTTPRoute(两种形态的对象一律尝试删,不存在即跳过 ——
+        删除路径不该依赖「这台当初是什么形态」的记忆)。**不动实例盘**,盘必须活过关机
         (见 delete_instance_disk)。不存在则跳过。
 
         force=True 走强制删除(gracePeriodSeconds=0,不等 kubelet 确认),只在节点已失联时用

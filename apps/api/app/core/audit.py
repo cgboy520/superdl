@@ -24,8 +24,17 @@ from app.core.metrics import AUDIT_WRITE_FAILED_TOTAL
 logger = get_logger(__name__)
 
 AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-# 不审计的路径前缀(高频只读或基础设施)
-AUDIT_EXCLUDE_PREFIXES = ("/healthz", "/metrics", "/docs", "/openapi.json")
+# 不审计的路径前缀(高频只读或基础设施)。
+# endpoint-auth 是网关对**每一次**服务调用的同步鉴权回调,方法跟着客户端走(含 POST):
+# 审计它等于按服务实例的 QPS 往 audit_log 灌行,真正要查的写操作会被埋掉。
+# 端点侧的可观测走结构化日志与网关访问日志,不走审计表。
+AUDIT_EXCLUDE_PREFIXES = (
+    "/healthz",
+    "/metrics",
+    "/docs",
+    "/openapi.json",
+    "/api/internal/v1/endpoint-auth",
+)
 
 
 class AuditLog(Base):

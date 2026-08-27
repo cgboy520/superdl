@@ -4,9 +4,11 @@
 
 ## 数据模型
 
-- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
+- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service})、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
 - `instance_events`:instance_id、from_status、to_status、reason、actor(user/system/admin)、metadata —— 追加式,计费主依据
 - `port_allocations`:port 唯一(30000~32767)、instance_id nullable(部分唯一:一台实例至多一个端口)
+- `service_endpoints`:instance_id 唯一(一实例一端点)、public_slug 唯一(`ep-<10 位 base32>`,公网域名左标签——刻意不用 instance.uuid,内部主键不进公网域名/TLS SNI/访问日志/第三方 Referer)、container_port(CHECK 1–65535 且 ∉ {22, 8888},那两个是 sshd 与 JupyterLab)、protocol、health_path?、require_api_key
+- `service_api_keys`:user_id、instance_id、name、key_hash 唯一(HMAC-SHA256,见 [security.md](./security.md))、key_prefix(列表页回显)、last_used_at?、revoked_at?(吊销不删行)
 
 状态机:creating→running/failed;running→stopping;stopping→stopped/releasing;stopped→starting/frozen/releasing;
 starting→running/failed;frozen→stopped/releasing;failed→stopped/releasing;releasing→released。
@@ -26,6 +28,10 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 | `GET /api/v1/instances/{uuid}/access` | user | SSH 指令 + Jupyter 一次性 bootstrap 票据 URL(单次、60s;核销后种第一方 cookie,token 不进 URL);非 running 报错并说明 |
 | `GET /api/v1/instances/{uuid}/logs` | user | 容器日志:**只读**;**owner 校验**(非属主 404 不暴露存在性);**限流 20/h/user**;**K8s 读 5s 超时**;仅 running/stopping(其余 409,已关机无 Pod 日志);`?tail_lines=` 默认 200、超 2000 截断,`?since_seconds=` 超 86400 截断;返回 `{lines, truncated}`;不记审计 |
 | `POST /api/v1/instances/{uuid}/reset-jupyter-token` | user | 轮换 token(密文落库),旧票据与旧 URL 立即失效 |
+| `GET /api/v1/instances/{uuid}/service` | user | 服务端点信息(URL / 容器端口 / 健康检查 / 是否需 Key);非服务型实例 404 |
+| `GET\|POST /api/v1/instances/{uuid}/api-keys` | user | 列出 / 新建;**明文只在新建响应里出现一次**(与恢复码同款一次性语义) |
+| `DELETE /api/v1/instances/{uuid}/api-keys/{id}` | user | 吊销(写 `revoked_at`,不删行) |
+| `/api/internal/v1/endpoint-auth/...` | 无(集群内) | 网关 `SecurityPolicy.extAuth` 的回调,**不对公网开放**(prod 下带 `X-Forwarded-For` 一律 404);详见 [services.md](./services.md) |
 
 ## 规则与不变量
 
@@ -42,7 +48,21 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 - stopping/releasing 悬挂两档超时(默认各 10min,`stopping_timeout_seconds`/`releasing_timeout_seconds`):一档经 outbox 重发删除任务,二档 force 强删后按正常边收敛(stopped 保留端口与实例盘;released 回收端口并销毁实例盘)。悬挂实例数见指标 `superdl_reconcile_stuck_instances`。
 - 泄漏回收熔断:未知(DB 无记录)Pod 占比超 `leak_reclaim_abort_ratio`(默认 0.5)即中止本轮并计 `superdl_reconcile_leak_aborted_total`;在途删除(stopping/releasing)宽限同两档超时,其余一律 force 强删。
 - 保留期 GC(reconciler 内):failed 超 `failed_retention_days`(默认 7 天)→ 通知并转 releasing;stopped 超 `stopped_retention_days`(默认 30 天)→ 转 releasing,提前 `stopped_retention_warn_days`(默认 7 天)预警。数据盘不受影响。
-- 节点失联判定先看节点 Ready 状况(`list_nodes`):持续 not-ready 超 `running_unready_timeout_seconds`(默认 600s,须宽于 unreachable toleration 的 300s)且节点 NotReady/未知 → node_lost(通知用户);节点正常 → pod_unready(Pod 自身问题,不告警失联)。
+- 节点失联判定先看节点 Ready 状况(`list_nodes`):持续 not-ready 超 `running_unready_timeout_seconds`(默认 600s,须宽于 unreachable toleration 的 300s)且节点 NotReady/未知 → node_lost(通知用户);节点正常 → pod_unready(Pod 自身问题,不告警失联)。**`workload_type='service'` 不走 pod_unready 这一支**:它的 not-ready 判据是用户自己声明的 readinessProbe,长期不过是用户容器的问题,判 failed 等于平台替用户停掉一台还在占卡、还在计费的实例;实例留在 running,就绪与否如实呈现在服务 Tab。`pod_lost` 与 `node_lost` 两支不豁免。
+- **实例有两种形态**(`instances.workload_type`),差别只在 `build_pod_spec` 的分叉与建哪些 K8s 对象;状态机、计费、配额、回收、reconciler、监控、审计全部共用:
+
+  | | `dev`(SSH + JupyterLab) | `service`(对外 HTTP 服务) |
+  |---|---|---|
+  | `restartPolicy` | `Never`(容器退出即故障) | `Always`(kubelet 原地重启容器,Pod 不重建 —— 重建会换名字,而全套 reconciler 都建立在「Pod 名 = 实例 uuid」上) |
+  | command / args | 不设,用镜像 ENTRYPOINT | 用户可覆盖(`container_command` / `container_args`) |
+  | 用户 env | 无 | `env_encrypted`(整包 AES-GCM,AAD 绑实例 uuid);密文项经 per-instance Secret 以 `secretKeyRef` 引用,明文不落 Pod spec |
+  | SSH NodePort Service | 恒建 | `with_ssh` 才建;为假时**不进端口池**(端口池 30000–32767 是全平台硬上限) |
+  | Jupyter Service + HTTPRoute | 恒建 | 不建 |
+  | 服务 Service + HTTPRoute | 无 | `<uuid>-svc` ClusterIP + 挂 `svc-https` listener 的 HTTPRoute |
+  | 探针 | 无(无探针时 ready ≡ 容器已启动) | `health_path` 非空时 startupProbe(失败阈值 90 × 10s = 15 分钟启动预算)+ readinessProbe |
+
+  服务端点的域名规则、鉴权链路与 API Key 生命周期见 [services.md](./services.md)。
+- **服务路由挂错 listener 是本形态最危险的单点**:`app-https` 上没有 `SecurityPolicy.extAuth`,把服务路由挂过去照样通、返回 200,只是**完全不鉴权**,且没有任何报错。两个 listener 名在 `core/k8s/base.py` 的 `GATEWAY_APP_LISTENER` / `GATEWAY_SVC_LISTENER` 钉死,离线用例 `tests/test_k8s_real_units.py::TestServiceWorkloadObjects` 逐条断言。
 - 端口从 `port_allocations` 池分配,释放必须回池;池耗尽时创建失败并给出明确错误。
 - SSH 仅密钥登录(公钥注入 authorized_keys),禁用密码;连接串形如 `ssh root@<实例域名> -p 3xxxx`——SSH 协议没有主机名,实例只靠 NodePort 区分,所以不设单独的 SSH 入口域名,主机名就是实例自己的域名(与 Jupyter 同名,`orchestrator/service.jupyter_host`);部署约束:泛域名解析到的地址必须同时转发 80/443 与 `ssh_port_range` 端口段(单节点即节点本身,多节点为转发该端口段的 LB/VIP)。
 - SSH 依赖租户容器的三个 capability(`SYS_CHROOT` / `SETUID` / `SETGID`,见 [security.md](./security.md))与 entrypoint 起 sshd 前对 `/root` 的 `chmod g-w,o-w`(TopoLVM 把挂载点留成 2777,sshd StrictModes 会拒认证);缺任一条 SSH 都不可用,而 `ssh_command` 只是拼串,断言它不等于验证过连接——镜像自检里有「真连一次」那一步。

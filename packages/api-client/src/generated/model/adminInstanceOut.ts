@@ -19,10 +19,13 @@ export interface AdminInstanceOut {
   name: string;
   node_name: string | null;
   price_hourly: string;
+  service_slug?: string | null;
   sku_id: number;
   spec: AdminInstanceOutSpec;
   ssh_port: number | null;
   status: string;
   user_id: number;
   uuid: string;
+  with_ssh: boolean;
+  workload_type: string;
 }

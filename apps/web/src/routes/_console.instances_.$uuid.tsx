@@ -1,12 +1,22 @@
-/** 实例详情:监控(降级文案)/连接/事件时间线(=计费依据)/账单 + 危险区释放。
- * 事件/账单两 Tab 走游标分页;面包屑返回列表不丢筛选态。 */
+/** 实例详情:监控(降级文案)/服务/连接/事件时间线(=计费依据)/账单 + 危险区释放。
+ * 事件/账单两 Tab 走游标分页;面包屑返回列表不丢筛选态。
+ *
+ * 「服务」Tab 只对 workload_type='service' 出;服务形态的「连接」按 with_ssh 决定出不出
+ * SSH 卡,Jupyter 卡一律不出(服务型实例根本没建 Jupyter 入口)。 */
 
-import { isApiError, type BillHourlyOut, type InstanceEventOut } from "@superdl/api-client";
+import {
+  isApiError,
+  type ApiKeyOut,
+  type BillHourlyOut,
+  type InstanceEventOut,
+  type InstanceOut,
+} from "@superdl/api-client";
 import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
+  Badge,
   Breadcrumb,
   Button,
   Card,
@@ -18,6 +28,7 @@ import {
   Switch,
   Table,
   Tabs,
+  Tag,
   theme,
   Timeline,
   Typography,
@@ -27,8 +38,9 @@ import EChart from "../components/EChart";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useResetJupyterToken } from "../api/mutations";
+import { useResetJupyterToken, useRevokeApiKey } from "../api/mutations";
 import {
+  useApiKeys,
   useDailySummary,
   useHourlyBillPages,
   useInstance,
@@ -36,13 +48,16 @@ import {
   useInstanceEventPages,
   useInstanceLogs,
   useInstanceMetrics,
+  useServiceEndpoint,
 } from "../api/queries";
+import { ApiKeyModal } from "../components/ApiKeyModal";
 import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
-const DETAIL_TABS = ["metrics", "access", "logs", "events", "bills"] as const;
+// service 只对服务型实例出;白名单照收(dev 实例带 ?tab=service 进来时下面回退默认 Tab)
+const DETAIL_TABS = ["metrics", "service", "access", "logs", "events", "bills"] as const;
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
@@ -120,50 +135,335 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   );
 }
 
-function AccessTab({ uuid, running }: { uuid: string; running: boolean }) {
+/**
+ * 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出。
+ * 接入信息的每个字段都是可空的(契约「拿到什么渲染什么」),不能按「恒有值」写。
+ */
+function AccessTab({ instance, running }: { instance: InstanceOut; running: boolean }) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
-  const { data: access } = useInstanceAccess(uuid, { enabled: running });
+  const { data: access } = useInstanceAccess(instance.uuid, { enabled: running });
   const reset = useResetJupyterToken();
+  const isService = instance.workload_type === "service";
   if (!running) {
     return <Alert type="info" showIcon title={t("instances.accessNotRunning")} />;
   }
+  // 服务型 + 不开 SSH:这个 Tab 没有任何入口,直接把人指到「服务」Tab,不留一张空卡
+  if (isService && !instance.with_ssh) {
+    return <Alert type="info" showIcon title={t("instances.accessServiceOnly")} />;
+  }
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Card size="small" title="SSH">
-        <Space orientation="vertical">
-          <Typography.Text code>{access?.ssh_command}</Typography.Text>
-          {access && <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />}
-          <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
+      {instance.with_ssh && (
+        <Card size="small" title="SSH">
+          <Space orientation="vertical">
+            <Typography.Text code>{access?.ssh_command}</Typography.Text>
+            {access?.ssh_command && (
+              <CopyButton text={access.ssh_command} label={t("instances.copyCommand")} />
+            )}
+            <Typography.Text type="secondary">{t("copy.sshKeyOnly")}</Typography.Text>
+          </Space>
+        </Card>
+      )}
+      {/* 服务型实例不建 Jupyter 入口:这张卡一律不出,而不是出一个点了没反应的按钮 */}
+      {!isService && (
+        <Card size="small" title="JupyterLab">
+          <Space>
+            <Button
+              type="primary"
+              disabled={!access?.jupyter_url}
+              onClick={() => {
+                if (access?.jupyter_url) {
+                  window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+                }
+              }}
+            >
+              {t("instances.openJupyter")}
+            </Button>
+            <Button
+              onClick={() =>
+                modal.confirm({
+                  title: t("instances.resetTokenConfirmTitle"),
+                  content: t("instances.resetTokenConfirmBody"),
+                  onOk: async () => {
+                    await reset.mutateAsync(instance.uuid);
+                    message.success(t("instances.tokenReset"));
+                  },
+                })
+              }
+            >
+              {t("instances.resetToken")}
+            </Button>
+          </Space>
+        </Card>
+      )}
+    </Space>
+  );
+}
+
+/**
+ * 服务:端点 + API Key + 调用示例 + 容器配置回显。仅 workload_type='service' 渲染。
+ * 就绪为「否」不是故障态:服务实例持续 not-ready 也留在 running(平台不替用户杀实例),
+ * 这里如实显示并把人指向日志与健康检查路径,不渲染成红色报错。
+ */
+function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLogs: () => void }) {
+  const { t } = useTranslation();
+  const { message, modal } = App.useApp();
+  const running = instance.status === "running";
+  const [newKeyOpen, setNewKeyOpen] = useState(false);
+  const epQ = useServiceEndpoint(instance.uuid, {
+    // 就绪位跟着 Pod readiness 变,running 时 30s 刷一次;非 running 不轮询
+    refetchInterval: running ? 30_000 : false,
+  });
+  const keysQ = useApiKeys(instance.uuid);
+  const revoke = useRevokeApiKey(instance.uuid, {
+    onSuccess: () => message.success(t("instances.apiKeyRevokedMsg")),
+  });
+  const ep = epQ.data;
+  const keys = keysQ.data ?? [];
+  // 调用示例里的 Key 用「某把未吊销 Key 的前缀 + 省略号」占位,不拿明文(明文根本不在这儿)
+  const livePrefix = keys.find((k) => k.revoked_at == null)?.key_prefix;
+  const curl = ep
+    ? [
+        `curl ${ep.url}`,
+        ...(ep.require_api_key
+          ? [`  -H "Authorization: Bearer ${livePrefix ?? "sk-xxxxxxxx"}…"`]
+          : []),
+      ].join(" \\\n")
+    : "";
+
+  // 容器配置回显的环境变量:明文项来自 env(有值),密文项只有键名 —— 后端不回密文的值,
+  // 「勾了密文就不再回显」是创建页对用户的承诺,这个端点不能成为读回明文的口子
+  const envRows = ep
+    ? [
+        ...Object.entries(ep.env).map(([name, value]) => ({ name, value, secret: false })),
+        ...ep.env_secret_keys.map((name) => ({ name, value: "", secret: true })),
+      ].sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
+  if (epQ.isError) {
+    return <DataErrorAlert onRetry={() => void epQ.refetch()} />;
+  }
+
+  return (
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Card size="small" title={t("instances.serviceEndpointCard")} loading={!ep}>
+        {ep && (
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <Space wrap size={8}>
+              <Typography.Text code style={{ fontSize: 15 }}>
+                {ep.url}
+              </Typography.Text>
+              <CopyButton text={ep.url} label={t("instances.copyEndpoint")} />
+            </Space>
+            <Space wrap size={12}>
+              <Typography.Text type="secondary">
+                {t("instances.serviceEndpointLine", {
+                  port: ep.container_port,
+                  health: ep.health_path ?? t("instances.serviceHealthNone"),
+                })}
+              </Typography.Text>
+              <Badge
+                status={ep.ready ? "success" : "default"}
+                text={ep.ready ? t("instances.serviceReady") : t("instances.serviceNotReady")}
+              />
+              <Tag>
+                {ep.require_api_key
+                  ? t("instances.serviceAuthRequired")
+                  : t("instances.serviceAuthPublic")}
+              </Tag>
+            </Space>
+            {!running && <Alert type="info" showIcon title={t("instances.serviceNotRunning")} />}
+            {running && !ep.ready && (
+              // 平台刻意不把持续 not-ready 的服务实例判 failed —— 这里也就不能渲染成错误态
+              <Alert
+                type="info"
+                showIcon
+                title={t("copy.serviceNotReadyHint")}
+                action={
+                  <Button size="small" onClick={onShowLogs}>
+                    {t("instances.serviceCheckLogs")}
+                  </Button>
+                }
+              />
+            )}
+          </Space>
+        )}
+      </Card>
+
+      <Card
+        size="small"
+        title={t("instances.apiKeyCard")}
+        extra={
+          <Button type="primary" size="small" onClick={() => setNewKeyOpen(true)}>
+            {t("instances.apiKeyNew")}
+          </Button>
+        }
+      >
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          {ep && !ep.require_api_key && (
+            <Alert type="warning" showIcon title={t("instances.apiKeyPublicNote")} />
+          )}
+          <Table<ApiKeyOut>
+            rowKey="id"
+            size="small"
+            pagination={false}
+            loading={keysQ.isLoading}
+            dataSource={keys}
+            locale={{
+              emptyText: keysQ.isError ? (
+                <TableErrorEmpty onRetry={() => void keysQ.refetch()} />
+              ) : (
+                t("instances.apiKeyEmpty")
+              ),
+            }}
+            columns={[
+              { title: t("instances.apiKeyColName"), render: (_, r) => r.name },
+              {
+                title: t("instances.apiKeyColKey"),
+                render: (_, r) => <Typography.Text code>{r.key_prefix}…</Typography.Text>,
+              },
+              {
+                title: t("instances.apiKeyColLastUsed"),
+                render: (_, r) =>
+                  r.last_used_at ? formatDateTime(r.last_used_at) : t("instances.apiKeyNeverUsed"),
+              },
+              {
+                title: t("instances.apiKeyColCreated"),
+                render: (_, r) => formatDateTime(r.created_at),
+              },
+              {
+                title: t("instances.apiKeyColActions"),
+                render: (_, r) =>
+                  r.revoked_at ? (
+                    <Typography.Text type="secondary">{t("instances.apiKeyRevoked")}</Typography.Text>
+                  ) : (
+                    <Button
+                      size="small"
+                      danger
+                      onClick={() =>
+                        modal.confirm({
+                          title: t("instances.apiKeyRevokeConfirmTitle"),
+                          content: t("instances.apiKeyRevokeConfirmBody"),
+                          okButtonProps: { danger: true },
+                          onOk: () => revoke.mutateAsync(r.id),
+                        })
+                      }
+                    >
+                      {t("instances.apiKeyRevoke")}
+                    </Button>
+                  ),
+              },
+            ]}
+          />
+          <Typography.Text type="secondary">{t("copy.apiKeyOnce")}</Typography.Text>
         </Space>
       </Card>
-      <Card size="small" title="JupyterLab">
-        <Space>
-          <Button
-            type="primary"
-            disabled={!access}
-            onClick={() => {
-              if (access) window.open(access.jupyter_url, "_blank", "noopener,noreferrer");
+
+      <Card size="small" title={t("instances.curlCard")}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <pre
+            style={{
+              margin: 0,
+              fontSize: 13,
+              lineHeight: 1.8,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
             }}
           >
-            {t("instances.openJupyter")}
-          </Button>
-          <Button
-            onClick={() =>
-              modal.confirm({
-                title: t("instances.resetTokenConfirmTitle"),
-                content: t("instances.resetTokenConfirmBody"),
-                onOk: async () => {
-                  await reset.mutateAsync(uuid);
-                  message.success(t("instances.tokenReset"));
-                },
-              })
-            }
-          >
-            {t("instances.resetToken")}
-          </Button>
+            {curl}
+          </pre>
+          {curl && <CopyButton text={curl} label={t("instances.copyCommand")} />}
+          {ep?.require_api_key && (
+            <Typography.Text type="secondary">{t("instances.curlKeyPlaceholderNote")}</Typography.Text>
+          )}
         </Space>
       </Card>
+
+      <Card size="small" title={t("instances.containerConfigCard")}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Descriptions
+            size="small"
+            column={{ xs: 1, sm: 2 }}
+            items={[
+              { label: t("instances.containerConfigImage"), children: instance.image_ref },
+              { label: t("instances.containerConfigPort"), children: ep?.container_port ?? "—" },
+              { label: t("instances.containerConfigProtocol"), children: ep?.protocol ?? "—" },
+              {
+                label: t("instances.containerConfigHealth"),
+                children: ep?.health_path ?? t("instances.serviceHealthNone"),
+              },
+              {
+                label: t("instances.containerConfigAuth"),
+                children: ep
+                  ? ep.require_api_key
+                    ? t("instances.serviceAuthRequired")
+                    : t("instances.serviceAuthPublic")
+                  : "—",
+              },
+              {
+                label: "SSH",
+                children: instance.with_ssh
+                  ? t("instances.containerConfigSshOn")
+                  : t("instances.containerConfigSshOff"),
+              },
+              {
+                label: t("instances.containerConfigCommand"),
+                span: 2,
+                children:
+                  ep?.container_command && ep.container_command.length > 0 ? (
+                    <Typography.Text code>{ep.container_command.join(" ")}</Typography.Text>
+                  ) : (
+                    <Typography.Text type="secondary">
+                      {t("instances.containerConfigCommandDefault")}
+                    </Typography.Text>
+                  ),
+              },
+              {
+                label: t("instances.containerConfigArgs"),
+                span: 2,
+                // 创建时是一行一个参数,这里也一行一个:join 成一串会让带空格的参数分不出边界
+                children:
+                  ep?.container_args && ep.container_args.length > 0 ? (
+                    <Space orientation="vertical" size={2}>
+                      {ep.container_args.map((arg, i) => (
+                        <Typography.Text key={`${i}-${arg}`} code>
+                          {arg}
+                        </Typography.Text>
+                      ))}
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary">{t("instances.containerConfigNone")}</Typography.Text>
+                  ),
+              },
+              {
+                label: t("instances.containerConfigEnv"),
+                span: 2,
+                children: envRows.length > 0 ? (
+                  <Space orientation="vertical" size={2}>
+                    {envRows.map((row) => (
+                      <Typography.Text key={row.name} code>
+                        {row.name}={row.secret ? "••••••" : row.value}
+                        {row.secret && (
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {` (${t("instances.containerConfigEnvSecret")})`}
+                          </Typography.Text>
+                        )}
+                      </Typography.Text>
+                    ))}
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">{t("instances.containerConfigNone")}</Typography.Text>
+                ),
+              },
+            ]}
+          />
+          {/* 密文变量的值后端刻意不回:回了这个端点就成了「把密文读回明文」的入口 */}
+          <Typography.Text type="secondary">{t("instances.containerConfigImmutable")}</Typography.Text>
+        </Space>
+      </Card>
+
+      <ApiKeyModal uuid={instance.uuid} open={newKeyOpen} onClose={() => setNewKeyOpen(false)} />
     </Space>
   );
 }
@@ -388,7 +688,10 @@ function InstanceDetail() {
     );
   }
   const running = instance.status === "running";
+  const isService = instance.workload_type === "service";
   const canRelease = canReleaseStatus(instance.status);
+  // dev 实例被人带着 ?tab=service 直接打开时回退默认 Tab,不渲染无选中态的 Tabs
+  const activeTab = tab === "service" && !isService ? "metrics" : (tab ?? "metrics");
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -446,7 +749,7 @@ function InstanceDetail() {
       </Card>
 
       <Tabs
-        activeKey={tab ?? "metrics"}
+        activeKey={activeTab}
         onChange={(k) =>
           navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k } })
         }
@@ -456,10 +759,31 @@ function InstanceDetail() {
             label: t("instances.tabMetrics"),
             children: <MetricsTab uuid={uuid} running={running} />,
           },
+          // 「服务」只对服务型实例出:开发机没有端点也没有 Key,出一张空 Tab 是噪声
+          ...(isService
+            ? [
+                {
+                  key: "service",
+                  label: t("instances.tabService"),
+                  children: (
+                    <ServiceTab
+                      instance={instance}
+                      onShowLogs={() =>
+                        void navigate({
+                          to: "/instances/$uuid",
+                          params: { uuid },
+                          search: { tab: "logs" },
+                        })
+                      }
+                    />
+                  ),
+                },
+              ]
+            : []),
           {
             key: "access",
             label: t("instances.tabAccess"),
-            children: <AccessTab uuid={uuid} running={running} />,
+            children: <AccessTab instance={instance} running={running} />,
           },
           {
             key: "logs",

@@ -44,6 +44,21 @@ check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
 if grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
+  # 光有 secret 不够:acmedns.json 以**被验证的域**为键,两张泛域名证书各要一个键
+  # (*.app.<域> 的挑战名是 app.<域>,*.svc.<域> 是 svc.<域>)。少一个键时 cert-manager
+  # 不报错、也不告警,只有那张 Certificate 长期 Ready=False,对应 listener 不 Programmed,
+  # 该域 TLS 握手直接失败——而平台侧看着一切正常。这正是 preflight 该抓的那类静默失败。
+  if kubectl -n cert-manager get secret acme-dns-account >/dev/null 2>&1; then
+    acmedns_keys="$(kubectl -n cert-manager get secret acme-dns-account       -o jsonpath='{.data.acmedns\.json}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+    for zone in app svc; do
+      # 键名按清单里的占位域推;换真实域后这里跟着改(与 05-cert-manager.yaml 同源)
+      if [[ "$acmedns_keys" == *"\"$zone."* ]]; then
+        ok "acme-dns 账户含 $zone.<域> 的委托键"
+      else
+        miss "acme-dns 账户缺 $zone.<域> 的键(acmedns.json 以被验证的域为键)—— 缺它那张泛域名证书永远签不出来,见 runbooks/acme-dns.md"
+      fi
+    done
+  fi
 else
   ok "cert-manager/acme-dns-account 不需要(environments/$env_name.yaml acmeDns.enabled=false:泛域名证书由 superdl/superdl-jupyter-wildcard-tls 手工灌入)"
 fi

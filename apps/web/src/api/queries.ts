@@ -12,6 +12,7 @@ import {
   getLedgerApiV1WalletLedgerGet,
   getPoliciesApiV1PoliciesGet,
   getRechargeApiV1WalletRechargesOrderNoGet,
+  getServiceEndpointApiV1InstancesUuidServiceGet,
   getSiteConfigApiV1SiteConfigGet,
   getWalletApiV1WalletGet,
   instancesMetricsSummaryApiV1MetricsInstancesGet,
@@ -20,6 +21,7 @@ import {
   listImagesApiV1ImagesGet,
   listInstanceEventsApiV1InstancesUuidEventsGet,
   listInstancesApiV1InstancesGet,
+  listApiKeysApiV1InstancesUuidApiKeysGet,
   listInvoiceEligibleApiV1BillingInvoicesEligibleGet,
   listMyInvoicesApiV1BillingInvoicesGet,
   listMyRefundsApiV1WalletRefundsGet,
@@ -34,6 +36,7 @@ import {
 } from "@superdl/api-client";
 import type {
   ApiError,
+  ApiKeyOut,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
   InstanceLogsOut,
@@ -48,6 +51,7 @@ import type {
   PageRefundOut,
   PageTicketOut,
   RechargeOut,
+  ServiceEndpointOut,
   TicketDetailOut,
 } from "@superdl/api-client";
 import { isTransientInstanceStatus } from "@superdl/ui";
@@ -188,6 +192,20 @@ export const useInstanceEventPages = (uuid: string) =>
   });
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
   useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
+/**
+ * 服务端点(仅 workload_type='service' 的实例有;dev 实例调用会 404)。
+ * ready 位是「我的服务起来没有」的唯一真相 —— 服务实例持续 not-ready 不再判 failed,
+ * status 一直是 running,不能拿 status 代替。
+ */
+export const useServiceEndpoint = (uuid: string, opts?: QueryOpts<ServiceEndpointOut>) =>
+  useApiQuery(
+    ["instances", uuid, "service"],
+    () => getServiceEndpointApiV1InstancesUuidServiceGet(uuid),
+    opts,
+  );
+/** 实例的 API Key 列表:只有前缀,明文只在创建响应里出现一次。 */
+export const useApiKeys = (uuid: string, opts?: QueryOpts<ApiKeyOut[]>) =>
+  useApiQuery(["instances", uuid, "api-keys"], () => listApiKeysApiV1InstancesUuidApiKeysGet(uuid), opts);
 /** 容器日志:tail/自动刷新由调用方经 params 与 refetchInterval 控制。 */
 export const useInstanceLogs = (
   uuid: string,

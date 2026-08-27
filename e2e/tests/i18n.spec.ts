@@ -5,7 +5,8 @@
 import { expect, test } from "@playwright/test";
 
 const CJK = /[一-鿿]/;
-const KEY_LEAK = /\b(?:web|shared|errors):[a-zA-Z0-9_.]+\b|\b(?:landing|login|topbar|footer|copy|instances|market|create|storage|billing|settings|dashboard|query|sku|common)\.[a-zA-Z0-9_.]+\b/;
+const KEY_LEAK =
+  /\b(?:web|shared|errors):[a-zA-Z0-9_.]+\b|\b(?:landing|login|topbar|footer|copy|instances|market|create|storage|billing|settings|dashboard|query|sku|common)\.[a-zA-Z0-9_.]+\b/;
 
 test.use({ locale: "en-US" });
 
@@ -22,9 +23,7 @@ test("英文环境公开页无中文残留与键泄漏", async ({ page }) => {
 
 test("语言切换器可将界面切回中文", async ({ page }) => {
   await page.goto("/login");
-  await expect(
-    page.getByRole("heading", { name: "Log in to SuperDL" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Log in to SuperDL" })).toBeVisible();
   await page.getByLabel("language").click();
   // antd Select 的 role=option 是隐藏的 a11y 节点,点可见下拉项
   await page.locator(".ant-select-item-option").filter({ hasText: "中文" }).click();

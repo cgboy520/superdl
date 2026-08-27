@@ -7,7 +7,11 @@
 
 命中以下危险操作时,文件内需显式标注 `# ddl-risk: reviewed`(说明为何可接受):
 - drop_column / drop_table / rename_table / alter_column(new_column_name=...)
-- op.execute 裸 SQL 里 ADD CONSTRAINT 未带 NOT VALID(锁表校验存量行)
+- ADD CONSTRAINT 未带 NOT VALID(锁表校验存量行):裸 SQL 与 alembic 的
+  create_check_constraint / create_unique_constraint / create_foreign_key 三个
+  helper 一并拦 —— helper 生成的就是不带 NOT VALID 的 ADD CONSTRAINT,
+  与裸 SQL 同样持 ACCESS EXCLUSIVE 全表扫描,只是从 SQL 文本里看不见。
+  本迁移内 create_table 新建的表豁免(空表零成本)。
 - add_column(nullable=False) 且无 server_default(大表重写/全表校验;三步法见
   deploy/README.md「迁移向前兼容窗口(expand-only)规范」)
 - create_index 未带 postgresql_concurrently=True(在线建索引锁写;
@@ -130,6 +134,12 @@ def check_file(path: str) -> list[str]:
                 " `with op.get_context().autocommit_block():` 内(env.py 整轮单事务,"
                 "CONCURRENTLY 在事务块内直接报错)"
             )
+        elif short in _CONSTRAINT_HELPERS and not _constraint_on_new_table(call, new_tables):
+            findings.append(
+                f"{path}:{call.lineno}: {short} 生成的是不带 NOT VALID 的 ADD CONSTRAINT"
+                "(全表校验锁)。改用两条 op.execute:ADD CONSTRAINT ... NOT VALID"
+                " 后单独 VALIDATE CONSTRAINT"
+            )
         elif short == "execute":
             for arg in call.args:
                 sql = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else ""
@@ -147,6 +157,28 @@ def check_file(path: str) -> list[str]:
                         " `with op.get_context().autocommit_block():` 内(事务块内直接报错)"
                     )
     return findings
+
+
+# 这三个 helper 都渲染成 ALTER TABLE ... ADD CONSTRAINT,且都没有 NOT VALID 参数可传。
+# create_primary_key 不在列表里:主键只在建表时加,加在既有表上是另一类问题(要求列非空),
+# 拦它反而会把正常的建表迁移误伤。
+_CONSTRAINT_HELPERS = frozenset(
+    {"create_check_constraint", "create_unique_constraint", "create_foreign_key"}
+)
+
+
+def _constraint_on_new_table(call: ast.Call, new_tables: set[str]) -> bool:
+    """约束加在本迁移新建的表上?空表加约束零成本,豁免。
+
+    三个 helper 的表名位置不同:create_check_constraint(name, table, cond)、
+    create_unique_constraint(name, table, cols)、
+    create_foreign_key(name, source_table, ref_table, ...) —— 都是第二个位置实参。
+    """
+    return (
+        len(call.args) >= 2
+        and isinstance(call.args[1], ast.Constant)
+        and call.args[1].value in new_tables
+    )
 
 
 def _index_on_new_table(call: ast.Call, new_tables: set[str]) -> bool:

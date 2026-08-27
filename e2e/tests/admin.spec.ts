@@ -159,7 +159,10 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   const setMfa = (enabled: boolean) =>
     request.put(`${API}/api/admin/v1/platform-config`, {
       headers: { Authorization: `Bearer ${adminToken}` },
-      data: { updates: { admin_mfa_enabled: enabled ? "true" : "false" }, reason: "e2e 两步验证开关" },
+      data: {
+        updates: { admin_mfa_enabled: enabled ? "true" : "false" },
+        reason: "e2e 两步验证开关",
+      },
     });
   const opsName = `ops-e2e-${String(Date.now()).slice(-6)}`;
   const opsCreated = await request.post(`${API}/api/admin/v1/admins`, {

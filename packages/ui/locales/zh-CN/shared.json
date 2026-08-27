@@ -136,6 +136,10 @@
       "draft": "草稿",
       "published": "已发布",
       "archived": "已归档"
+    },
+    "workload": {
+      "dev": "开发机",
+      "service": "服务"
     }
   }
 }

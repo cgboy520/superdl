@@ -129,6 +129,13 @@ async def _running_pod_lost_reason(
     故 exists 与 phase 之外还要看 ready。持续 not-ready 超宽限后按节点 Ready 状况
     分流:节点也失联 → node_lost(通知用户);节点正常 → pod_unready(Pod 自身问题)。
     node_not_ready=None 表示节点视图本轮不可用,回落旧口径(按失联处理)。
+
+    **服务型实例不走 pod_unready 这一支**(见下方分支):它的 not-ready 判据是用户
+    自己声明的 readinessProbe,长期不过是用户容器的 bug —— 健康检查路径写错、模型权重
+    下载失败、进程起不来。把它判 failed 等于平台替用户把一台付费实例杀了:卡还占着、
+    钱照扣,状态却成了 failed,而用户改一行代码重启就好。dev 实例没有这个歧义 ——
+    它 not-ready 就是镜像里的 Jupyter 没起来,那确实该判故障。
+    pod_lost(Pod 消失/被驱逐)与 node_lost(节点失联)两支对两种形态一视同仁。
     """
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
@@ -142,7 +149,9 @@ async def _running_pod_lost_reason(
         await session.flush()
         return None
     if now_utc() - ensure_utc(instance.unready_since) > unready_timeout:
-        return "node_lost" if node_not_ready is not False else "pod_unready"
+        if node_not_ready is not False:
+            return "node_lost"
+        return "pod_unready" if instance.workload_type != "service" else None
     return None
 
 
@@ -289,7 +298,11 @@ async def _reconcile_instances(
 
                 if instance.status in (sm_def.CREATING, sm_def.STARTING):
                     ready = st.exists and st.ready
-                    if ready and instance.ssh_port is not None:
+                    # 端口就位与否只对开了 SSH 的实例有意义。服务型实例默认不开 SSH、
+                    # 压根不进端口池(handlers._create_with_port_recovery),拿「端口非空」
+                    # 当推进 running 的前置,会让它永远停在 creating 直到超时转 failed
+                    port_ok = instance.ssh_port is not None or not instance.with_ssh
+                    if ready and port_ok:
                         instance.node_name = st.node_name
                         await transition(
                             session,
@@ -345,7 +358,7 @@ async def _reconcile_instances(
                             dedup_key=f"schedule_timeout:{instance.id}",
                         )
                     elif ready:
-                        # Pod 已 Ready 但端口未落库(建 Pod 后 handler 事务被回滚):不推进 running
+                        # 开了 SSH 却没有端口落库(建 Pod 后 handler 事务被回滚):不推进 running
                         # ——/access 与重启都依赖 ssh_port,且补发的端口未必等于 Service 已建的
                         # nodePort;留在原状态等超时转 failed 清理
                         logger.warning("instance_ready_without_port", instance_id=instance.id)

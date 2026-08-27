@@ -1,7 +1,7 @@
 # 北向唯一入口:Gateway API + Envoy Gateway(替代 ingress-nginx —— 该项目 2026-03 退休,
 # 最后版本 controller-v1.15.1,此后不再修任何 CVE,继续用等于长期背未修漏洞)。
 # EG 控制面与 Envoy 数据面 Pod 都在 envoy-gateway-system(由 helmfile 装,见 deploy/cluster/),
-# 本文件只描述「入口长什么样」:GatewayClass / 数据面参数 / 5 个监听器 / 4 条路由 / 3 条策略。
+# 本文件只描述「入口长什么样」:GatewayClass / 数据面参数 / 6 个监听器 / 4 条路由 / 5 条策略。
 #
 # 三条 nginx annotation 的去向(语义差异写在各对象旁,别当成无损平移):
 #   limit-rps / limit-rpm      → BackendTrafficPolicy superdl-api-ratelimit(等价)
@@ -184,6 +184,28 @@ spec:
           from: Selector
           selector:
             matchLabels: {superdl.io/managed: "true"}
+    # 服务型实例的对外端点(ep-<slug>.svc.<域>):与 app-https 同款跨 ns 授权(租户 ns 已带
+    # MANAGED_LABEL),但两者的**鉴权口径相反**,分成两个 listener 就是为了这件事:
+    #   app-https  不挂任何 SecurityPolicy → Jupyter 自己用 token 鉴权,网关不管
+    #   svc-https  挂 superdl-svc-extauth   → 每个请求先回调平台校验 API Key
+    # 若把服务端点并进 app-https 的通配域,就只能靠「按路由挂策略」区分,而按路由挂策略在
+    # EG 里是**整份 SecurityFeatures 替换**(见 superdl-svc-extauth 注释里的 mergeType 一节),
+    # 漏挂一条路由 = 那个端点彻底不鉴权且不报错。分 listener 是唯一 fail-closed 的分法。
+    - name: svc-https
+      port: 443
+      protocol: HTTPS
+      hostname: "*.svc.superdl.example.com"
+      tls:
+        mode: Terminate
+        # 独立泛域名证书(不与 *.app 共用):两者的签发链路各要一个 acme-dns 账户与一条
+        # CNAME 委托,合在一张证书里等于把两个入口的签发失败绑成一件事。见 05-cert-manager.yaml
+        certificateRefs:
+          - {kind: Secret, name: superdl-svc-wildcard-tls}
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: {superdl.io/managed: "true"}
 ---
 # HTTP→HTTPS 301:原 ingress-nginx 全局 ssl-redirect: "true" 的等价物。
 # 不写 hostnames = 命中 :80 上的一切 Host(含租户 Jupyter 子域),与原全局开关同语义;
@@ -310,7 +332,172 @@ spec:
           clientSelectors:
             - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
 ---
-# 网关级超时与连接兜底。挂 Gateway(不带 sectionName)= 对 5 个 listener 全部生效。
+# 服务型实例端点的网关鉴权:到 *.svc.<域> 的每个请求先回调平台 API 校验 API Key,
+# 用户容器不实现任何鉴权。**一条策略挂 svc-https listener** = 覆盖该 listener 上的全部租户
+# 路由(含跨 ns 的),新端点上线不必再动网关清单。跨 ns 路由继承 listener 级策略**不需要
+# ReferenceGrant**(策略作用于 EG 内部的路由 IR,不是跨 ns 对象引用);extAuth 的 backendRefs
+# 指向同 ns 的 superdl-api,也不需要。app-https(Jupyter)不挂任何策略 → 天然不鉴权。
+#
+# 下面每个字段的取值都按 Envoy Gateway **v1.9.0 的 CRD schema 与上游源码核实过**(官方文档
+# 在本仓已有前科:local 限流 distinct 那条文档至今是错的),复核入口:
+#   helm pull oci://docker.io/envoyproxy/gateway-helm --version v1.9.0 --untar
+#   → charts/crds/crds/generated/gateway.envoyproxy.io_securitypolicies.yaml 的 openAPIV3Schema
+#   → 上游 internal/xds/translator/extauth.go、internal/gatewayapi/securitypolicy.go
+# 升 EG 版本时按源码复核,别按文档改。
+#
+# ⚠ mergeType 与「整份替换」(已核实):CRD 里 mergeType 无默认值,description 原文
+# 「If unset, no merging occurs, and only the most specific configuration takes effect」。
+# 源码侧 listener 级策略的下发是
+#   for _, r := range h.Routes { if r.Security != nil { continue }; r.Security = securityFeatures }
+# 而 r.Security 是**整个** SecurityFeatures 结构(CORS/CSRF/JWT/OIDC/APIKeyAuth/BasicAuth/
+# ExtAuth/Authorization 一起)。所以给某条租户 HTTPRoute 再挂一条哪怕**只写了 CORS** 的
+# SecurityPolicy,也会把本策略的 extAuth 一并顶掉——那个端点当场变成无鉴权,且不报错。
+# 本策略挂的是 listener,按 CRD 的 CEL 规则挂不了 mergeType(它只允许 xRoute 目标),
+# 真正挡住这条的是 RBAC:租户 ns 里 superdl-tenant-mgr 只有 httproutes 写权限、没有
+# securitypolicies(01-rbac.yaml),租户本人没有任何 K8s 凭据。**将来若给谁开了
+# securitypolicies 写权限,这条豁免就没了。**
+#
+# ⚠ 拒绝响应原样透传(已核实,影响平台侧 401 响应体口径):鉴权服务返回 4xx 时,
+# 响应体被原样回给客户端(ext_authz_http_impl.cc 的 toResponse 取 message->bodyAsString()),
+# 状态码也原样;响应头方面 EG 从不设置 allowed_client_headers,Envoy 的默认是「除 :authority
+# 外全部回给客户端」。**没有任何截断或过滤**。即平台 401 响应体与响应头里带什么,公网就看得到
+# 什么——栈、内网主机名、Set-Cookie 都会漏出去(平台侧有专门一条测试守这件事)。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: superdl-svc-extauth
+  namespace: superdl
+spec:
+  targetRefs:
+    # sectionName 在 Gateway 上被解释为 listener 名(Gateway API 的 SectionName 语义)。
+    # 写错不报错、apply 照样成功,只是策略静默不挂载 = 全部服务端点不鉴权。
+    # 唯一线索在 status.ancestors[].conditions,收工前必须确认 Accepted=True。
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl, sectionName: svc-https}
+  extAuth:
+    # 已核实:CRD 无 default,IR 层默认 10s(上游 internal/xds/translator/utils.go 的
+    # defaultExtServiceRequestTimeout)。10s 挂在每个请求的同步路径上——平台 API 一慢,
+    # 所有服务端点跟着卡满 10s 再 503。1s 足够覆盖「小表主键查询 + last_used_at 回写」。
+    timeout: 1s
+    # 已核实:不配时默认 **403**(CRD description「Defaults to 403 Forbidden」)。
+    # 那个默认值会把「平台控制面挂了/超时了」伪装成「你的 Key 不对」,用户会去查一把好 Key。
+    # 另:鉴权服务自己返回 5xx 也走这条(toResponse 里 5xx → errorResponse()),不透传,
+    # 所以平台 API 的 500 到客户端是 503 —— 这正是我们想要的语义。
+    statusOnError: 503
+    # 已核实:CRD 里就是 default: false,显式写出来是因为它的语义比字面更狠 ——
+    # description 原文「If set to true, the External Authorization will also be bypassed
+    # if its configuration is invalid」:true 时**连策略配置非法都整个绕过鉴权**,
+    # 一个手误就能让全部付费端点变成公开。宁可整片 503 也不裸奔。
+    failOpen: false
+    # 已核实:不写这行时,发给 HTTP 鉴权服务的**只有** :authority / :method / :path /
+    # content-length / authorization 五个(CRD description 列的 Host/Method/Path/
+    # Content-Length/Authorization;Envoy 侧 check_request_utils.cc 的 toRequestMatchers
+    # 把这四个硬编码进匹配器)。`x-api-key` **不在**默认清单里 —— 漏配的现象是「用
+    # Authorization 的客户端正常、用 X-API-Key 的一律 401」,极像平台只认一种写法。
+    #
+    # Host 到平台侧是**原样的客户端 Host**(Envoy 内部 key 是 :authority,HTTP/1.1 落地就是
+    # Host:),不是 superdl-api 的地址 —— 平台从它取 slug(<slug>.svc.<域>)才成立。
+    #
+    # ⚠ 绝不能往这里加 x-forwarded-for:鉴权请求本身不带 XFF
+    # (ext_authz_http_impl.cc 的 options.setSendXff(false)),而平台 edge_guard 对
+    # /api/internal 带 XFF 的请求一律 404。加了它 = 每次鉴权都 404 = fail-close 下
+    # 全部端点常态 503。
+    headersToExtAuth: ["x-api-key"]
+    http:
+      # 集群内 FQDN 是 superdl-api.superdl.svc.cluster.local:80(Service 见 02-api.yaml,
+      # :80 → targetPort http/8000)。这里只能写 Service 引用而不是 FQDN 字符串:CRD 的
+      # backendRefs 是 Gateway API 的对象引用(Service/ServiceImport/Backend),
+      # 省略 namespace 即取本策略所在 ns(superdl),Service 引用必须带 port。
+      # 网络侧不需要额外放行:09-networkpolicy.yaml 的 api-ingress 已允许
+      # envoy-gateway-system → superdl-api:8000,鉴权回调走的就是这条。
+      backendRefs:
+        - {name: superdl-api, port: 80}
+      # ⚠ 已核实,与「path 是静态整路径」的直觉相反:`path` 是 Envoy 的 **path_prefix**
+      # (extauth.go 的 `PathPrefix: http.Path`),原始请求 path 会被**拼在后面** ——
+      # CRD description 原文:path=/auth 且原始 path=/hello 时,鉴权请求的 path 是
+      # /auth/hello。用它就得在平台侧开一条 catch-all 路由,还会把客户端可控的 path
+      # (连 query 一起)拼进平台内部 URL。
+      # v1.9.0 新增的 `pathOverride`(extauth.go 的 `PathOverride`,对应 Envoy 1.39 的
+      # HttpService.path_override)才是「静态整路径」:鉴权请求的 path 恒为下面这个值。
+      # 鉴权决策只看 Host + Key、不看 path,丢掉原始 path 没有代价,所以用它 ——
+      # 平台侧因此是**一条精确路由**,不是 catch-all。两者互斥(CRD CEL:only one of
+      # path or pathOverride can be specified),别同时写。
+      #
+      # ⚠ 平台侧这条路由必须**接受全部 HTTP 方法**:鉴权请求沿用原始请求的 :method,
+      # 客户端 POST 过来鉴权请求就是 POST。只注册 GET 会拿到 405,而 4xx 原样透传给
+      # 客户端(见本对象顶部),表现为「调用方一 POST 就 405」。
+      pathOverride: /api/internal/v1/endpoint-auth
+      # 已核实是**覆盖语义**:映射到 Envoy 的 allowed_upstream_headers(extauth.go 的
+      # AuthorizationResponse),proto 原文「Existing headers will be overridden」。
+      # 即:列进来的头一定来自鉴权服务,客户端伪造的同名头会被顶掉;
+      # **没列进来的头原样透传客户端值**,ext_authz 不做任何过滤。
+      # 所以用户容器能信任的头有且只有这两个;将来平台想让容器再信任一个新头,
+      # 必须**同时**加到这里,否则那个头是客户端可伪造的。
+      headersToBackend: ["x-superdl-endpoint", "x-superdl-key-id"]
+      # fail-close(failOpen: false)之下,唯一能提升可用性的手段就是让这条回调本身别抖。
+      backendSettings:
+        retry:
+          # 默认 numRetries 是 2,且默认触发条件含 unavailable 与 retriable-status-codes(503)
+          # (CRD description 原文)。平台 API **主动**返回 503 时重试毫无意义,只会在故障时
+          # 把回调量放大 3 倍。这里收窄成「连接压根没建起来/被重置」这类瞬时故障
+          # (典型场景:API 滚动更新的摘流窗口),次数压到 1 —— 整个重试预算还在上面
+          # 那个 1s timeout 里面。
+          numRetries: 1
+          retryOn:
+            triggers: ["connect-failure", "refused-stream", "reset"]
+          # 刻意不设 perRetry.timeout:上面三个触发条件都是**快失败**,重试有的是预算;
+          # 设了反而会把一次合法的 900ms 慢鉴权提前掐掉,而慢又不在触发条件里 = 直接 503。
+        circuitBreaker:
+          # 四个阈值默认都是 1024。两个 API 副本各 1 CPU,扛不住 1024 条并发鉴权连接;
+          # 排队的结果是每条请求都先把 1s timeout 等满再统一 503。收到 128(× 2 个 Envoy
+          # 副本 = 256 并发在途,按每次鉴权约 10ms 算仍有上万 rps 余量,不构成瓶颈),
+          # 过载就在门口被 statusOnError 挡掉,而不是全网一起变慢。
+          maxConnections: 128
+          maxPendingRequests: 128
+        healthCheck:
+          active:
+            # 用 /healthz 不用 /readyz:/readyz 含 DB 探测(02-api.yaml),DB 抖一下会让
+            # **所有** API 端点同时被判不健康,而这不是「哪个 Pod 坏了」的信号。
+            # 主动健康检查的价值是在 Endpoints 摘除传播到 Envoy 之前就把挂掉的副本踢开。
+            # 不必担心「冷启动时一个健康副本都没有」:panicThreshold 默认 50%,
+            # 不健康比例过半时 Envoy 直接无视健康状态打给全部副本(CRD description),
+            # 首检完成前正好落在这个兜底里。**别把 panicThreshold 设成 0**(=关闭恐慌模式),
+            # 那才会让冷启动窗口里全部端点 503。
+            type: HTTP
+            http: {path: /healthz}
+---
+# 服务端点限流:一条挂 svc-https listener,覆盖该 listener 上全部租户路由。
+# 限额取策略参数 service_endpoint_rps 的默认值 20/s(平台侧 core/policies.py)。
+#
+# **桶按路由分是自动的,不需要额外 selector**(已核实):EG 把 local 限流写进**每条路由**的
+# typedPerFilterConfig(上游 internal/xds/translator/local_ratelimit.go 的 patchRoute),
+# Envoy 侧每条路由的 FilterConfig 各自持有一个 LocalRateLimiterImpl
+# (local_ratelimit.h 的 FilterConfig)。一实例一条 HTTPRoute ⇒ 一个端点一个桶,端点之间不互挤。
+#
+# ⚠ 这里**刻意没有**照抄 superdl-api-ratelimit 的 `sourceCIDR: {type: Distinct}`(已核实):
+# 不带 clientSelectors 的规则会成为**默认桶**,而 EG 下发时把 alwaysConsumeDefaultTokenBucket
+# 钉死为 false(local_ratelimit.go),语义是「请求只要命中任一 descriptor 就不再消耗默认桶」。
+# 一旦加一条 sourceCIDR Distinct 规则,每个请求都命中它,**默认桶一次都不会被消耗** ——
+# 「每端点 20/s」当场失效,退化成「每端点每源 IP 20/s」,换 100 个 IP 就能打满用户容器
+# 与鉴权回调。两种语义在 local 限流里只能二选一,这里要的是前者(护的是用户容器和平台
+# 鉴权链路,不是护平台自身入口——那是 superdl-api-ratelimit 的活)。
+#
+# 与 superdl-api-ratelimit 相同的两条:不写已废弃的 spec.rateLimit.type;local 限流是每个
+# Envoy 实例本地计数,2 副本时单端点全局实际上限约为 40/s。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-svc-ratelimit
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl, sectionName: svc-https}
+  rateLimit:
+    local:
+      rules:
+        - limit: {requests: 20, unit: Second}
+---
+# 网关级超时与连接兜底。挂 Gateway(不带 sectionName)= 对 6 个 listener 全部生效
+# (含 svc-https:streamIdleTimeout 1h 同时覆盖了 LLM 推理那种长时间只出 token 的 SSE 流)。
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:

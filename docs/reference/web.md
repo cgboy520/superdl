@@ -12,8 +12,9 @@
 | `/dashboard` | 登录 | 概览 |
 | `/market` | 公开可浏览 | 筛选链 + SKU 表格单选 + 底部结算条;CTA 即库存 |
 | `/market/create/:skuId` | 登录 | 单栏卡片流:规格/镜像级联/数据盘(可行内直建)/SSH 公钥(可行内添加)/名称 + 结算条;经济档知情同意 |
+| `/market/create/:skuId?workload=service` | 登录 | 同一条卡片流的服务形态:容器(镜像/启动命令/启动参数/环境变量)+ 对外服务(端口/协议/健康检查/访问鉴权)+ 可选 SSH;主按钮「部署服务」 |
 | `/instances` | 登录 | 登录后默认落地页;表格含状态徽标(冻结倒计时)、利用率 sparkline、今日消费、SSH 复制、Jupyter 直达 |
-| `/instances/:uuid` | 登录 | 监控 / 连接 / 事件时间线 / 账单 四 Tab + 危险区释放 |
+| `/instances/:uuid` | 登录 | 监控 / 服务 / 连接 / 日志 / 事件时间线 / 账单 Tab + 危险区释放;**服务** Tab 仅 `workload_type='service'` 渲染(端点 URL、API Key 表与一次性新建 modal、调用示例、容器配置回显),**连接** Tab 在服务形态下按 `with_ssh` 决定是否出 SSH 卡片、一律不出 Jupyter 卡片 |
 | `/billing` | 登录 | 余额卡 + 充值 modal(二维码轮询)+ 消费概览 + 账单/收支明细/退款/发票 + CSV 导出 |
 | `/storage` | 登录 | 挂载全景图 + 数据盘列表(扩容抽屉、到期倒计时、多级删除防护) |
 | `/settings` | 登录 | SSH 公钥、通知阈值、实名入口、危险区账号注销 |
@@ -31,6 +32,7 @@
 - 充值轮询到终态(paid/closed/failed)即停;渠道 Tab 随渠道开关启用,未开启时禁用并给原因。
 - 监控断源时该列/该区降级为「监控暂不可用」,页面其余部分照常。
 - 库存为 0 的行灰置不隐藏;未上线能力(包周期 chips、更多菜单预留项)禁用并带说明,不隐藏。
+- 服务端点的就绪为「否」时**不当故障渲染**:服务型实例持续 not-ready 也留在 running(平台不替用户停实例,见 [services.md](./services.md)),如实显示并提示检查容器日志与健康检查路径。
 - 月份等日期按本地时区计算;`/instances/:uuid` 直接刷新可达。
 - Jupyter `window.open` 必须带 `noopener,noreferrer`。
 - echarts 按需注册收口在 `components/EChart.tsx`;design tokens 与全局 `styles.css` 统一,不留硬编码色。

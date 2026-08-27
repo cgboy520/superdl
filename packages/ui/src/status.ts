@@ -5,7 +5,7 @@
  * 文案值在 packages/ui/locales/{zh-CN,en-US}/shared.json,键集由 src/locales.test.ts 守护。
  */
 
-import { statusColors } from "./tokens";
+import { colorPrimary, statusColors } from "./tokens";
 
 export type InstanceStatus =
   | "creating"
@@ -82,6 +82,20 @@ export const skuTierMap = {
   // 灰蓝:与三个 GPU 档的紫/青/橙拉开色相,读作「不带卡」;白字 ≈5.9:1(WCAG AA)
   cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
 } as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
+
+/**
+ * 实例形态,与 instances.workload_type 严格一致。
+ * dev = SSH + JupyterLab 开发机;service = 对外 HTTPS 服务容器(端点 + API Key)。
+ * 只有 service 需要在列表里挂标记,dev 是默认形态、不加视觉噪声 —— 但两项都进表,
+ * 免得调用方对着裸字符串判等。
+ */
+export type WorkloadType = "dev" | "service";
+
+export const workloadTypeMap = {
+  dev: { labelKey: "shared:status.workload.dev", color: statusColors.gray },
+  // 与档位徽标的紫/青/橙/灰蓝拉开:取品牌靛蓝,白字 ≈7.0:1(WCAG AA)
+  service: { labelKey: "shared:status.workload.service", color: colorPrimary },
+} as const satisfies Record<WorkloadType, { labelKey: string; color: string }>;
 
 /** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */
 export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";

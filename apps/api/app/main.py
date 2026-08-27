@@ -177,6 +177,7 @@ def _register_module_routers(app: FastAPI) -> None:
     from app.modules.nodes.enroll_router import router as node_enroll_router
     from app.modules.notify.router import router as notify_router
     from app.modules.orchestrator.disks_router import router as disks_router
+    from app.modules.orchestrator.endpoint_auth_router import router as endpoint_auth_router
     from app.modules.orchestrator.router import router as orchestrator_router
     from app.modules.tickets.router import router as tickets_router
 
@@ -192,6 +193,9 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(tickets_router, prefix="/api/v1")
     app.include_router(legal_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
+    # 网关 extAuth 回调:独立前缀 /api/internal —— 它是边缘收口(core/edge_guard)
+    # 的判据,也把「集群内才调得到」写进了路径本身
+    app.include_router(endpoint_auth_router, prefix="/api/internal/v1")
 
 
 app = create_app()

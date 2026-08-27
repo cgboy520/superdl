@@ -48,7 +48,10 @@ const lastStepBySecret = new Map<string, number>();
  * 同一密钥在同一 30s 窗内已提交过(绑定后紧接着二要素登录)则等到下一窗,防重放守卫误拒。
  */
 export async function fillTotp(
-  input: { fill: (v: string) => Promise<unknown>; page: () => { waitForTimeout: (ms: number) => Promise<unknown> } },
+  input: {
+    fill: (v: string) => Promise<unknown>;
+    page: () => { waitForTimeout: (ms: number) => Promise<unknown> };
+  },
   secret: string,
 ): Promise<void> {
   let now = Date.now();
