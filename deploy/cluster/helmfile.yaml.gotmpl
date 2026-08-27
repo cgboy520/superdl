@@ -112,7 +112,11 @@ releases:
     namespace: topolvm-system
     chart: topolvm/topolvm
     version: "17.0.0"
-    values: [values/topolvm.yaml]
+    values:
+      - values/topolvm.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/topolvm-light.yaml
+      {{- end }}
     hooks:
       # lvmd 挂载的 lvm.conf ConfigMap(issue_discards=1,P0-3)必须先于 chart 存在
       - events: ["presync"]

@@ -155,6 +155,9 @@
   ingress-nginx 的 `controller.progressDeadlineSeconds: 0` 被 API server 拒(must be greater than
   minReadySeconds),kube-prometheus-stack 的 `prometheusSpec.maximumStartupDurationSeconds: 0` 被 CRD 拒
   (须 ≥60)。分别钉 600(k8s 默认)与 900(prometheus-operator 自身默认),行为不变,只为 upgrade 能过。
+- **light 档 TopoLVM controller 取 1 副本。** chart 默认 2 副本 + 按 hostname 的 required 反亲和,
+  单节点上第二个副本永远 Pending:功能不受影响,但集群里长期挂着一个红 Pod,会把真问题淹掉,
+  也让「全部 Pod Running」这类巡检判据失效。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

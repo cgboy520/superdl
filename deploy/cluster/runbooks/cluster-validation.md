@@ -61,6 +61,10 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效(Harbor 自签时 `harbor-ca.crt` 同目录 0644,`configs.tls.ca_file` 指向它)
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
 - [ ] server 侧 agent token(非 node-token)录入管理端的引导路径可走通
+- [ ] **先装 gpu-operator 再加节点**:operator 首次安装时会给尚无 `nvidia.com/gpu.deploy.*`
+      标签的节点铺一套默认值(container 负载 → device-plugin=true),把先打好的
+      `device-plugin=false` 覆盖掉(单机 light 上 server 节点先于组件装机时实测撞到)。
+      顺序颠倒时重打一次即可,之后 operator 不再改动已有值
 - [ ] GPU Operator 工作负载标签就位(node-join 随池标签自动打,契约见 `values/gpu-operator.yaml` 头注释):
       kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、hami 池 `nvidia.com/gpu.deploy.device-plugin=false`;
       kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin,hami 池上无官方 device-plugin
