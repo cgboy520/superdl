@@ -1,6 +1,10 @@
 # ingress-nginx:默认证书 = superdl 命名空间的 *.app 泛域名证书,
 # 使租户 Jupyter Ingress 不写 secretName 也走 TLS(cert-manager 签发,见 deploy/app/k8s/05)。
 controller:
+  # chart 默认 0,渲染进 Deployment.spec.progressDeadlineSeconds 会被 API server 拒
+  # (must be greater than minReadySeconds),helm upgrade 直接失败。600 = k8s 默认值,
+  # 与现网 Deployment 上的实际值一致,写死只为让 upgrade 能过。
+  progressDeadlineSeconds: 600
   extraArgs:
     default-ssl-certificate: "superdl/superdl-jupyter-wildcard-tls"
   config:

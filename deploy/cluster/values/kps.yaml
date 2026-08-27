@@ -1,6 +1,10 @@
 # kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
 prometheus:
   prometheusSpec:
+    # chart 默认 0,进 Prometheus CR 会被 CRD 拒(须 ≥60),helm upgrade 直接失败。
+    # 900 = prometheus-operator 未设该字段时的自身默认(启动探针最长等待 15 分钟),
+    # 写死只为让 upgrade 能过,不改变现网行为。
+    maximumStartupDurationSeconds: 900
     retention: 15d
     retentionSize: "40GB"      # 约为 PVC 的 80%,到量先删最旧块,与 retention 双闸
     # 持久化:默认 emptyDir 意味着 Pod 重建丢全部指标历史(用量对账曲线断档)。

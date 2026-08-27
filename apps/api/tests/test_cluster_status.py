@@ -350,9 +350,9 @@ class TestClusterEndpoints:
         assert body["api_reachable"] is False and body["probed_at"] is None
         comp = {c["key"]: c for c in body["components"]}
         assert not comp["hami"]["ok"] and comp["hami"]["fix_hint"]
-        assert "helmfile" in comp["monitoring"]["fix_hint"]
+        assert "apply.sh" in comp["monitoring"]["fix_hint"]
         # 无探测缓存时不知道档位:留占位让人自己挑,不猜一个可能装错档的命令
-        assert "-e <full|light>" in comp["monitoring"]["fix_hint"]
+        assert "apply.sh <full|light>" in comp["monitoring"]["fix_hint"]
 
     async def test_fix_hint_env_follows_probed_distro(self, sm, fake, client):
         """修复命令的档位跟实测发行版走:k3s → -e light。给 full 档命令等于让人装不上。"""
@@ -366,7 +366,7 @@ class TestClusterEndpoints:
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
         assert body["distro"] == "k3s"
         comp = {c["key"]: c for c in body["components"]}
-        assert comp["hami"]["fix_hint"].endswith("-e light -l name=hami apply")
+        assert comp["hami"]["fix_hint"] == "deploy/cluster/apply.sh light -l name=hami"
 
     async def test_storage_component_uses_the_same_names_as_the_gate(self, sm, fake, client):
         """体检页 storage 与 require_storage_classes 同一口径(按名核对)。

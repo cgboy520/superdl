@@ -31,6 +31,11 @@ mig:
   strategy: mixed
 dcgmExporter:
   enabled: true            # DCGM 指标 → usage_hourly 聚合 + 大盘 24450
+  # 钉 4.8.3:节点维标签在 dcgm-exporter 4.8.3 由 Hostname 改成小写 hostname,
+  # 而 chart 默认还是 4.8.2。平台侧 prom.py 的 DCGM_NODE_LABEL 与 values/kps.yaml 两条
+  # GPU 告警的 {{ $labels.hostname }} 都按小写写死,跟着 chart 默认走会让节点页曲线
+  # 与 GPU 告警静默失效(指标在,选择器选不中)。升版前先核对该标签。
+  version: 4.6.0-4.8.3-distroless
   serviceMonitor:
     enabled: true
 sandboxWorkloads:

@@ -139,6 +139,22 @@
   由 node-join 随池标签一起打,不再是 README 里的手工步骤——漏打会让官方 device-plugin 与 HAMi 抢注
   `nvidia.com/gpu`。后果:档位可用性从此只看「池里有没有 Ready 节点 + 运行时是否到位」,与发行版无关;
   单机 light 仍只有一个池标签,选了 hami 就没有 kata/mig 池。见 `deploy/cluster/README.md`。
+- **`helmfile apply` 收进 `deploy/cluster/apply.sh`。** 两个开关必须每次都带,漏一个 apply 就中途失败,
+  而两处报错都不指向真正的原因:`HELM_DIFF_USE_UPGRADE_DRY_RUN=true`(helm-diff 默认客户端渲染,模板里的
+  `lookup` 恒空,kata-deploy 的身份校验据此判定「无法确认上一次安装的 multiInstallSuffix / deploymentMode」
+  而拒绝升级,即便那个 ConfigMap 就在集群里)、`--skip-diff-on-install`(gpu-operator 首装时 ClusterPolicy
+  CRD 尚不存在,服务端 dry-run 报 no matches for kind)。不写进文档靠人记,写成脚本。
+- **DCGM 采集面按档位分:light 收到 device 级,并把 exporter 镜像钉到 4.8.3。** 实机(CMP 170HX)上
+  gpu-operator 默认的 DCGM 字段清单含 `DCGM_FI_PROF_*`(DCP),这类卡的 profiling 模块初始化即
+  unrecoverable error,exporter 起不来 —— 节点 GPU 曲线与 GPU 告警整条链路没数据。light 档改用
+  device 级清单(与独立 dcgm-exporter chart 的默认同源,平台用到的四个指标全在里面),full 档保留
+  chart 默认。另:节点维标签在 dcgm-exporter 4.8.3 由 `Hostname` 改成小写 `hostname`,而 gpu-operator
+  v26.3.3 默认还是 4.8.2;`prom.py` 的 `DCGM_NODE_LABEL` 与两条 GPU 告警的 `$labels.hostname` 都按小写
+  写死,跟着 chart 默认走会让指标在、选择器选不中(静默失效),故把镜像钉到 4.8.3 而不是改三处选择器。
+- **两个 chart 默认值里的 `0` 会让 helm upgrade 直接失败,在 values 里显式钉成等效值。**
+  ingress-nginx 的 `controller.progressDeadlineSeconds: 0` 被 API server 拒(must be greater than
+  minReadySeconds),kube-prometheus-stack 的 `prometheusSpec.maximumStartupDurationSeconds: 0` 被 CRD 拒
+  (须 ≥60)。分别钉 600(k8s 默认)与 900(prometheus-operator 自身默认),行为不变,只为 upgrade 能过。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

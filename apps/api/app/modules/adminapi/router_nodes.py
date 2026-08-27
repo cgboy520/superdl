@@ -227,9 +227,12 @@ async def admin_port_pool_stats(session: DbSession) -> PortPoolStatsOut:
 
 
 def _helmfile(distro: str | None, release: str) -> str:
-    """修复命令按实测发行版给出档位:照抄即可执行,不留 <full|light> 让人自己挑。"""
+    """修复命令按实测发行版给出档位:照抄即可执行,不留 <full|light> 让人自己挑。
+
+    走 apply.sh 而非裸 helmfile:两个必带开关漏一个 apply 就中途失败(见该脚本头注释)。
+    """
     env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
-    return f"helmfile -f deploy/cluster/helmfile.yaml.gotmpl -e {env} -l name={release} apply"
+    return f"deploy/cluster/apply.sh {env} -l name={release}"
 
 
 def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.ClusterStatus 行或 None

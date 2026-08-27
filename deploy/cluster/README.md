@@ -44,7 +44,7 @@ kubectl -n monitoring create secret generic grafana-admin \
    **禁止**录入 `/var/lib/rancher/rke2/server/node-token`(server token 能拉 server 进 etcd 环;
    轮换与托管见下文「server token 与 agent token」)。
    GPU 节点的 registries.yaml 由平台按「平台配置 · 镜像仓库」自动生成;server 节点由 ansible 分发 `rke2/registries.yaml`。
-3. **组件**:`./preflight.sh full && helmfile -e full apply`(含 Loki/Alloy 日志栈,
+3. **组件**:`./preflight.sh full && ./apply.sh full`(含 Loki/Alloy 日志栈,
    审计日志留存与查询见 `runbooks/loki-logging.md`);再 apply 准入策略
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
@@ -63,6 +63,12 @@ kubectl -n monitoring create secret generic grafana-admin \
    kubectl label node <mig池节点> nvidia.com/mig.config=all-1g.10gb --overwrite
    ```
 6. 验证:`runbooks/cluster-validation.md`。
+
+`apply.sh` 是 `helmfile apply` 的薄包装,只为固定两个必带开关(漏一个 apply 就会中途失败,
+且报错都不指向真正的原因):`HELM_DIFF_USE_UPGRADE_DRY_RUN=true` 让 helm-diff 走服务端
+dry-run(否则模板里的 `lookup` 恒空,kata-deploy 的身份校验会误判成「无法确认上一次安装」
+而拒绝升级),`--skip-diff-on-install` 跳过首装时的 diff(gpu-operator 首装时 ClusterPolicy
+CRD 还不存在)。单个 release:`./apply.sh light -l name=gpu-operator`。
 
 ## server token 与 agent token(轮换 + 快照托管)
 
@@ -94,7 +100,7 @@ kubectl -n monitoring create secret generic grafana-admin \
    (config 已含 `disable: traefik` 与 `embedded-registry: true`=Spegel)
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;
    禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
-3. **组件**:`./preflight.sh light && helmfile -e light apply`;再 apply 准入策略
+3. **组件**:`./preflight.sh light && ./apply.sh light`;再 apply 准入策略
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    - light 与 full 装同一套组件,差异只在 values 覆盖:HAMi 钉 k3s 版 scheduler 镜像 +
@@ -107,7 +113,7 @@ kubectl -n monitoring create secret generic grafana-admin \
      并劫持节点自身 DNS,租户 Jupyter 泛域名证书改为把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`);
      **TopoLVM 必开**(每个租户 Pod 都要挂实例盘;VG `superdl-nvme` 由 node-join.sh 建出);
      JuiceFS 可选(只有数据盘用),要数据盘时在 `environments/light.yaml` 打开。
-4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),须在 `helmfile apply` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
+4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
 5. 能力边界:组件面没有阉割(dedicated/mig 同样可用),但档位可用性看的是**池里有没有 Ready 节点**——
    单机只有一个池标签,选了 hami 就没有 kata/mig 池,dedicated/mig 上架会被上架硬校验拦下。
    管理端「集群」页常驻「轻量集群」黄条与组件体检(修复命令按实测发行版给出档位)。
