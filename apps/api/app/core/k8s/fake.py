@@ -356,6 +356,8 @@ class FakeOrchestrator:
                 gpu_model_label=n.gpu_model_label,
                 model_label_current=n.model_label_current
                 or self.node_labels.get(n.name, {}).get(GPU_MODEL_NODE_LABEL, ""),
+                driver_version_label=n.driver_version_label,
+                cuda_version_label=n.cuda_version_label,
             )
             for n in nodes
         ]

@@ -276,6 +276,26 @@ class TestHamiCapacityAccounting:
         node = self._node(allocatable_gpu=80, gfd_count=None)
         assert RealOrchestrator._physical_gpu_amount(node) == 0
 
+    def test_gfd_version_full_label(self):
+        labels = {
+            "nvidia.com/cuda.driver-version.full": "610.57.04",
+            "nvidia.com/cuda.runtime-version.full": "13.3",
+        }
+        assert RealOrchestrator._gfd_version(labels, "driver") == "610.57.04"
+        assert RealOrchestrator._gfd_version(labels, "runtime") == "13.3"
+
+    def test_gfd_version_composed_from_parts(self):
+        """老版 GFD 只发 major/minor(/revision):拼回完整版本号,缺项不留空段。"""
+        labels = {
+            "nvidia.com/cuda.driver-version.major": "610",
+            "nvidia.com/cuda.driver-version.minor": "57",
+            "nvidia.com/cuda.runtime-version.major": "13",
+            "nvidia.com/cuda.runtime-version.minor": "3",
+        }
+        assert RealOrchestrator._gfd_version(labels, "driver") == "610.57"
+        assert RealOrchestrator._gfd_version(labels, "runtime") == "13.3"
+        assert RealOrchestrator._gfd_version({}, "driver") == ""
+
     def test_occupancy_by_gpucores(self):
         # 1 虚卡 × 50% 算力 = 0.5 物理卡当量
         assert (

@@ -267,3 +267,7 @@ class NodeInfo:
     # 台账巡检用:GFD 型号原文标签(nvidia.com/gpu.product)与平台 canonical 标签当前值(空串=无)
     gpu_model_label: str = ""
     model_label_current: str = ""
+    # GFD 驱动/CUDA 版本标签(nvidia.com/cuda.{driver,runtime}-version.full;
+    # 空串=无 GFD 或非 GPU 节点)
+    driver_version_label: str = ""
+    cuda_version_label: str = ""

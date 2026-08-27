@@ -41,6 +41,7 @@
 - 巡检在 worker 收敛环直连 K8s 并以幂等重试保证收敛,outbox 只管请求路径的业务事务。
 - 型号归一化在 `core/gpu_models.py`:`canonical_gpu_model(raw)` 未识别返回 None,同名多容量家族(A100/A800/H100/H800/H200/V100)追加 `-{n}G`;`model_matches(sku, node)` 为相等或节点值前缀匹配(SKU `A100` 匹配台账 `A100-80G`)。
 - `gpu_model` 必须参与调度,靠平台自有 label `superdl.io/gpu-model` 回写节点(不依赖 GFD、发行版无关)。但 hami 池的**物理卡数**依赖 GFD 标签 `nvidia.com/gpu.count`(HAMi 把 allocatable 放大为物理 × 切分数,缺标签按 0 纳管防超卖):full 档由 gpu-operator 自带 GFD,light 档单独装 `gpu-feature-discovery`(helmfile `gfd.enabled`)。
+- 台账 `driver_version` / `cuda_version` 以 GFD 标签 `nvidia.com/cuda.{driver,runtime}-version.full`(缺则按 `.major/.minor/.revision` 拼)为准,装机上报的 `os_info` 只作无 GFD 时的回落:装机快照在驱动升级后不再更新,且节点在收尾上报前被对账器判 joined(终态)时该次上报会 404 丢弃,两种情况都靠标签自愈。
 - HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;k3s 为受支持的轻量档,仅限 hami 池 SKU,dedicated/mig 需 full 集群。
 - k3s 只探测 nvidia 运行时、不设默认运行时,shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。

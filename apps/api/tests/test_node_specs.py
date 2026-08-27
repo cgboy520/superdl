@@ -1,5 +1,6 @@
 """节点台账巡检:铺行收敛/未打标可见/装机登记兜底/Missing 保留删行/label 收敛与失败自愈。"""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -90,9 +91,43 @@ async def test_missing_then_removed(sm, fake):
         ).scalar_one_or_none() is None
 
 
+async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake):
+    """驱动/CUDA 两列以 GFD 标签为准:没有这条路径,收尾上报晚于对账器判 joined(终态,上报 404)
+    的节点两列恒空,且驱动升级后台账不跟随。"""
+    fake.unlabeled_nodes.append(
+        NodeInfo(
+            name="gfd-node",
+            pool_label="hami",
+            gpu_total=8,
+            gpu_used=0,
+            status="Ready",
+            gpu_model_label="NVIDIA-Graphics-Device",
+            driver_version_label="580.65",
+            cuda_version_label="12.8",
+        )
+    )
+    await node_spec_patrol(sm)
+    async with sm() as session:
+        row = (
+            await session.execute(select(NodeSpec).where(NodeSpec.node_name == "gfd-node"))
+        ).scalar_one()
+    assert row.driver_version == "580.65" and row.cuda_version == "12.8"
+    # 节点升级驱动 → GFD 标签变 → 下一轮巡检跟随(装机快照永远停在首装那次)
+    fake.unlabeled_nodes[-1] = replace(
+        fake.unlabeled_nodes[-1], driver_version_label="610.57.04", cuda_version_label="13.3"
+    )
+    await node_spec_patrol(sm)
+    async with sm() as session:
+        row = (
+            await session.execute(select(NodeSpec).where(NodeSpec.node_name == "gfd-node"))
+        ).scalar_one()
+    assert row.driver_version == "610.57.04" and row.cuda_version == "13.3"
+
+
 async def test_enrollment_report_wins_over_gfd(sm, fake):
-    """装机登记(bootstrap 的 nvidia-smi 全卡清单 + 收尾上报的驱动/CUDA 版本)优先于 GFD 标签;
-    显存取卡清单最大值。版本走 report_progress → 登记快照 → 巡检落台账整条链:
+    """装机登记(bootstrap 的 nvidia-smi 全卡清单 + 收尾上报的驱动/CUDA 版本)优先于 GFD 型号标签;
+    显存取卡清单最大值。版本走 report_progress → 登记快照 → 巡检落台账整条链
+    (无 GFD 版本标签时的回落):
     挂了 = 管理端节点页驱动/CUDA 两列恒空。"""
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once

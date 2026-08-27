@@ -6,6 +6,7 @@
   C label 收敛:canonical 写 superdl.io/gpu-model(逐节点独立 try,失败下轮自愈)。
 
 数据源优先级(型号 raw):装机登记 nvidia-smi > GFD label(nvidia.com/gpu.product)> 存量。
+驱动/CUDA 版本反过来 GFD label 优先:装机登记是一次性快照,驱动升级后不再更新。
 """
 
 from datetime import timedelta
@@ -124,8 +125,10 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                 row.vcpu = n.vcpu
                 row.mem_gb = n.mem_gb
                 row.disk_gb = n.disk_gb
-                row.driver_version = e.get("driver_version") or row.driver_version
-                row.cuda_version = e.get("cuda_version") or row.cuda_version
+                row.driver_version = (
+                    n.driver_version_label or e.get("driver_version") or row.driver_version
+                )
+                row.cuda_version = n.cuda_version_label or e.get("cuda_version") or row.cuda_version
                 row.status = n.status
                 row.last_seen = now
                 counts["upserted"] += 1
