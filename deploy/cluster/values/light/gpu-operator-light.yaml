@@ -1,0 +1,11 @@
+# GPU Operator 的 k3s 覆盖(叠在 values/gpu-operator.yaml 之上)。
+#
+# toolkit 关掉:装机基线(node-join.sh 的 nvidia_toolkit 步)已在宿主装 nvidia-container-toolkit,
+# k3s 启动时自行探测 nvidia-container-runtime 并生成 containerd 运行时与 RuntimeClass nvidia。
+# k3s 的 containerd 配置是它自己从模板生成的,operator 的 toolkit 容器再改一遍会被下次
+# k3s 启动覆盖回去(两边互相盖),且没有任何收益 —— 运行时已经在了。
+#
+# operand 容器不受影响:ClusterPolicy 的 operator.runtimeClass 默认就是 nvidia
+# (chart 默认值),k3s 不设默认运行时,operand 靠这个 RuntimeClass 拿到卡。
+toolkit:
+  enabled: false

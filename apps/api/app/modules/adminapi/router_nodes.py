@@ -222,7 +222,10 @@ async def admin_port_pool_stats(session: DbSession) -> PortPoolStatsOut:
     return await orchestrator_service.port_pool_stats(session)
 
 
-HELMFILE = "helmfile -f deploy/cluster/helmfile.yaml.gotmpl -e <full|light>"
+def _helmfile(distro: str | None, release: str) -> str:
+    """修复命令按实测发行版给出档位:照抄即可执行,不留 <full|light> 让人自己挑。"""
+    env = {"k3s": "light", "rke2": "full"}.get(distro or "", "<full|light>")
+    return f"helmfile -f deploy/cluster/helmfile.yaml.gotmpl -e {env} -l name={release} apply"
 
 
 def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.ClusterStatus 行或 None
@@ -232,43 +235,45 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
     gpu_op_ok = bool(row and row.gpu_operator_present)
     kata_ok = bool(row and row.kata_runtimeclass)
     scs = list(row.storage_classes or []) if row else []
+    distro = row.distro if row else None
     return [
         ClusterComponentOut(
             key="hami",
             ok=hami_ok,
             detail=None if hami_ok else "hami-scheduler Deployment 未就绪",
-            fix_hint=None if hami_ok else f"{HELMFILE} -l name=hami apply",
+            fix_hint=None if hami_ok else _helmfile(distro, "hami"),
         ),
         ClusterComponentOut(
             key="monitoring",
             ok=kps_ok,
-            fix_hint=None if kps_ok else f"{HELMFILE} -l name=kube-prometheus-stack apply",
+            fix_hint=None if kps_ok else _helmfile(distro, "kube-prometheus-stack"),
         ),
         ClusterComponentOut(
             key="dcgm",
             ok=dcgm_ok,
             detail=None if dcgm_ok else "dcgm-exporter DaemonSet 未发现(GPU 指标不可用)",
-            fix_hint=None if dcgm_ok else f"{HELMFILE} -l name=gpu-operator apply",
+            fix_hint=None if dcgm_ok else _helmfile(distro, "gpu-operator"),
         ),
         ClusterComponentOut(
             key="gpu_operator",
             ok=gpu_op_ok,
-            detail=None if gpu_op_ok else "gpu-operator 未发现(light/k3s 集群预期如此)",
-            fix_hint=None if gpu_op_ok else f"{HELMFILE} -l name=gpu-operator apply",
+            # 两档都装(light 只是关掉 toolkit,见 values/light/gpu-operator-light.yaml):
+            # 缺它 = GFD/DCGM/MIG/VFIO 全部缺位,不是「轻量集群本该如此」
+            detail=None if gpu_op_ok else "gpu-operator 未发现(GFD/DCGM/MIG/VFIO 均缺位)",
+            fix_hint=None if gpu_op_ok else _helmfile(distro, "gpu-operator"),
         ),
         ClusterComponentOut(
             key="kata_runtimeclass",
             ok=kata_ok,
             detail=None if kata_ok else "RuntimeClass kata-qemu 不存在(dedicated 档不可用)",
-            fix_hint=(
-                None if kata_ok else "kubectl apply -f deploy/cluster/kata/kata-runtimeclass.yaml"
-            ),
+            fix_hint=None if kata_ok else _helmfile(distro, "kata-deploy"),
         ),
         ClusterComponentOut(
             key="storage",
             ok=bool(scs),
-            detail=", ".join(scs) if scs else "无 StorageClass(数据盘/JuiceFS 不可用)",
-            fix_hint=None if scs else f"{HELMFILE} -l name=juicefs-csi-driver apply",
+            # 实例盘(TopoLVM)人人要挂,是两档的强制依赖;数据盘的 JuiceFS 才是可选项
+            detail=", ".join(scs) if scs else "无 StorageClass(实例盘/数据盘均不可用)",
+            fix_hint=None if scs else _helmfile(distro, "topolvm"),
         ),
     ]
 

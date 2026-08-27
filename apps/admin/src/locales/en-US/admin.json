@@ -90,7 +90,7 @@
     "grafanaLink": "Open in Grafana",
     "healthCard": "Component health",
     "lightBadge": "lightweight",
-    "lightWarning": "A k3s lightweight cluster supports shared-tier (hami pool) SKUs only; dedicated/MIG tiers require a full RKE2 cluster",
+    "lightWarning": "A k3s light cluster runs the same component set as a full one. A single machine carries one pool label, so choosing the shared pool leaves no dedicated/MIG pool — publishing those tiers is blocked by the inventory check.",
     "neverProbed": "Not probed yet; the patrol runs within a minute of worker start",
     "poolCard": "Pool distribution",
     "probedAt": "Probed at {{time}}",

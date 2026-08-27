@@ -30,7 +30,7 @@ flowchart LR
 react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd 6 原生组件自封装,不引
 `@ant-design/pro-components`;管理端监控图一律自绘(ECharts),Grafana 只作可选外链。
 
-**平台层**:两档集群。**full** = RKE2 多机生产,全档位(dedicated/mig/shared);**light** = k3s 单机,仅共享档。发行版由
+**平台层**:两档集群。**full** = RKE2 多机生产;**light** = k3s 单机。两档组件集相同(全档位可用),差异只在 k3s 侧的 values 覆盖。发行版由
 平台探测,业务侧无需声明。
 
 依赖版本的单一事实源:`apps/api/pyproject.toml`(后端)、`package.json`(前端)、`deploy/cluster/helmfile.yaml.gotmpl`(chart),升级走变更评审。
@@ -38,7 +38,9 @@ react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd
 | 组件 | 角色 |
 |---|---|
 | RKE2 / k3s | 容器平台,发行版钉 v1.36(userns `hostUsers: false` 所需的最低版本) |
-| Cilium / GPU Operator | 仅 full 档;light 档用 k3s 内置 flannel + HAMi 直装 |
+| Cilium | 仅 full 档;light 档用 k3s 内置 flannel |
+| GPU Operator | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关掉 toolkit,宿主 toolkit 由装机基线装、k3s 自行探测 |
+| kata-deploy | 两档同装,dedicated 档运行时;只落 kata 池节点 |
 | Kata | RuntimeClass `kata-qemu`,VFIO 整卡直通 |
 | HAMi | 共享档 CUDA 层软切分与限额 |
 | kube-prometheus-stack | Prometheus 本地留 15 天,长期数据进 PostgreSQL |

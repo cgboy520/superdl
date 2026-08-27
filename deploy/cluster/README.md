@@ -56,18 +56,13 @@ kubectl -n monitoring create secret generic grafana-admin \
    手建 `superdl-registry-pull`(平台自身镜像的 `imagePullSecrets`),之后配置中心录入机器人后由 worker
    按指纹覆写同名 Secret 并托管到各租户 ns;server 节点的 `registries.yaml`(Spegel / 代理缓存 / CA)
    由 ansible 分发。镜像发布与凭据轮换 SOP:`runbooks/image-prewarm.md`。
-5. **Kata**(dedicated 档):`kata/` 下 kata-deploy(仅 kata 池节点)+
-   `kubectl apply -f kata/kata-runtimeclass.yaml`
-6. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入
-   (池标签/驱动/registries 全自动;无需再 SSH 回 server)。加入后按池补 GPU Operator
-   工作负载标签(组件落点由节点标签决定,values 里的 nodeSelector 不生效;
-   契约全文见 `values/gpu-operator.yaml` 头注释):
+5. **GPU 节点**:管理端「节点 · 新增」生成一键命令,节点上执行即完成打标加入
+   (池标签 + GPU Operator 落点标签 / 驱动 / registries 全自动;无需再 SSH 回 server)。
+   MIG 切分是唯一还要手工打的标签:
    ```bash
-   kubectl label node <kata池节点> nvidia.com/gpu.workload.config=vm-passthrough
-   kubectl label node <hami池节点> nvidia.com/gpu.deploy.device-plugin=false
-   # mig 池无需标签;切分配置按需:kubectl label node <mig池节点> nvidia.com/mig.config=all-1g.10gb --overwrite
+   kubectl label node <mig池节点> nvidia.com/mig.config=all-1g.10gb --overwrite
    ```
-7. 验证:`runbooks/cluster-validation.md`。
+6. 验证:`runbooks/cluster-validation.md`。
 
 ## server token 与 agent token(轮换 + 快照托管)
 
@@ -102,17 +97,18 @@ kubectl -n monitoring create secret generic grafana-admin \
 3. **组件**:`./preflight.sh light && helmfile -e light apply`;再 apply 准入策略
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
-   - light = HAMi(钉 k3s 版 scheduler 镜像 + devicePlugin runtimeClassName=nvidia,
-     见 `values/light/hami-light.yaml`)+ GFD(`values/gfd.yaml`,独立 chart 含 NFD,不装 NVIDIA device plugin;
-     平台按 hami 池节点的 `nvidia.com/gpu.count` 取物理卡数,缺它按 0 卡纳管)+ kps 精简 + cert-manager + ingress-nginx
-     + Loki/Alloy 日志栈(默认开,资源收紧见 `values/light/loki-light.yaml`;
-     盘紧可在 `environments/light.yaml` 关);
-     + dcgm-exporter(`values/dcgm-exporter.yaml`,节点级 GPU 曲线与 GPU 告警的指标源,full 档由 gpu-operator 自带);
-     Cilium/gpu-operator/acme-dns 不装(acme-dns 的 LoadBalancer 53 在 klipper-lb 上会占节点 hostPort 53 并劫持节点自身 DNS,
-     租户 Jupyter 泛域名证书改为把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`);**TopoLVM 必开**(每个租户 Pod 都要挂实例盘;
-     VG `superdl-nvme` 由 node-join.sh 建出);JuiceFS 可选(只有数据盘用),
-     要数据盘时在 `environments/light.yaml` 打开。
-4. **GPU 节点**:同 full 第 6 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),须在 `helmfile apply` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
-5. 能力边界:仅共享档 SKU;dedicated/mig 上架会被硬校验拦下;管理端「集群」页
-   常驻「轻量集群」黄条与组件体检(含修复命令)。
+   - light 与 full 装同一套组件,差异只在 values 覆盖:HAMi 钉 k3s 版 scheduler 镜像 +
+     devicePlugin runtimeClassName=nvidia(`values/light/hami-light.yaml`);gpu-operator 关掉 toolkit
+     (`values/light/gpu-operator-light.yaml`,宿主 toolkit 由 node-join 装、k3s 自行探测生成
+     RuntimeClass nvidia;让 operator 再改一遍 k3s 的 containerd 配置会被下次启动覆盖回去);
+     kps / Loki 精简(`values/light/`,盘紧可在 `environments/light.yaml` 关掉日志栈)。
+     `nvidia.com/gpu.count` 由 gpu-operator 自带的 GFD 提供,缺它 hami 池按 0 卡纳管。
+     Cilium 不装(用 k3s 内置 flannel);acme-dns 不装(其 LoadBalancer 53 在 klipper-lb 上会占节点 hostPort 53
+     并劫持节点自身 DNS,租户 Jupyter 泛域名证书改为把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`);
+     **TopoLVM 必开**(每个租户 Pod 都要挂实例盘;VG `superdl-nvme` 由 node-join.sh 建出);
+     JuiceFS 可选(只有数据盘用),要数据盘时在 `environments/light.yaml` 打开。
+4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),须在 `helmfile apply` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
+5. 能力边界:组件面没有阉割(dedicated/mig 同样可用),但档位可用性看的是**池里有没有 Ready 节点**——
+   单机只有一个池标签,选了 hami 就没有 kata/mig 池,dedicated/mig 上架会被上架硬校验拦下。
+   管理端「集群」页常驻「轻量集群」黄条与组件体检(修复命令按实测发行版给出档位)。
 

@@ -88,6 +88,7 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
                 k8s_version="v1.36.2+rke2r1",
                 distro="rke2",
                 hami_ready=True,
+                kata_runtimeclass=True,  # dedicated 档门禁的正例基线
                 storage_classes=(INSTANCE_DISK_STORAGE_CLASS, JUICEFS_STORAGE_CLASS),
             ),
         )

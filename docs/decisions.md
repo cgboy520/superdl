@@ -125,6 +125,20 @@
   kubectl 打到节点对象,驱动版本在打标签前上报(节点已 Ready,标签一落对账器即判 joined 终态);`--uninstall` 在 server
   本机不执行发行版卸载脚本。后果:server 本机的实例盘 VG 不在 node-join 建时须先于 helmfile 手工建好;nvidia-smi 只报
   通用名的卡(CMP 系列)型号来自 lspci 方括号名,`canonical_gpu_model` 识别 `CMP<数字>HX`。见 `reference/nodes.md`。
+- **两档集群装同一套 GPU 栈:light 也上 gpu-operator 与 kata-deploy。** 背景:light 档原先绕开 gpu-operator,
+  用独立的 `gpu-feature-discovery` + `dcgm-exporter` 两个 chart 顶 GFD/DCGM,dedicated 档所需的 kata 则完全不装,
+  于是集群体检页恒有两条红叉,修复命令给的还是在 light 档下什么也不做的 `-l name=gpu-operator apply`;
+  两条并行的 GPU 栈也意味着任何 GPU 相关改动都要验两遍。k3s 两者都支持:gpu-operator 官方文档列了 k3s,
+  kata-deploy 4.x 的 helm chart 有 `k8sDistribution: k3s`(自动写 k3s 的 containerd 配置目录,并在与节点自检
+  不符时拒装)。决定:light 与 full 用同一份 release 清单,差异收敛成 `values/light/` 的覆盖——light 只多一条
+  `toolkit.enabled=false`,因为装机基线已在宿主装了 nvidia-container-toolkit、k3s 自行探测生成 RuntimeClass
+  `nvidia`,再让 operator 改一遍 k3s 自己从模板生成的 containerd 配置只会被下次启动覆盖回去。
+  配套:删掉独立的 gfd / dcgm-exporter 两个 release 与 `kata/kata-runtimeclass.yaml`(RuntimeClass 由 chart 建,
+  kata-deploy 4.x 已移除 3.x 的 `overlays/<distro>` kustomize 目录);GPU Operator 的 operand 落点标签
+  (hami 池 `nvidia.com/gpu.deploy.device-plugin=false`、kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`)
+  由 node-join 随池标签一起打,不再是 README 里的手工步骤——漏打会让官方 device-plugin 与 HAMi 抢注
+  `nvidia.com/gpu`。后果:档位可用性从此只看「池里有没有 Ready 节点 + 运行时是否到位」,与发行版无关;
+  单机 light 仍只有一个池标签,选了 hami 就没有 kata/mig 池。见 `deploy/cluster/README.md`。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

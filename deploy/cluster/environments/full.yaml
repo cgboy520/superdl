@@ -2,8 +2,7 @@
 cilium: {enabled: true}
 gpuOperator: {enabled: true}
 hami: {enabled: true}
-gfd: {enabled: false}
-dcgmExporter: {enabled: false}   # full 档 dcgm-exporter 由 gpu-operator 自带,不重复装   # full 档 GFD 由 gpu-operator 自带,不重复装
+kataDeploy: {enabled: true}   # dedicated 档运行时;chart 按 k8sDistribution=rke2 写 rke2 的 containerd 配置
 kps: {enabled: true}
 juicefs: {enabled: true}
 topolvm: {enabled: true}

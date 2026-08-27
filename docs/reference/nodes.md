@@ -40,14 +40,15 @@
 - 业务读台账,不实时调 K8s;节点消失先置 `Missing`,超 7 天才删行;上架校验只认 Ready。
 - 巡检在 worker 收敛环直连 K8s 并以幂等重试保证收敛,outbox 只管请求路径的业务事务。
 - 型号归一化在 `core/gpu_models.py`:`canonical_gpu_model(raw)` 未识别返回 None,同名多容量家族(A100/A800/H100/H800/H200/V100)追加 `-{n}G`;`model_matches(sku, node)` 为相等或节点值前缀匹配(SKU `A100` 匹配台账 `A100-80G`)。
-- `gpu_model` 必须参与调度,靠平台自有 label `superdl.io/gpu-model` 回写节点(不依赖 GFD、发行版无关)。但 hami 池的**物理卡数**依赖 GFD 标签 `nvidia.com/gpu.count`(HAMi 把 allocatable 放大为物理 × 切分数,缺标签按 0 纳管防超卖):full 档由 gpu-operator 自带 GFD,light 档单独装 `gpu-feature-discovery`(helmfile `gfd.enabled`)。
+- `gpu_model` 必须参与调度,靠平台自有 label `superdl.io/gpu-model` 回写节点(不依赖 GFD、发行版无关)。但 hami 池的**物理卡数**依赖 GFD 标签 `nvidia.com/gpu.count`(HAMi 把 allocatable 放大为物理 × 切分数,缺标签按 0 纳管防超卖):两档的 GFD 都由 gpu-operator 自带。
 - 台账 `driver_version` / `cuda_version` 以 GFD 标签 `nvidia.com/cuda.{driver,runtime}-version.full`(缺则按 `.major/.minor/.revision` 拼)为准,装机上报的 `os_info` 只作无 GFD 时的回落:装机快照在驱动升级后不再更新,且节点在收尾上报前被对账器判 joined(终态)时该次上报会 404 丢弃,两种情况都靠标签自愈。
-- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。
-- 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;k3s 为受支持的轻量档,仅限 hami 池 SKU,dedicated/mig 需 full 集群。
+- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档同款门禁看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`):缺它下发的 Pod 会被 kubelet 直接拒,用户侧只能看到开机后转 failed。
+- 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;两档装同一套组件(gpu-operator + HAMi + kata-deploy),差异只在 k3s 侧的 values 覆盖(见 `deploy/cluster/values/light/`)。档位可用性看的是池里有没有 Ready 节点与运行时是否到位,不看发行版。
 - k3s 只探测 nvidia 运行时、不设默认运行时,shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。
 - cluster 配置组键面:`cluster_server_url / cluster_join_token(secret)/ cluster_agent_version / node_driver_version / node_registries_yaml(留空=平台生成;高级覆盖明文落库,不得含凭据)/ node_install_mirror(""|cn,默认 cn)`,无 k8s_distro 键。
 - `render_registries_yaml`(`node_registries_yaml` 留空时的平台默认)按镜像仓库组生成:Spegel `"*"` + `registry_proxy_projects` 的每个上游 mirror + rewrite 到 Harbor 代理缓存项目(拉不到回落上游)+ `registry_ca_pem` 非空时 `configs.<host>.tls.ca_file`(占位 `__RANCHER_DIR__` 由 node-join 按发行版目录替换并落 `harbor-ca.crt` 0644);不含 auth,拉取凭据经 imagePullSecrets 托管(见 [images.md](./images.md))。server 节点的同一份文件由 ansible 分发 `deploy/cluster/rke2/registries.yaml`。
 - cluster 键不做启动 fail-fast(配置路径是 DB 覆盖层):改由 lifespan 在 DB 就绪后查生效配置打 error + 集群页红牌 + 创建注册命令 409。
+- 池标签与 GPU Operator 的 operand 落点标签由 node-join 同时落下(agent 节点写进 `node-label`,server 节点经本机 kubectl):hami 池 `nvidia.com/gpu.deploy.device-plugin=false`(排斥官方 device-plugin,否则与 HAMi 抢注 `nvidia.com/gpu`),kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`(换来 vfio-manager + kata 沙箱插件),mig 池无需额外标签。ClusterPolicy 不认各组件的 nodeSelector,落点只认节点标签。
 - `node-join.sh` 随 API 镜像下发,步骤 marker 可无限重跑;需重启的场景(kata 池 IOMMU 等)用 systemd oneshot 断点续跑。phase 名发行版中性:bootstrap/precheck/nouveau/sysctl/iommu/driver/nvidia_toolkit/nvme_vg/reboot/registries/agent_config/agent_install/agent_start/waiting_node。
 - **server 本机跑 node-join(light 单机,server 兼跑 GPU 负载)**:脚本以「本机 `k3s.service` / `rke2-server.service` 在运行」为判据,此时不写 agent 的 `config.yaml`(那是 server 配置)、不装/不起 agent,池标签经本机 kubectl(`k3s kubectl` / `/var/lib/rancher/rke2/bin/kubectl`)直接打到节点对象;toolkit 补装后重启的是 server 服务;`--uninstall` 不执行发行版卸载脚本、不删 server 的 config/registries。其余步骤(驱动、toolkit、VG、registries、上报)与 agent 节点相同,对账器判 joined 的依据不变。
 - bootstrap 上报的 `gpu_details`:nvidia-smi 只报通用名(CMP/工程样卡的 `NVIDIA Graphics Device`)时,名称回落 lspci 方括号内型号(如 `CMP 170HX`),显存仍取 nvidia-smi;`canonical_gpu_model` 识别 CMP 系列为 `CMP<数字>HX`。

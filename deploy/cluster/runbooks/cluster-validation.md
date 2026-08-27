@@ -61,8 +61,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效(Harbor 自签时 `harbor-ca.crt` 同目录 0644,`configs.tls.ca_file` 指向它)
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
 - [ ] server 侧 agent token(非 node-token)录入管理端的引导路径可走通
-- [ ] GPU Operator 工作负载标签就位:kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、
-      hami 池 `nvidia.com/gpu.deploy.device-plugin=false`(契约见 `values/gpu-operator.yaml` 头注释);
+- [ ] GPU Operator 工作负载标签就位(node-join 随池标签自动打,契约见 `values/gpu-operator.yaml` 头注释):
+      kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、hami 池 `nvidia.com/gpu.deploy.device-plugin=false`;
       kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin,hami 池上无官方 device-plugin
 
 ## G. 镜像缓存与预热
@@ -78,11 +78,20 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 - [ ] `superdl.io/gpu-model` nodeSelector 在 dedicated/mig/shared 三档位真实命中(含混布池)
 - [ ] 开启 `use-gputype` 后,以 raw 型号串注入的匹配语义符合预期
-- [ ] GFD 启用后数据源优先级:nvidia-smi > GFD label > 存量台账
+- [ ] 台账数据源优先级:型号 raw 走 nvidia-smi > GFD label > 存量;驱动/CUDA 版本反过来 GFD label 优先
+      (`nvidia.com/cuda.{driver,runtime}-version.full`),装机快照只作无 GFD 时的回落
 
 ## I. 双档路径
 
 - [ ] full / light 两条路径各按 `../README.md` 单页走通一次
+- [ ] **light 档 gpu-operator(k3s)**:`toolkit.enabled=false` 下 operand 全部 Running,
+      且 `kubectl get node -o json | jq '.items[].metadata.labels'` 里 `nvidia.com/gpu.count`
+      与 `nvidia.com/cuda.driver-version.full` 仍在 —— 缺 `gpu.count` 时 hami 池按 0 卡纳管,
+      在售 SKU 会当场无货(切换 GPU 栈后第一件要看的事)
+- [ ] **light 档 kata-deploy(k3s)**:`kubectl get runtimeclass kata-qemu` 存在;kata 池有节点时
+      `kata-deploy` DaemonSet Ready,节点上 `/var/lib/rancher/k3s/agent/etc/containerd/` 下有
+      kata 的 drop-in,且真跑一个 `runtimeClassName: kata-qemu` 的 Pod(k3s 不自动探测 kata 运行时,
+      containerd 配置全靠 chart 按 `k8sDistribution=k3s` 写对目录)
 - [ ] 集群相关环境变量全部留空,仅经管理端「平台配置 · 集群接入」完成节点加入
 - [ ] k3s kube-router NetworkPolicy 对租户 Egress 黑名单与 Cilium 等效
 - [ ] RKE2 / k3s 的 cn 镜像源可用

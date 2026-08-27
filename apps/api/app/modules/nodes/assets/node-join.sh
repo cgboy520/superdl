@@ -496,7 +496,21 @@ step_registries() {
   chmod 600 "$RANCHER_DIR"/registries.yaml
 }
 
+# GPU Operator 的 operand 落点由节点标签决定(ClusterPolicy 不认各组件 nodeSelector,
+# 见 deploy/cluster/values/gpu-operator.yaml 头注释)。这套标签必须与池标签同时落,
+# 否则 hami 池会被官方 device-plugin 与 HAMi 抢注 nvidia.com/gpu、kata 池拿不到 VFIO 直通。
+pool_gpu_labels() {  # pool_gpu_labels <pool> —— 输出 0 个或多个 key=value(mig 池无需额外标签)
+  case "$1" in
+    hami) echo "nvidia.com/gpu.deploy.device-plugin=false" ;;
+    kata) echo "nvidia.com/gpu.workload.config=vm-passthrough" ;;
+  esac
+}
+
 step_agent_config() {
+  local pool extra
+  pool="$(cfg_get pool)"
+  # shellcheck disable=SC2207  # 逐行切词正是所需(每行一个 key=value,不含空格)
+  extra=($(pool_gpu_labels "$pool"))
   if is_server_node; then
     # server 的 config.yaml 不能被 agent 配置覆盖;池标签用本机 kubectl 打到节点对象上
     # (Node 标签持久在集群数据库里,与 server 启动参数无关),对账器据此判定 joined
@@ -505,16 +519,18 @@ step_agent_config() {
     # 所以驱动/CUDA 版本要在打标签之前上报,否则台账永远缺这两列
     collect_driver_versions
     report agent_config running "server 本机:先上报驱动版本,再打池标签"
-    server_kubectl label node "$(hostname)" "superdl.io/pool=$(cfg_get pool)" --overwrite
+    server_kubectl label node "$(hostname)" "superdl.io/pool=$pool" "${extra[@]}" --overwrite
     return 0
   fi
   mkdir -p "$RANCHER_DIR"
-  cat > "$RANCHER_DIR"/config.yaml <<EOF
-server: $(cfg_get rke2_server_url)
-token: $(cfg_get rke2_join_token)
-node-label:
-  - "superdl.io/pool=$(cfg_get pool)"
-EOF
+  {
+    echo "server: $(cfg_get rke2_server_url)"
+    echo "token: $(cfg_get rke2_join_token)"
+    echo "node-label:"
+    echo "  - \"superdl.io/pool=$pool\""
+    local l
+    for l in "${extra[@]}"; do echo "  - \"$l\""; done
+  } > "$RANCHER_DIR"/config.yaml
   chmod 600 "$RANCHER_DIR"/config.yaml
 }
 

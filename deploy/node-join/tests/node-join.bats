@@ -213,6 +213,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ "$status" -eq 0 ]
   # rke2 config:server/token/池标签,0600
   grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/rke2/config.yaml"
+  grep -q "nvidia.com/gpu.deploy.device-plugin=false" "$TMP/etc/rancher/rke2/config.yaml"
   grep -q "K10fixture::server:secret" "$TMP/etc/rancher/rke2/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/config.yaml")" = "600" ]
   # registries.yaml 落位;含仓库认证凭据(configs.auth),与 config.yaml 同口径 600
@@ -367,6 +368,8 @@ RKESHIM
   [ "$status" -eq 0 ]
   grep -q "intel_iommu=on iommu=pt" "$TMP/etc/default/grub.d/99-superdl.cfg"
   grep -q "update-grub" "$SHIM_CALLS"
+  # kata 池的 GPU Operator 落点标签:vm-passthrough 才会部署 vfio-manager 与 kata 沙箱插件
+  grep -q "nvidia.com/gpu.workload.config=vm-passthrough" "$TMP/etc/rancher/rke2/config.yaml"
 }
 
 @test "k3s 模式:config/registries 落 /etc/rancher/k3s,走中国镜像 agent 安装并起 k3s-agent" {
@@ -481,7 +484,8 @@ EOF
   run_script
   [ "$status" -eq 0 ]
   [ ! -e "$TMP/etc/rancher/k3s/config.yaml" ]
-  grep -q "k3s kubectl label node $(hostname) superdl.io/pool=hami --overwrite" "$SHIM_CALLS"
+  # 池标签与 GPU Operator 落点标签同一条命令落下(hami 池须排斥官方 device-plugin)
+  grep -q "k3s kubectl label node $(hostname) superdl.io/pool=hami nvidia.com/gpu.deploy.device-plugin=false --overwrite" "$SHIM_CALLS"
   # 驱动版本在打标签前已随 agent_config 上报(对账器判 joined 后上报即 404)
   grep -q '"phase":"agent_config".*"driver_version":"580.65.06"' "$CURL_LOG"
   ! grep -q "k3s-install.sh" "$CURL_LOG"

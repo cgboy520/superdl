@@ -576,6 +576,22 @@ async def require_hami_ready(session: AsyncSession) -> None:
         )
 
 
+async def require_kata_runtimeclass(session: AsyncSession) -> None:
+    """dedicated 档下发门禁:RuntimeClass kata-qemu 缺位即时 409。
+
+    没有它,Pod 带着 runtimeClassName: kata-qemu 下发会被 kubelet 直接拒掉,
+    用户侧表现为开机后几十秒转 failed(force 上架的 dedicated SKU 是唯一入口)。
+    """
+    row = await _fresh_cluster_status(session)
+    if not row.kata_runtimeclass:
+        raise AppError(
+            ErrorCode.CLUSTER_NOT_READY,
+            key="nodes.clusterNotReady",
+            http_status=http_status.HTTP_409_CONFLICT,
+            detail={"reason": "kata_runtimeclass_missing"},
+        )
+
+
 async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool) -> None:
     """存储下发门禁:StorageClass 缺位即时 409,而非等 Pod Pending 超时。
 

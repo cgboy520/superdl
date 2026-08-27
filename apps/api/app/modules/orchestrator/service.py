@@ -165,10 +165,13 @@ async def _require_cluster_for_tier(
 ) -> None:
     """下发门禁:能力缺位即时 409,而非等 Pod Pending 到超时。
 
-    HAMi 只有 shared 档依赖;StorageClass 实例盘人人要挂,数据盘按需。
+    HAMi 只有 shared 档依赖,Kata RuntimeClass 只有 dedicated 档依赖;
+    StorageClass 实例盘人人要挂,数据盘按需。
     """
     if tier in _SHARED_TIERS:
         await nodes_service.require_hami_ready(session)
+    elif tier == "dedicated":
+        await nodes_service.require_kata_runtimeclass(session)
     await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
 
 

@@ -145,6 +145,42 @@ class TestGateWiring:
         )
         assert resp2.status_code == 202, resp2.text
 
+    async def test_dedicated_create_blocked_when_kata_runtimeclass_missing(self, sm, fake, client):
+        """dedicated 档缺 RuntimeClass kata-qemu → 即时 409;shared 档不受影响。
+
+        挂了 = Pod 带 runtimeClassName: kata-qemu 下发后被 kubelet 直接拒,
+        用户侧表现成开机几十秒后转 failed(而不是当场告诉他集群没这个档位)。
+        """
+        from app.modules.nodes.models import ClusterStatus
+        from tests.helpers import create_user_with_key, fund_wallet
+        from tests.test_catalog import seed_skus
+
+        await seed_skus(sm)
+        headers, user_id, key_id = await create_user_with_key(client)
+        await fund_wallet(sm, user_id)
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            assert row is not None
+            row.kata_runtimeclass = False
+            await session.commit()
+        skus = (await client.get("/api/v1/skus")).json()
+        dedicated = next(s for s in skus if s["tier"] == "dedicated")
+        shared = next(s for s in skus if s["tier"] == "shared_std")
+        images = (await client.get("/api/v1/images")).json()
+        body = {
+            "sku_id": dedicated["id"],
+            "gpu_count": 1,
+            "image_ref": images[0]["image_ref"],
+            "ssh_key_ids": [key_id],
+        }
+        resp = await client.post("/api/v1/instances", json=body, headers=headers)
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["code"] == "CLUSTER_NOT_READY"
+        resp2 = await client.post(
+            "/api/v1/instances", json={**body, "sku_id": shared["id"]}, headers=headers
+        )
+        assert resp2.status_code == 202, resp2.text
+
     async def test_create_blocked_when_storage_class_missing(self, sm, fake, client):
         """SC 名对不上/档位没装 → 即时 409,而不是让用户等 300 秒 Pending 超时判 failed。
 
@@ -315,6 +351,22 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert not comp["hami"]["ok"] and comp["hami"]["fix_hint"]
         assert "helmfile" in comp["monitoring"]["fix_hint"]
+        # 无探测缓存时不知道档位:留占位让人自己挑,不猜一个可能装错档的命令
+        assert "-e <full|light>" in comp["monitoring"]["fix_hint"]
+
+    async def test_fix_hint_env_follows_probed_distro(self, sm, fake, client):
+        """修复命令的档位跟实测发行版走:k3s → -e light。给 full 档命令等于让人装不上。"""
+        from app.modules.nodes.patrol import node_spec_patrol
+        from tests.test_catalog import admin_headers
+
+        fake.probe_hami_ready = False
+        fake.probe_k8s_version = "v1.36.3+k3s1"
+        await node_spec_patrol(sm)
+        headers = await admin_headers(sm, client, role="readonly")
+        body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
+        assert body["distro"] == "k3s"
+        comp = {c["key"]: c for c in body["components"]}
+        assert comp["hami"]["fix_hint"].endswith("-e light -l name=hami apply")
 
     async def test_test_connection_upserts_and_returns(self, sm, fake, client):
         from tests.test_catalog import admin_headers

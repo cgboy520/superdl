@@ -85,6 +85,8 @@ class FakeOrchestrator:
     instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 能力探测:默认健康 RKE2;fail_probe 模拟断连
     probe_hami_ready: bool = True
+    probe_kata_runtimeclass: bool = True
+    probe_k8s_version: str = _FAKE_K8S_VERSION  # 改成 +k3s1 即模拟 light 档
     fail_probe: bool = False
     # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
     fail_next_logs: bool = False
@@ -107,13 +109,13 @@ class FakeOrchestrator:
             pools[key] = pools.get(key, 0) + 1
         return ClusterProbe(
             api_reachable=True,
-            k8s_version=_FAKE_K8S_VERSION,
-            distro=derive_distro(_FAKE_K8S_VERSION),
+            k8s_version=self.probe_k8s_version,
+            distro=derive_distro(self.probe_k8s_version),
             hami_ready=self.probe_hami_ready,
             dcgm_present=True,
             kps_present=True,
             gpu_operator_present=True,
-            kata_runtimeclass=True,
+            kata_runtimeclass=self.probe_kata_runtimeclass,
             storage_classes=(JUICEFS_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
             pools=pools,
         )

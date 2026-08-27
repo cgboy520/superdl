@@ -1,6 +1,6 @@
 # 平台组件(版本锁定,升级须走变更评审)。双档:
 #   helmfile -e full apply    # RKE2 生产全组件
-#   helmfile -e light apply   # k3s 单机/小规模(仅共享档,见 environments/light.yaml)
+#   helmfile -e light apply   # k3s 单机/小规模(组件集同 full,k3s 侧 values 覆盖见 values/light/)
 # 必须显式 -e;前置检查:./preflight.sh <full|light>
 environments:
   full:
@@ -13,12 +13,6 @@ repositories:
     url: https://helm.cilium.io
   - name: nvidia
     url: https://helm.ngc.nvidia.com/nvidia
-  # GPU Feature Discovery 独立 chart(light 档用;full 档由 gpu-operator 自带 GFD)
-  - name: nvdp
-    url: https://nvidia.github.io/k8s-device-plugin
-  # dcgm-exporter 独立 chart(light 档用;full 档由 gpu-operator 自带)
-  - name: gpu-helm-charts
-    url: https://nvidia.github.io/dcgm-exporter/helm-charts
   - name: hami
     url: https://project-hami.github.io/HAMi
   - name: prometheus-community
@@ -56,33 +50,30 @@ releases:
     # HAMi 池节点以 nvidia.com/gpu.deploy.device-plugin=false 排斥官方插件
     # (见 values/gpu-operator.yaml 头注释);升版前复核 release notes 的 labels/ClusterPolicy 字段变化。
     version: "v26.3.3"
-    values: [values/gpu-operator.yaml]
+    values:
+      - values/gpu-operator.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/gpu-operator-light.yaml
+      {{- end }}
     # values 开了 ServiceMonitor:CRD 来自 kube-prometheus-stack,新集群首装必须排在它之后,
     # 且首装 diff 不做 API 校验(kind 尚不存在时 helm diff/install 会直接失败)
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
 
-  # GFD(仅 light):平台按 hami 池节点的 nvidia.com/gpu.count 标签取物理卡数(HAMi 把 allocatable 放大为
-  # 物理 × 切分数,缺该标签即按 0 纳管防超卖,见 apps/api/app/core/k8s/real.py::_physical_gpu_amount);
-  # light 不装 gpu-operator,GFD 须单独装。chart 自带 NFD 子 chart;不装 NVIDIA device plugin(devicePlugin.enabled=false)
-  - name: gpu-feature-discovery
-    condition: gfd.enabled
-    namespace: gpu-feature-discovery
-    chart: nvdp/gpu-feature-discovery
-    version: "0.20.0"
-    values: [values/gfd.yaml]
-
-  # DCGM exporter(仅 light):管理端节点页/告警规则的节点级 GPU 曲线(DCGM_FI_DEV_GPU_UTIL / FB_USED /
-  # GPU_TEMP / XID,按 Hostname 标签取节点,见 apps/api/app/modules/metering/prom.py)都来自它;
-  # light 不装 gpu-operator,须单独装。共享池容器级曲线另由 HAMi vGPUmonitor 提供
-  - name: dcgm-exporter
-    condition: dcgmExporter.enabled
-    namespace: dcgm-exporter
-    chart: gpu-helm-charts/dcgm-exporter
-    version: "4.8.3"
-    values: [values/dcgm-exporter.yaml]
-    needs: [monitoring/kube-prometheus-stack]   # chart 自带 ServiceMonitor,CRD 来自 kps
-    disableValidationOnInstall: true
+  # Kata(dedicated 档运行时):chart 装 shim 二进制、写 containerd drop-in、建 RuntimeClass kata-qemu。
+  # k8sDistribution 决定往哪个 containerd 配置目录写 —— k3s/rke2 的 containerd 配置由发行版自己
+  # 从模板生成,写错目录 = 装在没人读的地方(chart 侧会因与节点自检不符直接拒装)。
+  # 只装 kata 池节点(values 的 nodeSelector);kata 池为空时 DaemonSet 0 副本,RuntimeClass 照建。
+  - name: kata-deploy
+    condition: kataDeploy.enabled
+    namespace: kube-system
+    chart: oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy
+    # 4.x 起只发 helm chart(3.x 的 kata-deploy/overlays/<distro> kustomize 目录已移除)
+    version: "4.1.0"
+    values: [values/kata-deploy.yaml]
+    set:
+      - name: k8sDistribution
+        value: {{ if eq .Environment.Name "light" }}k3s{{ else }}rke2{{ end }}
 
   - name: hami
     condition: hami.enabled

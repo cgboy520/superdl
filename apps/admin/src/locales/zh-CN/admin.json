@@ -89,7 +89,7 @@
     "grafanaLink": "在 Grafana 打开",
     "healthCard": "组件体检",
     "lightBadge": "轻量集群",
-    "lightWarning": "k3s 轻量集群仅支持共享档(hami 池)规格;独享/MIG 档需要 RKE2 完整集群",
+    "lightWarning": "k3s 轻量集群与完整集群装同一套组件;单机只有一个池标签,选了共享池就没有独享/MIG 池,那两档上架会被库存硬校验拦下",
     "neverProbed": "尚未探测,worker 启动后一分钟内自动巡检",
     "poolCard": "池分布",
     "probedAt": "探测时间 {{time}}",
