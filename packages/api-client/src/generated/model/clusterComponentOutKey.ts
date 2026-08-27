@@ -9,10 +9,14 @@ export type ClusterComponentOutKey = typeof ClusterComponentOutKey[keyof typeof 
 
 
 export const ClusterComponentOutKey = {
+  nodes: 'nodes',
   hami: 'hami',
-  monitoring: 'monitoring',
-  dcgm: 'dcgm',
   gpu_operator: 'gpu_operator',
+  dcgm: 'dcgm',
+  nvidia_runtimeclass: 'nvidia_runtimeclass',
   kata_runtimeclass: 'kata_runtimeclass',
   storage: 'storage',
+  ingress: 'ingress',
+  cert_manager: 'cert_manager',
+  monitoring: 'monitoring',
 } as const;

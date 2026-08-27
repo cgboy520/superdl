@@ -76,11 +76,15 @@ export default interface Resources {
       "cfgToken": "Join Token",
       "cfgUnset": "未配置",
       "comp": {
+        "certManager": "证书签发",
         "dcgm": "GPU 指标(DCGM)",
         "gpuOperator": "GPU Operator",
         "hami": "HAMi 调度",
+        "ingress": "实例入口",
         "kataRuntimeclass": "Kata 运行时",
         "monitoring": "监控栈",
+        "nodes": "节点就绪",
+        "nvidiaRuntimeclass": "NVIDIA 运行时",
         "storage": "存储类"
       },
       "configCard": "配置就绪",

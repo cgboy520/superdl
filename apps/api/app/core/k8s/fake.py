@@ -116,6 +116,11 @@ class FakeOrchestrator:
             kps_present=True,
             gpu_operator_present=True,
             kata_runtimeclass=self.probe_kata_runtimeclass,
+            nvidia_runtimeclass=True,
+            ingress_ready=True,
+            cert_manager_ready=True,
+            nodes_ready=sum(pools.values()),
+            nodes_total=sum(pools.values()),
             storage_classes=(JUICEFS_STORAGE_CLASS, INSTANCE_DISK_STORAGE_CLASS),
             pools=pools,
         )

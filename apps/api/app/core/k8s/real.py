@@ -1104,6 +1104,7 @@ class RealOrchestrator:
         errors: list[str] = []
         apps = _TimeoutApi(client.AppsV1Api(), self._timeout)
         hami_ready = dcgm = kps = gpu_operator = False
+        ingress_ready = cert_manager_ready = False
         try:
             deployments: Any = apps.list_deployment_for_all_namespaces()
             for d in deployments.items:
@@ -1114,6 +1115,11 @@ class RealOrchestrator:
                     gpu_operator = True
                 if "kube-prometheus-stack" in name:
                     kps = True
+                # 入口与证书:租户 Jupyter 的 HTTPS 入场链路,两者任一缺位全站实例都进不去
+                if "ingress-nginx-controller" in name:
+                    ingress_ready = ingress_ready or bool(d.status.ready_replicas)
+                if name == "cert-manager":
+                    cert_manager_ready = bool(d.status.ready_replicas)
             daemonsets: Any = apps.list_daemon_set_for_all_namespaces()
             for ds in daemonsets.items:
                 if "dcgm" in (ds.metadata.name or ""):
@@ -1138,12 +1144,16 @@ class RealOrchestrator:
         except client.ApiException as exc:
             errors.append(f"storageclasses: {exc.status}")
         pools: dict[str, int] = {}
+        nodes_ready = nodes_total = 0
         try:
-            # 只数池标签,不走 _list_nodes_sync(它还会全量 LIST Pod 算已用份额,探测用不上;
+            # 只数池标签与就绪面,不走 _list_nodes_sync(它还会全量 LIST Pod 算已用份额,探测用不上;
             # 节点巡检同一轮紧接着就会 list_nodes)
             for node in self._list_all(self.core.list_node):
                 key = (node.metadata.labels or {}).get(POOL_NODE_LABEL, "unlabeled")
                 pools[key] = pools.get(key, 0) + 1
+                nodes_total += 1
+                if _ready_condition(node) and not node.spec.unschedulable:
+                    nodes_ready += 1
         except client.ApiException as exc:
             errors.append(f"nodes: {exc.status}")
         return ClusterProbe(
@@ -1155,6 +1165,11 @@ class RealOrchestrator:
             kps_present=kps,
             gpu_operator_present=gpu_operator,
             kata_runtimeclass="kata-qemu" in runtime_classes,
+            nvidia_runtimeclass="nvidia" in runtime_classes,
+            ingress_ready=ingress_ready,
+            cert_manager_ready=cert_manager_ready,
+            nodes_ready=nodes_ready,
+            nodes_total=nodes_total,
             storage_classes=storage_classes,
             pools=pools,
             error="; ".join(errors) or None,

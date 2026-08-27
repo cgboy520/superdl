@@ -489,6 +489,11 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
     row.kps_present = probe.kps_present
     row.gpu_operator_present = probe.gpu_operator_present
     row.kata_runtimeclass = probe.kata_runtimeclass
+    row.nvidia_runtimeclass = probe.nvidia_runtimeclass
+    row.ingress_ready = probe.ingress_ready
+    row.cert_manager_ready = probe.cert_manager_ready
+    row.nodes_ready = probe.nodes_ready
+    row.nodes_total = probe.nodes_total
     row.storage_classes = list(probe.storage_classes)
     row.pools = dict(probe.pools)
     row.error = probe.error

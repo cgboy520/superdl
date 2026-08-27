@@ -508,7 +508,18 @@ class CapacityPreviewOut(BaseModel):
 class ClusterComponentOut(BaseModel):
     """组件体检项:key 由前端映射文案;fix_hint 为可复制修复命令(不随语言)。"""
 
-    key: Literal["hami", "monitoring", "dcgm", "gpu_operator", "kata_runtimeclass", "storage"]
+    key: Literal[
+        "nodes",
+        "hami",
+        "gpu_operator",
+        "dcgm",
+        "nvidia_runtimeclass",
+        "kata_runtimeclass",
+        "storage",
+        "ingress",
+        "cert_manager",
+        "monitoring",
+    ]
     ok: bool
     detail: str | None = None
     fix_hint: str | None = None

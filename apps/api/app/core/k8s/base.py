@@ -110,6 +110,11 @@ class ClusterProbe:
     kps_present: bool = False
     gpu_operator_present: bool = False
     kata_runtimeclass: bool = False  # RuntimeClass kata-qemu 存在
+    nvidia_runtimeclass: bool = False  # RuntimeClass nvidia 存在(k3s 上 shared 档下发的前提)
+    ingress_ready: bool = False  # ingress-nginx controller ready≥1(租户 Jupyter 入口)
+    cert_manager_ready: bool = False  # cert-manager ready≥1(泛域名证书签发与续期)
+    nodes_ready: int = 0  # Ready 且可调度的节点数
+    nodes_total: int = 0  # 集群节点总数(含未打池标签)
     storage_classes: tuple[str, ...] = ()
     pools: dict[str, int] = field(default_factory=dict)  # 池→节点数,未打标计 unlabeled
     error: str | None = None

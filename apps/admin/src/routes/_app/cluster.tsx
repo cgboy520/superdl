@@ -21,12 +21,16 @@ export const Route = createFileRoute("/_app/cluster")({
 });
 
 const COMPONENT_LABEL = {
+  nodes: "cluster.comp.nodes",
   hami: "cluster.comp.hami",
-  monitoring: "cluster.comp.monitoring",
-  dcgm: "cluster.comp.dcgm",
   gpu_operator: "cluster.comp.gpuOperator",
+  dcgm: "cluster.comp.dcgm",
+  nvidia_runtimeclass: "cluster.comp.nvidiaRuntimeclass",
   kata_runtimeclass: "cluster.comp.kataRuntimeclass",
   storage: "cluster.comp.storage",
+  ingress: "cluster.comp.ingress",
+  cert_manager: "cluster.comp.certManager",
+  monitoring: "cluster.comp.monitoring",
 } as const satisfies Record<ClusterComponent["key"], string>;
 
 function ClusterPage() {

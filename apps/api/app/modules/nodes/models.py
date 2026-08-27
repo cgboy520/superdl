@@ -99,6 +99,11 @@ class ClusterStatus(Base):
     kps_present: Mapped[bool] = mapped_column(default=False)
     gpu_operator_present: Mapped[bool] = mapped_column(default=False)
     kata_runtimeclass: Mapped[bool] = mapped_column(default=False)
+    nvidia_runtimeclass: Mapped[bool] = mapped_column(default=False, server_default="false")
+    ingress_ready: Mapped[bool] = mapped_column(default=False, server_default="false")
+    cert_manager_ready: Mapped[bool] = mapped_column(default=False, server_default="false")
+    nodes_ready: Mapped[int] = mapped_column(default=0, server_default="0")
+    nodes_total: Mapped[int] = mapped_column(default=0, server_default="0")
     storage_classes: Mapped[list[str] | None] = mapped_column(JSONB)
     pools: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # 池→节点数
     error: Mapped[str | None] = mapped_column(Text)

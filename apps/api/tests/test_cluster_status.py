@@ -368,6 +368,38 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert comp["hami"]["fix_hint"].endswith("-e light -l name=hami apply")
 
+    async def test_storage_component_uses_the_same_names_as_the_gate(self, sm, fake, client):
+        """体检页 storage 与 require_storage_classes 同一口径(按名核对)。
+
+        挂了 = 集群里有任意一个 SC 就给绿灯,而用户创建实例时才撞 409,运维在体检页看不出端倪。
+        """
+        from app.modules.nodes.models import ClusterStatus
+        from tests.test_catalog import admin_headers
+
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            assert row is not None
+            row.storage_classes = ["local-path"]  # 有 SC,但不是实例盘要的那只
+            await session.commit()
+        headers = await admin_headers(sm, client, role="readonly")
+        body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
+        comp = {c["key"]: c for c in body["components"]}
+        assert comp["storage"]["ok"] is False
+        assert "topolvm-provisioner" in comp["storage"]["detail"]
+
+    async def test_kata_component_calls_out_empty_pool(self, sm, fake, client):
+        """RuntimeClass 在、kata 池没节点:独享档一样开不了机,detail 要说出来。"""
+        from app.modules.nodes.patrol import node_spec_patrol
+        from tests.test_catalog import admin_headers
+
+        fake.pool_capacity.pop("kata", None)
+        await node_spec_patrol(sm)
+        headers = await admin_headers(sm, client, role="readonly")
+        body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
+        comp = {c["key"]: c for c in body["components"]}
+        assert comp["kata_runtimeclass"]["ok"] is True
+        assert "无节点" in comp["kata_runtimeclass"]["detail"]
+
     async def test_test_connection_upserts_and_returns(self, sm, fake, client):
         from tests.test_catalog import admin_headers
 

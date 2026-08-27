@@ -1967,12 +1967,16 @@
           },
           "key": {
             "enum": [
+              "nodes",
               "hami",
-              "monitoring",
-              "dcgm",
               "gpu_operator",
+              "dcgm",
+              "nvidia_runtimeclass",
               "kata_runtimeclass",
-              "storage"
+              "storage",
+              "ingress",
+              "cert_manager",
+              "monitoring"
             ],
             "title": "Key",
             "type": "string"

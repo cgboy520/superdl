@@ -75,11 +75,15 @@
     "cfgToken": "Join token",
     "cfgUnset": "not configured",
     "comp": {
+      "certManager": "Certificates",
       "dcgm": "GPU metrics (DCGM)",
       "gpuOperator": "GPU Operator",
       "hami": "HAMi scheduler",
+      "ingress": "Instance ingress",
       "kataRuntimeclass": "Kata runtime",
       "monitoring": "Monitoring stack",
+      "nodes": "Node readiness",
+      "nvidiaRuntimeclass": "NVIDIA runtime",
       "storage": "Storage classes"
     },
     "configCard": "Configuration",
