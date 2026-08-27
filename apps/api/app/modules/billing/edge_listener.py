@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, hour_floor
+from app.modules.billing import subscriptions
 from app.modules.billing.settlement import settle_instance_window
 
 if TYPE_CHECKING:
@@ -18,6 +20,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 RUNNING = "running"
+RELEASING = "releasing"
 
 # 平台责任失联(节点失联/Pod 丢失):计费截断到 Pod 首次 not-ready 的时刻,
 # 判定前的宽限观察期不向用户计费。pod_unready(节点正常,负载自身问题)不在此列。
@@ -27,7 +30,18 @@ _TRUNCATE_REASONS = ("node_lost", "pod_lost")
 async def on_instance_transition(
     session: AsyncSession, instance: "Instance", event: "InstanceEvent"
 ) -> None:
+    if event.to_status == RELEASING and instance.market == MARKET_SUBSCRIPTION:
+        # 中途释放不退款(预付语义),但订阅必须作废:留着 active 会让软准入
+        # 继续替一台已经不存在的实例预留容量,也会让到期巡检去停一台已释放的机器。
+        # 挂在迁移监听器上而不是 release_instance 里,是为了把用户释放、欠费回收、
+        # 到期回收、管理端强制回收四条路径一次覆盖 —— 它们最终都经过这条边
+        await subscriptions.cancel_for_instance(session, instance.id)
     if event.from_status != RUNNING:
+        return
+    if instance.market == MARKET_SUBSCRIPTION:
+        # 包周期离开 running 不出尾账:整段周期的钱在下单时已经收过了。
+        # 三处配套过滤之一(另两处:wallet.assert_can_afford 的在途燃烧率、
+        # billing.patrol 的停机判据),漏一处就是对预付用户二次收费
         return
     at = ensure_utc(event.created_at)
     detail_extra = None

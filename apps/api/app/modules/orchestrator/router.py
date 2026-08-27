@@ -9,17 +9,21 @@ from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.modules.account.deps import CurrentUser
+from app.modules.billing.schemas import SubscriptionQuoteOut
 from app.modules.orchestrator import service
 from app.modules.orchestrator.schemas import (
     ApiKeyCreate,
     ApiKeyCreateOut,
     ApiKeyOut,
     InstanceAccessOut,
+    InstanceAutoRenew,
     InstanceCreate,
     InstanceEventOut,
     InstanceLogsOut,
     InstanceOut,
     InstanceRename,
+    InstanceRenew,
+    RenewOut,
     ServiceEndpointOut,
 )
 
@@ -54,6 +58,9 @@ async def create_instance(
         name=body.name,
         data_disk_id=body.data_disk_id,
         idempotency_key=idempotency_key,
+        market=body.market,
+        period=body.period,
+        period_count=body.period_count,
         workload_type=body.workload_type,
         container_command=body.container_command,
         container_args=body.container_args,
@@ -67,7 +74,7 @@ async def create_instance(
     if not created:
         mark_idempotent_replay(response)
     set_audit_target(request, f"instance:{instance.uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)
 
 
 @router.get("/instances")
@@ -87,7 +94,7 @@ async def list_instances(
 
 @router.get("/instances/{uuid}")
 async def get_instance(uuid: str, user: CurrentUser, session: DbSession) -> InstanceOut:
-    return InstanceOut.model_validate(await service.get_instance(session, user.id, uuid))
+    return await service.instance_view(session, await service.get_instance(session, user.id, uuid))
 
 
 @router.patch("/instances/{uuid}")
@@ -96,7 +103,7 @@ async def rename_instance(
 ) -> InstanceOut:
     instance = await service.rename_instance(session, user.id, uuid, body.name)
     set_audit_target(request, f"instance:{uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)
 
 
 @router.post("/instances/{uuid}/stop")
@@ -105,7 +112,7 @@ async def stop_instance(
 ) -> InstanceOut:
     instance = await service.stop_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)
 
 
 @router.post("/instances/{uuid}/start")
@@ -114,7 +121,7 @@ async def start_instance(
 ) -> InstanceOut:
     instance = await service.start_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)
 
 
 @router.post("/instances/{uuid}/restart")
@@ -123,7 +130,80 @@ async def restart_instance(
 ) -> InstanceOut:
     instance = await service.restart_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)
+
+
+@router.post("/instances/{uuid}/renew")
+async def renew_instance(
+    uuid: str,
+    body: InstanceRenew,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> RenewOut:
+    """包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
+
+    挂在 instances 下而不是 billing 下:用户的心智是「给这台机器续费」,
+    而实例状态(冻结中续费即解冻)也只能由 orchestrator 这一侧改。
+    """
+    instance, quoted, created = await service.renew_instance(
+        session,
+        user.id,
+        uuid,
+        period=body.period,
+        period_count=body.period_count,
+        idempotency_key=idempotency_key,
+    )
+    if not created:
+        mark_idempotent_replay(response)
+    set_audit_target(request, f"instance:{uuid}")
+    return RenewOut(
+        instance=await service.instance_view(session, instance),
+        quote=SubscriptionQuoteOut.model_validate(quoted, from_attributes=True),
+    )
+
+
+@router.post("/instances/{uuid}/subscribe")
+async def subscribe_instance(
+    uuid: str,
+    body: InstanceRenew,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> RenewOut:
+    """按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣。
+
+    与 `/renew` 同一个入参与响应形态(都是「给这台机器买一段周期」),区别只在起点:
+    这里从现在起算,续费从老周期到期时刻接上。
+    """
+    instance, quoted, created = await service.subscribe_instance(
+        session,
+        user.id,
+        uuid,
+        period=body.period,
+        period_count=body.period_count,
+        idempotency_key=idempotency_key,
+    )
+    if not created:
+        mark_idempotent_replay(response)
+    set_audit_target(request, f"instance:{uuid}")
+    return RenewOut(
+        instance=await service.instance_view(session, instance),
+        quote=SubscriptionQuoteOut.model_validate(quoted, from_attributes=True),
+    )
+
+
+@router.post("/instances/{uuid}/auto-renew")
+async def set_auto_renew(
+    uuid: str, body: InstanceAutoRenew, user: CurrentUser, session: DbSession, request: Request
+) -> InstanceOut:
+    instance = await service.set_instance_auto_renew(session, user.id, uuid, enabled=body.enabled)
+    set_audit_target(request, f"instance:{uuid}")
+    return await service.instance_view(session, instance)
 
 
 @router.delete("/instances/{uuid}")
@@ -133,7 +213,7 @@ async def release_instance(
     """释放实例(清除实例盘,数据盘不受影响)。前端多级确认后调用。"""
     instance = await service.release_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)
 
 
 @router.get("/instances/{uuid}/events")
@@ -219,4 +299,4 @@ async def reset_jupyter_token(
 ) -> InstanceOut:
     instance = await service.reset_jupyter_token(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
-    return InstanceOut.model_validate(instance)
+    return await service.instance_view(session, instance)

@@ -498,6 +498,7 @@ export default interface Resources {
       "payingTenants": "付费租户",
       "pendingCount": "{{count}} 条待处理",
       "poolOccupancy": "GPU 池占用",
+      "prepaidPart": "其中包周期预付 {{amount}}",
       "raiseThreshold": "上调阈值 60%",
       "rented": "已租",
       "replay": "重放",
@@ -508,6 +509,8 @@ export default interface Resources {
       "seriesOversell": "实际超卖率",
       "seriesUtil": "真实利用率(24h)",
       "severityFilter": "级别",
+      "subscriptionsActive": "包周期在保实例",
+      "subscriptionsActiveHint": "按订阅计,含已停机;到期前仍占库存",
       "todayRevenue": "今日收入",
       "todaySignups": "今日新注册",
       "vsYesterday": "{{count}} 较昨日",
@@ -660,6 +663,7 @@ export default interface Resources {
       "colOnSale": "上架",
       "colOversellCores": "算力超卖",
       "colOversellVram": "显存超卖",
+      "colPeriod": "包周期",
       "colPrice": "单价",
       "colSlice": "切分",
       "colSoldShare": "已售",
@@ -690,6 +694,10 @@ export default interface Resources {
       "oversellRisk": "超卖参数为高风险配置",
       "oversellRiskDesc": "变更仅影响新实例;显存超卖 >1.2 需二次确认。上调前须有同卡互扰压测数据(P95 利用率 <60%)。",
       "oversellVramLabel": "显存超卖 ×",
+      "periodEnabledHint": "关闭后该规格只能按量购买;已在保的包周期实例不受影响,到期前仍占库存",
+      "periodEnabledLabel": "包周期",
+      "periodOff": "不支持",
+      "periodOn": "支持",
       "previewEst": "档位容量(实例)",
       "previewNodes": "可调度节点",
       "previewPending": "填写型号与档位后显示",
@@ -735,6 +743,7 @@ export default interface Resources {
       "colInstance": "实例",
       "colInstanceId": "实例 ID",
       "colInstances": "实例",
+      "colMarket": "购买模式",
       "colNode": "节点",
       "colOwner": "租户",
       "colPhone": "手机",
@@ -782,6 +791,7 @@ export default interface Resources {
       },
       "evict": "驱逐重调度",
       "evictP1": "驱逐重调度为 P1 功能,当前版本未开放",
+      "expiresAt": "到期 {{date}}",
       "forceStop": "强制停止",
       "forceStopConfirm": "确认强制停止实例 {{name}}({{id}})?将立即结算尾账并通知用户。",
       "forceStopNeedsRunning": "仅运行中的实例可强制停止",
@@ -949,9 +959,14 @@ export default interface Resources {
       "refundStateNotCancellable": "退款单状态 {{status}} 不可取消",
       "refundStateNotPayable": "退款单状态 {{status}} 不可登记打款",
       "refundStateNotReviewable": "退款单状态 {{status}} 不可审批",
+      "settlementBehind": "结算正在追平,请稍后再转包周期",
       "settlementGapNotFound": "结算缺口不存在",
       "settlementGapNotReplayable": "该缺口类型({{reason}})不支持重放:请人工核查后核销",
       "settlementGapObjectGone": "缺口关联对象(id={{objectId}})已不存在,请人工核查后核销",
+      "subscriptionAlreadyActive": "该实例已在包周期内,如需延长请使用续费",
+      "subscriptionCancelled": "该实例的包周期已作废,无法续费",
+      "subscriptionExpired": "包周期已到期,请先续费再开机",
+      "subscriptionMissing": "该实例没有可续费的包周期",
       "unknownChannel": "未知支付渠道:{{name}}",
       "wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
       "wechatCallbackVerifyFailed": "微信回调验签失败",
@@ -1026,6 +1041,8 @@ export default interface Resources {
       "apiKeyInvalid": "访问密钥无效",
       "apiKeyNotFound": "访问密钥不存在",
       "apiKeyQuota": "单个服务的访问密钥已达上限({{max}} 把),请先吊销不用的密钥",
+      "convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
+      "convertNotOnDemand": "只有按量计费的实例可以转包周期",
       "cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
       "devWorkloadExtraFields": "开发机不支持服务容器参数({{fields}}):要对外发布服务请改用服务型实例",
       "envKeyInvalid": "环境变量名「{{name}}」不合法:只能用字母、数字和下划线,且不能以数字开头",
@@ -1046,8 +1063,13 @@ export default interface Resources {
       "noCapacity": "「{{model}} × {{pool}} 池」当前无可分配容量,请稍后重试或选择其他规格",
       "noCapacityCpu": "「{{pool}} 池」当前无可分配的 CPU 容量,请稍后重试或选择其他规格",
       "nodeUnreachable": "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)",
+      "periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
+      "periodOnOnDemand": "按量计费的实例不能带计费周期",
+      "periodRequired": "包周期实例必须选择计费周期",
       "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
       "releaseNeedsStopped": "关机后才能释放实例",
+      "renewNotSubscription": "只有包周期实例可以续费",
+      "renewReleased": "实例正在释放或已释放,无法续费",
       "restartNeedsRunning": "仅运行中的实例可以重启",
       "serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
       "servicePortRequired": "服务型实例必须填写容器监听端口",
@@ -1089,7 +1111,15 @@ export default interface Resources {
         "m": "{{m}} 分钟",
         "zero": "0 分钟"
       },
-      "perHour": "{{price}}/时"
+      "perHour": "{{price}}/时",
+      "perPeriod": "{{price}}/{{unit}}",
+      "perPeriodCount": "{{price}}/{{count}} {{unit}}",
+      "periodUnit": {
+        "day": "日",
+        "month": "月",
+        "week": "周",
+        "year": "年"
+      }
     },
     "status": {
       "adjustment": {
@@ -1153,6 +1183,11 @@ export default interface Resources {
         "draft": "草稿",
         "published": "已发布"
       },
+      "market": {
+        "on_demand": "按量",
+        "spot": "竞价",
+        "subscription": "包周期"
+      },
       "nodeEnroll": {
         "expired": "已过期",
         "failed": "已失败",
@@ -1174,12 +1209,23 @@ export default interface Resources {
         "offline": "线下转账",
         "wechat_transfer": "微信转账"
       },
+      "period": {
+        "day": "包日",
+        "month": "包月",
+        "week": "包周",
+        "year": "包年"
+      },
       "refund": {
         "approved": "待打款",
         "cancelled": "已取消",
         "paid": "已完成",
         "pending": "待审批",
         "rejected": "已驳回"
+      },
+      "subscription": {
+        "active": "在保",
+        "cancelled": "已作废",
+        "expired": "已到期"
       },
       "ticket": {
         "closed": "已关闭",

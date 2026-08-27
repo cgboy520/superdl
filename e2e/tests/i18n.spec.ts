@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 
 const CJK = /[一-鿿]/;
 const KEY_LEAK =
-  /\b(?:web|shared|errors):[a-zA-Z0-9_.]+\b|\b(?:landing|login|topbar|footer|copy|instances|market|create|storage|billing|settings|dashboard|query|sku|common)\.[a-zA-Z0-9_.]+\b/;
+  /\b(?:web|shared|errors):[a-zA-Z0-9_.]+\b|\b(?:landing|login|topbar|footer|copy|instances|market|create|storage|billing|settings|dashboard|query|sku|common|period)\.[a-zA-Z0-9_.]+\b/;
 
 test.use({ locale: "en-US" });
 

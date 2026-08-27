@@ -32,14 +32,17 @@ import {
   resetPasswordApiV1AuthPasswordResetPost,
   releaseInstanceApiV1InstancesUuidDelete,
   renameInstanceApiV1InstancesUuidPatch,
+  renewInstanceApiV1InstancesUuidRenewPost,
   resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost,
   restartInstanceApiV1InstancesUuidRestartPost,
   revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete,
   sendSmsCodeApiV1AuthSmsCodePost,
+  setAutoRenewApiV1InstancesUuidAutoRenewPost,
   setWarnThresholdApiV1MeWarnThresholdPatch,
   submitRealNameApiV1MeRealNamePost,
   startInstanceApiV1InstancesUuidStartPost,
   stopInstanceApiV1InstancesUuidStopPost,
+  subscribeInstanceApiV1InstancesUuidSubscribePost,
 } from "@superdl/api-client";
 import type {
   ApiKeyCreateOut,
@@ -47,6 +50,8 @@ import type {
   DiskCreate,
   DiskExpand,
   InstanceCreate,
+  InstanceOut,
+  InstanceRenew,
   InvoiceCreate,
   LoginRequest,
   RealNameRequest,
@@ -54,6 +59,7 @@ import type {
   RefundCreate,
   PasswordResetRequest,
   RegisterRequest,
+  RenewOut,
   SmsCodeRequest,
   TicketCreate,
   TicketMessageCreate,
@@ -159,6 +165,35 @@ export const useRenameInstance = () =>
     ({ uuid, name }: { uuid: string; name: string }) =>
       renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
     { invalidates: ["instances"] },
+  );
+/**
+ * 包周期续费:必须带幂等键(响应丢失后重提不会扣两次钱,重放回 200 + X-Idempotent-Replay)。
+ * 键由续费 modal 每次打开生成一个 uuid —— 同一次打开内改周期/数量不换键(那是同一张单的改价),
+ * 关掉重开才是新单。
+ */
+export const useRenewInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
+      renewInstanceApiV1InstancesUuidRenewPost(uuid, body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: [...INSTANCE_INVALIDATES] },
+  );
+/**
+ * 按量转包周期:与续费同一个入参/响应形态,区别只在起点(这里从现在起算)。
+ * 后端会先结清转换前那段按量账再翻 market,所以失效面要连账单一起 —— 那笔尾账立刻出现在账单页。
+ */
+export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
+      subscribeInstanceApiV1InstancesUuidSubscribePost(uuid, body, {
+        "Idempotency-Key": idempotencyKey,
+      }),
+    { ...o, invalidates: [...INSTANCE_INVALIDATES] },
+  );
+/** 自动续费开关:只改订阅行,不动实例状态,失效面只有实例域。 */
+export const useSetAutoRenew = (uuid: string, o?: CallerOpts<InstanceOut>) =>
+  useApiMutation(
+    (enabled: boolean) => setAutoRenewApiV1InstancesUuidAutoRenewPost(uuid, { enabled }),
+    { ...o, invalidates: ["instances"] },
   );
 export const useResetJupyterToken = () =>
   useApiMutation((uuid: string) => resetJupyterTokenApiV1InstancesUuidResetJupyterTokenPost(uuid), {

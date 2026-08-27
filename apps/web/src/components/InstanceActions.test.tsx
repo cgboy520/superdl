@@ -10,23 +10,78 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InstanceActions, ReleaseModal } from "./InstanceActions";
 
-const { startMutate, stopMutateAsync, restartMutateAsync, releaseMutate } = vi.hoisted(() => ({
-  startMutate: vi.fn(),
-  stopMutateAsync: vi.fn().mockResolvedValue(undefined),
-  restartMutateAsync: vi.fn().mockResolvedValue(undefined),
-  releaseMutate: vi.fn(),
-}));
+const { startMutate, stopMutateAsync, restartMutateAsync, releaseMutate, autoRenewMutate } =
+  vi.hoisted(() => ({
+    startMutate: vi.fn(),
+    stopMutateAsync: vi.fn().mockResolvedValue(undefined),
+    restartMutateAsync: vi.fn().mockResolvedValue(undefined),
+    releaseMutate: vi.fn(),
+    autoRenewMutate: vi.fn(),
+  }));
 
 vi.mock("../api/mutations", () => ({
   useStartInstance: () => ({ mutate: startMutate, isPending: false }),
   useStopInstance: () => ({ mutateAsync: stopMutateAsync, isPending: false }),
   useRestartInstance: () => ({ mutateAsync: restartMutateAsync, isPending: false }),
   useReleaseInstance: () => ({ mutate: releaseMutate, isPending: false }),
+  useSetAutoRenew: () => ({ mutate: autoRenewMutate, isPending: false }),
+  // RenewModal 在菜单点开后挂载,它自己的两个提交 hook 也要有桩
+  useRenewInstance: () => ({ mutate: vi.fn(), isPending: false }),
+  useSubscribeInstance: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+// RenewModal 会拉钱包与策略;这里只验菜单,给最小可用数据即可
+vi.mock("../api/queries", () => ({
+  useWallet: () => ({ data: { balance: "3000.00" } }),
+  usePolicies: () => ({
+    data: {
+      period_discount_day: 95,
+      period_discount_week: 90,
+      period_discount_month: 80,
+      period_discount_year: 70,
+      period_expire_warn_days: 3,
+    },
+  }),
 }));
 
 function makeInstance(status: string): InstanceOut {
-  return { uuid: "u-1", name: "demo-vm", status } as InstanceOut;
+  return {
+    uuid: "u-1",
+    name: "demo-vm",
+    status,
+    market: "on_demand",
+    gpu_count: 1,
+    price_hourly: "3.9900",
+  } as InstanceOut;
 }
+
+/** 包周期实例:market 与 subscription 两个字段一起给,缺一后端与前端都判它不是包周期 */
+function makeSubscription(
+  status: string,
+  sub: { expiresAt: string; subStatus?: string; autoRenew?: boolean },
+): InstanceOut {
+  return {
+    uuid: "u-2",
+    name: "my-vllm",
+    status,
+    market: "subscription",
+    gpu_count: 1,
+    price_hourly: "3.1920",
+    subscription: {
+      period: "month",
+      period_count: 1,
+      started_at: "2026-08-04T04:00:00Z",
+      expires_at: sub.expiresAt,
+      status: sub.subStatus ?? "active",
+      auto_renew: sub.autoRenew ?? false,
+      amount_paid: "2298.24",
+      unit_price: "3.9900",
+    },
+  } as InstanceOut;
+}
+
+const FUTURE = new Date(Date.now() + 20 * 86_400_000).toISOString();
+const PAST = new Date(Date.now() - 86_400_000).toISOString();
 
 function renderWithApp(ui: React.ReactElement) {
   return render(<App>{ui}</App>);
@@ -81,6 +136,94 @@ describe("InstanceActions", () => {
     expect(confirm).toBeEnabled();
     await user.click(confirm);
     expect(releaseMutate).toHaveBeenCalledWith("u-1");
+  });
+});
+
+describe("InstanceActions · 包周期", () => {
+  it("按量 running 实例:出「转包周期」,不出续费/自动续费(那两项对它不存在)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeInstance("running")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByText("转包周期")).toBeInTheDocument();
+    expect(screen.queryByText("续费")).toBeNull();
+    expect(screen.queryByText("开启自动续费")).toBeNull();
+  });
+
+  it("按量 stopped 实例:「转包周期」照常可用(后端两种状态都收)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeInstance("stopped")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    const item = await screen.findByText("转包周期");
+    expect(item.closest("li")).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("按量在途/冻结实例:「转包周期」可见但灰置(后端会 409,先拦一道)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeInstance("frozen")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    const item = await screen.findByText("转包周期");
+    expect(item.closest("li")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("包周期实例:不出「转包周期」(它已经在包周期里,该走续费)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(
+      <InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />,
+    );
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    await screen.findByText("续费");
+    expect(screen.queryByText("转包周期")).toBeNull();
+  });
+
+  it("点「转包周期」弹的是支付确认(标题带实例名,按钮写明是支付)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeInstance("running")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(await screen.findByText("转包周期"));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getAllByText(/转包周期 · demo-vm/).length).toBeGreaterThan(0);
+    expect(within(dialog).getByRole("button", { name: "支付并转为包周期" })).toBeEnabled();
+    // 转换从现在起算,不是接在某个周期之后
+    expect(within(dialog).getByText("从现在起算")).toBeInTheDocument();
+  });
+
+  it("包周期实例:菜单出续费与自动续费,开关项按当前状态取反", async () => {
+    const user = userEvent.setup();
+    renderWithApp(
+      <InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />,
+    );
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByText("续费")).toBeInTheDocument();
+    await user.click(screen.getByText("开启自动续费"));
+    expect(autoRenewMutate).toHaveBeenCalledWith(true);
+  });
+
+  it("已开自动续费的实例菜单项变成「关闭自动续费」,点它传 false", async () => {
+    const user = userEvent.setup();
+    renderWithApp(
+      <InstanceActions
+        instance={makeSubscription("running", { expiresAt: FUTURE, autoRenew: true })}
+      />,
+    );
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(await screen.findByText("关闭自动续费"));
+    expect(autoRenewMutate).toHaveBeenCalledWith(false);
+  });
+
+  it("包周期已到期:开机灰置(后端 assert_active 会 409,按钮先拦一道)", () => {
+    renderWithApp(
+      <InstanceActions
+        instance={makeSubscription("stopped", { expiresAt: PAST, subStatus: "expired" })}
+      />,
+    );
+    expect(screen.getByRole("button", { name: BTN_START })).toBeDisabled();
+  });
+
+  it("包周期在保且已关机:开机照常可用", () => {
+    renderWithApp(
+      <InstanceActions instance={makeSubscription("stopped", { expiresAt: FUTURE })} />,
+    );
+    expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
   });
 });
 

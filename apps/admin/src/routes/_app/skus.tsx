@@ -66,6 +66,8 @@ interface SkuFormValues {
   price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
   max_gpus_per_instance: number;
   cuda_max?: string | null;
+  /** 是否接受包周期(预付)下单。与档位正交:包周期不是新档位,是同一条 SKU 的另一种买法 */
+  period_enabled: boolean;
   /** 编辑必填(入审计);新建端点不接受 reason,提交时不带 */
   reason?: string;
 }
@@ -297,6 +299,9 @@ function SkusPage() {
       form.setFieldsValue({
         variant: "shared_hami", gpu_cores_pct: 50, oversell_cores: 1.5, oversell_vram: 1.0,
         disk_gb: 100, max_gpus_per_instance: 1, pool_label: "hami", vcpu: 8, mem_gb: 32,
+        // 默认开:与后端 SkuCreate.period_enabled 默认值一致。默认关会让包周期上线当天
+        // 在市场页完全看不见,得逐条 SKU 手动打开
+        period_enabled: true,
         // 草稿覆盖默认值(仅新建):误关抽屉后重开不丢
         ...draft.load(),
       });
@@ -352,6 +357,7 @@ function SkusPage() {
           disk_gb: values.disk_gb,
           price_hourly: values.price_hourly,
           cuda_max: values.cuda_max ?? null,
+          period_enabled: values.period_enabled,
         };
         create.mutate({ data: createPayload });
       } else if (editing) {
@@ -369,6 +375,7 @@ function SkusPage() {
           disk_gb: values.disk_gb,
           price_hourly: values.price_hourly,
           cuda_max: values.cuda_max ?? null,
+          period_enabled: values.period_enabled,
           reason: values.reason ?? "",
         };
         update.mutate({ skuId: editing.id, data: updatePayload });
@@ -438,7 +445,7 @@ function SkusPage() {
       }
     >
       <Table<SkuAdminOut>
-        scroll={{ x: 1240 }}
+        scroll={{ x: 1340 }}
         rowKey="id"
         dataSource={skus ?? []}
         pagination={false}
@@ -490,6 +497,14 @@ function SkusPage() {
               Number(v) > 1.2 ? <Tag color="orange">{v}×</Tag> : `${v}×`,
           },
           { title: t("skus.colPrice"), dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
+          {
+            // 与档位正交:包周期不是新档位,是同一条 SKU 的另一种买法,所以单独成列而不塞进档位标签
+            title: t("skus.colPeriod"),
+            dataIndex: "period_enabled",
+            width: 100,
+            render: (v: boolean) =>
+              v ? <Tag color="blue">{t("skus.periodOn")}</Tag> : <Tag>{t("skus.periodOff")}</Tag>,
+          },
           {
             title: t("skus.colOnSale"),
             dataIndex: "status",
@@ -704,6 +719,16 @@ function SkusPage() {
             </Form.Item>
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
+            </Form.Item>
+            {/* 包周期开关跟着单价放:它决定这条 SKU 能不能被预付买走,是定价的一部分,不是档位属性。
+                关掉只挡新单,已在保的包周期实例不受影响(到期前仍占库存) */}
+            <Form.Item
+              name="period_enabled"
+              label={t("skus.periodEnabledLabel")}
+              valuePropName="checked"
+              extra={t("skus.periodEnabledHint")}
+            >
+              <Switch />
             </Form.Item>
             {/* 编辑必填原因:新实例会永久快照当时单价,审计只记新值就答不出「从多少改到多少」 */}
             {editing !== "new" && (

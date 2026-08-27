@@ -23,6 +23,7 @@ export interface SkuAdminOut {
   name: string;
   oversell_cores: string;
   oversell_vram: string;
+  period_enabled: boolean;
   pool_label: string;
   price_hourly: string;
   sold_share?: string | null;

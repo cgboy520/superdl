@@ -91,9 +91,14 @@ export default interface Resources {
       "refundStateNotCancellable": "退款单状态 {{status}} 不可取消",
       "refundStateNotPayable": "退款单状态 {{status}} 不可登记打款",
       "refundStateNotReviewable": "退款单状态 {{status}} 不可审批",
+      "settlementBehind": "结算正在追平,请稍后再转包周期",
       "settlementGapNotFound": "结算缺口不存在",
       "settlementGapNotReplayable": "该缺口类型({{reason}})不支持重放:请人工核查后核销",
       "settlementGapObjectGone": "缺口关联对象(id={{objectId}})已不存在,请人工核查后核销",
+      "subscriptionAlreadyActive": "该实例已在包周期内,如需延长请使用续费",
+      "subscriptionCancelled": "该实例的包周期已作废,无法续费",
+      "subscriptionExpired": "包周期已到期,请先续费再开机",
+      "subscriptionMissing": "该实例没有可续费的包周期",
       "unknownChannel": "未知支付渠道:{{name}}",
       "wechatCallbackMerchantMismatch": "微信回调的商户信息与本平台不符",
       "wechatCallbackVerifyFailed": "微信回调验签失败",
@@ -168,6 +173,8 @@ export default interface Resources {
       "apiKeyInvalid": "访问密钥无效",
       "apiKeyNotFound": "访问密钥不存在",
       "apiKeyQuota": "单个服务的访问密钥已达上限({{max}} 把),请先吊销不用的密钥",
+      "convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
+      "convertNotOnDemand": "只有按量计费的实例可以转包周期",
       "cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
       "devWorkloadExtraFields": "开发机不支持服务容器参数({{fields}}):要对外发布服务请改用服务型实例",
       "envKeyInvalid": "环境变量名「{{name}}」不合法:只能用字母、数字和下划线,且不能以数字开头",
@@ -188,8 +195,13 @@ export default interface Resources {
       "noCapacity": "「{{model}} × {{pool}} 池」当前无可分配容量,请稍后重试或选择其他规格",
       "noCapacityCpu": "「{{pool}} 池」当前无可分配的 CPU 容量,请稍后重试或选择其他规格",
       "nodeUnreachable": "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)",
+      "periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
+      "periodOnOnDemand": "按量计费的实例不能带计费周期",
+      "periodRequired": "包周期实例必须选择计费周期",
       "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
       "releaseNeedsStopped": "关机后才能释放实例",
+      "renewNotSubscription": "只有包周期实例可以续费",
+      "renewReleased": "实例正在释放或已释放,无法续费",
       "restartNeedsRunning": "仅运行中的实例可以重启",
       "serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
       "servicePortRequired": "服务型实例必须填写容器监听端口",
@@ -231,7 +243,15 @@ export default interface Resources {
         "m": "{{m}} 分钟",
         "zero": "0 分钟"
       },
-      "perHour": "{{price}}/时"
+      "perHour": "{{price}}/时",
+      "perPeriod": "{{price}}/{{unit}}",
+      "perPeriodCount": "{{price}}/{{count}} {{unit}}",
+      "periodUnit": {
+        "day": "日",
+        "month": "月",
+        "week": "周",
+        "year": "年"
+      }
     },
     "status": {
       "adjustment": {
@@ -295,6 +315,11 @@ export default interface Resources {
         "draft": "草稿",
         "published": "已发布"
       },
+      "market": {
+        "on_demand": "按量",
+        "spot": "竞价",
+        "subscription": "包周期"
+      },
       "nodeEnroll": {
         "expired": "已过期",
         "failed": "已失败",
@@ -316,12 +341,23 @@ export default interface Resources {
         "offline": "线下转账",
         "wechat_transfer": "微信转账"
       },
+      "period": {
+        "day": "包日",
+        "month": "包月",
+        "week": "包周",
+        "year": "包年"
+      },
       "refund": {
         "approved": "待打款",
         "cancelled": "已取消",
         "paid": "已完成",
         "pending": "待审批",
         "rejected": "已驳回"
+      },
+      "subscription": {
+        "active": "在保",
+        "cancelled": "已作废",
+        "expired": "已到期"
       },
       "ticket": {
         "closed": "已关闭",
@@ -466,13 +502,13 @@ export default interface Resources {
       "billingBasis": "按量计费:「运行中」时段按秒累计,精确到关机瞬间;关机即停 GPU 计费",
       "billingBasisCpu": "按量计费:「运行中」时段按秒累计,精确到关机瞬间;关机即停计费",
       "billingDayBoundary": "账单「日」按北京时间(UTC+8)切分",
-      "billingModeComingSoon": "包日/包周/包月计费即将上线,当前仅支持按量计费",
       "billingRules": {
         "r1": "按量计费:实例「运行中」时段按秒累计,精确到关机瞬间,单价 × 卡数 × 时长",
         "r2": "关机即停止 GPU 计费;数据盘按日计费(日常费用),关机也会产生",
         "r3": "计费依据为实例事件流水,可在实例详情「事件」页自查",
         "r4": "余额不足时实例将被停机,欠费冻结 {{hours}} 小时后回收实例盘(数据盘不受影响)",
-        "r4Fallback": "余额不足时实例将被停机,欠费冻结超期后回收实例盘(数据盘不受影响)"
+        "r4Fallback": "余额不足时实例将被停机,欠费冻结超期后回收实例盘(数据盘不受影响)",
+        "r5": "包周期为预付:按下单时的原价快照计费,到期自动停机,中途释放不退款"
       },
       "channelComingSoon": "商户资质接入后开放,当前请使用模拟支付(开发环境)",
       "channelPending": "商户资质接入后开放",
@@ -500,6 +536,11 @@ export default interface Resources {
       "noCapacityGuide": "当前规格空闲 GPU 不足,试试其他档位或稍后再来",
       "noStockForGpuCount": "该卡数当前空闲库存不足",
       "outOfStock": "已租完",
+      "periodConvertSettles": "转换前那段按量费用会先结清,再一次性预扣整段周期;两段各按各的价收,不重复计费",
+      "periodExpirePolicy": "到期后自动停机,{{hours}} 小时内未续费将回收实例盘(数据盘不受影响)",
+      "periodExpirePolicyFallback": "到期后自动停机,逾期未续费将回收实例盘(数据盘不受影响)",
+      "periodPrepaid": "包周期为预付:下单即一次性扣费,到期前保有实例;中途释放不退款",
+      "periodReserved": "未到期的包周期实例即使已关机也仍占用库存(平台为你留着这份算力)",
       "releaseNeedsStopped": "关机后才能释放实例",
       "serviceGatewayAuth": "平台在网关校验 Authorization: Bearer,你的容器不用自己实现鉴权",
       "serviceImagePinned": "写固定 tag 或 @sha256 digest:服务容器退出后会被原地重启,可变 tag 会让重启后悄悄换成另一个版本。服务型容器不要求内置 SSH 与 JupyterLab",
@@ -522,6 +563,7 @@ export default interface Resources {
       "authPublicHint": "任何人拿到地址都能调用,且照常按运行时长计费",
       "authRequire": "需要 API Key",
       "balanceNeedNote": "开机前需余额 ≥ 1 小时预估费用;按量计费:「运行中」时段按秒累计,精确到关机瞬间,关机即停 GPU 计费",
+      "balanceNeedNotePeriod": "包周期为预付:下单即一次性扣除全部费用,余额不足请先充值",
       "cancel": "取消",
       "cascadePlaceholder": "框架 / 版本 / Python / CUDA",
       "changeSpec": "更换规格",
@@ -563,6 +605,8 @@ export default interface Resources {
       "envSecretHint": "勾了密文的值经 Secret 下发,创建后不再回显,只能整条覆盖",
       "envValueAria": "第 {{index}} 个变量值",
       "envValuePlaceholder": "值",
+      "expiresAtApprox": "约 {{date}}",
+      "expiresAtLabel": "到期时间",
       "healthHint": "返回 2xx 才判就绪并进流量;留空则容器启动即就绪",
       "healthLabel": "健康检查",
       "healthPathSlash": "健康检查路径要以 / 开头",
@@ -576,6 +620,7 @@ export default interface Resources {
       "namePlaceholder": "不填则自动生成",
       "noMountableDisks": "暂无可挂载的数据盘",
       "notEnoughGoRecharge": "余额不足,去充值",
+      "payAndCreate": "支付并创建",
       "prewarmed": "平台镜像已在节点预热,秒级启动",
       "prewarmedNotForCpu": "平台镜像只在带卡节点预热;CPU 规格首次启动需现拉镜像,耗时取决于镜像大小",
       "protocolLabel": "协议",
@@ -709,7 +754,7 @@ export default interface Resources {
         "stopConfirmTitle": "确认关机?",
         "stopOk": "关机",
         "stopped": "已下发关机",
-        "toPeriod": "转包年包月",
+        "toPeriod": "转包周期",
         "typeNameToConfirm": "请输入实例名 {{name}} 以确认"
       },
       "apiKeyCancel": "取消",
@@ -779,6 +824,7 @@ export default interface Resources {
       "imageLine": "镜像:{{ref}}",
       "keySettings": "密钥登录设置",
       "labelBilling": "计费",
+      "labelExpiresAt": "到期时间",
       "labelId": "ID",
       "labelSpec": "规格",
       "labelToday": "今日消费",
@@ -969,6 +1015,47 @@ export default interface Resources {
       "subtitle": "你访问的地址不存在或已被移除",
       "title": "页面不存在"
     },
+    "period": {
+      "autoRenewOff": "已关闭自动续费",
+      "autoRenewOffMenu": "关闭自动续费",
+      "autoRenewOn": "已开启自动续费",
+      "autoRenewOnMenu": "开启自动续费",
+      "balanceChange": "{{before}} → {{after}}",
+      "basisCards": "{{unit}} × {{count}} 卡 × {{hours}} 小时",
+      "basisWhole": "整机 {{unit}} × {{hours}} 小时",
+      "convertConfirm": "支付并转为包周期",
+      "convertLength": "购买时长",
+      "convertOk": "已转为包周期,本次扣款 {{amount}}",
+      "convertTitle": "转包周期 · {{name}}",
+      "costLabel": "{{period}}费用",
+      "countLabel": "数量",
+      "currentBilling": "当前计费",
+      "currentPeriod": "当前周期",
+      "currentPeriodRange": "{{from}} → {{to}}",
+      "expiryBanner": "{{name}} 的{{period}}将于 {{time}} 到期({{left}})",
+      "expiryBannerMore": "另有 {{count}} 台实例也将到期",
+      "fallbackToHourly": "所选规格暂不支持包周期,已按按量计费展示",
+      "hintFinalOnCreate": "此处为预估,最终报价在配置实例页给出",
+      "newExpiry": "新到期时间",
+      "offPct": "-{{off}}%",
+      "quotePending": "费用正在计算,请稍候",
+      "renewConfirm": "确认续费",
+      "renewLength": "续费时长",
+      "renewMenu": "续费",
+      "renewNow": "立即续费",
+      "renewOk": "续费成功,本次扣款 {{amount}}",
+      "renewTitle": "续费 · {{name}}",
+      "rowDiscount": "{{period}}优惠 {{off}}%",
+      "rowPayable": "应付",
+      "startsAfterCurrent": "接在当前周期之后",
+      "startsFrom": "起算时间",
+      "startsNow": "从现在起算",
+      "tagWithExpiry": "{{period}} · {{expiry}}",
+      "unitDay": "天",
+      "unitMonth": "个月",
+      "unitWeek": "周",
+      "unitYear": "年"
+    },
     "query": {
       "loadFailed": "数据加载失败,可能是网络异常或服务暂不可用",
       "partialFailed": "部分数据加载失败",
@@ -1060,10 +1147,7 @@ export default interface Resources {
       "gpuMig": "{{model}} · {{vram}}G · MIG {{profile}}",
       "gpuShared": "{{model}} · {{vram}}G · {{pct}}% 算力(均值)",
       "hostShort": "{{vcpu}} vCPU / {{mem}}G 内存",
-      "modeDaily": "包日",
       "modeHourly": "按量计费",
-      "modeMonthly": "包月",
-      "modeWeekly": "包周",
       "sliceFallback": "切分"
     },
     "storage": {

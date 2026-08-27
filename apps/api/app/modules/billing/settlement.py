@@ -259,6 +259,59 @@ async def settle_instance_window(
     )
 
 
+# 转包周期前允许结清的最大滞后小时数。正常运行下水位线至多落后 1 小时(整点 :02 结算);
+# 超过两天说明结算本身出了事,这时候翻 market 会把那段真实消费永久免掉 —— 拒绝转换、
+# 让运营先去看结算,远好过悄悄替用户抹账
+MAX_CONVERT_SETTLE_HOURS = 48
+
+
+async def settle_on_demand_up_to(
+    session: AsyncSession,
+    *,
+    instance_id: int,
+    user_id: int,
+    unit_price: Decimal,
+    gpu_count: int,
+    at: datetime,
+) -> Decimal:
+    """把该实例截至 `at` 的按量账逐小时结清(水位线之后的第一个小时起)。返回本次扣款合计。
+
+    **转包周期前必须调它。** `billing_candidates` 按实例**当前**的 market 挑候选:market 一旦
+    翻成 subscription,水位线之后那些还没出账的小时就再也没人管 —— 用户会白拿转换前那段算力。
+    逐小时切是因为 `bills_hourly` 的幂等键是 (instance_id, hour_start),一个窗口只能落一行。
+
+    滞后超过 MAX_CONVERT_SETTLE_HOURS 直接抛 CONFLICT:那不是用户的问题,但也不该由用户免单。
+    """
+    watermark = await get_watermark(session, "hourly")
+    last_hour = hour_floor(at)
+    start = (
+        last_hour
+        if watermark is None
+        else min(last_hour, ensure_utc(watermark) + timedelta(hours=1))
+    )
+    lag_hours = int((last_hour - start).total_seconds() // 3600)
+    if lag_hours > MAX_CONVERT_SETTLE_HOURS:
+        logger.error(
+            "convert_blocked_settlement_behind", instance_id=instance_id, lag_hours=lag_hours
+        )
+        raise AppError(ErrorCode.CONFLICT, key="billing.settlementBehind", http_status=409)
+    total = Decimal("0.00")
+    cursor = start
+    while cursor <= last_hour:
+        total += await settle_instance_window(
+            session,
+            instance_id=instance_id,
+            user_id=user_id,
+            unit_price=unit_price,
+            gpu_count=gpu_count,
+            window_start=cursor,
+            window_end=min(cursor + timedelta(hours=1), at),
+            source="convert",
+        )
+        cursor += timedelta(hours=1)
+    return total
+
+
 async def get_watermark(session: AsyncSession, key: str) -> datetime | None:
     row = await session.get(SettlementWatermark, key)
     return ensure_utc(row.settled_through) if row else None

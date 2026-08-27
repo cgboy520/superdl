@@ -16,8 +16,16 @@ from app.core.errors import AppError, ErrorCode
 from app.core.money import as_amount, disk_daily_charge, hourly_cost
 from app.core.pagination import Page, RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.policies import get_effective_policies
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import now_utc
-from app.modules.billing.models import BalanceLedger, BillDailyDisk, BillHourly, Order, Wallet
+from app.modules.billing.models import (
+    BalanceLedger,
+    BillDailyDisk,
+    BillHourly,
+    Order,
+    Subscription,
+    Wallet,
+)
 from app.modules.billing.schemas import BillHourlyOut, BillSummaryItem, LedgerEntryOut
 
 
@@ -172,7 +180,14 @@ async def assert_can_afford(
 
     running = (await orchestrator_service.list_running_instances_by_user(session)).get(user_id, [])
     inflight_hourly = sum(
-        (hourly_cost(i.price_hourly, i.gpu_count) for i in running), Decimal("0.00")
+        # 包周期实例不进燃烧率:它已经付过整段周期的钱,再算作「在途消耗」会让
+        # 一个把余额全买成包月的用户**开不出任何新机**(护栏把他自己已付的钱又扣了一遍)
+        (
+            hourly_cost(i.price_hourly, i.gpu_count)
+            for i in running
+            if i.market != MARKET_SUBSCRIPTION
+        ),
+        Decimal("0.00"),
     )
     inflight_daily = sum(
         (
@@ -371,9 +386,14 @@ async def consumed_by_user(
 async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict:
     """今日/本月消费额与环比基数。本地日界按 tz_offset 折算。
 
-    口径:按账单**归属期**切窗(bills_hourly.hour_start / bills_daily_disk.day),
+    口径:计量出账按账单**归属期**切窗(bills_hourly.hour_start / bills_daily_disk.day),
     而非扣款入账时间(ledger.created_at)——小时结算在次小时 :02 才扣款,按入账时间
     归属会把 23 点的消费错记到次日;按归属期才与用户账单页、日终核对同口径。
+
+    **包周期预付另按收款当日切窗**(subscriptions.created_at):它不产生任何账单行,
+    归属期就是收款那一刻,没有延迟入账的问题。`*_revenue` 是两者之和 —— 少加这一段,
+    包周期上线后运营看到的「今日收入」会把全部预付漏掉;再单独给一个 `*_prepaid`,
+    是因为一笔包年会在当天造成一个尖峰,看环比时必须能把它拆出来。
     """
     offset = timedelta(minutes=tz_offset_minutes)
     local_now = now_utc() + offset
@@ -381,7 +401,7 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
     month_start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - offset
     prev_day_start = day_start - timedelta(days=1)
 
-    async def _billed_since(start, end=None) -> str:
+    async def _billed_since(start, end=None) -> Decimal:
         hourly_stmt = select(func.coalesce(func.sum(BillHourly.amount), 0)).where(
             BillHourly.hour_start >= start
         )
@@ -393,12 +413,28 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
             daily_stmt = daily_stmt.where(BillDailyDisk.day < end)
         hourly = (await session.execute(hourly_stmt)).scalar_one()
         daily = (await session.execute(daily_stmt)).scalar_one()
-        return format(Decimal(hourly) + Decimal(daily), "f")
+        return Decimal(hourly) + Decimal(daily)
 
+    async def _prepaid_since(start, end=None) -> Decimal:
+        stmt = select(func.coalesce(func.sum(Subscription.amount_paid), 0)).where(
+            Subscription.created_at >= start
+        )
+        if end is not None:
+            stmt = stmt.where(Subscription.created_at < end)
+        return Decimal((await session.execute(stmt)).scalar_one())
+
+    today_prepaid = await _prepaid_since(day_start)
+    month_prepaid = await _prepaid_since(month_start)
     return {
-        "today_revenue": await _billed_since(day_start),
-        "yesterday_revenue": await _billed_since(prev_day_start, day_start),
-        "month_revenue": await _billed_since(month_start),
+        "today_revenue": format(await _billed_since(day_start) + today_prepaid, "f"),
+        "yesterday_revenue": format(
+            await _billed_since(prev_day_start, day_start)
+            + await _prepaid_since(prev_day_start, day_start),
+            "f",
+        ),
+        "month_revenue": format(await _billed_since(month_start) + month_prepaid, "f"),
+        "today_prepaid": format(today_prepaid, "f"),
+        "month_prepaid": format(month_prepaid, "f"),
     }
 
 

@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service})、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
+- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、market(CHECK ∈ {on_demand, spot, subscription},默认 on_demand)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service})、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
 - `instance_events`:instance_id、from_status、to_status、reason、actor(user/system/admin)、metadata —— 追加式,计费主依据
 - `port_allocations`:port 唯一(30000~32767)、instance_id nullable(部分唯一:一台实例至多一个端口)
 - `service_endpoints`:instance_id 唯一(一实例一端点)、public_slug 唯一(`ep-<10 位 base32>`,公网域名左标签——刻意不用 instance.uuid,内部主键不进公网域名/TLS SNI/访问日志/第三方 Referer)、container_port(CHECK 1–65535 且 ∉ {22, 8888},那两个是 sshd 与 JupyterLab)、protocol、health_path?、require_api_key
@@ -14,16 +14,21 @@
 starting→running/failed;frozen→stopped/releasing;failed→stopped/releasing;releasing→released。
 running↔非 running 的边即计费边。failed→stopped 是故障恢复边(复用同一块实例盘重开机,
 start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删不掉时允许直接释放)。
+**包周期到期不新增状态与边**,只多两个 reason:系统侧停机与冻结按原因分开命名(欠费 `arrears_stop` / `arrears_freeze`,
+包周期到期 `subscription_expired` / `subscription_freeze`)—— 在用户时间线上是两件不同的事,合成一个 reason 会让工单无从查起。
 
 ## 契约
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/v1/instances` | user | Idempotency-Key;软准入(台账无货 409)→ 钱包行锁临界区(在途+新增余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202 |
+| `POST /api/v1/instances` | user | Idempotency-Key;软准入(台账无货 409)→ 钱包行锁临界区(在途+新增余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`,取 `subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣整段周期(见 [billing.md](./billing.md));`market='on_demand'` 却显式带 `period`/`period_count` 一律 422 |
 | `GET /api/v1/instances` `GET /api/v1/instances/{uuid}` | user | 列表(不分页)与详情 |
 | `PATCH /api/v1/instances/{uuid}` | user | 改名等 |
 | `POST /api/v1/instances/{uuid}/stop\|start\|restart` | user | 同构,均经 outbox;start 对 failed 放行(恢复边) |
-| `DELETE /api/v1/instances/{uuid}` | user | 释放(stopped/frozen/failed/creating/stopping);幂等:releasing/released 重放回当前状态而非 400 |
+| `POST /api/v1/instances/{uuid}/subscribe` | user | **按量转包周期**,入参与响应同 `/renew`;Idempotency-Key。先结清转换前那段按量账再翻 `market`(见下)。前置:`market='on_demand'` 且状态 running / stopped(其余 409 `orchestrator.convertNeedsRunningOrStopped`)、SKU `period_enabled` 为真;已在保报 `billing.subscriptionAlreadyActive`;结算滞后超 48h 报 409 `billing.settlementBehind` |
+| `POST /api/v1/instances/{uuid}/renew` | user | 包周期续费,body `{period, period_count}`;Idempotency-Key(重放回 200 + `X-Idempotent-Replay`);返回 `{instance, quote}`,报价三件套由后端算好逐行下发。非包周期 / 已释放报 `SUBSCRIPTION_NOT_RENEWABLE`(400),余额不足 `INSUFFICIENT_BALANCE`。冻结中续费即解冻(回 stopped,不自动开机)。挂在 instances 下而不是 billing 下:用户心智是「给这台机器续费」,而实例状态也只能由 orchestrator 这一侧改 |
+| `POST /api/v1/instances/{uuid}/auto-renew` | user | body `{enabled}`;开关到期自动续费,默认关 |
+| `DELETE /api/v1/instances/{uuid}` | user | 释放(stopped/frozen/failed/creating/stopping);幂等:releasing/released 重放回当前状态而非 400。**包周期实例释放不退款**,订阅转 cancelled(见 [billing.md](./billing.md)) |
 | `GET /api/v1/instances/{uuid}/events` | user | 事件时间线,即计费依据;降序(最新在前)游标分页 `?cursor=&limit=` |
 | `GET /api/v1/instances/{uuid}/access` | user | SSH 指令 + Jupyter 一次性 bootstrap 票据 URL(单次、60s;核销后种第一方 cookie,token 不进 URL);非 running 报错并说明 |
 | `GET /api/v1/instances/{uuid}/logs` | user | 容器日志:**只读**;**owner 校验**(非属主 404 不暴露存在性);**限流 20/h/user**;**K8s 读 5s 超时**;仅 running/stopping(其余 409,已关机无 Pod 日志);`?tail_lines=` 默认 200、超 2000 截断,`?since_seconds=` 超 86400 截断;返回 `{lines, truncated}`;不记审计 |
@@ -49,6 +54,46 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 - 泄漏回收熔断:未知(DB 无记录)Pod 占比超 `leak_reclaim_abort_ratio`(默认 0.5)即中止本轮并计 `superdl_reconcile_leak_aborted_total`;在途删除(stopping/releasing)宽限同两档超时,其余一律 force 强删。
 - 保留期 GC(reconciler 内):failed 超 `failed_retention_days`(默认 7 天)→ 通知并转 releasing;stopped 超 `stopped_retention_days`(默认 30 天)→ 转 releasing,提前 `stopped_retention_warn_days`(默认 7 天)预警。数据盘不受影响。
 - 节点失联判定先看节点 Ready 状况(`list_nodes`):持续 not-ready 超 `running_unready_timeout_seconds`(默认 600s,须宽于 unreachable toleration 的 300s)且节点 NotReady/未知 → node_lost(通知用户);节点正常 → pod_unready(Pod 自身问题,不告警失联)。**`workload_type='service'` 不走 pod_unready 这一支**:它的 not-ready 判据是用户自己声明的 readinessProbe,长期不过是用户容器的问题,判 failed 等于平台替用户停掉一台还在占卡、还在计费的实例;实例留在 running,就绪与否如实呈现在服务 Tab。`pod_lost` 与 `node_lost` 两支不豁免。
+- **实例有三种购买模式**(`instances.market`),与 `skus.tier`(买什么档)正交 —— 一条 SKU 三种卖法,不为包周期或竞价另建 SKU 行:
+
+  | 值 | 含义 |
+  |---|---|
+  | `on_demand` | 按量,唯一进 `bills_hourly` 的模式 |
+  | `subscription` | 包周期,下单一次性预扣,小时结算在 `billing_candidates` 一处跳过(见 [billing.md](./billing.md)) |
+  | `spot` | 竞价(折扣价 + 可被平台回收)。DB CHECK 与 `core/pricing` 已预留,**契约层此刻不收** —— `InstanceCreate.market` 只有 `on_demand` / `subscription`,`price_for` 对 spot 显式抛错而不是静默按原价:静默会让「竞价上线了但没打折」在账单出来之前没人发现 |
+
+  `market` 由创建时定,**唯一会改它的路径是 `subscribe_instance`(按量 → 包周期)**;反向不开 ——
+  包周期是已预付的整段周期,转回按量等于要求平台把没用完的那段退成余额,与「预付不退款」直接冲突。
+- **`instances.price_hourly` 落的是该购买模式下的有效时价**,由 `app/core/pricing.py` 的 `price_for` 单点算出
+  (按量即 SKU 原价,包周期按周期折扣打折)。计费引擎因此完全不用感知折扣:它拿到的永远是「这台实例的时价」。
+  折扣的其它三个消费方(市场页报价、创建预估、续费报价)共用同一组函数,不得各算各的 ——
+  四处各算各的迟早出现「页面显示 8 折、实际扣 8.5 折」这类没人能复现的差异(与 `sellable_per_gpu` 同一条口径纪律)。
+- **包周期实例的开机门禁看周期,不看余额**:`start` 对 `market='subscription'` 走 `assert_subscription_active`
+  (周期内才放行,到期报 `SUBSCRIPTION_EXPIRED` 409),不走 `assert_can_afford` —— 整段周期已经付过钱了。
+  订阅行缺失也判过期(fail-closed):`market='subscription'` 却查不到订阅行是数据不一致,放行等于白送一台机器,
+  拦下最坏只是用户来提一张工单。
+- **未到期的包周期实例即使已停机,也仍占软准入库存。** `_reserved_slots` 把「同一条 SKU 上 stopped / frozen 且仍在保」
+  的实例计为占用,从可售数里扣掉。台账的 `gpu_used` 只数真在跑的 Pod,包月用户关一晚机、那张卡在台账上就是空闲的,
+  被别人买走后他早上开不了机 —— 那是比超卖更难向他解释的事故。**这是控制面层面的预留,物理层不预留**(卡确实空着,
+  谁调度到就是谁的),所以创建页与续费入口必须把这一条写给用户看。只算同一条 SKU:同池同型号但规格不同的实例槽位大小不一样,
+  折算成本 SKU 的槽位数只会给出一个假精确的值,而软准入本来就是近似闸门。
+- 续费同事务刷新 `instances.price_hourly`(用户可以换周期续,有效时价随之变),冻结中的实例续费即回 `stopped`
+  并清 `frozen_deadline`,**不自动开机**。
+- **按量转包周期的顺序是「先结后翻」,不可颠倒**:`subscribe_instance` 在钱包行锁内先把转换前那段按量账结清
+  (running 才有账要结),再落订阅行、翻 `market`、刷 `price_hourly`。翻在前的话 `billing_candidates` 会按翻新后的
+  market 把这台实例整个排除,水位线之后还没出账的小时就永远没人结 —— 用户白拿转换前那段算力;而且结算必须用
+  **转换前**的按量时价(那一刻 `price_hourly` 还没被改)。口径与拒绝条件见 [billing.md](./billing.md)。
+- **幂等重放在全部守卫之前判**:转换成功后 `market` 已是 subscription,重放请求会撞上「只有按量实例可以转」
+  那条守卫拿到一个毫不相干的 400;更糟的是它会先跑一遍结算,而此刻 `price_hourly` 已是折后价 ——
+  等于拿包周期的价格去补一笔本该按按量收的账。
+- 只收 running / stopped:creating / starting / stopping / releasing 是在途态,翻 `market` 会和收敛路径抢同一行;
+  frozen 是欠费处置中,那笔账得先还清而不是转成预付。
+- 列表与详情的包周期概要(`InstanceOut.subscription`:period / period_count / expires_at / status / auto_renew /
+  amount_paid)与服务端点 slug 一样,由 `attach_instance_details` **各一次批量查询**回填,不逐行打接口
+  (列表页禁止「接口调用随行数放大」,见 [web.md](./web.md))。**管理端走同一条回填路径**
+  (`admin_list_instances` 与强制停止的响应都过 `attach_instance_details`):`AdminInstanceOut.subscription`
+  在包周期实例上有值、按量实例为 null —— 客服问的第一个问题就是「他这台什么时候到期」,
+  管理端另起一套投影只会让两端的到期日在边界上对不齐。
 - **实例有两种形态**(`instances.workload_type`),差别只在 `build_pod_spec` 的分叉与建哪些 K8s 对象;状态机、计费、配额、回收、reconciler、监控、审计全部共用:
 
   | | `dev`(SSH + JupyterLab) | `service`(对外 HTTP 服务) |

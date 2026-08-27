@@ -10,8 +10,10 @@ import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-c
 import {
   formatDateTime,
   instanceStatusMap,
+  isBillingPeriod,
   localToday,
   metaOf,
+  periodMap,
 } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -38,10 +40,19 @@ import {
   useInstanceAccess,
   useInstanceEvents,
   useInstancePages,
+  useInstances,
   useMetricsSummary,
   usePolicies,
 } from "../api/queries";
-import { CopyButton, InstanceStatusBadge, TierTag, WorkloadTag } from "../components/common";
+import { useSetAutoRenew } from "../api/mutations";
+import {
+  CopyButton,
+  InstanceStatusBadge,
+  SubscriptionTag,
+  TierTag,
+  WorkloadTag,
+} from "../components/common";
+import { RenewModal } from "../components/RenewModal";
 import { moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
@@ -172,6 +183,94 @@ function ExpandedFailed({ instance }: { instance: InstanceOut }) {
       )}
     </Space>
   );
+}
+
+/**
+ * 到期横幅正文。auto_renew 已开的实例只留「立即续费」——「开启自动续费」对它是个空动作,
+ * 灰着比不出更让人困惑。
+ */
+function ExpiryBannerBody({
+  instance,
+  more,
+  onRenew,
+}: {
+  instance: InstanceOut;
+  /** 同样临期的其它实例台数(0 = 只有这一台) */
+  more: number;
+  onRenew: (i: InstanceOut) => void;
+}) {
+  const { t } = useTranslation(["web", "shared"]);
+  const { formatExpiry } = useFormat();
+  const { message } = App.useApp();
+  const { data: policies } = usePolicies();
+  const sub = instance.subscription;
+  const autoRenew = useSetAutoRenew(instance.uuid, {
+    onSuccess: () => message.success(t("period.autoRenewOn")),
+  });
+  if (!sub) return null;
+  const periodKey = isBillingPeriod(sub.period) ? periodMap[sub.period].labelKey : null;
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      title={t("period.expiryBanner", {
+        name: instance.name,
+        period: periodKey ? t(periodKey) : sub.period,
+        time: formatDateTime(sub.expires_at),
+        left: formatExpiry(sub.expires_at) ?? "",
+      })}
+      description={
+        <Space orientation="vertical" size={2}>
+          <span>
+            {policies
+              ? t("copy.periodExpirePolicy", { hours: policies.freeze_grace_hours })
+              : t("copy.periodExpirePolicyFallback")}
+          </span>
+          {more > 0 && <span>{t("period.expiryBannerMore", { count: more })}</span>}
+        </Space>
+      }
+      action={
+        <Space size={8}>
+          <Button size="small" type="primary" onClick={() => onRenew(instance)}>
+            {t("period.renewNow")}
+          </Button>
+          {!sub.auto_renew && (
+            <Button size="small" loading={autoRenew.isPending} onClick={() => autoRenew.mutate(true)}>
+              {t("period.autoRenewOnMenu")}
+            </Button>
+          )}
+        </Space>
+      }
+    />
+  );
+}
+
+/**
+ * 到期提醒:名下有临期(active 且剩余 ≤ period_expire_warn_days)的包周期实例时出。
+ * 数据源刻意用整表视图而不是本页的分页/筛选结果 —— 横幅不能因为「筛了 running」
+ * 或「还没翻到那一页」就消失;它是一次整表查询,不随行数放大接口调用。
+ */
+function ExpiryBanner({ onRenew }: { onRenew: (i: InstanceOut) => void }) {
+  const { data: policies } = usePolicies();
+  const { data: all } = useInstances();
+  const warnDays = policies?.period_expire_warn_days;
+  // 「现在」在挂载时定一次:每次重渲染都取一遍会让横幅在轮询刷新时闪进闪出
+  const [mountedAt] = useState(() => Date.now());
+  const soon = useMemo(() => {
+    if (warnDays == null) return [];
+    const horizon = mountedAt + warnDays * 86_400_000;
+    return (all ?? [])
+      .flatMap((i) => {
+        const sub = i.subscription;
+        if (!sub || sub.status !== "active") return [];
+        const at = new Date(sub.expires_at).getTime();
+        return at <= horizon ? [{ instance: i, at }] : [];
+      })
+      .sort((a, b) => a.at - b.at);
+  }, [all, warnDays, mountedAt]);
+  const first = soon[0];
+  if (!first) return null;
+  return <ExpiryBannerBody instance={first.instance} more={soon.length - 1} onRenew={onRenew} />;
 }
 
 function UtilCell({
@@ -333,8 +432,10 @@ const NameCellMemo = memo(
 
 function InstancesPage() {
   const { t } = useTranslation(["web", "shared"]);
-  const { formatHourlyPrice, formatMoney } = useFormat();
+  const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
   const navigate = useNavigate();
+  // 横幅与「计费」列的续费入口共用一个 modal(每行各挂一个只会让 DOM 里多出 N 个隐藏弹窗)
+  const [renewTarget, setRenewTarget] = useState<InstanceOut | null>(null);
   const { q, status } = Route.useSearch();
   const [keyword, setKeyword] = useState(q ?? "");
   // 搜索输入防抖走 useDeferredValue:击键不直接打服务端/写 URL
@@ -405,6 +506,7 @@ function InstancesPage() {
       <Typography.Title level={4} style={{ margin: 0 }}>
         {t("instances.title")}
       </Typography.Title>
+      <ExpiryBanner onRenew={setRenewTarget} />
       <Alert
         type="info"
         showIcon
@@ -521,22 +623,43 @@ function InstancesPage() {
           },
           {
             title: t("instances.colBilling"),
-            render: (_, r) => (
-              <Space orientation="vertical" size={0}>
-                <Space size={6}>
-                  <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
+            // 到期信息内联在 InstanceOut.subscription 里,不逐行再打接口
+            render: (_, r) =>
+              r.market === "subscription" && r.subscription ? (
+                <Space orientation="vertical" size={0} align="start">
+                  <SubscriptionTag market={r.market} subscription={r.subscription} />
                   <span>
-                    {t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}
+                    {formatPeriodPrice(
+                      r.subscription.amount_paid,
+                      r.subscription.period,
+                      r.subscription.period_count,
+                    )}
                   </span>
+                  <Button
+                    size="small"
+                    type="link"
+                    style={{ paddingInline: 0, height: 20, fontSize: 12 }}
+                    onClick={() => setRenewTarget(r)}
+                  >
+                    {t("period.renewMenu")}
+                  </Button>
                 </Space>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
-                  {t("instances.todayCost", {
-                    amount: moneyOr(formatMoney(todayByInstance.get(r.id)), daily != null),
-                  })}
-                </Typography.Text>
-              </Space>
-            ),
+              ) : (
+                <Space orientation="vertical" size={0}>
+                  <Space size={6}>
+                    <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
+                    <span>
+                      {t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}
+                    </span>
+                  </Space>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
+                    {t("instances.todayCost", {
+                      amount: moneyOr(formatMoney(todayByInstance.get(r.id)), daily != null),
+                    })}
+                  </Typography.Text>
+                </Space>
+              ),
           },
           {
             title: t("instances.colActions"),
@@ -557,6 +680,14 @@ function InstancesPage() {
         <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
           {t("billing.loadMore")}
         </Button>
+      )}
+      {renewTarget && (
+        <RenewModal
+          key={renewTarget.uuid}
+          instance={renewTarget}
+          open
+          onClose={() => setRenewTarget(null)}
+        />
       )}
     </Space>
   );

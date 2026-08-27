@@ -14,6 +14,7 @@ from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
 from app.core.money import as_amount, hourly_cost
 from app.core.policies import get_effective_policies
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import wallet
@@ -118,7 +119,13 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
         thresholds = await account_service.get_warn_thresholds(session, list(by_user))
         settled_through = await get_watermark(session, "hourly")
 
-    for user_id, instances in by_user.items():
+    for user_id, all_instances in by_user.items():
+        # 包周期实例整段周期已预付:既不参与燃烧率,也不该被欠费停机。
+        # 三处配套过滤之一(另两处:wallet.assert_can_afford、billing.edge_listener),
+        # 漏这一处的后果最直接 —— 余额为 0 的包月用户会被巡检当成欠费户停机
+        instances = [i for i in all_instances if i.market != MARKET_SUBSCRIPTION]
+        if not instances:
+            continue
         try:
             async with sm() as session:
                 balance = await wallet.get_balance(session, user_id)
@@ -180,8 +187,11 @@ async def _patrol_frozen_and_arrears_stopped(
         stopped = await orchestrator_service.list_instances_by_status(session, "stopped")
         frozen = await orchestrator_service.list_instances_by_status(session, "frozen")
 
-    # 欠费用户的 stopped 实例 → 冻结(72h 倒计时)
-    for inst in stopped:
+    # 欠费用户的 stopped 实例 → 冻结(72h 倒计时)。
+    # 包周期实例不走这条:它的冻结条件是「周期到期」不是「余额为 0」,由
+    # billing/subscriptions.subscription_patrol 负责(那边一样写 frozen_deadline,
+    # 回收仍由下面的 frozen 分支统一做,状态机只有一处实现)
+    for inst in (i for i in stopped if i.market != MARKET_SUBSCRIPTION):
         try:
             async with sm() as session:
                 balance = await wallet.get_balance(session, inst.user_id)
@@ -211,8 +221,11 @@ async def _patrol_frozen_and_arrears_stopped(
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
                 if fresh.status != "frozen":
                     continue
+                # 解冻条件按购买模式分:按量看「有没有回款」,包周期看「有没有续费」。
+                # 给包周期也按余额解冻,会让一个到期没续费但余额充足的用户被无限解冻,
+                # 冻结倒计时永远走不到头 —— 等于免费续期
                 balance = await wallet.get_balance(session, inst.user_id)
-                if balance > 0:
+                if balance > 0 and fresh.market != MARKET_SUBSCRIPTION:
                     await orchestrator_service.unfreeze_instance(session, fresh)
                     counts["unfrozen"] += 1
                 elif fresh.frozen_deadline is not None and fresh.frozen_deadline <= now:

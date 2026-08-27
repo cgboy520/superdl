@@ -1,0 +1,92 @@
+/**
+ * 包周期冒烟:市场页选包月 → 创建页「支付并创建」→ 余额一次性扣掉整段周期 →
+ * 列表显示「包月 · 剩 N 天」→「更多」→ 续费 → 扣款回执。
+ *
+ * 与 smoke.spec.ts 分开一个文件:它跑按量的全生命周期(跑多久算多少钱),
+ * 这条跑预付形态的独有链路(先付一整段、结算完全不参与),两者共用同一套前置。
+ *
+ * 这条挂了通常说明:计费方式 chips 没把 period 带进创建流(用户以为买了包月、
+ * 实际开出按量实例),或结算条没换成周期总价,或续费入口/报价断了 ——
+ * 第一条最要命:钱和用户预期差一个数量级,而页面上看不出来。
+ */
+import { expect, test } from "@playwright/test";
+
+import { genEd25519Key, uniquePhone } from "./helpers";
+
+test("买包月并续费", async ({ page }) => {
+  test.setTimeout(300_000);
+  const phone = uniquePhone();
+
+  // ── 注册 + 充值(与 smoke 同款前置)──────────────────────
+  await page.goto("/login");
+  await page.getByText("注册", { exact: true }).click();
+  await page.getByPlaceholder("手机号").fill(phone);
+  await page.getByRole("button", { name: "获取验证码" }).click();
+  await page.getByPlaceholder("短信验证码").fill("123456");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "注册并登录" }).click();
+  await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
+
+  await page.goto("/billing");
+  await page
+    .getByRole("button", { name: /^充\s*值$/ })
+    .first()
+    .click();
+  // 包月一次性预扣整段周期,默认的 ¥100 不够,显式填一个够大的数
+  await page.getByRole("dialog").getByRole("spinbutton").fill("5000");
+  await page.getByRole("button", { name: "生成支付二维码" }).click();
+  await page.getByRole("button", { name: /模拟支付成功/ }).click();
+  await expect(page.getByText(/已到账/)).toBeVisible({ timeout: 15_000 });
+  await page.keyboard.press("Escape");
+
+  // ── SSH 公钥(开发机形态必须选一把)──────────────────────
+  await page.goto("/settings");
+  await page.getByLabel("名称").fill("e2e-key");
+  await page.getByLabel("公钥内容").fill(genEd25519Key());
+  await page.getByRole("button", { name: "添加公钥" }).click();
+  await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
+
+  // ── 市场:选规格 → 计费方式切「包月」→ 下一步 ─────────────
+  await page.goto("/market");
+  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
+  await expect(skuRow).toBeVisible({ timeout: 15_000 });
+  await skuRow.getByRole("radio").check();
+  // 计费方式 chips 是 aria-pressed 的按钮组(ChipRow),不是 radio;
+  // 且 antd 会在两个汉字之间插空格,按名定位一律用正则容忍它
+  await page
+    .getByRole("group", { name: "计费方式" })
+    .getByRole("button", { name: /^包\s*月/ })
+    .click();
+  await page.getByRole("button", { name: "下一步:配置实例" }).click();
+  await expect(page).toHaveURL(/period=month/);
+
+  // ── 创建页:主 CTA 是「支付」而不是「创建」──────────────
+  await page.getByText("自定义镜像").click();
+  await page
+    .getByPlaceholder("registry.example.com/your/image:tag")
+    .fill("registry.superdl.local/pytorch:2.9.0-cu128");
+  await page.getByRole("checkbox", { name: /e2e-key/ }).check();
+  const submit = page.getByRole("button", { name: "支付并创建" });
+  await expect(submit).toBeVisible({ timeout: 15_000 });
+  await submit.click();
+
+  // ── 列表:包月标记 + 剩余天数(到期信息内联,不逐行打接口)──
+  await expect(page).toHaveURL(/instances/, { timeout: 15_000 });
+  const row = page.locator(".ant-table-row").first();
+  await expect(row.getByText(/包月/)).toBeVisible({ timeout: 90_000 });
+  await expect(row.getByText(/剩 \d+ 天/)).toBeVisible();
+
+  // ── 余额:一次性扣掉整段周期(不是一小时)──────────────
+  await page.goto("/billing");
+  const balance = await page.getByText(/¥\s*[\d,]+\.\d{2}/).first().innerText();
+  expect(Number(balance.replace(/[^\d.]/g, ""))).toBeLessThan(5000);
+
+  // ── 续费:更多 → 续费 → 确认 → 扣款回执 ───────────────────
+  await page.goto("/instances");
+  await page.locator(".ant-table-row").first().getByRole("button", { name: /更\s*多/ }).click();
+  await page.getByRole("menuitem", { name: /^续\s*费$/ }).click();
+  await expect(page.getByText("续费时长")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("应付")).toBeVisible();
+  await page.getByRole("button", { name: /^确认续费$/ }).click();
+  await expect(page.getByText(/续费成功,本次扣款/)).toBeVisible({ timeout: 20_000 });
+});

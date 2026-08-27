@@ -15,12 +15,12 @@
 | `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废 |
 | `POST /api/admin/v1/me/mfa/recovery-codes` | 全角色(本人) | 重新生成恢复码,旧码全部作废,明文仅此一次返回;进审计 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由都调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |
-| `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、池级 GPU 台账(含非 Ready 段)、节点 Ready/Missing 计数 |
-| `/` 运营总览 | 全角色 | KPI 行(接 /overview 精确计数,含节点健康卡)+ 「实际超卖率 vs 真实利用率」双曲线(60%/85% 辅助线)+ GPU 池占用条(含未就绪段)+ 告警流 + 收入 KPI + 死信卡(重放/忽略都需原因) |
+| `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、`subscriptions_active`(**在保订阅数**,精确 COUNT)、池级 GPU 台账(含非 Ready 段)、节点 Ready/Missing 计数 |
+| `/` 运营总览 | 全角色 | KPI 行(接 /overview 精确计数,含节点健康卡)+ 「实际超卖率 vs 真实利用率」双曲线(60%/85% 辅助线)+ GPU 池占用条(含未就绪段)+ 告警流 + 收入 KPI(计量出账 + 包周期预付之和,另有 `today_prepaid` / `month_prepaid` 拆出预付部分,口径见 [billing.md](./billing.md))+ 死信卡(重放/忽略都需原因) |
 | `/nodes` 节点与 GPU | ops/readonly | 节点表(台账;最近心跳列/排序/池与状态筛选;cordon 需原因)+ 每卡热力网格 + 添加节点 + 注册记录(进行中/全部) |
-| `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览)+ 从集群资源创建 + 容量预览 |
+| `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览;含 `period_enabled` 开关「包周期」,关掉后该规格只能按量购买、已售出的订阅不受影响)+ 从集群资源创建 + 容量预览 |
 | `GET /api/admin/v1/skus/{sku_id}/impact` | ops/finance/readonly | 改价影响面(只读):活跃实例数/涉及用户数/占用卡数 |
-| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;驱逐重调度为占位按钮,未开放);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
+| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;**购买模式**列 = 按量 / 包日 / 包周 / 包月 / 包年;驱逐重调度为占位按钮,未开放);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
 | `POST /api/admin/v1/tenants/{user_id}/freeze` `/unfreeze` | ops | `{reason}` 必填;冻结与 status 变更同事务对该用户全部实例下发停机(经 outbox),响应回显 `instances_stopped`(creating/starting 由巡检收敛,不计入);解冻不自动开机,站内信告知用户手动开机 |
 | `POST /api/admin/v1/instances/{uuid}/force-stop` | ops | `{reason}` 必填;仅 running(其余 409),下发关机并结算尾账 |
 | `GET /api/admin/v1/tenants/{user_id}/adjust-context` | ops/finance/readonly | 调账前置上下文(只读,敏感读落审计):掩码手机号/当前余额/近 3 条流水/在跑台数;不存在 → 404 |
@@ -60,5 +60,15 @@
 - 补单为渠道核验制:服务端实时查渠道,已支付且金额一致才入账,不接受人工填写的支付结果。
 - 「超卖率 vs 利用率」按池加权聚合(metering 出 per-instance 小时聚合,orchestrator 出实例→池映射,adminapi 组装);无数据的池返 `null`,不用全集群均值代替。
 - 管理端所见账单与用户所见同源。
+- 策略参数页含包周期五键:`period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`
+  (各 50~100,百分数)与 `period_expire_warn_days`(1~30);改动即时生效,只作用于**之后**的报价 ——
+  已售出的订阅按下单时的原价快照续费,不追已购用户。取值与承载见 [limits.md](./limits.md)。
+- 财务对账的日对账卡覆盖包周期:出账侧含 `subscriptions.amount_paid`,消费侧含 `ref_type='subscription'` 的流水,
+  两侧按同一切窗口径(见 [billing.md](./billing.md))。预付那段钱不进对账就等于全无核对。
+- 全局实例表的「购买模式」取 `AdminInstanceOut.market`,到期日取 `AdminInstanceOut.subscription.expires_at` ——
+  管理端与用户端**走同一条批量回填路径**(`attach_instance_details`),两端看到的到期时刻恒一致;
+  按量实例的 `subscription` 为 null,列里渲染为「—」。
+- 总览的 `subscriptions_active` 是**在保订阅数,不是实例状态计数**:停机的包月实例只要周期未满就仍在保
+  (也仍占库存,见 [orchestrator.md](./orchestrator.md)),拿 `instances_by_status` 里的 running 数替代必然偏小。
 - adminapi 端点全部声明响应模型(kind/group/source 用 Literal 出联合类型);前端行类型一律从生成契约再导出,不手写、不强转。
 - 高危操作原因必填 → 二次确认 → 审计;色值集中在 `adminColors` token,message 走 `App.useApp()`。

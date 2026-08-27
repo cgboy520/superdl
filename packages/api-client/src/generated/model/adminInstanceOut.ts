@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminInstanceOutSpec } from './adminInstanceOutSpec';
+import type { InstanceSubscriptionOut } from './instanceSubscriptionOut';
 
 /**
  * 管理端全局实例视图:含租户与调度节点(不暴露给用户端)。
@@ -16,6 +17,7 @@ export interface AdminInstanceOut {
   gpu_count: number;
   id: number;
   image_ref: string;
+  market: string;
   name: string;
   node_name: string | null;
   price_hourly: string;
@@ -24,6 +26,7 @@ export interface AdminInstanceOut {
   spec: AdminInstanceOutSpec;
   ssh_port: number | null;
   status: string;
+  subscription?: InstanceSubscriptionOut | null;
   user_id: number;
   uuid: string;
   with_ssh: boolean;

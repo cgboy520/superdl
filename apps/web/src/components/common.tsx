@@ -1,12 +1,18 @@
 /** 小件:状态徽标 / 档位标 / 复制按钮。 */
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
+import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import {
+  colorPrimary,
   diskStatusMap,
   instanceStatusMap,
+  isSubscriptionExpired,
+  marketLabelKey,
   metaOf,
   skuTierMap,
   skuVariant,
+  statusColors,
+  subscriptionStatusMap,
   workloadTypeMap,
 } from "@superdl/ui";
 import { App, Badge, Button, Tag, Tooltip } from "antd";
@@ -64,6 +70,35 @@ export function WorkloadTag({ workloadType }: { workloadType: string }) {
   const meta = metaOf(workloadTypeMap, workloadType);
   if (!meta) return null;
   return <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
+}
+
+/**
+ * 包周期标记:「包月 · 剩 23 天」。按量/竞价实例不出标记 —— 按量是默认买法,
+ * 给每一行挂一个「按量」徽标只是噪声(与 WorkloadTag 同一条口径)。
+ * 已到期转橙并改显订阅状态:剩余天数对一台已经停掉的机器没有意义。
+ */
+export function SubscriptionTag({
+  market,
+  subscription,
+}: {
+  market: string;
+  subscription: InstanceSubscriptionOut | null | undefined;
+}) {
+  const { t } = useTranslation(["web", "shared"]);
+  const { formatExpiry } = useFormat();
+  if (market !== "subscription" || !subscription) return null;
+  const labelKey = marketLabelKey(market, subscription.period);
+  const periodLabel = labelKey ? t(labelKey) : subscription.period;
+  const expired = isSubscriptionExpired(market, subscription);
+  const statusMeta = metaOf(subscriptionStatusMap, subscription.status);
+  const tail = expired
+    ? (statusMeta ? t(statusMeta.labelKey) : subscription.status)
+    : formatExpiry(subscription.expires_at);
+  return (
+    <Tag color={expired ? statusColors.orange : colorPrimary}>
+      {tail ? t("period.tagWithExpiry", { period: periodLabel, expiry: tail }) : periodLabel}
+    </Tag>
+  );
 }
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {

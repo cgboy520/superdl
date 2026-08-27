@@ -21,7 +21,19 @@
       "m": "{{m}} min",
       "zero": "0 min"
     },
-    "perHour": "{{price}}/hr"
+    "perHour": "{{price}}/hr",
+    "perPeriod": "{{price}}/{{unit}}",
+    "perPeriodCount": "{{price}} per {{count}} {{unit}}",
+    "periodUnit": {
+      "day_one": "day",
+      "day_other": "days",
+      "month_one": "month",
+      "month_other": "months",
+      "week_one": "week",
+      "week_other": "weeks",
+      "year_one": "year",
+      "year_other": "years"
+    }
   },
   "status": {
     "announcement": {
@@ -141,6 +153,22 @@
     "workload": {
       "dev": "Dev box",
       "service": "Service"
+    },
+    "market": {
+      "on_demand": "Pay-as-you-go",
+      "spot": "Spot",
+      "subscription": "Subscription"
+    },
+    "period": {
+      "day": "Daily plan",
+      "month": "Monthly plan",
+      "week": "Weekly plan",
+      "year": "Yearly plan"
+    },
+    "subscription": {
+      "active": "Active",
+      "cancelled": "Cancelled",
+      "expired": "Expired"
     }
   }
 }

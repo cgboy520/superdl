@@ -349,3 +349,159 @@ async def test_service_container_drill(client, sm, fake):
         assert e.balance_after == running
     balance = Decimal((await client.get("/api/v1/wallet", headers=h)).json()["balance"])
     assert running == balance
+
+
+async def test_subscription_drill(client, sm, fake):
+    """包周期主链路:充值 → 买包月 → 运行 → 到期 → 停机 → 冻结 → 回收,全程资金自洽。
+
+    与按量演练分开一条:它跑的是「跑多久算多少钱」,这条跑的是「先付一整段、
+    结算完全不参与」。两条链路在计费上是互斥的口径,合成一个用例会让任何一条
+    坏掉时都看不出是哪一条坏了。
+
+    挂在中段(到期不停机)= 白送算力;挂在末段(冻结不回收)= 实例盘永远收不回来;
+    挂在资金断言 = 预扣与流水对不上,财务侧无法对账。
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    from app.core.timeutil import now_utc
+    from app.modules.billing.models import BillHourly, Subscription
+    from app.modules.billing.patrol import balance_patrol
+    from app.modules.billing.subscriptions import subscription_patrol
+    from app.modules.orchestrator.models import Instance
+
+    # ── 1. 注册 + 充值 ────────────────────────────────────────
+    phone = "13411113333"
+    await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
+    reg = await client.post(
+        "/api/v1/auth/register", json={"phone": phone, "sms_code": "123456", "accept_terms": True}
+    )
+    h = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+    user_id = reg.json()["user"]["id"]
+    order = (
+        await client.post(
+            "/api/v1/wallet/recharges", json={"amount": "3000.00", "channel": "mock"}, headers=h
+        )
+    ).json()
+    await client.post(
+        "/api/v1/webhooks/mock", json={"order_no": order["order_no"], "amount": "3000.00"}
+    )
+    assert Decimal((await client.get("/api/v1/wallet", headers=h)).json()["balance"]) == Decimal(
+        "3000.00"
+    )
+
+    # ── 2. 买一个月(下单即预扣整段周期)────────────────────
+    key = await client.post(
+        "/api/v1/ssh-keys", json={"name": "k", "public_key": gen_ed25519_key()}, headers=h
+    )
+    sku_id = await create_test_sku(
+        sm,
+        gpu_cores_pct=100,
+        vcpu=16,
+        mem_gb=64,
+        tier="dedicated",
+        pool_label="kata",
+        gpu_model="RTX4090",
+        vram_gb=24,
+        price_hourly=Decimal("3.9900"),
+        name="RTX4090 · 专用整卡",
+    )
+    await seed_node_spec(sm, node_name="node-sub", pool_label="kata")
+    resp = await client.post(
+        "/api/v1/instances",
+        json={
+            "sku_id": sku_id,
+            "gpu_count": 1,
+            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "ssh_key_ids": [key.json()["id"]],
+            "market": "subscription",
+            "period": "month",
+            "period_count": 1,
+        },
+        headers=h,
+    )
+    assert resp.status_code == 202, resp.text
+    uuid = resp.json()["uuid"]
+    # ¥3.99/时 × 720 时 × 8 折 —— 与 UI 稿上的数字逐字相同
+    assert Decimal((await client.get("/api/v1/wallet", headers=h)).json()["balance"]) == Decimal(
+        "701.76"
+    )
+
+    await drain(sm)
+    fake.mark_ready(f"tenant-{user_id}", uuid)
+    await reconcile_once(sm)
+    item = next(
+        i
+        for i in (await client.get("/api/v1/instances", headers=h)).json()["items"]
+        if i["uuid"] == uuid
+    )
+    assert item["status"] == "running"
+    assert item["market"] == "subscription"
+    assert item["subscription"]["period"] == "month"
+
+    # ── 3. 到期 → 停机 → 冻结 → 回收 ──────────────────────────
+    async with sm() as session:
+        await session.execute(
+            update(Subscription)
+            .where(Subscription.user_id == user_id)
+            .values(expires_at=now_utc() - timedelta(minutes=1))
+        )
+        await session.commit()
+    assert (await subscription_patrol(sm))["stopped"] == 1
+    await drain(sm)
+    await reconcile_once(sm)
+    assert (await subscription_patrol(sm))["frozen"] == 1
+
+    async with sm() as session:
+        inst = (await session.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
+        assert inst.status == "frozen" and inst.frozen_deadline is not None
+        await session.execute(
+            update(Instance)
+            .where(Instance.id == inst.id)
+            .values(frozen_deadline=now_utc() - timedelta(minutes=1))
+        )
+        await session.commit()
+        instance_id = inst.id
+    await balance_patrol(sm)  # 回收仍走欠费巡检的既有分支
+    await drain(sm)
+    await reconcile_once(sm)
+    events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=h)).json()["items"]
+    assert events[0]["to_status"] == "released"
+    chain = [(e["from_status"], e["to_status"]) for e in reversed(events)]
+    assert ("running", "stopping") in chain
+    assert ("stopped", "frozen") in chain
+    assert ("frozen", "releasing") in chain
+
+    # ── 4. 全程零小时账单:预付过的实例不进结算 ───────────────
+    async with sm() as session:
+        bills = (
+            (await session.execute(select(BillHourly).where(BillHourly.instance_id == instance_id)))
+            .scalars()
+            .all()
+        )
+    assert bills == []
+
+    # ── 5. 资金自洽:充值 - 预扣 = 余额,流水快照链一致 ────────
+    async with sm() as session:
+        entries = (
+            (
+                await session.execute(
+                    select(BalanceLedger)
+                    .where(BalanceLedger.user_id == user_id)
+                    .order_by(BalanceLedger.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    running_total = Decimal("0.00")
+    for e in entries:
+        running_total += e.amount
+        assert e.balance_after == running_total
+    consume = [e for e in entries if e.type == "consume"]
+    assert len(consume) == 1  # 只有下单那一笔,没有任何小时账
+    assert consume[0].ref_type == "subscription"
+    assert consume[0].amount == Decimal("-2298.24")
+    wallet = (await client.get("/api/v1/wallet", headers=h)).json()
+    assert Decimal(wallet["balance"]) == Decimal("701.76")

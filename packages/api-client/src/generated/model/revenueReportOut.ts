@@ -5,8 +5,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * 收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日)。
+ *
+ * `*_prepaid` 是其中的预付部分,单独给出来是因为一笔包年会在当天造成一个尖峰,
+ * 看环比时必须能把它拆出来。
+ */
 export interface RevenueReportOut {
+  month_prepaid: string;
   month_revenue: string;
+  today_prepaid: string;
   today_revenue: string;
   today_signups: number;
   yesterday_revenue: string;

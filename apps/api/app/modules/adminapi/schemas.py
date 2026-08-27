@@ -193,6 +193,7 @@ class OverviewOut(BaseModel):
     instances_by_status: dict[str, int]  # 非终态分状态计数(不含 released)
     tenants_total: int  # active 用户口径
     paying_tenants: int  # ledger consume > 0 的精确人数
+    subscriptions_active: int  # 在保(未到期)的包周期实例数,精确 COUNT
     nodes_total: int
     nodes_ready: int
     nodes_missing: int
@@ -376,9 +377,17 @@ class AuditLogOut(BaseModel):
 
 
 class RevenueReportOut(BaseModel):
+    """收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日)。
+
+    `*_prepaid` 是其中的预付部分,单独给出来是因为一笔包年会在当天造成一个尖峰,
+    看环比时必须能把它拆出来。
+    """
+
     today_revenue: str
     yesterday_revenue: str
     month_revenue: str
+    today_prepaid: str
+    month_prepaid: str
     today_signups: int
     yesterday_signups: int
 

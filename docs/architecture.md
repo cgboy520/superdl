@@ -87,7 +87,7 @@ apps/api/app/
 而 DB 是 running → 记 `failed` 事件、停止计费并告警;Pod 存在而 DB 已 released → 强制删除并告警;
 `creating` 超时未调度 → 失败退款。reconciler 不得关闭。
 
-worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、支付查单与超时关单、
+worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、包周期到期巡检、支付查单与超时关单、
 镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。定时任务一律先抢 pg advisory lock,多副本下单实例执行。
 
 ## 5. 接入层
@@ -110,7 +110,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 | account | `users` `ssh_keys` `used_refresh_tokens` `sms_codes` `user_quota_overrides` `account_deletion_requests` |
 | catalog | `skus` `images` `image_node_cache` |
 | orchestrator | `instances` `instance_events` `port_allocations` `data_disks` `service_endpoints` `service_api_keys` |
-| billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
+| billing | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` |
 | metering | `usage_hourly` |
 | nodes | `node_enrollments` `node_specs` `cluster_status` |
 | notify | `notifications` `announcements` |
@@ -123,7 +123,9 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 - 结算幂等键:`bills_hourly` UNIQUE(instance_id, hour_start)、`bills_daily_disk` UNIQUE(disk_id, day)、`usage_hourly` UNIQUE(instance_id, hour_start)。
 - 支付与创建幂等:`orders.channel_txn_id` / `order_no` 唯一;`orders`、`instances`、`data_disks` 均带
   UNIQUE(user_id, idempotency_key)。
-- `instance_events`、`balance_ledger` 追加式不可改,后者带 `balance_after` 快照。
+- `instance_events`、`balance_ledger` 追加式不可改,后者带 `balance_after` 快照;`balance_ledger.ref_type` 的白名单含 `subscription`(包周期预扣的流水)。
+- **`instances.market`(on_demand / subscription / spot,CHECK 兜底)是「怎么买」,`skus.tier` 是「买什么档」,两者正交** —— 一条 SKU 同时供多种购买模式售卖,不为包周期另建 SKU 行。包周期的预付凭证落 `subscriptions`:续费**新开一行**并用 `renewed_from_id` 串链、老行转 expired,不在原行上累加到期时刻(跨月续费的账期归属要在行上看得见,不靠流水反推)。
+- 订阅行的 UNIQUE(user_id, idempotency_key) 只服务**续费**:下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保(两张表共用一个键会在 24h 窗口过后撞车)。
 - 服务端点凭据只存带密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
 - `skus.oversell_cores` / `oversell_vram` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。
 
@@ -151,6 +153,7 @@ UPDATE status。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原�
 `instance_events` + `outbox_tasks`,立即返回 202。worker 领取任务后 ensure Namespace / NetworkPolicy / Quota /
 JuiceFS PVC,再建 Pod(RuntimeClass 按档位、GPU 资源经 gpu_adapter、注入公钥与 jupyter token)、SSH 与 Jupyter 两个
 Service、HTTPRoute;Pod Ready 后同事务转 `running` 并写计费起点事件。超时未 Ready 转 `failed`,退款并清理。
+包周期下单(`market='subscription'`)在同一事务里多做两件事:按周期总价一次性预扣 + 落一行 `subscriptions`,见 §7.5。
 
 ### 7.3 小时结算
 
@@ -167,6 +170,21 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 天数与盘价都是可在线调整的策略参数(`policy_overrides`),取值见 [`reference/billing.md`](./reference/billing.md)
 与 [`reference/disks.md`](./reference/disks.md)。
 
+### 7.5 包周期(预付订阅)
+
+`market='subscription'` 的实例在下单时一次性预扣整段周期的费用,不走小时结算。周期取**定长小时**
+(日 24 / 周 168 / 月 720 / 年 8760),定价与到期时刻同源;折扣按周期长度分四档,是可在线调整的策略参数。
+下单、续费与到期链路都在 `app/modules/billing/subscriptions.py`,折扣与报价的唯一计算点在 `app/core/pricing.py`。
+
+进入包周期有两条路:创建时直接买,或把已经在跑的按量实例**就地转过来**
+(`POST /api/v1/instances/{uuid}/subscribe`)。转换在同一事务里**先结清转换前那段按量账、再翻 `market`** ——
+顺序反了那段账就永远没人结(结算候选按实例当前的 market 挑),而账面上看不出少了什么。
+
+到期链路由 `subscription_patrol`(30 分钟一轮)驱动:临期预警 → 到期且开了自动续费则扣款续期 →
+否则停机 → 冻结并写 `frozen_deadline`。**回收那一步仍由余额巡检的 frozen 分支做**,状态机与回收逻辑
+只有一处实现。预付语义的三条后果(中途释放不退款、到期不自动转按量、余额为零不停机)与四处配套过滤
+见 [`reference/billing.md`](./reference/billing.md)。
+
 ## 8. 硬约束
 
 1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**(HAMi device plugin 与 Kata / KubeVirt 不兼容)。节点池标签
@@ -180,5 +198,7 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
 5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
+6. **包周期实例只在 `orchestrator/queries.py::billing_candidates` 一处跳过小时结算。** `upsert_hour_bill`、水位线、缺口机制一行不动;
+   加一种购买模式不必再碰结算引擎。跳过点散开就是对预付用户二次收费,而这类错误在账单出来之前没人会发现。
 
 金额、时间、钱包加锁、outbox、状态机、计费依据等编码级硬性规范见 `CLAUDE.md`。

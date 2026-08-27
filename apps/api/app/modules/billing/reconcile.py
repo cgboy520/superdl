@@ -25,6 +25,7 @@ from app.modules.billing.models import (
     BillDailyDisk,
     BillHourly,
     ReconcileCheckpoint,
+    Subscription,
     Wallet,
 )
 
@@ -216,6 +217,11 @@ async def bills_vs_consume(
     两侧都按账单**归属期**切窗:bills 用 hour_start/day,ledger 经 ref_id 回连账单取
     归属期 —— 与入账时间(created_at)解耦。BillHourly.amount 会被补差价原地更新、
     追平补账的 created_at 落在后来某天,按 created_at 切窗在跨日/追平场景必误报。
+
+    包周期预付是第三条腿:它不产生账单行,「出账」侧取 `subscriptions.amount_paid`,
+    切窗用 `subscriptions.created_at`(下单与扣款同一事务,不存在延迟入账)。
+    不把它算进来,`ref_type='subscription'` 的 consume 流水就成了**全无对账的一段钱** ——
+    金额写错、写重、写漏都没有任何机制会发现。
     """
     billed_hourly = (
         await session.execute(
@@ -247,8 +253,25 @@ async def bills_vs_consume(
             .where(BillDailyDisk.day >= since, BillDailyDisk.day < until)
         )
     ).scalar_one()
-    billed = Decimal(billed_hourly) + Decimal(billed_daily)
-    consumed = -(Decimal(consumed_hourly) + Decimal(consumed_daily))
+    billed_subscription = (
+        await session.execute(
+            select(func.coalesce(func.sum(Subscription.amount_paid), 0)).where(
+                Subscription.created_at >= since, Subscription.created_at < until
+            )
+        )
+    ).scalar_one()
+    consumed_subscription = (
+        await session.execute(
+            select(func.coalesce(func.sum(BalanceLedger.amount), 0))
+            .where(BalanceLedger.type == "consume", BalanceLedger.ref_type == "subscription")
+            .join(Subscription, BalanceLedger.ref_id == cast(Subscription.id, String))
+            .where(Subscription.created_at >= since, Subscription.created_at < until)
+        )
+    ).scalar_one()
+    billed = Decimal(billed_hourly) + Decimal(billed_daily) + Decimal(billed_subscription)
+    consumed = -(
+        Decimal(consumed_hourly) + Decimal(consumed_daily) + Decimal(consumed_subscription)
+    )
     return billed, consumed
 
 
@@ -280,7 +303,20 @@ async def dangling_consume_refs(session: AsyncSession) -> int:
             )
         )
     ).scalar_one()
-    return int(hourly_dangling) + int(daily_dangling)
+    subscription_dangling = (
+        await session.execute(
+            select(func.count())
+            .select_from(BalanceLedger)
+            .where(
+                BalanceLedger.type == "consume",
+                BalanceLedger.ref_type == "subscription",
+                ~select(Subscription.id)
+                .where(cast(Subscription.id, String) == BalanceLedger.ref_id)
+                .exists(),
+            )
+        )
+    ).scalar_one()
+    return int(hourly_dangling) + int(daily_dangling) + int(subscription_dangling)
 
 
 async def reconcile_funds(

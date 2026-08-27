@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     # 平台侧改配置中心不会自动同步到网关(与其它策略键不同,这一项是「渲染进清单」的)
     service_endpoint_rps: int = 20
 
+    # 包周期折扣(百分数,80 = 8 折);周期越长折扣越深是定价意图,不由代码强制
+    period_discount_day: int = 95
+    period_discount_week: int = 90
+    period_discount_month: int = 80
+    period_discount_year: int = 70
+    period_expire_warn_days: int = 3  # 包周期到期前几天开始预警
+
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长
     # 开户前燃烧率校验:余额须覆盖「在途+新增」实例的这么多小时消耗(护栏,非预占)

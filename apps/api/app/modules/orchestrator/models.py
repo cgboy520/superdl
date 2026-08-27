@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.core.pricing import MARKET_ON_DEMAND
 
 
 class Instance(Base):
@@ -37,6 +38,13 @@ class Instance(Base):
         # 两者的 Pod spec 分叉在 build_pod_spec,写错值会落到「既不建 Jupyter 也不建服务入口」
         # 的哑状态——实例跑着、计费照走、没有任何入口
         CheckConstraint("workload_type IN ('dev', 'service')", name="workload_type"),
+        # 购买模式枚举兜底。写错值最坏的后果是计费口径错位:小时结算按
+        # `market != 'subscription'` 挑候选,一个拼错的 'subscribtion' 会让这台
+        # 预付过的实例再被按小时扣一遍(用户已付过钱,还在继续掉余额)
+        CheckConstraint(
+            "market IN ('on_demand', 'spot', 'subscription')",
+            name="market",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -49,6 +57,13 @@ class Instance(Base):
     price_hourly: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     gpu_count: Mapped[int] = mapped_column(default=1)
     image_ref: Mapped[str] = mapped_column(String(256))
+    # 购买模式:on_demand(按量)/ subscription(包周期,已预付)/ spot(竞价)。
+    # 与 skus.tier 正交 —— tier 是「买什么档」,market 是「怎么买」,一条 SKU 三种卖法。
+    # 不建索引:没有任何查询按 market 单独过滤(结算候选先按 status/事件收窄再在
+    # Python 侧筛),给它加索引只是白付写放大
+    market: Mapped[str] = mapped_column(
+        String(16), default=MARKET_ON_DEMAND, server_default=MARKET_ON_DEMAND
+    )
     # 实例形态:dev(SSH + JupyterLab)/ service(对外 HTTP 服务)。
     # 不另立实体是刻意的——状态机、计费、配额、回收、reconciler、监控全套复用
     workload_type: Mapped[str] = mapped_column(String(8), default="dev", server_default="dev")

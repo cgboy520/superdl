@@ -5,6 +5,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { InstanceCreateEnv } from './instanceCreateEnv';
+import type { InstanceCreateMarket } from './instanceCreateMarket';
+import type { InstanceCreatePeriod } from './instanceCreatePeriod';
 import type { InstanceCreateWorkloadType } from './instanceCreateWorkloadType';
 
 export interface InstanceCreate {
@@ -24,7 +26,14 @@ export interface InstanceCreate {
      * @maxLength 256
      */
   image_ref: string;
+  market?: InstanceCreateMarket;
   name?: string | null;
+  period?: InstanceCreatePeriod;
+  /**
+     * @minimum 1
+     * @maximum 36
+     */
+  period_count?: number;
   require_api_key?: boolean;
   service_port?: number | null;
   sku_id: number;

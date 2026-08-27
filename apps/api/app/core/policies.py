@@ -43,6 +43,14 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "gpu_node_cpu_instance_vcpu_cap": ("int", Decimal(0), Decimal(1024)),
     # 对外服务端点的边缘限流(每端点每秒请求数)。在网关本地桶生效,不回源平台
     "service_endpoint_rps": ("int", Decimal(1), Decimal(1000)),
+    # 包周期折扣(百分数,80 = 8 折)。上界 100 = 不打折,不设 >100 的「加价」档:
+    # 预付比按量贵在任何定价模型里都讲不通,写错一个数就是全站涨价
+    "period_discount_day": ("int", Decimal(50), Decimal(100)),
+    "period_discount_week": ("int", Decimal(50), Decimal(100)),
+    "period_discount_month": ("int", Decimal(50), Decimal(100)),
+    "period_discount_year": ("int", Decimal(50), Decimal(100)),
+    # 包周期到期前多少天开始预警(短信 + 站内信,每天至多一条)
+    "period_expire_warn_days": ("int", Decimal(1), Decimal(30)),
 }
 
 
@@ -63,6 +71,11 @@ class EffectivePolicies:
     max_disks_per_user: int
     gpu_node_cpu_instance_vcpu_cap: int
     service_endpoint_rps: int
+    period_discount_day: int
+    period_discount_week: int
+    period_discount_month: int
+    period_discount_year: int
+    period_expire_warn_days: int
 
 
 def validate_policy_value(key: str, value: str) -> str:
@@ -104,6 +117,11 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
         max_disks_per_user=int(eff["max_disks_per_user"]),
         gpu_node_cpu_instance_vcpu_cap=int(eff["gpu_node_cpu_instance_vcpu_cap"]),
         service_endpoint_rps=int(eff["service_endpoint_rps"]),
+        period_discount_day=int(eff["period_discount_day"]),
+        period_discount_week=int(eff["period_discount_week"]),
+        period_discount_month=int(eff["period_discount_month"]),
+        period_discount_year=int(eff["period_discount_year"]),
+        period_expire_warn_days=int(eff["period_expire_warn_days"]),
     )
 
 

@@ -14,10 +14,13 @@ import {
   instanceStatusMap,
   invoiceStatusMap,
   legalDocStatusMap,
+  marketMap,
   nodeEnrollStatusMap,
   payoutChannelMap,
+  periodMap,
   refundStatusMap,
   skuTierMap,
+  subscriptionStatusMap,
   ticketCategoryMap,
   ticketStatusMap,
   workloadTypeMap,
@@ -34,7 +37,7 @@ function lookup(catalog: Record<string, unknown>, dotted: string): string | unde
 }
 
 const usedKeys: string[] = [];
-for (const map of [instanceStatusMap, skuTierMap, imageCacheStatusMap, nodeEnrollStatusMap, diskStatusMap, refundStatusMap, payoutChannelMap, invoiceStatusMap, ticketStatusMap, ticketCategoryMap, announcementStatusMap, adjustmentStatusMap, legalDocStatusMap, workloadTypeMap]) {
+for (const map of [instanceStatusMap, skuTierMap, imageCacheStatusMap, nodeEnrollStatusMap, diskStatusMap, refundStatusMap, payoutChannelMap, invoiceStatusMap, ticketStatusMap, ticketCategoryMap, announcementStatusMap, adjustmentStatusMap, legalDocStatusMap, workloadTypeMap, marketMap, periodMap, subscriptionStatusMap]) {
   for (const meta of Object.values<Record<string, unknown>>(map)) {
     for (const field of ["labelKey", "hintKey"]) {
       const v = meta[field];

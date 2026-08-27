@@ -97,6 +97,69 @@ export const workloadTypeMap = {
   service: { labelKey: "shared:status.workload.service", color: colorPrimary },
 } as const satisfies Record<WorkloadType, { labelKey: string; color: string }>;
 
+/**
+ * 购买模式,与 instances.market 严格一致(后端 core/pricing.py 的 MARKETS)。
+ * 与 tier 正交:同一条 SKU 可以按量买、也可以包周期买,不是新档位。
+ * spot 由批次 C 接上,枚举先齐 —— 值域少一个,列表页拿到就渲染成裸字符串。
+ */
+export type Market = "on_demand" | "spot" | "subscription";
+
+export const marketMap = {
+  on_demand: { labelKey: "shared:status.market.on_demand", color: statusColors.gray },
+  spot: { labelKey: "shared:status.market.spot", color: statusColors.orange },
+  subscription: { labelKey: "shared:status.market.subscription", color: colorPrimary },
+} as const satisfies Record<Market, { labelKey: string; color: string }>;
+
+/** 计费周期,与 subscriptions.period 严格一致(定长小时,见 PERIOD_HOURS)。 */
+export type BillingPeriod = "day" | "week" | "month" | "year";
+
+export const BILLING_PERIODS: readonly BillingPeriod[] = ["day", "week", "month", "year"];
+
+export function isBillingPeriod(value: string | null | undefined): value is BillingPeriod {
+  return value != null && (BILLING_PERIODS as readonly string[]).includes(value);
+}
+
+export const periodMap = {
+  day: { labelKey: "shared:status.period.day" },
+  week: { labelKey: "shared:status.period.week" },
+  month: { labelKey: "shared:status.period.month" },
+  year: { labelKey: "shared:status.period.year" },
+} as const satisfies Record<BillingPeriod, { labelKey: string }>;
+
+/**
+ * 「怎么买的」这一格该显示什么:包周期按周期分化成 包日/包周/包月/包年,其余取 market。
+ * 用户心智里「包月」是一种买法而不是「包周期 + 月」两个字段,两端的列表列都照这里取,
+ * 不各自拼一遍。未知 market 返回 undefined(调用方回退渲染原始值)。
+ */
+export function marketLabelKey(market: string, period?: string | null) {
+  if (market === "subscription" && isBillingPeriod(period)) return periodMap[period].labelKey;
+  return metaOf(marketMap, market)?.labelKey;
+}
+
+/** 订阅单状态,与 subscriptions.status 严格一致。 */
+export type SubscriptionStatus = "active" | "expired" | "cancelled";
+
+export const subscriptionStatusMap = {
+  active: { labelKey: "shared:status.subscription.active", color: statusColors.green, badge: "success" },
+  expired: { labelKey: "shared:status.subscription.expired", color: statusColors.orange, badge: "warning" },
+  cancelled: { labelKey: "shared:status.subscription.cancelled", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<SubscriptionStatus, StatusMeta>;
+
+/**
+ * 包周期已到期(开机门禁的前端判据,与后端 subscriptions.assert_active 同口径)。
+ * 非包周期实例恒为 false;缺 subscription 字段的包周期实例判为已到期 —— 与后端同样 fail-closed,
+ * 让按钮灰着最坏是提一张工单,放行则是白送一台机器。
+ */
+export function isSubscriptionExpired(
+  market: string,
+  subscription: { status: string; expires_at: string } | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (market !== "subscription") return false;
+  if (!subscription) return true;
+  return subscription.status !== "active" || new Date(subscription.expires_at).getTime() <= now.getTime();
+}
+
 /** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */
 export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";
 

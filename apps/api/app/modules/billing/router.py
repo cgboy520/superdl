@@ -48,6 +48,11 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         disk_grace_days=p.disk_grace_days,
         disk_frozen_days=p.disk_frozen_days,
         freeze_grace_hours=p.freeze_grace_hours,
+        period_discount_day=p.period_discount_day,
+        period_discount_week=p.period_discount_week,
+        period_discount_month=p.period_discount_month,
+        period_discount_year=p.period_discount_year,
+        period_expire_warn_days=p.period_expire_warn_days,
         real_name_enabled=cfg["real_name_enabled"] == "true",
         real_name_required_for_recharge=cfg["real_name_required_for_recharge"] == "true",
     )

@@ -20,7 +20,15 @@
       "m": "{{m}} 分钟",
       "zero": "0 分钟"
     },
-    "perHour": "{{price}}/时"
+    "perHour": "{{price}}/时",
+    "perPeriod": "{{price}}/{{unit}}",
+    "perPeriodCount": "{{price}}/{{count}} {{unit}}",
+    "periodUnit": {
+      "day": "日",
+      "month": "月",
+      "week": "周",
+      "year": "年"
+    }
   },
   "status": {
     "announcement": {
@@ -140,6 +148,22 @@
     "workload": {
       "dev": "开发机",
       "service": "服务"
+    },
+    "market": {
+      "on_demand": "按量",
+      "spot": "竞价",
+      "subscription": "包周期"
+    },
+    "period": {
+      "day": "包日",
+      "month": "包月",
+      "week": "包周",
+      "year": "包年"
+    },
+    "subscription": {
+      "active": "在保",
+      "cancelled": "已作废",
+      "expired": "已到期"
     }
   }
 }

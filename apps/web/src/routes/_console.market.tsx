@@ -7,7 +7,14 @@
  * 型号与显存两行对 CPU 恒为空,卡数行还会算出「× 0 卡 = ¥0」。
  */
 
-import { GPU_COUNT_STEPS, mulPrice, skuTierMap, skuVariant } from "@superdl/ui";
+import {
+  billingUnits,
+  GPU_COUNT_STEPS,
+  mulPrice,
+  periodMap,
+  skuTierMap,
+  skuVariant,
+} from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Segmented, Space, Table, Tooltip, Typography } from "antd";
@@ -20,7 +27,8 @@ import { TableErrorEmpty } from "../components/QueryState";
 import { usePolicies, useSkus } from "../api/queries";
 import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
-import { BillingModeCard, skuColumns } from "../components/skuTable";
+import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
+import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
 import { useIsLoggedIn } from "../stores/auth";
 
 export const Route = createFileRoute("/_console/market")({
@@ -39,6 +47,7 @@ function MarketPage() {
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
   const [kind, setKind] = useState<Kind>("gpu");
+  const [billingMode, setBillingMode] = useState<BillingMode>("on_demand");
   const [gpuModel, setGpuModel] = useState<string>(ALL);
   const [tier, setTier] = useState<string>(ALL);
   const [vram, setVram] = useState<number>(0);
@@ -55,6 +64,7 @@ function MarketPage() {
   } = useSkus({ refetchInterval: 30_000 });
   // 计费规则的冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
+  const discounts = usePeriodDiscounts();
 
   const isCpu = kind === "cpu";
   // 分栏先切分数据源:两栏的 chip 取值域各自从本栏 SKU 聚合,不会互相带出空选项
@@ -109,6 +119,20 @@ function MarketPage() {
 
   const columns = skuColumns({ fmt, t, availability: true, priceFontSize: 18, cpu: isCpu });
 
+  // 选中的规格不接受包周期时按量兜底:chips 已灰置,结算条也不能还挂着一个下不了的单
+  const periodBlocked = selected != null && !selected.period_enabled;
+  const mode: BillingMode = periodBlocked ? "on_demand" : billingMode;
+  const period = mode === "on_demand" ? null : mode;
+  // 市场页没有报价端点,按 policies 折扣本地估算;数量恒 1(几个周期在创建页选)
+  const quote =
+    selected && period
+      ? periodQuoteOf(
+          selected.price_hourly,
+          { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount: 1 },
+          discounts,
+        )
+      : undefined;
+
   return (
     // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
@@ -118,8 +142,14 @@ function MarketPage() {
       <Alert type="warning" showIcon title={t("copy.antiMiningNotice")} />
 
       <BillingModeCard
+        value={mode}
+        onChange={setBillingMode}
+        periodEnabled={!periodBlocked}
         extra={<Typography.Link onClick={() => setRulesOpen(true)}>{t("market.billingRulesLink")}</Typography.Link>}
       />
+      {periodBlocked && billingMode !== "on_demand" && (
+        <Alert type="info" showIcon title={t("period.fallbackToHourly")} />
+      )}
 
       <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -199,27 +229,48 @@ function MarketPage() {
             : t("market.selectHint")
         }
         items={[
-          {
-            label: t("create.configCostLabel"),
-            // CPU 规格的 price_hourly 已是整机时价(后端计费份数恒 1),不再乘卡数
-            value: selected ? formatHourlyPrice(mulPrice(selected.price_hourly, needed)) : "--",
-          },
+          period && quote
+            ? {
+                label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
+                value: (
+                  <Space size={8} align="baseline">
+                    <Typography.Text type="secondary" delete style={{ fontSize: 14 }}>
+                      {fmt.formatMoney(quote.listAmount)}
+                    </Typography.Text>
+                    <span>{fmt.formatPeriodPrice(quote.amount, period, 1)}</span>
+                  </Space>
+                ),
+              }
+            : {
+                label: t("create.configCostLabel"),
+                // CPU 规格的 price_hourly 已是整机时价(后端计费份数恒 1),不再乘卡数
+                value: selected ? formatHourlyPrice(mulPrice(selected.price_hourly, needed)) : "--",
+              },
         ]}
         detail={
           selected ? (
-            <Space orientation="vertical" size={4}>
-              <span>
-                {isCpu
-                  ? t("instances.pricePerInstance", { price: formatHourlyPrice(selected.price_hourly) })
-                  : t("instances.pricePerCard", {
-                      price: formatHourlyPrice(selected.price_hourly),
-                      count: gpuCount,
-                    })}
-              </span>
-              <Typography.Text type="secondary">
-                {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
-              </Typography.Text>
-            </Space>
+            period && quote ? (
+              <PeriodQuoteRows
+                quote={quote}
+                gpuCount={gpuCount}
+                cpu={isCpu}
+                hint={t("period.hintFinalOnCreate")}
+              />
+            ) : (
+              <Space orientation="vertical" size={4}>
+                <span>
+                  {isCpu
+                    ? t("instances.pricePerInstance", { price: formatHourlyPrice(selected.price_hourly) })
+                    : t("instances.pricePerCard", {
+                        price: formatHourlyPrice(selected.price_hourly),
+                        count: gpuCount,
+                      })}
+                </span>
+                <Typography.Text type="secondary">
+                  {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
+                </Typography.Text>
+              </Space>
+            )
           ) : undefined
         }
         actions={
@@ -236,9 +287,11 @@ function MarketPage() {
                     void navigate({
                       to: "/market/create/$skuId",
                       params: { skuId: String(selected.id) },
-                      search: isCpu
-                        ? { workload: "service" }
-                        : { gpus: gpuCount, workload: "service" },
+                      search: {
+                        ...(isCpu ? {} : { gpus: gpuCount }),
+                        ...(period ? { period } : {}),
+                        workload: "service" as const,
+                      },
                     });
                   }}
                 >
@@ -256,7 +309,11 @@ function MarketPage() {
                       to: "/market/create/$skuId",
                       params: { skuId: String(selected.id) },
                       // CPU 规格不带卡数:创建页按 SKU 的 max_gpus_per_instance=0 提交 gpu_count: 0
-                      search: isCpu ? {} : { gpus: gpuCount },
+                      // 计费方式随选择带过去,创建页不用再选一次
+                      search: {
+                        ...(isCpu ? {} : { gpus: gpuCount }),
+                        ...(period ? { period } : {}),
+                      },
                     });
                   }}
                 >
@@ -290,6 +347,7 @@ function MarketPage() {
             policies
               ? t("copy.billingRules.r4", { hours: policies.freeze_grace_hours })
               : t("copy.billingRules.r4Fallback"),
+            t("copy.billingRules.r5"),
           ].map((r) => (
             <li key={r} style={{ marginBottom: 8 }}>
               {r}

@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.core.messages import render_message
 from app.core.money import MoneyOut
+from app.core.pricing import MARKET_ON_DEMAND, MARKET_SUBSCRIPTION, MAX_PERIOD_COUNT
+from app.modules.billing.schemas import SubscriptionQuoteOut
 from app.modules.orchestrator import statemachine as sm_def
 
 # 非终态清单(released 是唯一终态,历史行无界):状态机是唯一事实源,这里只做跨模块导出
@@ -42,6 +44,42 @@ _SERVICE_ONLY_FIELDS: tuple[str, ...] = (
 )
 
 
+class InstanceSubscriptionOut(BaseModel):
+    """列表/详情内联的包周期概要(完整明细在 billing.SubscriptionOut)。"""
+
+    period: str
+    period_count: int
+    # 下单时的 SKU **原价**时价快照。下发它是为了让续费预览与实扣同源:
+    # 续费在后端就是按这个数重新报价的,前端拿不到它就只能用「折后价 ÷ 当前周期折扣」
+    # 反推 —— 4 位单价的量化不可逆,反推值在长周期大卡数上会与实扣差到分级
+    unit_price: MoneyOut
+    started_at: datetime
+    expires_at: datetime
+    status: str
+    auto_renew: bool
+    amount_paid: MoneyOut
+
+    model_config = {"from_attributes": True}
+
+
+class InstanceRenew(BaseModel):
+    """续费入参。period 可与当前周期不同(包月转包年),按新周期的折扣重新报价。"""
+
+    period: Literal["day", "week", "month", "year"]
+    period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
+
+
+class InstanceAutoRenew(BaseModel):
+    enabled: bool
+
+
+class RenewOut(BaseModel):
+    """续费响应:实例最新态 + 这一单的报价明细(前端直接渲染成收据)。"""
+
+    instance: "InstanceOut"
+    quote: SubscriptionQuoteOut
+
+
 class InstanceCreate(BaseModel):
     sku_id: int
     # 0 = CPU 实例(SKU 的 max_gpus_per_instance 也为 0);下界与上界的实际配对
@@ -67,6 +105,23 @@ class InstanceCreate(BaseModel):
     require_api_key: bool = True
     # 服务型实例默认不开 SSH:开了就要占一个 NodePort,而服务容器通常连 sshd 都没有
     with_ssh: bool = False
+
+    # ---- 购买模式 ----
+    # 契约层暂不收 'spot'(抢占机制在批次 C);DB 的 CHECK 已含它,加进来只需放开这一行
+    market: Literal["on_demand", "subscription"] = MARKET_ON_DEMAND
+    period: Literal["day", "week", "month", "year"] | None = None
+    period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
+
+    @model_validator(mode="after")
+    def _market_shape(self) -> "InstanceCreate":
+        if self.market == MARKET_SUBSCRIPTION:
+            if self.period is None:
+                raise ValueError(render_message("orchestrator.periodRequired", None))
+        elif "period" in self.model_fields_set or "period_count" in self.model_fields_set:
+            # 按量单里带周期字段一律拒:静默忽略会让用户以为自己买的是包月,
+            # 直到月底看见按小时出的账单才发现
+            raise ValueError(render_message("orchestrator.periodOnOnDemand", None))
+        return self
 
     @model_validator(mode="after")
     def _workload_shape(self) -> "InstanceCreate":
@@ -114,6 +169,10 @@ class InstanceOut(BaseModel):
     gpu_count: int
     image_ref: str
     workload_type: str
+    # 购买模式(on_demand / subscription / spot)。包周期实例的到期信息在 subscription 里,
+    # 由列表侧一次批量查询回填(见 service._attach_subscriptions),不逐行打接口
+    market: str
+    subscription: InstanceSubscriptionOut | None = None
     # 前端「连接」栏按它决定显不显示 SSH 那一块。dev 恒 True;service 由用户勾选。
     # 不拿 ssh_port 是否为空代替:端口是 outbox 建 Pod 时才分配的,creating 期间恒空
     with_ssh: bool

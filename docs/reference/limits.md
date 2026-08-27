@@ -29,6 +29,12 @@
 | 开户前余额须覆盖的小时数 | 1h | 策略 `afford_cover_hours`(1~24) |
 | 低余额预警阈值 | 预估可用 <24h | 只存 `users.low_balance_warn_hours`(用户在 1~168h 内自设,默认 24);不设平台级策略键 |
 | 欠费冻结到回收 | 72h | 策略 `freeze_grace_hours`(1~720) |
+| 包周期到期冻结到回收 | 72h | 复用同一个 `freeze_grace_hours`:对用户是同一句承诺「停机后 72 小时内还能救回来」,两条链路给不同天数只会制造投诉 |
+| 包日 / 包周 / 包月 / 包年折扣 | 95 / 90 / 80 / 70(百分数,80 = 8 折) | 策略 `period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`(各 50~100)。**上界 100 = 不打折,不设加价档** —— 预付比按量贵讲不通,写错一个数就是全站涨价。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
+| 包周期到期预警 | 到期前 3 天 | 策略 `period_expire_warn_days`(1~30);短信 + 站内信,每个到期时刻至多一条(去重锚点 `subscriptions.warned_for_expiry`) |
+| 包周期定长小时 | 日 24 / 周 168 / 月 720 / 年 8760 | `core/pricing.py` `PERIOD_HOURS` —— 常量,不可在线改:到期时刻与定价同源,改它等于同时改价与改到期口径 |
+| 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值。它是用户可控的乘数,不封顶一次请求就能算出溢出 `numeric(14,2)` 的应付额 |
+| 包周期到期巡检 | 30min 一轮 | `workers/main.py` `subscription_patrol`(worker `core` 组件);预警窗以天计,到期后的处置晚半小时不影响任何计费口径 |
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |
 | failed 实例保留 | 7 天后回收 | env `failed_retention_days` |

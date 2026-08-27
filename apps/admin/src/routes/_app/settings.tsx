@@ -62,6 +62,11 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
   max_disks_per_user: { label: "每用户数据盘数上限", unit: "块", hint: "用户级覆盖优先于本项" },
   prewarm_min_coverage_pct: { label: "镜像预热覆盖率门槛", unit: "%", hint: "节点覆盖率达标才标记已预热" },
   prewarm_recheck_hours: { label: "预热复检窗口", unit: "小时", hint: "cached 节点多久复检一次" },
+  period_discount_day: { label: "包日折扣", unit: "%", hint: "百分数:80 = 8 折,100 = 不打折;下单与续费同源" },
+  period_discount_week: { label: "包周折扣", unit: "%" },
+  period_discount_month: { label: "包月折扣", unit: "%" },
+  period_discount_year: { label: "包年折扣", unit: "%" },
+  period_expire_warn_days: { label: "包周期到期预警", unit: "天", hint: "到期前几天开始推送预警,每天至多一条" },
 };
 
 function PoliciesTab() {

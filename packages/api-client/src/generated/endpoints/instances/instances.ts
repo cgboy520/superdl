@@ -11,15 +11,20 @@ import type {
   CreateInstanceApiV1InstancesPostHeaders,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   InstanceAccessOut,
+  InstanceAutoRenew,
   InstanceCreate,
   InstanceLogsOut,
   InstanceOut,
   InstanceRename,
+  InstanceRenew,
   ListInstanceEventsApiV1InstancesUuidEventsGetParams,
   ListInstancesApiV1InstancesGetParams,
   PageInstanceEventOut,
   PageInstanceOut,
-  ServiceEndpointOut
+  RenewInstanceApiV1InstancesUuidRenewPostHeaders,
+  RenewOut,
+  ServiceEndpointOut,
+  SubscribeInstanceApiV1InstancesUuidSubscribePostHeaders
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -251,6 +256,30 @@ export const revokeApiKeyApiV1InstancesUuidApiKeysKeyIdDelete = async (uuid: str
 );}
 
 
+export const getSetAutoRenewApiV1InstancesUuidAutoRenewPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/instances/${uuid}/auto-renew`
+}
+
+/**
+ * @summary Set Auto Renew
+ */
+export const setAutoRenewApiV1InstancesUuidAutoRenewPost = async (uuid: string,
+    instanceAutoRenew: InstanceAutoRenew, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
+
+  return customFetch<InstanceOut>(getSetAutoRenewApiV1InstancesUuidAutoRenewPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(instanceAutoRenew)
+  }
+);}
+
+
 export const getListInstanceEventsApiV1InstancesUuidEventsGetUrl = (uuid: string,
     params?: ListInstanceEventsApiV1InstancesUuidEventsGetParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -316,6 +345,35 @@ export const getInstanceLogsApiV1InstancesUuidLogsGet = async (uuid: string,
     method: 'GET'
 
 
+  }
+);}
+
+
+export const getRenewInstanceApiV1InstancesUuidRenewPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/instances/${uuid}/renew`
+}
+
+/**
+ * 包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
+ *
+ * 挂在 instances 下而不是 billing 下:用户的心智是「给这台机器续费」,
+ * 而实例状态(冻结中续费即解冻)也只能由 orchestrator 这一侧改。
+ * @summary Renew Instance
+ */
+export const renewInstanceApiV1InstancesUuidRenewPost = async (uuid: string,
+    instanceRenew: InstanceRenew,
+    headers?: RenewInstanceApiV1InstancesUuidRenewPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RenewOut> => {
+
+  return customFetch<RenewOut>(getRenewInstanceApiV1InstancesUuidRenewPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    body: JSON.stringify(instanceRenew)
   }
 );}
 
@@ -432,6 +490,35 @@ export const stopInstanceApiV1InstancesUuidStopPost = async (uuid: string, optio
     method: 'POST'
 
 
+  }
+);}
+
+
+export const getSubscribeInstanceApiV1InstancesUuidSubscribePostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/instances/${uuid}/subscribe`
+}
+
+/**
+ * 按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣。
+ *
+ * 与 `/renew` 同一个入参与响应形态(都是「给这台机器买一段周期」),区别只在起点:
+ * 这里从现在起算,续费从老周期到期时刻接上。
+ * @summary Subscribe Instance
+ */
+export const subscribeInstanceApiV1InstancesUuidSubscribePost = async (uuid: string,
+    instanceRenew: InstanceRenew,
+    headers?: SubscribeInstanceApiV1InstancesUuidSubscribePostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RenewOut> => {
+
+  return customFetch<RenewOut>(getSubscribeInstanceApiV1InstancesUuidSubscribePostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    body: JSON.stringify(instanceRenew)
   }
 );}
 

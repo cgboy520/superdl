@@ -17,5 +17,6 @@ export interface OverviewOut {
   nodes_total: number;
   paying_tenants: number;
   pools: OverviewPoolOut[];
+  subscriptions_active: number;
   tenants_total: number;
 }

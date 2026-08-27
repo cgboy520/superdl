@@ -56,6 +56,7 @@ COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
             "payment_reconcile",
             "cleanup_expired_rows",
             "balance_patrol",
+            "subscription_patrol",
             "ticket_stale_patrol",
         }
     ),

@@ -191,6 +191,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.reconcile import reconcile_funds
     from app.modules.billing.settlement import settle_daily_disks, settle_due_hours
+    from app.modules.billing.subscriptions import subscription_patrol
     from app.modules.catalog.prewarm import prewarm_patrol
     from app.modules.metering.service import aggregate_previous_hour
     from app.modules.nodes.patrol import node_spec_patrol
@@ -325,6 +326,17 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         seconds=30,
         args=[sm],
         id="node_enroll_reconciler",
+        max_instances=1,
+        coalesce=True,
+    )
+    # 包周期到期链路:预警 → 自动续费 → 到期停机 → 冻结(回收仍由 balance_patrol 做)。
+    # 30 分钟一轮足够:预警窗以天计,到期后的处置晚半小时不影响任何计费口径
+    add_job(
+        _timed_job("subscription_patrol", subscription_patrol, 1800),
+        "interval",
+        minutes=30,
+        args=[sm],
+        id="subscription_patrol",
         max_instances=1,
         coalesce=True,
     )

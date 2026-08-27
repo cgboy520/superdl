@@ -15,6 +15,11 @@ export interface PoliciesOut {
   disk_min_gb: number;
   disk_price_gb_month: string;
   freeze_grace_hours: number;
+  period_discount_day: number;
+  period_discount_month: number;
+  period_discount_week: number;
+  period_discount_year: number;
+  period_expire_warn_days: number;
   real_name_enabled?: boolean;
   real_name_required_for_recharge?: boolean;
 }

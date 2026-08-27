@@ -75,7 +75,8 @@ _EXTRA_CHECKS: list[tuple[CheckConstraint, str]] = [
     (
         CheckConstraint(
             "ref_type IS NULL OR ref_type IN"
-            " ('bill_hourly', 'bill_daily_disk', 'order', 'adjustment', 'refund_request')",
+            " ('bill_hourly', 'bill_daily_disk', 'order', 'adjustment', 'refund_request',"
+            " 'subscription')",
             name="ref_type",
         ),
         "balance_ledger",

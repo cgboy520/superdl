@@ -374,14 +374,22 @@ function Overview() {
       <Col xs={12} md={8} xl={6}>
         <Card>
           <Statistic title={t("overview.todayRevenue")} value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
             {t("overview.yesterdayPrefix", { amount: revenue ? formatMoney(revenue.yesterday_revenue) : "—" })}
+          </Typography.Text>
+          {/* 收入已含包周期预付。预付必须摊开单列:一笔包年当天就是一个尖峰,不标出来
+              上面那行昨日环比会被读成异常 */}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.today_prepaid) : "—" })}
           </Typography.Text>
         </Card>
       </Col>
       <Col xs={12} md={8} xl={6}>
         <Card>
           <Statistic title={t("overview.monthRevenue")} value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.month_prepaid) : "—" })}
+          </Typography.Text>
         </Card>
       </Col>
       <Col xs={12} md={8} xl={6}>
@@ -415,6 +423,19 @@ function Overview() {
               stopped: byStatus.stopped ?? 0,
               failed: byStatus.failed ?? 0,
             })}
+          </Typography.Text>
+        </Card>
+      </Col>
+      <Col xs={12} md={8} xl={6}>
+        <Card>
+          {/* 按订阅行数,不是按实例状态数:停机的包月实例仍在保、仍占库存(平台层预留),
+              所以这个数可以大于上面的活跃实例数 —— 不写清口径就会被当成对不上的脏数据 */}
+          <Statistic
+            title={t("overview.subscriptionsActive")}
+            value={ov ? ov.subscriptions_active : "—"}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t("overview.subscriptionsActiveHint")}
           </Typography.Text>
         </Card>
       </Col>

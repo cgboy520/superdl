@@ -1,12 +1,18 @@
 /**
  * 金额/时长/倒计时统一格式化。
  * 金额入参为后端 numeric 序列化出的字符串,禁止在前端做浮点运算;locale 只决定符号与量词。
- * 本模块保持零运行时依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts)。
+ * 本模块保持零外部依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts);
+ * 包内只 import ./status 的周期枚举(枚举值域只该有一处定义,复制一份迟早对不齐)。
  */
+
+import { isBillingPeriod, type BillingPeriod } from "./status";
 
 /** 本包量词/单位文案用到的 key 全集(值在 locales 下两语言的 shared.json,由 locales.test 守护)。 */
 type SharedFormatKey =
   | "shared:format.perHour"
+  | "shared:format.perPeriod"
+  | "shared:format.perPeriodCount"
+  | `shared:format.periodUnit.${BillingPeriod}`
   | "shared:format.duration.zero"
   | "shared:format.duration.lessThanMinute"
   | "shared:format.duration.h"
@@ -52,13 +58,28 @@ export function formatHourlyPrice(price: string | null | undefined, t: SharedT, 
   return t("shared:format.perHour", { price: `${currencySymbol(locale)}${int}.${frac}` });
 }
 
-/** 十进制字符串 × 整数(BigInt 精确到 4 位小数,禁浮点)。展示层用;计费权威在后端。 */
-export function mulPrice(price: string | null | undefined, count: number): string {
-  if (!price) return "0.0000";
-  const [int = "0", frac = ""] = price.split(".");
-  const scaled = BigInt(int + (frac + "0000").slice(0, 4)) * BigInt(count);
+/** 非负十进制字符串 → 万分位 BigInt(禁浮点)。空值按 0 处理。 */
+function scaled4(value: string | null | undefined): bigint {
+  if (!value) return 0n;
+  const [int = "0", frac = ""] = value.split(".");
+  return BigInt(int + (frac + "0000").slice(0, 4));
+}
+
+/** 万分位 BigInt → "X.XXXX" */
+function unscale4(scaled: bigint): string {
   const s = scaled.toString().padStart(5, "0");
   return `${s.slice(0, -4)}.${s.slice(-4)}`;
+}
+
+/** 分 BigInt → "X.XX" */
+function unscale2(cents: bigint): string {
+  const s = cents.toString().padStart(3, "0");
+  return `${s.slice(0, -2)}.${s.slice(-2)}`;
+}
+
+/** 十进制字符串 × 整数(BigInt 精确到 4 位小数,禁浮点)。展示层用;计费权威在后端。 */
+export function mulPrice(price: string | null | undefined, count: number): string {
+  return unscale4(scaled4(price) * BigInt(count));
 }
 
 /**
@@ -82,6 +103,76 @@ function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   if (twice > denominator) return q + 1n;
   if (twice < denominator) return q;
   return q % 2n === 0n ? q : q + 1n; // 恰好一半:向偶
+}
+
+/**
+ * 周期长度取**定长小时**(与后端 core/pricing.py 的 PERIOD_HOURS 逐值一致)。
+ * 到期时刻与定价同源:按自然月算到期而按 30 天算价,会算出「二月的包月比一月便宜三天」。
+ */
+export const PERIOD_HOURS: Record<BillingPeriod, number> = {
+  day: 24,
+  week: 24 * 7,
+  month: 24 * 30,
+  year: 24 * 365,
+};
+
+/**
+ * 单次下单/续费的周期数上限(与后端 pricing.MAX_PERIOD_COUNT 一致)。
+ * 不设上限时 period_count 是用户可控的乘数,一次请求就能算出天文数字的应付额。
+ */
+export const MAX_PERIOD_COUNT = 36;
+
+/** 一小时收几份 price_hourly(与后端 money.billing_units 同口径:CPU 实例恒 1 份)。 */
+export function billingUnits(gpuCount: number): number {
+  return gpuCount || 1;
+}
+
+/**
+ * 包周期报价的展示副本(字段与后端 SubscriptionQuoteOut 同名同序)。
+ * **只用于下单/续费前的预览**:成交金额一律以接口返回的 quote 为准。
+ */
+export interface PeriodQuote {
+  period: BillingPeriod;
+  periodCount: number;
+  hours: number;
+  discountPct: number;
+  baseHourly: string;
+  unitPrice: string;
+  listAmount: string;
+  discountAmount: string;
+  amount: string;
+}
+
+/**
+ * 本地报价(BigInt 全程精确,禁浮点),运算顺序与后端 pricing.quote_subscription 逐步对齐:
+ * 折后时价先量化到 4 位,再乘份数与小时数量化到分 —— 顺序换一下,边界上就会差出分。
+ *
+ * base 一律取后端下单时用的那个数:市场页/创建页是 SKU 现价,续费是
+ * `subscription.unit_price`(下单时的原价快照)。三处的预览因此与实扣逐分相同。
+ */
+export function quoteSubscription(
+  baseHourly: string | null | undefined,
+  opts: { units: number; period: BillingPeriod; periodCount: number; discountPct: number },
+): PeriodQuote {
+  const { units, period, periodCount, discountPct } = opts;
+  const hours = PERIOD_HOURS[period] * periodCount;
+  const base4 = scaled4(baseHourly);
+  const unit4 = halfEvenDiv(base4 * BigInt(discountPct), 100n);
+  const factor = BigInt(units) * BigInt(hours);
+  // 万分位 × 份数 × 小时 → 分:再除 100
+  const listCents = halfEvenDiv(base4 * factor, 100n);
+  const amountCents = halfEvenDiv(unit4 * factor, 100n);
+  return {
+    period,
+    periodCount,
+    hours,
+    discountPct,
+    baseHourly: unscale4(base4),
+    unitPrice: unscale4(unit4),
+    listAmount: unscale2(listCents),
+    discountAmount: unscale2(listCents - amountCents),
+    amount: unscale2(amountCents),
+  };
 }
 
 /** 秒 → "X 小时 Y 分"(en 用缩写单位规避复数形态)。 */
@@ -139,6 +230,37 @@ export function formatDaysLeft(
   return formatDaysUntil(new Date(new Date(startedAt).getTime() + totalDays * 86_400_000), t, now);
 }
 
+/**
+ * 包周期价:"2298.24" + month + 1 → "¥2,298.24/月";份数 > 1 → "¥6,894.72/3 月"。
+ * 未知周期只回金额,不编造量词(后端加了新周期而前端没跟上时,宁可少一个字)。
+ */
+export function formatPeriodPrice(
+  amount: string | null | undefined,
+  period: string,
+  count: number,
+  t: SharedT,
+  locale: string,
+): string {
+  const price = formatMoney(amount, locale);
+  if (!isBillingPeriod(period)) return price;
+  const unit = t(`shared:format.periodUnit.${period}`, { count });
+  return count > 1
+    ? t("shared:format.perPeriodCount", { price, count, unit })
+    : t("shared:format.perPeriod", { price, unit });
+}
+
+/**
+ * 包周期到期倒计时:"剩 23 天" / "今日到期" / "已到期"。
+ * 到期时刻缺失(非包周期实例)返回 null —— 调用方手里的 subscription 本来就是可空的。
+ */
+export function formatExpiry(
+  expiresAt: string | null | undefined,
+  t: SharedT,
+  now: Date = new Date(),
+): string | null {
+  return expiresAt ? formatDaysUntil(expiresAt, t, now) : null;
+}
+
 /** 应用侧经 useFormat() 一次绑定 t/locale 后使用的格式化件集合。 */
 export interface Formatters {
   currencySymbol: string;
@@ -149,6 +271,8 @@ export interface Formatters {
   formatReclaimCountdown(deadline: string | Date, now?: Date): string;
   formatDaysUntil(deadline: string | Date, now?: Date): string;
   formatDaysLeft(startedAt: string | null | undefined, totalDays: number, now?: Date): string | null;
+  formatPeriodPrice(amount: string | null | undefined, period: string, count: number): string;
+  formatExpiry(expiresAt: string | null | undefined, now?: Date): string | null;
 }
 
 export function makeFormatters(t: SharedT, locale: string): Formatters {
@@ -161,6 +285,8 @@ export function makeFormatters(t: SharedT, locale: string): Formatters {
     formatReclaimCountdown: (deadline, now) => formatReclaimCountdown(deadline, t, now),
     formatDaysUntil: (deadline, now) => formatDaysUntil(deadline, t, now),
     formatDaysLeft: (startedAt, totalDays, now) => formatDaysLeft(startedAt, totalDays, t, now),
+    formatPeriodPrice: (amount, period, count) => formatPeriodPrice(amount, period, count, t, locale),
+    formatExpiry: (expiresAt, now) => formatExpiry(expiresAt, t, now),
   };
 }
 
@@ -220,6 +346,14 @@ export function formatDateTime(iso: string | null | undefined): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${tzSuffix(d)}`;
+}
+
+/** ISO 时间 → "2026-09-03"(本地日期;到期日这类只关心哪一天的场景) */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /** GB 容量 → "100 GB" / "1.5 TB" */

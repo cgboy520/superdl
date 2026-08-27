@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { InstanceOutSpec } from './instanceOutSpec';
+import type { InstanceSubscriptionOut } from './instanceSubscriptionOut';
 
 export interface InstanceOut {
   created_at: string;
@@ -13,6 +14,7 @@ export interface InstanceOut {
   gpu_count: number;
   id: number;
   image_ref: string;
+  market: string;
   name: string;
   price_hourly: string;
   service_slug?: string | null;
@@ -20,6 +22,7 @@ export interface InstanceOut {
   spec: InstanceOutSpec;
   ssh_port: number | null;
   status: string;
+  subscription?: InstanceSubscriptionOut | null;
   uuid: string;
   with_ssh: boolean;
   workload_type: string;

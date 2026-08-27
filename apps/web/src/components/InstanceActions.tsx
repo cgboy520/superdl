@@ -1,13 +1,18 @@
 /**
- * 实例操作组:开机/关机/更多(重启·事件·预留项·释放)。
- * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/转包年包月)可见但禁用,
- * 注「即将上线」——只有已排期的能力才留占位,没排期的直接不进 UI(见 ui-ux-spec 规则 2);
+ * 实例操作组:开机/关机/更多(重启·事件·续费·自动续费·预留项·释放)。
+ * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式)可见但禁用,注「即将上线」——
+ * 只有已排期的能力才留占位,没排期的直接不进 UI(见 ui-ux-spec 规则 2)。
+ * 计费方式相关的三项按对象形态出,不出即「对这台实例不存在」而非「还没做」:
+ * 按量实例(running / stopped)出「转包周期」,包周期实例出「续费」与「自动续费」。
+ * 转包周期是 POST /instances/{uuid}/subscribe 的入口 —— 后端先结清转换前那段按量账再翻
+ * market,一次性预扣整段周期;它是**支付**动作,确认在 RenewModal 里做,菜单点开即弹。
  * 释放走多级防护(复述名称+ID、键入实例名、勾选盘数据清除确认
  * 两道都满足才解锁红按钮 —— 见 docs/ui-ux-spec.md 规则 4)。
  */
 
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
+import { isSubscriptionExpired } from "@superdl/ui";
 
 import { App, Button, Checkbox, Dropdown, Input, Modal, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
@@ -16,9 +21,11 @@ import { Trans, useTranslation } from "react-i18next";
 import {
   useReleaseInstance,
   useRestartInstance,
+  useSetAutoRenew,
   useStartInstance,
   useStopInstance,
 } from "../api/mutations";
+import { RenewModal } from "./RenewModal";
 
 // creating 也可释放:调度长期不满足(如资源不足)时用户可主动取消
 export function canReleaseStatus(s: string): boolean {
@@ -128,19 +135,41 @@ export function InstanceActions({
   onShowEvents?: () => void;
 }) {
   const { t } = useTranslation();
+  // 「包周期已到期,请先续费再开机」的事实源在后端 messages.py,前端不另写一份
+  const { t: tErr } = useTranslation("errors");
   const { modal, message } = App.useApp();
   const [releaseOpen, setReleaseOpen] = useState(false);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const start = useStartInstance();
   const stop = useStopInstance();
   const restart = useRestartInstance();
+  const autoRenew = useSetAutoRenew(instance.uuid, {
+    onSuccess: (data) =>
+      message.success(
+        data.subscription?.auto_renew ? t("period.autoRenewOn") : t("period.autoRenewOff"),
+      ),
+  });
   const s = instance.status;
+  const sub = instance.subscription;
+  const isSubscription = instance.market === "subscription";
+  // 到期后开机后端直接 409(subscriptions.assert_active),按钮先灰掉并说明原因
+  const expired = isSubscriptionExpired(instance.market, sub);
 
-  const canStart = s === "stopped";
+  // 转包周期只对按量实例出;状态不合适时灰置带原因(与后端 subscribe_instance 同款判据)
+  const canConvert = instance.market === "on_demand";
+  const convertBlocked = canConvert && s !== "running" && s !== "stopped";
+
+  const canStart = s === "stopped" && !expired;
   const canStop = s === "running";
   const canRestart = s === "running";
   const canRelease = canReleaseStatus(s);
 
-  const startTip = s === "frozen" ? t("copy.frozenNeedsRecharge") : t("copy.startNeedsStopped");
+  const startTip = expired
+    ? tErr("billing.subscriptionExpired")
+    : s === "frozen"
+      ? t("copy.frozenNeedsRecharge")
+      : t("copy.startNeedsStopped");
 
   const confirmStop = () =>
     modal.confirm({
@@ -180,14 +209,38 @@ export function InstanceActions({
             },
             { key: "events", label: t("instances.actions.eventsLog") },
             { type: "divider" },
+            // 计费方式项按形态分化:按量出「转包周期」,包周期出「续费 / 自动续费」
+            ...(isSubscription
+              ? [
+                  { key: "renew", label: t("period.renewMenu") },
+                  {
+                    key: "auto-renew",
+                    label: sub?.auto_renew
+                      ? t("period.autoRenewOffMenu")
+                      : t("period.autoRenewOnMenu"),
+                    disabled: sub == null,
+                  },
+                  { type: "divider" as const },
+                ]
+              : []),
+            // 在途状态(creating/starting/stopping/releasing)与 frozen 后端一律拒:
+            // 前者会和收敛路径抢同一行,后者那笔欠费得先还清而不是转成预付
+            ...(canConvert
+              ? [
+                  {
+                    key: "to-period",
+                    label: tipped(
+                      t("instances.actions.toPeriod"),
+                      convertBlocked ? tErr("orchestrator.convertNeedsRunningOrStopped") : undefined,
+                    ),
+                    disabled: convertBlocked,
+                  },
+                  { type: "divider" as const },
+                ]
+              : []),
             {
               key: "cardless",
               label: tipped(t("instances.actions.cardless"), t("copy.comingSoon")),
-              disabled: true,
-            },
-            {
-              key: "to-period",
-              label: tipped(t("instances.actions.toPeriod"), t("copy.comingSoon")),
               disabled: true,
             },
             { type: "divider" },
@@ -210,6 +263,12 @@ export function InstanceActions({
               });
             } else if (key === "events") {
               onShowEvents?.();
+            } else if (key === "renew") {
+              setRenewOpen(true);
+            } else if (key === "to-period") {
+              setConvertOpen(true);
+            } else if (key === "auto-renew") {
+              autoRenew.mutate(!sub?.auto_renew);
             } else if (key === "release") {
               setReleaseOpen(true);
             }
@@ -221,6 +280,18 @@ export function InstanceActions({
         </Button>
       </Dropdown>
       <ReleaseModal instance={instance} open={releaseOpen} onClose={() => setReleaseOpen(false)} />
+      {/* 按需挂载:关掉即卸载,重开就是一张新单(幂等键随之换新) */}
+      {isSubscription && renewOpen && (
+        <RenewModal instance={instance} open onClose={() => setRenewOpen(false)} />
+      )}
+      {canConvert && convertOpen && (
+        <RenewModal
+          instance={instance}
+          mode="subscribe"
+          open
+          onClose={() => setConvertOpen(false)}
+        />
+      )}
     </Space>
   );
 }

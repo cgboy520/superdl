@@ -8,15 +8,19 @@ import {
   compareAmounts,
   diskDailyEstimate,
   formatCountdown,
+  formatDate,
   formatDateTime,
   formatDaysLeft,
   formatDuration,
+  formatExpiry,
   formatHourlyPrice,
   formatMoney,
+  formatPeriodPrice,
   formatReclaimCountdown,
   formatSizeGb,
   maskPhone,
   mulPrice,
+  quoteSubscription,
   tzSuffix,
   type SharedT,
 } from "./format";
@@ -221,5 +225,86 @@ describe("diskDailyEstimate", () => {
     expect(diskDailyEstimate("", 100)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 0)).toBe("0.00");
     expect(diskDailyEstimate("0.50", 1.5)).toBe("0.00");
+  });
+});
+
+describe("quoteSubscription", () => {
+  it("逐步量化与后端 quote_subscription 对齐(折后时价先到 4 位,再乘份数与小时到分)", () => {
+    // UI 稿那一单:¥3.99/时 × 1 卡 × 720 小时,包月 8 折
+    const q = quoteSubscription("3.9900", { units: 1, period: "month", periodCount: 1, discountPct: 80 });
+    expect(q.hours).toBe(720);
+    expect(q.unitPrice).toBe("3.1920");
+    expect(q.listAmount).toBe("2872.80");
+    expect(q.discountAmount).toBe("574.56");
+    expect(q.amount).toBe("2298.24");
+  });
+  it("三件套自洽:discountAmount === listAmount - amount", () => {
+    for (const pct of [95, 90, 80, 70]) {
+      for (const period of ["day", "week", "month", "year"] as const) {
+        const q = quoteSubscription("1.2345", { units: 3, period, periodCount: 2, discountPct: pct });
+        expect(addAmounts(q.amount, q.discountAmount)).toBe(q.listAmount);
+      }
+    }
+  });
+  it("份数与周期数是乘数:CPU 实例(units=1)不按卡放大", () => {
+    const one = quoteSubscription("2.0000", { units: 1, period: "day", periodCount: 1, discountPct: 95 });
+    const four = quoteSubscription("2.0000", { units: 4, period: "day", periodCount: 1, discountPct: 95 });
+    expect(one.amount).toBe("45.60"); // 2 × 0.95 × 24
+    expect(four.amount).toBe("182.40");
+  });
+  it("年付 8760 小时不溢出、不丢精度", () => {
+    const q = quoteSubscription("3.9900", { units: 8, period: "year", periodCount: 3, discountPct: 70 });
+    expect(q.hours).toBe(26280);
+    expect(q.unitPrice).toBe("2.7930"); // 3.99 × 0.7 恰好 4 位
+    expect(q.listAmount).toBe("838857.60"); // 3.99 × 8 × 26280
+    expect(q.amount).toBe("587200.32");
+  });
+  it("空价与 100% 折扣(不打折)照常自洽", () => {
+    const none = quoteSubscription(null, { units: 1, period: "month", periodCount: 1, discountPct: 80 });
+    expect(none.amount).toBe("0.00");
+    const full = quoteSubscription("1.0000", { units: 1, period: "day", periodCount: 1, discountPct: 100 });
+    expect(full.amount).toBe(full.listAmount);
+    expect(full.discountAmount).toBe("0.00");
+  });
+});
+
+describe.each([
+  ["zh-CN", tZh],
+  ["en-US", tEn],
+] as const)("formatPeriodPrice (%s)", (lng, t) => {
+  const zh = lng === "zh-CN";
+  const locale = lng;
+  it("单个周期", () => {
+    expect(formatPeriodPrice("2298.24", "month", 1, t, locale)).toBe(
+      zh ? "¥2,298.24/月" : "CN¥2,298.24/month",
+    );
+  });
+  it("多个周期(en 走复数量词)", () => {
+    expect(formatPeriodPrice("6894.72", "month", 3, t, locale)).toBe(
+      zh ? "¥6,894.72/3 月" : "CN¥6,894.72 per 3 months",
+    );
+  });
+  it("未知周期只回金额,不编造量词", () => {
+    expect(formatPeriodPrice("10.00", "quarter", 1, t, locale)).toBe(zh ? "¥10.00" : "CN¥10.00");
+  });
+});
+
+describe("formatExpiry", () => {
+  const now = new Date("2026-08-19T12:00:00Z");
+  it("剩余天数 / 今日到期 / 已到期", () => {
+    expect(formatExpiry("2026-09-11T12:00:00Z", tZh, now)).toBe("剩 23 天");
+    expect(formatExpiry("2026-08-19T20:00:00Z", tZh, now)).toBe("今日到期");
+    expect(formatExpiry("2026-08-18T12:00:00Z", tZh, now)).toBe("已到期");
+  });
+  it("到期时刻缺失返回 null(非包周期实例)", () => {
+    expect(formatExpiry(null, tZh, now)).toBeNull();
+    expect(formatExpiry(undefined, tZh, now)).toBeNull();
+  });
+});
+
+describe("formatDate", () => {
+  it("只到日,空值仍为占位符", () => {
+    expect(formatDate("2026-09-03T04:00:00Z")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(formatDate(null)).toBe("-");
   });
 });

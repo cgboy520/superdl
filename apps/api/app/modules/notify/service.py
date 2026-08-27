@@ -141,6 +141,39 @@ async def send_arrears_notice(
     # patrol 的事务里调用,由调用方 commit;此处不强制
 
 
+async def send_subscription_notice(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    action: str,
+    detail: str,
+    dedup_suffix: str,
+) -> None:
+    """包周期到期链路通知(站内信 + 短信)。
+
+    dedup_key 带 subscription/instance id 而不是只按天分桶:同一天名下两台实例先后到期,
+    只按天去重会让第二条被吞掉 —— 用户以为只有一台要停。日桶仍在,防的是巡检每 30 分钟
+    重复发同一条(自动续费失败会连着几轮都失败)。
+    """
+    titles = {
+        "expiring": "包周期即将到期",
+        "expired": "包周期已到期,实例已停机",
+        "renewed": "包周期已自动续费",
+        "renew_failed": "自动续费失败",
+    }
+    await notify(
+        session,
+        user_id,
+        type_="subscription",
+        title=titles.get(action, "包周期通知"),
+        content=detail,
+        severity="info" if action == "renewed" else "warning",
+        dedup_key=f"subscription:{action}:{dedup_suffix}:{_day_bucket(now_utc())}",
+        sms=True,
+    )
+    # 巡检的事务里调用,由调用方 commit;与 send_arrears_notice 同口径
+
+
 # 群发的单语句行数上限:PG 单条语句 65535 个绑定参数,按 5 列 × 1000 行留足余量
 _ANNOUNCEMENT_CHUNK = 1000
 

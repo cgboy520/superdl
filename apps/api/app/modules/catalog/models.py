@@ -50,6 +50,9 @@ class Sku(Base):
     price_hourly: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     max_gpus_per_instance: Mapped[int] = mapped_column(default=1)
     cuda_max: Mapped[str | None] = mapped_column(String(16))  # 支持的最高 CUDA 版本
+    # 这条 SKU 是否接受包周期(预付)下单。默认开:关掉是例外(稀缺型号不想被人一次锁一年),
+    # 默认关会让功能上线当天在页面上完全看不见,得逐条 SKU 手动打开
+    period_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
     status: Mapped[str] = mapped_column(String(8), default="off", index=True)  # on / off
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # 变更时间,onupdate 自动刷新;无业务读取,留作审计线索

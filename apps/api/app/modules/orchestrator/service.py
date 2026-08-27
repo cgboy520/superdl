@@ -15,6 +15,7 @@ import hmac
 import json
 import secrets
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -38,6 +39,11 @@ from app.core.outbox import enqueue
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
+from app.core.pricing import (
+    MARKET_ON_DEMAND,
+    MARKET_SUBSCRIPTION,
+    price_for,
+)
 from app.core.ratelimit import check_rate_limit
 from app.core.registry import (
     effective_image_allowlist,
@@ -427,6 +433,7 @@ async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int
     matching_free, sellable = _sku_free_capacity(sku, specs, gpu_node_vcpu_cap=cap)
     if matching_free is None:
         return
+    sellable -= await _reserved_slots(session, sku)
     # 要占几份容量:GPU 实例按卡数,CPU 实例(gpu_count=0)占 1 台的位置。
     # 写成 max(1, gpu_count) 会让「0 卡要 0 份」这种恒成立的比较悄悄放行所有 CPU 单
     needed = gpu_count if gpu_count > 0 else 1
@@ -443,6 +450,56 @@ async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int
         )
 
 
+async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> dict[int, int]:
+    """sku_id → 被未到期包周期实例占住的槽位数(**一次查询**,市场页按 SKU 批量取)。
+
+    台账里 `gpu_used` 只数真在跑的 Pod,包月用户关一晚机,他那张卡在台账上就是空闲的;
+    别人买走之后他早上开不了机 —— 那是比超卖更难向他解释的事故。这里在控制面层面
+    把周期内的实例继续算作占用(**物理层不预留**,卡确实空着,这一点必须在创建页
+    与 docs/reference/billing.md 里写明)。
+
+    只算**同一条 SKU** 的停机/冻结实例:同池同型号但规格不同的实例,槽位大小不一样,
+    折算成本 SKU 的槽位数只会给出一个假精确的值,而软准入本来就是近似闸门。
+    """
+    if not sku_ids:
+        return {}
+    rows = (
+        (
+            await session.execute(
+                select(Instance.id, Instance.sku_id, Instance.gpu_count).where(
+                    Instance.sku_id.in_(sku_ids),
+                    Instance.market == MARKET_SUBSCRIPTION,
+                    Instance.status.in_((sm_def.STOPPED, sm_def.FROZEN)),
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    if not rows:
+        return {}
+    reserved_ids = await billing_service.reserved_subscription_instance_ids(
+        session, [iid for iid, _, _ in rows]
+    )
+    out: dict[int, int] = {}
+    for instance_id, sku_id, gpus in rows:
+        if instance_id in reserved_ids:
+            out[sku_id] = out.get(sku_id, 0) + (gpus if gpus > 0 else 1)
+    return out
+
+
+async def _reserved_slots(session: AsyncSession, sku: "Sku") -> int:
+    """单条 SKU 的包周期预留槽位(创建软准入用)。口径见 _reserved_slots_by_sku。
+
+    台账里 `gpu_used` 只数真在跑的 Pod,包月用户关一晚机,他那张卡在台账上就是空闲的;
+    别人买走之后他早上开不了机 —— 那是比超卖更难向他解释的事故。这里在控制面层面
+    把周期内的实例继续算作占用(**物理层不预留**,卡确实空着,这一点必须在创建页
+    与 docs/reference/billing.md 里写明)。
+
+    """
+    return (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
+
+
 async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
     """该用户 creating/starting 实例的时费合计:尚未跑起来不算「在途」,
     assert_can_afford 看不到它们,由调用方并入 additional_hourly 防止连续开户绕过护栏。
@@ -453,6 +510,8 @@ async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
                 select(Instance.price_hourly, Instance.gpu_count).where(
                     Instance.user_id == user_id,
                     Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
+                    # 包周期实例已经付过整段周期的钱,它跑起来不会再动余额
+                    Instance.market != MARKET_SUBSCRIPTION,
                 )
             )
         )
@@ -526,12 +585,19 @@ async def create_instance(
     health_path: str | None = None,
     require_api_key: bool = True,
     with_ssh: bool = False,
+    market: str = MARKET_ON_DEMAND,
+    period: str | None = None,
+    period_count: int = 1,
 ) -> tuple[Instance, bool]:
     """创建实例(202 异步)。返回 (实例, created):created=False = 幂等重放,
     路由据此回 200 + X-Idempotent-Replay 而非 202。
 
     service 形态额外落一行 service_endpoints,并按 with_ssh 决定要不要 SSH 入口;
     dev 形态的入参与行为逐字不变。
+
+    market='subscription' 时同事务里再多做两件事:落一行 subscriptions、按周期总价
+    一次性扣款(不允许透支)。扣完还要过一遍在途燃烧率校验 —— 「买得起包月、但买完
+    连正在跑的按量实例都撑不到下一小时」不是我们该放行的单。
     """
     if idempotency_key:
         existing = await find_replay(
@@ -578,16 +644,29 @@ async def create_instance(
     # dev 形态恒开 SSH(那是它唯一的登录方式);service 形态由用户勾选
     wants_ssh = with_ssh if is_service else True
 
+    is_subscription = market == MARKET_SUBSCRIPTION
+    if is_subscription:
+        if period is None:
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodRequired")
+        if not sku.period_enabled:
+            # 运营对稀缺型号关掉包周期:不许有人一次把它锁走一年。
+            # 市场页会把 chips 置灰,这里兜住直调接口
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
+    # 有效时价:按量即原价,包周期按周期折扣打折(唯一折扣计算点在 core/pricing)
+    policies = await get_effective_policies(session)
+    unit_price = price_for(sku.price_hourly, market=market, policies=policies, period=period)
+
     # 临界区开始:FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
     # 在途统计与配额校验必须在锁内做(先算后锁即 TOCTOU)。
     # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增。
-    estimate = hourly_cost(sku.price_hourly, gpu_count)
+    estimate = hourly_cost(unit_price, gpu_count)
     try:
         await billing_service.lock_wallet(session, user_id)
         pending = await _pending_hourly(session, user_id)
-        await billing_service.assert_can_afford(
-            session, user_id, additional_hourly=as_amount(estimate + pending)
-        )
+        if not is_subscription:
+            await billing_service.assert_can_afford(
+                session, user_id, additional_hourly=as_amount(estimate + pending)
+            )
         # CPU 实例才计 vCPU 维(GPU 实例的 vCPU 是配卡的附属,不单独设闸)
         await _check_user_quota(session, user_id, gpu_count, sku.vcpu if gpu_count == 0 else 0)
 
@@ -614,8 +693,9 @@ async def create_instance(
             name=name or f"instance-{uuid4().hex[:6]}",
             sku_id=sku.id,
             spec=_snapshot_spec(sku),
-            price_hourly=sku.price_hourly,
+            price_hourly=unit_price,
             gpu_count=gpu_count,
+            market=market,
             image_ref=image_ref,
             status=sm_def.CREATING,
             k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
@@ -655,6 +735,29 @@ async def create_instance(
             if raced is not None:
                 return raced, False
             raise
+        if is_subscription:
+            assert period is not None  # 上面已拦,这里给类型收敛
+            # 先扣款(余额不够即 INSUFFICIENT_BALANCE,文案直指余额),再校验在途:
+            # 此刻钱包行上的余额已是扣后值,assert_can_afford 校验的正是「付完这一单
+            # 还撑不撑得住已经在跑的按量资源」
+            await billing_service.charge_new_subscription(
+                session,
+                user_id=user_id,
+                instance_id=instance.id,
+                instance_name=instance.name,
+                sku_id=sku.id,
+                base_hourly=sku.price_hourly,
+                gpu_count=gpu_count,
+                period=period,
+                period_count=period_count,
+                # 订阅行不带幂等键:整笔创建的幂等由 instances 那行担保(同事务),
+                # 两张表共用一个键反而会在 24h 窗口过后撞车 —— 实例行到期释放键位、
+                # 订阅行还占着,同一个键第二次用就炸在这里
+                idempotency_key=None,
+            )
+            await billing_service.assert_can_afford(
+                session, user_id, additional_hourly=as_amount(pending)
+            )
         if disk_id_validated is not None:
             from app.modules.orchestrator import disks as disks_service
 
@@ -681,6 +784,7 @@ async def create_instance(
                     "sku_id": sku.id,
                     "gpu_count": gpu_count,
                     "workload_type": workload_type,
+                    "market": market,
                 },
                 created_at=now_utc(),
             )
@@ -697,6 +801,13 @@ async def create_instance(
         ) from exc
     logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
     return instance, True
+
+
+async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance | None:
+    """按主键取实例(不限归属、不限状态)。系统侧巡检用,用户请求一律走 get_instance。"""
+    return (
+        await session.execute(select(Instance).where(Instance.id == instance_id))
+    ).scalar_one_or_none()
 
 
 async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
@@ -762,11 +873,30 @@ async def list_instances_page(
     rows = list((await session.execute(stmt)).scalars())
     page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
     items = [InstanceOut.model_validate(i) for i in page_items]
-    await _attach_service_slugs(session, items)
+    await attach_instance_details(session, items)
     return Page[InstanceOut](items=items, next_cursor=next_cursor)
 
 
-async def _attach_service_slugs(session: AsyncSession, items: list["InstanceOut"]) -> None:
+async def attach_instance_details(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
+    """回填两个「住在别处」的字段:服务端点 slug 与包周期概要。
+
+    两次批量查询(各自在无相关实例时直接返回),与列表长度无关。
+    列表页和详情页共用同一条路径,免得详情少一个字段、前端为它单开一个请求。
+    """
+    await _attach_service_slugs(session, items)
+    await _attach_subscriptions(session, items)
+
+
+async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceOut":
+    """单实例出参:与列表项同形。"""
+    from app.modules.orchestrator.schemas import InstanceOut
+
+    items = [InstanceOut.model_validate(instance)]
+    await attach_instance_details(session, items)
+    return items[0]
+
+
+async def _attach_service_slugs(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
     """给列表项回填端点 slug:**一次查询**,不是每行一次。
 
     列表页要内联「[服务] ep-xxxx」,而 slug 在另一张表。逐行查是 N+1,
@@ -775,19 +905,41 @@ async def _attach_service_slugs(session: AsyncSession, items: list["InstanceOut"
     ids = [i.id for i in items if i.workload_type == WORKLOAD_SERVICE]
     if not ids:
         return
-    rows = (
-        await session.execute(
-            select(ServiceEndpoint.instance_id, ServiceEndpoint.public_slug).where(
-                ServiceEndpoint.instance_id.in_(ids)
+    # .tuples().all() 而不是直接 dict(session.execute(...)):Result 带 .keys()(列名),
+    # dict() 见到 .keys() 就按映射协议对它做下标访问,报的是
+    # "'ChunkedIteratorResult' object is not subscriptable" —— 跟真实原因毫无关系。
+    # .tuples() 还顺带把行类型收成 tuple[int, str],dict() 的返回类型才推得出来
+    slugs = dict(
+        (
+            await session.execute(
+                select(ServiceEndpoint.instance_id, ServiceEndpoint.public_slug).where(
+                    ServiceEndpoint.instance_id.in_(ids)
+                )
             )
         )
-    ).all()
-    # 显式推导而不是 dict(result):SQLAlchemy 的 Result 带 .keys()(列名),
-    # dict() 见到 .keys() 就按映射协议走,转而对 Result 做下标访问 —— 于是
-    # 报的是 "'ChunkedIteratorResult' object is not subscriptable",跟真实原因毫无关系
-    slugs = {instance_id: slug for instance_id, slug in rows}
+        .tuples()
+        .all()
+    )
     for item in items:
         item.service_slug = slugs.get(item.id)
+
+
+async def _attach_subscriptions(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
+    """给列表项回填包周期概要:**一次查询**,理由同 _attach_service_slugs。
+
+    列表页要在计费列里内联「包月 · 剩 23 天」和续费入口 —— 那要求每行都知道自己的
+    到期时刻,而 subscriptions 在另一张表(还在另一个模块)。逐行查是 N+1。
+    """
+    from app.modules.orchestrator.schemas import InstanceSubscriptionOut
+
+    ids = [i.id for i in items if i.market == MARKET_SUBSCRIPTION]
+    if not ids:
+        return
+    rows = await billing_service.subscriptions_by_instance(session, ids)
+    for item in items:
+        row = rows.get(item.id)
+        if row is not None:
+            item.subscription = InstanceSubscriptionOut.model_validate(row)
 
 
 async def list_events(
@@ -877,8 +1029,13 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
         instance.gpu_count,
         with_data_disk=instance.data_disk_id is not None,
     )
-    estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
-    await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
+    if instance.market == MARKET_SUBSCRIPTION:
+        # 包周期已预付整段周期,开机不看余额;但周期已过就不能再开
+        # (到期链路会停机 → 冻结 → 回收,允许开机等于白送算力)
+        await billing_service.assert_subscription_active(session, instance.id)
+    else:
+        estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
+        await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     if recovered:
         # 故障恢复:failed → stopped(复用同一块实例盘)→ 走正常开机链路
         await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
@@ -908,6 +1065,149 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
     )
     await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
     enqueue(session, "instance.restart", {"instance_id": instance.id})
+    await session.commit()
+    return instance
+
+
+async def renew_instance(
+    session: AsyncSession,
+    user_id: int,
+    uuid: str,
+    *,
+    period: str,
+    period_count: int,
+    idempotency_key: str | None,
+) -> tuple[Instance, Any, bool]:
+    """续费包周期实例。返回 (实例, 报价, created);created=False = 幂等重放。
+
+    续费同时刷新 `instances.price_hourly` —— 用户可以换周期续(包月转包年),
+    有效时价随之变;不刷新的话列表页会一直显示上一个周期的折后价。
+    冻结中的实例续费即解冻(回到 stopped,由用户自己开机):
+    自动开机要过容量与调度,失败了反而给出「续费成功但机器没起来」的坏体验。
+    """
+    instance = await get_instance(session, user_id, uuid)
+    if instance.market != MARKET_SUBSCRIPTION:
+        raise AppError(
+            ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.renewNotSubscription"
+        )
+    if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
+        raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.renewReleased")
+    await billing_service.lock_wallet(session, user_id)
+    row, quoted, created = await billing_service.renew_subscription(
+        session,
+        instance=instance,
+        period=period,
+        period_count=period_count,
+        idempotency_key=idempotency_key,
+    )
+    if not created:
+        # 幂等重放:并发撞键那条路径在 billing 侧 rollback 过,手上的 instance 已失效
+        return await get_instance(session, user_id, uuid), quoted, False
+    policies = await get_effective_policies(session)
+    instance.price_hourly = price_for(
+        row.unit_price, market=MARKET_SUBSCRIPTION, policies=policies, period=period
+    )
+    if instance.status == sm_def.FROZEN:
+        await transition(
+            session, instance, sm_def.STOPPED, reason="subscription_renew", actor="user"
+        )
+        instance.frozen_deadline = None
+    await session.commit()
+    return instance, quoted, True
+
+
+async def subscribe_instance(
+    session: AsyncSession,
+    user_id: int,
+    uuid: str,
+    *,
+    period: str,
+    period_count: int,
+    idempotency_key: str | None,
+) -> tuple[Instance, Any, bool]:
+    """按量实例转包周期。返回 (实例, 报价, created);created=False = 幂等重放。
+
+    **顺序是这个函数的全部要害**:先把转换前那段按量账结清,再翻 `market`。
+    反过来的话,`billing_candidates` 会按翻新后的 market 把这台实例整个排除掉,
+    水位线之后还没出账的小时就永远没人结了 —— 用户白拿转换前那段算力。
+    结清用的是转换前的按量时价(此刻 `instance.price_hourly` 还没被改),这也是
+    「先结后翻」的另一个理由。
+
+    只收 running / stopped 两种状态:creating/starting/stopping/releasing 是在途,
+    翻 market 会和收敛路径抢同一行;frozen 是欠费处置中,那笔账得先还清而不是转成预付。
+    """
+    instance = await get_instance(session, user_id, uuid)
+    if idempotency_key:
+        # 重放必须最先问:转换成功后 market 已经是 subscription,重放请求会撞上下面
+        # 「只有按量实例可以转」那条守卫,拿到一个与真实情况毫不相干的 400;更糟的是
+        # 它还会先跑一遍结算,而此刻 price_hourly 已是折后价 —— 等于拿包周期的价格
+        # 去补一笔本该按按量收的账
+        replayed = await billing_service.find_subscription_replay(
+            session, user_id=user_id, key=idempotency_key
+        )
+        if replayed is not None:
+            return (
+                instance,
+                await billing_service.quote_of_subscription_row(
+                    session, replayed, instance.gpu_count
+                ),
+                False,
+            )
+    if instance.market != MARKET_ON_DEMAND:
+        raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.convertNotOnDemand")
+    if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
+        raise AppError(
+            ErrorCode.INSTANCE_INVALID_TRANSITION,
+            key="orchestrator.convertNeedsRunningOrStopped",
+            http_status=http_status.HTTP_409_CONFLICT,
+        )
+    sku = await catalog_service.get_sku(session, instance.sku_id)
+    if not sku.period_enabled:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
+
+    await billing_service.lock_wallet(session, user_id)
+    if instance.status == sm_def.RUNNING:
+        await billing_service.settle_on_demand_up_to(
+            session,
+            instance_id=instance.id,
+            user_id=user_id,
+            unit_price=instance.price_hourly,
+            gpu_count=instance.gpu_count,
+            at=now_utc(),
+        )
+    row, quoted, created = await billing_service.convert_to_subscription(
+        session,
+        instance=instance,
+        period=period,
+        period_count=period_count,
+        idempotency_key=idempotency_key,
+    )
+    if not created:
+        return await get_instance(session, user_id, uuid), quoted, False
+    policies = await get_effective_policies(session)
+    instance.market = MARKET_SUBSCRIPTION
+    instance.price_hourly = price_for(
+        row.unit_price, market=MARKET_SUBSCRIPTION, policies=policies, period=period
+    )
+    # 转换后余额还得撑得住其它在途按量资源(与建包周期实例同一条判据)
+    await billing_service.assert_can_afford(session, user_id)
+    await session.commit()
+    logger.info("instance_converted_to_subscription", instance_id=instance.id, period=period)
+    return instance, quoted, True
+
+
+async def set_instance_auto_renew(
+    session: AsyncSession, user_id: int, uuid: str, *, enabled: bool
+) -> Instance:
+    """开关自动续费。"""
+    instance = await get_instance(session, user_id, uuid)
+    if instance.market != MARKET_SUBSCRIPTION:
+        raise AppError(
+            ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.renewNotSubscription"
+        )
+    await billing_service.set_subscription_auto_renew(
+        session, user_id=user_id, instance_id=instance.id, enabled=enabled
+    )
     await session.commit()
     return instance
 
@@ -1333,10 +1633,19 @@ async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> d
     数据源是节点台账(node_specs,巡检 60s 粒度),按 (池, canonical 型号) 双维度
     聚合 Ready 节点空闲卡;请求路径不碰 K8s,台账一次查询供全部 SKU。
     台账无该池×型号数据 → 0(与市场页「无货」语义一致)。
+
+    要减掉包周期预留:软准入减了而这里不减,市场页就会显示「可开 16 台」、点进去建的时候
+    409 —— 两个数必须同源,否则用户只能靠试错才知道到底有没有货。
     """
     specs = await nodes_service.list_node_specs(session)
     cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
-    return {sku.id: _sku_free_capacity(sku, specs, gpu_node_vcpu_cap=cap)[1] for sku in skus}
+    reserved = await _reserved_slots_by_sku(session, [s.id for s in skus])
+    return {
+        sku.id: max(
+            0, _sku_free_capacity(sku, specs, gpu_node_vcpu_cap=cap)[1] - reserved.get(sku.id, 0)
+        )
+        for sku in skus
+    }
 
 
 # ---------- 管理端 ----------
@@ -1416,18 +1725,29 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
     return instance
 
 
-async def arrears_stop(session: AsyncSession, instance: Instance) -> None:
-    """欠费停机(巡检调用,actor=system)。同事务落事件+outbox。"""
-    await transition(session, instance, sm_def.STOPPING, reason="arrears_stop", actor="system")
+async def system_stop(session: AsyncSession, instance: Instance, *, reason: str) -> None:
+    """平台侧停机(巡检调用,actor=system)。同事务落事件 + outbox,不 commit。
+
+    reason 由调用方给:欠费是 arrears_stop,包周期到期是 subscription_expired。
+    两者在用户时间线上是不同的事,共用一个 reason 会让工单无从查起。
+    """
+    await transition(session, instance, sm_def.STOPPING, reason=reason, actor="system")
     enqueue(session, "instance.stop", {"instance_id": instance.id})
 
 
-async def freeze_instance(session: AsyncSession, instance: Instance, deadline: Any) -> None:
+async def arrears_stop(session: AsyncSession, instance: Instance) -> None:
+    """欠费停机。"""
+    await system_stop(session, instance, reason="arrears_stop")
+
+
+async def freeze_instance(
+    session: AsyncSession, instance: Instance, deadline: Any, *, reason: str = "arrears_freeze"
+) -> None:
     await transition(
         session,
         instance,
         sm_def.FROZEN,
-        reason="arrears_freeze",
+        reason=reason,
         actor="system",
         metadata={"deadline": deadline.isoformat()},
     )

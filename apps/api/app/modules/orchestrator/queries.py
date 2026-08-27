@@ -11,6 +11,7 @@ from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.money import hourly_cost
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 
@@ -67,6 +68,10 @@ async def billing_candidates(
     完备性论证:「窗口末仍在 running」= 现在仍 running ∪ 窗口末之后才离开 running;
     每个已结束的 running 区间都有一条 from_status='running' 的离开事件。
     两条腿都走索引(instances.status / instance_events.created_at)。
+
+    **包周期实例在这里、也只在这里被跳过。** 它下单时已一次性预扣整段周期,
+    再走小时结算就是二次收费。`upsert_hour_bill` / 水位线 / 缺口机制一行不动 ——
+    跳过点只有这一处,加一种购买模式不必再碰结算引擎(见 billing/subscriptions)。
     """
     running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
     exited = (
@@ -78,7 +83,11 @@ async def billing_candidates(
         .distinct()
     )
     candidates = [row[0] for row in (await session.execute(union(running_now, exited))).all()]
-    return [_billing_row(i) for i in await instances_by_ids(session, candidates)]
+    return [
+        _billing_row(i)
+        for i in await instances_by_ids(session, candidates)
+        if i.market != MARKET_SUBSCRIPTION
+    ]
 
 
 def _billing_row(i: Instance) -> tuple[int, int, Any, int]:

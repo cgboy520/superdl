@@ -20,6 +20,7 @@ class LockKey(IntEnum):
     NODE_SPEC_PATROL = 1010
     FUND_RECONCILE = 1011
     TICKET_STALE_PATROL = 1012
+    SUBSCRIPTION_PATROL = 1013
 
 
 @asynccontextmanager

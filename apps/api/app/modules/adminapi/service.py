@@ -679,6 +679,8 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     - 实例分状态计数:list_instances_by_status 逐状态装载计数;released 终态不统计
       (历史行无界)。规模上来后应下沉为 orchestrator 的 count 聚合函数。
     - 付费租户:ledger consume 全表聚合精确计数;租户总数取 active 用户口径。
+    - 包周期在保数:未到期的订阅行数(不是实例状态数)—— 停机的包月实例仍在保,
+      按实例状态数会把它漏掉,而它恰恰还占着库存。
     - 节点/GPU:台账全量(含 NotReady/Missing,前端据此画非 Ready 段)。
     """
     from app.modules.account import service as account_service
@@ -711,6 +713,9 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
         "instances_by_status": status_counts,
         "tenants_total": len(active_user_ids),
         "paying_tenants": sum(1 for v in consumed.values() if v > 0),
+        "subscriptions_active": len(
+            await billing_service.reserved_subscription_instance_ids(session)
+        ),
         "nodes_total": len(specs),
         "nodes_ready": nodes_ready,
         "nodes_missing": nodes_missing,

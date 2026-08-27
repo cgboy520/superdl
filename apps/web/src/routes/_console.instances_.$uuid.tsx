@@ -51,7 +51,7 @@ import {
   useServiceEndpoint,
 } from "../api/queries";
 import { ApiKeyModal } from "../components/ApiKeyModal";
-import { CopyButton, InstanceStatusBadge, TierTag } from "../components/common";
+import { CopyButton, InstanceStatusBadge, SubscriptionTag, TierTag } from "../components/common";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
@@ -653,7 +653,7 @@ function BillsTab({ instanceId }: { instanceId: number }) {
 
 function InstanceDetail() {
   const { t } = useTranslation();
-  const { formatHourlyPrice, formatMoney } = useFormat();
+  const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
@@ -716,6 +716,7 @@ function InstanceDetail() {
                 frozenDeadline={instance.frozen_deadline}
               />
               <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
+              <SubscriptionTag market={instance.market} subscription={instance.subscription} />
             </Space>
             <Descriptions
               size="small"
@@ -728,12 +729,28 @@ function InstanceDetail() {
                 },
                 {
                   label: t("instances.labelBilling"),
-                  children: t("instances.pricePerCard", { price: formatHourlyPrice(instance.price_hourly), count: instance.gpu_count }),
+                  // 包周期实例的时价是折后价、且不出小时账,报「¥X/时 × N 卡」会让人以为在按小时扣
+                  children: instance.subscription
+                    ? formatPeriodPrice(
+                        instance.subscription.amount_paid,
+                        instance.subscription.period,
+                        instance.subscription.period_count,
+                      )
+                    : t("instances.pricePerCard", { price: formatHourlyPrice(instance.price_hourly), count: instance.gpu_count }),
                 },
-                {
-                  label: t("instances.labelToday"),
-                  children: moneyOr(formatMoney(todayAmount), daily != null),
-                },
+                ...(instance.subscription
+                  ? [
+                      {
+                        label: t("instances.labelExpiresAt"),
+                        children: formatDateTime(instance.subscription.expires_at),
+                      },
+                    ]
+                  : [
+                      {
+                        label: t("instances.labelToday"),
+                        children: moneyOr(formatMoney(todayAmount), daily != null),
+                      },
+                    ]),
                 { label: t("instances.createdAt"), children: formatDateTime(instance.created_at) },
               ]}
             />

@@ -82,6 +82,11 @@ MESSAGES: dict[str, str] = {
     "billing.channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
     "billing.channelStateNotBackfillable": "渠道侧状态为 {status},不能补单",
     "billing.insufficientBalance": "余额不足,请先充值",
+    "billing.settlementBehind": "结算正在追平,请稍后再转包周期",
+    "billing.subscriptionAlreadyActive": "该实例已在包周期内,如需延长请使用续费",
+    "billing.subscriptionCancelled": "该实例的包周期已作废,无法续费",
+    "billing.subscriptionExpired": "包周期已到期,请先续费再开机",
+    "billing.subscriptionMissing": "该实例没有可续费的包周期",
     "billing.insufficientForInFlight": (
         "余额不足:在途资源预计还要消耗 ¥{inflight},本次操作要求余额不少于 ¥{required}"
         "(当前 ¥{balance}),请先充值"
@@ -249,6 +254,13 @@ MESSAGES: dict[str, str] = {
     ),
     "orchestrator.restartNeedsRunning": "仅运行中的实例可以重启",
     "orchestrator.serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
+    "orchestrator.convertNeedsRunningOrStopped": "只有运行中或已关机的实例可以转包周期",
+    "orchestrator.convertNotOnDemand": "只有按量计费的实例可以转包周期",
+    "orchestrator.periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
+    "orchestrator.periodOnOnDemand": "按量计费的实例不能带计费周期",
+    "orchestrator.periodRequired": "包周期实例必须选择计费周期",
+    "orchestrator.renewNotSubscription": "只有包周期实例可以续费",
+    "orchestrator.renewReleased": "实例正在释放或已释放,无法续费",
     "orchestrator.servicePortRequired": "服务型实例必须填写容器监听端口",
     "orchestrator.servicePortReserved": (
         "端口 {port} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口"

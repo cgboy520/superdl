@@ -19,6 +19,7 @@ export interface SkuMarketOut {
   mem_gb: number;
   mig_profile: string | null;
   name: string;
+  period_enabled: boolean;
   pool_label: string;
   price_hourly: string;
   tier: string;

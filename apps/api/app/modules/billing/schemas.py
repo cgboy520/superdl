@@ -63,8 +63,47 @@ class PoliciesOut(BaseModel):
     disk_grace_days: int
     disk_frozen_days: int
     freeze_grace_hours: int
+    # 包周期折扣(百分数,80 = 8 折)与到期预警窗。市场页的「包月 -20%」直接读这里 ——
+    # 前端硬编码折扣就意味着运营在管理端调完价、页面还显示旧折扣
+    period_discount_day: int
+    period_discount_week: int
+    period_discount_month: int
+    period_discount_year: int
+    period_expire_warn_days: int
     real_name_enabled: bool = False  # 用户端实名表单是否可用(安全策略开关)
     real_name_required_for_recharge: bool = False
+
+
+class SubscriptionQuoteOut(BaseModel):
+    """包周期报价。金额三件套由后端算好逐行下发,前端不自己做乘法 ——
+    4 位单价 × 8760 小时的舍入差在前端算会和实扣金额对不齐。"""
+
+    period: str
+    period_count: int
+    hours: int
+    discount_pct: int
+    base_hourly: MoneyOut  # SKU 原价时价
+    unit_price: MoneyOut  # 折后时价
+    list_amount: MoneyOut  # 原价总额
+    discount_amount: MoneyOut  # 优惠额
+    amount: MoneyOut  # 应付(实扣)
+
+
+class SubscriptionOut(BaseModel):
+    """包周期订阅明细(续费响应与账单页下钻用)。"""
+
+    id: int
+    instance_id: int
+    period: str
+    period_count: int
+    unit_price: MoneyOut
+    amount_paid: MoneyOut
+    started_at: datetime
+    expires_at: datetime
+    status: str
+    auto_renew: bool
+
+    model_config = {"from_attributes": True}
 
 
 class DailySummaryOut(BaseModel):

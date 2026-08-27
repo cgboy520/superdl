@@ -8,7 +8,21 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, diskDailyEstimate, formatSizeGb, GPU_COUNT_STEPS, idemKeyOf, mulPrice, skuVariant } from "@superdl/ui";
+import {
+  billingUnits,
+  compareAmounts,
+  diskDailyEstimate,
+  formatDate,
+  formatSizeGb,
+  GPU_COUNT_STEPS,
+  idemKeyOf,
+  isBillingPeriod,
+  mulPrice,
+  PERIOD_HOURS,
+  periodMap,
+  skuVariant,
+  type BillingPeriod,
+} from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -41,16 +55,20 @@ import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { DataErrorAlert } from "../components/QueryState";
-import { BillingModeCard, skuColumns } from "../components/skuTable";
+import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
+import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
-  validateSearch: (search: Record<string, unknown>): { gpus?: number; workload?: "service" } => {
-    // 市场页带入的 GPU 数量(可改)与形态(缺省 = 开发机)
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { gpus?: number; workload?: "service"; period?: BillingPeriod } => {
+    // 市场页带入的 GPU 数量(可改)、形态(缺省 = 开发机)与计费方式(缺省 = 按量)
     const g = Number(search.gpus);
-    const out: { gpus?: number; workload?: "service" } = {};
+    const out: { gpus?: number; workload?: "service"; period?: BillingPeriod } = {};
     if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
     if (search.workload === "service") out.workload = "service";
+    if (typeof search.period === "string" && isBillingPeriod(search.period)) out.period = search.period;
     return out;
   },
   beforeLoad: requireAuth,
@@ -102,7 +120,7 @@ function CreatePage() {
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
   const { skuId } = Route.useParams();
-  const { gpus: gpusFromMarket, workload } = Route.useSearch();
+  const { gpus: gpusFromMarket, workload, period: periodFromMarket } = Route.useSearch();
   // 服务形态:换掉镜像/SSH 两张卡,其余卡片与结算逻辑逐字复用
   const isService = workload === "service";
   const navigate = useNavigate();
@@ -119,8 +137,11 @@ function CreatePage() {
   const { data: disks } = disksQ;
   const { data: wallet } = useWallet();
   const { data: policies } = usePolicies();
+  const discounts = usePeriodDiscounts();
 
   const [gpuCount, setGpuCount] = useState(gpusFromMarket ?? 1);
+  const [billingMode, setBillingMode] = useState<BillingMode>(periodFromMarket ?? "on_demand");
+  const [periodCount, setPeriodCount] = useState(1);
   // 后端契约:CPU 规格(max_gpus_per_instance=0)只收 gpu_count=0,GPU 规格只收 1..max
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
   const [platformImage, setPlatformImage] = useState<string[]>();
@@ -146,6 +167,7 @@ function CreatePage() {
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
   // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
   const [formNonce] = useState(() => crypto.randomUUID());
+  const [mountedAt] = useState(() => Date.now());
 
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
@@ -253,10 +275,31 @@ function CreatePage() {
   // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
   const hourlyTotal = mulPrice(sku.price_hourly, priceUnits);
-  // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)。
-  // 三态处理:未就绪 ≠ 余额为 0。
-  const balanceReady = wallet != null;
-  const enough = balanceReady && compareAmounts(wallet.balance, hourlyTotal) >= 0;
+
+  // 该规格不接受包周期时按量兜底:chips 已灰置,提交体也不能还带着 period(后端 400)
+  const periodBlocked = !sku.period_enabled;
+  const mode: BillingMode = periodBlocked ? "on_demand" : billingMode;
+  const period = mode === "on_demand" ? null : mode;
+  // 创建页的 base 就是 SKU 现价,与后端下单用的是同一个数,预览与实扣同源
+  const quote = period
+    ? periodQuoteOf(
+        sku.price_hourly,
+        { units: billingUnits(gpus), period, periodCount },
+        discounts,
+      )
+    : undefined;
+  // 「现在」在挂载时定一次(mountedAt):每次重渲染都取一遍属于渲染期副作用
+  const expiresAt = period
+    ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString()
+    : null;
+
+  // BigInt 精确比较,禁浮点。按量与后端 require_balance_at_least 同口径(1 小时费用);
+  // 包周期是预付,下单即一次性扣走全额,门槛就是应付额本身。
+  // 三态处理:未就绪 ≠ 余额为 0;报价未就绪(policies 没回来)时不放行,免得按 0 元判够。
+  const needAmount = period ? quote?.amount : hourlyTotal;
+  const balanceReady = wallet != null && (!period || quote != null);
+  const enough =
+    balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
 
   const imageRef = isService
     ? serviceImage.trim()
@@ -316,6 +359,9 @@ function CreatePage() {
       formNonce,
       sku.id,
       gpus,
+      // 计费方式进快照:同一台机器按量买和包月买是两张不同的单
+      mode,
+      period ? periodCount : null,
       imageRef ?? "",
       (isService && !withSsh ? [] : [...keyIds].sort((a, b) => a - b)).join(","),
       name || null,
@@ -362,6 +408,11 @@ function CreatePage() {
             ssh_key_ids: isService && !withSsh ? [] : keyIds,
             name: name || null,
             data_disk_id: diskId,
+            // 按量单里一个周期字段都不能出现:后端按 model_fields_set 判「显式传了」,
+            // 传了就是 422(与服务字段同款契约)
+            ...(period
+              ? { market: "subscription" as const, period, period_count: periodCount }
+              : {}),
             // dev 形态一个服务字段都不能出现:后端按 model_fields_set 判「显式传了」,
             // 传了就是 422(静默忽略会让用户以为启动命令生效了,而实例跑的是镜像原样)
             ...(isService
@@ -412,6 +463,13 @@ function CreatePage() {
 
   const columns = skuColumns({ fmt, t, cpu: isCpu });
 
+  // 包周期点下去就一次性扣走全额,按钮不能还写「创建并开机」
+  const submitLabel = period
+    ? t("create.payAndCreate")
+    : isService
+      ? t("create.deployService")
+      : t("create.createAndStart");
+
   // 开发机形态是一整张卡;服务形态挂在「同时开放 SSH」勾选项下面 —— 同一块 UI,别写两遍
   const sshKeyPicker = keysQ.isError ? (
     // SSH key 查询失败绝不伪装成「你还没有密钥」(老客户会看到添加表单,
@@ -460,7 +518,17 @@ function CreatePage() {
         {pageTitle}
       </Typography.Title>
 
-      <BillingModeCard />
+      <BillingModeCard
+        value={mode}
+        onChange={setBillingMode}
+        periodEnabled={!periodBlocked}
+        count={periodCount}
+        onCountChange={setPeriodCount}
+      />
+      {period && <Alert type="info" showIcon title={t("copy.periodReserved")} />}
+      {periodBlocked && billingMode !== "on_demand" && (
+        <Alert type="info" showIcon title={t("period.fallbackToHourly")} />
+      )}
 
       <Alert type="info" showIcon title={t("copy.instanceDiskLocalNotice")} />
 
@@ -852,32 +920,59 @@ function CreatePage() {
                 mem: sku.mem_gb * gpuCount,
               })
         }
-        items={[
-          {
-            label: t("create.dailyCostLabel"),
-            hint: t("create.dailyCostHint"),
-            value: t("common.dailyApprox", { amount: diskGb > 0 && diskPriceGbMonth ? diskDaily : "0.00" }),
-          },
-          { label: t("create.configCostLabel"), value: formatHourlyPrice(hourlyTotal) },
-        ]}
+        items={
+          period && quote
+            ? [
+                // 包周期不出「日常费用(按量口径)」;数据盘仍按日计费,只在真挂了盘时才提这一栏
+                ...(diskGb > 0 && diskPriceGbMonth
+                  ? [
+                      {
+                        label: t("create.dailyCostLabel"),
+                        hint: t("create.dailyCostHint"),
+                        value: t("common.dailyApprox", { amount: diskDaily }),
+                      },
+                    ]
+                  : []),
+                {
+                  label: t("create.expiresAtLabel"),
+                  value: t("create.expiresAtApprox", { date: formatDate(expiresAt) }),
+                },
+                {
+                  label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
+                  value: fmt.formatPeriodPrice(quote.amount, period, periodCount),
+                },
+              ]
+            : [
+                {
+                  label: t("create.dailyCostLabel"),
+                  hint: t("create.dailyCostHint"),
+                  value: t("common.dailyApprox", { amount: diskGb > 0 && diskPriceGbMonth ? diskDaily : "0.00" }),
+                },
+                { label: t("create.configCostLabel"), value: formatHourlyPrice(hourlyTotal) },
+              ]
+        }
         detail={
           <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
-            <span>
-              {isCpu
-                ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
-                : t("create.detailInstanceLine", {
-                    unit: formatHourlyPrice(sku.price_hourly),
-                    count: gpuCount,
-                    total: formatHourlyPrice(hourlyTotal),
-                  })}
-            </span>
+            {period && quote ? (
+              <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
+            ) : (
+              <span>
+                {isCpu
+                  ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
+                  : t("create.detailInstanceLine", {
+                      unit: formatHourlyPrice(sku.price_hourly),
+                      count: gpuCount,
+                      total: formatHourlyPrice(hourlyTotal),
+                    })}
+              </span>
+            )}
             <span>
               {diskGb > 0 && diskPriceGbMonth
                 ? t("create.detailDiskLine", { size: diskGb, price: t("common.gbMonthPrice", { price: diskPriceGbMonth }) })
                 : t("create.detailDiskNone")}
             </span>
             <Typography.Text type="secondary">
-              {t("create.balanceNeedNote")}
+              {period ? t("create.balanceNeedNotePeriod") : t("create.balanceNeedNote")}
             </Typography.Text>
           </Space>
         }
@@ -891,7 +986,7 @@ function CreatePage() {
             {!balanceReady ? (
               // 余额未就绪:主 CTA 保持 primary + loading,不出现红色文案
               <Button type="primary" size="large" loading disabled>
-                {isService ? t("create.deployService") : t("create.createAndStart")}
+                {submitLabel}
               </Button>
             ) : enough ? (
               <Tooltip
@@ -906,7 +1001,7 @@ function CreatePage() {
                   loading={submitting || create.isPending}
                   onClick={submit}
                 >
-                  {isService ? t("create.deployService") : t("create.createAndStart")}
+                  {submitLabel}
                 </Button>
               </Tooltip>
             ) : (

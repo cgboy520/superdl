@@ -31,6 +31,7 @@ export interface SkuCreate {
   name: string;
   oversell_cores?: number | string;
   oversell_vram?: number | string;
+  period_enabled?: boolean;
   /**
      * @minLength 1
      * @maxLength 32

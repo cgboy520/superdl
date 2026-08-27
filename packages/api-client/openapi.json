@@ -582,6 +582,10 @@
             "title": "Image Ref",
             "type": "string"
           },
+          "market": {
+            "title": "Market",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -636,6 +640,16 @@
             "title": "Status",
             "type": "string"
           },
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSubscriptionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "user_id": {
             "title": "User Id",
             "type": "integer"
@@ -664,6 +678,7 @@
           "gpu_count",
           "image_ref",
           "workload_type",
+          "market",
           "with_ssh",
           "ssh_port",
           "data_disk_id",
@@ -3130,6 +3145,19 @@
         "title": "InstanceAccessOut",
         "type": "object"
       },
+      "InstanceAutoRenew": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "InstanceAutoRenew",
+        "type": "object"
+      },
       "InstanceCreate": {
         "properties": {
           "container_args": {
@@ -3224,6 +3252,15 @@
             "title": "Image Ref",
             "type": "string"
           },
+          "market": {
+            "default": "on_demand",
+            "enum": [
+              "on_demand",
+              "subscription"
+            ],
+            "title": "Market",
+            "type": "string"
+          },
           "name": {
             "anyOf": [
               {
@@ -3235,6 +3272,30 @@
               }
             ],
             "title": "Name"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "week",
+                  "month",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "period_count": {
+            "default": 1,
+            "maximum": 36.0,
+            "minimum": 1.0,
+            "title": "Period Count",
+            "type": "integer"
           },
           "require_api_key": {
             "default": true,
@@ -3475,6 +3536,10 @@
             "title": "Image Ref",
             "type": "string"
           },
+          "market": {
+            "title": "Market",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3518,6 +3583,16 @@
             "title": "Status",
             "type": "string"
           },
+          "subscription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSubscriptionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "uuid": {
             "title": "Uuid",
             "type": "string"
@@ -3542,6 +3617,7 @@
           "gpu_count",
           "image_ref",
           "workload_type",
+          "market",
           "with_ssh",
           "ssh_port",
           "data_disk_id",
@@ -3564,6 +3640,84 @@
           "name"
         ],
         "title": "InstanceRename",
+        "type": "object"
+      },
+      "InstanceRenew": {
+        "description": "续费入参。period 可与当前周期不同(包月转包年),按新周期的折扣重新报价。",
+        "properties": {
+          "period": {
+            "enum": [
+              "day",
+              "week",
+              "month",
+              "year"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "period_count": {
+            "default": 1,
+            "maximum": 36.0,
+            "minimum": 1.0,
+            "title": "Period Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period"
+        ],
+        "title": "InstanceRenew",
+        "type": "object"
+      },
+      "InstanceSubscriptionOut": {
+        "description": "列表/详情内联的包周期概要(完整明细在 billing.SubscriptionOut)。",
+        "properties": {
+          "amount_paid": {
+            "title": "Amount Paid",
+            "type": "string"
+          },
+          "auto_renew": {
+            "title": "Auto Renew",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "period_count": {
+            "title": "Period Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unit_price": {
+            "title": "Unit Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "period_count",
+          "unit_price",
+          "started_at",
+          "expires_at",
+          "status",
+          "auto_renew",
+          "amount_paid"
+        ],
+        "title": "InstanceSubscriptionOut",
         "type": "object"
       },
       "InvoiceCreate": {
@@ -4946,6 +5100,10 @@
             "title": "Pools",
             "type": "array"
           },
+          "subscriptions_active": {
+            "title": "Subscriptions Active",
+            "type": "integer"
+          },
           "tenants_total": {
             "title": "Tenants Total",
             "type": "integer"
@@ -4955,6 +5113,7 @@
           "instances_by_status",
           "tenants_total",
           "paying_tenants",
+          "subscriptions_active",
           "nodes_total",
           "nodes_ready",
           "nodes_missing",
@@ -5745,6 +5904,26 @@
             "title": "Freeze Grace Hours",
             "type": "integer"
           },
+          "period_discount_day": {
+            "title": "Period Discount Day",
+            "type": "integer"
+          },
+          "period_discount_month": {
+            "title": "Period Discount Month",
+            "type": "integer"
+          },
+          "period_discount_week": {
+            "title": "Period Discount Week",
+            "type": "integer"
+          },
+          "period_discount_year": {
+            "title": "Period Discount Year",
+            "type": "integer"
+          },
+          "period_expire_warn_days": {
+            "title": "Period Expire Warn Days",
+            "type": "integer"
+          },
           "real_name_enabled": {
             "default": false,
             "title": "Real Name Enabled",
@@ -5762,7 +5941,12 @@
           "disk_max_gb",
           "disk_grace_days",
           "disk_frozen_days",
-          "freeze_grace_hours"
+          "freeze_grace_hours",
+          "period_discount_day",
+          "period_discount_week",
+          "period_discount_month",
+          "period_discount_year",
+          "period_expire_warn_days"
         ],
         "title": "PoliciesOut",
         "type": "object"
@@ -6456,10 +6640,36 @@
         "title": "RegistryTestOut",
         "type": "object"
       },
-      "RevenueReportOut": {
+      "RenewOut": {
+        "description": "续费响应:实例最新态 + 这一单的报价明细(前端直接渲染成收据)。",
         "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/InstanceOut"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/SubscriptionQuoteOut"
+          }
+        },
+        "required": [
+          "instance",
+          "quote"
+        ],
+        "title": "RenewOut",
+        "type": "object"
+      },
+      "RevenueReportOut": {
+        "description": "收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日)。\n\n`*_prepaid` 是其中的预付部分,单独给出来是因为一笔包年会在当天造成一个尖峰,\n看环比时必须能把它拆出来。",
+        "properties": {
+          "month_prepaid": {
+            "title": "Month Prepaid",
+            "type": "string"
+          },
           "month_revenue": {
             "title": "Month Revenue",
+            "type": "string"
+          },
+          "today_prepaid": {
+            "title": "Today Prepaid",
             "type": "string"
           },
           "today_revenue": {
@@ -6483,6 +6693,8 @@
           "today_revenue",
           "yesterday_revenue",
           "month_revenue",
+          "today_prepaid",
+          "month_prepaid",
           "today_signups",
           "yesterday_signups"
         ],
@@ -6795,6 +7007,10 @@
             "title": "Oversell Vram",
             "type": "string"
           },
+          "period_enabled": {
+            "title": "Period Enabled",
+            "type": "boolean"
+          },
           "pool_label": {
             "title": "Pool Label",
             "type": "string"
@@ -6848,6 +7064,7 @@
           "price_hourly",
           "max_gpus_per_instance",
           "cuda_max",
+          "period_enabled",
           "status",
           "created_at"
         ],
@@ -6943,6 +7160,11 @@
             ],
             "default": "1.00",
             "title": "Oversell Vram"
+          },
+          "period_enabled": {
+            "default": true,
+            "title": "Period Enabled",
+            "type": "boolean"
           },
           "pool_label": {
             "maxLength": 32,
@@ -7079,6 +7301,10 @@
             "title": "Name",
             "type": "string"
           },
+          "period_enabled": {
+            "title": "Period Enabled",
+            "type": "boolean"
+          },
           "pool_label": {
             "title": "Pool Label",
             "type": "string"
@@ -7114,7 +7340,8 @@
           "price_hourly",
           "max_gpus_per_instance",
           "cuda_max",
-          "pool_label"
+          "pool_label",
+          "period_enabled"
         ],
         "title": "SkuMarketOut",
         "type": "object"
@@ -7239,6 +7466,17 @@
               }
             ],
             "title": "Oversell Vram"
+          },
+          "period_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Enabled"
           },
           "pool_label": {
             "anyOf": [
@@ -7439,6 +7677,60 @@
           "created_at"
         ],
         "title": "SshKeyOut",
+        "type": "object"
+      },
+      "SubscriptionQuoteOut": {
+        "description": "包周期报价。金额三件套由后端算好逐行下发,前端不自己做乘法 ——\n4 位单价 × 8760 小时的舍入差在前端算会和实扣金额对不齐。",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "base_hourly": {
+            "title": "Base Hourly",
+            "type": "string"
+          },
+          "discount_amount": {
+            "title": "Discount Amount",
+            "type": "string"
+          },
+          "discount_pct": {
+            "title": "Discount Pct",
+            "type": "integer"
+          },
+          "hours": {
+            "title": "Hours",
+            "type": "integer"
+          },
+          "list_amount": {
+            "title": "List Amount",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "period_count": {
+            "title": "Period Count",
+            "type": "integer"
+          },
+          "unit_price": {
+            "title": "Unit Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "period_count",
+          "hours",
+          "discount_pct",
+          "base_hourly",
+          "unit_price",
+          "list_amount",
+          "discount_amount",
+          "amount"
+        ],
+        "title": "SubscriptionQuoteOut",
         "type": "object"
       },
       "TenantFreezeRequest": {
@@ -15549,6 +15841,63 @@
         ]
       }
     },
+    "/api/v1/instances/{uuid}/auto-renew": {
+      "post": {
+        "operationId": "set_auto_renew_api_v1_instances__uuid__auto_renew_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceAutoRenew"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Auto Renew",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
     "/api/v1/instances/{uuid}/events": {
       "get": {
         "description": "状态时间线(计费依据)。降序(最新在前)游标分页。",
@@ -15763,6 +16112,80 @@
         "summary": "Get Instance Metrics",
         "tags": [
           "metering"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/renew": {
+      "post": {
+        "description": "包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。\n\n挂在 instances 下而不是 billing 下:用户的心智是「给这台机器续费」,\n而实例状态(冻结中续费即解冻)也只能由 orchestrator 这一侧改。",
+        "operationId": "renew_instance_api_v1_instances__uuid__renew_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceRenew"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Renew Instance",
+        "tags": [
+          "instances"
         ]
       }
     },
@@ -15997,6 +16420,80 @@
           }
         ],
         "summary": "Stop Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/subscribe": {
+      "post": {
+        "description": "按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣。\n\n与 `/renew` 同一个入参与响应形态(都是「给这台机器买一段周期」),区别只在起点:\n这里从现在起算,续费从老周期到期时刻接上。",
+        "operationId": "subscribe_instance_api_v1_instances__uuid__subscribe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceRenew"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Subscribe Instance",
         "tags": [
           "instances"
         ]

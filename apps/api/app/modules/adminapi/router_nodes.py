@@ -71,10 +71,11 @@ async def admin_list_instances(
         cursor=cursor,
         limit=limit,
     )
-    return Page[AdminInstanceOut](
-        items=[AdminInstanceOut.model_validate(i) for i in page.items],
-        next_cursor=page.next_cursor,
-    )
+    items = [AdminInstanceOut.model_validate(i) for i in page.items]
+    # 与用户端列表同一条回填路径:管理端也要看得见端点 slug 与包周期到期日
+    # (客服问的第一个问题就是「他这台什么时候到期」)
+    await orchestrator_service.attach_instance_details(session, items)
+    return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor)
 
 
 @router.post("/instances/{uuid}/force-stop", dependencies=[require_roles("ops")])
@@ -84,7 +85,7 @@ async def admin_force_stop(
     """强制停止(原因必填)。"""
     instance = await orchestrator_service.admin_force_stop(session, uuid, reason=body.reason)
     set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
-    return InstanceOut.model_validate(instance)
+    return await orchestrator_service.instance_view(session, instance)
 
 
 @router.get("/instances/{uuid}/events", dependencies=[require_roles("ops", "finance", "readonly")])
