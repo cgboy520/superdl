@@ -702,7 +702,7 @@ function NodesPage() {
                 return (
                   <Space>
                     <ReasonAction
-                      label={cordoned ? "uncordon" : "cordon"}
+                      label={cordoned ? t("nodes.uncordonBtn") : t("nodes.cordonBtn")}
                       title={cordoned ? t("nodes.uncordonTitle") : t("nodes.cordonTitle")}
                       confirmText={
                         cordoned
@@ -721,7 +721,7 @@ function NodesPage() {
                       }}
                     />
                     <Tooltip title={t("nodes.drainDeferred")}>
-                      <Typography.Text type="secondary">drain</Typography.Text>
+                      <Typography.Text type="secondary">{t("nodes.drainBtn")}</Typography.Text>
                     </Tooltip>
                   </Space>
                 );
