@@ -1,7 +1,8 @@
 /**
  * 实例操作组:开机/关机/更多(重启·事件·预留项·释放)。
- * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/保存镜像/转包年包月)
- * 可见但禁用,注「即将上线」;释放走多级防护(复述名称+ID、键入实例名、勾选盘数据清除确认
+ * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式/转包年包月)可见但禁用,
+ * 注「即将上线」——只有已排期的能力才留占位,没排期的直接不进 UI(见 ui-ux-spec 规则 2);
+ * 释放走多级防护(复述名称+ID、键入实例名、勾选盘数据清除确认
  * 两道都满足才解锁红按钮 —— 见 docs/ui-ux-spec.md 规则 4)。
  */
 
@@ -182,11 +183,6 @@ export function InstanceActions({
             {
               key: "cardless",
               label: tipped(t("instances.actions.cardless"), t("copy.comingSoon")),
-              disabled: true,
-            },
-            {
-              key: "save-image",
-              label: tipped(t("instances.actions.saveImage"), t("copy.comingSoon")),
               disabled: true,
             },
             {

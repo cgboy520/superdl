@@ -139,7 +139,6 @@
     "jupyterNeedsRunning": "实例运行中才能打开 JupyterLab",
     "metricsUnavailableShort": "监控暂不可用",
     "monitoringDown": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)",
-    "myImagesComingSoon": "保存镜像功能上线后,可在此选择自己保存的镜像",
     "noCapacityGuide": "当前规格空闲 GPU 不足,试试其他档位或稍后再来",
     "noStockForGpuCount": "该卡数当前空闲库存不足",
     "outOfStock": "已租完",
@@ -192,7 +191,6 @@
     "sshCard": "SSH 密钥",
     "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存",
     "tabCustom": "自定义镜像",
-    "tabMine": "我的镜像",
     "tabPlatform": "平台镜像",
     "title": "创建实例"
   },
@@ -297,7 +295,6 @@
       "restart": "重启",
       "restartConfirmBody": "重启期间实例短暂不可用,计费在关机瞬间出尾账、开机后重新计时。",
       "restartConfirmTitle": "确认重启?",
-      "saveImage": "保存镜像",
       "start": "开机",
       "stop": "关机",
       "stopConfirmTitle": "确认关机?",

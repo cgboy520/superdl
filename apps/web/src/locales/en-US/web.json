@@ -139,7 +139,6 @@
     "jupyterNeedsRunning": "JupyterLab is available while the instance is running",
     "metricsUnavailableShort": "Metrics unavailable",
     "monitoringDown": "Metrics are temporarily unavailable; billing is unaffected (it relies on the instance event log)",
-    "myImagesComingSoon": "Once image saving ships, your saved images appear here",
     "noCapacityGuide": "Not enough idle GPUs for this spec — try another tier or come back later",
     "noStockForGpuCount": "Not enough idle stock for this GPU count right now",
     "outOfStock": "Sold out",
@@ -195,7 +194,6 @@
     "summary_one": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G RAM",
     "summary_other": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G RAM",
     "tabCustom": "Custom image",
-    "tabMine": "My images",
     "tabPlatform": "Platform images",
     "title": "Create instance"
   },
@@ -301,7 +299,6 @@
       "restart": "Restart",
       "restartConfirmBody": "Brief downtime during restart; billing settles a tail bill at stop and restarts the clock at boot.",
       "restartConfirmTitle": "Restart this instance?",
-      "saveImage": "Save image",
       "start": "Start",
       "stop": "Stop",
       "stopConfirmTitle": "Stop this instance?",

@@ -362,12 +362,6 @@ function CreatePage() {
                 </Space>
               ),
             },
-            {
-              key: "mine",
-              label: <Tooltip title={t("copy.myImagesComingSoon")}>{t("create.tabMine")}</Tooltip>,
-              disabled: true,
-              children: null,
-            },
           ]}
         />
       </Card>

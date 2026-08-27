@@ -19,6 +19,13 @@
   (`apps/web/src/api/*.ts`、`apps/admin/src/api.ts`)用 useQuery/useMutation 包 fetcher,查询键、失效域与轮询策略都在那里定义。
   曾经生成的 hooks 与 QueryKey/QueryOptions 占生成物六成、两端零引用,还把 `@tanstack/react-query` 拖成 api-client 的 peer 依赖。
   后果:`pnpm api-client` 重生成只影响 fetcher 签名与 model 类型;不要再把 `client` 改回 `react-query` 或加 `query` 块。
+- **UI 占位项的去留有判据,不是想留就留。** 背景:`ui-ux-spec.md` 规则 2 同一句里既写「预留功能一律可见但禁用」
+  又写「未实现的能力不进 UI」,两条互斥,实际执行成了前者 —— 于是「我的镜像」「保存镜像」这类没有任何排期的
+  能力在控制台挂了很久的 disabled 占位,tooltip 恒写「即将上线」,对用户是承诺,对维护者是每次改这块都要绕开的死代码。
+  决定:只有「已排期、按当前设计确定要做」的能力才留占位并注「即将上线」;没有排期的直接不进 UI,想做时再加。
+  兑现或删除时,`ui-ux-spec.md` 的占位清单与 `reference/web.md` 同提交更新。
+  后果:本次删掉「我的镜像」Tab(自定义镜像栏已能填任意仓库地址,该 Tab 无独立价值)与「保存镜像」菜单项;
+  保留「无卡模式开机」与「转包年包月」(两者都已排期)。
 
 ## 计费与资金
 
