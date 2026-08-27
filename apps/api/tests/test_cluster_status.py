@@ -386,6 +386,16 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert comp["storage"]["ok"] is False
         assert "topolvm-provisioner" in comp["storage"]["detail"]
+        # 数据盘 SC 是可选项(light 默认不装 JuiceFS):缺它只提示不可售,不把整项判红
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            assert row is not None
+            row.storage_classes = ["local-path", "topolvm-provisioner"]
+            await session.commit()
+        body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
+        comp = {c["key"]: c for c in body["components"]}
+        assert comp["storage"]["ok"] is True
+        assert "数据盘不可售" in comp["storage"]["detail"]
 
     async def test_kata_component_calls_out_empty_pool(self, sm, fake, client):
         """RuntimeClass 在、kata 池没节点:独享档一样开不了机,detail 要说出来。"""

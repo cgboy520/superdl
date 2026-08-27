@@ -44,8 +44,7 @@
 - 台账 `driver_version` / `cuda_version` 以 GFD 标签 `nvidia.com/cuda.{driver,runtime}-version.full`(缺则按 `.major/.minor/.revision` 拼)为准,装机上报的 `os_info` 只作无 GFD 时的回落:装机快照在驱动升级后不再更新,且节点在收尾上报前被对账器判 joined(终态)时该次上报会 404 丢弃,两种情况都靠标签自愈。
 - 集群页组件体检十项按用户可见链路排:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia /
   RuntimeClass kata-qemu / 存储类 / 实例入口 / 证书签发 / 监控栈。`storage` 按名核对
-  `topolvm-provisioner` 与 `superdl-juicefs`(与下发门禁 `require_storage_classes` 同一口径,
-  只判「有任意 SC」会在实例盘 SC 缺位时给绿灯);`kata_runtimeclass` 绿灯时另报 kata 池节点数
+  `topolvm-provisioner`(强制,缺它判红)与 `superdl-juicefs`(可选,缺它只提示数据盘不可售);`kata_runtimeclass` 绿灯时另报 kata 池节点数
   (RuntimeClass 在但池里没节点,独享档一样没库存)。
 - HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档同款门禁看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`):缺它下发的 Pod 会被 kubelet 直接拒,用户侧只能看到开机后转 failed。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;两档装同一套组件(gpu-operator + HAMi + kata-deploy),差异只在 k3s 侧的 values 覆盖(见 `deploy/cluster/values/light/`)。档位可用性看的是池里有没有 Ready 节点与运行时是否到位,不看发行版。

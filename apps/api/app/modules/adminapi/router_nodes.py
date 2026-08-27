@@ -253,9 +253,10 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
     pools: dict[str, int] = dict(row.pools or {}) if row else {}
     scs = set(row.storage_classes or []) if row else set()
     distro = row.distro if row else None
-    disk_missing = [
-        sc for sc in (INSTANCE_DISK_STORAGE_CLASS, JUICEFS_STORAGE_CLASS) if sc not in scs
-    ]
+    # 实例盘 SC 是两档的强制依赖(每个租户 Pod 都要挂),缺它才算红;
+    # 数据盘的 JuiceFS 是可选项(light 默认不装),缺它只是数据盘不可售,不该把整项判红
+    instance_disk_ok = INSTANCE_DISK_STORAGE_CLASS in scs
+    data_disk_ok = JUICEFS_STORAGE_CLASS in scs
     return [
         ClusterComponentOut(
             key="nodes",
@@ -299,9 +300,9 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
             key="storage",
             # 按名核对,与下发门禁 require_storage_classes 同一口径:
             # 只判「有任意 SC」会在实例盘 SC 缺位时给出绿灯,而用户创建时才 409
-            ok=not disk_missing,
-            detail=", ".join(sorted(scs)) if not disk_missing else f"缺 {'、'.join(disk_missing)}",
-            fix_hint=None if not disk_missing else _helmfile(distro, "topolvm"),
+            ok=instance_disk_ok,
+            detail=_storage_detail(instance_disk_ok, data_disk_ok, scs),
+            fix_hint=None if instance_disk_ok else _helmfile(distro, "topolvm"),
         ),
         ClusterComponentOut(
             key="ingress",
@@ -322,6 +323,13 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
             fix_hint=None if kps_ok else _helmfile(distro, "kube-prometheus-stack"),
         ),
     ]
+
+
+def _storage_detail(instance_disk_ok: bool, data_disk_ok: bool, scs: set[str]) -> str:
+    if not instance_disk_ok:
+        return f"缺 {INSTANCE_DISK_STORAGE_CLASS}(实例盘不可用,全站开不了机)"
+    listed = ", ".join(sorted(scs))
+    return listed if data_disk_ok else f"{listed}(无 {JUICEFS_STORAGE_CLASS},数据盘不可售)"
 
 
 def _kata_detail(kata_ok: bool, kata_nodes: int) -> str | None:
