@@ -127,7 +127,7 @@ class TestGateWiring:
             row.hami_ready = False
             await session.commit()
         skus = (await client.get("/api/v1/skus")).json()
-        shared = next(s for s in skus if s["tier"] == "shared_std")
+        shared = next(s for s in skus if s["pool_label"] == "hami")
         dedicated = next(s for s in skus if s["tier"] == "dedicated")
         images = (await client.get("/api/v1/images")).json()
         body = {
@@ -165,7 +165,7 @@ class TestGateWiring:
             await session.commit()
         skus = (await client.get("/api/v1/skus")).json()
         dedicated = next(s for s in skus if s["tier"] == "dedicated")
-        shared = next(s for s in skus if s["tier"] == "shared_std")
+        shared = next(s for s in skus if s["pool_label"] == "hami")
         images = (await client.get("/api/v1/images")).json()
         body = {
             "sku_id": dedicated["id"],
@@ -218,11 +218,10 @@ class TestGateWiring:
         )
         assert resp.status_code == 409, resp.text
 
-    async def test_k3s_shared_pod_gets_nvidia_runtime(self, sm, fake):
+    async def test_k3s_hami_pod_gets_nvidia_runtime(self, sm, fake):
         from app.core.gpu_adapter import build_gpu_request
 
         k3s = build_gpu_request(
-            tier="shared_std",
             gpu_count=1,
             gpu_cores_pct=50,
             vram_gb=8,
@@ -232,7 +231,6 @@ class TestGateWiring:
         )
         assert k3s.runtime_class == "nvidia"
         rke2 = build_gpu_request(
-            tier="shared_std",
             gpu_count=1,
             gpu_cores_pct=50,
             vram_gb=8,
@@ -242,7 +240,6 @@ class TestGateWiring:
         )
         assert rke2.runtime_class is None
         kata = build_gpu_request(
-            tier="dedicated",
             gpu_count=1,
             gpu_cores_pct=100,
             vram_gb=24,
@@ -275,7 +272,7 @@ class TestGateWiring:
             authorized_keys=[],
             k8s_namespace="tenant-1",
             spec={
-                "tier": "shared_std",
+                "tier": "shared",
                 "pool_label": "hami",
                 "vram_gb": 8,
                 "gpu_cores_pct": 50,

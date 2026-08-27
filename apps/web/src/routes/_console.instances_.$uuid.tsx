@@ -412,7 +412,7 @@ function InstanceDetail() {
                 status={instance.status}
                 frozenDeadline={instance.frozen_deadline}
               />
-              <TierTag tier={instance.spec["tier"] as string} />
+              <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
             </Space>
             <Descriptions
               size="small"

@@ -3,8 +3,12 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.gpu_adapter import TIERS
 from app.core.money import MoneyOut
 from app.core.registry import is_valid_image_ref
+
+# 档位枚举的事实源在 core/gpu_adapter,这里只拼正则——两处各写一遍必然漂
+_TIER_PATTERN = f"^({'|'.join(TIERS)})$"
 
 
 class PaymentChannelsOut(BaseModel):
@@ -85,7 +89,7 @@ class SkuAdminOut(BaseModel):
 class SkuCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     gpu_model: str = Field(min_length=1, max_length=32)
-    tier: str = Field(pattern="^(dedicated|mig|shared_std|shared_eco)$")
+    tier: str = Field(pattern=_TIER_PATTERN)
     mig_profile: str | None = None
     gpu_cores_pct: int = Field(default=100, ge=1, le=100)
     vram_gb: int = Field(ge=1)
@@ -102,6 +106,9 @@ class SkuCreate(BaseModel):
 
 class SkuUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
+    # 与 pool_label 成对可改(改池必须能同时清/填切片,否则 mig↔hami 两个方向都走不通);
+    # 只在下架态放行,见 service.admin_update_sku
+    mig_profile: str | None = None
     gpu_cores_pct: int | None = Field(default=None, ge=1, le=100)
     vram_gb: int | None = Field(default=None, ge=1)
     oversell_cores: Decimal | None = Field(default=None, ge=Decimal("1.00"), le=Decimal("9.99"))

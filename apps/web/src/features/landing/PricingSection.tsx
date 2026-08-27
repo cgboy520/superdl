@@ -4,7 +4,7 @@
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
-import { getGpuSpec, metaOf, skuTierMap } from "@superdl/ui";
+import { getGpuSpec, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Skeleton, Tabs, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -23,7 +23,7 @@ interface ModelGroup {
   representative: SkuMarketOut; // 展示用:组内最低价
   rentTarget: SkuMarketOut; // CTA 用:有货最低价,全组无货回落 representative
   available: number; // 组内可售数(同 (池, 型号) 取 max,跨池求和)
-  tiers: string[]; // 组内覆盖的档位(型号下多档展示)
+  tiers: string[]; // 组内覆盖的展示档位(tier × pool 的变体,型号下多档展示)
 }
 
 export function PricingSection() {
@@ -55,7 +55,7 @@ export function PricingSection() {
         representative,
         rentTarget,
         available: freeByModel.get(model) ?? 0,
-        tiers: [...new Set(list.map((s) => s.tier))],
+        tiers: [...new Set(list.map((s) => skuVariant(s.tier, s.pool_label)))],
       });
     }
     // 型号按代表价升序:低价在前
@@ -115,15 +115,15 @@ export function PricingSection() {
             {groups.map((g) => {
               const sku = g.representative;
               const spec = getGpuSpec(sku.gpu_model);
-              const shared = sku.tier.startsWith("shared");
-              const meta = metaOf(skuTierMap, sku.tier);
+              const variant = skuVariant(sku.tier, sku.pool_label);
+              const meta = metaOf(skuTierMap, variant);
               return (
                 <Card
                   key={g.model}
                   hoverable
                   title={
                     <span>
-                      {spec?.label ?? g.model} <TierTag tier={sku.tier} />
+                      {spec?.label ?? g.model} <TierTag tier={sku.tier} pool={sku.pool_label} />
                     </span>
                   }
                   styles={{ body: { display: "flex", flexDirection: "column", gap: 4 } }}
@@ -137,9 +137,14 @@ export function PricingSection() {
                     </Typography.Text>
                   )}
                   <Typography.Text strong>
-                    {shared
-                      ? t("landing.pricing.sharedSpec", { pct: sku.gpu_cores_pct, vram: sku.vram_gb })
-                      : t("landing.pricing.dedicatedSpec", { vram: sku.vram_gb })}
+                    {variant === "shared_mig"
+                      ? t("landing.pricing.migSpec", {
+                          profile: sku.mig_profile ?? t("sku.sliceFallback"),
+                          vram: sku.vram_gb,
+                        })
+                      : variant === "shared_hami"
+                        ? t("landing.pricing.sharedSpec", { pct: sku.gpu_cores_pct, vram: sku.vram_gb })
+                        : t("landing.pricing.dedicatedSpec", { vram: sku.vram_gb })}
                   </Typography.Text>
                   {spec && (
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>

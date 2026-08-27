@@ -40,7 +40,7 @@ export interface SkuCreate {
      */
   pool_label: string;
   price_hourly: number | string;
-  /** @pattern ^(dedicated|mig|shared_std|shared_eco)$ */
+  /** @pattern ^(dedicated|shared)$ */
   tier: string;
   /** @minimum 1 */
   vcpu: number;

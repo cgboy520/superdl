@@ -166,10 +166,11 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 ## 8. 硬约束
 
 1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**(HAMi device plugin 与 Kata / KubeVirt 不兼容)。节点池标签
-   `superdl.io/pool` 装机时定死,RuntimeClass 的 nodeSelector 再兜一层:dedicated → kata 池;mig / shared_* → runc,
-   分别落 mig / hami 池。
-2. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** 整卡与 MIG 档不超卖。
-3. **共享池与 MIG 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;Kata 档本身是
+   `superdl.io/pool` 装机时定死。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami
+   决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared)只是售卖分类,两者的合法
+   配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
+2. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** kata 与 mig 池不超卖。
+3. **hami 池与 mig 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
 4. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
 

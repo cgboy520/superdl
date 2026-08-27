@@ -117,13 +117,13 @@
       "other": "其他"
     },
     "tier": {
-      "dedicated": "独享整卡",
-      "mig": "MIG 切分",
-      "shared_eco": "共享·经济",
-      "shared_std": "共享·标准"
+      "dedicated": "专用整卡",
+      "shared_hami": "共享·经济",
+      "shared_mig": "共享·标准"
     },
     "tierHint": {
-      "shared_eco": "性能可能波动"
+      "shared_hami": "性能可能波动",
+      "shared_mig": "显存与算力硬隔离"
     },
     "adjustment": {
       "pending": "待复核",

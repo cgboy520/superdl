@@ -104,12 +104,15 @@ export default interface Resources {
     },
     "catalog": {
       "imageRefExists": "镜像 image_ref 已存在",
+      "isolationChangeNeedsOffSale": "在售规格不能改池或 MIG 切片:两者决定隔离方式与用户看到的规格,改了就是另一件商品。请先下架,或新建规格",
+      "migProfileMismatch": "mig 池必须填切片规格,其它池必须留空",
       "prewarmDisabled": "该镜像已关闭预热,请先开启",
       "priceHourlyTwoDecimals": "按小时计费的规格单价最多 2 位小数(逐小时按 2 位入账,更多位数会产生舍入漂移);4 位精度仅用于数据盘 GB·月价",
       "priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
-      "skuBusinessKeyExists": "相同型号、档位、切片与算力份额的规格已存在,请直接编辑该规格",
+      "skuBusinessKeyExists": "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格",
       "skuNotSellable": "集群中没有「{{model}} × {{pool}} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架",
-      "skuOffSale": "该规格已下架"
+      "skuOffSale": "该规格已下架",
+      "tierPoolMismatch": "档位 {{tier}} 只能落 {{pools}} 池,当前为 {{pool}}"
     },
     "common": {
       "badCursor": "无效的分页游标",
@@ -317,13 +320,13 @@ export default interface Resources {
         "other": "其他"
       },
       "tier": {
-        "dedicated": "独享整卡",
-        "mig": "MIG 切分",
-        "shared_eco": "共享·经济",
-        "shared_std": "共享·标准"
+        "dedicated": "专用整卡",
+        "shared_hami": "共享·经济",
+        "shared_mig": "共享·标准"
       },
       "tierHint": {
-        "shared_eco": "性能可能波动"
+        "shared_hami": "性能可能波动",
+        "shared_mig": "显存与算力硬隔离"
       }
     }
   },
@@ -720,6 +723,7 @@ export default interface Resources {
         "dedicatedSpec": "整卡 · {{vram}}G 显存",
         "fallbackCta": "前往算力市场",
         "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
+        "migSpec": "MIG {{profile}} · {{vram}}G 显存",
         "moreLink": "查看全部规格与筛选",
         "priceFrom": "{{price}} 起(多档)",
         "sharedSpec": "{{pct}}% 算力(均值) · {{vram}}G 显存",

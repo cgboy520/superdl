@@ -4,7 +4,7 @@
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
-import { compareAmounts, diskDailyEstimate, formatSizeGb, GPU_COUNT_STEPS, idemKeyOf, mulPrice } from "@superdl/ui";
+import { compareAmounts, diskDailyEstimate, formatSizeGb, GPU_COUNT_STEPS, idemKeyOf, mulPrice, skuVariant } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -263,7 +263,8 @@ function CreatePage() {
   };
 
   const submit = () => {
-    if (sku.tier === "shared_eco") {
+    // 经济档 = 落 hami 池的共享(软切分超卖);mig 池的共享是硬切分,不弹此 modal
+    if (skuVariant(sku.tier, sku.pool_label) === "shared_hami") {
       setEcoOpen(true);
       return;
     }

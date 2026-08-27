@@ -71,7 +71,6 @@ async def sku_capacity_preview(
     session: DbSession,
     gpu_model: str,
     pool_label: str,
-    tier: str,
     gpu_cores_pct: int = 100,
     oversell_cores: Decimal = Decimal("1.00"),
     vram_gb: int | None = None,
@@ -104,7 +103,7 @@ async def sku_capacity_preview(
         ready_gpus=ready_gpus,
         total_gpus=sum(sp.gpu_count for sp in specs),
         est_instances=ready_gpus
-        * catalog_service.sellable_per_gpu(tier, gpu_cores_pct, oversell_cores),
+        * catalog_service.sellable_per_gpu(pool_label, gpu_cores_pct, oversell_cores),
         warnings=warnings,
     )
 

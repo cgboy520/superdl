@@ -5,6 +5,7 @@ import {
   instanceStatusMap,
   metaOf,
   skuTierMap,
+  skuVariant,
   type InstanceStatus,
 } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
@@ -276,7 +277,7 @@ function InstancesTab() {
           {
             title: t("tenants.colSpec"),
             render: (_, r) => {
-              const tm = metaOf(skuTierMap, r.spec.tier as string);
+              const tm = metaOf(skuTierMap, skuVariant(r.spec.tier as string, r.spec.pool_label as string));
               return (
                 <Space>
                   <span>

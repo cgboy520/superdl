@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.gpu_adapter import spec_to_gpu_request
+from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
 from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
 from app.core.k8s import InstancePodSpec, get_orchestrator
@@ -157,20 +157,18 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     }
 
 
-_SHARED_TIERS = ("shared_std", "shared_eco")
-
-
-async def _require_cluster_for_tier(
-    session: AsyncSession, tier: str | None, *, with_data_disk: bool = False
+async def _require_cluster_for_pool(
+    session: AsyncSession, pool_label: str | None, *, with_data_disk: bool = False
 ) -> None:
     """下发门禁:能力缺位即时 409,而非等 Pod Pending 到超时。
 
-    HAMi 只有 shared 档依赖,Kata RuntimeClass 只有 dedicated 档依赖;
+    按池判而非按档位判:HAMi 只有 hami 池依赖,Kata RuntimeClass 只有 kata 池依赖
+    (mig 池由 gpu-operator 的 MIG manager 管,无独立门禁项);
     StorageClass 实例盘人人要挂,数据盘按需。
     """
-    if tier in _SHARED_TIERS:
+    if pool_label == POOL_HAMI:
         await nodes_service.require_hami_ready(session)
-    elif tier == "dedicated":
+    elif pool_label == POOL_KATA:
         await nodes_service.require_kata_runtimeclass(session)
     await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
 
@@ -279,7 +277,7 @@ def _sku_free_capacity(sku: "Sku", specs: list["NodeSpec"]) -> tuple[int | None,
         return None, 0
     free = sum(max(0, s.gpu_count - s.gpu_used) for s in matching if s.status == "Ready")
     return free, free * catalog_service.sellable_per_gpu(
-        sku.tier, sku.gpu_cores_pct, sku.oversell_cores
+        sku.pool_label, sku.gpu_cores_pct, sku.oversell_cores
     )
 
 
@@ -348,7 +346,9 @@ async def create_instance(
             return existing, False
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
-    await _require_cluster_for_tier(session, sku.tier, with_data_disk=data_disk_id is not None)
+    await _require_cluster_for_pool(
+        session, sku.pool_label, with_data_disk=data_disk_id is not None
+    )
     if gpu_count > sku.max_gpus_per_instance:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -600,8 +600,8 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
                 key="orchestrator.nodeUnreachable",
                 http_status=409,
             )
-    await _require_cluster_for_tier(
-        session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
+    await _require_cluster_for_pool(
+        session, instance.spec.get("pool_label"), with_data_disk=instance.data_disk_id is not None
     )
     estimate = as_amount(instance.price_hourly * instance.gpu_count)
     await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
@@ -626,8 +626,8 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
         )
-    await _require_cluster_for_tier(
-        session, instance.spec.get("tier"), with_data_disk=instance.data_disk_id is not None
+    await _require_cluster_for_pool(
+        session, instance.spec.get("pool_label"), with_data_disk=instance.data_disk_id is not None
     )
     await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
     enqueue(session, "instance.restart", {"instance_id": instance.id})

@@ -147,8 +147,8 @@ class TestNodeMetrics:
 
 
 class TestTierSource:
-    async def test_shared_tier_prefers_hami_and_falls_back(self):
-        """shared 档 gpu_util 优先 HAMi 指标;HAMi 查空回落 DCGM;dedicated 恒 DCGM。"""
+    async def test_hami_pool_prefers_hami_and_falls_back(self):
+        """hami 池 gpu_util 优先 HAMi 指标;HAMi 查空回落 DCGM;kata / mig 池恒 DCGM。"""
         hami_point = [{"metric": {}, "values": [[1.0, "55"]]}]
         dcgm_point = [{"metric": {}, "values": [[1.0, "70"]]}]
         prom.set_client(
@@ -159,18 +159,18 @@ class TestTierSource:
                 }
             )
         )
-        shared = await prom.query_instance_metric(
-            "gpu_util", "tenant-1", "u1", tier="shared_std", start=0, end=1, step="60s"
+        hami = await prom.query_instance_metric(
+            "gpu_util", "tenant-1", "u1", pool_label="hami", start=0, end=1, step="60s"
         )
-        assert shared == [(1.0, 55.0)]
-        dedicated = await prom.query_instance_metric(
-            "gpu_util", "tenant-1", "u1", tier="dedicated", start=0, end=1, step="60s"
+        assert hami == [(1.0, 55.0)]
+        kata = await prom.query_instance_metric(
+            "gpu_util", "tenant-1", "u1", pool_label="kata", start=0, end=1, step="60s"
         )
-        assert dedicated == [(1.0, 70.0)]
+        assert kata == [(1.0, 70.0)]
         # HAMi 查空 → 回落 DCGM
         prom.set_client(prom_mock_routed({"DCGM_FI_DEV_GPU_UTIL": dcgm_point}))
         fallback = await prom.query_instance_metric(
-            "gpu_util", "tenant-1", "u1", tier="shared_eco", start=0, end=1, step="60s"
+            "gpu_util", "tenant-1", "u1", pool_label="hami", start=0, end=1, step="60s"
         )
         assert fallback == [(1.0, 70.0)]
 

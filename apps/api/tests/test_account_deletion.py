@@ -53,7 +53,7 @@ async def _seed_instance(
             name="t",
             sku_id=1,
             spec={
-                "tier": "shared_std",
+                "tier": "shared",
                 "vram_gb": 8,
                 "vcpu": 8,
                 "mem_gb": 32,

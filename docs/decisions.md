@@ -165,6 +165,23 @@
 - **light 档 TopoLVM controller 取 1 副本。** chart 默认 2 副本 + 按 hostname 的 required 反亲和,
   单节点上第二个副本永远 Pending:功能不受影响,但集群里长期挂着一个红 Pod,会把真问题淹掉,
   也让「全部 Pod Running」这类巡检判据失效。
+- **档位收敛成 dedicated / shared,隔离机制的派发键改成节点池。** 背景:`skus.tier` 四值
+  `dedicated / mig / shared_std / shared_eco` 把「隔离与切分技术」和「价格档」揉在一个枚举里 ——
+  用户要在市场页四选一而 `mig` 与 `shared_std` 的差别说不清,代码侧则是 `("shared_std","shared_eco")`
+  这个元组在 catalog / orchestrator / metering / gpu_adapter 四处各抄一份,且 tier 与 pool_label
+  各承载一半机制判断(tier 决定资源语法、pool 决定 nodeSelector),天然可能对不齐。
+  决定:`tier` 收敛成 `dedicated` / `shared` 两值,只表达售卖分类;隔离机制一律按 `pool_label`
+  (kata / mig / hami)派发 —— 它装机时定死,是物理事实源。用户看到的「共享·标准 / 共享·经济」由池派生
+  (mig 池 = 硬切分标准档,hami 池 = 软切分超卖经济档),消费级卡没有 MIG,因而只有专用 + 经济两档。
+  配套:档位与池的合法配对表 `core/gpu_adapter.TIER_POOLS` + 服务端 `catalog/service.py::_check_tier_pool`
+  (建 SKU 与改池两条路径共用),管理端表单只让运营选展示档位、tier 与 pool 由它派生 —— 否则可以建出
+  「卖整卡直通、实际跑 HAMi 超卖」的 SKU。业务唯一键补上 pool_label / vcpu / mem_gb。
+  后果:四份重复的档位元组归零;`build_gpu_request` 不再收 tier;容量预览端点不再收 tier;
+  旧档位值一次迁移改到位(含 `instances.spec` 快照),**不留别名兜底** —— 无生产库,
+  `unknown pool` 保持 fail-closed。另一个后果是「改池」被收窄成**仅下架态**并配上可改的
+  `mig_profile`:配对约束一上,原来的在售改池在三个方向上全部不可达(dedicated 只有 kata;
+  shared 的 mig↔hami 都卡在切片填不了/清不掉),留着就是死字段。收窄后语义也更正:
+  改池或改切片 = 换隔离方式 = 换商品,在售的商品不该在用户眼皮底下换芯 —— 两者同门禁。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

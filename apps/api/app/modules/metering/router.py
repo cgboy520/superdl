@@ -31,5 +31,7 @@ async def get_instance_metrics(
 ) -> dict[str, Any]:
     """实例监控曲线(代理 Prometheus,按租户隔离)。断源 503,不影响计费。"""
     instance = await orchestrator_service.get_instance(session, user.id, uuid)
-    tier = instance.spec.get("tier")
-    return await service.instance_metrics(instance.k8s_namespace, instance.uuid, range, tier=tier)
+    pool_label = instance.spec.get("pool_label")
+    return await service.instance_metrics(
+        instance.k8s_namespace, instance.uuid, range, pool_label=pool_label
+    )

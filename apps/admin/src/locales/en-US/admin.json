@@ -724,6 +724,7 @@
     "sliceShared": "{{pct}}% compute · {{vram}}G VRAM",
     "submit": "Submit",
     "submitConfirmTitle": "Submit changes?",
+    "tierLockedOnSale": "A listed SKU cannot change tier (that means changing pool, i.e. a different product); delist it first",
     "toggleFailed": "Operation failed",
     "vramLabel": "VRAM quota GB",
     "vramOversellConfirmBody": "High VRAM oversell sharply raises OOM interference risk in the shared pool; confirm you have load-test data.",

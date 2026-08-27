@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.core.gpu_adapter import POOL_HAMI
 
 # ---- 标签常量:与 dcgm-exporter / HAMi vGPUmonitor 实机形态对齐,如有出入只改这里 ----
 # dcgm-exporter 4.x 的节点标签是小写 hostname(3.x 为 Hostname;gpu-operator v26 与独立 chart
@@ -176,10 +177,14 @@ async def query_instant(promql: str) -> float | None:
 
 
 async def query_instance_metric(
-    metric: str, ns: str, pod: str, *, tier: str | None, start: float, end: float, step: str
+    metric: str, ns: str, pod: str, *, pool_label: str | None, start: float, end: float, step: str
 ) -> list[tuple[float, float]]:
-    """实例级单指标:shared 档 gpu_util/vram 优先 HAMi 容器维指标,查空回落 DCGM。"""
-    if tier in ("shared_std", "shared_eco") and metric in HAMI_QUERIES:
+    """实例级单指标:hami 池 gpu_util/vram 优先 HAMi 容器维指标,查空回落 DCGM。
+
+    判据是池不是档位:HAMi 容器维指标只有 HAMi device plugin 产出,mig 池同属「共享」
+    但走 DCGM per-instance(MIG 设备维归属可靠)。
+    """
+    if pool_label == POOL_HAMI and metric in HAMI_QUERIES:
         promql = HAMI_QUERIES[metric].format(ns=ns, pod=pod)
         results = await query_range_raw(promql, start=start, end=end, step=step)
         if results:

@@ -80,7 +80,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 ## H. 调度与 SKU
 
-- [ ] `superdl.io/gpu-model` nodeSelector 在 dedicated/mig/shared 三档位真实命中(含混布池)
+- [ ] `superdl.io/gpu-model` nodeSelector 在 kata / mig / hami 三个池真实命中(含混布池)
 - [ ] 开启 `use-gputype` 后,以 raw 型号串注入的匹配语义符合预期
 - [ ] 台账数据源优先级:型号 raw 走 nvidia-smi > GFD label > 存量;驱动/CUDA 版本反过来 GFD label 优先
       (`nvidia.com/cuda.{driver,runtime}-version.full`),装机快照只作无 GFD 时的回落

@@ -709,6 +709,7 @@
     "sliceShared": "{{pct}}% 算力 · {{vram}}G 显存",
     "submit": "提交",
     "submitConfirmTitle": "确认提交变更?",
+    "tierLockedOnSale": "在售规格不能改档位(改档位即改池,等于换成另一件商品);请先下架",
     "toggleFailed": "操作失败",
     "vramLabel": "显存配额 GB",
     "vramOversellConfirmBody": "显存超卖过高会显著增加共享池 OOM 互扰风险,请确认已有压测数据支撑。",

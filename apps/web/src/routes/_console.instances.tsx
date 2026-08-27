@@ -481,7 +481,7 @@ function InstancesPage() {
                   <span>
                     {r.spec["gpu_model"] as string} × {r.gpu_count}
                   </span>
-                  <TierTag tier={r.spec["tier"] as string} />
+                  <TierTag tier={r.spec["tier"] as string} pool={r.spec["pool_label"] as string} />
                 </Space>
               </Popover>
             ),

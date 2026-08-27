@@ -91,10 +91,11 @@ async def create_user_with_key(
 
 
 async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> int:
-    """按业务唯一键 (gpu_model, tier, mig_profile, gpu_cores_pct) get-or-create。
+    """按业务唯一键 get-or-create,键与 catalog/models.py 的 uq_skus_business_key 一致。
 
     skus 有业务键唯一约束:同一用例内多次 provisioning 复用同一条,而不是撞约束。
     同键但其余字段不同的请求直接报错(测试写法问题,不该静默复用)。
+    键漏字段会让本该各建一条的两个 SKU 误判成同一条,报出误导性的断言。
     """
     from sqlalchemy import select
 
@@ -108,17 +109,19 @@ async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> 
                 select(Sku).where(
                     Sku.gpu_model == wanted.gpu_model,
                     Sku.tier == wanted.tier,
+                    Sku.pool_label == wanted.pool_label,
                     Sku.mig_profile.is_(None)
                     if wanted.mig_profile is None
                     else Sku.mig_profile == wanted.mig_profile,
                     Sku.gpu_cores_pct == wanted.gpu_cores_pct,
+                    Sku.vcpu == wanted.vcpu,
+                    Sku.mem_gb == wanted.mem_gb,
                 )
             )
         ).scalar_one_or_none()
         if existing is not None:
             same = (
-                existing.pool_label == wanted.pool_label
-                and existing.price_hourly == wanted.price_hourly
+                existing.price_hourly == wanted.price_hourly
                 and existing.max_gpus_per_instance == wanted.max_gpus_per_instance
             )
             if not same:

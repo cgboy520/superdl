@@ -399,6 +399,7 @@
       "dedicatedSpec": "Full card · {{vram}}G VRAM",
       "fallbackCta": "Go to marketplace",
       "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
+      "migSpec": "MIG {{profile}} · {{vram}}G VRAM",
       "moreLink": "All specs and filters",
       "priceFrom": "from {{price}} (multiple tiers)",
       "sharedSpec": "{{pct}}% compute (avg) · {{vram}}G VRAM",

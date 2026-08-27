@@ -119,12 +119,12 @@
     },
     "tier": {
       "dedicated": "Dedicated GPU",
-      "mig": "MIG slice",
-      "shared_eco": "Shared · Economy",
-      "shared_std": "Shared · Standard"
+      "shared_hami": "Shared · Economy",
+      "shared_mig": "Shared · Standard"
     },
     "tierHint": {
-      "shared_eco": "Performance may fluctuate"
+      "shared_hami": "Performance may fluctuate",
+      "shared_mig": "Hardware-isolated memory and compute"
     },
     "adjustment": {
       "pending": "Pending review",

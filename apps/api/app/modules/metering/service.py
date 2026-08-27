@@ -26,11 +26,11 @@ RANGES = {"1h": 3600, "6h": 6 * 3600, "24h": 24 * 3600}
 
 
 async def instance_metrics(
-    ns: str, pod: str, range_key: str, *, tier: str | None = None
+    ns: str, pod: str, range_key: str, *, pool_label: str | None = None
 ) -> dict[str, Any]:
     """代理查询实例监控曲线。断源报 503(前端提示"监控暂不可用,不影响计费")。
 
-    shared 档的 gpu_util/vram 走 HAMi 容器维指标(软切分下 DCGM per-pod 归属不可靠),
+    hami 池的 gpu_util/vram 走 HAMi 容器维指标(软切分下 DCGM per-pod 归属不可靠),
     查空自动回落 DCGM;cpu/mem 恒 cAdvisor。
     """
     if range_key not in RANGES:
@@ -42,7 +42,7 @@ async def instance_metrics(
     try:
         for metric in prom.QUERIES:
             series[metric] = await prom.query_instance_metric(
-                metric, ns, pod, tier=tier, start=start, end=end, step=step
+                metric, ns, pod, pool_label=pool_label, start=start, end=end, step=step
             )
     except prom.PrometheusUnavailable as exc:
         raise AppError(
@@ -102,13 +102,13 @@ async def aggregate_previous_hour(
             located = loc.get(inst_id)
             if located is None:  # 实例在候选查询与定位查询之间被删:跳过该台,不作废整轮
                 continue
-            ns, pod, tier = located
+            ns, pod, pool_label = located
             try:
                 values = await prom.query_instance_metric(
                     "gpu_util",
                     ns,
                     pod,
-                    tier=tier,
+                    pool_label=pool_label,
                     start=window_start.timestamp(),
                     end=window_end.timestamp(),
                     step="60s",
@@ -117,7 +117,7 @@ async def aggregate_previous_hour(
                     "vram_used_mb",
                     ns,
                     pod,
-                    tier=tier,
+                    pool_label=pool_label,
                     start=window_start.timestamp(),
                     end=window_end.timestamp(),
                     step="60s",

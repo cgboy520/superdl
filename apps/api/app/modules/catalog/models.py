@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -11,15 +11,23 @@ class Sku(Base):
     """商品规格。超卖参数是 SKU 属性;变更仅影响新实例(实例落库时快照)。"""
 
     __tablename__ = "skus"
-    # 业务唯一键:同一 (型号, 档位, MIG 切片, 算力份额) 只允许一条,mig_profile 为空也算相等
-    # (NULLS NOT DISTINCT),防并发/重试建出同义 SKU 把库存口径搅浑
+    # 业务唯一键:同一 (型号, 档位, 池, MIG 切片, 算力份额, vCPU, 内存) 只允许一条,
+    # mig_profile 为空也算相等(NULLS NOT DISTINCT),防并发/重试建出同义 SKU 把库存口径搅浑。
+    # 带上池是因为「共享」档同名却可能落 mig(硬切分)或 hami(软切分)两种池;带上
+    # vCPU/内存是为了让同一张卡能出不同配套规格(纯 CPU 规格更是只能靠这两列区分)。
+    # 用唯一索引而非 UniqueConstraint:后者的 ADD CONSTRAINT 要全表校验锁,
+    # 唯一索引可以 CONCURRENTLY 在线建(见 scripts/check-migration-ddl.py)。
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_skus_business_key",
             "gpu_model",
             "tier",
+            "pool_label",
             "mig_profile",
             "gpu_cores_pct",
-            name="uq_skus_business_key",
+            "vcpu",
+            "mem_gb",
+            unique=True,
             postgresql_nulls_not_distinct=True,
         ),
     )
@@ -27,7 +35,9 @@ class Sku(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
     gpu_model: Mapped[str] = mapped_column(String(32), index=True)  # e.g. RTX4090 / A100
-    tier: Mapped[str] = mapped_column(String(16), index=True)  # dedicated/mig/shared_std/shared_eco
+    # dedicated(专用整卡)/ shared(共享切分);标准 vs 经济由 pool_label 派生
+    # (mig 池 = 硬切分标准档,hami 池 = 软切分经济档),不再单列枚举值
+    tier: Mapped[str] = mapped_column(String(16), index=True)
     mig_profile: Mapped[str | None] = mapped_column(String(32))  # e.g. 1g.10gb(仅 mig 档)
     gpu_cores_pct: Mapped[int] = mapped_column(default=100)  # 算力份额 %(共享档 <100)
     vram_gb: Mapped[int]  # 每实例显存配额

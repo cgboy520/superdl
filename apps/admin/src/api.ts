@@ -167,6 +167,7 @@ import type {
   MfaSetupOut,
   RecoveryCodesOut,
   SettlementGapResolve,
+  SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
   SkuCreate,
   SkuUpdate,
   TenantFreezeRequest,
@@ -265,14 +266,8 @@ export function useGpuModelAggregates(options?: { enabled?: boolean }) {
 }
 
 export function useSkuCapacityPreview(
-  params: {
-    gpu_model: string;
-    pool_label: string;
-    tier: string;
-    gpu_cores_pct?: number;
-    oversell_cores?: string;
-    vram_gb?: number;
-  } | null,
+  // 入参类型取生成契约,不手写:端点增删 query 参数时这里编译期就红
+  params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null,
 ) {
   return useQuery<CapacityPreviewOut>({
     queryKey: ["admin", "sku-capacity-preview", params],

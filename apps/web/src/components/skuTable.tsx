@@ -8,15 +8,19 @@ import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChipRow } from "./ChipRow";
+import { skuVariant } from "@superdl/ui";
+
 import { TierTag } from "./common";
 
 /** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余为整卡。 */
 function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
-  if (s.tier.startsWith("shared")) {
-    return t("sku.gpuShared", { model: s.gpu_model, vram: s.vram_gb, pct: s.gpu_cores_pct });
-  }
-  if (s.tier === "mig") {
+  // 按展示档位派发:「共享」既可能是 MIG 硬切分也可能是 HAMi 份额,两者的规格描述不同
+  const variant = skuVariant(s.tier, s.pool_label);
+  if (variant === "shared_mig") {
     return t("sku.gpuMig", { model: s.gpu_model, vram: s.vram_gb, profile: s.mig_profile ?? t("sku.sliceFallback") });
+  }
+  if (variant === "shared_hami") {
+    return t("sku.gpuShared", { model: s.gpu_model, vram: s.vram_gb, pct: s.gpu_cores_pct });
   }
   return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
 }
@@ -52,7 +56,7 @@ export function skuColumns(
       render: (_: unknown, s: SkuMarketOut) => (
         <Space>
           <Typography.Text strong>{s.name}</Typography.Text>
-          <TierTag tier={s.tier} />
+          <TierTag tier={s.tier} pool={s.pool_label} />
         </Space>
       ),
     },

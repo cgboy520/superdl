@@ -97,7 +97,6 @@ class TestCapacityPreview:
             params={
                 "gpu_model": "RTX4090",
                 "pool_label": "hami",
-                "tier": "shared_std",
                 "gpu_cores_pct": 50,
                 "oversell_cores": "1.50",
             },
@@ -118,7 +117,6 @@ class TestCapacityPreview:
             params={
                 "gpu_model": "RTX4090",
                 "pool_label": "hami",
-                "tier": "shared_std",
                 "vram_gb": 48,
             },
             headers=headers,
@@ -127,7 +125,7 @@ class TestCapacityPreview:
         assert codes == ["vram_exceeds_node"]
         resp2 = await client.get(
             "/api/admin/v1/skus/capacity-preview",
-            params={"gpu_model": "H20", "pool_label": "kata", "tier": "dedicated"},
+            params={"gpu_model": "H20", "pool_label": "kata"},
             headers=headers,
         )
         body2 = resp2.json()
@@ -138,7 +136,7 @@ class TestCapacityPreview:
         headers = await admin_headers(sm, client)
         resp = await client.get(
             "/api/admin/v1/skus/capacity-preview",
-            params={"gpu_model": "Banana 9000", "pool_label": "hami", "tier": "shared_std"},
+            params={"gpu_model": "Banana 9000", "pool_label": "hami"},
             headers=headers,
         )
         codes = [w["code"] for w in resp.json()["warnings"]]
@@ -148,7 +146,7 @@ class TestCapacityPreview:
 class TestSkuListAssembly:
     async def test_capacity_and_sold_columns(self, client: AsyncClient, sm):
         await seed_spec(sm)  # RTX4090×hami 4 卡 Ready
-        sku_id = await seed_one_sku(sm)  # shared_std 50%, oversell 1.50
+        sku_id = await seed_one_sku(sm)  # 共享 50%, oversell 1.50
         async with sm() as session:
             from app.modules.orchestrator.models import Instance
 

@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
+from app.core.gpu_adapter import POOL_HAMI, POOL_MIG, TIER_POOLS
 from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
 from app.core.money import as_amount, as_price
@@ -25,19 +26,37 @@ from app.modules.catalog.schemas import (
 
 logger = get_logger(__name__)
 
-SHARED_TIERS = ("shared_std", "shared_eco")
 
+def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
+    """每张物理卡可售实例数:hami 池 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal 整除,
+    至少 1),kata / mig 池恒 1。
 
-def sellable_per_gpu(tier: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
-    """每张物理卡可售实例数:共享档 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal 整除,
-    至少 1),独享/MIG 档恒 1。
+    按池判而非按档位判:超卖只发生在 HAMi 软切分上,是池的属性(架构硬约束二),
+    档位只是它的售卖名字。
 
     市场库存、创建软准入、管理端容量预览共用这一份口径:float 路径会把 100 × 1.15 算成
     114.999…,同一 SKU 在市场页与管理端相差一台。
     """
-    if tier not in SHARED_TIERS:
+    if pool_label != POOL_HAMI:
         return 1
     return max(1, int(Decimal(100) * oversell_cores // max(1, gpu_cores_pct)))
+
+
+def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> None:
+    """档位与池必须配对,mig 切片与 mig 池必须同时有或同时无。
+
+    隔离机制的派发键是池(见 core/gpu_adapter),档位只是售卖名字——两者不配对时,
+    卖出去的隔离强度与实际跑的不是一回事。建 SKU 与改池两条路径共用本函数。
+    """
+    allowed = TIER_POOLS.get(tier, ())
+    if pool_label not in allowed:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            key="catalog.tierPoolMismatch",
+            params={"tier": tier, "pools": "/".join(allowed), "pool": pool_label},
+        )
+    if (pool_label == POOL_MIG) != bool(mig_profile):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.migProfileMismatch")
 
 
 async def list_market_skus(
@@ -159,6 +178,7 @@ def _checked_price(value: Decimal) -> Decimal:
 async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
     values = data.model_dump()
     values["price_hourly"] = _checked_price(values["price_hourly"])
+    _check_tier_pool(values["tier"], values["pool_label"], values.get("mig_profile"))
     sku = Sku(**values)
     session.add(sku)
     try:
@@ -183,7 +203,21 @@ async def admin_update_sku(
 ) -> tuple[Sku, dict[str, Any]]:
     """更新 SKU。返回 (sku, 本次实际变更字段的旧值快照),旧值交调用方落审计。"""
     sku = await get_sku(session, sku_id)
+    was_on_sale = sku.status == "on"
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})
+    # 改池或改切片 = 换隔离方式 = 换商品(档位展示名与规格列都跟着变)。在售规格改了会让
+    # 市场页挂着的「共享·标准」静默变成「共享·经济」,新下单的人拿到的不是他看到的那个;
+    # 因此只在下架态放行,在售要改先下架或新建。存量实例走 spec 快照,不受影响。
+    # 放在应用更新之前:不碰 ORM 对象就退出,不依赖会话退出时的回滚
+    if was_on_sale and any(
+        field in updates and updates[field] != getattr(sku, field)
+        for field in ("pool_label", "mig_profile")
+    ):
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="catalog.isolationChangeNeedsOffSale",
+            http_status=status.HTTP_409_CONFLICT,
+        )
     if updates.get("price_hourly") is not None:
         updates["price_hourly"] = _checked_price(updates["price_hourly"])
     turning_on = updates.get("status") == "on" and sku.status != "on"
@@ -193,16 +227,26 @@ async def admin_update_sku(
         if old != value:
             before[field] = str(old) if isinstance(old, Decimal) else old
         setattr(sku, field, value)
-    # 在售期间改池同样过硬校验(型号不可改,SkuUpdate 无该字段):否则在售 SKU 可被改成
-    # 指向无 Ready 节点的池,用户创建路径才被拦——售卖侧先失败,体验与库存口径都受损
-    pool_changed_on_sale = sku.status == "on" and "pool_label" in before
-    if (turning_on or pool_changed_on_sale) and not force:
+    # 池与切片成对可改,任一动了都复核配对(tier / gpu_model 不可改,SkuUpdate 无这两个字段)
+    if "pool_label" in before or "mig_profile" in before:
+        _check_tier_pool(sku.tier, sku.pool_label, sku.mig_profile)
+    if turning_on and not force:
         await _ensure_sellable(session, sku)
     if "price_hourly" in before:
         await _alert_large_price_change(
             session, sku, Decimal(before["price_hourly"]), updates["price_hourly"], data.reason
         )
-    await session.commit()
+    # 业务唯一键的 7 列里有 5 列(pool_label / mig_profile / gpu_cores_pct / vcpu / mem_gb)
+    # 可改,改到与另一条重合时要给 409 而不是漏 500 —— 与 admin_create_sku 同款处理
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise AppError(
+            ErrorCode.CONFLICT,
+            key="catalog.skuBusinessKeyExists",
+            http_status=status.HTTP_409_CONFLICT,
+        ) from exc
     await session.refresh(sku)
     return sku, before
 

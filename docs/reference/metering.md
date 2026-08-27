@@ -22,7 +22,7 @@ Prometheus 代理查询、`usage_hourly` 聚合、事件计费与指标估算对
 - 批量端点路径必须避开 `/instances/*` 前缀,否则会被 `{uuid}` 路由吞掉。
 - `usage_hourly` 聚合幂等(UNIQUE + ON CONFLICT);单实例查询失败只跳过该实例该小时(continue),不丢整轮;缺口实例记 `usage_aggregation_partial` 日志,不自动回填。对账 diff >2% 的实例进入差异清单。
 - Prometheus 响应形态异常(缺 `data.result`、序列缺 `values` 等)统一归 `PrometheusUnavailable`:详情端点 503,批量/节点端点 `available=false`,绝不击穿成 500。
-- 指标源按实例 spec 的 tier 选:shared 档用 HAMi vGPUmonitor per-container 指标,查空回落 DCGM;dedicated/mig 恒用 DCGM。HAMi 共享卡上 DCGM 的 `{pod=}` 归属不可靠,不得用于 shared 档。
+- 指标源按实例 spec 的 `pool_label` 选:hami 池用 HAMi vGPUmonitor per-container 指标,查空回落 DCGM;kata / mig 池恒用 DCGM。HAMi 共享卡上 DCGM 的 `{pod=}` 归属不可靠,不得用于 hami 池;判据是池不是档位——mig 池同属「共享」档但走 DCGM。
 - `prom.py` 含 `NODE_QUERIES`(DCGM `hostname` 维度 per-GPU 多序列,dcgm-exporter 4.x 小写标签,常量 `DCGM_NODE_LABEL`)与 `HAMI_QUERIES`,`query_range_multi` 返回多序列;标签常量集中在该文件头部。
 - `prometheus_url` 在 prod 下 fail-fast(含 localhost 拒启)。
 - 节点级指标端点见 [observability.md](./observability.md)。

@@ -96,9 +96,9 @@ async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -
 async def instance_locations(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, tuple[str, str, str | None]]:
-    """metering 聚合用:instance_id → (k8s_namespace, uuid, tier)。"""
+    """metering 聚合用:instance_id → (k8s_namespace, uuid, pool_label)。"""
     return {
-        i.id: (i.k8s_namespace, i.uuid, (i.spec or {}).get("tier"))
+        i.id: (i.k8s_namespace, i.uuid, (i.spec or {}).get("pool_label"))
         for i in await instances_by_ids(session, instance_ids)
     }
 

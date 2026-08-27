@@ -3,7 +3,7 @@
  * CTA 即库存,售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
  */
 
-import { GPU_COUNT_STEPS, mulPrice, skuTierMap } from "@superdl/ui";
+import { GPU_COUNT_STEPS, mulPrice, skuTierMap, skuVariant } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
@@ -74,7 +74,7 @@ function MarketPage() {
   const skus = (allSkus ?? []).filter(
     (s) =>
       (!gpuModel || s.gpu_model === gpuModel) &&
-      (!tier || s.tier === tier) &&
+      (!tier || skuVariant(s.tier, s.pool_label) === tier) &&
       (!vram || s.vram_gb === vram) &&
       s.max_gpus_per_instance >= gpuCount,
   );

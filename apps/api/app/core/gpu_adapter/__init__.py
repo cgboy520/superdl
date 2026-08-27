@@ -1,9 +1,13 @@
 """GPU 资源申请抽象层:device-plugin 语法(HAMi 软切分 / MIG / 整卡直通)。
 
+**派发键是节点池,不是档位。** 池标签装机时定死、是隔离机制的物理事实源;档位(`skus.tier`)
+只表达售卖分类。两者曾各自承载一半机制判断(tier 决定资源语法、pool 决定 nodeSelector),
+于是「同一份档位元组」在 catalog / orchestrator / metering / 本模块各抄了一遍,且天然可能对不齐。
+
 分池铁律:
-- dedicated → Kata(RuntimeClass=kata-qemu)+ VFIO 整卡直通,kata 池
-- mig       → runc + MIG device plugin + userns 加固(hostUsers=false),mig 池
-- shared_*  → runc + HAMi 软切分 + userns 加固(hostUsers=false),hami 池
+- kata → Kata(RuntimeClass=kata-qemu)+ VFIO 整卡直通,不叠 userns(VM 级隔离)
+- mig  → runc + MIG device plugin + userns 加固(hostUsers=false)
+- hami → runc + HAMi 软切分 + userns 加固(hostUsers=false)
 Kata 与 HAMi 永不混布同一节点池。
 """
 
@@ -14,6 +18,24 @@ from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL
 
 # HAMi 型号白名单 annotation,值须为 HAMi 登记的原文串(nvidia-smi 名),canonical 不同构
 HAMI_USE_GPUTYPE_ANNOTATION = "nvidia.com/use-gputype"
+
+# ---------- 节点池(隔离机制的事实源) ----------
+POOL_KATA = "kata"
+POOL_MIG = "mig"
+POOL_HAMI = "hami"
+
+# ---------- 售卖档位(纯商业分类;标准/经济由所在池派生,不再单列枚举值) ----------
+TIER_DEDICATED = "dedicated"  # 专用整卡 → kata 池
+TIER_SHARED = "shared"  # 共享切分 → mig 池(标准,硬切分)或 hami 池(经济,软切分超卖)
+TIERS = (TIER_DEDICATED, TIER_SHARED)
+
+# 档位 → 允许落的池。派发键改成池之后,这张表就是「档位承诺的隔离强度」与「实际跑在哪」
+# 之间的唯一约束:没有它,运营可以建出 tier=dedicated 却挂 hami 池的 SKU——
+# 卖的是整卡直通,跑的是软切分超卖。建 SKU 与改池两条路径都过 catalog 的同一处校验。
+TIER_POOLS: dict[str, tuple[str, ...]] = {
+    TIER_DEDICATED: (POOL_KATA,),
+    TIER_SHARED: (POOL_MIG, POOL_HAMI),
+}
 
 
 @dataclass(frozen=True)
@@ -29,40 +51,39 @@ class GpuRequest:
 
 def build_gpu_request(
     *,
-    tier: str,
+    pool_label: str,
     gpu_count: int,
     gpu_cores_pct: int,
     vram_gb: int,
     mig_profile: str | None,
-    pool_label: str,
     gpu_model: str | None = None,
     hami_gputype: str | None = None,
     distro: str | None = None,
 ) -> GpuRequest:
-    """gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全档位钉型号;
-    hami_gputype 为原文串,仅共享档注 use-gputype annotation;
-    distro=k3s 时共享档必须显式 runtimeClassName=nvidia(k3s 不设默认运行时;
+    """gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全池钉型号;
+    hami_gputype 为原文串,仅 hami 池注 use-gputype annotation;
+    distro=k3s 时 hami 池必须显式 runtimeClassName=nvidia(k3s 不设默认运行时;
     RKE2+gpu-operator 默认已是 nvidia,故为 None)。"""
     node_selector = {POOL_NODE_LABEL: pool_label}
     if gpu_model:
         node_selector[GPU_MODEL_NODE_LABEL] = gpu_model
-    if tier == "dedicated":
+    if pool_label == POOL_KATA:
         return GpuRequest(
             resources={"nvidia.com/gpu": str(gpu_count)},
             runtime_class="kata-qemu",
             host_users=True,  # Kata 为 VM 级隔离,不叠 userns
             node_selector=node_selector,
         )
-    if tier == "mig":
+    if pool_label == POOL_MIG:
         if not mig_profile:
-            raise ValueError("mig tier requires mig_profile")
+            raise ValueError("mig pool requires mig_profile")
         return GpuRequest(
             resources={f"nvidia.com/mig-{mig_profile}": str(gpu_count)},
             runtime_class=None,
             host_users=False,
             node_selector=node_selector,
         )
-    if tier in ("shared_std", "shared_eco"):
+    if pool_label == POOL_HAMI:
         # HAMi:gpu 数 + 算力百分比 + 显存 MB(CUDA 层限额)
         return GpuRequest(
             resources={
@@ -76,7 +97,7 @@ def build_gpu_request(
             scheduler_name="hami-scheduler",
             annotations={HAMI_USE_GPUTYPE_ANNOTATION: hami_gputype} if hami_gputype else {},
         )
-    raise ValueError(f"unknown tier: {tier}")
+    raise ValueError(f"unknown pool: {pool_label}")
 
 
 def spec_to_gpu_request(
@@ -88,12 +109,11 @@ def spec_to_gpu_request(
 ) -> GpuRequest:
     """从实例的 SKU 快照构造(gpu_model_selector 为 None = 不钉型号)。"""
     return build_gpu_request(
-        tier=spec["tier"],
+        pool_label=spec["pool_label"],
         gpu_count=gpu_count,
         gpu_cores_pct=spec.get("gpu_cores_pct", 100),
         vram_gb=spec["vram_gb"],
         mig_profile=spec.get("mig_profile"),
-        pool_label=spec["pool_label"],
         gpu_model=spec.get("gpu_model_selector"),
         hami_gputype=spec.get("gpu_model") if hami_use_gputype else None,
         distro=distro,

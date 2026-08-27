@@ -57,15 +57,27 @@ export function isTransientInstanceStatus(status: string): boolean {
   return TRANSIENT_INSTANCE_STATUSES.includes(status);
 }
 
-export type SkuTier = "dedicated" | "mig" | "shared_std" | "shared_eco";
+/** 售卖档位,与 skus.tier 严格一致。标准/经济不是档位值,由所在池派生 —— 见 skuVariant。 */
+export type SkuTier = "dedicated" | "shared";
+
+/**
+ * 用户可见的档位:tier × pool_label 的合并键。
+ * 隔离机制的事实源是节点池(后端 core/gpu_adapter 同款口径),「共享」既可能是 mig 池的
+ * 硬切分(标准),也可能是 hami 池的软切分超卖(经济),两者性能承诺不同,必须分开展示。
+ */
+export type SkuVariant = "dedicated" | "shared_mig" | "shared_hami";
+
+export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant {
+  if (tier === "dedicated") return "dedicated";
+  return poolLabel === "mig" ? "shared_mig" : "shared_hami";
+}
 
 export const skuTierMap = {
   dedicated: { labelKey: "shared:status.tier.dedicated", color: "#4F46E5" },
   // cyan 档取深:#0891B2 白字仅 3.7:1 不达标;#0E7490 ≈5.4:1(WCAG AA)
-  mig: { labelKey: "shared:status.tier.mig", color: "#0E7490" },
-  shared_std: { labelKey: "shared:status.tier.shared_std", color: statusColors.green },
-  shared_eco: { labelKey: "shared:status.tier.shared_eco", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_eco" },
-} as const satisfies Record<SkuTier, { labelKey: string; color: string; hintKey?: string }>;
+  shared_mig: { labelKey: "shared:status.tier.shared_mig", color: "#0E7490", hintKey: "shared:status.tierHint.shared_mig" },
+  shared_hami: { labelKey: "shared:status.tier.shared_hami", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_hami" },
+} as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
 
 /** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */
 export type ImageCacheStatus = "pending" | "pulling" | "cached" | "failed";

@@ -11,6 +11,7 @@ export interface SkuUpdate {
   gpu_cores_pct?: number | null;
   max_gpus_per_instance?: number | null;
   mem_gb?: number | null;
+  mig_profile?: string | null;
   name?: string | null;
   oversell_cores?: number | string | null;
   oversell_vram?: number | string | null;

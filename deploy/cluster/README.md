@@ -1,7 +1,7 @@
 # 集群部署:full / light 两条路径
 
-选档:**full** = RKE2 多机生产,全档位(dedicated/mig/shared);
-**light** = k3s 单机/小规模验证与轻量运营,仅共享档(hami 池)SKU。
+选档:**full** = RKE2 多机生产,全池齐备(kata / mig / hami);
+**light** = k3s 单机/小规模验证与轻量运营,仅共享·经济档(hami 池)SKU。
 发行版由平台探测(管理端「集群」页可见),业务侧无需声明。
 
 chart 版本钉在 `helmfile.yaml.gotmpl`,K8s 版本钉在 `rke2/` 与 `k3s/` 的 server-config;升级走变更评审。
@@ -114,7 +114,7 @@ CRD 还不存在)。单个 release:`./apply.sh light -l name=gpu-operator`。
      **TopoLVM 必开**(每个租户 Pod 都要挂实例盘;VG `superdl-nvme` 由 node-join.sh 建出);
      JuiceFS 可选(只有数据盘用),要数据盘时在 `environments/light.yaml` 打开。
 4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机 `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
-5. 能力边界:组件面没有阉割(dedicated/mig 同样可用),但档位可用性看的是**池里有没有 Ready 节点**——
-   单机只有一个池标签,选了 hami 就没有 kata/mig 池,dedicated/mig 上架会被上架硬校验拦下。
+5. 能力边界:组件面没有阉割(kata / mig 池同样可用),但档位可用性看的是**池里有没有 Ready 节点**——
+   单机只有一个池标签,选了 hami 就没有 kata/mig 池,专用整卡与共享·标准的 SKU 上架会被上架硬校验拦下。
    管理端「集群」页常驻「轻量集群」黄条与组件体检(修复命令按实测发行版给出档位)。
 

@@ -1,4 +1,4 @@
-import { adminColors, metaOf, skuTierMap, type SkuTier } from "@superdl/ui";
+import { adminColors, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -50,7 +50,10 @@ export const Route = createFileRoute("/_app/skus")({
 interface SkuFormValues {
   name: string;
   gpu_model: string;
-  tier: SkuTier;
+  /** 表单只让运营选「展示档位」,提交时派生出 tier 与 pool_label —— 两者能对不齐就是事故。
+   *  tier 刻意不做表单字段:antd 的 validateFields() 只回已挂载 Form.Item 的值,
+   *  靠 setFieldsValue 塞进 store 的字段拿不到(会静默漏字段)。 */
+  variant: SkuVariant;
   mig_profile?: string | null;
   gpu_cores_pct: number;
   vram_gb: number;
@@ -67,17 +70,20 @@ interface SkuFormValues {
   reason?: string;
 }
 
-const TIER_POOL: Record<SkuTier, string> = {
-  dedicated: "kata",
-  mig: "mig",
-  shared_std: "hami",
-  shared_eco: "hami",
+// 展示档位 → (落库档位, 节点池)。隔离机制的事实源是池,档位只是售卖名字;
+// 让运营只选前者、后两者派生,是「卖的隔离强度 = 实际跑的」的唯一保证(后端 catalog
+// 的 _check_tier_pool 是同一份约束的服务端版本)。
+const VARIANT_SPEC: Record<SkuVariant, { tier: SkuTier; pool: string }> = {
+  dedicated: { tier: "dedicated", pool: "kata" },
+  shared_mig: { tier: "shared", pool: "mig" },
+  shared_hami: { tier: "shared", pool: "hami" },
 };
-const POOL_TIERS: Record<string, SkuTier[]> = {
+const POOL_VARIANTS: Record<string, SkuVariant[]> = {
   kata: ["dedicated"],
-  mig: ["mig"],
-  hami: ["shared_std", "shared_eco"],
+  mig: ["shared_mig"],
+  hami: ["shared_hami"],
 };
+const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
 
 type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
@@ -120,7 +126,7 @@ function SkusPage() {
   const draft = useFormDraft<SkuFormValues>("sku-new");
 
   const clusterOptions = useMemo(
-    () => (aggregates ?? []).filter((a) => a.gpu_model && a.pool_label && POOL_TIERS[a.pool_label]),
+    () => (aggregates ?? []).filter((a) => a.gpu_model && a.pool_label && POOL_VARIANTS[a.pool_label]),
     [aggregates],
   );
 
@@ -172,29 +178,29 @@ function SkusPage() {
   // 改价影响面(编辑态才查;新建无存量实例)
   const impact = useSkuImpact(record?.id ?? null);
   const wModel = Form.useWatch("gpu_model", form);
-  const wTier = Form.useWatch("tier", form);
+  const wVariant = Form.useWatch("variant", form);
   const wPool = Form.useWatch("pool_label", form);
   const wPct = Form.useWatch("gpu_cores_pct", form);
   const wOversell = Form.useWatch("oversell_cores", form);
   const wVram = Form.useWatch("vram_gb", form);
   const pModel = wModel ?? record?.gpu_model;
-  const pTier = wTier ?? record?.tier;
   const pPool = wPool ?? record?.pool_label;
+  // 折算口径只看池(超卖只发生在 HAMi),端点因此不再收 tier
   const previewParams = useMemo(() => {
-    if (editing === null || !pModel || !pTier || !pPool) return null;
+    if (editing === null || !pModel || !pPool) return null;
     return {
       gpu_model: pModel,
       pool_label: pPool,
-      tier: pTier,
       gpu_cores_pct: wPct ?? record?.gpu_cores_pct ?? 100,
       oversell_cores: String(wOversell ?? record?.oversell_cores ?? "1.00"),
       vram_gb: wVram ?? record?.vram_gb,
     };
-  }, [editing, pModel, pTier, pPool, wPct, wOversell, wVram, record]);
+  }, [editing, pModel, pPool, wPct, wOversell, wVram, record]);
   const preview = useSkuCapacityPreview(previewParams);
 
-  const applyRecommend = (agg: GpuModelAggregate, tier: SkuTier, pct: number) => {
-    const shared = tier.startsWith("shared");
+  const applyRecommend = (agg: GpuModelAggregate, variant: SkuVariant, pct: number) => {
+    // 只有 HAMi 软切分按算力份额折规格;整卡与 MIG 硬切分都拿整份(MIG 的份额由切片名定)
+    const shared = variant === "shared_hami";
     const factor = shared ? pct / 100 : 1;
     form.setFieldsValue({
       gpu_model: agg.gpu_model ?? "",
@@ -217,19 +223,25 @@ function SkusPage() {
     if (!agg) return;
     setClusterPick(agg);
     const pool = agg.pool_label ?? "";
-    const tiers = POOL_TIERS[pool] ?? [];
-    const current = form.getFieldValue("tier") as SkuTier | undefined;
-    const tier = current && tiers.includes(current) ? current : tiers[0];
-    if (!tier) return;
-    form.setFieldsValue({ tier });
-    applyRecommend(agg, tier, form.getFieldValue("gpu_cores_pct") ?? 50);
+    const variants = POOL_VARIANTS[pool] ?? [];
+    const current = form.getFieldValue("variant") as SkuVariant | undefined;
+    const variant = current && variants.includes(current) ? current : variants[0];
+    if (!variant) return;
+    onVariantChange(variant);
+    applyRecommend(agg, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
   };
 
-  const onTierChange = (tier: SkuTier) => {
-    form.setFieldsValue({ pool_label: TIER_POOL[tier] });
+  const onVariantChange = (variant: SkuVariant) => {
+    const { pool } = VARIANT_SPEC[variant];
+    form.setFieldsValue({
+      variant,
+      pool_label: pool,
+      // 切片只属于 mig 池:换走时必须清掉,否则后端 _check_tier_pool 会以「切片与池不符」驳回
+      ...(variant === "shared_mig" ? {} : { mig_profile: null }),
+    });
     if (clusterPick) {
-      applyRecommend(clusterPick, tier, form.getFieldValue("gpu_cores_pct") ?? 50);
-    } else if (!tier.startsWith("shared")) {
+      applyRecommend(clusterPick, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
+    } else if (variant !== "shared_hami") {
       form.setFieldsValue({ gpu_cores_pct: 100 });
     }
   };
@@ -240,7 +252,7 @@ function SkusPage() {
     if (sku === "new") {
       form.resetFields();
       form.setFieldsValue({
-        tier: "shared_std", gpu_cores_pct: 50, oversell_cores: 1.5, oversell_vram: 1.0,
+        variant: "shared_hami", gpu_cores_pct: 50, oversell_cores: 1.5, oversell_vram: 1.0,
         disk_gb: 100, max_gpus_per_instance: 1, pool_label: "hami", vcpu: 8, mem_gb: 32,
         // 草稿覆盖默认值(仅新建):误关抽屉后重开不丢
         ...draft.load(),
@@ -248,7 +260,7 @@ function SkusPage() {
     } else {
       form.setFieldsValue({
         ...sku,
-        tier: sku.tier as SkuTier,
+        variant: skuVariant(sku.tier, sku.pool_label),
         oversell_cores: Number(sku.oversell_cores),
         oversell_vram: Number(sku.oversell_vram),
         price_hourly: sku.price_hourly,
@@ -258,19 +270,22 @@ function SkusPage() {
 
   const submit = async () => {
     const values = await form.validateFields();
+    // 派生而非读表单:tier 没有 Form.Item,pool_label 的输入框是只读回显,
+    // 两者的事实源都是 variant
+    const { tier, pool } = VARIANT_SPEC[values.variant];
     const doSubmit = () => {
       if (editing === "new") {
         // 新建端点不接受 reason(编辑才必填,入审计)
         const createPayload: SkuCreate = {
           name: values.name,
           gpu_model: values.gpu_model,
-          tier: values.tier,
+          tier,
           mig_profile: values.mig_profile ?? null,
           gpu_cores_pct: values.gpu_cores_pct,
           vram_gb: values.vram_gb,
           oversell_cores: String(values.oversell_cores),
           oversell_vram: String(values.oversell_vram),
-          pool_label: values.pool_label,
+          pool_label: pool,
           vcpu: values.vcpu,
           mem_gb: values.mem_gb,
           disk_gb: values.disk_gb,
@@ -282,11 +297,12 @@ function SkusPage() {
       } else if (editing) {
         const updatePayload: SkuUpdate = {
           name: values.name,
+          mig_profile: values.mig_profile ?? null,
           gpu_cores_pct: values.gpu_cores_pct,
           vram_gb: values.vram_gb,
           oversell_cores: String(values.oversell_cores),
           oversell_vram: String(values.oversell_vram),
-          pool_label: values.pool_label,
+          pool_label: pool,
           vcpu: values.vcpu,
           mem_gb: values.mem_gb,
           disk_gb: values.disk_gb,
@@ -342,9 +358,13 @@ function SkusPage() {
   };
 
   const isNew = editing === "new";
-  const tierOptions = (
-    isNew && clusterPick?.pool_label ? POOL_TIERS[clusterPick.pool_label] : Object.keys(skuTierMap)
-  ) as SkuTier[];
+  // 新建:按选中的集群资源限定池;编辑:tier 不可改(SkuUpdate 无该字段),
+  // 只放行同 tier 的变体 —— 即「共享」在 mig / hami 两池之间改挂
+  const variantOptions: SkuVariant[] = isNew
+    ? (clusterPick?.pool_label ? (POOL_VARIANTS[clusterPick.pool_label] ?? ALL_VARIANTS) : ALL_VARIANTS)
+    : ALL_VARIANTS.filter((v) => VARIANT_SPEC[v].tier === record?.tier);
+  // 改档位就是改池,在售规格后端 409(换池 = 换商品);这里先灰置并说明,不让人白填一遍
+  const variantLocked = !isNew && record?.status === "on";
 
   return (
     <Card
@@ -367,8 +387,8 @@ function SkusPage() {
           { title: t("skus.colGpuModel"), dataIndex: "gpu_model" },
           {
             title: t("skus.colTier"),
-            dataIndex: "tier",
-            render: (v: SkuTier) => {
+            render: (_, r) => {
+              const v = skuVariant(r.tier, r.pool_label);
               const m = metaOf(skuTierMap, v);
               return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
             },
@@ -376,7 +396,7 @@ function SkusPage() {
           {
             title: t("skus.colSlice"),
             render: (_, r) =>
-              r.tier === "mig"
+              r.pool_label === "mig"
                 ? r.mig_profile
                 : t("skus.sliceShared", { pct: r.gpu_cores_pct, vram: r.vram_gb }),
           },
@@ -489,47 +509,55 @@ function SkusPage() {
             <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
               <Input />
             </Form.Item>
+            {/* 型号不可改(SkuUpdate 无该字段),只在新建时出现 */}
             {isNew && (
-              <>
-                <Form.Item
-                  name="gpu_model"
-                  label={t("skus.gpuModelLabel")}
-                  rules={[{ required: true }]}
-                >
-                  <Input
-                    placeholder={t("skus.gpuModelPlaceholder")}
-                    disabled={clusterPick !== null}
-                  />
-                </Form.Item>
-                <Form.Item name="tier" label={t("skus.colTier")} rules={[{ required: true }]}>
-                  <Select
-                    onChange={onTierChange}
-                    options={tierOptions.map((v) => ({
-                      value: v,
-                      label: t(skuTierMap[v].labelKey),
-                    }))}
-                  />
-                </Form.Item>
-                {wTier === "mig" && (
-                  <Form.Item
-                    name="mig_profile"
-                    label={t("skus.migProfileLabel")}
-                    rules={[{ required: true }]}
-                  >
-                    <Input
-                      placeholder={t("skus.migProfilePlaceholder")}
-                      onChange={(e) => {
-                        const m = /(\d+)gb/i.exec(e.target.value);
-                        if (m) form.setFieldsValue({ vram_gb: Number(m[1]) });
-                      }}
-                    />
-                  </Form.Item>
-                )}
-              </>
+              <Form.Item
+                name="gpu_model"
+                label={t("skus.gpuModelLabel")}
+                rules={[{ required: true }]}
+              >
+                <Input
+                  placeholder={t("skus.gpuModelPlaceholder")}
+                  disabled={clusterPick !== null}
+                />
+              </Form.Item>
             )}
+            {/* 档位与切片编辑态也要在:下架规格可在 mig / hami 两池之间改挂。
+                关进 isNew 会让改池不可达,且编辑时 mig_profile 不挂载 = 提交被抹成 null */}
+            <Form.Item
+              name="variant"
+              label={t("skus.colTier")}
+              rules={[{ required: true }]}
+              extra={variantLocked ? t("skus.tierLockedOnSale") : undefined}
+            >
+              <Select
+                disabled={variantLocked}
+                onChange={onVariantChange}
+                options={variantOptions.map((v) => ({
+                  value: v,
+                  label: t(skuTierMap[v].labelKey),
+                }))}
+              />
+            </Form.Item>
+            {wVariant === "shared_mig" && (
+              <Form.Item
+                name="mig_profile"
+                label={t("skus.migProfileLabel")}
+                rules={[{ required: true }]}
+              >
+                <Input
+                  placeholder={t("skus.migProfilePlaceholder")}
+                  onChange={(e) => {
+                    const m = /(\d+)gb/i.exec(e.target.value);
+                    if (m) form.setFieldsValue({ vram_gb: Number(m[1]) });
+                  }}
+                />
+              </Form.Item>
+            )}
+            {/* 池恒由上面的档位派生,不单独可改 —— 两者能各改各的就会卖错隔离强度 */}
             <Form.Item name="pool_label" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
               <Select
-                disabled={isNew}
+                disabled
                 options={Object.entries(POOL_LABEL_KEY).map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
               />
             </Form.Item>
@@ -541,11 +569,11 @@ function SkusPage() {
               <InputNumber
                 min={1}
                 max={100}
-                disabled={isNew && !!wTier && !wTier.startsWith("shared")}
+                disabled={!!wVariant && wVariant !== "shared_hami"}
                 style={{ width: "100%" }}
                 onChange={(v) => {
-                  if (clusterPick && wTier && typeof v === "number") {
-                    applyRecommend(clusterPick, wTier, v);
+                  if (clusterPick && wVariant && typeof v === "number") {
+                    applyRecommend(clusterPick, wVariant, v);
                   }
                 }}
               />

@@ -140,8 +140,16 @@ MESSAGES: dict[str, str] = {
     "catalog.skuNotSellable": (
         "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
     ),
+    "catalog.isolationChangeNeedsOffSale": (
+        "在售规格不能改池或 MIG 切片:两者决定隔离方式与用户看到的规格,改了就是另一件商品。"
+        "请先下架,或新建规格"
+    ),
     "catalog.skuOffSale": "该规格已下架",
-    "catalog.skuBusinessKeyExists": "相同型号、档位、切片与算力份额的规格已存在,请直接编辑该规格",
+    "catalog.tierPoolMismatch": "档位 {tier} 只能落 {pools} 池,当前为 {pool}",
+    "catalog.migProfileMismatch": "mig 池必须填切片规格,其它池必须留空",
+    "catalog.skuBusinessKeyExists": (
+        "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格"
+    ),
     # 通用兜底(errors.py 三个 helper 与 422/500 handler 使用)
     "common.forbidden": "无权访问",
     "common.httpError": "请求失败({status})",

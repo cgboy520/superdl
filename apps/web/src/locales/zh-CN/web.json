@@ -391,6 +391,7 @@
       "dedicatedSpec": "整卡 · {{vram}}G 显存",
       "fallbackCta": "前往算力市场",
       "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
+      "migSpec": "MIG {{profile}} · {{vram}}G 显存",
       "moreLink": "查看全部规格与筛选",
       "priceFrom": "{{price}} 起(多档)",
       "sharedSpec": "{{pct}}% 算力(均值) · {{vram}}G 显存",

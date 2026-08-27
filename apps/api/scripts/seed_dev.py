@@ -45,7 +45,7 @@ SKUS = [
     {
         "name": "H100-MIG-1g.10gb",
         "gpu_model": "H100",
-        "tier": "mig",
+        "tier": "shared",
         "mig_profile": "1g.10gb",
         "gpu_cores_pct": 100,
         "vram_gb": 10,
@@ -58,9 +58,9 @@ SKUS = [
         "status": "on",
     },
     {
-        "name": "RTX4090-STD50",
+        "name": "RTX4090-SHARED50",
         "gpu_model": "RTX4090",
-        "tier": "shared_std",
+        "tier": "shared",
         "gpu_cores_pct": 50,
         "vram_gb": 8,
         "oversell_cores": Decimal("1.50"),
@@ -74,9 +74,9 @@ SKUS = [
         "status": "on",
     },
     {
-        "name": "RTX4090-ECO30",
+        "name": "RTX4090-SHARED30",
         "gpu_model": "RTX4090",
-        "tier": "shared_eco",
+        "tier": "shared",
         "gpu_cores_pct": 30,
         "vram_gb": 7,
         "oversell_cores": Decimal("2.00"),

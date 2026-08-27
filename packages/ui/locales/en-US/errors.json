@@ -102,12 +102,15 @@
   },
   "catalog": {
     "imageRefExists": "This image_ref already exists",
+    "isolationChangeNeedsOffSale": "A listed SKU cannot change its pool or MIG profile: both decide the isolation mechanism and the spec buyers see, so changing them makes it a different product. Delist it first, or create a new SKU",
+    "migProfileMismatch": "The mig pool requires a slice profile; other pools must leave it empty",
     "prewarmDisabled": "Prewarming is disabled for this image — enable it first",
     "priceHourlyTwoDecimals": "Hourly-billed specs allow at most 2 decimal places (billed per hour at 2 decimals — more digits cause rounding drift); 4-digit precision is only for data-disk GB-month prices",
     "priceTooSmall": "Unit price too small: it rounds to 0 at 0.0001 CNY/hour",
-    "skuBusinessKeyExists": "A SKU with the same model, tier, MIG profile and cores share already exists — edit that one instead",
+    "skuBusinessKeyExists": "A SKU with the same model, tier, pool, MIG profile, cores share and vCPU/memory already exists — edit that one instead",
     "skuNotSellable": "No Ready node of “{{model}} × {{pool}} pool” exists in the cluster; instances of this spec would never start. Confirm to force-list it",
-    "skuOffSale": "This spec has been delisted"
+    "skuOffSale": "This spec has been delisted",
+    "tierPoolMismatch": "Tier {{tier}} may only run on the {{pools}} pool, but this is {{pool}}"
   },
   "common": {
     "badCursor": "Invalid pagination cursor",
