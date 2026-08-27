@@ -3,7 +3,8 @@
 三层结构:
 
 1. **Spegel P2P**(RKE2 `embedded-registry: true` + 全节点 `registries.yaml` 的 `mirrors "*"`)——任一节点已缓存的镜像,其余节点内网互拉。
-2. **Harbor**——平台镜像与租户实例镜像的权威源;镜像引用一律 Harbor 全限定名 `<host>/<项目>/<名>:<tag>`。
+2. **Harbor**——平台镜像与租户实例镜像的权威源;镜像引用一律 Harbor 全限定名并钉 digest
+   `<host>/<项目>/<名>:<tag>@sha256:<digest>`。
    接入参数(地址 / 项目 / 机器人账户与 Secret / 自签 CA / 代理缓存映射)在管理端「平台配置 · 镜像仓库」,保存后「测试连接」。
 3. **平台预热**(管理端「镜像与预热」页 + worker 巡检)——每镜像 × 每节点拉取 Job,覆盖率实时可见。
 
@@ -27,19 +28,37 @@
 
 ## 平台镜像发布 SOP
 
+平台自带的 12 个实例镜像由 `deploy/instance-images/` 构建,**构建命令与推送前自检以那份 README 为准**,
+这里只写「推完之后怎么上线」。
+
 ```bash
-# 1. 运维机 push(push 权限机器人)
+# 1. 运维机 push(push 权限机器人)。tag 可以覆盖重推,不搞 -rN 后缀
 docker login harbor.<域> -u 'robot$superdl+push'
 skopeo copy --dest-creds 'robot$superdl+push:<secret>' \
   docker://<上游镜像> docker://harbor.<域>/superdl/pytorch:2.13.0-cu132-py313
-# 2. 管理端「镜像与预热」新建条目:image_ref 默认前缀已按配置填好,补 pytorch:2.13.0-cu132-py313
-# 3. 等巡检铺开(≤60s 发现节点),页面看每节点覆盖率;失败行有错误原因,可一键重试
+
+# 2. 取这一次推上去的 digest —— 目录里要填的是它,不是 tag
+skopeo inspect --format '{{.Digest}}' \
+  docker://harbor.<域>/superdl/pytorch:2.13.0-cu132-py313
+# 本机构建的话:docker inspect --format '{{index .RepoDigests 0}}' <镜像> | cut -d@ -f2
+
+# 3. 管理端「镜像与预热」新建/编辑条目,image_ref 填
+#    harbor.<域>/superdl/pytorch:2.13.0-cu132-py313@sha256:<上一步的 digest>
+#    编辑已有条目时页面会提示「变更镜像地址将清空全部节点缓存记录并按新地址重新预热」——这正是预期行为
+
+# 4. 等巡检铺开(≤60s 发现节点),页面看每节点覆盖率;失败行有错误原因,可一键重试
 ```
 
 规则:
 
-- **镜像一律钉版本 tag,禁止 latest**:Spegel 不对 latest 做 P2P。
-- 换 Harbor 域名:SQL 批量改 `images.image_ref`(实例快照是历史值,不改)+ 重新预热。
+- **`image_ref` 必须钉 digest,禁止只写 tag,禁止 latest。** 按 tag 拉会经 Spegel 命中节点自己缓存的旧 digest,
+  `imagePullPolicy: Always` 也救不回来(实测,见 `docs/decisions.md`);latest 更是被 Spegel 显式排除出 P2P。
+- **重推同名 tag 之后必须回到第 2、3 步换 ref**,否则节点上跑的还是旧镜像,而管理端会显示「已预热」。
+- **实例的 ref 是创建时快照且终身不变**:停机/开机/重启都用旧 digest。带 entrypoint 修复的镜像上线后,
+  存量实例必须由用户删掉重建才能拿到修复,发布时要一并通知。
+- 换 Harbor 域名:SQL 批量改 `images.image_ref`(实例快照是历史值,不改)。SQL 绕过了服务层的「清缓存行」,
+  但巡检会比对 `image_node_cache.cached_ref` 与当前 ref,不一致即作废重拉,≤60s 自愈;要更快就在管理端把每个
+  镜像的 ref 重存一次。
 
 ## 灾备与容量
 

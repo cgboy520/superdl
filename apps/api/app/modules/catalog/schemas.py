@@ -1,9 +1,10 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.money import MoneyOut
+from app.core.registry import is_valid_image_ref
 
 
 class PaymentChannelsOut(BaseModel):
@@ -130,6 +131,17 @@ class ImageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _check_image_ref(v: str) -> str:
+    """形态非法必须在管理端写入时就拒掉:目录 ref 钉 digest 后是 70+ 字符的手抄串,
+    抄错一位若能入库,要等用户创建实例才报错,而错误落在用户身上、运维看不到。"""
+    v = v.strip()
+    if not is_valid_image_ref(v):
+        raise ValueError(
+            "image_ref 形态不合法(期望 <host>[:port]/<path>[:tag][@sha256:<64位小写十六进制>])"
+        )
+    return v
+
+
 class ImageCreate(BaseModel):
     framework: str = Field(min_length=1, max_length=32)
     framework_version: str = Field(min_length=1, max_length=32)
@@ -138,6 +150,11 @@ class ImageCreate(BaseModel):
     image_ref: str = Field(min_length=3, max_length=256)
     prewarm_enabled: bool = True
     sort: int = Field(default=0, ge=0, le=9999)
+
+    @field_validator("image_ref")
+    @classmethod
+    def _valid_ref(cls, v: str) -> str:
+        return _check_image_ref(v)
 
 
 class ImageUpdate(BaseModel):
@@ -148,3 +165,8 @@ class ImageUpdate(BaseModel):
     image_ref: str | None = Field(default=None, min_length=3, max_length=256)
     prewarm_enabled: bool | None = None
     sort: int | None = Field(default=None, ge=0, le=9999)
+
+    @field_validator("image_ref")
+    @classmethod
+    def _valid_ref(cls, v: str | None) -> str | None:
+        return None if v is None else _check_image_ref(v)

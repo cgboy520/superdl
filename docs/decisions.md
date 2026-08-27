@@ -92,11 +92,32 @@
 - **平台镜像 tag 语义化且可覆盖重推,目录 `image_ref` 钉 digest。** 背景:原规则「tag 不可变、改一个字就换 `-rN`」
   让仓库里堆一代代垃圾 tag、目录 ref 跟着漂。想改成「同名 tag 重推 + 预热 Job 用 `imagePullPolicy: Always`」时实测发现行不通:
   k3s 内置 registry(Spegel,节点 `registries.yaml` 的 `mirrors "*"`)按 **tag** 解析会返回节点自己缓存的旧 digest,
-  `Always` 照样拉到旧镜像(实机:Harbor 上已是新 digest,Pod 跑的仍是旧的;k3s 官方亦注明 embedded mirror 只适用于不可变 tag)。
+  `Always` 照样拉到旧镜像。证据:手工 apply 的探测 Pod(`imagePullPolicy: Always`、按 tag 引用)记录的 `imageID`
+  是旧 digest;直接拿 containerd 的 `ns=` 参数问节点上的内置 registry,同一个 tag 至今仍回一个落后数代的 digest。
+  外部依据:k3s 文档「other nodes will trust the tag advertised by the node, and use it **without checking with the
+  upstream registry** … you should use image digests instead of tags」(https://docs.k3s.io/installation/registry-mirror#potential-concerns),
+  上游 Spegel 写得更直白「Once an image has been pulled by a reusable tag reference, that tag will resolve to the first
+  digest for as long as the image is present in the cluster」(https://spegel.dev/docs/usage/resolving-tags/)。
+  「`Always` 也救不回来」这一条没有官方明文,是实测 + 机制推断(mirror 本地有内容就直接返回,不回上游)。
   决定:tag 只表达「框架版本 + CUDA 线 + Python」并允许覆盖重推(不再 `-rN`);`images.image_ref` 一律写
-  `<repo>:<tag>@sha256:<digest>`(`_IMAGE_REF_RE` 本就支持),按 digest 拉取是内容寻址,Spegel 只会给到同一份内容。
+  `<repo>:<tag>@sha256:<digest>`(`core.registry.is_valid_image_ref` 本就支持),按 digest 拉取是内容寻址。
+  考虑过但没选的替代:把 Harbor 从节点 `registries.yaml` 的 `mirrors "*"` 里摘出去(平台有 `node_registries_yaml`
+  覆盖键,不改代码就能做),此后按 tag 拉恒回上游、tag 重推立即生效,digest 钉扎可以整个不要——代价是平台自己那批
+  8–27GB 的 GPU 镜像彻底退出 P2P,每加一个节点就多一份直连 Harbor 的全量拉取。单节点时它更简单,但 node-join 与
+  管理端加节点流程都在,按多节点取向保留 digest 钉扎。k3s 没有暴露 Spegel 的 `resolveTags` 开关,那条路走不通。
   后果:重推后在管理端把该镜像的 ref 换成新 digest 即可——`admin_update_image` 会同事务清掉该镜像的节点缓存行,
-  巡检按新 ref 重新预热;实例 Pod 与预热 Job 都保持 `IfNotPresent`(开机不依赖仓库可达)。
+  巡检按新 ref 重新预热(缓存行另记 `cached_ref`,SQL 直改绕过服务层时由巡检兜底作废);实例 Pod 与预热 Job 都保持
+  `IfNotPresent`(开机不依赖仓库可达)。实例的 ref 是创建时快照且终身不变,镜像修复只对新建实例生效。
+- **加固基线为 SSH 让出 `SYS_CHROOT` / `SETUID` / `SETGID` 三个 capability。** 背景:`tenant_security_context()`
+  原本无条件 `drop ALL`,而 OpenSSH 的预认证特权分离是强制且不可配置的(必须 `chroot("/run/sshd")` 再 setgid/setuid),
+  结果每个连接在密钥交换阶段就 Connection reset——平台在控制台和 `reference/orchestrator.md` 里承诺的 `ssh root@` 入口
+  从来没通过,而测试只断言了 `ssh_command` 这个字符串的形状,没有一处真连过 22 端口,所以坏了很久无人发现。
+  评估过换 dropbear:它能在零 capability 下完成密钥交换与公钥认证,但仍卡在 `initgroups()`(`setgroups` 恒需
+  CAP_SETGID),最少也要 1 个 capability,零 capability 只能靠自编译打补丁或 LD_PRELOAD 垫片——为此自己维护一个
+  安全关键守护进程,比多给两个 capability 更糟。决定:保留 OpenSSH,drop ALL 之后 add 回这三个。
+  依据:容器本就以 root 跑在自己的 user namespace 里,这三个能力不产生新的宿主侧权限。
+  配套:entrypoint 起 sshd 前 `chmod g-w,o-w /root`(TopoLVM 把实例盘挂载点留成 2777,sshd 的 StrictModes 会
+  因此拒绝公钥认证,这是与 capability 相互独立的第二道拦阻),推送前自检增加「真连一次 SSH」。
 - **light 单机的 server 兼 GPU 节点走同一条 node-join 命令,脚本按「server 服务在运行」切换路径。** 背景:light 档
   单机时 server 就是唯一的 GPU 节点,而 node-join 原本无条件写 agent config、装 agent,在 server 本机执行会覆盖 server
   配置并装出第二个 k3s 单元;手工打标签又拿不到装机登记(gpu_info / 驱动版本),台账型号只能靠 GFD。决定:不另开

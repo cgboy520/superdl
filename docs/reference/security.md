@@ -18,9 +18,13 @@
 - 边缘收口中间件(`app/core/edge_guard.py`):`/api/admin/*` 仅放行 Host 命中 `admin_host` 的请求,其余 404;`/metrics` 带 `X-Forwarded-For`(经 ingress 进入)一律 404,集群内直刮不带该头,与 Bearer 双闸并存。prod 恒开、无开关:`environment` 只有 dev / test / prod 三值,类生产环境(staging)也以 `prod` 运行(独立 secrets),收口随之生效;dev / test 无 ingress,不启用。
 - 短信渠道走 `app/core/sms.py` 的 Protocol + 工厂(mock / 阿里云 dysmsapi RPC 签名),不在业务代码里直连渠道 SDK;落日志时手机号与验证码由全局日志处理器(`app/core/logging.py`)按键名打码,渠道不各自打码。
 - Bearer token 常量时间比较统一走 `app/core/http.py` 的 `bearer_matches`(先 `.encode()` 成 bytes:compare_digest 收 str 遇非 ASCII 会抛 TypeError),/metrics(API 与 worker)与 Alertmanager webhook 三处共用。
+- 租户容器加固基线(`core/k8s/real.py::tenant_security_context`,无条件下发):`allowPrivilegeEscalation=false`、
+  `seccompProfile=RuntimeDefault`、`capabilities.drop=[ALL]` 之后只 add 回 `SYS_CHROOT` / `SETUID` / `SETGID` ——
+  OpenSSH 的预认证特权分离强制需要这三个,缺任一个则平台承诺的 `ssh root@` 入口在密钥交换阶段即断(见 `docs/decisions.md`);
+  容器本就以 root 跑在自己的 user namespace 里,这三个不产生新的宿主侧权限。不下发 `runAsNonRoot`(平台镜像以 root 运行)。
 - 租户 Pod 必须带 Egress 隔离 NetworkPolicy:禁访内网网段(含 CGNAT 100.64.0.0/10 与云元数据地址),并按明确滥用途 TCP 端口黑名单封禁 SMTP(25/465/587)、SMB/NetBIOS(135/139/445)、Telnet(23)、RDP(3389);HTTPS/SSH 出/包管理/对象存储等正常用途不受影响。租户 ns 打 PSA 标签(enforce=baseline、audit/warn=restricted;平台镜像以 root 运行,不能 enforce=restricted),容器有 ephemeral-storage 限额。
 - 每租户独立 namespace + ResourceQuota 兜底 + 独立 JuiceFS PVC;JuiceFS 子路径须校验合法性,拒绝越界路径。
-- 创建实例只校验镜像引用形态(域名/路径/tag 合法),来源白名单默认关;需要收紧时在平台配置·镜像仓库填 `image_allowed_registries`(每行一个仓库前缀),生效白名单 = 配置行 ∪ Harbor 地址前缀(`core/registry.effective_image_allowlist`),配置后只放行平台镜像目录内的引用与这些前缀;prod 下白名单为空且未配 Harbor 地址只给配置告警(`compute_config_warnings`),不拒启动。
+- 创建实例只校验镜像引用形态(域名/路径/tag/digest 合法,`core/registry.is_valid_image_ref`),来源白名单默认关;需要收紧时在平台配置·镜像仓库填 `image_allowed_registries`(每行一个仓库前缀),生效白名单 = 配置行 ∪ Harbor 地址前缀(`core/registry.effective_image_allowlist`),配置后只放行平台镜像目录内的引用与这些前缀;prod 下白名单为空且未配 Harbor 地址只给配置告警(`compute_config_warnings`),不拒启动。
 - 合规:前端 `/legal/terms` 与 `/legal/privacy` 为模板页,注册勾选前后端强校验,备案号运行期下发。
 - 高危管理操作一律「原因必填 → 二次确认 → 审计」;审计不落 token、密钥与配置值。
 - 密钥与凭据不入 git,只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME` 占位。

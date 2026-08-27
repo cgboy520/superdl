@@ -59,10 +59,15 @@ def tenant_security_context() -> "client.V1SecurityContext":
     kata-qemu 在 guest 内照常施加;userns 只挡逃逸后在宿主的权限,不替代这一层。
     不下发 runAsNonRoot:平台镜像以 root 运行(ssh root@ + 实例盘挂 /root),
     强开会杀死全部租户 Pod;root 的宿主侧风险由 userns 映射与 kata VM 边界兜住。
+
+    drop ALL 之后再 add 回三个:OpenSSH 的预认证特权分离是强制且不可配置的,
+    要 chroot("/run/sshd") 再 setgid/setuid,缺一个连密钥交换都过不去(实测每个连接
+    在 KEX 阶段 Connection reset,平台承诺的 ssh root@ 入口整个不可用)。容器本就以
+    root 跑在自己的 userns 里,这三个能力不给出新的宿主侧权限。见 docs/decisions.md。
     """
     return client.V1SecurityContext(
         allow_privilege_escalation=False,
-        capabilities=client.V1Capabilities(drop=["ALL"]),
+        capabilities=client.V1Capabilities(drop=["ALL"], add=["SYS_CHROOT", "SETUID", "SETGID"]),
         seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
     )
 
@@ -1044,6 +1049,18 @@ class RealOrchestrator:
         except ValueError:
             return 0
 
+    @staticmethod
+    def _gfd_version(labels: dict[str, str], kind: str) -> str:
+        """GFD 版本标签取值:优先 <kind>-version.full,回落按 major/minor(/revision)拼。"""
+        full = labels.get(f"nvidia.com/cuda.{kind}-version.full")
+        if full:
+            return full
+        parts = [
+            labels.get(f"nvidia.com/cuda.{kind}-version.{k}")
+            for k in ("major", "minor", "revision")
+        ]
+        return ".".join(p for p in parts if p)
+
     def _list_nodes_sync(self, include_unlabeled: bool = False) -> list[NodeInfo]:
         selector = None if include_unlabeled else POOL_NODE_LABEL
         nodes = self._list_all(self.core.list_node, label_selector=selector)
@@ -1067,6 +1084,8 @@ class RealOrchestrator:
                     disk_gb=self._qty_to_bytes(cap.get("ephemeral-storage")) // 1024**3,
                     gpu_model_label=labels.get("nvidia.com/gpu.product", ""),
                     model_label_current=labels.get(GPU_MODEL_NODE_LABEL, ""),
+                    driver_version_label=self._gfd_version(labels, "driver")[:32],
+                    cuda_version_label=self._gfd_version(labels, "runtime")[:16],
                 )
             )
         return out

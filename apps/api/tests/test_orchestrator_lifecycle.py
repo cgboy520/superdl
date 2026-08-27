@@ -662,6 +662,55 @@ class TestInventoryProvider:
 
 
 class TestImageRefValidation:
+    def test_digest_pinned_ref_accepted(self):
+        """目录 image_ref 钉 digest 是不可变量:形态校验必须同时收 tag + digest。
+
+        它挂了说明什么坏了:镜像目录钉不了 digest,按 tag 拉又会经 Spegel 拿到节点缓存的
+        旧镜像(见 docs/decisions.md),等于重推的修复永远到不了实例。
+        """
+        from app.core.registry import is_valid_image_ref
+
+        d = "a" * 64
+        assert is_valid_image_ref(
+            f"harbor.example.com/superdl/pytorch:2.13.0-cu132-py313@sha256:{d}"
+        )
+        assert is_valid_image_ref(f"harbor.example.com:10031/superdl/pytorch:2.13.0@sha256:{d}")
+        assert is_valid_image_ref(f"harbor.example.com/superdl/pytorch@sha256:{d}")  # 纯 digest
+        assert is_valid_image_ref("harbor.example.com/superdl/pytorch:2.13.0-cu132-py313")  # 纯 tag
+        # 手抄错一位不能放过:长度不足、大写十六进制、算法名写错
+        assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha256:{'a' * 63}")
+        assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha256:{'A' * 64}")
+        assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha512:{d}")
+
+    def test_admin_image_schema_rejects_malformed_ref(self):
+        """管理端写入路径也要挡:ref 钉 digest 后是 70+ 字符的手抄串,抄错若能入库,
+        要等用户创建实例才报错,而错误落在用户身上、运维看不到。"""
+        import pytest as _pytest
+        from pydantic import ValidationError
+
+        from app.modules.catalog.schemas import ImageCreate, ImageUpdate
+
+        d = "a" * 64
+        ok = ImageCreate(
+            framework="PyTorch",
+            framework_version="2.13.0",
+            python_version="3.13",
+            cuda_version="13.2",
+            image_ref=f" harbor.example.com/superdl/pytorch:2.13.0@sha256:{d} ",
+        )
+        assert ok.image_ref.endswith(d) and not ok.image_ref.startswith(" ")  # 顺带去空白
+        with _pytest.raises(ValidationError):
+            ImageCreate(
+                framework="PyTorch",
+                framework_version="2.13.0",
+                python_version="3.13",
+                cuda_version="13.2",
+                image_ref="not a valid ref!",
+            )
+        with _pytest.raises(ValidationError):
+            ImageUpdate(image_ref=f"harbor.example.com/superdl/pytorch:t@sha256:{'a' * 63}")
+        assert ImageUpdate(image_ref=None).image_ref is None  # 不传不校验
+
     async def test_malformed_image_ref_rejected(self, client, sm):
         headers, user_id, key_id = await create_user_with_key(client, "13500000090")
         await fund_wallet(sm, user_id)

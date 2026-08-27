@@ -8,6 +8,7 @@
 import base64
 import hashlib
 import json
+import re
 import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -48,6 +49,22 @@ def parse_proxy_projects(text: str) -> dict[str, str]:
         if upstream.strip() and project.strip():
             out[upstream.strip()] = project.strip()
     return out
+
+
+# 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串。
+# tag 与 digest 必须允许同时出现:平台镜像目录的 image_ref 就是 <repo>:<tag>@sha256:...
+# (按 tag 拉会经 Spegel 命中节点缓存的旧 digest,见 docs/decisions.md)。
+_IMAGE_REF_RE = re.compile(
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
+    r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
+    r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?"
+    r"(?:@sha256:[0-9a-f]{64})?$"
+)
+
+
+def is_valid_image_ref(image_ref: str) -> bool:
+    """镜像引用形态是否合法。创建实例与管理端目录 CRUD 共用同一份判定。"""
+    return bool(_IMAGE_REF_RE.match(image_ref))
 
 
 def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:

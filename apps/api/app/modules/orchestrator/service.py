@@ -11,7 +11,6 @@
 
 import hashlib
 import hmac
-import re
 import secrets
 import time
 from decimal import Decimal
@@ -36,7 +35,7 @@ from app.core.outbox import enqueue
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit
-from app.core.registry import effective_image_allowlist
+from app.core.registry import effective_image_allowlist, is_valid_image_ref
 from app.core.sqlutil import like_escape
 from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
@@ -203,22 +202,14 @@ def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
     )
 
 
-# 容器镜像引用形态(域名[:端口]/路径[:tag][@sha256:...]);拒绝空格、大写等非法串
-_IMAGE_REF_RE = re.compile(
-    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
-    r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
-    r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?"
-    r"(?:@sha256:[0-9a-f]{64})?$"
-)
-
-
 async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
     """镜像引用校验:先形态,再来源。
 
+    形态判定与管理端目录 CRUD 共用 core.registry.is_valid_image_ref(单一事实源)。
     来源白名单默认关(平台配置·镜像仓库 image_allowed_registries,Harbor 地址自动放行);
     配置后只放行平台镜像目录内的引用与白名单前缀;这是唯一的镜像来源闸门。
     """
-    if not _IMAGE_REF_RE.match(image_ref):
+    if not is_valid_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
     allowed = effective_image_allowlist(await get_effective_platform_config(session))
     if not allowed:

@@ -160,7 +160,7 @@
     "configCostLabel": "Instance cost",
     "createAndStart": "Create & start",
     "creating": "Instance {{name}} is being created",
-    "customImageHint": "Images must include SSH (22) and JupyterLab (8888); contact support for private registry credentials",
+    "customImageHint": "Images must include SSH (22) and JupyterLab (8888); contact support for private registry credentials. Prefer an @sha256: reference — pulling by tag may hit a stale image cached on the node",
     "dailyCostHint": "accrues while stopped",
     "dailyCostLabel": "Daily costs",
     "detailDiskLine": "Data disk: {{size}}G × {{price}} (billed daily, even while stopped)",

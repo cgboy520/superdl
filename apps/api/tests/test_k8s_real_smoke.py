@@ -162,6 +162,9 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
     assert sc is not None
     assert sc.allow_privilege_escalation is False
     assert sc.capabilities is not None and sc.capabilities.drop == ["ALL"]
+    # 这三个是 SSH 的硬前置(OpenSSH 预认证特权分离要 chroot + setgid/setuid),
+    # 少任何一个,平台承诺的 ssh root@ 入口在密钥交换阶段就断;多给别的则是加固回退
+    assert set(sc.capabilities.add or []) == {"SYS_CHROOT", "SETUID", "SETGID"}
     assert sc.seccomp_profile is not None and sc.seccomp_profile.type == "RuntimeDefault"
     assert pod.spec.automount_service_account_token is False
     # ephemeral-storage 限额(可写层+日志):防写爆节点盘连坐整节点

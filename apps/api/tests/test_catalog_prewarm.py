@@ -195,6 +195,36 @@ class TestPrewarmLifecycle:
         rows = await cache_rows(sm)
         assert [r.status for r in rows] == ["pending"] * 3
 
+    async def test_ref_change_via_sql_invalidates_cached_rows(
+        self, sm, fake: FakeOrchestrator
+    ) -> None:
+        """绕过服务层直接改 image_ref(SQL 批量换域名 / 数据修复)时,缓存行必须作废重拉。
+
+        它挂了说明什么坏了:管理端会报「已预热」,而节点上留着旧 digest 的镜像——
+        重推的镜像修复永远到不了实例(admin_update_image 的清行只覆盖走接口那条路)。
+        """
+        image_id = await make_image(sm)
+        await prewarm_patrol(sm)
+        await drain(sm)
+        await prewarm_patrol(sm)  # 全部 cached,cached_ref = 旧 ref
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["cached"] * 3
+        assert {r.cached_ref for r in rows} == {IMAGE_REF}
+
+        async with sm() as session:
+            await session.execute(
+                update(PlatformImage)
+                .where(PlatformImage.id == image_id)
+                .values(image_ref=IMAGE_REF + "@sha256:" + "b" * 64)
+            )
+            await session.commit()
+
+        counts = await prewarm_patrol(sm)
+        assert counts["requeued"] == 3
+        rows = await cache_rows(sm)
+        assert [r.status for r in rows] == ["pending"] * 3
+        assert {r.cached_ref for r in rows} == {None}
+
     async def test_pending_row_requeued_after_timeout(self, sm, fake: FakeOrchestrator) -> None:
         """pending 行超时(默认 10min)重派:outbox 任务死信/丢失后行不再永远卡 pending。
 

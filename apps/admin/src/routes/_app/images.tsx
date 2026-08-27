@@ -335,13 +335,13 @@ function ImagesPage() {
               { required: true, min: 3 },
               {
                 validator: (_, v: string) =>
-                  v?.endsWith(":latest") || (v && !v.includes(":"))
+                  v && !/@sha256:[0-9a-f]{64}$/.test(v)
                     ? Promise.reject(new Error(t("images.tagRule")))
                     : Promise.resolve(),
               },
             ]}
           >
-            <Input placeholder={`${registryPrefix}pytorch:2.9.0-cu128`} />
+            <Input placeholder={`${registryPrefix}pytorch:2.13.0-cu132-py313@sha256:…`} />
           </Form.Item>
           <Form.Item name="sort" label={t("images.sortLabel")}>
             <InputNumber min={0} max={9999} style={{ width: "100%" }} />

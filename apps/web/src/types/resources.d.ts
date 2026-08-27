@@ -488,7 +488,7 @@ export default interface Resources {
       "configCostLabel": "配置费用",
       "createAndStart": "创建并开机",
       "creating": "实例 {{name}} 创建中",
-      "customImageHint": "镜像需内置 SSH(22)与 JupyterLab(8888);私有仓库拉取凭据请联系客服配置",
+      "customImageHint": "镜像需内置 SSH(22)与 JupyterLab(8888);私有仓库拉取凭据请联系客服配置。建议用 @sha256: 的形式引用:按 tag 拉可能命中节点上缓存的旧镜像",
       "dailyCostHint": "关机也会产生",
       "dailyCostLabel": "日常费用",
       "detailDiskLine": "数据盘:{{size}}G × {{price}}(按日折算,关机也计费)",

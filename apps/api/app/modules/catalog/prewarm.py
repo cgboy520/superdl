@@ -57,6 +57,7 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
         node_name, image.image_ref, image_pull_secret=pull_secret
     )
     row.status = "pulling"
+    row.cached_ref = image.image_ref
 
 
 async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
@@ -104,7 +105,16 @@ async def _plan(
             # NotReady 节点保留行但不派新任务(回 Ready/Cordoned 后由下列分支自然续派)
             if row.node_name not in target_nodes:
                 continue
-            if row.status == "failed" and row.updated_at < now - FAILED_RETRY_INTERVAL:
+            if row.cached_ref is not None and row.cached_ref != ref_by_id.get(row.image_id):
+                # ref 变了(重推后换 digest):这行缓存的是旧镜像,作废重拉
+                row.status = "pending"
+                row.cached_ref = None
+                row.checked_at = None
+                enqueue(
+                    session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}
+                )
+                counts["requeued"] += 1
+            elif row.status == "failed" and row.updated_at < now - FAILED_RETRY_INTERVAL:
                 row.status = "pending"  # last_error 保留供 UI 展示直至下次收敛
                 enqueue(
                     session, "image.prewarm", {"image_id": row.image_id, "node_name": row.node_name}

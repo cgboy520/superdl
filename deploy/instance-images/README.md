@@ -13,14 +13,18 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 | Jupyter 默认界面 | `--ServerApp.default_url=/lab`,票据核销后 302 到 `/lab`;界面语言默认 zh-CN(`lab-overrides.json`,用户可在设置里改) |
 | Jupyter 进程 | 守护循环拉起(不用 exec 当 PID 1),连续秒退 5 次才放弃 |
 | Jupyter Origin | 读环境变量 `JUPYTER_ALLOW_ORIGIN`(本实例域名)作为 `ServerApp.allow_origin`;**禁止写死 `'*'`** —— cookie 会话下等于放行跨站 WebSocket 在用户实例内执行代码 |
-| Jupyter 套件 | 每个镜像必装:`jupyterlab` / `jupyter-ai` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel`(少了 ipykernel 实例里没有 Python 内核) |
-| 补充组命名 | 运行时注入的宿主 video/render 补充组在镜像 `/etc/group` 里无名字,shell 启动会刷 `groups: cannot find name for group ID <gid>`;entrypoint 按需补 `hostgrp<gid>` 记录(只补名字不动权限) |
+| Jupyter 套件 | 每个镜像必装:`jupyterlab` / `jupyter-ai[jupyternaut,magics]` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel`(少了 ipykernel 实例里没有 Python 内核) |
+| jupyter-ai | 必须带 `[jupyternaut,magics]` extra:裸装 `jupyter-ai` 只有聊天壳子,`jupyter_ai.model_providers` 为空、只剩 8 个要另装 CLI 才能用的 ACP persona。entrypoint 另下发两项:模型提供方白名单(`openai` / `anthropic` / `github_copilot` / `ollama` / `ollama_chat`),以及显式的默认 persona(上游默认值写的是 `::jupyter_ai::`,实际类在 `::jupyter_ai_jupyternaut::`,不钉则新建会话无应答者) |
+| 补充组命名 | 运行时注入的宿主 video/render 补充组在镜像 `/etc/group` 里无名字,shell 启动会刷 `groups: cannot find name for group ID <gid>`;entrypoint 按需补 `hostgrp<gid>` 记录,并把 `root` 写进这些组的成员列表 —— sshd 认证后按 `/etc/group` 重建补充组,root 不在成员里的组会被丢掉,SSH 会话会因此拿不到 `/dev/dri`(0660,组=render) |
 | CUDA compat | 启动时探测 `cuInit`:失败才从 `LD_LIBRARY_PATH` 摘掉 `*/compat`(镜像自带的旧 libcuda 会盖过宿主驱动库,宿主驱动更新时框架看到 0 张卡);仍失败则还原 |
-| SSH 会话环境 | entrypoint 把 `PATH` / `LD_LIBRARY_PATH` / `CUDA_HOME` 写进 `/etc/environment`(PAM,覆盖非交互 `ssh host cmd`)与 `/etc/profile.d/superdl-env.sh`(登录 shell);**禁止把 `JUPYTER_TOKEN` 等敏感值写进去** |
+| SSH 会话环境 | entrypoint 把 PID 1 的环境写进 `/etc/environment`(PAM,覆盖非交互 `ssh host cmd`)与 `/etc/profile.d/superdl-env.sh`(登录 shell)。**用黑名单不用白名单**:白名单每换一个基座就要重猜一次(datascience 的 `JULIA_DEPOT_PATH`、`LANG` 曾因此在 SSH 里整个丢失)。黑名单剔除 `JUPYTER_TOKEN` / `AUTHORIZED_KEYS` 与含 TOKEN/SECRET/PASSWORD/KEY/CREDENTIAL 的变量,以及 shell 私有变量;**敏感值绝不落盘** |
+| SSH 可用性 | OpenSSH 的预认证特权分离是强制的,需要 `SYS_CHROOT` / `SETUID` / `SETGID` 三个 capability,平台在 `tenant_security_context()` 里 drop ALL 之后单独 add 回这三个。另外 TopoLVM 把 `/root` 挂成 `2777`,sshd 的 StrictModes 会因此拒绝公钥认证,entrypoint 起 sshd 前 `chmod g-w,o-w /root` |
+| 用户安装的包 | 必须落在实例盘:entrypoint 下发 `PYTHONUSERBASE=/root/.local` + `PIP_USER=1`,并把 `JULIA_DEPOT_PATH` 前置 `/root/.julia`(还要把镜像自带的 `environments/vX.Y` 复制过去 —— Julia 的活动环境取 DEPOT_PATH 里第一个**已存在**的那份,不复制则 `Pkg.add` 会去写只读的镜像 depot)。`/opt/conda`、`/opt/julia` 在容器可写层,装进去 Pod 重建即消失,还占 `ephemeral-storage` 配额。`PIP_USER=1` 在已激活的 venv 里会让 pip 直接报错,故 `profile.d` 里定义了一个 `pip` 包装:`$VIRTUAL_ENV` 非空时关掉 `--user` |
+| Lab 设置目录 | `lab-overrides.json` 构建期放到 root 属主的 `/opt/superdl/labsettings`,entrypoint 用 `--LabApp.app_settings_dir` 指过去。不用基座默认的 `<app_dir>/settings`:docker-stacks 系基座的 `/opt/conda` 属主是 jovyan,租户容器 drop 掉 DAC_OVERRIDE 后 root 反而写不进去 |
 | SSH host key | 首次生成后持久化到实例盘(`/root/.ssh/host_keys`),`/etc/ssh` 下为符号链接;否则 Pod 重建即变指纹 |
 | SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)写入 `~/.ssh/authorized_keys`,sshd 监听 `22`,仅密钥登录 |
 | 工作目录 | 用户数据放 `/root`(实例盘挂载点);数据盘挂 `/root/data` |
-| HOME 与运行目录 | `HOME=/root`,且 Jupyter 的 runtime/data/config 目录都落在 `/root` 下 —— 共享池 userns(`hostUsers:false`)下 `/home/xxx` 不可写 |
+| HOME 与运行目录 | `HOME=/root`,Jupyter 的 data/config 目录落在 `/root` 下 —— 共享池 userns(`hostUsers:false`)下 `/home/xxx` 不可写。**runtime 目录例外**:`JUPYTER_RUNTIME_DIR=/run/jupyter`(容器可写层),因为 `jpserver-*.json` 与 0644 的 `jpserver-*-open.html` 含 token 明文,落实例盘会随 PVC 长期存活 |
 | 基础镜像 | 与 SKU 的 `cuda_max` 兼容的 CUDA 运行时 |
 
 ## 默认镜像矩阵(平台自带目录)
@@ -57,17 +61,22 @@ entrypoint,每个平台镜像必须自行满足下面的契约。
 
 一份 `Dockerfile` + `entrypoint.sh` + `superdl_jupyter_auth.py` + `lab-overrides.json`,三种用法靠 build-arg 区分
 (文件头注释有全表)。构建上下文就是本目录。基座一律钉 digest:浮动 tag 会在重建时静默换基座。
+所有安装步骤之后统一跑一次 `apt full-upgrade`,把发行版的安全回补一次打齐;
+OpenSSH 版本由基座 OS 决定(24.04 → 9.6p1、22.04 → 8.9p1),两条线 Ubuntu 都做 CVE 回补,不从源码自建。
+这一层在 CUDA 基座上约 **4GB**(实测 miniconda cu132:升级 86 个包,其中 50 个是 CUDA 系的补丁版本,
+体积大且升级等于把新版本整套复制进新层),已知且刻意接受——不为省这 4GB 而 hold 住 CUDA 包。
 
 ```bash
 cd deploy/instance-images
 REG=<registry>/superdl
-JUP="jupyterlab==4.6.3 jupyter-ai==3.1.3 jupyter-resource-usage==1.3.0 jupyterlab-language-pack-zh-CN==4.5.post3 ipykernel==7.3.0"
+JUP="jupyterlab==4.6.3 jupyter-ai[jupyternaut,magics]==3.1.3 jupyter-resource-usage==1.3.0 jupyterlab-language-pack-zh-CN==4.5.post3 ipykernel==7.3.0"
+CONDA=/opt/conda/bin:   # 只有自建 conda 的那几步传;厂商基座不传(它们没有 /opt/conda)
 
 # ---- CUDA 13.2 线 ----
 docker build -t $REG/miniconda:26.5.3-cu132-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:13.2.1-cudnn-devel-ubuntu24.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
-  --build-arg JUPYTER_PACKAGES="$JUP" .
+  --build-arg CONDA_PATH_PREFIX=$CONDA --build-arg JUPYTER_PACKAGES="$JUP" .
 docker build -t $REG/pytorch:2.13.0-cu132-py313 \
   --build-arg BASE_IMAGE=$REG/miniconda:26.5.3-cu132-py313 \
   --build-arg FRAMEWORK_PIP="torch==2.13.0+cu132 torchvision==0.28.0+cu132" \
@@ -77,7 +86,7 @@ docker build -t $REG/pytorch:2.13.0-cu132-py313 \
 docker build -t $REG/miniconda:26.5.3-cu129-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
-  --build-arg JUPYTER_PACKAGES="$JUP" .
+  --build-arg CONDA_PATH_PREFIX=$CONDA --build-arg JUPYTER_PACKAGES="$JUP" .
 docker build -t $REG/pytorch:2.13.0-cu129-py313 \
   --build-arg BASE_IMAGE=$REG/miniconda:26.5.3-cu129-py313 \
   --build-arg FRAMEWORK_PIP="torch==2.13.0+cu129 torchvision==0.28.0+cu129" \
@@ -90,7 +99,7 @@ docker build -t $REG/tensorflow:2.21.0-cu129-py313 \
 docker build -t $REG/miniconda:26.5.3-cu118-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
-  --build-arg JUPYTER_PACKAGES="$JUP" .
+  --build-arg CONDA_PATH_PREFIX=$CONDA --build-arg JUPYTER_PACKAGES="$JUP" .
 docker build -t $REG/pytorch:2.7.1-cu118-py313 \
   --build-arg BASE_IMAGE=$REG/miniconda:26.5.3-cu118-py313 \
   --build-arg FRAMEWORK_PIP="torch==2.7.1+cu118 torchvision==0.22.1+cu118 torchaudio==2.7.1+cu118" \
@@ -98,7 +107,7 @@ docker build -t $REG/pytorch:2.7.1-cu118-py313 \
 docker build -t $REG/tensorflow:2.14.1-cu118-py311 \
   --build-arg BASE_IMAGE=nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py311_26.5.3-2-Linux-x86_64.sh \
-  --build-arg JUPYTER_PACKAGES="$JUP" \
+  --build-arg CONDA_PATH_PREFIX=$CONDA --build-arg JUPYTER_PACKAGES="$JUP" \
   --build-arg FRAMEWORK_PIP="tensorflow==2.14.1" .
 # TF 2.14 不能用 [and-cuda]:该 extra 钉了 tensorrt==8.5.3.1,此包已从 PyPI 下架,装不上;
 # TF 2.14 官方要求 CUDA 11.8 + cuDNN 8.7,基座(cudnn8.9)自带,直接用系统 CUDA。
@@ -107,9 +116,10 @@ docker build -t $REG/tensorflow:2.14.1-cu118-py311 \
 # 上游只有滚动的 latest,构建时钉住当次的 digest;版本号用镜像快照月份,内容见上表
 docker build -t $REG/datascience:2026.08-py313 \
   --build-arg BASE_IMAGE=quay.io/jupyter/datascience-notebook@sha256:<当次 digest> \
-  --build-arg JUPYTER_PACKAGES="$JUP" --build-arg CHOWN_CONDA_ROOT=1 .
-# CHOWN_CONDA_ROOT:docker-stacks 基座的 /opt/conda 属于 jovyan,而租户容器是 root 且 capabilities 全 drop
-# (无 DAC_OVERRIDE),不归 root 的话 entrypoint 写 Lab 设置会失败、用户 pip install 也会被拒(实测 Pod 直接起不来)
+  --build-arg JUPYTER_PACKAGES="$JUP" .
+# 不需要 chown /opt/conda:Lab 设置改放 root 属主的 /opt/superdl/labsettings,用户装包走
+# PYTHONUSERBASE/JULIA_DEPOT_PATH 落实例盘。曾经的 chown -R 会多出 3.75GB 的一层,
+# 还把基座 fix-permissions 的属主约定打破。
 
 # ---- PaddlePaddle(厂商基座,只补平台契约层;基座自带 python3.10 与 paddle)----
 PADDLE=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle
@@ -119,23 +129,32 @@ for pair in "cu130:3.3.1-gpu-cuda13.0-cudnn9.13" "cu129:3.3.1-gpu-cuda12.9-cudnn
 done
 ```
 
-推送前自检(四步,缺一不可;`deploy/instance-images` 下任何文件改动后重建都要重跑):
+推送前自检(五步,缺一不可;`deploy/instance-images` 下任何文件改动后重建都要重跑):
 
 ```bash
 IMG=$REG/pytorch:2.13.0-cu132-py313
 # ① 扩展能在目标基座的 jupyter_server 上 import
 docker run --rm --entrypoint python $IMG -c "import sys; sys.path.insert(0,'/opt/superdl'); import superdl_jupyter_auth; print('ok')"
-# ② Jupyter 套件齐全:4 个模块 + 内核都在,且 jupyter_ai / resource-usage 的 server 扩展是 enabled
-docker run --rm --entrypoint bash $IMG -lc 'pip list | grep -iE "jupyterlab |jupyter_ai|jupyter-resource-usage|language-pack|ipykernel"; jupyter server extension list 2>&1 | grep -cE "jupyter_ai_router|jupyter_resource_usage"'
-# ③ 起一次,验三件事:坏票据 403(404 = 扩展没加载;容器秒退 = 启动参数错)、
-#    入场票据 302 落 /lab(不是 /tree)、语言包里有 zh_CN
-docker run -d --name jcheck -e JUPYTER_TOKEN=selfcheck -p 127.0.0.1:18888:8888 $IMG && sleep 20
+# ② Jupyter 套件齐全,且 jupyter-ai 的模型能力真的在位(裸装 jupyter-ai 时 jupyternaut 不存在)
+docker run --rm --entrypoint bash $IMG -lc 'pip list | grep -iE "jupyterlab |jupyter_ai|jupyter-resource-usage|language-pack|ipykernel";
+  python -c "from importlib.metadata import entry_points,version; assert \"jupyternaut\" in [e.name for e in entry_points(group=\"jupyter_ai.personas\")]; version(\"jupyter-ai-litellm\"); print(\"ai ok\")"'
+# ③ 真起一次(按生产的 capabilities 与 2777 的 /root),验票据、界面语言默认值、SSH
+FAKE=$(mktemp -d); chmod 2777 $FAKE; ssh-keygen -q -t ed25519 -f /tmp/tkey -N ""
+docker run -d --name jcheck --cap-drop=ALL --cap-add=SYS_CHROOT --cap-add=SETUID --cap-add=SETGID \
+  -e JUPYTER_TOKEN=selfcheck -e AUTHORIZED_KEYS="$(cat /tmp/tkey.pub)" \
+  -v $FAKE:/root -p 127.0.0.1:18888:8888 $IMG && sleep 28
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'   # 期望 403
 TIK=$(python3 -c 'import hmac,hashlib,time;e=str(int(time.time())+60);print(f"code=c0&exp={e}&sig="+hmac.new(b"selfcheck",f"c0.{e}".encode(),hashlib.sha256).hexdigest())')
 curl -s -o /dev/null -D - -c /tmp/jar "http://127.0.0.1:18888/superdl-bootstrap?$TIK" | grep -i '^location:'  # 期望 /lab
-curl -s -b /tmp/jar 'http://127.0.0.1:18888/lab/api/translations/' | head -c 120                            # 期望含 zh_CN
-docker rm -f jcheck
-# ④ 推送
+# 界面语言要验「默认值」而不是「语言包装了没」——那是两件事,装了包但 overrides 没落位时后者照样过
+curl -s -b /tmp/jar 'http://127.0.0.1:18888/lab/api/settings/@jupyterlab/translation-extension:plugin' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["schema"]["properties"]["locale"]["default"])'   # 期望 zh_CN
+# ④ 真连一次 SSH(平台承诺的入口;只验 sshd 起没起是不够的,认证会被 /root 权限单独挡掉)
+IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' jcheck)
+ssh -i /tmp/tkey -o StrictHostKeyChecking=no -o BatchMode=yes root@$IP 'echo SSHOK; python -V; id -Gn'
+docker exec jcheck sh -c 'cat /etc/environment /etc/profile.d/superdl-env.sh | grep -ciE "selfcheck|ssh-ed25519"'  # 期望 0
+docker rm -f jcheck; rm -rf $FAKE
+# ⑤ 推送
 docker push $IMG
 ```
 
@@ -154,6 +173,9 @@ echo "$IMG@$(docker inspect --format '{{index .RepoDigests 0}}' $IMG | cut -d@ -
 再把管理端里该镜像的 ref 换成新 digest。为什么不能只按 tag 拉:k3s 内置 registry(Spegel P2P,节点
 `registries.yaml` 的 `mirrors "*"`)按 **tag** 解析时会返回节点自己缓存的旧 digest,`imagePullPolicy: Always`
 也拉不到新镜像(实机实测:Harbor 上已是新 digest,Pod 跑的仍是旧的);按 digest 拉是内容寻址,不会拿错。
-换 ref 后平台会同事务清掉该镜像的节点缓存行并按新 ref 重新预热;已在跑的实例用自己的快照,不受影响。
+换 ref 后平台会同事务清掉该镜像的节点缓存行并按新 ref 重新预热(缓存行另记 `cached_ref`,SQL 直改绕过服务层时由巡检兜底作废)。
+
+**实例的 ref 是创建时的快照,终身不变**:停机、开机、重启都用创建时那个 digest,所以镜像修复只对**新建实例**生效,
+存量实例必须由用户删掉重建才能拿到。发布带 entrypoint 修复的镜像时要把这一点一并通知到。
 
 推送到托管镜像仓、在管理端登记与预热的 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`(托管仓 + Spegel P2P 节点间分发;集群内自建 registry 已退役)。

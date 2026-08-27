@@ -73,6 +73,9 @@ class ImageNodeCache(Base):
     node_name: Mapped[str] = mapped_column(String(255))
     # pending(待预热)/ pulling(Job 进行中)/ cached(已缓存)/ failed(拉取失败)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # 这一行缓存的是哪个 ref。与镜像当前 image_ref 不符即由巡检作废重拉:
+    # admin_update_image 改 ref 时会同事务删行,但 SQL 直改 / 数据修复脚本绕不过这条兜底。
+    cached_ref: Mapped[str | None] = mapped_column(String(256))
     last_error: Mapped[str | None] = mapped_column(Text)
     checked_at: Mapped[datetime | None]  # 最近确认 cached 的时刻,复检窗口依据
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

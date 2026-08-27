@@ -470,7 +470,9 @@ function InstancesPage() {
                         disk: r.spec["disk_gb"] as number,
                       })}
                     </span>
-                    <span>{t("instances.imageLine", { ref: r.image_ref })}</span>
+                    <span style={{ maxWidth: 360, wordBreak: "break-all" }}>
+                      {t("instances.imageLine", { ref: r.image_ref })}
+                    </span>
                     <span>{t("instances.createdAtLine", { time: formatDateTime(r.created_at) })}</span>
                   </Space>
                 }

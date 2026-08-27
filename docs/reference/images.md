@@ -5,7 +5,7 @@
 ## 数据模型
 
 - `images`:framework/version/python/cuda/image_ref、`prewarm_enabled`(管理员意图)
-- `image_node_cache`:image_id(FK CASCADE)、node_name、status(pending/pulling/cached/failed)、last_error、checked_at,Unique(image_id, node_name)
+- `image_node_cache`:image_id(FK CASCADE)、node_name、status(pending/pulling/cached/failed)、cached_ref(该行缓存的是哪个 ref)、last_error、checked_at,Unique(image_id, node_name)
 
 ## 契约
 
@@ -36,10 +36,14 @@
 - 预热由 `image.prewarm` outbox handler(幂等)+ `prewarm_patrol` 巡检(60s,advisory lock 1008)铺行、收敛与复检;节点增删由巡检自行发现,与装机链路零耦合。
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
+- **实例的 image_ref 快照终身不变**:创建时定下,停机/开机/重启都用它,没有「实例换镜像」的端点。
+  所以镜像修复(entrypoint 改动等)只对新建实例生效,存量实例必须删掉重建;发布这类镜像时要一并通知用户。
 - 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
 - **平台镜像 tag 允许同名重推,但目录 `image_ref` 必须钉 digest**(`<repo>:<tag>@sha256:...`,形态校验本就支持)。
   按 tag 拉不可靠:k3s 内置 registry(Spegel)按 tag 解析会返回节点缓存的旧 digest,`imagePullPolicy: Always` 也救不回来(实测)。
   重推后把管理端该镜像的 ref 换成新 digest 即可:`admin_update_image` 同事务清该镜像的 cache 行,巡检按新 ref 重新预热;
+  绕过服务层直接改库(SQL 批量换域名之类)时不会触发清行,由巡检比对 `cached_ref` 兜底作废,≤60s 自愈;
   已在跑的实例用的是自己的快照,不受影响。构建、自检与取 digest 的命令见 `deploy/instance-images/README.md`。
-- 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律存 Harbor 全限定名 `<host>/<项目>/<名>:<tag>`,没有逻辑名。拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 之前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与该租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`,指纹相同不覆写),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户(项目 public)则不生成、不引用。轮换 = 配置中心保存新 Secret,节点不落凭据。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
+- 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律存 Harbor 全限定名并钉 digest:`<host>/<项目>/<名>:<tag>@sha256:<digest>`,没有逻辑名。
+形态校验的单一事实源是 `core/registry.is_valid_image_ref`,创建实例与管理端目录 CRUD 共用同一份判定。拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 之前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与该租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`,指纹相同不覆写),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户(项目 public)则不生成、不引用。轮换 = 配置中心保存新 Secret,节点不落凭据。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。

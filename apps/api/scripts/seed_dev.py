@@ -94,7 +94,8 @@ SKUS = [
 IMAGES = [
     # 平台默认镜像目录:选版规则与构建命令见 deploy/instance-images/README.md
     # (框架取「最新稳定版 + 最后一个支持 CUDA 11.8 的稳定版」;CUDA 三条线 13.2 / 12.9 / 11.8;
-    #  Python 取该框架支持的最高版本)。dev 用 Fake 编排不真拉取,image_ref 存 Harbor 全限定名。
+    #  Python 取该框架支持的最高版本)。dev 用 Fake 编排不真拉取,host 是占位符,所以这里只写 tag;
+    #  生产目录的 image_ref 必须钉 digest(<repo>:<tag>@sha256:...),别照抄这张表去建生产条目。
     # (framework, framework_version, python, cuda, image_ref, sort)
     (
         "PyTorch",
