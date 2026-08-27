@@ -48,8 +48,11 @@ import { useSetAutoRenew } from "../api/mutations";
 import {
   CopyButton,
   InstanceStatusBadge,
+  SpotReclaimTag,
+  SpotTag,
   SubscriptionTag,
   TierTag,
+  useEventReasonText,
   WorkloadTag,
 } from "../components/common";
 import { RenewModal } from "../components/RenewModal";
@@ -148,6 +151,7 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
 /** 展开行(failed):事件按需加载,给失败原因 + 未扣费/重新创建闭环。 */
 function ExpandedFailed({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
+  const reasonText = useEventReasonText();
   const { data: events, isError } = useInstanceEvents(instance.uuid);
   if (isError) {
     return <Typography.Text type="secondary">{t("query.loadFailed")}</Typography.Text>;
@@ -160,7 +164,7 @@ function ExpandedFailed({ instance }: { instance: InstanceOut }) {
     <Space orientation="vertical" size={4}>
       {reason ? (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {reason}
+          {reasonText(reason)}
         </Typography.Text>
       ) : null}
       {everRan ? (
@@ -645,19 +649,28 @@ function InstancesPage() {
                   </Button>
                 </Space>
               ) : (
+                // 竞价与按量共用这一支:两者都按秒出小时账,差别只在标记与「可回收」这一句。
+                // price_hourly 在竞价实例上已经是折后价(后端建实例时锁定),这里不再折一次。
                 <Space orientation="vertical" size={0}>
                   <Space size={6}>
-                    <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
+                    {r.market === "spot" ? (
+                      <SpotTag market={r.market} />
+                    ) : (
+                      <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
+                    )}
                     <span>
                       {t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}
                     </span>
                   </Space>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
-                    {t("instances.todayCost", {
-                      amount: moneyOr(formatMoney(todayByInstance.get(r.id)), daily != null),
-                    })}
-                  </Typography.Text>
+                  <Space size={6}>
+                    <SpotReclaimTag market={r.market} />
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
+                      {t("instances.todayCost", {
+                        amount: moneyOr(formatMoney(todayByInstance.get(r.id)), daily != null),
+                      })}
+                    </Typography.Text>
+                  </Space>
                 </Space>
               ),
           },

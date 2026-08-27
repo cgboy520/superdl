@@ -54,6 +54,7 @@ class SkuMarketOut(BaseModel):
     # 池标签:同一 (pool, model) 物理池上的互斥档位可售数不可相加(前端按组取 max 展示)
     pool_label: str
     period_enabled: bool  # 是否接受包周期下单(市场页据此决定包日/包周/包月/包年 chips)
+    spot_enabled: bool  # 是否上竞价档(市场页据此决定竞价入口可不可选)
     available_count: int = 0  # 近似库存(节点台账口径,每请求直接算),service 填充
 
     model_config = {"from_attributes": True}
@@ -79,6 +80,7 @@ class SkuAdminOut(BaseModel):
     max_gpus_per_instance: int
     cuda_max: str | None
     period_enabled: bool
+    spot_enabled: bool
     status: str
     created_at: datetime
     # 台账/占用组装列(仅列表端点填充;写操作响应保持默认,前端保存后 refetch)
@@ -134,6 +136,7 @@ class SkuCreate(BaseModel):
     max_gpus_per_instance: int = Field(default=1, ge=0, le=8)
     cuda_max: str | None = None
     period_enabled: bool = True
+    spot_enabled: bool = False
 
     @model_validator(mode="after")
     def _tier_matches_gpu_fields(self) -> "SkuCreate":
@@ -168,6 +171,7 @@ class SkuUpdate(BaseModel):
     max_gpus_per_instance: int | None = Field(default=None, ge=0, le=8)
     cuda_max: str | None = None
     period_enabled: bool | None = None
+    spot_enabled: bool | None = None
     status: str | None = Field(default=None, pattern="^(on|off)$")
     # 必填原因:改价单人一步生效且被新实例快照;配套记录旧值与幅度超阈告警。同策略参数 PUT。
     reason: str = Field(min_length=2, max_length=200)

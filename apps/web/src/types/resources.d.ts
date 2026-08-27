@@ -198,6 +198,7 @@ export default interface Resources {
       "periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
       "periodOnOnDemand": "按量计费的实例不能带计费周期",
       "periodRequired": "包周期实例必须选择计费周期",
+      "preemptNotSpot": "只有竞价实例可以强制回收",
       "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
       "releaseNeedsStopped": "关机后才能释放实例",
       "renewNotSubscription": "只有包周期实例可以续费",
@@ -206,11 +207,13 @@ export default interface Resources {
       "serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
       "servicePortRequired": "服务型实例必须填写容器监听端口",
       "servicePortReserved": "端口 {{port}} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口",
+      "spotNotEnabled": "该规格暂未上竞价档,请选择按量或包周期",
       "sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
       "sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",
       "startNeedsStopped": "仅已关机的实例可以开机",
       "stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
       "stopNeedsRunning": "仅运行中的实例可以关机",
+      "toOnDemandNotSpot": "只有竞价实例可以转按量",
       "vcpuQuota": "CPU 实例的 vCPU 总数将超过上限({{max}} 核),请释放后再创建或联系客服提额"
     },
     "tickets": {
@@ -251,7 +254,8 @@ export default interface Resources {
         "month": "月",
         "week": "周",
         "year": "年"
-      }
+      },
+      "spotDiscount": "{{off}} 折"
     },
     "status": {
       "adjustment": {
@@ -281,6 +285,31 @@ export default interface Resources {
         "deleting": "清除中",
         "frozen": "已冻结",
         "grace": "宽限期"
+      },
+      "eventReason": {
+        "admin_force_stop": "管理员强制停止",
+        "admin_release": "管理员释放",
+        "arrears_freeze": "欠费冻结",
+        "arrears_reclaim": "欠费回收实例盘",
+        "arrears_stop": "欠费停机",
+        "create": "创建实例",
+        "failed_recover": "从失败恢复",
+        "failed_retention_reclaim": "失败实例留存到期回收",
+        "pod_deleted": "容器已删除",
+        "pod_ready": "容器就绪",
+        "preempted": "竞价回收",
+        "recharge_unfreeze": "充值解冻",
+        "released": "释放完成",
+        "restart": "重启",
+        "retention_reclaim": "留存到期回收",
+        "schedule_timeout": "调度超时",
+        "subscription_expired": "包周期到期停机",
+        "subscription_freeze": "包周期到期冻结",
+        "subscription_renew": "包周期续费",
+        "tenant_frozen": "账号被冻结",
+        "user_release": "用户释放",
+        "user_start": "用户开机",
+        "user_stop": "用户关机"
       },
       "imageCache": {
         "cached": "已缓存",
@@ -318,7 +347,11 @@ export default interface Resources {
       "market": {
         "on_demand": "按量",
         "spot": "竞价",
+        "spotReclaimable": "可回收",
         "subscription": "包周期"
+      },
+      "marketHint": {
+        "spot": "容量紧张时,平台会按创建时间从新到旧回收竞价实例;回收前提前通知"
       },
       "nodeEnroll": {
         "expired": "已过期",
@@ -545,6 +578,19 @@ export default interface Resources {
       "serviceGatewayAuth": "平台在网关校验 Authorization: Bearer,你的容器不用自己实现鉴权",
       "serviceImagePinned": "写固定 tag 或 @sha256 digest:服务容器退出后会被原地重启,可变 tag 会让重启后悄悄换成另一个版本。服务型容器不要求内置 SSH 与 JupyterLab",
       "serviceNotReadyHint": "服务还没就绪:实例仍在运行、照常计费,平台不会替你停。先看容器日志,再核对健康检查路径与服务端口",
+      "spotBillingBasis": "竞价价按折扣锁定在实例上,同样按秒累计;被回收时按实际运行秒数结算,不免单",
+      "spotConsent": {
+        "c1": "竞价价为按量价的 {{pct}}%,代价是实例可被平台回收",
+        "c2": "按量或包周期用户需要容量而池里不够时,平台在同池同型号内按创建时间从新到旧回收竞价实例;凑不够则一台都不动",
+        "c3": "回收前提前 {{seconds}} 秒发短信与站内信,宽限窗内实例仍在运行、SSH 仍可登录,请自行保存进度",
+        "c4": "回收即关机,实例盘保留;已运行时长按实际秒数正常结算,不免单",
+        "c5": "有容量时可自行开机;竞价不适合线上服务与不可中断的长任务"
+      },
+      "spotNotForService": "竞价实例可被回收,不建议用于对外服务:被回收时实例关机,服务地址随之中断",
+      "spotReclaimNotice": "竞价实例可被平台回收:容量紧张时按创建时间从新到旧回收,回收前会提前通知",
+      "spotToOnDemandNoReclaim": "转换后这台实例不再被回收",
+      "spotToOnDemandNoRestart": "不动容器、不重新调度,任务零中断",
+      "spotToOnDemandRepriceHour": "当前整点小时将整体改按按量价结算(账单一小时只有一行、一个单价)",
       "sshKeyOnly": "实例仅支持 SSH 密钥登录,不支持密码登录",
       "startNeedsStopped": "仅已关机的实例可以开机",
       "stockAvailable": "可开实例 {{count}}",
@@ -638,6 +684,9 @@ export default interface Resources {
       "servicePortReserved": "22 与 8888 由平台占用,请换一个端口",
       "serviceTitle": "部署服务",
       "skuMissing": "规格不存在或已下架",
+      "spotAgree": "我已知悉竞价实例可能被回收",
+      "spotConfirm": "我已知悉,继续创建",
+      "spotModalTitle": "竞价实例服务说明",
       "sshCard": "SSH 密钥",
       "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存",
       "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存",
@@ -1006,6 +1055,8 @@ export default interface Resources {
       "selectFirst": "请先在上方选择一个规格",
       "selectHint": "选择规格后可下一步配置实例",
       "selectSpec": "选择规格",
+      "spotFallbackToHourly": "所选规格暂未上竞价档,已按按量计费展示",
+      "spotOff": "低至 {{discount}}",
       "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
       "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
       "title": "算力市场",
@@ -1148,7 +1199,14 @@ export default interface Resources {
       "gpuShared": "{{model}} · {{vram}}G · {{pct}}% 算力(均值)",
       "hostShort": "{{vcpu}} vCPU / {{mem}}G 内存",
       "modeHourly": "按量计费",
-      "sliceFallback": "切分"
+      "sliceFallback": "切分",
+      "spotUnavailable": "未上竞价"
+    },
+    "spot": {
+      "toOnDemandConfirm": "确认转按量",
+      "toOnDemandMenu": "转按量",
+      "toOnDemandOk": "已转为按量计费,这台实例不会再被回收",
+      "toOnDemandTitle": "转为按量计费?"
     },
     "storage": {
       "activeBilling": "按日扣费中",

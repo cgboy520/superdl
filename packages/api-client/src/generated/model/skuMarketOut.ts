@@ -22,6 +22,7 @@ export interface SkuMarketOut {
   period_enabled: boolean;
   pool_label: string;
   price_hourly: string;
+  spot_enabled: boolean;
   tier: string;
   vcpu: number;
   vram_gb: number;

@@ -23,6 +23,7 @@ export interface SkuUpdate {
      * @maxLength 200
      */
   reason: string;
+  spot_enabled?: boolean | null;
   status?: string | null;
   vcpu?: number | null;
   vram_gb?: number | null;

@@ -5,12 +5,15 @@ import type { InstanceSubscriptionOut } from "@superdl/api-client";
 import {
   colorPrimary,
   diskStatusMap,
+  instanceEventReasonMap,
   instanceStatusMap,
   isSubscriptionExpired,
   marketLabelKey,
+  marketMap,
   metaOf,
   skuTierMap,
   skuVariant,
+  spotReclaimTag,
   statusColors,
   subscriptionStatusMap,
   workloadTypeMap,
@@ -98,6 +101,47 @@ export function SubscriptionTag({
     <Tag color={expired ? statusColors.orange : colorPrimary}>
       {tail ? t("period.tagWithExpiry", { period: periodLabel, expiry: tail }) : periodLabel}
     </Tag>
+  );
+}
+
+/**
+ * 实例事件 `reason` → 文案。列表的失败原因与详情页时间线共用一份映射;
+ * 表里没有的(后端调度器回填的自由文本)原样渲染 —— 没配文案不是吞掉整句的理由。
+ */
+export function useEventReasonText() {
+  const { t } = useTranslation(["web", "shared"]);
+  return (reason: string) => {
+    const meta = metaOf(instanceEventReasonMap, reason);
+    return meta ? t(meta.labelKey) : reason;
+  };
+}
+
+/**
+ * 竞价标记。只有竞价实例出标记 —— 按量是默认买法(与 WorkloadTag / SubscriptionTag 同口径)。
+ * 「可被回收」是这台机器与别人最要紧的区别,tooltip 里写清回收顺序与提前通知。
+ */
+export function SpotTag({ market }: { market: string }) {
+  const { t } = useTranslation(["web", "shared"]);
+  if (market !== "spot") return null;
+  return (
+    <Tooltip title={t(marketMap.spot.hintKey)}>
+      <Tag color={marketMap.spot.color} style={{ marginInlineEnd: 0 }}>
+        {t(marketMap.spot.labelKey)}
+      </Tag>
+    </Tooltip>
+  );
+}
+
+/** 「可回收」行内标记(列表计费列):与 SpotTag 同色,说的是同一件事的两面。 */
+export function SpotReclaimTag({ market }: { market: string }) {
+  const { t } = useTranslation(["web", "shared"]);
+  if (market !== "spot") return null;
+  return (
+    <Tooltip title={t(spotReclaimTag.hintKey)}>
+      <Tag color={spotReclaimTag.color} style={{ marginInlineEnd: 0 }}>
+        {t(spotReclaimTag.labelKey)}
+      </Tag>
+    </Tooltip>
   );
 }
 

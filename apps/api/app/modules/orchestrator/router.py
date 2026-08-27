@@ -197,6 +197,20 @@ async def subscribe_instance(
     )
 
 
+@router.post("/instances/{uuid}/to-on-demand")
+async def convert_to_on_demand(
+    uuid: str, user: CurrentUser, session: DbSession, request: Request
+) -> InstanceOut:
+    """竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。
+
+    当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准),
+    这一条必须在确认弹窗里写清楚。
+    """
+    instance = await service.convert_to_on_demand(session, user.id, uuid)
+    set_audit_target(request, f"instance:{uuid}")
+    return await service.instance_view(session, instance)
+
+
 @router.post("/instances/{uuid}/auto-renew")
 async def set_auto_renew(
     uuid: str, body: InstanceAutoRenew, user: CurrentUser, session: DbSession, request: Request

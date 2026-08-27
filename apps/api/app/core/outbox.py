@@ -119,15 +119,27 @@ def outbox_handler(
     return deco
 
 
-def enqueue(session: AsyncSession, task_type: str, payload: dict[str, Any]) -> OutboxTask:
+def enqueue(
+    session: AsyncSession,
+    task_type: str,
+    payload: dict[str, Any],
+    *,
+    delay_seconds: int = 0,
+) -> OutboxTask:
     """入队。不 commit —— 调用方必须把它放进业务事务。
 
     跨进程请求链:当前 contextvar 的 request_id 随 payload 落库(_request_id 键),
     worker 执行 handler 时回填日志上下文(API 请求与异步执行日志可按同一 id 串联)。
+
+    delay_seconds:推迟到期时刻(领取条件就是 `next_retry_at <= now`,不需要新机制)。
+    竞价抢占用它实现宽限窗 —— 状态机立刻迁到 stopping 让用户看到「即将回收」,
+    Pod 却要到宽限期满才真删,期间用户还能登进去保存进度。
     """
     if REQUEST_ID_KEY not in payload and (request_id := _current_request_id()):
         payload = {**payload, REQUEST_ID_KEY: request_id}
     task = OutboxTask(type=task_type, payload=payload)
+    if delay_seconds > 0:
+        task.next_retry_at = now_utc() + timedelta(seconds=delay_seconds)
     session.add(task)
     return task
 

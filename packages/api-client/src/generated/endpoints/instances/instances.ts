@@ -523,3 +523,30 @@ export const subscribeInstanceApiV1InstancesUuidSubscribePost = async (uuid: str
 );}
 
 
+export const getConvertToOnDemandApiV1InstancesUuidToOnDemandPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/instances/${uuid}/to-on-demand`
+}
+
+/**
+ * 竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。
+ *
+ * 当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准),
+ * 这一条必须在确认弹窗里写清楚。
+ * @summary Convert To On Demand
+ */
+export const convertToOnDemandApiV1InstancesUuidToOnDemandPost = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
+
+  return customFetch<InstanceOut>(getConvertToOnDemandApiV1InstancesUuidToOnDemandPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+

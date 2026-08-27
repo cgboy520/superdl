@@ -41,6 +41,7 @@ from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
 from app.core.pricing import (
     MARKET_ON_DEMAND,
+    MARKET_SPOT,
     MARKET_SUBSCRIPTION,
     price_for,
 )
@@ -134,6 +135,9 @@ from app.modules.orchestrator.queries import (
 from app.modules.orchestrator.queries import (
     running_gpu_share_by_pool as running_gpu_share_by_pool,
 )
+from app.modules.orchestrator.queries import (
+    running_spot_gpus_by_pool as running_spot_gpus_by_pool,
+)
 from app.modules.orchestrator.schemas import (
     RESERVED_SERVICE_PORTS,
     WORKLOAD_DEV,
@@ -204,6 +208,10 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     return {
         "sku_name": sku.name,
+        # SKU **原价**时价快照(字符串,JSONB 不存 Decimal)。instances.price_hourly 落的是
+        # 折后有效价,竞价转按量要把它还原成原价 —— 拿折后价 ÷ 当时的折扣反推不行:
+        # 策略是在线可调的,反推用的是「现在的折扣」而不是「当时的折扣」
+        "base_price_hourly": format(sku.price_hourly, "f"),
         "gpu_model": sku.gpu_model,
         "tier": sku.tier,
         "mig_profile": sku.mig_profile,
@@ -422,21 +430,48 @@ def _sku_free_capacity(
     )
 
 
-async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int) -> None:
-    """创建软准入:台账明确显示该 (池, 型号) 可分配量不足 → 即时 409。
+async def _soft_admit_capacity(
+    session: AsyncSession,
+    sku: "Sku",
+    gpu_count: int,
+    *,
+    market: str = MARKET_ON_DEMAND,
+    user_id: int | None = None,
+) -> None:
+    """创建软准入:台账明确显示该 (池, 型号) 可分配量不足 → 先尝试抢占竞价实例,仍不足则 409。
 
     台账 60s 粒度,只是近似:无数据(巡检未覆盖/全新集群)一律放行,交调度器裁决;
     放行后仍可能调度超时转 failed,本判断只挡「确定卖不出去」的单。
+
+    抢占只对 **GPU 档的非竞价请求**生效:竞价买的就是「有富余才给」,让它去抢别人
+    等于把风险转嫁给更早下单的人;CPU 档的容量口径是 vCPU/内存而不是卡数,套不上
+    「腾几张卡」这套换算。
     """
+    policies = await get_effective_policies(session)
     specs = await nodes_service.list_node_specs(session)
-    cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
-    matching_free, sellable = _sku_free_capacity(sku, specs, gpu_node_vcpu_cap=cap)
+    matching_free, sellable = _sku_free_capacity(
+        sku, specs, gpu_node_vcpu_cap=policies.gpu_node_cpu_instance_vcpu_cap
+    )
     if matching_free is None:
         return
     sellable -= await _reserved_slots(session, sku)
     # 要占几份容量:GPU 实例按卡数,CPU 实例(gpu_count=0)占 1 台的位置。
     # 写成 max(1, gpu_count) 会让「0 卡要 0 份」这种恒成立的比较悄悄放行所有 CPU 单
     needed = gpu_count if gpu_count > 0 else 1
+    if sellable < needed and market != MARKET_SPOT and sku.tier != TIER_CPU:
+        from app.modules.orchestrator import preempt as preempt_mod
+
+        if await preempt_mod.try_free_capacity(
+            session,
+            sku=sku,
+            deficit_slots=needed - sellable,
+            slots_per_card=catalog_service.sellable_per_gpu(
+                sku.pool_label, sku.gpu_cores_pct, sku.oversell_cores
+            ),
+            grace_seconds=policies.spot_grace_seconds,
+            requested_by=user_id or 0,
+        ):
+            return
     if sellable < needed:
         raise AppError(
             ErrorCode.NO_CAPACITY,
@@ -627,7 +662,10 @@ async def create_instance(
             params={"max": sku.max_gpus_per_instance},
         )
     await _validate_image_ref(session, image_ref, require_pinned=workload_type == WORKLOAD_SERVICE)
-    await _soft_admit_capacity(session, sku, gpu_count)
+    if market == MARKET_SPOT and not sku.spot_enabled:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
+    # 抢占在本函数内下发,与建实例同事务:后面任何一步失败都会把回收一起回滚
+    await _soft_admit_capacity(session, sku, gpu_count, market=market, user_id=user_id)
     # 服务端口的三层同源闸门之一(另两层:契约层 InstanceCreate、DB CHECK)。
     # service 层这层不是冗余:service.create_instance 是唯一入口,巡检/管理端/脚本
     # 绕过契约层直调时,只有这里还挡着
@@ -1196,6 +1234,52 @@ async def subscribe_instance(
     return instance, quoted, True
 
 
+async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -> Instance:
+    """竞价实例转按量(免被回收)。已经是按量则原样返回(幂等,不报错)。
+
+    `market` 是「怎么买」而不是资源形态,翻过来不动 Pod、不重调度 —— 用户跑到一半
+    发现任务快完了、不想被回收,这一步必须是零中断的。
+
+    计价口径:**一小时一价,以结算时的实例单价为准**。转换会把当前整点小时整体改按
+    按量价(见 billing.reprice_current_hour)—— `bills_hourly` 一小时只有一行、
+    只有一个 unit_price,横跨两个价的小时没有第二种表达方式,而留一行
+    `unit_price × seconds ≠ amount` 的账没法向任何人解释。这条要写进确认弹窗。
+
+    原价从 `spec.base_price_hourly` 取,不从折后价反推:折扣是在线可调的策略,
+    反推用的是「现在的折扣」而不是「当时的折扣」,改过一次策略就再也还原不回去。
+    """
+    instance = await get_instance(session, user_id, uuid)
+    if instance.market == MARKET_ON_DEMAND:
+        return instance  # 幂等:目标状态已达成,重试不该拿到一个莫名其妙的 400
+    if instance.market != MARKET_SPOT:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.toOnDemandNotSpot")
+    if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
+        raise AppError(
+            ErrorCode.INSTANCE_INVALID_TRANSITION,
+            key="orchestrator.convertNeedsRunningOrStopped",
+            http_status=http_status.HTTP_409_CONFLICT,
+        )
+    base = Decimal(str(instance.spec.get("base_price_hourly") or instance.price_hourly))
+    await billing_service.lock_wallet(session, user_id)
+    if instance.status == sm_def.RUNNING:
+        await billing_service.reprice_current_hour(
+            session,
+            instance_id=instance.id,
+            user_id=user_id,
+            new_price=base,
+            gpu_count=instance.gpu_count,
+            at=now_utc(),
+        )
+    instance.market = MARKET_ON_DEMAND
+    instance.price_hourly = base
+    # 转按量后单价涨了,余额得撑得住新的燃烧率 —— 撑不住的话转完立刻会被欠费巡检停机,
+    # 那不如现在就告诉他去充值
+    await billing_service.assert_can_afford(session, user_id)
+    await session.commit()
+    logger.info("spot_converted_to_on_demand", instance_id=instance.id, user_id=user_id)
+    return instance
+
+
 async def set_instance_auto_renew(
     session: AsyncSession, user_id: int, uuid: str, *, enabled: bool
 ) -> Instance:
@@ -1720,6 +1804,35 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
         title="实例已被管理员强制停止",
         content=f"实例「{instance.name}」已被强制停止并结算尾账。原因:{reason}",
         severity="warning",
+    )
+    await session.commit()
+    return instance
+
+
+async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: str) -> Instance:
+    """管理端强制回收一台竞价实例(腾容量用)。走与自动抢占**同一条**回收路径。
+
+    与 admin_force_stop 分开一个入口而不是复用它:两者对用户的含义不同 ——
+    强制停止是处置(违规/风控),回收是履行竞价那份「可能被回收」的约定。
+    用同一个 reason 会让用户的时间线上分不出自己是被处置了还是被回收了,
+    也会让「被回收过几次」这类竞价可靠性指标算不出来。
+    """
+    from app.modules.orchestrator import preempt as preempt_mod
+
+    instance = await admin_get_instance(session, instance_uuid)
+    if instance.market != MARKET_SPOT:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.preemptNotSpot")
+    if instance.status != sm_def.RUNNING:
+        raise AppError(
+            ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.forceStopNeedsRunning"
+        )
+    policies = await get_effective_policies(session)
+    await preempt_mod.preempt(
+        session,
+        [instance],
+        grace_seconds=policies.spot_grace_seconds,
+        requested_by=0,
+        admin_reason=reason,
     )
     await session.commit()
     return instance

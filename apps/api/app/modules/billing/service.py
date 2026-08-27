@@ -26,6 +26,7 @@ from app.modules.billing.refunds import (
 from app.modules.billing.settlement import (
     admin_list_gaps,
     replay_gap,
+    reprice_current_hour,
     resolve_gap,
     settle_disk_pending_days,
     settle_on_demand_up_to,
@@ -122,6 +123,7 @@ __all__ = [
     "reject_invoice",
     "renew_subscription",
     "replay_gap",
+    "reprice_current_hour",
     "reserved_subscription_instance_ids",
     "resolve_gap",
     "revenue_summary",

@@ -3256,7 +3256,8 @@
             "default": "on_demand",
             "enum": [
               "on_demand",
-              "subscription"
+              "subscription",
+              "spot"
             ],
             "title": "Market",
             "type": "string"
@@ -5125,6 +5126,10 @@
       "OverviewPoolOut": {
         "description": "池级 GPU 台账:总量含非 Ready 节点(前端单独画第三段)。",
         "properties": {
+          "gpu_spot_used": {
+            "title": "Gpu Spot Used",
+            "type": "integer"
+          },
           "gpu_total": {
             "title": "Gpu Total",
             "type": "integer"
@@ -5146,6 +5151,7 @@
           "pool",
           "gpu_total",
           "gpu_used",
+          "gpu_spot_used",
           "ready_gpu_total"
         ],
         "title": "OverviewPoolOut",
@@ -5933,6 +5939,14 @@
             "default": false,
             "title": "Real Name Required For Recharge",
             "type": "boolean"
+          },
+          "spot_discount_pct": {
+            "title": "Spot Discount Pct",
+            "type": "integer"
+          },
+          "spot_grace_seconds": {
+            "title": "Spot Grace Seconds",
+            "type": "integer"
           }
         },
         "required": [
@@ -5946,7 +5960,9 @@
           "period_discount_week",
           "period_discount_month",
           "period_discount_year",
-          "period_expire_warn_days"
+          "period_expire_warn_days",
+          "spot_discount_pct",
+          "spot_grace_seconds"
         ],
         "title": "PoliciesOut",
         "type": "object"
@@ -7030,6 +7046,10 @@
             ],
             "title": "Sold Share"
           },
+          "spot_enabled": {
+            "title": "Spot Enabled",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -7065,6 +7085,7 @@
           "max_gpus_per_instance",
           "cuda_max",
           "period_enabled",
+          "spot_enabled",
           "status",
           "created_at"
         ],
@@ -7184,6 +7205,11 @@
               }
             ],
             "title": "Price Hourly"
+          },
+          "spot_enabled": {
+            "default": false,
+            "title": "Spot Enabled",
+            "type": "boolean"
           },
           "tier": {
             "pattern": "^(dedicated|shared|cpu)$",
@@ -7313,6 +7339,10 @@
             "title": "Price Hourly",
             "type": "string"
           },
+          "spot_enabled": {
+            "title": "Spot Enabled",
+            "type": "boolean"
+          },
           "tier": {
             "title": "Tier",
             "type": "string"
@@ -7341,7 +7371,8 @@
           "max_gpus_per_instance",
           "cuda_max",
           "pool_label",
-          "period_enabled"
+          "period_enabled",
+          "spot_enabled"
         ],
         "title": "SkuMarketOut",
         "type": "object"
@@ -7510,6 +7541,17 @@
             "minLength": 2,
             "title": "Reason",
             "type": "string"
+          },
+          "spot_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Enabled"
           },
           "status": {
             "anyOf": [
@@ -10881,6 +10923,64 @@
           }
         ],
         "summary": "Admin Force Stop",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/instances/{uuid}/preempt": {
+      "post": {
+        "description": "强制回收一台竞价实例(腾容量;原因必填)。走与自动抢占同一条路径:\n宽限窗内 Pod 仍在、用户已收到通知,尾账按实际运行秒数结算。",
+        "operationId": "admin_preempt_api_admin_v1_instances__uuid__preempt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminForceStopRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Preempt",
         "tags": [
           "admin"
         ]
@@ -16494,6 +16594,54 @@
           }
         ],
         "summary": "Subscribe Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{uuid}/to-on-demand": {
+      "post": {
+        "description": "竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。\n\n当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准),\n这一条必须在确认弹窗里写清楚。",
+        "operationId": "convert_to_on_demand_api_v1_instances__uuid__to_on_demand_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Convert To On Demand",
         "tags": [
           "instances"
         ]

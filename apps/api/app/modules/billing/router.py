@@ -53,6 +53,8 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         period_discount_month=p.period_discount_month,
         period_discount_year=p.period_discount_year,
         period_expire_warn_days=p.period_expire_warn_days,
+        spot_discount_pct=p.spot_discount_pct,
+        spot_grace_seconds=p.spot_grace_seconds,
         real_name_enabled=cfg["real_name_enabled"] == "true",
         real_name_required_for_recharge=cfg["real_name_required_for_recharge"] == "true",
     )

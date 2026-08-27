@@ -1230,6 +1230,32 @@ export const adminForceStopApiAdminV1InstancesUuidForceStopPost = async (uuid: s
 );}
 
 
+export const getAdminPreemptApiAdminV1InstancesUuidPreemptPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/instances/${uuid}/preempt`
+}
+
+/**
+ * 强制回收一台竞价实例(腾容量;原因必填)。走与自动抢占同一条路径:
+ * 宽限窗内 Pod 仍在、用户已收到通知,尾账按实际运行秒数结算。
+ * @summary Admin Preempt
+ */
+export const adminPreemptApiAdminV1InstancesUuidPreemptPost = async (uuid: string,
+    adminForceStopRequest: AdminForceStopRequest, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
+
+  return customFetch<InstanceOut>(getAdminPreemptApiAdminV1InstancesUuidPreemptPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminForceStopRequest)
+  }
+);}
+
+
 export const getAdminListInvoicesApiAdminV1InvoicesGetUrl = (params?: AdminListInvoicesApiAdminV1InvoicesGetParams,) => {
   const normalizedParams = new URLSearchParams();
 

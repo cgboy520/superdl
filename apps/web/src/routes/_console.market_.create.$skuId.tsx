@@ -35,7 +35,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Radio,
   Select,
   Skeleton,
@@ -55,20 +54,24 @@ import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { DataErrorAlert } from "../components/QueryState";
+import { ConsentModal } from "../components/ConsentModal";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
+import { SpotConsentModal, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { gpus?: number; workload?: "service"; period?: BillingPeriod } => {
-    // 市场页带入的 GPU 数量(可改)、形态(缺省 = 开发机)与计费方式(缺省 = 按量)
+  ): { gpus?: number; workload?: "service"; period?: BillingPeriod; market?: "spot" } => {
+    // 市场页带入的 GPU 数量(可改)、形态(缺省 = 开发机)与计费方式(缺省 = 按量)。
+    // 竞价与包周期互斥(market 是单值),两个都带进来时以 period 为准 —— 包周期是付过钱的那个。
     const g = Number(search.gpus);
-    const out: { gpus?: number; workload?: "service"; period?: BillingPeriod } = {};
+    const out: { gpus?: number; workload?: "service"; period?: BillingPeriod; market?: "spot" } = {};
     if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
     if (search.workload === "service") out.workload = "service";
     if (typeof search.period === "string" && isBillingPeriod(search.period)) out.period = search.period;
+    else if (search.market === "spot") out.market = "spot";
     return out;
   },
   beforeLoad: requireAuth,
@@ -120,7 +123,8 @@ function CreatePage() {
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
   const { skuId } = Route.useParams();
-  const { gpus: gpusFromMarket, workload, period: periodFromMarket } = Route.useSearch();
+  const { gpus: gpusFromMarket, workload, period: periodFromMarket, market: marketFromUrl } =
+    Route.useSearch();
   // 服务形态:换掉镜像/SSH 两张卡,其余卡片与结算逻辑逐字复用
   const isService = workload === "service";
   const navigate = useNavigate();
@@ -138,9 +142,12 @@ function CreatePage() {
   const { data: wallet } = useWallet();
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
+  const spotPolicy = useSpotPolicy();
 
   const [gpuCount, setGpuCount] = useState(gpusFromMarket ?? 1);
-  const [billingMode, setBillingMode] = useState<BillingMode>(periodFromMarket ?? "on_demand");
+  const [billingMode, setBillingMode] = useState<BillingMode>(
+    periodFromMarket ?? (marketFromUrl === "spot" ? "spot" : "on_demand"),
+  );
   const [periodCount, setPeriodCount] = useState(1);
   // 后端契约:CPU 规格(max_gpus_per_instance=0)只收 gpu_count=0,GPU 规格只收 1..max
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
@@ -162,7 +169,7 @@ function CreatePage() {
   const [requireApiKey, setRequireApiKey] = useState(true);
   const [withSsh, setWithSsh] = useState(false);
   const [ecoOpen, setEcoOpen] = useState(false);
-  const [ecoChecked, setEcoChecked] = useState(false);
+  const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
   // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
@@ -274,12 +281,20 @@ function CreatePage() {
         : 0;
   // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
-  const hourlyTotal = mulPrice(sku.price_hourly, priceUnits);
 
-  // 该规格不接受包周期时按量兜底:chips 已灰置,提交体也不能还带着 period(后端 400)
+  // 该规格不接受包周期 / 未上竞价时按量兜底:chips 已灰置,提交体也不能还带着 period
+  // 或 market=spot(后端分别是 400 periodNotEnabled / spotNotEnabled)
   const periodBlocked = !sku.period_enabled;
-  const mode: BillingMode = periodBlocked ? "on_demand" : billingMode;
-  const period = mode === "on_demand" ? null : mode;
+  const spotBlocked = !sku.spot_enabled || spotPolicy == null;
+  const mode: BillingMode =
+    (periodBlocked && isBillingPeriod(billingMode)) || (spotBlocked && billingMode === "spot")
+      ? "on_demand"
+      : billingMode;
+  const isSpot = mode === "spot";
+  const period = isBillingPeriod(mode) ? mode : null;
+  // 竞价单价 = SKU 现价 × spot_discount_pct / 100,与后端 pricing.effective_price_hourly 同算法
+  const unitHourly = (isSpot ? spotPriceOf(sku.price_hourly, spotPolicy) : null) ?? sku.price_hourly;
+  const hourlyTotal = mulPrice(unitHourly, priceUnits);
   // 创建页的 base 就是 SKU 现价,与后端下单用的是同一个数,预览与实扣同源
   const quote = period
     ? periodQuoteOf(
@@ -409,10 +424,12 @@ function CreatePage() {
             name: name || null,
             data_disk_id: diskId,
             // 按量单里一个周期字段都不能出现:后端按 model_fields_set 判「显式传了」,
-            // 传了就是 422(与服务字段同款契约)
+            // 传了就是 422(与服务字段同款契约)。竞价只翻 market,不带周期字段。
             ...(period
               ? { market: "subscription" as const, period, period_count: periodCount }
-              : {}),
+              : isSpot
+                ? { market: "spot" as const }
+                : {}),
             // dev 形态一个服务字段都不能出现:后端按 model_fields_set 判「显式传了」,
             // 传了就是 422(静默忽略会让用户以为启动命令生效了,而实例跑的是镜像原样)
             ...(isService
@@ -448,13 +465,23 @@ function CreatePage() {
     }
   };
 
-  const submit = () => {
-    // 经济档 = 落 hami 池的共享(软切分超卖);mig 池的共享是硬切分,不弹此 modal
+  /** 竞价同意之后的下一道闸:经济档 = 落 hami 池的共享(软切分超卖);mig 池是硬切分,不弹。 */
+  const afterSpotConsent = () => {
     if (skuVariant(sku.tier, sku.pool_label) === "shared_hami") {
       setEcoOpen(true);
       return;
     }
     void doCreate();
+  };
+
+  // 两道知情同意串起来:竞价(可被回收)在前、经济档(性能可能波动)在后 ——
+  // 同一台机器可能两条都占,合成一个 modal 会让用户分不清自己到底同意了几件事
+  const submit = () => {
+    if (isSpot) {
+      setSpotOpen(true);
+      return;
+    }
+    afterSpotConsent();
   };
 
   const gpuOptions = Array.from({ length: sku.max_gpus_per_instance }, (_, i) => i + 1).filter(
@@ -522,12 +549,22 @@ function CreatePage() {
         value={mode}
         onChange={setBillingMode}
         periodEnabled={!periodBlocked}
+        spotEnabled={sku.spot_enabled}
         count={periodCount}
         onCountChange={setPeriodCount}
       />
       {period && <Alert type="info" showIcon title={t("copy.periodReserved")} />}
-      {periodBlocked && billingMode !== "on_demand" && (
+      {periodBlocked && isBillingPeriod(billingMode) && (
         <Alert type="info" showIcon title={t("period.fallbackToHourly")} />
+      )}
+      {!sku.spot_enabled && billingMode === "spot" && (
+        <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
+      )}
+      {isSpot && <Alert type="warning" showIcon title={t("copy.spotReclaimNotice")} />}
+      {/* 服务形态选竞价只警示不禁止:平台不替用户决定「这个服务能不能中断」,
+          但被回收时那条对外地址会断,这一句必须在下单前出现 */}
+      {isSpot && isService && (
+        <Alert type="warning" showIcon title={t("copy.spotNotForService")} />
       )}
 
       <Alert type="info" showIcon title={t("copy.instanceDiskLocalNotice")} />
@@ -948,7 +985,18 @@ function CreatePage() {
                   hint: t("create.dailyCostHint"),
                   value: t("common.dailyApprox", { amount: diskGb > 0 && diskPriceGbMonth ? diskDaily : "0.00" }),
                 },
-                { label: t("create.configCostLabel"), value: formatHourlyPrice(hourlyTotal) },
+                {
+                  label: t("create.configCostLabel"),
+                  value: isSpot ? (
+                    <SpotPriceInline
+                      baseHourly={sku.price_hourly}
+                      units={priceUnits}
+                      policy={spotPolicy}
+                    />
+                  ) : (
+                    formatHourlyPrice(hourlyTotal)
+                  ),
+                },
               ]
         }
         detail={
@@ -957,10 +1005,11 @@ function CreatePage() {
               <PeriodQuoteRows quote={quote} gpuCount={gpuCount} cpu={isCpu} />
             ) : (
               <span>
+                {/* 竞价档摊开的是折后单价:结算条大字与明细报两个不同的数,只会让人以为算错了 */}
                 {isCpu
                   ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
                   : t("create.detailInstanceLine", {
-                      unit: formatHourlyPrice(sku.price_hourly),
+                      unit: formatHourlyPrice(unitHourly),
                       count: gpuCount,
                       total: formatHourlyPrice(hourlyTotal),
                     })}
@@ -1015,48 +1064,35 @@ function CreatePage() {
         }
       />
 
-      <Modal
-        title={t("create.ecoModalTitle")}
-        open={ecoOpen}
-        onCancel={() => {
-          setEcoOpen(false);
-          setEcoChecked(false);
+      {/* 竞价知情同意在前:确认后再走经济档那道(两条都占的规格要连过两关) */}
+      <SpotConsentModal
+        open={spotOpen}
+        policy={spotPolicy}
+        loading={submitting || create.isPending}
+        onCancel={() => setSpotOpen(false)}
+        onConfirm={() => {
+          setSpotOpen(false);
+          afterSpotConsent();
         }}
-        footer={
-          <Space>
-            <Button
-              onClick={() => {
-                setEcoOpen(false);
-                setEcoChecked(false);
-              }}
-            >
-              {t("create.cancel")}
-            </Button>
-            <Button
-              type="primary"
-              disabled={!ecoChecked}
-              loading={submitting || create.isPending}
-              onClick={() => {
-                setEcoOpen(false);
-                void doCreate();
-              }}
-            >
-              {t("create.ecoConfirm")}
-            </Button>
-          </Space>
-        }
-      >
-        <ul style={{ paddingLeft: 20 }}>
-          {[t("copy.ecoTierConsent.c1"), t("copy.ecoTierConsent.c2"), t("copy.ecoTierConsent.c3"), t("copy.ecoTierConsent.c4")].map((line) => (
-            <li key={line} style={{ marginBottom: 8 }}>
-              {line}
-            </li>
-          ))}
-        </ul>
-        <Checkbox checked={ecoChecked} onChange={(e) => setEcoChecked(e.target.checked)}>
-          {t("create.ecoAgree")}
-        </Checkbox>
-      </Modal>
+      />
+      <ConsentModal
+        open={ecoOpen}
+        title={t("create.ecoModalTitle")}
+        lines={[
+          t("copy.ecoTierConsent.c1"),
+          t("copy.ecoTierConsent.c2"),
+          t("copy.ecoTierConsent.c3"),
+          t("copy.ecoTierConsent.c4"),
+        ]}
+        agreeLabel={t("create.ecoAgree")}
+        confirmLabel={t("create.ecoConfirm")}
+        loading={submitting || create.isPending}
+        onCancel={() => setEcoOpen(false)}
+        onConfirm={() => {
+          setEcoOpen(false);
+          void doCreate();
+        }}
+      />
     </div>
   );
 }

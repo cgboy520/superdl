@@ -70,6 +70,10 @@ class PoliciesOut(BaseModel):
     period_discount_month: int
     period_discount_year: int
     period_expire_warn_days: int
+    # 竞价折扣与抢占宽限窗:市场页的「低至 4 折」与知情同意里的「提前 60 秒通知」
+    # 都从这里读,前端硬编码就意味着运营调完、页面还显示旧数
+    spot_discount_pct: int
+    spot_grace_seconds: int
     real_name_enabled: bool = False  # 用户端实名表单是否可用(安全策略开关)
     real_name_required_for_recharge: bool = False
 

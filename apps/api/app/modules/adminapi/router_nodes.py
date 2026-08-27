@@ -88,6 +88,17 @@ async def admin_force_stop(
     return await orchestrator_service.instance_view(session, instance)
 
 
+@router.post("/instances/{uuid}/preempt", dependencies=[require_roles("ops")])
+async def admin_preempt(
+    uuid: str, body: AdminForceStopRequest, session: DbSession, request: Request
+) -> InstanceOut:
+    """强制回收一台竞价实例(腾容量;原因必填)。走与自动抢占同一条路径:
+    宽限窗内 Pod 仍在、用户已收到通知,尾账按实际运行秒数结算。"""
+    instance = await orchestrator_service.admin_preempt(session, uuid, reason=body.reason)
+    set_audit_target(request, f"instance:{uuid}", detail={"reason": body.reason})
+    return await orchestrator_service.instance_view(session, instance)
+
+
 @router.get("/instances/{uuid}/events", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_instance_events(
     uuid: str,

@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `notifications`:user_id、type(account/instance/balance_warn/arrears/gpu_fault/announcement/admin_alert 及资金类 recharge/consume/adjust)、title、content、severity、dedup_key?、read_at?
+- `notifications`:user_id、type(account/instance/balance_warn/arrears/subscription/preempted/gpu_fault/ticket/announcement/admin_alert 及资金类 recharge/consume/adjust)、title、content、severity、dedup_key?、read_at?
 - 预警阈值存 `users.low_balance_warn_hours`,用户可配
 
 ## 契约

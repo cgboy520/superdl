@@ -3,6 +3,8 @@ import {
   deletionStatusMap,
   formatDateTime,
   instanceStatusMap,
+  marketLabelKey,
+  marketMap,
   metaOf,
   skuTierMap,
   skuVariant,
@@ -23,6 +25,7 @@ import {
   useDeletionRequests,
   useForceStop,
   useFreezeTenant,
+  usePreemptInstance,
   useRejectDeletion,
   useTenants,
   useUnfreezeTenant,
@@ -223,6 +226,7 @@ function InstancesTab() {
     });
   const instances: AdminInstanceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
   const forceStop = useForceStop();
+  const preempt = usePreemptInstance();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
   return (
@@ -253,7 +257,7 @@ function InstancesTab() {
         />
       </Space>
       <Table<AdminInstanceOut>
-        scroll={{ x: 1000 }}
+        scroll={{ x: 1140 }}
         rowKey="uuid"
         loading={isLoading}
         dataSource={instances}
@@ -288,6 +292,22 @@ function InstancesTab() {
               );
             },
           },
+          {
+            // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍。
+            // 这一列是「强制回收」那个按钮的前提 —— 只有竞价实例可回收,看不出哪台是竞价
+            // 就只剩一排灰按钮
+            title: t("tenants.colMarket"),
+            dataIndex: "market",
+            width: 110,
+            render: (v: string, r) => {
+              const labelKey = marketLabelKey(v, r.subscription?.period);
+              return (
+                <StatusTag color={metaOf(marketMap, v)?.color}>
+                  {labelKey ? t(labelKey) : v}
+                </StatusTag>
+              );
+            },
+          },
           { title: t("tenants.colSshPort"), dataIndex: "ssh_port", width: 100 },
           { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
           {
@@ -307,11 +327,30 @@ function InstancesTab() {
                       refresh();
                     }}
                   />
-                  <Tooltip title={t("tenants.evictP1")}>
-                    <Button size="small" disabled>
-                      {t("tenants.evict")}
-                    </Button>
-                  </Tooltip>
+                  {/* 强制回收:腾容量用,走与自动抢占同一条路径(通知 + 宽限窗,不是立即删 Pod)。
+                      与强制停止分成两个按钮而不是一个带选项的:用户时间线上「被处置」与
+                      「被回收」是两件事,合并会让竞价可靠性也统计不出来 */}
+                  <ReasonAction
+                    label={t("tenants.preempt")}
+                    danger
+                    title={t("tenants.preemptTitle")}
+                    confirmText={t("tenants.preemptConfirm", {
+                      name: r.name,
+                      id: r.uuid.slice(0, 8),
+                    })}
+                    disabled={!writable || r.market !== "spot" || r.status !== "running"}
+                    disabledReason={
+                      !writable
+                        ? t("tenants.noPermission")
+                        : r.market !== "spot"
+                          ? t("tenants.preemptNeedsSpot")
+                          : t("tenants.preemptNeedsRunning")
+                    }
+                    onSubmit={async (reason) => {
+                      await preempt.mutateAsync({ uuid: r.uuid, data: { reason } });
+                      refresh();
+                    }}
+                  />
                 </Space>
               );
             },

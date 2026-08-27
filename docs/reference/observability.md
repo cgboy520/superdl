@@ -13,10 +13,19 @@
 | `GET /api/admin/v1/alerts` | ops/finance/readonly | 告警流,条目关联节点/实例内部链接 |
 | platform-config `observability` 组 | admin | 键 `grafana_url`(str,`https?://` pattern,可空)、`oncall_phone`(值班手机号:critical 平台告警额外经 outbox `notify.sms` 直发短信,留空不启用) |
 
-业务指标在 `app/core/metrics.py`:死信、任务超时、结算失败与落后、未核销结算缺口(`superdl_settlement_gap_unresolved`,DB 口径 gauge,告警按 >0 持续 15 分钟判)、资金账实差异、巡检分阶段失败、泄漏 Pod 与熔断、悬挂实例、节点失联、回调金额不符、关单后入账、渠道反向通知、查单收敛单笔失败、JuiceFS 配额死信、审计写失败、worker 心跳、HTTP 直方图(用完整路由模板)。每个指标都有对应告警规则(`deploy/cluster/values/kps.yaml`),没有消费方的指标不保留。
+业务指标在 `app/core/metrics.py`:死信、任务超时、结算失败与落后、未核销结算缺口(`superdl_settlement_gap_unresolved`,DB 口径 gauge,告警按 >0 持续 15 分钟判)、资金账实差异、巡检分阶段失败、泄漏 Pod 与熔断、悬挂实例、节点失联、回调金额不符、关单后入账、渠道反向通知、查单收敛单笔失败、JuiceFS 配额死信、审计写失败、worker 心跳、HTTP 直方图(用完整路由模板)、竞价抢占计数。**故障类指标都有对应告警规则**(`deploy/cluster/values/kps.yaml`),没有消费方的指标不保留;唯一不配告警的是下面这条。
 
 ## 规则与不变量
 
+- **`superdl_spot_preempted_total` 是唯一不配告警规则的业务指标。** 它数的是「被平台回收的竞价实例台数」
+  (自动抢占与管理端强制回收共用同一条路径,都计在这里;用户自己关机不计)。抢占是竞价档的**设计内行为**,
+  不是故障 —— 按「>0 就告警」配等于每卖出一次竞价容量就响一次铃,值班很快会把它静音,连带把它旁边
+  真正的故障告警一起忽略掉。它的消费方是运维侧的 PromQL 与外链 Grafana:看回收频率、看是不是同一批
+  用户被反复回收 —— 那是产品口径问题(该调 `spot_discount_pct` 还是该加机器),不是值班要立刻处置的事。
+  真要给它配规则,判据得是**速率异常**(例如按 24h 环比),不是绝对计数。
+  计数在事务内自增,而抢占与请求方的建实例同事务(见 [orchestrator.md](./orchestrator.md)):
+  请求方失败回滚时 DB 侧的回收撤销了、这个计数不会跟着退回,所以它是**上界**,对账要以
+  `instance_events` 里 `reason='preempted'` 的行为准。
 - request-id 贯穿全链路(contextvars + 响应头);未捕获异常统一 500 错误体。异常告警经日志栈承接(不引 Sentry 类 SaaS,理由见 `docs/decisions.md`;Loki 查询/告警见 `deploy/cluster/runbooks/loki-logging.md`)。
 - 日志:structlog 管道 + stdlib 桥接(ProcessorFormatter,第三方库日志同一格式);prod=JSON、dev/test=Console;级别 `SUPERDL_LOG_LEVEL`(默认 INFO);outbox payload 带 `_request_id`,worker 执行时回填日志上下文,API 请求与异步执行可按同一 id 串联(Loki 查询式见 runbook)。
 - **异常栈不带局部变量**:prod 的结构化栈帧渲染显式关掉 `show_locals`(不用 structlog 的

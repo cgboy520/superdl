@@ -71,6 +71,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/instances": _ANY_READ,
     "GET /api/admin/v1/instances/{uuid}/events": _ANY_READ,
     "POST /api/admin/v1/instances/{uuid}/force-stop": _OPS,
+    "POST /api/admin/v1/instances/{uuid}/preempt": _OPS,
     "GET /api/admin/v1/invoices": _ANY_READ,
     "POST /api/admin/v1/invoices/{invoice_id}/issue": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/reject": _FIN,

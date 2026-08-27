@@ -107,8 +107,9 @@ class InstanceCreate(BaseModel):
     with_ssh: bool = False
 
     # ---- 购买模式 ----
-    # 契约层暂不收 'spot'(抢占机制在批次 C);DB 的 CHECK 已含它,加进来只需放开这一行
-    market: Literal["on_demand", "subscription"] = MARKET_ON_DEMAND
+    # spot 与 subscription 互斥(market 是单值):竞价的对价是可被回收,
+    # 而包周期的对价是买断一段时间,两者放一起没有任何自洽的语义
+    market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
 

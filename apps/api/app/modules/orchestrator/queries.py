@@ -11,7 +11,7 @@ from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.money import hourly_cost
-from app.core.pricing import MARKET_SUBSCRIPTION
+from app.core.pricing import MARKET_SPOT, MARKET_SUBSCRIPTION
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 
@@ -258,6 +258,36 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
         pool = inst.spec["pool_label"]
         share = inst.gpu_count * (inst.spec["gpu_cores_pct"] / 100.0)
         by_pool[pool] = by_pool.get(pool, 0.0) + share
+    return by_pool
+
+
+async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
+    """池 → 正在跑的竞价实例占用的卡数合计(总览的「其中竞价(可回收)」那一段)。
+
+    与节点台账的 `gpu_used` 同一单位(都是 device 计数:HAMi 共享实例申请的也是整数张
+    device,只是限了算力份额)。但**超卖档下这个数可能大于 gpu_used** —— 多个共享实例
+    共用一张卡时,台账只记一张、实例侧却各记一张。调用方按「不超过已租」截断,
+    别把一段画得比它所在的容器还长。
+    """
+    # 在 Python 侧聚合而不是 GROUP BY:PG 不认「SELECT spec ->> $1 … GROUP BY spec ->> $1」
+    # 里的参数化表达式相等(实测 GroupingError),而竞价 running 实例是小集合 ——
+    # 与紧邻的 running_gpu_share_by_pool 同一写法,不为一个小聚合另造一套 SQL 技巧
+    rows = (
+        (
+            await session.execute(
+                select(Instance.spec, Instance.gpu_count).where(
+                    Instance.status == sm_def.RUNNING, Instance.market == MARKET_SPOT
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    by_pool: dict[str, int] = {}
+    for spec, gpus in rows:
+        pool = (spec or {}).get("pool_label")
+        if pool:
+            by_pool[pool] = by_pool.get(pool, 0) + int(gpus)
     return by_pool
 
 

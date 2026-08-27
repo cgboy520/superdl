@@ -51,6 +51,12 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "period_discount_year": ("int", Decimal(50), Decimal(100)),
     # 包周期到期前多少天开始预警(短信 + 站内信,每天至多一条)
     "period_expire_warn_days": ("int", Decimal(1), Decimal(30)),
+    # 竞价价 = 按量价 × pct/100。上界 90 而不是 100:竞价的对价是「可被回收」,
+    # 不打折的竞价档没有任何存在理由,只会让用户白担一份风险
+    "spot_discount_pct": ("int", Decimal(10), Decimal(90)),
+    # 抢占通知到真删 Pod 的宽限窗(秒)。与 creating_timeout_seconds 有时间预算耦合,
+    # 调之前先读 docs/reference/limits.md 那一段
+    "spot_grace_seconds": ("int", Decimal(30), Decimal(600)),
 }
 
 
@@ -76,6 +82,14 @@ class EffectivePolicies:
     period_discount_month: int
     period_discount_year: int
     period_expire_warn_days: int
+    spot_discount_pct: int
+    spot_grace_seconds: int
+
+
+# 抢占宽限窗之外还要留给「删 Pod → 释放卡 → 调度请求方 → 拉起」的时间余量(秒):
+# terminationGracePeriod 30 + 调度与镜像准备。宽限窗吃掉整个 creating 超时预算的话,
+# 请求方会在 victim 的 Pod 还没删完时就超时转 failed —— 杀了人、单还是没开成
+PREEMPT_TIME_RESERVE_SECONDS = 120
 
 
 def validate_policy_value(key: str, value: str) -> str:
@@ -92,6 +106,16 @@ def validate_policy_value(key: str, value: str) -> str:
         raise ValueError(f"{key} 须为整数:{value}")
     if not lo <= num <= hi:
         raise ValueError(f"{key} 取值须在 {lo}~{hi} 之间")
+    if key == "spot_grace_seconds":
+        # 跨键约束,静态区间表达不了:宽限窗必须给「删 Pod + 调度请求方」留够余量,
+        # 否则调大它等于给自己造一批 creating 超时的失败单(见上面的常量注释)
+        budget = get_settings().creating_timeout_seconds - PREEMPT_TIME_RESERVE_SECONDS
+        if num > budget:
+            raise ValueError(
+                f"spot_grace_seconds 不得超过 {budget} 秒"
+                f"(creating 超时 {get_settings().creating_timeout_seconds}s 减去"
+                f" {PREEMPT_TIME_RESERVE_SECONDS}s 调度余量)"
+            )
     return str(int(num)) if kind == "int" else str(num)
 
 
@@ -122,6 +146,8 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
         period_discount_month=int(eff["period_discount_month"]),
         period_discount_year=int(eff["period_discount_year"]),
         period_expire_warn_days=int(eff["period_expire_warn_days"]),
+        spot_discount_pct=int(eff["spot_discount_pct"]),
+        spot_grace_seconds=int(eff["spot_grace_seconds"]),
     )
 
 

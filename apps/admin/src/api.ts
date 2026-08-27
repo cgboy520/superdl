@@ -48,6 +48,7 @@ import {
   adminImageNodesApiAdminV1ImagesImageIdNodesGet,
   adminListEnrollmentsApiAdminV1NodeEnrollmentsGet,
   adminListImagesApiAdminV1ImagesGet,
+  adminPreemptApiAdminV1InstancesUuidPreemptPost,
   adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost,
   adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost,
   adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost,
@@ -1014,6 +1015,16 @@ export function useForceStop() {
   return useMutation({
     mutationFn: (v: { uuid: string; data: AdminForceStopRequest }) =>
       adminForceStopApiAdminV1InstancesUuidForceStopPost(v.uuid, v.data),
+  });
+}
+
+/** 强制回收一台竞价实例(腾容量)。与强制停止分成两个 hook,是因为后端就是两条路径:
+ *  回收履行的是竞价那份「可能被回收」的约定(宽限窗 + 通知),强制停止是风控处置,
+ *  用户时间线上的 reason 与竞价可靠性统计都靠这个区分。 */
+export function usePreemptInstance() {
+  return useMutation({
+    mutationFn: (v: { uuid: string; data: AdminForceStopRequest }) =>
+      adminPreemptApiAdminV1InstancesUuidPreemptPost(v.uuid, v.data),
   });
 }
 

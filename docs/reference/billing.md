@@ -6,7 +6,7 @@
 
 - `wallets`:user_id 唯一、balance numeric(14,2)
 - `balance_ledger`:user_id、type(recharge/consume/refund/adjust)、amount 带符号 numeric(14,2)、balance_after、ref_type/ref_id —— 追加式
-- `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count(**照实存,CPU 实例为 0**)、amount numeric(14,2)、detail jsonb、UNIQUE(instance_id, hour_start)。`detail.source` 记这一行由哪条路径落的:`hourly`(整点结算与追平)/ `tail`(离开 running 的尾账)/ `convert`(按量转包周期前的结清)/ `gap_replay`(缺口人工重放);秒数单调递增时原地补差价的行另带 `topped_up`
+- `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count(**照实存,CPU 实例为 0**)、amount numeric(14,2)、detail jsonb、UNIQUE(instance_id, hour_start)。`detail.source` 记这一行由哪条路径落的:`hourly`(整点结算与追平)/ `tail`(离开 running 的尾账)/ `convert`(按量转包周期前的结清)/ `gap_replay`(缺口人工重放);秒数单调递增时原地补差价的行另带 `topped_up`,竞价转按量时被整体改价的行另带 `repriced`
 - `bills_daily_disk`:disk_id、day、size_gb、unit_price、amount、UNIQUE(disk_id, day)
 - `subscriptions`:user_id、instance_id、sku_id、period(CHECK ∈ {day, week, month, year})、period_count(CHECK ≥1)、unit_price numeric(12,4)(下单时的 SKU **原价**时价快照,续费据它重新报价)、amount_paid numeric(14,2)(实扣,已含折扣)、started_at、expires_at、status(active/expired/cancelled)、auto_renew(默认 false)、renewed_from_id?(续费链)、warned_for_expiry?(到期预警去重锚点,存「已预警到哪个到期时刻」)、idempotency_key?、UNIQUE(user_id, idempotency_key);另有部分索引 `ix_subscriptions_active_expiry`(`expires_at` WHERE status='active')供巡检取「到期在即 / 已到期」两种谓词
 - `settlement_watermarks`:key(PK)、settled_through、updated_at —— 结算水位线,漏掉的时段由后续轮次追平
@@ -18,7 +18,7 @@
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `GET /api/v1/policies` | 匿名 | 盘价(Decimal 串)、盘容量上下限、宽限与冻结天数、冻结 72h、默认预警阈值、**包周期四档折扣 `period_discount_day/week/month/year`(百分数,80 = 8 折)与 `period_expire_warn_days`**、`real_name_required_for_recharge`。折扣一律从这里读,前端硬编码就意味着运营调完价、页面还显示旧折扣 |
+| `GET /api/v1/policies` | 匿名 | 盘价(Decimal 串)、盘容量上下限、宽限与冻结天数、冻结 72h、默认预警阈值、**包周期四档折扣 `period_discount_day/week/month/year`(百分数,80 = 8 折)与 `period_expire_warn_days`**、**竞价的 `spot_discount_pct`(40 = 4 折)与 `spot_grace_seconds`(抢占通知到真删 Pod 的宽限窗)**、`real_name_required_for_recharge`。折扣与宽限窗一律从这里读,前端硬编码就意味着运营调完、页面还在承诺一个已经不成立的数 |
 | `GET /api/v1/wallet` | user | 余额与冻结额 |
 | `GET /api/v1/wallet/ledger` | user | 资金流水,游标分页 |
 | `GET /api/v1/bills/hourly` | user | 小时账单,游标分页(含 instance_name 展示冗余,非对账字段) |
@@ -41,7 +41,7 @@
 - 钱包更新必须 `SELECT ... FOR UPDATE`,且同事务写 `balance_ledger`(带 balance_after 快照)。
 - 金额全链路 Decimal:单价 4 位小数,入账 2 位小数,ROUND_HALF_EVEN;0 秒不出账。SKU 时价须使单卡满 1 小时至少入账 ¥0.01(4 位时价 ≥ 0.0051,0.0050 恰为 tie 向偶舍 0),否则上架/改价拒绝。
 - **计费份数只经 `core/money.billing_units(gpu_count)` 换算**:GPU 实例 = 卡数(`price_hourly` 是单卡时价),CPU 实例 `gpu_count=0` = 1 份整机(`price_hourly` 是整机时价)。金额 = `单价 × 份数 × 秒 ÷ 3600`。`bill_amount`、钱包护栏 `assert_can_afford` 的在途时费、欠费巡检的 `burn_per_hour`、对账的实例时费、创建/开机的预估,全部走 `billing_units` / `hourly_cost`,不许各处写 `max(1, n)` —— 直接写 `单价 × gpu_count` 会让 CPU 实例每小时算出 ¥0.00,连带余额护栏与停机判据一起归零。账单行照实存 `gpu_count`,复算时按同一函数还原份数,行仍自洽(理由见 [../decisions.md](../decisions.md)「CPU 实例计费为 0 的解法」)。
-- 小时结算的候选集**只在 `orchestrator/queries.py::billing_candidates` 一处**排除包周期实例(`market != 'subscription'`),结算引擎本身不感知购买模式;口径见下节。
+- 小时结算的候选集**只在 `orchestrator/queries.py::billing_candidates` 一处**排除包周期实例(`market != 'subscription'`),结算引擎本身不感知购买模式;口径见下节。**竞价实例不在排除之列** —— 它与按量走同一条计费链,折扣只落在 `price_hourly` 上,见「竞价(spot)」。
 - 营收报表(revenue_summary)分两段切窗:**计量出账**(`bills_hourly` / `bills_daily_disk`)按账单归属期(hour_start / day),不按扣款入账时间(ledger.created_at);**包周期预付**(`subscriptions.amount_paid`)按收款当日(`subscriptions.created_at`)——它不产生任何账单行,归属期就是收款那一刻,没有延迟入账的问题。`today_revenue` / `yesterday_revenue` / `month_revenue` 是两段之和;`today_prepaid` / `month_prepaid` 单独拆出预付部分,因为一笔包年会在当天造成一个尖峰,看环比时必须能把它剥掉。
 - 日终资金核对:钱包侧按 `reconcile_checkpoints` 增量链式校验(逐笔 balance_after 链接 + 游标边界行复核,只扫增量,断链定位到 ledger id);出账 vs 消费两侧都按账单归属期切窗(ledger 经 ref_id 回连)。**包周期是第三条腿**:出账侧取 `SUM(subscriptions.amount_paid)`(按 `created_at` 切窗),消费侧取 `ref_type='subscription'` 的 ledger 经 `ref_id` 回连订阅行,同一窗口;`dangling_consume_refs`(有扣款无出账)同样加了这条腿。**不加就等于 `ref_type='subscription'` 那段钱全无核对** —— 金额写错、写重、写漏都没有任何机制会发现,而它是单笔金额最大的一类流水。
 - 策略参数改动即时生效,盘价快照、巡检、扩容全链路跟随。
@@ -210,3 +210,61 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
   (宽限只读 → 冻结 → 清除)。包周期买断的只是实例本身。
 - 未到期的包周期实例即使已停机也仍占软准入库存(平台层预留、物理层不预留),口径与理由见
   [orchestrator.md](./orchestrator.md)。
+
+## 竞价(spot)
+
+`instances.market='spot'` 的实例拿折后价,对价是容量紧张时可被平台回收。抢占的选择规则、宽限窗与
+两个入口在 [orchestrator.md](./orchestrator.md);这里只写钱的口径。用例在 `apps/api/tests/test_spot.py`。
+
+### 折扣落在 `price_hourly`,结算引擎零改动
+
+竞价时价 = SKU 原价 × `spot_discount_pct` / 100,由 `app/core/pricing.py` 的 `price_for` 单点算出,
+建实例时快照进 `instances.price_hourly`。此后它和按量实例完全一样:一样进 `billing_candidates`、
+一样出 `bills_hourly`、一样走水位线与尾账、一样计入燃烧率与欠费巡检 —— **结算引擎不知道有竞价这回事**,
+`billing_candidates` 的跳过条件仍然只有 `market != 'subscription'` 一条。
+
+`spot_discount_pct` 的范围是 10~90,**上界 90 = 至少打九折**:竞价的对价是「可被回收」,
+不打折的竞价档没有存在理由,只会让用户白担一份风险。取值与承载见 [limits.md](./limits.md)。
+
+### 被抢占按实际运行秒数正常结算,不免单
+
+被回收的实例迁 `stopping` 时,由既有的计费边监听器(`billing/edge_listener.py`)照常出尾账,
+**按到那一刻为止的实际运行秒数结算**,金额与「用户自己在同一秒关机」逐分相等。
+
+不做免单有两条理由。其一,免单要在结算链上引入第二种判据(「哪几段秒数不算钱」),而结算引擎最贵的
+那条性质 ——「重复执行零重复扣款」—— 正建立在「秒数只有一个来源:`instance_events` 的 running 边」之上。
+其二,回收发生在用户**已经用掉**那段算力之后,免单等于让「反正会被回收」变成一条比按量更便宜的使用路径。
+
+**宽限窗那段不计费**,但这不是一条额外规则,是「先迁状态、后删 Pod」的顺序自带的结果:状态机在发通知
+的那一刻就迁到了 `stopping`,计费边随之落定,后面 Pod 多活的那几十秒本来就在计费窗口之外。
+平台单方面决定回收,不该让用户为等待期买单 —— 而实现上不需要为它写任何代码。
+
+### 转按量:一小时一价
+
+`POST /api/v1/instances/{uuid}/to-on-demand` 把 `market` 翻成 `on_demand`、单价还原成
+`spec.base_price_hourly`(SKU 原价快照,不从折后价反推 —— 折扣是在线可调的策略)。转换点通常落在一个
+自然小时中间,于是那一小时横跨两个单价,而 **`bills_hourly` 一小时只有一行、只有一个 `unit_price`**
+(幂等键就是 `(instance_id, hour_start)`),横跨两个价的小时没有第二种表达方式。
+
+定下的口径是**「一小时一价,以结算时的实例单价为准」**:转换把当前整点小时**整体**改按按量价。
+`settlement.reprice_current_hour` 在钱包行锁内 `FOR UPDATE` 取当前小时那一行 ——
+
+- **常见路径是这一行还不存在**(整点结算在次小时 :02,尾账要到离开 running 才落),那就什么都不用做,
+  之后的整点结算自然按新单价出账;
+- 已经出过账(转换前刚好跨过一次整点结算或补差价)且**新价更高**,才按新单价重算 `amount`、改写
+  `unit_price`、补扣差价,并在 `detail` 上打 `repriced`;三件事一起做,不拆开。
+
+不改 `unit_price` 的话,后续整点结算会用新价重算秒数、只更新 `amount` 不更新 `unit_price`,留下一行
+`unit_price × 秒数 ≠ amount` 的账 —— 那种行没法向用户解释,也没法在对账里自动判对错。
+
+**只在涨价时动这一行,降价整行不动。** 竞价转按量必然涨价(`spot_discount_pct` 上界 90),
+降价路径经 `/to-on-demand` 不可达;真出现了(手工改价,或将来有人复用这个原语)就**整行原样留着** ——
+`unit_price` 也不改。只改 `unit_price` 不改 `amount` 写出的恰恰是这个函数存在的意义所要避免的那种行,
+而按新价往下改、补一笔负数流水更不行:**退款要走人工 `refund_requests`**(双人制衡、登记打款才动钱包,
+见 [payment.md](./payment.md)),不该由一个结算原语顺手写出来。用例直接锁降价路径:整行未动、无扣款流水。
+
+转换对用户是一次涨价,所以这一条必须写进转换确认弹窗而不是只写在文档里
+(见 [../ui-ux-spec.md](../ui-ux-spec.md) §3.5)。转完再过一次 `assert_can_afford`:
+单价涨了,余额撑不住新燃烧率的话转完立刻会被欠费巡检停机。
+
+**反向不开**:按量转不回竞价。给一台已经在跑的实例单方面降价并附上回收风险,用户没有在下单时同意过。

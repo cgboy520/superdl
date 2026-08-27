@@ -153,6 +153,19 @@
     "serviceGatewayAuth": "The gateway checks Authorization: Bearer for you — your container implements no auth of its own",
     "serviceImagePinned": "Pin the image with a fixed tag or an @sha256 digest: a service container is restarted in place when it exits, and a moving tag would quietly swap in a different build. Service containers need no built-in SSH or JupyterLab",
     "serviceNotReadyHint": "The service is not ready yet. The instance keeps running and billing, and the platform will not stop it for you. Check the container logs, then the health check path and service port",
+    "spotBillingBasis": "The spot price is locked onto the instance at creation and still accrues by the second; a reclaimed instance is billed for the seconds it actually ran",
+    "spotConsent": {
+      "c1": "Spot pricing is {{pct}}% of the pay-as-you-go price; in exchange, the instance can be reclaimed by the platform",
+      "c2": "When a pay-as-you-go or subscription user needs capacity the pool cannot supply, the platform reclaims spot instances of the same model in the same pool, newest first; if that still is not enough, nothing is reclaimed",
+      "c3": "You get an SMS and an in-app notice {{seconds}} seconds before the reclaim; the instance keeps running and SSH stays open during that window, so save your work",
+      "c4": "A reclaim stops the instance and keeps its instance disk; the time it already ran is billed by the second as usual",
+      "c5": "You can start it again yourself once capacity frees up; spot is not suited to production services or long jobs that cannot be interrupted"
+    },
+    "spotNotForService": "Spot instances can be reclaimed and are not recommended for public-facing services: a reclaim stops the instance and its endpoint goes down with it",
+    "spotReclaimNotice": "Spot instances can be reclaimed by the platform: when capacity runs short they are reclaimed newest-first, with advance notice",
+    "spotToOnDemandNoReclaim": "After the switch this instance is no longer subject to reclaim",
+    "spotToOnDemandNoRestart": "The container is not touched and not rescheduled: no interruption",
+    "spotToOnDemandRepriceHour": "The current clock hour is re-billed entirely at the pay-as-you-go price (an hourly bill has one row and one unit price)",
     "sshKeyOnly": "Instances accept SSH key login only; passwords are not supported",
     "startNeedsStopped": "Only stopped instances can be started",
     "stockAvailable_one": "1 instance available",
@@ -248,6 +261,9 @@
     "servicePortReserved": "22 and 8888 are reserved by the platform — pick another port",
     "serviceTitle": "Deploy a service",
     "skuMissing": "Spec not found or delisted",
+    "spotAgree": "I understand that a spot instance can be reclaimed",
+    "spotConfirm": "I understand, continue",
+    "spotModalTitle": "About spot instances",
     "sshCard": "SSH keys",
     "summary_one": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G RAM",
     "summary_other": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G RAM",
@@ -624,6 +640,8 @@
     "selectFirst": "Select a spec above first",
     "selectHint": "Pick a spec to continue configuring",
     "selectSpec": "Select spec",
+    "spotFallbackToHourly": "The selected spec has no spot tier; showing pay-as-you-go pricing",
+    "spotOff": "as low as {{discount}}",
     "summary_one": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G RAM · {{disk}}G instance disk",
     "summary_other": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G RAM · {{disk}}G instance disk",
     "summaryCpu": "{{vcpu}} vCPU · {{mem}}G RAM · {{disk}}G instance disk",
@@ -770,7 +788,14 @@
     "gpuShared": "{{model}} · {{vram}}G · {{pct}}% compute (avg)",
     "hostShort": "{{vcpu}} vCPU / {{mem}}G RAM",
     "modeHourly": "Pay-as-you-go",
-    "sliceFallback": "slice"
+    "sliceFallback": "slice",
+    "spotUnavailable": "No spot tier"
+  },
+  "spot": {
+    "toOnDemandConfirm": "Switch to pay-as-you-go",
+    "toOnDemandMenu": "Switch to pay-as-you-go",
+    "toOnDemandOk": "Switched to pay-as-you-go; this instance is no longer subject to reclaim",
+    "toOnDemandTitle": "Switch to pay-as-you-go?"
   },
   "storage": {
     "activeBilling": "Billing daily",

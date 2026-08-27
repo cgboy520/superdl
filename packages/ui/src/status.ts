@@ -100,15 +100,63 @@ export const workloadTypeMap = {
 /**
  * 购买模式,与 instances.market 严格一致(后端 core/pricing.py 的 MARKETS)。
  * 与 tier 正交:同一条 SKU 可以按量买、也可以包周期买,不是新档位。
- * spot 由批次 C 接上,枚举先齐 —— 值域少一个,列表页拿到就渲染成裸字符串。
  */
 export type Market = "on_demand" | "spot" | "subscription";
 
 export const marketMap = {
   on_demand: { labelKey: "shared:status.market.on_demand", color: statusColors.gray },
-  spot: { labelKey: "shared:status.market.spot", color: statusColors.orange },
+  // 橙 = 「这台机器随时可能被收走」,与 frozen 同色系:两者都是「还在跑,但不保证跑到底」
+  spot: {
+    labelKey: "shared:status.market.spot",
+    color: statusColors.orange,
+    hintKey: "shared:status.marketHint.spot",
+  },
   subscription: { labelKey: "shared:status.market.subscription", color: colorPrimary },
-} as const satisfies Record<Market, { labelKey: string; color: string }>;
+} as const satisfies Record<Market, { labelKey: string; color: string; hintKey?: string }>;
+
+/**
+ * 竞价实例的「可回收」行内标记(用户端列表/详情、管理端实例 Tab 共用)。
+ * 与 `marketMap.spot` 同色 —— 「竞价」和「可回收」说的是同一件事的两面,
+ * 分成两种颜色会让人以为是两个互不相干的状态。
+ */
+export const spotReclaimTag = {
+  labelKey: "shared:status.market.spotReclaimable",
+  hintKey: "shared:status.marketHint.spot",
+  color: statusColors.orange,
+} as const satisfies { labelKey: string; hintKey: string; color: string };
+
+/**
+ * 实例事件 `reason` → 文案。值与后端 `transition(reason=...)` 传的字面量严格一致
+ * (orchestrator/service.py、reconciler.py、preempt.py、billing/subscriptions.py)。
+ * 后端还有少量自由文本 reason(如调度器回填的失败详情),取不到就原样渲染 ——
+ * 调用方一律走 `metaOf(instanceEventReasonMap, e.reason)?.labelKey ?? e.reason`。
+ */
+export const instanceEventReasonMap = {
+  create: { labelKey: "shared:status.eventReason.create" },
+  pod_ready: { labelKey: "shared:status.eventReason.pod_ready" },
+  schedule_timeout: { labelKey: "shared:status.eventReason.schedule_timeout" },
+  pod_deleted: { labelKey: "shared:status.eventReason.pod_deleted" },
+  user_start: { labelKey: "shared:status.eventReason.user_start" },
+  user_stop: { labelKey: "shared:status.eventReason.user_stop" },
+  restart: { labelKey: "shared:status.eventReason.restart" },
+  failed_recover: { labelKey: "shared:status.eventReason.failed_recover" },
+  user_release: { labelKey: "shared:status.eventReason.user_release" },
+  admin_release: { labelKey: "shared:status.eventReason.admin_release" },
+  released: { labelKey: "shared:status.eventReason.released" },
+  retention_reclaim: { labelKey: "shared:status.eventReason.retention_reclaim" },
+  failed_retention_reclaim: { labelKey: "shared:status.eventReason.failed_retention_reclaim" },
+  subscription_renew: { labelKey: "shared:status.eventReason.subscription_renew" },
+  subscription_expired: { labelKey: "shared:status.eventReason.subscription_expired" },
+  subscription_freeze: { labelKey: "shared:status.eventReason.subscription_freeze" },
+  arrears_stop: { labelKey: "shared:status.eventReason.arrears_stop" },
+  arrears_freeze: { labelKey: "shared:status.eventReason.arrears_freeze" },
+  arrears_reclaim: { labelKey: "shared:status.eventReason.arrears_reclaim" },
+  recharge_unfreeze: { labelKey: "shared:status.eventReason.recharge_unfreeze" },
+  admin_force_stop: { labelKey: "shared:status.eventReason.admin_force_stop" },
+  tenant_frozen: { labelKey: "shared:status.eventReason.tenant_frozen" },
+  // 竞价回收(preempt.py 的 REASON_PREEMPTED):自动腾容量与管理端强制回收共用这一条
+  preempted: { labelKey: "shared:status.eventReason.preempted" },
+} as const satisfies Record<string, { labelKey: string }>;
 
 /** 计费周期,与 subscriptions.period 严格一致(定长小时,见 PERIOD_HOURS)。 */
 export type BillingPeriod = "day" | "week" | "month" | "year";

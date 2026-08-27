@@ -174,6 +174,36 @@ async def send_subscription_notice(
     # 巡检的事务里调用,由调用方 commit;与 send_arrears_notice 同口径
 
 
+async def send_preemption_notice(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    instance_name: str,
+    grace_seconds: int,
+    instance_id: int,
+) -> None:
+    """竞价实例被抢占的通知(站内信 + 短信)。
+
+    dedup_key 带 instance_id 且**不按天分桶**:同一台实例一天内可能被抢占、用户重开、
+    再被抢占,按天去重会把第二次吞掉 —— 而第二次恰恰是用户最需要知道的那条。
+    去重靠 dedup_key 里的实例 id + 当前时刻分钟位:同一次抢占的重试不会重复发,
+    不同次抢占各发各的。
+    """
+    await notify(
+        session,
+        user_id,
+        type_="preempted",
+        title="竞价实例即将被回收",
+        content=(
+            f"{instance_name} 因平台需要容量将在 {grace_seconds} 秒后关机。"
+            f"实例盘保留,有容量时可自行开机;已运行时长按实际秒数结算。"
+        ),
+        severity="warning",
+        dedup_key=f"preempt:{instance_id}:{now_utc():%Y%m%d%H%M}",
+        sms=True,
+    )
+
+
 # 群发的单语句行数上限:PG 单条语句 65535 个绑定参数,按 5 列 × 1000 行留足余量
 _ANNOUNCEMENT_CHUNK = 1000
 

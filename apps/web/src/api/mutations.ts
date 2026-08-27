@@ -11,6 +11,7 @@ import {
   appendMessageApiV1TicketsTicketIdMessagesPost,
   cancelDeletionRequestApiV1MeDeletionRequestCancelPost,
   closeTicketApiV1TicketsTicketIdClosePost,
+  convertToOnDemandApiV1InstancesUuidToOnDemandPost,
   createApiKeyApiV1InstancesUuidApiKeysPost,
   createDeletionRequestApiV1MeDeletionRequestPost,
   createDiskApiV1DisksPost,
@@ -187,6 +188,17 @@ export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
       subscribeInstanceApiV1InstancesUuidSubscribePost(uuid, body, {
         "Idempotency-Key": idempotencyKey,
       }),
+    { ...o, invalidates: [...INSTANCE_INVALIDATES] },
+  );
+/**
+ * 竞价转按量(免被回收):不动 Pod、不重调度,只翻 market 与单价。
+ * **不带幂等键** —— 后端对已经是按量的实例原样返回 200,重放天然安全,
+ * 多一把键反而要解释「同一台机器为什么会有两张单」。
+ * 转换会把当前整点小时整体改按按量价重算,那笔账立刻变,失效面要连账单一起。
+ */
+export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) =>
+  useApiMutation(
+    (_v: void) => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
 /** 自动续费开关:只改订阅行,不动实例状态,失效面只有实例域。 */

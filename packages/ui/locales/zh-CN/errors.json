@@ -196,6 +196,7 @@
     "periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
     "periodOnOnDemand": "按量计费的实例不能带计费周期",
     "periodRequired": "包周期实例必须选择计费周期",
+    "preemptNotSpot": "只有竞价实例可以强制回收",
     "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
     "releaseNeedsStopped": "关机后才能释放实例",
     "renewNotSubscription": "只有包周期实例可以续费",
@@ -204,11 +205,13 @@
     "serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
     "servicePortRequired": "服务型实例必须填写容器监听端口",
     "servicePortReserved": "端口 {{port}} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口",
+    "spotNotEnabled": "该规格暂未上竞价档,请选择按量或包周期",
     "sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
     "sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",
     "startNeedsStopped": "仅已关机的实例可以开机",
     "stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
     "stopNeedsRunning": "仅运行中的实例可以关机",
+    "toOnDemandNotSpot": "只有竞价实例可以转按量",
     "vcpuQuota": "CPU 实例的 vCPU 总数将超过上限({{max}} 核),请释放后再创建或联系客服提额"
   },
   "tickets": {

@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     period_discount_month: int = 80
     period_discount_year: int = 70
     period_expire_warn_days: int = 3  # 包周期到期前几天开始预警
+    # 竞价价 = 按量价 × pct/100;抢占前的宽限窗(秒),用户据此保存进度
+    spot_discount_pct: int = 40
+    spot_grace_seconds: int = 60
 
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长

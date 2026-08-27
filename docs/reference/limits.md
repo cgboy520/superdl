@@ -34,6 +34,8 @@
 | 包周期到期预警 | 到期前 3 天 | 策略 `period_expire_warn_days`(1~30);短信 + 站内信,每个到期时刻至多一条(去重锚点 `subscriptions.warned_for_expiry`) |
 | 包周期定长小时 | 日 24 / 周 168 / 月 720 / 年 8760 | `core/pricing.py` `PERIOD_HOURS` —— 常量,不可在线改:到期时刻与定价同源,改它等于同时改价与改到期口径 |
 | 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值。它是用户可控的乘数,不封顶一次请求就能算出溢出 `numeric(14,2)` 的应付额 |
+| 竞价折扣 | 40(百分数,40 = 4 折) | 策略 `spot_discount_pct`(10~90)。**上界 90 = 至少打九折** —— 竞价的对价是「可被回收」,不打折的竞价档没有存在理由,只会让用户白担一份风险。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
+| 抢占宽限窗 | 60s | 策略 `spot_grace_seconds`(静态区间 30~600),**另有比它更紧的跨键上限,见下**;同样经 `/policies` 下发(知情同意里那句「提前 N 秒通知」取它) |
 | 包周期到期巡检 | 30min 一轮 | `workers/main.py` `subscription_patrol`(worker `core` 组件);预警窗以天计,到期后的处置晚半小时不影响任何计费口径 |
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |
@@ -54,6 +56,18 @@
 | 节点注册令牌 | 默认 24h,1~168h | 创建时指定 |
 | 装机无心跳判失败 | 2h | `nodes/reconciler.py` |
 | 节点 Missing 后删行 | 7 天 | `nodes/patrol.py` `MISSING_RETENTION` |
+
+**抢占宽限窗与 creating 超时共用同一段时间预算。** 被抢占的实例迁 `stopping` 后,`instance.stop` 经 outbox
+延迟 `spot_grace_seconds` 才到期执行;而触发这次抢占的请求方此刻已经在 `creating` 里等着,
+`creating_timeout_seconds`(默认 300s)一到就转 failed。宽限窗之外还得留给「删 Pod → terminationGracePeriod
+30s → 释放卡 → 调度请求方 → 拉起」的时间,这段余量是常量 `core/policies.py` 的
+`PREEMPT_TIME_RESERVE_SECONDS = 120`。所以 `spot_grace_seconds` 的**真实上限是
+`creating_timeout_seconds − 120`**(默认 300 − 120 = **180s**),比静态区间的 600 紧得多。
+
+这是**跨键约束,静态区间表达不了**,由 `validate_policy_value` 在保存时拦下,错误文案里带出当时的
+具体上限(前端原样展示,不自己再算一遍)。要调大宽限窗就先调大 `creating_timeout_seconds`,顺序反了
+只会得到一个被拒绝的保存 —— 而真放行的话,等于给自己造一批「竞价实例杀了、请求方还是超时失败」的单:
+两边的用户都输,平台一份容量也没多出来。
 
 ## 会话与凭据
 

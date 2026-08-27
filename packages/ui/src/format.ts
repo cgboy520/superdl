@@ -26,7 +26,8 @@ type SharedFormatKey =
   | "shared:format.countdown.reclaimNow"
   | "shared:format.daysLeft.expired"
   | "shared:format.daysLeft.dueToday"
-  | "shared:format.daysLeft.count";
+  | "shared:format.daysLeft.count"
+  | "shared:format.spotDiscount";
 
 export type SharedT = (key: SharedFormatKey, opts?: Record<string, unknown>) => string;
 
@@ -175,6 +176,30 @@ export function quoteSubscription(
   };
 }
 
+/**
+ * 竞价时价 = 按量时价 × `spot_discount_pct` / 100(BigInt 万分位,HALF_EVEN 到 4 位)。
+ * 运算与后端 `pricing.effective_price_hourly` 的 `as_price(price * pct / 100)` 逐值一致 ——
+ * 折扣是运营在线可调的策略,页面上那个数只能从 `/policies` 现算,不能硬编码任何一档。
+ */
+export function spotHourlyPrice(
+  baseHourly: string | null | undefined,
+  discountPct: number,
+): string {
+  return unscale4(halfEvenDiv(scaled4(baseHourly) * BigInt(discountPct), 100n));
+}
+
+/**
+ * 折扣力度的**本地化短语**:zh 说「4 折」,en 说「40% of on-demand」。
+ * 与 currencySymbol 同一条口径 —— 中文的「折」是按剩下几成算的,英文没有对应说法,
+ * 硬塞同一个数字会在其中一端读成反义(4 折 ≠ 4% off)。调用方把它当成一段值嵌进整句。
+ */
+export function formatSpotDiscount(discountPct: number, t: SharedT, locale: string): string {
+  if (!locale.startsWith("zh")) return t("shared:format.spotDiscount", { off: discountPct });
+  const whole = Math.trunc(discountPct / 10);
+  const rest = discountPct % 10;
+  return t("shared:format.spotDiscount", { off: rest === 0 ? `${whole}` : `${whole}.${rest}` });
+}
+
 /** 秒 → "X 小时 Y 分"(en 用缩写单位规避复数形态)。 */
 export function formatDuration(seconds: number, t: SharedT): string {
   if (seconds < 60) {
@@ -273,6 +298,7 @@ export interface Formatters {
   formatDaysLeft(startedAt: string | null | undefined, totalDays: number, now?: Date): string | null;
   formatPeriodPrice(amount: string | null | undefined, period: string, count: number): string;
   formatExpiry(expiresAt: string | null | undefined, now?: Date): string | null;
+  formatSpotDiscount(discountPct: number): string;
 }
 
 export function makeFormatters(t: SharedT, locale: string): Formatters {
@@ -287,6 +313,7 @@ export function makeFormatters(t: SharedT, locale: string): Formatters {
     formatDaysLeft: (startedAt, totalDays, now) => formatDaysLeft(startedAt, totalDays, t, now),
     formatPeriodPrice: (amount, period, count) => formatPeriodPrice(amount, period, count, t, locale),
     formatExpiry: (expiresAt, now) => formatExpiry(expiresAt, t, now),
+    formatSpotDiscount: (discountPct) => formatSpotDiscount(discountPct, t, locale),
   };
 }
 

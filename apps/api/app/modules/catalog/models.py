@@ -53,6 +53,9 @@ class Sku(Base):
     # 这条 SKU 是否接受包周期(预付)下单。默认开:关掉是例外(稀缺型号不想被人一次锁一年),
     # 默认关会让功能上线当天在页面上完全看不见,得逐条 SKU 手动打开
     period_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    # 这条 SKU 是否上竞价档。**默认关**,与 period_enabled 相反:竞价的对价是「可被回收」,
+    # 那是要在下单前跟用户讲清楚的承诺,不该因为新建了一条 SKU 就自动生效
+    spot_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(8), default="off", index=True)  # on / off
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # 变更时间,onupdate 自动刷新;无业务读取,留作审计线索

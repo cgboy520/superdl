@@ -49,6 +49,10 @@ INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",
     "因节点失联(Pod 持续 not-ready)被判定停止的实例数",
 )
+SPOT_PREEMPTED_TOTAL = Counter(
+    "superdl_spot_preempted_total",
+    "被抢占回收的竞价实例数(平台主动回收,不含用户自己关机)",
+)
 RECONCILE_STUCK_INSTANCES = Gauge(
     "superdl_reconcile_stuck_instances",
     "悬挂实例数(进入 stopping/releasing 超过第一档超时仍未收敛)",

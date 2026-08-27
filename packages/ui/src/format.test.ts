@@ -18,9 +18,11 @@ import {
   formatPeriodPrice,
   formatReclaimCountdown,
   formatSizeGb,
+  formatSpotDiscount,
   maskPhone,
   mulPrice,
   quoteSubscription,
+  spotHourlyPrice,
   tzSuffix,
   type SharedT,
 } from "./format";
@@ -286,6 +288,45 @@ describe.each([
   });
   it("未知周期只回金额,不编造量词", () => {
     expect(formatPeriodPrice("10.00", "quarter", 1, t, locale)).toBe(zh ? "¥10.00" : "CN¥10.00");
+  });
+});
+
+describe("spotHourlyPrice", () => {
+  it("与后端 as_price(price × pct / 100) 同口径:HALF_EVEN 量化到 4 位", () => {
+    expect(spotHourlyPrice("3.9900", 40)).toBe("1.5960");
+    expect(spotHourlyPrice("3.9900", 100)).toBe("3.9900"); // 不打折 = 原价
+    expect(spotHourlyPrice(null, 40)).toBe("0.0000");
+  });
+  it("恰好半个万分位时向偶进(与 quoteSubscription 的折后时价同一条舍入规则)", () => {
+    // 0.0010 × 45% = 0.00045 → 万分位恰好 4.5 个:向偶 = 0.0004(不是 0.0005)
+    expect(spotHourlyPrice("0.0010", 45)).toBe("0.0004");
+    // 0.0030 × 45% = 0.00135 → 恰好 13.5 个:向偶 = 0.0014
+    expect(spotHourlyPrice("0.0030", 45)).toBe("0.0014");
+    // 半个以下照常舍去
+    expect(spotHourlyPrice("0.0001", 45)).toBe("0.0000");
+  });
+  it("与 quoteSubscription 的 unitPrice 逐值一致(同一个折扣算法,不能有两套)", () => {
+    for (const pct of [10, 40, 45, 55, 90]) {
+      const q = quoteSubscription("1.2345", { units: 1, period: "day", periodCount: 1, discountPct: pct });
+      expect(spotHourlyPrice("1.2345", pct)).toBe(q.unitPrice);
+    }
+  });
+});
+
+describe("formatSpotDiscount", () => {
+  const zh = makeT("zh-CN");
+  const en = makeT("en-US");
+  it("zh 按「折」说(40 → 4 折),整十不留小数点", () => {
+    expect(formatSpotDiscount(40, zh, "zh-CN")).toBe("4 折");
+    expect(formatSpotDiscount(90, zh, "zh-CN")).toBe("9 折");
+  });
+  it("zh 非整十保留一位小数(45 → 4.5 折)", () => {
+    expect(formatSpotDiscount(45, zh, "zh-CN")).toBe("4.5 折");
+    expect(formatSpotDiscount(10, zh, "zh-CN")).toBe("1 折");
+  });
+  it("en 直接说占按量价的百分比(「4 折」在英文里没有对应说法)", () => {
+    expect(formatSpotDiscount(40, en, "en-US")).toBe("40% of on-demand");
+    expect(formatSpotDiscount(45, en, "en-US")).toBe("45% of on-demand");
   });
 });
 

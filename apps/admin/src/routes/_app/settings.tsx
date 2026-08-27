@@ -67,6 +67,8 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
   period_discount_month: { label: "包月折扣", unit: "%" },
   period_discount_year: { label: "包年折扣", unit: "%" },
   period_expire_warn_days: { label: "包周期到期预警", unit: "天", hint: "到期前几天开始推送预警,每天至多一条" },
+  spot_discount_pct: { label: "竞价折扣", unit: "%", hint: "百分数:40 = 按量价的 4 折;调价只影响新建的竞价实例" },
+  spot_grace_seconds: { label: "抢占宽限窗", unit: "秒", hint: "回收通知发出到真删 Pod 的时间;实际上限还受实例创建超时(env 配置,不在本表)约束,越界时保存被驳回并给出具体上限" },
 };
 
 function PoliciesTab() {

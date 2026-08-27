@@ -501,6 +501,7 @@ export default interface Resources {
       "prepaidPart": "其中包周期预付 {{amount}}",
       "raiseThreshold": "上调阈值 60%",
       "rented": "已租",
+      "rentedSpot": "其中竞价(可回收)",
       "replay": "重放",
       "replayConfirmMeta": "确认重放任务 #{{id}}({{type}})?将置回队列重新执行。",
       "replayTitle": "重放死信",
@@ -509,6 +510,7 @@ export default interface Resources {
       "seriesOversell": "实际超卖率",
       "seriesUtil": "真实利用率(24h)",
       "severityFilter": "级别",
+      "spotReclaimable": "已租合计 {{used}} 卡,其中 {{spot}} 卡是竞价实例:按量或包周期需要容量时,按创建时间从新到旧回收",
       "subscriptionsActive": "包周期在保实例",
       "subscriptionsActiveHint": "按订阅计,含已停机;到期前仍占库存",
       "todayRevenue": "今日收入",
@@ -667,6 +669,7 @@ export default interface Resources {
       "colPrice": "单价",
       "colSlice": "切分",
       "colSoldShare": "已售",
+      "colSpot": "竞价",
       "colTier": "档位",
       "confirmSubmit": "确认提交",
       "coresPctLabel": "算力份额 %",
@@ -719,6 +722,10 @@ export default interface Resources {
       "saveFailed": "保存失败",
       "saved": "已保存(变更仅影响新实例)",
       "sliceShared": "{{pct}}% 算力 · {{vram}}G 显存",
+      "spotEnabledHint": "开启后该规格可按竞价价售卖;竞价实例在容量紧张时会被平台回收",
+      "spotEnabledLabel": "竞价档",
+      "spotOff": "不支持",
+      "spotOn": "支持",
       "submit": "提交",
       "submitConfirmTitle": "确认提交变更?",
       "tierLockedOnSale": "在售规格不能改档位(改档位即改池,等于换成另一件商品);请先下架",
@@ -789,8 +796,6 @@ export default interface Resources {
         "instancePlaceholder": "选择实例查看事件",
         "pickFirst": "请先选择实例"
       },
-      "evict": "驱逐重调度",
-      "evictP1": "驱逐重调度为 P1 功能,当前版本未开放",
       "expiresAt": "到期 {{date}}",
       "forceStop": "强制停止",
       "forceStopConfirm": "确认强制停止实例 {{name}}({{id}})?将立即结算尾账并通知用户。",
@@ -803,6 +808,11 @@ export default interface Resources {
       "frozen": "已冻结",
       "gotoAudit": "跳审计",
       "noPermission": "当前角色无权操作",
+      "preempt": "强制回收",
+      "preemptConfirm": "确认回收竞价实例 {{name}}({{id}})?将立即通知用户并结算尾账,宽限窗内 SSH 仍可登录,窗口到期后停机(实例盘保留)。",
+      "preemptNeedsRunning": "仅运行中的实例可回收",
+      "preemptNeedsSpot": "仅竞价实例可回收",
+      "preemptTitle": "回收竞价实例",
       "quota": {
         "effective": "生效值",
         "effectiveLine": "GPU {{gpus}} · 实例 {{instances}} · 数据盘 {{disks}}",
@@ -1066,6 +1076,7 @@ export default interface Resources {
       "periodNotEnabled": "该规格暂不支持包周期,请选择按量计费",
       "periodOnOnDemand": "按量计费的实例不能带计费周期",
       "periodRequired": "包周期实例必须选择计费周期",
+      "preemptNotSpot": "只有竞价实例可以强制回收",
       "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
       "releaseNeedsStopped": "关机后才能释放实例",
       "renewNotSubscription": "只有包周期实例可以续费",
@@ -1074,11 +1085,13 @@ export default interface Resources {
       "serviceEndpointNotFound": "该实例没有对外服务端点(仅服务型实例有)",
       "servicePortRequired": "服务型实例必须填写容器监听端口",
       "servicePortReserved": "端口 {{port}} 由平台占用(22 = SSH,8888 = JupyterLab),请把服务改到其他端口",
+      "spotNotEnabled": "该规格暂未上竞价档,请选择按量或包周期",
       "sshKeyRequired": "请至少选择一个 SSH 公钥(实例仅支持密钥登录)",
       "sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",
       "startNeedsStopped": "仅已关机的实例可以开机",
       "stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
       "stopNeedsRunning": "仅运行中的实例可以关机",
+      "toOnDemandNotSpot": "只有竞价实例可以转按量",
       "vcpuQuota": "CPU 实例的 vCPU 总数将超过上限({{max}} 核),请释放后再创建或联系客服提额"
     },
     "tickets": {
@@ -1119,7 +1132,8 @@ export default interface Resources {
         "month": "月",
         "week": "周",
         "year": "年"
-      }
+      },
+      "spotDiscount": "{{off}} 折"
     },
     "status": {
       "adjustment": {
@@ -1149,6 +1163,31 @@ export default interface Resources {
         "deleting": "清除中",
         "frozen": "已冻结",
         "grace": "宽限期"
+      },
+      "eventReason": {
+        "admin_force_stop": "管理员强制停止",
+        "admin_release": "管理员释放",
+        "arrears_freeze": "欠费冻结",
+        "arrears_reclaim": "欠费回收实例盘",
+        "arrears_stop": "欠费停机",
+        "create": "创建实例",
+        "failed_recover": "从失败恢复",
+        "failed_retention_reclaim": "失败实例留存到期回收",
+        "pod_deleted": "容器已删除",
+        "pod_ready": "容器就绪",
+        "preempted": "竞价回收",
+        "recharge_unfreeze": "充值解冻",
+        "released": "释放完成",
+        "restart": "重启",
+        "retention_reclaim": "留存到期回收",
+        "schedule_timeout": "调度超时",
+        "subscription_expired": "包周期到期停机",
+        "subscription_freeze": "包周期到期冻结",
+        "subscription_renew": "包周期续费",
+        "tenant_frozen": "账号被冻结",
+        "user_release": "用户释放",
+        "user_start": "用户开机",
+        "user_stop": "用户关机"
       },
       "imageCache": {
         "cached": "已缓存",
@@ -1186,7 +1225,11 @@ export default interface Resources {
       "market": {
         "on_demand": "按量",
         "spot": "竞价",
+        "spotReclaimable": "可回收",
         "subscription": "包周期"
+      },
+      "marketHint": {
+        "spot": "容量紧张时,平台会按创建时间从新到旧回收竞价实例;回收前提前通知"
       },
       "nodeEnroll": {
         "expired": "已过期",

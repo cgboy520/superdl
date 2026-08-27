@@ -184,6 +184,10 @@ class OverviewPoolOut(BaseModel):
     pool: str
     gpu_total: int
     gpu_used: int
+    # 已租的那段里属于竞价实例的卡数(可回收容量)。已按 gpu_used 截断:
+    # 超卖档下多个共享实例共用一张卡,台账只记一张、实例侧各记一张,不截断会画出
+    # 一段比它所在容器还长的堆叠条
+    gpu_spot_used: int
     ready_gpu_total: int
 
 

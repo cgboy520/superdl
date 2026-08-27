@@ -28,7 +28,8 @@
       "month": "月",
       "week": "周",
       "year": "年"
-    }
+    },
+    "spotDiscount": "{{off}} 折"
   },
   "status": {
     "announcement": {
@@ -152,6 +153,7 @@
     "market": {
       "on_demand": "按量",
       "spot": "竞价",
+      "spotReclaimable": "可回收",
       "subscription": "包周期"
     },
     "period": {
@@ -164,6 +166,34 @@
       "active": "在保",
       "cancelled": "已作废",
       "expired": "已到期"
+    },
+    "marketHint": {
+      "spot": "容量紧张时,平台会按创建时间从新到旧回收竞价实例;回收前提前通知"
+    },
+    "eventReason": {
+      "admin_force_stop": "管理员强制停止",
+      "admin_release": "管理员释放",
+      "arrears_freeze": "欠费冻结",
+      "arrears_reclaim": "欠费回收实例盘",
+      "arrears_stop": "欠费停机",
+      "create": "创建实例",
+      "failed_recover": "从失败恢复",
+      "failed_retention_reclaim": "失败实例留存到期回收",
+      "pod_deleted": "容器已删除",
+      "pod_ready": "容器就绪",
+      "preempted": "竞价回收",
+      "recharge_unfreeze": "充值解冻",
+      "released": "释放完成",
+      "restart": "重启",
+      "retention_reclaim": "留存到期回收",
+      "schedule_timeout": "调度超时",
+      "subscription_expired": "包周期到期停机",
+      "subscription_freeze": "包周期到期冻结",
+      "subscription_renew": "包周期续费",
+      "tenant_frozen": "账号被冻结",
+      "user_release": "用户释放",
+      "user_start": "用户开机",
+      "user_stop": "用户关机"
     }
   }
 }

@@ -153,6 +153,19 @@
     "serviceGatewayAuth": "平台在网关校验 Authorization: Bearer,你的容器不用自己实现鉴权",
     "serviceImagePinned": "写固定 tag 或 @sha256 digest:服务容器退出后会被原地重启,可变 tag 会让重启后悄悄换成另一个版本。服务型容器不要求内置 SSH 与 JupyterLab",
     "serviceNotReadyHint": "服务还没就绪:实例仍在运行、照常计费,平台不会替你停。先看容器日志,再核对健康检查路径与服务端口",
+    "spotBillingBasis": "竞价价按折扣锁定在实例上,同样按秒累计;被回收时按实际运行秒数结算,不免单",
+    "spotConsent": {
+      "c1": "竞价价为按量价的 {{pct}}%,代价是实例可被平台回收",
+      "c2": "按量或包周期用户需要容量而池里不够时,平台在同池同型号内按创建时间从新到旧回收竞价实例;凑不够则一台都不动",
+      "c3": "回收前提前 {{seconds}} 秒发短信与站内信,宽限窗内实例仍在运行、SSH 仍可登录,请自行保存进度",
+      "c4": "回收即关机,实例盘保留;已运行时长按实际秒数正常结算,不免单",
+      "c5": "有容量时可自行开机;竞价不适合线上服务与不可中断的长任务"
+    },
+    "spotNotForService": "竞价实例可被回收,不建议用于对外服务:被回收时实例关机,服务地址随之中断",
+    "spotReclaimNotice": "竞价实例可被平台回收:容量紧张时按创建时间从新到旧回收,回收前会提前通知",
+    "spotToOnDemandNoReclaim": "转换后这台实例不再被回收",
+    "spotToOnDemandNoRestart": "不动容器、不重新调度,任务零中断",
+    "spotToOnDemandRepriceHour": "当前整点小时将整体改按按量价结算(账单一小时只有一行、一个单价)",
     "sshKeyOnly": "实例仅支持 SSH 密钥登录,不支持密码登录",
     "startNeedsStopped": "仅已关机的实例可以开机",
     "stockAvailable": "可开实例 {{count}}",
@@ -246,6 +259,9 @@
     "servicePortReserved": "22 与 8888 由平台占用,请换一个端口",
     "serviceTitle": "部署服务",
     "skuMissing": "规格不存在或已下架",
+    "spotAgree": "我已知悉竞价实例可能被回收",
+    "spotConfirm": "我已知悉,继续创建",
+    "spotModalTitle": "竞价实例服务说明",
     "sshCard": "SSH 密钥",
     "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存",
     "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存",
@@ -614,6 +630,8 @@
     "selectFirst": "请先在上方选择一个规格",
     "selectHint": "选择规格后可下一步配置实例",
     "selectSpec": "选择规格",
+    "spotFallbackToHourly": "所选规格暂未上竞价档,已按按量计费展示",
+    "spotOff": "低至 {{discount}}",
     "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
     "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
     "title": "算力市场",
@@ -756,7 +774,14 @@
     "gpuShared": "{{model}} · {{vram}}G · {{pct}}% 算力(均值)",
     "hostShort": "{{vcpu}} vCPU / {{mem}}G 内存",
     "modeHourly": "按量计费",
-    "sliceFallback": "切分"
+    "sliceFallback": "切分",
+    "spotUnavailable": "未上竞价"
+  },
+  "spot": {
+    "toOnDemandConfirm": "确认转按量",
+    "toOnDemandMenu": "转按量",
+    "toOnDemandOk": "已转为按量计费,这台实例不会再被回收",
+    "toOnDemandTitle": "转为按量计费?"
   },
   "storage": {
     "activeBilling": "按日扣费中",

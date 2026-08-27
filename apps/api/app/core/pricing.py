@@ -99,10 +99,7 @@ def price_for(
             raise ValueError("subscription price requires a period")
         return as_price(price * period_discount_pct(policies, period) / Decimal(100))
     if market == MARKET_SPOT:
-        # 批次 C 接上(spot_discount_pct 策略键随抢占机制一起进来)。
-        # 契约层此刻不收 market='spot',这条不可达;留 raise 而不是静默按原价 ——
-        # 静默会让「竞价上线了但没打折」这种事在账单出来之前没人发现
-        raise ValueError("spot pricing not enabled yet")
+        return as_price(price * policies.spot_discount_pct / Decimal(100))
     return price
 
 

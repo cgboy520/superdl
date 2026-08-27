@@ -27,6 +27,8 @@ from app.modules.adminapi.models import AdminUser
 from app.modules.adminapi.service import ensure_bootstrap_admin
 from app.modules.catalog.models import PlatformImage, Sku
 
+# dev 种子里**全部 SKU 都开竞价档**(生产默认是关的,见 catalog/models.spot_enabled):
+# 竞价链路的浏览器冒烟需要一条可竞价的规格,靠人手工去库里改一下就成了「换台机器跑不起来」
 SKUS = [
     {
         "name": "RTX4090-FULL",
@@ -40,6 +42,7 @@ SKUS = [
         "price_hourly": Decimal("3.9900"),
         "max_gpus_per_instance": 8,
         "cuda_max": "13.2",
+        "spot_enabled": True,
         "status": "on",
     },
     {
@@ -55,6 +58,7 @@ SKUS = [
         "price_hourly": Decimal("2.5000"),
         "max_gpus_per_instance": 1,
         "cuda_max": "13.2",
+        "spot_enabled": True,
         "status": "on",
     },
     {
@@ -71,6 +75,7 @@ SKUS = [
         "price_hourly": Decimal("1.6800"),
         "max_gpus_per_instance": 1,
         "cuda_max": "13.2",
+        "spot_enabled": True,
         "status": "on",
     },
     {
@@ -87,6 +92,7 @@ SKUS = [
         "price_hourly": Decimal("0.4900"),
         "max_gpus_per_instance": 0,
         "cuda_max": None,
+        "spot_enabled": True,
         "status": "on",
     },
     {
@@ -103,6 +109,7 @@ SKUS = [
         "price_hourly": Decimal("0.9900"),
         "max_gpus_per_instance": 1,
         "cuda_max": "13.2",
+        "spot_enabled": True,
         "status": "on",
     },
 ]

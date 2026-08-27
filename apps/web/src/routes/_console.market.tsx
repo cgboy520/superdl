@@ -10,6 +10,7 @@
 import {
   billingUnits,
   GPU_COUNT_STEPS,
+  isBillingPeriod,
   mulPrice,
   periodMap,
   skuTierMap,
@@ -29,6 +30,7 @@ import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
+import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { useIsLoggedIn } from "../stores/auth";
 
 export const Route = createFileRoute("/_console/market")({
@@ -65,6 +67,7 @@ function MarketPage() {
   // 计费规则的冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
+  const spotPolicy = useSpotPolicy();
 
   const isCpu = kind === "cpu";
   // 分栏先切分数据源:两栏的 chip 取值域各自从本栏 SKU 聚合,不会互相带出空选项
@@ -117,12 +120,33 @@ function MarketPage() {
   const needed = isCpu ? 1 : gpuCount;
   const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= needed;
 
-  const columns = skuColumns({ fmt, t, availability: true, priceFontSize: 18, cpu: isCpu });
-
-  // 选中的规格不接受包周期时按量兜底:chips 已灰置,结算条也不能还挂着一个下不了的单
+  // 选中的规格不接受包周期 / 未上竞价时按量兜底:chips 已灰置,结算条也不能还挂着一个下不了的单
   const periodBlocked = selected != null && !selected.period_enabled;
-  const mode: BillingMode = periodBlocked ? "on_demand" : billingMode;
-  const period = mode === "on_demand" ? null : mode;
+  const spotUnavailable = selected != null && !selected.spot_enabled;
+  const spotBlocked = spotUnavailable || spotPolicy == null;
+  const mode: BillingMode =
+    (periodBlocked && isBillingPeriod(billingMode)) || (spotBlocked && billingMode === "spot")
+      ? "on_demand"
+      : billingMode;
+  const isSpot = mode === "spot";
+  const period = isBillingPeriod(mode) ? mode : null;
+  // 竞价档选中时,没上竞价的规格整行灰置而不是过滤掉:表格是「这条卡还有哪些买法」的全景,
+  // 抽掉行会让用户以为规格下架了(与「售罄行灰置不隐藏」同一条口径)
+  const selectable = (s: SkuMarketOut) => rentable(s) && (!isSpot || s.spot_enabled);
+  // 明细区摊开的单价:竞价档报折后价(与结算条大字同一个数),其余报 SKU 原价
+  const unitPrice =
+    selected && isSpot
+      ? (spotPriceOf(selected.price_hourly, spotPolicy) ?? selected.price_hourly)
+      : selected?.price_hourly;
+
+  const columns = skuColumns({
+    fmt,
+    t,
+    availability: true,
+    priceFontSize: 18,
+    cpu: isCpu,
+    ...(isSpot && spotPolicy ? { spot: spotPolicy } : {}),
+  });
   // 市场页没有报价端点,按 policies 折扣本地估算;数量恒 1(几个周期在创建页选)
   const quote =
     selected && period
@@ -145,11 +169,17 @@ function MarketPage() {
         value={mode}
         onChange={setBillingMode}
         periodEnabled={!periodBlocked}
+        spotEnabled={!spotUnavailable}
         extra={<Typography.Link onClick={() => setRulesOpen(true)}>{t("market.billingRulesLink")}</Typography.Link>}
       />
-      {periodBlocked && billingMode !== "on_demand" && (
+      {periodBlocked && isBillingPeriod(billingMode) && (
         <Alert type="info" showIcon title={t("period.fallbackToHourly")} />
       )}
+      {spotUnavailable && billingMode === "spot" && (
+        <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
+      )}
+      {/* 竞价档常驻提示:折扣是拿「可能被回收」换的,选中期间一直摆在页面上 */}
+      {isSpot && <Alert type="warning" showIcon title={t("copy.spotReclaimNotice")} />}
 
       <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -198,12 +228,12 @@ function MarketPage() {
               type: "radio",
               selectedRowKeys: selected ? [selected.id] : [],
               onChange: (keys) => setSelectedId(keys[0] as number),
-              getCheckboxProps: (s) => ({ disabled: !rentable(s) }),
+              getCheckboxProps: (s) => ({ disabled: !selectable(s) }),
             }}
             onRow={(s) => ({
-              style: rentable(s) ? { cursor: "pointer" } : { opacity: 0.5 },
+              style: selectable(s) ? { cursor: "pointer" } : { opacity: 0.5 },
               onClick: () => {
-                if (rentable(s)) setSelectedId(s.id);
+                if (selectable(s)) setSelectedId(s.id);
               },
             })}
           />
@@ -244,7 +274,13 @@ function MarketPage() {
             : {
                 label: t("create.configCostLabel"),
                 // CPU 规格的 price_hourly 已是整机时价(后端计费份数恒 1),不再乘卡数
-                value: selected ? formatHourlyPrice(mulPrice(selected.price_hourly, needed)) : "--",
+                value: !selected ? (
+                  "--"
+                ) : isSpot ? (
+                  <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
+                ) : (
+                  formatHourlyPrice(mulPrice(selected.price_hourly, needed))
+                ),
               },
         ]}
         detail={
@@ -259,16 +295,18 @@ function MarketPage() {
             ) : (
               <Space orientation="vertical" size={4}>
                 <span>
+                  {/* 竞价档摊开的是折后时价:结算条大字与明细报两个不同的数,只会让人以为算错了 */}
                   {isCpu
-                    ? t("instances.pricePerInstance", { price: formatHourlyPrice(selected.price_hourly) })
+                    ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
                     : t("instances.pricePerCard", {
-                        price: formatHourlyPrice(selected.price_hourly),
+                        price: formatHourlyPrice(unitPrice),
                         count: gpuCount,
                       })}
                 </span>
                 <Typography.Text type="secondary">
                   {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
                 </Typography.Text>
+                {isSpot && <Typography.Text type="secondary">{t("copy.spotBillingBasis")}</Typography.Text>}
               </Space>
             )
           ) : undefined
@@ -290,6 +328,7 @@ function MarketPage() {
                       search: {
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),
+                        ...(isSpot ? { market: "spot" as const } : {}),
                         workload: "service" as const,
                       },
                     });
@@ -313,6 +352,7 @@ function MarketPage() {
                       search: {
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),
+                        ...(isSpot ? { market: "spot" as const } : {}),
                       },
                     });
                   }}

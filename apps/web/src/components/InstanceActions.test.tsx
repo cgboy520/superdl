@@ -10,14 +10,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InstanceActions, ReleaseModal } from "./InstanceActions";
 
-const { startMutate, stopMutateAsync, restartMutateAsync, releaseMutate, autoRenewMutate } =
-  vi.hoisted(() => ({
-    startMutate: vi.fn(),
-    stopMutateAsync: vi.fn().mockResolvedValue(undefined),
-    restartMutateAsync: vi.fn().mockResolvedValue(undefined),
-    releaseMutate: vi.fn(),
-    autoRenewMutate: vi.fn(),
-  }));
+const {
+  startMutate,
+  stopMutateAsync,
+  restartMutateAsync,
+  releaseMutate,
+  autoRenewMutate,
+  toOnDemandMutateAsync,
+} = vi.hoisted(() => ({
+  startMutate: vi.fn(),
+  stopMutateAsync: vi.fn().mockResolvedValue(undefined),
+  restartMutateAsync: vi.fn().mockResolvedValue(undefined),
+  releaseMutate: vi.fn(),
+  autoRenewMutate: vi.fn(),
+  toOnDemandMutateAsync: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../api/mutations", () => ({
   useStartInstance: () => ({ mutate: startMutate, isPending: false }),
@@ -25,6 +32,7 @@ vi.mock("../api/mutations", () => ({
   useRestartInstance: () => ({ mutateAsync: restartMutateAsync, isPending: false }),
   useReleaseInstance: () => ({ mutate: releaseMutate, isPending: false }),
   useSetAutoRenew: () => ({ mutate: autoRenewMutate, isPending: false }),
+  useConvertToOnDemand: () => ({ mutateAsync: toOnDemandMutateAsync, isPending: false }),
   // RenewModal 在菜单点开后挂载,它自己的两个提交 hook 也要有桩
   useRenewInstance: () => ({ mutate: vi.fn(), isPending: false }),
   useSubscribeInstance: () => ({ mutate: vi.fn(), isPending: false }),
@@ -40,6 +48,8 @@ vi.mock("../api/queries", () => ({
       period_discount_month: 80,
       period_discount_year: 70,
       period_expire_warn_days: 3,
+      spot_discount_pct: 40,
+      spot_grace_seconds: 60,
     },
   }),
 }));
@@ -52,6 +62,18 @@ function makeInstance(status: string): InstanceOut {
     market: "on_demand",
     gpu_count: 1,
     price_hourly: "3.9900",
+  } as InstanceOut;
+}
+
+/** 竞价实例:price_hourly 已是折后价(后端建实例时锁定),前端不再折一次 */
+function makeSpot(status: string): InstanceOut {
+  return {
+    uuid: "u-3",
+    name: "cheap-vm",
+    status,
+    market: "spot",
+    gpu_count: 1,
+    price_hourly: "1.5960",
   } as InstanceOut;
 }
 
@@ -224,6 +246,45 @@ describe("InstanceActions · 包周期", () => {
       <InstanceActions instance={makeSubscription("stopped", { expiresAt: FUTURE })} />,
     );
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
+  });
+});
+
+describe("InstanceActions · 竞价", () => {
+  it("竞价 running 实例:出「转按量」,不出「转包周期」(market 是单值,两条路互斥)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeSpot("running")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    expect(await screen.findByText("转按量")).toBeInTheDocument();
+    expect(screen.queryByText("转包周期")).toBeNull();
+  });
+
+  it("按量实例不出「转按量」(它已经是按量,那一项对它不存在)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeInstance("running")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    await screen.findByText("转包周期");
+    expect(screen.queryByText("转按量")).toBeNull();
+  });
+
+  it("竞价在途实例:「转按量」可见但灰置(后端只收 running / stopped)", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeSpot("creating")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    const item = await screen.findByText("转按量");
+    expect(item.closest("li")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("点「转按量」的确认框必须写明重算当前整点小时与不再被回收,确认后才下发", async () => {
+    const user = userEvent.setup();
+    renderWithApp(<InstanceActions instance={makeSpot("running")} />);
+    await user.hover(screen.getByRole("button", { name: BTN_MORE }));
+    await user.click(await screen.findByText("转按量"));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/当前整点小时将整体改按按量价结算/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/不再被回收/)).toBeInTheDocument();
+    expect(toOnDemandMutateAsync).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "确认转按量" }));
+    expect(toOnDemandMutateAsync).toHaveBeenCalled();
   });
 });
 

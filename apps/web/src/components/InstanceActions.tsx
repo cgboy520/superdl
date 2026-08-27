@@ -2,8 +2,9 @@
  * 实例操作组:开机/关机/更多(重启·事件·续费·自动续费·预留项·释放)。
  * 条目永不隐藏,灰置用 Tooltip 说明前置条件;预留项(无卡模式)可见但禁用,注「即将上线」——
  * 只有已排期的能力才留占位,没排期的直接不进 UI(见 ui-ux-spec 规则 2)。
- * 计费方式相关的三项按对象形态出,不出即「对这台实例不存在」而非「还没做」:
- * 按量实例(running / stopped)出「转包周期」,包周期实例出「续费」与「自动续费」。
+ * 计费方式相关的几项按对象形态出,不出即「对这台实例不存在」而非「还没做」:
+ * 按量实例(running / stopped)出「转包周期」,包周期实例出「续费」与「自动续费」,
+ * 竞价实例出「转按量」(免被回收;零中断,但当前整点小时整体改按按量价结算)。
  * 转包周期是 POST /instances/{uuid}/subscribe 的入口 —— 后端先结清转换前那段按量账再翻
  * market,一次性预扣整段周期;它是**支付**动作,确认在 RenewModal 里做,菜单点开即弹。
  * 释放走多级防护(复述名称+ID、键入实例名、勾选盘数据清除确认
@@ -19,6 +20,7 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import {
+  useConvertToOnDemand,
   useReleaseInstance,
   useRestartInstance,
   useSetAutoRenew,
@@ -150,15 +152,21 @@ export function InstanceActions({
         data.subscription?.auto_renew ? t("period.autoRenewOn") : t("period.autoRenewOff"),
       ),
   });
+  const toOnDemand = useConvertToOnDemand(instance.uuid, {
+    onSuccess: () => message.success(t("spot.toOnDemandOk"), 6),
+  });
   const s = instance.status;
   const sub = instance.subscription;
   const isSubscription = instance.market === "subscription";
+  const isSpot = instance.market === "spot";
   // 到期后开机后端直接 409(subscriptions.assert_active),按钮先灰掉并说明原因
   const expired = isSubscriptionExpired(instance.market, sub);
 
   // 转包周期只对按量实例出;状态不合适时灰置带原因(与后端 subscribe_instance 同款判据)
   const canConvert = instance.market === "on_demand";
   const convertBlocked = canConvert && s !== "running" && s !== "stopped";
+  // 转按量与转包周期同款状态判据(后端 convert_to_on_demand 也只收 running / stopped)
+  const toOnDemandBlocked = isSpot && s !== "running" && s !== "stopped";
 
   const canStart = s === "stopped" && !expired;
   const canStop = s === "running";
@@ -223,6 +231,22 @@ export function InstanceActions({
                   { type: "divider" as const },
                 ]
               : []),
+            // 转按量:竞价档的退出口,点开先把「当前整点小时整体改按按量价」讲清楚
+            ...(isSpot
+              ? [
+                  {
+                    key: "to-on-demand",
+                    label: tipped(
+                      t("spot.toOnDemandMenu"),
+                      toOnDemandBlocked
+                        ? tErr("orchestrator.convertNeedsRunningOrStopped")
+                        : undefined,
+                    ),
+                    disabled: toOnDemandBlocked,
+                  },
+                  { type: "divider" as const },
+                ]
+              : []),
             // 在途状态(creating/starting/stopping/releasing)与 frozen 后端一律拒:
             // 前者会和收敛路径抢同一行,后者那笔欠费得先还清而不是转成预付
             ...(canConvert
@@ -267,6 +291,19 @@ export function InstanceActions({
               setRenewOpen(true);
             } else if (key === "to-period") {
               setConvertOpen(true);
+            } else if (key === "to-on-demand") {
+              modal.confirm({
+                title: t("spot.toOnDemandTitle"),
+                content: (
+                  <Space orientation="vertical" size={4}>
+                    <span>{t("copy.spotToOnDemandRepriceHour")}</span>
+                    <span>{t("copy.spotToOnDemandNoReclaim")}</span>
+                    <span>{t("copy.spotToOnDemandNoRestart")}</span>
+                  </Space>
+                ),
+                okText: t("spot.toOnDemandConfirm"),
+                onOk: () => toOnDemand.mutateAsync(),
+              });
             } else if (key === "auto-renew") {
               autoRenew.mutate(!sub?.auto_renew);
             } else if (key === "release") {

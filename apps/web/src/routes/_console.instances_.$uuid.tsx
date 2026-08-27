@@ -51,7 +51,14 @@ import {
   useServiceEndpoint,
 } from "../api/queries";
 import { ApiKeyModal } from "../components/ApiKeyModal";
-import { CopyButton, InstanceStatusBadge, SubscriptionTag, TierTag } from "../components/common";
+import {
+  CopyButton,
+  InstanceStatusBadge,
+  SpotTag,
+  SubscriptionTag,
+  TierTag,
+  useEventReasonText,
+} from "../components/common";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
@@ -561,6 +568,7 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
 
 function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   const { t } = useTranslation();
+  const reasonText = useEventReasonText();
   // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多
   const { data, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useInstanceEventPages(uuid);
@@ -592,7 +600,11 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
                 )}
               </Typography.Text>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("instances.eventMetaLine", { time: formatDateTime(e.created_at), reason: e.reason, actor: e.actor })}
+                {t("instances.eventMetaLine", {
+                  time: formatDateTime(e.created_at),
+                  reason: reasonText(e.reason),
+                  actor: e.actor,
+                })}
               </Typography.Text>
             </Space>
           ),
@@ -717,6 +729,7 @@ function InstanceDetail() {
               />
               <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
               <SubscriptionTag market={instance.market} subscription={instance.subscription} />
+              <SpotTag market={instance.market} />
             </Space>
             <Descriptions
               size="small"

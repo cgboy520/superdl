@@ -681,7 +681,8 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     - 付费租户:ledger consume 全表聚合精确计数;租户总数取 active 用户口径。
     - 包周期在保数:未到期的订阅行数(不是实例状态数)—— 停机的包月实例仍在保,
       按实例状态数会把它漏掉,而它恰恰还占着库存。
-    - 节点/GPU:台账全量(含 NotReady/Missing,前端据此画非 Ready 段)。
+    - 节点/GPU:台账全量(含 NotReady/Missing,前端据此画非 Ready 段);已租那段再拆出
+      竞价占用(可回收容量),按台账的 gpu_used 截断(口径见 orchestrator 侧的查询)。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
@@ -698,6 +699,7 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
     pools: dict[str, dict[str, int]] = {}
     nodes_ready = nodes_missing = 0
     specs = await nodes_service.list_node_specs(session)
+    spot_by_pool = await orchestrator_service.running_spot_gpus_by_pool(session)
     for r in specs:
         if r.status == "Ready":
             nodes_ready += 1
@@ -724,6 +726,7 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
                 "pool": name or "unlabeled",
                 "gpu_total": p["gpu_total"],
                 "gpu_used": p["gpu_used"],
+                "gpu_spot_used": min(spot_by_pool.get(name, 0), p["gpu_used"]),
                 "ready_gpu_total": p["ready"],
             }
             for name, p in sorted(pools.items())

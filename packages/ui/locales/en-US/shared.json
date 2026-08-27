@@ -33,7 +33,8 @@
       "week_other": "weeks",
       "year_one": "year",
       "year_other": "years"
-    }
+    },
+    "spotDiscount": "{{off}}% of on-demand"
   },
   "status": {
     "announcement": {
@@ -157,6 +158,7 @@
     "market": {
       "on_demand": "Pay-as-you-go",
       "spot": "Spot",
+      "spotReclaimable": "Reclaimable",
       "subscription": "Subscription"
     },
     "period": {
@@ -169,6 +171,34 @@
       "active": "Active",
       "cancelled": "Cancelled",
       "expired": "Expired"
+    },
+    "marketHint": {
+      "spot": "When capacity runs short, spot instances are reclaimed newest-first, with advance notice"
+    },
+    "eventReason": {
+      "admin_force_stop": "Force-stopped by an administrator",
+      "admin_release": "Released by an administrator",
+      "arrears_freeze": "Frozen: insufficient balance",
+      "arrears_reclaim": "Instance disk reclaimed: unpaid balance",
+      "arrears_stop": "Stopped: insufficient balance",
+      "create": "Instance created",
+      "failed_recover": "Recovered from failure",
+      "failed_retention_reclaim": "Failed instance reclaimed after retention window",
+      "pod_deleted": "Container deleted",
+      "pod_ready": "Container ready",
+      "preempted": "Reclaimed (spot)",
+      "recharge_unfreeze": "Unfrozen after top-up",
+      "released": "Release completed",
+      "restart": "Restart",
+      "retention_reclaim": "Reclaimed after retention window",
+      "schedule_timeout": "Scheduling timed out",
+      "subscription_expired": "Stopped: subscription expired",
+      "subscription_freeze": "Frozen: subscription expired",
+      "subscription_renew": "Subscription renewed",
+      "tenant_frozen": "Account frozen",
+      "user_release": "Released by you",
+      "user_start": "Started by you",
+      "user_stop": "Stopped by you"
     }
   }
 }

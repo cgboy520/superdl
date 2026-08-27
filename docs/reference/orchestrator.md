@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、market(CHECK ∈ {on_demand, spot, subscription},默认 on_demand)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service})、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
+- `instances`:uuid、user_id、SKU 快照(sku_id + `spec` jsonb + price_hourly;`spec.base_price_hourly` 是 SKU **原价**时价快照,竞价转按量据它还原单价)、market(CHECK ∈ {on_demand, spot, subscription},默认 on_demand)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、workload_type(CHECK ∈ {dev, service})、with_ssh、container_command?/container_args?(jsonb)、env_encrypted?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
 - `instance_events`:instance_id、from_status、to_status、reason、actor(user/system/admin)、metadata —— 追加式,计费主依据
 - `port_allocations`:port 唯一(30000~32767)、instance_id nullable(部分唯一:一台实例至多一个端口)
 - `service_endpoints`:instance_id 唯一(一实例一端点)、public_slug 唯一(`ep-<10 位 base32>`,公网域名左标签——刻意不用 instance.uuid,内部主键不进公网域名/TLS SNI/访问日志/第三方 Referer)、container_port(CHECK 1–65535 且 ∉ {22, 8888},那两个是 sshd 与 JupyterLab)、protocol、health_path?、require_api_key
@@ -21,11 +21,12 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `POST /api/v1/instances` | user | Idempotency-Key;软准入(台账无货 409)→ 钱包行锁临界区(在途+新增余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`,取 `subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣整段周期(见 [billing.md](./billing.md));`market='on_demand'` 却显式带 `period`/`period_count` 一律 422 |
+| `POST /api/v1/instances` | user | Idempotency-Key;软准入(台账无货 409)→ 钱包行锁临界区(在途+新增余额校验、配额)→ 事务写 instances(creating)+event+outbox → 202。`market` 默认 `on_demand`,取 `subscription` 时 `period` 必填、`period_count` 1~36,同事务预扣整段周期(见 [billing.md](./billing.md));`market='on_demand'` 却显式带 `period`/`period_count` 一律 422。`market='spot'` 要求 SKU `spot_enabled` 为真(否则 400 `orchestrator.spotNotEnabled`)、不带 `period`;软准入判无货时先尝试抢占竞价实例腾容量,腾不出才 409(见下节) |
 | `GET /api/v1/instances` `GET /api/v1/instances/{uuid}` | user | 列表(不分页)与详情 |
 | `PATCH /api/v1/instances/{uuid}` | user | 改名等 |
 | `POST /api/v1/instances/{uuid}/stop\|start\|restart` | user | 同构,均经 outbox;start 对 failed 放行(恢复边) |
 | `POST /api/v1/instances/{uuid}/subscribe` | user | **按量转包周期**,入参与响应同 `/renew`;Idempotency-Key。先结清转换前那段按量账再翻 `market`(见下)。前置:`market='on_demand'` 且状态 running / stopped(其余 409 `orchestrator.convertNeedsRunningOrStopped`)、SKU `period_enabled` 为真;已在保报 `billing.subscriptionAlreadyActive`;结算滞后超 48h 报 409 `billing.settlementBehind` |
+| `POST /api/v1/instances/{uuid}/to-on-demand` | user | **竞价转按量**(转完不再被回收)。无 body、**不需要 Idempotency-Key** —— 目标状态唯一,已经是按量则原样返回 200(幂等)。前置:`market='spot'`(包周期实例报 `orchestrator.toOnDemandNotSpot`)、状态 running / stopped(其余 409 `orchestrator.convertNeedsRunningOrStopped`)。**不动 Pod、不重调度、零中断**;单价还原成 `spec.base_price_hourly`,当前整点小时整体改按按量价重算(见 [billing.md](./billing.md)) |
 | `POST /api/v1/instances/{uuid}/renew` | user | 包周期续费,body `{period, period_count}`;Idempotency-Key(重放回 200 + `X-Idempotent-Replay`);返回 `{instance, quote}`,报价三件套由后端算好逐行下发。非包周期 / 已释放报 `SUBSCRIPTION_NOT_RENEWABLE`(400),余额不足 `INSUFFICIENT_BALANCE`。冻结中续费即解冻(回 stopped,不自动开机)。挂在 instances 下而不是 billing 下:用户心智是「给这台机器续费」,而实例状态也只能由 orchestrator 这一侧改 |
 | `POST /api/v1/instances/{uuid}/auto-renew` | user | body `{enabled}`;开关到期自动续费,默认关 |
 | `DELETE /api/v1/instances/{uuid}` | user | 释放(stopped/frozen/failed/creating/stopping);幂等:releasing/released 重放回当前状态而非 400。**包周期实例释放不退款**,订阅转 cancelled(见 [billing.md](./billing.md)) |
@@ -60,12 +61,15 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
   |---|---|
   | `on_demand` | 按量,唯一进 `bills_hourly` 的模式 |
   | `subscription` | 包周期,下单一次性预扣,小时结算在 `billing_candidates` 一处跳过(见 [billing.md](./billing.md)) |
-  | `spot` | 竞价(折扣价 + 可被平台回收)。DB CHECK 与 `core/pricing` 已预留,**契约层此刻不收** —— `InstanceCreate.market` 只有 `on_demand` / `subscription`,`price_for` 对 spot 显式抛错而不是静默按原价:静默会让「竞价上线了但没打折」在账单出来之前没人发现 |
+  | `spot` | 竞价(按量价 × `spot_discount_pct`,默认 4 折),对价是容量紧张时**可被平台回收**。与按量走同一条计费链:一样进 `bills_hourly`、一样出尾账 —— 折扣只落在 `price_hourly` 上,结算引擎不知道有竞价这回事。前置是 SKU `spot_enabled`(**默认关**,见 [catalog.md](./catalog.md));抢占口径见下节 |
 
-  `market` 由创建时定,**唯一会改它的路径是 `subscribe_instance`(按量 → 包周期)**;反向不开 ——
-  包周期是已预付的整段周期,转回按量等于要求平台把没用完的那段退成余额,与「预付不退款」直接冲突。
+  `market` 由创建时定,**只有两条路径会改它**:`subscribe_instance`(按量 → 包周期)与
+  `convert_to_on_demand`(竞价 → 按量)。另外两个方向都不开:**包周期 → 按量**等于要求平台把没用完的
+  那段退成余额,与「预付不退款」直接冲突;**按量 → 竞价**是给一台已经在跑的实例单方面降价并附上
+  回收风险,而用户在下单时并没有同意过这份对价。
 - **`instances.price_hourly` 落的是该购买模式下的有效时价**,由 `app/core/pricing.py` 的 `price_for` 单点算出
-  (按量即 SKU 原价,包周期按周期折扣打折)。计费引擎因此完全不用感知折扣:它拿到的永远是「这台实例的时价」。
+  (按量即 SKU 原价,竞价按 `spot_discount_pct` 打折,包周期按周期折扣打折)。计费引擎因此完全不用感知折扣:
+  它拿到的永远是「这台实例的时价」。
   折扣的其它三个消费方(市场页报价、创建预估、续费报价)共用同一组函数,不得各算各的 ——
   四处各算各的迟早出现「页面显示 8 折、实际扣 8.5 折」这类没人能复现的差异(与 `sellable_per_gpu` 同一条口径纪律)。
 - **包周期实例的开机门禁看周期,不看余额**:`start` 对 `market='subscription'` 走 `assert_subscription_active`
@@ -122,3 +126,82 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 - shared 档 create/start/restart 三入口读集群能力缓存做 HAMi 门禁,未就绪直接报 `CLUSTER_NOT_READY`,见 [nodes.md](./nodes.md)。门禁判据与 `build_gpu_request` 同源:**先看要不要卡,再看落哪个池** —— `gpu_count == 0` 的实例只过 StorageClass(它不申请 `nvidia.com/*`、走默认调度器,挂在 hami 池上也不需要 hami-scheduler);要卡的才按池过 HAMi / Kata 门禁。
 - 每用户实例数、GPU 数与 CPU 实例 vCPU 数配额由策略/config 控制,三维互不相交(CPU 实例不计入 GPU 维,GPU 实例不计入 vCPU 维),见 [limits.md](./limits.md)。
 - 实例释放后触发擦盘任务;数据盘生命周期独立,见 [disks.md](./disks.md)。
+
+## 竞价抢占
+
+`market='spot'` 的实例拿折后价(`price_hourly` = SKU 原价 × `spot_discount_pct` / 100),对价是
+**容量紧张时可被平台回收**。选择器与回收在 `app/modules/orchestrator/preempt.py`,触发点是创建软准入
+`_soft_admit_capacity`,用例在 `apps/api/tests/test_spot.py`。钱的口径见 [billing.md](./billing.md)。
+
+### 三条硬规矩
+
+这三条逐字写在竞价知情同意 modal 里给用户看(见 [../ui-ux-spec.md](../ui-ux-spec.md) §1 规则 5),
+**改代码等于改文案,两边同提交**:
+
+1. **只在同池同型号内选。** 候选谓词 `status='running' AND market='spot' AND spec->>'pool_label' = 池
+   AND spec->>'gpu_model_selector' IS NOT DISTINCT FROM canonical 型号`。回收一台 RTX4090 腾不出 A100 的位置,
+   跨池连调度域都不同。用 `IS NOT DISTINCT FROM` 而不是 `=`:未识别型号的快照存的是 NULL,`=` 对它恒不成立,
+   等于让那批实例永远不会被抢占 —— 那不是一条能向另一批用户解释的豁免。
+2. **按 `created_at` 从新到旧,最晚创建的先回收。** 这是**唯一**的排序规则(同刻用 `id` 降序破平),
+   用户据它判断自己的实例有多安全。任何「按用量」「按单价」「按用户等级」的排序都会让那句承诺变成
+   一句无法验证的话,而竞价卖的就是这句承诺。
+3. **凑不够一台都不动。** 按 `gpu_count` 累加到够为止;不够就返回空列表,请求方照旧拿 409 `NO_CAPACITY`。
+   半途回收既杀了竞价用户又没救成请求方,是两头落空的最坏结果。
+
+### 触发与事务边界
+
+- 只有**非竞价的 GPU 档请求**会触发抢占。竞价请求不抢别人:它买的就是「有富余才给」,让它去抢
+  等于把风险转嫁给更早下单的人;CPU 档的容量口径是 vCPU / 内存而不是卡数,套不上「腾几张卡」这套换算。
+- 缺口换算 `cards_needed = ⌈缺的槽位 ÷ sellable_per_gpu⌉`,向上取整 —— 差一个槽位也得整张卡才腾得出来。
+- **抢占与请求方的建实例在同一个事务里**,`preempt()` 因此不 commit。请求方后续任何一步失败
+  (余额不足、幂等撞车、配额超限)都会把回收一起回滚,不会出现「杀了人但单没开成」。
+- 「一台实例腾出 `gpu_count` 张卡」是**近似口径**:共享档实例只占一张卡的一部分,回收它未必真空出整张卡。
+  整个软准入模型本来就建立在「一张卡要么空要么满」的近似上(`_sku_free_capacity`),这里沿用同一套近似
+  而不是另造一套更精确的 —— 两套口径并存才是真正说不清的那种 bug。近似偏乐观的后果是抢占后请求方仍
+  调度不上,那条路径已有兜底:creating 超时转 failed、全额不出账。
+
+### 宽限窗:outbox 的延迟投递,不是新机制
+
+对每台选中的实例,同事务内做三件事:`transition(→ stopping, reason='preempted', actor='system')`
++ `enqueue('instance.stop', delay_seconds=spot_grace_seconds)` + 短信与站内信通知。
+
+- 延迟投递只是给 `outbox_tasks.next_retry_at` 写一个未来时刻(`core/outbox.py` 的 `enqueue(delay_seconds=...)`),
+  而领取条件本来就是 `next_retry_at <= now` —— **不引入第二套调度机制**,重试、退避、死信与可观测性全部沿用。
+- 效果:**状态机立刻迁 `stopping`**(用户当即在控制台看到「关机中」并收到通知),**Pod 到期才删** ——
+  宽限窗内 Pod 还在、SSH 还能登、进度还能存。
+- 宽限窗与 `creating_timeout_seconds` 从此共用一段时间预算,`spot_grace_seconds` 的真实上限由跨键校验兜住,
+  见 [limits.md](./limits.md)。
+- 通知的 dedup_key 带实例 id 与分钟位、**不按天分桶**:同一台实例一天内可能被回收、用户重开、再被回收,
+  按天去重会把第二条吞掉,而第二条恰恰是用户最需要知道的那条。
+- 终态是 `stopped` 而不是 `frozen`(它没欠费):实例盘保留,有容量时用户可自行开机。
+- 每回收一台计一次 `superdl_spot_preempted_total`(见 [observability.md](./observability.md))。
+
+### 两个入口,同一条回收路径
+
+| 入口 | 谁触发 | 说明 |
+|---|---|---|
+| `_soft_admit_capacity` | 按量 / 包周期用户建实例而容量不足 | 自动抢占,与建实例同事务;腾不出就照旧 409 `NO_CAPACITY` |
+| `POST /api/admin/v1/instances/{uuid}/preempt` | ops,原因必填 | 强制回收一台竞价实例腾容量,见 [admin.md](./admin.md) |
+
+管理端**不复用强制停止**:强制停止是处置(违规 / 风控),回收是履行竞价那份「可能被回收」的约定。
+两者在用户时间线上是不同的事 —— 同一个 reason 会让用户分不出自己是被处置了还是被回收了,
+也会让「被回收过几次」这类竞价可靠性统计算不出来。非竞价实例调 `/preempt` 报 `orchestrator.preemptNotSpot`,
+非 running 报 `orchestrator.forceStopNeedsRunning`。
+
+### 转按量(`POST /api/v1/instances/{uuid}/to-on-demand`)
+
+`market` 是「怎么买」而不是资源形态,翻过来**不动 Pod、不重调度、零中断** —— 用户跑到一半发现任务
+快完了、不想被回收,这一步必须是无损的,否则它就等于「重建实例」,没人会用。
+
+- 单价还原成 `spec.base_price_hourly`(建实例时落的 SKU 原价快照),**不从折后价反推**:折扣是在线可调的
+  策略,反推用的是「现在的折扣」而不是「当时的折扣」,运营改过一次策略就再也还原不回去。
+- 代价是**当前整点小时整体改按按量价结算**(一小时一价),口径与理由见 [billing.md](./billing.md);
+  这一条必须写进转换确认弹窗。
+- 转完再过一次 `assert_can_afford`:单价涨了,余额撑不住新燃烧率的话转完立刻会被欠费巡检停机,
+  不如现在就告诉他去充值。
+- 只收 running / stopped(在途态翻 `market` 会和收敛路径抢同一行);running 才需要改当前小时的账,
+  stopped 没有未结的 running 秒数,直接翻。
+- **转按量不写 `instance_events`**,`subscribe_instance` 同理。`instance_events` 是**计费主依据**
+  (running↔非 running 的边),往里塞非状态迁移的行会污染 `running_seconds_in_window` 的重建 ——
+  那是「重复执行零重复扣款」赖以成立的那份事实。购买模式变更的痕迹在审计日志(写操作全过审计中间件)
+  与资金流水里,查得到、也不影响计费。

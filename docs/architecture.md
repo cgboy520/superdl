@@ -185,6 +185,25 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 只有一处实现。预付语义的三条后果(中途释放不退款、到期不自动转按量、余额为零不停机)与四处配套过滤
 见 [`reference/billing.md`](./reference/billing.md)。
 
+### 7.6 竞价(抢占与回收)
+
+`market='spot'` 的实例拿折后价(按量价 × `spot_discount_pct`,默认 4 折),对价是**容量紧张时可被平台回收**。
+折扣只落在 `instances.price_hourly` 上,其余一切与按量实例相同:进小时结算、出尾账、走同一条欠费链 ——
+**计费引擎不知道有竞价这回事**。
+
+按量或包周期用户建实例而软准入判定容量不足时,`orchestrator/preempt.py` 在**同池同型号**内按 `created_at`
+从新到旧挑竞价实例,凑够卡数就回收,**凑不够一台都不动**(请求方照旧拿 409)。回收与请求方的建实例在
+**同一个事务**里:请求方后面任何一步失败,回收一起回滚,不会出现「杀了人但单没开成」。
+
+宽限窗不用新机制:状态机立刻迁 `stopping`(用户当即看到并收到短信与站内信),删 Pod 的 outbox 任务延迟
+`spot_grace_seconds` 才到期 —— `core/outbox.py` 的 `enqueue(delay_seconds=...)` 只是把 `next_retry_at` 写到未来,
+而领取条件本来就是它。宽限窗内 Pod 还在、SSH 还能登。终态是 `stopped` 而不是 `frozen`(它没欠费),
+实例盘保留,有容量时用户可自行开机;**已运行时长按实际秒数正常结算,不免单**。
+
+用户可随时 `POST /api/v1/instances/{uuid}/to-on-demand` 转按量免除回收风险,不动 Pod、零中断,代价是
+**当前整点小时整体改按按量价结算**(`bills_hourly` 一小时只有一个单价)。口径见
+[`reference/orchestrator.md`](./reference/orchestrator.md) 与 [`reference/billing.md`](./reference/billing.md)。
+
 ## 8. 硬约束
 
 1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**(HAMi device plugin 与 Kata / KubeVirt 不兼容)。节点池标签
@@ -200,5 +219,9 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
 6. **包周期实例只在 `orchestrator/queries.py::billing_candidates` 一处跳过小时结算。** `upsert_hour_bill`、水位线、缺口机制一行不动;
    加一种购买模式不必再碰结算引擎。跳过点散开就是对预付用户二次收费,而这类错误在账单出来之前没人会发现。
+7. **竞价抢占只在同池同型号内选,按 `created_at` 从新到旧,凑不够一台都不动。** 这三条不是实现细节,
+   是逐字写进知情同意给用户看的承诺 —— 用户据「创建得越早越安全」安排自己的任务,任何「更聪明」的
+   排序都会让那句话变成无法验证的话。凑不够就半途回收更糟:既杀了竞价用户,又没救成请求方。
+   抢占与请求方的建实例**同事务**,请求方失败即整体回滚;被抢占实例按实际运行秒数正常结算,不免单。
 
 金额、时间、钱包加锁、outbox、状态机、计费依据等编码级硬性规范见 `CLAUDE.md`。

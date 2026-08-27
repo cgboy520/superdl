@@ -312,6 +312,57 @@ async def settle_on_demand_up_to(
     return total
 
 
+async def reprice_current_hour(
+    session: AsyncSession,
+    *,
+    instance_id: int,
+    user_id: int,
+    new_price: Decimal,
+    gpu_count: int,
+    at: datetime,
+) -> Decimal:
+    """把当前自然小时**已出的**账单行改按新单价重算,补扣差价。返回补扣金额。
+
+    竞价转按量会让一个自然小时横跨两个单价,而 `bills_hourly` 一小时只有一行、
+    只有一个 `unit_price`。定下的口径是「**一小时一价,以结算时的实例单价为准**」:
+    转换会把当前整点小时整体改按新价(转换确认页与 docs/reference/billing.md 都写明)。
+    不改的话,后续整点结算会用新价重算秒数、只更新 amount 不更新 unit_price,
+    留下一行 `unit_price × seconds ≠ amount` 的账 —— 那种行没法向任何人解释。
+
+    **只在涨价时动这一行**:竞价转按量必然涨价(spot_discount_pct 上界 90),降价路径
+    经 `/to-on-demand` 不可达。真出现了(手工改价、将来复用本函数)就整行不动 ——
+    只改 unit_price 不改 amount,写出的正是这个函数存在的意义所要避免的那种行;
+    而退款要走人工流程,不该由一个结算原语顺手写一笔负数流水。
+    """
+    row = (
+        await session.execute(
+            select(BillHourly)
+            .where(BillHourly.instance_id == instance_id, BillHourly.hour_start == hour_floor(at))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:  # 常见路径:本小时还没出过账(整点结算在次小时 :02),什么都不用做
+        return Decimal("0.00")
+    amount = bill_amount(new_price, gpu_count, row.seconds_used)
+    delta = as_amount(amount - row.amount)
+    if delta <= 0:
+        return Decimal("0.00")  # 降价:整行不动(理由见 docstring)
+    row.unit_price = new_price
+    row.amount = amount
+    row.detail = {**(row.detail or {}), "repriced": True}
+    await wallet.debit(
+        session,
+        user_id,
+        delta,
+        type_="consume",
+        ref_type="bill_hourly",
+        ref_id=str(row.id),
+        remark="实例 GPU 时费(转按量补差价)",
+        allow_negative=True,
+    )
+    return delta
+
+
 async def get_watermark(session: AsyncSession, key: str) -> datetime | None:
     row = await session.get(SettlementWatermark, key)
     return ensure_utc(row.settled_through) if row else None

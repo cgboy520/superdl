@@ -4,7 +4,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 ## 数据模型
 
-- `skus`:name、gpu_model、tier(dedicated / shared / cpu)、mig_profile?、gpu_cores_pct、vram_gb、oversell_cores numeric(4,2)、oversell_vram numeric(4,2)、pool_label、vcpu、mem_gb、disk_gb(含 100G 实例盘)、price_hourly numeric(12,4)、max_gpus_per_instance、cuda_max、period_enabled(**默认 true**)、status(on/off)
+- `skus`:name、gpu_model、tier(dedicated / shared / cpu)、mig_profile?、gpu_cores_pct、vram_gb、oversell_cores numeric(4,2)、oversell_vram numeric(4,2)、pool_label、vcpu、mem_gb、disk_gb(含 100G 实例盘)、price_hourly numeric(12,4)、max_gpus_per_instance、cuda_max、period_enabled(**默认 true**)、spot_enabled(**默认 false**)、status(on/off)
 - **CPU 规格(tier=cpu)的字段约定**:`gpu_model=""`、`gpu_cores_pct=0`、`vram_gb=0`、`mig_profile=NULL`、`max_gpus_per_instance=0`,`price_hourly` 是**整机**时价(GPU 规格是单卡时价)。跨字段规则写在 `catalog/schemas.py::cpu_spec_error` 一处:建 SKU 由 `SkuCreate` 的 model_validator 在契约层调用(422),改 SKU 是部分更新、拿不到终态,由 `service.admin_update_sku` 合并出终态后调用(400 + `message_key`)。反向也拦:GPU 规格的这三项一个都不许为 0。
 - `images`:平台镜像树 framework→version→python→cuda→image_ref、prewarm_enabled;预热见 [images.md](./images.md)
 
@@ -12,10 +12,10 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 | 端点 | 角色/鉴权 | 说明 |
 |---|---|---|
-| `GET /api/v1/skus?tier=&gpu_model=` | 匿名 | 仅 on 架;含 available_count(每请求按节点台账直接算,全部 SKU 批量一次)与 `period_enabled`(市场页据此决定四个周期 chip 是否可选) |
+| `GET /api/v1/skus?tier=&gpu_model=` | 匿名 | 仅 on 架;含 available_count(每请求按节点台账直接算,全部 SKU 批量一次)、`period_enabled`(市场页据此决定四个周期 chip 是否可选)与 `spot_enabled`(据此决定竞价 chip 是否可选) |
 | `GET /api/v1/images` | 匿名 | 平台镜像目录;`is_prewarmed` 为计算值 |
 | `GET /api/admin/v1/skus` | ops/finance/readonly | SkuAdminOut 含 `capacity_gpus / sold_share / actual_oversell` |
-| `POST /api/admin/v1/skus` | ops | 创建;`period_enabled` 可省,省略即 true |
+| `POST /api/admin/v1/skus` | ops | 创建;`period_enabled` 可省,省略即 true;`spot_enabled` 可省,**省略即 false**(两个默认值方向相反,理由见下) |
 | `PATCH /api/admin/v1/skus/{sku_id}?force=` | ops | 可改 `pool_label` + `mig_profile`(成对,仅下架态;在售改任一个 409 `CONFLICT`)。撞业务唯一键 409 `skuBusinessKeyExists`。`status→on` 时硬校验「台账存在 model_matches 且 pool 相符的 Ready 节点」,失败 409 `SKU_NOT_SELLABLE`(报错指明缺哪种型号×池),force 跳过 |
 | `GET /api/admin/v1/skus/capacity-preview` | ops/readonly | query `pool_label&gpu_model&gpu_cores_pct&oversell_cores&vram_gb&vcpu&mem_gb` → `{matching_nodes, ready_gpus, total_gpus, est_instances, warnings[]}`;纯 DB,hami 池 est = ready_gpus × ⌊100×oversell/pct⌋(折算口径只看池,不收 tier)。`gpu_model` 留空 = CPU 规格预览:只按池匹配节点,`ready_gpus/total_gpus` 恒 0,est 走 `sellable_cpu_slots(vcpu, mem_gb, …)`,不报「型号未识别」 |
 
@@ -37,6 +37,15 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
   服务端在 `orchestrator.create_instance` 兜住直调接口的单(`orchestrator.periodNotEnabled`)。
   改这个开关**只影响新单**:已售出的订阅照常到期、照常续费(续费按 `subscriptions.unit_price` 原价快照重新报价,
   不回头看 SKU 现在的开关与价格),口径见 [billing.md](./billing.md)。
+- **`spot_enabled` 决定这条规格上不上竞价档**,与 `tier` / `pool_label` 同样无关(竞价也不是新档位,
+  是同一条 SKU 的第三种买法)。**默认关,与 `period_enabled` 的默认开刻意相反**:包周期的对价是
+  「预付」,用户付了钱就一定拿得到这台机器,默认开只是让新建的 SKU 立刻可卖;竞价的对价是
+  「实例可能被平台回收」,那是要在下单前逐条讲清楚的承诺(知情同意 modal),不该因为运营新建了一条
+  SKU 就自动生效。两个方向的错误代价不对称 —— 默认开一旦错了,是「用户在不知情的情况下买到了会被
+  回收的机器」;默认关错了只是「运营忘了打开,少卖一档」。为假时市场页竞价 chip 置灰,服务端在
+  `orchestrator.create_instance` 兜住直调接口的单(`orchestrator.spotNotEnabled`)。
+  改这个开关**只影响新单**:已经在跑的竞价实例照常按快照价计费、照常可能被回收,关掉它不会把存量
+  实例变成按量(想免除回收风险要用户自己走 `/to-on-demand`,见 [orchestrator.md](./orchestrator.md))。
 - 超卖参数是纯定价参数,不下发调度;显存超卖 >1.2 由前端二次确认。
 - 上架为硬校验(可 force 覆盖),创建与编辑为软校验(容量预览警示,可保存)。
 - off 架 SKU 用户端不可见;readonly 角色全站只读,finance 不能改 SKU。

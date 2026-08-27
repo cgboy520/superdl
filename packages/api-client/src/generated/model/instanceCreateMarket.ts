@@ -11,4 +11,5 @@ export type InstanceCreateMarket = typeof InstanceCreateMarket[keyof typeof Inst
 export const InstanceCreateMarket = {
   on_demand: 'on_demand',
   subscription: 'subscription',
+  spot: 'spot',
 } as const;

@@ -38,6 +38,7 @@ export interface SkuCreate {
      */
   pool_label: string;
   price_hourly: number | string;
+  spot_enabled?: boolean;
   /** @pattern ^(dedicated|shared|cpu)$ */
   tier: string;
   /** @minimum 1 */

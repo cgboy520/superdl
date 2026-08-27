@@ -103,10 +103,16 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const { t } = useTranslation();
   const names = pools.map((p) => p.pool);
-  const used = pools.map((p) => p.gpu_used);
+  // 「已租」拆成两段:竞价那段是容量紧张时能拿回来的部分,与空闲一起才是真正的可调度余量。
+  // gpu_spot_used 服务端已按 gpu_used 截断(共享档多个实例共用一张卡,台账记一张、
+  // 实例侧各记一张),这里**不再 clamp 第二遍** —— 两处都夹一次,后端口径变了前端会吃掉差异
+  const spotUsed = pools.map((p) => p.gpu_spot_used);
+  const usedOther = pools.map((p) => p.gpu_used - p.gpu_spot_used);
   // 空闲只算 Ready 节点的卡;非 Ready 节点的物理卡画成第三段,不再混进「空闲」
   const free = pools.map((p) => Math.max(0, p.ready_gpu_total - p.gpu_used));
   const notReady = pools.map((p) => Math.max(0, p.gpu_total - p.ready_gpu_total));
+  const usedTotal = pools.reduce((n, p) => n + p.gpu_used, 0);
+  const spotTotal = pools.reduce((n, p) => n + p.gpu_spot_used, 0);
   const option = {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis" },
@@ -115,12 +121,22 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
     xAxis: { type: "value", axisLabel: { color: adminColors.textSecondary }, splitLine: { lineStyle: { color: adminColors.gridLine } } },
     yAxis: { type: "category", data: names, axisLabel: { color: adminColors.textSecondary } },
     series: [
-      { name: t("overview.rented"), type: "bar", stack: "t", data: used, itemStyle: { color: statusColors.green } },
+      { name: t("overview.rented"), type: "bar", stack: "t", data: usedOther, itemStyle: { color: statusColors.green } },
+      // 竞价段紧挨已租段,取 marketMap.spot 的橙:两端「竞价」是同一个颜色
+      { name: t("overview.rentedSpot"), type: "bar", stack: "t", data: spotUsed, itemStyle: { color: statusColors.orange } },
       { name: t("overview.idle"), type: "bar", stack: "t", data: free, itemStyle: { color: adminColors.chartNeutral } },
       { name: t("overview.notReady"), type: "bar", stack: "t", data: notReady, itemStyle: { color: adminColors.alertAccent } },
     ],
   };
-  return <EChart option={option} style={{ height: 220 }} />;
+  return (
+    <>
+      <EChart option={option} style={{ height: 220 }} />
+      {/* 图例里两段是并排的,合计只能靠这句话讲清楚:与收入卡「其中包周期预付」同一写法 */}
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {t("overview.spotReclaimable", { used: usedTotal, spot: spotTotal })}
+      </Typography.Text>
+    </>
+  );
 }
 
 /** 值班首屏第二排:任务死信(重放/忽略都需原因 + 二次确认,handler 幂等)。 */

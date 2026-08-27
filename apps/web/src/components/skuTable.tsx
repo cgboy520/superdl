@@ -3,6 +3,8 @@
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
   BILLING_PERIODS,
+  isBillingPeriod,
+  marketMap,
   MAX_PERIOD_COUNT,
   periodMap,
   statusColors,
@@ -19,6 +21,7 @@ import { skuVariant } from "@superdl/ui";
 
 import { TierTag } from "./common";
 import { discountOff, PeriodCountUnit, usePeriodDiscounts } from "./periodBilling";
+import { SpotOffLabel, SpotPriceInline, useSpotPolicy, type SpotPolicy } from "./spotBilling";
 
 /** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余为整卡;CPU 档报「不带 GPU」。 */
 function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
@@ -49,6 +52,11 @@ export function skuColumns(
     priceFontSize?: number;
     /** CPU 规格表:价格是整机时价,表头不能写「单卡」 */
     cpu?: boolean;
+    /**
+     * 竞价档选中时传入:上了竞价的规格价格列改显「原价划线 + 折后价」,
+     * 没上的原样显示原价并挂「未上竞价」标 —— 灰置的行也得说得出灰在哪。
+     */
+    spot?: SpotPolicy;
   },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const { t } = opts;
@@ -107,29 +115,47 @@ export function skuColumns(
       // 钉右:窄屏(≤1024)下表格横滚,价格不能被滚出视口
       fixed: "right" as const,
       align: "right" as const,
-      width: 150,
+      // 竞价档一格里放两个价(原价划线 + 折后价),150 放不下会把划线价挤成竖排
+      width: opts.spot ? 210 : 150,
       sorter: (a: SkuMarketOut, b: SkuMarketOut) => Number(a.price_hourly) - Number(b.price_hourly),
-      render: (_: unknown, s: SkuMarketOut) => (
-        <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
-          {opts.fmt.formatHourlyPrice(s.price_hourly)}
-        </span>
-      ),
+      render: (_: unknown, s: SkuMarketOut) =>
+        opts.spot && !s.spot_enabled ? (
+          <Space size={6} align="baseline">
+            <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
+              {opts.fmt.formatHourlyPrice(s.price_hourly)}
+            </span>
+            <Tag style={{ marginInlineEnd: 0 }}>{t("sku.spotUnavailable")}</Tag>
+          </Space>
+        ) : (
+          <span style={{ fontSize: opts.priceFontSize, fontWeight: 700 }}>
+            {opts.spot ? (
+              <SpotPriceInline baseHourly={s.price_hourly} units={1} policy={opts.spot} />
+            ) : (
+              opts.fmt.formatHourlyPrice(s.price_hourly)
+            )}
+          </span>
+        ),
     },
   ];
 }
 
-/** 计费方式:按量 + 四个包周期。与档位正交 —— 同一条 SKU 的另一种买法,不是新档位。 */
-export type BillingMode = "on_demand" | BillingPeriod;
+/**
+ * 计费方式:按量 + 竞价 + 四个包周期。与档位正交 —— 同一条 SKU 的另几种买法,不是新档位。
+ * 竞价与包周期互斥(market 是单值),所以它们同在这一行里单选。
+ */
+export type BillingMode = "on_demand" | "spot" | BillingPeriod;
 
 /**
- * 计费方式卡(市场页与创建页共用)。折扣角标从 `/policies` 读,禁止前端硬编码。
- * 所选规格不接受包周期(`period_enabled=false`)时四个周期项灰置 + tooltip 说明,不隐藏。
+ * 计费方式卡(市场页与创建页共用)。折扣角标与竞价折扣从 `/policies` 读,禁止前端硬编码。
+ * 所选规格不接受包周期(`period_enabled=false`)/ 未上竞价(`spot_enabled=false`)时,
+ * 对应项灰置 + tooltip 说明,不隐藏。
  * 数量选择器(几个周期)只在创建/续费这类真要提交的场景出(传 count + onCountChange)。
  */
 export function BillingModeCard({
   value,
   onChange,
   periodEnabled = true,
+  spotEnabled = true,
   count,
   onCountChange,
   extra,
@@ -137,15 +163,17 @@ export function BillingModeCard({
   value: BillingMode;
   onChange: (v: BillingMode) => void;
   periodEnabled?: boolean;
+  spotEnabled?: boolean;
   count?: number;
   onCountChange?: (n: number) => void;
   extra?: ReactNode;
 }) {
   const { t } = useTranslation(["web", "shared"]);
-  // 「该规格暂不支持包周期」的事实源在后端 messages.py,前端不另写一份
+  // 「该规格暂不支持包周期 / 暂未上竞价档」的事实源在后端 messages.py,前端不另写一份
   const { t: tErr } = useTranslation("errors");
   const discounts = usePeriodDiscounts();
-  const showCount = count != null && onCountChange != null && value !== "on_demand";
+  const spotPolicy = useSpotPolicy();
+  const showCount = count != null && onCountChange != null && isBillingPeriod(value);
   return (
     <Card title={t("sku.billingModeTitle")} styles={{ body: { paddingBlock: 16 } }}>
       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -155,6 +183,22 @@ export function BillingModeCard({
           onChange={onChange}
           options={[
             { value: "on_demand", label: t("sku.modeHourly") },
+            {
+              value: "spot",
+              label: (
+                <span>
+                  {t(marketMap.spot.labelKey)}
+                  <SpotOffLabel policy={spotPolicy} />
+                </span>
+              ),
+              // 策略没回来就不放行:折扣算不出的竞价档,点进去只会看到一个「--」的价
+              disabled: !spotEnabled || spotPolicy == null,
+              disabledReason: !spotEnabled
+                ? tErr("orchestrator.spotNotEnabled")
+                : spotPolicy == null
+                  ? t("period.quotePending")
+                  : undefined,
+            },
             ...BILLING_PERIODS.map((p) => {
               const off = discounts ? discountOff(discounts[p]) : 0;
               return {

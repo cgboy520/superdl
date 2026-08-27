@@ -27,6 +27,7 @@ export interface SkuAdminOut {
   pool_label: string;
   price_hourly: string;
   sold_share?: string | null;
+  spot_enabled: boolean;
   status: string;
   tier: string;
   vcpu: number;

@@ -196,6 +196,7 @@
     "periodNotEnabled": "This spec does not support subscriptions; choose pay-as-you-go",
     "periodOnOnDemand": "Pay-as-you-go instances cannot carry a billing period",
     "periodRequired": "A subscription instance must have a billing period",
+    "preemptNotSpot": "Only spot instances can be reclaimed",
     "realNameRequired": "Regulations require identity verification before renting compute — complete it under Settings · Identity Verification first",
     "releaseNeedsStopped": "Stop the instance before releasing it",
     "renewNotSubscription": "Only subscription instances can be renewed",
@@ -204,11 +205,13 @@
     "serviceEndpointNotFound": "This instance has no public endpoint (only service instances do)",
     "servicePortRequired": "A service instance needs the port its container listens on",
     "servicePortReserved": "Port {{port}} is reserved by the platform (22 for SSH, 8888 for JupyterLab) — move your service to another port",
+    "spotNotEnabled": "This spec is not offered on spot; choose pay-as-you-go or a subscription",
     "sshKeyRequired": "Select at least one SSH public key (instances accept key login only)",
     "sshPortsExhausted": "No SSH port available right now — try again later or contact support",
     "startNeedsStopped": "Only stopped instances can be started",
     "stateChangedRetry": "The instance state was changed by another operation — refresh and retry",
     "stopNeedsRunning": "Only running instances can be stopped",
+    "toOnDemandNotSpot": "Only spot instances can be switched to pay-as-you-go",
     "vcpuQuota": "CPU instances would exceed your vCPU limit ({{max}} vCPU). Release one first or contact support to raise the limit"
   },
   "tickets": {

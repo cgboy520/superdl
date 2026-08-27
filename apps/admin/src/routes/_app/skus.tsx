@@ -68,6 +68,8 @@ interface SkuFormValues {
   cuda_max?: string | null;
   /** 是否接受包周期(预付)下单。与档位正交:包周期不是新档位,是同一条 SKU 的另一种买法 */
   period_enabled: boolean;
+  /** 是否上竞价档(可被平台回收换取折扣)。与包周期同级:仍是同一条 SKU 的另一种买法 */
+  spot_enabled: boolean;
   /** 编辑必填(入审计);新建端点不接受 reason,提交时不带 */
   reason?: string;
 }
@@ -302,6 +304,9 @@ function SkusPage() {
         // 默认开:与后端 SkuCreate.period_enabled 默认值一致。默认关会让包周期上线当天
         // 在市场页完全看不见,得逐条 SKU 手动打开
         period_enabled: true,
+        // 默认关:与后端 SkuCreate.spot_enabled 默认值一致。竞价意味着这条规格上的实例
+        // 可能被平台回收,不该由「新建时忘了看」变成默认承诺
+        spot_enabled: false,
         // 草稿覆盖默认值(仅新建):误关抽屉后重开不丢
         ...draft.load(),
       });
@@ -358,6 +363,7 @@ function SkusPage() {
           price_hourly: values.price_hourly,
           cuda_max: values.cuda_max ?? null,
           period_enabled: values.period_enabled,
+          spot_enabled: values.spot_enabled,
         };
         create.mutate({ data: createPayload });
       } else if (editing) {
@@ -376,6 +382,7 @@ function SkusPage() {
           price_hourly: values.price_hourly,
           cuda_max: values.cuda_max ?? null,
           period_enabled: values.period_enabled,
+          spot_enabled: values.spot_enabled,
           reason: values.reason ?? "",
         };
         update.mutate({ skuId: editing.id, data: updatePayload });
@@ -445,7 +452,7 @@ function SkusPage() {
       }
     >
       <Table<SkuAdminOut>
-        scroll={{ x: 1340 }}
+        scroll={{ x: 1440 }}
         rowKey="id"
         dataSource={skus ?? []}
         pagination={false}
@@ -504,6 +511,15 @@ function SkusPage() {
             width: 100,
             render: (v: boolean) =>
               v ? <Tag color="blue">{t("skus.periodOn")}</Tag> : <Tag>{t("skus.periodOff")}</Tag>,
+          },
+          {
+            // 与包周期同一口径:哪些规格上了竞价档,列表要能一眼看出 —— 竞价实例会被回收,
+            // 「哪些规格允许这件事」属于要能对着账查的配置
+            title: t("skus.colSpot"),
+            dataIndex: "spot_enabled",
+            width: 100,
+            render: (v: boolean) =>
+              v ? <Tag color="orange">{t("skus.spotOn")}</Tag> : <Tag>{t("skus.spotOff")}</Tag>,
           },
           {
             title: t("skus.colOnSale"),
@@ -727,6 +743,16 @@ function SkusPage() {
               label={t("skus.periodEnabledLabel")}
               valuePropName="checked"
               extra={t("skus.periodEnabledHint")}
+            >
+              <Switch />
+            </Form.Item>
+            {/* 竞价档同理跟着单价放:它决定这条 SKU 能不能按折后价卖。
+                关掉只挡新单,已在跑的竞价实例不受影响(仍可被回收,也仍可自行转按量) */}
+            <Form.Item
+              name="spot_enabled"
+              label={t("skus.spotEnabledLabel")}
+              valuePropName="checked"
+              extra={t("skus.spotEnabledHint")}
             >
               <Switch />
             </Form.Item>
