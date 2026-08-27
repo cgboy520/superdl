@@ -93,6 +93,9 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   // 必须早于调账发起:服务端拒绝「发起后才创建的账号」当第二人
   // (adminapi/service.py 的 adjustReviewerTooNew,防自建第二账号绕复核)
   const financeName = `fin-e2e-${String(Date.now()).slice(-6)}`;
+  // 调账原因同样要带随机后缀:它是本用例定位表格行的唯一依据,写死的话第二次跑会同时
+  // 命中上一轮留下的那条,strict mode 直接判失败 —— 只在全新库上能过的用例不是闸门
+  const adjReason = `e2e 冒烟调账 ${String(Date.now()).slice(-6)}`;
   const created = await request.post(`${API}/api/admin/v1/admins`, {
     headers: { Authorization: `Bearer ${adminToken}` },
     data: {
@@ -113,12 +116,12 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   // 上下文回显(掩码手机号)出现后 OK 才可点
   await expect(createModal.getByText(maskedPhone)).toBeVisible({ timeout: 15_000 });
   await createModal.getByLabel(/金额/).fill("1.01");
-  await createModal.getByLabel(/操作原因/).fill("e2e 冒烟调账");
+  await createModal.getByLabel(/操作原因/).fill(adjReason);
   await createModal.getByRole("button", { name: /确\s*定/ }).click();
   await expect(page.getByText("调账单已发起,等待第二位管理员复核")).toBeVisible({
     timeout: 10_000,
   });
-  const adjRow = page.locator(".ant-table-row", { hasText: "e2e 冒烟调账" });
+  const adjRow = page.locator(".ant-table-row", { hasText: adjReason });
   await expect(adjRow.getByText("待复核")).toBeVisible({ timeout: 10_000 });
   // 自复核禁手(双人制衡):发起人行的「通过」必须禁用
   await expect(adjRow.getByRole("button", { name: /^通\s*过$/ })).toBeDisabled();
@@ -127,13 +130,13 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   await loginAndBindMfa(page, financeName, "finance-e2e-pass1");
   await page.goto(`${ADMIN}/finance`);
   await page.getByRole("tab", { name: /调账/ }).click();
-  const reviewRow = page.locator(".ant-table-row", { hasText: "e2e 冒烟调账" });
+  const reviewRow = page.locator(".ant-table-row", { hasText: adjReason });
   await reviewRow.getByRole("button", { name: /^通\s*过$/ }).click();
   const reviewModal = page.locator(".ant-modal", { hasText: "通过调账(二次确认)" });
   await reviewModal.getByRole("button", { name: /^通\s*过$/ }).click();
   await expect(page.getByText("复核完成")).toBeVisible({ timeout: 10_000 });
   await expect(
-    page.locator(".ant-table-row", { hasText: "e2e 冒烟调账" }).getByText("已生效"),
+    page.locator(".ant-table-row", { hasText: adjReason }).getByText("已生效"),
   ).toBeVisible({ timeout: 10_000 });
 
   // ── 5. 冻结租户(ops 写权限;seed admin 经已绑定 TOTP 重新登录)────────

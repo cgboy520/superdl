@@ -90,7 +90,18 @@ const POOL_VARIANTS: Record<string, SkuVariant[]> = {
 };
 const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
 /** CPU 规格必须落库的 GPU 字段值(后端 catalog.cpu_spec_error 的镜像:任一非 0 即被拒) */
-const CPU_ZERO_FIELDS = { gpu_model: "", mig_profile: null, gpu_cores_pct: 0, vram_gb: 0, max_gpus_per_instance: 0 } as const;
+/** CPU 规格必须落库的值(后端 catalog.cpu_spec_error 的镜像:GPU 三项任一非 0 即被拒)。
+ *  超卖也一并钉成 1:CPU 规格没有算力/显存可超卖,而那两个输入框在 cpu 档不挂载 ——
+ *  不显式覆盖就会把切档前的旧值(默认 1.5)带进库,管理端超卖列显示成 1.50× 纯属误导。 */
+const CPU_ZERO_FIELDS = {
+  gpu_model: "",
+  mig_profile: null,
+  gpu_cores_pct: 0,
+  vram_gb: 0,
+  max_gpus_per_instance: 0,
+  oversell_cores: 1,
+  oversell_vram: 1,
+} as const;
 
 type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
@@ -259,8 +270,10 @@ function SkusPage() {
     const { pool } = VARIANT_SPEC[variant];
     form.setFieldsValue({
       variant,
-      // cpu 档在 cpu / hami 两池都合法:从 hami 上的共享档切过来时保留 hami,别把池挪走
-      pool_label: variant === "cpu" && wPool === "hami" ? "hami" : pool,
+      // cpu 档在 cpu / hami 两池都合法,但默认必须是 cpu 池:挂 hami 是去吃 GPU 机的空闲 CPU,
+      // 要受 gpu_node_cpu_instance_vcpu_cap 封顶、也会挤占 GPU 实例的配套 CPU ——
+      // 影响更大的那个选项不该是静默默认值,得让运营显式改
+      pool_label: pool,
       // 切片只属于 mig 池:换走时必须清掉,否则后端 _check_tier_pool 会以「切片与池不符」驳回
       ...(variant === "shared_mig" ? {} : { mig_profile: null }),
     });
@@ -299,7 +312,12 @@ function SkusPage() {
   };
 
   const submit = async () => {
-    const values = await form.validateFields();
+    await form.validateFields();
+    // 取全量 store 而非 validateFields() 的返回值:后者只回**已挂载** Form.Item 的字段,
+    // 而本表单按档位隐藏大半输入框(cpu 档没有型号/显存/份额/超卖/单卡数,非 mig 档没有切片)。
+    // 读返回值会让那些字段变成 undefined 混进 payload —— String(undefined) 就是 "undefined",
+    // 服务端直接 422。这个坑在本文件已经踩过三次,统一走 store。
+    const values = form.getFieldsValue(true) as SkuFormValues;
     // 派生而非读表单:tier 没有 Form.Item,pool_label 的输入框是只读回显,
     // 两者的事实源都是 variant
     const { tier, pool: derivedPool } = VARIANT_SPEC[values.variant];
@@ -702,9 +720,12 @@ function SkusPage() {
                 <InputNumber min={1} max={8} style={{ width: "100%" }} />
               </Form.Item>
             )}
-            <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
-              <Input placeholder={t("images.cudaPlaceholder")} />
-            </Form.Item>
+            {/* 最高 CUDA 只对带卡的规格有意义,CPU 档不出现 */}
+            {!isCpuVariant && (
+              <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
+                <Input placeholder={t("images.cudaPlaceholder")} />
+              </Form.Item>
+            )}
           </Form>
           <Card size="small" title={t("skus.previewTitle")} style={{ width: 248, flexShrink: 0 }}>
             {previewParams === null ? (

@@ -349,7 +349,10 @@ function CreatePage() {
                         onChange={(v) => setPlatformImage(v as string[])}
                         placeholder={t("create.cascadePlaceholder")}
                       />
-                      <Typography.Text type="secondary">{t("create.prewarmed")}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {/* CPU 规格落无卡机,平台镜像不在那儿预热(全是 CUDA 镜像,铺过去是死重量)——别对它承诺秒级启动 */}
+                        {isCpu ? t("create.prewarmedNotForCpu") : t("create.prewarmed")}
+                      </Typography.Text>
                     </>
                   )}
                 </Space>

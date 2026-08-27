@@ -23,12 +23,15 @@ def fake():
 
 async def test_patrol_converges_and_labels(sm, fake):
     counts = await node_spec_patrol(sm)
-    assert counts["upserted"] == 3  # fake 三池各一节点
+    assert counts["upserted"] == 4  # fake 四池各一节点(kata / hami / mig / cpu)
     async with sm() as session:
         rows = {r.node_name: r for r in (await session.execute(select(NodeSpec))).scalars()}
     assert rows["fake-hami-node-1"].gpu_model == "RTX4090"
     assert rows["fake-hami-node-1"].vram_gb == 24  # DEFAULT_VRAM_GB 兜底
     assert rows["fake-mig-node-1"].gpu_model == "H100"
+    # cpu 池是无卡机:0 卡、无型号,台账照样收敛(纯 CPU 规格的库存口径只看 vCPU/内存)
+    assert rows["fake-cpu-node-1"].gpu_count == 0
+    assert not rows["fake-cpu-node-1"].gpu_model
     # label 收敛已写入 fake
     assert fake.node_labels["fake-hami-node-1"]["superdl.io/gpu-model"] == "RTX4090"
     async with sm() as session:
@@ -38,7 +41,7 @@ async def test_patrol_converges_and_labels(sm, fake):
         assert row.label_synced is True
     # 二轮幂等
     counts2 = await node_spec_patrol(sm)
-    assert counts2["upserted"] == 3 and counts2["removed"] == 0
+    assert counts2["upserted"] == 4 and counts2["removed"] == 0
 
 
 async def test_unlabeled_node_visible(sm, fake):

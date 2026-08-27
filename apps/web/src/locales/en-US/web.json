@@ -188,6 +188,7 @@
     "noMountableDisks": "No mountable data disks",
     "notEnoughGoRecharge": "Insufficient balance — top up",
     "prewarmed": "Platform images are pre-warmed on nodes for second-level startup",
+    "prewarmedNotForCpu": "Platform images are pre-warmed on GPU nodes only; a CPU spec pulls its image on first start, so startup takes as long as the pull",
     "selectDiskPlaceholder": "Select a data disk",
     "selectedSpec": "Selected spec",
     "selectImageAndKey": "Select an image and at least one SSH key first",

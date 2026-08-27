@@ -81,14 +81,19 @@ export function skuColumns(
       render: (_: unknown, s: SkuMarketOut) => t("sku.hostShort", { vcpu: s.vcpu, mem: s.mem_gb }),
     },
     { title: t("sku.colDisk"), render: (_: unknown, s: SkuMarketOut) => t("sku.diskWithBase", { disk: s.disk_gb }) },
-    {
-      title: (
-        <Tooltip title={t("sku.cudaTooltip")}>
-          <span>{t("sku.colCuda")}</span>
-        </Tooltip>
-      ),
-      render: (_: unknown, s: SkuMarketOut) => s.cuda_max ?? "-",
-    },
+    // 最高 CUDA 只对带卡的规格有意义:CPU 分栏整列恒为「-」,留着是纯噪音
+    ...(opts.cpu
+      ? []
+      : [
+          {
+            title: (
+              <Tooltip title={t("sku.cudaTooltip")}>
+                <span>{t("sku.colCuda")}</span>
+              </Tooltip>
+            ),
+            render: (_: unknown, s: SkuMarketOut) => s.cuda_max ?? "-",
+          },
+        ]),
     {
       title: opts.cpu ? t("sku.colPriceCpu") : t("sku.colPrice"),
       // 钉右:窄屏(≤1024)下表格横滚,价格不能被滚出视口

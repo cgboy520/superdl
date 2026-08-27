@@ -66,6 +66,19 @@ async def pending_tasks(sm: async_sessionmaker[AsyncSession]) -> int:
 
 
 class TestPrewarmFullChain:
+    async def test_cpu_pool_nodes_are_never_prewarmed(self, sm, fake: FakeOrchestrator) -> None:
+        """无卡机不铺预热行。
+
+        挂了说明:平台镜像目录整体是 CUDA 镜像(单个 8~27 GB),会被整套铺到
+        cpu 池的无卡机上 —— 百 GB 级磁盘换一批那台机器永远用不上 GPU 栈的镜像。
+        fake 的 cpu 节点是 Ready 的,所以这条只可能被「预热选点漏了池维度」挂掉。
+        """
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        nodes = {r.node_name for r in await cache_rows(sm)}
+        assert any(n.pool_label == "cpu" for n in await fake.list_nodes()), "fake 应有 cpu 节点"
+        assert not any(n.startswith("fake-cpu-") for n in nodes), nodes
+
     async def test_plan_pull_converge_to_cached(self, sm, fake: FakeOrchestrator) -> None:
         """建镜像 → 巡检铺行(=节点数) → drain 置 pulling → 巡检收敛 cached。"""
         await make_image(sm)

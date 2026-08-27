@@ -526,6 +526,7 @@ export default interface Resources {
       "noMountableDisks": "暂无可挂载的数据盘",
       "notEnoughGoRecharge": "余额不足,去充值",
       "prewarmed": "平台镜像已在节点预热,秒级启动",
+      "prewarmedNotForCpu": "平台镜像只在带卡节点预热;CPU 规格首次启动需现拉镜像,耗时取决于镜像大小",
       "selectDiskPlaceholder": "选择数据盘",
       "selectImageAndKey": "请先选择镜像与至少一个 SSH 公钥",
       "selectedSpec": "已选规格",

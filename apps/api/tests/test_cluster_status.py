@@ -326,7 +326,7 @@ class TestClusterEndpoints:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["api_reachable"] is True and body["distro"] == "rke2"
-        assert body["pools"] == {"kata": 1, "hami": 1, "mig": 1}
+        assert body["pools"] == {"kata": 1, "hami": 1, "mig": 1, "cpu": 1}
         comp = {c["key"]: c for c in body["components"]}
         assert comp["hami"]["ok"] and comp["monitoring"]["ok"] and comp["storage"]["ok"]
         assert comp["hami"]["fix_hint"] is None

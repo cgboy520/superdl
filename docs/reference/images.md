@@ -35,6 +35,7 @@
 - 策略参数(ops 可调):`prewarm_min_coverage_pct` 默认 90、`prewarm_recheck_hours` 默认 24。
 - 预热由 `image.prewarm` outbox handler(幂等)+ `prewarm_patrol` 巡检(60s,advisory lock 1008)铺行、收敛与复检;节点增删由巡检自行发现,与装机链路零耦合。
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
+- **cpu 池不预热。** 平台镜像目录整体是 CUDA 镜像(单个 8~27 GB),铺到无卡机上是百 GB 级的死重量 —— 那台机器永远用不上它们编译进去的 GPU 栈。代价是 CPU 规格首次启动现拉镜像,创建页对 CPU 规格不承诺秒级启动(`prewarm.py` 的 `target_nodes` 排除 `pool_label == cpu`)。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
 - **实例的 image_ref 快照终身不变**:创建时定下,停机/开机/重启都用它,没有「实例换镜像」的端点。
   所以镜像修复(entrypoint 改动等)只对新建实例生效,存量实例必须删掉重建;发布这类镜像时要一并通知用户。

@@ -41,8 +41,10 @@ class FakeOrchestrator:
     # 模拟真实 K8s 的优雅删除:对象在 etcd 里再留 terminationGracePeriodSeconds,期间
     # read 仍 200、phase 仍 Running。默认关,复现「删了又立刻同名重建」的时序问题时打开。
     graceful_delete: bool = False
+    # 池 → 该池合成节点的 GPU 数。cpu 池恒 0 卡:不给它一个节点,纯 CPU 档在 dev 与
+    # e2e 里就是零库存、点不进去,整条 CPU 路径无从验证
     pool_capacity: dict[str, int] = field(
-        default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16}
+        default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16, "cpu": 0}
     )
     pods: dict[tuple[str, str], _FakePod] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
