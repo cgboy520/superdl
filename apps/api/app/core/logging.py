@@ -14,6 +14,7 @@ import re
 import sys
 
 import structlog
+import structlog.tracebacks
 from structlog.typing import EventDict, WrappedLogger
 
 from app.core.config import get_settings
@@ -96,11 +97,23 @@ def setup_logging() -> None:
         structlog.stdlib.ProcessorFormatter.remove_processors_meta,
     ]
     if settings.environment == "prod":
-        # dict_tracebacks:prod JSON 里 logger.exception 渲染成结构化栈帧
-        # (否则生产 traceback 只剩一行 event,排障无栈无行号)。
-        # dev 的 ConsoleRenderer 自己渲染 exc_info,不能加(dict_tracebacks 产 list,
-        # ConsoleRenderer 按 str 拼接会 TypeError)
-        formatter_processors.append(structlog.processors.dict_tracebacks)
+        # prod JSON 里把 logger.exception 渲染成结构化栈帧(否则生产 traceback
+        # 只剩一行 event,排障无栈无行号)。dev 的 ConsoleRenderer 自己渲染 exc_info,
+        # 不能加(它产 list,ConsoleRenderer 按 str 拼接会 TypeError)。
+        #
+        # **show_locals 必须关掉**,不能图省事用 structlog.processors.dict_tracebacks ——
+        # 那个快捷方式的 ExceptionDictTransformer 默认 show_locals=True,会把每个栈帧的
+        # 局部变量原样写进日志。异步栈里几乎每一帧都握着 Settings / session /
+        # 配置对象,于是 `database_url` 的口令与 `jwt_secret` 就直接落进 journald
+        # (实测:一条 reconciler 的 404 异常里两者都是明文)。
+        # 上面的 _mask_sensitive_processor 拦不住:它在 shared_processors 里、
+        # 先于本处理器跑,栈帧字典是它跑完之后才生成的。
+        # 代价是丢掉局部变量,而排障真正要的栈与行号都还在。
+        formatter_processors.append(
+            structlog.processors.ExceptionRenderer(
+                structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+            )
+        )
     formatter_processors.append(renderer)
     formatter = structlog.stdlib.ProcessorFormatter(
         processors=formatter_processors,

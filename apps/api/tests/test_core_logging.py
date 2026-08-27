@@ -70,8 +70,8 @@ def test_log_level_config_filters_both_sides(restore_logging: None, monkeypatch)
 
 
 def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
-    """prod(JSON):logger.exception 渲染成结构化栈帧(dict_tracebacks),不再只剩一行 event。
-    dev 的 ConsoleRenderer 自己渲染 exc_info(不能叠 dict_tracebacks,见其 TypeError)。"""
+    """prod(JSON):logger.exception 渲染成结构化栈帧,不再只剩一行 event。
+    dev 的 ConsoleRenderer 自己渲染 exc_info(不能叠结构化栈帧渲染器,见其 TypeError)。"""
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -119,3 +119,39 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
     assert "123456" not in out  # 嵌套 dict 的 code 键同样打码
     assert "keep" in out
     assert "13800002222" in out  # 键名不命中原样保留
+
+
+def test_exception_traceback_never_carries_frame_locals(restore_logging: None, monkeypatch):
+    """prod 的结构化栈帧**不带局部变量**。
+
+    挂了 = 生产日志把每个栈帧的局部变量原样写出去。异步栈里几乎每一帧都握着
+    Settings / session / 配置对象,于是数据库口令与 JWT 密钥直接落进 journald 与
+    日志后端(实测过:reconciler 的一条 404 异常里两者都是明文)。
+    上面那条 `_mask_sensitive_processor` 的按键名打码拦不住它 —— 打码跑在
+    shared_processors 里,栈帧字典是它跑完之后才生成的。
+    """
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", "prod", raising=False)
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    setup_logging()
+
+    def _raise_holding_a_secret() -> None:
+        # 与真实调用栈同形:帧里握着一个含凭据的对象
+        leaky_config = {"database_url": "postgresql://u:hunter2-marker@h/db"}
+        assert leaky_config
+        raise ValueError("boom-marker")
+
+    try:
+        _raise_holding_a_secret()
+    except ValueError:
+        get_logger("t.exc").exception("evt_with_traceback")
+
+    out = buf.getvalue()
+    assert "boom-marker" in out  # 栈仍在:排障要的行号与异常消息没丢
+    assert "_raise_holding_a_secret" in out
+    assert "hunter2-marker" not in out  # 帧内局部变量不得出现
+    assert "leaky_config" not in out
