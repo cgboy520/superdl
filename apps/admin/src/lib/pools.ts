@@ -3,4 +3,5 @@ export const POOL_LABEL_KEY = {
   kata: "nodes.poolKata",
   hami: "nodes.poolHami",
   mig: "nodes.poolMig",
+  cpu: "nodes.poolCpu",
 } as const;

@@ -8,7 +8,7 @@
 export interface InstanceCreate {
   data_disk_id?: number | null;
   /**
-     * @minimum 1
+     * @minimum 0
      * @maximum 8
      */
   gpu_count?: number;

@@ -10,6 +10,9 @@ setup() {
   export SUPERDL_JOIN_LOG_FILE="$TMP/join.log"
   export SUPERDL_JOIN_ETC_DIR="$TMP/etc"
   export SUPERDL_JOIN_LVM_DIR="$TMP/lvm"
+  # IOMMU 分组非空 = 直通已生效(默认场景);要测「未生效需重启」的用例自行清空该目录
+  export SUPERDL_JOIN_IOMMU_DIR="$TMP/iommu_groups"
+  mkdir -p "$TMP/iommu_groups/0"
   export CURL_LOG="$TMP/curl.log"
   export SHIM_CALLS="$TMP/calls.log"
   export BOOTSTRAP_FIXTURE="$TMP/bootstrap-fixture.json"
@@ -96,8 +99,10 @@ echo "$*" >> "$SHIM_CALLS"
 [[ "$DPKG_INSTALLED" == "1" ]] && { echo "ii  nvidia-driver-580-server"; exit 0; }
 exit 1
 EOF
+  # lspci:LSPCI_NVIDIA=0 模拟无卡机(cpu 池),其余场景照报 NVIDIA
   cat > "$TMP/bin/lspci" <<'EOF'
 #!/usr/bin/env bash
+[[ "${LSPCI_NVIDIA:-1}" == "1" ]] || exit 0
 echo "01:00.0 3D controller: NVIDIA Corporation AD102 RTX4090"
 EOF
   cat > "$TMP/bin/df" <<'EOF'
@@ -370,6 +375,26 @@ RKESHIM
   grep -q "update-grub" "$SHIM_CALLS"
   # kata 池的 GPU Operator 落点标签:vm-passthrough 才会部署 vfio-manager 与 kata 沙箱插件
   grep -q "nvidia.com/gpu.workload.config=vm-passthrough" "$TMP/etc/rancher/rke2/config.yaml"
+}
+
+@test "cpu 池(无卡机):跳过 NVIDIA 探测/驱动/toolkit,只打池标签,不上报驱动版本" {
+  _write_fixture cpu
+  export NVIDIA_OK=0 LSPCI_NVIDIA=0   # 无卡机:nvidia-smi 不存在、lspci 报不出 NVIDIA
+  run_script
+  [ "$status" -eq 0 ]
+  # 池标签落地,且不带任何 GPU Operator operand 标签(operand 不该落到无卡机上)
+  grep -q "superdl.io/pool=cpu" "$TMP/etc/rancher/rke2/config.yaml"
+  ! grep -q "nvidia.com/" "$TMP/etc/rancher/rke2/config.yaml"
+  # 整条 NVIDIA 链路跳过:不装驱动、不装 toolkit、不写 nouveau 黑名单、不写 GRUB
+  ! grep -q "apt-get install" "$SHIM_CALLS"
+  [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
+  [ ! -f "$TMP/etc/default/grub.d/99-superdl.cfg" ]
+  [[ "$output" == *"跳过 NVIDIA GPU 探测"* ]]
+  # 收尾上报不带 driver_version / cuda_version(无卡机采不到,台账两列留空)
+  grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
+  ! grep -q '"driver_version"' "$CURL_LOG"
+  # bootstrap 仍上报空卡清单(契约字段必发)
+  grep -q '"gpu_details": \[\]' "$CURL_LOG"
 }
 
 @test "k3s 模式:config/registries 落 /etc/rancher/k3s,走中国镜像 agent 安装并起 k3s-agent" {

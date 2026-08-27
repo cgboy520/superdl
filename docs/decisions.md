@@ -182,6 +182,32 @@
   `mig_profile`:配对约束一上,原来的在售改池在三个方向上全部不可达(dedicated 只有 kata;
   shared 的 mig↔hami 都卡在切片填不了/清不掉),留着就是死字段。收窄后语义也更正:
   改池或改切片 = 换隔离方式 = 换商品,在售的商品不该在用户眼皮底下换芯 —— 两者同门禁。
+- **纯 CPU 实例:第三档 `tier=cpu`,允许挂 hami 池。** 无卡机是很多客户的常态需求(数据预处理、
+  推理前后处理、跑 Jupyter 写代码),把它做成第三个售卖档而不是另起一条产品线,是因为整条链路
+  (SKU / 实例 / 计费 / 配额 / 节点池)只差「不申请 GPU」一件事。**允许 cpu 档挂 hami 池**是刻意的:
+  平台上线初期未必有专门的无卡服务器,而 GPU 机的 CPU 长期闲置(一张卡配 8~16 核,跑训练时 CPU 常年低载),
+  让 CPU 规格吃这部分空闲即可先把档位卖起来。代价是 CPU 实例会挤占 GPU 实例的配套 CPU,因此加策略
+  `gpu_node_cpu_instance_vcpu_cap`(默认 16,0 = 禁止)给每个 GPU 节点封顶;这只是**库存口径**上的封顶,
+  不下发调度,和超卖参数一样属于「运营给自己划的线」。
+  实现上有两个「0 是合法值」的坑必须点名:①`build_gpu_request` 里 `gpu_count == 0` 的判定**必须先于池分支**,
+  否则挂 hami 池的 CPU 实例会照 HAMi 语法申请 `nvidia.com/gpu`,把真卡判给不用卡的实例;
+  **下发门禁必须用同一个判据** —— CPU 实例 `schedulerName` 为空走默认调度器,hami-scheduler 不是它的前置,
+  拿 HAMi 就绪去拦它等于让 HAMi 一挂就连带挡住一批根本不用 GPU 的实例;
+  ②`build_pod_spec` 原来的 `gpu_n = max(1, gpu_count)` 要改成显式的「GPU 档按卡数放大、CPU 档倍率恒 1」——
+  数值碰巧一样,但 `max(1, …)` 表达的是「把 0 卡当 1 卡放大」,语义反了。
+- **CPU 实例计费为 0 的解法:计费份数收口到 `core/money.billing_units`,不动 `price_hourly` 语义。**
+  账单金额一直是 `单价 × gpu_count × 秒 / 3600`,CPU 实例 `gpu_count=0` 会算出 ¥0.00 —— 不只是白送算力,
+  余额护栏(`assert_can_afford`)、欠费停机判据(巡检的 `burn_per_hour`)、对账的实例时费也一并归零。
+  比选过三条路:(a) 账单行里存 `gpu_count=1` —— 列名说的是卡数,存 1 就是在账单与导出 CSV 里撒谎;
+  (b) 给 `bills_hourly` 加一列 `billing_units` —— 诚实,但为一个恒等于 `max(1, gpu_count)` 的派生值
+  加列、加迁移、改导出与前端账单,收益不抵成本;(c) 让 CPU SKU 的 `price_hourly` 语义仍是「单卡价」而把
+  `gpu_count` 存 1 —— 同 (a),且会让「单实例 GPU 数」的校验失去意义。
+  选定:新增 `billing_units(gpu_count) = gpu_count or 1` 与 `hourly_cost(price, gpu_count)`,
+  计费链上所有「单价 × 份数」只经这两个函数(`bill_amount` / 钱包护栏 / 燃烧率 / 对账 / 在途估算);
+  `price_hourly` 的语义随 SKU 形态分化并写进 `reference/catalog.md`(GPU 规格 = 单卡时价,CPU 规格 = 整机时价);
+  账单行照实存 `gpu_count=0`,复算金额时按同一函数还原份数,行仍然自洽。
+  之所以不散写 `max(1, n)`:那种写法碰巧算对,但读的人无从判断 0 是合法值还是脏数据 —— 这正是本次要修掉的
+  `build_pod_spec` 旧写法的毛病,不该在计费链上再复制一遍。
 - **DNS01 走 acme-dns 中转。** 集群内只持有能改 `_acme-challenge` 子域 TXT 的账户,不再持有全域 RAM DNS 凭据;
   见 `deploy/cluster/runbooks/acme-dns.md`。
 - **集群键中性化,砍掉 `k8s_distro`。** `rke2_*` 改 `cluster_*`,发行版由平台探测 gitVersion 派生。改名时没有任何

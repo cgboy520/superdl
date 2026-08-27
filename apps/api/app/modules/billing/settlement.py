@@ -32,7 +32,7 @@ from app.core.metrics import (
     SETTLEMENT_GAP_UNRESOLVED,
     SETTLEMENT_LAG,
 )
-from app.core.money import as_amount, as_price, disk_daily_charge
+from app.core.money import as_amount, as_price, billing_units, disk_daily_charge
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
 from app.core.timeutil import (
     BILLING_DAY_OFFSET,
@@ -133,10 +133,16 @@ def bill_amount(
 ) -> Decimal:
     """入账 2 位 HALF_EVEN。seconds ∈ [0, max_seconds](默认单整点小时窗口);越界即窗口计算
     有 bug,报错不截断。max_seconds 只供巡检的多小时估算口径放宽(估算永不入账),
-    入账一律逐窗按默认上限。"""
+    入账一律逐窗按默认上限。
+
+    份数走 money.billing_units:GPU 实例 = 卡数,CPU 实例(gpu_count=0)= 1 份整机。
+    账单行照实存 gpu_count(CPU 实例存 0),对账时按同一函数还原份数即可复算 amount。
+    """
     if not 0 <= seconds <= max_seconds:
         raise ValueError(f"seconds out of range: {seconds}")
-    raw = as_price(unit_price) * Decimal(gpu_count) * Decimal(seconds) / Decimal(3600)
+    raw = (
+        as_price(unit_price) * Decimal(billing_units(gpu_count)) * Decimal(seconds) / Decimal(3600)
+    )
     return as_amount(raw)
 
 

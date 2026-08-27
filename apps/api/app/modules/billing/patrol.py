@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
-from app.core.money import as_amount
+from app.core.money import as_amount, hourly_cost
 from app.core.policies import get_effective_policies
 from app.core.timeutil import hour_floor, now_utc
 from app.modules.account import service as account_service
@@ -123,7 +123,7 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
             async with sm() as session:
                 balance = await wallet.get_balance(session, user_id)
                 burn_per_hour = sum(
-                    (as_amount(i.price_hourly * i.gpu_count) for i in instances),
+                    (hourly_cost(i.price_hourly, i.gpu_count) for i in instances),
                     Decimal("0.00"),
                 )
                 # 停机判据:余额 − 未结算消耗 ≤ 0。小时结算次小时 :02 才落账,

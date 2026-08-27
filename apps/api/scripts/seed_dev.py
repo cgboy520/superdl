@@ -1,4 +1,4 @@
-"""开发环境种子数据:SKU 四档 + 平台镜像 + 管理员。
+"""开发环境种子数据:SKU 五条(整卡 / MIG / HAMi 两档 / 纯 CPU)+ 平台镜像 + 管理员。
 
 用法(需 PG 已迁移):cd apps/api && uv run python scripts/seed_dev.py
 幂等:已存在同名数据则跳过。
@@ -71,6 +71,22 @@ SKUS = [
         "price_hourly": Decimal("1.6800"),
         "max_gpus_per_instance": 1,
         "cuda_max": "13.2",
+        "status": "on",
+    },
+    {
+        # 纯 CPU 规格:不带卡(gpu_model 空串,算力份额/显存/单实例卡数全 0),
+        # price_hourly 是**整机**时价而非单卡价(计费份数见 core/money.billing_units)
+        "name": "CPU-8C16G",
+        "gpu_model": "",
+        "tier": "cpu",
+        "gpu_cores_pct": 0,
+        "vram_gb": 0,
+        "pool_label": "cpu",
+        "vcpu": 8,
+        "mem_gb": 16,
+        "price_hourly": Decimal("0.4900"),
+        "max_gpus_per_instance": 0,
+        "cuda_max": None,
         "status": "on",
     },
     {

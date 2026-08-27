@@ -77,6 +77,7 @@ function CreatePage() {
   const { data: policies } = usePolicies();
 
   const [gpuCount, setGpuCount] = useState(gpusFromMarket ?? 1);
+  // 后端契约:CPU 规格(max_gpus_per_instance=0)只收 gpu_count=0,GPU 规格只收 1..max
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
   const [platformImage, setPlatformImage] = useState<string[]>();
   const [customImage, setCustomImage] = useState("");
@@ -181,6 +182,11 @@ function CreatePage() {
     );
   }
 
+  // CPU 规格:不带卡,提交 gpu_count: 0;价格是整机时价,不乘卡数
+  const isCpu = sku.tier === "cpu";
+  const gpus = isCpu ? 0 : gpuCount;
+  const priceUnits = isCpu ? 1 : gpuCount;
+
   const diskPriceGbMonth = policies?.disk_price_gb_month;
   const diskGb =
     diskMode === "new"
@@ -190,7 +196,7 @@ function CreatePage() {
         : 0;
   // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
-  const hourlyTotal = mulPrice(sku.price_hourly, gpuCount);
+  const hourlyTotal = mulPrice(sku.price_hourly, priceUnits);
   // BigInt 精确比较,禁浮点(与后端 require_balance_at_least 同口径:1 小时 GPU 费)。
   // 三态处理:未就绪 ≠ 余额为 0。
   const balanceReady = wallet != null;
@@ -206,7 +212,7 @@ function CreatePage() {
     const idempotencyKey = idemKeyOf("inst", [
       formNonce,
       sku.id,
-      gpuCount,
+      gpus,
       imageRef ?? "",
       [...keyIds].sort((a, b) => a - b).join(","),
       name || null,
@@ -237,7 +243,7 @@ function CreatePage() {
         await create.mutateAsync({
           body: {
             sku_id: sku.id,
-            gpu_count: gpuCount,
+            gpu_count: gpus,
             image_ref: imageRef ?? "",
             ssh_key_ids: keyIds,
             name: name || null,
@@ -275,7 +281,7 @@ function CreatePage() {
     (n) => GPU_COUNT_STEPS.includes(n) || n === sku.max_gpus_per_instance,
   );
 
-  const columns = skuColumns({ fmt, t });
+  const columns = skuColumns({ fmt, t, cpu: isCpu });
 
   return (
     // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
@@ -297,7 +303,8 @@ function CreatePage() {
             columns={columns}
             pagination={false}
           />
-          {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示 */}
+          {/* 卡数选择受 available_count 约束:无库存档位禁用 + 提示。CPU 规格不带卡,整行不出 */}
+          {!isCpu && (
           <ChipRow
             label={t("market.chipGpuCount")}
             value={gpuCount}
@@ -316,6 +323,7 @@ function CreatePage() {
               ) : undefined
             }
           />
+          )}
         </Space>
       </Card>
 
@@ -484,7 +492,16 @@ function CreatePage() {
       </Card>
 
       <CheckoutBar
-        summary={t("create.summary", { model: sku.gpu_model, count: gpuCount, vcpu: sku.vcpu * gpuCount, mem: sku.mem_gb * gpuCount })}
+        summary={
+          isCpu
+            ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
+            : t("create.summary", {
+                model: sku.gpu_model,
+                count: gpuCount,
+                vcpu: sku.vcpu * gpuCount,
+                mem: sku.mem_gb * gpuCount,
+              })
+        }
         items={[
           {
             label: t("create.dailyCostLabel"),
@@ -496,11 +513,13 @@ function CreatePage() {
         detail={
           <Space orientation="vertical" size={4} style={{ maxWidth: 360 }}>
             <span>
-              {t("create.detailInstanceLine", {
-                unit: formatHourlyPrice(sku.price_hourly),
-                count: gpuCount,
-                total: formatHourlyPrice(hourlyTotal),
-              })}
+              {isCpu
+                ? t("create.detailInstanceLineCpu", { total: formatHourlyPrice(hourlyTotal) })
+                : t("create.detailInstanceLine", {
+                    unit: formatHourlyPrice(sku.price_hourly),
+                    count: gpuCount,
+                    total: formatHourlyPrice(hourlyTotal),
+                  })}
             </span>
             <span>
               {diskGb > 0 && diskPriceGbMonth

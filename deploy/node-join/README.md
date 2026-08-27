@@ -42,6 +42,11 @@ shellcheck apps/api/app/modules/nodes/assets/node-join.sh
 bats deploy/node-join/tests          # PATH shim 伪造系统命令,不碰真实系统
 ```
 
+脚本读到的系统路径一律经 `SUPERDL_JOIN_*` 覆盖(`STATE_DIR` / `ETC_DIR` / `LVM_IMG_DIR` /
+`IOMMU_GROUPS_DIR`),bats 在 setup 里把它们指向临时目录。**新增读宿主路径的代码必须照此加覆盖点** ——
+曾经 IOMMU 分组目录直读 `/sys/kernel/iommu_groups`,于是 kata 用例在任何没开 VT-d 的机器
+(VM / WSL)上永久红,而永久红的闸门等于没有闸门。
+
 覆盖:参数错误 / 全流程免重启 / 令牌不进 argv 与完成后落盘清理 / 完成后重跑直退 /
 --force 重装 / 断点续跑(令牌切换)/ 旧服务端无 progress_token 兼容 / 重启断点
 (oneshot + token 0600)/ 管道执行重拉脚本指纹校验与不符中止 / 安装器 pin 不符拒执行 /

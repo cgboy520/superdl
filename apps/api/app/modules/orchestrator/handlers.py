@@ -6,7 +6,7 @@ from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.k8s import NodePortTaken, get_orchestrator
 from app.core.logging import get_logger
-from app.core.money import as_amount
+from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
 from app.core.registry import ensure_registry_pull_secret
 from app.modules.billing import service as billing_service
@@ -117,7 +117,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         # 不分开提交会把已完成的迁移和尾账一起回滚掉(尾账丢失 = 少计停机前费用)
         await session.commit()
     if instance.status == sm_def.STOPPED:
-        estimate = as_amount(instance.price_hourly * instance.gpu_count)
+        estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
         try:
             await billing_service.assert_can_afford(
                 session, instance.user_id, additional_hourly=estimate

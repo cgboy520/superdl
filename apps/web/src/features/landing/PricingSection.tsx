@@ -35,9 +35,8 @@ export function PricingSection() {
   const { data: skus, isLoading, isError } = useSkus({ refetchInterval: 60_000 });
 
   const groups = useMemo<ModelGroup[]>(() => {
-    const inTab = (skus ?? []).filter((s) =>
-      tab === "dedicated" ? s.tier === "dedicated" : s.tier !== "dedicated",
-    );
+    // 价格墙只排 GPU 规格:CPU 档没有型号,按型号分组会多出一张空名字的卡
+    const inTab = (skus ?? []).filter((s) => s.tier === tab);
     const freeByModel = dedupAvailableByModel(inTab);
     const byModel = new Map<string, SkuMarketOut[]>();
     for (const s of inTab) {

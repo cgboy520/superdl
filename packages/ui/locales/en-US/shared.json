@@ -118,11 +118,13 @@
       "other": "Other"
     },
     "tier": {
+      "cpu": "CPU instance",
       "dedicated": "Dedicated GPU",
       "shared_hami": "Shared · Economy",
       "shared_mig": "Shared · Standard"
     },
     "tierHint": {
+      "cpu": "No GPU attached",
       "shared_hami": "Performance may fluctuate",
       "shared_mig": "Hardware-isolated memory and compute"
     },

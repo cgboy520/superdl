@@ -428,6 +428,7 @@
       "sysctl": "Kernel params",
       "waitingNode": "Await reconcile"
     },
+    "poolCpu": "cpu (GPU-less machines)",
     "poolHami": "hami (shared soft-slicing)",
     "poolKata": "kata (dedicated passthrough)",
     "poolLabel": "Node pool",
@@ -678,6 +679,7 @@
     "colTier": "Tier",
     "confirmSubmit": "Confirm",
     "coresPctLabel": "Compute share %",
+    "cpuPoolHint": "cpu pool = GPU-less machines; hami pool = spare CPU on GPU machines (no GPU requested)",
     "created": "SKU created (delisted by default)",
     "createFailed": "Creation failed",
     "cudaMaxLabel": "Max CUDA version",

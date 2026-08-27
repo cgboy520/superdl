@@ -28,6 +28,9 @@ STATE_DIR="${SUPERDL_JOIN_STATE_DIR:-/var/lib/superdl-node-join}"
 LOG_FILE="${SUPERDL_JOIN_LOG_FILE:-/var/log/superdl-node-join.log}"
 ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
 LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"  # loop 兜底镜像目录(仅显式选择时用)
+# IOMMU 分组目录:非空 = 直通已生效。做成可覆盖是为了让 bats 能造这个状态 ——
+# 直接读宿主 sysfs 会让 kata 用例在任何没开 VT-d 的机器(VM / WSL)上永久红
+IOMMU_GROUPS_DIR="${SUPERDL_JOIN_IOMMU_DIR:-/sys/kernel/iommu_groups}"
 RESUME_UNIT="superdl-node-join-resume"
 TOKEN=""
 TOKEN_FILE=""
@@ -148,6 +151,8 @@ report() { # report <phase> <state> [message]
 }
 
 collect_driver_versions() {
+  # cpu 池是无卡机,没有 nvidia-smi 可采;留空即不附带这两个字段(台账两列保持为空)
+  if is_cpu_pool; then return 0; fi
   # 驱动版本只有内核模块加载后才取得到:首装要经一次重启,bootstrap 时采不到;
   # 装机收尾时采集并随 waiting_node 上报,巡检把它落进节点台账。只留数字与点,便于直接拼 JSON
   DRIVER_VERSION="$({ nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true; } | head -1 | tr -cd '0-9.')"
@@ -162,6 +167,10 @@ on_error() {
   echo "!! 失败于 $CURRENT_PHASE,详情见 $LOG_FILE;修复后可重跑同一条命令续跑" >&2
 }
 trap on_error ERR
+
+# 纯 CPU 节点池:无卡机,整条 NVIDIA 链路(探测/驱动/toolkit/operand 标签)全部跳过。
+# bootstrap 之前不可用(池由 bootstrap 响应下发),所以只给 bootstrap 之后的步骤用。
+is_cpu_pool() { [[ "$(cfg_get pool)" == "cpu" ]]; }
 
 marker() { [[ -f "$STATE_DIR/done.d/$1" ]]; }
 mark_done() { touch "$STATE_DIR/done.d/$1"; }
@@ -263,8 +272,12 @@ step_precheck() {
   command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
   command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
   # 不用 grep -q:pipefail 下 grep 命中即退出会让仍在输出的 lspci 收到 SIGPIPE,整条判为失败
-  # (PCI 设备多的多卡机必现);grep 读完全部输出再判定
-  lspci 2>/dev/null | grep -i nvidia >/dev/null || { echo "未检测到 NVIDIA GPU"; return 1; }
+  # (PCI 设备多的多卡机必现);grep 读完全部输出再判定。cpu 池本就无卡,不做这一检查
+  if is_cpu_pool; then
+    echo "-- cpu 池:跳过 NVIDIA GPU 探测"
+  else
+    lspci 2>/dev/null | grep -i nvidia >/dev/null || { echo "未检测到 NVIDIA GPU"; return 1; }
+  fi
   local avail_kb
   avail_kb="$(df --output=avail -k / | tail -1 | tr -d ' ')"
   [[ "$avail_kb" -ge $((50 * 1024 * 1024)) ]] || { echo "/ 分区可用空间不足 50G"; return 1; }
@@ -278,6 +291,7 @@ step_precheck() {
 }
 
 step_nouveau() {
+  if is_cpu_pool; then echo "-- cpu 池:无 NVIDIA 卡,跳过 nouveau 黑名单"; return 0; fi
   cat > "$ETC_DIR"/modprobe.d/blacklist-nouveau.conf <<'EOF'
 blacklist nouveau
 options nouveau modeset=0
@@ -300,13 +314,14 @@ step_iommu() {
       > "$ETC_DIR"/default/grub.d/99-superdl.cfg
     update-grub
   fi
-  if [[ -z "$(ls -A /sys/kernel/iommu_groups 2>/dev/null)" ]]; then
+  if [[ -z "$(ls -A "$IOMMU_GROUPS_DIR" 2>/dev/null)" ]]; then
     NEED_REBOOT=1
     echo "-- IOMMU 未生效,需重启(重启后仍未生效请检查 BIOS VT-d/AMD-Vi)"
   fi
 }
 
 step_driver() {
+  if is_cpu_pool; then echo "-- cpu 池:跳过 NVIDIA 驱动安装"; return 0; fi
   local want
   want="$(cfg_get driver_version)"
   if nvidia-smi >/dev/null 2>&1; then
@@ -325,6 +340,7 @@ step_driver() {
 }
 
 step_nvidia_toolkit() {
+  if is_cpu_pool; then echo "-- cpu 池:跳过 nvidia-container-toolkit"; return 0; fi
   # NVIDIA Container Toolkit:k8s 认卡的前置(驱动之外的容器运行时依赖)。装好后
   # k3s/rke2 的 containerd 下次启动会探测 nvidia-container-runtime 并生成 nvidia RuntimeClass。
   if command -v nvidia-ctk >/dev/null 2>&1; then
@@ -499,7 +515,9 @@ step_registries() {
 # GPU Operator 的 operand 落点由节点标签决定(ClusterPolicy 不认各组件 nodeSelector,
 # 见 deploy/cluster/values/gpu-operator.yaml 头注释)。这套标签必须与池标签同时落,
 # 否则 hami 池会被官方 device-plugin 与 HAMi 抢注 nvidia.com/gpu、kata 池拿不到 VFIO 直通。
-pool_gpu_labels() {  # pool_gpu_labels <pool> —— 输出 0 个或多个 key=value(mig 池无需额外标签)
+# cpu 池不打任何 NVIDIA operand 标签:无卡机上 GFD 不会打 nvidia.com/gpu.present,
+# operand 本就不会落;再显式打 deploy.* 标签反而是给 ClusterPolicy 塞噪声。
+pool_gpu_labels() {  # pool_gpu_labels <pool> —— 输出 0 个或多个 key=value(mig / cpu 池无需额外标签)
   case "$1" in
     hami) echo "nvidia.com/gpu.deploy.device-plugin=false" ;;
     kata) echo "nvidia.com/gpu.workload.config=vm-passthrough" ;;

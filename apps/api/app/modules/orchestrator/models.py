@@ -29,6 +29,9 @@ class Instance(Base):
             " 'releasing', 'released', 'failed')",
             name="status",
         ),
+        # CPU 实例 gpu_count=0 是合法值,负数不是。计费份数 = billing_units(gpu_count),
+        # 负数会算出负账单;应用层已拦(契约 ge=0 + 建实例按 SKU 形态配对),这里兜住手工 SQL
+        CheckConstraint("gpu_count >= 0", name="gpu_count_nonneg"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发;NULL=尚未 bootstrap 或注册令牌已轮换)、pool(kata/hami/mig)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
+- `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发;NULL=尚未 bootstrap 或注册令牌已轮换)、pool(kata/hami/mig/cpu)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
 - `node_specs`:node_name 唯一、pool_label?、unlabeled、gpu_model_raw?、gpu_model?(canonical)、label_synced、gpu_count、gpu_used、vram_gb、vcpu、mem_gb、disk_gb、driver_version?、cuda_version?、status(Ready/NotReady/Cordoned/Missing)、last_seen
 - `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、nvidia_runtimeclass、ingress_ready、cert_manager_ready、nodes_ready、nodes_total、storage_classes JSONB?、pools JSONB?、error?、probed_at
 
@@ -46,13 +46,14 @@
   RuntimeClass kata-qemu / 存储类 / 实例入口 / 证书签发 / 监控栈。`storage` 按名核对
   `topolvm-provisioner`(强制,缺它判红)与 `superdl-juicefs`(可选,缺它只提示数据盘不可售);`kata_runtimeclass` 绿灯时另报 kata 池节点数
   (RuntimeClass 在但池里没节点,独享档一样没库存)。
-- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档同款门禁看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`):缺它下发的 Pod 会被 kubelet 直接拒,用户侧只能看到开机后转 failed。
+- HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档同款门禁看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`):缺它下发的 Pod 会被 kubelet 直接拒,用户侧只能看到开机后转 failed。门禁判据与 `build_gpu_request` 同源:**先看要不要卡,再看落哪个池**。`gpu_count == 0` 的实例不申请任何 `nvidia.com/*`、`schedulerName` 为空走默认调度器,因此只过 StorageClass —— **即使它挂在 hami 池上**;拿 HAMi 就绪去拦它,等于让 HAMi 挂掉连带挡住一批根本不用 GPU 的实例。要卡的才按池过 HAMi / Kata 门禁。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;两档装同一套组件(gpu-operator + HAMi + kata-deploy),差异只在 k3s 侧的 values 覆盖(见 `deploy/cluster/values/light/`)。档位可用性看的是池里有没有 Ready 节点与运行时是否到位,不看发行版。
 - k3s 只探测 nvidia 运行时、不设默认运行时,shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。
 - cluster 配置组键面:`cluster_server_url / cluster_join_token(secret)/ cluster_agent_version / node_driver_version / node_registries_yaml(留空=平台生成;高级覆盖明文落库,不得含凭据)/ node_install_mirror(""|cn,默认 cn)`,无 k8s_distro 键。
 - `render_registries_yaml`(`node_registries_yaml` 留空时的平台默认)按镜像仓库组生成:Spegel `"*"` + `registry_proxy_projects` 的每个上游 mirror + rewrite 到 Harbor 代理缓存项目(拉不到回落上游)+ `registry_ca_pem` 非空时 `configs.<host>.tls.ca_file`(占位 `__RANCHER_DIR__` 由 node-join 按发行版目录替换并落 `harbor-ca.crt` 0644);不含 auth,拉取凭据经 imagePullSecrets 托管(见 [images.md](./images.md))。server 节点的同一份文件由 ansible 分发 `deploy/cluster/rke2/registries.yaml`。
 - cluster 键不做启动 fail-fast(配置路径是 DB 覆盖层):改由 lifespan 在 DB 就绪后查生效配置打 error + 集群页红牌 + 创建注册命令 409。
-- 池标签与 GPU Operator 的 operand 落点标签由 node-join 同时落下(agent 节点写进 `node-label`,server 节点经本机 kubectl):hami 池 `nvidia.com/gpu.deploy.device-plugin=false`(排斥官方 device-plugin,否则与 HAMi 抢注 `nvidia.com/gpu`),kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`(换来 vfio-manager + kata 沙箱插件),mig 池无需额外标签。ClusterPolicy 不认各组件的 nodeSelector,落点只认节点标签。
+- 池标签与 GPU Operator 的 operand 落点标签由 node-join 同时落下(agent 节点写进 `node-label`,server 节点经本机 kubectl):hami 池 `nvidia.com/gpu.deploy.device-plugin=false`(排斥官方 device-plugin,否则与 HAMi 抢注 `nvidia.com/gpu`),kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`(换来 vfio-manager + kata 沙箱插件),mig 与 cpu 池无需额外标签。ClusterPolicy 不认各组件的 nodeSelector,落点只认节点标签。
+- **cpu 池 = 无卡机**,承载纯 CPU 实例(`tier=cpu`,见 [catalog.md](./catalog.md))。装机时整条 NVIDIA 链路跳过:precheck 不做 NVIDIA 探测、不写 nouveau 黑名单、不装驱动与 container-toolkit、收尾不上报驱动/CUDA 版本(无卡机没有 nvidia-smi,台账这两列留空),也不打任何 NVIDIA operand 标签。其余步骤(NVMe VG、registries、上报、对账判 joined)与 GPU 节点相同。CPU 实例也可以挂 hami 池吃 GPU 机的空闲 CPU,那属于 SKU 侧选择,与装机无关。
 - `node-join.sh` 随 API 镜像下发,步骤 marker 可无限重跑;需重启的场景(kata 池 IOMMU 等)用 systemd oneshot 断点续跑。phase 名发行版中性:bootstrap/precheck/nouveau/sysctl/iommu/driver/nvidia_toolkit/nvme_vg/reboot/registries/agent_config/agent_install/agent_start/waiting_node。
 - **server 本机跑 node-join(light 单机,server 兼跑 GPU 负载)**:脚本以「本机 `k3s.service` / `rke2-server.service` 在运行」为判据,此时不写 agent 的 `config.yaml`(那是 server 配置)、不装/不起 agent,池标签经本机 kubectl(`k3s kubectl` / `/var/lib/rancher/rke2/bin/kubectl`)直接打到节点对象;toolkit 补装后重启的是 server 服务;`--uninstall` 不执行发行版卸载脚本、不删 server 的 config/registries。其余步骤(驱动、toolkit、VG、registries、上报)与 agent 节点相同,对账器判 joined 的依据不变。
 - bootstrap 上报的 `gpu_details`:nvidia-smi 只报通用名(CMP/工程样卡的 `NVIDIA Graphics Device`)时,名称回落 lspci 方括号内型号(如 `CMP 170HX`),显存仍取 nvidia-smi;`canonical_gpu_model` 识别 CMP 系列为 `CMP<数字>HX`。

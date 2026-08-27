@@ -103,6 +103,8 @@ export default interface Resources {
       "wechatQueryFailed": "微信查单失败:{{message}}"
     },
     "catalog": {
+      "cpuSkuGpuFieldsMustBeZero": "CPU 规格不带卡:GPU 型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片",
+      "gpuSkuNeedsGpuFields": "GPU 规格必须填 GPU 型号,且算力份额/显存/单实例卡数都不能为 0",
       "imageRefExists": "镜像 image_ref 已存在",
       "isolationChangeNeedsOffSale": "在售规格不能改池或 MIG 切片:两者决定隔离方式与用户看到的规格,改了就是另一件商品。请先下架,或新建规格",
       "migProfileMismatch": "mig 池必须填切片规格,其它池必须留空",
@@ -111,6 +113,7 @@ export default interface Resources {
       "priceTooSmall": "单价过小:精确到 0.0001 元/时后不能为 0",
       "skuBusinessKeyExists": "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格",
       "skuNotSellable": "集群中没有「{{model}} × {{pool}} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架",
+      "skuNotSellableCpu": "集群中没有「{{pool}} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架",
       "skuOffSale": "该规格已下架",
       "tierPoolMismatch": "档位 {{tier}} 只能落 {{pools}} 池,当前为 {{pool}}"
     },
@@ -162,6 +165,7 @@ export default interface Resources {
     },
     "orchestrator": {
       "accessNeedsRunning": "实例运行中才能获取接入信息",
+      "cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
       "forceStopNeedsRunning": "仅运行中的实例可以强制停止",
       "frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
       "gpuCountRange": "GPU 数量须在 1~{{max}} 之间",
@@ -173,6 +177,7 @@ export default interface Resources {
       "logsNeedsRunning": "仅运行中或关机中的实例可读取容器日志:已关机实例无 Pod 日志,请开机后再试",
       "logsUnavailable": "日志读取失败,请稍后重试",
       "noCapacity": "「{{model}} × {{pool}} 池」当前无可分配容量,请稍后重试或选择其他规格",
+      "noCapacityCpu": "「{{pool}} 池」当前无可分配的 CPU 容量,请稍后重试或选择其他规格",
       "nodeUnreachable": "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)",
       "realNameRequired": "按监管要求,开通算力前需完成实名认证:请先到「设置 · 实名认证」完成核验",
       "releaseNeedsStopped": "关机后才能释放实例",
@@ -181,7 +186,8 @@ export default interface Resources {
       "sshPortsExhausted": "当前无可分配的 SSH 端口,请稍后重试或联系客服",
       "startNeedsStopped": "仅已关机的实例可以开机",
       "stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
-      "stopNeedsRunning": "仅运行中的实例可以关机"
+      "stopNeedsRunning": "仅运行中的实例可以关机",
+      "vcpuQuota": "CPU 实例的 vCPU 总数将超过上限({{max}} 核),请释放后再创建或联系客服提额"
     },
     "tickets": {
       "notFound": "工单不存在",
@@ -320,11 +326,13 @@ export default interface Resources {
         "other": "其他"
       },
       "tier": {
+        "cpu": "CPU 实例",
         "dedicated": "专用整卡",
         "shared_hami": "共享·经济",
         "shared_mig": "共享·标准"
       },
       "tierHint": {
+        "cpu": "不带 GPU",
         "shared_hami": "性能可能波动",
         "shared_mig": "显存与算力硬隔离"
       }
@@ -439,6 +447,7 @@ export default interface Resources {
     "copy": {
       "antiMiningNotice": "严禁将实例用于挖矿等违规用途,违者封号并不予退款(见用户协议)",
       "billingBasis": "按量计费:「运行中」时段按秒累计,精确到关机瞬间;关机即停 GPU 计费",
+      "billingBasisCpu": "按量计费:「运行中」时段按秒累计,精确到关机瞬间;关机即停计费",
       "billingDayBoundary": "账单「日」按北京时间(UTC+8)切分",
       "billingModeComingSoon": "包日/包周/包月计费即将上线,当前仅支持按量计费",
       "billingRules": {
@@ -496,6 +505,7 @@ export default interface Resources {
       "detailDiskLine": "数据盘:{{size}}G × {{price}}(按日折算,关机也计费)",
       "detailDiskNone": "数据盘:无",
       "detailInstanceLine": "实例:{{unit}} × {{count}} 卡 = {{total}}",
+      "detailInstanceLineCpu": "实例:整机 {{total}}",
       "diskAutoCreateNote": "提交时将自动创建并随实例挂载",
       "diskCard": "数据盘(可选)",
       "diskExisting": "挂载已有盘",
@@ -522,6 +532,7 @@ export default interface Resources {
       "skuMissing": "规格不存在或已下架",
       "sshCard": "SSH 密钥",
       "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存",
+      "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存",
       "tabCustom": "自定义镜像",
       "tabPlatform": "平台镜像",
       "title": "创建实例"
@@ -676,6 +687,7 @@ export default interface Resources {
       "openJupyter": "打开 JupyterLab",
       "payAsYouGo": "按量",
       "pricePerCard": "{{price}} × {{count}} 卡",
+      "pricePerInstance": "{{price}} × 整机",
       "range1h": "1 小时",
       "range24h": "24 小时",
       "range6h": "6 小时",
@@ -814,9 +826,13 @@ export default interface Resources {
       "cardsUnit": "{{count}} 卡",
       "chipGpuCount": "GPU 数量",
       "chipGpuModel": "GPU 型号",
+      "chipMem": "内存",
       "chipTier": "档位",
+      "chipVcpu": "vCPU",
       "chipVram": "显存",
       "freeSuffix": "可开 {{count}}",
+      "kindCpu": "CPU 算力",
+      "kindGpu": "GPU 算力",
       "loginToRent": "登录后租用",
       "next": "下一步:配置实例",
       "noMatch": "没有符合条件的规格,试试放宽筛选",
@@ -824,7 +840,9 @@ export default interface Resources {
       "selectHint": "选择规格后可下一步配置实例",
       "selectSpec": "选择规格",
       "summary": "{{model}} × {{count}} · {{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
-      "title": "算力市场"
+      "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
+      "title": "算力市场",
+      "vcpuUnit": "{{count}} 核"
     },
     "notFound": {
       "subtitle": "你访问的地址不存在或已被移除",
@@ -909,11 +927,14 @@ export default interface Resources {
       "colDisk": "实例盘",
       "colFree": "可开实例",
       "colGpu": "GPU / 显存",
+      "colGpuCpu": "CPU / 内存",
       "colHost": "实例配置",
       "colPrice": "价格(单卡)",
+      "colPriceCpu": "价格(整机)",
       "colSpec": "规格",
       "cudaTooltip": "镜像可用的最高 CUDA 版本,取决于节点驱动",
       "diskWithBase": "{{disk}}G(含 100G)",
+      "gpuCpuNone": "不带 GPU · {{vcpu}} vCPU · {{mem}}G 内存",
       "gpuDedicated": "{{model}} · {{vram}}G · 整卡",
       "gpuMig": "{{model}} · {{vram}}G · MIG {{profile}}",
       "gpuShared": "{{model}} · {{vram}}G · {{pct}}% 算力(均值)",

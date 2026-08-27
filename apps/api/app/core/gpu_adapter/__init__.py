@@ -8,7 +8,11 @@
 - kata → Kata(RuntimeClass=kata-qemu)+ VFIO 整卡直通,不叠 userns(VM 级隔离)
 - mig  → runc + MIG device plugin + userns 加固(hostUsers=false)
 - hami → runc + HAMi 软切分 + userns 加固(hostUsers=false)
+- cpu  → runc + userns 加固,不申请任何 nvidia.com/* 资源
 Kata 与 HAMi 永不混布同一节点池。
+
+**gpu_count == 0(CPU 实例)先于池分支判定**:CPU 档允许挂 hami 池跑 GPU 机的空闲
+CPU,若仍按池分支走,就会替一台没有 GPU 的实例申请 nvidia.com/gpu,占掉真正卖卡的名额。
 """
 
 from dataclasses import dataclass, field
@@ -23,18 +27,23 @@ HAMI_USE_GPUTYPE_ANNOTATION = "nvidia.com/use-gputype"
 POOL_KATA = "kata"
 POOL_MIG = "mig"
 POOL_HAMI = "hami"
+POOL_CPU = "cpu"  # 无卡节点池(纯 CPU 实例;GPU 节点的空闲 CPU 走 hami 池)
 
 # ---------- 售卖档位(纯商业分类;标准/经济由所在池派生,不再单列枚举值) ----------
 TIER_DEDICATED = "dedicated"  # 专用整卡 → kata 池
 TIER_SHARED = "shared"  # 共享切分 → mig 池(标准,硬切分)或 hami 池(经济,软切分超卖)
-TIERS = (TIER_DEDICATED, TIER_SHARED)
+TIER_CPU = "cpu"  # 纯 CPU,不带卡 → cpu 池(无卡机)或 hami 池(GPU 机的空闲 CPU)
+TIERS = (TIER_DEDICATED, TIER_SHARED, TIER_CPU)
 
 # 档位 → 允许落的池。派发键改成池之后,这张表就是「档位承诺的隔离强度」与「实际跑在哪」
 # 之间的唯一约束:没有它,运营可以建出 tier=dedicated 却挂 hami 池的 SKU——
 # 卖的是整卡直通,跑的是软切分超卖。建 SKU 与改池两条路径都过 catalog 的同一处校验。
+# cpu 档允许挂 hami 池,是为了没有无卡服务器时也能先上线:CPU 实例不申请 nvidia.com/*,
+# 只吃 GPU 节点的空闲 CPU;吃多少由策略 gpu_node_cpu_instance_vcpu_cap 封顶(0 = 不许)。
 TIER_POOLS: dict[str, tuple[str, ...]] = {
     TIER_DEDICATED: (POOL_KATA,),
     TIER_SHARED: (POOL_MIG, POOL_HAMI),
+    TIER_CPU: (POOL_CPU, POOL_HAMI),
 }
 
 
@@ -60,11 +69,22 @@ def build_gpu_request(
     hami_gputype: str | None = None,
     distro: str | None = None,
 ) -> GpuRequest:
-    """gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全池钉型号;
+    """gpu_count=0 即 CPU 实例(不申请任何 nvidia.com/*,不钉型号),判定先于池分支;
+    gpu_model 为 canonical 型号(节点巡检打的 label 值),有值则全池钉型号;
     hami_gputype 为原文串,仅 hami 池注 use-gputype annotation;
     distro=k3s 时 hami 池必须显式 runtimeClassName=nvidia(k3s 不设默认运行时;
     RKE2+gpu-operator 默认已是 nvidia,故为 None)。"""
     node_selector = {POOL_NODE_LABEL: pool_label}
+    if gpu_count == 0:
+        # CPU 实例:必须先于池分支返回。cpu 档可以挂 hami 池,落到下面的池分支就会申请
+        # nvidia.com/gpu(还带 gpucores/gpumem 限额),把一张真卡判给不用卡的实例。
+        # 不钉 superdl.io/gpu-model:无卡节点根本没有这个标签,钉了必然 Pending。
+        return GpuRequest(
+            resources={},
+            runtime_class=None,
+            host_users=False,  # runc + userns 加固,与 hami/mig 池同款
+            node_selector=node_selector,
+        )
     if gpu_model:
         node_selector[GPU_MODEL_NODE_LABEL] = gpu_model
     if pool_label == POOL_KATA:

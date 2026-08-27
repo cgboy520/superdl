@@ -9,10 +9,12 @@
 | 项 | 默认 | 可调范围 | 承载 |
 |---|---|---|---|
 | 实例数 | 10 | 1~1000 | 用户覆盖 → 策略 `max_instances_per_user` → env |
-| GPU 总数 | 8 | 1~1024 | 同上 `max_gpus_per_user` |
+| GPU 总数 | 8 | 1~1024 | 同上 `max_gpus_per_user`(只计 GPU 实例;CPU 实例 gpu_count=0,不计入这一维) |
+| CPU 实例 vCPU 总数 | 64 | 1~4096 | 策略 `max_vcpus_per_user`(无用户级覆盖列;只计 `gpu_count=0` 的实例,GPU 实例不计入)。超限报 `VCPU_QUOTA_EXCEEDED` |
 | 数据盘数 | 20 | 1~1000 | 同上 `max_disks_per_user` |
 | 单盘容量 | 10~4096 GB | 下限 1~1024,上限 10~65536 | 策略 `disk_min_gb` / `disk_max_gb` |
-| 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8) | — | `skus` |
+| 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0,只收 `gpu_count=0`) | — | `skus` |
+| 单个 GPU 节点让给 CPU 实例的 vCPU | 16 | 0~1024 | 策略 `gpu_node_cpu_instance_vcpu_cap`;0 = 不许 CPU 实例落 GPU 节点(pool≠cpu 的 CPU 规格一律判无容量)。近似库存口径,见 [catalog.md](./catalog.md) |
 | 进行中工单 | 10 | — | `tickets/service.py` `MAX_OPEN_TICKETS` |
 | SSH 公钥 | 不限;同用户指纹唯一 | — | `ssh_keys` |
 | 容器临时存储 | 请求 2Gi,上限 64Gi | — | `core/k8s/real.py` |

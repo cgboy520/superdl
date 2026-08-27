@@ -10,17 +10,14 @@ export interface SkuCreate {
   /** @minimum 10 */
   disk_gb?: number;
   /**
-     * @minimum 1
+     * @minimum 0
      * @maximum 100
      */
   gpu_cores_pct?: number;
-  /**
-     * @minLength 1
-     * @maxLength 32
-     */
+  /** @maxLength 32 */
   gpu_model: string;
   /**
-     * @minimum 1
+     * @minimum 0
      * @maximum 8
      */
   max_gpus_per_instance?: number;
@@ -40,10 +37,10 @@ export interface SkuCreate {
      */
   pool_label: string;
   price_hourly: number | string;
-  /** @pattern ^(dedicated|shared)$ */
+  /** @pattern ^(dedicated|shared|cpu)$ */
   tier: string;
   /** @minimum 1 */
   vcpu: number;
-  /** @minimum 1 */
+  /** @minimum 0 */
   vram_gb: number;
 }

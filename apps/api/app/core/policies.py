@@ -36,7 +36,11 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     # 每用户配额:校验链 用户级覆盖 → 本层 → env 默认(Settings 同名字段)
     "max_instances_per_user": ("int", Decimal(1), Decimal(1000)),
     "max_gpus_per_user": ("int", Decimal(1), Decimal(1024)),
+    "max_vcpus_per_user": ("int", Decimal(1), Decimal(4096)),
     "max_disks_per_user": ("int", Decimal(1), Decimal(1000)),
+    # 每个 GPU 节点最多让 CPU 实例吃掉多少 vCPU(近似库存口径,见 catalog/service)。
+    # 0 = 不许 CPU 实例落 GPU 节点:pool != cpu 的 CPU SKU 一律判无容量。
+    "gpu_node_cpu_instance_vcpu_cap": ("int", Decimal(0), Decimal(1024)),
 }
 
 
@@ -53,7 +57,9 @@ class EffectivePolicies:
     prewarm_recheck_hours: int
     max_instances_per_user: int
     max_gpus_per_user: int
+    max_vcpus_per_user: int
     max_disks_per_user: int
+    gpu_node_cpu_instance_vcpu_cap: int
 
 
 def validate_policy_value(key: str, value: str) -> str:
@@ -91,7 +97,9 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
         prewarm_recheck_hours=int(eff["prewarm_recheck_hours"]),
         max_instances_per_user=int(eff["max_instances_per_user"]),
         max_gpus_per_user=int(eff["max_gpus_per_user"]),
+        max_vcpus_per_user=int(eff["max_vcpus_per_user"]),
         max_disks_per_user=int(eff["max_disks_per_user"]),
+        gpu_node_cpu_instance_vcpu_cap=int(eff["gpu_node_cpu_instance_vcpu_cap"]),
     )
 
 

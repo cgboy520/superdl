@@ -117,11 +117,13 @@
       "other": "其他"
     },
     "tier": {
+      "cpu": "CPU 实例",
       "dedicated": "专用整卡",
       "shared_hami": "共享·经济",
       "shared_mig": "共享·标准"
     },
     "tierHint": {
+      "cpu": "不带 GPU",
       "shared_hami": "性能可能波动",
       "shared_mig": "显存与算力硬隔离"
     },

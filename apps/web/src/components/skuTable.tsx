@@ -12,10 +12,14 @@ import { skuVariant } from "@superdl/ui";
 
 import { TierTag } from "./common";
 
-/** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余为整卡。 */
+/** GPU / 显存列文案:共享档报算力份额,MIG 档报切分规格,其余为整卡;CPU 档报「不带 GPU」。 */
 function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>): string {
   // 按展示档位派发:「共享」既可能是 MIG 硬切分也可能是 HAMi 份额,两者的规格描述不同
   const variant = skuVariant(s.tier, s.pool_label);
+  if (variant === "cpu") {
+    // 型号与显存对 CPU 规格恒为空;这一列改报整机 CPU/内存,不要渲染成「 · 0G · 整卡」
+    return t("sku.gpuCpuNone", { vcpu: s.vcpu, mem: s.mem_gb });
+  }
   if (variant === "shared_mig") {
     return t("sku.gpuMig", { model: s.gpu_model, vram: s.vram_gb, profile: s.mig_profile ?? t("sku.sliceFallback") });
   }
@@ -30,7 +34,14 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
  * priceFontSize 控制价格字号(市场页放大到 18)。
  */
 export function skuColumns(
-  opts: { fmt: Formatters; t: TFunction<readonly ["web", "shared"]>; availability?: boolean; priceFontSize?: number },
+  opts: {
+    fmt: Formatters;
+    t: TFunction<readonly ["web", "shared"]>;
+    availability?: boolean;
+    priceFontSize?: number;
+    /** CPU 规格表:价格是整机时价,表头不能写「单卡」 */
+    cpu?: boolean;
+  },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
   const { t } = opts;
   const availability = [
@@ -60,7 +71,10 @@ export function skuColumns(
         </Space>
       ),
     },
-    { title: t("sku.colGpu"), render: (_: unknown, s: SkuMarketOut) => formatSkuGpu(s, t) },
+    {
+      title: opts.cpu ? t("sku.colGpuCpu") : t("sku.colGpu"),
+      render: (_: unknown, s: SkuMarketOut) => formatSkuGpu(s, t),
+    },
     ...(opts.availability ? availability : []),
     {
       title: t("sku.colHost"),
@@ -76,7 +90,7 @@ export function skuColumns(
       render: (_: unknown, s: SkuMarketOut) => s.cuda_max ?? "-",
     },
     {
-      title: t("sku.colPrice"),
+      title: opts.cpu ? t("sku.colPriceCpu") : t("sku.colPrice"),
       // 钉右:窄屏(≤1024)下表格横滚,价格不能被滚出视口
       fixed: "right" as const,
       align: "right" as const,

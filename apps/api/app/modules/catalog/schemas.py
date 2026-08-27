@@ -1,9 +1,10 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.gpu_adapter import TIERS
+from app.core.gpu_adapter import TIER_CPU, TIERS
+from app.core.messages import render_message
 from app.core.money import MoneyOut
 from app.core.registry import is_valid_image_ref
 
@@ -86,13 +87,41 @@ class SkuAdminOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def cpu_spec_error(
+    *,
+    tier: str,
+    gpu_model: str,
+    gpu_cores_pct: int,
+    vram_gb: int,
+    max_gpus_per_instance: int,
+    mig_profile: str | None,
+) -> str | None:
+    """档位与「带不带卡」的跨字段规则,返回文案键(None=通过)。
+
+    规则只写这一处:SkuCreate 在契约层调用(422),SkuUpdate 是部分更新拿不到终态,
+    由 service 合并出终态后调用(400 + message_key)。两处各写一遍必然漂。
+    CPU 规格三项恒 0 + 型号空串 + 无切片,是 build_gpu_request 走 CPU 分支的前提
+    (gpu_count 由 max_gpus_per_instance=0 逼成 0);GPU 规格反过来三项都不能为 0,
+    否则会建出「0 显存 / 0 算力份额」的 HAMi SKU,下发即 Pending。
+    """
+    if tier == TIER_CPU:
+        if gpu_model or gpu_cores_pct or vram_gb or max_gpus_per_instance or mig_profile:
+            return "catalog.cpuSkuGpuFieldsMustBeZero"
+        return None
+    if not gpu_model or not gpu_cores_pct or not vram_gb or not max_gpus_per_instance:
+        return "catalog.gpuSkuNeedsGpuFields"
+    return None
+
+
 class SkuCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    gpu_model: str = Field(min_length=1, max_length=32)
+    # 下界放开到 0 是给 CPU 档留位置(gpu_model 空串、三项为 0);档位与这几项的配对
+    # 由下面的 model_validator 兜住,GPU 档一项都不许为 0
+    gpu_model: str = Field(max_length=32)
     tier: str = Field(pattern=_TIER_PATTERN)
     mig_profile: str | None = None
-    gpu_cores_pct: int = Field(default=100, ge=1, le=100)
-    vram_gb: int = Field(ge=1)
+    gpu_cores_pct: int = Field(default=100, ge=0, le=100)
+    vram_gb: int = Field(ge=0)
     oversell_cores: Decimal = Field(default=Decimal("1.00"), ge=Decimal("1.00"), le=Decimal("9.99"))
     oversell_vram: Decimal = Field(default=Decimal("1.00"), ge=Decimal("1.00"), le=Decimal("9.99"))
     pool_label: str = Field(min_length=1, max_length=32)
@@ -100,8 +129,22 @@ class SkuCreate(BaseModel):
     mem_gb: int = Field(ge=1)
     disk_gb: int = Field(default=100, ge=10)
     price_hourly: Decimal = Field(gt=Decimal("0"))
-    max_gpus_per_instance: int = Field(default=1, ge=1, le=8)
+    max_gpus_per_instance: int = Field(default=1, ge=0, le=8)
     cuda_max: str | None = None
+
+    @model_validator(mode="after")
+    def _tier_matches_gpu_fields(self) -> "SkuCreate":
+        key = cpu_spec_error(
+            tier=self.tier,
+            gpu_model=self.gpu_model,
+            gpu_cores_pct=self.gpu_cores_pct,
+            vram_gb=self.vram_gb,
+            max_gpus_per_instance=self.max_gpus_per_instance,
+            mig_profile=self.mig_profile,
+        )
+        if key is not None:
+            raise ValueError(render_message(key, None))
+        return self
 
 
 class SkuUpdate(BaseModel):
@@ -109,8 +152,9 @@ class SkuUpdate(BaseModel):
     # 与 pool_label 成对可改(改池必须能同时清/填切片,否则 mig↔hami 两个方向都走不通);
     # 只在下架态放行,见 service.admin_update_sku
     mig_profile: str | None = None
-    gpu_cores_pct: int | None = Field(default=None, ge=1, le=100)
-    vram_gb: int | None = Field(default=None, ge=1)
+    # 与 SkuCreate 同理放开到 0(CPU 档);终态配对在 service.admin_update_sku 复核
+    gpu_cores_pct: int | None = Field(default=None, ge=0, le=100)
+    vram_gb: int | None = Field(default=None, ge=0)
     oversell_cores: Decimal | None = Field(default=None, ge=Decimal("1.00"), le=Decimal("9.99"))
     oversell_vram: Decimal | None = Field(default=None, ge=Decimal("1.00"), le=Decimal("9.99"))
     pool_label: str | None = None
@@ -118,7 +162,7 @@ class SkuUpdate(BaseModel):
     mem_gb: int | None = Field(default=None, ge=1)
     disk_gb: int | None = Field(default=None, ge=10)
     price_hourly: Decimal | None = Field(default=None, gt=Decimal("0"))
-    max_gpus_per_instance: int | None = Field(default=None, ge=1, le=8)
+    max_gpus_per_instance: int | None = Field(default=None, ge=0, le=8)
     cuda_max: str | None = None
     status: str | None = Field(default=None, pattern="^(on|off)$")
     # 必填原因:改价单人一步生效且被新实例快照;配套记录旧值与幅度超阈告警。同策略参数 PUT。

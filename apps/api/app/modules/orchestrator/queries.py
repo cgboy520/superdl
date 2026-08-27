@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.money import as_amount
+from app.core.money import hourly_cost
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 
@@ -106,9 +106,9 @@ async def instance_locations(
 async def instance_hourly_prices(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, Any]:
-    """对账用:instance_id → 单价 × 卡数(元/时)。"""
+    """对账用:instance_id → 时费(单价 × 计费份数;CPU 实例份数恒 1)。"""
     return {
-        i.id: as_amount(i.price_hourly * i.gpu_count)
+        i.id: hourly_cost(i.price_hourly, i.gpu_count)
         for i in await instances_by_ids(session, instance_ids)
     }
 

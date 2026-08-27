@@ -13,7 +13,9 @@ NON_TERMINAL_STATUSES: tuple[str, ...] = tuple(sm_def.TRANSITIONS)
 
 class InstanceCreate(BaseModel):
     sku_id: int
-    gpu_count: int = Field(default=1, ge=1, le=8)
+    # 0 = CPU 实例(SKU 的 max_gpus_per_instance 也为 0);下界与上界的实际配对
+    # 按 SKU 形态在 service.create_instance 判,契约层只挡明显越界
+    gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
     ssh_key_ids: list[int] = Field(min_length=1)
     name: str | None = Field(default=None, max_length=64)

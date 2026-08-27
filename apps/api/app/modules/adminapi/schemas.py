@@ -499,9 +499,11 @@ class CapacityPreviewOut(BaseModel):
     """SKU 表单容量预览(纯台账推算,不做库存预占)。"""
 
     matching_nodes: int
-    ready_gpus: int
-    total_gpus: int
-    est_instances: int  # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;其余 = ready_gpus
+    ready_gpus: int  # CPU 规格恒 0(不带卡)
+    total_gpus: int  # 同上
+    # 共享档 = ready_gpus × ⌊100×oversell/pct⌋;dedicated/mig = ready_gpus;
+    # CPU 规格 = 按节点 vCPU/内存上限折算(catalog.sellable_cpu_slots)
+    est_instances: int
     warnings: list[CapacityWarningOut]
 
 

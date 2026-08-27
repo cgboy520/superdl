@@ -426,6 +426,16 @@ def matching_specs(
     ]
 
 
+def pool_specs(specs: Iterable[NodeSpec], pool_label: str) -> list[NodeSpec]:
+    """台账里只按池匹配的行,不看型号也不看状态(CPU 档口径)。
+
+    不复用 matching_specs(..., wanted_model=None):那里 None 表示「型号未识别」并
+    刻意恒不匹配(显存/型号不确定不许卖卡)。CPU 规格根本不带型号,是另一件事,
+    掺进同一个参数会把「未识别型号也放行」偷偷带给 GPU 路径。
+    """
+    return [s for s in specs if s.pool_label == pool_label]
+
+
 async def gpu_model_aggregates(session: AsyncSession) -> list["GpuModelAggregate"]:
     """台账按 canonical×池聚合(SKU「从集群资源创建」下拉数据源)。
 

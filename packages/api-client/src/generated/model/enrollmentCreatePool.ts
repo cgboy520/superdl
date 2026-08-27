@@ -12,4 +12,5 @@ export const EnrollmentCreatePool = {
   kata: 'kata',
   hami: 'hami',
   mig: 'mig',
+  cpu: 'cpu',
 } as const;

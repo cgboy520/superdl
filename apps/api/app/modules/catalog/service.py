@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import status
 from sqlalchemy import delete, func, select
@@ -7,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.gpu_adapter import POOL_HAMI, POOL_MIG, TIER_POOLS
+from app.core.gpu_adapter import POOL_CPU, POOL_HAMI, POOL_MIG, TIER_CPU, TIER_POOLS
 from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
 from app.core.money import as_amount, as_price
@@ -22,7 +23,11 @@ from app.modules.catalog.schemas import (
     SkuCreate,
     SkuMarketOut,
     SkuUpdate,
+    cpu_spec_error,
 )
+
+if TYPE_CHECKING:
+    from app.modules.nodes.models import NodeSpec
 
 logger = get_logger(__name__)
 
@@ -40,6 +45,43 @@ def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decima
     if pool_label != POOL_HAMI:
         return 1
     return max(1, int(Decimal(100) * oversell_cores // max(1, gpu_cores_pct)))
+
+
+def sellable_cpu_slots(
+    vcpu: int, mem_gb: int, specs: Iterable["NodeSpec"], *, gpu_node_vcpu_cap: int
+) -> int:
+    """CPU 规格的近似可售实例数:逐 Ready 节点取
+    min(⌊预算 vCPU ÷ vcpu⌋, ⌊预算内存 ÷ mem_gb⌋),跨节点求和。
+
+    收 (vcpu, mem_gb) 标量而非 Sku,与 sellable_per_gpu 同款:管理端容量预览要为
+    「表单里还没提交的规格」算这个数,没有 Sku 记录可传。
+
+    预算口径:
+    - cpu 池(无卡机):整机 vCPU 与内存都算 CPU 实例的;
+    - 其它池(cpu 档挂 hami 池跑 GPU 机的空闲 CPU):每节点封顶
+      `gpu_node_cpu_instance_vcpu_cap` 核,内存按同一比例折算(不折算的话,一台
+      16 核/512G 的 CPU 实例会被判成落得下,却把整机内存吃光,卡再多也卖不出去);
+      cap=0 → 该节点一台都不卖。
+
+    **这是上限估算,不是实时余量**,与 GPU 库存「台账 60s 粒度、只是近似」同款措辞:
+    台账 `node_specs` 只有 vCPU/内存总量,没有「已用 vCPU」一列(K8s 侧的 `NodeInfo`
+    只报 gpu_used),而 `instances.node_name` 由 reconciler 事后回填、creating/starting
+    期间为空,按节点扣减必然漏算。所以本函数只挡「确定卖不出去」的单,真正裁决在调度器;
+    要变成实时余量得先给节点巡检加一列已用 vCPU,那是另一件事。
+    """
+    if vcpu <= 0 or mem_gb <= 0:
+        return 0
+    total = 0
+    for node in specs:
+        if node.status != "Ready" or node.vcpu <= 0 or node.mem_gb <= 0:
+            continue
+        if node.pool_label == POOL_CPU:
+            vcpu_budget, mem_budget = node.vcpu, node.mem_gb
+        else:
+            vcpu_budget = min(gpu_node_vcpu_cap, node.vcpu)
+            mem_budget = node.mem_gb * vcpu_budget // node.vcpu
+        total += min(vcpu_budget // vcpu, mem_budget // mem_gb)
+    return total
 
 
 def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> None:
@@ -230,6 +272,18 @@ async def admin_update_sku(
     # 池与切片成对可改,任一动了都复核配对(tier / gpu_model 不可改,SkuUpdate 无这两个字段)
     if "pool_label" in before or "mig_profile" in before:
         _check_tier_pool(sku.tier, sku.pool_label, sku.mig_profile)
+    # 「带不带卡」的跨字段规则按**合并后的终态**复核:部分更新单看本次入参判不了
+    # (只把 vram_gb 改成 0 的 GPU SKU,入参本身没有任何非法组合)
+    cpu_key = cpu_spec_error(
+        tier=sku.tier,
+        gpu_model=sku.gpu_model,
+        gpu_cores_pct=sku.gpu_cores_pct,
+        vram_gb=sku.vram_gb,
+        max_gpus_per_instance=sku.max_gpus_per_instance,
+        mig_profile=sku.mig_profile,
+    )
+    if cpu_key is not None:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key=cpu_key)
     if turning_on and not force:
         await _ensure_sellable(session, sku)
     if "price_hourly" in before:
@@ -278,11 +332,21 @@ async def _ensure_sellable(session: AsyncSession, sku: Sku) -> None:
     """上架硬校验:台账须有「型号×池」匹配的 Ready 节点。
 
     未识别型号(canonical=None)恒不匹配 → 只能 force 上架。
+    CPU 档不带卡,只校验「池里有 Ready 节点」——按型号匹配对它恒不成立(gpu_model 是空串)。
     """
     from app.modules.nodes import service as nodes_service
 
-    wanted = canonical_gpu_model(sku.gpu_model)
     specs = await nodes_service.ready_specs(session)
+    if sku.tier == TIER_CPU:
+        if nodes_service.pool_specs(specs, sku.pool_label):
+            return
+        raise AppError(
+            ErrorCode.SKU_NOT_SELLABLE,
+            key="catalog.skuNotSellableCpu",
+            params={"pool": sku.pool_label},
+            http_status=status.HTTP_409_CONFLICT,
+        )
+    wanted = canonical_gpu_model(sku.gpu_model)
     if nodes_service.matching_specs(specs, sku.pool_label, wanted):
         return
     raise AppError(

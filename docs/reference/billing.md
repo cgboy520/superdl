@@ -6,7 +6,7 @@
 
 - `wallets`:user_id 唯一、balance numeric(14,2)
 - `balance_ledger`:user_id、type(recharge/consume/refund/adjust)、amount 带符号 numeric(14,2)、balance_after、ref_type/ref_id —— 追加式
-- `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count、amount numeric(14,2)、UNIQUE(instance_id, hour_start)
+- `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count(**照实存,CPU 实例为 0**)、amount numeric(14,2)、UNIQUE(instance_id, hour_start)
 - `bills_daily_disk`:disk_id、day、size_gb、unit_price、amount、UNIQUE(disk_id, day)
 - `settlement_watermarks`:key(PK)、settled_through、updated_at —— 结算水位线,漏掉的时段由后续轮次追平
 - `settlement_gaps`:kind、window_start、object_id、reason、resolved_at —— 结算缺口登记(追平截断 catchup_truncated / 单对象连续失败死信 dead_letter / 水位线丢失 watermark_missing / 宽限期重叠 grace_overlap),UNIQUE(kind, window_start, object_id);水位线被越过但账未结清的窗口一律留痕。闭环:管理端「财务 › 结算缺口」列表 + 人工重放(幂等入账原语,成功回写 resolved_at;grace_overlap 拒重放走人工核销)+ DB 口径持续告警 `superdl_settlement_gap_unresolved`(缺口不自愈,不自动补结)
@@ -39,6 +39,7 @@
 - 余额恰好 0.00 即进入停机→冻结→回收链(冻结判据 `balance > 0` 才放行,与停机判据 `effective <= 0` 自洽);边界测试 `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。为何不是 `>= 0`:见 [../decisions.md](../decisions.md)「余额归零即回收」。
 - 钱包更新必须 `SELECT ... FOR UPDATE`,且同事务写 `balance_ledger`(带 balance_after 快照)。
 - 金额全链路 Decimal:单价 4 位小数,入账 2 位小数,ROUND_HALF_EVEN;0 秒不出账。SKU 时价须使单卡满 1 小时至少入账 ¥0.01(4 位时价 ≥ 0.0051,0.0050 恰为 tie 向偶舍 0),否则上架/改价拒绝。
+- **计费份数只经 `core/money.billing_units(gpu_count)` 换算**:GPU 实例 = 卡数(`price_hourly` 是单卡时价),CPU 实例 `gpu_count=0` = 1 份整机(`price_hourly` 是整机时价)。金额 = `单价 × 份数 × 秒 ÷ 3600`。`bill_amount`、钱包护栏 `assert_can_afford` 的在途时费、欠费巡检的 `burn_per_hour`、对账的实例时费、创建/开机的预估,全部走 `billing_units` / `hourly_cost`,不许各处写 `max(1, n)` —— 直接写 `单价 × gpu_count` 会让 CPU 实例每小时算出 ¥0.00,连带余额护栏与停机判据一起归零。账单行照实存 `gpu_count`,复算时按同一函数还原份数,行仍自洽(理由见 [../decisions.md](../decisions.md)「CPU 实例计费为 0 的解法」)。
 - 营收报表(revenue_summary)按账单归属期(hour_start/day)切窗,不按扣款入账时间(ledger.created_at)。
 - 日终资金核对:钱包侧按 `reconcile_checkpoints` 增量链式校验(逐笔 balance_after 链接 + 游标边界行复核,只扫增量,断链定位到 ledger id);出账 vs 消费两侧都按账单归属期切窗(ledger 经 ref_id 回连)。
 - 策略参数改动即时生效,盘价快照、巡检、扩容全链路跟随。

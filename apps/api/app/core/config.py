@@ -99,7 +99,10 @@ class Settings(BaseSettings):
     # 每用户配额;K8s ResourceQuota 是集群侧兜底
     max_instances_per_user: int = 10
     max_gpus_per_user: int = 8
+    max_vcpus_per_user: int = 64  # CPU 实例的 vCPU 总量上限(GPU 实例不计入这一维)
     max_disks_per_user: int = 20  # 数据盘数量上限
+    # 单个 GPU 节点让给 CPU 实例的 vCPU 上限(近似库存口径);0 = 不许 CPU 实例落 GPU 节点
+    gpu_node_cpu_instance_vcpu_cap: int = 16
 
     # 计费参数(可运营调整)
     freeze_grace_hours: int = 72  # 欠费冻结时长

@@ -1,12 +1,16 @@
 /**
- * 算力市场:筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。
+ * 算力市场:GPU / CPU 分栏 + 筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。
  * CTA 即库存,售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
+ *
+ * 两栏的筛选维度不同,不是同一条链的子集:GPU 按「型号 / 档位 / 显存 / 卡数」选,
+ * CPU 不带卡,只按「vCPU / 内存」选,价格也是整机时价而非单卡价。混在一栏里,
+ * 型号与显存两行对 CPU 恒为空,卡数行还会算出「× 0 卡 = ¥0」。
  */
 
 import { GPU_COUNT_STEPS, mulPrice, skuTierMap, skuVariant } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Alert, Button, Card, Modal, Space, Table, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Modal, Segmented, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -25,6 +29,8 @@ export const Route = createFileRoute("/_console/market")({
 
 const ALL = "";
 
+type Kind = "gpu" | "cpu";
+
 function MarketPage() {
   const { t } = useTranslation(["web", "shared"]);
   const fmt = useFormat();
@@ -32,10 +38,13 @@ function MarketPage() {
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [kind, setKind] = useState<Kind>("gpu");
   const [gpuModel, setGpuModel] = useState<string>(ALL);
   const [tier, setTier] = useState<string>(ALL);
   const [vram, setVram] = useState<number>(0);
   const [gpuCount, setGpuCount] = useState(1);
+  const [vcpu, setVcpu] = useState<number>(0);
+  const [memGb, setMemGb] = useState<number>(0);
   const [selectedId, setSelectedId] = useState<number>();
 
   const {
@@ -47,7 +56,21 @@ function MarketPage() {
   // 计费规则的冻结宽限小时数读 /policies;未就绪用无数字兜底句
   const { data: policies } = usePolicies();
 
-  const freeByModel = dedupAvailableByModel(allSkus ?? []);
+  const isCpu = kind === "cpu";
+  // 分栏先切分数据源:两栏的 chip 取值域各自从本栏 SKU 聚合,不会互相带出空选项
+  const kindSkus = (allSkus ?? []).filter((s) => (s.tier === "cpu") === isCpu);
+  const freeByModel = dedupAvailableByModel(kindSkus);
+
+  const kindOptions = [
+    { value: "gpu" as const, label: t("market.kindGpu") },
+    { value: "cpu" as const, label: t("market.kindCpu") },
+  ];
+  const numOptions = (values: number[], unit: (v: number) => string): ChipOption<number>[] => [
+    { value: 0, label: t("market.all") },
+    ...Array.from(new Set(values))
+      .sort((a, b) => a - b)
+      .map((v) => ({ value: v, label: unit(v) })),
+  ];
 
   const modelOptions: ChipOption<string>[] = [
     { value: ALL, label: t("market.all") },
@@ -62,27 +85,29 @@ function MarketPage() {
   ];
   const tierOptions: ChipOption<string>[] = [
     { value: ALL, label: t("market.all") },
-    ...Object.entries(skuTierMap).map(([value, meta]) => ({ value, label: t(meta.labelKey) })),
+    ...Object.entries(skuTierMap)
+      .filter(([value]) => value !== "cpu")
+      .map(([value, meta]) => ({ value, label: t(meta.labelKey) })),
   ];
-  const vramOptions: ChipOption<number>[] = [
-    { value: 0, label: t("market.all") },
-    ...Array.from(new Set((allSkus ?? []).map((s) => s.vram_gb)))
-      .sort((a, b) => a - b)
-      .map((v) => ({ value: v, label: `${v} GB` })),
-  ];
+  const vramOptions = numOptions(kindSkus.map((s) => s.vram_gb), (v) => `${v} GB`);
+  const vcpuOptions = numOptions(kindSkus.map((s) => s.vcpu), (v) => t("market.vcpuUnit", { count: v }));
+  const memOptions = numOptions(kindSkus.map((s) => s.mem_gb), (v) => `${v} GB`);
 
-  const skus = (allSkus ?? []).filter(
-    (s) =>
-      (!gpuModel || s.gpu_model === gpuModel) &&
-      (!tier || skuVariant(s.tier, s.pool_label) === tier) &&
-      (!vram || s.vram_gb === vram) &&
-      s.max_gpus_per_instance >= gpuCount,
+  const skus = kindSkus.filter((s) =>
+    isCpu
+      ? (!vcpu || s.vcpu === vcpu) && (!memGb || s.mem_gb === memGb)
+      : (!gpuModel || s.gpu_model === gpuModel) &&
+        (!tier || skuVariant(s.tier, s.pool_label) === tier) &&
+        (!vram || s.vram_gb === vram) &&
+        s.max_gpus_per_instance >= gpuCount,
   );
 
   const selected = skus.find((s) => s.id === selectedId);
-  const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= gpuCount;
+  // CPU 实例一台占一份库存(不带卡),GPU 实例按卡数占
+  const needed = isCpu ? 1 : gpuCount;
+  const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= needed;
 
-  const columns = skuColumns({ fmt, t, availability: true, priceFontSize: 18 });
+  const columns = skuColumns({ fmt, t, availability: true, priceFontSize: 18, cpu: isCpu });
 
   return (
     // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
@@ -98,15 +123,32 @@ function MarketPage() {
 
       <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <ChipRow label={t("market.chipGpuModel")} value={gpuModel} onChange={setGpuModel} options={modelOptions} />
-          <ChipRow label={t("market.chipTier")} value={tier} onChange={setTier} options={tierOptions} />
-          <ChipRow label={t("market.chipVram")} value={vram} onChange={setVram} options={vramOptions} />
-          <ChipRow
-            label={t("market.chipGpuCount")}
-            value={gpuCount}
-            onChange={setGpuCount}
-            options={GPU_COUNT_STEPS.map((n) => ({ value: n, label: String(n) }))}
+          <Segmented<Kind>
+            value={kind}
+            options={kindOptions}
+            onChange={(v) => {
+              setKind(v);
+              setSelectedId(undefined); // 换栏必须清选中:上一栏的行不在本栏表里,结算条会挂着幽灵规格
+            }}
           />
+          {isCpu ? (
+            <>
+              <ChipRow label={t("market.chipVcpu")} value={vcpu} onChange={setVcpu} options={vcpuOptions} />
+              <ChipRow label={t("market.chipMem")} value={memGb} onChange={setMemGb} options={memOptions} />
+            </>
+          ) : (
+            <>
+              <ChipRow label={t("market.chipGpuModel")} value={gpuModel} onChange={setGpuModel} options={modelOptions} />
+              <ChipRow label={t("market.chipTier")} value={tier} onChange={setTier} options={tierOptions} />
+              <ChipRow label={t("market.chipVram")} value={vram} onChange={setVram} options={vramOptions} />
+              <ChipRow
+                label={t("market.chipGpuCount")}
+                value={gpuCount}
+                onChange={setGpuCount}
+                options={GPU_COUNT_STEPS.map((n) => ({ value: n, label: String(n) }))}
+              />
+            </>
+          )}
           <Table<SkuMarketOut>
             size="middle"
             rowKey="id"
@@ -141,30 +183,42 @@ function MarketPage() {
       <CheckoutBar
         summary={
           selected
-            ? t("market.summary", {
-                model: selected.gpu_model,
-                count: gpuCount,
-                vcpu: selected.vcpu * gpuCount,
-                mem: selected.mem_gb * gpuCount,
-                disk: selected.disk_gb,
-              })
+            ? isCpu
+              ? t("market.summaryCpu", {
+                  vcpu: selected.vcpu,
+                  mem: selected.mem_gb,
+                  disk: selected.disk_gb,
+                })
+              : t("market.summary", {
+                  model: selected.gpu_model,
+                  count: gpuCount,
+                  vcpu: selected.vcpu * gpuCount,
+                  mem: selected.mem_gb * gpuCount,
+                  disk: selected.disk_gb,
+                })
             : t("market.selectHint")
         }
         items={[
           {
             label: t("create.configCostLabel"),
-            value: selected
-              ? formatHourlyPrice(mulPrice(selected.price_hourly, gpuCount))
-              : "--",
+            // CPU 规格的 price_hourly 已是整机时价(后端计费份数恒 1),不再乘卡数
+            value: selected ? formatHourlyPrice(mulPrice(selected.price_hourly, needed)) : "--",
           },
         ]}
         detail={
           selected ? (
             <Space orientation="vertical" size={4}>
               <span>
-                {t("instances.pricePerCard", { price: formatHourlyPrice(selected.price_hourly), count: gpuCount })}
+                {isCpu
+                  ? t("instances.pricePerInstance", { price: formatHourlyPrice(selected.price_hourly) })
+                  : t("instances.pricePerCard", {
+                      price: formatHourlyPrice(selected.price_hourly),
+                      count: gpuCount,
+                    })}
               </span>
-              <Typography.Text type="secondary">{t("copy.billingBasis")}</Typography.Text>
+              <Typography.Text type="secondary">
+                {isCpu ? t("copy.billingBasisCpu") : t("copy.billingBasis")}
+              </Typography.Text>
             </Space>
           ) : undefined
         }
@@ -180,7 +234,8 @@ function MarketPage() {
                   void navigate({
                     to: "/market/create/$skuId",
                     params: { skuId: String(selected.id) },
-                    search: { gpus: gpuCount },
+                    // CPU 规格不带卡数:创建页按 SKU 的 max_gpus_per_instance=0 提交 gpu_count: 0
+                    search: isCpu ? {} : { gpus: gpuCount },
                   });
                 }}
               >

@@ -77,13 +77,20 @@ const VARIANT_SPEC: Record<SkuVariant, { tier: SkuTier; pool: string }> = {
   dedicated: { tier: "dedicated", pool: "kata" },
   shared_mig: { tier: "shared", pool: "mig" },
   shared_hami: { tier: "shared", pool: "hami" },
+  // CPU 档默认落 cpu 池(无卡机);要跑 GPU 机的空闲 CPU 就把池改成 hami,
+  // 后端 TIER_POOLS 两者都放行,这里只给默认值
+  cpu: { tier: "cpu", pool: "cpu" },
 };
 const POOL_VARIANTS: Record<string, SkuVariant[]> = {
   kata: ["dedicated"],
   mig: ["shared_mig"],
-  hami: ["shared_hami"],
+  // hami 池上既能卖共享卡,也能卖只吃空闲 CPU 的 CPU 规格
+  hami: ["shared_hami", "cpu"],
+  cpu: ["cpu"],
 };
 const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
+/** CPU 规格必须落库的 GPU 字段值(后端 catalog.cpu_spec_error 的镜像:任一非 0 即被拒) */
+const CPU_ZERO_FIELDS = { gpu_model: "", mig_profile: null, gpu_cores_pct: 0, vram_gb: 0, max_gpus_per_instance: 0 } as const;
 
 type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
@@ -183,11 +190,23 @@ function SkusPage() {
   const wPct = Form.useWatch("gpu_cores_pct", form);
   const wOversell = Form.useWatch("oversell_cores", form);
   const wVram = Form.useWatch("vram_gb", form);
+  const wVcpu = Form.useWatch("vcpu", form);
+  const wMem = Form.useWatch("mem_gb", form);
+  const isCpuVariant = (wVariant ?? (record ? skuVariant(record.tier, record.pool_label) : undefined)) === "cpu";
   const pModel = wModel ?? record?.gpu_model;
   const pPool = wPool ?? record?.pool_label;
-  // 折算口径只看池(超卖只发生在 HAMi),端点因此不再收 tier
+  // 折算口径只看池(超卖只发生在 HAMi),端点因此不再收 tier。
+  // CPU 规格没有型号:留空 gpu_model 让端点走 vCPU/内存上限口径,别拿空型号去报「未识别」
   const previewParams = useMemo(() => {
-    if (editing === null || !pModel || !pPool) return null;
+    if (editing === null || !pPool) return null;
+    if (isCpuVariant) {
+      return {
+        pool_label: pPool,
+        vcpu: wVcpu ?? record?.vcpu,
+        mem_gb: wMem ?? record?.mem_gb,
+      };
+    }
+    if (!pModel) return null;
     return {
       gpu_model: pModel,
       pool_label: pPool,
@@ -195,7 +214,7 @@ function SkusPage() {
       oversell_cores: String(wOversell ?? record?.oversell_cores ?? "1.00"),
       vram_gb: wVram ?? record?.vram_gb,
     };
-  }, [editing, pModel, pPool, wPct, wOversell, wVram, record]);
+  }, [editing, isCpuVariant, pModel, pPool, wPct, wOversell, wVram, wVcpu, wMem, record]);
   const preview = useSkuCapacityPreview(previewParams);
 
   const applyRecommend = (agg: GpuModelAggregate, variant: SkuVariant, pct: number) => {
@@ -228,17 +247,28 @@ function SkusPage() {
     const variant = current && variants.includes(current) ? current : variants[0];
     if (!variant) return;
     onVariantChange(variant);
-    applyRecommend(agg, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
+    // CPU 规格没有型号/显存可推荐:套上去会把 onVariantChange 刚清零的 GPU 字段再填回来
+    if (variant !== "cpu") {
+      applyRecommend(agg, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
+    } else {
+      form.setFieldsValue({ pool_label: agg.pool_label ?? "hami" });
+    }
   };
 
   const onVariantChange = (variant: SkuVariant) => {
     const { pool } = VARIANT_SPEC[variant];
     form.setFieldsValue({
       variant,
-      pool_label: pool,
+      // cpu 档在 cpu / hami 两池都合法:从 hami 上的共享档切过来时保留 hami,别把池挪走
+      pool_label: variant === "cpu" && wPool === "hami" ? "hami" : pool,
       // 切片只属于 mig 池:换走时必须清掉,否则后端 _check_tier_pool 会以「切片与池不符」驳回
       ...(variant === "shared_mig" ? {} : { mig_profile: null }),
     });
+    if (variant === "cpu") {
+      // GPU 字段一律清零:留着旧值提交会被后端 cpu_spec_error 拒掉,而那几个输入框此时已隐藏
+      form.setFieldsValue(CPU_ZERO_FIELDS);
+      return;
+    }
     if (clusterPick) {
       applyRecommend(clusterPick, variant, form.getFieldValue("gpu_cores_pct") ?? 50);
     } else if (variant !== "shared_hami") {
@@ -272,17 +302,30 @@ function SkusPage() {
     const values = await form.validateFields();
     // 派生而非读表单:tier 没有 Form.Item,pool_label 的输入框是只读回显,
     // 两者的事实源都是 variant
-    const { tier, pool } = VARIANT_SPEC[values.variant];
+    const { tier, pool: derivedPool } = VARIANT_SPEC[values.variant];
+    // 只有 cpu 档的池是运营可选的(cpu 池 / 蹭 GPU 节点的 hami 池),其余三档恒由档位派生。
+    // 不写成 `values.pool_label || derivedPool`:那个 || 永远不会触发(池的 Form.Item 一直挂载,
+    // 禁用不等于不挂载),留着只会让人以为这里有回落逻辑
+    const pool = values.variant === "cpu" ? values.pool_label : derivedPool;
+    // CPU 规格的 GPU 字段全部清零:那几个 Form.Item 在 cpu 档不挂载,validateFields()
+    // 拿不到它们的值(antd 只回已挂载项),不显式补零会漏字段
+    const gpuFields =
+      tier === "cpu"
+        ? CPU_ZERO_FIELDS
+        : {
+            gpu_model: values.gpu_model,
+            mig_profile: values.mig_profile ?? null,
+            gpu_cores_pct: values.gpu_cores_pct,
+            vram_gb: values.vram_gb,
+            max_gpus_per_instance: values.max_gpus_per_instance,
+          };
     const doSubmit = () => {
       if (editing === "new") {
         // 新建端点不接受 reason(编辑才必填,入审计)
         const createPayload: SkuCreate = {
           name: values.name,
-          gpu_model: values.gpu_model,
           tier,
-          mig_profile: values.mig_profile ?? null,
-          gpu_cores_pct: values.gpu_cores_pct,
-          vram_gb: values.vram_gb,
+          ...gpuFields,
           oversell_cores: String(values.oversell_cores),
           oversell_vram: String(values.oversell_vram),
           pool_label: pool,
@@ -290,16 +333,16 @@ function SkusPage() {
           mem_gb: values.mem_gb,
           disk_gb: values.disk_gb,
           price_hourly: values.price_hourly,
-          max_gpus_per_instance: values.max_gpus_per_instance,
           cuda_max: values.cuda_max ?? null,
         };
         create.mutate({ data: createPayload });
       } else if (editing) {
+        // 型号不可改(SkuUpdate 无该字段),从 gpuFields 里摘掉
+        const { gpu_model, ...gpuUpdatable } = gpuFields;
+        void gpu_model;
         const updatePayload: SkuUpdate = {
           name: values.name,
-          mig_profile: values.mig_profile ?? null,
-          gpu_cores_pct: values.gpu_cores_pct,
-          vram_gb: values.vram_gb,
+          ...gpuUpdatable,
           oversell_cores: String(values.oversell_cores),
           oversell_vram: String(values.oversell_vram),
           pool_label: pool,
@@ -307,7 +350,6 @@ function SkusPage() {
           mem_gb: values.mem_gb,
           disk_gb: values.disk_gb,
           price_hourly: values.price_hourly,
-          max_gpus_per_instance: values.max_gpus_per_instance,
           cuda_max: values.cuda_max ?? null,
           reason: values.reason ?? "",
         };
@@ -396,15 +438,18 @@ function SkusPage() {
           {
             title: t("skus.colSlice"),
             render: (_, r) =>
-              r.pool_label === "mig"
-                ? r.mig_profile
-                : t("skus.sliceShared", { pct: r.gpu_cores_pct, vram: r.vram_gb }),
+              r.tier === "cpu"
+                ? "—"
+                : r.pool_label === "mig"
+                  ? r.mig_profile
+                  : t("skus.sliceShared", { pct: r.gpu_cores_pct, vram: r.vram_gb }),
           },
           {
+            // 容量列口径是「匹配型号×池的物理卡数」:CPU 规格不带卡,0 不是告警而是无此概念
             title: t("skus.colCapacity"),
             dataIndex: "capacity_gpus",
             render: (v: number, r) =>
-              v === 0 && r.status === "on" ? <Tag color="red">0</Tag> : v,
+              r.tier === "cpu" ? "—" : v === 0 && r.status === "on" ? <Tag color="red">0</Tag> : v,
           },
           {
             title: t("skus.colSoldShare"),
@@ -509,8 +554,8 @@ function SkusPage() {
             <Form.Item name="name" label={t("skus.colName")} rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-            {/* 型号不可改(SkuUpdate 无该字段),只在新建时出现 */}
-            {isNew && (
+            {/* 型号不可改(SkuUpdate 无该字段),只在新建时出现;CPU 规格不带型号 */}
+            {isNew && !isCpuVariant && (
               <Form.Item
                 name="gpu_model"
                 label={t("skus.gpuModelLabel")}
@@ -554,58 +599,73 @@ function SkusPage() {
                 />
               </Form.Item>
             )}
-            {/* 池恒由上面的档位派生,不单独可改 —— 两者能各改各的就会卖错隔离强度 */}
-            <Form.Item name="pool_label" label={t("nodes.poolLabel")} rules={[{ required: true }]}>
+            {/* 池恒由上面的档位派生,不单独可改 —— 两者能各改各的就会卖错隔离强度。
+                唯一例外是 CPU 档:它在 cpu(无卡机)与 hami(GPU 机的空闲 CPU)两池都合法,
+                两者对用户无差别、只影响落在哪批机器上,交由运营选(后端 TIER_POOLS 同样放行) */}
+            <Form.Item
+              name="pool_label"
+              label={t("nodes.poolLabel")}
+              rules={[{ required: true }]}
+              extra={isCpuVariant ? t("skus.cpuPoolHint") : undefined}
+            >
               <Select
-                disabled
-                options={Object.entries(POOL_LABEL_KEY).map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
+                disabled={!isCpuVariant}
+                options={Object.entries(POOL_LABEL_KEY)
+                  .filter(([value]) => !isCpuVariant || value === "cpu" || value === "hami")
+                  .map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
               />
             </Form.Item>
-            <Form.Item
-              name="gpu_cores_pct"
-              label={t("skus.coresPctLabel")}
-              rules={[{ required: true }]}
-            >
-              <InputNumber
-                min={1}
-                max={100}
-                disabled={!!wVariant && wVariant !== "shared_hami"}
-                style={{ width: "100%" }}
-                onChange={(v) => {
-                  if (clusterPick && wVariant && typeof v === "number") {
-                    applyRecommend(clusterPick, wVariant, v);
-                  }
-                }}
-              />
-            </Form.Item>
-            <Form.Item name="vram_gb" label={t("skus.vramLabel")} rules={[{ required: true }]}>
-              <InputNumber
-                min={1}
-                max={clusterPick?.vram_gb || undefined}
-                style={{ width: "100%" }}
-              />
-            </Form.Item>
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-              title={t("skus.oversellRisk")}
-              description={t("skus.oversellRiskDesc")}
-            />
-            <Form.Item
-              name="oversell_cores"
-              label={t("skus.oversellCoresLabel")}
-              rules={[{ required: true }]}
-            >
-              <InputNumber min={1} max={9.99} step={0.1} style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              name="oversell_vram"
-              label={t("skus.oversellVramLabel")}
-              rules={[{ required: true }]}
-            >
-              <InputNumber min={1} max={9.99} step={0.05} style={{ width: "100%" }} />
-            </Form.Item>
+            {/* 算力份额/显存/超卖三项都是卡的属性:CPU 规格整块不挂载,提交时由
+                CPU_ZERO_FIELDS 补零(超卖两列保留 DB 默认 1.00,对不带卡的规格无意义) */}
+            {!isCpuVariant && (
+              <>
+                <Form.Item
+                  name="gpu_cores_pct"
+                  label={t("skus.coresPctLabel")}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber
+                    min={1}
+                    max={100}
+                    disabled={!!wVariant && wVariant !== "shared_hami"}
+                    style={{ width: "100%" }}
+                    onChange={(v) => {
+                      if (clusterPick && wVariant && typeof v === "number") {
+                        applyRecommend(clusterPick, wVariant, v);
+                      }
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="vram_gb" label={t("skus.vramLabel")} rules={[{ required: true }]}>
+                  <InputNumber
+                    min={1}
+                    max={clusterPick?.vram_gb || undefined}
+                    style={{ width: "100%" }}
+                  />
+                </Form.Item>
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  title={t("skus.oversellRisk")}
+                  description={t("skus.oversellRiskDesc")}
+                />
+                <Form.Item
+                  name="oversell_cores"
+                  label={t("skus.oversellCoresLabel")}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={1} max={9.99} step={0.1} style={{ width: "100%" }} />
+                </Form.Item>
+                <Form.Item
+                  name="oversell_vram"
+                  label={t("skus.oversellVramLabel")}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={1} max={9.99} step={0.05} style={{ width: "100%" }} />
+                </Form.Item>
+              </>
+            )}
             <Form.Item
               name="vcpu"
               label="vCPU"
@@ -637,9 +697,11 @@ function SkusPage() {
                 <Input.TextArea rows={2} placeholder={t("skus.reasonPlaceholder")} />
               </Form.Item>
             )}
-            <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
-              <InputNumber min={1} max={8} style={{ width: "100%" }} />
-            </Form.Item>
+            {!isCpuVariant && (
+              <Form.Item name="max_gpus_per_instance" label={t("skus.maxGpusLabel")}>
+                <InputNumber min={1} max={8} style={{ width: "100%" }} />
+              </Form.Item>
+            )}
             <Form.Item name="cuda_max" label={t("skus.cudaMaxLabel")}>
               <Input placeholder={t("images.cudaPlaceholder")} />
             </Form.Item>
@@ -649,12 +711,18 @@ function SkusPage() {
               <Typography.Text type="secondary">{t("skus.previewPending")}</Typography.Text>
             ) : preview.data ? (
               <>
-                {[
-                  [t("skus.previewNodes"), preview.data.matching_nodes],
-                  [t("skus.previewReadyGpus"), preview.data.ready_gpus],
-                  [t("skus.previewTotalGpus"), preview.data.total_gpus],
-                  [t("skus.previewEst"), preview.data.est_instances],
-                ].map(([label, value]) => (
+                {(isCpuVariant
+                  ? [
+                      [t("skus.previewNodes"), preview.data.matching_nodes],
+                      [t("skus.previewEst"), preview.data.est_instances],
+                    ]
+                  : [
+                      [t("skus.previewNodes"), preview.data.matching_nodes],
+                      [t("skus.previewReadyGpus"), preview.data.ready_gpus],
+                      [t("skus.previewTotalGpus"), preview.data.total_gpus],
+                      [t("skus.previewEst"), preview.data.est_instances],
+                    ]
+                ).map(([label, value]) => (
                   <div
                     key={String(label)}
                     style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}

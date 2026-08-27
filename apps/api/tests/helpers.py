@@ -139,10 +139,12 @@ async def seed_node_spec(
     *,
     node_name: str = "node-1",
     pool_label: str = "hami",
-    gpu_model: str = "RTX4090",
+    gpu_model: str | None = "RTX4090",
     gpu_count: int = 32,
     gpu_used: int = 0,
     status: str = "Ready",
+    vcpu: int = 64,
+    mem_gb: int = 256,
 ) -> None:
     """写一条节点台账(node_specs):市场近似库存与创建软准入的唯一数据源。
 
@@ -159,6 +161,9 @@ async def seed_node_spec(
                 gpu_model=gpu_model,
                 gpu_count=gpu_count,
                 gpu_used=gpu_used,
+                # vCPU/内存是 CPU 档库存口径的数据源(GPU 档不看这两列)
+                vcpu=vcpu,
+                mem_gb=mem_gb,
                 status=status,
                 last_seen=now_utc(),
             )

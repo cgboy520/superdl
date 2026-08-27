@@ -101,6 +101,8 @@
     "wechatQueryFailed": "WeChat Pay order query failed: {{message}}"
   },
   "catalog": {
+    "cpuSkuGpuFieldsMustBeZero": "CPU specs carry no GPU: leave the GPU model empty, set compute share / VRAM / GPUs per instance to 0, and leave the MIG profile blank",
+    "gpuSkuNeedsGpuFields": "GPU specs need a GPU model, and compute share / VRAM / GPUs per instance cannot be 0",
     "imageRefExists": "This image_ref already exists",
     "isolationChangeNeedsOffSale": "A listed SKU cannot change its pool or MIG profile: both decide the isolation mechanism and the spec buyers see, so changing them makes it a different product. Delist it first, or create a new SKU",
     "migProfileMismatch": "The mig pool requires a slice profile; other pools must leave it empty",
@@ -109,6 +111,7 @@
     "priceTooSmall": "Unit price too small: it rounds to 0 at 0.0001 CNY/hour",
     "skuBusinessKeyExists": "A SKU with the same model, tier, pool, MIG profile, cores share and vCPU/memory already exists — edit that one instead",
     "skuNotSellable": "No Ready node of “{{model}} × {{pool}} pool” exists in the cluster; instances of this spec would never start. Confirm to force-list it",
+    "skuNotSellableCpu": "No Ready node in the {{pool}} pool; users will not be able to start instances after listing. Confirm to force listing",
     "skuOffSale": "This spec has been delisted",
     "tierPoolMismatch": "Tier {{tier}} may only run on the {{pools}} pool, but this is {{pool}}"
   },
@@ -160,6 +163,7 @@
   },
   "orchestrator": {
     "accessNeedsRunning": "Connection info is available while the instance is running",
+    "cpuSkuNoGpu": "This spec is a CPU instance (no GPU); the GPU count cannot be set",
     "forceStopNeedsRunning": "Only running instances can be force-stopped",
     "frozenNeedsRecharge": "Frozen due to arrears — top up to unfreeze, then start",
     "gpuCountRange": "GPU count must be between 1 and {{max}}",
@@ -171,6 +175,7 @@
     "logsNeedsRunning": "Logs are available only while the instance is running or stopping — a stopped instance has no pod logs; start it first",
     "logsUnavailable": "Failed to read logs — please retry shortly",
     "noCapacity": "No allocatable capacity in “{{model}} × {{pool}} pool” right now — retry later or pick another spec",
+    "noCapacityCpu": "The {{pool}} pool has no allocatable CPU capacity right now. Try again later or pick another spec",
     "nodeUnreachable": "The node hosting this instance's disk is unreachable and the instance cannot start for now — the platform is handling it. Data stays on that node's local disk; contact support if it persists",
     "releaseNeedsStopped": "Stop the instance before releasing it",
     "realNameRequired": "Regulations require identity verification before renting compute — complete it under Settings · Identity Verification first",
@@ -179,7 +184,8 @@
     "sshPortsExhausted": "No SSH port available right now — try again later or contact support",
     "startNeedsStopped": "Only stopped instances can be started",
     "stateChangedRetry": "The instance state was changed by another operation — refresh and retry",
-    "stopNeedsRunning": "Only running instances can be stopped"
+    "stopNeedsRunning": "Only running instances can be stopped",
+    "vcpuQuota": "CPU instances would exceed your vCPU limit ({{max}} vCPU). Release one first or contact support to raise the limit"
   },
   "tickets": {
     "notFound": "Ticket not found",

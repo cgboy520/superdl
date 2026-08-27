@@ -3,7 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Pool = Literal["kata", "hami", "mig"]
+# cpu = 无卡节点池(纯 CPU 实例);装机时不打任何 NVIDIA operand 标签、跳过 GPU 探测
+Pool = Literal["kata", "hami", "mig", "cpu"]
 
 HOSTNAME_PATTERN = r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
 

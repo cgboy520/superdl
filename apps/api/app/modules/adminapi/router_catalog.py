@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.gpu_models import canonical_gpu_model
+from app.core.policies import get_effective_policies
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.schemas import (
@@ -32,6 +33,29 @@ from app.modules.nodes import service as nodes_service
 from app.modules.orchestrator import service as orchestrator_service
 
 router = APIRouter(tags=["admin"])
+
+
+async def _cpu_capacity_preview(
+    session: DbSession, pool_label: str, vcpu: int | None, mem_gb: int | None
+) -> CapacityPreviewOut:
+    specs = nodes_service.pool_specs(await nodes_service.list_node_specs(session), pool_label)
+    ready = [sp for sp in specs if sp.status == "Ready"]
+    warnings: list[CapacityWarningOut] = []
+    if not ready:
+        warnings.append(
+            CapacityWarningOut(code="no_ready_node", params={"model": "CPU", "pool": pool_label})
+        )
+    est = 0
+    if vcpu and mem_gb:
+        cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
+        est = catalog_service.sellable_cpu_slots(vcpu, mem_gb, ready, gpu_node_vcpu_cap=cap)
+    return CapacityPreviewOut(
+        matching_nodes=len(specs),
+        ready_gpus=0,
+        total_gpus=0,
+        est_instances=est,
+        warnings=warnings,
+    )
 
 
 # ---------- SKU 管理(角色:admin / ops) ----------
@@ -69,13 +93,21 @@ async def admin_list_skus(session: DbSession) -> list[SkuAdminOut]:
 @router.get("/skus/capacity-preview", dependencies=[require_roles("ops", "readonly")])
 async def sku_capacity_preview(
     session: DbSession,
-    gpu_model: str,
     pool_label: str,
+    gpu_model: str = "",
     gpu_cores_pct: int = 100,
     oversell_cores: Decimal = Decimal("1.00"),
     vram_gb: int | None = None,
+    vcpu: int | None = None,
+    mem_gb: int | None = None,
 ) -> CapacityPreviewOut:
-    """SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。"""
+    """SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。
+
+    gpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 vCPU/内存上限口径
+    (`catalog.sellable_cpu_slots`,与市场库存同一份算法),不报「型号未识别」。
+    """
+    if not gpu_model:
+        return await _cpu_capacity_preview(session, pool_label, vcpu, mem_gb)
     warnings: list[CapacityWarningOut] = []
     wanted = canonical_gpu_model(gpu_model)
     if wanted is None:

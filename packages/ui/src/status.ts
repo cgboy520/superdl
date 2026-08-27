@@ -58,16 +58,18 @@ export function isTransientInstanceStatus(status: string): boolean {
 }
 
 /** 售卖档位,与 skus.tier 严格一致。标准/经济不是档位值,由所在池派生 —— 见 skuVariant。 */
-export type SkuTier = "dedicated" | "shared";
+export type SkuTier = "dedicated" | "shared" | "cpu";
 
 /**
  * 用户可见的档位:tier × pool_label 的合并键。
  * 隔离机制的事实源是节点池(后端 core/gpu_adapter 同款口径),「共享」既可能是 mig 池的
  * 硬切分(标准),也可能是 hami 池的软切分超卖(经济),两者性能承诺不同,必须分开展示。
+ * cpu 档不带卡,落 cpu 池还是 hami 池对用户无差别(都不申请 GPU),因此不按池分化。
  */
-export type SkuVariant = "dedicated" | "shared_mig" | "shared_hami";
+export type SkuVariant = "dedicated" | "shared_mig" | "shared_hami" | "cpu";
 
 export function skuVariant(tier: string, poolLabel?: string | null): SkuVariant {
+  if (tier === "cpu") return "cpu";
   if (tier === "dedicated") return "dedicated";
   return poolLabel === "mig" ? "shared_mig" : "shared_hami";
 }
@@ -77,6 +79,8 @@ export const skuTierMap = {
   // cyan 档取深:#0891B2 白字仅 3.7:1 不达标;#0E7490 ≈5.4:1(WCAG AA)
   shared_mig: { labelKey: "shared:status.tier.shared_mig", color: "#0E7490", hintKey: "shared:status.tierHint.shared_mig" },
   shared_hami: { labelKey: "shared:status.tier.shared_hami", color: statusColors.orange, hintKey: "shared:status.tierHint.shared_hami" },
+  // 灰蓝:与三个 GPU 档的紫/青/橙拉开色相,读作「不带卡」;白字 ≈5.9:1(WCAG AA)
+  cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
 } as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
 
 /** 镜像节点缓存状态(与 image_node_cache.status 严格一致) */

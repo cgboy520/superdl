@@ -29,6 +29,26 @@ def as_amount(value: Decimal | str | int) -> Decimal:
     return Decimal(value).quantize(AMOUNT_QUANT, rounding=ROUND_HALF_EVEN)
 
 
+def billing_units(gpu_count: int) -> int:
+    """一小时收几份 `price_hourly`。
+
+    `price_hourly` 的语义随 SKU 形态不同:GPU SKU 是**单卡**时价(N 卡实例收 N 份),
+    CPU SKU 是**整机**时价(`gpu_count` 恒 0,收 1 份)。直接写 `price × gpu_count`
+    会让 CPU 实例每小时算出 ¥0.00 —— 白送算力,且账单行、余额护栏、停机判据全线归零。
+
+    计费链上所有「单价 × 份数」只经这里换算(bill_amount / 余额护栏 / 燃烧率 / 对账),
+    不再各处写 `max(1, n)`:那种写法碰巧算对,但读的人无从知道 0 是合法值还是脏数据。
+    """
+    if gpu_count < 0:
+        raise ValueError(f"gpu_count out of range: {gpu_count}")
+    return gpu_count or 1
+
+
+def hourly_cost(price_hourly: Decimal, gpu_count: int) -> Decimal:
+    """实例时费(2 位入账口径)= 单价 × 计费份数。"""
+    return as_amount(as_price(price_hourly) * billing_units(gpu_count))
+
+
 def disk_daily_charge(price_gb_month: Decimal, size_gb: int, day: date | None = None) -> Decimal:
     """数据盘日结:GB·月单价 / 30 × 容量,返回该「盘×日」应扣的 2 位小数金额。
 

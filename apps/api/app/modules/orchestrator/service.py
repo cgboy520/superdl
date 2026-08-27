@@ -18,22 +18,23 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import status as http_status
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, spec_to_gpu_request
+from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, TIER_CPU, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
 from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
-from app.core.money import as_amount
+from app.core.money import as_amount, hourly_cost
 from app.core.outbox import enqueue
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
+from app.core.policies import get_effective_policies
 from app.core.ratelimit import check_rate_limit
 from app.core.registry import effective_image_allowlist, is_valid_image_ref
 from app.core.sqlutil import like_escape
@@ -158,18 +159,28 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
 
 
 async def _require_cluster_for_pool(
-    session: AsyncSession, pool_label: str | None, *, with_data_disk: bool = False
+    session: AsyncSession,
+    pool_label: str | None,
+    gpu_count: int,
+    *,
+    with_data_disk: bool = False,
 ) -> None:
     """下发门禁:能力缺位即时 409,而非等 Pod Pending 到超时。
 
-    按池判而非按档位判:HAMi 只有 hami 池依赖,Kata RuntimeClass 只有 kata 池依赖
-    (mig 池由 gpu-operator 的 MIG manager 管,无独立门禁项);
-    StorageClass 实例盘人人要挂,数据盘按需。
+    判据与 `build_gpu_request` 完全同源 —— **先看要不要卡,再看落哪个池**:
+    - `gpu_count == 0`(CPU 实例)不申请任何 `nvidia.com/*`、`scheduler_name` 为 None,
+      走默认调度器。**即使它挂在 hami 池上,hami-scheduler 也不是它落地的前置**,
+      拿 HAMi 就绪去拦它,等于让 HAMi 挂掉连带挡住一批根本不用 GPU 的实例。
+    - 其余按池判:HAMi 只有 hami 池依赖,Kata RuntimeClass 只有 kata 池依赖
+      (mig 池由 gpu-operator 的 MIG manager 管,无独立门禁项)。
+
+    StorageClass 实例盘人人要挂,数据盘按需 —— 这一条与要不要卡无关。
     """
-    if pool_label == POOL_HAMI:
-        await nodes_service.require_hami_ready(session)
-    elif pool_label == POOL_KATA:
-        await nodes_service.require_kata_runtimeclass(session)
+    if gpu_count > 0:
+        if pool_label == POOL_HAMI:
+            await nodes_service.require_hami_ready(session)
+        elif pool_label == POOL_KATA:
+            await nodes_service.require_kata_runtimeclass(session)
     await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
 
 
@@ -226,17 +237,35 @@ async def _validate_image_ref(session: AsyncSession, image_ref: str) -> None:
     )
 
 
-async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) -> None:
-    """每用户配额(实例数 / GPU 总数);K8s 侧 ResourceQuota 为兜底。
+async def _check_user_quota(
+    session: AsyncSession, user_id: int, new_gpus: int, new_vcpus: int
+) -> None:
+    """每用户配额(实例数 / GPU 总数 / CPU 实例 vCPU 总数);K8s 侧 ResourceQuota 为兜底。
 
-    生效值走统一校验链(account.get_user_limits:用户覆盖 → 平台策略 → env 默认)。
+    生效值走统一校验链(account.get_user_limits:用户覆盖 → 平台策略 → env 默认);
+    vCPU 维只有平台策略层(`max_vcpus_per_user`),无用户级覆盖列。
+
+    两维刻意互不相交:GPU 实例只吃 `max_gpus_per_user`,CPU 实例只吃
+    `max_vcpus_per_user`。让 GPU 实例也计 vCPU,会让一个 8 卡户被 CPU 额度先卡死;
+    让 CPU 实例计 GPU,则是拿 0 去比上限,等于没有闸门。
     """
 
     limits = await account_service.get_user_limits(session, user_id)
+    policies = await get_effective_policies(session)
     live = (
         (
             await session.execute(
-                select(func.count(), func.coalesce(func.sum(Instance.gpu_count), 0)).where(
+                select(
+                    func.count(),
+                    func.coalesce(func.sum(Instance.gpu_count), 0),
+                    # CPU 实例(gpu_count=0)的 vCPU 合计;spec 是落库时的 SKU 快照
+                    func.coalesce(
+                        func.sum(cast(Instance.spec["vcpu"].astext, Integer)).filter(
+                            Instance.gpu_count == 0
+                        ),
+                        0,
+                    ),
+                ).where(
                     Instance.user_id == user_id,
                     Instance.status.notin_(("released", "failed")),
                 )
@@ -245,7 +274,7 @@ async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) 
         .tuples()
         .one()
     )
-    count, gpus = live
+    count, gpus, vcpus = live
     if count >= limits.max_instances:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -258,18 +287,38 @@ async def _check_user_quota(session: AsyncSession, user_id: int, new_gpus: int) 
             key="orchestrator.gpuQuota",
             params={"max": limits.max_gpus},
         )
+    if vcpus + new_vcpus > policies.max_vcpus_per_user:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            key="orchestrator.vcpuQuota",
+            params={"max": policies.max_vcpus_per_user},
+        )
 
 
 # ---------- 容量估算((池, 型号) 双维度,数据源是节点台账而非请求路径直连 K8s) ----------
 
 
-def _sku_free_capacity(sku: "Sku", specs: list["NodeSpec"]) -> tuple[int | None, int]:
-    """该 SKU 的近似可分配量:返回 (匹配台账行的 Ready 空闲卡合计, 折算后可售实例数)。
+def _sku_free_capacity(
+    sku: "Sku", specs: list["NodeSpec"], *, gpu_node_vcpu_cap: int
+) -> tuple[int | None, int]:
+    """该 SKU 的近似可分配量:返回 (匹配台账行数据是否存在的哨兵, 可售实例数)。
 
-    第一项为 None 表示台账无此池×型号数据。只有 Ready 节点的空闲卡计入:
-    NotReady/Cordoned/Missing 不卖。共享档按算力份额折算可售实例数(超卖生效在调度层),
-    (池, 型号) 匹配与每卡可售数都走 nodes/catalog 的公共口径,与管理端容量预览同一份算法。
+    第一项为 None 表示台账无此池(×型号)数据,调用方据此放行交调度器裁决;
+    GPU 档下第一项是「Ready 空闲卡合计」,CPU 档下只是匹配到的节点行数(无卡可数)。
+    只有 Ready 节点计入:NotReady/Cordoned/Missing 不卖。
+
+    GPU 档:(池, 型号) 匹配 + 按算力份额折算可售实例数(超卖生效在调度层)。
+    CPU 档:**不按型号匹配**(gpu_model 是空串,按型号匹配对它恒不成立),只按池;
+    可售数走 catalog.sellable_cpu_slots 的 vCPU/内存上限口径。
+    两条都走 nodes/catalog 的公共口径,与管理端容量预览同一份算法。
     """
+    if sku.tier == TIER_CPU:
+        matching = nodes_service.pool_specs(specs, sku.pool_label)
+        if not matching:
+            return None, 0
+        return len(matching), catalog_service.sellable_cpu_slots(
+            sku.vcpu, sku.mem_gb, matching, gpu_node_vcpu_cap=gpu_node_vcpu_cap
+        )
     matching = nodes_service.matching_specs(
         specs, sku.pool_label, canonical_gpu_model(sku.gpu_model)
     )
@@ -288,14 +337,22 @@ async def _soft_admit_capacity(session: AsyncSession, sku: "Sku", gpu_count: int
     放行后仍可能调度超时转 failed,本判断只挡「确定卖不出去」的单。
     """
     specs = await nodes_service.list_node_specs(session)
-    matching_free, sellable = _sku_free_capacity(sku, specs)
+    cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
+    matching_free, sellable = _sku_free_capacity(sku, specs, gpu_node_vcpu_cap=cap)
     if matching_free is None:
         return
-    if sellable < gpu_count:
+    # 要占几份容量:GPU 实例按卡数,CPU 实例(gpu_count=0)占 1 台的位置。
+    # 写成 max(1, gpu_count) 会让「0 卡要 0 份」这种恒成立的比较悄悄放行所有 CPU 单
+    needed = gpu_count if gpu_count > 0 else 1
+    if sellable < needed:
         raise AppError(
             ErrorCode.NO_CAPACITY,
-            key="orchestrator.noCapacity",
-            params={"model": sku.gpu_model, "pool": sku.pool_label},
+            key="orchestrator.noCapacityCpu" if sku.tier == TIER_CPU else "orchestrator.noCapacity",
+            params=(
+                {"pool": sku.pool_label}
+                if sku.tier == TIER_CPU
+                else {"model": sku.gpu_model, "pool": sku.pool_label}
+            ),
             http_status=http_status.HTTP_409_CONFLICT,
         )
 
@@ -316,7 +373,7 @@ async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
         .tuples()
         .all()
     )
-    return sum((as_amount(price * count) for price, count in rows), Decimal("0.00"))
+    return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
 
 
 async def create_instance(
@@ -347,9 +404,14 @@ async def create_instance(
 
     sku = await catalog_service.get_on_sale_sku(session, sku_id)
     await _require_cluster_for_pool(
-        session, sku.pool_label, with_data_disk=data_disk_id is not None
+        session, sku.pool_label, gpu_count, with_data_disk=data_disk_id is not None
     )
-    if gpu_count > sku.max_gpus_per_instance:
+    # gpu_count 的下界随 SKU 形态走:CPU 规格(max_gpus_per_instance=0)只收 0,
+    # GPU 规格只收 1..max。契约层放开到 ge=0 之后,这里是「0 卡的 GPU 实例」的唯一闸门
+    if sku.max_gpus_per_instance == 0:
+        if gpu_count != 0:
+            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
+    elif not 1 <= gpu_count <= sku.max_gpus_per_instance:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="orchestrator.gpuCountRange",
@@ -361,14 +423,15 @@ async def create_instance(
     # 临界区开始:FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
     # 在途统计与配额校验必须在锁内做(先算后锁即 TOCTOU)。
     # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增。
-    estimate = as_amount(sku.price_hourly * gpu_count)
+    estimate = hourly_cost(sku.price_hourly, gpu_count)
     try:
         await billing_service.lock_wallet(session, user_id)
         pending = await _pending_hourly(session, user_id)
         await billing_service.assert_can_afford(
             session, user_id, additional_hourly=as_amount(estimate + pending)
         )
-        await _check_user_quota(session, user_id, gpu_count)
+        # CPU 实例才计 vCPU 维(GPU 实例的 vCPU 是配卡的附属,不单独设闸)
+        await _check_user_quota(session, user_id, gpu_count, sku.vcpu if gpu_count == 0 else 0)
 
         keys = await account_service.list_ssh_keys(session, user_id)
         selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
@@ -601,9 +664,12 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
                 http_status=409,
             )
     await _require_cluster_for_pool(
-        session, instance.spec.get("pool_label"), with_data_disk=instance.data_disk_id is not None
+        session,
+        instance.spec.get("pool_label"),
+        instance.gpu_count,
+        with_data_disk=instance.data_disk_id is not None,
     )
-    estimate = as_amount(instance.price_hourly * instance.gpu_count)
+    estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
     await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     if recovered:
         # 故障恢复:failed → stopped(复用同一块实例盘)→ 走正常开机链路
@@ -627,7 +693,10 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
         )
     await _require_cluster_for_pool(
-        session, instance.spec.get("pool_label"), with_data_disk=instance.data_disk_id is not None
+        session,
+        instance.spec.get("pool_label"),
+        instance.gpu_count,
+        with_data_disk=instance.data_disk_id is not None,
     )
     await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
     enqueue(session, "instance.restart", {"instance_id": instance.id})
@@ -679,9 +748,11 @@ def build_pod_spec(
     )
     if instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
-    # N 卡实例收 N 倍价,CPU/内存必须同步放大(Guaranteed QoS 下 CPU 是硬限,
-    # 否则多卡被单份 CPU 饿死、节点侧资源被低估占用);系统盘不随卡数放大。
-    gpu_n = max(1, instance.gpu_count)
+    # 规格倍率:GPU 实例按卡数放大 CPU/内存(N 卡收 N 倍价,Guaranteed QoS 下 CPU 是硬限,
+    # 否则多卡被单份 CPU 饿死、节点侧资源被低估占用);CPU 实例(gpu_count=0)规格就是
+    # SKU 本身,倍率恒 1。写 max(1, gpu_count) 结果碰巧一样,但那是「把 0 卡当 1 卡放大」,
+    # 语义与这里要表达的「不放大」是两回事。系统盘任何形态都不随卡数放大。
+    spec_n = instance.gpu_count if instance.gpu_count > 0 else 1
     return InstancePodSpec(
         namespace=instance.k8s_namespace,
         name=instance.uuid,
@@ -689,8 +760,8 @@ def build_pod_spec(
         gpu_resources=gpu_req.resources,
         runtime_class=gpu_req.runtime_class,
         host_users=gpu_req.host_users,
-        vcpu=instance.spec["vcpu"] * gpu_n,
-        mem_gb=instance.spec["mem_gb"] * gpu_n,
+        vcpu=instance.spec["vcpu"] * spec_n,
+        mem_gb=instance.spec["mem_gb"] * spec_n,
         disk_gb=instance.spec["disk_gb"],
         ssh_node_port=instance.ssh_port,
         jupyter_host=jupyter_host(instance.uuid, settings),
@@ -822,7 +893,8 @@ async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> d
     台账无该池×型号数据 → 0(与市场页「无货」语义一致)。
     """
     specs = await nodes_service.list_node_specs(session)
-    return {sku.id: _sku_free_capacity(sku, specs)[1] for sku in skus}
+    cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
+    return {sku.id: _sku_free_capacity(sku, specs, gpu_node_vcpu_cap=cap)[1] for sku in skus}
 
 
 # ---------- 管理端 ----------

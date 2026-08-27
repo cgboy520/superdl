@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、gpu_count、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
+- `instances`:uuid、user_id、SKU 快照(sku_id + spec_snapshot jsonb + price_hourly)、gpu_count(CHECK ≥0;**0 = 纯 CPU 实例**,见 [catalog.md](./catalog.md))、status、k8s(namespace/node_name(253))、ssh_port?、jupyter_token(AES-GCM 密文)、image_ref、data_disk_id?、idempotency_key 唯一?(24h 窗口,窗外同键按新单)、version(乐观锁)
 - `instance_events`:instance_id、from_status、to_status、reason、actor(user/system/admin)、metadata —— 追加式,计费主依据
 - `port_allocations`:port 唯一(30000~32767)、instance_id nullable(部分唯一:一台实例至多一个端口)
 
@@ -31,7 +31,10 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 
 - K8s 访问收敛在 `app/core/k8s`:`K8sOrchestrator` 协议:ensure_namespace / create_instance / delete_instance / delete_instance_disk / get_status / read_instance_logs / list_instance_pods / wipe_disk / list_nodes / set_node_labels / prewarm_image / get_prewarm_status / delete_prewarm_job / probe_cluster / set_node_unschedulable。
 - FakeOrchestrator(dev/test,内存态,可注入故障)与 RealOrchestrator(kubernetes 官方客户端)必须同步实现协议全部方法。
-- gpu_adapter 按 tier 产出资源请求语法(HAMi `nvidia.com/gpu` + `gpucores`/`gpumem`;MIG profile;整卡)、按池选 RuntimeClass(kata-qemu / runc)、按 canonical 型号产出 `superdl.io/gpu-model` nodeSelector,以及 `annotations` 透传口(`nvidia.com/use-gputype`,开关 `SUPERDL_HAMI_USE_GPUTYPE` 默认关,仅混卡节点池需要)。
+- gpu_adapter 按**池**产出资源请求语法(HAMi `nvidia.com/gpu` + `gpucores`/`gpumem`;MIG profile;整卡)、选 RuntimeClass(kata-qemu / runc)、按 canonical 型号产出 `superdl.io/gpu-model` nodeSelector,以及 `annotations` 透传口(`nvidia.com/use-gputype`,开关 `SUPERDL_HAMI_USE_GPUTYPE` 默认关,仅混卡节点池需要)。
+- **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支**:资源请求为空、不钉型号、`runtimeClass=None`、`hostUsers=false`,nodeSelector 只有池标签。cpu 档允许挂 hami 池(见 [catalog.md](./catalog.md)),按池分支走就会替不用卡的实例申请 `nvidia.com/gpu`。
+- Pod 规格倍率:GPU 实例的 vCPU/内存按卡数放大(N 卡收 N 倍价即给 N 份资源),CPU 实例倍率恒 1;系统盘任何形态都不放大。
+- 创建时 `gpu_count` 的合法区间随 SKU 形态走:`max_gpus_per_instance == 0`(CPU 规格)只收 0(否则 `orchestrator.cpuSkuNoGpu`),否则只收 `1..max`(否则 `orchestrator.gpuCountRange`)。契约层是 `ge=0, le=8`,真正的配对闸门在 service。
 - RealOrchestrator 每租户:独立 namespace(PSA enforce=baseline + audit=restricted 标签)、ResourceQuota 兜底(对象数 + cpu/memory/ephemeral-storage 总量)、Egress 隔离 NetworkPolicy(私网黑名单 + 滥用端口黑名单,DNS 收敛到 CoreDNS Pod)、JuiceFS PVC;`disk.wipe` 为真实擦除 Job(幂等 + 退避)。ns/NetPol/Quota 已存在时 patch 收敛,加固覆盖存量租户;K8s list 调用一律分页(limit=500 + continue),同步调用走专属有界执行器。
 - 状态迁移只能经 `orchestrator/service.py` 的 transition 函数(同事务写 `instance_events`),禁止直接 UPDATE status;非法迁移报 `INSTANCE_INVALID_TRANSITION`。
 - 请求路径不许调 K8s:业务写入与 `outbox_tasks` 插入同一事务,K8s 动作一律由 worker 执行。唯一例外是日志端点的只读直读(实时性要求;owner/限流/超时三道闸兜住,见契约表)。
@@ -47,6 +50,6 @@ start 端点对 failed 放行);stopping→releasing 是悬挂放弃边(关机删
 - JupyterLab 走 `<instance-uuid>.app.<域名>` 泛域名 Ingress 按 host 路由到实例 Service(主机名 = `SUPERDL_JUPYTER_HOST_PREFIX`(默认空)+ uuid + `.` + `SUPERDL_JUPYTER_DOMAIN_SUFFIX`,由 `orchestrator/service.jupyter_host` 单点拼接;后缀与其它业务共用一级域以复用 `*.<域>` 通配证书时用前缀区分,如 `superdl-<uuid>.<域>`)(IngressClass 由 `SUPERDL_INGRESS_CLASS_NAME` 指定,默认 `nginx`;未标 default 的 IngressClass 不会自动接管)。token 由控制面生成、AES-GCM 密文落库、注入 Pod env;access 端点签发一次性 bootstrap 票据(HMAC 密钥=token 本体,单次、60s),镜像内 `/superdl-bootstrap` handler 核销后种第一方 cookie,token 不出现在 URL;`?token=` stock 登录为回落通道。实例镜像须先于控制面发布:镜像内的 bootstrap handler 是票据流的前提。
 - 镜像拉取凭据不落节点、不进 Pod spec 明文:outbox 建 Pod 前在 `ensure_namespace` 之后调 `core/registry.ensure_registry_pull_secret`,按生效 `registry_*` 把 `superdl-registry-pull` 托管到租户 ns(annotation 指纹相同跳过),Pod spec 以 `imagePullSecrets` 引用;未配机器人则 `image_pull_secret=None`。预热 Job 同一条链(平台 ns)。
 - 型号 nodeSelector 由 spec 快照的 `gpu_model_selector` 键决定(未识别型号存 None,不钉型号)。
-- shared 档 create/start/restart 三入口读集群能力缓存做 HAMi 门禁,未就绪直接报 `CLUSTER_NOT_READY`,见 [nodes.md](./nodes.md)。
-- 每用户实例数与 GPU 数配额由 config 控制。
+- shared 档 create/start/restart 三入口读集群能力缓存做 HAMi 门禁,未就绪直接报 `CLUSTER_NOT_READY`,见 [nodes.md](./nodes.md)。门禁判据与 `build_gpu_request` 同源:**先看要不要卡,再看落哪个池** —— `gpu_count == 0` 的实例只过 StorageClass(它不申请 `nvidia.com/*`、走默认调度器,挂在 hami 池上也不需要 hami-scheduler);要卡的才按池过 HAMi / Kata 门禁。
+- 每用户实例数、GPU 数与 CPU 实例 vCPU 数配额由策略/config 控制,三维互不相交(CPU 实例不计入 GPU 维,GPU 实例不计入 vCPU 维),见 [limits.md](./limits.md)。
 - 实例释放后触发擦盘任务;数据盘生命周期独立,见 [disks.md](./disks.md)。

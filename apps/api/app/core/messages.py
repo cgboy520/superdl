@@ -140,12 +140,21 @@ MESSAGES: dict[str, str] = {
     "catalog.skuNotSellable": (
         "集群中没有「{model} × {pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
     ),
+    "catalog.skuNotSellableCpu": (
+        "集群中没有「{pool} 池」的 Ready 节点,上架后用户将无法开机;确认可强制上架"
+    ),
     "catalog.isolationChangeNeedsOffSale": (
         "在售规格不能改池或 MIG 切片:两者决定隔离方式与用户看到的规格,改了就是另一件商品。"
         "请先下架,或新建规格"
     ),
     "catalog.skuOffSale": "该规格已下架",
     "catalog.tierPoolMismatch": "档位 {tier} 只能落 {pools} 池,当前为 {pool}",
+    "catalog.cpuSkuGpuFieldsMustBeZero": (
+        "CPU 规格不带卡:GPU 型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片"
+    ),
+    "catalog.gpuSkuNeedsGpuFields": (
+        "GPU 规格必须填 GPU 型号,且算力份额/显存/单实例卡数都不能为 0"
+    ),
     "catalog.migProfileMismatch": "mig 池必须填切片规格,其它池必须留空",
     "catalog.skuBusinessKeyExists": (
         "相同型号、档位、池、切片、算力份额与 vCPU/内存的规格已存在,请直接编辑该规格"
@@ -197,6 +206,7 @@ MESSAGES: dict[str, str] = {
     "orchestrator.accessNeedsRunning": "实例运行中才能获取接入信息",
     "orchestrator.forceStopNeedsRunning": "仅运行中的实例可以强制停止",
     "orchestrator.frozenNeedsRecharge": "实例已因欠费冻结,充值解冻后可开机",
+    "orchestrator.cpuSkuNoGpu": "该规格为 CPU 实例(不带 GPU),不能选择 GPU 数量",
     "orchestrator.gpuCountRange": "GPU 数量须在 1~{max} 之间",
     "orchestrator.gpuQuota": "GPU 总数将超过上限({max} 卡),请释放后再创建或联系客服提额",
     "orchestrator.imageRefInvalid": "镜像地址格式不正确,示例:registry.example.com/pytorch:2.9",
@@ -208,6 +218,7 @@ MESSAGES: dict[str, str] = {
     ),
     "orchestrator.logsUnavailable": "日志读取失败,请稍后重试",
     "orchestrator.noCapacity": "「{model} × {pool} 池」当前无可分配容量,请稍后重试或选择其他规格",
+    "orchestrator.noCapacityCpu": ("「{pool} 池」当前无可分配的 CPU 容量,请稍后重试或选择其他规格"),
     "orchestrator.nodeUnreachable": (
         "实例盘所在节点已失联,暂无法开机;平台处理中,恢复后即可开机。"
         "如长时间未恢复请联系客服(实例盘数据保留在该节点本地盘)"
@@ -222,6 +233,9 @@ MESSAGES: dict[str, str] = {
     "orchestrator.startNeedsStopped": "仅已关机的实例可以开机",
     "orchestrator.stateChangedRetry": "实例状态已被其他操作变更,请刷新后重试",
     "orchestrator.stopNeedsRunning": "仅运行中的实例可以关机",
+    "orchestrator.vcpuQuota": (
+        "CPU 实例的 vCPU 总数将超过上限({max} 核),请释放后再创建或联系客服提额"
+    ),
     # 工单
     "tickets.notFound": "工单不存在",
     "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",

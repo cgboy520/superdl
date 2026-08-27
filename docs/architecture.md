@@ -166,12 +166,15 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 ## 8. 硬约束
 
 1. **Kata 与 HAMi 不能共用同一批 GPU,必须分池**(HAMi device plugin 与 Kata / KubeVirt 不兼容)。节点池标签
-   `superdl.io/pool` 装机时定死。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami
-   决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared)只是售卖分类,两者的合法
+   `superdl.io/pool` 装机时定死。**隔离机制的派发键是池,不是档位**:`core/gpu_adapter` 按 kata / mig / hami / cpu
+   决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,两者的合法
    配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
-2. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** kata 与 mig 池不超卖。
-3. **hami 池与 mig 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
+2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** cpu 档允许挂 hami 池吃 GPU 机的空闲 CPU,按池分支走
+   就会替一台不用卡的实例申请 `nvidia.com/gpu`。同理,计费份数走 `core/money.billing_units`(GPU 实例 = 卡数,
+   CPU 实例 = 1 份整机):直接写 `单价 × gpu_count` 会让 CPU 实例每小时算出 ¥0.00。
+3. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。
+4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
-4. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
+5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
 
 金额、时间、钱包加锁、outbox、状态机、计费依据等编码级硬性规范见 `CLAUDE.md`。

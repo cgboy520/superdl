@@ -16,10 +16,15 @@ export function dedupAvailableTotal(skus: readonly SkuAvailabilityLike[]): numbe
   return total;
 }
 
-/** 按型号聚合的可售数(市场页型号筛选 chip):组内 (池, 型号) 取 max,同型号跨池求和。 */
+/**
+ * 按型号聚合的可售数(市场页型号筛选 chip):组内 (池, 型号) 取 max,同型号跨池求和。
+ * CPU 规格(gpu_model 空串)整条跳过:它按 vCPU/内存卖,混进「型号」维度会多出一个
+ * 空名字的 chip,首页「可租 N 张卡」也会把不带卡的实例数算进卡数。
+ */
 export function dedupAvailableByModel(skus: readonly SkuAvailabilityLike[]): Map<string, number> {
   const byGroup = new Map<string, { model: string; free: number }>();
   for (const s of skus) {
+    if (!s.gpu_model) continue;
     const key = `${s.pool_label ?? ""}${s.gpu_model}`;
     const free = s.available_count ?? 0;
     const cur = byGroup.get(key);

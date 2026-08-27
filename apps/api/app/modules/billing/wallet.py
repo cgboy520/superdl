@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
-from app.core.money import as_amount, disk_daily_charge
+from app.core.money import as_amount, disk_daily_charge, hourly_cost
 from app.core.pagination import Page, RawPage, clamp_limit, decode_cursor_int, slice_page
 from app.core.policies import get_effective_policies
 from app.core.timeutil import now_utc
@@ -172,7 +172,7 @@ async def assert_can_afford(
 
     running = (await orchestrator_service.list_running_instances_by_user(session)).get(user_id, [])
     inflight_hourly = sum(
-        (as_amount(i.price_hourly * i.gpu_count) for i in running), Decimal("0.00")
+        (hourly_cost(i.price_hourly, i.gpu_count) for i in running), Decimal("0.00")
     )
     inflight_daily = sum(
         (

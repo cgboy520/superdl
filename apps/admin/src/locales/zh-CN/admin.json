@@ -421,6 +421,7 @@
       "sysctl": "内核参数",
       "waitingNode": "等待对账"
     },
+    "poolCpu": "cpu(无卡机)",
     "poolHami": "hami(共享软切分)",
     "poolKata": "kata(整卡直通)",
     "poolLabel": "节点池",
@@ -663,6 +664,7 @@
     "colTier": "档位",
     "confirmSubmit": "确认提交",
     "coresPctLabel": "算力份额 %",
+    "cpuPoolHint": "cpu 池 = 无卡机;hami 池 = 跑 GPU 机的空闲 CPU(不申请显卡)",
     "created": "SKU 已创建(默认下架)",
     "createFailed": "创建失败",
     "cudaMaxLabel": "最高 CUDA 版本",

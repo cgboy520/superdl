@@ -2493,7 +2493,8 @@
             "enum": [
               "kata",
               "hami",
-              "mig"
+              "mig",
+              "cpu"
             ],
             "title": "Pool",
             "type": "string"
@@ -2959,7 +2960,7 @@
           "gpu_count": {
             "default": 1,
             "maximum": 8.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Gpu Count",
             "type": "integer"
           },
@@ -6467,20 +6468,19 @@
           "gpu_cores_pct": {
             "default": 100,
             "maximum": 100.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Gpu Cores Pct",
             "type": "integer"
           },
           "gpu_model": {
             "maxLength": 32,
-            "minLength": 1,
             "title": "Gpu Model",
             "type": "string"
           },
           "max_gpus_per_instance": {
             "default": 1,
             "maximum": 8.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Max Gpus Per Instance",
             "type": "integer"
           },
@@ -6556,7 +6556,7 @@
             "title": "Price Hourly"
           },
           "tier": {
-            "pattern": "^(dedicated|shared)$",
+            "pattern": "^(dedicated|shared|cpu)$",
             "title": "Tier",
             "type": "string"
           },
@@ -6566,7 +6566,7 @@
             "type": "integer"
           },
           "vram_gb": {
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Vram Gb",
             "type": "integer"
           }
@@ -6740,7 +6740,7 @@
             "anyOf": [
               {
                 "maximum": 100.0,
-                "minimum": 1.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -6753,7 +6753,7 @@
             "anyOf": [
               {
                 "maximum": 8.0,
-                "minimum": 1.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -6892,7 +6892,7 @@
           "vram_gb": {
             "anyOf": [
               {
-                "minimum": 1.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -12445,24 +12445,25 @@
     },
     "/api/admin/v1/skus/capacity-preview": {
       "get": {
-        "description": "SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。",
+        "description": "SKU 表单实时容量预览(纯台账;创建仍软校验,上架才硬校验)。\n\ngpu_model 留空 = CPU 规格预览:只按池匹配节点,可售数走 vCPU/内存上限口径\n(`catalog.sellable_cpu_slots`,与市场库存同一份算法),不报「型号未识别」。",
         "operationId": "sku_capacity_preview_api_admin_v1_skus_capacity_preview_get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "gpu_model",
-            "required": true,
-            "schema": {
-              "title": "Gpu Model",
-              "type": "string"
-            }
-          },
           {
             "in": "query",
             "name": "pool_label",
             "required": true,
             "schema": {
               "title": "Pool Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gpu_model",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Gpu Model",
               "type": "string"
             }
           },
@@ -12508,6 +12509,38 @@
                 }
               ],
               "title": "Vram Gb"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vcpu",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vcpu"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mem_gb",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mem Gb"
             }
           }
         ],
