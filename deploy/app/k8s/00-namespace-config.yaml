@@ -49,6 +49,6 @@ data:
   SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"
   SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
   # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。
-  # 默认值是 RKE2/k3s 的 Pod CIDR(请求经 ingress-nginx / 前端 nginx 转发,源地址是其 Pod IP)。
+  # 默认值是 RKE2/k3s 的 Pod CIDR(请求经 Envoy Gateway 数据面 / 前端 nginx 转发,源地址是其 Pod IP)。
   # 集群 Pod CIDR 不同按实际改;禁止写 "*",等于允许伪造源 IP。
   FORWARDED_ALLOW_IPS: "10.42.0.0/16"

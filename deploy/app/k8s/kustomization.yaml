@@ -11,7 +11,7 @@ resources:
   - 01-rbac.yaml
   - 02-api.yaml
   - 03-worker.yaml
-  - 04-ingress.yaml
+  - 04-gateway.yaml
   - 05-cert-manager.yaml
   - 06-pg-backup.yaml
   - 07-frontends.yaml

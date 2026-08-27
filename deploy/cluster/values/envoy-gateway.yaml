@@ -1,0 +1,77 @@
+# Envoy Gateway 控制面:北向唯一入口(Gateway API 实现),1:1 顶掉 2026-03 退休的 ingress-nginx。
+#
+# 分工必须记牢:本文件只配【控制面】——那个把 Gateway/HTTPRoute 翻译成 xDS 的 envoy-gateway
+# Deployment,它自己不过一个字节的业务流量。真正过流量的 Envoy 数据面(副本数/资源/落点/
+# Service 类型)在 EnvoyProxy CR 里(deploy/app/k8s/04-gateway.yaml 的 superdl-proxy)。
+# 两处名字相近、键名也像,改错地方的表现是「值写了但完全没生效」,没有任何报错。
+#
+# CRD 不由本 chart 装(helmfile 侧 crds.enabled=false),改由 presync 的 ../gateway-api-crds.sh
+# 单点负责:chart 把 Gateway API CRD 放在 helm 的 crds/ 目录,而该目录在 helm upgrade 时
+# 永不更新——跟着 chart 装等于 CRD 永远停在首装那一版。理由细节见脚本头注释。
+
+deployment:
+  # 控制面挂了不立刻断流(数据面 Envoy 按最后一份 xDS 继续转发),但期间 Gateway/HTTPRoute
+  # 的任何变更都不生效——租户新开实例的 Jupyter 域名一直 404,而且现象是「偶发」(取决于
+  # 控制面何时恢复)。2 副本(热备选主)保证滚动升级/节点驱逐时始终有一个在 reconcile。
+  replicas: 2
+  # 与 API/worker 同规(deploy/app/k8s/02、03),也与原 ingress-nginx values 一致:
+  # Guaranteed 只防同优先级驱逐,priorityClass 才保证资源紧张时先于租户 Pod 被保。
+  priorityClassName: system-cluster-critical
+  envoyGateway:
+    # 与 chart 默认值相同,显式写死:控制面内存随 HTTPRoute 条数涨(我们是一实例一条,
+    # 活跃实例多了就是几百上千条),这是唯一需要跟着规模复核的数字——写进仓库才有的复核。
+    # 升 chart 版本时默认值若变动也不会悄悄改掉现网限额。按实测调。
+    # 只限内存不限 CPU 是刻意的(也是 chart 默认):批量 HTTPRoute 变更时 reconcile 会短时打满,
+    # 卡上 CPU limit 只会把收敛时间拖长——而收敛慢的表现就是「新实例的 Jupyter 域名要等很久才通」。
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {memory: 1024Mi}
+  pod:
+    nodeSelector:
+      # 平台组件落点统一锚点(与 deploy/app/k8s 各清单一致);GPU 节点严禁打此标签。
+      node-role.superdl.io/infra: "true"
+    tolerations:
+      # 必配:infra 标签落在 RKE2 server 上,而 server 带 CriticalAddonsOnly=true:NoExecute
+      # (rke2/server-config.yaml)。只写 nodeSelector 不写容忍 = 控制面 Pod 永远 Pending,
+      # 而 Gateway 的 status 会一直停在空白,看上去像 CRD 没装好。
+      - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+    topologySpreadConstraints:
+      # 2 副本落同一台 infra 节点等于没有 HA;小集群不满足时仍可调度(ScheduleAnyway)。
+      # 选择器用 chart 恒定的两个标签(control-plane / app.kubernetes.io/name),
+      # 不用 instance——它跟 release 名走,改名即静默失配。
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            control-plane: envoy-gateway
+            app.kubernetes.io/name: gateway-helm
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            control-plane: envoy-gateway
+            app.kubernetes.io/name: gateway-helm
+
+podDisruptionBudget:
+  # chart 默认 0 = PDB 形同虚设,一次 drain 可以带走全部副本。
+  minAvailable: 1
+
+certgen:
+  # certgen 是 pre-install/pre-upgrade 钩子 Job,生成控制面自签的 webhook/xDS 服务证书。
+  # 与控制面同落 infra:私钥材料在这个 Pod 里过一遍,没有理由让它落到跑租户负载的 GPU 节点上。
+  # 钉了 nodeSelector 就必须一并给容忍,否则 Job 永远 Pending,helm install 卡在钩子上不返回。
+  job:
+    nodeSelector:
+      node-role.superdl.io/infra: "true"
+    tolerations:
+      - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+
+config:
+  envoyGateway:
+    logging:
+      level:
+        # 控制面日志是排查「路由不生效」的唯一入口:sectionName 写错、certificateRefs 指向
+        # 不存在的 Secret 这类错误不会阻断 apply,只在这里和策略对象的 status 里留痕。
+        default: info

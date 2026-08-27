@@ -228,6 +228,11 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
+      # 租户 Jupyter 入口是 HTTPRoute:kind 裸集群没有 Gateway API CRD,不装则 create_instance
+      # 直接 404。复用发布脚本装(顺带在 CI 里验证它可执行);只装 CRD 不装 Envoy Gateway 控制器
+      # —— 本冒烟断言的是「apiserver 接受我们拼的对象规约」,不需要真有数据面接管路由。
+      - name: 装 Gateway API CRD
+        run: bash deploy/cluster/gateway-api-crds.sh
       - name: RealOrchestrator 冒烟(kind)
         working-directory: apps/api
         env:
@@ -310,11 +315,21 @@ jobs:
               exit 1
             fi
           fi
-          # -skip:CRD 类(cert-manager/prometheus-operator)不在内置 schema;
-          # Kustomization 是 kustomize 配置而非 k8s 清单,同样无 schema;
+          # -skip:CRD 类(cert-manager/prometheus-operator/Gateway API/Envoy Gateway)
+          # 不在内置 schema;Kustomization 是 kustomize 配置而非 k8s 清单,同样无 schema;
           # -ignore-filename-pattern:10-migrate-job.yaml 的 name 含 CHANGE_TAG 占位
-          # (非法 DNS 名,由 scripts/release.sh 渲染后 create),不做静态校验
+          # (非法 DNS 名,由 scripts/release.sh 渲染后 create),不做静态校验。
+          # 被 skip 掉的 7 种网关对象改由下一步按真实 CRD 校验,不是不校验
           docker run --rm -v "$PWD:/work" "$img" \
-            -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization \
+            -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
             -ignore-filename-pattern '10-migrate-job' \
             -summary /work/deploy/app/k8s
+      # 网关清单按 helmfile 钉死那版 Envoy Gateway chart 里的真实 CRD 校验。
+      # 这一步存在的理由见脚本头注释:04-gateway.yaml 是「写错不报错、策略静默失效」的
+      # 重灾区,而其中最坏的一种(SecurityPolicy 被 apiserver 单独拒收 → 管理端白名单没了)
+      # 恰好是 apply 时才暴露的
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          python-version: "3.13"
+      - name: 网关清单 CRD schema 校验
+        run: uv run --with pyyaml --with jsonschema python3 scripts/check-gateway-manifests.py

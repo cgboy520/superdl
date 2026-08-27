@@ -158,10 +158,12 @@
   chart 默认。另:节点维标签在 dcgm-exporter 4.8.3 由 `Hostname` 改成小写 `hostname`,而 gpu-operator
   v26.3.3 默认还是 4.8.2;`prom.py` 的 `DCGM_NODE_LABEL` 与两条 GPU 告警的 `$labels.hostname` 都按小写
   写死,跟着 chart 默认走会让指标在、选择器选不中(静默失效),故把镜像钉到 4.8.3 而不是改三处选择器。
-- **两个 chart 默认值里的 `0` 会让 helm upgrade 直接失败,在 values 里显式钉成等效值。**
-  ingress-nginx 的 `controller.progressDeadlineSeconds: 0` 被 API server 拒(must be greater than
-  minReadySeconds),kube-prometheus-stack 的 `prometheusSpec.maximumStartupDurationSeconds: 0` 被 CRD 拒
-  (须 ≥60)。分别钉 600(k8s 默认)与 900(prometheus-operator 自身默认),行为不变,只为 upgrade 能过。
+- **chart 默认值里的 `0` 会让 helm upgrade 直接失败,在 values 里显式钉成等效值。**
+  kube-prometheus-stack 的 `prometheusSpec.maximumStartupDurationSeconds: 0` 被 CRD 拒(须 ≥60),
+  钉 900(prometheus-operator 自身默认),行为不变,只为 upgrade 能过。同款的第二例原本是 ingress-nginx 的
+  `controller.progressDeadlineSeconds: 0`(被 API server 拒:must be greater than minReadySeconds),钉 600;
+  该 release 已随「北向入口迁 Gateway API」删除,这一半随之作废。**保留本条**是因为「chart 默认值给 `0`」
+  这类坑不止这两处,新加 release 时照此复核。
 - **light 档 TopoLVM controller 取 1 副本。** chart 默认 2 副本 + 按 hostname 的 required 反亲和,
   单节点上第二个副本永远 Pending:功能不受影响,但集群里长期挂着一个红 Pod,会把真问题淹掉,
   也让「全部 Pod Running」这类巡检判据失效。
@@ -215,6 +217,44 @@
 - **不引 Sentry 类 SaaS。** 未捕获异常统一 500 留痕并经 Loki / Prometheus 告警,少一个外部依赖与数据出境面。
 - **管理端监控自绘,Grafana 只作外链。** 不做 iframe 嵌入,`grafana_url` 未配置只显示一行提示。
 - **告警 `runbook_url` 只加在有专属 runbook 的规则上。** 其余告警的第一步写在 summary 与 `deploy/cluster/runbooks/README.md` 索引表里,不为每条告警生造一页。
+- **北向入口从 ingress-nginx 迁到 Gateway API + Envoy Gateway。** 背景:ingress-nginx 2026-03 退休,最后版本
+  controller-v1.15.1,此后不再修任何 CVE —— 而它是全站唯一的公网入口,继续用等于长期背着未修漏洞。
+  决定:整体换成 Gateway API 的实现 Envoy Gateway v1.9.0(对齐 Gateway API v1.6.1,内置 Envoy distroless-v1.39.0),
+  版本钉在 `deploy/cluster/helmfile.yaml.gotmpl` 与 `deploy/cluster/gateway-api-crds.sh`;本次**只做 1:1 平移**,
+  不借机加新入口能力。选 Envoy Gateway 而不是 Cilium 的 Gateway API:light 档(k3s + 内置 flannel)根本不装 Cilium,
+  而两档必须跑同一套入口;`values/cilium.yaml` 的 `gatewayAPI` 因此保持 false —— 两个控制器 reconcile 同一批
+  Gateway/HTTPRoute 会互相覆盖 status 与 LB 地址,现象是入口地址来回翻,而两边日志都「一切正常」。
+  形态:`GatewayClass superdl` + 一个 `Gateway superdl`(ns `superdl`)带 5 个 listener
+  (`http` / `api-https` / `console-https` / `admin-https` / `app-https`)+ 4 条平台 HTTPRoute;租户 Jupyter 是
+  **每实例一条 HTTPRoute**,建在租户 ns 挂 `app-https`,跨 ns 靠 `allowedRoutes.namespaces.from: Selector` 加租户 ns
+  已有的 `superdl.io/managed=true`(不需要 ReferenceGrant,也不新增标签)。不拿一张 `*.superdl.example.com` 通配
+  listener 顶掉三个平台域:那会强制 api/console/admin 与租户域同根,现网清单允许它们落在互不相干的域名上。
+  **CRD 的 channel 首装即定,事后换不回去**:平台用到的每源 IP 本地限流落在 experimental channel,而随 CRD 一起装的
+  safe-upgrades ValidatingAdmissionPolicy 用 CEL 明文拒绝「standard 之上装 experimental」;装错只能把 Gateway API CRD
+  删净重装,而删 CRD 会连带删掉集群内全部 Gateway/HTTPRoute —— 平台三个域名加全部租户 Jupyter 入口一起消失。
+  所以 CRD 的生命周期单点收进 `deploy/cluster/gateway-api-crds.sh`(chart 侧一律 `crds.enabled=false`:gateway-helm 的
+  CRD 子 chart 走 helm 的 `crds/` 目录,该目录在 `helm upgrade` 时永不更新,跟着 chart 装等于 CRD 永远停在首装那一版),
+  脚本自带 channel 前置闸门,`preflight.sh` 另有一道复核。
+  **三条 nginx annotation 的等价与不等价**(取值与症状见 `reference/security.md`「限流分层」):`limit-rps` / `limit-rpm`
+  → `BackendTrafficPolicy` 的 local 限流,靠 `sourceCIDR.type: Distinct` 拿回「每源 IP 一个桶」,**等价**;
+  `whitelist-source-range` → `SecurityPolicy.authorization`(`defaultAction: Deny` + `clientCIDRs`),**等价**,
+  但占位符换成 RFC 5737 的 `192.0.2.0/24` 而不是 `CHANGE_ME_*` —— CRD 上有 CIDR 正则,非法串会被 apiserver
+  单独拒收该对象而其余照常生效,那等于管理端无声敞开,换成合法但无真实主机的网段才是 fail-closed;
+  `limit-connections: 20`(每源 IP 并发连接)**没有等价物**,EG 只有每 Envoy 实例的连接总量,这是一处有意接受的
+  **能力回退**,不要当无损迁移。三者连同白名单都以 `externalTrafficPolicy: Local` 为前提。
+  后果:①`SUPERDL_INGRESS_CLASS_NAME` 删除,入口坐标改成 `core/k8s/base.py` 的三个常量(与 StorageClass 同一做法,
+  入口拓扑不是按环境变的东西);②`cluster_status.ingress_ready` 改名 `gateway_ready`,判据从「控制器 Deployment
+  ready≥1」换成「Gateway 对象 `Programmed=True`」(前者探不到 listener 证书缺失、hostname 撞车这类「控制器活着但
+  流量进不来」),管理端组件 key 同步 `ingress` → `gateway`;③凡按 ns 名认入口的地方(NetworkPolicy 来源、准入豁免
+  名单)一律 `ingress-nginx` → `envoy-gateway-system`(未开 Gateway Namespace Mode,Envoy 数据面与 EG 控制面同 ns),
+  漏改就是网关起不来,且报错只在 EG 控制器日志里;④TLS 弃用 ingress-shim 注解,改在 `05-cert-manager.yaml` 里显式写
+  Certificate(gateway-shim 要给 cert-manager 开 `--enable-gateway-api`,不值得为省几行多挂一个依赖);
+  ⑤`04-ingress.yaml` 改名 `04-gateway.yaml`,并新增 CI 闸门 `scripts/check-gateway-manifests.py` 按钉死那版 chart 的
+  真实 CRD 校验它 —— kubeconform 内置 schema 没有这 7 种对象,只能 skip,而这个文件恰恰是「写错不报错」的重灾区;
+  ⑥两个不报错的默认值必须记住:`streamIdleTimeout` 默认 5 分钟会切断 Jupyter 的 WebSocket 与 SSE(症状极像鉴权过期
+  或网络抖动),listener 的 `sectionName` 写错只让策略静默失效、唯一线索在策略对象的 `status.ancestors[].conditions`;
+  ⑦一实例一条 HTTPRoute 意味着路由条数随活跃实例线性增长、Envoy 内存跟着涨,light 档的 memory limit 必须实机压过再定。
+  见 `deploy/cluster/README.md`、`deploy/app/k8s/04-gateway.yaml`。
 
 ## 评审编号索引
 

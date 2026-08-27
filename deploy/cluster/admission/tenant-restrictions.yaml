@@ -243,11 +243,15 @@ spec:
     namespaceSelector:
       matchExpressions:
         # 豁免:cilium/hami/juicefs-csi(kube-system)、gpu-operator、node-exporter+alloy
-        # (monitoring)、ingress-nginx、topolvm node plugin(topolvm-system)——
+        # (monitoring)、envoy-gateway-system(北向入口)、topolvm node plugin(topolvm-system)——
         # 这些栈的 DaemonSet 合法需要 privileged/hostPath/hostNetwork。
+        # envoy-gateway-system 是原 ingress-nginx 那一格:名单按 ns 名匹配,入口 ns 改名而
+        # 名单没跟着改,Envoy 数据面立刻落进本策略覆盖面——而数据面 Deployment 是 EG 控制器
+        # 动态生成的(仓库里没有它的清单,改不到它),命中任一条基线就是整个网关起不来,
+        # 且拒绝信息只出现在 EG 控制器日志里,kubectl 那边看到的只是「Gateway 一直不 Ready」。
         - key: kubernetes.io/metadata.name
           operator: NotIn
-          values: ["kube-system", "gpu-operator", "monitoring", "ingress-nginx", "topolvm-system"]
+          values: ["kube-system", "gpu-operator", "monitoring", "envoy-gateway-system", "topolvm-system"]
     resourceRules:
       - apiGroups: [""]
         apiVersions: ["*"]

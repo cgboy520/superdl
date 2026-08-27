@@ -2,9 +2,9 @@
 
 | 目录 | 内容 |
 |---|---|
-| `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/Ingress-TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
+| `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/网关与 TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
 | `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server 安装:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点一律走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
-| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;`cluster/admission/` 为准入策略(非 helm release,发布流程内单独 `kubectl apply`,preflight 强制校验 Deny 生效) |
+| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Envoy Gateway 北向入口 + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 不跟 chart 走,由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为准入策略(非 helm release,发布流程内单独 `kubectl apply`,preflight 强制校验 Deny 生效) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
 
@@ -12,7 +12,7 @@
 
 发布走 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>` 一个入口:迁移 Job → set image+apply
 (kustomize 渲染后替换清单占位 `CHANGE_IMAGE_PREFIX`(Harbor 项目前缀)与 `CHANGE_TAG`)→ rollout status →
-经 Ingress 从集群外 GET `/readyz`,任一步失败即非零退出(第 4 步取不到域名时跳过并提示)。禁止绕过脚本手改各清单 tag。
+经网关从集群外 GET `/readyz`,任一步失败即非零退出(第 4 步取不到域名时跳过并提示)。禁止绕过脚本手改各清单 tag。
 
 1. `helmfile -e <full|light> apply`(cluster/:双档见 `cluster/README.md`,先 `./preflight.sh`)→ 建 `superdl-api-secrets` 与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)等 Secret(值不入库;字段清单 `app/k8s/00-namespace-config.yaml` 非密 + `app/secrets.example.yaml` 密,prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准)
 2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息自动生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME`(push 机器人)/ `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl;api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册)
@@ -20,7 +20,7 @@
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`——**必须先于滚动**;`/readyz` 会比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都会在这一关现形;
    - 第 2 步 `kubectl kustomize` 渲染后把 `CHANGE_IMAGE_PREFIX` / `CHANGE_TAG` 换成 Harbor 项目前缀与本次 tag 再 apply;
    - 第 3 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不再重复探测);
-   - 第 4 步经 Ingress 从集群外 `curl -fsS https://<api-domain>/readyz`,多验 DNS/TLS/Ingress 一层:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。任一步失败即退、按下方回滚指引处理。
+   - 第 4 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,多验 DNS / TLS / 网关路由一层:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。任一步失败即退、按下方回滚指引处理。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(prod 可跑;`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
 5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
@@ -109,8 +109,15 @@ staging 的 PG 同样适用上节备份要求。
 
 管理端 API 在公网 api 域下不可达(API 侧边缘收口:prod 下 Host 非 admin 域一律 404,恒开、无开关,见 `docs/reference/security.md`);
 `admin.superdl.example.com` 本身仅 TLS + 管理端 JWT + TOTP(全角色强制)。
-生产必须再叠加一层网络边界——`app/k8s/04-ingress.yaml` 的 `superdl-admin` Ingress
-**默认启用**源 IP 白名单注解(`CHANGE_ME_OFFICE_CIDR/32` 占位,preflight 强制校验已替换),
-填办公网/跳板机出口 CIDR;VPN 或身份感知代理(oauth2-proxy 等)可替代之。
+生产必须再叠加一层网络边界——`app/k8s/04-gateway.yaml` 的 `SecurityPolicy superdl-admin-allowlist`
+(挂在 `superdl-admin` 这条 HTTPRoute 上)**默认启用**源 IP 白名单:`authorization.defaultAction: Deny`
+加一条 `action: Allow` 的 `principal.clientCIDRs`,填办公网/跳板机出口 CIDR(多个就多写几条)。
+占位符是 `192.0.2.0/24`(RFC 5737 文档专用网段)而不是 `CHANGE_ME_*`:`clientCIDRs` 在 CRD 里带 CIDR 正则,
+非法字符串会被 apiserver **单独拒收该对象**,而 `kubectl apply` 是逐对象的 —— 结果会是只有白名单没建起来、
+其余全部生效,管理端就此在无人察觉的情况下敞开。换成合法但不存在任何真实主机的网段,忘了替换时是 fail-closed
+(管理端从任何地方都进不去,当场发现);`preflight.sh` 按这个网段扫描,未替换不予放行。
+另两处易错:漏写 `defaultAction: Deny` 会让规则从白名单退化成一条毫无作用的显式放行;源 IP 的真实性依赖
+`EnvoyProxy` 的 `envoyService.externalTrafficPolicy: Local`,改成 `Cluster` 后 Envoy 看到的源 IP 全是节点 IP,
+白名单把所有人算成同一个源、当场失效且不报错。VPN 或身份感知代理(oauth2-proxy 等)可替代之。
 应急通道:白名单误伤时用 `kubectl port-forward`(见 runbook),勿直接放开 0.0.0.0/0。
-Grafana 等其他管理面只走内网或 port-forward,勿经 Ingress 暴露。
+Grafana 等其他管理面只走内网或 port-forward,勿经网关暴露。

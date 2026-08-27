@@ -15,15 +15,16 @@
 - 限流计数落 PG(`rate_limit_counters`),不用进程内计数;429 响应带 `Retry-After`(窗口剩余秒数,DB 侧计算),401 统一带 `WWW-Authenticate: Bearer`。
 - 统一错误体覆盖框架层异常:路由 404/405 等 StarletteHTTPException 也渲染 `{code, message, message_key, params, detail}`(405 用 `METHOD_NOT_ALLOWED`/`common.methodNotAllowed`);未捕获异常由内层 `Uniform500Middleware` 渲染成 500 响应,审计中间件按响应状态码落 `result=500` 审计行。
 - 安全响应头由纯 ASGI 中间件统一注入;`/metrics` 须 Bearer 鉴权(见 [observability.md](./observability.md))。
-- 边缘收口中间件(`app/core/edge_guard.py`):`/api/admin/*` 仅放行 Host 命中 `admin_host` 的请求,其余 404;`/metrics` 带 `X-Forwarded-For`(经 ingress 进入)一律 404,集群内直刮不带该头,与 Bearer 双闸并存。prod 恒开、无开关:`environment` 只有 dev / test / prod 三值,类生产环境(staging)也以 `prod` 运行(独立 secrets),收口随之生效;dev / test 无 ingress,不启用。
+- 边缘收口中间件(`app/core/edge_guard.py`):`/api/admin/*` 仅放行 Host 命中 `admin_host` 的请求,其余 404;`/metrics` 带 `X-Forwarded-For`(经网关进入)一律 404,集群内直刮不带该头,与 Bearer 双闸并存。prod 恒开、无开关:`environment` 只有 dev / test / prod 三值,类生产环境(staging)也以 `prod` 运行(独立 secrets),收口随之生效;dev / test 无网关,不启用。
 - 短信渠道走 `app/core/sms.py` 的 Protocol + 工厂(mock / 阿里云 dysmsapi RPC 签名),不在业务代码里直连渠道 SDK;落日志时手机号与验证码由全局日志处理器(`app/core/logging.py`)按键名打码,渠道不各自打码。
 - Bearer token 常量时间比较统一走 `app/core/http.py` 的 `bearer_matches`(先 `.encode()` 成 bytes:compare_digest 收 str 遇非 ASCII 会抛 TypeError),/metrics(API 与 worker)与 Alertmanager webhook 三处共用。
 - 租户容器加固基线(`core/k8s/real.py::tenant_security_context`,无条件下发):`allowPrivilegeEscalation=false`、
   `seccompProfile=RuntimeDefault`、`capabilities.drop=[ALL]` 之后只 add 回 `SYS_CHROOT` / `SETUID` / `SETGID` ——
   OpenSSH 的预认证特权分离强制需要这三个,缺任一个则平台承诺的 `ssh root@` 入口在密钥交换阶段即断(见 `docs/decisions.md`);
   容器本就以 root 跑在自己的 user namespace 里,这三个不产生新的宿主侧权限。不下发 `runAsNonRoot`(平台镜像以 root 运行)。
-- 租户 Pod 必须带 Egress 隔离 NetworkPolicy:禁访内网网段(含 CGNAT 100.64.0.0/10 与云元数据地址),并按明确滥用途 TCP 端口黑名单封禁 SMTP(25/465/587)、SMB/NetBIOS(135/139/445)、Telnet(23)、RDP(3389);HTTPS/SSH 出/包管理/对象存储等正常用途不受影响。租户 ns 打 PSA 标签(enforce=baseline、audit/warn=restricted;平台镜像以 root 运行,不能 enforce=restricted),容器有 ephemeral-storage 限额。
+- 租户 Pod 必须带 Egress 隔离 NetworkPolicy:禁访内网网段(含 CGNAT 100.64.0.0/10 与云元数据地址),并按明确滥用途 TCP 端口黑名单封禁 SMTP(25/465/587)、SMB/NetBIOS(135/139/445)、Telnet(23)、RDP(3389);HTTPS/SSH 出/包管理/对象存储等正常用途不受影响。入方向默认拒东西向,只放行 `envoy-gateway-system`(Envoy **数据面 Pod** 所在 ns,`core/k8s/real.py` 的 `GATEWAY_DATAPLANE_NAMESPACE`)到 Jupyter 8888 与 SSH 22 —— 注意不是 `Gateway` 对象所在的 `superdl` ns:未开 Gateway Namespace Mode 时数据面与 EG 控制面同 ns,按 Gateway 所在 ns 写会双不通。平台自身前端与 API 的入向 NetworkPolicy(`deploy/app/k8s/09-networkpolicy.yaml`)同源。租户 ns 打 PSA 标签(enforce=baseline、audit/warn=restricted;平台镜像以 root 运行,不能 enforce=restricted),容器有 ephemeral-storage 限额。
 - 每租户独立 namespace + ResourceQuota 兜底 + 独立 JuiceFS PVC;JuiceFS 子路径须校验合法性,拒绝越界路径。
+- **租户手里没有任何 K8s 凭据,`httproutes` 的写权限只给 `superdl-tenant-mgr` 这一个 SA**(`deploy/app/k8s/01-rbac.yaml`)。这条不是可有可无的:HTTPRoute 只要 hostname 与 listener 有交集就能挂上,谁能在租户 ns 里任意建路由,谁就能声明平台域名把流量劫走。与之配套的是 listener 侧的消歧规则 —— 平台三个 listener 写**精确 hostname**、租户 listener 写通配,SNI 与 Host 都按「精确优先于通配」匹配,所以租户域与平台域共用一级域(如租户 `*.<域>` + 平台 `api.<域>`)是支持的形态;把平台域也换成通配就真分不开了。
 - 创建实例只校验镜像引用形态(域名/路径/tag/digest 合法,`core/registry.is_valid_image_ref`),来源白名单默认关;需要收紧时在平台配置·镜像仓库填 `image_allowed_registries`(每行一个仓库前缀),生效白名单 = 配置行 ∪ Harbor 地址前缀(`core/registry.effective_image_allowlist`),配置后只放行平台镜像目录内的引用与这些前缀;prod 下白名单为空且未配 Harbor 地址只给配置告警(`compute_config_warnings`),不拒启动。
 - 合规:前端 `/legal/terms` 与 `/legal/privacy` 为模板页,注册勾选前后端强校验,备案号运行期下发。
 - 高危管理操作一律「原因必填 → 二次确认 → 审计」;审计不落 token、密钥与配置值。
@@ -32,7 +33,15 @@
 
 ## 限流分层
 
-两层纵深:边缘层(ingress-nginx,`deploy/app/k8s/04-ingress.yaml`)对公网 API 域按单 IP 兜底 20 rps / 600 rpm / 20 并发连接,只挡洪水;精细化限流全在应用层(`app/core/ratelimit.py`,PG 固定窗口计数,多副本共享,429 带 `Retry-After`)。管理面(admin host)不配边缘限流——源 IP 白名单是更强的边界。各端点的应用层限额以模块文档为准,汇总表见 [limits.md](./limits.md)。
+两层纵深:边缘层(Envoy Gateway,`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy superdl-api-ratelimit`)对公网 API 域按**每源 IP** 兜底 20 rps / 600 rpm,只挡爆破与洪水;精细化限流全在应用层(`app/core/ratelimit.py`,PG 固定窗口计数,多副本共享,429 带 `Retry-After`)。管理面(admin host)不配边缘限流——源 IP 白名单是更强的边界。各端点的应用层限额以模块文档为准,汇总表见 [limits.md](./limits.md)。
+
+边缘层这几条都属于「配错了不报错、只是静默失效」,改动后必须 `kubectl describe backendtrafficpolicy/securitypolicy/clienttrafficpolicy -n superdl` 看 `Accepted=True` 再收工:
+
+- **每源 IP 靠 `sourceCIDR.type: Distinct`**:它让 `0.0.0.0/0` 里每个源 IP 各占一个桶,等价于原 nginx 按 `$binary_remote_addr` 计的 `limit-rps` / `limit-rpm`。写成默认的 `Exact` 会变成全网共用一个桶,正常业务量就能把所有人一起限死。(官方文档至今写着「local 限流不支持 distinct 匹配」,那句话对 v1.9.0 已过时,以源码为准;升版时按源码复核,别按文档改回去。)
+- **每源 IP 并发连接数是一处能力回退,不是无损平移**:原 ingress-nginx 的 `limit-connections: 20` 按源 IP 计,Envoy Gateway 没有等价原语——`ClientTrafficPolicy.connection.connectionLimit` 是**每个 Envoy 实例的连接总量**,照抄 20 会瞬间打死全站。那里现在配的是防内存耗尽的总量兜底 10000,每 IP 维度只剩上面的 RPS/RPM 承担。后人别把 10000 当成「20 的等价值」再调小。
+- **管理端源 IP 白名单**(`SecurityPolicy superdl-admin-allowlist`,挂 `superdl-admin` 路由,默认启用):`authorization.defaultAction: Deny` + 一条 `action: Allow` 的 `principal.clientCIDRs`。漏写 `defaultAction: Deny` 则默认是 Allow,规则从白名单退化成一条毫无作用的显式放行。占位符是 `192.0.2.0/24`(RFC 5737 文档网段)而不是 `CHANGE_ME_*`:`clientCIDRs` 在 CRD 里带 CIDR 正则,非法字符串会被 apiserver **单独拒收该对象**,而 apply 是逐对象的——结果会是只有白名单没建起来、其余全部生效,管理端就此无声敞开;换成合法但没有任何真实主机的网段,忘了替换时是 fail-closed(管理端谁也进不去,当场发现)。`preflight.sh` 按这个网段扫描,未替换不予放行。
+- **每 IP 限流与管理端白名单都建立在 `envoyService.externalTrafficPolicy: Local` 之上**(`EnvoyProxy superdl-proxy`,虽是默认值仍显式写死):改成 `Cluster` 会多一跳 kube-proxy SNAT,Envoy 看到的源 IP 变成节点 IP —— 白名单把全部流量算成同一个源、每 IP 限流退化成全网一个桶,两条策略当场失效且不报错。
+- local 限流是每个 Envoy 实例本地计数,2 副本时全局实际上限约为配置值 × 副本数;原 nginx 的 `limit_req` 共享内存区同样是每副本一份,这一条不是本次迁移引入的偏差。要严格全局需另部署 rate limit service + Redis,当前规模不值当。
 
 ## 已接受取舍(评审在案,勿再单独立项)
 

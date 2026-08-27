@@ -13,6 +13,23 @@ INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"  # 实例盘:节点本地 NV
 JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
 JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)
 
+# 北向入口契约:三个名字须与 deploy/app/k8s/04-gateway.yaml 里的 Gateway 逐字一致。
+# 与 StorageClass 同一类问题——写错不报错:HTTPRoute 会一直停在
+# status.parents[].conditions 的 Accepted=False / NotAllowedByListeners,
+# 而 create 调用本身返回 201,实例照常进 running,只是 Jupyter 域名永远 404。
+# 这条链路没有下发门禁(入口不通不影响实例本身与计费),兜底在管理端集群体检的
+# gateway 项:判据是 Gateway 对象的 Programmed 条件,见 probe_cluster。
+GATEWAY_NAMESPACE = "superdl"  # Gateway 对象所在 ns(= 平台自身 ns)
+GATEWAY_NAME = "superdl"
+# 租户 Jupyter 专用 listener(*.app.<域名>)。平台自身三个入口挂在各自的 listener 上,
+# 租户路由只许挂这一个:它是唯一开了 allowedRoutes.namespaces.from=Selector 的。
+GATEWAY_APP_LISTENER = "app-https"
+# Gateway API 资源坐标(官方客户端无 typed model,一律走 CustomObjectsApi)
+GATEWAY_API_GROUP = "gateway.networking.k8s.io"
+GATEWAY_API_VERSION = "v1"
+HTTPROUTE_PLURAL = "httproutes"
+GATEWAY_PLURAL = "gateways"
+
 
 def jupyter_service_name(instance_name: str) -> str:
     """Jupyter 的 ClusterIP Service 名,与 SSH 的 NodePort Service 分开。
@@ -111,7 +128,10 @@ class ClusterProbe:
     gpu_operator_present: bool = False
     kata_runtimeclass: bool = False  # RuntimeClass kata-qemu 存在
     nvidia_runtimeclass: bool = False  # RuntimeClass nvidia 存在(k3s 上 shared 档下发的前提)
-    ingress_ready: bool = False  # ingress-nginx controller ready≥1(租户 Jupyter 入口)
+    # Gateway 对象 status.conditions 的 Programmed=True(租户 Jupyter 入口)。
+    # 只探控制器 Deployment 不够:CRD 装了、控制器活着,但 listener 的证书 Secret 缺失
+    # 或 hostname 冲突时,Programmed 仍为 False 而流量一条都进不来。
+    gateway_ready: bool = False
     cert_manager_ready: bool = False  # cert-manager ready≥1(泛域名证书签发与续期)
     nodes_ready: int = 0  # Ready 且可调度的节点数
     nodes_total: int = 0  # 集群节点总数(含未打池标签)
@@ -155,11 +175,11 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        """创建 Pod + Service(SSH NodePort)+ Ingress(Jupyter)。已存在则跳过。"""
+        """创建 Pod + Service(SSH NodePort)+ HTTPRoute(Jupyter)。已存在则跳过。"""
         ...
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
-        """删除该实例的 Pod/Service/Ingress。**不动实例盘**,盘必须活过关机
+        """删除该实例的 Pod/Service/HTTPRoute。**不动实例盘**,盘必须活过关机
         (见 delete_instance_disk)。不存在则跳过。
 
         force=True 走强制删除(gracePeriodSeconds=0,不等 kubelet 确认),只在节点已失联时用
@@ -189,7 +209,7 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
-        """列出全部租户实例的 Service/Ingress (namespace, 实例名;jupyter 副名已归并)。
+        """列出全部租户实例的 Service/HTTPRoute (namespace, 实例名;jupyter 副名已归并)。
         reconciler 孤儿端点清理用(残留端点会持续占 NodePort)。"""
         ...
 
@@ -249,7 +269,10 @@ GPU_MODEL_NODE_LABEL = (
     "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)
 )
 POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定死;kata / hami / mig 分池铁律)
-# 平台受管对象标签:实例 Pod/Service/Ingress/受管 Job 均打此标,全量 LIST 的过滤依据
+# 平台受管对象标签:实例 Pod/Service/HTTPRoute/受管 Job 均打此标,全量 LIST 的过滤依据。
+# 租户 namespace 也打这一个标签,同时兼作 Gateway `app-https` listener 的
+# allowedRoutes.namespaces.from=Selector 选择器 —— 平台自身 ns 不带此标,
+# 于是该 selector 精确等于「全部租户 ns 且仅租户 ns」,不必再造一个标签。
 MANAGED_LABEL = "superdl.io/managed"
 # K8s 控制器自动打在 Job 子孙 Pod 上的标签:泄漏回收的豁免依据
 # (Job 泄漏由 ttl_seconds_after_finished 兜底,不属"未知 Pod 强删"范围)

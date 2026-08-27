@@ -62,7 +62,9 @@
 
 ## 应用层限流
 
-固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(ingress-nginx)对公网 API 域另有单 IP 20 rps / 600 rpm / 20 并发连接兜底(`deploy/app/k8s/04-ingress.yaml`);管理面不配边缘限流,靠源 IP 白名单。
+固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(Envoy Gateway)对公网 API 域另有**每源 IP** 20 rps / 600 rpm 兜底(`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy`,`sourceCIDR.type: Distinct` 才是每 IP 一个桶);管理面不配边缘限流,靠源 IP 白名单。
+
+原 ingress-nginx 的**每源 IP 20 并发连接**这一条已不存在:Envoy Gateway 没有每源 IP 连接数原语,`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000 只作防内存耗尽的兜底,不是 20 的等价值。取舍见 [security.md](./security.md)「限流分层」。
 
 | 动作 | 维度 | 限额 | 备注 |
 |---|---|---|---|

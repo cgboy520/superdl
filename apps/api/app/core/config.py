@@ -151,8 +151,6 @@ class Settings(BaseSettings):
     # 每次 K8s 请求的超时(连接, 读);官方客户端无全局超时,须显式设置
     k8s_connect_timeout_seconds: float = 5.0
     k8s_read_timeout_seconds: float = 30.0
-    # 租户 Jupyter Ingress 的 IngressClass;未标 default 的 IngressClass 不自动接管,须显式指定
-    ingress_class_name: str = "nginx"
     # SSH 入口不单独配域名:SSH 协议没有主机名,实例只靠 NodePort 区分,连接串直接用实例自己的域名
     # (与 Jupyter 同名,见 orchestrator/service.jupyter_host);部署约束:泛域名解析到的地址必须
     # 同时能转发 ssh_port_range 端口段(单节点即节点本身;多节点为转发该端口段的 LB/VIP)

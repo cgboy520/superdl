@@ -16,7 +16,7 @@ export const ClusterComponentOutKey = {
   nvidia_runtimeclass: 'nvidia_runtimeclass',
   kata_runtimeclass: 'kata_runtimeclass',
   storage: 'storage',
-  ingress: 'ingress',
+  gateway: 'gateway',
   cert_manager: 'cert_manager',
   monitoring: 'monitoring',
 } as const;

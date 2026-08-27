@@ -78,13 +78,45 @@ for f in "${placeholder_files[@]}"; do
   fi
 done
 
-say "== 应用入口(../app)=="
-app_ingress=../app/k8s/04-ingress.yaml
-if [[ -f "$app_ingress" ]]; then
-  if grep -q 'CHANGE_ME_OFFICE_CIDR' "$app_ingress"; then
-    miss "$app_ingress 管理端白名单仍是 CHANGE_ME_OFFICE_CIDR 占位(替换为办公网/跳板机出口 CIDR)"
+say "== Gateway API CRD(channel 首装即定,事后换不回去)=="
+# 北向入口是 Envoy Gateway,平台用到的策略对象(BackendTrafficPolicy 的每源 IP 本地限流等)
+# 落在 experimental channel。CRD 由 helmfile presync 的 ./gateway-api-crds.sh 装:
+# 首装时集群里还没有 CRD 属正常,不算缺项。但装成 standard 就换不回来了——随 CRD 一起装的
+# safe-upgrades ValidatingAdmissionPolicy 用 CEL 拒绝 standard→experimental,唯一出路是把
+# CRD 删净重装,而删 CRD 会连带删掉集群内全部 Gateway/HTTPRoute(平台三域名 + 全部租户
+# Jupyter 入口一起消失)。所以这一项发现不符要当场停,别等到某条策略静默失效才发现。
+gw_crd=gateways.gateway.networking.k8s.io
+if kubectl get crd "$gw_crd" >/dev/null 2>&1; then
+  gw_channel=$(kubectl get crd "$gw_crd" \
+    -o 'go-template={{index .metadata.annotations "gateway.networking.k8s.io/channel"}}' 2>/dev/null || true)
+  gw_bundle=$(kubectl get crd "$gw_crd" \
+    -o 'go-template={{index .metadata.annotations "gateway.networking.k8s.io/bundle-version"}}' 2>/dev/null || true)
+  if [[ "$gw_channel" == "experimental" ]]; then
+    ok "Gateway API CRD channel=experimental"
   else
-    ok "$app_ingress 管理端白名单已配真实网段"
+    miss "Gateway API CRD channel=${gw_channel:-未知}(需 experimental)——事后换不回去:safe-upgrades 策略拒绝 standard→experimental,只能删净 CRD 重装,代价是集群内全部 Gateway/HTTPRoute 一并消失"
+  fi
+  if [[ "$gw_bundle" == "v1.6.1" ]]; then
+    ok "Gateway API bundle-version=v1.6.1(对齐 Envoy Gateway v1.9.0)"
+  else
+    miss "Gateway API bundle-version=${gw_bundle:-未知}(需 v1.6.1,与 helmfile 的 envoy-gateway v1.9.0 对齐;跑 ./gateway-api-crds.sh 升到位)"
+  fi
+else
+  ok "Gateway API CRD 尚未安装(首装正常:helmfile apply 的 presync 会跑 ./gateway-api-crds.sh 按 experimental channel 装入)"
+fi
+
+say "== 应用入口(../app)=="
+app_gateway=../app/k8s/04-gateway.yaml
+# 管理端白名单的占位符不是 CHANGE_ME_* 而是 192.0.2.0/24(RFC 5737 文档网段):
+# SecurityPolicy 的 clientCIDRs 在 CRD 里带 CIDR 正则,非法字符串会被 apiserver 单独拒收,
+# 而 apply 是逐对象的——结果会是「只有白名单这一个对象没建起来,其余全部生效」,
+# 管理端就此无声敞开。换成合法但不存在任何真实主机的网段,忘了替换时是 fail-closed
+# (管理端谁也进不去,当场发现),这道检查负责在 apply 之前就拦住。
+if [[ -f "$app_gateway" ]]; then
+  if grep -q '192\.0\.2\.0/24' "$app_gateway"; then
+    miss "$app_gateway 管理端白名单仍是 192.0.2.0/24 占位(替换为办公网/跳板机出口 CIDR)"
+  else
+    ok "$app_gateway 管理端白名单已配真实网段"
   fi
 fi
 
@@ -198,7 +230,7 @@ if [[ "$env_name" == "light" ]]; then
     miss "RuntimeClass nvidia 不存在(k3s 需已装 NVIDIA 驱动+toolkit;node-join.sh 会就位)"
   fi
   if kubectl -n kube-system get deploy traefik >/dev/null 2>&1; then
-    miss "traefik 未禁用(server config 需 disable: traefik,Ingress 统一走 ingress-nginx)"
+    miss "traefik 未禁用(server config 需 disable: traefik,北向入口统一走 Envoy Gateway)"
   else
     ok "traefik 已禁用"
   fi

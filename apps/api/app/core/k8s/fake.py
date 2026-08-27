@@ -119,7 +119,7 @@ class FakeOrchestrator:
             gpu_operator_present=True,
             kata_runtimeclass=self.probe_kata_runtimeclass,
             nvidia_runtimeclass=True,
-            ingress_ready=True,
+            gateway_ready=True,
             cert_manager_ready=True,
             nodes_ready=sum(pools.values()),
             nodes_total=sum(pools.values()),

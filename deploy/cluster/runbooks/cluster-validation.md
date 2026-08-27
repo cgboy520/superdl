@@ -101,7 +101,42 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] RKE2 / k3s 的 cn 镜像源可用
 - [ ] 集群能力探测(probe)所需 RBAC 在 RKE2 与 k3s 上均足够
 
-## J. 发布检查单(每次上线)
+## J. 北向入口(Gateway API + Envoy Gateway)
+
+- [ ] `kubectl get crd gateways.gateway.networking.k8s.io -o jsonpath='{.metadata.annotations}'`:
+      `gateway.networking.k8s.io/channel` = **experimental**、`bundle-version` = **v1.6.1**。不符即停手 ——
+      channel 事后换不回去(safe-upgrades 策略拒绝 standard→experimental),唯一出路是删净 CRD 重装,
+      而那会连带删掉集群内全部 Gateway/HTTPRoute(平台三域名 + 全部租户 Jupyter 入口)。`preflight.sh` 同款检查
+- [ ] `kubectl -n superdl get gateway superdl -o yaml`:`Programmed=True`,5 个 listener
+      (`http` / `api-https` / `console-https` / `admin-https` / `app-https`)各自 `Programmed=True`,
+      `attachedRoutes` 与预期条数一致。这也是管理端「集群」页「实例入口(网关)」那一格的判据
+- [ ] **策略真的挂上了**:`kubectl -n superdl describe securitypolicy superdl-admin-allowlist` /
+      `backendtrafficpolicy superdl-api-ratelimit` / `clienttrafficpolicy superdl-gateway`,
+      三者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
+      apply 照样成功,只是策略静默失效(白名单没了、限流没了),线上看不出异常 —— 这里是唯一线索
+- [ ] 三个平台域各 `curl -I https://<域>` 证书链正确;`curl -I http://<域>` 返回 301
+- [ ] **源 IP 真的传到了 Envoy**:白名单网段外的机器访问 `admin.<域>` 应 403,网段内正常。失败先查
+      `kubectl -n superdl get envoyproxy superdl-proxy -o jsonpath='{.spec.provider.kubernetes.envoyService.externalTrafficPolicy}'`
+      是否仍是 `Local` —— 改成 `Cluster` 后 Envoy 看到的源 IP 全变成节点 IP,白名单与每 IP 限流同时失效且不报错
+- [ ] 每源 IP 限流生效:同一客户端 `for i in $(seq 30); do curl -s -o /dev/null -w '%{http_code} ' https://<api域>/readyz; done`
+      出现 429;**换第二台机器同时打不受影响**(`sourceCIDR.type` 写成 `Exact` 时第二台会被一起限死)。
+      注意本地限流是每 Envoy 实例计数,2 副本时全局上限约为配置值 × 副本数
+- [ ] **Jupyter 长连接熬过 5 分钟**:开一个实例的 JupyterLab,跑一段 >6 分钟无输出的 cell,期间不操作页面,
+      内核不得断连。`streamIdleTimeout` 未配时 EG 默认 5 分钟掐 WebSocket/SSE,症状(「用着用着内核断了 /
+      页面反复重连」)极像 token 过期或网络抖动,不实测就发现不了
+- [ ] 租户路由跨 ns 挂载:`kubectl -n tenant-<uuid> get httproute <实例uuid> -o yaml` 的
+      `status.parents[].conditions` 为 `Accepted=True`(不是 `NotAllowedByListeners`);删实例后该路由随之消失
+      (`kubectl get httproute -A -l superdl.io/managed=true` 无孤儿)
+- [ ] **路由规模与内存**:按目标单机实例数造出等量 HTTPRoute,记录 Envoy 数据面与 envoy-gateway 控制面 RSS,
+      据此定 `EnvoyProxy` 的 memory limit 或单机实例数硬上限。实测记录于此:____
+      (一实例一条路由,几百上千条是常态;这里 OOMKill 掉的是全站入口,不是单个租户)
+- [ ] 数据面滚动不断流:重启 `envoy-gateway-system` 下 EG 生成的 Envoy Deployment,期间外部 `/readyz` 轮询无 5xx
+      (2 副本 + `envoyPDB.minAvailable: 1` + `shutdown.drainTimeout: 60s`)
+- [ ] Envoy Pod 落在 infra 节点且未被准入策略拦下(`admission/tenant-restrictions.yaml` 的豁免名单含
+      `envoy-gateway-system`)。漏改名单时数据面 Deployment 是 EG 动态生成的、仓库里改不到,
+      现象只是「Gateway 一直不 Ready」,拒绝信息只在 EG 控制器日志里
+
+## K. 发布检查单(每次上线)
 
 - [ ] **CSP 与第三方 SDK 域核对**:staging 用真实 aliyun captcha provider 走通 注册/登录/找回密码 全链路(发码 → 弹窗验证 → 收码),浏览器控制台无 CSP 违规报告;若有新增域,先切 `Content-Security-Policy-Report-Only` 收敛清单再 enforce(见 `deploy/app/security-headers-web-csp.conf` 注释)
 - [ ] admin 站响应头含 `X-Robots-Tag: noindex, nofollow`,web 站 CSP 含 `o.alicdn.com` 与 `*.captcha-open.aliyuncs.com`

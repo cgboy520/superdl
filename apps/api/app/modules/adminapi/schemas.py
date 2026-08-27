@@ -518,7 +518,7 @@ class ClusterComponentOut(BaseModel):
         "nvidia_runtimeclass",
         "kata_runtimeclass",
         "storage",
-        "ingress",
+        "gateway",
         "cert_manager",
         "monitoring",
     ]

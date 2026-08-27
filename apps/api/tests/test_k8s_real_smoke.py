@@ -24,6 +24,11 @@ import pytest
 from kubernetes import client as k8s_client
 
 from app.core.k8s.base import (
+    GATEWAY_API_GROUP,
+    GATEWAY_API_VERSION,
+    GATEWAY_APP_LISTENER,
+    GATEWAY_NAME,
+    HTTPROUTE_PLURAL,
     JUICEFS_PVC_NAME,
     InstancePodSpec,
     instance_disk_pvc_name,
@@ -178,9 +183,16 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
     svc: Any = orch.core.read_namespaced_service(name, namespace)
     assert svc.spec is not None and svc.spec.ports[0].node_port == 31999
     orch.core.read_namespaced_service(jupyter_service_name(name), namespace)
-    orch.net.read_namespaced_ingress(name, namespace)
+    # Jupyter 入口是 HTTPRoute(Gateway API):这里验的是 apiserver 真的接受我们拼的
+    # parentRefs/hostnames/backendRefs 形状 —— fake 后端只记 (ns, name) 二元组,
+    # 拼错字段名它一样通过,只有真 CRD 校验能挡下
+    route: Any = orch.custom.get_namespaced_custom_object(
+        GATEWAY_API_GROUP, GATEWAY_API_VERSION, namespace, HTTPROUTE_PLURAL, name
+    )
+    parent = route["spec"]["parentRefs"][0]
+    assert parent["name"] == GATEWAY_NAME and parent["sectionName"] == GATEWAY_APP_LISTENER
 
-    # 删实例:Pod/SVC/Ingress/Secret 清除,实例盘必须保留(数据活过关机,见 base.py 契约)
+    # 删实例:Pod/SVC/HTTPRoute/Secret 清除,实例盘必须保留(数据活过关机,见 base.py 契约)
     await orch.delete_instance(namespace, name, force=True)
     await _wait_pod_gone(orch, namespace, name)
     orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)  # 盘还在

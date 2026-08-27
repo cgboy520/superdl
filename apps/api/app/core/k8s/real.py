@@ -2,7 +2,7 @@
 
 官方客户端为同步实现,全部调用经专属有界执行器出让事件循环(见 _run)。
 
-对象命名:pod/svc/ingress 同名 = instance uuid;统一打标 superdl.io/instance。
+对象命名:pod/svc/httproute 同名 = instance uuid;统一打标 superdl.io/instance。
 """
 
 # 本文件需真实集群,单测不覆盖(pyproject [tool.coverage.run] omit 整文件)
@@ -18,7 +18,14 @@ from kubernetes import client, config
 
 from app.core.config import get_settings
 from app.core.k8s.base import (
+    GATEWAY_API_GROUP,
+    GATEWAY_API_VERSION,
+    GATEWAY_APP_LISTENER,
+    GATEWAY_NAME,
+    GATEWAY_NAMESPACE,
+    GATEWAY_PLURAL,
     GPU_MODEL_NODE_LABEL,
+    HTTPROUTE_PLURAL,
     INSTANCE_DISK_STORAGE_CLASS,
     JUICEFS_PVC_NAME,
     JUICEFS_STORAGE_CLASS,
@@ -40,7 +47,11 @@ from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NA
 
 INSTANCE_LABEL = "superdl.io/instance"
 PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
-INGRESS_NAMESPACE = "ingress-nginx"  # Jupyter 北向入口所在 ns(NetworkPolicy 放行来源)
+# Envoy 数据面 Pod 所在 ns(NetworkPolicy 放行来源)。与 base.GATEWAY_NAMESPACE 是两码事:
+# 那个是 Gateway **对象**所在的 ns(= superdl),这个是 Envoy **Pod** 实际跑的 ns。
+# Envoy Gateway 默认把数据面部署在控制面同 ns(未开 Gateway Namespace Mode),
+# 值须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway release 的 namespace 一致。
+GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
 
 # 租户 ns 的 Pod Security Admission 标签。enforce 只到 baseline:平台镜像以 root 运行,
 # restricted 的 runAsNonRoot 会拒绝全部租户 Pod;逃逸面由 kata VM / userns 承担。
@@ -208,6 +219,8 @@ class RealOrchestrator:
         self.core = cast(client.CoreV1Api, _TimeoutApi(client.CoreV1Api(), timeout))
         self.net = cast(client.NetworkingV1Api, _TimeoutApi(client.NetworkingV1Api(), timeout))
         self.batch = cast(client.BatchV1Api, _TimeoutApi(client.BatchV1Api(), timeout))
+        # Gateway API 无 typed model,HTTPRoute 的增删查一律走 CustomObjectsApi(收发裸 dict)
+        self.custom = cast(client.CustomObjectsApi, _TimeoutApi(client.CustomObjectsApi(), timeout))
         # K8s 同步调用出让到专属有界执行器:与 bcrypt 等共用的默认执行器隔离,
         # 防集群抖动时慢调用占满默认线程池、卡死登录等无关链路
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="k8s")
@@ -234,13 +247,13 @@ class RealOrchestrator:
         self._ensure_juicefs_pvc_sync(namespace)
 
     def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
-        """入方向:默认拒东西向,放行 Ingress Controller 到 Jupyter(8888)与 SSH(22);
+        """入方向:默认拒东西向,放行网关数据面到 Jupyter(8888)与 SSH(22);
         出方向放行公网(除私网/元数据网段):TCP 扣明确滥用途黑名单,UDP 白名单 53/443,+ DNS。
 
         SSH 走 NodePort:DNAT 后是否过 NetworkPolicy 取决于 CNI(Cilium 会过,
         kube-proxy iptables 通常不过),显式放行 22 消除对「NodePort 不过策略」的
         隐式依赖;from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。
-        sshd 仅密钥登录,Jupyter(8888)仍只放行 Ingress 来源。
+        sshd 仅密钥登录,Jupyter(8888)仍只放行网关数据面来源。
         """
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -248,12 +261,14 @@ class RealOrchestrator:
                 pod_selector=client.V1LabelSelector(),
                 policy_types=["Ingress", "Egress"],
                 ingress=[
-                    # 北向:Ingress Controller → JupyterLab(8888)。其余东西向一律拒绝。
+                    # 北向:Envoy 数据面 → JupyterLab(8888)。其余东西向一律拒绝。
                     client.V1NetworkPolicyIngressRule(
                         _from=[
                             client.V1NetworkPolicyPeer(
                                 namespace_selector=client.V1LabelSelector(
-                                    match_labels={"kubernetes.io/metadata.name": INGRESS_NAMESPACE}
+                                    match_labels={
+                                        "kubernetes.io/metadata.name": GATEWAY_DATAPLANE_NAMESPACE
+                                    }
                                 )
                             )
                         ],
@@ -353,7 +368,7 @@ class RealOrchestrator:
         self._ensure_instance_secret_sync(spec)
         self._create_pod_sync(spec)
         self._create_service_sync(spec)
-        self._create_ingress_sync(spec)
+        self._create_httproute_sync(spec)
 
     # ---------- 平台托管的镜像拉取凭据 ----------
 
@@ -538,7 +553,7 @@ class RealOrchestrator:
                 ) from exc
 
     def _create_service_sync(self, spec: InstancePodSpec) -> None:
-        """SSH 走 NodePort(显式端口),Jupyter 走 ClusterIP(Ingress 回源)。
+        """SSH 走 NodePort(显式端口),Jupyter 走 ClusterIP(网关数据面回源)。
 
         拆成两个 Service:type=NodePort 会给每个 port 都分配 NodePort,合并会让
         Jupyter 从 30000–32767 随机取号,撞 SSH 端口池。
@@ -627,41 +642,56 @@ class RealOrchestrator:
                 raise NodePortTaken(spec.ssh_node_port) from patch_exc
             raise
 
-    def _create_ingress_sync(self, spec: InstancePodSpec) -> None:
-        ingress = client.V1Ingress(
-            metadata=client.V1ObjectMeta(
-                name=spec.name,
-                namespace=spec.namespace,
-                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
-            ),
-            spec=client.V1IngressSpec(
-                # 显式 IngressClass:IngressClass 未标 default 时,不写这行则无控制器接管
-                ingress_class_name=self.settings.ingress_class_name,
-                # TLS 不指定 secretName,由 ingress-nginx default-ssl-certificate
-                # 提供 *.app 泛域名证书
-                tls=[client.V1IngressTLS(hosts=[spec.jupyter_host])],
-                rules=[
-                    client.V1IngressRule(
-                        host=spec.jupyter_host,
-                        http=client.V1HTTPIngressRuleValue(
-                            paths=[
-                                client.V1HTTPIngressPath(
-                                    path="/",
-                                    path_type="Prefix",
-                                    backend=client.V1IngressBackend(
-                                        service=client.V1IngressServiceBackend(
-                                            name=jupyter_service_name(spec.name),
-                                            port=client.V1ServiceBackendPort(number=8888),
-                                        )
-                                    ),
-                                )
-                            ]
-                        ),
-                    )
+    def _httproute_body(self, spec: InstancePodSpec) -> dict[str, Any]:
+        """租户 Jupyter 的 HTTPRoute。
+
+        跨 ns 挂载:路由在租户 ns,Gateway 在平台 ns —— 由 listener 的
+        allowedRoutes.namespaces.from=Selector 授权(租户 ns 带 MANAGED_LABEL),
+        **不需要 ReferenceGrant**(它只管 backendRef 跨 ns,而 backend 与本路由同 ns)。
+
+        sectionName 钉死在 app-https:不写它路由会挂到全部同端口 listener 上,
+        平台自身三个入口的 hostname 会被一起拉进同一份路由表。
+        TLS 不在这里出现 —— 证书由 listener 的 certificateRefs 提供(泛域名一张)。
+        """
+        return {
+            "apiVersion": f"{GATEWAY_API_GROUP}/{GATEWAY_API_VERSION}",
+            "kind": "HTTPRoute",
+            "metadata": {
+                "name": spec.name,
+                "namespace": spec.namespace,
+                "labels": {INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            },
+            "spec": {
+                "parentRefs": [
+                    {
+                        "group": GATEWAY_API_GROUP,
+                        "kind": "Gateway",
+                        "name": GATEWAY_NAME,
+                        "namespace": GATEWAY_NAMESPACE,
+                        "sectionName": GATEWAY_APP_LISTENER,
+                    }
                 ],
+                "hostnames": [spec.jupyter_host],
+                "rules": [
+                    {
+                        "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
+                        "backendRefs": [{"name": jupyter_service_name(spec.name), "port": 8888}],
+                    }
+                ],
+            },
+        }
+
+    def _create_httproute_sync(self, spec: InstancePodSpec) -> None:
+        _ignore(
+            lambda: self.custom.create_namespaced_custom_object(
+                GATEWAY_API_GROUP,
+                GATEWAY_API_VERSION,
+                spec.namespace,
+                HTTPROUTE_PLURAL,
+                self._httproute_body(spec),
             ),
+            409,
         )
-        _ignore(lambda: self.net.create_namespaced_ingress(spec.namespace, ingress), 409)
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
         await self._run(self._delete_instance_sync, namespace, name, force)
@@ -674,7 +704,9 @@ class RealOrchestrator:
             lambda: self.core.delete_namespaced_service(name, namespace),
             lambda: self.core.delete_namespaced_service(jupyter_service_name(name), namespace),
             lambda: self.core.delete_namespaced_secret(instance_env_secret_name(name), namespace),
-            lambda: self.net.delete_namespaced_ingress(name, namespace),
+            lambda: self.custom.delete_namespaced_custom_object(
+                GATEWAY_API_GROUP, GATEWAY_API_VERSION, namespace, HTTPROUTE_PLURAL, name
+            ),
         ):
             _ignore(deleter, 404)
 
@@ -755,12 +787,17 @@ class RealOrchestrator:
             name = svc.metadata.name
             # jupyter 副名归并到实例名(<uuid>-jupyter → <uuid>)
             out.add((ns, name[: -len("-jupyter")] if name.endswith("-jupyter") else name))
-        for ing in self._list_all(
-            self.net.list_ingress_for_all_namespaces, label_selector=MANAGED_LABEL
+        for route in self._list_all_custom(
+            self.custom.list_cluster_custom_object,
+            GATEWAY_API_GROUP,
+            GATEWAY_API_VERSION,
+            HTTPROUTE_PLURAL,
+            label_selector=MANAGED_LABEL,
         ):
-            ns = ing.metadata.namespace
+            meta = route.get("metadata") or {}
+            ns = meta.get("namespace") or ""
             if ns.startswith(prefix):
-                out.add((ns, ing.metadata.name))
+                out.add((ns, meta.get("name") or ""))
         return sorted(out)
 
     async def used_node_ports(self) -> set[int]:
@@ -986,6 +1023,22 @@ class RealOrchestrator:
             if not cont:
                 return items
 
+    @staticmethod
+    def _list_all_custom(list_fn: Any, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        """_list_all 的 CustomObjectsApi 版:它返回裸 dict,拿不到 typed model 的
+        `.items` 与 `.metadata._continue`,分页游标在 `metadata.continue`(无下划线)。"""
+        items: list[dict[str, Any]] = []
+        kwargs["limit"] = 500
+        cont: str | None = None
+        while True:
+            if cont:
+                kwargs["_continue"] = cont
+            page: Any = list_fn(*args, **kwargs)
+            items.extend(page.get("items") or [])
+            cont = (page.get("metadata") or {}).get("continue")
+            if not cont:
+                return items
+
     def _used_gpus_by_node(self) -> dict[str, int]:
         """全部受管 Pod 一次拉取,按节点聚合已用份额(物理卡当量:整卡/MIG 按 1,
         HAMi 按 gpucores 折算后向上取整,不低估占用)。未调度的 Pod 无节点可归,跳过。"""
@@ -1104,7 +1157,7 @@ class RealOrchestrator:
         errors: list[str] = []
         apps = _TimeoutApi(client.AppsV1Api(), self._timeout)
         hami_ready = dcgm = kps = gpu_operator = False
-        ingress_ready = cert_manager_ready = False
+        gateway_ready = cert_manager_ready = False
         try:
             deployments: Any = apps.list_deployment_for_all_namespaces()
             for d in deployments.items:
@@ -1115,9 +1168,7 @@ class RealOrchestrator:
                     gpu_operator = True
                 if "kube-prometheus-stack" in name:
                     kps = True
-                # 入口与证书:租户 Jupyter 的 HTTPS 入场链路,两者任一缺位全站实例都进不去
-                if "ingress-nginx-controller" in name:
-                    ingress_ready = ingress_ready or bool(d.status.ready_replicas)
+                # 证书:租户 Jupyter 的 HTTPS 入场链路,与网关任一缺位全站实例都进不去
                 if name == "cert-manager":
                     cert_manager_ready = bool(d.status.ready_replicas)
             daemonsets: Any = apps.list_daemon_set_for_all_namespaces()
@@ -1131,6 +1182,25 @@ class RealOrchestrator:
                 )
         except client.ApiException as exc:
             errors.append(f"apps: {exc.status}")
+        # 网关就绪面看 Gateway 对象自己的 Programmed 条件,不看控制器 Deployment:
+        # CRD 装了、envoy-gateway 活着,但 listener 的证书 Secret 缺失、hostname 撞车或
+        # 端口被占时 Programmed 仍是 False,而流量一条都进不来。CRD 未装 / 对象未下发
+        # 都是 404 —— 那同样是「没就绪」,不记 error(集群页对该组件另有 fix_hint)。
+        try:
+            gw: Any = self.custom.get_namespaced_custom_object(
+                GATEWAY_API_GROUP,
+                GATEWAY_API_VERSION,
+                GATEWAY_NAMESPACE,
+                GATEWAY_PLURAL,
+                GATEWAY_NAME,
+            )
+            gateway_ready = any(
+                c.get("type") == "Programmed" and c.get("status") == "True"
+                for c in ((gw.get("status") or {}).get("conditions") or [])
+            )
+        except client.ApiException as exc:
+            if exc.status != 404:
+                errors.append(f"gateway: {exc.status}")
         runtime_classes: tuple[str, ...] = ()
         try:
             rcs: Any = _TimeoutApi(client.NodeV1Api(), self._timeout).list_runtime_class()
@@ -1166,7 +1236,7 @@ class RealOrchestrator:
             gpu_operator_present=gpu_operator,
             kata_runtimeclass="kata-qemu" in runtime_classes,
             nvidia_runtimeclass="nvidia" in runtime_classes,
-            ingress_ready=ingress_ready,
+            gateway_ready=gateway_ready,
             cert_manager_ready=cert_manager_ready,
             nodes_ready=nodes_ready,
             nodes_total=nodes_total,

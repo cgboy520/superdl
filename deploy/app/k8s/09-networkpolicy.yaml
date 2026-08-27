@@ -37,7 +37,9 @@ spec:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
 ---
-# 前端入向:仅 ingress-nginx 控制器转发来的外部流量。
+# 前端入向:仅 Envoy Gateway 数据面转发来的外部流量。
+# 来源 ns 是 envoy-gateway-system 不是 superdl:Gateway 对象在 superdl ns,扛流量的
+# Envoy Pod 却跟 EG 控制面同 ns(未开 Gateway Namespace Mode)。按 Gateway 所在 ns 写会双不通。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -51,7 +53,7 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+            matchLabels: {kubernetes.io/metadata.name: envoy-gateway-system}
       ports:
         - {protocol: TCP, port: 8080}
 ---
@@ -73,7 +75,7 @@ spec:
       ports:
         - {protocol: TCP, port: 8000}
 ---
-# API 入向:ingress-nginx(外部 API 流量)、monitoring(Prometheus 抓 /metrics、
+# API 入向:Envoy Gateway 数据面(外部 API 流量,ns 同上)、monitoring(Prometheus 抓 /metrics、
 # Alertmanager 告警 webhook)、前端 nginx(/api 反代)。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -87,7 +89,7 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+            matchLabels: {kubernetes.io/metadata.name: envoy-gateway-system}
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: monitoring}
         - podSelector:

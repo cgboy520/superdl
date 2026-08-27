@@ -8,6 +8,7 @@
 | [pg-backup-restore.md](./pg-backup-restore.md) | 事件处置 + SOP | 资金库备份分层、逻辑备份恢复、季度演练与 RTO 记录 |
 | [image-prewarm.md](./image-prewarm.md) | SOP | 托管镜像仓迁移、平台镜像发布、Spegel P2P 与预热 |
 | [acme-dns.md](./acme-dns.md) | SOP | 泛域名证书 DNS01(acme-dns)部署、凭据轮换与回滚 |
+| [gateway-migration.md](./gateway-migration.md) | SOP | 北向入口从 ingress-nginx 切到 Gateway API + Envoy Gateway(一次性;存量集群专用,含存量实例的 HTTPRoute 补建与回滚窗口)|
 | [loki-logging.md](./loki-logging.md) | 参考 | 日志留存口径、LogQL 排障查询、采集自检 |
 | [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
 

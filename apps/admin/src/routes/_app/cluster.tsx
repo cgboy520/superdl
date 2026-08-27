@@ -28,7 +28,7 @@ const COMPONENT_LABEL = {
   nvidia_runtimeclass: "cluster.comp.nvidiaRuntimeclass",
   kata_runtimeclass: "cluster.comp.kataRuntimeclass",
   storage: "cluster.comp.storage",
-  ingress: "cluster.comp.ingress",
+  gateway: "cluster.comp.gateway",
   cert_manager: "cluster.comp.certManager",
   monitoring: "cluster.comp.monitoring",
 } as const satisfies Record<ClusterComponent["key"], string>;

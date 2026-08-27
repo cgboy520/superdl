@@ -3,7 +3,11 @@
 #   | INSTALL_K3S_MIRROR=cn sh -s - server --config /etc/rancher/k3s/config.yaml
 write-kubeconfig-mode: "0640"
 disable:
-  - traefik                  # Ingress 统一走 helmfile 的 ingress-nginx(与 full 档一致)
+  - traefik                  # 北向入口统一走 helmfile 装的 Envoy Gateway(与 full 档一致)。
+                             # 必须装机即禁,绝不能「先启用后禁用」:k3s 在部分版本上禁用
+                             # traefik 会连带删掉它自带的 Gateway API CRD,而平台的
+                             # Gateway/HTTPRoute 全挂在这组 CRD 上——删 CRD = 平台三域名与
+                             # 全部租户 Jupyter 入口一起消失,且要重装 experimental channel。
 node-label:
   - "node-role.superdl.io/infra=true"   # 平台组件 nodeSelector 统一锚点(P0-1);
                              # light 档 server 兼跑平台组件,必须与 full 档 RKE2 server 同款标签。

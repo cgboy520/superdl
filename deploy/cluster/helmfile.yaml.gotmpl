@@ -23,8 +23,6 @@ repositories:
     url: https://topolvm.github.io/topolvm
   - name: jetstack
     url: https://charts.jetstack.io
-  - name: ingress-nginx
-    url: https://kubernetes.github.io/ingress-nginx
   - name: cloudnative-pg
     url: https://cloudnative-pg.github.io/charts
   # Loki(OSS)自 2026-03-16 起由社区仓维护(grafana/loki 转 GEL 专用);
@@ -149,13 +147,34 @@ releases:
         args: ["apply", "-f", "acme-dns.yaml"]
     {{- end }}
 
-  - name: ingress-nginx
-    condition: ingressNginx.enabled
-    namespace: ingress-nginx
-    chart: ingress-nginx/ingress-nginx
-    # chart 4.15.1 = controller v1.15.1;升版 apply 前 helm diff 复核
-    version: "4.15.1"
-    values: [values/ingress-nginx.yaml]
+  # 北向唯一入口:Envoy Gateway(Gateway API 实现),1:1 顶掉 2026-03 退休的 ingress-nginx
+  # (最后版本 controller-v1.15.1,此后不再修任何 CVE)。数据面 Envoy 与控制面同 ns
+  # (不开 Gateway Namespace Mode),所以 envoy-gateway-system 就是原 ingress-nginx ns 的替代——
+  # 凡是按 ns 名认入口的地方(NetworkPolicy 来源、准入豁免名单)都要跟着换,漏一处就是网关起不来。
+  - name: envoy-gateway
+    condition: envoyGateway.enabled
+    namespace: envoy-gateway-system
+    chart: oci://docker.io/envoyproxy/gateway-helm
+    # chart v1.9.0 = 控制面 v1.9.0 + 内置 Envoy distroless-v1.39.0,对齐 Gateway API v1.6.1;
+    # 升版前先跑 ./gateway-api-crds.sh 升 CRD(本 chart 不管 CRD),再 helm diff 复核
+    version: "v1.9.0"
+    values:
+      - values/envoy-gateway.yaml
+      {{- if eq .Environment.Name "light" }}
+      - values/light/envoy-gateway-light.yaml
+      {{- end }}
+    set:
+      # chart 自带的 CRD 子 chart 走 helm 的 crds/ 目录,该目录在 helm upgrade 时永不更新:
+      # 跟着 chart 装,CRD 会永远停在首装那一版。改由下面的 presync 钩子单点管理。
+      - name: crds.enabled
+        value: "false"
+    hooks:
+      # CRD 必须先于 chart 存在:控制面一起来就 list/watch GatewayClass/Gateway,缺 CRD 时
+      # 它反复重启,且本 release 的 diff 阶段先一步失败。channel 首装即定、事后换不回去
+      # (safe-upgrades 策略拒绝 standard→experimental),细节见脚本头注释。
+      - events: ["presync"]
+        showlogs: true
+        command: "./gateway-api-crds.sh"
 
   # CloudNativePG:平台库进 K8s 时的唯一受支持形态(见 ../README.md「生产数据库要求」)。
   # 默认关闭(cnpg.enabled=false,用托管 PG 时不装);启用时 operator 与业务集群两个 release 一起进。

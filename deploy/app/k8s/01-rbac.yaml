@@ -80,6 +80,11 @@ rules:
   - apiGroups: ["node.k8s.io"]
     resources: ["runtimeclasses"]
     verbs: ["get", "list"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    # 北向入口就绪面:probe_cluster 读 Gateway 对象的 status.conditions[Programmed]。
+    # 只探控制器 Deployment 不够——listener 证书缺失/hostname 撞车时控制器一切正常
+    resources: ["gateways"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -97,7 +102,7 @@ subjects:
     name: superdl-node-mgr   # 巡检 probe_cluster 同用
     namespace: superdl
 ---
-# tenant-mgr 编排面:租户 namespace/Pod/Service/Ingress/NetworkPolicy/PVC/Quota/Secret
+# tenant-mgr 编排面:租户 namespace/Pod/Service/HTTPRoute/NetworkPolicy/PVC/Quota/Secret
 # 全生命周期(instance.* 任务 + reconciler;per-instance JUPYTER_TOKEN 走 Secret)。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -114,8 +119,13 @@ rules:
     resources: ["secrets"]  # per-instance 敏感 env(JUPYTER_TOKEN)的创建/收敛/随实例删除
     verbs: ["get", "create", "delete", "patch"]
   - apiGroups: ["networking.k8s.io"]
-    resources: ["ingresses", "networkpolicies"]
+    resources: ["networkpolicies"]
     verbs: ["get", "create", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    # 租户 Jupyter 入口(每实例一条 HTTPRoute,建在租户 ns,挂平台 ns 的 Gateway)。
+    # list 是 reconciler 孤儿端点清理要的全集群 LIST,不能只给 get
+    resources: ["httproutes"]
+    verbs: ["get", "list", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

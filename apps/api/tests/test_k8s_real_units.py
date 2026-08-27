@@ -14,6 +14,7 @@ from kubernetes import client as k8s_client
 from app.core.k8s.base import POOL_NODE_LABEL, InstancePodSpec, NodePortTaken
 from app.core.k8s.real import (
     EGRESS_BLOCKED_TCP_PORTS,
+    GATEWAY_DATAPLANE_NAMESPACE,
     PRIVATE_CIDRS,
     RealOrchestrator,
 )
@@ -64,11 +65,16 @@ class TestTenantNetpol:
         spec: Any = policy.spec
         assert set(spec.policy_types) == {"Ingress", "Egress"}
 
-        # 入方向:Jupyter(8888,仅 ingress-nginx)+ SSH(22,NodePort 显式放行)
+        # 入方向:Jupyter(8888,仅网关数据面 ns)+ SSH(22,NodePort 显式放行)
         assert len(spec.ingress) == 2
         jupyter, ssh = spec.ingress
         assert [(p.protocol, p.port) for p in jupyter.ports] == [("TCP", 8888)]
         assert jupyter._from[0].pod_selector is None  # 不放行同 ns 其它 Pod
+        # 放行来源必须是 Envoy 数据面所在 ns:与 deploy/cluster/helmfile 的 envoy-gateway
+        # release namespace 一处写错,全站 Jupyter 502 而对象规约看着一切正常
+        assert jupyter._from[0].namespace_selector.match_labels == {
+            "kubernetes.io/metadata.name": GATEWAY_DATAPLANE_NAMESPACE
+        }
         assert [(p.protocol, p.port) for p in ssh.ports] == [("TCP", 22)]
         assert ssh._from[0].ip_block.cidr == "0.0.0.0/0"
 

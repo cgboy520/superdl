@@ -7,7 +7,7 @@ GPU 算力租赁平台的架构事实:技术栈、模块边界、数据模型、
 
 ```mermaid
 flowchart LR
-    U[租户浏览器] --- W[web 用户控制台] & NP[SSH NodePort 端口池] & ING["JupyterLab ingress-nginx *.app.域名"]
+    U[租户浏览器] --- W[web 用户控制台] & NP[SSH NodePort 端口池] & ING["JupyterLab Envoy Gateway *.app.域名"]
     A[运营/管理员] --- AD[admin 管理控制台]
     W & AD -- REST/OpenAPI --> API[api 模块化单体 FastAPI]
     ALM[Alertmanager] -- webhook --> API
@@ -46,7 +46,8 @@ react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd
 | kube-prometheus-stack | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
 | JuiceFS CSI | 数据盘;后端云 OSS 或自建 SeaweedFS |
 | TopoLVM | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
-| cert-manager + acme-dns / ingress-nginx | 泛域名证书(DNS01 经 acme-dns 中转,集群内凭据只能改 `_acme-challenge` TXT)与 Jupyter 北向入口 |
+| Envoy Gateway | 北向唯一入口(Gateway API 实现,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名。顶替 2026-03 退休的 ingress-nginx(最后版本 controller-v1.15.1,此后不再修 CVE) |
+| cert-manager + acme-dns | 平台三域与 Jupyter 泛域名证书(DNS01 经 acme-dns 中转,集群内凭据只能改 `_acme-challenge` TXT);Gateway 的 `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 里显式声明的 Certificate,不走 ingress-shim 那种「注解自动生成」 |
 
 GPU 资源申请的 device-plugin 语法集中在 `app/core/gpu_adapter`;切 DRA 还需改 PodSpec 的 resourceClaims(`core/k8s/real.py`),不止这一层。
 
@@ -94,8 +95,9 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 | 通道 | 机制 |
 |---|---|
 | SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 必须拆成两个 Service:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 随机占走端口池号段 |
-| JupyterLab | 实例 Pod 内跑 JupyterLab(8888),`<instance>.app.<域名>` 泛域名 ingress-nginx 按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
-| 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,仅放行 Ingress Controller 到 8888;禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
+| JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂平台 Gateway 的 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张。路由条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量 |
+| 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,入方向仅放行 Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)到 8888;禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
+| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、全局超时与连接兜底三条策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**、apply 照样成功,只是策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;5 个 listener 名因此锁死 |
 
 ## 6. 数据模型
 
@@ -146,7 +148,7 @@ UPDATE status。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原�
 `POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额 ≥ 1 小时预估费用,写 `instances(creating)` +
 `instance_events` + `outbox_tasks`,立即返回 202。worker 领取任务后 ensure Namespace / NetworkPolicy / Quota /
 JuiceFS PVC,再建 Pod(RuntimeClass 按档位、GPU 资源经 gpu_adapter、注入公钥与 jupyter token)、SSH 与 Jupyter 两个
-Service、Ingress;Pod Ready 后同事务转 `running` 并写计费起点事件。超时未 Ready 转 `failed`,退款并清理。
+Service、HTTPRoute;Pod Ready 后同事务转 `running` 并写计费起点事件。超时未 Ready 转 `failed`,退款并清理。
 
 ### 7.3 小时结算
 

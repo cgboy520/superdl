@@ -3,7 +3,8 @@
 write-kubeconfig-mode: "0640"
 cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(CNI + LB)
 disable:
-  - rke2-ingress-nginx       # 禁内置版本,改由 helmfile 装上游 ingress-nginx(版本可控)
+  - rke2-ingress-nginx       # 内置的是已退休的 ingress-nginx;北向入口改由 helmfile 装
+                             # Envoy Gateway(Gateway API),禁掉以免两个入口控制器并存
   - rke2-canal
 # 控制面 HA(3 server 堆叠 etcd,P0-1):apiserver 证书 SAN 必须覆盖 VIP 与全部 server
 # 地址,否则 agent/kubectl 经 VIP 连接时 TLS 校验失败,任一 server 重建后其余成员也失连。

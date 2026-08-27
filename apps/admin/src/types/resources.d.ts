@@ -78,9 +78,9 @@ export default interface Resources {
       "comp": {
         "certManager": "证书签发",
         "dcgm": "GPU 指标(DCGM)",
+        "gateway": "实例入口(网关)",
         "gpuOperator": "GPU Operator",
         "hami": "HAMi 调度",
-        "ingress": "实例入口",
         "kataRuntimeclass": "Kata 运行时",
         "monitoring": "监控栈",
         "nodes": "节点就绪",

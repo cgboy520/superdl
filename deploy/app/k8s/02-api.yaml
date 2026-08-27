@@ -64,7 +64,7 @@ spec:
             timeoutSeconds: 5   # /readyz 含 DB 探测:默认 1s 在 DB 抖动时易误判摘流;放宽到 5s,超时即失败摘流
             failureThreshold: 3
           lifecycle:
-            # 滚动/缩容先摘流再退出:preStop 等 Endpoints 摘除传播到 ingress-nginx/iptables,
+            # 滚动/缩容先摘流再退出:preStop 等 Endpoints 摘除传播到 Envoy Gateway/iptables,
             # 避免在途请求被 SIGTERM 直接掐断。
             preStop:
               exec:

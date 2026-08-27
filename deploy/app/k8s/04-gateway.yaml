@@ -1,0 +1,334 @@
+# 北向唯一入口:Gateway API + Envoy Gateway(替代 ingress-nginx —— 该项目 2026-03 退休,
+# 最后版本 controller-v1.15.1,此后不再修任何 CVE,继续用等于长期背未修漏洞)。
+# EG 控制面与 Envoy 数据面 Pod 都在 envoy-gateway-system(由 helmfile 装,见 deploy/cluster/),
+# 本文件只描述「入口长什么样」:GatewayClass / 数据面参数 / 5 个监听器 / 4 条路由 / 3 条策略。
+#
+# 三条 nginx annotation 的去向(语义差异写在各对象旁,别当成无损平移):
+#   limit-rps / limit-rpm      → BackendTrafficPolicy superdl-api-ratelimit(等价)
+#   limit-connections          → ClientTrafficPolicy superdl-gateway(**不等价**,见该处)
+#   whitelist-source-range     → SecurityPolicy superdl-admin-allowlist(等价)
+# TLS 不再走 cert-manager 的 ingress-shim annotation,改为 05-cert-manager.yaml 里显式的
+# Certificate;certificateRefs 与 Gateway 同 ns,不需要 ReferenceGrant。
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: superdl
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  # 数据面部署参数挂在 GatewayClass 上(本 class 的所有 Gateway 共享)。GatewayClass 是集群级
+  # 对象,parametersRef 因此必须显式给 namespace ——漏写不会让 apply 失败,EG 只是找不到
+  # EnvoyProxy,照样把数据面拉起来,拉起来的却是一份默认参数(1 副本、无 nodeSelector、
+  # 无资源上限)。症状是「配了没生效」,查 GatewayClass 的 status.conditions。
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: superdl-proxy
+    namespace: superdl
+---
+# Envoy **数据面**的部署参数。与 deploy/cluster/values/envoy-gateway.yaml 的分工别搞混:
+# 那边是 EG **控制面**(envoy-gateway Deployment)的副本与资源,这里是真正扛流量的 Envoy 的。
+# 调错地方的症状同样是「改了没效果」。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: superdl-proxy
+  namespace: superdl
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        # 北向唯一入口(api/console/admin/租户 Jupyter 全走这里),单点重启不应断流
+        replicas: 2
+        container:
+          # requests==limits 提 Guaranteed:节点资源紧张时不与租户 Pod 同级,避免先被驱逐。
+          # 取值沿用原 ingress-nginx controller 档,入口峰值带宽/连接数实测后再调。
+          #
+          # 内存是本档位最需要实测的一项:我们是**一实例一条 HTTPRoute**(租户 ns 内,见
+          # orchestrator),活跃实例多了就是几百上千条路由,全量 xDS 下发进每个 Envoy。
+          # 独立基准显示 5000 条路由时部分数据面涨到 1–2 GB。light 档单机要么给足 memory
+          # limit,要么对单机实例数设硬上限——这里 OOMKill 掉的是全站入口,不是单个租户。
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+        pod:
+          # 平台组件落点统一走 infra 标签(与 02-api.yaml / 03-worker.yaml / 07-frontends.yaml
+          # 同锚点);GPU 节点严禁打此标签。
+          nodeSelector:
+            node-role.superdl.io/infra: "true"
+          tolerations:
+            # 必须与 nodeSelector 成对出现:full 档 RKE2 server 带
+            # CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint),
+            # 只钉 infra 标签不容忍污点 = Envoy Pod 永远 Pending = 全站无入口。
+            - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
+          # 与 API/worker 对齐:Guaranteed 只防同优先级驱逐,priorityClass 才保证资源
+          # 紧张时先于租户 Pod 被保。原 ingress-nginx values 也是这个值。
+          priorityClassName: system-cluster-critical
+          # 2 副本尽量跨节点/跨可用区摊开;小集群不满足时仍可调度(ScheduleAnyway)。
+          # labelSelector 必须命中 EG 生成的 Envoy Pod:那些 Pod 不带我们写的任何标签,
+          # 只带 owning-gateway-{name,namespace};选错标签不报错,约束直接退化成空集
+          # (等于没写),两个副本可能挤在同一节点上。
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  gateway.envoyproxy.io/owning-gateway-name: superdl
+                  gateway.envoyproxy.io/owning-gateway-namespace: superdl
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  gateway.envoyproxy.io/owning-gateway-name: superdl
+                  gateway.envoyproxy.io/owning-gateway-namespace: superdl
+      envoyPDB:
+        minAvailable: 1
+      envoyService:
+        type: LoadBalancer
+        # 显式写死,虽然它就是 CRD 默认值:改成 Cluster 会多一跳 kube-proxy SNAT,
+        # Envoy 看到的源 IP 变成节点 IP —— 管理端白名单会把全部流量算成同一个源、
+        # 每 IP 限流会退化成全网一个桶,两条策略当场失效且不报错。
+        # 这一行是下面 SecurityPolicy 与 BackendTrafficPolicy 成立的前提。
+        externalTrafficPolicy: Local
+  logging:
+    # Envoy 自身日志(不是访问日志):warn 起步,排障时临时调 info/debug
+    level:
+      default: warn
+  shutdown:
+    # 滚动更新先排空在途连接再退出,与 02-api.yaml 的 preStop sleep 是同一件事的两端
+    drainTimeout: 60s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: superdl
+  namespace: superdl
+spec:
+  gatewayClassName: superdl
+  # listener 的 name 就是各策略的 sectionName,**锁死不许改**:
+  # SecurityPolicy / BackendTrafficPolicy / ClientTrafficPolicy 靠它找挂载点,名字对不上
+  # 不报错、apply 照样成功,只是策略静默不生效——白名单没了、限流没了,线上看不出异常。
+  # 唯一线索在策略对象的 status.ancestors[].conditions 里,所以改动本段后必须
+  # `kubectl describe securitypolicy/backendtrafficpolicy/clienttrafficpolicy -n superdl`
+  # 确认 Accepted=True 再收工。
+  #
+  # 为什么不用一张 *.superdl.example.com 通配 listener 顶掉三个平台域:那会强制
+  # api/console/admin 与租户域同根。现网清单允许它们落在互不相干的域名上,保留这个自由度。
+  #
+  # 反过来,租户域与平台域**共用一级域**(如租户 *.xiaocg.xyz + 平台 api.xiaocg.xyz)也是
+  # 支持的形态:此时租户通配 listener 与三个平台 listener 的 hostname 有交集,靠「精确优先于
+  # 通配」消歧(SNI 与 Host 都是这个规则),平台域不会被通配 listener 抢走。前提是平台三个
+  # listener 必须写**精确 hostname**(现状如此),换成通配就真的分不开了。
+  # 另注:HTTPRoute 只要 hostname 与 listener 有交集就能挂上,所以租户 ns 里若能任意建路由,
+  # 是可以声明平台域名把流量劫走的 —— 挡住这条的是 RBAC:tenant-* ns 的 httproutes 写权限
+  # 只给了 superdl-tenant-mgr 这一个 SA(01-rbac.yaml),租户本人没有任何 K8s 凭据。
+  listeners:
+    # HTTP:只承载 301 跳转(见 superdl-https-redirect),不直接对接任何后端
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces: {from: Same}
+    # 三个平台域各一个 listener。证书未就绪时只有对应 listener 不 Programmed
+    # (其它 listener 不受影响),表现为该域 TLS 握手失败;首装顺序见 05-cert-manager.yaml。
+    - name: api-https
+      port: 443
+      protocol: HTTPS
+      hostname: api.superdl.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - {kind: Secret, name: superdl-api-tls}
+      allowedRoutes:
+        namespaces: {from: Same}
+    - name: console-https
+      port: 443
+      protocol: HTTPS
+      hostname: console.superdl.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - {kind: Secret, name: superdl-frontends-tls}
+      allowedRoutes:
+        namespaces: {from: Same}
+    - name: admin-https
+      port: 443
+      protocol: HTTPS
+      hostname: admin.superdl.example.com
+      tls:
+        mode: Terminate
+        # 独立 secret(不与 console 共用):管理端的访问边界、证书轮换、故障影响面
+        # 都要能与用户端分开处理
+        certificateRefs:
+          - {kind: Secret, name: superdl-admin-tls}
+      allowedRoutes:
+        namespaces: {from: Same}
+    # 租户 Jupyter:每实例一条 HTTPRoute,落在租户自己的 ns 里(不在 superdl ns),
+    # 所以这里必须放开跨 ns 挂载。selector 用 ensure_namespace 已经打好的
+    # superdl.io/managed=true(core/k8s/real.py 的 MANAGED_LABEL,存量 ns 走 patch 收敛):
+    # 平台自己的 superdl ns 没有这个标签,于是它精确等于「全部租户 ns,且仅租户 ns」。
+    # 不为此新增标签——多一个标签就多一处可能忘记打的地方。
+    # 泛域名证书顶掉了原 ingress-nginx 的 default-ssl-certificate 兜底,且更显式。
+    - name: app-https
+      port: 443
+      protocol: HTTPS
+      hostname: "*.app.superdl.example.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - {kind: Secret, name: superdl-jupyter-wildcard-tls}
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: {superdl.io/managed: "true"}
+---
+# HTTP→HTTPS 301:原 ingress-nginx 全局 ssl-redirect: "true" 的等价物。
+# 不写 hostnames = 命中 :80 上的一切 Host(含租户 Jupyter 子域),与原全局开关同语义;
+# 少了它,80 端口上的请求会直接 404,而不是跳到 https。
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-https-redirect
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: http}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect: {scheme: https, statusCode: 301}
+---
+# 以下三条路由都不写 hostnames:listener 已按 sectionName 限定了 Host,重复写等于把域名
+# 散落到两处,改域名时漏一处就静默不通(路由 hostname 与 listener hostname 取交集,
+# 交集为空 = 路由不生效且不报错)。backendRefs 的 port 只认端口号,不认 Service 端口名,
+# 三个 Service 都是 :80 → targetPort http(见 02-api.yaml / 07-frontends.yaml)。
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-api
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: api-https}
+  rules:
+    - backendRefs:
+        - {name: superdl-api, port: 80}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-console
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: console-https}
+  rules:
+    - backendRefs:
+        - {name: superdl-web, port: 80}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-admin
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: admin-https}
+  rules:
+    - backendRefs:
+        - {name: superdl-admin, port: 80}
+---
+# 管理端源 IP 白名单(默认启用),原 nginx whitelist-source-range 的等价物。
+# 把 CIDR 改成办公网/跳板机出口(多个就多写几条 clientCIDRs 元素)。
+#
+# 占位符为什么是 192.0.2.0/24 而不是 CHANGE_ME_*:clientCIDRs 在 CRD 里带 CIDR 正则,
+# 非法字符串会被 apiserver 直接拒收 —— 而 `kubectl apply -f deploy/app/k8s/` 是逐对象应用,
+# 结果是**只有这一个对象没建起来、其余全部生效**,管理端就此在无人察觉的情况下失去白名单。
+# 192.0.2.0/24 是 RFC 5737 的文档专用网段,不存在任何真实主机:忘了替换时清单照样能 apply,
+# 但管理端从任何地方都进不去(fail-closed,当场就会发现),而不是悄悄敞开。
+# preflight.sh 按这个网段扫描,未替换不予放行;确需临时放开须走变更评审,
+# 长期仍建议叠加 VPN / 身份感知代理(如 oauth2-proxy)之一。
+#
+# defaultAction: Deny 是「白名单」成立的前提:漏写它默认是 Allow,规则就从白名单退化成
+# 一条毫无作用的显式放行。源 IP 的真实性依赖 envoyService.externalTrafficPolicy: Local(见上)。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: superdl-admin-allowlist
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-admin}
+  authorization:
+    defaultAction: Deny
+    rules:
+      - action: Allow
+        principal:
+          clientCIDRs: ["192.0.2.0/24"]   # ← 替换为办公网/跳板机出口 CIDR
+---
+# 边缘层限流(纵深防御;应用层固定窗口限流不变,见 core/ratelimit.py)。
+# 正常用户单页 API 并发远低于此,只挡爆破/洪水。admin 面另有白名单,不在此列。
+#
+# type: Distinct 是本对象的命门:它让 0.0.0.0/0 里**每个源 IP 各占一个桶**,等价于原
+# nginx 的 limit-rps/limit-rpm(按 $binary_remote_addr 计)。写成默认的 Exact 会变成
+# 全网共用一个桶——20 rps 全站合计,正常业务量就能把所有人一起限死。
+#
+# ⚠ 官方文档 tasks/traffic/local-rate-limit 至今写着「local 不支持 distinct 匹配」。
+# 那句话对 v1.9.0 已过时:internal/xds/translator/local_ratelimit.go 的
+# buildDistinctCIDRMatchRateLimitAction 会在 masked CIDR 描述符之外再加一个不带 value 的
+# RemoteAddress 描述符,正是「每个源 IP 一个桶」。照文档把它改回 Exact = 静默丢掉每 IP 语义。
+# 升 EG 版本时按源码复核这一条,别按文档改。
+#
+# 两条规则各自独立成桶(描述符 key 带 rule 序号),同时生效 = 20/s 且 600/min。
+# 新增规则时注意 EG 的一条硬约束:**不带 clientSelectors 的那条规则决定默认桶的时间单位**,
+# 其余规则的单位必须是它的整数倍,否则整条 policy 翻译失败(Accepted=False)。
+# 当前两条都带 selector,默认桶退化为 uint32max/Second,任何单位都合法。
+#
+# Local 限流是每个 Envoy 实例本地计数,2 副本时全局实际上限约为配置值×副本数;
+# 原 nginx 的 limit_req 共享内存区同样是每副本一份,所以这不是本次迁移引入的偏差。
+# 想要严格全局需另部署 rate limit service + Redis,当前规模不值当。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-api-ratelimit
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-api}
+  rateLimit:
+    # 不写 spec.rateLimit.type:该字段在 v1.9.0 已标 Deprecated,直接给 local/global 即可
+    # (两者可并存)。写了反而走 backward-compat 分支,只认这一种。
+    local:
+      rules:
+        - limit: {requests: 20, unit: Second}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+        - limit: {requests: 600, unit: Minute}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+---
+# 网关级超时与连接兜底。挂 Gateway(不带 sectionName)= 对 5 个 listener 全部生效。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: superdl-gateway
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl}
+  timeout:
+    http:
+      # 必配项:EG 默认 5 分钟,会把 Jupyter 的 WebSocket 与 SSE 长连接按时掐断。
+      # 症状是「用着用着内核就断了/页面提示重连」,极易被误诊成鉴权过期或网络抖动,
+      # 排查成本远高于这一行。1h 覆盖正常交互空闲。
+      streamIdleTimeout: 1h
+  connection:
+    connectionLimit:
+      # 注意:这**不是**原 nginx limit-connections: 20 的等价物。那条是**每源 IP** 并发
+      # 连接数,EG 没有对应原语;这里是**每个 Envoy 实例的连接总量**,照抄 20 会瞬间打死
+      # 全站。所以改为设一个防内存耗尽的总量兜底,每 IP 维度的压制由上面的 RPS/RPM 承担。
+      # 后人别把它当成等价迁移回调小。
+      value: 10000

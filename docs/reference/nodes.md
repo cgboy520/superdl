@@ -6,7 +6,7 @@
 
 - `node_enrollments`:token_hash(sha256 唯一)、progress_token_hash?(sha256 唯一,首次 bootstrap 换发;NULL=尚未 bootstrap 或注册令牌已轮换)、pool(kata/hami/mig/cpu)、hostname?、note?、nvme_devices JSONB?、status、phase、error、node_name、reported_ip、os_info JSONB、gpu_info JSONB、expires_at(默认 24h,1~168h 可调,绝对截止)、last_report_at、joined_at、created_by、idempotency_key(与 created_by 联合唯一)
 - `node_specs`:node_name 唯一、pool_label?、unlabeled、gpu_model_raw?、gpu_model?(canonical)、label_synced、gpu_count、gpu_used、vram_gb、vcpu、mem_gb、disk_gb、driver_version?、cuda_version?、status(Ready/NotReady/Cordoned/Missing)、last_seen
-- `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、nvidia_runtimeclass、ingress_ready、cert_manager_ready、nodes_ready、nodes_total、storage_classes JSONB?、pools JSONB?、error?、probed_at
+- `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、nvidia_runtimeclass、gateway_ready、cert_manager_ready、nodes_ready、nodes_total、storage_classes JSONB?、pools JSONB?、error?、probed_at
 
 装机状态机:pending → installing → rebooting ⇆ installing → joining → joined,旁路终态 failed / expired / revoked(非终态均可因绝对过期落 expired)。
 
@@ -43,9 +43,14 @@
 - `gpu_model` 必须参与调度,靠平台自有 label `superdl.io/gpu-model` 回写节点(不依赖 GFD、发行版无关)。但 hami 池的**物理卡数**依赖 GFD 标签 `nvidia.com/gpu.count`(HAMi 把 allocatable 放大为物理 × 切分数,缺标签按 0 纳管防超卖):两档的 GFD 都由 gpu-operator 自带。
 - 台账 `driver_version` / `cuda_version` 以 GFD 标签 `nvidia.com/cuda.{driver,runtime}-version.full`(缺则按 `.major/.minor/.revision` 拼)为准,装机上报的 `os_info` 只作无 GFD 时的回落:装机快照在驱动升级后不再更新,且节点在收尾上报前被对账器判 joined(终态)时该次上报会 404 丢弃,两种情况都靠标签自愈。
 - 集群页组件体检十项按用户可见链路排:节点就绪 / HAMi / gpu-operator / DCGM / RuntimeClass nvidia /
-  RuntimeClass kata-qemu / 存储类 / 实例入口 / 证书签发 / 监控栈。`storage` 按名核对
+  RuntimeClass kata-qemu / 存储类 / 实例入口(组件 key `gateway`)/ 证书签发 / 监控栈。`storage` 按名核对
   `topolvm-provisioner`(强制,缺它判红)与 `superdl-juicefs`(可选,缺它只提示数据盘不可售);`kata_runtimeclass` 绿灯时另报 kata 池节点数
   (RuntimeClass 在但池里没节点,独享档一样没库存)。
+- **实例入口的判据是 `Gateway superdl` 对象 `status.conditions` 的 `Programmed=True`,不是「入口控制器 Deployment 活着」。**
+  换判据是因为后者探不到真正会断流的那几种:CRD 装了、envoy-gateway 控制面活着,而 listener 的证书 Secret 缺失、
+  hostname 撞车或端口被占时 `Programmed` 仍是 False,流量一条都进不来。CRD 未装或对象未下发都是 404,
+  同样计「未就绪」但不记 `error`(集群页对该组件另有 fix_hint)。探测需 `gateway.networking.k8s.io/gateways` 的 get/list 权限
+  (`deploy/app/k8s/01-rbac.yaml` 的 node-mgr 角色)。
 - HAMi 门禁不做调度回落:shared 档能力未就绪直接报 `CLUSTER_NOT_READY`,schedulerName 静态钉死。dedicated 档同款门禁看 RuntimeClass `kata-qemu`(`require_kata_runtimeclass`):缺它下发的 Pod 会被 kubelet 直接拒,用户侧只能看到开机后转 failed。门禁判据与 `build_gpu_request` 同源:**先看要不要卡,再看落哪个池**。`gpu_count == 0` 的实例不申请任何 `nvidia.com/*`、`schedulerName` 为空走默认调度器,因此只过 StorageClass —— **即使它挂在 hami 池上**;拿 HAMi 就绪去拦它,等于让 HAMi 挂掉连带挡住一批根本不用 GPU 的实例。要卡的才按池过 HAMi / Kata 门禁。
 - 发行版不设运行期配置,由平台探测 gitVersion(含 `+k3s`/`+rke2`)派生;两档装同一套组件(gpu-operator + HAMi + kata-deploy),差异只在 k3s 侧的 values 覆盖(见 `deploy/cluster/values/light/`)。档位可用性看的是池里有没有 Ready 节点与运行时是否到位,不看发行版。
 - k3s 只探测 nvidia 运行时、不设默认运行时,shared 档租户 Pod 必须显式 `runtimeClassName: nvidia`;RKE2 + gpu-operator 默认运行时已是 nvidia,保持 None。

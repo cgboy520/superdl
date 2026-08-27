@@ -10,6 +10,7 @@
 `gpu_node_cpu_instance_vcpu_cap` 封顶(0 = 不许)。详见 `docs/reference/nodes.md` 与 `docs/reference/catalog.md`。
 
 chart 版本钉在 `helmfile.yaml.gotmpl`,K8s 版本钉在 `rke2/` 与 `k3s/` 的 server-config;升级走变更评审。
+唯一不跟 chart 走的是 Gateway API 的 CRD,由 `gateway-api-crds.sh` 单点管,见下面「北向入口」一节 —— 它有一个**首装即定、事后换不回去**的选择,首装前先读。
 
 ## 前置检查(两档通用)
 
@@ -24,6 +25,44 @@ kubectl -n monitoring create secret generic superdl-smtp-password --from-literal
 kubectl -n monitoring create secret generic grafana-admin \
   --from-literal=admin-user=admin --from-literal=admin-password=<口令>   # 仅 full;light 关 Grafana
 ```
+
+## 北向入口:Envoy Gateway 与 Gateway API CRD(两档通用,首装前必读)
+
+北向唯一入口是 Gateway API + Envoy Gateway,1:1 顶掉 2026-03 退休的 ingress-nginx(最后版本
+controller-v1.15.1,此后不再修任何 CVE)。EG 控制面与真正扛流量的 Envoy 数据面同住
+`envoy-gateway-system`(未开 Gateway Namespace Mode)——**凡是按 ns 名认入口的地方**
+(NetworkPolicy 来源、`admission/tenant-restrictions.yaml` 的豁免名单)都指这个 ns,改名漏一处就是网关起不来。
+全新集群按下面两条路径正常装机即可;**已经在跑 ingress-nginx 的存量集群**另走一次性切换 SOP:
+`runbooks/gateway-migration.md`(存量实例的 HTTPRoute 必须手工补建,否则切流那一刻它们的 Jupyter 全部 502)。
+
+**CRD 不跟 chart 走,由 `./gateway-api-crds.sh` 单点管**(helmfile 侧 `crds.enabled=false`)。两个理由:
+gateway-helm 内置的 CRD 子 chart 落在 helm 的 `crds/` 目录,而该目录在 `helm upgrade` 时**永不更新**,
+跟着 chart 装等于 CRD 永远停在首装那一版;官方的 CRD chart 又把清单放在 `templates/`(CRD 太大,放 `crds/`
+会踩 helm 的已知限制),官方给的装法就是 `helm template | kubectl apply --server-side`,脚本封的正是这条管线
+(清单近 4 MB,客户端 apply 会撞注解体积上限,报错还只说 `metadata.annotations: Too long`)。
+首装不必手工执行:`./apply.sh` 会经 envoy-gateway release 的 presync 钩子自动跑一次。
+
+> **channel 只有一次机会。** 平台用到的每源 IP 边缘限流落在 Gateway API 的 **experimental** channel。
+> CRD 一旦以 standard 装进集群就换不回来:随 CRD 一起装的 safe-upgrades ValidatingAdmissionPolicy 用 CEL
+> 明文拒绝「standard 之上装 experimental」。唯一出路是把 Gateway API CRD 删净重装,而**删 CRD 会连带删掉
+> 集群内全部 Gateway/HTTPRoute** —— 平台三个域名加全部租户 Jupyter 入口一起消失。脚本自带前置闸门
+> (发现 channel 不符直接停手,不给「再 apply 一次试试」的机会),`./preflight.sh` 另有一道复核
+> (channel=experimental、bundle-version=v1.6.1)。
+> k3s 的 traefik 是同一类风险的另一面:必须**装机即禁**(`k3s/server-config.yaml` 已写好),绝不能
+> 「先启用后禁用」—— 部分版本上禁用 traefik 会连带删掉它自带的 Gateway API CRD。
+
+**升级 Envoy Gateway**:先把 `helmfile.yaml.gotmpl`、`gateway-api-crds.sh` 与
+`scripts/check-gateway-manifests.py` 三处版本号一起改(第三处是 CI 的清单校验闸门,不改就是拿旧 schema 校验新清单),
+然后**单独跑一遍 `./gateway-api-crds.sh` 升 CRD,再 `./apply.sh <full|light>`**。chart 侧 `crds.enabled=false`,
+不先跑脚本就是「新控制面 + 旧 CRD」,表现为控制器反复重启,或新字段被 apiserver 悄悄丢掉而清单看着一切正常。
+命令与判据见 `runbooks/gateway-migration.md`「升级 Envoy Gateway 版本」。
+
+入口的**配置**不在本目录,在 `../app/k8s/04-gateway.yaml`(GatewayClass / 5 个 listener / 4 条平台路由 /
+3 条策略);数据面 Envoy 的副本与资源也在那里的 `EnvoyProxy`,本目录 `values/envoy-gateway.yaml` 只管
+**控制面**。两处名字相近、键名也像,改错地方的表现是「值写了但完全没生效」,没有任何报错。
+**light 档单机尤其注意**:租户 Jupyter 是一实例一条 HTTPRoute,活跃实例多了就是几百上千条路由全量下发进
+每个 Envoy,内存跟着涨(独立基准显示 5000 条路由时部分数据面到 1–2 GB)。单机要么给足 `EnvoyProxy` 的
+memory limit,要么对单机实例数设硬上限,**取值实机压过再定** —— 这里 OOMKill 掉的是全站入口,不是单个租户。
 
 ## 路径 A:full(RKE2 生产)
 
@@ -50,7 +89,8 @@ kubectl -n monitoring create secret generic grafana-admin \
    轮换与托管见下文「server token 与 agent token」)。
    GPU 节点的 registries.yaml 由平台按「平台配置 · 镜像仓库」自动生成;server 节点由 ansible 分发 `rke2/registries.yaml`。
 3. **组件**:`./preflight.sh full && ./apply.sh full`(含 Loki/Alloy 日志栈,
-   审计日志留存与查询见 `runbooks/loki-logging.md`);再 apply 准入策略
+   审计日志留存与查询见 `runbooks/loki-logging.md`;apply 的 presync 会先跑 `./gateway-api-crds.sh`
+   按 experimental channel 装 Gateway API CRD —— 首装即定,见上节);再 apply 准入策略
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    (首次上线可先 [Audit] 观察一周再改回 [Deny],见该文件头注释;Audit 期间 preflight 该项会报缺)
@@ -105,7 +145,8 @@ CRD 还不存在)。单个 release:`./apply.sh light -l name=gpu-operator`。
    (config 已含 `disable: traefik` 与 `embedded-registry: true`=Spegel)
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;
    禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
-3. **组件**:`./preflight.sh light && ./apply.sh light`;再 apply 准入策略
+3. **组件**:`./preflight.sh light && ./apply.sh light`(同样由 presync 先装 Gateway API CRD,
+   channel 首装即定,见上节);再 apply 准入策略
    (preflight 强制校验两个 Binding 存在且 Deny):
    `kubectl apply -f admission/tenant-restrictions.yaml`
    - light 与 full 装同一套组件,差异只在 values 覆盖:HAMi 钉 k3s 版 scheduler 镜像 +
@@ -114,6 +155,8 @@ CRD 还不存在)。单个 release:`./apply.sh light -l name=gpu-operator`。
      RuntimeClass nvidia;让 operator 再改一遍 k3s 的 containerd 配置会被下次启动覆盖回去);
      kps / Loki 精简(`values/light/`,盘紧可在 `environments/light.yaml` 关掉日志栈)。
      `nvidia.com/gpu.count` 由 gpu-operator 自带的 GFD 提供,缺它 hami 池按 0 卡纳管。
+     Envoy Gateway 控制面降到 1 副本并关掉 PDB(`values/light/envoy-gateway-light.yaml`;
+     单副本配 `minAvailable: 1` 会让 `kubectl drain` 永远卡在这个 Pod 上);
      Cilium 不装(用 k3s 内置 flannel);acme-dns 不装(其 LoadBalancer 53 在 klipper-lb 上会占节点 hostPort 53
      并劫持节点自身 DNS,租户 Jupyter 泛域名证书改为把现成通配证书灌成 `superdl/superdl-jupyter-wildcard-tls`);
      **TopoLVM 必开**(每个租户 Pod 都要挂实例盘;VG `superdl-nvme` 由 node-join.sh 建出);

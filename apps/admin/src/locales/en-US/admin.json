@@ -77,9 +77,9 @@
     "comp": {
       "certManager": "Certificates",
       "dcgm": "GPU metrics (DCGM)",
+      "gateway": "Instance gateway",
       "gpuOperator": "GPU Operator",
       "hami": "HAMi scheduler",
-      "ingress": "Instance ingress",
       "kataRuntimeclass": "Kata runtime",
       "monitoring": "Monitoring stack",
       "nodes": "Node readiness",

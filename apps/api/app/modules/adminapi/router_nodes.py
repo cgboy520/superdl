@@ -246,7 +246,7 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
     gpu_op_ok = bool(row and row.gpu_operator_present)
     kata_ok = bool(row and row.kata_runtimeclass)
     nvidia_rc_ok = bool(row and row.nvidia_runtimeclass)
-    ingress_ok = bool(row and row.ingress_ready)
+    gateway_ok = bool(row and row.gateway_ready)
     cert_ok = bool(row and row.cert_manager_ready)
     nodes_ready = int(row.nodes_ready) if row else 0
     nodes_total = int(row.nodes_total) if row else 0
@@ -305,10 +305,12 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
             fix_hint=None if instance_disk_ok else _helmfile(distro, "topolvm"),
         ),
         ClusterComponentOut(
-            key="ingress",
-            ok=ingress_ok,
-            detail=None if ingress_ok else "ingress-nginx controller 未就绪(实例入口不可达)",
-            fix_hint=None if ingress_ok else _helmfile(distro, "ingress-nginx"),
+            key="gateway",
+            ok=gateway_ok,
+            # 判据是 Gateway 对象的 Programmed 条件,不是控制器活着:listener 的证书 Secret
+            # 缺失或 hostname 撞车时控制器一切正常,而实例入口一条流量都进不来
+            detail=None if gateway_ok else "Gateway 未 Programmed(实例入口不可达)",
+            fix_hint=None if gateway_ok else _helmfile(distro, "envoy-gateway"),
         ),
         ClusterComponentOut(
             key="cert_manager",
