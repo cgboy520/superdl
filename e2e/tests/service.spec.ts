@@ -61,7 +61,7 @@ test("部署服务并拿到端点与 API Key", async ({ page }) => {
   const row = page.locator(".ant-table-row").first();
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
   // 服务型实例在列表里带标记,slug 随 InstanceOut 一起下发(不额外打接口)
-  await expect(row.getByText(/ep-[a-z0-9]+/)).toBeVisible();
+  await expect(row.getByText(/svc-[a-z0-9]+/)).toBeVisible();
 
   // ── 详情「服务」Tab:端点 URL ────────────────────────────
   await row.dblclick();
@@ -69,7 +69,7 @@ test("部署服务并拿到端点与 API Key", async ({ page }) => {
   await page.getByRole("tab", { name: "服务" }).click();
   await expect(page.getByText("服务端点")).toBeVisible({ timeout: 15_000 });
   // 端点 URL 在页面上出现两次(端点卡 + curl 示例),取卡片里那个 <code>
-  await expect(page.locator("code", { hasText: /^https:\/\/ep-[a-z0-9]+\./ })).toBeVisible();
+  await expect(page.locator("code", { hasText: /^https:\/\/svc-[a-z0-9]+\./ })).toBeVisible();
 
   // ── 新建 Key:一次性展示,勾选前关不掉 ────────────────────
   await page.getByRole("button", { name: "新建 Key" }).click();

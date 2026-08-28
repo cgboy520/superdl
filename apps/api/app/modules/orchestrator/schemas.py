@@ -179,7 +179,7 @@ class InstanceOut(BaseModel):
     with_ssh: bool
     ssh_port: int | None
     # 服务型实例的端点 slug(dev 恒 None)。放在列表项里是为了让列表页零成本内联
-    # 「[服务] ep-xxxx」——不然前端只能逐行去打 /service,而那正是 web.md 明令
+    # 「[服务] svc-xxxx」——不然前端只能逐行去打 /service,而那正是 web.md 明令
     # 禁止的「接口调用随行数放大」。列表侧由一次批量查询回填(见 service._attach_slugs)
     service_slug: str | None = None
     data_disk_id: int | None

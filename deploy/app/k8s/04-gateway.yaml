@@ -184,7 +184,7 @@ spec:
           from: Selector
           selector:
             matchLabels: {superdl.io/managed: "true"}
-    # 服务型实例的对外端点(ep-<slug>.svc.<域>):与 app-https 同款跨 ns 授权(租户 ns 已带
+    # 服务型实例的对外端点(svc-<slug>.svc.<域>):与 app-https 同款跨 ns 授权(租户 ns 已带
     # MANAGED_LABEL),但两者的**鉴权口径相反**,分成两个 listener 就是为了这件事:
     #   app-https  不挂任何 SecurityPolicy → Jupyter 自己用 token 鉴权,网关不管
     #   svc-https  挂 superdl-svc-extauth   → 每个请求先回调平台校验 API Key

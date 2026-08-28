@@ -195,7 +195,7 @@ class ServiceEndpoint(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     instance_id: Mapped[int] = mapped_column(unique=True)
-    # 公网域名左标签(ep-<10 位 base32>)。刻意不用 instance.uuid:
+    # 公网域名左标签(svc-<10 位 base32>)。刻意不用 instance.uuid:
     # 内部主键不该出现在公网域名、TLS SNI、访问日志与第三方 Referer 里
     public_slug: Mapped[str] = mapped_column(String(32), unique=True)
     container_port: Mapped[int]

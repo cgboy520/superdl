@@ -133,7 +133,7 @@ class TestAuthMatrix:
         """端点不存在与密钥不对同码同文案:区分开就是一个枚举平台端点的预言机。"""
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000409")
         key = await issue_key(client, headers, uuid)
-        resp = await call_auth(client, slug="ep-doesnotex", key=key)
+        resp = await call_auth(client, slug="svc-doesnotex", key=key)
         assert resp.status_code == 401
         assert resp.json()["code"] == "API_KEY_INVALID"
 
@@ -142,7 +142,7 @@ class TestAuthMatrix:
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000410")
         key = await issue_key(client, headers, uuid)
         resp = await client.get(
-            AUTH_PATH, headers={"host": "ep-abc.evil.example.com", "x-api-key": key}
+            AUTH_PATH, headers={"host": "svc-abc.evil.example.com", "x-api-key": key}
         )
         assert resp.status_code == 401
 
@@ -274,6 +274,6 @@ class TestNoAuthRequired:
     async def test_unknown_user_cannot_enumerate(self, client, sm, fake):
         """未注册的调用方拿不到任何区分信息(全 401 同码)。"""
         await new_user(client, sm, "13900000451")
-        resp = await client.get(AUTH_PATH, headers={"host": host_for("ep-aaaaaaaaaa")})
+        resp = await client.get(AUTH_PATH, headers={"host": host_for("svc-aaaaaaaaaa")})
         assert resp.status_code == 401
         assert resp.json()["code"] == "API_KEY_INVALID"

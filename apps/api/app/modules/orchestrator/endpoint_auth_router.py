@@ -45,7 +45,7 @@ async def authorize_endpoint(
     """校验一次端点访问。通过回 200 + 归属头,不通过抛 401(统一错误体)。
 
     slug 从 Host 取而不是 path:端点的身份就是它的域名,path 是用户容器自己的路由空间,
-    平台不该对它有任何假设。Host 可能带端口(`ep-xxx.svc.example.com:443`),
+    平台不该对它有任何假设。Host 可能带端口(`svc-xxx.svc.example.com:443`),
     endpoint_slug_from_host 负责切。x-forwarded-host 只在 Host 不含 slug 时兜底
     (网关若改写了 Host):两者同为客户端可写,信任级别一样,不引入新的攻击面。
     """

@@ -245,7 +245,7 @@ TLS 通配只匹配一级标签,`*.<域>` 盖不住 `<slug>.svc.<域>`。两个 
   `SUPERDL_JUPYTER_URL_PORT=8443`,它只进入场 URL 与 `JUPYTER_ALLOW_ORIGIN`,不进 HTTPRoute hostname
   与 SSH 连接串。反过来把端点让到非 443 也成立,只是那个端口号要跟着用户贴出去的地址走一辈子。
 - 两个后缀因此是同一个字符串,`endpoint_slug_from_host` 的后缀比对不再能分开两类域名,把关的只剩
-  `ep-` 前缀那一条。
+  `svc-` 前缀那一条。
 - **切换顺序在这个形态下是硬要求**:k3s 的 klipper-lb 把 LoadBalancer 端口实现成节点 hostPort,
   80/443 还被 ingress-nginx 占着时,新 Service 的 svclb Pod 整个调度不上 —— 连 8443 一起没有。
   所以要先只开 8443 那一个 listener、验通 Jupyter、摘掉 ingress-nginx,再把 80/443 两个 listener 加回来。

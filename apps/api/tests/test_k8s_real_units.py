@@ -484,7 +484,7 @@ class TestServiceWorkloadObjects:
         svc: dict[str, Any] = {
             "restart_policy": "Always",
             "service_port": 8000,
-            "service_host": "ep-abc123.svc.example.com",
+            "service_host": "svc-abc123.svc.example.com",
             "with_ssh": False,
             "ssh_node_port": None,
         }
@@ -504,7 +504,7 @@ class TestServiceWorkloadObjects:
         body = _bare()._httproute_body(self._svc())
         parent = body["spec"]["parentRefs"][0]
         assert parent["sectionName"] == "svc-https"
-        assert body["spec"]["hostnames"] == ["ep-abc123.svc.example.com"]
+        assert body["spec"]["hostnames"] == ["svc-abc123.svc.example.com"]
         assert body["spec"]["rules"][0]["backendRefs"] == [{"name": "inst-1-svc", "port": 8000}]
 
     def test_service_route_without_host_refuses(self):

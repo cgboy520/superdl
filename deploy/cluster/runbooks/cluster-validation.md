@@ -145,7 +145,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       CNAME 委托 + 往 `acme-dns-account` 的 acmedns.json **追加** `svc.<域>` 这个键,见 `05-cert-manager.yaml`
       与 `runbooks/acme-dns.md`)。`preflight.sh` 只校验该 secret 存在、不看里面有哪些键,漏了不会告警;
       证书没签发时 `svc-https` 不 Programmed,**全部服务端点 TLS 直接握手失败,且没有兜底证书**
-- [ ] **合法 Key 通**:`curl -H 'Authorization: Bearer <明文 Key>' https://ep-<slug>.svc.<域>/<容器自己的路径>`
+- [ ] **合法 Key 通**:`curl -H 'Authorization: Bearer <明文 Key>' https://svc-<slug>.svc.<域>/<容器自己的路径>`
       返回容器的真实响应。同时用 `-H 'X-API-Key: <明文 Key>'` 再打一遍 —— 两种写法都必须通过。
       只有 Bearer 通、X-API-Key 一律 401,说明 `headersToExtAuth` 漏了 `x-api-key`
       (Envoy 默认只发 `:authority`/`:method`/`:path`/`content-length`/`authorization` 五个头给鉴权服务)
@@ -163,7 +163,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       打端点,容器侧收到的必须是鉴权服务给的真值(`headersToBackend` 是覆盖语义)。收到 `forged`
       说明这两个头没列进 `headersToBackend`,容器基于它做的任何判断都是可伪造的
 - [ ] **端点级限流生效且互不牵连**:对同一端点 `for i in $(seq 40); do curl -s -o /dev/null -w '%{http_code} '
-      -H 'Authorization: Bearer <Key>' https://ep-<slug>.svc.<域>/; done` 出现 429;
+      -H 'Authorization: Bearer <Key>' https://svc-<slug>.svc.<域>/; done` 出现 429;
       **同时打另一个端点不受影响**(桶按路由分)。注意本地限流是每 Envoy 实例计数,2 副本时单端点
       实际上限约为 20/s × 2
 - [ ] **Jupyter 域没有被顺带鉴权**:`app-https` 上的实例 Jupyter 仍按原样(token)可访问 —— 两个 listener

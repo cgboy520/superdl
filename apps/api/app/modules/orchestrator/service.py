@@ -168,7 +168,7 @@ logger = get_logger(__name__)
 # 吊销了哪把),没有上限就等于给已鉴权用户开了一条无限追加写的口子
 MAX_API_KEYS_PER_INSTANCE = 20
 # 端点公网域名左标签前缀,与 deploy 侧 Gateway listener 的 hostname 通配同一形态
-ENDPOINT_SLUG_PREFIX = "ep-"
+ENDPOINT_SLUG_PREFIX = "svc-"
 _SLUG_ATTEMPTS = 3
 
 
@@ -578,7 +578,7 @@ async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
 
 
 def _new_endpoint_slug() -> str:
-    """公网端点左标签:ep- + 10 位 base32(约 50 bit 熵)。
+    """公网端点左标签:svc- + 10 位 base32(约 50 bit 熵)。
 
     刻意不用 instance.uuid:内部主键不该出现在公网域名、TLS SNI、访问日志与
     第三方 Referer 里 —— 那等于把「有多少台实例、编号怎么排」白送出去。
@@ -958,7 +958,7 @@ async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceO
 async def _attach_service_slugs(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
     """给列表项回填端点 slug:**一次查询**,不是每行一次。
 
-    列表页要内联「[服务] ep-xxxx」,而 slug 在另一张表。逐行查是 N+1,
+    列表页要内联「[服务] svc-xxxx」,而 slug 在另一张表。逐行查是 N+1,
     让前端逐行打 /service 是把 N+1 搬到网络上(web.md 明令禁止接口调用随行数放大)。
     """
     ids = [i.id for i in items if i.workload_type == WORKLOAD_SERVICE]

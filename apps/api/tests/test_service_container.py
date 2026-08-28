@@ -100,8 +100,8 @@ class TestServiceInstanceCreate:
                     select(ServiceEndpoint).where(ServiceEndpoint.instance_id == inst.id)
                 )
             ).scalar_one()
-        assert endpoint.public_slug.startswith("ep-")
-        assert len(endpoint.public_slug) == 13
+        assert endpoint.public_slug.startswith("svc-")
+        assert len(endpoint.public_slug) == 14  # svc- + 10 位 base32
         assert uuid not in endpoint.public_slug
         assert endpoint.container_port == 8000
         assert endpoint.health_path == "/health"
@@ -160,7 +160,7 @@ class TestServiceInstanceCreate:
         assert spec.service_port == 8000
         assert spec.health_path == "/health"
         assert spec.service_host.endswith(f".{get_settings().service_domain_suffix}")
-        assert spec.service_host.startswith("ep-")
+        assert spec.service_host.startswith("svc-")
         # 服务容器不跑 Jupyter:token 不进 Secret,也不注入 JUPYTER_ALLOW_ORIGIN
         assert "JUPYTER_TOKEN" not in spec.secret_env
         assert "JUPYTER_ALLOW_ORIGIN" not in spec.env
@@ -258,7 +258,7 @@ class TestListView:
         assert resp.status_code == 200, resp.text
         row = next(i for i in resp.json()["items"] if i["uuid"] == uuid)
         assert row["workload_type"] == "service"
-        assert row["service_slug"] and row["service_slug"].startswith("ep-")
+        assert row["service_slug"] and row["service_slug"].startswith("svc-")
         # 与端点接口给的是同一个 slug(两条路径不能各说各的)
         endpoint = (await client.get(f"/api/v1/instances/{uuid}/service", headers=headers)).json()
         assert row["service_slug"] == endpoint["slug"]
@@ -495,7 +495,7 @@ class TestServiceEndpointApi:
         data = resp.json()
         assert data["jupyter_url"] is None
         assert data["ssh_host"] is None and data["ssh_port"] is None
-        assert data["endpoint_url"].startswith("https://ep-")
+        assert data["endpoint_url"].startswith("https://svc-")
 
     async def test_access_service_with_ssh_has_both(self, client, sm, fake):
         headers, uuid, _ = await provision_service(
@@ -503,7 +503,7 @@ class TestServiceEndpointApi:
         )
         data = (await client.get(f"/api/v1/instances/{uuid}/access", headers=headers)).json()
         assert data["ssh_command"].startswith("ssh root@")
-        assert data["endpoint_url"].startswith("https://ep-")
+        assert data["endpoint_url"].startswith("https://svc-")
         assert data["jupyter_url"] is None
 
 
@@ -576,11 +576,11 @@ class TestSlugHostParsing:
 
     def test_matches_service_suffix_only(self):
         suffix = get_settings().service_domain_suffix
-        assert service.endpoint_slug_from_host(f"ep-abc123.{suffix}") == "ep-abc123"
+        assert service.endpoint_slug_from_host(f"svc-abc123.{suffix}") == "svc-abc123"
         # 带端口(网关回调里 Host 常带 :443)
-        assert service.endpoint_slug_from_host(f"ep-abc123.{suffix}:443") == "ep-abc123"
+        assert service.endpoint_slug_from_host(f"svc-abc123.{suffix}:443") == "svc-abc123"
         # 大小写与结尾点(FQDN 写法)
-        assert service.endpoint_slug_from_host(f"EP-ABC123.{suffix.upper()}.") == "ep-abc123"
+        assert service.endpoint_slug_from_host(f"SVC-ABC123.{suffix.upper()}.") == "svc-abc123"
 
     def test_rejects_other_domains(self):
         # Jupyter 域不能当端点别名:否则 <uuid>.app.<域名> 成了鉴权端点的第二个入口
@@ -589,7 +589,7 @@ class TestSlugHostParsing:
         assert service.endpoint_slug_from_host(None) is None
         # 多段左标签不是平台签发的形态
         suffix = get_settings().service_domain_suffix
-        assert service.endpoint_slug_from_host(f"a.ep-abc123.{suffix}") is None
+        assert service.endpoint_slug_from_host(f"a.svc-abc123.{suffix}") is None
 
 
 class TestServiceInstanceReusesLifecycle:

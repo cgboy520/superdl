@@ -15,9 +15,9 @@
 ## 域名规则
 
 端点主机名 = `<public_slug>.<SUPERDL_SERVICE_DOMAIN_SUFFIX>`,例如
-`ep-a1b2c3d4e5.svc.superdl.example.com`。
+`svc-a1b2c3d4e5.svc.superdl.example.com`。
 
-- slug 形如 `ep-` + 10 位小写 base32,建端点时生成,库内 UNIQUE,碰撞重试。
+- slug 形如 `svc-` + 10 位小写 base32,建端点时生成,库内 UNIQUE,碰撞重试。
   **刻意不用 `instances.uuid`** —— 内部主键不该出现在公网域名、TLS SNI、访问日志与第三方 Referer 里。
 - **不变量:服务端点与 Jupyter 必须落在两个不同的 listener 上。** 只有服务那个挂
   `SecurityPolicy.extAuth`;并成一个 listener 就只能逐路由挂策略,而 EG 里按路由挂是整份替换语义,
@@ -28,7 +28,7 @@
     两个后缀只能都写成裸域,hostname 就分不开了 —— Gateway API 的 listener hostname 只允许整标签
     通配(CRD 正则 `^(\*\.)?…`),写不出 `svc-*.<域>`。此时靠端口分:443 留给服务端点(用户要粘进
     客户端代码的地址),Jupyter 用 `SUPERDL_JUPYTER_URL_PORT` 让到非 443。后缀相同时,把关的只剩
-    `ep-` 前缀那一条(`endpoint_slug_from_host`),它因此不是可选的装饰。
+    `svc-` 前缀那一条(`endpoint_slug_from_host`),它因此不是可选的装饰。
 - 泛域名解析到网关入口(只需 80/443,不像 Jupyter 后缀那样还要转发 NodePort 段);证书由 listener 的
   `certificateRefs` 引用 —— 默认形态是 `deploy/app/k8s/05-cert-manager.yaml` 里签发的泛域名证书,
   按端口分的形态则是两个 listener 共用同一张一级通配证书。

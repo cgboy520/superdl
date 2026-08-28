@@ -86,7 +86,7 @@ spec:
   dnsNames:
     - "*.app.superdl.example.com"
 ---
-# 泛域名证书:服务型实例的对外端点(ep-<slug>.svc.<域>)共用一张,给 04-gateway.yaml 的
+# 泛域名证书:服务型实例的对外端点(svc-<slug>.svc.<域>)共用一张,给 04-gateway.yaml 的
 # svc-https listener 用。与 *.app 分开两张,不合并:两者各自要一个 acme-dns 账户与一条 CNAME
 # 委托,合成一张会把两个入口的签发失败绑成一件事(其中一条委托没做好,连 Jupyter 一起没证书)。
 #
