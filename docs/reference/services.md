@@ -19,11 +19,19 @@
 
 - slug 形如 `ep-` + 10 位小写 base32,建端点时生成,库内 UNIQUE,碰撞重试。
   **刻意不用 `instances.uuid`** —— 内部主键不该出现在公网域名、TLS SNI、访问日志与第三方 Referer 里。
-- **服务后缀必须与 `SUPERDL_JUPYTER_DOMAIN_SUFFIX` 是两个不同的后缀。** 它们在 Gateway 上是两个独立
-  listener,而**只有服务这个挂了 `SecurityPolicy.extAuth`**。写成同一个后缀,两类流量就没法按 hostname
-  分流,服务端点会落到不鉴权的那个 listener 上 —— 而且照样通、返回 200,没有任何报错。
-- 泛域名 `*.svc.<域名>` 解析到网关入口(只需 80/443,不像 Jupyter 后缀那样还要转发 NodePort 段);
-  证书是 `deploy/app/k8s/05-cert-manager.yaml` 里的一张泛域名证书,由 listener 的 `certificateRefs` 引用。
+- **不变量:服务端点与 Jupyter 必须落在两个不同的 listener 上。** 只有服务那个挂
+  `SecurityPolicy.extAuth`;并成一个 listener 就只能逐路由挂策略,而 EG 里按路由挂是整份替换语义,
+  漏挂一条 = 那个端点彻底不鉴权,照样返回 200,没有任何报错。分开的方式有两种,选一种:
+  - **按 hostname 分(默认)**:`SUPERDL_SERVICE_DOMAIN_SUFFIX` 与 `SUPERDL_JUPYTER_DOMAIN_SUFFIX`
+    写成两个不同后缀(`*.svc.<域>` / `*.app.<域>`),两个 listener 同在 443。需要两张泛域名证书。
+  - **按端口分**:手上只有一张**一级**通配证书(`*.<域>`,盖不住 `*.svc.<域>` 这种两级名字)时,
+    两个后缀只能都写成裸域,hostname 就分不开了 —— Gateway API 的 listener hostname 只允许整标签
+    通配(CRD 正则 `^(\*\.)?…`),写不出 `svc-*.<域>`。此时靠端口分:443 留给服务端点(用户要粘进
+    客户端代码的地址),Jupyter 用 `SUPERDL_JUPYTER_URL_PORT` 让到非 443。后缀相同时,把关的只剩
+    `ep-` 前缀那一条(`endpoint_slug_from_host`),它因此不是可选的装饰。
+- 泛域名解析到网关入口(只需 80/443,不像 Jupyter 后缀那样还要转发 NodePort 段);证书由 listener 的
+  `certificateRefs` 引用 —— 默认形态是 `deploy/app/k8s/05-cert-manager.yaml` 里签发的泛域名证书,
+  按端口分的形态则是两个 listener 共用同一张一级通配证书。
 
 ## 契约
 

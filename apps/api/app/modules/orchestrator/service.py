@@ -179,6 +179,22 @@ def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
     return f"{s.jupyter_host_prefix}{instance_uuid}.{s.jupyter_domain_suffix}"
 
 
+def jupyter_origin(instance_uuid: str, settings: Settings | None = None) -> str:
+    """实例 Jupyter 的浏览器 origin:`https://<主机名>` 或 `https://<主机名>:<端口>`。
+
+    与 `jupyter_host` 分开是因为两者的使用面正好相反:HTTPRoute 的 hostname 与 SSH 连接串
+    只认**不带端口**的主机名(Gateway API 的 hostname 里写端口直接被 CRD 拒收),而入场票据
+    URL 与 JUPYTER_ALLOW_ORIGIN 必须带端口 —— 浏览器的同源判定把端口算进 origin。
+    少一个端口号的表现极具迷惑性:页面打得开,内核的 WebSocket 却被自己的 CORS 全挡掉,
+    看上去像「内核连不上」。
+    """
+    s = settings or get_settings()
+    host = jupyter_host(instance_uuid, s)
+    return (
+        f"https://{host}" if s.jupyter_url_port == 443 else f"https://{host}:{s.jupyter_url_port}"
+    )
+
+
 def service_endpoint_host(slug: str, settings: Settings | None = None) -> str:
     """服务端点主机名:<slug>.<service_domain_suffix>。
 
@@ -201,8 +217,13 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
     if not name.endswith(suffix):
         return None
     slug = name[: -len(suffix)]
-    # 只收单段左标签:多段说明是 <x>.<slug>.svc.<域名> 这种,不属本平台签发的端点
-    return slug if slug and "." not in slug else None
+    # 只收单段左标签:多段说明是 <x>.<slug>.svc.<域名> 这种,不属本平台签发的端点。
+    # 再卡一道 ep- 前缀:当部署把 Jupyter 与端点放在**同一个**后缀下(两类入口靠端口
+    # 分开,见 config.jupyter_url_port)时,后缀比对不再能把两类域名分开 —— 少了这一条,
+    # Jupyter 域名就成了鉴权端点的别名(查不到 slug 仍是 401,但函数的契约已经假了)。
+    if "." in slug or not slug.startswith(ENDPOINT_SLUG_PREFIX):
+        return None
+    return slug
 
 
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
@@ -303,7 +324,7 @@ def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
     exp = int(time.time()) + settings.jupyter_ticket_ttl_seconds
     sig = hmac.new(token_plain.encode(), f"{code}.{exp}".encode(), hashlib.sha256).hexdigest()
     return (
-        f"https://{jupyter_host(instance.uuid, settings)}"
+        f"{jupyter_origin(instance.uuid, settings)}"
         f"/superdl-bootstrap?code={code}&exp={exp}&sig={sig}"
     )
 
@@ -1360,7 +1381,7 @@ def build_pod_spec(
     else:
         env = {
             # 实例自己的域名:镜像据此收敛 Jupyter 的 Origin 校验(防跨站 WebSocket)
-            "JUPYTER_ALLOW_ORIGIN": f"https://{jupyter_host(instance.uuid, settings)}",
+            "JUPYTER_ALLOW_ORIGIN": jupyter_origin(instance.uuid, settings),
         }
         # token 走 per-instance Secret(secretKeyRef),不以明文 env 落 Pod spec:
         # spec 会进 etcd/审计快照,任何 pods:get/list 身份(含只读 SA)都能读走

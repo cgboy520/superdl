@@ -181,6 +181,13 @@ class Settings(BaseSettings):
     # 共用的一级域(如为了复用 *.<域> 通配证书——通配只匹配一级标签,盖不住 <uuid>.app.<域>)时,
     # 用前缀把实例域名从共用域里区分出来(如 superdl-)。DNS 通配仍按整段标签匹配(*.<域>)
     jupyter_host_prefix: str = ""
+    # Jupyter 入场 URL 与 JUPYTER_ALLOW_ORIGIN 里的端口;443 = URL 不带端口(默认形态)。
+    # 需要改它的只有一种部署:两个 listener 复用同一张**一级**通配证书时,hostname 分不开 ——
+    # Gateway API 的 listener hostname 只允许整标签通配(CRD 正则 `^(\*\.)?…`),写不出
+    # `svc-*.<域>` 这种半标签通配;而两个 listener 必须分得开,因为**只有服务端点那个挂
+    # extAuth**。此时只能靠端口把两类入口分开,占非 443 的那一个要把端口带进 URL。
+    # 只影响 URL/origin:HTTPRoute 的 hostname 与 SSH 连接串仍是不带端口的主机名。
+    jupyter_url_port: int = 443
     # 服务型实例的对外端点后缀:端点主机名 = <slug>.<service_domain_suffix>。
     # 与 jupyter_domain_suffix 分成两个后缀是刻意的:Gateway 上是两个独立 listener,
     # 只有服务这个 listener 挂 extAuth 鉴权策略,Jupyter 那个不挂 —— 同后缀就没法

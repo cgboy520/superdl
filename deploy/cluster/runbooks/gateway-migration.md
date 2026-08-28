@@ -217,6 +217,40 @@ kubectl get validatingadmissionpolicybinding superdl-platform-sa-scope   # 仍�
 | `default-ssl-certificate`(泛域名兜底) | `app-https` listener 的 `certificateRefs` | 更显式;代价是没有兜底证书,某条 listener 的 Secret 缺失时该域直接 TLS 握手失败 |
 | (nginx 无此概念) | `ClientTrafficPolicy.timeout.http.streamIdleTimeout: 1h` | **必配项**:EG 默认 5 分钟,会按时掐断 Jupyter 的 WebSocket 与 SSE。症状是「用着用着内核就断了」,极易误诊成鉴权过期或网络抖动 |
 
+## 变体:平台在集群外,或只有一张一级通配证书
+
+上面的步骤假定的是仓库清单描述的完整形态:平台自身(api/console/admin)也跑在集群里,且有
+`*.app.<域>` 与 `*.svc.<域>` 两张泛域名证书。真实部署里有两处常见偏离,各自要改的东西不多但漏一处就不通。
+
+**偏离一:平台跑在集群外**(API 与前端在宿主机 systemd + nginx,集群里只有租户负载)。
+
+- `04-gateway.yaml` 里平台的三个 listener、三条路由与 `superdl-admin-allowlist` / `superdl-api-ratelimit`
+  **一律不下发** —— 下发了也只是一组 backend 不存在的路由,和挂在空路由上的策略。
+- `SecurityPolicy.extAuth` 的 `backendRefs` 指向的 `superdl-api` Service 因此不存在,要自己补一条
+  **无 selector 的 Service + 手写 EndpointSlice**,地址指向宿主机。
+- 宿主机上还要给它开一个**内部端口**:平台 API 通常只监听 127.0.0.1,集群到不了;而走公网 API 域会被
+  `core/edge_guard` 按 `X-Forwarded-For` 判成 404(那条收口正是为了不让这个无鉴权回调跟着
+  `path: /` 的公网路由一起暴露,不能绕过)。这个内部 server 必须:只监听内网/隧道地址、只放行网关
+  节点、只放行 `/api/internal/` 与 `/healthz`(后者给 `backendSettings.healthCheck.active` 探)、
+  **绝不设 `X-Forwarded-For`**(设了就是常态 404,fail-close 之下全部端点 503),并原样透传 `Host`
+  (平台从 Host 取 slug,改写即全部 401)。
+
+**偏离二:只有一张一级通配证书 `*.<域>`。**
+
+TLS 通配只匹配一级标签,`*.<域>` 盖不住 `<slug>.svc.<域>`。两个 listener 的 hostname 因此只能都写成
+`*.<域>` —— 而 Gateway API 的 listener hostname 只允许整标签通配(CRD 正则 `^(\*\.)?…`),写不出
+`svc-*.<域>` 这种半标签通配。**结论:此时两类入口只能按端口分,不能按 hostname 分。**
+
+- 443 留给服务端点(用户要粘进客户端代码的地址),Jupyter 让到 8443:平台侧
+  `SUPERDL_JUPYTER_URL_PORT=8443`,它只进入场 URL 与 `JUPYTER_ALLOW_ORIGIN`,不进 HTTPRoute hostname
+  与 SSH 连接串。反过来把端点让到非 443 也成立,只是那个端口号要跟着用户贴出去的地址走一辈子。
+- 两个后缀因此是同一个字符串,`endpoint_slug_from_host` 的后缀比对不再能分开两类域名,把关的只剩
+  `ep-` 前缀那一条。
+- **切换顺序在这个形态下是硬要求**:k3s 的 klipper-lb 把 LoadBalancer 端口实现成节点 hostPort,
+  80/443 还被 ingress-nginx 占着时,新 Service 的 svclb Pod 整个调度不上 —— 连 8443 一起没有。
+  所以要先只开 8443 那一个 listener、验通 Jupyter、摘掉 ingress-nginx,再把 80/443 两个 listener 加回来。
+  单机上没有「两者并存各自一个 LB IP」这种从容窗口,第 6 步的回滚路径也随之变短。
+
 ## 迁移之后要盯的两件事
 
 - **Envoy 数据面内存**。我们是「一实例一条 HTTPRoute」,活跃实例多了就是几百上千条路由,
