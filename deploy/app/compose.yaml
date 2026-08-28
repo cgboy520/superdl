@@ -5,6 +5,11 @@ name: superdl
 services:
   postgres:
     image: postgres:18
+    # 没有它,宿主机/Docker 重启后容器不会自己回来:API 与 worker 会进无限重启循环
+    # (asyncpg 连不上 → startup 失败 → systemd Restart=always),而两个 unit 的状态
+    # 一直是 active,systemctl 看不出任何异常 —— 唯一线索在 journal 的重启计数里。
+    # 2026-08-28 就这么静默停了 6 小时。unless-stopped 而非 always:显式 stop 后不自作主张拉起。
+    restart: unless-stopped
     environment:
       POSTGRES_USER: superdl
       POSTGRES_PASSWORD: superdl
