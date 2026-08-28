@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay
+from app.core.idempotency import find_replay, request_fingerprint
 from app.core.logging import get_logger
 from app.core.metrics import (
     PAYMENT_CALLBACK_MISMATCH_TOTAL,
@@ -64,9 +64,16 @@ async def create_recharge(
         raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.channelNotEnabled")
     channel = await get_channel(channel_name, session)
 
+    # 异参检测指纹:同键改了金额/渠道 → 409,而非静默返回上一单
+    fingerprint = request_fingerprint(user_id, amount, channel_name)
     if idempotency_key:
         existing = await find_replay(
-            session, Order, owner_col=Order.user_id, owner_id=user_id, key=idempotency_key
+            session,
+            Order,
+            owner_col=Order.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+            fingerprint=fingerprint,
         )
         if existing is not None:
             if existing.status == "pending" and not existing.qr_url:
@@ -79,6 +86,7 @@ async def create_recharge(
         amount=amount,
         channel=channel.name,
         idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
         expires_at=now_utc() + timedelta(seconds=get_settings().recharge_order_ttl_seconds),
     )
     session.add(order)
@@ -91,7 +99,12 @@ async def create_recharge(
         if idempotency_key is None:
             raise  # 无幂等键不会撞 (user_id, idempotency_key) 约束,原样上抛
         existing = await find_replay(
-            session, Order, owner_col=Order.user_id, owner_id=user_id, key=idempotency_key
+            session,
+            Order,
+            owner_col=Order.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+            fingerprint=fingerprint,
         )
         if existing is None:
             raise exc  # 撞的是别的唯一约束(理论不到达),原样上抛
@@ -211,12 +224,14 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
 
 
 async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
-    """查单收敛(定时任务,每 2 分钟):对 pending 超 60s 及近 48h failed 的订单主动向渠道查单,
-    渠道侧已支付则按回调同路径入账。
+    """查单收敛(定时任务,每 2 分钟):对 pending 超 60s、近 48h failed 及近 48h closed 的
+    订单主动向渠道查单,渠道侧已支付则按回调同路径入账。
 
-    failed 订单纳入扫描:渠道中间态(TRADE_CLOSED 等)会把订单打成 failed,
-    但用户可能稍后完成支付——渠道查单是唯一事实源。48h 窗口限定避免无限重扫
-    下单即失败的旧单(渠道侧查无此单,会被跳过)。
+    failed/closed 订单纳入扫描:渠道中间态(TRADE_CLOSED 等)会把订单打成 failed;
+    「用户在关单前最后一刻支付成功但回调丢失」则留下 closed 单——两种情况下
+    渠道查单都是唯一事实源,扫进来才能自动救回,不必等人工补单。
+    48h 窗口限定避免无限重扫下单即失败的旧单(渠道侧查无此单,会被跳过);
+    closed 单由 expires_at 界定同一只窗口(关单时刻 = expires_at)。
 
     advisory lock 防多副本重复;单轮 cap 50;渠道不可达跳过该单,下轮再试。
     """
@@ -236,11 +251,17 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                         select(Order)
                         .where(
                             or_(
-                                Order.status == "pending",
-                                Order.status == "failed",
+                                Order.status.in_(("pending", "failed")),
+                                # closed 单按关单时刻(expires_at)限定近 48h:
+                                # 与 created_at 双界交集 = 关单不久的新单
+                                Order.status == "closed",
                             ),
                             Order.created_at < now_utc() - timedelta(seconds=60),
                             Order.created_at > now_utc() - timedelta(hours=48),
+                            or_(
+                                Order.status != "closed",
+                                Order.expires_at > now_utc() - timedelta(hours=48),
+                            ),
                         )
                         .order_by(Order.id)
                         .limit(50)

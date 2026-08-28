@@ -271,6 +271,17 @@ class TestCreate:
             rows = (await session.execute(select(InvoiceRequest))).scalars().all()
         assert len(rows) == 1
 
+    async def test_idem_key_param_mismatch_409(self, client: AsyncClient, sm):
+        """同键异参(改了抬头):显式 409,绝不静默返回上一张申请。"""
+        headers = await user_headers(client, "13700000219")
+        p1, at1 = past_period(1)
+        await paid_order_at(client, sm, headers, "50.00", at1)
+        r1 = await apply_invoice(client, headers, p1, idem="inv-mix")
+        assert r1.status_code == 201
+        r2 = await apply_invoice(client, headers, p1, idem="inv-mix", title="改名科技有限公司")
+        assert r2.status_code == 409
+        assert r2.json()["message_key"] == "common.idempotencyKeyMismatch"
+
 
 class TestAdminFlow:
     async def _submitted(self, client: AsyncClient, sm, phone: str) -> tuple[dict, int, str]:

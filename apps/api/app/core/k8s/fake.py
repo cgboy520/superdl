@@ -16,6 +16,7 @@ from app.core.k8s.base import (
     POOL_NODE_LABEL,
     ClusterProbe,
     InstancePodSpec,
+    NodeInfo,
     NodePortTaken,
     PodStatus,
     PrewarmJobStatus,
@@ -320,10 +321,8 @@ class FakeOrchestrator:
         """模拟 DB 已 released 但 K8s 残留的泄漏 Pod。"""
         self.pods[(namespace, name)] = _FakePod(spec=spec, ready=True)
 
-    async def list_nodes(self, include_unlabeled: bool = False):
+    async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
         """节点视图(Fake:按池合成节点;include_unlabeled 时附无标签节点)。"""
-        from app.core.k8s.base import NodeInfo
-
         models = {"kata": "RTX4090", "hami": "RTX4090", "mig": "H100"}
         nodes = []
         for pool, cap in self.pool_capacity.items():

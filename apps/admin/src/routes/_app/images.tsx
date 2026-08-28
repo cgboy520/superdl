@@ -1,4 +1,5 @@
 import { imageCacheStatusMap, metaOf, type ImageCacheStatus } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -55,14 +56,20 @@ interface ImageFormValues {
 /** 行展开:该镜像的每节点缓存明细(展开期间 10s 轮询看拉取进度) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const { data } = useImageNodes(imageId, { refetchInterval: 10_000 });
+  const { data, isError, refetch } = useImageNodes(imageId, { refetchInterval: 10_000 });
   return (
     <Table<ImageNodeRow>
       size="small"
       rowKey="node_name"
       dataSource={data ?? []}
       pagination={false}
-      locale={{ emptyText: t("images.nodesEmpty") }}
+      locale={{
+        emptyText: (
+          <TableErrorEmpty isError={isError} onRetry={() => void refetch()}>
+            {t("images.nodesEmpty")}
+          </TableErrorEmpty>
+        ),
+      }}
       columns={[
         { title: t("nodes.colNode"), dataIndex: "node_name" },
         {
@@ -111,7 +118,7 @@ function ImagesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: images, queryKey } = useAdminImages({ refetchInterval: 15_000 });
+  const { data: images, queryKey, isLoading, isError, refetch } = useAdminImages({ refetchInterval: 15_000 });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
   // 新建镜像的默认仓库前缀:Harbor 地址与平台项目来自平台配置(经集群状态透出,ops 可读)
   const { data: cluster } = useClusterStatus();
@@ -198,6 +205,10 @@ function ImagesPage() {
       <Table<ImageRow>
         scroll={{ x: 1100 }}
         rowKey="id"
+        loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={images ?? []}
         pagination={false}
         expandable={{
@@ -300,7 +311,7 @@ function ImagesPage() {
         }
         open={editing !== null}
         onClose={() => setEditing(null)}
-        width={480}
+        width="min(480px, 100vw)"
         extra={
           <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
             {t("skus.submit")}

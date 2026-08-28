@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target
 from app.core.db import DbSession
-from app.core.errors import AppError
+from app.core.errors import AppError, ErrorCode
 from app.core.logging import mask_phone_value
 from app.core.money import as_amount
 from app.core.pagination import Page
@@ -52,18 +52,30 @@ async def admin_list_tenants(
     status: str | None = None,
     cursor: str | None = None,
     limit: int | None = Query(default=None, le=100),
+    reveal: bool = False,
+    reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
 ) -> Page[TenantOut]:
     """租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
 
     id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
     按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
 
-    实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
-    该次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
+    实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填
+    (ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——
+    「客服日常浏览列表」不再批量接触明文 PII。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
+    if reveal:
+        if admin.role == "readonly":
+            raise AppError(ErrorCode.FORBIDDEN, key="common.forbidden", http_status=403)
+        if reason is None or len(reason.strip()) < 2:
+            raise AppError(
+                ErrorCode.VALIDATION_ERROR,
+                key="common.validation",
+                detail={"field": "reason", "constraint": "required_when_reveal"},
+            )
     if q:
         masked = mask_phone_value(q)
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
@@ -90,7 +102,7 @@ async def admin_list_tenants(
     balances = await billing_service.balances_by_user(session, page_user_ids)
     consumed = await billing_service.consumed_by_user(session, page_user_ids)
     stats = await orchestrator_service.instance_disk_stats_by_user(session, page_user_ids)
-    mask_realname = admin.role == "readonly"
+    mask_realname = not reveal
     realname_hits = 0
     out = []
     for u in users:
@@ -113,8 +125,12 @@ async def admin_list_tenants(
             )
         )
     if realname_hits:
-        # 明文实名的敏感读留痕:target 只落条数不落内容(内容即 PII,审计里不复制一份)
-        mark_audited_read(request, "tenant-realname:list", detail={"rows": realname_hits})
+        # 明文实名的敏感读逐次留痕:落条数与事由,不落内容(内容即 PII,审计里不复制一份)
+        mark_audited_read(
+            request,
+            "tenant-realname:reveal",
+            detail={"rows": realname_hits, "reason": (reason or "").strip()},
+        )
     return Page[TenantOut](items=out, next_cursor=page.next_cursor)
 
 

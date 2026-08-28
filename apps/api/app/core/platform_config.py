@@ -64,24 +64,28 @@ class SettingSpec:
 
 # key 与 Settings 同名字段一一对应(env 即默认值层;K8s Secret 注入仍有效)
 SETTING_SPECS: dict[str, SettingSpec] = {
-    # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;prod 关闭不拒启动,只给告警) ----
+    # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;env 层 prod 关闭只告警不拒启动,
+    # 在线写库层 prod 一律禁关——单管理员一次请求即降防的口子必须堵死) ----
     "captcha_enabled": SettingSpec(
         "security",
         "bool",
+        prod_forbidden=("false",),
         hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
-        "关闭 = 不做人机校验,发码口子只剩 IP/手机号限流",
+        "关闭 = 不做人机校验,发码口子只剩 IP/手机号限流;prod 在线关闭已禁(需部署层变更)",
     ),
     "admin_mfa_enabled": SettingSpec(
         "security",
         "bool",
+        prod_forbidden=("false",),
         hint="开 = 管理端全角色强制 TOTP 两步验证(首登绑定);关 = 密码即登录,已绑定者也不再校验;"
-        "生产环境关闭属高危运营动作",
+        "生产环境关闭属高危运营动作,prod 在线关闭已禁(需部署层变更)",
     ),
     "real_name_enabled": SettingSpec(
         "security",
         "bool",
+        prod_forbidden=("false",),
         hint="开启后用户端「账户设置」可提交三要素核验(凭据在「实名认证」组,缺失即 502);"
-        "关闭 = 提交返 409,不影响已实名用户",
+        "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁(需部署层变更)",
     ),
     "real_name_required_for_recharge": SettingSpec(
         "security",

@@ -201,6 +201,7 @@ class TestProdConfigValidation:
             "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
             "cors_origins": ["https://console.superdl.cn"],
             "admin_host": "admin.superdl.cn",
+            "admin_edge_token": "edge-token-for-tests",
             "jupyter_domain_suffix": "app.superdl.cn",
             "service_domain_suffix": "svc.superdl.cn",
             "public_base_url": "https://api.superdl.cn",
@@ -380,6 +381,7 @@ class TestEdgeGuard:
         settings = get_settings()
         monkeypatch.setattr(settings, "environment", "prod", raising=False)
         monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
+        monkeypatch.setattr(settings, "admin_edge_token", "edge-secret-1", raising=False)
         # 公网 api 域:管理端登录面 404(不暴露)
         resp = await client.post(
             "/api/admin/v1/auth/login",
@@ -387,15 +389,40 @@ class TestEdgeGuard:
             headers={"Host": "api.superdl.cn"},
         )
         assert resp.status_code == 404
-        # admin 域(admin SPA 同源反代):穿过收口,到达路由(凭据错 400,不是 404)
+        # admin 域 + 边缘密钥头(admin SPA 同源反代注入):穿过收口,到达路由(凭据错 400)
+        resp = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "x", "password": "y"},
+            headers={"Host": "admin.superdl.cn", "X-Admin-Edge-Token": "edge-secret-1"},
+        )
+        assert resp.status_code == 400
+        # 用户端 API 不受影响
+        assert (await client.get("/healthz", headers={"Host": "api.superdl.cn"})).status_code == 200
+
+    async def test_admin_api_rejects_host_match_without_edge_token(
+        self, client: AsyncClient, monkeypatch
+    ):
+        """双闸:Host 伪造正确但缺/错共享密钥头(集群内直连)→ 404,不穿闸。"""
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "environment", "prod", raising=False)
+        monkeypatch.setattr(settings, "admin_host", "admin.superdl.cn", raising=False)
+        monkeypatch.setattr(settings, "admin_edge_token", "edge-secret-2", raising=False)
+        # 缺头
         resp = await client.post(
             "/api/admin/v1/auth/login",
             json={"username": "x", "password": "y"},
             headers={"Host": "admin.superdl.cn"},
         )
-        assert resp.status_code == 400
-        # 用户端 API 不受影响
-        assert (await client.get("/healthz", headers={"Host": "api.superdl.cn"})).status_code == 200
+        assert resp.status_code == 404
+        # 错头
+        resp = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "x", "password": "y"},
+            headers={"Host": "admin.superdl.cn", "X-Admin-Edge-Token": "wrong"},
+        )
+        assert resp.status_code == 404
 
     async def test_metrics_rejects_ingress_traffic(self, client: AsyncClient, monkeypatch):
         from app.core.config import get_settings

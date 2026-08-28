@@ -10,6 +10,7 @@
 - 到期链路:到期不停机(免费继续跑)或停机后永不回收(实例盘泄漏)。
 """
 
+import asyncio
 from datetime import timedelta
 from decimal import Decimal
 
@@ -25,13 +26,22 @@ from app.core.pricing import (
 )
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
-from app.modules.billing.models import BalanceLedger, BillHourly, Subscription
+from app.modules.billing.models import BalanceLedger, BillHourly, Subscription, Wallet
 from app.modules.billing.patrol import balance_patrol
 from app.modules.billing.subscriptions import subscription_patrol
 from app.modules.catalog.models import Sku
+from app.modules.notify.models import Notification
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wallet, seed_node_spec
+from tests.helpers import (
+    create_test_sku,
+    create_user_with_key,
+    drain,
+    fund_wallet,
+    get_instance,
+    provision_running,
+    seed_node_spec,
+)
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -79,6 +89,34 @@ async def provision_subscription(client, sm, fake, phone: str, *, period: str = 
     fake.mark_ready(f"tenant-{user_id}", data["uuid"])
     await reconcile_once(sm)
     return headers, data["uuid"], user_id, sku_id, key_id
+
+
+class TestExpiringEndpoint:
+    async def test_expiring_lists_only_horizon_hits_sorted(self, client, sm, fake):
+        """到期横幅轻端点:只回临期(active 且 ≤ within_days)实例,升序,不分页;
+        路由注册顺序守护:/instances/expiring 不被 /instances/{uuid} 吃掉。"""
+        headers, uuid, _user_id, _sku, _key = await provision_subscription(
+            client, sm, fake, "13910000101"
+        )
+        async with sm() as session:
+            await session.execute(
+                update(Subscription)
+                .where(
+                    Subscription.instance_id
+                    == select(Instance.id).where(Instance.uuid == uuid).scalar_subquery()
+                )
+                .values(expires_at=now_utc() + timedelta(days=3))
+            )
+            await session.commit()
+        resp = await client.get("/api/v1/instances/expiring?within_days=7", headers=headers)
+        assert resp.status_code == 200, resp.text
+        items = resp.json()
+        assert isinstance(items, list)  # 列表而非 404/单对象:{uuid} 路由没吃掉 expiring
+        assert [i["uuid"] for i in items] == [uuid]
+        assert items[0]["subscription"]["status"] == "active"
+        # 窗口收窄到 1 天:窗口外即空
+        resp = await client.get("/api/v1/instances/expiring?within_days=1", headers=headers)
+        assert resp.json() == []
 
 
 async def _policies(sm) -> EffectivePolicies:
@@ -700,6 +738,161 @@ class TestExpiryChain:
                 .all()
             )
         assert len(notes) == 1
+
+
+class TestRenewConcurrency:
+    """续费并发(手动 × 自动)的零重复扣款纪律。
+
+    挂了 = 审计 P1-2 竞态回归:两条路径产出第二条 active 订阅行,
+    或同一周期(同一 renewed_from_id)被续出两行、二次扣款。
+    """
+
+    async def test_concurrent_manual_and_auto_renew_never_double_charges(
+        self, client, sm, fake
+    ):
+        """无论谁先赢:一实例仅一行 active,同一周期不被续两次,余额与链上实扣自洽。"""
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "13911100096"
+        )
+        async with sm() as s:
+            await s.execute(
+                update(Subscription)
+                .where(Subscription.user_id == user_id)
+                .values(auto_renew=True, expires_at=now_utc() - timedelta(minutes=1))
+            )
+            await s.commit()
+            balance_before = await wallet.get_balance(s, user_id)
+
+        async def manual() -> None:
+            resp = await client.post(
+                f"/api/v1/instances/{uuid}/renew",
+                json={"period": "month", "period_count": 1},
+                headers=headers,
+            )
+            assert resp.status_code == 200, resp.text
+
+        await asyncio.gather(manual(), subscription_patrol(sm))
+
+        async with sm() as s:
+            rows = list(
+                (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
+                .scalars()
+                .all()
+            )
+            active = [r for r in rows if r.status == "active"]
+            assert len(active) == 1
+            parents = [r.renewed_from_id for r in rows if r.renewed_from_id is not None]
+            assert len(parents) == len(set(parents))  # 同一周期没有被续出两条
+            charged = sum(r.amount_paid for r in rows if r.renewed_from_id is not None)
+            assert await wallet.get_balance(s, user_id) == balance_before - charged
+
+    async def test_auto_renew_after_manual_renew_is_noop(self, client, sm, fake):
+        """手动续费已完成后再跑到期巡检:自动续费不重复扣款(等锁后复核命中)。
+
+        挂了 = 巡检把已续过的周期再续一遍(老行 expired 仍被 UPDATE、插入第二条 active)。
+        """
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "13911100097"
+        )
+        async with sm() as s:
+            await s.execute(
+                update(Subscription)
+                .where(Subscription.user_id == user_id)
+                .values(auto_renew=True, expires_at=now_utc() - timedelta(minutes=1))
+            )
+            await s.commit()
+        resp = await client.post(
+            f"/api/v1/instances/{uuid}/renew",
+            json={"period": "month", "period_count": 1},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as s:
+            balance_after_manual = await wallet.get_balance(s, user_id)
+
+        counts = await subscription_patrol(sm)
+        assert counts["renewed"] == 0
+        async with sm() as s:
+            assert await wallet.get_balance(s, user_id) == balance_after_manual
+            rows = list(
+                (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
+                .scalars()
+                .all()
+            )
+            assert len([r for r in rows if r.status == "active"]) == 1
+
+
+class TestRestartGate:
+    """重启的资金门禁与开机同口径:包周期看订阅有效期,按量看余额。
+
+    挂在第一例 = 已预付整周期的包月用户余额为 0(正常态)时重启被余额门禁拦下,
+    付费资产须充值才能恢复;挂在第二例 = 已到期实例借重启绕过开机有效期门禁,
+    重建 Pod 免费续跑;挂在第三例 = 按量余额不足分支被顺带改坏。
+    """
+
+    async def test_subscription_restart_ignores_balance(self, client, sm, fake):
+        """包月实例余额为 0 重启照常:整周期已预付,余额门禁不该拦。"""
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "13911100090"
+        )
+        async with sm() as s:
+            await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
+            await s.commit()
+        resp = await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "starting"
+        fake.mark_ready(f"tenant-{user_id}", uuid)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+
+    async def test_expired_subscription_restart_aborts_at_stopped(self, client, sm, fake):
+        """到期包月实例重启:停在 stopped 并发通知,不能重建 Pod 绕过有效期门禁。"""
+        headers, uuid, user_id, _, _ = await provision_subscription(
+            client, sm, fake, "13911100091"
+        )
+        async with sm() as s:
+            await s.execute(
+                update(Subscription)
+                .where(Subscription.user_id == user_id)
+                .values(expires_at=now_utc() - timedelta(minutes=1))
+            )
+            await s.commit()
+        resp = await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        async with sm() as s:
+            notice = (
+                await s.execute(
+                    select(Notification).where(
+                        Notification.user_id == user_id,
+                        Notification.dedup_key.like("restart_subscription_expired:%"),
+                    )
+                )
+            ).scalar_one()
+            assert "包周期已到期" in notice.title
+
+    async def test_payg_restart_insufficient_balance_aborts_at_stopped(self, client, sm, fake):
+        """按量实例余额不足:重启中止在 stopped 并发通知(原行为回归)。"""
+        headers, uuid, user_id = await provision_running(client, sm, fake, "13900000150")
+        async with sm() as s:
+            await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
+            await s.commit()
+        resp = await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        async with sm() as s:
+            notice = (
+                await s.execute(
+                    select(Notification).where(
+                        Notification.user_id == user_id,
+                        Notification.dedup_key.like("restart_no_balance:%"),
+                    )
+                )
+            ).scalar_one()
+            assert "余额不足" in notice.title
 
 
 class TestRelease:

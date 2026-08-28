@@ -176,8 +176,9 @@ class RefundableOrderOut(BaseModel):
     """可申请退款口径的充值订单(用户端退款表单的数据源)。
 
     refundable=False 时 reason_code 说明置灰原因:
-    not_paid(未支付)/ already_applied(已有活跃申请)/ invoiced(已开票,先红冲)/
-    no_balance(当前余额为 0,无款可退)。
+    not_paid(未支付)/ already_applied(已有进行中的申请)/ fully_refunded(已全额退完)/
+    invoiced(已开票,先红冲)/ no_balance(当前余额为 0,无款可退)。
+    同单可多次部分退款:max_amount = min(订单剩余可退, 当前余额),剩余可退 = 订单额 − Σ已打款。
     """
 
     order_no: str
@@ -187,7 +188,7 @@ class RefundableOrderOut(BaseModel):
     paid_at: datetime | None
     refundable: bool
     reason_code: str | None
-    max_amount: MoneyOut  # min(订单金额, 当前钱包余额)
+    max_amount: MoneyOut  # min(订单剩余可退, 当前钱包余额)
 
 
 class AdminRefundOut(RefundOut):

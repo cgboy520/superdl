@@ -88,6 +88,29 @@ class TestRecharge:
             orders = (await session.execute(select(Order))).scalars().all()
         assert len(orders) == 1
 
+    async def test_idempotency_key_param_mismatch_409(self, client: AsyncClient, sm):
+        """同键异参(改了金额):显式 409,绝不静默返回上一单(弱键复用防线)。"""
+        headers = {**(await user_headers(client, "13700000045")), "Idempotency-Key": "recharge-mix"}
+        a = await create_order(client, headers, "20.00")
+        resp = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "21.00", "channel": "mock"},
+            headers=headers,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "common.idempotencyKeyMismatch"
+        async with sm() as session:
+            orders = (await session.execute(select(Order))).scalars().all()
+        assert [o.order_no for o in orders] == [a["order_no"]]
+        # 同键同参仍是重放(回归不破)
+        replay = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "20.00", "channel": "mock"},
+            headers=headers,
+        )
+        assert replay.status_code == 200
+        assert replay.headers["x-idempotent-replay"] == "true"
+
     async def test_concurrent_same_key_first_request(self, client: AsyncClient, sm):
         """同键并发首请求(双击/超时重试):负方回查返回同一订单,不许 500。
         冒烟性质:两路是否真撞到「先 SELECT 后 INSERT」的唯一约束兜底分支取决于调度,

@@ -72,6 +72,29 @@ async def _backdate_created(sm, uuid: str, age: timedelta) -> None:
         await session.commit()
 
 
+class TestEnsurePortRace:
+    async def test_concurrent_segment_extension_self_heals(self, sm):
+        """空池并发扩段:on_conflict_do_nothing + 函数内重试消化唯一冲突,
+        不抛 IntegrityError、不拖累外层事务(旧实现:败方整笔建实例进 outbox 退避)。"""
+        import asyncio
+
+        from app.modules.orchestrator.ports import ensure_port
+
+        async def alloc(owner: int) -> int:
+            async with sm() as session:
+                port = await ensure_port(session, Instance(id=owner))
+                await session.commit()
+                return port
+
+        ports = await asyncio.gather(*(alloc(owner) for owner in range(1, 5)))
+        assert len(set(ports)) == 4  # 各得一个端口,无人失败
+        async with sm() as session:
+            rows = (await session.execute(select(PortAllocation))).scalars().all()
+        assert {r.port: r.instance_id for r in rows} == {
+            p: o for o, p in enumerate(ports, start=1)
+        }
+
+
 class TestBlockedPortRecheck:
     async def test_external_occupant_stays_blocked(self, sm, fake):
         """外部对象(无平台标签的 Service)占用的端口:复检必须看得见占用者。

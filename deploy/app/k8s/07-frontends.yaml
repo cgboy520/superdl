@@ -49,8 +49,16 @@ spec:
         - name: web
           image: CHANGE_IMAGE_PREFIX/superdl-web:CHANGE_TAG
           imagePullPolicy: IfNotPresent
+          env:
+            # conf 走 envsubst 模板:只放行 ADMIN_EDGE_TOKEN(web 未引用,输出与原 conf 一致),
+            # 防 $host/$request_id 等 nginx 变量被替换掉
+            - {name: NGINX_ENVSUBST_FILTER, value: "ADMIN_EDGE_TOKEN"}
           ports:
             - {containerPort: 8080, name: http}
+          # liveness 与 readiness 同探 /(nginx 静态首页,进程僵死即重启)
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 10
           readinessProbe:
             httpGet: {path: /, port: http}
           resources:
@@ -75,6 +83,16 @@ spec:
   ports:
     - {name: http, port: 80, targetPort: http}
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: superdl-web
+  namespace: superdl
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: superdl-web}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -82,7 +100,7 @@ metadata:
   namespace: superdl
   labels: {app: superdl-admin}
 spec:
-  replicas: 1
+  replicas: 2   # 与 web 对齐:单副本时节点维护即管理端中断(应急处理入口,可用性要求不低于用户端)
   selector:
     matchLabels: {app: superdl-admin}
   template:
@@ -125,8 +143,18 @@ spec:
         - name: admin
           image: CHANGE_IMAGE_PREFIX/superdl-admin:CHANGE_TAG
           imagePullPolicy: IfNotPresent
+          env:
+            # envsubst 只放行边缘密钥这一个变量(防 $host 等 nginx 变量被替换)
+            - {name: NGINX_ENVSUBST_FILTER, value: "ADMIN_EDGE_TOKEN"}
+            # 边缘共享密钥(edge_guard 双闸):按 key 引用而非 envFrom,整套 API Secret 不进 admin Pod
+            - name: ADMIN_EDGE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: superdl-api-secrets, key: SUPERDL_ADMIN_EDGE_TOKEN}
           ports:
             - {containerPort: 8080, name: http}
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 10
           readinessProbe:
             httpGet: {path: /, port: http}
           resources:
@@ -150,3 +178,13 @@ spec:
   selector: {app: superdl-admin}
   ports:
     - {name: http, port: 80, targetPort: http}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: superdl-admin
+  namespace: superdl
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: superdl-admin}

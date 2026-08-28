@@ -7,6 +7,7 @@
 
 import asyncio
 import contextlib
+import hashlib
 import os
 import signal
 import socket
@@ -22,7 +23,7 @@ from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger, setup_logging
 from app.core.metrics import WORKER_HEARTBEAT_TS
-from app.core.outbox import process_one, reap_stuck_running
+from app.core.outbox import process_one, reap_stuck_running, report_pending_metrics
 from app.core.timeutil import now_utc
 
 logger = get_logger(__name__)
@@ -32,6 +33,28 @@ HEARTBEAT_INTERVAL_SECONDS = 10.0
 # 并发领取协程数:claim 是 FOR UPDATE SKIP LOCKED,多协程不会重复领取;
 # 消除全局串行 FIFO 的队头阻塞(一个慢任务不挡住排在后面的关机请求)
 OUTBOX_CONCURRENCY = int(os.environ.get("SUPERDL_OUTBOX_CONCURRENCY", "4"))
+
+# worker_id 长度预算:outbox_tasks.locked_by 为 String(128),lane 后缀(-N)至多再占几位。
+# 超长会在 claim 的 commit 抛 StringDataRightTruncation,且所有 lane 共享同一前缀 →
+# 该组件 outbox 整体静默停摆(任务滞留 pending,心跳/探针/死信指标全部正常)
+MAX_WORKER_ID_LEN = 120
+
+
+def make_worker_id() -> str:
+    """worker 标识:`<hostname>-<pid>`,保证最长 MAX_WORKER_ID_LEN。
+
+    K8s 里 hostname 即 Pod 名(DNS label 上限 63 字符,长 release 名可逼近),
+    裸拼接再叠 lane 后缀会突破 locked_by 列宽。只截前缀会撞「同前缀 Pod 名 +
+    容器内恒为小数字 pid」的组合,故超预算时保留可读前缀 + 全名哈希兜底唯一性。
+    """
+    hostname = socket.gethostname()
+    pid = str(os.getpid())
+    budget = MAX_WORKER_ID_LEN - len(pid) - 1
+    if len(hostname) <= budget:
+        return f"{hostname}-{pid}"
+    digest = hashlib.sha256(hostname.encode()).hexdigest()[:8]
+    return f"{hostname[: budget - 9]}-{digest}-{pid}"
+
 
 # K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
 # (挂在循环里长任务会让活着的 worker 被 SIGKILL)。
@@ -62,6 +85,13 @@ async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) 
     """N 条并发领取协程(SKIP LOCKED 保证不重复);领取按 next_retry_at, id 公平排序。
 
     task_types 非空时按组件过滤:其它组件的任务在查询层不可见,不阻塞也不误领。"""
+    # fail-fast 双保险:make_worker_id 已截断,这里挡住任何绕过它构造的长 id——
+    # lane_id 超出 locked_by 列宽 = claim commit 抛错 = 本组件 outbox 静默停摆
+    longest_lane_id = f"{worker_id}-{OUTBOX_CONCURRENCY - 1}"
+    if len(longest_lane_id) > 128:
+        raise RuntimeError(
+            f"lane_id 过长({len(longest_lane_id)} > 128):locked_by 列装不下,请检查 worker_id 构造"
+        )
     sm = get_sessionmaker()
     logger.info(
         "outbox_worker_started",
@@ -137,8 +167,9 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
             "DELETE FROM outbox_tasks WHERE status IN ('done', 'discarded') "
             "AND updated_at < now() - interval '7 days'"
         ),
+        # 保留期走绑定参数(make_interval):字符串插值拼 SQL 的写法即使来源是配置也不留
         "audit_log": (
-            f"DELETE FROM audit_log WHERE created_at < now() - interval '{retention} days'"
+            "DELETE FROM audit_log WHERE created_at < now() - make_interval(days => :days)"
         ),
         # 限流计数:窗口最长 24h(发码日限),留 2 天余量后即为死行
         "rate_limit_counters": (
@@ -148,7 +179,8 @@ async def cleanup_expired_rows(sm) -> dict[str, int]:
     counts: dict[str, int] = {}
     async with sm() as session:
         for name, stmt in stmts.items():
-            result = await session.execute(text(stmt))
+            params = {"days": retention} if name == "audit_log" else {}
+            result = await session.execute(text(stmt), params)
             counts[name] = result.rowcount or 0
         await session.commit()
     if any(counts.values()):
@@ -213,6 +245,15 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         minutes=5,
         args=[sm],
         id="outbox_reaper",
+    )
+    # 积压可观测:消费停滞(领不动任务)时任务滞留 pending,死信指标与心跳都不暴露
+    add_job(
+        _timed_job("outbox_metrics", report_pending_metrics, 60),
+        "interval",
+        seconds=60,
+        args=[sm],
+        id="outbox_metrics",
+        coalesce=True,
     )
     add_job(
         _timed_job("reconciler", reconcile_once, 30),
@@ -355,7 +396,7 @@ async def main() -> None:
     from app.workers.components import current_component, outbox_types_for
 
     wire_modules()
-    worker_id = f"{socket.gethostname()}-{os.getpid()}"
+    worker_id = make_worker_id()
     component = current_component()  # 非法值在此即炸(fail-closed),不带病起跑
     logger.info("worker_component_resolved", component=component.value)
 

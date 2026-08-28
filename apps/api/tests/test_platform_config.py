@@ -1,5 +1,7 @@
 """平台配置中心:加密往返、白名单校验、脱敏读取、覆盖即时生效、渠道开关门禁、角色隔离。"""
 
+from types import SimpleNamespace
+
 import httpx
 import pytest
 from httpx import AsyncClient
@@ -46,6 +48,37 @@ class TestSpecValidation:
             validate_setting_value("business_license_url", " https://example.com/l.png ")
             == "https://example.com/l.png"
         )
+
+
+class TestProdDegradeForbidden:
+    """降防开关(人机验证/管理端 MFA/实名)在 prod 禁止在线关闭。
+
+    单管理员一次请求即降防的口子必须堵死 —— 关掉 MFA 连 MFA 自身的保护也一并消失
+    (自我解除);env/部署层保留(env 层 prod 关闭启动时只告警),在线写库层一律禁。
+    """
+
+    @pytest.mark.parametrize(
+        "key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"]
+    )
+    def test_security_switches_cannot_be_disabled_in_prod(self, key, monkeypatch):
+        monkeypatch.setattr(
+            "app.core.platform_config.get_settings",
+            lambda: SimpleNamespace(environment="prod"),
+        )
+        with pytest.raises(ValueError, match="生产环境禁止"):
+            validate_setting_value(key, "false")
+        # 开启(升防)不受限
+        assert validate_setting_value(key, "true") == "true"
+
+    @pytest.mark.parametrize(
+        "key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"]
+    )
+    def test_security_switches_toggle_freely_outside_prod(self, key, monkeypatch):
+        monkeypatch.setattr(
+            "app.core.platform_config.get_settings",
+            lambda: SimpleNamespace(environment="dev"),
+        )
+        assert validate_setting_value(key, "false") == "false"
 
 
 class TestAdminApi:

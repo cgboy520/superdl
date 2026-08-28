@@ -1,4 +1,8 @@
 {
+  "common": {
+    "loadFailed": "加载失败,请重试",
+    "retry": "重试"
+  },
   "format": {
     "countdown": {
       "expired": "已到期",

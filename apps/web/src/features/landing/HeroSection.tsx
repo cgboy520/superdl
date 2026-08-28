@@ -1,6 +1,6 @@
 /** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。 */
 
-import { brand, colorPrimary } from "@superdl/ui";
+import { brand, colorPrimary, compareAmounts } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Grid, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -41,7 +41,8 @@ export function HeroSection() {
   const { data: skus } = useSkus({ refetchInterval: 60_000 });
 
   const minPrice = (skus ?? []).reduce<string | null>(
-    (min, s) => (min === null || Number(s.price_hourly) < Number(min) ? s.price_hourly : min),
+    // 金额比较走 compareAmounts(BigInt 万分位):价格墙排序不受浮点精度影响
+    (min, s) => (min === null || compareAmounts(s.price_hourly, min) < 0 ? s.price_hourly : min),
     null,
   );
   const freeCards = dedupAvailableTotal(skus ?? []);

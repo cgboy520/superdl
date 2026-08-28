@@ -6500,7 +6500,7 @@
         "type": "object"
       },
       "RefundableOrderOut": {
-        "description": "可申请退款口径的充值订单(用户端退款表单的数据源)。\n\nrefundable=False 时 reason_code 说明置灰原因:\nnot_paid(未支付)/ already_applied(已有活跃申请)/ invoiced(已开票,先红冲)/\nno_balance(当前余额为 0,无款可退)。",
+        "description": "可申请退款口径的充值订单(用户端退款表单的数据源)。\n\nrefundable=False 时 reason_code 说明置灰原因:\nnot_paid(未支付)/ already_applied(已有进行中的申请)/ fully_refunded(已全额退完)/\ninvoiced(已开票,先红冲)/ no_balance(当前余额为 0,无款可退)。\n同单可多次部分退款:max_amount = min(订单剩余可退, 当前余额),剩余可退 = 订单额 − Σ已打款。",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -13452,7 +13452,7 @@
     },
     "/api/admin/v1/tenants": {
       "get": {
-        "description": "租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。\n\nid 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。\n按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。\n\n实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),\n该次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。",
+        "description": "租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。\n\nid 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。\n按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。\n\n实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填\n(ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——\n「客服日常浏览列表」不再批量接触明文 PII。",
         "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
         "parameters": [
           {
@@ -13518,6 +13518,33 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reveal",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reveal",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
             }
           }
         ],
@@ -14440,17 +14467,24 @@
     },
     "/api/v1/auth/logout": {
       "post": {
-        "description": "登出当前会话(refresh token 一次性消费位撤销)。token 无效也回 204,防枚举。",
+        "description": "登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。",
         "operationId": "logout_api_v1_auth_logout_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "204": {
@@ -14537,16 +14571,24 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
+        "description": "轮换刷新:refresh 经 HttpOnly Cookie(首选)或 body(存量旁路)提交;\n成功即轮换 Cookie 与 body 双写。",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -15533,6 +15575,61 @@
           }
         ],
         "summary": "Create Instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/expiring": {
+      "get": {
+        "description": "临期包周期实例(到期横幅专用):active 订阅且到期时刻 ≤ now+within_days,升序,不分页。",
+        "operationId": "list_expiring_instances_api_v1_instances_expiring_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "within_days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Within Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstanceOut"
+                  },
+                  "title": "Response List Expiring Instances Api V1 Instances Expiring Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Expiring Instances",
         "tags": [
           "instances"
         ]

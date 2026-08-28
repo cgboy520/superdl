@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay
+from app.core.idempotency import find_replay, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
@@ -178,6 +178,8 @@ async def create_invoice(
 ) -> tuple[InvoiceRequest, bool]:
     """申请开票。幂等:Idempotency-Key 重放返回既有单(唯一约束兜底并发)。
     返回 (申请单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
+    # 异参检测指纹:金额由服务端按账期计算,客户端参数即「账期 + 抬头三要素 + 邮箱」
+    fingerprint = request_fingerprint(user_id, period, title_type, title, tax_id, email)
     if idempotency_key:
         existing = await find_replay(
             session,
@@ -185,6 +187,7 @@ async def create_invoice(
             owner_col=InvoiceRequest.user_id,
             owner_id=user_id,
             key=idempotency_key,
+            fingerprint=fingerprint,
         )
         if existing is not None:
             return existing, False  # 幂等重放
@@ -222,6 +225,7 @@ async def create_invoice(
         email=email,
         amount=amount,
         idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
     )
     session.add(req)
     try:
@@ -237,6 +241,7 @@ async def create_invoice(
                 owner_col=InvoiceRequest.user_id,
                 owner_id=user_id,
                 key=idempotency_key,
+                fingerprint=fingerprint,
             )
             if winner is not None:
                 return winner, False  # 同键并发:返回胜出方的单

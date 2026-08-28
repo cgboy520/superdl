@@ -1,15 +1,17 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import outbox
+from app.core.metrics import OUTBOX_PENDING_OLDEST_AGE
 from app.core.outbox import (
     OutboxTask,
     enqueue,
     process_one,
     reap_stuck_running,
+    report_pending_metrics,
 )
 from app.core.timeutil import now_utc
 from tests.helpers import OutboxDrainError, drain_strict
@@ -379,3 +381,27 @@ class TestTerminalWriteOwnership:
 def test_running_timeout_is_double_task_timeout():
     """reaper 打回 running 的窗口必须显著大于任务执行上限,否则正常执行中的任务会被双认领。"""
     assert timedelta(seconds=2 * outbox.TASK_TIMEOUT_SECONDS) <= outbox.RUNNING_TIMEOUT
+
+
+class TestPendingMetrics:
+    async def test_tracks_oldest_pending_age(self, sm: async_sessionmaker[AsyncSession]):
+        """积压指标 = 最老 pending 任务年龄(挂了 = 消费停滞类静默停摆失去唯一可观测出口)。"""
+        async with sm() as session:
+            task = enqueue(session, "t_metric", {})
+            await session.flush()
+            await session.execute(
+                update(OutboxTask)
+                .where(OutboxTask.id == task.id)
+                .values(created_at=now_utc() - timedelta(hours=2))
+            )
+            await session.commit()
+        await report_pending_metrics(sm)
+        assert OUTBOX_PENDING_OLDEST_AGE._value.get() >= 7200
+
+    async def test_zero_when_no_pending(self, sm: async_sessionmaker[AsyncSession]):
+        """队列排空后指标归零(告警 for 10m 能自动恢复,不残留陈旧值)。"""
+        async with sm() as session:
+            await session.execute(delete(OutboxTask))
+            await session.commit()
+        await report_pending_metrics(sm)
+        assert OUTBOX_PENDING_OLDEST_AGE._value.get() == 0

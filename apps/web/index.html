@@ -8,6 +8,16 @@
     <title>SuperDL · GPU 算力云</title>
   </head>
   <body>
+    <script>
+      // 主题预置(FOUC 守护):与 stores/theme.ts 同一判定,先上底色与 color-scheme 再加载 bundle
+      (function () {
+        var m = localStorage.getItem("superdl.theme");
+        var dark = m ? m === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        document.body.style.background = dark ? "#0F1420" : "#F5F6FA";
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

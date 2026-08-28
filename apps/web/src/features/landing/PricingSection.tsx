@@ -4,7 +4,7 @@
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
-import { getGpuSpec, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
+import { compareAmounts, getGpuSpec, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Skeleton, Tabs, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -46,7 +46,7 @@ export function PricingSection() {
     }
     const out: ModelGroup[] = [];
     for (const [model, list] of byModel) {
-      const byPrice = [...list].sort((a, b) => Number(a.price_hourly) - Number(b.price_hourly));
+      const byPrice = [...list].sort((a, b) => compareAmounts(a.price_hourly, b.price_hourly));
       const representative = byPrice[0]!;
       const rentTarget = byPrice.find((s) => (s.available_count ?? 0) > 0) ?? representative;
       out.push({
@@ -57,7 +57,7 @@ export function PricingSection() {
         tiers: [...new Set(list.map((s) => skuVariant(s.tier, s.pool_label)))],
       });
     }
-    return out.sort((a, b) => Number(a.representative.price_hourly) - Number(b.representative.price_hourly));
+    return out.sort((a, b) => compareAmounts(a.representative.price_hourly, b.representative.price_hourly));
   }, [skus, tab]);
 
   const rent = (skuId: number) => {

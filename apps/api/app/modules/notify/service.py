@@ -4,6 +4,7 @@
 """
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -19,6 +20,10 @@ from app.core.platform_config import get_effective_platform_config
 from app.core.sms import ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.notify.models import Announcement, Notification
+
+if TYPE_CHECKING:
+    from app.core.pagination import Page
+    from app.modules.notify.schemas import NotificationOut
 
 logger = get_logger(__name__)
 
@@ -326,7 +331,7 @@ async def list_notifications(
     unread_only: bool = False,
     cursor: str | None = None,
     limit: int | None = None,
-):
+) -> "Page[NotificationOut]":
     """站内信列表:降序(最新在前)游标分页,与流水/账单同一套分页语义。
     只读 published:被撤回公告(status=revoked)对用户不可见。"""
     from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page

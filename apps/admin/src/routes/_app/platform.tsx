@@ -98,30 +98,31 @@ const FIELD_LABELS: Record<string, string> = {
   image_allowed_registries: "镜像来源白名单(每行一个前缀)",
 };
 
-const FIELD_EXTRA: Record<string, string> = {
-  admin_mfa_enabled:
-    "开:全角色首登强制绑定并二要素登录;关:密码即登录,已绑定者也不再校验(重新开启即恢复)。生产环境关闭 = 放弃口令泄漏的最后一道纵深",
-  captcha_enabled:
-    "开启后用户端「获取验证码」先弹阿里云滑块,请先在「人机校验」页填齐凭据;生产环境关闭 = 发码接口只剩 IP/手机号限流",
-  oncall_phone: "critical 平台告警经阿里云短信直发该手机号(不依赖平台自身可用性);留空即关闭",
-  payment_wechat_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现微信入口",
-  payment_alipay_enabled: "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现支付宝入口",
-  wechat_public_key_id: "公钥模式(新注册商户仅支持该模式);与公钥同时填写,留空则走平台证书模式",
-  real_name_enabled:
-    "开启后用户端「账户设置」的实名表单可提交;请先在「实名认证」页填齐凭据(缺失时提交报 502)",
-  real_name_required_for_recharge:
-    "《网络安全法》要求;开启后未实名用户无法充值与开通实例,用户端费用中心出现引导横幅;须先开启实名认证",
-  sms_template_verify: "模板需含变量 ${code}",
-  sms_template_notice: "模板需含变量 ${title}",
-  icp_number: "展示于用户端页脚,链接工信部备案系统(beian.miit.gov.cn)",
-  police_record_number: "展示于用户端页脚,链接公安备案系统(beian.mps.gov.cn);未取得可留空",
-  company_name: "《电子商务法》第十五条公示项;展示于用户端页脚,留空即不展示",
-  company_address: "同上,页脚公司主体行展示;留空即不展示",
-  company_phone: "同上,页脚公司主体行展示;留空即不展示",
-  business_license_url: "仅接受 http(s) 绝对链接;配置后页脚「营业执照」可点击亮照,留空为纯文本展示",
-  support_email: "展示于用户端页脚与「帮助与支持」页;留空即不展示邮箱入口",
-  support_wechat: "同上,展示为可复制文本(用户自行搜索添加),留空即不展示",
-};
+// 指引性 prose 入 locale(platform.fieldExtra.*,双语);字段名表(FIELD_LABELS/
+// PROVIDER_LABELS/RISK_OFF)维持 i18n-exempt 豁免(中国渠道运营域术语,不译)。
+// as const 保留字面量键类型:admin 的 t() 是严格键类型,字符串键表过不了 tsc
+const FIELD_EXTRA_KEYS = {
+  admin_mfa_enabled: "platform.fieldExtra.admin_mfa_enabled",
+  captcha_enabled: "platform.fieldExtra.captcha_enabled",
+  oncall_phone: "platform.fieldExtra.oncall_phone",
+  payment_wechat_enabled: "platform.fieldExtra.payment_wechat_enabled",
+  payment_alipay_enabled: "platform.fieldExtra.payment_alipay_enabled",
+  wechat_public_key_id: "platform.fieldExtra.wechat_public_key_id",
+  real_name_enabled: "platform.fieldExtra.real_name_enabled",
+  real_name_required_for_recharge: "platform.fieldExtra.real_name_required_for_recharge",
+  sms_template_verify: "platform.fieldExtra.sms_template_verify",
+  sms_template_notice: "platform.fieldExtra.sms_template_notice",
+  icp_number: "platform.fieldExtra.icp_number",
+  police_record_number: "platform.fieldExtra.police_record_number",
+  company_name: "platform.fieldExtra.company_name",
+  company_address: "platform.fieldExtra.company_address",
+  company_phone: "platform.fieldExtra.company_phone",
+  business_license_url: "platform.fieldExtra.business_license_url",
+  support_email: "platform.fieldExtra.support_email",
+  support_wechat: "platform.fieldExtra.support_wechat",
+} as const;
+type FieldExtraKey = (typeof FIELD_EXTRA_KEYS)[keyof typeof FIELD_EXTRA_KEYS];
+const FIELD_EXTRA_BY_KEY: Record<string, FieldExtraKey> = FIELD_EXTRA_KEYS;
 
 const PROVIDER_LABELS: Record<string, string> = {
   mock: "开发模式(不发短信,固定码 123456 写日志;仅开发环境)",
@@ -130,49 +131,26 @@ const PROVIDER_LABELS: Record<string, string> = {
   official: "官方源",
 };
 
-const GROUP_INTRO: Record<string, string> = {
-  registry:
-    "Harbor 是平台镜像与租户实例镜像的权威源:在 Harbor 建平台项目(默认 superdl)与仅 Pull + List Repository 权限的机器人账户,填入地址、项目、机器人与 Secret;" +
-    "自签证书粘贴 CA(node-join 落节点 + 平台探测用)。拉取凭据不落节点:worker 在建 Pod / 预热前把 Secret superdl-registry-pull 按指纹写入 superdl 与各租户 ns," +
-    "轮换只需在此保存新 Secret。Docker Hub 等公网镜像可经 Harbor 代理缓存项目加速(每行 上游=项目,项目设 public)。保存后用下方「测试连接」验证。",
-  security:
-    "安全功能的运行期开关:关闭即跳过对应校验,开启前先在各渠道页填齐凭据(凭据缺失时该功能 fail-closed 报 502)。" +
-    "生产环境允许关闭,但等于放弃该道纵深,保存时必须写明原因(进审计)。",
-  observability:
-    "管理端节点页自绘监控曲线,不依赖 Grafana。如需深挖(自定义面板/长程对比),可在此配置 " +
-    "Grafana 地址,节点页将出现「在 Grafana 打开」外链(不做 iframe 嵌入)。",
-  payment_wechat:
-    "微信支付 APIv3(Native 扫码):在商户平台(pay.weixin.qq.com)→ 账户中心 → API 安全中下载商户 API 证书/私钥并设置 APIv3 密钥。" +
-    "推荐「微信支付公钥」验签模式:申请公钥后同时填入公钥 ID 与公钥;两者留空则回退平台证书模式(存量商户,SDK 自动拉取轮换)。" +
-    "支付回调地址为 {public_base_url}/api/v1/webhooks/wechatpay,由下单请求携带,无需在商户平台单独配置。",
-  payment_alipay:
-    "支付宝当面付(precreate 扫码,RSA2):在开放平台(open.alipay.com)创建应用并签约「当面付」," +
-    "开发设置 → 接口加签方式选「公钥模式」:用密钥工具生成应用私钥(填入下方)、上传应用公钥后回填平台生成的「支付宝公钥」。" +
-    "异步通知地址 {public_base_url}/api/v1/webhooks/alipay 由下单请求携带。",
-  sms:
-    "阿里云短信服务(dysmsapi):完成企业资质、签名与模板报备后填入凭据。" +
-    "建议使用独立 RAM 子账号并仅授权 AliyunDysmsFullAccess。切换 Provider 为「阿里云」后即时生效,可先用下方测试发送验证。",
-  real_name:
-    "阿里云实人认证 · 手机号三要素核验(简版,Mobile3MetaSimpleVerify):开通「要素核验」服务并授权 RAM 子账号。" +
-    "核验通过即标记已实名;身份证号仅存脱敏串,原文即用即弃。是否启用与「充值前强制实名」在「安全策略」页切换。",
-  captcha:
-    "阿里云验证码 2.0(/auth/sms-code 前置人机校验,防分布式脚本刷码):开通验证码 2.0 后," +
-    "在控制台「场景管理」新建 Web/H5 场景取场景 ID,「概览」页取身份标;" +
-    "建议独立 RAM 子账号仅授 AliyunYundunAFSFullAccess。是否启用在「安全策略」页切换;开启前请先在此填齐凭据。",
-  support:
-    "客服联系方式展示于用户端页脚与「帮助与支持」页。留空即不展示对应入口 —— " +
-    "GPU 租赁的用户教育成本高,没有任何联系方式等于把问题都堵在工单之外。",
-  compliance:
-    "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);" +
-    "公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。" +
-    "公司主体信息(全称/地址/电话/亮照链接)为《电子商务法》第十五条公示项,页脚持续展示,留空即不展示对应行。",
-  cluster:
-    "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点" +
-    "(token 填专用 agent token,即 server config 里 agent-token 的值;禁止填 node-token —— " +
-    "它能把节点拉进 etcd 环。轮换后在此更新)。" +
-    "发行版由平台探测(见「集群」页),无需声明;registries.yaml 平台按 Server 地址自动生成," +
-    "该键仅作高级覆盖,建议留空。配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令。",
-};
+const GROUP_INTRO_KEYS = {
+  registry: "platform.groupIntro.registry",
+  security: "platform.groupIntro.security",
+  observability: "platform.groupIntro.observability",
+  payment_wechat: "platform.groupIntro.payment_wechat",
+  payment_alipay: "platform.groupIntro.payment_alipay",
+  sms: "platform.groupIntro.sms",
+  real_name: "platform.groupIntro.real_name",
+  captcha: "platform.groupIntro.captcha",
+  support: "platform.groupIntro.support",
+  compliance: "platform.groupIntro.compliance",
+  cluster: "platform.groupIntro.cluster",
+} as const satisfies Record<Group, string>;
+
+/** 字段级指引文案:locale 查表(fieldExtra.*) + 服务端 hint 拼一行。 */
+function FieldExtraText({ itemKey, hint }: { itemKey: string; hint?: string | null }) {
+  const { t } = useTranslation();
+  const key = FIELD_EXTRA_BY_KEY[itemKey];
+  return <>{[key ? t(key) : null, hint].filter(Boolean).join(";")}</>;
+}
 
 const SOURCE_TAG = {
   override: { color: "cyan", textKey: "platform.sourceDb" },
@@ -258,7 +236,7 @@ function GroupPanel({
   disabled,
   extraContent,
 }: {
-  group: string;
+  group: Group;
   items: PlatformConfigItem[];
   draft: Record<string, string>;
   setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -276,7 +254,7 @@ function GroupPanel({
             label: t("platform.configGuide"),
             children: (
               <Typography.Paragraph style={{ marginBottom: 0 }}>
-                {GROUP_INTRO[group]}
+                {t(GROUP_INTRO_KEYS[group])}
               </Typography.Paragraph>
             ),
           },
@@ -299,7 +277,7 @@ function GroupPanel({
             }
             extra={
               <span style={{ fontSize: 12 }}>
-                {[FIELD_EXTRA[item.key], item.hint].filter(Boolean).join(";")}
+                <FieldExtraText itemKey={item.key} hint={item.hint} />
               </span>
             }
           >
@@ -534,7 +512,7 @@ function SwitchRow({
             )}
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {[FIELD_EXTRA[item.key], item.hint].filter(Boolean).join(";")}
+            <FieldExtraText itemKey={item.key} hint={item.hint} />
           </Typography.Text>
           {deps && (
             <Space size={4}>
@@ -546,7 +524,7 @@ function SwitchRow({
               >
                 {missing.length > 0
                   ? t("platform.depsMissing", {
-                      keys: missing.map((k) => FIELD_LABELS[k] ?? k).join("、"),
+                      keys: missing.map((k) => FIELD_LABELS[k] ?? k).join(", "),
                     })
                   : t("platform.depsOk")}
               </Typography.Text>
@@ -607,7 +585,7 @@ function SecurityPanel({
             label: t("platform.configGuide"),
             children: (
               <Typography.Paragraph style={{ marginBottom: 0 }}>
-                {GROUP_INTRO.security}
+                {t(GROUP_INTRO_KEYS.security)}
               </Typography.Paragraph>
             ),
           },

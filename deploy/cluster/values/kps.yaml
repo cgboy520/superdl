@@ -372,6 +372,12 @@ additionalPrometheusRulesMap:
             for: 5m
             labels: {severity: critical}
             annotations: {summary: "worker 心跳缺失超 2 分钟:outbox/结算/巡检/查单全部停摆"}
+          # 消费停滞但心跳正常的静默停摆(locked_by 溢出等):只能靠积压年龄发现
+          - alert: OutboxBacklogStale
+            expr: superdl_outbox_pending_oldest_age_seconds > 600
+            for: 10m
+            labels: {severity: critical}
+            annotations: {summary: "最老 pending outbox 任务已滞留 {{ $value }}s:worker 活着但领不动任务,查 outbox_loop_error 日志"}
           - alert: PgBackupFailed
             expr: kube_job_status_failed{namespace="superdl", job_name=~"pg-backup-daily-.*"} > 0
             for: 5m

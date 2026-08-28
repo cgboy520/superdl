@@ -2495,8 +2495,9 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
  * id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
  * 按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
  *
- * 实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
- * 该次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
+ * 实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填
+ * (ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——
+ * 「客服日常浏览列表」不再批量接触明文 PII。
  * @summary Admin List Tenants
  */
 export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageTenantOut> => {

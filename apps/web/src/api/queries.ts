@@ -19,6 +19,7 @@ import {
   listDisksApiV1DisksGet,
   listHourlyBillsApiV1BillsHourlyGet,
   listImagesApiV1ImagesGet,
+  listExpiringInstancesApiV1InstancesExpiringGet,
   listInstanceEventsApiV1InstancesUuidEventsGet,
   listInstancesApiV1InstancesGet,
   listApiKeysApiV1InstancesUuidApiKeysGet,
@@ -117,6 +118,14 @@ export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
     select: (p) => p.items,
     ...opts,
   });
+/** 临期包周期实例(到期横幅数据源):服务端按 within_days 过滤,不分页——
+ *  列表筛选/翻页/首页截断都不会把临期实例藏掉(D3)。 */
+export const useExpiringInstances = (withinDays: number | undefined, opts?: QueryOpts) =>
+  useApiQuery(
+    ["instances", "expiring", withinDays ?? null],
+    () => listExpiringInstancesApiV1InstancesExpiringGet({ within_days: withinDays ?? 7 }),
+    { ...opts, enabled: withinDays !== undefined && (opts?.enabled ?? true) },
+  );
 /** 实例列表游标分页:status 精确/name 模糊服务端过滤,「加载更多」向下翻页。
  *  轮询交给 refetchInterval:过渡态 5s、稳态 30s,窗口失焦自动停(默认
  *  refetchIntervalInBackground=false),失败态由查询自身承担,不必自己拿 setInterval

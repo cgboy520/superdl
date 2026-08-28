@@ -1,4 +1,5 @@
 import { adminColors, formatDateTime, heatColors, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -313,7 +314,7 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
           </Button>
         )
       }
-      width={640}
+      width="min(640px, 100vw)"
       destroyOnHidden
     >
       {result ? (
@@ -365,7 +366,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
   const qc = useQueryClient();
   // 进行中=活跃行(5s 轮询);全部=含 joined/expired/revoked 的历史装机记录
   const [scope, setScope] = useState<"active" | "all">("active");
-  const { data, queryKey } = useEnrollments({
+  const { data, queryKey, isLoading, isError, refetch } = useEnrollments({
     active: scope === "active" ? true : undefined,
     refetchInterval: scope === "active" ? 5_000 : undefined,
   });
@@ -384,7 +385,8 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
     mutation: { onSuccess: () => void qc.invalidateQueries({ queryKey }) },
   });
 
-  if (rows.length === 0 && scope === "active") return null;
+  // 查询失败也要露出(进行中注册被误判为「没有」会误导装机值班),错误态由表内空态明示
+  if (rows.length === 0 && scope === "active" && !isError) return null;
   return (
     <Card
       title={scope === "active" ? t("nodes.pendingTitle") : t("nodes.allEnrollmentsTitle")}
@@ -405,6 +407,10 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
         size="small"
         rowKey="id"
         scroll={{ x: 900 }}
+        loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={rows}
         pagination={false}
         columns={[
@@ -511,7 +517,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             {t("nodes.done")}
           </Button>
         }
-        width={640}
+        width="min(640px, 100vw)"
       >
         {regenResult && <CommandPanel result={regenResult} />}
       </Modal>
@@ -526,7 +532,7 @@ function NodesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data } = useNodes();
+  const { data, isLoading, isError, refetch } = useNodes();
   const nodes: NodeRow[] = data ?? [];
   const { data: portPool } = usePortPool();
   const [selected, setSelected] = useState<string | null>(null);
@@ -594,6 +600,10 @@ function NodesPage() {
         <Table<NodeRow>
           scroll={{ x: 1000 }}
           rowKey="name"
+          loading={isLoading}
+          locale={{
+            emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          }}
           dataSource={nodes}
           pagination={false}
           onRow={(r) => ({ onClick: () => setSelected(r.name), style: { cursor: "pointer" } })}

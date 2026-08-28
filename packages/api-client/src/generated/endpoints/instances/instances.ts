@@ -17,6 +17,7 @@ import type {
   InstanceOut,
   InstanceRename,
   InstanceRenew,
+  ListExpiringInstancesApiV1InstancesExpiringGetParams,
   ListInstanceEventsApiV1InstancesUuidEventsGetParams,
   ListInstancesApiV1InstancesGetParams,
   PageInstanceEventOut,
@@ -80,6 +81,37 @@ export const createInstanceApiV1InstancesPost = async (instanceCreate: InstanceC
     method: 'POST',
     headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(instanceCreate)
+  }
+);}
+
+
+export const getListExpiringInstancesApiV1InstancesExpiringGetUrl = (params?: ListExpiringInstancesApiV1InstancesExpiringGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/instances/expiring?${stringifiedParams}` : `/api/v1/instances/expiring`
+}
+
+/**
+ * 临期包周期实例(到期横幅专用):active 订阅且到期时刻 ≤ now+within_days,升序,不分页。
+ * @summary List Expiring Instances
+ */
+export const listExpiringInstancesApiV1InstancesExpiringGet = async (params?: ListExpiringInstancesApiV1InstancesExpiringGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut[]> => {
+
+  return customFetch<InstanceOut[]>(getListExpiringInstancesApiV1InstancesExpiringGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
   }
 );}
 

@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay
+from app.core.idempotency import find_replay, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
@@ -30,7 +30,9 @@ from app.modules.billing.schemas import AdminRefundOut, RefundOut
 
 logger = get_logger(__name__)
 
-ACTIVE_STATUSES = ("pending", "approved", "paid")
+# 活跃口径 = 进行中(pending/approved):已打款不占位,同单可多次部分退款,
+# 累计上限 = 订单额 − Σpaid(申请与打款两处复核;DB 部分唯一索引同口径)
+ACTIVE_STATUSES = ("pending", "approved")
 
 # 用户端「可申请订单」候选集:最近 N 笔充值订单(含不可申请行,置灰展示用)
 REFUNDABLE_ORDERS_CAP = 50
@@ -76,6 +78,19 @@ async def _active_refund_of_order(session: AsyncSession, order_no: str) -> Refun
     ).scalar_one_or_none()
 
 
+async def _paid_total_of_order(session: AsyncSession, order_no: str) -> Decimal:
+    """该订单已打款退款合计:多次部分退款的累计上限扣减项。"""
+    total = (
+        await session.execute(
+            select(func.coalesce(func.sum(RefundRequest.amount), 0)).where(
+                RefundRequest.order_no == order_no,
+                RefundRequest.status == "paid",
+            )
+        )
+    ).scalar_one()
+    return Decimal(total)
+
+
 async def _next_daily_seq(session: AsyncSession, prefix: str) -> int:
     count = (
         await session.execute(
@@ -94,8 +109,11 @@ async def create_refund(
     reason: str,
     idempotency_key: str | None,
 ) -> tuple[RefundRequest, bool]:
-    """用户申请退款。幂等:Idempotency-Key 重放返回既有单(唯一约束兜底并发)。
+    """用户申请退款。幂等:Idempotency-Key 重放返回既有单(唯一约束兜底并发);
+    同键异参(改单/改额/改事由)409。同单可多次部分退款,累计不超过订单额。
     返回 (退款单, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
+    amount = as_amount(amount)
+    fingerprint = request_fingerprint(user_id, order_no, amount, reason)
     if idempotency_key:
         existing = await find_replay(
             session,
@@ -103,6 +121,7 @@ async def create_refund(
             owner_col=RefundRequest.user_id,
             owner_id=user_id,
             key=idempotency_key,
+            fingerprint=fingerprint,
         )
         if existing is not None:
             return existing, False  # 幂等重放
@@ -126,9 +145,13 @@ async def create_refund(
     if await _active_refund_of_order(session, order_no) is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundAlreadyApplied", http_status=409)
 
-    amount = as_amount(amount)
+    # 多次部分退款口径:上限 = min(订单剩余可退, 当前余额)。
+    # 进行中申请与已打款互斥占位(同一时间至多一条 pending/approved),
+    # Σpaid 只增不减,这里的创建时校验与打款时复核不存在交错窗口
+    refunded = await _paid_total_of_order(session, order_no)
+    remaining = as_amount(order.amount - refunded)
     balance = await wallet.get_balance(session, user_id)
-    limit = min(order.amount, balance)
+    limit = min(remaining, balance)
     if amount > limit:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
@@ -136,6 +159,7 @@ async def create_refund(
             params={
                 "max": format(limit, "f"),
                 "order": format(order.amount, "f"),
+                "refunded": format(refunded, "f"),
                 "balance": format(balance, "f"),
             },
         )
@@ -150,6 +174,7 @@ async def create_refund(
             amount=amount,
             reason=reason,
             idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
         )
         session.add(req)
         try:
@@ -165,6 +190,7 @@ async def create_refund(
                     owner_col=RefundRequest.user_id,
                     owner_id=user_id,
                     key=idempotency_key,
+                    fingerprint=fingerprint,
                 )
                 if winner is not None:
                     return winner, False  # 同键并发:返回胜出方的单
@@ -199,7 +225,11 @@ async def list_my_refunds(
 
 
 async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
-    """用户端退款表单的订单候选集:最近充值订单逐单标注可否申请与置灰原因。"""
+    """用户端退款表单的订单候选集:最近充值订单逐单标注可否申请与置灰原因。
+
+    多次部分退款口径:max_amount = min(订单剩余可退, 当前余额),
+    订单剩余可退 = 订单额 − Σ已打款退款;退满的订单置灰(fully_refunded)。
+    """
     orders = list(
         (
             await session.execute(
@@ -220,14 +250,28 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
             )
         ).scalars()
     )
+    paid_rows = (
+        await session.execute(
+            select(RefundRequest.order_no, func.coalesce(func.sum(RefundRequest.amount), 0))
+            .where(RefundRequest.user_id == user_id, RefundRequest.status == "paid")
+            .group_by(RefundRequest.order_no)
+        )
+    ).all()
+    paid_by_order: dict[str, Decimal] = {
+        order_no: Decimal(total) for order_no, total in paid_rows
+    }
     balance = await wallet.get_balance(session, user_id)
     out: list[dict] = []
     for o in orders:
+        refunded = paid_by_order.get(o.order_no, Decimal("0.00"))
+        remaining = as_amount(o.amount - refunded)
         reason_code: str | None = None
         if o.status != "paid":
             reason_code = "not_paid"
         elif o.order_no in active_order_nos:
             reason_code = "already_applied"
+        elif remaining <= 0:
+            reason_code = "fully_refunded"
         elif await _order_has_issued_invoice(session, o):
             reason_code = "invoiced"
         elif balance <= 0:
@@ -241,7 +285,7 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
                 "paid_at": o.paid_at,
                 "refundable": reason_code is None,
                 "reason_code": reason_code,
-                "max_amount": min(o.amount, balance),
+                "max_amount": min(remaining, balance),
             }
         )
     return out
@@ -339,6 +383,21 @@ async def payout_refund(
     ).scalar_one_or_none()
     if order is not None and order.channel_reversed_at is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
+    # 多次部分退款的出金闸:累计已退 + 本单 ≤ 订单额。创建时虽已按同口径校验,
+    # 这里是出金前最后一道(修数/老数据/口径变更的兜底),超额的坚决不出金
+    if order is not None:
+        paid_total = await _paid_total_of_order(session, req.order_no)
+        if paid_total + req.amount > order.amount:
+            raise AppError(
+                ErrorCode.CONFLICT,
+                key="billing.refundCumulativeExceeded",
+                params={
+                    "order": format(order.amount, "f"),
+                    "refunded": format(paid_total, "f"),
+                    "amount": format(req.amount, "f"),
+                },
+                http_status=409,
+            )
     # 不复查账期是否已开票:能走到打款的退款在开票重算时已从票额扣除
     # 钱包行锁内再校验:审批后用户可能已消费,余额不足坚决不出金(不允许负余额核销)
     locked = await wallet.lock_wallet(session, req.user_id)

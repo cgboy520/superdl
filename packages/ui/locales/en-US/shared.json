@@ -1,4 +1,8 @@
 {
+  "common": {
+    "loadFailed": "Failed to load. Please try again.",
+    "retry": "Retry"
+  },
   "format": {
     "countdown": {
       "expired": "Expired",

@@ -212,6 +212,21 @@ class TestApply:
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.refundAlreadyApplied"
 
+    async def test_idem_key_param_mismatch_409(self, client: AsyncClient, sm):
+        """同键异参(改了金额):显式 409,绝不静默返回上一笔申请。"""
+        headers = await user_headers(client, "13700000106")
+        order = await paid_order(client, headers)
+        r1 = await apply_refund(client, headers, order["order_no"], "20.00", idem="rf-mix")
+        assert r1.status_code == 201
+        r2 = await apply_refund(client, headers, order["order_no"], "21.00", idem="rf-mix")
+        assert r2.status_code == 409
+        assert r2.json()["message_key"] == "common.idempotencyKeyMismatch"
+        # 同键同参仍是重放(回归不破)
+        r3 = await apply_refund(client, headers, order["order_no"], "20.00", idem="rf-mix")
+        assert r3.status_code == 200
+        assert r3.headers["x-idempotent-replay"] == "true"
+        assert r3.json()["refund_no"] == r1.json()["refund_no"]
+
 
 class TestAdminFlow:
     async def test_review_then_payout_full_flow(self, client: AsyncClient, sm):
@@ -426,6 +441,97 @@ class TestAdminFlow:
         ).json()["items"] == []
         # 管理端视图含双人字段与用户 id
         assert rows[0]["user_id"] is not None
+
+
+class TestPartialRefunds:
+    """多次部分退款:已打款不占位,同单累计可退至订单额(公有云主流口径)。"""
+
+    async def _review_and_payout(self, client, rid: int, reviewer: dict, payer: dict) -> None:
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200, resp.text
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": f"OFF-{rid}"},
+            headers=payer,
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_second_partial_after_payout_up_to_order_amount(self, client: AsyncClient, sm):
+        """首笔打款后可再申:两笔累计 = 订单额;再申任意金额被拒(上限 0)。"""
+        headers = await user_headers(client, "13700000130")
+        order = await paid_order(client, headers, "50.00")
+        reviewer, payer = await finance_pair(sm, client)
+
+        rid1 = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
+        await self._review_and_payout(client, rid1, reviewer, payer)
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "30.00"
+
+        # 已打款不占活跃位:第二笔 30(累计 50 = 订单额)可申
+        r2 = await apply_refund(client, headers, order["order_no"], "30.00", idem="rf-p2")
+        assert r2.status_code == 201, r2.text
+        await self._review_and_payout(client, r2.json()["id"], reviewer, payer)
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "0.00"
+
+        # 累计已满:上限 0,再申被拒
+        r3 = await apply_refund(client, headers, order["order_no"], "0.01", idem="rf-p3")
+        assert r3.status_code == 400
+        assert r3.json()["message_key"] == "billing.refundAmountExceeded"
+
+    async def test_payout_cumulative_guard_on_data_anomaly(self, client: AsyncClient, sm):
+        """出金闸:审批后订单额被改小(数据异常),累计将超额 → 打款 409,坚决不出金。"""
+        headers = await user_headers(client, "13700000131")
+        order = await paid_order(client, headers, "50.00")
+        reviewer, payer = await finance_pair(sm, client)
+        rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/review",
+            json={"approve": True, "comment": "同意"},
+            headers=reviewer,
+        )
+        assert resp.status_code == 200
+        async with sm() as session:  # 模拟修数事故:订单额被改小到 10
+            await session.execute(
+                update(Order)
+                .where(Order.order_no == order["order_no"])
+                .values(amount=Decimal("10.00"))
+            )
+            await session.commit()
+        resp = await client.post(
+            f"/api/admin/v1/refunds/{rid}/payout",
+            json={"channel": "offline", "ref": "OFF-GUARD"},
+            headers=payer,
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "billing.refundCumulativeExceeded"
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "50.00"  # 未出金
+
+    async def test_eligible_orders_fully_refunded(self, client: AsyncClient, sm):
+        """候选集口径:退满的订单置灰 fully_refunded;部分退款后 max_amount = 剩余可退。"""
+        headers = await user_headers(client, "13700000132")
+        order = await paid_order(client, headers, "50.00")
+        reviewer, payer = await finance_pair(sm, client)
+        rid = (await apply_refund(client, headers, order["order_no"], "20.00")).json()["id"]
+        await self._review_and_payout(client, rid, reviewer, payer)
+
+        rows = (await client.get("/api/v1/wallet/refunds/eligible-orders", headers=headers)).json()
+        row = next(r for r in rows if r["order_no"] == order["order_no"])
+        assert row["refundable"] is True  # 已打款不占位,可再申
+        assert row["max_amount"] == "30.00"  # min(剩余 30, 余额 30)
+
+        rid2 = (await apply_refund(client, headers, order["order_no"], "30.00")).json()["id"]
+        await self._review_and_payout(client, rid2, reviewer, payer)
+        rows = (await client.get("/api/v1/wallet/refunds/eligible-orders", headers=headers)).json()
+        row = next(r for r in rows if r["order_no"] == order["order_no"])
+        assert row["refundable"] is False
+        assert row["reason_code"] == "fully_refunded"
+        assert row["max_amount"] == "0.00"
 
 
 class TestIdor:

@@ -82,6 +82,12 @@ WORKER_HEARTBEAT_TS = Gauge(
     "superdl_worker_heartbeat_timestamp_seconds",
     "worker 主循环最近一次心跳的 Unix 时间戳",
 )
+OUTBOX_PENDING_OLDEST_AGE = Gauge(
+    "superdl_outbox_pending_oldest_age_seconds",
+    "最老 pending outbox 任务年龄(秒)。持续 >600 = 消费停滞:worker 活着但领不动任务"
+    "(如 locked_by 列溢出致 claim 静默停摆)——此时心跳/探针/OUTBOX_DEAD_TOTAL 全部正常,"
+    "本指标是唯一可观测出口",
+)
 HTTP_REQUEST_DURATION = Histogram(
     "superdl_http_request_duration_seconds",
     "HTTP 请求时延(route 为路由模板,避免高基数)",

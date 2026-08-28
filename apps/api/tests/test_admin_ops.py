@@ -870,7 +870,8 @@ class TestAuditPagination:
 
 
 class TestTenantRealnameExposure:
-    """实名透出:readonly 脱敏;ops/finance/admin 明文,且含实名字段的响应落敏感读审计。"""
+    """实名透出:全角色默认脱敏;明文查看是逐次显式动作(reveal + reason 必填,
+    readonly 不可 reveal),每次明文读按条数+事由落敏感读审计。"""
 
     async def _realname_user(self, client, sm) -> int:
         """开启安全策略 real_name_enabled 并注入恒过的假渠道,经正式提交路径落脱敏实名字段。"""
@@ -895,21 +896,22 @@ class TestTenantRealnameExposure:
             set_realname_provider(None)
         return uid
 
-    async def test_readonly_sees_masked_and_no_audit(self, client, sm, fake):
-        """readonly:姓名留姓掩名;脱敏响应不落实名读审计(防列表页写放大)。"""
+    async def test_default_masked_for_all_roles_and_no_audit(self, client, sm, fake):
+        """默认(任意角色,含 ops/finance):姓名留姓掩名;脱敏响应不落实名读审计(防列表页写放大)。"""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
-        ro = await admin_headers(sm, client, role="readonly")
-        rows = (await client.get("/api/admin/v1/tenants", headers=ro)).json()["items"]
-        me = next(t for t in rows if t["id"] == uid)
-        assert me["verification_status"] == "verified"
-        assert me["id_name"] == "张*"
+        for role in ("readonly", "ops", "finance"):
+            headers = await admin_headers(sm, client, role=role, username=f"rn-{role}")
+            rows = (await client.get("/api/admin/v1/tenants", headers=headers)).json()["items"]
+            me = next(t for t in rows if t["id"] == uid)
+            assert me["verification_status"] == "verified"
+            assert me["id_name"] == "张*", role
         async with sm() as session:
             hits = (
                 (
                     await session.execute(
-                        select(AuditLog).where(AuditLog.target == "tenant-realname:list")
+                        select(AuditLog).where(AuditLog.target.like("tenant-realname:%"))
                     )
                 )
                 .scalars()
@@ -917,21 +919,43 @@ class TestTenantRealnameExposure:
             )
         assert hits == []
 
-    async def test_ops_sees_plaintext_and_audited(self, client, sm, fake):
-        """ops 看明文;响应真含实名字段 → 恰好落一条敏感读审计(内容不进审计,只记条数)。"""
+    async def test_reveal_requires_reason(self, client, sm, fake):
+        """reveal=true 不带 reason(或过短)→ 400 校验错误,不放行明文。"""
+        uid = await self._realname_user(client, sm)
+        ah = await admin_headers(sm, client, role="ops")
+        resp = await client.get("/api/admin/v1/tenants?reveal=true", headers=ah)
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "common.validation"
+        rows = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
+        assert next(t for t in rows if t["id"] == uid)["id_name"] == "张*"
+
+    async def test_readonly_cannot_reveal(self, client, sm, fake):
+        """readonly 即使带 reason 也不可 reveal(403):明文权限不收口到最小角色。"""
+        await self._realname_user(client, sm)
+        ro = await admin_headers(sm, client, role="readonly")
+        resp = await client.get(
+            "/api/admin/v1/tenants?reveal=true&reason=客服工单核实", headers=ro
+        )
+        assert resp.status_code == 403
+
+    async def test_reveal_sees_plaintext_and_audited_with_reason(self, client, sm, fake):
+        """reveal + reason:看明文;恰好落一条敏感读审计(条数+事由,内容不进审计)。"""
         from app.core.audit import AuditLog
 
         uid = await self._realname_user(client, sm)
         ah = await admin_headers(sm, client, role="ops")
-        rows = (await client.get("/api/admin/v1/tenants", headers=ah)).json()["items"]
-        me = next(t for t in rows if t["id"] == uid)
+        resp = await client.get(
+            "/api/admin/v1/tenants?reveal=true&reason=客服工单核实身份", headers=ah
+        )
+        assert resp.status_code == 200, resp.text
+        me = next(t for t in resp.json()["items"] if t["id"] == uid)
         assert me["verification_status"] == "verified"
         assert me["id_name"] == "张三"
         async with sm() as session:
             hits = (
                 (
                     await session.execute(
-                        select(AuditLog).where(AuditLog.target == "tenant-realname:list")
+                        select(AuditLog).where(AuditLog.target == "tenant-realname:reveal")
                     )
                 )
                 .scalars()
@@ -939,7 +963,7 @@ class TestTenantRealnameExposure:
             )
         assert len(hits) == 1
         assert hits[0].action == "admin.GET /api/admin/v1/tenants"
-        assert hits[0].detail == {"rows": 1}
+        assert hits[0].detail == {"rows": 1, "reason": "客服工单核实身份"}
 
 
 class TestTenantQuotaOverride:

@@ -1,7 +1,9 @@
 """节点注册:令牌生命周期 + 加入状态机。
 
 安全要点:
-- 注册令牌 `sdln_` + token_urlsafe(32)(256-bit 熵),库中只存 sha256;
+- 注册令牌 `sdln_` + token_urlsafe(32)(256-bit 熵),库中只存 HMAC-SHA256
+  (core/crypto.hash_node_token,域分离前缀 node-enroll|;读路径 dual-read:
+  裸 SHA-256 旧行命中即席升级为 HMAC,过渡期后清理裸验分支);
   明文仅在创建/重生成响应出现一次。首次 bootstrap 即消费:换发窄权限
   progress 令牌 `sdlp_`(仅可上报进度,不能再换装机参数)。
 - 令牌绝对过期:progress 上报只刷新心跳(last_report_at),不延长 expires_at。
@@ -20,8 +22,10 @@ from typing import Any
 from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.config import get_settings
+from app.core.crypto import hash_node_token
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import model_matches
 from app.core.idempotency import find_replay
@@ -88,7 +92,7 @@ def transition_enrollment(
 
 def _new_token(prefix: str = TOKEN_PREFIX) -> tuple[str, str]:
     token = prefix + secrets.token_urlsafe(32)
-    return token, hashlib.sha256(token.encode()).hexdigest()
+    return token, hash_node_token(token)
 
 
 def enrollment_commands(token: str) -> tuple[str, str]:
@@ -293,23 +297,42 @@ def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
     return row
 
 
+async def _resolve_by_hash(
+    session: AsyncSession, column: InstrumentedAttribute[str | None], token: str
+) -> NodeEnrollment | None:
+    """按摘要取行(dual-read):先 HMAC;miss 再按裸 SHA-256(迁移前旧行)取,
+    命中即席升级为 HMAC 落库。令牌短 TTL,旧行自然过期后裸验分支可清理。"""
+    row = (
+        await session.execute(
+            select(NodeEnrollment).where(column == hash_node_token(token))
+        )
+    ).scalar_one_or_none()
+    if row is not None:
+        return row
+    legacy = hashlib.sha256(token.encode()).hexdigest()
+    row = (
+        await session.execute(select(NodeEnrollment).where(column == legacy))
+    ).scalar_one_or_none()
+    if row is not None:
+        # 即席升级:旧裸摘要行换 HMAC,不让无密钥摘要长期留在库里
+        upgraded = hash_node_token(token)
+        if column is NodeEnrollment.token_hash:
+            row.token_hash = upgraded
+        else:
+            row.progress_token_hash = upgraded
+        await session.flush()
+    return row
+
+
 async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
     """注册令牌(bootstrap 用):按哈希取行。"""
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        await session.execute(select(NodeEnrollment).where(NodeEnrollment.token_hash == token_hash))
-    ).scalar_one_or_none()
+    row = await _resolve_by_hash(session, NodeEnrollment.token_hash, token)
     return _check_usable(row)
 
 
 async def _resolve_progress_token(session: AsyncSession, token: str) -> NodeEnrollment:
     """progress 令牌(进度上报用):只按 progress_token_hash 取行,注册令牌不能上报。"""
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        await session.execute(
-            select(NodeEnrollment).where(NodeEnrollment.progress_token_hash == token_hash)
-        )
-    ).scalar_one_or_none()
+    row = await _resolve_by_hash(session, NodeEnrollment.progress_token_hash, token)
     return _check_usable(row)
 
 

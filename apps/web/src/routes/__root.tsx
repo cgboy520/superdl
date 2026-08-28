@@ -1,10 +1,11 @@
-import { webTheme } from "@superdl/ui";
+import { webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
 import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
-import { App as AntApp, Button, ConfigProvider, Result } from "antd";
-import type { ReactNode } from "react";
+import { App as AntApp, Button, ConfigProvider, Result, theme as antdTheme } from "antd";
+import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAppLocale } from "../lib/locale";
+import { useThemeMode } from "../stores/theme";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -12,11 +13,24 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
-/** locale 联动的唯一 Provider:主树/错误边界/404 共用(后两者渲染在主树之外,须自带)。 */
+/** locale + 主题联动的唯一 Provider:主树/错误边界/404 共用(后两者渲染在主树之外,须自带)。
+ *  暗色 = darkAlgorithm + webDarkTheme 覆写(浅色系 token 与组件覆盖全部继承)。 */
 function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
+  const mode = useThemeMode();
+  useEffect(() => {
+    // CSS 变量面(抽屉链接/滚动条等非 token 覆盖区)与 color-scheme 随动
+    document.documentElement.dataset.theme = mode;
+    document.documentElement.style.colorScheme = mode;
+    document.body.style.background = mode === "dark" ? webDarkColors.bgBase : "#F5F6FA";
+  }, [mode]);
   return (
-    <ConfigProvider locale={antdLocale} theme={webTheme}>
+    <ConfigProvider
+      locale={antdLocale}
+      theme={
+        mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme
+      }
+    >
       <AntApp>{children}</AntApp>
     </ConfigProvider>
   );

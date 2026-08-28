@@ -12,7 +12,7 @@ import {
   type RefundOut,
   type RefundableOrderOut,
 } from "@superdl/api-client";
-import { addAmounts, compareAmounts, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
+import { addAmounts, amountToScaledNumber, compareAmounts, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
@@ -386,6 +386,7 @@ function LedgerTable() {
 const REFUND_REASON_CODE = {
   not_paid: "billing.refundOrderNotPaid",
   already_applied: "billing.refundOrderAlreadyApplied",
+  fully_refunded: "billing.refundOrderFullyRefunded",
   invoiced: "billing.refundOrderInvoiced",
   no_balance: "billing.refundOrderNoBalance",
 } as const;
@@ -836,7 +837,8 @@ function BillingPage() {
 
   const pieData = (summary?.items ?? []).map((i) => ({
     name: i.instance_name ?? t("billing.instanceRef", { id: i.instance_id }),
-    value: parseFloat(i.total_amount),
+    // 万分位整数做图值:占比与 compareAmounts 同口径,parseFloat 的浮点误差(0.1+0.2≠0.3)不进图表
+    value: amountToScaledNumber(i.total_amount),
   }));
 
   return (

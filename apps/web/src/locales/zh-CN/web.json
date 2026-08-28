@@ -65,10 +65,11 @@
     "refundAmount": "退款金额",
     "refundApply": "申请退款",
     "refundCreated": "退款申请已提交,财务审核后将人工打款",
-    "refundMaxHint": "最多可退 {{amount}}(不超过订单金额与当前余额)",
+    "refundMaxHint": "该单累计还可退 {{amount}}(不超过订单剩余可退与当前余额,支持多次部分退款)",
     "refundNone": "暂无退款记录",
     "refundNoOrders": "暂无充值订单",
     "refundOrderAlreadyApplied": "已有进行中的退款申请",
+    "refundOrderFullyRefunded": "已全额退款",
     "refundOrderInvoiced": "已开票,需先红冲,请联系客服",
     "refundOrderNoBalance": "当前余额不足,无款可退",
     "refundOrderNotPaid": "未支付成功",
@@ -863,6 +864,7 @@
     "title": "支持"
   },
   "topbar": {
+    "consoleSection": "控制台",
     "help": "帮助",
     "login": "登录",
     "loginRegister": "登录 / 注册",
@@ -873,6 +875,9 @@
     "openMenu": "打开导航菜单",
     "pricing": "GPU 价格",
     "ranking": "算力排名",
-    "register": "免费注册"
+    "register": "免费注册",
+    "siteSection": "网站",
+    "themeToDark": "切换到暗色主题",
+    "themeToLight": "切换到浅色主题"
   }
 }

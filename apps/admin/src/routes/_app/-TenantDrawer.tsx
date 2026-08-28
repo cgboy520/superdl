@@ -12,6 +12,7 @@ import {
   metaOf,
   subscriptionStatusMap,
 } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -73,7 +74,8 @@ export function TenantDrawer({
 
   return (
     <Drawer
-      width={880}
+      // 响应式宽度:桌面 880,窄屏吃满视口宽(antd Drawer 移动端正解)
+      width="min(880px, 100vw)"
       open={tenant !== null}
       onClose={onClose}
       title={
@@ -182,6 +184,11 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
         size="small"
         rowKey="id"
         loading={bills.isLoading}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty isError={bills.isError} onRetry={() => void bills.refetch()} />
+          ),
+        }}
         pagination={false}
         scroll={{ y: 420 }}
         dataSource={billRows}
@@ -228,6 +235,11 @@ function LedgerTab({ userId }: { userId: number }) {
         size="small"
         rowKey="id"
         loading={ledger.isLoading}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty isError={ledger.isError} onRetry={() => void ledger.refetch()} />
+          ),
+        }}
         pagination={false}
         scroll={{ y: 420 }}
         dataSource={ledgerRows}
@@ -276,6 +288,11 @@ function OrdersTab({ userId }: { userId: number }) {
         size="small"
         rowKey="order_no"
         loading={orders.isLoading}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty isError={orders.isError} onRetry={() => void orders.refetch()} />
+          ),
+        }}
         pagination={false}
         scroll={{ y: 420 }}
         dataSource={rows}
@@ -509,7 +526,13 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
         pagination={false}
         scroll={{ y: 420 }}
         dataSource={rows}
-        locale={{ emptyText: uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst") }}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty isError={uuid !== null && events.isError} onRetry={() => void events.refetch()}>
+              {uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst")}
+            </TableErrorEmpty>
+          ),
+        }}
         columns={[
           { title: t("tenants.colTime"), dataIndex: "created_at", render: formatDateTime },
           {

@@ -241,6 +241,30 @@ async def register(
     return _issue_tokens(user)
 
 
+# 登录限流桶(键模板, max_attempts, window_seconds),四维防线:
+# - ip 桶:只按 IP 切分,兜住「遍历号段换桶」的分布式撞库;
+# - ip+phone 桶:单账号单源的最严闸;
+# - acct 桶(15min)/acct-daily 桶:纯账号维度——撞库可以换 IP 但换不了目标账号,
+#   只按 IP+账号的桶在 N 个源地址下是 5×N 次/5 分钟,必须有账号级阶梯锁定。
+# 预检(bcrypt 前拦封禁,不付哈希成本)/计数(只计失败)/清零/异常判定四处遍历同一张表,
+# 改一处即全链路生效
+_LOGIN_BUCKETS: tuple[tuple[str, int, float], ...] = (
+    ("user-login-ip:{ip}", 60, 3600.0),
+    ("user-login:{ip}:{phone}", 5, 300.0),
+    ("user-login-acct:{phone}", 10, 900.0),
+    ("user-login-acct-daily:{phone}", 30, 86400.0),
+)
+
+# 成功登录后立即清零的桶(IP 桶不清:撞库不会产生成功登录);
+# acct 15min 桶兼作异常判定数据源,必须先读后清(见 login 尾部)
+_LOGIN_CLEAR_BUCKETS = ("user-login:{ip}:{phone}",)
+_LOGIN_ANOMALY_BUCKET = ("user-login-acct:{phone}", 900.0)
+
+
+def _login_bucket_keys(phone: str, client_ip: str | None) -> list[str]:
+    return [tmpl.format(ip=client_ip or "-", phone=phone) for tmpl, _, _ in _LOGIN_BUCKETS]
+
+
 async def login(
     session: AsyncSession,
     phone: str,
@@ -264,20 +288,12 @@ async def login(
         elif password is not None:
             # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求
             # 不付哈希成本(只读预检,不计数,不影响正常登录的配额语义)
-            await ensure_not_rate_limited(
-                f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
-            )
-            await ensure_not_rate_limited(
-                f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
-            )
-            # 纯账号维度:撞库可以换 IP 但换不了目标账号,只按 IP+账号的桶在 N 个源地址下
-            # 是 5×N 次/5 分钟,必须有账号级锁定
-            await ensure_not_rate_limited(
-                f"user-login-acct:{phone}", max_attempts=10, window_seconds=900.0
-            )
-            await ensure_not_rate_limited(
-                f"user-login-acct-daily:{phone}", max_attempts=30, window_seconds=86400.0
-            )
+            for key, (_, max_attempts, window_seconds) in zip(
+                _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
+            ):
+                await ensure_not_rate_limited(
+                    key, max_attempts=max_attempts, window_seconds=window_seconds
+                )
             stored = (
                 user.password_hash
                 if (user is not None and user.password_hash)
@@ -290,28 +306,24 @@ async def login(
             raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
     except AppError as exc:
         if exc.code == ErrorCode.LOGIN_FAILED:
-            # 只在失败后计数,成功登录不消耗配额;含手机号的键遍历号段即换桶,
-            # 故再加一个只按 IP 切分的桶
-            await check_rate_limit(
-                f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
-            )
-            await check_rate_limit(
-                f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
-            )
-            # 账号维度同计(15 分钟窗 + 日窗阶梯):换 IP 也逃不掉目标账号的锁定
-            await check_rate_limit(
-                f"user-login-acct:{phone}", max_attempts=10, window_seconds=900.0
-            )
-            await check_rate_limit(
-                f"user-login-acct-daily:{phone}", max_attempts=30, window_seconds=86400.0
-            )
+            # 只在失败后计数,成功登录不消耗配额
+            for key, (_, max_attempts, window_seconds) in zip(
+                _login_bucket_keys(phone, client_ip), _LOGIN_BUCKETS, strict=True
+            ):
+                await check_rate_limit(
+                    key, max_attempts=max_attempts, window_seconds=window_seconds
+                )
         raise
-    # 凭据正确即清零该账号桶的失败计数(IP 桶不清:撞库不会产生成功登录)
-    await clear_rate_limit(f"user-login:{client_ip or '-'}:{phone}")
+    # 凭据正确即清零该账号桶的失败计数
+    for tmpl in _LOGIN_CLEAR_BUCKETS:
+        await clear_rate_limit(tmpl.format(ip=client_ip or "-", phone=phone))
     # 异常登录通知:账号桶在窗口内有失败记录而本次成功——疑似被撞库,通知本人;
     # 随后清零账号桶(正常用户的预算不被攻击者的失败计数拖垮)
     if password is not None:
-        acct_hits = await read_hits(f"user-login-acct:{phone}", window_seconds=900.0)
+        anomaly_tmpl, anomaly_window = _LOGIN_ANOMALY_BUCKET
+        acct_hits = await read_hits(
+            anomaly_tmpl.format(ip=client_ip or "-", phone=phone), window_seconds=anomaly_window
+        )
         if acct_hits > 0:
             from app.modules.notify import service as notify_service
 
@@ -328,7 +340,10 @@ async def login(
                 dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
             )
             await session.commit()  # 通知落库(password 路径无其它提交点)
-        await clear_rate_limit(f"user-login-acct:{phone}")
+        # 异常判定完成后才清零账号桶(先读 hits 再清,顺序不可换)
+        await clear_rate_limit(
+            _LOGIN_ANOMALY_BUCKET[0].format(ip=client_ip or "-", phone=phone)
+        )
     # 已注销账号的 phone 已改写为 del:…,按手机号查不到,不必再判 deleted(持凭证路径见 deps/refresh)
     if user.status == "frozen":
         raise AppError(
@@ -394,6 +409,7 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
             .values(
                 jti=jti,
                 expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+                consumed_via="refresh",
             )
             .on_conflict_do_nothing(index_elements=["jti"])
             .returning(UsedRefreshToken.jti)
@@ -404,6 +420,12 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
         if used is not None and used.used_at > now_utc() - timedelta(
             seconds=REFRESH_REPLAY_GRACE_SECONDS
         ):
+            if used.consumed_via == "logout":
+                # 登出消费的重放:一律拒绝,但不 bump token_version——
+                # 登出与并发首刷竞态时首刷方可能已合法轮换出新对,
+                # 全撤会误伤那条在线会话(登出本就不是即时全局失效)
+                logger.warning("logout_consumed_token_replayed", user_id=user.id)
+                raise unauthorized()
             if used.replaced_refresh_jti is not None and used.replaced_iat is not None:
                 # 宽限窗内的重放 = 并发重试:回首次轮换的同一对 token,不另开有效链
                 return _issue_tokens(
@@ -412,7 +434,8 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
                     access_jti=used.replaced_access_jti,
                     iat=ensure_utc(used.replaced_iat),
                 )
-            # 登出写入的消费记录没有替代对:维持原补发语义(见 logout 的已知竞态说明)
+            # refresh 消费但未落替代对(首消费与登记替代对两笔提交之间崩溃):
+            # 维持原补发语义
             return _issue_tokens(user)
         user.token_version += 1
         await session.commit()
@@ -434,10 +457,12 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
 
 
 async def logout(session: AsyncSession, refresh_token: str) -> None:
-    """登出当前会话:refresh token 落 used_refresh_tokens(与轮换同一条一次性消费位)。
+    """登出当前会话:refresh token 落 used_refresh_tokens(与轮换同一条一次性消费位,
+    consumed_via='logout'——该 jti 的重放一律 401,不再按并发重试补发新对)。
 
     token 无效/过期/已登出也静默成功(调用方恒回 204),不构成 token 有效性探测口。
-    已知竞态:登出与同 jti 的并发刷新撞在宽限窗内时,刷新方按并发重试放行;
+    已知竞态:登出与同 jti 的并发首刷撞在宽限窗内时,首刷方已合法轮换出新对,
+    重放方按登出拒绝且不全撤(见 refresh_tokens 的 consumed_via 分支);
     登出本就不是即时全局失效(access token 尚有短 TTL),要即时全撤用 logout_all。
     """
     try:
@@ -452,6 +477,7 @@ async def logout(session: AsyncSession, refresh_token: str) -> None:
         .values(
             jti=str(payload.get("jti", "")),
             expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+            consumed_via="logout",
         )
         .on_conflict_do_nothing(index_elements=["jti"])
     )
@@ -587,7 +613,7 @@ async def list_active_user_ids(session: AsyncSession) -> list[int]:
     return list((await session.execute(select(User.id).where(User.status == "active"))).scalars())
 
 
-async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict:
+async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) -> dict[str, int]:
     """今日/昨日新注册数(本地日界)。"""
     from sqlalchemy import func
 
@@ -596,7 +622,7 @@ async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) ->
     day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - offset
     prev_day_start = day_start - timedelta(days=1)
 
-    async def _count(start, end=None) -> int:
+    async def _count(start: datetime, end: datetime | None = None) -> int:
         stmt = select(func.count()).select_from(User).where(User.created_at >= start)
         if end is not None:
             stmt = stmt.where(User.created_at < end)
@@ -730,7 +756,8 @@ async def set_quota_override(
 
 
 def realname_view(user: User, *, masked: bool) -> tuple[str, str | None]:
-    """实名信息透出:masked=True(readonly)脱敏;False 明文(调用方须对本次敏感读落审计)。"""
+    """实名信息透出:masked=True 脱敏(全角色默认);False 明文(仅 reveal 显式动作,
+    调用方须对本次敏感读落审计,见 adminapi/router_tenants.admin_list_tenants)。"""
     if not masked:
         return user.verification_status, user.id_name
     return user.verification_status, mask_id_name(user.id_name) if user.id_name else None

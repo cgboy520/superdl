@@ -338,6 +338,36 @@ class TestDailyDiskBilling:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == str(Decimal("100.00") - expected)
 
+    async def test_delete_without_watermark_backfills_from_creation(self, client, sm, fake):
+        """水位线缺失(全新部署引导窗口):删盘以建盘日为下界补结欠账天数,
+        而非只结当日(那是少收方向的静默免单)。"""
+        headers, user_id, _key = await create_user_with_key(client, "13500000025")
+        await fund_wallet(sm, user_id)
+        disk = await create_disk(client, headers, size_gb=100)
+        async with sm() as session:
+            await session.execute(
+                update(DataDisk).values(created_at=now_utc() - timedelta(days=3))
+            )
+            await session.commit()
+        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            bills = (
+                (await session.execute(select(BillDailyDisk).order_by(BillDailyDisk.day)))
+                .scalars()
+                .all()
+            )
+        assert len(bills) == 4  # 建盘日..当日,逐日一张
+        expected = sum(
+            disk_daily_charge(
+                Decimal("0.0350"),
+                100,
+                (billing_day_floor(now_utc()) - timedelta(days=k) + BILLING_DAY_OFFSET).date(),
+            )
+            for k in range(3, -1, -1)
+        )
+        assert sum(b.amount for b in bills) == expected
+
     async def test_expand_settles_old_size_first(self, client, sm, fake):
         """扩容前按旧容量结清未出账日期:新容量不追溯到旧日期(多扣用户)。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000023")
@@ -468,4 +498,16 @@ class TestDiskIdempotency:
         assert a.status_code == 201 and b.status_code == 200
         assert b.headers["x-idempotent-replay"] == "true"
         assert a.json()["uuid"] == b.json()["uuid"]
+        assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1
+
+    async def test_same_key_different_params_409(self, client, sm, fake):
+        """同键异参(改了容量):显式 409,绝不静默返回上一块盘(弱键复用防线)。"""
+        headers, user_id, _key = await create_user_with_key(client, "13500000051")
+        await fund_wallet(sm, user_id)
+        h = {**headers, "Idempotency-Key": "disk-idem-mix"}
+        a = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=h)
+        assert a.status_code == 201
+        b = await client.post("/api/v1/disks", json={"name": "d", "size_gb": 200}, headers=h)
+        assert b.status_code == 409
+        assert b.json()["message_key"] == "common.idempotencyKeyMismatch"
         assert len((await client.get("/api/v1/disks", headers=headers)).json()) == 1

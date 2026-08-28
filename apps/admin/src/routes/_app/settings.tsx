@@ -6,6 +6,7 @@
  */
 
 import { adminColors, announcementStatusMap, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -78,7 +79,7 @@ function PoliciesTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data, queryKey, isLoading } = useAdminPolicies();
+  const { data, queryKey, isLoading, isError, refetch } = useAdminPolicies();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [reasonOpen, setReasonOpen] = useState(false);
   const [reasonForm] = Form.useForm<{ reason: string }>();
@@ -115,6 +116,16 @@ function PoliciesTab() {
         style={{ marginBottom: 12 }}
         title={t("settings.instantEffect")}
       />
+      {/* 静态行 + 查询填值:查询失败时「生效值」列全空,必须明示错误而非伪装成无覆盖 */}
+      {isError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={t("common.loadFailed")}
+          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry")}</Button>}
+        />
+      )}
       <Table
         rowKey="key"
         size="small"
@@ -212,7 +223,7 @@ function AnnouncementTab() {
   const [form] = Form.useForm<{ title: string; content: string }>();
   // 公告草稿(sessionStorage):刷新/误关不丢;发布成功清除
   const draft = useFormDraft<{ title: string; content: string }>("announcement-new");
-  const { data, queryKey, isLoading } = useAnnouncements();
+  const { data, queryKey, isLoading, isError, refetch } = useAnnouncements();
   const revoke = useRevokeAnnouncement();
   const rows: AnnouncementRow[] = data ?? [];
   // 「上次发布」读接口而非本地缓存:最新一条仍处 published 的公告
@@ -290,6 +301,9 @@ function AnnouncementTab() {
         rowKey="id"
         size="small"
         loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         pagination={false}
         scroll={{ x: 720 }}
         dataSource={rows}

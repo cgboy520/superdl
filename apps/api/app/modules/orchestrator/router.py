@@ -91,6 +91,17 @@ async def list_instances(
     )
 
 
+# 必须在 /instances/{uuid} 之前注册:否则 "expiring" 会被当 uuid 吃掉
+@router.get("/instances/expiring")
+async def list_expiring_instances(
+    user: CurrentUser,
+    session: DbSession,
+    within_days: int = Query(default=7, ge=1, le=90),
+) -> list[InstanceOut]:
+    """临期包周期实例(到期横幅专用):active 订阅且到期时刻 ≤ now+within_days,升序,不分页。"""
+    return await service.list_expiring_instances(session, user.id, within_days=within_days)
+
+
 @router.get("/instances/{uuid}")
 async def get_instance(uuid: str, user: CurrentUser, session: DbSession) -> InstanceOut:
     return await service.instance_view(session, await service.get_instance(session, user.id, uuid))

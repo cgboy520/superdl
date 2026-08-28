@@ -167,6 +167,10 @@ class Settings(BaseSettings):
     # 管理端域名(admin SPA 经该域 nginx 同源反代 /api/admin/);prod 下 /api/admin/*
     # 仅放行 Host 命中本项的请求(公网 api 域不暴露管理端 API)
     admin_host: str = "admin.superdl.example.com"
+    # 管理端边缘共享密钥:admin 域 nginx 反代注 X-Admin-Edge-Token,edge_guard 双闸
+    # (Host + 该头)校验——Host 可被集群内直连调用方伪造,密钥把「知道 admin_host」
+    # 与「能进 admin 反代面」分开。prod 必填(启动 fail-fast);dev/test 无 ingress 不启用
+    admin_edge_token: str = ""
     # SSH 入口不单独配域名:实例只靠 NodePort 区分,连接串直接用实例自己的域名(与 Jupyter
     # 同名,见 orchestrator/service.jupyter_host)。部署约束:泛域名解析到的地址必须同时能
     # 转发本端口段(单节点即节点本身;多节点为转发该端口段的 LB/VIP)
@@ -283,6 +287,10 @@ class Settings(BaseSettings):
             )
         if not self.metrics_token:
             problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
+        if not self.admin_edge_token:
+            problems.append(
+                "admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)"
+            )
         if not self.config_encryption_key:
             problems.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
         else:

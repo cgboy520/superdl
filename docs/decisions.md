@@ -198,6 +198,7 @@
   - 一实例一条 HTTPRoute 意味着路由条数随活跃实例线性增长、Envoy 内存跟着涨,light 档的 memory limit 必须实机压过再定。
 
   见 `deploy/cluster/README.md`、`deploy/app/k8s/04-gateway.yaml`。
+
 - **服务容器是实例的第二种形态,不另立实体。** 加一列 `instances.workload_type`(`dev` / `service`),Pod spec 在
   `build_pod_spec` 按形态分叉,其余全部复用——状态机、计费、配额、回收、reconciler、监控、审计一行不改。见 `docs/reference/services.md`、`docs/reference/orchestrator.md`。
 - **对外服务的鉴权放在网关,不要求用户容器自己实现。** 用 `extAuth`,一条 SecurityPolicy 挂在 `svc-https` listener 上服务全部端点,
@@ -208,3 +209,20 @@
 - **迁移门禁拦 alembic 的三个约束 helper。** `op.create_check_constraint` / `create_unique_constraint` /
   `create_foreign_key` 渲染出的是不带 `NOT VALID` 的 `ADD CONSTRAINT`,同样持 ACCESS EXCLUSIVE 全表扫描,只是从
   SQL 文本里看不见。`scripts/check-migration-ddl.py` 三个 helper 一并拦,本迁移内 `create_table` 新建的表豁免。
+
+## 功能缺口路线图(仅方向,未排期;实施前各自补设计)
+
+审计评价报告(2026-08,`.trae/documents/superdl-审计评价报告.md`)附录的功能完备度缺口,
+按资金风险与用户价值排序如下。约束:每一项动工前必须先在本文档补「决定与约束」条目,
+不得在代码里先行留半成品(对照「UI 占位项的去留有判据」)。
+
+| 优先级 | 功能 | 设计方向要点 |
+|---|---|---|
+| R1 | 配额主动展示页 | 设置页加「我的配额」卡(当前仅触限报错);数据源自 policies + user_quota_overrides,无新后端 |
+| R2 | 优惠券/营销体系 | 新模块 coupon:码 → 抵扣规则 → 下单/充值核销;需先定「能否提现/退款回流」资金口径 |
+| R3 | 磁盘快照 | 依赖 TopoLVM VolumeSnapshot;编排侧新增 snapshot 状态机与计费口径 |
+| R4 | 发票在线版式 | 对接电子发票服务或自生成 PDF;当前人工开具流程保留作兜底 |
+| R5 | 变配/重装/VNC | 变配涉及价格差结算与 SKU 迁移语义;VNC 需 console 网关;均为中型项目 |
+| R6 | 帮助文档站 | 静态站(如 VitePress)挂 help 子域,替换现有 8 条 FAQ |
+| R7 | admin 端 token 改 HttpOnly Cookie | 同 web 端 C1 模式(2026-08 已落地),待 MFA 体系稳定后随动 |
+| R8 | 敏感配置双人闸 | pending change + 第二 admin 批准队列,替代/叠加 prod 降防开关的硬禁止(2026-08 已落地) |

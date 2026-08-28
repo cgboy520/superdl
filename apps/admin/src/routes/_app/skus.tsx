@@ -1,4 +1,5 @@
 import { adminColors, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -128,7 +129,7 @@ function SkusPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: skus, queryKey } = useAdminSkus();
+  const { data: skus, queryKey, isLoading, isError, refetch } = useAdminSkus();
   // 聚合端点只放 ops/readonly:finance 可看 SKU 页但拉它会 403,按角色关停查询
   const { data: aggregates } = useGpuModelAggregates({
     enabled: canWriteOps(role) || role === "readonly",
@@ -424,6 +425,10 @@ function SkusPage() {
       <Table<SkuAdminOut>
         scroll={{ x: 1440 }}
         rowKey="id"
+        loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={skus ?? []}
         pagination={false}
         columns={[
@@ -520,7 +525,7 @@ function SkusPage() {
         title={isNew ? t("skus.newSku") : t("skus.editTitle", { name: record?.name ?? "" })}
         open={editing !== null}
         onClose={() => setEditing(null)}
-        width={760}
+        width="min(760px, 100vw)"
         extra={
           <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
             {t("skus.submit")}

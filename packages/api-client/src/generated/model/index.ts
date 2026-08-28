@@ -167,6 +167,7 @@ export * from './legalDocVersionBrief';
 export * from './legalDocVersionCreate';
 export * from './legalDocVersionOut';
 export * from './legalDocVersionUpdate';
+export * from './listExpiringInstancesApiV1InstancesExpiringGetParams';
 export * from './listHourlyBillsApiV1BillsHourlyGetParams';
 export * from './listInstanceEventsApiV1InstancesUuidEventsGetParams';
 export * from './listInstancesApiV1InstancesGetParams';

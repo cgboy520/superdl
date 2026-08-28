@@ -97,10 +97,12 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        # CORS 默认不暴露自定义响应头;前端 fetch 需读到该头做全链路追踪
-        expose_headers=["X-Request-ID"],
+        # 枚举实际使用面,不用通配:方法与头部收窄到双端真实请求
+        # (X-Requested-With 是 refresh/logout 的 CSRF 纵深头,见 account/router)
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"],
+        # CORS 默认不暴露自定义响应头;前端 fetch 需读到这两个头做全链路追踪与重放区分
+        expose_headers=["X-Request-ID", "X-Idempotent-Replay"],
     )
     # 最外层:边缘收口(prod 下 /api/admin 与 /metrics 不从公网 api 域暴露)
     app.add_middleware(EdgeGuardMiddleware)

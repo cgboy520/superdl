@@ -82,6 +82,8 @@ class Instance(Base):
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
     data_disk_id: Mapped[int | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 请求体指纹 sha256(下单参数全集,见 service.create_instance):同键异参重放 409
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     # 冻结回收截止:进入 frozen 时按策略 freeze_grace_hours 写入(见 billing/patrol.py)
     frozen_deadline: Mapped[datetime | None]
     # running 实例 Pod 首次 not-ready 的时刻,持续超过宽限即判节点失联(见 reconciler);
@@ -154,6 +156,8 @@ class DataDisk(Base):
     juicefs_subpath: Mapped[str] = mapped_column(String(128), unique=True)
     price_gb_month: Mapped[Decimal] = mapped_column(Numeric(12, 4))  # 创建时快照
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 请求体指纹 sha256(user_id|name|size_gb):同键异参重放 409
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
     # active / grace(欠费宽限,只读) / frozen / deleting / deleted
     mounted_instance_id: Mapped[int | None] = mapped_column(index=True)

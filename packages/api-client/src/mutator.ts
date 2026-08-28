@@ -79,15 +79,18 @@ export function isApiError(e: unknown): e is ApiError {
   return typeof e === "object" && e !== null && "code" in e && "status" in e;
 }
 
-/** 直连用户端刷新接口(绕过拦截器,避免 401→refresh 递归)。失败返回 null。 */
-export async function requestTokenRefresh(
-  refreshToken: string,
-): Promise<{ access_token: string; refresh_token: string } | null> {
+/** 直连用户端刷新接口(绕过拦截器,避免 401→refresh 递归)。
+ *  refresh 走 HttpOnly Cookie(同源反代自动随路),不带 body;
+ *  X-Requested-With 是 cookie 路径的 CSRF 纵深头(服务端强制)。失败返回 null。 */
+export async function requestTokenRefresh(): Promise<{
+  access_token: string;
+  refresh_token: string;
+} | null> {
   try {
     const resp = await fetch(`${config.baseUrl}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      credentials: "same-origin",
+      headers: { "X-Requested-With": "fetch" },
     });
     if (!resp.ok) return null;
     return (await resp.json()) as { access_token: string; refresh_token: string };

@@ -29,7 +29,7 @@ from app.core.crypto import decrypt_str, encrypt_str, hash_api_key
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, TIER_CPU, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
-from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
+from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, request_fingerprint
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import as_amount, hourly_cost
@@ -595,6 +595,29 @@ async def create_instance(
     market='subscription' 时同事务再落一行 subscriptions、按周期总价一次性扣款(不许透支),
     扣完还要过一遍在途燃烧率校验。
     """
+    # 异参检测指纹:下单参数全集(改任何一个都视为新请求)。dict 先排序保证确定性;
+    # env 含密文键值也只进 sha256,不落明文
+    fingerprint = request_fingerprint(
+        user_id,
+        sku_id,
+        gpu_count,
+        image_ref,
+        sorted(ssh_key_ids),
+        name,
+        data_disk_id,
+        workload_type,
+        container_command,
+        container_args,
+        sorted(env.items()) if env else None,
+        sorted(env_secret_keys) if env_secret_keys else None,
+        service_port,
+        health_path,
+        require_api_key,
+        with_ssh,
+        market,
+        period,
+        period_count,
+    )
     if idempotency_key:
         existing = await find_replay(
             session,
@@ -603,6 +626,7 @@ async def create_instance(
             owner_id=user_id,
             key=idempotency_key,
             window=IDEMPOTENCY_WINDOW,
+            fingerprint=fingerprint,
         )
         if existing is not None:
             return existing, False
@@ -689,6 +713,7 @@ async def create_instance(
         authorized_keys=selected,
         data_disk_id=disk_id_validated,
         idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
         workload_type=workload_type,
         container_command=list(container_command) if container_command else None,
         container_args=list(container_args) if container_args else None,
@@ -712,6 +737,7 @@ async def create_instance(
                 owner_col=Instance.user_id,
                 owner_id=user_id,
                 key=idempotency_key,
+                fingerprint=fingerprint,
             )
             if idempotency_key
             else None
@@ -849,6 +875,34 @@ async def attach_instance_details(session: AsyncSession, items: "Sequence[Instan
     列表页与详情页共用同一条路径。"""
     await _attach_service_slugs(session, items)
     await _attach_subscriptions(session, items)
+
+
+async def list_expiring_instances(
+    session: AsyncSession, user_id: int, *, within_days: int
+) -> "list[InstanceOut]":
+    """临期包周期实例(到期横幅数据源):active 订阅且 expires_at ≤ now+within_days,
+    按到期时刻升序。专用轻端点,不经分页:列表筛选/翻页/首页截断都不会把临期实例藏掉。
+    订阅查询在 billing 层(跨模块只经 service 门面),这里只装配实例出参。"""
+    from app.modules.orchestrator.schemas import InstanceOut
+
+    subs = await billing_service.list_expiring_subscriptions(
+        session, user_id, within_days=within_days
+    )
+    if not subs:
+        return []
+    instances = list(
+        (
+            await session.execute(
+                select(Instance).where(Instance.id.in_([s.instance_id for s in subs]))
+            )
+        ).scalars()
+    )
+    by_id = {i.id: i for i in instances}
+    items = [
+        InstanceOut.model_validate(by_id[s.instance_id]) for s in subs if s.instance_id in by_id
+    ]
+    await attach_instance_details(session, items)
+    return items
 
 
 async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceOut":

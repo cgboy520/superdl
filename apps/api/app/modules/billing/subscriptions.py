@@ -123,6 +123,28 @@ async def charge_new(
     return row, quoted
 
 
+async def list_expiring_active(
+    session: AsyncSession, user_id: int, *, within_days: int
+) -> list[Subscription]:
+    """临期 active 订阅(到期横幅数据源):expires_at ≤ now+within_days,按到期时刻升序。
+    50 是防御性上限(用户配额下正常远够;横幅只展示最早一条 + 计数)。"""
+    horizon = now_utc() + timedelta(days=within_days)
+    return list(
+        (
+            await session.execute(
+                select(Subscription)
+                .where(
+                    Subscription.user_id == user_id,
+                    Subscription.status == STATUS_ACTIVE,
+                    Subscription.expires_at <= horizon,
+                )
+                .order_by(Subscription.expires_at)
+                .limit(50)
+            )
+        ).scalars()
+    )
+
+
 async def find_replay_row(session: AsyncSession, *, user_id: int, key: str) -> Subscription | None:
     """幂等窗口内同 (user_id, key) 的订阅行。转换/续费的**第一步**就要问它。
 
@@ -211,6 +233,10 @@ async def renew(
 
     重新定价的基准是 `subscriptions.unit_price`(下单时的 SKU **原价**快照),不是 SKU 现价:
     与「变更 SKU 仅影响新实例」同一条口径,涨价不追已购用户。
+
+    并发纪律:调用前必须先持钱包行锁(lock_wallet;两条入口——手动 renew_instance 与
+    自动 _try_auto_renew——都遵守),老订阅行在锁内经 FOR UPDATE 重读。
+    锁序 wallet → subscriptions,与 debit 内的钱包锁重入一致,不会成环。
     """
     if idempotency_key:
         existing = await find_replay(
@@ -224,7 +250,7 @@ async def renew(
         if existing is not None:
             return existing, await _quote_of(session, existing, instance.gpu_count), False
 
-    current = await current_for_instance(session, instance.id)
+    current = await current_for_instance(session, instance.id, for_update=True)
     if current is None:
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="billing.subscriptionMissing")
     if current.status == STATUS_CANCELLED:
@@ -273,7 +299,17 @@ async def renew(
                 raise
             return raced, await _quote_of(session, raced, instance.gpu_count), False
     else:
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            # 防御层(理论不可达:钱包锁 + 行锁已串行化):部分唯一索引
+            # uq_subscriptions_active_instance 兜住第二条 active 行时,回查链头
+            # 按「已被并发续费」返回,绝不二次扣款
+            await session.rollback()
+            raced = await current_for_instance(session, instance.id)
+            if raced is None or raced.status != STATUS_ACTIVE:
+                raise
+            return raced, await _quote_of(session, raced, instance.gpu_count), False
     await wallet.debit(
         session,
         instance.user_id,
@@ -310,20 +346,26 @@ async def _quote_of(session: AsyncSession, row: Subscription, gpu_count: int) ->
 # ---------- 查询 ----------
 
 
-async def current_for_instance(session: AsyncSession, instance_id: int) -> Subscription | None:
+async def current_for_instance(
+    session: AsyncSession, instance_id: int, *, for_update: bool = False
+) -> Subscription | None:
     """该实例当前生效(或最后一期)的订阅行:取 id 最大的一行。
 
     续费链上永远只有一行 active,但到期未续时全链都是 expired —— 取最后一行才能回答
     「什么时候到的期」,那正是到期横幅和续费 modal 要显示的东西。
+
+    for_update=True 给续费路径:行锁把「老行转 expired + 新行插入」串行化,
+    调用前必须先持钱包行锁(锁序 wallet → subscriptions,与 debit 一致)。
     """
-    return (
-        await session.execute(
-            select(Subscription)
-            .where(Subscription.instance_id == instance_id)
-            .order_by(Subscription.id.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    stmt = (
+        select(Subscription)
+        .where(Subscription.instance_id == instance_id)
+        .order_by(Subscription.id.desc())
+        .limit(1)
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def latest_by_instance(
@@ -537,7 +579,17 @@ async def _try_auto_renew(
     先算价再比余额,而不是让 `renew` 的 debit 抛 INSUFFICIENT_BALANCE 兜底:
     debit 抛错时 `renew` 已经把老订阅行改成了 expired,ORM 里那个改动还在,
     捕获异常继续用同一个 session 就会把它一起提交(老周期凭空作废)。
+
+    并发纪律:与手动续费同一锁序——先 lock_wallet 再动订阅行(手动路径
+    orchestrator.service.renew_instance 同款)。等锁期间可能已被手动续费
+    (老行已 expired、新周期已开),refresh 复核后放弃,否则就是重复扣款。
     """
+    await wallet.lock_wallet(session, row.user_id)
+    await session.refresh(row)
+    if row.status != STATUS_ACTIVE:
+        # 等钱包锁期间已被并发续费(手动路径已把老行转 expired):视为已处理,
+        # 不再续也不走到期停机
+        return True
     quoted = await quote(
         session,
         base_hourly=row.unit_price,
@@ -555,7 +607,7 @@ async def _try_auto_renew(
             dedup_suffix=str(row.id),
         )
         return False
-    await renew(
+    _new_row, _quote, created = await renew(
         session,
         instance=instance,
         period=row.period,
@@ -563,6 +615,9 @@ async def _try_auto_renew(
         idempotency_key=None,
         actor="system",
     )
+    if not created:
+        # 唯一索引防御层命中(理论不可达:锁序+复核已挡):并发者已续,不重复计数/通知
+        return True
     counts["renewed"] += 1
     await notify_service.send_subscription_notice(
         session,

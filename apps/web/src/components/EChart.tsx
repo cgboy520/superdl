@@ -1,17 +1,3 @@
-/** echarts 按需注册封装:只打包本端用到的图型/组件。新增图型在此登记,禁止在页面里直接 import echarts。 */
-import { LineChart, PieChart } from "echarts/charts";
-import {
-  GridComponent,
-  LegendComponent,
-  TooltipComponent,
-} from "echarts/components";
-import * as echarts from "echarts/core";
-import { CanvasRenderer } from "echarts/renderers";
-import EChartsReactCore from "echarts-for-react/esm/core";
-import type { EChartsReactProps } from "echarts-for-react/esm/types";
-
-echarts.use([LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
-
-export default function EChart(props: Omit<EChartsReactProps, "echarts">) {
-  return <EChartsReactCore echarts={echarts} {...props} />;
-}
+/** echarts 封装已收口到 @superdl/ui/components(图型注册全集 + noc 主题预设);
+ *  本文件仅留默认导出兼容既有调用点。新增图型在共享包登记,禁止在页面里直接 import echarts。 */
+export { EChart as default } from "@superdl/ui/components";

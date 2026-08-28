@@ -26,7 +26,10 @@ async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> 
     await session.execute(
         select(Instance.id)
         .where(Instance.id == instance_id)
-        .with_for_update(read=False, key_share=True)
+        # FOR UPDATE(而非 FOR KEY SHARE):transition() 的普通 UPDATE 持 FOR NO KEY UPDATE,
+        # 与 KEY SHARE 在 PG 锁矩阵里互不冲突——只有 FOR UPDATE 才挡得住它,docstring
+        # 上面那段「迁移被挡住」的语义才成立
+        .with_for_update()
     )
 
 

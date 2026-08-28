@@ -42,6 +42,9 @@ from app.modules.billing.subscriptions import (
     latest_by_instance as subscriptions_by_instance,
 )
 from app.modules.billing.subscriptions import (
+    list_expiring_active as list_expiring_subscriptions,
+)
+from app.modules.billing.subscriptions import (
     quote_of_row as quote_of_subscription_row,
 )
 from app.modules.billing.subscriptions import (
@@ -89,6 +92,7 @@ __all__ = [
     "hourly_bills_page",
     "issue_invoice",
     "ledger_page",
+    "list_expiring_subscriptions",
     "list_payment_anomalies",
     "lock_wallet",
     "payout_refund",

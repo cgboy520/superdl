@@ -22,7 +22,16 @@ logger = get_logger(__name__)
 
 
 async def ensure_port(session: AsyncSession, instance: Instance) -> int:
-    """分配一个 SSH NodePort。已分配则原样返回(幂等)。"""
+    """分配一个 SSH NodePort。已分配则原样返回(幂等)。
+
+    并发同段扩段:新段插入用 on_conflict_do_nothing(撞唯一索引不抛错、
+    等对方事务落定后自然落空),落空则重查空闲/最大值再试——冲突在函数内消化,
+    不把整笔建实例事务打成 outbox 退避(白烧一次 ~10s 重试预算)。
+    重试预算 8:扩段冲突会排队成链(第 N 个等待者最多撞 N-1 次),
+    8 覆盖并发创建风暴的现实规模,超出仍回 NO_CAPACITY 由 outbox 退避兜底。
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
     settings = get_settings()
     mine = (
         await session.execute(
@@ -31,29 +40,38 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     ).scalar_one_or_none()
     if mine is not None:
         return mine.port
-    free = (
-        await session.execute(
-            select(PortAllocation)
-            .where(PortAllocation.instance_id.is_(None), PortAllocation.blocked.is_(False))
-            .order_by(PortAllocation.port)
-            .limit(1)
-            .with_for_update(skip_locked=True)
-        )
-    ).scalar_one_or_none()
-    if free is not None:
-        free.instance_id = instance.id
-        await session.flush()
-        return free.port
-    max_port = (await session.execute(select(func.max(PortAllocation.port)))).scalar_one()
-    next_port = settings.ssh_port_range_start if max_port is None else max_port + 1
-    while next_port in settings.ssh_port_excluded:
-        next_port += 1
-    if next_port > settings.ssh_port_range_end:
-        raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
-    alloc = PortAllocation(port=next_port, instance_id=instance.id)
-    session.add(alloc)
-    await session.flush()
-    return next_port
+    for _ in range(8):
+        free = (
+            await session.execute(
+                select(PortAllocation)
+                .where(PortAllocation.instance_id.is_(None), PortAllocation.blocked.is_(False))
+                .order_by(PortAllocation.port)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+        ).scalar_one_or_none()
+        if free is not None:
+            free.instance_id = instance.id
+            await session.flush()
+            return free.port
+        max_port = (await session.execute(select(func.max(PortAllocation.port)))).scalar_one()
+        next_port = settings.ssh_port_range_start if max_port is None else max_port + 1
+        while next_port in settings.ssh_port_excluded:
+            next_port += 1
+        if next_port > settings.ssh_port_range_end:
+            raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
+        inserted = (
+            await session.execute(
+                pg_insert(PortAllocation)
+                .values(port=next_port, instance_id=instance.id)
+                .on_conflict_do_nothing(index_elements=["port"])
+                .returning(PortAllocation.port)
+            )
+        ).scalar_one_or_none()
+        if inserted is not None:
+            return inserted
+        # 撞段:胜出方可能扩了段或新标了 blocked,下一轮重查空闲行/最大值
+    raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
 
 
 async def block_port(sm: Any, port: int, *, reason: str, expected_instance_id: int | None) -> None:

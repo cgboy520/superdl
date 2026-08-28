@@ -8,7 +8,7 @@ import { CheckCircleOutlined } from "@ant-design/icons";
 import type { TokenPair } from "@superdl/api-client";
 import { brand } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, Typography } from "antd";
+import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, theme, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -92,12 +92,14 @@ function LoginPage() {
   const { redirect: redirectTo, mode: searchMode } = Route.useSearch();
   const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
+  const { token } = theme.useToken();
   const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
   const [form] = Form.useForm();
 
   const onLoggedIn = (data: unknown) => {
     const pair = data as TokenPair;
-    authStore.getState().login(pair.access_token, pair.refresh_token);
+    // refresh token 已由服务端经 HttpOnly Cookie 下发,JS 只留 access token
+    authStore.getState().login(pair.access_token);
     if (redirectTo) {
       router.history.push(redirectTo);
     } else {
@@ -152,7 +154,8 @@ function LoginPage() {
       <div
         style={{
           flex: 1,
-          background: "#fff",
+          // 容器底色走 token(暗色主题为深靛灰),不再硬编码白
+          background: token.colorBgContainer,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -291,14 +294,14 @@ function LoginPage() {
           </Form>
           <div style={{ marginTop: 12, textAlign: "right" }}>
             {mode === "password" && (
-              <Typography.Link onClick={() => setMode("reset")}>
+              <Button type="link" size="small" onClick={() => setMode("reset")}>
                 {t("login.forgotPassword")}
-              </Typography.Link>
+              </Button>
             )}
             {mode === "reset" && (
-              <Typography.Link onClick={() => setMode("password")}>
+              <Button type="link" size="small" onClick={() => setMode("password")}>
                 {t("login.backToLogin")}
-              </Typography.Link>
+              </Button>
             )}
           </div>
         </div>

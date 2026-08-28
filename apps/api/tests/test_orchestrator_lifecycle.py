@@ -29,6 +29,29 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 
 class TestCreateLifecycle:
+    async def test_idem_key_param_mismatch_409(self, client, sm, fake):
+        """同键异参(改了 GPU 数):显式 409,绝不静默返回上一台实例(弱键复用防线)。"""
+        headers, user_id, key_id = await create_user_with_key(client, "13900000031")
+        await fund_wallet(sm, user_id)
+        sku_id = await create_test_sku(sm)
+        h = {**headers, "Idempotency-Key": "inst-idem-mix"}
+        body = {
+            "sku_id": sku_id,
+            "gpu_count": 1,
+            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "ssh_key_ids": [key_id],
+        }
+        a = await client.post("/api/v1/instances", json=body, headers=h)
+        assert a.status_code == 202, a.text
+        b = await client.post("/api/v1/instances", json={**body, "gpu_count": 2}, headers=h)
+        assert b.status_code == 409
+        assert b.json()["message_key"] == "common.idempotencyKeyMismatch"
+        # 同键同参仍是重放(回归不破)
+        c = await client.post("/api/v1/instances", json=body, headers=h)
+        assert c.status_code == 200
+        assert c.headers["x-idempotent-replay"] == "true"
+        assert c.json()["uuid"] == a.json()["uuid"]
+
     async def test_full_create_to_running(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], fake: FakeOrchestrator
     ):

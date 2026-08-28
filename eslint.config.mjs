@@ -29,6 +29,15 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "no-restricted-globals": ["error", { name: "fetch", message: "使用 @superdl/api-client 生成的 hooks,禁止手写 fetch" }],
+      "no-restricted-syntax": [
+        "error",
+        {
+          // a11y:无 href 的「链接」不是链接(不可聚焦、无键盘语义)——纯动作一律 <Button type="link">
+          selector:
+            "JSXOpeningElement[name.type='JSXMemberExpression'][name.object.name='Typography'][name.property.name='Link']:not(:has(> JSXAttribute[name.name='href']))",
+          message: "Typography.Link 必须带 href;纯动作请用 <Button type=\"link\" size=\"small\">",
+        },
+      ],
     },
   },
   {

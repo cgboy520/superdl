@@ -89,6 +89,13 @@ max_connections ≥ 进程数 × (db_pool_size + max_overflow) + 迁移/运维�
 - api/worker 进程内已带 `statement_timeout=30s / lock_timeout=5s / idle_in_transaction_session_timeout=60s`,
   卡死语句不会无限占连接。
 
+## 前端可用性与 HPA 结论
+
+web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同探 `/`(见 `app/k8s/07-frontends.yaml`)。
+**不配置 HPA 的书面结论**:双端 `requests == limits`(Guaranteed QoS,防驱逐优先于弹性),
+而 CPU 型 HPA 依赖 requests 基线计算利用率,与 Guaranteed 语义冲突;静态 nginx 无 CPU 弹性需求
+(单副本 50m 请求即远够,瓶颈永远在 API 不在静态托管)。若未来引入 SSR/BFF 再重估。
+
 ## 独立环境副本(预发/演示)
 
 仓库只定义 full/light 双档,不含预发 overlay。自建:复制 `cluster/environments/full.yaml` 改名,叠加层把副本数降到 1、

@@ -81,9 +81,10 @@ export default interface Resources {
       "orderStateNotBackfillable": "订单状态 {{status}} 不可补单",
       "realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
       "refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
-      "refundAmountExceeded": "退款金额不能超过可退上限 ¥{{max}}(订单金额 ¥{{order}},当前余额 ¥{{balance}})",
+      "refundAmountExceeded": "退款金额不能超过可退上限 ¥{{max}}(订单金额 ¥{{order}},已退 ¥{{refunded}},当前余额 ¥{{balance}})",
       "refundBalanceConsumed": "余额已被消费,暂不能核销退款(当前余额 ¥{{balance}},应退 ¥{{amount}});请取消该退款单",
       "refundChannelReversed": "该订单支付已被支付渠道冲正(拒付),不可申请退款,请联系客服",
+      "refundCumulativeExceeded": "累计退款将超过订单金额(订单 ¥{{order}},已退 ¥{{refunded}},本次 ¥{{amount}}):数据异常,请核查后取消该退款单",
       "refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
       "refundNotFound": "退款单不存在",
       "refundOrderNotPaid": "仅支付成功的充值订单可申请退款",
@@ -126,6 +127,7 @@ export default interface Resources {
       "badCursor": "无效的分页游标",
       "forbidden": "无权访问",
       "httpError": "请求失败({{status}})",
+      "idempotencyKeyMismatch": "同一幂等键对应了不同的请求参数,已按冲突拒绝:如需新操作请更换幂等键后重试",
       "internal": "服务器内部错误,请稍后重试",
       "methodNotAllowed": "该接口不支持此请求方法",
       "networkError": "网络连接失败,请检查网络后重试",
@@ -225,6 +227,10 @@ export default interface Resources {
     }
   },
   "shared": {
+    "common": {
+      "loadFailed": "加载失败,请重试",
+      "retry": "重试"
+    },
     "format": {
       "countdown": {
         "expired": "已到期",
@@ -490,10 +496,11 @@ export default interface Resources {
       "refundAmount": "退款金额",
       "refundApply": "申请退款",
       "refundCreated": "退款申请已提交,财务审核后将人工打款",
-      "refundMaxHint": "最多可退 {{amount}}(不超过订单金额与当前余额)",
+      "refundMaxHint": "该单累计还可退 {{amount}}(不超过订单剩余可退与当前余额,支持多次部分退款)",
       "refundNoOrders": "暂无充值订单",
       "refundNone": "暂无退款记录",
       "refundOrderAlreadyApplied": "已有进行中的退款申请",
+      "refundOrderFullyRefunded": "已全额退款",
       "refundOrderInvoiced": "已开票,需先红冲,请联系客服",
       "refundOrderNoBalance": "当前余额不足,无款可退",
       "refundOrderNotPaid": "未支付成功",
@@ -1288,6 +1295,7 @@ export default interface Resources {
       "title": "支持"
     },
     "topbar": {
+      "consoleSection": "控制台",
       "help": "帮助",
       "login": "登录",
       "loginRegister": "登录 / 注册",
@@ -1298,7 +1306,10 @@ export default interface Resources {
       "openMenu": "打开导航菜单",
       "pricing": "GPU 价格",
       "ranking": "算力排名",
-      "register": "免费注册"
+      "register": "免费注册",
+      "siteSection": "网站",
+      "themeToDark": "切换到暗色主题",
+      "themeToLight": "切换到浅色主题"
     }
   }
 }

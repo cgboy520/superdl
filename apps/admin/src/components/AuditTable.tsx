@@ -1,6 +1,7 @@
 /** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
@@ -101,6 +102,11 @@ export function AuditTable({
         dataSource={rows}
         size="small"
         loading={audit.isLoading}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty isError={audit.isError} onRetry={() => void audit.refetch()} />
+          ),
+        }}
         pagination={false}
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },

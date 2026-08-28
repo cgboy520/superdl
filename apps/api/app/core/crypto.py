@@ -69,3 +69,14 @@ def hash_api_key(key: str) -> str:
     import hmac
 
     return hmac.new(_master_key(), f"service-api-key|{key}".encode(), hashlib.sha256).hexdigest()
+
+
+def hash_node_token(token: str) -> str:
+    """节点注册/进度令牌的带密钥摘要(HMAC-SHA256,hex,域分离前缀 node-enroll|)。
+
+    与 hash_api_key 同一约定:库 dump 不应用来对令牌做离线批量比对(令牌虽为高熵,
+    无密钥摘要仍会泄漏「同令牌复用」等结构信息;统一 HMAC 后全仓无裸 SHA-256 摘要)。
+    """
+    import hmac
+
+    return hmac.new(_master_key(), f"node-enroll|{token}".encode(), hashlib.sha256).hexdigest()

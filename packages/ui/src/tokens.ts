@@ -110,3 +110,64 @@ export const adminThemeToken = {
   borderRadius: 6,
 } as const;
 
+/** 间距阶梯(4 的倍数)。纪律:新代码的布局尺寸(padding/gap/margin)一律走这里,
+ * 不再散落魔法数;存量 inline style 按「碰到的文件顺手收敛」推进(见 docs/ui-ux-spec.md) */
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
+
+/** 字号层级:页面标题/区块标题/正文/辅助/KPI 五档(散落硬编码的收敛目标) */
+export const fontSize = {
+  pageTitle: 20,
+  sectionTitle: 16,
+  body: 14,
+  caption: 12,
+  kpi: 28,
+} as const;
+
+/** 版式常量:页容器与卡片网格 */
+export const layout = {
+  pageMaxWidth: 1280,
+  contentPadding: 24,
+  cardGap: 16,
+  cardRadius: 10,
+} as const;
+
+/** 用户端暗色板(「开发者夜间工作台」):深靛灰基板,与 admin 的 NOC 藏青区分调性,
+ * 保持品牌靛蓝主色。文本/边框取值白底对比度 ≥4.5:1(tokens.test.ts 同标准守护)。 */
+export const webDarkColors = {
+  bgBase: "#0F1420",
+  bgContainer: "#171E30",
+  bgElevated: "#1F2942",
+  text: "#E5E9F2",
+  textSecondary: "#9AA7C2",
+  border: "#2A3552",
+  /** 暗色 Menu 选中底/选中字(浅靛,深底可读) */
+  menuSelectedBg: "#26304D",
+  menuSelectedColor: "#A5B4FC",
+} as const;
+
+/** antd 6 ConfigProvider theme —— 用户端暗色(配合 theme.darkAlgorithm 使用);
+ * 与 webTheme 同构,仅覆写底色/文本/边框系,组件级覆盖继承浅色版 */
+export const webDarkTheme = {
+  token: {
+    ...webTheme.token,
+    colorBgBase: webDarkColors.bgBase,
+    colorBgContainer: webDarkColors.bgContainer,
+    colorBgElevated: webDarkColors.bgElevated,
+    colorBgLayout: webDarkColors.bgBase,
+    colorText: webDarkColors.text,
+    colorTextSecondary: webDarkColors.textSecondary,
+    colorBorder: webDarkColors.border,
+  },
+  components: {
+    ...webTheme.components,
+    Layout: { siderBg: webDarkColors.bgContainer, footerBg: "transparent" },
+    Menu: {
+      itemSelectedBg: webDarkColors.menuSelectedBg,
+      itemSelectedColor: webDarkColors.menuSelectedColor,
+      itemMarginInline: 8,
+      itemBorderRadius: 6,
+    },
+    Table: { headerBg: webDarkColors.bgElevated, cellPaddingBlock: 12 },
+  },
+} as const;
+

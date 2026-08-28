@@ -10,4 +10,6 @@ q?: string | null;
 status?: string | null;
 cursor?: string | null;
 limit?: number | null;
+reveal?: boolean;
+reason?: string | null;
 };

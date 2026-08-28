@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
+from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
@@ -34,8 +34,9 @@ async def create_disk(
     idempotency_key: str | None = None,
 ) -> tuple[DataDisk, bool]:
     """创建数据盘。返回 (盘, created):created=False = 幂等重放,路由回 200 + X-Idempotent-Replay。"""
+    fingerprint = request_fingerprint(user_id, name, size_gb)
     if idempotency_key:
-        # 幂等键:响应丢失后重试不会开出第二块盘
+        # 幂等键:响应丢失后重试不会开出第二块盘;同键异参(改名/改容量)409
         existing = await find_replay(
             session,
             DataDisk,
@@ -43,6 +44,7 @@ async def create_disk(
             owner_id=user_id,
             key=idempotency_key,
             window=IDEMPOTENCY_WINDOW,
+            fingerprint=fingerprint,
         )
         if existing is not None:
             return existing, False
@@ -85,6 +87,7 @@ async def create_disk(
         juicefs_subpath=f"disk-{disk_uuid}",
         price_gb_month=price,
         idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
     )
     session.add(disk)
     try:
@@ -99,6 +102,7 @@ async def create_disk(
                 owner_col=DataDisk.user_id,
                 owner_id=user_id,
                 key=idempotency_key,
+                fingerprint=fingerprint,
             )
             if idempotency_key
             else None

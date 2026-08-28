@@ -79,17 +79,17 @@ export const getLogoutApiV1AuthLogoutPostUrl = () => {
 }
 
 /**
- * 登出当前会话(refresh token 一次性消费位撤销)。token 无效也回 204,防枚举。
+ * 登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。
  * @summary Logout
  */
-export const logoutApiV1AuthLogoutPost = async (refreshRequest: RefreshRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const logoutApiV1AuthLogoutPost = async (refreshRequestNull?: RefreshRequest | null, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
   return customFetch<void>(getLogoutApiV1AuthLogoutPostUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(refreshRequest)
+    body: JSON.stringify(refreshRequestNull)
   }
 );}
 
@@ -151,16 +151,18 @@ export const getRefreshApiV1AuthRefreshPostUrl = () => {
 }
 
 /**
+ * 轮换刷新:refresh 经 HttpOnly Cookie(首选)或 body(存量旁路)提交;
+ * 成功即轮换 Cookie 与 body 双写。
  * @summary Refresh
  */
-export const refreshApiV1AuthRefreshPost = async (refreshRequest: RefreshRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
+export const refreshApiV1AuthRefreshPost = async (refreshRequestNull?: RefreshRequest | null, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
 
   return customFetch<TokenPair>(getRefreshApiV1AuthRefreshPostUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(refreshRequest)
+    body: JSON.stringify(refreshRequestNull)
   }
 );}
 

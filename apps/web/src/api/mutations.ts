@@ -71,7 +71,7 @@ import { App } from "antd";
 import { useCallback } from "react";
 
 import { useApiErrorText } from "../lib/apiError";
-import { authStore, readTokens } from "../stores/auth";
+import { authStore } from "../stores/auth";
 
 interface MutationOpts<TData> {
   onSuccess?: (data: TData) => void;
@@ -113,7 +113,8 @@ export const useLogin = (o?: CallerOpts) =>
 export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), { ...o, invalidates: [] });
 
-/** 登出:current = 撤销本设备 refresh token;all = 服务端撤销该账号全部会话(token_version+1)。
+/** 登出:current = 撤销本设备 refresh token(cookie 路径,服务端顺带清 Cookie);
+ *  all = 服务端撤销该账号全部会话(token_version+1)。
  *  之后清本地并整页刷新;请求失败不阻断本地登出。 */
 export function useLogout() {
   return useCallback(async (scope: "current" | "all" = "current") => {
@@ -121,8 +122,8 @@ export function useLogout() {
       if (scope === "all") {
         await logoutAllApiV1AuthLogoutAllPost();
       } else {
-        const rt = readTokens().refreshToken;
-        if (rt) await logoutApiV1AuthLogoutPost({ refresh_token: rt });
+        // cookie 路径必须带 CSRF 纵深头(服务端强制);body 留空,服务端从 cookie 取
+        await logoutApiV1AuthLogoutPost(null, { headers: { "X-Requested-With": "fetch" } });
       }
     } catch {
       // 登出尽力而为,本地清理不依赖远端结果

@@ -147,6 +147,42 @@ class TestAdminEnrollments:
 
 
 class TestEnrollmentStateMachine:
+    async def test_legacy_sha256_token_dual_read_upgrades_to_hmac(self, sm) -> None:
+        """dual-read:迁移前的裸 SHA-256 摘要行仍能 bootstrap,命中即席升级为 HMAC 落库。"""
+        import hashlib
+
+        from app.core.crypto import hash_node_token
+
+        await set_cluster_config(sm)
+        async with sm() as session:
+            enrollment, token = await nodes_service.create_enrollment(
+                session,
+                EnrollmentCreate(pool="hami", hostname="legacy-node"),
+                created_by=1,
+                idempotency_key=None,
+            )
+            # 模拟迁移前旧行:摘要回写为裸 SHA-256
+            enrollment.token_hash = hashlib.sha256(token.encode()).hexdigest()
+            await session.commit()
+        async with sm() as session:
+            row, _cfg, _progress = await nodes_service.bootstrap(
+                session,
+                token,
+                hostname="legacy-node",
+                os_info={},
+                gpu_details=[],
+                client_ip=None,
+            )
+            assert row.status == "installing"
+            await session.commit()
+        async with sm() as session:
+            stored = (
+                await session.execute(
+                    select(NodeEnrollment).where(NodeEnrollment.id == enrollment.id)
+                )
+            ).scalar_one()
+            assert stored.token_hash == hash_node_token(token)  # 已升级,不再是无密钥摘要
+
     async def test_illegal_transition_rejected(self, sm) -> None:
         await set_cluster_config(sm)
         async with sm() as session:

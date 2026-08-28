@@ -159,6 +159,8 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending / paid / closed / failed
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 请求体指纹 sha256(user_id|amount|channel):同键异参重放 409,防弱键复用静默错单
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     # 管理端人工补单的幂等键:同键重放直接回当前状态,不报「已入账」409
     backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     qr_url: Mapped[str | None] = mapped_column(String(512))
@@ -207,6 +209,8 @@ class InvoiceRequest(Base):
     issued_by: Mapped[int | None]  # 开票操作人(admin_users.id,finance/admin)
     issued_at: Mapped[datetime | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 请求体指纹 sha256(user_id|period|抬头三要素|email):同键异参重放 409
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -215,8 +219,9 @@ class RefundRequest(Base):
     并回写 wallet_entry_id 关联 balance_ledger。
 
     双人制衡硬约束:DB CHECK 兜底 payout_by <> review_by(应用层同样拦截给 409 文案)。
-    部分唯一索引 uq_refund_requests_active_order:同一订单只允许一条活跃申请
-    (rejected/cancelled 后用户可重新申请)。
+    部分唯一索引 uq_refund_requests_active_order:同一订单只允许一条「进行中」申请
+    (pending/approved;已打款不占位——同单可多次部分退款,累计不超过订单额,
+    由申请/打款两处按 Σpaid 复核;rejected/cancelled 后用户可重新申请)。
     """
 
     __tablename__ = "refund_requests"
@@ -234,7 +239,7 @@ class RefundRequest(Base):
             "uq_refund_requests_active_order",
             "order_no",
             unique=True,
-            postgresql_where=text("status IN ('pending', 'approved', 'paid')"),
+            postgresql_where=text("status IN ('pending', 'approved')"),
         ),
     )
 
@@ -257,6 +262,8 @@ class RefundRequest(Base):
     payout_at: Mapped[datetime | None]
     wallet_entry_id: Mapped[int | None] = mapped_column(BigInteger)  # 核销后的 balance_ledger.id
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 请求体指纹 sha256(user_id|order_no|amount|reason):同键异参重放 409
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -284,6 +291,14 @@ class Subscription(Base):
         Index(  # 巡检取「到期在即 / 已到期」的活跃订阅,一条索引服务两种谓词
             "ix_subscriptions_active_expiry",
             "expires_at",
+            postgresql_where=text("status = 'active'"),
+        ),
+        # DB 兜底:一实例仅一行 active。应用层由「钱包锁 + 续费行锁」串行化(见
+        # subscriptions.renew docstring),本索引兜住任何绕过该路径的写入(修数/新 worker)
+        Index(
+            "uq_subscriptions_active_instance",
+            "instance_id",
+            unique=True,
             postgresql_where=text("status = 'active'"),
         ),
     )

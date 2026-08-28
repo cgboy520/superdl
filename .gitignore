@@ -37,3 +37,4 @@ test-results/
 /audit-landing.png
 
 # Generated (packages/api-client/src is orval output, committed; openapi.json is exported artifact, committed)
+.trae/

@@ -65,10 +65,11 @@
     "refundAmount": "Refund amount",
     "refundApply": "Request a refund",
     "refundCreated": "Refund request submitted — finance will pay out manually after review",
-    "refundMaxHint": "Up to {{amount}} (capped by order amount and current balance)",
+    "refundMaxHint": "Up to {{amount}} remaining for this order (capped by remaining refundable and current balance; partial refunds allowed)",
     "refundNone": "No refund requests yet",
     "refundNoOrders": "No top-up orders yet",
     "refundOrderAlreadyApplied": "Active refund request exists",
+    "refundOrderFullyRefunded": "Fully refunded",
     "refundOrderInvoiced": "Invoiced — must be voided first; contact support",
     "refundOrderNoBalance": "Balance too low to refund",
     "refundOrderNotPaid": "Not paid",
@@ -877,6 +878,7 @@
     "title": "Support"
   },
   "topbar": {
+    "consoleSection": "Console",
     "help": "Help",
     "login": "Log in",
     "loginRegister": "Log in / Sign up",
@@ -887,6 +889,9 @@
     "openMenu": "Open navigation menu",
     "pricing": "GPU Pricing",
     "ranking": "Compute Ranking",
-    "register": "Sign up free"
+    "register": "Sign up free",
+    "siteSection": "Site",
+    "themeToDark": "Switch to dark theme",
+    "themeToLight": "Switch to light theme"
   }
 }

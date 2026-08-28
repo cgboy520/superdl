@@ -28,12 +28,19 @@
 
 | | 用户端 `web` | 管理端 `admin` |
 |---|---|---|
-| 基调 | 浅色,清爽企业风 | 深色 NOC 风 |
+| 基调 | 浅色(默认)/ 暗色「开发者夜间工作台」(深靛灰 `#0F1420` 系,顶栏图标钮切换,`localStorage("superdl.theme")` 持久化,初值跟系统) | 深色 NOC 风 |
 | 主色 | 靛蓝 `#4F46E5` | 同主色;亮青 `#22D3EE` 作数据强调、琥珀 `#F59E0B` 作告警 |
-| 实现 | antd 6 ConfigProvider token + components 级 token(Menu/Table/Card…)+ brand 渐变常量,均定义在 `packages/ui/src/tokens.ts` 两端共享;少量全局 reset/工具类在 `apps/web/src/styles.css` | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`) |
+| 实现 | antd 6 ConfigProvider token + components 级 token(Menu/Table/Card…)+ brand 渐变常量;暗色 = `theme.darkAlgorithm` + `webDarkTheme` 覆写,均定义在 `packages/ui/src/tokens.ts` 两端共享;少量全局 reset/工具类在 `apps/web/src/styles.css`;`index.html` 内联脚本预置底色防 FOUC | antd `theme.darkAlgorithm` + 自定义背景 `#0B1220` 系(色值集中在 `adminColors`) |
 | 字体 | 系统栈(`tokens.fontFamily`)+ body 级 tabular-nums | 同左,监控数值可用等宽 |
-| 布局 | 全宽品牌渐变顶栏 56px(logo / 顶级入口 / 语言 / 余额 / 通知 / 用户菜单)+ 其下浅色可折叠侧栏 200px(lg 断点收起) | 左侧不可折叠侧栏 200px(品牌字 + 菜单,按角色过滤)+ 右侧 56px 顶栏(环境徽标「生产环境」/「预发/开发」、语言、全局告警铃、用户名与角色 + 退出登录) |
+| 布局 | 全宽品牌渐变顶栏 56px(logo / 顶级入口 / 主题切换 / 语言 / 余额 / 通知 / 用户菜单)+ 其下可折叠侧栏 200px(lg 断点收起,窄屏控制台导航进顶栏汉堡 Drawer) | 左侧可折叠侧栏 200px(品牌字 + 菜单,按角色过滤;lg 断点收为 0 宽,顶栏汉堡钮展开)+ 右侧 56px 顶栏(环境徽标「生产环境」/「预发/开发」、语言、全局告警铃、用户名与角色 + 退出登录) |
 | 状态色 | running 绿 / creating·starting 蓝(动效)/ stopped 灰 / frozen 橙 / failed·releasing 红 | 同一套语义色,深色版调亮 |
+
+**设计 token 纪律(F2)**:`packages/ui/src/tokens.ts` 是唯一事实源 ——
+① 色值必须走 token(`webTheme`/`webDarkTheme`/`adminColors`/`statusColors` 等),禁止散落硬编码 hex;
+② 新代码的布局尺寸(padding/gap/margin)必须走 `space`(4 阶梯)与 `layout`(页容器/卡距/圆角),字号走 `fontSize` 五档;
+③ 高频模式组件化:`PageContainer`/`KpiGrid`/`TableErrorEmpty`/`EChart`(packages/ui `src/components/`,两端共用);
+④ 存量 inline style 不强求清空,按「碰到的文件顺手收敛」推进;
+⑤ 对比度底线 WCAG AA ≥4.5:1,新增色值须在 `tokens.test.ts` 补同标准回归。
 
 ## 3. 用户端
 
@@ -138,7 +145,8 @@ CPU 规格写「整机 ¥X.XX」不乘卡数;盘价 GB·月折日;注明计费�
   (`租用新实例` 主按钮 / 刷新 / `密钥登录设置`(→ /settings#ssh)/ 搜索框,客户端过滤 name/uuid)。
 - **到期横幅**(名下有 `subscription.status='active'` 且剩余天数 ≤ `policies.period_expire_warn_days` 的实例时出现):
   写清哪台、什么时候到期、到期后自动停机、72 小时内未续费将回收实例盘(数据盘不受影响),带 `立即续费` 与
-  `开启自动续费` 两个按钮。判据全部来自列表已有的 `subscription` 内联字段与 `/policies`,不为横幅单开接口。
+  `开启自动续费` 两个按钮。数据源是专用轻端点 `GET /api/v1/instances/expiring?within_days=N`(服务端过滤,
+  不分页)——列表筛选/翻页/首页截断都不会把临期实例藏掉。
 - 表格 6 列:①`名称 / ID`(可改名)+「详情」链接(双击行同效);②`状态` 徽标(冻结态附红色回收倒计时,hover 出
   回收策略 tooltip);③`规格详情` GPU 型号 × 数量 + 档位徽标,popover 展开完整配置;④`GPU 利用率` 迷你 sparkline(近 1h,running 时;`GET /api/v1/metrics/instances` 批量端点,
   45s 独立轮询)+ 末值 %,断源时灰字「监控暂不可用」而页面其余正常;⑤`计费` 随购买模式分化:按量为 `按量` 标签 + `¥X.XX/时 × N 卡` + 第二行 `今日 ¥Y.YY`

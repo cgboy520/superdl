@@ -286,20 +286,28 @@ export function makeFormatters(t: SharedT, locale: string): Formatters {
   };
 }
 
+/** 金额字符串 → BigInt 万分位(比较/缩放共用的唯一缩放口径,禁浮点)。 */
+function scaledAmount(s: string | null | undefined): bigint {
+  if (!s) return 0n;
+  const neg = s.startsWith("-");
+  const [int = "0", frac = ""] = (neg ? s.slice(1) : s).split(".");
+  const v = BigInt(int + (frac + "0000").slice(0, 4));
+  return neg ? -v : v;
+}
+
 /** 金额字符串比较(BigInt 万分位精度,禁浮点):a<b → -1,a==b → 0,a>b → 1。 */
 export function compareAmounts(
   a: string | null | undefined,
   b: string | null | undefined,
 ): number {
-  const scaled = (s: string | null | undefined): bigint => {
-    if (!s) return 0n;
-    const neg = s.startsWith("-");
-    const [int = "0", frac = ""] = (neg ? s.slice(1) : s).split(".");
-    const v = BigInt(int + (frac + "0000").slice(0, 4));
-    return neg ? -v : v;
-  };
-  const d = scaled(a) - scaled(b);
+  const d = scaledAmount(a) - scaledAmount(b);
   return d < 0n ? -1 : d > 0n ? 1 : 0;
+}
+
+/** 金额字符串 → 万分位整数 number(ECharts 等图表值用:与 compareAmounts 同口径,
+ *  占比/排序完全精确;拒绝 parseFloat 的浮点误差,如 0.1+0.2 ≠ 0.3)。 */
+export function amountToScaledNumber(s: string | null | undefined): number {
+  return Number(scaledAmount(s));
 }
 
 /** 两个金额字符串相加(BigInt 分级精确,2 位小数,禁浮点)。展示层用。 */

@@ -703,11 +703,13 @@ async def settle_disk_pending_days(
 
     删盘与扩容前必须调用:日结只对结算时点仍存活的盘、按结算时点容量出账。
     下界取日结水位线而非建盘日,欠费冻结期这类有意不计费的日子不补回来。
+    水位线缺失(全新部署的引导窗口)时以建盘日为下界:否则引导窗口内删盘只结当日,
+    之前的日子静默免单(少收);「不补」仅限追平截断/死信这类人工认定的 gap。
     """
     target_day = billing_day_floor(at or now_utc())
     watermark = await get_watermark(session, "daily_disk")
     if watermark is None:
-        first_day = target_day
+        first_day = billing_day_floor(ensure_utc(created_at))
     else:
         first_day = max(
             billing_day_floor(watermark) + timedelta(days=1),

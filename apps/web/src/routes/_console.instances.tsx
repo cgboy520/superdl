@@ -36,10 +36,10 @@ import { useFormat } from "../lib/format";
 import { useRenameInstance } from "../api/mutations";
 import {
   useDailySummary,
+  useExpiringInstances,
   useInstanceAccess,
   useInstanceEvents,
   useInstancePages,
-  useInstances,
   useMetricsSummary,
   usePolicies,
 } from "../api/queries";
@@ -244,28 +244,15 @@ function ExpiryBannerBody({
 }
 
 /** 到期提醒:名下有临期(active 且剩余 ≤ period_expire_warn_days)的包周期实例时出。
- *  数据源必须用整表视图而非本页分页/筛选结果,否则筛了状态或没翻到那页时横幅就不出。 */
+ *  数据源是 /instances/expiring 专用轻端点(服务端过滤,不分页)——
+ *  列表筛选/翻页/首页截断都不会把临期实例藏掉。 */
 function ExpiryBanner({ onRenew }: { onRenew: (i: InstanceOut) => void }) {
   const { data: policies } = usePolicies();
-  const { data: all } = useInstances();
   const warnDays = policies?.period_expire_warn_days;
-  // 「现在」在挂载时定一次:每次重渲染都取一遍会让横幅在轮询刷新时闪进闪出
-  const [mountedAt] = useState(() => Date.now());
-  const soon = useMemo(() => {
-    if (warnDays == null) return [];
-    const horizon = mountedAt + warnDays * 86_400_000;
-    return (all ?? [])
-      .flatMap((i) => {
-        const sub = i.subscription;
-        if (!sub || sub.status !== "active") return [];
-        const at = new Date(sub.expires_at).getTime();
-        return at <= horizon ? [{ instance: i, at }] : [];
-      })
-      .sort((a, b) => a.at - b.at);
-  }, [all, warnDays, mountedAt]);
-  const first = soon[0];
+  const { data: soon } = useExpiringInstances(warnDays);
+  const first = soon?.[0];
   if (!first) return null;
-  return <ExpiryBannerBody instance={first.instance} more={soon.length - 1} onRenew={onRenew} />;
+  return <ExpiryBannerBody instance={first} more={(soon?.length ?? 1) - 1} onRenew={onRenew} />;
 }
 
 function UtilCell({

@@ -3,6 +3,7 @@
  */
 
 import { formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -290,9 +291,7 @@ function TicketsPage() {
         dataSource={rows}
         pagination={false}
         locale={{
-          emptyText: isError ? (
-            <Typography.Link onClick={() => void refetch()}>{t("common.retry")}</Typography.Link>
-          ) : undefined,
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
         }}
         onRow={(r) => ({ onClick: () => setOpenId(r.id), style: { cursor: "pointer" } })}
         columns={[

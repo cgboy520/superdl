@@ -118,6 +118,7 @@ export default interface Resources {
       "csvTruncated": "已达单次导出上限,文件末尾有截断标记;请缩小范围分次导出",
       "exportCsv": "导出 CSV",
       "listCapped": "已达单次返回上限({{max}} 条):更早的记录未列出,请用上方筛选缩小范围",
+      "loadFailed": "加载失败,请重试",
       "loadMore": "加载更多",
       "loading": "加载中…",
       "next": "下一步",
@@ -527,7 +528,40 @@ export default interface Resources {
       "confirmTitle": "确认变更平台配置",
       "depsMissing": "缺 {{keys}}",
       "depsOk": "凭据已配置",
+      "fieldExtra": {
+        "admin_mfa_enabled": "开:全角色首登强制绑定并二要素登录;关:密码即登录,已绑定者也不再校验(重新开启即恢复)。生产环境关闭 = 放弃口令泄漏的最后一道纵深",
+        "business_license_url": "仅接受 http(s) 绝对链接;配置后页脚「营业执照」可点击亮照,留空为纯文本展示",
+        "captcha_enabled": "开启后用户端「获取验证码」先弹阿里云滑块,请先在「人机校验」页填齐凭据;生产环境关闭 = 发码接口只剩 IP/手机号限流",
+        "company_address": "同上,页脚公司主体行展示;留空即不展示",
+        "company_name": "《电子商务法》第十五条公示项;展示于用户端页脚,留空即不展示",
+        "company_phone": "同上,页脚公司主体行展示;留空即不展示",
+        "icp_number": "展示于用户端页脚,链接工信部备案系统(beian.miit.gov.cn)",
+        "oncall_phone": "critical 平台告警经阿里云短信直发该手机号(不依赖平台自身可用性);留空即关闭",
+        "payment_alipay_enabled": "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现支付宝入口",
+        "payment_wechat_enabled": "凭据配置完成并联调通过后再开启;开启后用户端充值弹窗即出现微信入口",
+        "police_record_number": "展示于用户端页脚,链接公安备案系统(beian.mps.gov.cn);未取得可留空",
+        "real_name_enabled": "开启后用户端「账户设置」的实名表单可提交;请先在「实名认证」页填齐凭据(缺失时提交报 502)",
+        "real_name_required_for_recharge": "《网络安全法》要求;开启后未实名用户无法充值与开通实例,用户端费用中心出现引导横幅;须先开启实名认证",
+        "sms_template_notice": "模板需含变量 ${title}",
+        "sms_template_verify": "模板需含变量 ${code}",
+        "support_email": "展示于用户端页脚与「帮助与支持」页;留空即不展示邮箱入口",
+        "support_wechat": "同上,展示为可复制文本(用户自行搜索添加),留空即不展示",
+        "wechat_public_key_id": "公钥模式(新注册商户仅支持该模式);与公钥同时填写,留空则走平台证书模式"
+      },
       "goTo": "前往",
+      "groupIntro": {
+        "captcha": "阿里云验证码 2.0(/auth/sms-code 前置人机校验,防分布式脚本刷码):开通验证码 2.0 后,在控制台「场景管理」新建 Web/H5 场景取场景 ID,「概览」页取身份标;建议独立 RAM 子账号仅授 AliyunYundunAFSFullAccess。是否启用在「安全策略」页切换;开启前请先在此填齐凭据。",
+        "cluster": "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点(token 填专用 agent token,即 server config 里 agent-token 的值;禁止填 node-token —— 它能把节点拉进 etcd 环。轮换后在此更新)。发行版由平台探测(见「集群」页),无需声明;registries.yaml 平台按 Server 地址自动生成,该键仅作高级覆盖,建议留空。配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令。",
+        "compliance": "备案信息展示于用户端页脚。ICP 备案通过接入商(云厂商)提交,下发后填入完整备案号(含 -1 等后缀);公安联网备案在网站上线后 30 日内于 beian.mps.gov.cn 申请。公司主体信息(全称/地址/电话/亮照链接)为《电子商务法》第十五条公示项,页脚持续展示,留空即不展示对应行。",
+        "observability": "管理端节点页自绘监控曲线,不依赖 Grafana。如需深挖(自定义面板/长程对比),可在此配置 Grafana 地址,节点页将出现「在 Grafana 打开」外链(不做 iframe 嵌入)。",
+        "payment_alipay": "支付宝当面付(precreate 扫码,RSA2):在开放平台(open.alipay.com)创建应用并签约「当面付」,开发设置 → 接口加签方式选「公钥模式」:用密钥工具生成应用私钥(填入下方)、上传应用公钥后回填平台生成的「支付宝公钥」。异步通知地址 {public_base_url}/api/v1/webhooks/alipay 由下单请求携带。",
+        "payment_wechat": "微信支付 APIv3(Native 扫码):在商户平台(pay.weixin.qq.com)→ 账户中心 → API 安全中下载商户 API 证书/私钥并设置 APIv3 密钥。推荐「微信支付公钥」验签模式:申请公钥后同时填入公钥 ID 与公钥;两者留空则回退平台证书模式(存量商户,SDK 自动拉取轮换)。支付回调地址为 {public_base_url}/api/v1/webhooks/wechatpay,由下单请求携带,无需在商户平台单独配置。",
+        "real_name": "阿里云实人认证 · 手机号三要素核验(简版,Mobile3MetaSimpleVerify):开通「要素核验」服务并授权 RAM 子账号。核验通过即标记已实名;身份证号仅存脱敏串,原文即用即弃。是否启用与「充值前强制实名」在「安全策略」页切换。",
+        "registry": "Harbor 是平台镜像与租户实例镜像的权威源:在 Harbor 建平台项目(默认 superdl)与仅 Pull + List Repository 权限的机器人账户,填入地址、项目、机器人与 Secret;自签证书粘贴 CA(node-join 落节点 + 平台探测用)。拉取凭据不落节点:worker 在建 Pod / 预热前把 Secret superdl-registry-pull 按指纹写入 superdl 与各租户 ns,轮换只需在此保存新 Secret。Docker Hub 等公网镜像可经 Harbor 代理缓存项目加速(每行 上游=项目,项目设 public)。保存后用下方「测试连接」验证。",
+        "security": "安全功能的运行期开关:关闭即跳过对应校验,开启前先在各渠道页填齐凭据(凭据缺失时该功能 fail-closed 报 502)。生产环境允许关闭,但等于放弃该道纵深,保存时必须写明原因(进审计)。",
+        "sms": "阿里云短信服务(dysmsapi):完成企业资质、签名与模板报备后填入凭据。建议使用独立 RAM 子账号并仅授权 AliyunDysmsFullAccess。切换 Provider 为「阿里云」后即时生效,可先用下方测试发送验证。",
+        "support": "客服联系方式展示于用户端页脚与「帮助与支持」页。留空即不展示对应入口 —— GPU 租赁的用户教育成本高,没有任何联系方式等于把问题都堵在工单之外。"
+      },
       "instantEffect": "保存后即时生效。",
       "loadFailed": "加载失败:{{message}}",
       "navChannels": "第三方渠道",
@@ -653,7 +687,8 @@ export default interface Resources {
       "envDev": "预发/开发",
       "envProd": "生产环境",
       "logout": "退出登录",
-      "noAlerts": "暂无告警"
+      "noAlerts": "暂无告警",
+      "openMenu": "打开导航菜单"
     },
     "skus": {
       "clusterEmptyHint": "节点台账暂无数据,型号需手动填写;接入集群并等待巡检后可从集群资源创建",
@@ -827,6 +862,12 @@ export default interface Resources {
       "realname": "实名",
       "realnameUnverified": "未实名",
       "realnameVerified": "已实名",
+      "revealActive": "实名明文中 · {{reason}}",
+      "revealConfirm": "确认查看",
+      "revealHint": "实名信息默认脱敏。明文查看是逐次显式动作:请填写查看事由,本次查看将按条数与事由记入审计。",
+      "revealIdName": "明文查看实名",
+      "revealReasonPlaceholder": "查看事由(必填,如:客服工单 #123 核实身份)",
+      "revealTitle": "明文查看实名信息",
       "searchInstancePlaceholder": "实例名或 uuid",
       "searchNodePlaceholder": "节点名(精确)",
       "searchPhonePlaceholder": "按手机号或租户 ID 查找",
@@ -956,9 +997,10 @@ export default interface Resources {
       "orderStateNotBackfillable": "订单状态 {{status}} 不可补单",
       "realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
       "refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
-      "refundAmountExceeded": "退款金额不能超过可退上限 ¥{{max}}(订单金额 ¥{{order}},当前余额 ¥{{balance}})",
+      "refundAmountExceeded": "退款金额不能超过可退上限 ¥{{max}}(订单金额 ¥{{order}},已退 ¥{{refunded}},当前余额 ¥{{balance}})",
       "refundBalanceConsumed": "余额已被消费,暂不能核销退款(当前余额 ¥{{balance}},应退 ¥{{amount}});请取消该退款单",
       "refundChannelReversed": "该订单支付已被支付渠道冲正(拒付),不可申请退款,请联系客服",
+      "refundCumulativeExceeded": "累计退款将超过订单金额(订单 ¥{{order}},已退 ¥{{refunded}},本次 ¥{{amount}}):数据异常,请核查后取消该退款单",
       "refundInvoiceIssued": "该订单已开具发票,须先红冲后才能退款,请联系客服",
       "refundNotFound": "退款单不存在",
       "refundOrderNotPaid": "仅支付成功的充值订单可申请退款",
@@ -1001,6 +1043,7 @@ export default interface Resources {
       "badCursor": "无效的分页游标",
       "forbidden": "无权访问",
       "httpError": "请求失败({{status}})",
+      "idempotencyKeyMismatch": "同一幂等键对应了不同的请求参数,已按冲突拒绝:如需新操作请更换幂等键后重试",
       "internal": "服务器内部错误,请稍后重试",
       "methodNotAllowed": "该接口不支持此请求方法",
       "networkError": "网络连接失败,请检查网络后重试",
@@ -1100,6 +1143,10 @@ export default interface Resources {
     }
   },
   "shared": {
+    "common": {
+      "loadFailed": "加载失败,请重试",
+      "retry": "重试"
+    },
     "format": {
       "countdown": {
         "expired": "已到期",

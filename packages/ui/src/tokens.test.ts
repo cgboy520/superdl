@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { adminColors, heatColors, medalColors, statusColors, webTheme } from "./tokens";
+import { adminColors, heatColors, medalColors, statusColors, webDarkColors, webTheme } from "./tokens";
 import { skuTierMap } from "./status";
 
 function relLuminance(hex: string): number {
@@ -72,5 +72,16 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     expect(contrast(webTheme.token.colorTextDescription, "#FFFFFF")).toBeGreaterThanOrEqual(AA);
     // 浅靛强调面上的主色文字(菜单选中)
     expect(contrast(webTheme.token.colorPrimary, "#FFFFFF")).toBeGreaterThanOrEqual(AA);
+  });
+
+  it("用户端暗色板:正文/次级文本/菜单选中字在各自底上", () => {
+    expect(contrast(webDarkColors.text, webDarkColors.bgBase)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.text, webDarkColors.bgContainer)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.text, webDarkColors.bgElevated)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgBase)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgContainer)).toBeGreaterThanOrEqual(AA);
+    expect(
+      contrast(webDarkColors.menuSelectedColor, webDarkColors.menuSelectedBg)
+    ).toBeGreaterThanOrEqual(AA);
   });
 });

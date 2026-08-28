@@ -248,6 +248,17 @@ class RealOrchestrator:
         self.batch = cast(client.BatchV1Api, _TimeoutApi(client.BatchV1Api(), timeout))
         # Gateway API 无 typed model,HTTPRoute 的增删查一律走 CustomObjectsApi(收发裸 dict)
         self.custom = cast(client.CustomObjectsApi, _TimeoutApi(client.CustomObjectsApi(), timeout))
+        # 探测专用 API 提升为实例属性:四个裸客户端共享一个 ApiClient(单 PoolManager),
+        # 不再每次探测新建连接池(巡检每轮 4 个,长跑即 FD/连接累积)
+        probe_client = client.ApiClient()
+        self._version = cast(
+            client.VersionApi, _TimeoutApi(client.VersionApi(probe_client), timeout)
+        )
+        self._apps = cast(client.AppsV1Api, _TimeoutApi(client.AppsV1Api(probe_client), timeout))
+        self._node = cast(client.NodeV1Api, _TimeoutApi(client.NodeV1Api(probe_client), timeout))
+        self._storage = cast(
+            client.StorageV1Api, _TimeoutApi(client.StorageV1Api(probe_client), timeout)
+        )
         # K8s 同步调用出让到专属有界执行器:与 bcrypt 等共用的默认执行器隔离,
         # 防集群抖动时慢调用占满默认线程池、卡死登录等无关链路
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="k8s")
@@ -1235,12 +1246,12 @@ class RealOrchestrator:
         # 裸客户端同样经 _TimeoutApi 注超时:探测挂在慢集群上会把巡检整轮拖死。
         # 版本失败 = API 不可达,整体判不可用;组件清点逐项容错(RBAC 缺项不清零全局)
         try:
-            version: Any = _TimeoutApi(client.VersionApi(), self._timeout).get_code()
+            version: Any = self._version.get_code()
             git_version = getattr(version, "git_version", None)
         except Exception as exc:
             return ClusterProbe(api_reachable=False, error=str(exc))
         errors: list[str] = []
-        apps = _TimeoutApi(client.AppsV1Api(), self._timeout)
+        apps = self._apps
         hami_ready = dcgm = kps = gpu_operator = False
         gateway_ready = cert_manager_ready = False
         try:
@@ -1287,13 +1298,13 @@ class RealOrchestrator:
                 errors.append(f"gateway: {exc.status}")
         runtime_classes: tuple[str, ...] = ()
         try:
-            rcs: Any = _TimeoutApi(client.NodeV1Api(), self._timeout).list_runtime_class()
+            rcs: Any = self._node.list_runtime_class()
             runtime_classes = tuple(rc.metadata.name for rc in rcs.items)
         except client.ApiException as exc:
             errors.append(f"runtimeclasses: {exc.status}")
         storage_classes: tuple[str, ...] = ()
         try:
-            scs: Any = _TimeoutApi(client.StorageV1Api(), self._timeout).list_storage_class()
+            scs: Any = self._storage.list_storage_class()
             storage_classes = tuple(sc.metadata.name for sc in scs.items)
         except client.ApiException as exc:
             errors.append(f"storageclasses: {exc.status}")

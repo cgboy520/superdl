@@ -166,7 +166,11 @@ function MarketPage() {
         onChange={setBillingMode}
         periodEnabled={!periodBlocked}
         spotEnabled={!spotUnavailable}
-        extra={<Typography.Link onClick={() => setRulesOpen(true)}>{t("market.billingRulesLink")}</Typography.Link>}
+        extra={
+          <Button type="link" size="small" onClick={() => setRulesOpen(true)}>
+            {t("market.billingRulesLink")}
+          </Button>
+        }
       />
       {periodBlocked && isBillingPeriod(billingMode) && (
         <Alert type="info" showIcon title={t("period.fallbackToHourly")} />

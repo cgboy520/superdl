@@ -28,3 +28,13 @@ html {
   scrollbar-color: #334155 transparent;
   scrollbar-width: thin;
 }
+
+/* Sider 汉堡钮只在窄屏(lg 断点以下)出现;桌面 Sider 常驻,不需要它 */
+.shell-sider-trigger {
+  display: none !important;
+}
+@media (max-width: 991.98px) {
+  .shell-sider-trigger {
+    display: inline-flex !important;
+  }
+}

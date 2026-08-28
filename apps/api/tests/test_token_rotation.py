@@ -83,6 +83,48 @@ class TestRefreshRotation:
         assert (await _refresh(client, first["refresh_token"])).status_code == 200
 
 
+class TestRefreshCookie:
+    """refresh token 的 HttpOnly Cookie 通道(C1):签发/轮换/CSRF 头/登出清除。"""
+
+    async def test_login_sets_cookie_and_cookie_refresh_rotates(self, client: AsyncClient, sm):
+        await register(client, "13800000105")  # 先建号,登录路径才可验
+        await issue_code(sm, "13800000105", "login")
+        resp = await client.post(
+            "/api/v1/auth/login", json={"phone": "13800000105", "sms_code": "123456"}
+        )
+        assert resp.status_code == 200, resp.text
+        sc = resp.headers["set-cookie"]
+        assert "superdl_refresh=" in sc
+        assert "HttpOnly" in sc and "SameSite=strict" in sc
+        assert "Path=/api/v1/auth" in sc
+        assert "Secure" not in sc  # dev/test 是 http,prod 才置 Secure
+
+        # cookie 路径刷新(带 CSRF 头):成功并轮换 Cookie;轮换后的新 cookie 可继续刷
+        r2 = await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
+        assert r2.status_code == 200, r2.text
+        assert "superdl_refresh=" in r2.headers["set-cookie"]
+        assert r2.json()["access_token"]
+        r3 = await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
+        assert r3.status_code == 200, r3.text
+
+    async def test_cookie_path_requires_csrf_header(self, client: AsyncClient, sm):
+        """cookie 路径缺 X-Requested-With → 403(双提交纵深);body 存量旁路不受影响。"""
+        data = await register(client, "13800000106")
+        resp = await client.post("/api/v1/auth/refresh")  # jar 里有 cookie,无头无 body
+        assert resp.status_code == 403
+        # body 旁路(存量客户端)照常轮换
+        ok = await _refresh(client, data["refresh_token"])
+        assert ok.status_code == 200
+
+    async def test_logout_via_cookie_clears_cookie(self, client: AsyncClient):
+        data = await register(client, "13800000107")
+        resp = await client.post("/api/v1/auth/logout", headers={"X-Requested-With": "fetch"})
+        assert resp.status_code == 204
+        # Set-Cookie 删除(空值 + expires 过去);该 refresh 已消费,body 重放 401
+        assert "superdl_refresh=" in resp.headers["set-cookie"]
+        assert (await _refresh(client, data["refresh_token"])).status_code == 401
+
+
 class TestLogout:
     async def test_logout_revokes_refresh_token(self, client: AsyncClient, sm):
         """登出当前会话:refresh 落一次性消费位,之后再刷新一律 401。"""
@@ -103,6 +145,25 @@ class TestLogout:
             "/api/v1/me", headers={"Authorization": f"Bearer {data['access_token']}"}
         )
         assert me.status_code == 401
+
+    async def test_logout_replay_within_grace_401_without_global_revoke(
+        self, client: AsyncClient, sm
+    ):
+        """登出消费(consumed_via=logout)的 jti 在宽限窗内重放:一律 401,
+        但不 bump token_version——并发首刷已合法轮换时,在线会话不被误撤
+        (旧语义:按并发重试补发新对,等于给已登出的 token 又开了一条有效链)。"""
+        data = await register(client, "13800000104")
+        resp = await client.post(
+            "/api/v1/auth/logout", json={"refresh_token": data["refresh_token"]}
+        )
+        assert resp.status_code == 204
+        replay = await _refresh(client, data["refresh_token"])
+        assert replay.status_code == 401
+        # 不全撤:本会话 access token 仍有效(登出本就不是即时全局失效)
+        me = await client.get(
+            "/api/v1/me", headers={"Authorization": f"Bearer {data['access_token']}"}
+        )
+        assert me.status_code == 200
 
     async def test_logout_invalid_token_still_204(self, client: AsyncClient):
         """无效/错类型 token 也回 204:不构成 token 有效性探测口。"""

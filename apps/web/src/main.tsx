@@ -6,7 +6,7 @@ import ReactDOM from "react-dom/client";
 
 import { routeTree } from "./routeTree.gen";
 import { setupAuthCacheGuard } from "./lib/authCacheGuard";
-import { authStore, readTokens } from "./stores/auth";
+import { authStore, readAccessToken } from "./stores/auth";
 import "./i18n";
 import "./styles.css";
 
@@ -27,13 +27,12 @@ declare module "@tanstack/react-router" {
 configureApiClient({
   baseUrl: "",
   // 请求路径读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
-  getToken: () => readTokens().accessToken,
+  getToken: () => readAccessToken(),
   refreshToken: async () => {
-    const rt = readTokens().refreshToken;
-    if (!rt) return false;
-    const pair = await requestTokenRefresh(rt);
+    // refresh 走 HttpOnly Cookie(服务端轮换并回写新 Cookie),JS 只接住新 access token
+    const pair = await requestTokenRefresh();
     if (!pair) return false;
-    authStore.getState().login(pair.access_token, pair.refresh_token);
+    authStore.getState().login(pair.access_token);
     return true;
   },
   onUnauthorized: () => {

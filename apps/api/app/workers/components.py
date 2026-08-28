@@ -47,6 +47,7 @@ COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.CORE: frozenset(
         {
             "outbox_reaper",
+            "outbox_metrics",
             "hourly_settlement",
             "daily_disk_settlement",
             "fund_reconcile",

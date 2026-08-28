@@ -1,7 +1,7 @@
 /** 底部通栏结算条(sticky,市场页与创建页共用):费用项逐项摊开,日常费用与配置费用分栏。 */
 
 import { brand, colorPrimary } from "@superdl/ui";
-import { Popover, Space, theme, Typography } from "antd";
+import { Button, Popover, Space, theme, Typography } from "antd";
 import type { ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
@@ -82,7 +82,10 @@ export function CheckoutBar({
         ))}
         {detail && (
           <Popover content={detail} title={t("common.costDetail")} placement="topLeft">
-            <Typography.Link>{t("common.costDetail")}</Typography.Link>
+            {/* 纯动作触发器用 Button 不用 Typography.Link:无 href 的链接不可聚焦、无键盘语义 */}
+            <Button type="link" size="small">
+              {t("common.costDetail")}
+            </Button>
           </Popover>
         )}
         {balance !== undefined && (

@@ -1,4 +1,5 @@
 import { addAmounts, adjustmentStatusMap, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -79,7 +80,7 @@ function ReconciliationCard() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const [day, setDay] = useState<Dayjs>(dayjs());
-  const { data: report } = useReconciliation(day.format("YYYY-MM-DD"));
+  const { data: report, isError, refetch } = useReconciliation(day.format("YYYY-MM-DD"));
   const diffHigh = report != null && report.diff_pct > 2;
   const { doExport, exporting } = useCsvExport((_tz, lang) =>
     exportReconciliationCsv(day.format("YYYY-MM-DD"), lang),
@@ -97,6 +98,16 @@ function ReconciliationCard() {
         </Space>
       }
     >
+      {/* 查询失败时三个 Statistic 会全显示「—」,必须明示错误而非伪装成当日无数据 */}
+      {isError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={t("common.loadFailed")}
+          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry")}</Button>}
+        />
+      )}
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
           <Statistic title={t("finance.billedTotal")} value={report ? formatMoney(report.billed_total) : "—"} />
@@ -181,6 +192,9 @@ function OrdersTab() {
         rowKey="order_no"
         dataSource={orders}
         loading={q.isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={q.isError} onRetry={() => void q.refetch()} />,
+        }}
         columns={orderColumns}
       />
       <LoadMoreButton
@@ -285,7 +299,7 @@ function AdjustmentsTab() {
   const [status, setStatus] = useState<string | undefined>();
   const [day, setDay] = useState<Dayjs | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
-  const { data, queryKey, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useAdjustments({
       ...(status ? { status } : {}),
       ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
@@ -356,6 +370,9 @@ function AdjustmentsTab() {
         scroll={{ x: 1000 }}
         rowKey="id"
         loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={rows}
         columns={[
           { title: t("finance.colAdjustId"), dataIndex: "id", width: 70 },
@@ -549,7 +566,7 @@ function AnomaliesTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  const { data, queryKey, isLoading } = useAnomalies();
+  const { data, queryKey, isLoading, isError, refetch } = useAnomalies();
   const rows: AnomalyRow[] = data ?? [];
   const verify = useVerifyOrder();
   const backfill = useBackfillOrder();
@@ -586,7 +603,13 @@ function AnomaliesTab() {
         rowKey={(r) => `${r.kind}:${r.order_no ?? r.user_id}`}
         loading={isLoading}
         dataSource={rows}
-        locale={{ emptyText: t("finance.noAnomalies") }}
+        locale={{
+          emptyText: (
+            <TableErrorEmpty isError={isError} onRetry={() => void refetch()}>
+              {t("finance.noAnomalies")}
+            </TableErrorEmpty>
+          ),
+        }}
         columns={[
           {
             title: t("finance.colKind"),
@@ -738,7 +761,7 @@ function RefundsTab() {
   const [day, setDay] = useState<Dayjs | null>(null);
   // 渠道过滤在客户端做(接口口径只有 status/day;对已加载页生效)
   const [channel, setChannel] = useState<string | undefined>();
-  const { data, queryKey, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useRefunds({
+  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = useRefunds({
     ...(status ? { status } : {}),
     ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
   });
@@ -781,6 +804,9 @@ function RefundsTab() {
         scroll={{ x: 1100 }}
         rowKey="id"
         loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={rows}
         columns={[
           { title: t("finance.colRefundNo"), dataIndex: "refund_no", width: 130 },
@@ -977,7 +1003,7 @@ function InvoicesTab() {
   const qc = useQueryClient();
   const [status, setStatus] = useState<string | undefined>();
   const [period, setPeriod] = useState("");
-  const { data, queryKey, isLoading } = useInvoices({
+  const { data, queryKey, isLoading, isError, refetch } = useInvoices({
     ...(status ? { status } : {}),
     ...(period ? { period } : {}),
   });
@@ -1012,6 +1038,9 @@ function InvoicesTab() {
         scroll={{ x: 1100 }}
         rowKey="id"
         loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={rows}
         columns={[
           { title: t("finance.colPeriod"), dataIndex: "period", width: 90 },

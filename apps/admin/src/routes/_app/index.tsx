@@ -1,4 +1,5 @@
 import { adminColors, formatDateTime, statusColors } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
@@ -146,13 +147,14 @@ function DeadTasksCard() {
   const writable = canWriteOps(role);
   // 读死信需 ops/readonly:finance 看不到这张卡,也不发会 403 的轮询
   const canRead = canWriteOps(role) || role === "readonly";
-  const { data, queryKey } = useDeadTasks({ enabled: canRead });
+  const { data, queryKey, isError, refetch } = useDeadTasks({ enabled: canRead });
   const rows: DeadTaskRow[] = data ?? [];
   const retry = useRetryDeadTask();
   const discard = useDiscardDeadTask();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
-  if (!canRead || rows.length === 0) return null;
+  // 查询失败也要露出(值班首屏「没有死信」是最危险的误判),错误态由表内空态明示
+  if (!canRead || (!isError && rows.length === 0)) return null;
   return (
     <Col span={24}>
     <Collapse
@@ -163,7 +165,11 @@ function DeadTasksCard() {
             <Space size={8}>
               <Badge status="error" />
               <b>{t("overview.deadTasks")}</b>
-              <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
+              {isError ? (
+                <Tag color="orange">{t("common.loadFailed")}</Tag>
+              ) : (
+                <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
+              )}
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {t("overview.deadTasksSummary", {
                   types: [...new Set(rows.map((r) => r.type))].join("、"),
@@ -177,6 +183,9 @@ function DeadTasksCard() {
         rowKey="id"
         pagination={false}
         scroll={{ x: 860 }}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={rows}
         columns={[
           { title: t("overview.colTask"), dataIndex: "type", width: 150 },

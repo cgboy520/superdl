@@ -8,6 +8,7 @@ import {
   DeploymentUnitOutlined,
   DashboardOutlined,
   LogoutOutlined,
+  MenuOutlined,
   PayCircleOutlined,
   TagsOutlined,
   TeamOutlined,
@@ -22,8 +23,9 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { Badge, Dropdown, Layout, Menu, Popover, Space, Tag, Typography, theme } from "antd";
+import { Badge, Button, Dropdown, Layout, Menu, Popover, Space, Tag, Typography, theme } from "antd";
 import dayjs from "dayjs";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { type AlertRow, fetchAdminMe, useAlertUnreadCount, useAlerts } from "../api";
@@ -111,6 +113,9 @@ function AppLayout() {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // 窄屏(lg 断点)Sider 整体收起为 0 宽,Header 出汉堡钮触发展开(antd 标准模式);
+  // 断点命中与否由 antd 经 onCollapse 同步进 state,初值给桌面展开态即可
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
   const menuItems = MENU.filter((m) => canSeeMenu(m.key, admin?.role ?? "readonly")).map((m) => ({
     key: m.key,
     icon: m.icon,
@@ -124,7 +129,16 @@ function AppLayout() {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Layout.Sider width={200} style={{ background: token.colorBgContainer }}>
+      <Layout.Sider
+        width={200}
+        breakpoint="lg"
+        collapsedWidth={0}
+        collapsible
+        collapsed={siderCollapsed}
+        onCollapse={setSiderCollapsed}
+        trigger={null}
+        style={{ background: token.colorBgContainer }}
+      >
         <div
           style={{
             height: 56,
@@ -138,7 +152,16 @@ function AppLayout() {
         >
           SuperDL · NOC
         </div>
-        <Menu mode="inline" selectedKeys={selected} items={menuItems} style={{ borderRight: 0 }} />
+        <Menu
+          mode="inline"
+          selectedKeys={selected}
+          items={menuItems}
+          style={{ borderRight: 0 }}
+          // 窄屏点选即收:Drawer 式覆盖体验,点完不挡内容
+          onClick={() => {
+            if (window.innerWidth < 992) setSiderCollapsed(true);
+          }}
+        />
       </Layout.Sider>
       <Layout>
         <Layout.Header
@@ -152,7 +175,17 @@ function AppLayout() {
             lineHeight: "56px",
           }}
         >
-          <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
+          <Space size={12}>
+            {/* 窄屏(lg 以下)Sider 已收为 0 宽,菜单入口挪到这里 */}
+            <Button
+              type="text"
+              className="shell-sider-trigger"
+              aria-label={t("shell.openMenu")}
+              icon={<MenuOutlined />}
+              onClick={() => setSiderCollapsed((c) => !c)}
+            />
+            <Tag color={isProd ? "red" : "cyan"}>{isProd ? t("shell.envProd") : t("shell.envDev")}</Tag>
+          </Space>
           <Space size={24}>
             <LangSwitcher />
             <AlertBell />

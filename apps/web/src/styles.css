@@ -87,15 +87,44 @@ body {
   }
 }
 
-/* 移动端抽屉导航链接(浅底深字,与 .topbar-link 深底白字相对) */
+/* 移动端抽屉导航链接(浅底深字,与 .topbar-link 深底白字相对);
+   颜色走 CSS 变量:暗色主题(html[data-theme=dark],由主题预置脚本/Provider 同步)自动切换 */
+:root {
+  --drawer-link-fg: rgba(0, 0, 0, 0.88);
+  --drawer-link-hover: rgba(0, 0, 0, 0.04);
+  --drawer-link-active-bg: #eef2ff;
+  --drawer-link-active-fg: #4f46e5;
+  --drawer-section-fg: rgba(0, 0, 0, 0.45);
+}
+html[data-theme="dark"] {
+  --drawer-link-fg: #e5e9f2;
+  --drawer-link-hover: rgba(255, 255, 255, 0.08);
+  --drawer-link-active-bg: #26304d;
+  --drawer-link-active-fg: #a5b4fc;
+  --drawer-section-fg: #9aa7c2;
+}
 .drawer-link {
   display: block;
   padding: 10px 12px;
   border-radius: 6px;
-  color: rgba(0, 0, 0, 0.88);
+  color: var(--drawer-link-fg);
   text-decoration: none;
   font-size: 15px;
 }
 .drawer-link:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--drawer-link-hover);
+}
+.drawer-link--active,
+.drawer-link--active:hover {
+  background: var(--drawer-link-active-bg);
+  color: var(--drawer-link-active-fg);
+  font-weight: 600;
+}
+
+/* 抽屉内分组标题(控制台/网站 分段) */
+.drawer-section {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--drawer-section-fg);
+  letter-spacing: 0.04em;
 }

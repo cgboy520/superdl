@@ -82,6 +82,46 @@ class TestReconcilePoller:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "33.00"
 
+    async def test_closed_order_recovered_by_poller(self, client: AsyncClient, sm):
+        """关单前最后一刻支付成功但回调丢失:closed 单纳入收敛扫描,poller 自动救回。"""
+        headers = await user_headers(client, "13700000044")
+        order = await create_order(client, headers, "55.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(status="closed")
+            )
+            await session.commit()
+        MockChannel.mark_paid(order["order_no"], "txn-closed-poll", "55.00")
+        await _backdate_order(sm, order["order_no"], 2)
+
+        assert await reconcile_pending_orders(sm) == 1
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "55.00"
+        # 幂等:再跑一轮不重复入账
+        assert await reconcile_pending_orders(sm) == 0
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "55.00"
+
+    async def test_stale_closed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
+        """关单时刻(expires_at)超出 48h 的 closed 旧单不参与查单(防无限重扫)。"""
+        headers = await user_headers(client, "13700000046")
+        order = await create_order(client, headers, "45.00")
+        async with sm() as session:
+            await session.execute(
+                update(Order)
+                .where(Order.order_no == order["order_no"])
+                .values(
+                    status="closed",
+                    expires_at=now_utc() - timedelta(hours=49),
+                )
+            )
+            await session.commit()
+        MockChannel.mark_paid(order["order_no"], "txn-stale-closed", "45.00")
+        await _backdate_order(sm, order["order_no"], 2)  # created_at 在窗内:仅靠 expires_at 排除
+        assert await reconcile_pending_orders(sm) == 0
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "0.00"
+
     async def test_stale_failed_order_outside_window_not_scanned(self, client: AsyncClient, sm):
         """48h 窗口外的 failed 旧单不参与查单(防无限重扫下单即废的订单)。"""
         headers = await user_headers(client, "13700000043")

@@ -2,6 +2,7 @@
  * 写操作仅 admin;发布确认弹窗带与现版的行级 diff 统计(+/−)。 */
 
 import { adminColors, formatDateTime, legalDocStatusMap, metaOf } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -79,6 +80,15 @@ export function LegalDocsTab() {
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
       {!writable && <Alert type="info" showIcon title={t("settings.legal.adminOnlyTip")} />}
+      {/* 静态行 + 查询填格:查询失败时单元格会全显示「missing」,必须明示错误而非伪装缺文档 */}
+      {overview.isError && (
+        <Alert
+          type="error"
+          showIcon
+          title={t("common.loadFailed")}
+          action={<Button size="small" onClick={() => void overview.refetch()}>{t("common.retry")}</Button>}
+        />
+      )}
       <Table
         rowKey="docKey"
         size="small"
@@ -323,6 +333,14 @@ function CellEditor({
                 rowKey="id"
                 size="small"
                 loading={versionsQ.isLoading}
+                locale={{
+                  emptyText: (
+                    <TableErrorEmpty
+                      isError={versionsQ.isError}
+                      onRetry={() => void versionsQ.refetch()}
+                    />
+                  ),
+                }}
                 pagination={false}
                 dataSource={versions}
                 columns={[

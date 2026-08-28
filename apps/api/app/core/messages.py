@@ -109,7 +109,11 @@ MESSAGES: dict[str, str] = {
     "billing.realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
     "billing.refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
     "billing.refundAmountExceeded": (
-        "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},当前余额 ¥{balance})"
+        "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},已退 ¥{refunded},当前余额 ¥{balance})"
+    ),
+    "billing.refundCumulativeExceeded": (
+        "累计退款将超过订单金额(订单 ¥{order},已退 ¥{refunded},本次 ¥{amount}):"
+        "数据异常,请核查后取消该退款单"
     ),
     "billing.refundBalanceConsumed": (
         "余额已被消费,暂不能核销退款(当前余额 ¥{balance},应退 ¥{amount});请取消该退款单"
@@ -173,6 +177,9 @@ MESSAGES: dict[str, str] = {
     "common.notFound": "资源不存在",
     "common.unauthorized": "未登录或凭证已过期",
     "common.badCursor": "无效的分页游标",
+    "common.idempotencyKeyMismatch": (
+        "同一幂等键对应了不同的请求参数,已按冲突拒绝:如需新操作请更换幂等键后重试"
+    ),
     "common.rateLimited": "尝试过于频繁,请稍后再试",
     "common.retryableConflict": "请求与另一个进行中的操作冲突,请重试",
     "common.validation": "参数校验失败",

@@ -3,8 +3,9 @@
  */
 
 import { formatDateTime } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { App, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import { App, Button, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -77,9 +78,7 @@ export function SettlementGapsTab() {
         dataSource={items}
         pagination={false}
         locale={{
-          emptyText: isError ? (
-            <Typography.Link onClick={() => void refetch()}>{t("common.retry")}</Typography.Link>
-          ) : undefined,
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
         }}
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },
@@ -138,9 +137,10 @@ export function SettlementGapsTab() {
                       }
                     }}
                   >
-                    <Typography.Link disabled={!writable} style={{ whiteSpace: "nowrap" }}>
+                    {/* 纯动作触发器用 Button 不用 Typography.Link(eslint 强制):无 href 的链接不可聚焦 */}
+                    <Button type="link" size="small" disabled={!writable} style={{ whiteSpace: "nowrap" }}>
                       {t("finance.gapReplay")}
-                    </Typography.Link>
+                    </Button>
                   </Popconfirm>
                   <ReasonAction
                     label={t("finance.gapResolve")}

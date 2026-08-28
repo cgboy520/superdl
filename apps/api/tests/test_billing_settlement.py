@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.billing import wallet
@@ -354,12 +354,14 @@ class TestUpsertIdempotency:
         release = asyncio.Event()
 
         async def inflight_stop() -> None:
-            """模拟用户 10:59:30 关机的事务:先拿实例行锁,再写 stopping 事件,迟迟不提交。"""
+            """模拟用户 10:59:30 关机的事务:transition() 同款非键列 UPDATE
+            (持 FOR NO KEY UPDATE 行锁,与结算的 KEY SHARE 不互斥、与 FOR UPDATE 互斥),
+            再写 stopping 事件,迟迟不提交。"""
             async with sm() as session:
                 await session.execute(
-                    select(Instance.id)
+                    update(Instance)
                     .where(Instance.id == inst_id)
-                    .with_for_update(read=False, key_share=True)
+                    .values(status="stopping", version=Instance.version + 1)
                 )
                 session.add(
                     InstanceEvent(

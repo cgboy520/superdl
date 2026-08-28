@@ -1,6 +1,7 @@
 /** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
 import { adminColors, formatDateTime } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -38,7 +39,7 @@ export function AdminsTab() {
   const qc = useQueryClient();
   const { admin: me, logout } = useAuth();
   const isSuperAdmin = me?.role === "admin";
-  const { data, queryKey, isLoading } = useAdminAccounts();
+  const { data, queryKey, isLoading, isError, refetch } = useAdminAccounts();
   // 安全策略 admin_mfa_enabled(仅超管可读;读不到按「开启」处理,不误标)
   const mfaEnabled =
     usePlatformConfig().data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !== "false";
@@ -221,6 +222,9 @@ export function AdminsTab() {
         rowKey="id"
         size="small"
         loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={data ?? []}
         columns={columns}
         pagination={false}

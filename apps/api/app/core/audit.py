@@ -6,16 +6,15 @@ actor 由鉴权依赖写入 request.state.audit_actor;管理端动作带 "admin.
 审计写失败即业务失败回滚——宁可不出金,不可无留痕。
 """
 
-from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
-from fastapi import Request, Response
+from fastapi import Request
 from sqlalchemy import String, func
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.db import Base, get_sessionmaker
 from app.core.logging import get_logger
@@ -58,14 +57,33 @@ class AuditActor:
         self.actor_id = actor_id
 
 
-class AuditMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        # 未捕获异常已被内层 Uniform500Middleware 渲成 500 响应,到这里按状态码落行
-        response = await call_next(request)
-        await _write_audit_row(request, response.status_code)
-        return response
+class AuditMiddleware:
+    """纯 ASGI 实现(对齐 ObservabilityMiddleware):不经过 BaseHTTPMiddleware 的
+    请求/响应包装——流式路由(强制审计的 CSV 导出)不再被整段缓冲,
+    anyio 任务/取消语义差异也一并消失。响应头落定(http.response.start)即按状态码
+    落审计,与原「call_next 返回后落行」语义一致;连响应都没构造出来的异常按 500 留痕。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        # Request(scope) 是零成本视图:state/client 与原请求共享同一 scope
+        request = Request(scope)
+        status_holder = {"status": 500}
+
+        async def send_capture(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_capture)
+        finally:
+            # 未捕获异常已被内层 Uniform500Middleware 渲成 500 响应,到这里按状态码落行
+            await _write_audit_row(request, status_holder["status"])
 
 
 async def _write_audit_row(request: Request, result: int) -> None:

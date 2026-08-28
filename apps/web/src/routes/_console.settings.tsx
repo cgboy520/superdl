@@ -207,8 +207,8 @@ function PasswordModal({
   const reset = useResetPassword({
     onSuccess: (data) => {
       const pair = data as TokenPair;
-      // 改密会撤销全部在外会话,本设备用返回的新 token 继续
-      authStore.getState().login(pair.access_token, pair.refresh_token);
+      // 改密会撤销全部在外会话,本设备用返回的新 token 继续(refresh 经 Cookie 下发)
+      authStore.getState().login(pair.access_token);
       message.success(t("settings.passwordChanged"));
       form.resetFields();
       onClose();

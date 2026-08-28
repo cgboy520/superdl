@@ -8,6 +8,7 @@ from app.core.k8s import NodePortTaken, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.registry import ensure_registry_pull_secret
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
@@ -120,29 +121,47 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         # 不分开提交会把已完成的迁移和尾账一起回滚掉(尾账丢失 = 少计停机前费用)
         await session.commit()
     if instance.status == sm_def.STOPPED:
-        estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
         try:
-            await billing_service.assert_can_afford(
-                session, instance.user_id, additional_hourly=estimate
-            )
+            if instance.market == MARKET_SUBSCRIPTION:
+                # 与开机同口径(service.start_instance):包周期已预付整段周期,重启不看余额;
+                # 但周期已过不能再开,否则已到期实例可借重启绕过开机门禁继续运行
+                await billing_service.assert_subscription_active(session, instance.id)
+            else:
+                estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
+                await billing_service.assert_can_afford(
+                    session, instance.user_id, additional_hourly=estimate
+                )
         except AppError as exc:
-            if exc.code is not ErrorCode.INSUFFICIENT_BALANCE:
-                raise
-            # 余额不足不走重试:实例停在 stopped,发通知说明,充值后由用户自行开机
-            logger.warning("restart_aborted_insufficient_balance", instance_id=instance.id)
-            await notify_service.notify(
-                session,
-                instance.user_id,
-                type_="instance",
-                title="重启未完成:余额不足",
-                content=(
-                    f"实例「{instance.name}」已关机;余额不足以支付 1 小时预估费用,"
-                    "充值后可自行开机。"
-                ),
-                severity="warning",
-                dedup_key=f"restart_no_balance:{instance.id}",
-            )
-            return
+            if exc.code is ErrorCode.INSUFFICIENT_BALANCE:
+                # 余额不足不走重试:实例停在 stopped,发通知说明,充值后由用户自行开机
+                logger.warning("restart_aborted_insufficient_balance", instance_id=instance.id)
+                await notify_service.notify(
+                    session,
+                    instance.user_id,
+                    type_="instance",
+                    title="重启未完成:余额不足",
+                    content=(
+                        f"实例「{instance.name}」已关机;余额不足以支付 1 小时预估费用,"
+                        "充值后可自行开机。"
+                    ),
+                    severity="warning",
+                    dedup_key=f"restart_no_balance:{instance.id}",
+                )
+                return
+            if exc.code is ErrorCode.SUBSCRIPTION_EXPIRED:
+                # 包周期到期同样不走重试:实例停在 stopped,续费后由用户自行开机
+                logger.warning("restart_aborted_subscription_expired", instance_id=instance.id)
+                await notify_service.notify(
+                    session,
+                    instance.user_id,
+                    type_="instance",
+                    title="重启未完成:包周期已到期",
+                    content=(f"实例「{instance.name}」已关机;包周期已到期,续费后可自行开机。"),
+                    severity="warning",
+                    dedup_key=f"restart_subscription_expired:{instance.id}",
+                )
+                return
+            raise
         await transition(session, instance, sm_def.STARTING, reason="restart", actor="system")
         instance.unready_since = None  # 新一轮就绪观察从零起算(同 start_instance)
         # STARTING 先落库再建 Pod:建 Pod 期间 DB 已是 starting,泄漏回收对在途状态

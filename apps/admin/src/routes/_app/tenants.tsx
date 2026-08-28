@@ -10,6 +10,7 @@ import {
   skuVariant,
   type InstanceStatus,
 } from "@superdl/ui";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
@@ -69,8 +70,17 @@ function TenantsTab() {
       setSearch(urlQ);
     }
   }
-  const { data, queryKey, hasNextPage, isFetchingNextPage, fetchNextPage } = useTenants(
-    search ? { q: search } : undefined,
+  // 实名明文查看(全角色默认脱敏):逐次显式动作,必填事由,每次明文读落审计;
+  // readonly 不可 reveal(后端 403,这里直接不渲染入口)
+  const canReveal = role === "ops" || role === "finance" || role === "admin";
+  const [revealReason, setRevealReason] = useState<string | null>(null);
+  const [revealOpen, setRevealOpen] = useState(false);
+  const [reasonInput, setReasonInput] = useState("");
+  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = useTenants(
+    {
+      ...(search ? { q: search } : {}),
+      ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
+    },
   );
   const tenants: TenantRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const freeze = useFreezeTenant();
@@ -79,10 +89,11 @@ function TenantsTab() {
 
   return (
     <>
+    <Space style={{ marginBottom: 12 }} wrap>
     <Input.Search
       allowClear
       placeholder={tt("tenants.searchPhonePlaceholder")}
-      style={{ width: 280, marginBottom: 12 }}
+      style={{ width: 280 }}
       value={input}
       onChange={(e) => {
         setInput(e.target.value);
@@ -90,9 +101,47 @@ function TenantsTab() {
       }}
       onSearch={setSearch}
     />
+    {canReveal &&
+      (revealReason === null ? (
+        <Button size="small" onClick={() => setRevealOpen(true)}>
+          {tt("tenants.revealIdName")}
+        </Button>
+      ) : (
+        <Tag color="orange" closable onClose={() => setRevealReason(null)}>
+          {tt("tenants.revealActive", { reason: revealReason })}
+        </Tag>
+      ))}
+    </Space>
+    <Modal
+      title={tt("tenants.revealTitle")}
+      open={revealOpen}
+      onCancel={() => setRevealOpen(false)}
+      okText={tt("tenants.revealConfirm")}
+      okButtonProps={{ disabled: reasonInput.trim().length < 2 }}
+      onOk={() => {
+        setRevealReason(reasonInput.trim());
+        setRevealOpen(false);
+        setReasonInput("");
+      }}
+    >
+      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+        <Typography.Text type="secondary">{tt("tenants.revealHint")}</Typography.Text>
+        <Input.TextArea
+          rows={2}
+          value={reasonInput}
+          onChange={(e) => setReasonInput(e.target.value)}
+          placeholder={tt("tenants.revealReasonPlaceholder")}
+          maxLength={200}
+        />
+      </Space>
+    </Modal>
     <Table<TenantRow>
       scroll={{ x: 1000 }}
       rowKey="id"
+      loading={isLoading}
+      locale={{
+        emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+      }}
       dataSource={tenants}
       onRow={(r) => ({ style: { cursor: "pointer" }, onClick: () => setDrilldown(r) })}
       columns={[
@@ -218,7 +267,7 @@ function InstancesTab() {
   const [search, setSearch] = useState("");
   const [nodeName, setNodeName] = useState("");
   const qc = useQueryClient();
-  const { data, queryKey, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useAdminInstances({
       ...(status ? { status } : {}),
       ...(search ? { q: search } : {}),
@@ -260,6 +309,9 @@ function InstancesTab() {
         scroll={{ x: 1140 }}
         rowKey="uuid"
         loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={instances}
         columns={[
           { title: t("tenants.colInstance"), dataIndex: "name" },
@@ -388,7 +440,7 @@ function DeletionsTab() {
   const isAdmin = role === "admin";
   const [status, setStatus] = useState<string | undefined>();
   const qc = useQueryClient();
-  const { data, queryKey } = useDeletionRequests(status ? { status } : undefined);
+  const { data, queryKey, isLoading, isError, refetch } = useDeletionRequests(status ? { status } : undefined);
   const rows: DeletionRow[] = data ?? [];
   const approve = useApproveDeletion();
   const reject = useRejectDeletion();
@@ -438,6 +490,10 @@ function DeletionsTab() {
       <Table<DeletionRow>
         scroll={{ x: 1100 }}
         rowKey="id"
+        loading={isLoading}
+        locale={{
+          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        }}
         dataSource={rows}
         columns={[
           { title: "ID", dataIndex: "id", width: 70 },

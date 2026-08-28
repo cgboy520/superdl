@@ -58,6 +58,10 @@ venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
+# 增量收紧(不一步升 strict,避免 real.py 等 K8s Any 边界大量降级):
+# 泛型缺类型实参(dict 而非 dict[str, int])与缺参数标注一律报错
+reportMissingTypeArgument = true
+reportMissingParameterType = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

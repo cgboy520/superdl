@@ -22,8 +22,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db import Base
 from app.core.errors import current_request_id
 from app.core.logging import get_logger
-from app.core.metrics import OUTBOX_DEAD_TOTAL, OUTBOX_TASK_TIMEOUT_TOTAL
-from app.core.timeutil import now_utc
+from app.core.metrics import OUTBOX_DEAD_TOTAL, OUTBOX_PENDING_OLDEST_AGE, OUTBOX_TASK_TIMEOUT_TOTAL
+from app.core.timeutil import ensure_utc, now_utc
 
 logger = get_logger(__name__)
 
@@ -79,7 +79,8 @@ class OutboxTask(Base):
     )  # pending / running / done / dead / discarded(管理端人工忽略)
     retries: Mapped[int] = mapped_column(default=0)
     next_retry_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
-    locked_by: Mapped[str | None] = mapped_column(String(64))
+    # 128:lane_id 定长上限(见 workers/main.make_worker_id);迁移 b4e7d1a92c06 放宽后须同宽
+    locked_by: Mapped[str | None] = mapped_column(String(128))
     locked_at: Mapped[datetime | None]
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -328,3 +329,20 @@ async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
         if rows:
             logger.warning("outbox_reaped_stuck_tasks", count=len(rows))
         return len(rows)
+
+
+async def report_pending_metrics(sm: async_sessionmaker[AsyncSession]) -> None:
+    """上报积压指标(定时任务,60s):最老 pending 任务年龄。
+
+    消费停滞(worker 活着但领不动任务,如 locked_by 列溢出致 claim commit 抛错)时
+    任务滞留 pending:reaper 只收 running,OUTBOX_DEAD_TOTAL 不触发,心跳照常——
+    本指标是这类静默停摆唯一的可观测出口,告警按持续 >600s 判。
+    """
+    async with sm() as session:
+        oldest = (
+            await session.execute(
+                select(func.min(OutboxTask.created_at)).where(OutboxTask.status == "pending")
+            )
+        ).scalar_one()
+    age = 0.0 if oldest is None else (now_utc() - ensure_utc(oldest)).total_seconds()
+    OUTBOX_PENDING_OLDEST_AGE.set(max(age, 0.0))

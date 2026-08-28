@@ -66,6 +66,10 @@ class UsedRefreshToken(Base):
     # 读取只按 jti 主键;清理按 expires_at
     expires_at: Mapped[datetime] = mapped_column(index=True)  # 过期即可清理
     used_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # 消费途径:refresh(轮换)/ logout(登出)。登出消费的重放一律 401 且不全撤
+    # (登出与并发首刷竞态时,首刷方可能已合法轮换,bump 会误撤在线会话);
+    # 老行 NULL 按 refresh 旧语义处理(宽限窗后照常全撤)
+    consumed_via: Mapped[str | None] = mapped_column(String(16))
     # 首消费事务登记的轮换结果:宽限窗内同 jti 重放须回同一对 token(不另开有效链);
     # 登出产生的消费记录无替代对(NULL)
     replaced_refresh_jti: Mapped[str | None] = mapped_column(String(32))
