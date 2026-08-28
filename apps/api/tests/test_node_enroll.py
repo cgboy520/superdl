@@ -14,7 +14,7 @@ from app.core.timeutil import now_utc
 from app.modules.nodes import service as nodes_service
 from app.modules.nodes.models import NodeEnrollment
 from app.modules.nodes.schemas import EnrollmentCreate
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 
 CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "ttl_hours": 24}
 

@@ -16,6 +16,7 @@ import { Badge, Button, Dropdown, List, Popover, Space, Typography } from "antd"
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "../../lib/format";
+import { LoadMoreButton } from "../LoadMore";
 import { moneyOr, TableErrorEmpty } from "../QueryState";
 import { useLogout, useMarkAllNotificationsRead, useMarkNotificationRead } from "../../api/mutations";
 import { useMe, useNotificationPages, useUnreadCount, useWallet } from "../../api/queries";
@@ -80,16 +81,12 @@ function NotificationBell() {
                 </List.Item>
               )}
             />
-            {pagesQ.hasNextPage && (
-              <Button
-                block
-                size="small"
-                loading={pagesQ.isFetchingNextPage}
-                onClick={() => void pagesQ.fetchNextPage()}
-              >
-                {t("common.loadMore")}
-              </Button>
-            )}
+            <LoadMoreButton
+              visible={pagesQ.hasNextPage}
+              loading={pagesQ.isFetchingNextPage}
+              onClick={() => void pagesQ.fetchNextPage()}
+              size="small"
+            />
           </div>
         )
       }

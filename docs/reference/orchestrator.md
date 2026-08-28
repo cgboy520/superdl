@@ -32,7 +32,7 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 | `DELETE /api/v1/instances/{uuid}` | user | 释放(stopped/frozen/failed/creating/stopping);幂等:releasing/released 重放回当前状态而非 400。**包周期实例释放不退款**,订阅转 cancelled(见 [billing.md](./billing.md)) |
 | `GET /api/v1/instances/{uuid}/events` | user | 事件时间线,即计费依据;降序游标分页 `?cursor=&limit=` |
 | `GET /api/v1/instances/{uuid}/access` | user | SSH 指令 + Jupyter 一次性 bootstrap 票据 URL(单次、60s;核销后种第一方 cookie,token 不进 URL);非 running 报错并说明 |
-| `GET /api/v1/instances/{uuid}/logs` | user | 容器日志:**只读**、**owner 校验**(非属主 404 不暴露存在性)、**限流 20/h/user**、**K8s 读 5s 超时**;仅 running/stopping(其余 409,已关机无 Pod 日志);`?tail_lines=` 默认 200、超 2000 截断,`?since_seconds=` 超 86400 截断;返回 `{lines, truncated}`;不记审计 |
+| `GET /api/v1/instances/{uuid}/logs` | user | 容器日志:**只读**、**owner 校验**(非属主 404 不暴露存在性)、**限流 20/h/user**、**K8s 读 5s 超时**;仅 running/stopping(其余 409,已关机无 Pod 日志);`?tail_lines=` 默认 200、超 2000 截断;返回 `{lines, truncated}`;不记审计 |
 | `POST /api/v1/instances/{uuid}/reset-jupyter-token` | user | 轮换 token(密文落库),旧票据与旧 URL 立即失效 |
 | `POST /api/admin/v1/instances/{uuid}/preempt` | ops | 强制回收一台竞价实例腾容量,reason 必填;非竞价报 `orchestrator.preemptNotSpot`,非 running 报 `orchestrator.forceStopNeedsRunning`(见 [admin.md](./admin.md)) |
 

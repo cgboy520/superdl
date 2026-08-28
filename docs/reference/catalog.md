@@ -4,7 +4,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 
 ## 数据模型
 
-- `skus`:name、gpu_model、tier(dedicated / shared / cpu)、mig_profile?、gpu_cores_pct、vram_gb、oversell_cores numeric(4,2)、oversell_vram numeric(4,2)、pool_label、vcpu、mem_gb、disk_gb(含 100G 实例盘)、price_hourly numeric(12,4)、max_gpus_per_instance、cuda_max、period_enabled(**默认 true**)、spot_enabled(**默认 false**)、status(on/off)
+- `skus`:name、gpu_model、tier(dedicated / shared / cpu)、mig_profile?、gpu_cores_pct、vram_gb、oversell_cores numeric(4,2)、pool_label、vcpu、mem_gb、disk_gb(含 100G 实例盘)、price_hourly numeric(12,4)、max_gpus_per_instance、cuda_max、period_enabled(**默认 true**)、spot_enabled(**默认 false**)、status(on/off)
 - **CPU 规格(tier=cpu)的字段约定**:`gpu_model=""`、`gpu_cores_pct=0`、`vram_gb=0`、`mig_profile=NULL`、`max_gpus_per_instance=0`,`price_hourly` 是**整机**时价(GPU 规格是单卡时价)。跨字段规则写在 `catalog/schemas.py::cpu_spec_error` 一处:建 SKU 由 `SkuCreate` 的 model_validator 在契约层调用(422),改 SKU 是部分更新、拿不到终态,由 `service.admin_update_sku` 合并出终态后调用(400 + `message_key`)。反向也拦:GPU 规格的这三项一个都不许为 0。
 - `images`:平台镜像树 framework→version→python→cuda→image_ref、prewarm_enabled;预热见 [images.md](./images.md)
 
@@ -37,7 +37,7 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 - **改这两个开关只影响新单。** 已售出的订阅照常到期、照常按 `subscriptions.unit_price` 原价快照续费,
   不看 SKU 现在的开关与价格;已在跑的竞价实例照常按快照价计费、照常可能被回收,关掉开关不会把它变成按量
   (免除回收风险须用户自己走 `/to-on-demand`,见 [orchestrator.md](./orchestrator.md))。口径见 [billing.md](./billing.md)。
-- 超卖参数是纯定价参数,不下发调度;显存超卖 >1.2 由前端二次确认。
+- 超卖参数是纯定价参数,不下发调度。
 - 上架为硬校验(可 force 覆盖),创建与编辑为软校验(容量预览警示,可保存)。
 - off 架 SKU 用户端不可见;readonly 角色全站只读,finance 不能改 SKU。
 - **档位是售卖分类,隔离机制的事实源是 `pool_label`。** `tier` 只有 dedicated / shared / cpu 三值;用户看到的「共享·标准 / 共享·经济」由池派生(mig 池 = 硬切分标准档,hami 池 = 软切分经济档),前端在 `packages/ui/src/status.ts::skuVariant` 一处映射。cpu 档不按池分化展示(落 cpu 池还是 hami 池都不申请显卡,只影响落在哪批机器上)。

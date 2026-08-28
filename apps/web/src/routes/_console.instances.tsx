@@ -54,6 +54,7 @@ import {
   useEventReasonText,
   WorkloadTag,
 } from "../components/common";
+import { LoadMoreButton } from "../components/LoadMore";
 import { RenewModal } from "../components/RenewModal";
 import { moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
@@ -675,11 +676,11 @@ function InstancesPage() {
           onDoubleClick: () => void openDetail(r.uuid),
         })}
       />
-      {hasNextPage && (
-        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-          {t("billing.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={hasNextPage}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
+      />
       {renewTarget && (
         <RenewModal
           key={renewTarget.uuid}

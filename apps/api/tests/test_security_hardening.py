@@ -2,7 +2,7 @@ import base64
 
 from httpx import AsyncClient
 
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 
 
 class TestLoginRateLimit:
@@ -81,7 +81,7 @@ class TestAccountLevelLock:
 
         from app.core.errors import AppError, ErrorCode
         from app.modules.account import service as account_service
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         await register(client, "13800000081", password="secret123456")
         for i in range(10):
@@ -134,7 +134,7 @@ class TestAccountLevelLock:
         from app.core.ratelimit import read_hits
         from app.modules.account import service as account_service
         from app.modules.notify.models import Notification
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         data = await register(client, "13800000082", password="secret123456")
         # 攻击者从另外两个 IP 撞库失败 2 次
@@ -327,7 +327,7 @@ class TestSmsCodeBruteForce:
 
     async def test_sms_login_rate_limited(self, client: AsyncClient):
         """验证码登录路径与密码路径同限流(否则可穷举 6 位码)。"""
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         phone = "13800000089"
         await register(client, phone)
@@ -476,20 +476,17 @@ class TestSmsCodeAtRest:
 
 
 class TestGhostEnvKeys:
-    def test_unknown_superdl_vars_reported(self):
-        """拼错/残留的 SUPERDL_* 变量会被 pydantic 静默忽略:启动扫描负责把它们揪出来。"""
+    def test_unknown_superdl_vars_reported(self, monkeypatch):
+        """拼错/残留的 SUPERDL_* 变量会被 pydantic 静默忽略:启动扫描负责把它们措出来。"""
         from app.core.config import unknown_superdl_env_keys
 
-        env = {
-            "SUPERDL_JWT_SECRET": "x",  # 合法键
-            "SUPERDL_JWT_SECERT": "typo",  # 拼写错误
-            "SUPERDL_OLD_REMOVED_KEY": "y",  # 改名残留
-            "DATABASE_URL": "z",  # 非本前缀,不管
-        }
-        assert unknown_superdl_env_keys(env) == [
-            "SUPERDL_JWT_SECERT",
-            "SUPERDL_OLD_REMOVED_KEY",
-        ]
+        monkeypatch.setenv("SUPERDL_JWT_SECRET", "x")  # 合法键
+        monkeypatch.setenv("SUPERDL_JWT_SECERT", "typo")  # 拼写错误
+        monkeypatch.setenv("SUPERDL_OLD_REMOVED_KEY", "y")  # 改名残留
+        unknown = unknown_superdl_env_keys()
+        assert "SUPERDL_JWT_SECERT" in unknown
+        assert "SUPERDL_OLD_REMOVED_KEY" in unknown
+        assert "SUPERDL_JWT_SECRET" not in unknown
 
 
 class TestBootstrapAdminGate:
@@ -547,7 +544,7 @@ class TestAdminTokenRenewal:
         garbage = await client.post("/api/admin/v1/auth/refresh", json={"access_token": "xx"})
         assert garbage.status_code == 401
         # 用户端 token 不可换管理端(audience 物理隔离)
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         data = await register(client, "13900000071")
         cross = await client.post(

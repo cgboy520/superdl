@@ -16,8 +16,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, update
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.core.policies import EffectivePolicies, get_effective_policies
 from app.core.pricing import (
     MARKET_SUBSCRIPTION,
@@ -38,14 +36,6 @@ from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wal
 pytestmark = pytest.mark.usefixtures("fake")
 
 IMAGE = "registry.superdl.local/pytorch:2.9.0-cu128"
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def buy_subscription(
@@ -502,9 +492,9 @@ class TestRenewal:
         assert len(consume) == 2
 
     async def test_renew_rejects_on_demand_instance(self, client, sm, fake):
-        from tests.test_orchestrator_lifecycle import _provision_running
+        from tests.helpers import provision_running
 
-        headers, uuid, _ = await _provision_running(client, sm, fake, phone="13911100043")
+        headers, uuid, _ = await provision_running(client, sm, fake, phone="13911100043")
         resp = await client.post(
             f"/api/v1/instances/{uuid}/renew",
             json={"period": "month", "period_count": 1},
@@ -789,9 +779,9 @@ class TestConvertToSubscription:
     """按量转包周期。要害只有一个:转换那一刀两侧的账,不重复也不留缝。"""
 
     async def _on_demand_running(self, client, sm, fake, phone: str):
-        from tests.test_orchestrator_lifecycle import _provision_running
+        from tests.helpers import provision_running
 
-        headers, uuid, user_id = await _provision_running(client, sm, fake, phone=phone)
+        headers, uuid, user_id = await provision_running(client, sm, fake, phone=phone)
         await fund_wallet(sm, user_id, "5000.00")
         return headers, uuid, user_id
 

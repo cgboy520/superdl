@@ -5,23 +5,12 @@ from httpx import AsyncClient
 
 from app.core.config import get_settings
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import drain
-from tests.test_orchestrator_lifecycle import (
+from tests.helpers import (
     create_test_sku,
     create_user_with_key,
+    drain,
     fund_wallet,
 )
-
-
-@pytest.fixture
-def fake():
-    from app.core.k8s import set_orchestrator
-    from app.core.k8s.fake import FakeOrchestrator
-
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 @pytest.fixture

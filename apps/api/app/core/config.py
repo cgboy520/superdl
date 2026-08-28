@@ -1,5 +1,4 @@
 import os
-from collections.abc import Mapping
 from functools import lru_cache
 from typing import Literal
 
@@ -306,13 +305,12 @@ def get_settings() -> Settings:
     return Settings()  # pyright: ignore[reportCallIssue]
 
 
-def unknown_superdl_env_keys(env: Mapping[str, str] | None = None) -> list[str]:
+def unknown_superdl_env_keys() -> list[str]:
     """扫描 SUPERDL_ 前缀环境变量,返回不命中任何 Settings 字段的键。
 
     幽灵键(拼写错误、改名残留)会被 pydantic 静默忽略,配置者以为生效其实没有;
     启动时打 WARNING 即可,不 fail(兼容滚动发版期间新旧键并存)。
     """
-    source = os.environ if env is None else env
     known = {f"SUPERDL_{name.upper()}" for name in Settings.model_fields}
     # pydantic-settings 默认大小写不敏感,统一按大写比对
-    return sorted(k for k in source if k.startswith("SUPERDL_") and k.upper() not in known)
+    return sorted(k for k in os.environ if k.startswith("SUPERDL_") and k.upper() not in known)

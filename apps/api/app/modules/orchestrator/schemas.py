@@ -223,7 +223,6 @@ class ServiceEndpointOut(BaseModel):
     slug: str
     url: str
     container_port: int
-    protocol: str
     health_path: str | None
     require_api_key: bool
     # 就绪 = 实例 running 且巡检没观察到 Pod not-ready。服务实例持续 not-ready 不判 failed,

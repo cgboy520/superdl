@@ -85,12 +85,11 @@ class FakeOrchestrator:
     instance_secrets: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 能力探测:默认健康 RKE2;fail_probe 模拟断连
     probe_hami_ready: bool = True
-    probe_kata_runtimeclass: bool = True
     probe_k8s_version: str = _FAKE_K8S_VERSION  # 改成 +k3s1 即模拟 light 档
     fail_probe: bool = False
     # 容器日志:fail_next_logs 注入一次读取失败;log_calls 记录调用参数供断言
     fail_next_logs: bool = False
-    log_calls: list[tuple[str, str, int, int | None]] = field(default_factory=list)
+    log_calls: list[tuple[str, str, int]] = field(default_factory=list)
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -115,7 +114,7 @@ class FakeOrchestrator:
             dcgm_present=True,
             kps_present=True,
             gpu_operator_present=True,
-            kata_runtimeclass=self.probe_kata_runtimeclass,
+            kata_runtimeclass=True,
             nvidia_runtimeclass=True,
             gateway_ready=True,
             cert_manager_ready=True,
@@ -228,16 +227,14 @@ class FakeOrchestrator:
             name=name,
         )
 
-    async def read_instance_logs(
-        self, namespace: str, name: str, *, tail_lines: int, since_seconds: int | None = None
-    ) -> str:
+    async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
         """合成日志:带时间戳的固定几行(含实例名),不按 Pod 存在性报错——
         dev 下 API 与 worker 是两个进程,内存态 Pod 不同步,存在性报错会让前端联调恒失败。
         失败路径由 fail_next_logs 注入覆盖。"""
         if self.fail_next_logs:
             self.fail_next_logs = False
             raise RuntimeError("fake: read_instance_logs failed (injected)")
-        self.log_calls.append((namespace, name, tail_lines, since_seconds))
+        self.log_calls.append((namespace, name, tail_lines))
         lines = [
             f"2026-08-23T03:14:01Z [entrypoint] instance {name} booting",
             "2026-08-23T03:14:01Z [entrypoint] mounting instance disk at /root",

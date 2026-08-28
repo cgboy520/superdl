@@ -6,24 +6,13 @@
 
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.billing.models import BalanceLedger
 from app.modules.orchestrator.models import PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import create_test_sku, drain, gen_ed25519_key, seed_node_spec
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def test_full_lifecycle_drill(client, sm, fake):

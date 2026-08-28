@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+from app.core.errors import current_request_id
 from app.core.logging import get_logger
 from app.core.metrics import OUTBOX_DEAD_TOTAL, OUTBOX_TASK_TIMEOUT_TOTAL
 from app.core.timeutil import now_utc
@@ -96,13 +97,6 @@ _registry: dict[str, Handler] = {}
 REQUEST_ID_KEY = "_request_id"
 
 
-def _current_request_id() -> str | None:
-    import structlog
-
-    value = structlog.contextvars.get_contextvars().get("request_id")
-    return str(value) if value else None
-
-
 def outbox_handler(
     task_type: str, *, retry: RetryPolicy | None = None
 ) -> Callable[[Handler], Handler]:
@@ -133,7 +127,7 @@ def enqueue(
 
     delay_seconds:推迟到期时刻(领取条件即 `next_retry_at <= now`);竞价抢占的宽限窗用它。
     """
-    if REQUEST_ID_KEY not in payload and (request_id := _current_request_id()):
+    if REQUEST_ID_KEY not in payload and (request_id := current_request_id()):
         payload = {**payload, REQUEST_ID_KEY: request_id}
     task = OutboxTask(type=task_type, payload=payload)
     if delay_seconds > 0:

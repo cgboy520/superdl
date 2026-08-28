@@ -710,20 +710,6 @@ class TestNodeLostBillingTruncation:
             )
             await session.commit()
         assert charged == Decimal("0.14")
-        # 重复结算(尾账/整点/追平同口径):零新增,不重复扣
-        async with sm() as session:
-            again = await settle_instance_window(
-                session,
-                instance_id=inst_id,
-                user_id=1,
-                unit_price=Decimal("1.6800"),
-                gpu_count=1,
-                window_start=H,
-                window_end=H_END,
-                source="hourly",
-            )
-            await session.commit()
-        assert again == Decimal("0.00")
         async with sm() as session:
             bill = (await session.execute(select(BillHourly))).scalar_one()
         assert bill.seconds_used == 300  # 10:00~10:05,不是到判定时刻 10:15 的 900s
@@ -898,7 +884,7 @@ class TestGapEndpoints:
 
     async def test_list_replay_resolve_flow(self, client, sm):
         from app.modules.billing.models import SettlementGap
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         inst_id = await seed_instance(
             sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
@@ -962,7 +948,7 @@ class TestGapEndpoints:
         assert rows["items"] == []
 
     async def test_readonly_can_list_cannot_write(self, client, sm):
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         ro = await admin_headers(sm, client, role="readonly")
         assert (

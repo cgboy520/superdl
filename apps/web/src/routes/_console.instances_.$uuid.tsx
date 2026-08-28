@@ -6,7 +6,6 @@
 import {
   isApiError,
   type ApiKeyOut,
-  type BillHourlyOut,
   type InstanceEventOut,
   type InstanceOut,
 } from "@superdl/api-client";
@@ -41,7 +40,6 @@ import { useResetJupyterToken, useRevokeApiKey } from "../api/mutations";
 import {
   useApiKeys,
   useDailySummary,
-  useHourlyBillPages,
   useInstance,
   useInstanceAccess,
   useInstanceEventPages,
@@ -58,7 +56,9 @@ import {
   TierTag,
   useEventReasonText,
 } from "../components/common";
+import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
+import { LoadMoreButton } from "../components/LoadMore";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
@@ -388,7 +388,6 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
             items={[
               { label: t("instances.containerConfigImage"), children: instance.image_ref },
               { label: t("instances.containerConfigPort"), children: ep?.container_port ?? "—" },
-              { label: t("instances.containerConfigProtocol"), children: ep?.protocol ?? "—" },
               {
                 label: t("instances.containerConfigHealth"),
                 children: ep?.health_path ?? t("instances.serviceHealthNone"),
@@ -603,55 +602,11 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
           ),
         }))}
       />
-      {hasNextPage && (
-        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-          {t("billing.loadMore")}
-        </Button>
-      )}
-    </Space>
-  );
-}
-
-function BillsTab({ instanceId }: { instanceId: number }) {
-  const { t } = useTranslation();
-  const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
-  // 游标分页 + 加载更多(与费用中心小时账单同构)
-  const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useHourlyBillPages({ instance_id: instanceId });
-  const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
-  return (
-    <Space orientation="vertical" style={{ width: "100%" }}>
-      <Table
-        rowKey="id"
-        size="small"
-        pagination={false}
-        loading={isLoading}
-        locale={{
-          emptyText: isError ? <TableErrorEmpty onRetry={() => void refetch()} /> : undefined,
-        }}
-        dataSource={rows}
-        columns={[
-          { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
-          { title: t("instances.colBillDuration"), render: (_, r) => formatDuration(r.seconds_used) },
-          {
-            title: t("instances.colBillUnit"),
-            render: (_, r) => (
-              <span>
-                {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
-              </span>
-            ),
-          },
-          {
-            title: t("instances.colBillAmount"),
-            render: (_, r) => <span>{formatMoney(r.amount)}</span>,
-          },
-        ]}
+      <LoadMoreButton
+        visible={hasNextPage}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
       />
-      {hasNextPage && (
-        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-          {t("billing.loadMore")}
-        </Button>
-      )}
     </Space>
   );
 }
@@ -823,7 +778,11 @@ function InstanceDetail() {
             label: t("instances.tabEvents"),
             children: <EventsTab uuid={uuid} status={instance?.status} />,
           },
-          { key: "bills", label: t("instances.tabBills"), children: <BillsTab instanceId={instance.id} /> },
+          {
+            key: "bills",
+            label: t("instances.tabBills"),
+            children: <HourlyBillsTable params={{ instance_id: instance.id }} />,
+          },
         ]}
       />
 

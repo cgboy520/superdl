@@ -10,34 +10,7 @@ from app.core.errors import AppError
 from app.core.security import create_token, decode_token
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode, User
-
-PHONE = "13800000001"
-
-
-async def send_code(client: AsyncClient, phone: str = PHONE, purpose: str = "register") -> None:
-    resp = await client.post(
-        "/api/v1/auth/sms-code",
-        # mock 渠道固定放行串(人机校验闸门;与 MOCK_SMS_CODE "123456" 同哲学)
-        json={"phone": phone, "purpose": purpose},
-    )
-    assert resp.status_code == 204, resp.text
-
-
-async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
-    """把既有验证码的 created_at 回拨,越过 60s 限频窗口(不影响有效期)。"""
-    async with sm() as session:
-        await session.execute(update(SmsCode).values(created_at=now_utc() - timedelta(minutes=2)))
-        await session.commit()
-
-
-async def register(client: AsyncClient, phone: str = PHONE, password: str | None = None) -> dict:
-    await send_code(client, phone, "register")
-    body: dict = {"phone": phone, "sms_code": "123456", "accept_terms": True}
-    if password:
-        body["password"] = password
-    resp = await client.post("/api/v1/auth/register", json=body)
-    assert resp.status_code == 201, resp.text
-    return resp.json()
+from tests.helpers import PHONE, age_sms_codes, issue_code, register, send_code
 
 
 class TestRegister:
@@ -276,26 +249,6 @@ class TestAudit:
         reg = next(r for r in rows if r.action == "POST /api/v1/auth/register")
         assert reg.result == 201
         assert reg.target and reg.target.startswith("user:")
-
-
-async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
-    """直接落一条验证码(绕开 60s 发送间隔;注册助手刚发过码时不能再发)。"""
-    from datetime import timedelta
-
-    from app.core.crypto import hash_sms_code
-    from app.core.timeutil import now_utc
-    from app.modules.account.models import SmsCode
-
-    async with sm() as session:
-        session.add(
-            SmsCode(
-                phone=phone,
-                code_hash=hash_sms_code(phone, purpose, code),
-                purpose=purpose,
-                expires_at=now_utc() + timedelta(minutes=5),
-            )
-        )
-        await session.commit()
 
 
 class TestPasswordReset:

@@ -4,20 +4,19 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import status
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
-from app.core.ratelimit import RateLimitCounter, check_rate_limit, ensure_not_rate_limited
+from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_token,
     decode_token,
     hash_password,
-    hash_password_sync,
     verify_password,
 )
 from app.core.timeutil import ensure_utc, now_utc
@@ -31,9 +30,6 @@ from app.modules.adminapi.schemas import (
 from app.modules.orchestrator.schemas import NON_TERMINAL_STATUSES
 
 logger = get_logger(__name__)
-
-# 不存在的用户名也走一次哈希校验,拉平时间侧信道
-_DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 300.0
@@ -88,13 +84,6 @@ def _login_buckets(client_ip: str | None, username: str) -> list[tuple[str, int,
     ]
 
 
-async def _clear_login_failures(key: str) -> None:
-    """登录成功清零该桶的失败计数(独立事务,不随业务 session 回滚)。"""
-    async with get_sessionmaker()() as session:
-        await session.execute(delete(RateLimitCounter).where(RateLimitCounter.key == key))
-        await session.commit()
-
-
 async def login(
     session: AsyncSession, username: str, password: str, *, client_ip: str | None = None
 ) -> tuple[MfaChallengeOut | AdminLoginTokenOut, AdminUser]:
@@ -107,7 +96,9 @@ async def login(
     # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不付哈希成本
     for key, max_attempts, window, _ in buckets:
         await ensure_not_rate_limited(key, max_attempts=max_attempts, window_seconds=window)
-    password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
+    password_ok = await verify_password(
+        password, admin.password_hash if admin else DUMMY_PASSWORD_HASH
+    )
     if admin is None or not password_ok:
         # 只在失败后计数,四层同计:换 IP 逃不掉账号桶,换账号逃不掉 IP 桶
         for key, max_attempts, window, _ in buckets:
@@ -123,7 +114,7 @@ async def login(
     # 凭据正确即清零「成功即清零」的桶(IP 桶与日桶不清)
     for key, _, _, clear_on_success in buckets:
         if clear_on_success:
-            await _clear_login_failures(key)
+            await clear_rate_limit(key)
     # 安全策略关闭两步验证:密码即登录(已绑定者也不挑战;重新开启即恢复二要素)
     cfg = await get_effective_platform_config(session)
     if cfg["admin_mfa_enabled"] != "true":

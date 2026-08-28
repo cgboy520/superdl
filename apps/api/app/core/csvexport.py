@@ -9,7 +9,7 @@
 
 import re
 from collections.abc import AsyncIterator, Callable, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -47,8 +47,6 @@ def utc_suffix(offset_minutes: int) -> str:
 
 
 def fmt_ts(ts: datetime, offset_minutes: int) -> str:
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
     local = ts + timedelta(minutes=offset_minutes)
     return f"{local.strftime('%Y-%m-%d %H:%M')} {utc_suffix(offset_minutes)}"
 

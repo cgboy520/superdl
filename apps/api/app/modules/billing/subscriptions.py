@@ -501,9 +501,6 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
         return
 
     instance = await orchestrator_service.instance_by_id(session, row.instance_id)
-    if instance is None:  # 实例行不该消失(释放只改状态),兜住数据修复脚本
-        row.status = STATUS_EXPIRED
-        return
     if row.auto_renew and await _try_auto_renew(session, row, instance, counts):
         return
     row.status = STATUS_EXPIRED
@@ -643,7 +640,7 @@ async def _patrol_freeze_expired(
         try:
             async with sm() as session:
                 fresh = await orchestrator_service.instance_by_id(session, inst.id)
-                if fresh is None or fresh.status != "stopped":
+                if fresh.status != "stopped":
                     continue
                 await _freeze(session, fresh)
                 await session.commit()

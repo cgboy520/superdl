@@ -188,7 +188,6 @@ class ServiceEndpoint(Base):
     # TLS SNI、访问日志与第三方 Referer 里
     public_slug: Mapped[str] = mapped_column(String(32), unique=True)
     container_port: Mapped[int]
-    protocol: Mapped[str] = mapped_column(String(8), default="http", server_default="http")
     # 非空 → Pod 上挂 readinessProbe + startupProbe;空 = 容器起来即就绪
     health_path: Mapped[str | None] = mapped_column(String(128))
     # False = 公开端点,网关侧不挂 extAuth,不依赖控制面

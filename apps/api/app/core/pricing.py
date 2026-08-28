@@ -16,14 +16,12 @@ from app.core.policies import EffectivePolicies
 MARKET_ON_DEMAND = "on_demand"  # 按量:小时结算,唯一进 bills_hourly 的模式
 MARKET_SPOT = "spot"  # 竞价:折扣价 + 可被平台回收
 MARKET_SUBSCRIPTION = "subscription"  # 包周期:下单一次性预扣,小时结算跳过
-MARKETS: tuple[str, ...] = (MARKET_ON_DEMAND, MARKET_SPOT, MARKET_SUBSCRIPTION)
 
 # 计费周期(subscriptions.period)
 PERIOD_DAY = "day"
 PERIOD_WEEK = "week"
 PERIOD_MONTH = "month"
 PERIOD_YEAR = "year"
-PERIODS: tuple[str, ...] = (PERIOD_DAY, PERIOD_WEEK, PERIOD_MONTH, PERIOD_YEAR)
 
 # 周期长度取定长小时,不取自然月/自然年:定价与到期时刻必须同源,否则两者分叉。
 # 31 天的月份少收一天,属定价模型(同 disk_daily_charge 的「月按 30 天」),

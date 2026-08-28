@@ -6,29 +6,28 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import status
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.captcha import CaptchaError, get_captcha_channel
 from app.core.config import get_settings
 from app.core.crypto import hash_sms_code
-from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import (
-    RateLimitCounter,
     check_rate_limit,
+    clear_rate_limit,
     ensure_not_rate_limited,
     read_hits,
 )
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_token,
     decode_token,
     hash_password,
-    hash_password_sync,
     verify_password,
 )
 from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
@@ -48,12 +47,7 @@ from app.modules.account.sshkey_util import parse_public_key
 
 logger = get_logger(__name__)
 
-# 手机号脱敏只有 core/logging 一份实现;adminapi 经 account.service 取用,这里保留同名门面
-
 MOCK_SMS_CODE = "123456"
-
-# 未注册的手机号也走一次哈希校验,拉平时间侧信道(管理端登录同款)
-_DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 
 # 单条验证码最多允许失败次数,达到即作废
 MAX_SMS_CODE_ATTEMPTS = 5
@@ -68,13 +62,6 @@ SMS_CONSUME_DAILY_MAX = 10
 
 # 同 jti 重放宽限窗:窗内视为并发重试,按正常轮换处理;窗外判泄露并撤销全部会话
 REFRESH_REPLAY_GRACE_SECONDS = 10.0
-
-
-async def _clear_login_failures(key: str) -> None:
-    """登录成功清零该桶的失败计数(独立事务,不随业务 session 回滚)。"""
-    async with get_sessionmaker()() as session:
-        await session.execute(delete(RateLimitCounter).where(RateLimitCounter.key == key))
-        await session.commit()
 
 
 async def send_sms_code(
@@ -292,7 +279,9 @@ async def login(
                 f"user-login-acct-daily:{phone}", max_attempts=30, window_seconds=86400.0
             )
             stored = (
-                user.password_hash if (user is not None and user.password_hash) else _DUMMY_HASH
+                user.password_hash
+                if (user is not None and user.password_hash)
+                else DUMMY_PASSWORD_HASH
             )
             password_ok = await verify_password(password, stored)
             if user is None or user.password_hash is None or not password_ok:
@@ -318,7 +307,7 @@ async def login(
             )
         raise
     # 凭据正确即清零该账号桶的失败计数(IP 桶不清:撞库不会产生成功登录)
-    await _clear_login_failures(f"user-login:{client_ip or '-'}:{phone}")
+    await clear_rate_limit(f"user-login:{client_ip or '-'}:{phone}")
     # 异常登录通知:账号桶在窗口内有失败记录而本次成功——疑似被撞库,通知本人;
     # 随后清零账号桶(正常用户的预算不被攻击者的失败计数拖垮)
     if password is not None:
@@ -339,7 +328,7 @@ async def login(
                 dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
             )
             await session.commit()  # 通知落库(password 路径无其它提交点)
-        await _clear_login_failures(f"user-login-acct:{phone}")
+        await clear_rate_limit(f"user-login-acct:{phone}")
     # 已注销账号的 phone 已改写为 del:…,按手机号查不到,不必再判 deleted(持凭证路径见 deps/refresh)
     if user.status == "frozen":
         raise AppError(

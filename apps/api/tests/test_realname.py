@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.core.platform_config import PlatformSetting
 from app.modules.account.models import User
 from app.modules.account.realname import set_realname_provider
-from tests.test_account_auth import register
+from tests.helpers import register
 
 
 class _Provider:

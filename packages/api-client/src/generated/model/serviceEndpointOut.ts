@@ -17,7 +17,6 @@ export interface ServiceEndpointOut {
   env: ServiceEndpointOutEnv;
   env_secret_keys: string[];
   health_path: string | null;
-  protocol: string;
   ready: boolean;
   require_api_key: boolean;
   slug: string;

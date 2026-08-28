@@ -7,22 +7,12 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
 from app.modules.metering.service import aggregate_previous_hour
-from tests.test_orchestrator_lifecycle import _provision_running
+from tests.helpers import provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = False):
@@ -52,7 +42,7 @@ def _reset_prom_client():
 
 class TestMetricsProxy:
     async def test_metrics_endpoint(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock([(1e9, 55.0), (1e9 + 60, 60.0)]))
         resp = await client.get(
             f"/api/v1/instances/{uuid}/metrics", params={"range": "1h"}, headers=headers
@@ -62,15 +52,15 @@ class TestMetricsProxy:
         assert data["series"]["gpu_util"] == [[1e9, 55.0], [1e9 + 60, 60.0]]
 
     async def test_prometheus_down_degrades_gracefully(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock(fail=True))
         resp = await client.get(f"/api/v1/instances/{uuid}/metrics", headers=headers)
         assert resp.status_code == 503
         assert resp.json()["message_key"] == "metering.unavailable"
 
     async def test_cannot_read_others_metrics(self, client, sm, fake):
-        _headers, uuid, _user_id = await _provision_running(client, sm, fake)
-        from tests.test_account_auth import register
+        _headers, uuid, _user_id = await provision_running(client, sm, fake)
+        from tests.helpers import register
 
         other = await register(client, "13600000001")
         resp = await client.get(
@@ -82,7 +72,7 @@ class TestMetricsProxy:
 
 class TestAggregation:
     async def test_aggregate_idempotent(self, client, sm, fake):
-        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock([(1e9, 50.0), (1e9 + 60, 70.0), (1e9 + 120, 90.0)]))
         at = datetime.now(UTC) + timedelta(hours=1)
         assert await aggregate_previous_hour(sm, at=at) == 1
@@ -91,10 +81,9 @@ class TestAggregation:
             rows = (await session.execute(select(UsageHourly))).scalars().all()
         assert len(rows) == 1
         assert rows[0].gpu_util_avg == 70.0
-        assert rows[0].gpu_util_p95 == 90.0
 
     async def test_aggregate_prom_down_no_crash(self, client, sm, fake):
-        await _provision_running(client, sm, fake)
+        await provision_running(client, sm, fake)
         prom.set_client(prom_mock(fail=True))
         at = datetime.now(UTC) + timedelta(hours=1)
         assert await aggregate_previous_hour(sm, at=at) == 0  # 静默跳过,计费不受影响
@@ -187,7 +176,7 @@ def prom_mock_malformed():
 class TestMalformedResponse:
     async def test_instance_metrics_503_not_500(self, client, sm, fake):
         """Prometheus 响应缺 data 键:KeyError 不能击穿成 500,必须走 503 降级语义。"""
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         prom.set_client(prom_mock_malformed())
         resp = await client.get(f"/api/v1/instances/{uuid}/metrics", headers=headers)
         assert resp.status_code == 503
@@ -204,8 +193,8 @@ class TestMalformedResponse:
 class TestAggregationPartialFailure:
     async def test_single_failure_does_not_drop_whole_hour(self, client, sm, fake):
         """单实例查询失败只丢该实例该小时,整轮其它实例照常聚合。"""
-        _h1, uuid1, _u1 = await _provision_running(client, sm, fake, phone="13900000021")
-        _h2, _uuid2, _u2 = await _provision_running(client, sm, fake, phone="13900000022")
+        _h1, uuid1, _u1 = await provision_running(client, sm, fake, phone="13900000021")
+        _h2, _uuid2, _u2 = await provision_running(client, sm, fake, phone="13900000022")
 
         def handler(request: httpx.Request) -> httpx.Response:
             query = request.url.params.get("query", "")
@@ -225,25 +214,6 @@ class TestAggregationPartialFailure:
         async with sm() as session:
             rows = (await session.execute(select(UsageHourly))).scalars().all()
         assert len(rows) == 1
-
-    async def test_vram_zero_is_not_null(self, client, sm, fake):
-        """vram 峰值 0 是合法值,不能写成 NULL。"""
-        await _provision_running(client, sm, fake, phone="13900000023")
-        prom.set_client(
-            prom_mock_routed(
-                {
-                    "DCGM_FI_DEV_GPU_UTIL": [{"metric": {}, "values": [[1e9, "50"]]}],
-                    "DCGM_FI_DEV_FB_USED": [{"metric": {}, "values": [[1e9, "0"]]}],
-                    "container_cpu_usage_seconds_total": [{"metric": {}, "values": [[1e9, "3"]]}],
-                }
-            )
-        )
-        at = datetime.now(UTC) + timedelta(hours=1)
-        assert await aggregate_previous_hour(sm, at=at) == 1
-        async with sm() as session:
-            row = (await session.execute(select(UsageHourly))).scalar_one()
-        assert row.vram_max_mb == 0
-        assert row.gpu_util_avg == 50.0
 
 
 class TestNodeNameValidation:

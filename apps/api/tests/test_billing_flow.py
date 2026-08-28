@@ -9,26 +9,15 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, Wallet
 from app.modules.billing.patrol import balance_patrol
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import drain
-from tests.test_orchestrator_lifecycle import _provision_running, get_instance
+from tests.helpers import drain, get_instance, provision_running, register
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 class TestWalletFirstCreate:
@@ -76,7 +65,7 @@ class TestTailBilling:
     async def test_stop_charges_tail_in_same_transaction(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], fake
     ):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         expected = await backdate_running_event(sm, uuid, 30)
 
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -95,7 +84,7 @@ class TestTailBilling:
 
     async def test_pod_lost_also_charges_tail(self, client, sm, fake):
         """故障停费:running→failed 同样是计费边,尾账照出。"""
-        _headers, uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, uuid, user_id = await provision_running(client, sm, fake)
         expected = await backdate_running_event(sm, uuid, 15)
         fake.kill_pod(f"tenant-{user_id}", uuid)
         await reconcile_once(sm)
@@ -106,7 +95,7 @@ class TestTailBilling:
 
 class TestArrearsChain:
     async def test_zero_balance_stops_then_freezes_then_reclaims(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         # 清空余额
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
@@ -155,7 +144,7 @@ class TestArrearsChain:
         assert "arrears_reclaim" in reasons
 
     async def test_recharge_unfreezes(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(
@@ -179,7 +168,7 @@ class TestArrearsChain:
         assert data["frozen_deadline"] is None
 
     async def test_low_balance_warning(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         # 余额压到不足 24h(单价 1.68/时 → 24h 需 40.32;留 10)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
@@ -202,7 +191,7 @@ class TestArrearsChain:
         余额 → 不误停机(挂了 = 读余额到提交停机之间充值的竞态窗口复现)。"""
         from app.modules.billing import patrol as patrol_mod
 
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(
@@ -233,8 +222,8 @@ class TestArrearsChain:
 
 class TestBillingApiEdges:
     async def test_ledger_cursor_pagination(self, client, sm):
-        from tests.test_account_auth import register
-
+        """游标续页的唯一全程走查:limit 截断 → 拿 next_cursor 续 → 两页无重叠。
+        其余列表端点只钉自己的筛选口径,不再各走一遍同一套 Page 包装。"""
         data = await register(client, "13900000701")
         headers, user_id = {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
         async with sm() as session:
@@ -260,7 +249,7 @@ class TestBillingApiEdges:
         assert not ids1 & ids2  # 无重叠
 
     async def test_bills_filters(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         await backdate_running_event(sm, uuid, 20)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         month = now_utc().strftime("%Y-%m")

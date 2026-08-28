@@ -4,13 +4,11 @@ import pytest
 from sqlalchemy import select
 
 from app.core.audit import AuditLog
-from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
 from app.modules.catalog.models import ImageNodeCache
 from app.modules.catalog.prewarm import prewarm_patrol
-from tests.helpers import drain
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers, drain
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -21,14 +19,6 @@ IMAGE_BODY = {
     "cuda_version": "12.8",
     "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
 }
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def create_image(client, headers) -> int:

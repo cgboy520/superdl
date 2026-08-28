@@ -5,7 +5,6 @@ import pytest
 from app.core.errors import AppError, ErrorCode
 from app.core.timeutil import (
     billing_month_range,
-    day_floor,
     ensure_utc,
     hour_floor,
     prev_hour_range,
@@ -20,11 +19,6 @@ def test_ensure_utc_rejects_naive():
 def test_hour_floor():
     dt = datetime(2026, 8, 19, 10, 59, 59, 999999, tzinfo=UTC)
     assert hour_floor(dt) == datetime(2026, 8, 19, 10, 0, tzinfo=UTC)
-
-
-def test_day_floor():
-    dt = datetime(2026, 8, 19, 23, 1, tzinfo=UTC)
-    assert day_floor(dt) == datetime(2026, 8, 19, 0, 0, tzinfo=UTC)
 
 
 def test_billing_month_range():

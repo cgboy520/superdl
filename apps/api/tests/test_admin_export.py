@@ -10,23 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
 from app.core.timeutil import now_utc
-from tests.helpers import fund_wallet
-from tests.test_account_auth import register
+from tests.helpers import admin_headers, fund_wallet, register
 from tests.test_admin_ops import second_admin_headers
-from tests.test_catalog import admin_headers
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    from app.core.k8s import set_orchestrator
-    from app.core.k8s.fake import FakeOrchestrator
-
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def _make_orders(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:

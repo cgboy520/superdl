@@ -293,15 +293,12 @@ async def get_instance_logs(
     user: CurrentUser,
     session: DbSession,
     tail_lines: int = Query(default=200, ge=1),
-    since_seconds: int | None = Query(default=None, ge=1),
 ) -> InstanceLogsOut:
     """容器日志。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。
 
     仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按
-    2000 截断;since_seconds 可选、超 86400 按 86400 截断。不记审计。"""
-    return await service.read_instance_logs(
-        session, user.id, uuid, tail_lines=tail_lines, since_seconds=since_seconds
-    )
+    2000 截断。不记审计。"""
+    return await service.read_instance_logs(session, user.id, uuid, tail_lines=tail_lines)
 
 
 @router.post("/instances/{uuid}/reset-jupyter-token")

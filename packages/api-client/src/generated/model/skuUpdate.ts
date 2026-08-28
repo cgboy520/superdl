@@ -14,7 +14,6 @@ export interface SkuUpdate {
   mig_profile?: string | null;
   name?: string | null;
   oversell_cores?: number | string | null;
-  oversell_vram?: number | string | null;
   period_enabled?: boolean | null;
   pool_label?: string | null;
   price_hourly?: number | string | null;

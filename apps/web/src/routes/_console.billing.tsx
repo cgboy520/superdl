@@ -5,7 +5,6 @@
 
 import {
   exportBillingApiV1BillingExportGet,
-  type BillHourlyOut,
   type InvoiceEligibleOut,
   type InvoiceOut,
   type LedgerEntryOut,
@@ -46,12 +45,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { useCreateInvoice, useCreateRecharge, useCreateRefund, useMockPay } from "../api/mutations";
+import { HourlyBillsTable } from "../components/HourlyBillsTable";
+import { LoadMoreButton } from "../components/LoadMore";
 import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { WarnThresholdField } from "../components/WarnThresholdField";
 import {
   useBillSummary,
   useDailySummary,
-  useHourlyBillPages,
   useInvoiceEligible,
   useInvoicePages,
   useLedgerPages,
@@ -323,53 +323,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-/** 小时账单:游标分页 + 「加载更多」(与收支明细同构),金额不过 Number。 */
-function HourlyBillsTable({ month, tzOffsetMinutes }: { month: string; tzOffsetMinutes: number }) {
-  const { t } = useTranslation();
-  const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
-  const { data, isLoading, isError, refetch, isFetchingNextPage, hasNextPage, fetchNextPage } =
-    useHourlyBillPages({ month, tz_offset_minutes: tzOffsetMinutes });
-  const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
-
-  return (
-    <Space orientation="vertical" style={{ width: "100%" }}>
-      <Table
-        rowKey="id"
-        size="small"
-        pagination={false}
-        scroll={{ x: 760 }}
-        loading={isLoading}
-        dataSource={rows}
-        locale={{
-          emptyText: isError ? <TableErrorEmpty onRetry={() => void refetch()} /> : undefined,
-        }}
-        columns={[
-          { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
-          { title: t("billing.colInstance"), render: (_, r) => r.instance_name ?? `#${r.instance_id}` },
-          { title: t("instances.colBillDuration"), render: (_, r) => formatDuration(r.seconds_used) },
-          {
-            title: t("instances.colBillUnit"),
-            render: (_, r) => (
-              <span>
-                {formatHourlyPrice(r.unit_price)} × {r.gpu_count}
-              </span>
-            ),
-          },
-          {
-            title: t("instances.colBillAmount"),
-            render: (_, r) => <span>{formatMoney(r.amount)}</span>,
-          },
-        ]}
-      />
-      {hasNextPage && (
-        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-          {t("billing.loadMore")}
-        </Button>
-      )}
-    </Space>
-  );
-}
-
+/** 资金流水:游标分页 + 「加载更多」;金额一律按字符串渲染,不过 Number。 */
 function LedgerTable() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();
@@ -419,11 +373,11 @@ function LedgerTable() {
           { title: t("billing.colRemark"), dataIndex: "remark" },
         ]}
       />
-      {hasNextPage && (
-        <Button block loading={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-          {t("billing.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={hasNextPage}
+        loading={isFetchingNextPage}
+        onClick={() => void fetchNextPage()}
+      />
     </Space>
   );
 }
@@ -589,15 +543,11 @@ function RefundTab() {
           },
         ]}
       />
-      {refunds.hasNextPage && (
-        <Button
-          block
-          loading={refunds.isFetchingNextPage}
-          onClick={() => void refunds.fetchNextPage()}
-        >
-          {t("billing.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={refunds.hasNextPage}
+        loading={refunds.isFetchingNextPage}
+        onClick={() => void refunds.fetchNextPage()}
+      />
     </Space>
   );
 }
@@ -816,15 +766,11 @@ function InvoiceTab() {
           { title: t("billing.colTime"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
-      {invoices.hasNextPage && (
-        <Button
-          block
-          loading={invoices.isFetchingNextPage}
-          onClick={() => void invoices.fetchNextPage()}
-        >
-          {t("billing.loadMore")}
-        </Button>
-      )}
+      <LoadMoreButton
+        visible={invoices.hasNextPage}
+        loading={invoices.isFetchingNextPage}
+        onClick={() => void invoices.fetchNextPage()}
+      />
       <InvoiceApplyModal periods={periods} open={applyOpen} onClose={() => setApplyOpen(false)} />
     </Space>
   );
@@ -1014,7 +960,12 @@ function BillingPage() {
             {
               key: "bills",
               label: t("billing.tabBills"),
-              children: <HourlyBillsTable month={month} tzOffsetMinutes={tzOffsetMinutes} />,
+              children: (
+                <HourlyBillsTable
+                  params={{ month, tz_offset_minutes: tzOffsetMinutes }}
+                  showInstance
+                />
+              ),
             },
             { key: "ledger", label: t("billing.tabLedger"), children: <LedgerTable /> },
             { key: "refunds", label: t("billing.tabRefunds"), children: <RefundTab /> },

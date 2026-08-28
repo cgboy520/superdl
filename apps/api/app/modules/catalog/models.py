@@ -40,7 +40,6 @@ class Sku(Base):
     gpu_cores_pct: Mapped[int] = mapped_column(default=100)  # 算力份额 %(共享档 <100)
     vram_gb: Mapped[int]  # 每实例显存配额
     oversell_cores: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=Decimal("1.00"))
-    oversell_vram: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=Decimal("1.00"))
     pool_label: Mapped[str] = mapped_column(String(32))  # 节点池:kata / hami / mig
     vcpu: Mapped[int]
     mem_gb: Mapped[int]
@@ -55,8 +54,6 @@ class Sku(Base):
     spot_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(8), default="off", index=True)  # on / off
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # 变更时间,onupdate 自动刷新;无业务读取,留作审计线索
-    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class PlatformImage(Base):

@@ -10,8 +10,8 @@ from sqlalchemy import select, update
 from app.core.timeutil import now_utc
 from app.modules.billing import service as billing_service
 from app.modules.billing.models import BalanceLedger, Order, RefundRequest
+from tests.helpers import admin_headers
 from tests.test_admin_ops import second_admin_headers
-from tests.test_catalog import admin_headers
 from tests.test_payment import create_order, pay_mock, user_headers
 
 REFUND_NO_RE = re.compile(r"^R\d{8}-\d{2}$")

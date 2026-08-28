@@ -153,7 +153,6 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     order_no: Mapped[str] = mapped_column(String(40), unique=True)
     user_id: Mapped[int] = mapped_column(index=True)
-    type: Mapped[str] = mapped_column(String(16), default="recharge")
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     channel: Mapped[str] = mapped_column(String(16))  # wechat / alipay / mock
     channel_txn_id: Mapped[str | None] = mapped_column(String(64), unique=True)

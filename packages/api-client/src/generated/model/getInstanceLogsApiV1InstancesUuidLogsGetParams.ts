@@ -10,5 +10,4 @@ export type GetInstanceLogsApiV1InstancesUuidLogsGetParams = {
  * @minimum 1
  */
 tail_lines?: number;
-since_seconds?: number | null;
 };

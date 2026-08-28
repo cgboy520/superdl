@@ -22,7 +22,6 @@ export interface SkuAdminOut {
   mig_profile: string | null;
   name: string;
   oversell_cores: string;
-  oversell_vram: string;
   period_enabled: boolean;
   pool_label: string;
   price_hourly: string;

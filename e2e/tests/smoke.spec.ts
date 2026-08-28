@@ -7,46 +7,30 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { genEd25519Key, uniquePhone } from "./helpers";
+import {
+  addSshKeyViaUi,
+  pickSharedStandardSku,
+  rechargeViaUi,
+  registerViaUi,
+  uniquePhone,
+} from "./helpers";
 
 test("全生命周期冒烟", async ({ page }) => {
   test.setTimeout(300_000);
   const phone = uniquePhone();
 
   // ── 注册
-  await page.goto("/login");
-  await page.getByText("注册", { exact: true }).click();
-  await page.getByPlaceholder("手机号").fill(phone);
-  await page.getByRole("button", { name: "获取验证码" }).click();
-  await page.getByPlaceholder("短信验证码").fill("123456");
-  await page.getByRole("checkbox").check(); // 同意用户协议/隐私政策
-  await page.getByRole("button", { name: "注册并登录" }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
+  await registerViaUi(page, phone);
 
   // ── 充值 100(mock 渠道)
-  await page.goto("/billing");
-  await page
-    .getByRole("button", { name: /^充\s*值$/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: "生成支付二维码" }).click();
-  await page.getByRole("button", { name: /模拟支付成功/ }).click();
-  await expect(page.getByText(/已到账/)).toBeVisible({ timeout: 15_000 });
-  await page.keyboard.press("Escape");
+  await rechargeViaUi(page);
   await expect(page.getByText("¥100.00").first()).toBeVisible({ timeout: 10_000 });
 
   // ── 添加 SSH 公钥
-  await page.goto("/settings");
-  await page.getByLabel("名称").fill("e2e-key");
-  await page.getByLabel("公钥内容").fill(genEd25519Key());
-  await page.getByRole("button", { name: "添加公钥" }).click();
-  await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
+  await addSshKeyViaUi(page);
 
   // ── 市场:筛选链 + SKU 表格单选 → 结算条下一步
-  await page.goto("/market");
-  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
-  await expect(skuRow).toBeVisible({ timeout: 15_000 });
-  await skuRow.getByRole("radio").check();
+  await pickSharedStandardSku(page);
   await page.getByRole("button", { name: "下一步:配置实例" }).click();
   await expect(page).toHaveURL(/market\/create/);
 

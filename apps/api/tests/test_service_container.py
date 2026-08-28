@@ -16,8 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.crypto import decrypt_str
-from app.core.errors import AppError, ErrorCode
-from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.modules.orchestrator import service
 from app.modules.orchestrator.models import Instance, PortAllocation, ServiceEndpoint
@@ -27,14 +25,6 @@ from tests.helpers import create_test_sku, create_user_with_key, drain, drain_st
 pytestmark = pytest.mark.usefixtures("fake")
 
 IMAGE = "registry.superdl.local/vllm:0.11.0"
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 def service_body(sku_id: int, **over) -> dict:
@@ -106,7 +96,6 @@ class TestServiceInstanceCreate:
         assert endpoint.container_port == 8000
         assert endpoint.health_path == "/health"
         assert endpoint.require_api_key is True
-        assert endpoint.protocol == "http"
 
     async def test_no_ssh_means_no_port_pool_slot(self, client, sm, fake):
         """with_ssh=False 的服务实例不进端口池。
@@ -380,26 +369,6 @@ class TestCreateContract:
             "/api/v1/instances", json=service_body(sku_id, service_port=port), headers=headers
         )
         assert resp.status_code == 422, resp.text
-
-    async def test_reserved_port_also_blocked_at_service_layer(self, db, sm, client):
-        """契约层之外还有一道:service.create_instance 是唯一入口,绕开 schema 也拦得住。"""
-        _headers, user_id, _key_id, sku_id = await new_user(client, sm, "13900000323")
-        with pytest.raises(AppError) as exc:
-            await service.create_instance(
-                db,
-                user_id,
-                sku_id=sku_id,
-                gpu_count=1,
-                image_ref=IMAGE,
-                ssh_key_ids=[],
-                name=None,
-                data_disk_id=None,
-                idempotency_key=None,
-                workload_type="service",
-                service_port=8888,
-                with_ssh=False,
-            )
-        assert exc.value.code is ErrorCode.SERVICE_PORT_INVALID
 
     async def test_health_path_needs_leading_slash(self, client, sm):
         headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000324")

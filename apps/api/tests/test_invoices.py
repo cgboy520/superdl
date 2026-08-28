@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 
 from app.core.timeutil import now_utc
 from app.modules.billing.models import InvoiceRequest, Order
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 from tests.test_payment import create_order, pay_mock, user_headers
 
 

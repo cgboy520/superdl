@@ -55,9 +55,8 @@ import type {
   TicketDetailOut,
 } from "@superdl/api-client";
 import { isTransientInstanceStatus } from "@superdl/ui";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
-import { useEffect } from "react";
 
 interface QueryOpts<T = unknown> {
   enabled?: boolean;
@@ -118,12 +117,14 @@ export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
     select: (p) => p.items,
     ...opts,
   });
-/** 实例列表游标分页:status 精确/name 模糊服务端过滤,「加载更多」向下翻页。 */
+/** 实例列表游标分页:status 精确/name 模糊服务端过滤,「加载更多」向下翻页。
+ *  轮询交给 refetchInterval:过渡态 5s、稳态 30s,窗口失焦自动停(默认
+ *  refetchIntervalInBackground=false),失败态由查询自身承担,不必自己拿 setInterval
+ *  + setQueryData 手工合并首页。 */
 export const useInstancePages = (params?: { status?: string; name?: string }) => {
   const status = params?.status;
   const name = params?.name?.trim() || undefined;
-  const queryClient = useQueryClient();
-  const query = useInfiniteQuery<
+  return useInfiniteQuery<
     PageInstanceOut,
     ApiError,
     InfiniteData<PageInstanceOut>,
@@ -135,32 +136,13 @@ export const useInstancePages = (params?: { status?: string; name?: string }) =>
       listInstancesApiV1InstancesGet({ status, name, cursor: pageParam, limit: 20 }),
     initialPageParam: undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: (q) =>
+      (q.state.data?.pages ?? []).some((p) =>
+        p.items.some((i) => isTransientInstanceStatus(i.status)),
+      )
+        ? 5_000
+        : 30_000,
   });
-  // 轮询只回刷第一页:过渡态 5s、稳态 30s,页面不可见时跳过;首页数据用 setQueryData 原地合并
-  const hasTransient = (query.data?.pages[0]?.items ?? []).some((i) =>
-    isTransientInstanceStatus(i.status),
-  );
-  useEffect(() => {
-    // 变量名必须避开 `key`:i18next-cli 按变量名跨文件共享字符串数组常量,会污染别处的 t(MAP[key]) 解析而漏提键
-    const pagesKey = ["instances", "pages", { status, name }];
-    const tick = async () => {
-      if (document.visibilityState !== "visible") return;
-      try {
-        const first = await listInstancesApiV1InstancesGet({ status, name, limit: 20 });
-        queryClient.setQueryData<InfiniteData<PageInstanceOut>>(pagesKey, (old) => {
-          if (!old || old.pages.length === 0) return old;
-          const [head, ...rest] = old.pages;
-          // 首页条目整体替换;next_cursor 保持翻页链不变(渲染层按 uuid 去重覆盖重叠)
-          return { ...old, pages: [{ ...head, items: first.items }, ...rest] };
-        });
-      } catch {
-        // 轮询失败静默:列表仍展示最近一次成功数据,错误态由查询本身的 isError 承担
-      }
-    };
-    const timer = setInterval(() => void tick(), hasTransient ? 5_000 : 30_000);
-    return () => clearInterval(timer);
-  }, [queryClient, hasTransient, status, name]);
-  return query;
 };
 export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
   useApiQuery(["instances", uuid], () => getInstanceApiV1InstancesUuidGet(uuid), opts);

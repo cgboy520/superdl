@@ -5,12 +5,16 @@
 
 import os
 from collections.abc import AsyncIterator, Iterator
+from typing import TYPE_CHECKING
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
+
+if TYPE_CHECKING:
+    from app.core.k8s.fake import FakeOrchestrator
 
 # 静态测试环境变量:conftest 导入即就位,不挂在 pg_url fixture 上 —— 不消费数据库 fixture
 # 的用例单独运行时也需要它们,挂 fixture 上会让窄选集的顺序组合炸 Settings 校验。
@@ -105,12 +109,6 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
 
 
 @pytest.fixture
-async def db(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession]:
-    async with sm() as session:
-        yield session
-
-
-@pytest.fixture
 async def client(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncClient]:
     from app.main import create_app
 
@@ -118,3 +116,20 @@ async def client(sm: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncCli
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture
+def fake() -> Iterator["FakeOrchestrator"]:
+    """注入 FakeOrchestrator,收尾恢复默认(不注入时 get_orchestrator 走 lru_cache 的共享实例,
+    用例之间会串状态)。
+
+    auto_ready=False 是全局基线:Pod 不自动就绪,creating → running 的时序由用例自己驱动。
+    需要「建出来即 Ready」的模块(集群巡检、节点台账)在本文件外就地覆盖同名 fixture。
+    """
+    from app.core.k8s import set_orchestrator
+    from app.core.k8s.fake import FakeOrchestrator
+
+    orch = FakeOrchestrator(auto_ready=False)
+    set_orchestrator(orch)
+    yield orch
+    set_orchestrator(None)

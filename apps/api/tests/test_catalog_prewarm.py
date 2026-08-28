@@ -6,7 +6,6 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.k8s import set_orchestrator
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
@@ -17,14 +16,6 @@ from tests.helpers import drain, drain_strict
 pytestmark = pytest.mark.usefixtures("fake")
 
 IMAGE_REF = "registry.superdl.local/pytorch:2.9.0-cu128"
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)  # 默认三池 → 三节点 fake-{pool}-node-1
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def make_image(

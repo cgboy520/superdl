@@ -53,7 +53,7 @@ async def seed_disk_daily(
 
 
 async def register_user(client: AsyncClient, phone: str) -> tuple[dict[str, str], int]:
-    from tests.test_account_auth import register
+    from tests.helpers import register
 
     data = await register(client, phone)
     return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]

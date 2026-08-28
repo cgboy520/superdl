@@ -57,7 +57,6 @@ interface SkuFormValues {
   gpu_cores_pct: number;
   vram_gb: number;
   oversell_cores: number;
-  oversell_vram: number;
   pool_label: string;
   vcpu: number;
   mem_gb: number;
@@ -90,7 +89,7 @@ const POOL_VARIANTS: Record<string, SkuVariant[]> = {
 };
 const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
 /** CPU 规格必须落库的值(后端 catalog.cpu_spec_error 的镜像:GPU 三项任一非 0 即被拒)。
- *  超卖一并钉成 1:那两个输入框在 cpu 档不挂载,不显式覆盖会把切档前的旧值带进库。 */
+ *  超卖一并钉成 1:那个输入框在 cpu 档不挂载,不显式覆盖会把切档前的旧值带进库。 */
 const CPU_ZERO_FIELDS = {
   gpu_model: "",
   mig_profile: null,
@@ -98,7 +97,6 @@ const CPU_ZERO_FIELDS = {
   vram_gb: 0,
   max_gpus_per_instance: 0,
   oversell_cores: 1,
-  oversell_vram: 1,
 } as const;
 
 type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
@@ -291,7 +289,7 @@ function SkusPage() {
     if (sku === "new") {
       form.resetFields();
       form.setFieldsValue({
-        variant: "shared_hami", gpu_cores_pct: 50, oversell_cores: 1.5, oversell_vram: 1.0,
+        variant: "shared_hami", gpu_cores_pct: 50, oversell_cores: 1.5,
         disk_gb: 100, max_gpus_per_instance: 1, pool_label: "hami", vcpu: 8, mem_gb: 32,
         // 默认开:与后端 SkuCreate.period_enabled 默认值一致
         period_enabled: true,
@@ -305,7 +303,6 @@ function SkusPage() {
         ...sku,
         variant: skuVariant(sku.tier, sku.pool_label),
         oversell_cores: Number(sku.oversell_cores),
-        oversell_vram: Number(sku.oversell_vram),
         price_hourly: sku.price_hourly,
       });
     }
@@ -340,7 +337,6 @@ function SkusPage() {
           tier,
           ...gpuFields,
           oversell_cores: String(values.oversell_cores),
-          oversell_vram: String(values.oversell_vram),
           pool_label: pool,
           vcpu: values.vcpu,
           mem_gb: values.mem_gb,
@@ -359,7 +355,6 @@ function SkusPage() {
           name: values.name,
           ...gpuUpdatable,
           oversell_cores: String(values.oversell_cores),
-          oversell_vram: String(values.oversell_vram),
           pool_label: pool,
           vcpu: values.vcpu,
           mem_gb: values.mem_gb,
@@ -373,11 +368,8 @@ function SkusPage() {
         update.mutate({ skuId: editing.id, data: updatePayload });
       }
     };
-    // 改价二次确认(带影响预览:当前在跑台数/涉及用户);显存超卖 >1.2 同框复用
-    const priceChanged =
-      record !== null && Number(values.price_hourly) !== Number(record.price_hourly);
-    const vramHigh = values.oversell_vram > 1.2;
-    if (!priceChanged && !vramHigh) {
+    // 改价二次确认(带影响预览:当前在跑台数/涉及用户)
+    if (record === null || Number(values.price_hourly) === Number(record.price_hourly)) {
       doSubmit();
       return;
     }
@@ -385,33 +377,27 @@ function SkusPage() {
       title: t("skus.submitConfirmTitle"),
       content: (
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          {vramHigh && <span>{t("skus.vramOversellConfirmBody")}</span>}
-          {priceChanged && record && (
-            <>
-              <span>
-                {t("skus.priceChangeLine", {
-                  from: formatHourlyPrice(record.price_hourly),
-                  to: formatHourlyPrice(values.price_hourly),
-                })}
-              </span>
-              <span style={{ color: adminColors.alertAccent }}>
-                {impact.data
-                  ? t("skus.priceChangeImpact", {
-                      instances: impact.data.active_instances,
-                      users: impact.data.active_users,
-                      gpus: impact.data.active_gpus,
-                    })
-                  : t("skus.priceChangeImpactPending")}
-              </span>
-              <span style={{ color: adminColors.textSecondary, fontSize: 12 }}>
-                {t("skus.priceChangeScope")}
-              </span>
-            </>
-          )}
+          <span>
+            {t("skus.priceChangeLine", {
+              from: formatHourlyPrice(record.price_hourly),
+              to: formatHourlyPrice(values.price_hourly),
+            })}
+          </span>
+          <span style={{ color: adminColors.alertAccent }}>
+            {impact.data
+              ? t("skus.priceChangeImpact", {
+                  instances: impact.data.active_instances,
+                  users: impact.data.active_users,
+                  gpus: impact.data.active_gpus,
+                })
+              : t("skus.priceChangeImpactPending")}
+          </span>
+          <span style={{ color: adminColors.textSecondary, fontSize: 12 }}>
+            {t("skus.priceChangeScope")}
+          </span>
         </Space>
       ),
       okText: t("skus.confirmSubmit"),
-      okButtonProps: { danger: vramHigh },
       onOk: doSubmit,
     });
   };
@@ -481,12 +467,6 @@ function SkusPage() {
             },
           },
           { title: t("skus.colOversellCores"), dataIndex: "oversell_cores", render: (v: string) => `${v}×` },
-          {
-            title: t("skus.colOversellVram"),
-            dataIndex: "oversell_vram",
-            render: (v: string) =>
-              Number(v) > 1.2 ? <Tag color="orange">{v}×</Tag> : `${v}×`,
-          },
           { title: t("skus.colPrice"), dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
           {
             // 与档位正交,单独成列而不塞进档位标签
@@ -684,13 +664,6 @@ function SkusPage() {
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={1} max={9.99} step={0.1} style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item
-                  name="oversell_vram"
-                  label={t("skus.oversellVramLabel")}
-                  rules={[{ required: true }]}
-                >
-                  <InputNumber min={1} max={9.99} step={0.05} style={{ width: "100%" }} />
                 </Form.Item>
               </>
             )}

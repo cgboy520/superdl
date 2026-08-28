@@ -226,10 +226,8 @@ class K8sOrchestrator(Protocol):
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...
 
-    async def read_instance_logs(
-        self, namespace: str, name: str, *, tail_lines: int, since_seconds: int | None = None
-    ) -> str:
-        """读取实例容器日志(只读):末尾 tail_lines 行,可选 since_seconds 时间窗。
+    async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
+        """读取实例容器日志(只读):末尾 tail_lines 行。
 
         请求路径同步直读的例外(实时性,不进 outbox);调用方须自行做 owner/状态/限流校验。
         """

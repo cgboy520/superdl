@@ -137,12 +137,8 @@ from app.modules.orchestrator.queries import (
     running_spot_gpus_by_pool as running_spot_gpus_by_pool,
 )
 from app.modules.orchestrator.schemas import (
-    RESERVED_SERVICE_PORTS,
     WORKLOAD_DEV,
     WORKLOAD_SERVICE,
-)
-from app.modules.orchestrator.transitions import (
-    TransitionListener as TransitionListener,
 )
 from app.modules.orchestrator.transitions import (
     register_transition_listener as register_transition_listener,
@@ -631,28 +627,16 @@ async def create_instance(
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
     # 抢占在本函数内下发,与建实例同事务:后面任何一步失败都会把回收一起回滚
     await _soft_admit_capacity(session, sku, gpu_count, market=market, user_id=user_id)
-    # 服务端口三层同源闸门之一(另两层:契约层 InstanceCreate、DB CHECK);巡检/管理端/脚本
-    # 绕过契约层直调 service 层时,只有这里还挡着
+    # service_port 必填/保留端口、subscription 必带 period 由契约层 InstanceCreate
+    # 与 DB CHECK 把关,本函数唯一生产入口是路由层,不重复校验
     is_service = workload_type == WORKLOAD_SERVICE
-    if is_service:
-        if service_port is None:
-            raise AppError(ErrorCode.SERVICE_PORT_INVALID, key="orchestrator.servicePortRequired")
-        if service_port in RESERVED_SERVICE_PORTS:
-            raise AppError(
-                ErrorCode.SERVICE_PORT_INVALID,
-                key="orchestrator.servicePortReserved",
-                params={"port": service_port},
-            )
     # dev 形态恒开 SSH(那是它唯一的登录方式);service 形态由用户勾选
     wants_ssh = with_ssh if is_service else True
 
     is_subscription = market == MARKET_SUBSCRIPTION
-    if is_subscription:
-        if period is None:
-            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodRequired")
-        if not sku.period_enabled:
-            # 运营对稀缺型号关掉包周期;市场页置灰 chips,这里兜住直调接口
-            raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
+    if is_subscription and not sku.period_enabled:
+        # 运营对稀缺型号关掉包周期;市场页置灰 chips,这里兜住直调接口
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
     # 有效时价:按量即原价,包周期按周期折扣打折(唯一折扣计算点在 core/pricing)
     policies = await get_effective_policies(session)
     unit_price = price_for(sku.price_hourly, market=market, policies=policies, period=period)
@@ -660,152 +644,141 @@ async def create_instance(
     # 临界区开始:FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
     # 在途统计与配额校验必须在锁内做(先算后锁即 TOCTOU)。
     # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增。
+    # 异常路径不需要手动 rollback:session 出上下文管理器时未提交事务自动回滚。
     estimate = hourly_cost(unit_price, gpu_count)
+    await billing_service.lock_wallet(session, user_id)
+    pending = await _pending_hourly(session, user_id)
+    if not is_subscription:
+        await billing_service.assert_can_afford(
+            session, user_id, additional_hourly=as_amount(estimate + pending)
+        )
+    # CPU 实例才计 vCPU 维(GPU 实例的 vCPU 是配卡的附属,不单独设闸)
+    await _check_user_quota(session, user_id, gpu_count, sku.vcpu if gpu_count == 0 else 0)
+
+    selected: list[str] = []
+    if wants_ssh:
+        keys = await account_service.list_ssh_keys(session, user_id)
+        selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
+        if not selected:
+            raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
+
+    disk_id_validated: int | None = None
+    if data_disk_id is not None:
+        from app.modules.orchestrator import disks as disks_service
+
+        # 先校验归属与状态;实例 id 生成后再占用
+        disk = await disks_service.get_disk_by_id_for_user(session, user_id, data_disk_id)
+        disk_id_validated = disk.id
+
+    instance_uuid = uuid4().hex
+    jupyter_token = secrets.token_urlsafe(24)
+    instance = Instance(
+        uuid=instance_uuid,
+        user_id=user_id,
+        name=name or f"instance-{uuid4().hex[:6]}",
+        sku_id=sku.id,
+        spec=_snapshot_spec(sku),
+        price_hourly=unit_price,
+        gpu_count=gpu_count,
+        market=market,
+        image_ref=image_ref,
+        status=sm_def.CREATING,
+        k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
+        # service 形态不用 Jupyter,但该列非空:照常签一把,不进 Pod spec
+        jupyter_token=_encode_token(jupyter_token, instance_uuid=instance_uuid),
+        authorized_keys=selected,
+        data_disk_id=disk_id_validated,
+        idempotency_key=idempotency_key,
+        workload_type=workload_type,
+        container_command=list(container_command) if container_command else None,
+        container_args=list(container_args) if container_args else None,
+        with_ssh=wants_ssh,
+        env_encrypted=(
+            _encode_env(env, set(env_secret_keys or ()), instance_uuid=instance_uuid)
+            if env
+            else None
+        ),
+    )
+    session.add(instance)
     try:
-        await billing_service.lock_wallet(session, user_id)
-        pending = await _pending_hourly(session, user_id)
-        if not is_subscription:
-            await billing_service.assert_can_afford(
-                session, user_id, additional_hourly=as_amount(estimate + pending)
-            )
-        # CPU 实例才计 vCPU 维(GPU 实例的 vCPU 是配卡的附属,不单独设闸)
-        await _check_user_quota(session, user_id, gpu_count, sku.vcpu if gpu_count == 0 else 0)
-
-        selected: list[str] = []
-        if wants_ssh:
-            keys = await account_service.list_ssh_keys(session, user_id)
-            selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
-            if not selected:
-                raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
-
-        disk_id_validated: int | None = None
-        if data_disk_id is not None:
-            from app.modules.orchestrator import disks as disks_service
-
-            # 先校验归属与状态;实例 id 生成后再占用
-            disk = await disks_service.get_disk_by_id_for_user(session, user_id, data_disk_id)
-            disk_id_validated = disk.id
-
-        instance_uuid = uuid4().hex
-        jupyter_token = secrets.token_urlsafe(24)
-        instance = Instance(
-            uuid=instance_uuid,
-            user_id=user_id,
-            name=name or f"instance-{uuid4().hex[:6]}",
-            sku_id=sku.id,
-            spec=_snapshot_spec(sku),
-            price_hourly=unit_price,
-            gpu_count=gpu_count,
-            market=market,
-            image_ref=image_ref,
-            status=sm_def.CREATING,
-            k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
-            # service 形态不用 Jupyter,但该列非空:照常签一把,不进 Pod spec
-            jupyter_token=_encode_token(jupyter_token, instance_uuid=instance_uuid),
-            authorized_keys=selected,
-            data_disk_id=disk_id_validated,
-            idempotency_key=idempotency_key,
-            workload_type=workload_type,
-            container_command=list(container_command) if container_command else None,
-            container_args=list(container_args) if container_args else None,
-            with_ssh=wants_ssh,
-            env_encrypted=(
-                _encode_env(env, set(env_secret_keys or ()), instance_uuid=instance_uuid)
-                if env
-                else None
-            ),
-        )
-        session.add(instance)
-        try:
-            await session.flush()
-        except IntegrityError:
-            # 并发同幂等键:对方已落库,回滚后按重放返回既有实例(不多开一台)
-            await session.rollback()
-            raced = (
-                await find_replay(
-                    session,
-                    Instance,
-                    owner_col=Instance.user_id,
-                    owner_id=user_id,
-                    key=idempotency_key,
-                )
-                if idempotency_key
-                else None
-            )
-            if raced is not None:
-                return raced, False
-            raise
-        if is_subscription:
-            assert period is not None  # 上面已拦,这里给类型收敛
-            # 必须先扣款再校验在途:此刻钱包余额已是扣后值,校验的才是「付完这一单还撑不
-            # 撑得住已经在跑的按量资源」
-            await billing_service.charge_new_subscription(
-                session,
-                user_id=user_id,
-                instance_id=instance.id,
-                instance_name=instance.name,
-                sku_id=sku.id,
-                base_hourly=sku.price_hourly,
-                gpu_count=gpu_count,
-                period=period,
-                period_count=period_count,
-                # 订阅行不带幂等键:整笔创建的幂等由 instances 那行担保(同事务),
-                # 两张表共用一个键会在幂等窗口过后撞车
-                idempotency_key=None,
-            )
-            await billing_service.assert_can_afford(
-                session, user_id, additional_hourly=as_amount(pending)
-            )
-        if disk_id_validated is not None:
-            from app.modules.orchestrator import disks as disks_service
-
-            await disks_service.attach_for_instance(
-                session, user_id, disk_id_validated, instance.id
-            )
-        if is_service:
-            assert service_port is not None  # 上面已拦,这里给类型收敛
-            await _create_service_endpoint(
-                session,
-                instance,
-                container_port=service_port,
-                health_path=health_path,
-                require_api_key=require_api_key,
-            )
-        session.add(
-            InstanceEvent(
-                instance_id=instance.id,
-                from_status=None,
-                to_status=sm_def.CREATING,
-                reason="create",
-                actor="user",
-                event_metadata={
-                    "sku_id": sku.id,
-                    "gpu_count": gpu_count,
-                    "workload_type": workload_type,
-                    "market": market,
-                },
-                created_at=now_utc(),
-            )
-        )
-        enqueue(session, "instance.create", {"instance_id": instance.id})
-        await session.commit()
-    except IntegrityError as exc:
-        # 钱包首建与并发开户互撞唯一索引(locks 序列化前的瞬时竞争):可安全重试
+        await session.flush()
+    except IntegrityError:
+        # 并发同幂等键:对方已落库,回滚后按重放返回既有实例(不多开一台)
         await session.rollback()
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="common.retryableConflict",
-            http_status=http_status.HTTP_409_CONFLICT,
-        ) from exc
+        raced = (
+            await find_replay(
+                session,
+                Instance,
+                owner_col=Instance.user_id,
+                owner_id=user_id,
+                key=idempotency_key,
+            )
+            if idempotency_key
+            else None
+        )
+        if raced is not None:
+            return raced, False
+        raise
+    if is_subscription:
+        assert period is not None  # 契约层已拦,这里给类型收敛
+        # 必须先扣款再校验在途:此刻钱包余额已是扣后值,校验的才是「付完这一单还撑不
+        # 撑得住已经在跑的按量资源」
+        await billing_service.charge_new_subscription(
+            session,
+            user_id=user_id,
+            instance_id=instance.id,
+            instance_name=instance.name,
+            sku_id=sku.id,
+            base_hourly=sku.price_hourly,
+            gpu_count=gpu_count,
+            period=period,
+            period_count=period_count,
+            # 订阅行不带幂等键:整笔创建的幂等由 instances 那行担保(同事务),
+            # 两张表共用一个键会在幂等窗口过后撞车
+            idempotency_key=None,
+        )
+        await billing_service.assert_can_afford(
+            session, user_id, additional_hourly=as_amount(pending)
+        )
+    if disk_id_validated is not None:
+        from app.modules.orchestrator import disks as disks_service
+
+        await disks_service.attach_for_instance(session, user_id, disk_id_validated, instance.id)
+    if is_service:
+        assert service_port is not None  # 契约层已拦,这里给类型收敛
+        await _create_service_endpoint(
+            session,
+            instance,
+            container_port=service_port,
+            health_path=health_path,
+            require_api_key=require_api_key,
+        )
+    session.add(
+        InstanceEvent(
+            instance_id=instance.id,
+            from_status=None,
+            to_status=sm_def.CREATING,
+            reason="create",
+            actor="user",
+            event_metadata={
+                "sku_id": sku.id,
+                "gpu_count": gpu_count,
+                "workload_type": workload_type,
+                "market": market,
+            },
+            created_at=now_utc(),
+        )
+    )
+    enqueue(session, "instance.create", {"instance_id": instance.id})
+    await session.commit()
     logger.info("instance_create_accepted", instance_id=instance.id, user_id=user_id)
     return instance, True
 
 
-async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance | None:
-    """按主键取实例(不限归属、不限状态)。系统侧巡检用,用户请求一律走 get_instance。"""
-    return (
-        await session.execute(select(Instance).where(Instance.id == instance_id))
-    ).scalar_one_or_none()
+async def instance_by_id(session: AsyncSession, instance_id: int) -> Instance:
+    """按主键取实例(不限归属、不限状态;行从不硬删,按 id 必命中)。
+    系统侧巡检用,用户请求一律走 get_instance。"""
+    return (await session.execute(select(Instance).where(Instance.id == instance_id))).scalar_one()
 
 
 async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
@@ -1420,7 +1393,6 @@ async def service_endpoint_view(
         slug=endpoint.public_slug,
         url=f"https://{service_endpoint_host(endpoint.public_slug)}",
         container_port=endpoint.container_port,
-        protocol=endpoint.protocol,
         health_path=endpoint.health_path,
         require_api_key=endpoint.require_api_key,
         # 只读 DB:请求路径不碰 K8s。unready_since 由巡检写,是 Pod 就绪的库内投影
@@ -1568,21 +1540,15 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
 # 代价由三道闸兜住:owner 校验、20/h/user 限流、K8s 读 5s 超时(real 侧 _request_timeout)。
 
 LOGS_MAX_TAIL_LINES = 2000
-LOGS_MAX_SINCE_SECONDS = 86400
 
 
 async def read_instance_logs(
-    session: AsyncSession,
-    user_id: int,
-    uuid: str,
-    *,
-    tail_lines: int,
-    since_seconds: int | None,
+    session: AsyncSession, user_id: int, uuid: str, *, tail_lines: int
 ) -> "InstanceLogsOut":
     """读取实例容器日志(只读;不记审计)。
 
     owner 校验(非属主 404,不暴露存在性);仅 running/stopping 可取(其余状态 Pod 已删,
-    409 给明确文案);超上限参数按上限截断而非 422(tail_lines≤2000、since_seconds≤86400)。
+    409 给明确文案);tail_lines 超上限按上限截断而非 422(≤2000)。
     """
     from app.modules.orchestrator.schemas import InstanceLogsOut
 
@@ -1595,11 +1561,10 @@ async def read_instance_logs(
         )
     await check_rate_limit(f"instance-logs:{user_id}", max_attempts=20, window_seconds=3600.0)
     tail = min(tail_lines, LOGS_MAX_TAIL_LINES)
-    since = min(since_seconds, LOGS_MAX_SINCE_SECONDS) if since_seconds is not None else None
     try:
         # +1 行探路:拿回的行数超过 tail 即知前面还有,truncated 标记由此而来
         raw = await get_orchestrator().read_instance_logs(
-            instance.k8s_namespace, instance.uuid, tail_lines=tail + 1, since_seconds=since
+            instance.k8s_namespace, instance.uuid, tail_lines=tail + 1
         )
     except Exception as exc:
         logger.warning("instance_logs_read_failed", instance_uuid=uuid, error=str(exc))
@@ -1738,11 +1703,6 @@ async def system_stop(session: AsyncSession, instance: Instance, *, reason: str)
     reason 由调用方给(欠费 arrears_stop / 到期 subscription_expired),不共用。"""
     await transition(session, instance, sm_def.STOPPING, reason=reason, actor="system")
     enqueue(session, "instance.stop", {"instance_id": instance.id})
-
-
-async def arrears_stop(session: AsyncSession, instance: Instance) -> None:
-    """欠费停机。"""
-    await system_stop(session, instance, reason="arrears_stop")
 
 
 async def freeze_instance(

@@ -107,11 +107,10 @@ async def _verify_user_once(
     async with sm() as session:
         # t0 取库时钟、先于一切读取:之后提交的变动 wallet.updated_at > t0,下轮必被重新选中
         t0 = (await session.execute(select(func.now()))).scalar_one()
+        # 候选集出自 wallets 表且行从不删,按 user_id 必命中
         wallet_row = (
             await session.execute(select(Wallet).where(Wallet.user_id == user_id))
-        ).scalar_one_or_none()
-        if wallet_row is None:
-            return None  # 理论不到达:候选集出自 wallets 表
+        ).scalar_one()
         checkpoint = await session.get(ReconcileCheckpoint, user_id)
         if checkpoint is not None:
             # 游标边界行复核:被删/被改则链无法续接,直接报差(候选集的尾部探测已选中)

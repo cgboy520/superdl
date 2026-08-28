@@ -10,24 +10,19 @@ from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillHourly, Wallet
 from app.modules.billing.reconcile import reconcile_funds
 from app.modules.notify.models import Notification
-
-
-async def _fund(sm, user_id: int, amount: str = "100.00") -> None:
-    async with sm() as session:
-        await wallet.credit(session, user_id, Decimal(amount), type_="recharge")
-        await session.commit()
+from tests.helpers import fund_wallet
 
 
 class TestWalletLedgerInvariant:
     async def test_clean_books_report_no_mismatch(self, sm):
-        await _fund(sm, 1)
+        await fund_wallet(sm, 1)
         counts = await reconcile_funds(sm)
         assert counts == {"wallet_mismatch": 0, "bill_mismatch": 0}
 
     async def test_balance_drift_detected_and_not_written_back(self, sm):
         """手工改一笔余额(模拟坏写/半提交事务)必须被发现并告警;只报不改:
         自动纠正会把一个可查的差异变成一个不可查的差异。"""
-        await _fund(sm, 1)
+        await fund_wallet(sm, 1)
         async with sm() as session:
             await session.execute(update(Wallet).values(balance=Decimal("999.00")))
             await session.commit()
@@ -51,7 +46,7 @@ class TestWalletLedgerInvariant:
 
     async def test_missing_ledger_row_is_detected(self, sm):
         """流水行被删掉(或压根没写)同样被发现。"""
-        await _fund(sm, 1)
+        await fund_wallet(sm, 1)
         async with sm() as session:
             await session.execute(text("DELETE FROM balance_ledger"))
             await session.commit()
@@ -61,7 +56,7 @@ class TestWalletLedgerInvariant:
 class TestBillsVsConsume:
     async def test_bill_without_debit_is_detected(self, sm):
         """出账写了但扣款没写:出账合计 ≠ 消费流水合计。"""
-        await _fund(sm, 1)
+        await fund_wallet(sm, 1)
         async with sm() as session:
             session.add(
                 BillHourly(

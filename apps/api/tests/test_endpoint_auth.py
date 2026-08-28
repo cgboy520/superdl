@@ -12,8 +12,6 @@ from sqlalchemy import func, select
 
 from app.core.audit import AuditLog
 from app.core.config import get_settings
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.orchestrator.models import Instance, ServiceApiKey
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import drain
@@ -22,14 +20,6 @@ from tests.test_service_container import new_user, provision_service
 pytestmark = pytest.mark.usefixtures("fake")
 
 AUTH_PATH = "/api/internal/v1/endpoint-auth"
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 def host_for(slug: str) -> str:
@@ -233,9 +223,8 @@ class TestPathShapes:
         resp = await call_auth(client, slug=slug, key=key, path="")
         assert resp.status_code == 200, resp.text
 
-    @pytest.mark.parametrize("path", ["/", "/v1/chat/completions", "/健康?a=1"])
-    async def test_suffixes_do_not_authorize(self, client, sm, fake, path):
-        """精确路径之外一律不放行。
+    async def test_suffixes_do_not_authorize(self, client, sm, fake):
+        """精确路径之外一律不放行(逐路径参数化会把一次完整开机重复三遍)。
 
         断「非 2xx」而不是钉死 404:带后缀是 404,而单个尾斜杠会先撞上 Starlette 的
         redirect_slashes(307)。两者对 ext_authz 是同一件事 —— 非 2xx 即拒绝,fail-close。
@@ -243,19 +232,20 @@ class TestPathShapes:
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000442")
         slug = await endpoint_of(client, headers, uuid)
         key = await issue_key(client, headers, uuid)
-        resp = await call_auth(client, slug=slug, key=key, path=path)
-        assert not 200 <= resp.status_code < 300, f"{resp.status_code} {resp.text}"
+        for path in ("/", "/v1/chat/completions", "/健康?a=1"):
+            resp = await call_auth(client, slug=slug, key=key, path=path)
+            assert not 200 <= resp.status_code < 300, f"{path}: {resp.status_code} {resp.text}"
 
-    @pytest.mark.parametrize("method", ["get", "post", "put", "patch", "delete", "head", "options"])
-    async def test_all_methods_accepted(self, client, sm, fake, method):
+    async def test_all_methods_accepted(self, client, sm, fake):
         """ext_authz 用客户端原始方法回调:漏一个方法就是那一类请求全被 fail-close 拦死。"""
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000441")
         slug = await endpoint_of(client, headers, uuid)
         key = await issue_key(client, headers, uuid)
-        resp = await getattr(client, method)(
-            AUTH_PATH, headers={"host": host_for(slug), "x-api-key": key}
-        )
-        assert resp.status_code == 200, resp.text
+        for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+            resp = await getattr(client, method)(
+                AUTH_PATH, headers={"host": host_for(slug), "x-api-key": key}
+            )
+            assert resp.status_code == 200, f"{method}: {resp.text}"
 
 
 class TestNoAuthRequired:

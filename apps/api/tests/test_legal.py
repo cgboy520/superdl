@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit import AuditLog
 from app.modules.legal.models import LegalDocVersion, UserConsent
-from tests.test_account_auth import register
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers, register
 
 NEW_CONTENT = "# 标题\n\n第一行\n第二行(改)\n第三行\n"
 
@@ -45,9 +44,12 @@ class TestPublicEndpoint:
         assert body["locale"] == "zh-CN"
         assert body["fallback"] is True
 
-    async def test_no_published_404(self, client: AsyncClient, db: AsyncSession):
-        await db.execute(delete(LegalDocVersion).where(LegalDocVersion.doc_key == "terms"))
-        await db.commit()
+    async def test_no_published_404(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        async with sm() as session:
+            await session.execute(delete(LegalDocVersion).where(LegalDocVersion.doc_key == "terms"))
+            await session.commit()
         resp = await client.get("/api/v1/legal/terms")
         assert resp.status_code == 404
         assert resp.json()["code"] == "NOT_FOUND"

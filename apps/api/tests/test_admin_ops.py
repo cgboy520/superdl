@@ -10,8 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
 from app.modules.adminapi import service as admin_service
@@ -20,20 +18,9 @@ from app.modules.adminapi.service import create_admin
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_user_with_key, drain
-from tests.test_account_auth import register
-from tests.test_catalog import admin_headers
-from tests.test_orchestrator_lifecycle import _provision_running
+from tests.helpers import admin_headers, create_user_with_key, drain, provision_running, register
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def second_admin_headers(
@@ -59,7 +46,7 @@ async def _make_dead_task(sm) -> int:
 
 class TestAdjustments:
     async def test_dual_review_flow(self, client, sm, fake):
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         finance_a = await second_admin_headers(sm, client, "fin-a")
         finance_b = await second_admin_headers(sm, client, "fin-b")
 
@@ -99,7 +86,7 @@ class TestAdjustments:
         assert resp.status_code == 409
 
     async def test_negative_adjustment_and_reject(self, client, sm, fake):
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await second_admin_headers(sm, client, "fin-c")
         fin_b = await second_admin_headers(sm, client, "fin-d")
 
@@ -121,7 +108,7 @@ class TestAdjustments:
     async def test_idempotency_scope_and_fingerprint(self, client, sm, fake):
         """幂等键加固:同键同体重放 → replay;同键异体 → 409 指纹不符;
         同键同体跨租户 → 各开各的单(作用域含 user_id,弱键跨租户不误判重放)。"""
-        _h1, _u1, user1 = await _provision_running(client, sm, fake)
+        _h1, _u1, user1 = await provision_running(client, sm, fake)
         _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
         finance = await second_admin_headers(sm, client, "fin-idem")
         body = {"user_id": user1, "amount": "10.00", "reason": "补偿一"}
@@ -158,7 +145,7 @@ class TestAdjustments:
 
     async def test_concurrent_review_single_credit(self, client, sm, fake):
         """两名复核人并发 approve 同一单:行锁保证只入账一次。"""
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             creator = await create_admin(session, "fin-race-a", "pass1234", "finance")
             r1 = await create_admin(session, "fin-race-b", "pass1234", "finance")
@@ -201,7 +188,7 @@ class TestAdjustments:
 
         挂了 = 单个 admin 发起调账后自建新账号复核,双人制衡形同虚设。
         """
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin_a = await second_admin_headers(sm, client, "fin-late-a")
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -239,7 +226,7 @@ class TestAdjustments:
 
     async def test_adjustment_amount_strict_decimal(self, client, sm, fake):
         """调账金额契约层严格十进制:科学计数法/超 2 位小数/非数字一律 422,不进服务层。"""
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin = await second_admin_headers(sm, client, "fin-strict")
         for bad in ("1e2", "1E-3", "10.005", "abc", "1,000.00", "10.", ".5", "--10.00", ""):
             resp = await client.post(
@@ -267,7 +254,7 @@ class TestTenantAggregations:
         from app.modules.billing import service as billing_service
         from tests.helpers import fund_wallet
 
-        _headers, _uuid, id1 = await _provision_running(client, sm, fake, "13600000061")
+        _headers, _uuid, id1 = await provision_running(client, sm, fake, "13600000061")
         id2 = (await register(client, "13600000062"))["user"]["id"]
         id3 = (await register(client, "13600000063"))["user"]["id"]  # 从未充值:无钱包行
         await fund_wallet(sm, id2, "20.00")
@@ -293,7 +280,7 @@ class TestNodesAndReports:
         """端口池水位:assigned=已分配实例数;blocked=撞占标记(周期复检会放回)。"""
         from app.modules.orchestrator.service import block_port
 
-        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # 占 1 端口
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # 占 1 端口
         await block_port(sm, 31999, reason="test_orphan_endpoint", expected_instance_id=None)
         ah = await admin_headers(sm, client, role="readonly")
         pool = (await client.get("/api/admin/v1/nodes/port-pool", headers=ah)).json()
@@ -302,7 +289,7 @@ class TestNodesAndReports:
         assert pool["total"] >= 2
 
     async def test_oversell_report(self, client, sm, fake):
-        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池 50% × 1
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # hami 池 50% × 1
         # 报表读台账(node_specs):先跑一轮巡检把 fake 节点写进台账(等价真实环境 60s 巡检)
         from app.modules.nodes.patrol import node_spec_patrol
 
@@ -319,7 +306,7 @@ class TestNodesAndReports:
         from app.modules.nodes.patrol import node_spec_patrol
         from app.modules.orchestrator.models import Instance
 
-        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # hami 池实例
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)  # hami 池实例
         await node_spec_patrol(sm)  # 台账播种:报表物理口径来自 node_specs
         hour = now_utc().replace(minute=0, second=0, microsecond=0)
         async with sm() as session:
@@ -348,7 +335,7 @@ class TestNodesAndReports:
         assert by_pool["mig"]["util_avg_24h"] is None
 
     async def test_audit_search(self, client, sm, fake):
-        _headers, _uuid, _user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, _user_id = await provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="admin")
         rows = (await client.get("/api/admin/v1/audit", headers=ah)).json()
         assert any(r["action"] == "POST /api/v1/instances" for r in rows)
@@ -532,12 +519,7 @@ class TestTenantBillingDrilldown:
         assert resp.status_code == 200, resp.text
         page = resp.json()
         assert len(page["items"]) == 2
-        assert page["next_cursor"]
-        resp2 = await client.get(
-            f"/api/admin/v1/tenants/4242/ledger?limit=2&cursor={page['next_cursor']}",
-            headers=headers,
-        )
-        assert len(resp2.json()["items"]) == 2  # 翻页拿到剩余两条
+        assert page["next_cursor"]  # 续页行为见 test_billing_flow.test_ledger_cursor_pagination
 
 
 class TestFreezeStopsInstances:
@@ -545,7 +527,7 @@ class TestFreezeStopsInstances:
         """封禁必须同时停机、停计费(计费主链路不看用户状态,只改 status
         + 撤 token 的话被封账号继续跑、继续扣费)。"""
         h = await admin_headers(sm, client)
-        user_headers, uuid, user_id = await _provision_running(client, sm, fake, "13600000090")
+        user_headers, uuid, user_id = await provision_running(client, sm, fake, "13600000090")
 
         resp = await client.post(
             f"/api/admin/v1/tenants/{user_id}/freeze",
@@ -583,7 +565,7 @@ class TestFreezeStopsInstances:
     async def test_unfreeze_does_not_auto_start(self, client, sm, fake):
         """解封不自动开机:解封即批量拉起会立刻又欠费停机。"""
         h = await admin_headers(sm, client)
-        _uh, uuid, user_id = await _provision_running(client, sm, fake, "13600000091")
+        _uh, uuid, user_id = await provision_running(client, sm, fake, "13600000091")
         await client.post(
             f"/api/admin/v1/tenants/{user_id}/freeze", json={"reason": "核查"}, headers=h
         )
@@ -670,7 +652,7 @@ class TestAdminSearch:
 
     async def test_instance_lookup_by_node_and_name(self, client, sm, fake):
         h = await admin_headers(sm, client)
-        _uh, uuid, user_id = await _provision_running(client, sm, fake, "13611110004")
+        _uh, uuid, user_id = await provision_running(client, sm, fake, "13611110004")
         by_node = (
             await client.get(
                 "/api/admin/v1/instances", params={"node_name": "fake-node-1"}, headers=h
@@ -733,7 +715,7 @@ class TestTenantLookupById:
 class TestAdjustContext:
     async def test_context_and_unknown_user(self, client, sm, fake):
         """调账前置上下文:掩码手机号 + 当前余额 + 近 3 条流水 + 在跑台数;幽灵 id → 404。"""
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin = await second_admin_headers(sm, client, "fin-ctx")
 
         resp = await client.get(f"/api/admin/v1/tenants/{user_id}/adjust-context", headers=fin)
@@ -760,7 +742,7 @@ class TestAdjustContext:
 
     async def test_create_over_cap_rejected(self, client, sm, fake):
         """单笔绝对值上限(ADJUST_MAX_ABS):防手滑多敲零,超出走对公/线下流程。"""
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
         fin = await second_admin_headers(sm, client, "fin-cap")
 
         for amount in ("100000.01", "-200000.00"):
@@ -785,7 +767,7 @@ class TestOverview:
         """总览聚合:精确 COUNT 口径,替代在截断列表(200/500 条)里数数。"""
         from app.modules.nodes.models import NodeSpec
 
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             session.add_all(
                 [
@@ -849,7 +831,7 @@ class TestOverview:
         """改价影响面:该 SKU 当前活跃实例数 / 涉及用户数 / 占用卡数。"""
         from app.modules.orchestrator.models import Instance
 
-        await _provision_running(client, sm, fake)
+        await provision_running(client, sm, fake)
         async with sm() as session:
             sku_id = (await session.execute(select(Instance.sku_id))).scalar_one()
         ah = await admin_headers(sm, client, role="ops")
@@ -868,7 +850,7 @@ class TestAuditPagination:
         """审计翻页:cursor=末行 id 的不透明编码,下一页全是更早的行;非法游标 400。"""
         import base64
 
-        await _provision_running(client, sm, fake)  # 产生若干审计行
+        await provision_running(client, sm, fake)  # 产生若干审计行
         ah = await admin_headers(sm, client, role="admin")
 
         page1 = (await client.get("/api/admin/v1/audit", params={"limit": 2}, headers=ah)).json()
@@ -1043,7 +1025,7 @@ class TestAdminInstanceEvents:
     """管理端实例事件时间线:读全角色,按时间倒序,游标分页;非管理端凭据拒绝。"""
 
     async def test_events_desc_and_cursor(self, client, sm, fake):
-        _uh, uuid, _uid = await _provision_running(client, sm, fake)
+        _uh, uuid, _uid = await provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="readonly")
 
         resp = await client.get(f"/api/admin/v1/instances/{uuid}/events", headers=ah)
@@ -1055,17 +1037,9 @@ class TestAdminInstanceEvents:
 
         p1 = (await client.get(f"/api/admin/v1/instances/{uuid}/events?limit=1", headers=ah)).json()
         assert len(p1["items"]) == 1 and p1["next_cursor"]
-        p2 = (
-            await client.get(
-                f"/api/admin/v1/instances/{uuid}/events?limit=1&cursor={p1['next_cursor']}",
-                headers=ah,
-            )
-        ).json()
-        assert len(p2["items"]) >= 1
-        assert all(e["id"] < p1["items"][0]["id"] for e in p2["items"])
 
     async def test_user_token_rejected_and_unknown_uuid(self, client, sm, fake):
-        _uh, uuid, _uid = await _provision_running(client, sm, fake)
+        _uh, uuid, _uid = await provision_running(client, sm, fake)
         data = await register(client, "13655550004")
         # 管理端是独立 JWT audience:用户 token 过不了鉴权依赖(401)
         resp = await client.get(
@@ -1079,42 +1053,10 @@ class TestAdminInstanceEvents:
 
 
 class TestAdminListPagination:
-    """四个管理端列表端点的游标分页(Page 包装 + next_cursor 走查)与筛选参数。"""
+    """管理端列表端点的筛选参数与分页入参。
 
-    async def test_tenants_cursor_walk(self, client, sm, fake):
-        h = await admin_headers(sm, client)
-        for i in range(3):
-            await register(client, f"1367777{i:04d}")
-        p1 = (await client.get("/api/admin/v1/tenants", params={"limit": 2}, headers=h)).json()
-        assert len(p1["items"]) == 2 and p1["next_cursor"]
-        p2 = (
-            await client.get(
-                "/api/admin/v1/tenants",
-                params={"limit": 2, "cursor": p1["next_cursor"]},
-                headers=h,
-            )
-        ).json()
-        ids1 = {t["id"] for t in p1["items"]}
-        assert len(p2["items"]) >= 1
-        assert all(t["id"] not in ids1 for t in p2["items"])
-        # 降序:第二页 id 全部小于第一页最小 id
-        assert max(t["id"] for t in p2["items"]) < min(ids1)
-
-    async def test_instances_cursor_walk(self, client, sm, fake):
-        h = await admin_headers(sm, client)
-        _h1, uuid1, _u1 = await _provision_running(client, sm, fake, "13677780001")
-        _h2, uuid2, _u2 = await _provision_running(client, sm, fake, "13677780002")
-        p1 = (await client.get("/api/admin/v1/instances", params={"limit": 1}, headers=h)).json()
-        assert len(p1["items"]) == 1 and p1["next_cursor"]
-        p2 = (
-            await client.get(
-                "/api/admin/v1/instances",
-                params={"limit": 1, "cursor": p1["next_cursor"]},
-                headers=h,
-            )
-        ).json()
-        seen = {p1["items"][0]["uuid"], *(i["uuid"] for i in p2["items"])}
-        assert {uuid1, uuid2} <= seen
+    游标续页本身是 Page 包装的通用行为,只在 test_billing_flow.test_ledger_cursor_pagination
+    走一次全程;这里只钉每个端点自己的筛选口径与 limit 是否接上。"""
 
     async def test_orders_cursor_and_day_filter(self, client, sm, fake):
         """订单:游标走查;day=YYYY-MM-DD 只留当日单(昨日单被滤掉)。"""
@@ -1157,20 +1099,12 @@ class TestAdminListPagination:
 
         p1 = (await client.get("/api/admin/v1/orders", params={"limit": 2}, headers=h)).json()
         assert len(p1["items"]) == 2 and p1["next_cursor"]
-        p2 = (
-            await client.get(
-                "/api/admin/v1/orders",
-                params={"limit": 2, "cursor": p1["next_cursor"]},
-                headers=h,
-            )
-        ).json()
-        assert [o["order_no"] for o in p2["items"]] == ["SDL-PAGE-0"]
 
     async def test_adjustments_cursor_and_filters(self, client, sm, fake):
         """调账:status/user_id 过滤 + 游标走查。"""
         from app.modules.adminapi.models import AdminUser
 
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake, "13677780003")
+        _headers, _uuid, user_id = await provision_running(client, sm, fake, "13677780003")
         fin = await second_admin_headers(sm, client, "fin-page")
         async with sm() as session:
             creator = (
@@ -1188,14 +1122,6 @@ class TestAdminListPagination:
             await client.get("/api/admin/v1/adjustments", params={"limit": 2}, headers=fin)
         ).json()
         assert len(p1["items"]) == 2 and p1["next_cursor"]
-        p2 = (
-            await client.get(
-                "/api/admin/v1/adjustments",
-                params={"limit": 2, "cursor": p1["next_cursor"]},
-                headers=fin,
-            )
-        ).json()
-        assert len(p2["items"]) == 1 and p2["next_cursor"] is None
         # status / user_id 过滤
         pending = (
             await client.get("/api/admin/v1/adjustments", params={"status": "pending"}, headers=fin)

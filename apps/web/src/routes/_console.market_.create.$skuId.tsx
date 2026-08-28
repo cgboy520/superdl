@@ -356,6 +356,9 @@ function CreatePage() {
   const canSubmit = isService ? serviceIssue == null : Boolean(imageRef) && keyIds.length > 0;
 
   const doCreate = async () => {
+    // canSubmit 已保证有镜像(两种形态各有一条判据);这里再挡一次是把类型收窄到 string,
+    // 下面拼幂等键与提交时不必再各写一次 ?? "" 兜底
+    if (!imageRef) return;
     setSubmitting(true);
     // 幂等键由参数派生且失败不轮换:响应丢失后重提不会开出第二台,改了参数才是新单
     const idempotencyKey = idemKeyOf("inst", [
@@ -365,7 +368,7 @@ function CreatePage() {
       // 计费方式进快照:同一台机器按量买和包月买是两张不同的单
       mode,
       period ? periodCount : null,
-      imageRef ?? "",
+      imageRef,
       (isService && !withSsh ? [] : [...keyIds].sort((a, b) => a - b)).join(","),
       name || null,
       diskMode,
@@ -406,7 +409,7 @@ function CreatePage() {
           body: {
             sku_id: sku.id,
             gpu_count: gpus,
-            image_ref: imageRef ?? "",
+            image_ref: imageRef,
             // 服务实例取消勾选 SSH 后不带公钥(不开 sshd 的容器注入 authorized_keys 无意义)
             ssh_key_ids: isService && !withSsh ? [] : keyIds,
             name: name || null,

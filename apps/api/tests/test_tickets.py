@@ -11,7 +11,7 @@ from app.core.timeutil import now_utc
 from app.modules.notify.models import Notification
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.patrol import stale_ticket_patrol
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 from tests.test_payment import user_headers
 
 

@@ -8,20 +8,10 @@ import pyotp
 import pytest
 from httpx import AsyncClient
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.adminapi.schemas import AdminRole
-from tests.test_catalog import admin_headers, complete_mfa_setup
+from tests.helpers import admin_headers, complete_mfa_setup
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def _login(client: AsyncClient, username: str, password: str = "pass1234"):

@@ -4,7 +4,7 @@ Prometheus 代理查询、`usage_hourly` 聚合、事件计费与指标估算对
 
 ## 数据模型
 
-- `usage_hourly`:instance_id、hour_start、gpu_util_avg、gpu_util_p95、vram_max_mb、cpu_avg_pct、UNIQUE(instance_id, hour_start)
+- `usage_hourly`:instance_id、hour_start、gpu_util_avg、UNIQUE(instance_id, hour_start)
 
 ## 契约
 

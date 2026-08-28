@@ -4,21 +4,11 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 
 pytestmark = pytest.mark.usefixtures("fake")
 
 STRONG = "s3cret-passw0rd"
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def login(client: AsyncClient, username: str, password: str):

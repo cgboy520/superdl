@@ -827,26 +827,22 @@ class RealOrchestrator:
             labels=dict(pod.metadata.labels or {}),
         )
 
-    async def read_instance_logs(
-        self, namespace: str, name: str, *, tail_lines: int, since_seconds: int | None = None
-    ) -> str:
-        return await self._run(
-            self._read_instance_logs_sync, namespace, name, tail_lines, since_seconds
-        )
+    async def read_instance_logs(self, namespace: str, name: str, *, tail_lines: int) -> str:
+        return await self._run(self._read_instance_logs_sync, namespace, name, tail_lines)
 
-    def _read_instance_logs_sync(
-        self, namespace: str, name: str, tail_lines: int, since_seconds: int | None
-    ) -> str:
+    def _read_instance_logs_sync(self, namespace: str, name: str, tail_lines: int) -> str:
         # 用户在线等日志:覆盖默认读超时收紧到 5s(_TimeoutApi 只 setdefault,显式传参生效)
-        kwargs: dict[str, Any] = {
-            "container": "workspace",
-            "tail_lines": tail_lines,
-            "timestamps": True,
-            "_request_timeout": (5.0, 5.0),
-        }
-        if since_seconds is not None:
-            kwargs["since_seconds"] = since_seconds
-        return cast(str, self.core.read_namespaced_pod_log(name, namespace, **kwargs))
+        return cast(
+            str,
+            self.core.read_namespaced_pod_log(
+                name,
+                namespace,
+                container="workspace",
+                tail_lines=tail_lines,
+                timestamps=True,
+                _request_timeout=(5.0, 5.0),
+            ),
+        )
 
     async def list_instance_pods(self) -> list[PodStatus]:
         return await self._run(self._list_instance_pods_sync)

@@ -16,8 +16,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, update
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
 from app.core.pricing import MARKET_ON_DEMAND, MARKET_SPOT, price_for
 from app.core.timeutil import hour_floor, now_utc
@@ -27,20 +25,12 @@ from app.modules.nodes.models import NodeSpec
 from app.modules.orchestrator import preempt as preempt_mod
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
+from tests.helpers import admin_headers as make_admin_headers
 from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wallet, seed_node_spec
-from tests.test_catalog import admin_headers as make_admin_headers
 
 pytestmark = pytest.mark.usefixtures("fake")
 
 IMAGE = "registry.superdl.local/pytorch:2.9.0-cu128"
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 async def spot_sku(sm, **overrides) -> int:
@@ -494,9 +484,9 @@ class TestAdminPreempt:
 
     async def test_admin_cannot_preempt_non_spot(self, client, sm, fake):
         """非竞价实例不走回收路径:回收是履行竞价的约定,不是处置手段(那是强制停止)。"""
-        from tests.test_orchestrator_lifecycle import _provision_running
+        from tests.helpers import provision_running
 
-        _, uuid, _ = await _provision_running(client, sm, fake, phone="13922200031")
+        _, uuid, _ = await provision_running(client, sm, fake, phone="13922200031")
         admin_headers = await make_admin_headers(sm, client, "ops")
         resp = await client.post(
             f"/api/admin/v1/instances/{uuid}/preempt",

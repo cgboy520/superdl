@@ -3,23 +3,12 @@
 import pytest
 from sqlalchemy import select
 
-from app.core.k8s import set_orchestrator
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.billing import wallet
 from app.modules.billing.patrol import balance_patrol
 from app.modules.notify.models import Notification
-from tests.test_catalog import admin_headers
-from tests.test_orchestrator_lifecycle import _provision_running
+from tests.helpers import admin_headers, provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 AM_PAYLOAD = {
@@ -41,7 +30,7 @@ AM_PAYLOAD = {
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
         """未读数轻端点:DB count 与列表分页解耦,标记已读后减少。"""
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             for i in range(3):
                 session.add(
@@ -63,7 +52,7 @@ class TestBalanceWarnNotification:
         assert resp.json()["unread_count"] == 2
 
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         from decimal import Decimal
 
         async with sm() as session:
@@ -82,7 +71,7 @@ class TestBalanceWarnNotification:
         assert "小时" in warns[0]["content"]
 
     async def test_read_flow(self, client, sm, fake):
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         from decimal import Decimal
 
         async with sm() as session:
@@ -107,7 +96,7 @@ class TestBalanceWarnNotification:
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
         """全部已读:多条未读一次清零;重复调用幂等(仍 204,不再改动任何行)。"""
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             for i in range(3):
                 session.add(
@@ -135,7 +124,7 @@ class TestBalanceWarnNotification:
 
     async def test_read_all_scoped_to_self(self, client, sm, fake):
         """全部已读只动本人:其他用户的未读不受影响。"""
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             session.add(
                 Notification(
@@ -162,7 +151,7 @@ class TestBalanceWarnNotification:
 
     async def test_list_pagination_beyond_50(self, client, sm, fake):
         """站内信不封顶条数:limit/cursor 游标翻页,降序不重不漏。"""
-        headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             for i in range(60):
                 session.add(
@@ -226,7 +215,7 @@ class TestAlertmanagerWebhook:
         assert len(again) == len(tasks)
 
     async def test_ingest_and_dedup(self, client, sm, fake):
-        headers, _uuid, _user_id = await _provision_running(client, sm, fake)  # user_id=1
+        headers, _uuid, _user_id = await provision_running(client, sm, fake)  # user_id=1
         resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
         assert resp.status_code == 200
         assert resp.json()["ingested"] == 1
@@ -257,7 +246,7 @@ class TestAlertmanagerWebhook:
         assert resp.status_code == 200
 
     async def test_arrears_notice_recorded(self, client, sm, fake):
-        _headers, _uuid, user_id = await _provision_running(client, sm, fake)
+        _headers, _uuid, user_id = await provision_running(client, sm, fake)
         async with sm() as session:
             balance = await wallet.get_balance(session, user_id)
             await wallet.debit(session, user_id, balance, type_="adjust", allow_negative=True)

@@ -138,7 +138,7 @@ namespace 与 nodes,二者叠加才是完整最小权限。HTTPRoute 条数随�
 - 订阅行的 UNIQUE(user_id, idempotency_key) 只服务**续费**;下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保。
 - 服务端点凭据只存密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,
   吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
-- `skus.oversell_cores` / `oversell_vram` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。
+- `skus.oversell_cores` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。
 
 ## 7. 核心流程
 
@@ -222,8 +222,8 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** cpu 档允许挂 hami 池吃 GPU 机的空闲 CPU,按池分支走
    就会替一台不用卡的实例申请 `nvidia.com/gpu`。同理,计费份数走 `core/money.billing_units`(GPU 实例 = 卡数,
    CPU 实例 = 1 份整机):直接写 `单价 × gpu_count` 会让 CPU 实例每小时算出 ¥0.00。
-3. **超卖分维度,且只发生在 HAMi 池。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。超卖参数是纯定价参数,
-   不下发调度;显存超卖 >1.2 由管理端二次确认(schema 上界 9.99)。
+3. **超卖只发生在 HAMi 池。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。`oversell_cores` 是纯定价参数,
+   不下发调度(schema 上界 9.99)。
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
 5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。

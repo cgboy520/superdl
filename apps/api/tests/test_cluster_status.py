@@ -115,8 +115,7 @@ class TestGateWiring:
 
     async def test_shared_create_blocked_when_hami_down(self, sm, fake, client):
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import create_user_with_key, fund_wallet
-        from tests.test_catalog import seed_skus
+        from tests.helpers import create_user_with_key, fund_wallet, seed_skus
 
         await seed_skus(sm)
         headers, user_id, key_id = await create_user_with_key(client)
@@ -152,8 +151,7 @@ class TestGateWiring:
         用户侧表现成开机几十秒后转 failed(而不是当场告诉他集群没这个档位)。
         """
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import create_user_with_key, fund_wallet
-        from tests.test_catalog import seed_skus
+        from tests.helpers import create_user_with_key, fund_wallet, seed_skus
 
         await seed_skus(sm)
         headers, user_id, key_id = await create_user_with_key(client)
@@ -187,8 +185,7 @@ class TestGateWiring:
         门禁必须按名核对,不能只判「集群里有任意一个 SC」。
         """
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import create_user_with_key, fund_wallet
-        from tests.test_catalog import seed_skus
+        from tests.helpers import create_user_with_key, fund_wallet, seed_skus
 
         await seed_skus(sm)
         headers, user_id, key_id = await create_user_with_key(client, "13900000077")
@@ -318,7 +315,7 @@ async def test_derive_node_distro_chain(sm, fake):
 class TestClusterEndpoints:
     async def test_status_endpoint_reads_cache(self, sm, fake, client):
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
@@ -335,7 +332,7 @@ class TestClusterEndpoints:
 
     async def test_status_empty_cache_shows_checklist(self, sm, client):
         from app.modules.nodes.models import ClusterStatus
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
@@ -354,7 +351,7 @@ class TestClusterEndpoints:
     async def test_fix_hint_env_follows_probed_distro(self, sm, fake, client):
         """修复命令的档位跟实测发行版走:k3s → -e light。给 full 档命令等于让人装不上。"""
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         fake.probe_hami_ready = False
         fake.probe_k8s_version = "v1.36.3+k3s1"
@@ -371,7 +368,7 @@ class TestClusterEndpoints:
         挂了 = 集群里有任意一个 SC 就给绿灯,而用户创建实例时才撞 409,运维在体检页看不出端倪。
         """
         from app.modules.nodes.models import ClusterStatus
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
@@ -397,7 +394,7 @@ class TestClusterEndpoints:
     async def test_kata_component_calls_out_empty_pool(self, sm, fake, client):
         """RuntimeClass 在、kata 池没节点:独享档一样开不了机,detail 要说出来。"""
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         fake.pool_capacity.pop("kata", None)
         await node_spec_patrol(sm)
@@ -408,7 +405,7 @@ class TestClusterEndpoints:
         assert "无节点" in comp["kata_runtimeclass"]["detail"]
 
     async def test_test_connection_upserts_and_returns(self, sm, fake, client):
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         headers = await admin_headers(sm, client)
         resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
@@ -419,7 +416,7 @@ class TestClusterEndpoints:
         assert row is not None and row.hami_ready
 
     async def test_test_connection_unreachable_502(self, sm, fake, client):
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         fake.fail_probe = True
         headers = await admin_headers(sm, client)
@@ -433,7 +430,7 @@ class TestClusterEndpoints:
         assert row is not None and row.api_reachable is False and row.error
 
     async def test_readonly_cannot_test_connection(self, sm, fake, client):
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         headers = await admin_headers(sm, client, role="readonly")
         resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)

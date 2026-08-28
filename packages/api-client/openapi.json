@@ -6782,10 +6782,6 @@
             ],
             "title": "Health Path"
           },
-          "protocol": {
-            "title": "Protocol",
-            "type": "string"
-          },
           "ready": {
             "title": "Ready",
             "type": "boolean"
@@ -6807,7 +6803,6 @@
           "slug",
           "url",
           "container_port",
-          "protocol",
           "health_path",
           "require_api_key",
           "ready",
@@ -7019,10 +7014,6 @@
             "title": "Oversell Cores",
             "type": "string"
           },
-          "oversell_vram": {
-            "title": "Oversell Vram",
-            "type": "string"
-          },
           "period_enabled": {
             "title": "Period Enabled",
             "type": "boolean"
@@ -7076,7 +7067,6 @@
           "gpu_cores_pct",
           "vram_gb",
           "oversell_cores",
-          "oversell_vram",
           "pool_label",
           "vcpu",
           "mem_gb",
@@ -7166,21 +7156,6 @@
             ],
             "default": "1.00",
             "title": "Oversell Cores"
-          },
-          "oversell_vram": {
-            "anyOf": [
-              {
-                "maximum": 9.99,
-                "minimum": 1.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              }
-            ],
-            "default": "1.00",
-            "title": "Oversell Vram"
           },
           "period_enabled": {
             "default": true,
@@ -7480,23 +7455,6 @@
               }
             ],
             "title": "Oversell Cores"
-          },
-          "oversell_vram": {
-            "anyOf": [
-              {
-                "maximum": 9.99,
-                "minimum": 1.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Oversell Vram"
           },
           "period_enabled": {
             "anyOf": [
@@ -16081,7 +16039,7 @@
     },
     "/api/v1/instances/{uuid}/logs": {
       "get": {
-        "description": "容器日志。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。\n\n仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按\n2000 截断;since_seconds 可选、超 86400 按 86400 截断。不记审计。",
+        "description": "容器日志。四要素:只读、owner 校验(非属主 404)、限流 20/h/user、K8s 读 5s 超时。\n\n仅 running/stopping 状态的实例可取(其余状态 409);tail_lines 默认 200、超 2000 按\n2000 截断。不记审计。",
         "operationId": "get_instance_logs_api_v1_instances__uuid__logs_get",
         "parameters": [
           {
@@ -16102,23 +16060,6 @@
               "minimum": 1,
               "title": "Tail Lines",
               "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "since_seconds",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Since Seconds"
             }
           }
         ],

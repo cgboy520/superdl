@@ -15,9 +15,7 @@ from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.billing.models import BalanceLedger, Wallet
 from app.modules.orchestrator.models import DataDisk, Instance
-from tests.helpers import create_user_with_key, fund_wallet
-from tests.test_account_auth import age_sms_codes
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers, age_sms_codes, create_user_with_key, fund_wallet
 
 PHONE = "13800000060"
 

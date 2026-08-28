@@ -16,7 +16,4 @@ class UsageHourly(Base):
     instance_id: Mapped[int] = mapped_column(index=True)
     hour_start: Mapped[datetime] = mapped_column(index=True)
     gpu_util_avg: Mapped[float | None]
-    gpu_util_p95: Mapped[float | None]
-    vram_max_mb: Mapped[int | None]
-    cpu_avg_pct: Mapped[float | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

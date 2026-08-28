@@ -15,7 +15,7 @@ from app.modules.account.realname import (
     RealNameError,
     get_realname_provider,
 )
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 
 
 class TestCrypto:

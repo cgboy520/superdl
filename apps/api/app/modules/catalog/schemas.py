@@ -71,7 +71,6 @@ class SkuAdminOut(BaseModel):
     gpu_cores_pct: int
     vram_gb: int
     oversell_cores: MoneyOut
-    oversell_vram: MoneyOut
     pool_label: str
     vcpu: int
     mem_gb: int
@@ -127,7 +126,6 @@ class SkuCreate(BaseModel):
     gpu_cores_pct: int = Field(default=100, ge=0, le=100)
     vram_gb: int = Field(ge=0)
     oversell_cores: Decimal = Field(default=Decimal("1.00"), ge=Decimal("1.00"), le=Decimal("9.99"))
-    oversell_vram: Decimal = Field(default=Decimal("1.00"), ge=Decimal("1.00"), le=Decimal("9.99"))
     pool_label: str = Field(min_length=1, max_length=32)
     vcpu: int = Field(ge=1)
     mem_gb: int = Field(ge=1)
@@ -162,7 +160,6 @@ class SkuUpdate(BaseModel):
     gpu_cores_pct: int | None = Field(default=None, ge=0, le=100)
     vram_gb: int | None = Field(default=None, ge=0)
     oversell_cores: Decimal | None = Field(default=None, ge=Decimal("1.00"), le=Decimal("9.99"))
-    oversell_vram: Decimal | None = Field(default=None, ge=Decimal("1.00"), le=Decimal("9.99"))
     pool_label: str | None = None
     vcpu: int | None = Field(default=None, ge=1)
     mem_gb: int | None = Field(default=None, ge=1)

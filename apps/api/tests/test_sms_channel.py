@@ -78,7 +78,7 @@ class TestNotifySmsBestEffort:
         """通知短信失败不影响站内信落库(尽力而为)。"""
         from app.modules.notify.models import Notification
         from app.modules.notify.service import send_low_balance_warning
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         data = await register(client, "13800000092")
         set_sms_channel(_FailingChannel())

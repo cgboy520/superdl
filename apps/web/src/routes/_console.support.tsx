@@ -28,6 +28,7 @@ import type { TicketCreate, TicketOut } from "@superdl/api-client";
 import { useCreateTicket } from "../api/mutations";
 import { useInstances, useSiteConfig, useTicketPages } from "../api/queries";
 import { CopyButton } from "../components/common";
+import { LoadMoreButton } from "../components/LoadMore";
 import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
@@ -248,15 +249,11 @@ function SupportPage() {
             );
           }}
         />
-        {tickets.hasNextPage && (
-          <Button
-            block
-            loading={tickets.isFetchingNextPage}
-            onClick={() => void tickets.fetchNextPage()}
-          >
-            {t("billing.loadMore")}
-          </Button>
-        )}
+        <LoadMoreButton
+          visible={tickets.hasNextPage}
+          loading={tickets.isFetchingNextPage}
+          onClick={() => void tickets.fetchNextPage()}
+        />
       </Card>
       <CreateTicketModal open={creating} onClose={() => setCreating(false)} />
     </Space>

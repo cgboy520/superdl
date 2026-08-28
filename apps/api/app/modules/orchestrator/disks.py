@@ -58,65 +58,57 @@ async def create_disk(
     price = as_price(policies.disk_price_gb_month)
     daily = disk_daily_charge(price, size_gb)
     # 临界区:assert_can_afford 锁钱包行(FOR UPDATE)并持有到 commit,并发建盘串行;
-    # 数量配额与余额校验都放进锁内,不存在 TOCTOU
-    try:
-        await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
-        # 数量配额:建盘只校验余额(日结才扣),故另设上限;生效值走
-        # account.get_user_limits(用户覆盖 → 平台策略 → env 默认)
-        limits = await account_service.get_user_limits(session, user_id)
-        max_disks = limits.max_disks
-        live = (
-            await session.execute(
-                select(func.count())
-                .select_from(DataDisk)
-                .where(DataDisk.user_id == user_id, DataDisk.status != "deleted")
-            )
-        ).scalar_one()
-        if live >= max_disks:
-            raise AppError(
-                ErrorCode.VALIDATION_ERROR, key="disks.countQuota", params={"max": max_disks}
-            )
-        disk_uuid = uuid4().hex
-        disk = DataDisk(
-            uuid=disk_uuid,
-            user_id=user_id,
-            name=name,
-            size_gb=size_gb,
-            juicefs_subpath=f"disk-{disk_uuid}",
-            price_gb_month=price,
-            idempotency_key=idempotency_key,
+    # 数量配额与余额校验都放进锁内,不存在 TOCTOU。
+    # 异常路径不需要手动 rollback:session 出上下文管理器时未提交事务自动回滚。
+    await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
+    # 数量配额:建盘只校验余额(日结才扣),故另设上限;生效值走
+    # account.get_user_limits(用户覆盖 → 平台策略 → env 默认)
+    limits = await account_service.get_user_limits(session, user_id)
+    max_disks = limits.max_disks
+    live = (
+        await session.execute(
+            select(func.count())
+            .select_from(DataDisk)
+            .where(DataDisk.user_id == user_id, DataDisk.status != "deleted")
         )
-        session.add(disk)
-        try:
-            await session.flush()
-        except IntegrityError:
-            # 并发同幂等键:对方已落库,回滚后按重放返回既有盘(不多开一块)
-            await session.rollback()
-            raced = (
-                await find_replay(
-                    session,
-                    DataDisk,
-                    owner_col=DataDisk.user_id,
-                    owner_id=user_id,
-                    key=idempotency_key,
-                )
-                if idempotency_key
-                else None
-            )
-            if raced is not None:
-                return raced, False
-            raise
-        # JuiceFS 目录硬配额下发(同事务 outbox):handler 成功才置 quota_synced
-        enqueue(session, "disk.quota", {"disk_id": disk.id})
-        await session.commit()
-    except IntegrityError as exc:
-        # 钱包首建与并发请求互撞唯一索引:可安全重试
-        await session.rollback()
+    ).scalar_one()
+    if live >= max_disks:
         raise AppError(
-            ErrorCode.CONFLICT,
-            key="common.retryableConflict",
-            http_status=409,
-        ) from exc
+            ErrorCode.VALIDATION_ERROR, key="disks.countQuota", params={"max": max_disks}
+        )
+    disk_uuid = uuid4().hex
+    disk = DataDisk(
+        uuid=disk_uuid,
+        user_id=user_id,
+        name=name,
+        size_gb=size_gb,
+        juicefs_subpath=f"disk-{disk_uuid}",
+        price_gb_month=price,
+        idempotency_key=idempotency_key,
+    )
+    session.add(disk)
+    try:
+        await session.flush()
+    except IntegrityError:
+        # 并发同幂等键:对方已落库,回滚后按重放返回既有盘(不多开一块)
+        await session.rollback()
+        raced = (
+            await find_replay(
+                session,
+                DataDisk,
+                owner_col=DataDisk.user_id,
+                owner_id=user_id,
+                key=idempotency_key,
+            )
+            if idempotency_key
+            else None
+        )
+        if raced is not None:
+            return raced, False
+        raise
+    # JuiceFS 目录硬配额下发(同事务 outbox):handler 成功才置 quota_synced
+    enqueue(session, "disk.quota", {"disk_id": disk.id})
+    await session.commit()
     await session.refresh(disk)
     logger.info("disk_created", disk_id=disk.id, user_id=user_id, size_gb=size_gb)
     return disk, True

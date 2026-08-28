@@ -10,7 +10,6 @@ token 直接铸造不经登录;MFA 绑定与登录链路由 test_admin_mfa.py �
 
 import re
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -187,38 +186,50 @@ async def _mint_admin_headers(sm: async_sessionmaker[AsyncSession], role: str) -
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.mark.parametrize("endpoint", sorted(MATRIX), ids=lambda e: e)
 async def test_endpoint_role_gate(
-    client: AsyncClient, sm: async_sessionmaker[AsyncSession], endpoint: str
+    client: AsyncClient, sm: async_sessionmaker[AsyncSession]
 ) -> None:
-    method, path = endpoint.split(" ", 1)
-    allowed = MATRIX[endpoint]
-    url = _sample_url(path)
+    """整张矩阵一趟跑完,失败汇总后一次性报出。
+
+    逐端点参数化会把「建四个管理员 + 全表 TRUNCATE」的固定开销乘上端点数,而失败信息
+    本身已带端点名;汇总还有个好处:改错一处角色门时一次看到全部受影响端点,不是修一个红一个。
+    """
     headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 
-    async def call(headers: dict[str, str] | None) -> int:
+    async def call(method: str, url: str, headers: dict[str, str] | None) -> int:
         kwargs: dict = {"headers": headers or {}}
         if method != "GET":
             kwargs["json"] = {}  # 空体:参数校验 422 也属「已过鉴权」,与角色门正交
         resp = await client.request(method, url, **kwargs)
         return resp.status_code
 
-    # 匿名
-    anon_status = await call(None)
-    if allowed == "anon":
-        assert anon_status != 403, f"匿名端点不得 403:{endpoint}"
-    else:
-        assert anon_status == 401, f"匿名应 401:{endpoint} -> {anon_status}"
+    failures: list[str] = []
+    for endpoint in sorted(MATRIX):
+        method, path = endpoint.split(" ", 1)
+        allowed = MATRIX[endpoint]
+        url = _sample_url(path)
 
-    # 已认证角色
-    for role in _ROLES:
-        status = await call(headers_by_role[role])
+        # 匿名
+        anon_status = await call(method, url, None)
         if allowed == "anon":
-            assert status != 403, f"匿名端点带 token 不得 403:{endpoint}({role})"
-            continue
-        if allowed == "any" or role == "admin" or role in allowed:
-            assert status not in (401, 403), (
-                f"{role} 应通过角色门:{endpoint} -> {status}(业务 404/422 可,401/403 不可)"
-            )
-        else:
-            assert status == 403, f"{role} 应被 403 拦截:{endpoint} -> {status}"
+            if anon_status == 403:
+                failures.append(f"匿名端点不得 403:{endpoint}")
+        elif anon_status != 401:
+            failures.append(f"匿名应 401:{endpoint} -> {anon_status}")
+
+        # 已认证角色
+        for role in _ROLES:
+            status = await call(method, url, headers_by_role[role])
+            if allowed == "anon":
+                if status == 403:
+                    failures.append(f"匿名端点带 token 不得 403:{endpoint}({role})")
+            elif allowed == "any" or role == "admin" or role in allowed:
+                if status in (401, 403):
+                    failures.append(
+                        f"{role} 应通过角色门:{endpoint} -> {status}(业务 404/422 可,401/403 不可)"
+                    )
+            elif status != 403:
+                failures.append(f"{role} 应被 403 拦截:{endpoint} -> {status}")
+
+    joined = "\n".join(failures)
+    assert not failures, f"角色门矩阵不符(共 {len(failures)} 处):\n{joined}"

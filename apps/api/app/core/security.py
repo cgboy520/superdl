@@ -22,6 +22,10 @@ def hash_password_sync(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
+# 不存在的账号也走一次哈希校验,拉平时间侧信道(用户端与管理端登录共用)
+DUMMY_PASSWORD_HASH = hash_password_sync("dummy-timing-equalizer")
+
+
 def verify_password_sync(plain: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(plain.encode(), hashed.encode())

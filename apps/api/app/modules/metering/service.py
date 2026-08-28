@@ -1,6 +1,5 @@
 """用量服务:实例监控代理 + usage_hourly 聚合 + 事件计费 vs 指标估算对账。"""
 
-import math
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -99,10 +98,7 @@ async def aggregate_previous_hour(
             loc = await orchestrator_service.instance_locations(session, [c[0] for c in candidates])
         failed = 0
         for inst_id, _user_id, _price, _gpus in candidates:
-            located = loc.get(inst_id)
-            if located is None:  # 实例在候选查询与定位查询之间被删:跳过该台,不作废整轮
-                continue
-            ns, pod, pool_label = located
+            ns, pod, pool_label = loc[inst_id]
             try:
                 values = await prom.query_instance_metric(
                     "gpu_util",
@@ -113,30 +109,12 @@ async def aggregate_previous_hour(
                     end=window_end.timestamp(),
                     step="60s",
                 )
-                vram = await prom.query_instance_metric(
-                    "vram_used_mb",
-                    ns,
-                    pod,
-                    pool_label=pool_label,
-                    start=window_start.timestamp(),
-                    end=window_end.timestamp(),
-                    step="60s",
-                )
-                cpu = await prom.query_range(
-                    "cpu_pct",
-                    ns,
-                    pod,
-                    start=window_start.timestamp(),
-                    end=window_end.timestamp(),
-                    step="60s",
-                )
             except prom.PrometheusUnavailable:
                 # 单次抖动只丢该实例该小时:continue 保住整轮其它实例
                 failed += 1
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
                 continue
             utils = [v for _, v in values]
-            cpus = [v for _, v in cpu]
             async with sm() as session:
                 await session.execute(
                     pg_insert(UsageHourly)
@@ -144,15 +122,6 @@ async def aggregate_previous_hour(
                         instance_id=inst_id,
                         hour_start=window_start,
                         gpu_util_avg=(sum(utils) / len(utils)) if utils else None,
-                        # p95 最近秩法:ceil(0.95n)-1
-                        gpu_util_p95=(
-                            sorted(utils)[max(0, math.ceil(len(utils) * 0.95) - 1)]
-                            if utils
-                            else None
-                        ),
-                        # vram 查空才是 None;max(...)=0 是合法值,不能用 or None 吞掉
-                        vram_max_mb=int(max((v for _, v in vram), default=0)) if vram else None,
-                        cpu_avg_pct=(sum(cpus) / len(cpus)) if cpus else None,
                     )
                     .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
                 )
@@ -234,13 +203,6 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
     供超卖报表按池加权平均(池归属在 orchestrator 侧,此处不跨模块查表);
     无数据返回空 dict。
     """
-    from datetime import timedelta
-
-    from sqlalchemy import func, select
-
-    from app.core.timeutil import now_utc
-    from app.modules.metering.models import UsageHourly
-
     since = now_utc() - timedelta(hours=24)
     rows = (
         await session.execute(

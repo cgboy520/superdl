@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.timeutil import now_utc
 from app.modules.billing.models import BalanceLedger, Order
 from app.modules.billing.payment_service import close_expired_orders
-from tests.test_account_auth import register
+from tests.helpers import register
 
 
 async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[str, str]:
@@ -151,7 +151,7 @@ class TestRecharge:
             ).scalar_one()
             assert row.channel_reversed_at is not None
         # 异常清单出现 channel_reversed 分桶
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
         ah = await admin_headers(sm, client, role="finance")
         anomalies = (await client.get("/api/admin/v1/finance/anomalies", headers=ah)).json()

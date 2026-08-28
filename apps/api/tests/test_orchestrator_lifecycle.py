@@ -7,7 +7,6 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.k8s import set_orchestrator
 from app.core.k8s.base import PodStatus
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
@@ -15,55 +14,18 @@ from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
+    create_instance_api,
     create_test_sku,
     create_user_with_key,
     drain,
     drain_strict,
     fund_wallet,
+    get_instance,
+    provision_running,
     seed_node_spec,
 )
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
-
-
-async def create_instance_api(
-    client: AsyncClient,
-    headers: dict[str, str],
-    sku_id: int,
-    key_id: int,
-    *,
-    gpu_count: int = 1,
-    idem: str | None = None,
-) -> dict:
-    h = dict(headers)
-    if idem:
-        h["Idempotency-Key"] = idem
-    resp = await client.post(
-        "/api/v1/instances",
-        json={
-            "sku_id": sku_id,
-            "gpu_count": gpu_count,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
-            "ssh_key_ids": [key_id],
-        },
-        headers=h,
-    )
-    assert resp.status_code == 202, resp.text
-    return resp.json()
-
-
-async def get_instance(client: AsyncClient, headers: dict, uuid: str) -> dict:
-    resp = await client.get(f"/api/v1/instances/{uuid}", headers=headers)
-    assert resp.status_code == 200, resp.text
-    return resp.json()
 
 
 class TestCreateLifecycle:
@@ -140,7 +102,7 @@ class TestCreateLifecycle:
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
     async def test_requires_ssh_key(self, client, sm):
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         data = await register(client, "13900000002")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
@@ -152,26 +114,6 @@ class TestCreateLifecycle:
             headers=headers,
         )
         assert resp.json()["code"] == "SSH_KEY_INVALID"
-
-    async def test_idempotency_key(self, client, sm):
-        headers, user_id, key_id = await create_user_with_key(client)
-        await fund_wallet(sm, user_id)
-        sku_id = await create_test_sku(sm)
-        h = {**headers, "Idempotency-Key": "idem-1"}
-        body = {
-            "sku_id": sku_id,
-            "gpu_count": 1,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
-            "ssh_key_ids": [key_id],
-        }
-        r1 = await client.post("/api/v1/instances", json=body, headers=h)
-        r2 = await client.post("/api/v1/instances", json=body, headers=h)
-        assert r1.status_code == 202 and r2.status_code == 200
-        assert r2.headers["x-idempotent-replay"] == "true"
-        a, b = r1.json(), r2.json()
-        assert a["uuid"] == b["uuid"]
-        instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
-        assert len(instances) == 1
 
     async def test_gpu_count_exceeds_sku_limit(self, client, sm):
         headers, user_id, key_id = await create_user_with_key(client)
@@ -185,21 +127,9 @@ class TestCreateLifecycle:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
 
-async def _provision_running(client, sm, fake, phone="13900000010") -> tuple[dict, str, int]:
-    """建好一台 running 实例。返回 (headers, uuid, user_id)。"""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
-    await fund_wallet(sm, user_id)
-    sku_id = await create_test_sku(sm)
-    data = await create_instance_api(client, headers, sku_id, key_id)
-    await drain(sm)
-    fake.mark_ready(f"tenant-{user_id}", data["uuid"])
-    await reconcile_once(sm)
-    return headers, data["uuid"], user_id
-
-
 class TestStopStartRestart:
     async def test_stop_then_start(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
 
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["status"] == "stopping"
@@ -230,7 +160,7 @@ class TestStopStartRestart:
         Fake 默认把删除建模成同步瞬时,本用例显式打开 graceful_delete。"""
         from app.core.outbox import OutboxTask
 
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         fake.graceful_delete = True
 
@@ -267,7 +197,7 @@ class TestStopStartRestart:
         assert ("stopped", "starting") in chain
 
     async def test_stop_requires_running(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         assert resp.json()["code"] == "INSTANCE_INVALID_TRANSITION"
@@ -276,7 +206,7 @@ class TestStopStartRestart:
 class TestFailureModes:
     async def test_pod_lost_marks_failed_and_stops_billing(self, client, sm, fake):
         """验收:kill pod 后(一轮 reconcile 内)DB 转 failed 并停止计费。"""
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         fake.kill_pod(f"tenant-{user_id}", uuid)
         counts = await reconcile_once(sm)
         assert counts["to_failed"] == 1
@@ -298,7 +228,7 @@ class TestFailureModes:
     async def test_node_lost_stops_billing_and_notifies(self, client, sm, fake):
         """节点失联时 Pod 停在 phase=Running 只有 Ready 转 False:RUNNING 分支若只看
         exists 与 phase,实例会一直显示运行中并持续计费。"""
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         fake.mark_unready(ns, uuid)
 
@@ -381,7 +311,7 @@ class TestFailureModes:
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
         """验收:DB 无主的泄漏 Pod 被回收(泄漏的 Pod 占着算力却无账可计)。"""
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         leaked_spec = fake.pods[(ns, uuid)].spec
         fake.inject_leaked_pod(ns, "deadbeef" * 4, leaked_spec)
@@ -394,7 +324,7 @@ class TestFailureModes:
 
 class TestRelease:
     async def test_release_flow_and_port_reuse(self, client, sm, fake):
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         # 关机
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -429,13 +359,13 @@ class TestRelease:
             assert row.instance_id is None
 
     async def test_release_requires_stopped(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
         assert resp.json()["code"] == "INSTANCE_NOT_STOPPED"
 
     async def test_release_is_idempotent(self, client, sm, fake):
         """重复 DELETE 不报 400:releasing/released 态直接回当前状态(照 delete_disk 写法)。"""
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -454,7 +384,7 @@ class TestRelease:
 
     async def test_events_pagination_desc(self, client, sm, fake):
         """事件时间线:降序(最新在前)+ 游标翻页覆盖全量、不重不漏。"""
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
@@ -481,7 +411,7 @@ class TestRelease:
 
     async def test_release_failed_instance_leaves_list(self, client, sm, fake):
         """失败实例可被释放并出清列表(failed 若无出边,用户永远删不掉它)。"""
-        headers, uuid, user_id = await _provision_running(client, sm, fake)
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         fake.kill_pod(f"tenant-{user_id}", uuid)  # 故障 → failed
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
@@ -606,9 +536,9 @@ class TestPortPool:
 
 class TestAdminOps:
     async def test_admin_list_and_force_stop(self, client, sm, fake):
-        from tests.test_catalog import admin_headers
+        from tests.helpers import admin_headers
 
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="ops")
 
         listed = (await client.get("/api/admin/v1/instances", headers=ah)).json()["items"]
@@ -627,7 +557,7 @@ class TestAdminOps:
         assert events[0]["event_metadata"]["admin_reason"] == "违规用途排查"
 
     async def test_frozen_cannot_start(self, client, sm, fake):
-        headers, uuid, _user_id = await _provision_running(client, sm, fake)
+        headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)

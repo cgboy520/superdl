@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.gpu_adapter import POOL_NODE_LABEL, build_gpu_request, spec_to_gpu_request
-from app.core.k8s import set_orchestrator
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL
 from app.core.money import billing_units, hourly_cost
 from app.core.policies import set_policy_overrides
@@ -29,13 +28,13 @@ from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.reconciler import reconcile_once
 from app.modules.orchestrator.service import _encode_token, build_pod_spec
 from tests.helpers import (
+    admin_headers,
     create_test_sku,
     create_user_with_key,
     drain,
     fund_wallet,
     seed_node_spec,
 )
-from tests.test_catalog import admin_headers
 
 CPU_SKU = {
     "name": "CPU-8C16G",
@@ -44,7 +43,6 @@ CPU_SKU = {
     "gpu_cores_pct": 0,
     "vram_gb": 0,
     "oversell_cores": Decimal("1.00"),
-    "oversell_vram": Decimal("1.00"),
     "pool_label": "cpu",
     "vcpu": 8,
     "mem_gb": 16,
@@ -52,16 +50,6 @@ CPU_SKU = {
     "max_gpus_per_instance": 0,
     "cuda_max": None,
 }
-
-
-@pytest.fixture
-def fake():
-    from app.core.k8s.fake import FakeOrchestrator
-
-    orch = FakeOrchestrator(auto_ready=False)
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
 
 
 def _cpu_spec(pool: str = "cpu", **extra) -> dict:

@@ -1,6 +1,6 @@
 from httpx import AsyncClient
 
-from tests.test_account_auth import register
+from tests.helpers import register
 
 # 合法的 ed25519 测试公钥(ssh-keygen 真实生成)
 ED25519_KEY = (
@@ -72,7 +72,7 @@ class TestSshKeys:
     async def test_same_key_allowed_across_users(self, client: AsyncClient):
         """指纹唯一性收窄为 (user_id, fingerprint):全局唯一是跨租户枚举面
         (可探测/占位阻断他租户添加自己的钥匙)。挂了 = 枚举面重新打开。"""
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         h1 = await auth_client(client)
         data = await register(client, "13800000010")

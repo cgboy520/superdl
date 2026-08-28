@@ -7,7 +7,7 @@
 from datetime import datetime
 
 from fastapi import status
-from sqlalchemy import String, func, text
+from sqlalchemy import String, delete, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, get_sessionmaker
@@ -58,6 +58,13 @@ async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float
             http_status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(max(1, retry_after))},
         )
+
+
+async def clear_rate_limit(key: str) -> None:
+    """清零该键的计数(登录成功后的失败桶清零;独立事务,不随业务 session 回滚)。"""
+    async with get_sessionmaker()() as session:
+        await session.execute(delete(RateLimitCounter).where(RateLimitCounter.key == key))
+        await session.commit()
 
 
 # 只读预检:不命中不建行、不计数,专供昂贵校验(如 bcrypt)之前的廉价准入

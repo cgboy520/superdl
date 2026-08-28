@@ -85,7 +85,7 @@ class AccountDeletionRequest(Base):
     __tablename__ = "account_deletion_requests"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'approved', 'completed', 'rejected', 'cancelled')",
+            "status IN ('pending', 'completed', 'rejected', 'cancelled')",
             name="status",
         ),
         Index(

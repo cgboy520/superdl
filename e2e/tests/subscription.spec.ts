@@ -7,46 +7,29 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { genEd25519Key, uniquePhone } from "./helpers";
+import {
+  addSshKeyViaUi,
+  pickSharedStandardSku,
+  rechargeViaUi,
+  registerViaUi,
+  uniquePhone,
+} from "./helpers";
 
 test("买包月并续费", async ({ page }) => {
   test.setTimeout(300_000);
   const phone = uniquePhone();
 
   // ── 注册 + 充值(与 smoke 同款前置)
-  await page.goto("/login");
-  await page.getByText("注册", { exact: true }).click();
-  await page.getByPlaceholder("手机号").fill(phone);
-  await page.getByRole("button", { name: "获取验证码" }).click();
-  await page.getByPlaceholder("短信验证码").fill("123456");
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "注册并登录" }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
+  await registerViaUi(page, phone);
 
-  await page.goto("/billing");
-  await page
-    .getByRole("button", { name: /^充\s*值$/ })
-    .first()
-    .click();
-  // 包月一次性预扣整段周期,默认的 ¥100 不够,显式填一个够大的数
-  await page.getByRole("dialog").getByRole("spinbutton").fill("5000");
-  await page.getByRole("button", { name: "生成支付二维码" }).click();
-  await page.getByRole("button", { name: /模拟支付成功/ }).click();
-  await expect(page.getByText(/已到账/)).toBeVisible({ timeout: 15_000 });
-  await page.keyboard.press("Escape");
+  // 包月一次性预扣整段周期,默认的 ¥100 不够,显式充一个够大的数
+  await rechargeViaUi(page, "5000");
 
   // ── SSH 公钥(开发机形态必须选一把)
-  await page.goto("/settings");
-  await page.getByLabel("名称").fill("e2e-key");
-  await page.getByLabel("公钥内容").fill(genEd25519Key());
-  await page.getByRole("button", { name: "添加公钥" }).click();
-  await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
+  await addSshKeyViaUi(page);
 
   // ── 市场:选规格 → 计费方式切「包月」→ 下一步
-  await page.goto("/market");
-  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
-  await expect(skuRow).toBeVisible({ timeout: 15_000 });
-  await skuRow.getByRole("radio").check();
+  await pickSharedStandardSku(page);
   // 计费方式 chips 是 aria-pressed 的按钮组(ChipRow)不是 radio;antd 两字按钮会插空格,按名定位一律用正则
   await page
     .getByRole("group", { name: "计费方式" })

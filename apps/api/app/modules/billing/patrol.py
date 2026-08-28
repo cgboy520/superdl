@@ -146,7 +146,9 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     for inst in instances:
                         fresh = await orchestrator_service.get_instance(session, user_id, inst.uuid)
                         if fresh.status == "running":
-                            await orchestrator_service.arrears_stop(session, fresh)
+                            await orchestrator_service.system_stop(
+                                session, fresh, reason="arrears_stop"
+                            )
                             counts["stopped"] += 1
                     await notify_service.send_arrears_notice(
                         session,

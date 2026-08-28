@@ -4,9 +4,8 @@
 """
 
 from datetime import datetime
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,12 +93,11 @@ async def handle_notify_sms(session: AsyncSession, task: OutboxTask) -> None:
     channel = await get_sms_channel(session)
     try:
         await ensure_sms_platform_quota()
-    except AppError as exc:
-        if exc.code is ErrorCode.RATE_LIMITED:
-            # 平台预算池耗尽:通知短信 best-effort,消化不重试(重试只会反复撞墙至死信)
-            logger.warning("sms_platform_quota_exhausted", task_id=task.id)
-            return
-        raise
+    except AppError:
+        # 平台预算池耗尽(唯一可能的 AppError 是 RATE_LIMITED):通知短信 best-effort,
+        # 消化不重试(重试只会反复撞墙至死信)
+        logger.warning("sms_platform_quota_exhausted", task_id=task.id)
+        return
     await channel.send(phone, cfg["sms_template_notice"] or "", {"title": task.payload["title"]})
 
 
@@ -379,22 +377,18 @@ async def mark_read(session: AsyncSession, user_id: int, notification_id: int) -
         await session.commit()
 
 
-async def mark_all_read(session: AsyncSession, user_id: int) -> int:
-    """全部已读(幂等):返回本次新标记的条数(重复调用返回 0)。"""
-    result = cast(
-        CursorResult[Any],
-        await session.execute(
-            update(Notification)
-            .where(
-                Notification.user_id == user_id,
-                Notification.status == "published",
-                Notification.read_at.is_(None),
-            )
-            .values(read_at=now_utc())
-        ),
+async def mark_all_read(session: AsyncSession, user_id: int) -> None:
+    """全部已读(幂等)。"""
+    await session.execute(
+        update(Notification)
+        .where(
+            Notification.user_id == user_id,
+            Notification.status == "published",
+            Notification.read_at.is_(None),
+        )
+        .values(read_at=now_utc())
     )
     await session.commit()
-    return result.rowcount or 0
 
 
 # 管理端告警流(admin_alerts)覆盖的通知类型:平台级告警 + 映射到租户的 GPU 故障
@@ -402,14 +396,14 @@ ALERT_STREAM_TYPES = ("admin_alert", "gpu_fault")
 
 
 async def admin_alert_stream(
-    session: AsyncSession, limit: int = 50, *, severity: str | None = None
+    session: AsyncSession, *, severity: str | None = None
 ) -> list[Notification]:
-    """管理端告警流(平台级 + 各租户 gpu_fault)。severity 精确过滤(可选)。"""
+    """管理端告警流(平台级 + 各租户 gpu_fault),最近 50 条。severity 精确过滤(可选)。"""
     stmt = (
         select(Notification)
         .where(Notification.type.in_(ALERT_STREAM_TYPES))
         .order_by(Notification.id.desc())
-        .limit(limit)
+        .limit(50)
     )
     if severity:
         stmt = stmt.where(Notification.severity == severity)

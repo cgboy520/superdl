@@ -52,7 +52,6 @@ class ErrorCode(StrEnum):
     INSTANCE_FROZEN = "INSTANCE_FROZEN"
     NO_CAPACITY = "NO_CAPACITY"
     # 服务型实例(对外 HTTPS 端点)
-    SERVICE_PORT_INVALID = "SERVICE_PORT_INVALID"
     SERVICE_ENDPOINT_NOT_FOUND = "SERVICE_ENDPOINT_NOT_FOUND"
     # 网关 extAuth 回调的唯一拒绝码:密钥错/已吊销/不属该端点/实例未运行一律同码同文案,
     # 调用方(可能是任意第三方)据此分不出被拒的具体原因
@@ -138,7 +137,7 @@ def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[
     return out
 
 
-def _current_request_id() -> str | None:
+def current_request_id() -> str | None:
     """错误体回带 request_id(observability 中间件绑定的 contextvar),便于凭单排障。"""
     import structlog
 
@@ -146,14 +145,11 @@ def _current_request_id() -> str | None:
     return str(value) if value else None
 
 
-# 框架层 HTTPException(路由 404/405 等)→ 统一错误体的状态码映射
+# 框架层 HTTPException → 统一错误体的状态码映射;业务侧只抛 AppError,
+# 框架自身只产生路由 404 与方法 405
 _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
-    status.HTTP_400_BAD_REQUEST: (ErrorCode.VALIDATION_ERROR, "common.validation"),
-    status.HTTP_401_UNAUTHORIZED: (ErrorCode.UNAUTHORIZED, "common.unauthorized"),
-    status.HTTP_403_FORBIDDEN: (ErrorCode.FORBIDDEN, "common.forbidden"),
     status.HTTP_404_NOT_FOUND: (ErrorCode.NOT_FOUND, "common.notFound"),
     status.HTTP_405_METHOD_NOT_ALLOWED: (ErrorCode.METHOD_NOT_ALLOWED, "common.methodNotAllowed"),
-    status.HTTP_429_TOO_MANY_REQUESTS: (ErrorCode.RATE_LIMITED, "common.rateLimited"),
 }
 
 
@@ -172,7 +168,7 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
             "message_key": "common.internal",
             "params": None,
             "detail": None,
-            "request_id": _current_request_id(),
+            "request_id": current_request_id(),
         },
     )
 
@@ -209,7 +205,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message_key": exc.message_key,
                 "params": jsonable_encoder(exc.params),
                 "detail": jsonable_encoder(exc.detail),
-                "request_id": _current_request_id(),
+                "request_id": current_request_id(),
             },
             headers=_error_headers(exc.http_status, exc.headers),
         )
@@ -235,7 +231,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message_key": key,
                 "params": None,
                 "detail": jsonable_encoder(exc.detail),
-                "request_id": _current_request_id(),
+                "request_id": current_request_id(),
             },
             headers=_error_headers(exc.status_code, exc.headers),
         )
@@ -254,7 +250,7 @@ def install_error_handlers(app: FastAPI) -> None:
                 "message_key": "common.validation",
                 "params": None,
                 "detail": jsonable_encoder(detail),
-                "request_id": _current_request_id(),
+                "request_id": current_request_id(),
             },
         )
 

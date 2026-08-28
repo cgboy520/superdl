@@ -7,7 +7,7 @@
 ## 数据模型
 
 - `service_endpoints`:`instance_id` 唯一(一实例一端点)、`public_slug` 唯一、`container_port`
-  (CHECK 1–65535 且 ∉ {22, 8888})、`protocol`、`health_path?`、`require_api_key`
+  (CHECK 1–65535 且 ∉ {22, 8888})、`health_path?`、`require_api_key`
 - `service_api_keys`:`user_id`、`instance_id`、`name`、`key_hash` 唯一、`key_prefix`、
   `last_used_at?`、`revoked_at?`
 

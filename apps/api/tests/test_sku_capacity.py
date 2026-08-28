@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import NodeSpec
-from tests.test_catalog import admin_headers, make_sku
+from tests.helpers import admin_headers, make_sku
 
 
 async def seed_spec(sm: async_sessionmaker[AsyncSession], **overrides) -> None:

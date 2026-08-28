@@ -9,8 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.timeutil import now_utc
 from app.modules.account.models import UsedRefreshToken
-from tests.test_account_auth import issue_code, register
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers, issue_code, register
 
 
 async def _refresh(client: AsyncClient, refresh_token: str):

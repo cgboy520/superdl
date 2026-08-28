@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.core.errors import AppError, ErrorCode
-from app.core.timeutil import billing_day_floor, day_floor, hour_floor, now_utc
+from app.core.timeutil import billing_day_floor, hour_floor, now_utc
 from app.modules.billing import patrol, settlement, wallet
 from app.modules.billing.models import (
     BalanceLedger,
@@ -26,6 +26,7 @@ from app.modules.billing.settlement import (
     settle_due_hours,
 )
 from app.modules.orchestrator.models import DataDisk
+from tests.helpers import fund_wallet
 from tests.test_billing_settlement import H_END, H, seed_instance
 
 
@@ -37,10 +38,9 @@ def _clear_failure_streaks():
     settlement._failure_streaks.clear()
 
 
-async def _fund(sm, user_id: int, amount: str) -> None:
-    async with sm() as session:
-        await wallet.credit(session, user_id, Decimal(amount), type_="recharge", remark="seed")
-        await session.commit()
+def _utc_day_start() -> datetime:
+    """UTC 自然日起点:配合 revenue_summary(tz_offset_minutes=0) 的造数口径。"""
+    return now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 class TestWalletLockGuards:
@@ -49,7 +49,7 @@ class TestWalletLockGuards:
 
     async def test_concurrent_credit_debit_no_lost_update(self, sm):
         """同一钱包并发 credit/debit:无丢失更新,且 balance_after 链单调接续。"""
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         gate = asyncio.Barrier(9)  # 4 credit + 4 debit + 主控,对齐起跑线
 
         async def do_credit():
@@ -166,7 +166,7 @@ class TestAffordGuard:
 
     async def test_first_instance_passes_with_one_hour_cover(self, sm):
         """无在途资源:余额 ≥ 新增 1 小时费即放行(门槛适度,不要求预存巨款)。"""
-        await _fund(sm, 1, "1.68")
+        await fund_wallet(sm, 1, "1.68")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
 
@@ -195,7 +195,7 @@ class TestAffordGuard:
         """在途数据盘按「日费 × 宽限天数」计入门槛(宽限期内盘仍在计费)。"""
         # 100GB × 0.35/GB·月 → 均摊日费 1.17;× 默认 7 天宽限 = 8.19
         await _seed_disk(sm, 1, size_gb=100, price="0.3500")
-        await _fund(sm, 1, "5.00")
+        await fund_wallet(sm, 1, "5.00")
         async with sm() as session:
             with pytest.raises(AppError) as exc:
                 await wallet.assert_can_afford(session, 1)
@@ -211,7 +211,7 @@ class TestAffordGuard:
 
     async def test_additional_disk_needs_grace_days_cover(self, sm):
         """新建数据盘:余额 ≥ 新增日费 × 宽限天数。"""
-        await _fund(sm, 1, "0.70")
+        await fund_wallet(sm, 1, "0.70")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1, additional_daily_disk=Decimal("0.10"))
         async with sm() as session:
@@ -226,7 +226,7 @@ class TestAffordGuard:
     async def test_frozen_disk_not_counted(self, sm):
         """frozen 盘不计费(见 disks.BILLABLE_STATUSES),不应占燃烧率额度。"""
         await _seed_disk(sm, 1, status="frozen")
-        await _fund(sm, 1, "0.01")
+        await fund_wallet(sm, 1, "0.01")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1)
 
@@ -525,7 +525,7 @@ class TestSettlementGaps:
 
         old_day = billing_day_floor(now_utc()) - timedelta(days=MAX_CATCHUP_DAYS + 10)
         await _seed_disk(sm, 1, created_at=old_day)
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         await _advance_watermark(sm, "daily_disk", old_day)
         await settle_daily_disks(sm)
 
@@ -553,8 +553,8 @@ class TestReconcileAttribution:
 
     async def test_cross_day_topup_no_false_positive(self, sm):
         """23 点的账单在次日 00:02 被补差价:两侧都归到账单所属日,不误判差异。"""
-        await _fund(sm, 1, "100.00")
-        yesterday_23h = day_floor(now_utc()) - timedelta(hours=1)
+        await fund_wallet(sm, 1, "100.00")
+        yesterday_23h = _utc_day_start() - timedelta(hours=1)
         async with sm() as session:
             bill = BillHourly(
                 instance_id=1,
@@ -594,7 +594,7 @@ class TestReconcileAttribution:
 
     async def test_dangling_consume_ref_detected(self, sm):
         """consume 流水回连不到账单(有扣款无出账)必须报差。"""
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         async with sm() as session:
             await wallet.debit(
                 session,
@@ -615,7 +615,7 @@ class TestWalletChainCheck:
 
     async def test_checkpoint_written_and_second_run_skips(self, sm):
         """首轮全量验过即落游标;无新流水时第二轮不再重扫(游标不动)。"""
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         assert (await reconcile_funds(sm))["wallet_mismatch"] == 0
         async with sm() as session:
             cp = await session.get(ReconcileCheckpoint, 1)
@@ -628,7 +628,7 @@ class TestWalletChainCheck:
 
     async def test_new_entries_verified_incrementally(self, sm):
         """新流水触发重验,游标跟进到最新一笔。"""
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         await reconcile_funds(sm)
         async with sm() as session:
             await wallet.debit(session, 1, Decimal("5.00"), type_="consume", allow_negative=True)
@@ -645,7 +645,7 @@ class TestWalletChainCheck:
 
     async def test_chain_break_localized_to_entry(self, sm):
         """手工塞进一笔 balance_after 造假的流水:报差且游标停在断链之前。"""
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         await reconcile_funds(sm)
         async with sm() as session:
             session.add(
@@ -672,7 +672,7 @@ class TestWalletChainCheck:
         """游标所指的流水行被删/被改:边界复核必须发现(不能只信游标)。"""
         from sqlalchemy import delete
 
-        await _fund(sm, 1, "100.00")
+        await fund_wallet(sm, 1, "100.00")
         await reconcile_funds(sm)
         async with sm() as session:
             last = (
@@ -694,9 +694,9 @@ class TestRevenueAttribution:
 
     async def test_last_hour_of_day_attributed_to_that_day(self, sm):
         """昨日 23 点的消费在今日 00:02 才扣款:报表必须归到昨日。"""
-        await _fund(sm, 1, "100.00")
-        yesterday_23h = day_floor(now_utc()) - timedelta(hours=1)
-        today_00_30 = day_floor(now_utc()) + timedelta(minutes=30)
+        await fund_wallet(sm, 1, "100.00")
+        yesterday_23h = _utc_day_start() - timedelta(hours=1)
+        today_00_30 = _utc_day_start() + timedelta(minutes=30)
         async with sm() as session:
             bill = BillHourly(
                 instance_id=1,
@@ -725,7 +725,7 @@ class TestRevenueAttribution:
         assert summary["yesterday_revenue"] == "1.68"
         assert summary["today_revenue"] == "0"
         # 每月 1 号凌晨跑时昨日 23 点落在上个月:月合计跟着归属期走
-        month_start = day_floor(now_utc()).replace(day=1)
+        month_start = _utc_day_start().replace(day=1)
         assert summary["month_revenue"] == ("1.68" if yesterday_23h >= month_start else "0")
 
 
@@ -736,8 +736,7 @@ class TestSmsOutbox:
         from app.core.outbox import OutboxTask
         from app.core.sms import set_sms_channel
         from app.modules.notify import service as notify_service
-        from tests.helpers import drain
-        from tests.test_account_auth import register
+        from tests.helpers import drain, register
 
         sent: list[dict] = []
 
@@ -776,7 +775,7 @@ class TestSmsOutbox:
     async def test_notify_without_sms_enqueues_nothing(self, client, sm):
         from app.core.outbox import OutboxTask
         from app.modules.notify import service as notify_service
-        from tests.test_account_auth import register
+        from tests.helpers import register
 
         data = await register(client, "13900000078")
         async with sm() as session:

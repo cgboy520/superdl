@@ -2,7 +2,7 @@
 
 from httpx import AsyncClient
 
-from tests.test_catalog import admin_headers
+from tests.helpers import admin_headers
 
 
 class TestPolicyOverrides:
