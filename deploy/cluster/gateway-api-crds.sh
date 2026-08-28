@@ -4,35 +4,22 @@
 # 不会替你升 CRD)。
 #
 # 用法:./gateway-api-crds.sh [--dry-run]   (在 deploy/cluster/ 下执行)
-#   --dry-run 走 kubectl apply --dry-run=server:真在 apiserver 上校验一遍但不落盘,
-#             需要能连集群(纯离线渲染没有意义——要看的正是它跟集群里现存 CRD 冲不冲突)。
+#   --dry-run 走 kubectl apply --dry-run=server:在 apiserver 上真校验一遍但不落盘,需要能连集群。
 #
-# 为什么是 `helm template | kubectl apply` 而不是 `helm install`:
-#   gateway-crds-helm 把 CRD 放在 templates/ 而不是 crds/(官方 README 明说的取舍:CRD 太大,
-#   放 crds/ 会踩 helm 对该目录的已知限制),官方给出的装法就是本脚本这条管线。
-#   顺带解决另一半问题:gateway-helm 内置的 CRD 子 chart 走的是 helm 的 crds/ 目录,
-#   而那个目录在 `helm upgrade` 时永不更新 —— 跟着 chart 装,CRD 就永远停在首装那一版。
-#   所以 CRD 的生命周期在这里单点管理,helmfile 侧一律 crds.enabled=false。
-#
-# 为什么必须 --server-side --force-conflicts:
-#   这份清单渲染出来近 4 MB(experimental channel 的 Gateway API CRD 加 EG 自己的 CRD)。
-#   客户端 apply 会把整份清单塞进 kubectl.kubernetes.io/last-applied-configuration 注解,
-#   直接撞上注解体积上限而失败(报错是 "metadata.annotations: Too long",
-#   完全不提 CRD 太大这回事)。
-#   --force-conflicts 用来接管上一次由别的客户端/控制器写下的字段所有权,否则升级时
-#   每个字段都报 conflict。
-#
-# channel 只有一次机会(本次迁移最容易踩死的一条):
-#   CRD 一旦以 standard channel 装进集群,就再也换不成 experimental —— 随 CRD 一起装的
-#   safe-upgrades ValidatingAdmissionPolicy 用 CEL 明文拒绝「standard 之上装 experimental」。
-#   我们必须是 experimental(BackendTrafficPolicy 的每源 IP 本地限流等就落在这一档)。
-#   装错了只能把 CRD 删净重来,而删 CRD 会连带删掉集群里全部 Gateway/HTTPRoute ——
-#   平台三个域名加全部租户 Jupyter 入口一起消失。所以下面有一道前置闸门,发现 channel
-#   不符时直接停手,不给「再 apply 一次试试」的机会。
+# 约束:
+# - 装法必须是 `helm template | kubectl apply`:gateway-crds-helm 把 CRD 放在 templates/ 而不是
+#   crds/,这是官方给出的管线。CRD 生命周期在本脚本单点管理,helmfile 侧一律 crds.enabled=false。
+# - 必须 --server-side --force-conflicts:清单近 4 MB,客户端 apply 会撞上
+#   last-applied-configuration 注解体积上限(报错只说 "metadata.annotations: Too long");
+#   --force-conflicts 接管上次由别的客户端写下的字段所有权,否则升级时每个字段都报 conflict。
+# - channel 只有一次机会:必须 experimental(BackendTrafficPolicy 的每源 IP 本地限流落在这一档)。
+#   装成 standard 后换不回来——随 CRD 一起装的 safe-upgrades VAP 用 CEL 拒绝
+#   standard→experimental,只能删净 CRD 重来,而删 CRD 会连带删掉集群里全部 Gateway/HTTPRoute。
+#   下面的前置闸门在 channel 不符时直接停手。
 set -euo pipefail
 
-# 版本锁定:EG_VERSION 必须与 helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致
-# (控制面 chart 与 CRD chart 同版本发布,错版会装出控制面读不懂的 CRD)。
+# EG_VERSION 必须与 helmfile.yaml.gotmpl 里 envoy-gateway release 的 version 一致:
+# 控制面 chart 与 CRD chart 同版本发布,错版会装出控制面读不懂的 CRD。
 EG_VERSION="v1.9.0"
 # 该 EG 版本对齐的 Gateway API 版本;只用于装完自检与人工核对(preflight.sh 也按它卡)。
 GATEWAY_API_VERSION="v1.6.1"
@@ -61,7 +48,7 @@ for bin in helm kubectl; do
 done
 
 # 读注解而不是 `helm list`:CRD 不属于任何 release,集群里的 channel 事实只写在注解上。
-# CRD 不存在时 kubectl 返回非零,这里吞掉——那是首装,不是错。
+# CRD 不存在时 kubectl 返回非零,吞掉——那是首装,不是错。
 crd_annotation() { # <注解名>
   kubectl get crd "$GW_CRD" -o "go-template={{index .metadata.annotations \"$1\"}}" 2>/dev/null || true
 }
@@ -73,8 +60,8 @@ if [[ -z "$existing_channel" || "$existing_channel" == "<no value>" ]]; then
 elif [[ "$existing_channel" == "$CHANNEL" ]]; then
   echo "    已是 channel=$existing_channel,bundle-version=$(crd_annotation "$BUNDLE_ANNOTATION")"
 else
-  # 这里停手是刻意的:继续 apply 只会被 safe-upgrades 策略拒掉,而它的报错指向 CEL 表达式,
-  # 没人第一眼能读出「channel 不兼容」。
+  # 必须停手:继续 apply 只会被 safe-upgrades 策略拒掉,而它的报错指向 CEL 表达式,
+  # 第一眼读不出「channel 不兼容」。
   echo "::error::集群里的 $GW_CRD 是 channel=$existing_channel,本脚本要装的是 $CHANNEL。" >&2
   echo "         safe-upgrades ValidatingAdmissionPolicy 拒绝 standard→experimental,换不回去。" >&2
   echo "         唯一出路是删净 Gateway API CRD 重装,而删 CRD 会连带删掉集群内全部" >&2
@@ -99,8 +86,8 @@ fi
 echo "==> 2/2 apply --server-side --force-conflicts"
 render | kubectl apply --server-side --force-conflicts -f -
 
-# 装完立刻回读注解:apply 成功不等于装对了 channel(比如有人手工改过 chart 参数),
-# 而错的 channel 要到某条 experimental 策略静默失效时才会暴露。
+# 装完立刻回读注解:apply 成功不等于装对了 channel,而错的 channel 要到某条 experimental
+# 策略静默失效时才会暴露。
 installed_channel="$(crd_annotation "$CHANNEL_ANNOTATION")"
 installed_bundle="$(crd_annotation "$BUNDLE_ANNOTATION")"
 echo "==> 完成:$GW_CRD channel=$installed_channel bundle-version=$installed_bundle"

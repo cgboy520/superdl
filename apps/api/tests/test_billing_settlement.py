@@ -68,7 +68,7 @@ class TestRunningSeconds:
         assert running_seconds_in_window(events, H, H_END) == 3000
 
     def test_subsecond_rounds_half_even_not_truncates(self):
-        """微秒级事件:整数微秒累加 + HALF_EVEN 舍入(不再 int() 截断)。
+        """微秒级事件:整数微秒累加 + HALF_EVEN 舍入(不做 int() 截断)。
         0.6s 进 1;0.5s 恰半向偶(0);1.5s 恰半向偶(2)。"""
         us = timedelta(microseconds=1)
         # 0.6 秒:进入 running 后 0.6s 离开
@@ -275,8 +275,7 @@ class TestUpsertIdempotency:
     async def test_concurrent_settlement_single_charge(self, sm):
         inst_id = await seed_instance(sm, events=[ev(0, "creating", "running")])
 
-        # 屏障对齐起跑线:三路写入同一时刻冲出,撞唯一约束的窗口拉到最大,
-        # 不依赖调度器碰巧交错
+        # 屏障对齐起跑线:三路同时冲出,把撞唯一约束的窗口拉到最大,不靠调度器碰巧交错
         gate = asyncio.Barrier(4)
 
         async def run():
@@ -653,8 +652,8 @@ class TestWindowBoundaries:
 class TestOverdraftRefusal:
     """allow_negative=False 的拒绝路径。
 
-    结算扣款必须允许透支(服务已消费完),但拒绝路径本身要能工作:
-    任何「先付后用」的同步扣款都要靠它。
+    结算扣款必须允许透支(服务已消费完),但拒绝路径本身要能工作:任何「先付后用」的
+    同步扣款都靠它。
     """
 
     async def test_refusal_leaves_wallet_and_ledger_untouched(self, sm):
@@ -684,9 +683,8 @@ class TestOverdraftRefusal:
 class TestNodeLostBillingTruncation:
     """节点失联/Pod 丢失(node_lost/pod_lost):宽限观察期不计费。
 
-    计费截断到 Pod 首次 not-ready 的时刻(metadata.unready_since),而非 reconciler
-    判定时刻。挂了 = 节点断电后宽限期(默认 10 分钟)照收 GPU 时费;或尾账截断了、
-    整点结算又把宽限期秒数补扣回来(口径不一致)。
+    计费截断到 Pod 首次 not-ready 的时刻(metadata.unready_since)而非判定时刻。
+    挂了 = 节点断电后宽限期照收 GPU 时费,或尾账截断了而整点结算又把秒数补扣回来。
     """
 
     async def test_reconstruction_truncates_at_unready_since(self, sm):
@@ -805,7 +803,7 @@ class TestNodeLostBillingTruncation:
 
 
 class TestGapClosure:
-    """结算缺口闭环(P1-2):登记 → 管理端可见 → 重放补结/人工核销 → resolved_at 回写。
+    """结算缺口闭环:登记 → 管理端可见 → 重放补结/人工核销 → resolved_at 回写。
     挂了 = 缺口只进不出,截断窗口永久漏收。"""
 
     async def _make_gap(

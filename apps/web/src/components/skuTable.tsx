@@ -40,10 +40,8 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
   return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
 }
 
-/**
- * SKU 表列。availability=true 时插入「空闲 GPU」列(市场页选规格用,创建页规格已定不需要);
- * priceFontSize 控制价格字号(市场页放大到 18)。
- */
+/** SKU 表列。availability=true 时插入「空闲 GPU」列(市场页用,创建页规格已定不需要);
+ *  priceFontSize 控制价格字号。 */
 export function skuColumns(
   opts: {
     fmt: Formatters;
@@ -52,10 +50,7 @@ export function skuColumns(
     priceFontSize?: number;
     /** CPU 规格表:价格是整机时价,表头不能写「单卡」 */
     cpu?: boolean;
-    /**
-     * 竞价档选中时传入:上了竞价的规格价格列改显「原价划线 + 折后价」,
-     * 没上的原样显示原价并挂「未上竞价」标 —— 灰置的行也得说得出灰在哪。
-     */
+    /** 竞价档选中时传入:上了竞价的规格价格列改显「原价划线 + 折后价」,没上的原样显示原价并挂标。 */
     spot?: SpotPolicy;
   },
 ): NonNullable<ComponentProps<typeof Table<SkuMarketOut>>["columns"]> {
@@ -97,7 +92,7 @@ export function skuColumns(
       render: (_: unknown, s: SkuMarketOut) => t("sku.hostShort", { vcpu: s.vcpu, mem: s.mem_gb }),
     },
     { title: t("sku.colDisk"), render: (_: unknown, s: SkuMarketOut) => t("sku.diskWithBase", { disk: s.disk_gb }) },
-    // 最高 CUDA 只对带卡的规格有意义:CPU 分栏整列恒为「-」,留着是纯噪音
+    // 最高 CUDA 只对带卡的规格有意义:CPU 分栏整列恒为「-」
     ...(opts.cpu
       ? []
       : [
@@ -139,18 +134,12 @@ export function skuColumns(
   ];
 }
 
-/**
- * 计费方式:按量 + 竞价 + 四个包周期。与档位正交 —— 同一条 SKU 的另几种买法,不是新档位。
- * 竞价与包周期互斥(market 是单值),所以它们同在这一行里单选。
- */
+/** 计费方式:按量 + 竞价 + 四个包周期,与档位正交。竞价与包周期互斥(market 是单值),故同行单选。 */
 export type BillingMode = "on_demand" | "spot" | BillingPeriod;
 
-/**
- * 计费方式卡(市场页与创建页共用)。折扣角标与竞价折扣从 `/policies` 读,禁止前端硬编码。
- * 所选规格不接受包周期(`period_enabled=false`)/ 未上竞价(`spot_enabled=false`)时,
- * 对应项灰置 + tooltip 说明,不隐藏。
- * 数量选择器(几个周期)只在创建/续费这类真要提交的场景出(传 count + onCountChange)。
- */
+/** 计费方式卡(市场页与创建页共用)。折扣角标与竞价折扣从 `/policies` 读,禁止前端硬编码。
+ *  规格不接受包周期 / 未上竞价时对应项灰置 + tooltip 说明,不隐藏。
+ *  数量选择器只在创建/续费这类真要提交的场景出(传 count + onCountChange)。 */
 export function BillingModeCard({
   value,
   onChange,
@@ -191,7 +180,7 @@ export function BillingModeCard({
                   <SpotOffLabel policy={spotPolicy} />
                 </span>
               ),
-              // 策略没回来就不放行:折扣算不出的竞价档,点进去只会看到一个「--」的价
+              // 策略没回来就不放行:折扣算不出
               disabled: !spotEnabled || spotPolicy == null,
               disabledReason: !spotEnabled
                 ? tErr("orchestrator.spotNotEnabled")

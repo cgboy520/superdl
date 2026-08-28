@@ -195,7 +195,7 @@ export type {
   SkuUpdate,
 } from "@superdl/api-client";
 
-// ---------- 行类型:全部取自生成契约,禁止手写 ----------
+// 行类型:全部取自生成契约,禁止手写
 
 export type {
   AdjustmentOut as AdjustmentRow,
@@ -224,7 +224,7 @@ export type {
   RefundPayout,
 } from "@superdl/api-client";
 
-// ---------- 查询 hooks ----------
+// 查询 hooks
 
 type MutOpts<TData, TVars> = { mutation?: UseMutationOptions<TData, unknown, TVars> };
 type Fetcher = (...args: never[]) => Promise<unknown>;
@@ -656,7 +656,7 @@ export function useResolveSettlementGap(
   });
 }
 
-/** 工单列表(游标分页,P2):status/category 过滤,user_id/ticket_no 检索。 */
+/** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索。 */
 export function useTickets(
   params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">,
 ) {
@@ -717,7 +717,7 @@ export function useTicketDetail(ticketId: number | null) {
   return { ...q, queryKey };
 }
 
-// ---------- 法务文档(读全角色,写仅 admin) ----------
+// 法务文档(读全角色,写仅 admin)
 
 export type { LegalDocCellOut as LegalDocCell, LegalDocVersionOut as LegalDocVersion } from "@superdl/api-client";
 
@@ -829,7 +829,7 @@ export function useAuditLog(filters: AuditFilters) {
   return { ...q, queryKey };
 }
 
-// ---------- 变更 hooks ----------
+// 变更 hooks
 
 /** 登录只返回二要素挑战票(全角色强制 TOTP);正式 token 经 useMfaSetupConfirm / useMfaVerify。 */
 export function useAdminLogin(
@@ -841,7 +841,7 @@ export function useAdminLogin(
   });
 }
 
-// ---------- TOTP MFA(全部管理角色强制) ----------
+// TOTP MFA(全部管理角色强制)
 export function useMfaSetupBegin(opts?: MutOpts<MfaSetupOut, { ticket: string }>) {
   return useMutation({
     mutationFn: (v: { ticket: string }) =>
@@ -1018,9 +1018,7 @@ export function useForceStop() {
   });
 }
 
-/** 强制回收一台竞价实例(腾容量)。与强制停止分成两个 hook,是因为后端就是两条路径:
- *  回收履行的是竞价那份「可能被回收」的约定(宽限窗 + 通知),强制停止是风控处置,
- *  用户时间线上的 reason 与竞价可靠性统计都靠这个区分。 */
+/** 强制回收一台竞价实例(腾容量)。与强制停止是两条后端路径,时间线 reason 与竞价可靠性统计据此区分。 */
 export function usePreemptInstance() {
   return useMutation({
     mutationFn: (v: { uuid: string; data: AdminForceStopRequest }) =>
@@ -1073,7 +1071,7 @@ export function useReviewAdjustment(
 }
 
 
-// ---------- 运营:死信重放 / 收入报表 / 公告 ----------
+// 运营:死信重放 / 收入报表 / 公告
 
 export function useAnomalies() {
   const queryKey = ["admin", "anomalies"] as const;
@@ -1190,14 +1188,14 @@ export function useUpdatePolicies(opts?: MutOpts<UpdatedKeysOut, { data: PolicyU
   });
 }
 
-// ---------- 平台配置(渠道凭据与合规;仅 admin 角色) ----------
+// 平台配置(渠道凭据与合规;仅 admin 角色)
 
 export function usePlatformConfig() {
   const queryKey = ["admin", "platform-config"] as const;
   const q = useQuery({
     queryKey,
     queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
-    // 表单页:不轮询(全局本就不设 refetchInterval),并关掉焦点重取,编辑中的表单不被刷新覆盖
+    // 编辑中的表单不能被后台重取覆盖,必须关掉焦点重取
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -1231,7 +1229,7 @@ export function useTestSms(opts?: MutOpts<SmsTestOut, { data: SmsTestRequest }>)
   });
 }
 
-// ---------- 管理员账号 ----------
+// 管理员账号
 
 export function useAdminAccounts() {
   const queryKey = ["admin", "admins"] as const;
@@ -1274,7 +1272,7 @@ export function useChangeOwnPassword(opts?: MutOpts<void, { data: AdminSelfPassw
   });
 }
 
-// ---------- 总览/上下文(全部走生成 fetcher;类型即契约) ----------
+// 总览/上下文(全部走生成 fetcher;类型即契约)
 
 /** 路由守卫用:/me 校准角色(角色只信服务端响应)。 */
 export function fetchAdminMe(): Promise<AdminOut> {
@@ -1313,7 +1311,7 @@ export function useSkuImpact(skuId: number | null) {
   });
 }
 
-// ---------- CSV 导出(生成 fetcher,文本响应;截断标记见 lib/csv.ts) ----------
+// CSV 导出(生成 fetcher,文本响应;截断标记见 lib/csv.ts)
 
 /** 服务端 CSV 截断标记(与 apps/api core/csvexport.py TRUNCATED_MARKER 一致)。 */
 const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
@@ -1360,7 +1358,6 @@ export async function exportAuditCsv(
   return downloadCsvText("superdl-audit.csv", text);
 }
 
-/** 日对账导出。 */
 export async function exportReconciliationCsv(
   day: string,
   lang: "zh-CN" | "en-US",

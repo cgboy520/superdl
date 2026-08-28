@@ -217,10 +217,9 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
 async def test_service_container_drill(client, sm, fake):
     """E2E 演练二:部署服务 → 建 Key → 经端点鉴权调用 → 吊销 → 401 → 释放。
 
-    与 test_endpoint_auth.py 的矩阵不重合:那边逐条钉鉴权判据,这里跑的是**一条脚本
-    走完全程**,顺带守住几件只有在整链路里才看得见的事 ——
-    服务型实例不占 SSH 端口池、不建 Jupyter 入口、密文 env 不落 Pod spec、
-    以及全程资金自洽(服务实例与开发机走同一套计费,没有第二条账路)。
+    与 test_endpoint_auth.py 的矩阵不重合:那边逐条钉鉴权判据,这里跑一条脚本走完全程,
+    守住只有在整链路里才看得见的事 —— 服务型实例不占 SSH 端口池、不建 Jupyter 入口、
+    密文 env 不落 Pod spec、全程资金自洽。
     """
     phone = "13411113333"
     await client.post("/api/v1/auth/sms-code", json={"phone": phone, "purpose": "register"})
@@ -354,11 +353,8 @@ async def test_service_container_drill(client, sm, fake):
 async def test_subscription_drill(client, sm, fake):
     """包周期主链路:充值 → 买包月 → 运行 → 到期 → 停机 → 冻结 → 回收,全程资金自洽。
 
-    与按量演练分开一条:它跑的是「跑多久算多少钱」,这条跑的是「先付一整段、
-    结算完全不参与」。两条链路在计费上是互斥的口径,合成一个用例会让任何一条
-    坏掉时都看不出是哪一条坏了。
-
-    挂在中段(到期不停机)= 白送算力;挂在末段(冻结不回收)= 实例盘永远收不回来;
+    与按量演练分开一条:那条跑「跑多久算多少钱」,这条跑「先付一整段、结算完全不参与」。
+    挂在中段(到期不停机)= 到期后仍免费在跑;挂在末段(冻结不回收)= 实例盘收不回来;
     挂在资金断言 = 预扣与流水对不上,财务侧无法对账。
     """
     from datetime import timedelta

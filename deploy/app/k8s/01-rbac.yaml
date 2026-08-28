@@ -1,4 +1,4 @@
-# 平台 ServiceAccount 拆身份(最小权限,P1-18/安全P0-1):
+# 平台 ServiceAccount 拆身份(最小权限):
 #   superdl-api        → API(serve)进程:仅只读探测(集群页 test-connection / 容量预览)。
 #                        业务规范:请求路径禁止直接改 K8s(一律走 outbox),故 API 无任何写权限。
 #   superdl-worker     → core worker(计费/通知/保洁):纯 DB + 外部渠道,零 K8s 权限
@@ -8,16 +8,9 @@
 #   superdl-prewarm    → prewarm worker:superdl ns 预热 Job + nodes 只读(挑选拉取目标)。
 #   superdl-disk-ops   → disk-ops worker:配额下发/擦除 Job(superdl + tenant ns)。
 #
-# 为何 pods/services 写权限是 ClusterRole 而非 RoleBinding:tenant-* namespace 是
-# 首次开机时动态创建的,无法预先绑定 RoleBinding(预绑本身又需要更大的 RBAC 权限)。
-# 收敛路线:deploy/cluster/admission/tenant-restrictions.yaml 的策略①(写操作范围钉死
-# superdl/tenant-* + nodes)与策略③(node 字段级白名单)把 ClusterRole 的实际可达面
-# 收窄到目标,二者叠加才是完整最小权限;两条 VAP 均按 SA 前缀匹配,新组件 SA 自动纳入。
-#
-# 升级路径(已部署集群):apply 本文件后删除旧聚合角色与绑定
-#   kubectl delete clusterrolebinding superdl-orchestrator
-#   kubectl delete clusterrole superdl-orchestrator
-# 并按 03-worker.yaml 滚动各 worker Deployment(任务幂等可重入,reaper 回收在跑任务)。
+# tenant-* namespace 动态创建,写权限只能给 ClusterRole;实际可达面由
+# deploy/cluster/admission/tenant-restrictions.yaml 的策略①③收窄,二者叠加才是最小权限。
+# 两条 VAP 按 SA 前缀匹配,新组件 SA 自动纳入。
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -56,10 +49,8 @@ metadata:
 ---
 # 只读面:与 app/core/k8s/real.py 的 probe_cluster / list_nodes 一一对应
 # (VersionApi 走 /version 非资源路径,认证用户默认可读,无需授权)。
-# 绑定对象:API(集群页探测/市场近似库存)与 node-mgr(节点巡检阶段 A 跑 probe_cluster);
-# tenant-mgr 的 reconciler 只需要下方编排面里的 pods/services 读,不再给宽读。
-# 边界:pods get/list 不再暴露租户凭据——JUPYTER_TOKEN 已迁移到 per-instance Secret
-# (secretKeyRef 引用,本角色无 secrets 权限);AUTHORIZED_KEYS 为公钥(非密)。
+# 绑定 API(集群页探测/市场近似库存)与 node-mgr(巡检阶段 A 跑 probe_cluster)。
+# 本角色无 secrets 权限:JUPYTER_TOKEN 在 per-instance Secret 里,pods get/list 不暴露租户凭据。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -81,8 +72,8 @@ rules:
     resources: ["runtimeclasses"]
     verbs: ["get", "list"]
   - apiGroups: ["gateway.networking.k8s.io"]
-    # 北向入口就绪面:probe_cluster 读 Gateway 对象的 status.conditions[Programmed]。
-    # 只探控制器 Deployment 不够——listener 证书缺失/hostname 撞车时控制器一切正常
+    # 北向入口就绪面:probe_cluster 读 Gateway 的 status.conditions[Programmed]。
+    # 只探控制器 Deployment 不够:listener 证书缺失/hostname 撞车时控制器一切正常
     resources: ["gateways"]
     verbs: ["get", "list"]
 ---

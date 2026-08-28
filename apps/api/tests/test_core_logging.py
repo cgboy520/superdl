@@ -70,7 +70,7 @@ def test_log_level_config_filters_both_sides(restore_logging: None, monkeypatch)
 
 
 def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
-    """prod(JSON):logger.exception 渲染成结构化栈帧,不再只剩一行 event。
+    """prod(JSON):logger.exception 渲染成结构化栈帧,而非只剩一行 event。
     dev 的 ConsoleRenderer 自己渲染 exc_info(不能叠结构化栈帧渲染器,见其 TypeError)。"""
     from app.core.config import get_settings
 
@@ -93,7 +93,7 @@ def test_exception_traceback_rendered(restore_logging: None, monkeypatch):
 
 
 def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
-    """PII/凭据全局兜底(P1-13):phone/id_number/token/secret/password/code 键名命中即打码
+    """PII/凭据全局兜底:phone/id_number/token/secret/password/code 键名命中即打码
     (挂了 = 新增日志点忘脱敏,手机号/凭据明文进 Loki 180 天)。"""
     from app.core.config import get_settings
 
@@ -124,11 +124,9 @@ def test_sensitive_fields_masked(restore_logging: None, monkeypatch):
 def test_exception_traceback_never_carries_frame_locals(restore_logging: None, monkeypatch):
     """prod 的结构化栈帧**不带局部变量**。
 
-    挂了 = 生产日志把每个栈帧的局部变量原样写出去。异步栈里几乎每一帧都握着
-    Settings / session / 配置对象,于是数据库口令与 JWT 密钥直接落进 journald 与
-    日志后端(实测过:reconciler 的一条 404 异常里两者都是明文)。
-    上面那条 `_mask_sensitive_processor` 的按键名打码拦不住它 —— 打码跑在
-    shared_processors 里,栈帧字典是它跑完之后才生成的。
+    挂了 = 生产日志把每个栈帧的局部变量原样写出去,数据库口令与 JWT 密钥直接落进日志后端。
+    `_mask_sensitive_processor` 的按键名打码拦不住它:打码跑在 shared_processors 里,
+    栈帧字典是它跑完之后才生成的。
     """
     from app.core.config import get_settings
 

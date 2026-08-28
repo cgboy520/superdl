@@ -18,6 +18,6 @@ class NotificationOut(BaseModel):
 
 
 class UnreadCountOut(BaseModel):
-    """未读角标轻端点(P2):顶栏 30s 轮询用,不拉通知列表全页。"""
+    """未读角标轻端点:顶栏 30s 轮询用,不拉通知列表全页。"""
 
     unread_count: int

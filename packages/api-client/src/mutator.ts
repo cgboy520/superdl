@@ -37,7 +37,6 @@ const REFRESH_LOCK = "superdl:token-refresh";
 /**
  * 续期一次。staleToken 是发起该请求时用的 access token:进入临界区后 token 已变,
  * 说明别的标签页/并发请求刚续期成功,直接重放。
- * 后端 refresh 一次性消费,重放旧 token 会撤销该用户全部会话。
  */
 async function refreshOnce(staleToken: string | null): Promise<boolean> {
   const run = async (): Promise<boolean> => {
@@ -114,7 +113,7 @@ export async function requestAdminTokenRefresh(
   }
 }
 
-/** 网络层失败(断网/DNS/连接拒绝)统一成 ApiError:fetch 的 TypeError 原文绝不能甩给用户。 */
+/** 网络层失败(断网/DNS/连接拒绝)统一成 ApiError,不把 fetch 的 TypeError 原文透出。 */
 function networkError(): ApiError {
   return {
     code: "NETWORK_ERROR",
@@ -140,7 +139,7 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     return fetch(`${config.baseUrl}${url}`, { ...options, headers });
   };
 
-  // 网络层失败(fetch 抛 TypeError)统一成 ApiError,其余异常原样抛出
+  // fetch 抛 TypeError 即网络层失败,其余异常原样抛出
   const guardedFetch = async (): Promise<Response> => {
     try {
       return await doFetch();

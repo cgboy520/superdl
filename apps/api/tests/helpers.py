@@ -20,8 +20,8 @@ async def drain(
 ) -> int:
     """连续处理 outbox 直到队列空(或到 limit),返回处理个数。
 
-    只是测试驱动手段:生产 worker 关停不做冲刷(SIGTERM 直接停在跑任务,遗留 running
-    由 reaper 超时打回 pending)。失败任务静默滑进重试;要断言「全部成功」用 drain_strict。
+    只是测试驱动手段,生产 worker 关停不做冲刷。失败任务静默滑进重试;
+    要断言「全部成功」用 drain_strict。
     """
     n = 0
     while n < limit and await outbox.process_one(sm, task_types=task_types):
@@ -93,8 +93,7 @@ async def create_user_with_key(
 async def create_test_sku(sm: async_sessionmaker[AsyncSession], **overrides) -> int:
     """按业务唯一键 get-or-create,键与 catalog/models.py 的 uq_skus_business_key 一致。
 
-    skus 有业务键唯一约束:同一用例内多次 provisioning 复用同一条,而不是撞约束。
-    同键但其余字段不同的请求直接报错(测试写法问题,不该静默复用)。
+    同一用例内多次 provisioning 复用同一条而不是撞约束;同键但其余字段不同的请求直接报错。
     键漏字段会让本该各建一条的两个 SKU 误判成同一条,报出误导性的断言。
     """
     from sqlalchemy import select

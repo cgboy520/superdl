@@ -13,8 +13,7 @@ configureApiClient({
   baseUrl: "",
   // 读 localStorage 而非 store 快照:别的标签页刚续期的 token 立即生效
   getToken: () => readAdminToken(),
-  // 静默续期(Web Locks 跨标签页互斥在 mutator 内):滑动换发 access token,
-  // 活跃管理员不因 1h TTL 被踢;12h 绝对会话上限在服务端
+  // 静默续期(Web Locks 跨标签页互斥在 mutator 内):滑动换发 access token,12h 绝对会话上限在服务端
   refreshToken: async () => {
     const token = readAdminToken();
     if (!token) return false;
@@ -35,8 +34,7 @@ configureApiClient({
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    // 不设全局轮询:需要轮询的查询各自声明 refetchInterval(api.ts 内或页面传入),
-    // 否则 infinite 列表会被全页重拉、表单页会被刷新覆盖
+    // 禁设全局轮询,否则 infinite 列表会被全页重拉、表单页会被刷新覆盖;要轮询的查询各自声明 refetchInterval
     queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 10_000 },
   },
 });

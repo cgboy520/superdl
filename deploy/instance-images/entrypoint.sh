@@ -13,7 +13,7 @@ export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
 export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-/root/.jupyter}"
 mkdir -p "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" /root/.cache
 chmod 700 "$JUPYTER_RUNTIME_DIR" 2>/dev/null || true
-rm -f /root/.local/share/jupyter/runtime/jpserver-* 2>/dev/null || true   # 旧镜像残留
+rm -f /root/.local/share/jupyter/runtime/jpserver-* 2>/dev/null || true   # 清残留(含 token)
 
 # 用户装的包落到实例盘(/opt/conda、/opt/julia 在容器可写层,Pod 重建即丢)
 export PYTHONUSERBASE=/root/.local
@@ -21,8 +21,8 @@ export PIP_USER=1
 if [[ -n "${JULIA_DEPOT_PATH:-}" ]]; then
   julia_base="${JULIA_DEPOT_PATH%%:*}"
   export JULIA_DEPOT_PATH="/root/.julia:${JULIA_DEPOT_PATH}"
-  # 活动环境取的是 DEPOT_PATH 里第一个已存在的 environments/vX.Y;不把镜像那份复制到
-  # 实例盘,Pkg.add 会去写只读的镜像 depot
+  # 活动环境取 DEPOT_PATH 里第一个已存在的 environments/vX.Y:不把镜像那份复制到实例盘,
+  # Pkg.add 就会去写只读的镜像 depot
   if [[ -d "$julia_base/environments" && ! -d /root/.julia/environments ]]; then
     # 用 cp -r 而非 -a:没有 CAP_CHOWN 时保留属主会失败并返回非零(文件其实已复制)
     { mkdir -p /root/.julia && cp -r "$julia_base/environments" /root/.julia/; } 2>/dev/null \
@@ -166,8 +166,8 @@ else
   warn "Lab 默认设置缺失,界面语言回落 en"
 fi
 
-# jupyter-ai:模型提供方白名单 + 默认 persona
-# (上游默认值写的是 ::jupyter_ai::,实际类在 ::jupyter_ai_jupyternaut::,不钉就没有应答者)
+# jupyter-ai:模型提供方白名单 + 默认 persona。persona id 必须钉死:上游默认值写的是
+# ::jupyter_ai::,实际类在 ::jupyter_ai_jupyternaut::,不钉就没有应答者
 ai_args=(
   --PersonaManager.default_persona_id=jupyter-ai-personas::jupyter_ai_jupyternaut::JupyternautPersona
 )

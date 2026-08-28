@@ -3,20 +3,18 @@
 GPU 算力租赁平台:租户按量租用整卡 / MIG / 共享 GPU 容器实例(SSH + JupyterLab),按秒累计、按小时出账;运营侧有节点一键加入、SKU 与库存、财务对账、工单与告警闭环。
 后端 FastAPI 模块化单体 + PostgreSQL 18,前端 React 19 + antd 6 双控制台,平台层 RKE2 / k3s + Kata / HAMi。
 
-状态:未发布(版本 0.1.0,尚无 tag);代码侧功能齐备,上线依赖实机验证与资质联调。
+状态:未发布;代码侧功能齐备,上线依赖实机验证与资质联调。
 
 ## 文档地图
 
-| 想知道 | 看 |
-|---|---|
-| 架构、模块边界、数据模型、核心流程与硬约束 | [docs/architecture.md](docs/architecture.md) |
-| 各模块契约与不变量 | [docs/reference/](docs/README.md) |
-| 配额、限流、保留期 | [docs/reference/limits.md](docs/reference/limits.md) |
-| UI/UX 规格、文案规范 | [docs/ui-ux-spec.md](docs/ui-ux-spec.md)、[docs/copy-style-guide.md](docs/copy-style-guide.md) |
-| 为什么这样定 | [docs/decisions.md](docs/decisions.md) |
-| 工程规范、闸门、提交约定 | [CLAUDE.md](CLAUDE.md)(人与 AI 代理共用);上手见 [CONTRIBUTING.md](CONTRIBUTING.md) |
-| 部署、发布、回滚、集群装机、runbook | [deploy/README.md](deploy/README.md) |
-| 报告安全漏洞 | [SECURITY.md](SECURITY.md) |
+完整索引在 [docs/README.md](docs/README.md)。最常用的几处:
+
+- [docs/architecture.md](docs/architecture.md) —— 架构、模块边界、数据模型、核心流程与硬约束
+- [docs/reference/](docs/README.md) —— 各模块契约与不变量(按模块一份)
+- [docs/decisions.md](docs/decisions.md) —— 跨模块决策与它们施加的约束
+- [CLAUDE.md](CLAUDE.md) —— 工程规范、闸门、提交约定(人与 AI 代理共用);上手见 [CONTRIBUTING.md](CONTRIBUTING.md)
+- [deploy/README.md](deploy/README.md) —— 部署、发布、回滚、集群装机与 runbook
+- [SECURITY.md](SECURITY.md) —— 报告安全漏洞
 
 ## 快速开始
 
@@ -31,7 +29,7 @@ cd apps/api
 cp .env.example .env                        # SUPERDL_ENVIRONMENT=dev 等
 uv sync
 uv run alembic upgrade head
-uv run python scripts/seed_dev.py           # 四档 SKU + 平台镜像 + 管理员(口令只打印这一次;固定口令用 SUPERDL_SEED_ADMIN_PASSWORD)
+uv run python scripts/seed_dev.py           # 五条 SKU + 平台镜像 + 管理员(口令只打印这一次;固定口令用 SUPERDL_SEED_ADMIN_PASSWORD)
 uv run uvicorn app.main:app --reload        # http://localhost:8000/docs
 uv run python -m app.workers.main           # 另开终端:outbox worker + 定时任务
 
@@ -41,7 +39,7 @@ pnpm --filter web dev                       # 用户控制台 http://localhost:5
 pnpm --filter admin dev                     # 管理控制台 http://localhost:5174(seed 的 admin 账号)
 ```
 
-K8s 在 dev 下是 `FakeOrchestrator`(进程内存态),不需要真实集群;真实集群只能在 `SUPERDL_ENVIRONMENT=prod` 下启用。
+K8s 默认是 `FakeOrchestrator`(进程内存态),不需要真实集群;接真实集群把 `SUPERDL_K8S_BACKEND` 设为 `real`,与 `SUPERDL_ENVIRONMENT` 无关(prod 下则不允许为 `fake`)。
 
 ## 闸门
 
@@ -59,4 +57,4 @@ K8s 在 dev 下是 `FakeOrchestrator`(进程内存态),不需要真实集群;真
 | `deploy/` | ansible 控制面装机、集群 helmfile 与 runbook、平台 K8s 清单与本地 compose、node-join 测试、实例镜像 |
 | `e2e/` | Playwright 浏览器冒烟(smoke / admin / i18n) |
 | `docs/` | 架构、模块参考、UI/UX 规格、文案规范、决策记录 |
-| `scripts/` | 发布脚本与仓库级闸门脚本(禁词、CJK、迁移 DDL、文档引用) |
+| `scripts/` | 发布脚本与仓库级闸门脚本(禁词、CJK、迁移 DDL、文档引用、网关清单) |

@@ -13,7 +13,7 @@ test("全生命周期冒烟", async ({ page }) => {
   test.setTimeout(300_000);
   const phone = uniquePhone();
 
-  // ── 注册 ────────────────────────────────────────────────
+  // ── 注册
   await page.goto("/login");
   await page.getByText("注册", { exact: true }).click();
   await page.getByPlaceholder("手机号").fill(phone);
@@ -23,7 +23,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
 
-  // ── 充值 100(mock 渠道)──────────────────────────────────
+  // ── 充值 100(mock 渠道)
   await page.goto("/billing");
   await page
     .getByRole("button", { name: /^充\s*值$/ })
@@ -35,14 +35,14 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByText("¥100.00").first()).toBeVisible({ timeout: 10_000 });
 
-  // ── 添加 SSH 公钥 ───────────────────────────────────────
+  // ── 添加 SSH 公钥
   await page.goto("/settings");
   await page.getByLabel("名称").fill("e2e-key");
   await page.getByLabel("公钥内容").fill(genEd25519Key());
   await page.getByRole("button", { name: "添加公钥" }).click();
   await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
 
-  // ── 市场:筛选链 + SKU 表格单选 → 结算条下一步 ──
+  // ── 市场:筛选链 + SKU 表格单选 → 结算条下一步
   await page.goto("/market");
   const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
   await expect(skuRow).toBeVisible({ timeout: 15_000 });
@@ -50,7 +50,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByRole("button", { name: "下一步:配置实例" }).click();
   await expect(page).toHaveURL(/market\/create/);
 
-  // ── 创建实例:自定义镜像 + 选公钥 → 创建并开机 ──────────
+  // ── 创建实例:自定义镜像 + 选公钥 → 创建并开机
   await page.getByText("自定义镜像").click();
   await page
     .getByPlaceholder("registry.example.com/your/image:tag")
@@ -58,18 +58,17 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByRole("checkbox", { name: /e2e-key/ }).check();
   await page.getByRole("button", { name: "创建并开机" }).click();
 
-  // ── 实例列表:创建中 → 运行中(worker+reconciler 推进)────
+  // ── 实例列表:创建中 → 运行中(worker+reconciler 推进)
   await expect(page).toHaveURL(/instances/, { timeout: 15_000 });
   const row = page.locator(".ant-table-row").first();
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
-  // 快捷工具在行展开区(antd 渲染成兄弟 tr.ant-table-expanded-row,不带 ant-table-row),
-  // access 也是展开才拉,故先点开再断言并给足超时
+  // 快捷工具在行展开区(antd 渲染成兄弟 tr.ant-table-expanded-row),access 也是展开才拉,须先点开再断言
   await row.locator(".ant-table-row-expand-icon").click();
   const tools = page.locator(".ant-table-expanded-row").first();
   await expect(tools.getByRole("button", { name: "SSH" })).toBeVisible({ timeout: 15_000 });
   await expect(tools.getByText("JupyterLab")).toBeVisible();
 
-  // ── 实例详情:双击进入 → 直刷 URL 可达 → 事件即计费依据 ──
+  // ── 实例详情:双击进入 → 直刷 URL 可达 → 事件即计费依据
   await row.dblclick();
   await expect(page).toHaveURL(/instances\/[0-9a-f-]{8,}/, { timeout: 10_000 });
   await page.reload();
@@ -78,7 +77,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await expect(page.getByText(/此事件记录即计费依据/)).toBeVisible({ timeout: 10_000 });
   await page.goto("/instances");
 
-  // ── 关机(二次确认)→ 已关机;尾账落账单 ────────────────
+  // ── 关机(二次确认)→ 已关机;尾账落账单
   await row.getByRole("button", { name: /^关\s*机$/ }).click();
   await page
     .getByRole("button", { name: /^关\s*机$/ })
@@ -90,7 +89,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await page.getByText("小时账单").click();
   await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 15_000 });
 
-  // ── 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失 ──────
+  // ── 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失
   await page.goto("/instances");
   await page
     .locator(".ant-table-row")
@@ -98,8 +97,7 @@ test("全生命周期冒烟", async ({ page }) => {
     .getByText(/更\s*多/)
     .click();
   await page.getByText("释放实例", { exact: true }).click();
-  // 多级防护两道闸(ui-ux-spec 规则 4):键入实例名 + 勾选清盘知情,缺一红按钮不解锁。
-  // placeholder 即实例名,不必把服务端生成的名字再拼一遍
+  // 多级防护两道闸(ui-ux-spec 规则 4):键入实例名 + 勾选清盘知情,缺一红按钮不解锁;placeholder 即实例名
   const confirmInput = page.getByLabel(/请输入实例名/);
   await confirmInput.fill((await confirmInput.getAttribute("placeholder")) ?? "");
   await page.getByRole("checkbox").check();

@@ -37,9 +37,8 @@ export const Route = createFileRoute("/_app")({
     if (!auth.accessToken) {
       throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
-    // 角色只信服务端:进入/切换受保护路由都调 /me 校准一次。
-    // token 失效/被撤销(改密、降权、停用即 token_version+1)在这里被拦下,直跳登录不闪屏;
-    // 被降权的账号最迟在下一次路由切换看到新菜单(残余窗口 = 停留在当前页的时长)。
+    // 角色只信服务端:进入/切换受保护路由都调 /me 校准一次,失效或被撤销的 token 在这里拦下直跳登录。
+    // 被降权的账号最迟在下一次路由切换看到新菜单(残余窗口 = 停留在当前页的时长)
     try {
       const me = await fetchAdminMe();
       auth.setAdmin({ id: me.id, username: me.username, role: me.role });

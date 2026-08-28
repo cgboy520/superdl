@@ -1,7 +1,7 @@
 # loki 轻量档(k3s 单机/小规模):与 full 同 chart,只改存储与占用。
-# light 默认无 JuiceFS(environments/light.yaml juicefs.enabled=false),存储回落
-# topolvm(同 values/light/kps-light.yaml 的取舍;单机本地 LV,RWO)。
-# retention_period 不砍:API 审计日志 ≥6 个月是合规硬要求,单机盘按此容量规划。
+# light 无 JuiceFS(environments/light.yaml juicefs.enabled=false),存储回落 topolvm
+# (单机本地 LV,RWO,同 values/light/kps-light.yaml)。
+# retention_period 不许砍:API 审计日志 ≥6 个月是合规硬要求,单机盘按此容量规划。
 singleBinary:
   persistence:
     storageClass: topolvm-provisioner

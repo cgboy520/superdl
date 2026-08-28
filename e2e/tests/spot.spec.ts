@@ -1,13 +1,8 @@
 /**
  * 竞价冒烟:市场页切竞价 → 折后价 → 创建页知情同意(不勾选关不掉)→ 建出竞价实例 →
- * 列表带「可回收」标记 →「更多」→ 转按量 → 标记消失。
+ * 列表带「可回收」标记 →「更多」→ 转按量 → 标记消失。前置与 smoke 同款。
  *
- * 与 smoke / subscription 分开一个文件:它跑的是竞价形态的独有链路 ——
- * 折扣、知情同意、可回收标记、转按量,四件事都不在另外两条链路上。
- *
- * 这条挂了通常说明:折扣没带进创建流(用户以为 4 折、实际按原价扣),
- * 或知情同意的闸松了(用户没看到「可能被回收」就买了,回收时必然投诉),
- * 或转按量断了(用户想免被回收却没有出口)。
+ * 这条挂了通常说明:折扣没带进创建流、知情同意的闸松了,或转按量断了。
  */
 import { expect, test } from "@playwright/test";
 
@@ -17,7 +12,7 @@ test("买竞价并转按量", async ({ page }) => {
   test.setTimeout(300_000);
   const phone = uniquePhone();
 
-  // ── 注册 + 充值 ──────────────────────────────────────────
+  // ── 注册 + 充值
   await page.goto("/login");
   await page.getByText("注册", { exact: true }).click();
   await page.getByPlaceholder("手机号").fill(phone);
@@ -43,7 +38,7 @@ test("买竞价并转按量", async ({ page }) => {
   await page.getByRole("button", { name: "添加公钥" }).click();
   await expect(page.getByText("公钥已添加")).toBeVisible({ timeout: 10_000 });
 
-  // ── 市场:切竞价 → 常驻警示 + 折后价 ─────────────────────
+  // ── 市场:切竞价 → 常驻警示 + 折后价
   await page.goto("/market");
   const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
   await expect(skuRow).toBeVisible({ timeout: 15_000 });
@@ -57,7 +52,7 @@ test("买竞价并转按量", async ({ page }) => {
   await page.getByRole("button", { name: "下一步:配置实例" }).click();
   await expect(page).toHaveURL(/market=spot/);
 
-  // ── 创建页:提交前弹知情同意,不勾选过不去 ───────────────
+  // ── 创建页:提交前弹知情同意,不勾选过不去
   await page.getByText("自定义镜像").click();
   await page
     .getByPlaceholder("registry.example.com/your/image:tag")
@@ -77,14 +72,14 @@ test("买竞价并转按量", async ({ page }) => {
   await expect(proceed).toBeEnabled();
   await proceed.click();
 
-  // ── 列表:竞价 + 可回收标记 ───────────────────────────────
+  // ── 列表:竞价 + 可回收标记
   await expect(page).toHaveURL(/instances/, { timeout: 20_000 });
   const row = page.locator(".ant-table-row").first();
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
   await expect(row.getByText(/竞价/).first()).toBeVisible();
   await expect(row.getByText("可回收")).toBeVisible();
 
-  // ── 转按量:标记消失,不再可被回收 ────────────────────────
+  // ── 转按量:标记消失,不再可被回收
   await row.getByRole("button", { name: /更\s*多/ }).click();
   await page.getByRole("menuitem", { name: /转按量/ }).click();
   await page

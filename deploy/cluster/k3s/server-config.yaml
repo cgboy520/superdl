@@ -4,13 +4,12 @@
 write-kubeconfig-mode: "0640"
 disable:
   - traefik                  # 北向入口统一走 helmfile 装的 Envoy Gateway(与 full 档一致)。
-                             # 必须装机即禁,绝不能「先启用后禁用」:k3s 在部分版本上禁用
-                             # traefik 会连带删掉它自带的 Gateway API CRD,而平台的
-                             # Gateway/HTTPRoute 全挂在这组 CRD 上——删 CRD = 平台三域名与
-                             # 全部租户 Jupyter 入口一起消失,且要重装 experimental channel。
+                             # 必须装机即禁,不能先启用后禁用:部分 k3s 版本上禁用 traefik 会
+                             # 连带删掉它自带的 Gateway API CRD,而平台的 Gateway/HTTPRoute 全挂
+                             # 在这组 CRD 上,删 CRD = 平台三域名与全部租户 Jupyter 入口一起消失。
 node-label:
-  - "node-role.superdl.io/infra=true"   # 平台组件 nodeSelector 统一锚点(P0-1);
-                             # light 档 server 兼跑平台组件,必须与 full 档 RKE2 server 同款标签。
+  - "node-role.superdl.io/infra=true"   # 平台组件 nodeSelector 统一锚点;light 档 server 兼跑
+                             # 平台组件,必须与 full 档 RKE2 server 同款标签。
 secrets-encryption: true     # etcd/sqlite 静态加密;快照仍需异地加密保存(见 rke2/server-config.yaml 注释)
 # 与 full 档同规:节点加入用专用 agent token,禁止下发 server node-token(见
 # deploy/cluster/README.md「server token 与 agent token」节)。首装前生成后取消注释:

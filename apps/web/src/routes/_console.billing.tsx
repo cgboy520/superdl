@@ -1,6 +1,5 @@
 /**
- * 费用中心:余额卡(阈值带保存钮)/充值 Modal(渠道 Tab 预留+真二维码+有效期)/
- * 消费概览(月选择器+今日)环图/账单与收支明细(服务端 CSV 导出)。
+ * 费用中心:余额卡 / 充值 Modal / 消费概览 / 账单与收支明细(服务端 CSV 导出)。
  * Tab 与月份入 URL;充值幂等键按 (amount, channel) 派生。
  */
 
@@ -124,11 +123,9 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   // 金额必须按字符串走(InputNumber stringMode),禁止经二进制浮点
   const [amount, setAmount] = useState("100.00");
   const [order, setOrder] = useState<RechargeOut | null>(null);
-  // 幂等键按「下单序号 + (amount, channel)」派生:响应丢失后重提不会再开一单,
-  // 改了金额/渠道即另一单;下单成功后序号 +1,下一笔同额同渠道是新订单
+  // 幂等键按「下单序号 + (amount, channel)」派生:响应丢失后重提不会再开一单,序号 +1 才是新订单
   const [orderSeq, setOrderSeq] = useState(0);
   const [pickedChannel, setPickedChannel] = useState<string | null>(null);
-  // 中断找回:订单号落 sessionStorage,支付中途关窗/刷新后重开可恢复轮询
   const [resumedNo, setResumedNo] = useState(() => sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
 
   // 渠道开关来自管理端·平台配置(site-config 公开端点)
@@ -142,7 +139,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const firstEnabled = enabled.wechat ? "wechat" : enabled.alipay ? "alipay" : "mock";
   const channel = pickedChannel ?? firstEnabled;
   const anyEnabled = enabled.wechat || enabled.alipay || enabled.mock;
-  // mock 渠道关闭(正式环境)时,未开通渠道不再引导用户去找模拟支付
+  // mock 渠道关闭(正式环境)时,未开通渠道不引导用户去模拟支付
   const channelTip = enabled.mock ? t("copy.channelComingSoon") : t("copy.channelPending");
 
   const create = useCreateRecharge({
@@ -159,7 +156,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const rechargeQ = useRecharge(activeNo, {
     // 轮询仅在弹窗 open 时进行:关窗即停,重开经找回标记恢复
     enabled: open && activeNo !== "",
-    // 到终态(paid/closed/failed)即停,不再空转打接口;出错(如找回的单号已失效)也停
+    // 到终态(paid/closed/failed)或出错即停,不空转打接口
     refetchInterval: (q) => {
       if (q.state.status === "error") return false;
       return q.state.data && q.state.data.status !== "pending" ? false : 2_000;
@@ -175,7 +172,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
   const status = shown?.status;
   const paid = status === "paid";
 
-  // 到终态即清找回标记;到账定向失效钱包与流水(不再等 10s 轮询)
+  // 到终态即清找回标记;到账定向失效钱包与流水(不等 10s 轮询)
   useEffect(() => {
     if (!status) return;
     if (status === "paid") {
@@ -199,7 +196,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
       open={open}
       onCancel={reset}
       footer={null}
-      // 中途关窗保留找回标记;重新打开时若本地无单,从 sessionStorage 再捡回来
+      // 中途关窗保留找回标记,重开时若本地无单就从 sessionStorage 捡回来
       afterOpenChange={(o) => {
         if (o && !order) setResumedNo(sessionStorage.getItem(PENDING_ORDER_KEY) ?? "");
       }}
@@ -207,7 +204,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
       {!shown ? (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           {siteQ.isError && (
-            // 渠道信息加载失败绝不伪装成「全部渠道未开通」(两个灰 tab + 死按钮无解释)
+            // 渠道信息加载失败绝不伪装成「全部渠道未开通」
             <DataErrorAlert onRetry={() => void siteQ.refetch()} />
           )}
           <Tabs
@@ -849,10 +846,9 @@ function BillingPage() {
   // 本地时区取当月(toISOString 是 UTC 切片,+08:00 月初凌晨会切到上个月)
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  // 月份选择器:月汇总/环图/小时账单/CSV 导出共用同一口径
   const month = monthParam ?? currentMonth;
   const { date, tzOffsetMinutes } = localToday();
-  // 三个查询必须共用同一个本地时区口径,否则 31 天日账单之和 ≠ 月账单
+  // 月汇总/环图/小时账单必须共用同一个本地时区口径,否则 31 天日账单之和 ≠ 月账单
   const summaryQ = useBillSummary(month, tzOffsetMinutes);
   const { data: summary } = summaryQ;
   const dailyQ = useDailySummary(date, tzOffsetMinutes);

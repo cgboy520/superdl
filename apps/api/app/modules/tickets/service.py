@@ -276,7 +276,7 @@ async def admin_list_tickets(
     cursor: str | None = None,
     limit: int | None = None,
 ) -> Page[AdminTicketOut]:
-    """工单列表(游标分页,降序,P2):status/category 精确过滤,user_id/ticket_no 检索。"""
+    """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
     lim = clamp_limit(limit)
     stmt = select(Ticket).order_by(Ticket.id.desc()).limit(lim + 1)
     if status:

@@ -256,8 +256,7 @@ class WechatChannel:
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackVerifyFailed"
             )
-        # 官方验证清单:币种必须是人民币——商户号/appid 都校了,币种是同一清单上的一行,
-        # 漏校则外币通知的金额会被按 CNY 入账
+        # 官方验证清单:币种必须是人民币,漏校则外币通知的金额会被按 CNY 入账
         if currency != "CNY":
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCallbackMerchantMismatch"

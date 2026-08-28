@@ -1,14 +1,15 @@
 # Runbook 索引
 
-值班处置手册与集群运维 SOP,按「类型」区分:**事件处置**(触发条件 → 处置步骤(带判据)→ 验收 / 演练)、**SOP**(一次性或周期性操作流程)、**清单**(逐项勾选的验证与发布检查)、**参考**(查询方式与口径)。新增事件处置类 runbook 照该结构写,并在对应告警规则上加 `runbook_url`。
+值班处置手册与集群运维 SOP,按类型区分:**事件处置**(触发条件 → 处置步骤(带判据)→ 验收 / 演练)、
+**SOP**(一次性或周期性操作流程)、**清单**(逐项勾选的验证与发布检查)、**参考**(查询方式与口径)。
+新增事件处置类 runbook 照该结构写,并在对应告警规则上加 `runbook_url`。
 
 | 文件 | 类型 | 场景 |
 |---|---|---|
 | [gpu-fault-sop.md](./gpu-fault-sop.md) | 事件处置 | GPU Xid 致命错误:隔离 → 停机结算 → 通知 → 补偿 → 回归 |
 | [pg-backup-restore.md](./pg-backup-restore.md) | 事件处置 + SOP | 资金库备份分层、逻辑备份恢复、季度演练与 RTO 记录 |
-| [image-prewarm.md](./image-prewarm.md) | SOP | 托管镜像仓迁移、平台镜像发布、Spegel P2P 与预热 |
-| [acme-dns.md](./acme-dns.md) | SOP | 泛域名证书 DNS01(acme-dns)部署、凭据轮换与回滚 |
-| [gateway-migration.md](./gateway-migration.md) | SOP | 北向入口从 ingress-nginx 切到 Gateway API + Envoy Gateway(一次性;存量集群专用,含存量实例的 HTTPRoute 补建与回滚窗口)|
+| [image-prewarm.md](./image-prewarm.md) | SOP | Harbor 接入与拉取凭据、平台镜像上线、Spegel P2P 与预热 |
+| [acme-dns.md](./acme-dns.md) | SOP | 泛域名证书 DNS01(acme-dns)部署与凭据轮换;**仅 full 档** |
 | [loki-logging.md](./loki-logging.md) | 参考 | 日志留存口径、LogQL 排障查询、采集自检 |
 | [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
 
@@ -16,8 +17,9 @@
 
 ## 告警 → 第一步
 
-告警规则在 `deploy/cluster/values/kps.yaml`(`superdl.platform` 与 GPU 规则组),critical 走 webhook + 外部 SMTP 双通道。
-有专属 runbook 的告警在规则里带 `runbook_url` 注解(指向本目录);其余告警的第一步写在 summary 与下表里,不为每条告警单独生造一页。平台指标含义见 `docs/reference/observability.md`。
+告警规则在 `deploy/cluster/values/kps.yaml`(`superdl.platform` 与 GPU 规则组),critical 必走 webhook + 外部 SMTP 双通道,可选钉钉与值班短信通道见 `docs/reference/observability.md`。
+有专属 runbook 的告警在规则里带 `runbook_url` 注解(指向本目录);其余告警的第一步写在 summary 与下表里,不为每条告警单独生造一页。
+平台指标含义见 `docs/reference/observability.md`。
 
 | 告警 | 含义 | 第一步 | 文档 |
 |---|---|---|---|
@@ -26,8 +28,9 @@
 | NodeGPUUnavailable | GPU 节点 NotReady | 查节点;运行中实例由 reconciler 判 node_lost 并停费 | `docs/reference/orchestrator.md`、`docs/reference/nodes.md` |
 | SharedPoolUtilSaturated | 共享池持续打满 | 复核该 SKU 超卖参数与容量 | `docs/reference/catalog.md` |
 | JuiceFSMountFailed | 数据盘挂载失败 | 查 CSI Pod 与 metaurl Secret | [cluster-validation.md](./cluster-validation.md) D 节 |
+| JuiceFSQuotaFailed | 数据盘配额下发进死信 | 查 disk-ops worker 日志与 `juicefs-metaurl` 键;期间容量上限不被强制 | [cluster-validation.md](./cluster-validation.md) D 节 |
 | HamiSchedulerDown | 共享池调度器指标缺失 | 查 `hami-scheduler` Pod;期间共享档下单报 CLUSTER_NOT_READY | [cluster-validation.md](./cluster-validation.md) C 节 |
-| CertExpiringSoon / CertExpiringCritical / CertNotReady / CertManagerMetricsMissing | 泛域名证书续签链路异常 | `kubectl describe certificate`,查 DNS01 委托与 acme-dns 账户 | [acme-dns.md](./acme-dns.md) |
+| CertExpiringSoon / CertExpiringCritical / CertNotReady / CertManagerMetricsMissing | 证书续签链路异常 | `kubectl describe certificate`;full 档查 DNS01 委托与 acme-dns 账户,light 档确认手工灌入的通配证书未过期 | [acme-dns.md](./acme-dns.md) |
 | OutboxTaskDead | 编排任务进死信 | 管理端总览死信卡:看原因后重放或忽略(需原因) | `docs/reference/orchestrator.md` |
 | OutboxTaskTimeout | outbox 任务执行超时 | 查 worker 日志中卡住的任务类型 | [loki-logging.md](./loki-logging.md) 查询 3 |
 | SettlementFailed / SettlementLagging | 结算失败 / 水位线落后 | 查 worker 日志失败实例;结算幂等可重跑 | `docs/reference/billing.md` |
@@ -35,6 +38,7 @@
 | PaymentCallbackMismatch | 回调金额与订单不符 | 财务异常清单核对;疑似攻击时保留报文 | `docs/reference/payment.md` |
 | PaymentClosedOrderRescued | 关单后回调自动入账 | 核对本地关单 TTL 与渠道过期是否同步 | `docs/reference/payment.md` |
 | PaymentRecoverFailed | 查单收敛单笔入账失败 | 按 error 标签人工核对该笔 | `docs/reference/payment.md` |
+| PaymentChannelReversed | 已入账订单收到渠道关单/退款通知 | 平台不自动冲账,财务异常清单人工核销 | `docs/reference/payment.md` |
 | FundReconcileMismatch | 资金账实不平 | 先冻结出账(退款打款),再按 ledger id 定位断链 | `docs/reference/billing.md` |
 | InstanceNodeLost | 实例因节点失联被判停 | 核对是否退费;节点恢复后用户可重开 | `docs/reference/orchestrator.md` |
 | LeakedPodsReclaimed / ReconcileLeakAborted | 泄漏 Pod 批量回收 / 回收熔断 | 核对节点残留 Pod 与 DB 记录差异 | `docs/reference/orchestrator.md` |

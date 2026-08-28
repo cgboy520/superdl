@@ -36,7 +36,7 @@ class AdminAdjustment(Base):
 
     __tablename__ = "admin_adjustments"
     # 幂等键:响应丢失后重试不会开出第二张调账单。
-    # 作用域 (发起人, 租户, 键)——弱键(如按日期生成)跨租户复用不会被误判重放(P2);
+    # 作用域 (发起人, 租户, 键):弱键(如按日期生成)跨租户复用不会被误判重放;
     # 同键重放须过 request_fingerprint 比对,不一致 409(对齐 Stripe 惯例)
     __table_args__ = (
         UniqueConstraint(

@@ -1,9 +1,8 @@
 /**
  * 常见加速卡公开规格静态表(主页算力排名/价格墙 TFLOPS 标注用)。
- * 口径:厂商公开白皮书理论峰值 —— FP32 为 shader 单精峰值;FP16 为 Tensor 稠密
- * 半精峰值(FP32 累加,不含稀疏加速);H800/H100 取 PCIe/SXM 各自公开值。
+ * 口径为厂商公开白皮书理论峰值:FP32 为 shader 单精,FP16 为 Tensor 稠密半精(FP32 累加,不含稀疏)。
  * 展示处必须带「理论峰值」脚注(landing.ranking.footnote)。
- * key 与后端 `gpu_model` 串一致(无空格);查询用 getGpuSpec 做归一。
+ * key 与后端 `gpu_model` 串一致(无空格),查询用 getGpuSpec 做归一。
  */
 
 export interface GpuSpec {

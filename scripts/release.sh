@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# SuperDL 发布流水线:迁移 → set image+apply → rollout status → 经 Ingress 外部冒烟,任一步失败即退。
+# SuperDL 发布流水线:迁移 → set image+apply → rollout status → 经网关从集群外冒烟,
+# 任一步失败即退。
 #
 # 用法: SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl [SUPERDL_API_BASE_URL=https://<api-domain>] scripts/release.sh <tag>
 #   tag:Harbor 已推送的发布标签(.github/workflows/release.yml 产物,形如 v1.2.3)。
@@ -8,10 +9,10 @@
 #   SUPERDL_API_BASE_URL:可选,第 4 步外部冒烟用的公网 API 基址;缺省读 ConfigMap
 #   superdl-api-config 的 SUPERDL_PUBLIC_BASE_URL,两者都取不到(或仍是占位)则跳过该步并提示。
 #
-# 顺序铁律:迁移 Job 必须先于滚动(expand-only 窗口内「老代码+新 schema」安全,
-# 反序「新代码+旧 schema」会被 /readyz 的 schema_mismatch 拦下,表现为发布卡死)。
-# 回滚:见 deploy/README.md「回滚指引」——rollout undo 各 Deployment 即可,
-# 迁移只增不删(expand-only),向后兼容窗口内无需回滚库。
+# 顺序铁律:迁移 Job 必须先于滚动。expand-only 窗口内「老代码+新 schema」安全,反序
+# 「新代码+旧 schema」会被 /readyz 的 schema_mismatch 拦下,表现为发布卡死。
+# 回滚见 deploy/README.md「回滚指引」:rollout undo 各 Deployment 即可,迁移只增不删,
+# 向前兼容窗口内无需回滚库。
 set -euo pipefail
 
 TAG="${1:?用法: SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>(形如 v1.2.3,release.yml 已推送 Harbor 的 tag)}"
@@ -19,7 +20,7 @@ IMAGE_PREFIX="${SUPERDL_IMAGE_PREFIX:?缺 SUPERDL_IMAGE_PREFIX(Harbor 项目前�
 K8S_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../deploy/app/k8s" && pwd)"
 NS=superdl
 
-# 清单占位单点:CHANGE_IMAGE_PREFIX(Harbor 项目前缀)与 CHANGE_TAG(本次 tag)
+# 清单占位单点:CHANGE_IMAGE_PREFIX(Harbor 项目前缀)与 CHANGE_TAG(发布 tag)
 render() { sed -e "s#CHANGE_IMAGE_PREFIX#${IMAGE_PREFIX}#g" -e "s/CHANGE_TAG/${TAG}/g"; }
 
 case "$TAG" in
@@ -48,8 +49,8 @@ echo "==> 2/4 set image + apply(清单占位 CHANGE_IMAGE_PREFIX → ${IMAGE_PRE
 kubectl kustomize "${K8S_DIR}" | render | kubectl apply -f -
 
 echo "==> 3/4 rollout status"
-# worker 组件集群:同一镜像的 5 个 Deployment 必须全部滚动到位,
-# 漏一个即旧代码继续领任务(队列兼容窗口靠任务幂等与 reaper 兜底,不替你做版本收敛)
+# 下列 8 个 Deployment 必须全部滚动到位;superdl-worker* 是同一镜像的 5 个 worker 组件,
+# 漏一个即旧代码继续领任务(任务幂等与 reaper 只兜底,不做版本收敛)
 for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-node-mgr \
   superdl-worker-prewarm superdl-worker-disk-ops superdl-web superdl-admin; do
   if ! kubectl -n "$NS" rollout status "deploy/${d}" --timeout=660s; then
@@ -58,9 +59,9 @@ for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-nod
   fi
 done
 
-echo "==> 4/4 冒烟:经 Ingress 从集群外 GET /readyz(DNS/TLS/Ingress 一并验证)"
-# Pod 内的 /healthz、/readyz 不再重复探测:第 3 步 rollout status 只在新 Pod 过 readinessProbe
-# (/readyz,02-api.yaml)后才成功,/healthz 是它的子集。这里验证的是 Pod 之外的链路。
+echo "==> 4/4 冒烟:经网关从集群外 GET /readyz(DNS/TLS/网关一并验证)"
+# 不重复探测 Pod 内的 /healthz、/readyz:第 3 步 rollout status 只在新 Pod 过 readinessProbe
+# (/readyz,02-api.yaml)后才成功。这里验证的是 Pod 之外的链路。
 API_BASE_URL="${SUPERDL_API_BASE_URL:-}"
 if [ -z "$API_BASE_URL" ]; then
   API_BASE_URL="$(kubectl -n "$NS" get configmap superdl-api-config \
@@ -72,9 +73,9 @@ case "$API_BASE_URL" in
     ;;
   *)
     if ! curl -fsS --max-time 10 "${API_BASE_URL%/}/readyz" >/dev/null; then
-      # Pod 已 Ready 而外部不通 → DNS/TLS/Ingress;readyz 含 alembic_version 比对,
+      # Pod 已 Ready 而外部不通 → 查 DNS/TLS/网关;readyz 含 alembic_version 比对,
       # schema_mismatch 多为第 1 步迁移漏跑/未追平,不回滚,先查迁移 Job
-      echo "::error::外部冒烟失败:GET ${API_BASE_URL%/}/readyz(查 DNS/TLS/Ingress;或 job/superdl-migrate-${TAG} 与 alembic_version)" >&2
+      echo "::error::外部冒烟失败:GET ${API_BASE_URL%/}/readyz(查 DNS/TLS/网关;或 job/superdl-migrate-${TAG} 与 alembic_version)" >&2
       exit 1
     fi
     echo "外部冒烟通过:${API_BASE_URL%/}/readyz"

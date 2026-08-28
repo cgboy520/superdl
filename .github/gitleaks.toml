@@ -55,8 +55,7 @@ regexes = [
   '''"(?:new_)?password": "(?:newpass|qwerty)123456"''',
 ]
 
-# 已退役的集群内 registry 占位口令 CHANGE_ME 的 bcrypt hash 已泄漏,禁止再以任何形式入库
-# (registry 清单已从仓库删除;规则保留,防止该 hash 以任何文件形式回流)
+# 该 bcrypt hash(集群内 registry 的 CHANGE_ME 占位口令)已泄漏,禁止以任何形式入库。
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
 description = "已泄漏的 registry htpasswd bcrypt hash"
@@ -68,9 +67,8 @@ paths = [
   '''\.github/gitleaks\.toml''',
   '''deploy/cluster/preflight\.sh''',
 ]
-# hash 曾在 commit 0bbf540 的 registry.yaml 入库(占位口令,已移除并轮换)。
-# 全历史扫描无法避开该 commit,按 commit 级放行(不收窄到 path——未来任何 commit 的
-# registry.yaml 再含此 hash 仍告警)
+# 该 hash 存在于 commit 0bbf540 的 registry.yaml,全历史扫描无法避开,故按 commit 级放行。
+# 不收窄到 path:未来任何 commit 的 registry.yaml 再含此 hash 仍告警。
 [[rules.allowlists]]
 description = "曾入库该 hash 的历史 commit"
 commits = ["0bbf5403082957d771607458c3a94ed41e7253c2"]

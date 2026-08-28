@@ -155,7 +155,7 @@ async def test_reaper_dead_letter_after_budget_exhausted(sm: async_sessionmaker[
             type="t_stuck",
             payload={},
             status="running",
-            retries=outbox.MAX_RETRIES,  # 已达预算上限,本次复活即越界
+            retries=outbox.MAX_RETRIES,  # 已达预算上限,再复活即越界
             locked_by="dead-worker",
             locked_at=now_utc() - timedelta(minutes=30),
         )
@@ -253,8 +253,8 @@ class TestConcurrency:
     ):
         """SKIP LOCKED 下多个领取协程并发执行不同任务,消除全局串行 FIFO 的队头阻塞。
 
-        屏障模式:两路 handler 与主协程在 Barrier(3) 汇合后才放行;若领取退化
-        为串行,先跑的 handler 永远等不到汇合 → wait_for 超时判负,不靠 wall-clock。
+        屏障模式:两路 handler 与主协程在 Barrier(3) 汇合后才放行;领取若退化为串行,
+        先跑的 handler 永远等不到汇合 → wait_for 超时判负,不靠 wall-clock。
         """
         import asyncio
 

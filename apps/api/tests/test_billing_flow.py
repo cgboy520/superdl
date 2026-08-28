@@ -198,7 +198,7 @@ class TestArrearsChain:
         assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_arrears_stop_rereads_balance_in_lock(self, client, sm, fake, monkeypatch):
-        """停机判定前锁内二次读余额(P2):无锁粗筛为负,锁内读到「窗口内」刚充值的
+        """停机判定前锁内二次读余额:无锁粗筛为负,锁内读到「窗口内」刚充值的
         余额 → 不误停机(挂了 = 读余额到提交停机之间充值的竞态窗口复现)。"""
         from app.modules.billing import patrol as patrol_mod
 

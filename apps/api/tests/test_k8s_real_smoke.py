@@ -1,17 +1,15 @@
 """真实 K8s 编排冒烟(默认跳过,CI 由 kind job 驱动)。
 
-门控:环境变量 SUPERDL_TEST_KUBECONFIG 指向可用 kubeconfig(CI 的 kind 集群)。
-未设置时整文件 skip,不影响本地默认 `uv run pytest`(conftest 强制 fake 后端
-只影响 get_orchestrator,这里直接构造 RealOrchestrator,互不干扰)。
+门控:环境变量 SUPERDL_TEST_KUBECONFIG 指向可用 kubeconfig(CI 的 kind 集群);未设置时
+整文件 skip。这里直接构造 RealOrchestrator,与 conftest 强制的 fake 后端互不干扰。
 
-覆盖单测(fake 后端)够不着的两条安全路径:
+覆盖 fake 后端够不着的两条安全路径:
 - 租户 namespace 的引导件经 apiserver 落库(PSA 标签、NetworkPolicy、配额、共享 PVC);
   NetPol 的结构在 test_k8s_real_units 离线钉死,这里只验 apiserver 接受 endPort/except
 - 实例盘生命周期:删除实例不动盘,仅显式 delete_instance_disk(释放/回收)才删盘
 
-kind 默认 CNI(kindnet)不执行 NetworkPolicy,断言落在对象规约而非实际流量;
-功能性流量隔离由集群交付的 Cilium 保证,不在此冒烟范围。
-JuiceFS/TopoLVM 在 kind 不存在,PVC 停留 Pending 属预期 —— 冒烟只验证对象生命周期。
+kind 默认 CNI 不执行 NetworkPolicy,断言落在对象规约而非实际流量;JuiceFS/TopoLVM 在
+kind 不存在,PVC 停留 Pending 属预期 —— 冒烟只验证对象生命周期。
 """
 
 import asyncio
@@ -183,9 +181,8 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
     svc: Any = orch.core.read_namespaced_service(name, namespace)
     assert svc.spec is not None and svc.spec.ports[0].node_port == 31999
     orch.core.read_namespaced_service(jupyter_service_name(name), namespace)
-    # Jupyter 入口是 HTTPRoute(Gateway API):这里验的是 apiserver 真的接受我们拼的
-    # parentRefs/hostnames/backendRefs 形状 —— fake 后端只记 (ns, name) 二元组,
-    # 拼错字段名它一样通过,只有真 CRD 校验能挡下
+    # 验 apiserver 真的接受我们拼的 parentRefs/hostnames/backendRefs 形状:fake 后端只记
+    # (ns, name) 二元组,拼错字段名它一样通过,只有真 CRD 校验能挡下
     route: Any = orch.custom.get_namespaced_custom_object(
         GATEWAY_API_GROUP, GATEWAY_API_VERSION, namespace, HTTPROUTE_PLURAL, name
     )

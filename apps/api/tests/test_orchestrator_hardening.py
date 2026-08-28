@@ -1,6 +1,5 @@
-"""编排器审计加固(P0 批次)的回归套件。
+"""编排器加固回归套件。
 
-每条用例对应一处修复:它挂了,说明那处修复被改回去了。
 覆盖:failed 恢复边、starting 超时边、stopping/releasing 悬挂两档超时逃逸、泄漏回收
 熔断与 force、并发开户临界区、幂等键并发与 24h 窗、(池,型号) 软准入、结算候选
 完备性、保留期 GC、欠费盘 grace 停计费与计时累计、重启撞端口不丢尾账。
@@ -303,7 +302,7 @@ class TestStuckEscape:
         counts = await reconcile_once(sm)
         assert counts["to_released"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "released"
-        await drain(sm)  # disk_cleanup outbox:实例盘销毁(P1-9 两阶段)
+        await drain(sm)  # disk_cleanup outbox:实例盘销毁(两阶段)
         assert (ns, uuid) not in fake.instance_disks  # 实例盘已销毁
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
@@ -372,7 +371,8 @@ class TestLeakReclaim:
         assert len(fake.pods) == 5  # 一个没动
 
     async def test_stopped_instance_leftover_pod_force_reclaimed(self, client, sm, fake):
-        """已 stopped 实例的残留 Pod 过了宽限期被强删回收(挂了 = 停机后泄漏的 Pod 白送算力)。
+        """已 stopped 实例的残留 Pod 过了宽限期被强删回收
+        (挂了 = 停机后泄漏的 Pod 继续占算力且无账可计)。
         宽限覆盖 restart 建 Pod 窗口(DB stopped、Pod 已建),宽限内不动。"""
         headers, uuid, user_id = await _provision_running(client, sm, fake, "13900000106")
         ns = f"tenant-{user_id}"
@@ -489,7 +489,7 @@ class TestBillingCandidatesCompleteness:
         """结算候选 = 当前 running ∪ 窗口内/后离开 running 的实例。
 
         覆盖「窗口末仍 running、之后才停机」:这类实例靠 from_status='running' 事件命中,
-        漏了就是少结账(平台亏钱)。
+        漏了就是少结账。
         """
         from tests.test_billing_settlement import H_END, H, seed_instance
 
@@ -554,7 +554,7 @@ class TestRetentionGC:
         assert any("失败实例已自动释放" in n["title"] for n in notes)
         await drain(sm)
         await reconcile_once(sm)
-        await drain(sm)  # disk_cleanup outbox:实例盘销毁(P1-9 两阶段)
+        await drain(sm)  # disk_cleanup outbox:实例盘销毁(两阶段)
         assert (ns, uuid) not in fake.instance_disks
 
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):

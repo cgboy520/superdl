@@ -5,7 +5,7 @@
 - 端口池:挂了说明每台对外服务白占一个 NodePort —— 端口池只有 30000–32767 一段
 - env 密文:挂了说明用户的 HF_TOKEN 之类落进了 Pod spec(进 etcd/审计快照)
 - 契约矩阵:挂了说明「传了却被静默忽略」或「平台占用端口被放行」
-- dev 分支:挂了说明服务容器这批改动把开发机的 Pod spec 改坏了
+- dev 分支:挂了说明开发机的 Pod spec 被服务型分支改坏了
 """
 
 import pytest
@@ -142,7 +142,7 @@ class TestServiceInstanceCreate:
     async def test_pod_spec_service_fork(self, client, sm, fake):
         """service 形态的 Pod spec:Always 重启 + 用户启动命令 + 对外 Service + 探针。
 
-        restartPolicy 挂了最要命:Never 会让用户容器崩一次就把实例判终结。
+        restartPolicy 写成 Never 时,用户容器崩一次就把实例判终结。
         """
         _headers, uuid, user_id = await provision_service(
             client,
@@ -244,12 +244,9 @@ class TestEnvHandling:
 class TestListView:
     """列表页要能内联 slug —— 且**不为它多打接口**。
 
-    它挂了说明什么坏了:整个实例列表页 500(服务型实例一进列表就炸),
-    或者 slug 没下发、前端只能退回逐行打 /service(web.md 明令禁止接口调用随行数放大)。
-
-    这条用例的存在本身有个教训:`_attach_service_slugs` 只在列表里**有服务型实例**时
-    才执行,所以全套其它用例(清一色 dev 实例)全都走的是提前返回那一支,
-    900+ 条测试全绿而列表页在真浏览器里直接白屏。
+    挂了说明:整个实例列表页 500,或 slug 没下发、前端只能退回逐行打 /service
+    (接口调用不得随行数放大)。`_attach_service_slugs` 只在列表里有服务型实例时才执行,
+    其它用例清一色 dev 实例盖不到这条路径。
     """
 
     async def test_service_instance_lists_with_slug(self, client, sm, fake):
@@ -283,9 +280,8 @@ class TestListView:
 class TestPinnedImage:
     """服务镜像必须钉死版本(latest / 无 tag 一律拒)。
 
-    它挂了说明什么坏了:一台对外服务能用可变 tag 建出来。服务容器 restartPolicy=Always,
-    kubelet 在容器退出时原地重启 —— tag 可变时,某次半夜 OOM 重启就能把线上服务悄悄换成
-    另一个版本,而实例状态、事件流水、账单全都看不出变化。开发机不适用(Never + 手动重开)。
+    挂了说明:一台对外服务能用可变 tag 建出来。服务容器 restartPolicy=Always,一次原地重启
+    就会换成另一个版本,而实例状态、事件流水、账单都看不出变化。开发机不适用。
     """
 
     @pytest.mark.parametrize(
@@ -439,7 +435,7 @@ class TestCreateContract:
         assert resp.status_code == 422, resp.text
 
     async def test_dev_still_requires_ssh_key(self, client, sm):
-        """min_length 放开后,dev 的「至少一把公钥」由 model_validator 接住。
+        """契约层 min_length 不设限,dev 的「至少一把公钥」由 model_validator 接住。
 
         挂了说明能建出一台谁也登不上去的开发机(镜像不收口令登录)。
         """

@@ -185,8 +185,7 @@ function StoragePage() {
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
 
-  // 幂等键按「提交序号 + 盘名 + 容量」派生:响应丢失后重提不会多出一块盘,改了参数即另一块盘;
-  // 建成了才递增序号,下一块同名同容量的盘是新单
+  // 幂等键按「提交序号 + 盘名 + 容量」派生:响应丢失后重提不会多出一块盘;建成了才递增序号
   const [submitSeq, setSubmitSeq] = useState(0);
   const createDisk = useCreateDisk({
     onSuccess: () => {

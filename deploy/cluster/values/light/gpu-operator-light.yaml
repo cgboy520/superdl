@@ -1,20 +1,18 @@
 # GPU Operator 的 k3s 覆盖(叠在 values/gpu-operator.yaml 之上)。
 #
-# toolkit 关掉:装机基线(node-join.sh 的 nvidia_toolkit 步)已在宿主装 nvidia-container-toolkit,
-# k3s 启动时自行探测 nvidia-container-runtime 并生成 containerd 运行时与 RuntimeClass nvidia。
-# k3s 的 containerd 配置是它自己从模板生成的,operator 的 toolkit 容器再改一遍会被下次
-# k3s 启动覆盖回去(两边互相盖),且没有任何收益 —— 运行时已经在了。
-#
-# operand 容器不受影响:ClusterPolicy 的 operator.runtimeClass 默认就是 nvidia
-# (chart 默认值),k3s 不设默认运行时,operand 靠这个 RuntimeClass 拿到卡。
+# toolkit 关掉:node-join.sh 的 nvidia_toolkit 步已在宿主装 nvidia-container-toolkit,
+# k3s 启动时自行探测并生成 containerd 运行时与 RuntimeClass nvidia。k3s 的 containerd 配置由
+# 它自己从模板生成,operator 的 toolkit 容器再改一遍会被下次 k3s 启动覆盖回去。
+# operand 容器不受影响:ClusterPolicy 的 operator.runtimeClass 默认就是 nvidia,
+# k3s 不设默认运行时,operand 靠这个 RuntimeClass 拿到卡。
 toolkit:
   enabled: false
 
-# dcgm-exporter 的采集字段收到 device 级:gpu-operator 默认清单含 DCGM_FI_PROF_*(DCP,
-# 需 GPU 侧 profiling 支持)。消费级/矿卡(实测 CMP 170HX)上 DCGM profiling 模块初始化即
-# "unrecoverable error",exporter 起不来 → 节点 GPU 曲线与 GPU 告警整条链路没数据。
-# 下面这份与独立 dcgm-exporter chart 的默认清单同源(它默认就把 PROF 字段注释掉了),
-# 平台用到的四个指标(GPU_UTIL / FB_USED / GPU_TEMP / XID_ERRORS)全在里面。
+# dcgm-exporter 采集字段收到 device 级:gpu-operator 默认清单含 DCGM_FI_PROF_*(DCP,需 GPU
+# 侧 profiling 支持),消费级/矿卡上 DCGM profiling 模块初始化即 "unrecoverable error",
+# exporter 起不来 → 节点 GPU 曲线与 GPU 告警整条链路没数据。
+# 下面这份与独立 dcgm-exporter chart 的默认清单同源,平台用到的四个指标
+# (GPU_UTIL / FB_USED / GPU_TEMP / XID_ERRORS)全在里面。
 # full 档不覆盖:数据中心卡支持 DCP,保留 chart 默认的完整清单。
 dcgmExporter:
   config:

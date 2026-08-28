@@ -1,16 +1,13 @@
-# Grafana Alloy 日志采集
-# (promtail 2026-03-02 EOL 停支持,官方迁移路径即 Alloy;
-# 原 promtail kubernetes_sd 采集由 discovery.kubernetes + loki.source.kubernetes 等价实现)。
-# chart 版本钉在 ../helmfile.yaml.gotmpl。
+# Grafana Alloy 日志采集。chart 版本钉在 ../helmfile.yaml.gotmpl。
 alloy:
   configMap:
     content: |
-      // ── 集群容器日志(原 promtail kubernetes_sd 等价):全命名空间 Pod ──
+      // ── 集群容器日志:全命名空间 Pod ──
       discovery.kubernetes "pods" {
         role = "pod"
       }
 
-      // 与 promtail 默认标签收敛对齐:namespace/pod/container/app
+      // 标签收敛为 namespace/pod/container/app
       discovery.relabel "pod_logs" {
         targets = discovery.kubernetes.pods.targets
         rule {
@@ -58,8 +55,8 @@ alloy:
           url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
         }
       }
-  # 资源出处:采集 agent 每节点一只,对齐 kps-light 中 node-exporter 量级(20m/32Mi)
-  # 上留一倍余量;日志洪峰靠 Loki 侧摄入限流兜底,agent 先不放开内存。
+  # 采集 agent 每节点一只,按 kps-light 的 node-exporter 量级(20m/32Mi)留一倍余量;
+  # 日志洪峰靠 Loki 侧摄入限流兜底。
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}
@@ -71,8 +68,8 @@ alloy:
         mountPath: /host-logs/rancher
         readOnly: true
 controller:
-  # DaemonSet(默认)每节点一只;控制面节点的 apiserver 审计文件也要采,
-  # 须容忍 server 侧 taint(full 档 CriticalAddonsOnly;标准 control-plane 污点)
+  # DaemonSet 每节点一只;控制面节点的 apiserver 审计文件也要采,必须容忍 server 侧 taint
+  # (full 档 CriticalAddonsOnly + 标准 control-plane 污点)
   tolerations:
     - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
     - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}

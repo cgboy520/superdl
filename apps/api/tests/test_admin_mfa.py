@@ -82,11 +82,8 @@ class TestMfaEnforcement:
 
 class TestSetupFlow:
     async def test_concurrent_begin_returns_the_stored_secret(self, client: AsyncClient, sm):
-        """并发 begin(StrictMode 双发 / 双击 / 多标签页;绑定页刷新重进同理)只能落一枚密钥,
-        且页面拿到的就是库里那枚。
-
-        它挂了说明:两路各生成一枚、后写者覆盖前者,用户照着二维码输的首个动态码必然
-        验不过 —— 首次绑定直接卡死(管理端 e2e 曾以此偶发红)。
+        """并发 begin(双发/双击/多标签页)只能落一枚密钥,且页面拿到的就是库里那枚。
+        挂了说明:两路各生成一枚、后写者覆盖前者,用户照二维码输的首个动态码必然验不过。
         """
         await _create(client, sm, "race-admin", "admin")
         ticket = (await _login(client, "race-admin")).json()["ticket"]

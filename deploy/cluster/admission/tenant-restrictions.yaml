@@ -3,19 +3,16 @@
 # 先决条件:K8s ≥ 1.30(VAP GA)。非 helm release(helmfile.yaml.gotmpl 末尾有说明),
 # 由发布流程单独 apply(步骤见 ../README.md 两档「组件」节):
 #   kubectl apply -f admission/tenant-restrictions.yaml
-# preflight.sh 强制校验:集群内两个 Binding 必须存在且 validationActions 含 Deny。
+# preflight.sh 强制校验:①②③ 三个 Binding 必须存在且 validationActions 含 Deny。
 # 回滚:`kubectl delete -f admission/tenant-restrictions.yaml`(先删 Binding 即失效)。
 #
-# 上线建议:第一次部署把两个 Binding 的 validationActions 改成 [Audit] 跑一周
-# (kubectl get events / apiserver 日志看 violation),确认零误伤再改回 [Deny]。
-# 以下规则已与平台实际行为对齐(不会误伤正常编排):
+# 规则与平台实际行为对齐,不会误伤正常编排:
 #   - worker 只写 superdl/tenant-* 命名空间 + nodes(patch);namespace 只建 tenant-*;
 #   - 租户 Pod 本身即 automountServiceAccountToken: false、无 hostPath/host*、
 #     hostUsers 仅 shared/mig 档显式 false(dedicated/Kata 档不传,VM 级隔离不叠 userns)。
+# 本文件只约束创建/更新/删除,读(get/list)不经过准入层,无需在此放行。
 #
-# 注意:本文件只约束「创建/更新/删除」,读(get/list)不经过准入层,无需在此放行。
-#
-# 策略清单(安全P0-1 扩展后共四条):
+# 策略清单:
 #   ① superdl-platform-sa-scope    平台 SA 写操作范围(superdl/tenant-* ns + nodes)[Deny]
 #   ② superdl-tenant-pod-baseline  租户 ns Pod 安全基线(禁特权/host*/hostPath/nodeName 等)[Deny]
 #   ③ superdl-node-field-scope     平台 SA 对 Node 的字段级写白名单(cordon + superdl.io/* 标签)[Deny]
@@ -24,7 +21,7 @@
 
 ---
 # 策略一:平台 SA 的写操作范围钉死(superdl ns 全部 ServiceAccount,按前缀匹配)。
-# RBAC 因 tenant-* 动态创建只能给 ClusterRole(见 deploy/app/k8s/01-rbac.yaml 的收敛说明),
+# RBAC 因 tenant-* 动态创建只能给 ClusterRole(见 deploy/app/k8s/01-rbac.yaml),
 # 本策略把 ClusterRole 的实际可达面收窄到目标命名空间,二者叠加才是完整最小权限。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -43,7 +40,7 @@ spec:
         scope: "*"
   matchConditions:
     # 全部平台 SA(api / core worker / tenant-mgr / node-mgr / prewarm / disk-ops;
-    # P1-18 组件拆分后新增 SA 由前缀自动纳入,无需改本策略)
+    # 新增 SA 由前缀自动纳入,无需改本策略)
     - name: platform-sa-only
       expression: "request.userInfo.username.startsWith('system:serviceaccount:superdl:')"
   validations:
@@ -55,7 +52,7 @@ spec:
           : object.metadata.name.startsWith('tenant-'))
       message: "平台 SA 只能创建/删除 tenant-* 命名空间"
     # namespace 创建必须携带 superdl.io/managed=true(策略二的 namespaceSelector 锚点):
-    # 此前只查名字——注入/bug 建出不打标的 tenant-*,整个 Pod 基线被静默绕过(安全P0-1)
+    # 不打标的 tenant-*(注入或 bug 建出)会让整个 Pod 基线被静默绕过
     - expression: >-
         !(request.resource.group == '' && request.resource.resource == 'namespaces') ||
         request.operation != 'CREATE' ||
@@ -84,11 +81,11 @@ metadata:
   name: superdl-platform-sa-scope
 spec:
   policyName: superdl-platform-sa-scope
-  validationActions: [Deny]   # 首次上线先 [Audit] 观察,确认零误伤再改 Deny
+  validationActions: [Deny]   # 首次上线可先 [Audit] 观察,确认零误伤再改 Deny
 
 ---
-# 策略二:租户命名空间(平台打标 superdl.io/managed=true)内的 Pod 安全基线。
-# 防的是「平台被注入/编排逻辑出 bug 时创建出越权 Pod」这层残余风险;正常租户 Pod 全部满足。
+# 策略二:租户命名空间(平台打标 superdl.io/managed=true)内的 Pod 安全基线,
+# 防的是平台被注入/编排逻辑出 bug 时创建出越权 Pod;正常租户 Pod 全部满足。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -128,7 +125,7 @@ spec:
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "租户 Pod 必须 automountServiceAccountToken: false"
     # 租户 Pod 一律走 nodeSelector(独享池经标签绑节点):nodeName 是调度器旁路,
-    # 平台创建路径从不设置(real.py 仅 node_selector),CREATE 时出现即异常(安全P0-1)。
+    # 平台创建路径从不设置(real.py 仅 node_selector),CREATE 时出现即异常。
     # UPDATE 必须放行「已绑定且未变」的 nodeName:调度器 Bind 之后 Pod 天然带 nodeName,
     # kubelet Allocate 阶段 HAMi device plugin 回写 hami.io/* 注解就是一次 UPDATE,
     # 一刀切 !has() 会让所有共享档 Pod 在 Allocate 时被拒(UnexpectedAdmissionError,实测)
@@ -137,7 +134,7 @@ spec:
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName)
       message: "租户 Pod 禁止指定/改动 spec.nodeName 绕过调度器"
     # RuntimeClass 白名单:kata-qemu(dedicated 档 VM 隔离)与 nvidia(light 档 HAMi
-    # devicePlugin 注入)之外皆非法;危险 RuntimeClass 是容器逃逸的直达通道(安全P0-1)
+    # devicePlugin 注入)之外皆非法;危险 RuntimeClass 是容器逃逸的直达通道
     - expression: >-
         !has(object.spec.runtimeClassName) ||
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
@@ -149,15 +146,13 @@ metadata:
   name: superdl-tenant-pod-baseline
 spec:
   policyName: superdl-tenant-pod-baseline
-  validationActions: [Deny]   # 首次上线先 [Audit] 观察,确认零误伤再改 Deny
+  validationActions: [Deny]   # 首次上线可先 [Audit] 观察,确认零误伤再改 Deny
 
 ---
-# 策略三:平台 SA 对 Node 的字段级写白名单(安全P0-1)。K8s RBAC 无法限字段,
-# nodes:patch 全字段可写等于:改 taints 驱逐任意节点负载、改寻址字段伪装节点身份——
-# 这里把可达变更收窄到平台真实使用的两项:spec.unschedulable(cordon)与 superdl.io/* 标签
-# (pool/gpu-model 收敛)。CEL 对 typed 字段无 map 宏,spec 侧按危险字段显式锁;
-# labels/annotations 是 map,用白名单收敛。人类运维(kubectl cordon/label)身份非 SA,
-# 不受本策略约束,break-glass 通道保留。
+# 策略三:平台 SA 对 Node 的字段级写白名单。K8s RBAC 无法限字段,而 nodes:patch 全字段可写
+# 等于能改 taints 驱逐任意节点负载、改寻址字段伪装节点身份;这里收窄到平台真实使用的两项:
+# spec.unschedulable(cordon)与 superdl.io/* 标签。CEL 对 typed 字段无 map 宏,spec 侧按危险
+# 字段显式锁,labels/annotations 用白名单收敛。人类运维身份非 SA,break-glass 通道保留。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -227,12 +222,10 @@ spec:
   validationActions: [Deny]
 
 ---
-# 策略四:全局 Pod 安全兜底(安全P0-1)。策略二只覆盖 tenant-*(标签锚定),其余
-# 命名空间(default/cert-manager/cnpg-system/registry/superdl 等)此前无基线——
-# 任何被突破的写凭据都能在非豁免 ns 种特权 Pod。豁免 ns 仅放确实需要特权/host 面的
-# 基础设施栈;豁免名单新增成员前先评估。superdl ns 不放豁免:平台 Pod 全部满足基线,
-# 预热 Job 的 nodeName 由标签白名单单独放行(其 Job 模板无特权/host 面)。
-# 与策略二重叠 tenant-* 属纵深防御,规则语义一致无冲突。
+# 策略四:全局 Pod 安全兜底。策略二只覆盖 tenant-*(标签锚定),其余命名空间无基线,
+# 任何被突破的写凭据都能在非豁免 ns 种特权 Pod。豁免 ns 只放确实需要特权/host 面的基础设施栈,
+# 新增成员前先评估。superdl ns 不放豁免:平台 Pod 全部满足基线,预热 Job 的 nodeName 由标签
+# 白名单单独放行。与策略二在 tenant-* 上重叠属纵深防御,规则语义一致无冲突。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -245,10 +238,9 @@ spec:
         # 豁免:cilium/hami/juicefs-csi(kube-system)、gpu-operator、node-exporter+alloy
         # (monitoring)、envoy-gateway-system(北向入口)、topolvm node plugin(topolvm-system)——
         # 这些栈的 DaemonSet 合法需要 privileged/hostPath/hostNetwork。
-        # envoy-gateway-system 是原 ingress-nginx 那一格:名单按 ns 名匹配,入口 ns 改名而
-        # 名单没跟着改,Envoy 数据面立刻落进本策略覆盖面——而数据面 Deployment 是 EG 控制器
-        # 动态生成的(仓库里没有它的清单,改不到它),命中任一条基线就是整个网关起不来,
-        # 且拒绝信息只出现在 EG 控制器日志里,kubectl 那边看到的只是「Gateway 一直不 Ready」。
+        # ⚠ 名单按 ns 名匹配:入口 ns 改名而名单没跟着改,Envoy 数据面立刻落进本策略覆盖面。
+        # 数据面 Deployment 由 EG 控制器动态生成(仓库里没有它的清单),命中任一条基线就是整个
+        # 网关起不来,拒绝信息只出现在 EG 控制器日志里,kubectl 只能看到「Gateway 一直不 Ready」。
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values: ["kube-system", "gpu-operator", "monitoring", "envoy-gateway-system", "topolvm-system"]
@@ -293,7 +285,7 @@ metadata:
   name: superdl-global-pod-guard
 spec:
   policyName: superdl-global-pod-guard
-  # 全局面大且覆盖第三方命名空间:[Audit] 先行观察 ≥2 周(apiserver 审计日志
-  # 按 validating_admission_policy 告警与 events 过滤),零误伤后改 [Deny]
-  # 并把本 Binding 补进 preflight.sh 的 Deny 强制清单。
+  # 全局面大且覆盖第三方命名空间,先 [Audit] 观察 ≥2 周(apiserver 审计日志按
+  # validating_admission_policy 与 events 过滤),零误伤后改 [Deny] 并把本 Binding
+  # 补进 preflight.sh 的 Deny 强制清单。
   validationActions: [Audit]

@@ -49,10 +49,9 @@ from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NA
 
 INSTANCE_LABEL = "superdl.io/instance"
 PREWARM_LABEL = "superdl.io/prewarm"  # 预热 Job 专用标签,与 managed(实例 Pod 查询)隔离
-# Envoy 数据面 Pod 所在 ns(NetworkPolicy 放行来源)。与 base.GATEWAY_NAMESPACE 是两码事:
-# 那个是 Gateway **对象**所在的 ns(= superdl),这个是 Envoy **Pod** 实际跑的 ns。
-# Envoy Gateway 默认把数据面部署在控制面同 ns(未开 Gateway Namespace Mode),
-# 值须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway release 的 namespace 一致。
+# Envoy 数据面 **Pod** 所在 ns(NetworkPolicy 放行来源),不同于 base.GATEWAY_NAMESPACE
+# (Gateway **对象**所在 ns)。须与 deploy/cluster/helmfile.yaml.gotmpl 里 envoy-gateway
+# release 的 namespace 一致。
 GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
 
 # 租户 ns 的 Pod Security Admission 标签。enforce 只到 baseline:平台镜像以 root 运行,
@@ -68,15 +67,11 @@ TENANT_NS_PSA_LABELS = {
 def tenant_security_context() -> "client.V1SecurityContext":
     """租户容器的加固基线:无条件下发,不看 runtimeClass、发行版与档位。
 
-    capabilities / allowPrivilegeEscalation / seccompProfile 是标准 OCI 字段,
-    kata-qemu 在 guest 内照常施加;userns 只挡逃逸后在宿主的权限,不替代这一层。
-    不下发 runAsNonRoot:平台镜像以 root 运行(ssh root@ + 实例盘挂 /root),
-    强开会杀死全部租户 Pod;root 的宿主侧风险由 userns 映射与 kata VM 边界兜住。
+    不下发 runAsNonRoot:平台镜像以 root 运行(ssh root@ + 实例盘挂 /root),强开会杀死
+    全部租户 Pod;root 的宿主侧风险由 userns 映射与 kata VM 边界兜住。
 
-    drop ALL 之后再 add 回三个:OpenSSH 的预认证特权分离是强制且不可配置的,
-    要 chroot("/run/sshd") 再 setgid/setuid,缺一个连密钥交换都过不去(实测每个连接
-    在 KEX 阶段 Connection reset,平台承诺的 ssh root@ 入口整个不可用)。容器本就以
-    root 跑在自己的 userns 里,这三个能力不给出新的宿主侧权限。见 docs/decisions.md。
+    drop ALL 之后必须 add 回 SYS_CHROOT/SETUID/SETGID:OpenSSH 的预认证特权分离强制且
+    不可配置,缺一个则每个连接在 KEX 阶段 Connection reset。见 docs/decisions.md。
     """
     return client.V1SecurityContext(
         allow_privilege_escalation=False,
@@ -118,8 +113,8 @@ def _ready_condition(obj: Any) -> bool:
 def _is_node_port_taken(exc: client.ApiException) -> bool:
     """apiserver 拒绝显式 nodePort 的形状:422 + "provided port is already allocated"。
 
-    注意它不等于「端口被别人占」——同名 Service 幂等重建时,分配器先于 AlreadyExists
-    命中,于是重放拿到的是 422 而不是 409。占用者是不是自己,须读对象才能判。
+    它不等于「端口被别人占」:同名 Service 幂等重建时分配器先于 AlreadyExists 命中,
+    重放拿到的是 422 而不是 409。占用者是不是自己,须读对象才能判。
     """
     return exc.status == 422 and "already allocated" in str(exc.body or "")
 
@@ -163,12 +158,10 @@ TENANT_EPHEMERAL_LIMIT = "64Gi"
 
 
 def _container_ports(spec: InstancePodSpec) -> list["client.V1ContainerPort"]:
-    """容器端口声明。
+    """容器端口声明(K8s 里只是元数据,但 Service targetPort 按名引用依赖它)。
 
-    K8s 里 ports 只是元数据(不声明也能通),但它是 `kubectl describe` 与 Service
-    targetPort 按名引用的依据,写清楚能让排查少一层猜。dev 恒 22+8888;
-    service 只声明用户端口(+ 开了 SSH 时的 22)—— 服务型实例里根本没有 Jupyter 进程,
-    声明 8888 会让人以为那个端口该通。
+    dev 恒 22+8888;service 只声明用户端口(+ 开了 SSH 时的 22),
+    服务型实例无 Jupyter 进程,不声明 8888。
     """
     ports: list[client.V1ContainerPort] = []
     if spec.with_ssh:
@@ -183,9 +176,8 @@ def _container_ports(spec: InstancePodSpec) -> list["client.V1ContainerPort"]:
 def _health_probe(spec: InstancePodSpec, *, failure_threshold: int) -> "client.V1Probe | None":
     """health_path 非空时的 httpGet 探针(startup 与 readiness 同一个形状,只差阈值)。
 
-    只有服务型实例会带 health_path。dev 实例不设探针是刻意的:Jupyter 的就绪由
-    reconciler 按 Pod ready 判,而 Pod 无探针时 ready 恒等于「容器已启动」——
-    给 dev 加探针只会让「镜像里没起 Jupyter」这类用户问题被误报成平台故障。
+    只有服务型实例带 health_path。dev 实例不设探针:reconciler 按 Pod ready 判就绪,
+    无探针时 ready 恒等于「容器已启动」,加探针会把用户镜像的问题误报成平台故障。
     """
     if not spec.health_path or spec.service_port is None:
         return None
@@ -216,10 +208,8 @@ def _allowed_tcp_port_ranges() -> list["client.V1NetworkPolicyPort"]:
 
 
 class _TimeoutApi:
-    """给官方同步客户端的每次调用注入 `_request_timeout`(客户端无全局超时配置项)。
-
-    包一层而非在各调用点手写,新增调用不会漏。
-    """
+    """给官方同步客户端的每次调用注入 `_request_timeout`(客户端无全局超时配置项);
+    包一层而非在各调用点手写,新增调用不会漏。"""
 
     def __init__(self, api: Any, timeout: tuple[float, float]) -> None:
         self._api = api
@@ -287,16 +277,12 @@ class RealOrchestrator:
         """入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH(22);
         出方向放行公网(除私网/元数据网段):TCP 扣明确滥用途黑名单,UDP 白名单 53/443,+ DNS。
 
-        SSH 走 NodePort:DNAT 后是否过 NetworkPolicy 取决于 CNI(Cilium 会过,
-        kube-proxy iptables 通常不过),显式放行 22 消除对「NodePort 不过策略」的
-        隐式依赖;from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。
-        sshd 仅密钥登录。
+        SSH 22 必须显式放行:NodePort DNAT 后是否过 NetworkPolicy 取决于 CNI;
+        from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。sshd 仅密钥登录。
 
-        网关数据面来源不限端口(原先只放 8888):服务型实例的容器端口由用户声明,
-        平台事先不知道是哪个,写死端口就等于只支持 8888 一种服务。放宽的代价可控 ——
-        Envoy 只会打到自己 HTTPRoute 里声明的那个 backend Service 端口,而 HTTPRoute
-        全由平台生成;租户之间的东西向仍然默认拒,放宽不产生租户间可达性。
-        **这是一处刻意的取舍,记在 docs/reference/security.md 的「已接受取舍」。**
+        网关数据面来源不限端口:服务型实例的容器端口由用户声明,平台事先不知道是哪个;
+        Envoy 只打到平台生成的 HTTPRoute 里的 backend 端口,租户间东西向仍默认拒。
+        见 docs/reference/security.md 的「已接受取舍」。
         """
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
@@ -388,7 +374,7 @@ class RealOrchestrator:
 
     def _ensure_juicefs_pvc_sync(self, namespace: str) -> None:
         """每租户 namespace 一只共享 JuiceFS PVC(数据盘 subPath 挂载的底座)。
-        容量是名义值 —— 真实额度由 JuiceFS 目录配额管。"""
+        容量是名义值,真实额度由 JuiceFS 目录配额管。"""
         pvc = client.V1PersistentVolumeClaim(
             metadata=client.V1ObjectMeta(
                 name=JUICEFS_PVC_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
@@ -455,11 +441,8 @@ class RealOrchestrator:
         )
 
     def _ensure_instance_secret_sync(self, spec: InstancePodSpec) -> None:
-        """per-instance 敏感 env 的 Secret(JUPYTER_TOKEN 等)。
-
-        幂等:已存在则按最新内容 patch(token 轮换/同 uuid 重建收敛);
-        生命周期随实例(delete_instance 一并摘除)。
-        """
+        """per-instance 敏感 env 的 Secret(JUPYTER_TOKEN 等)。幂等:已存在则按最新内容
+        patch(token 轮换/同 uuid 重建收敛);生命周期随实例(delete_instance 一并摘除)。"""
         if not spec.secret_env:
             return
         name = instance_env_secret_name(spec.name)
@@ -602,12 +585,11 @@ class RealOrchestrator:
     def _create_service_sync(self, spec: InstancePodSpec) -> None:
         """SSH 走 NodePort(显式端口),Jupyter/服务端点走 ClusterIP(网关数据面回源)。
 
-        始终拆成多个 Service:type=NodePort 会给每个 port 都分配 NodePort,合并会让
+        必须始终拆成多个 Service:type=NodePort 会给每个 port 都分配 NodePort,合并会让
         Jupyter/服务端口从 30000–32767 随机取号,撞 SSH 端口池。
 
-        建哪些随形态走 —— dev 是 SSH + Jupyter;service 是(可选 SSH)+ <name>-svc。
-        服务型实例不建 Jupyter Service:建了也没有 HTTPRoute 指向它,只是个永远
-        没人访问的对象,却会让孤儿端点回收的口径变复杂。
+        建哪些随形态走:dev 是 SSH + Jupyter;service 是(可选 SSH)+ <name>-svc。
+        服务型实例不建 Jupyter Service(无 HTTPRoute 指向它,且会搅乱孤儿端点回收口径)。
         """
         if spec.service_port is not None:
             self._create_endpoint_service_sync(spec)
@@ -683,9 +665,7 @@ class RealOrchestrator:
         422 走到这里是因为分配器先于 AlreadyExists 命中:同名 Service 不存在才说明
         端口真被集群其它对象占用,那时才归一化成 NodePortTaken 交编排层换端口。
         """
-        # 只有 SSH 分支会走到这里,而那条分支进来前已经核过端口在位;
-        # 独立断一次是为了让「端口必然已分配」这条不变量在本函数内自证,
-        # 而不是靠调用方的顺序记忆(下面两处 NodePortTaken 都要拿它)
+        # 让「端口必然已分配」这条不变量在本函数内自证(下面两处 NodePortTaken 都要拿它)
         port = spec.ssh_node_port
         if port is None:
             raise RuntimeError(f"instance {spec.name} ssh service conflict without a node port")
@@ -733,11 +713,10 @@ class RealOrchestrator:
         allowedRoutes.namespaces.from=Selector 授权(租户 ns 带 MANAGED_LABEL),
         **不需要 ReferenceGrant**(它只管 backendRef 跨 ns,而 backend 与本路由同 ns)。
 
-        sectionName 必须写且必须写对:不写路由会挂到全部同端口 listener 上,平台自身三个
-        入口的 hostname 会被一起拉进同一份路由表。两个 listener 的差别不只是域名 ——
-        **只有 svc-https 挂了 SecurityPolicy.extAuth**。把服务路由错挂到 app-https,
-        它照样能通,只是**完全不鉴权**,而且没有任何报错。
-        TLS 不在这里出现 —— 证书由 listener 的 certificateRefs 提供(泛域名一张)。
+        sectionName 必须写且必须写对:不写会挂到全部同端口 listener 上;而两个 listener 的
+        差别不只是域名 —— **只有 svc-https 挂了 SecurityPolicy.extAuth**,服务路由错挂到
+        app-https 照样能通,只是**完全不鉴权**且没有任何报错。
+        TLS 不在这里出现,证书由 listener 的 certificateRefs 提供(泛域名一张)。
         """
         if spec.service_port is not None:
             if not spec.service_host:
@@ -916,7 +895,7 @@ class RealOrchestrator:
     def _used_node_ports_sync(self) -> set[int]:
         # 必须列出全集群 Service 的 NodePort,不能按 MANAGED_LABEL 过滤:
         # blocked 端口标的就是「被非平台对象占用」的端口,复检看不见占用者会
-        # 每 30 秒把真占用误放回池 → 再撞 → 再封,振荡并把新建实例推过创建超时
+        # 每 30 秒把真占用误放回池,形成放回 → 撞占 → 再封的振荡
         ports: set[int] = set()
         for svc in self._list_all(self.core.list_service_for_all_namespaces):
             for p in svc.spec.ports or []:
@@ -1027,9 +1006,9 @@ class RealOrchestrator:
         """平台 ns 起 juicefs CLI Job 下发/摘除目录配额。幂等(见 _run_managed_job_sync)。
         metaurl 经 secretKeyRef 注入(superdl-api-secrets 与 Job 同 ns),worker 零接触明文;
         subpath/capacity 走 env 间接引用,不进 shell 命令串(防注入)。
-        密码不进 argv:shell 内把 metaurl 拆成「无密码 URL(argv)+ META_PASSWORD(env)」,
-        juicefs v1.0+ 官方机制;否则全租户共享文件系统的元数据引擎凭据会出现在
-        /proc/<pid>/cmdline(节点上任何进程可读)。"""
+        密码不得进 argv:shell 内把 metaurl 拆成「无密码 URL(argv)+ META_PASSWORD(env)」
+        (juicefs v1.0+ 官方机制),否则元数据引擎凭据会出现在节点上任何进程可读的
+        /proc/<pid>/cmdline。"""
         _check_subpath(subpath)
         # 密码拆分在容器内 shell 完成(env 不进 /proc cmdline);metaurl 密码段约定不含 @
         split = (
@@ -1292,10 +1271,9 @@ class RealOrchestrator:
                 )
         except client.ApiException as exc:
             errors.append(f"apps: {exc.status}")
-        # 网关就绪面看 Gateway 对象自己的 Programmed 条件,不看控制器 Deployment:
-        # CRD 装了、envoy-gateway 活着,但 listener 的证书 Secret 缺失、hostname 撞车或
-        # 端口被占时 Programmed 仍是 False,而流量一条都进不来。CRD 未装 / 对象未下发
-        # 都是 404 —— 那同样是「没就绪」,不记 error(集群页对该组件另有 fix_hint)。
+        # 网关就绪面看 Gateway 对象自己的 Programmed 条件,不看控制器 Deployment:控制器
+        # 活着但 listener 证书缺失 / hostname 撞车 / 端口被占时 Programmed 仍为 False。
+        # CRD 未装或对象未下发都是 404,同样算「没就绪」,不记 error。
         try:
             gw: Any = self.custom.get_namespaced_custom_object(
                 GATEWAY_API_GROUP,
@@ -1389,10 +1367,10 @@ class RealOrchestrator:
             return  # 幂等:任意状态的既有 Job 都交巡检收敛
         # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
         container = self._batch_container("prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[])
-        # IfNotPresent:节点开机/预热不依赖仓库可达。注意 Always 救不了「同名 tag 重推」——
-        # k3s 内置 registry(Spegel,registries.yaml 里 mirrors "*")按 tag 解析时会返回节点自己
-        # 缓存的旧 digest,实测 Always 仍拉到旧镜像;正确做法是目录 image_ref 钉 digest
-        # (`<repo>:<tag>@sha256:...`,_IMAGE_REF_RE 已支持),见 deploy/instance-images/README.md。
+        # IfNotPresent:节点开机/预热不依赖仓库可达。Always 救不了「同名 tag 重推」——
+        # Spegel(registries.yaml 里 mirrors "*")按 tag 解析会返回节点缓存的旧 digest;
+        # 要换版本只能让目录 image_ref 钉 digest(`<repo>:<tag>@sha256:...`),
+        # 见 deploy/instance-images/README.md。
         container.image_pull_policy = "IfNotPresent"
         job = client.V1Job(
             metadata=client.V1ObjectMeta(

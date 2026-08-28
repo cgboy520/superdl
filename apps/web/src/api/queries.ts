@@ -89,7 +89,7 @@ export const useMyDeletionRequest = (opts?: QueryOpts) =>
 export const useWallet = (opts?: QueryOpts) => useApiQuery(["wallet"], () => getWalletApiV1WalletGet(), opts);
 export const useNotifications = (params?: { unread?: boolean }, opts?: QueryOpts) =>
   useApiQuery(["notifications", params ?? null], () => listNotificationsApiV1NotificationsGet(params), opts);
-/** 未读角标轻端点(P2):30s 轮询只拿 count,与列表分页解耦(旧口径=已加载页未读数,偏低)。 */
+/** 未读角标轻端点:30s 轮询只拿 count,与列表分页解耦。 */
 export const useUnreadCount = (opts?: QueryOpts) =>
   useApiQuery(["notifications", "unread-count"], () => unreadCountApiV1NotificationsUnreadCountGet(), opts);
 /** 通知弹层游标分页:「加载更多」向下翻页。 */
@@ -109,10 +109,8 @@ export const useSkus = (opts?: QueryOpts) => useApiQuery(["skus"], () => listSku
 export const useImages = () => useApiQuery(["images"], () => listImagesApiV1ImagesGet());
 export const useSshKeys = () => useApiQuery(["ssh-keys"], () => listSshKeysApiV1SshKeysGet());
 export const useDisks = (opts?: QueryOpts) => useApiQuery(["disks"], () => listDisksApiV1DisksGet(), opts);
-/**
- * 轻量整表视图(首 100 条,dashboard 计数/存储页挂载名/support 关联选择用)。
- * 用户配额上限(默认 10)远小于 100;列表页本身走 useInstancePages 游标分页。
- */
+/** 轻量整表视图(首 100 条,dashboard 计数/存储页挂载名/support 关联选择用)。
+ *  用户配额上限远小于 100;列表页本身走 useInstancePages 游标分页。 */
 export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
   useQuery<PageInstanceOut, ApiError, InstanceOut[]>({
     queryKey: ["instances", "first100"],
@@ -138,14 +136,12 @@ export const useInstancePages = (params?: { status?: string; name?: string }) =>
     initialPageParam: undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
-  // 轮询只回刷第一页(摘要列):过渡态 5s、稳态 30s;已加载的旧页不整表重取。
-  // 页面不可见时跳过(react-query 轮询同款语义);首页数据用 setQueryData 原地合并。
+  // 轮询只回刷第一页:过渡态 5s、稳态 30s,页面不可见时跳过;首页数据用 setQueryData 原地合并
   const hasTransient = (query.data?.pages[0]?.items ?? []).some((i) =>
     isTransientInstanceStatus(i.status),
   );
   useEffect(() => {
-    // 变量名避开 `key`:i18next-cli 会把字符串数组常量按变量名跨文件共享,
-    // 叫 key 会让 billing.tsx 里 t(MAP[key]) 的解析被这里的值污染而漏提键
+    // 变量名必须避开 `key`:i18next-cli 按变量名跨文件共享字符串数组常量,会污染别处的 t(MAP[key]) 解析而漏提键
     const pagesKey = ["instances", "pages", { status, name }];
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
@@ -192,11 +188,8 @@ export const useInstanceEventPages = (uuid: string) =>
   });
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
   useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
-/**
- * 服务端点(仅 workload_type='service' 的实例有;dev 实例调用会 404)。
- * ready 位是「我的服务起来没有」的唯一真相 —— 服务实例持续 not-ready 不再判 failed,
- * status 一直是 running,不能拿 status 代替。
- */
+/** 服务端点(仅 workload_type='service' 的实例有,dev 实例调用会 404)。
+ *  ready 位是「服务起来没有」的唯一真相:持续 not-ready 时 status 仍是 running,不能拿 status 代替。 */
 export const useServiceEndpoint = (uuid: string, opts?: QueryOpts<ServiceEndpointOut>) =>
   useApiQuery(
     ["instances", uuid, "service"],

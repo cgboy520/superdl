@@ -103,12 +103,11 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   const { t } = useTranslation();
   const names = pools.map((p) => p.pool);
-  // 「已租」拆成两段:竞价那段是容量紧张时能拿回来的部分,与空闲一起才是真正的可调度余量。
-  // gpu_spot_used 服务端已按 gpu_used 截断(共享档多个实例共用一张卡,台账记一张、
-  // 实例侧各记一张),这里**不再 clamp 第二遍** —— 两处都夹一次,后端口径变了前端会吃掉差异
+  // 「已租」拆两段:竞价那段与空闲一起才是真正的可调度余量。
+  // gpu_spot_used 服务端已按 gpu_used 截断,前端不许 clamp 第二遍,否则会吃掉后端口径的变化
   const spotUsed = pools.map((p) => p.gpu_spot_used);
   const usedOther = pools.map((p) => p.gpu_used - p.gpu_spot_used);
-  // 空闲只算 Ready 节点的卡;非 Ready 节点的物理卡画成第三段,不再混进「空闲」
+  // 空闲只算 Ready 节点的卡;非 Ready 节点的物理卡画成第三段,不混进「空闲」
   const free = pools.map((p) => Math.max(0, p.ready_gpu_total - p.gpu_used));
   const notReady = pools.map((p) => Math.max(0, p.gpu_total - p.ready_gpu_total));
   const usedTotal = pools.reduce((n, p) => n + p.gpu_used, 0);
@@ -393,8 +392,7 @@ function Overview() {
           <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
             {t("overview.yesterdayPrefix", { amount: revenue ? formatMoney(revenue.yesterday_revenue) : "—" })}
           </Typography.Text>
-          {/* 收入已含包周期预付。预付必须摊开单列:一笔包年当天就是一个尖峰,不标出来
-              上面那行昨日环比会被读成异常 */}
+          {/* 收入已含包周期预付,必须摊开单列:一笔包年当天就是尖峰,不标出来昨日环比会被读成异常 */}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.today_prepaid) : "—" })}
           </Typography.Text>
@@ -444,8 +442,7 @@ function Overview() {
       </Col>
       <Col xs={12} md={8} xl={6}>
         <Card>
-          {/* 按订阅行数,不是按实例状态数:停机的包月实例仍在保、仍占库存(平台层预留),
-              所以这个数可以大于上面的活跃实例数 —— 不写清口径就会被当成对不上的脏数据 */}
+          {/* 按订阅行数而非实例状态数:停机的包月实例仍在保仍占库存,这个数可以大于活跃实例数 */}
           <Statistic
             title={t("overview.subscriptionsActive")}
             value={ov ? ov.subscriptions_active : "—"}

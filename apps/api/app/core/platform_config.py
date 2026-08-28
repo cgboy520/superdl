@@ -339,8 +339,7 @@ def _all(cfg: Mapping[str, str], *keys: str) -> bool:
 
 
 def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[ConfigWarning]:
-    """安全开关与凭据的组合风险。开关允许在 prod 关闭(运营决定),但必须看得见:
-    这里的每一条都对应一种「功能看起来在、其实在裸奔或在 502」的状态。"""
+    """安全开关与凭据的组合风险。开关允许在 prod 关闭(运营决定),但必须看得见。"""
     prod = environment == "prod"
     out: list[ConfigWarning] = []
     if prod and cfg.get("captcha_enabled") != "true":
@@ -456,8 +455,7 @@ def _decrypt_row(key: str, value: str, *, aad: str) -> str | None:
 async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]:
     """生效配置全量映射(secret 已解密,仅进程内使用,严禁整体入日志/响应)。
 
-    每次直接全量读:表只有几十行,一趟 SELECT + 少量 AES-GCM 解密是微秒级,
-    不做进程内缓存(缓存的失效签名本身也要一趟查询)。
+    每次直接全量读,不做进程内缓存:表只有几十行,一趟 SELECT + 少量 AES-GCM 解密是微秒级。
     """
     eff = _env_layer()
     for row in (await session.execute(select(PlatformSetting))).scalars():

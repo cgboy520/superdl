@@ -69,7 +69,7 @@ class TestTenantNetpol:
         assert len(spec.ingress) == 2
         gateway, ssh = spec.ingress
         # 不限端口是服务型实例的前提:容器端口由用户声明,平台事先不知道是哪个。
-        # 这里若又冒出 ports,说明有人「顺手收紧回 8888」——那会让全部对外服务 502
+        # 这里若冒出 ports(例如收紧到 8888),全部对外服务会 502
         assert gateway.ports is None
         assert gateway._from[0].pod_selector is None  # 不放行同 ns 其它 Pod
         # 放行来源必须是 Envoy 数据面所在 ns:与 deploy/cluster/helmfile 的 envoy-gateway
@@ -279,7 +279,7 @@ class TestHamiCapacityAccounting:
         assert RealOrchestrator._physical_gpu_amount(node) == 8
 
     def test_hami_pool_missing_gfd_label_refused(self):
-        """hami 池(切分池)缺 GFD 标签:拒纳管计 0(P2 硬校验)——按 allocatable 原样
+        """hami 池(切分池)缺 GFD 标签:拒纳管计 0(硬校验)——按 allocatable 原样
         会把物理卡数虚高 deviceSplitCount 倍直接超卖。"""
         node = self._node(allocatable_gpu=80, gfd_count=None)
         assert RealOrchestrator._physical_gpu_amount(node) == 0
@@ -404,10 +404,8 @@ class TestServiceConflict:
             orch._create_service_sync(_spec(31001))
 
     def test_replayed_create_keeps_own_port(self):
-        """outbox at-least-once 重放:同名 Service 已持有期望端口,但 apiserver 先在
-        NodePort 分配器上撞车、返回 422 而非 409。这是幂等成功,不是端口被别人占。
-
-        它挂了说明重放打真集群会被误判成端口冲突,编排层据此去换端口。
+        """outbox 重放时同名 Service 已持有期望端口,apiserver 先在 NodePort 分配器上撞车
+        返回 422 而非 409:这是幂等成功。挂了说明重放会被误判成端口冲突,编排层去换端口。
         """
         orch, calls = self._orch(
             self._existing_svc(31001), _api_exc(422, "provided port is already allocated")
@@ -458,9 +456,8 @@ class TestTenantQuota:
 class TestServiceWorkloadObjects:
     """服务型实例(workload_type='service')的对象规约。
 
-    这一组全是「写错不报错、只是行为悄悄变了」的地方 —— 路由挂错 listener 会
-    完全不鉴权、Jupyter Service 多建会让孤儿回收误判、SSH Service 该不建却建了
-    会白占端口池。全部离线可验,不需要集群。
+    这一组全是「写错不报错、只是行为悄悄变了」的地方:路由挂错 listener 完全不鉴权、
+    Jupyter Service 多建让孤儿回收误判、SSH Service 该不建却建了白占端口池。
     """
 
     def _dev(self, **over: Any) -> InstancePodSpec:
@@ -499,8 +496,8 @@ class TestServiceWorkloadObjects:
         assert body["spec"]["rules"][0]["backendRefs"] == [{"name": "inst-1-jupyter", "port": 8888}]
 
     def test_service_route_targets_svc_listener(self):
-        """挂错 listener 是本批最危险的单点:app-https 上没有 extAuth,
-        路由照样通、返回 200,只是**完全不鉴权**,且没有任何报错。"""
+        """挂错 listener 不报错:app-https 上没有 extAuth,路由照样通、返回 200,
+        只是**完全不鉴权**。"""
         body = _bare()._httproute_body(self._svc())
         parent = body["spec"]["parentRefs"][0]
         assert parent["sectionName"] == "svc-https"

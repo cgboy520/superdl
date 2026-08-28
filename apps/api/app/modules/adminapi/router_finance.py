@@ -1,4 +1,4 @@
-"""管理端路由(对账/告警/调账/退款/发票/订单/收入/补单,自 router.py 拆分)。"""
+"""管理端路由(对账/告警/调账/退款/发票/订单/收入/补单)。"""
 
 from typing import Annotated, Any, Literal
 

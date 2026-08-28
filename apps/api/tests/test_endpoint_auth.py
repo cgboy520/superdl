@@ -219,13 +219,11 @@ class TestResponseDiscipline:
 class TestPathShapes:
     """鉴权回调是**一条精确路由**,不是 catch-all。
 
-    网关侧用的是 `extAuth.http.pathOverride`(EG v1.9.0),它把鉴权请求的 path 恒定改写成
-    `/api/internal/v1/endpoint-auth`;同位置的 `path` 字段则是前缀语义(原始请求 path 拼在后面)。
-    两者互斥,已按 v1.9.0 CRD schema 与上游 extauth.go 核实,清单注释里有复核入口。
+    网关侧用 `extAuth.http.pathOverride` 把鉴权请求的 path 恒定改写成
+    `/api/internal/v1/endpoint-auth`;同位置的 `path` 字段是前缀语义,两者互斥。
 
-    这组用例挂了说明:要么路由被人改回了 catch-all(那会把客户端可控的 path 连 query
-    一起拼进平台内部 URL),要么网关清单从 pathOverride 漂回了 path —— 后者的现象是
-    全部服务端点 fail-close 503,响亮且立刻可见,正是这里要锁住的方向。
+    挂了说明:要么路由退化成 catch-all(把客户端可控的 path 连 query 拼进平台内部 URL),
+    要么网关清单从 pathOverride 漂成 path(全部服务端点 fail-close 503)。
     """
 
     async def test_exact_path_accepted(self, client, sm, fake):
@@ -241,7 +239,6 @@ class TestPathShapes:
 
         断「非 2xx」而不是钉死 404:带后缀是 404,而单个尾斜杠会先撞上 Starlette 的
         redirect_slashes(307)。两者对 ext_authz 是同一件事 —— 非 2xx 即拒绝,fail-close。
-        钉死 404 等于把框架的重定向行为写进契约,换个版本就红,而那不是这条用例要守的东西。
         """
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000442")
         slug = await endpoint_of(client, headers, uuid)

@@ -1,10 +1,7 @@
 /**
- * 创建实例:单栏卡片流(计费方式/已选规格/镜像/数据盘/SSH/名称)+ 底部结算条;经济档需知情同意。
- * 数据盘「新建」为行内直建:提交时先建盘再建实例;建盘成功而实例失败须提示盘已计费。
- *
- * `?workload=service` 走同一条卡片流的服务形态:镜像/SSH 两张卡换成「容器」「对外服务」,
- * SSH 降级成名称卡里的可选项。分叉只在卡片与提交体上,规格/数据盘/结算条/幂等键全部复用 ——
- * 拆成两个页面会让「换规格」「余额不足去充值」这些闭环各写一遍。
+ * 创建实例:单栏卡片流 + 底部结算条;经济档需知情同意。
+ * 数据盘「新建」为行内直建:提交时先建盘再建实例,建盘成功而实例失败必须提示盘已计费。
+ * `?workload=service` 走服务形态,只换镜像/SSH 两张卡与提交体,规格/数据盘/结算条/幂等键复用。
  */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
@@ -64,8 +61,7 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
   validateSearch: (
     search: Record<string, unknown>,
   ): { gpus?: number; workload?: "service"; period?: BillingPeriod; market?: "spot" } => {
-    // 市场页带入的 GPU 数量(可改)、形态(缺省 = 开发机)与计费方式(缺省 = 按量)。
-    // 竞价与包周期互斥(market 是单值),两个都带进来时以 period 为准 —— 包周期是付过钱的那个。
+    // 竞价与包周期互斥,两个都带进来时必须以 period 为准
     const g = Number(search.gpus);
     const out: { gpus?: number; workload?: "service"; period?: BillingPeriod; market?: "spot" } = {};
     if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
@@ -87,9 +83,8 @@ const RESERVED_ENV_NAMES = ["AUTHORIZED_KEYS"];
 const RESERVED_SERVICE_PORTS = [22, 8888];
 
 /**
- * 引用是否钉死到具体版本(与后端 core.registry.is_pinned_image_ref 同源判定)。
- * 服务容器的 restartPolicy 是 Always,可变 tag 会让某次半夜重启悄悄换掉线上版本;
- * 后端是硬闸,这里只是提前一步给反馈,判据必须与它一致(不写 tag = 隐含 latest,同样不算钉死)。
+ * 引用是否钉死到具体版本。判据必须与后端 core.registry.is_pinned_image_ref 一致
+ * (不写 tag = 隐含 latest,同样不算钉死),后端是硬闸,这里只提前给反馈。
  */
 function isPinnedImageRef(ref: string): boolean {
   if (ref.includes("@sha256:")) return true;
@@ -125,7 +120,6 @@ function CreatePage() {
   const { skuId } = Route.useParams();
   const { gpus: gpusFromMarket, workload, period: periodFromMarket, market: marketFromUrl } =
     Route.useSearch();
-  // 服务形态:换掉镜像/SSH 两张卡,其余卡片与结算逻辑逐字复用
   const isService = workload === "service";
   const navigate = useNavigate();
   const { message } = App.useApp();
@@ -149,7 +143,6 @@ function CreatePage() {
     periodFromMarket ?? (marketFromUrl === "spot" ? "spot" : "on_demand"),
   );
   const [periodCount, setPeriodCount] = useState(1);
-  // 后端契约:CPU 规格(max_gpus_per_instance=0)只收 gpu_count=0,GPU 规格只收 1..max
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
   const [platformImage, setPlatformImage] = useState<string[]>();
   const [customImage, setCustomImage] = useState("");
@@ -159,7 +152,7 @@ function CreatePage() {
   const [existingDiskId, setExistingDiskId] = useState<number>();
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [name, setName] = useState("");
-  // ---- 服务形态专属 ----
+  // 服务形态专属
   const [serviceImage, setServiceImage] = useState("");
   const [command, setCommand] = useState("");
   const [argRows, setArgRows] = useState<ArgRow[]>([]);
@@ -282,8 +275,7 @@ function CreatePage() {
   // 「约 ¥X/日」为展示层估算(月价/30,BigInt 禁浮点);入账以后端日结为准
   const diskDaily = diskDailyEstimate(diskPriceGbMonth, diskGb);
 
-  // 该规格不接受包周期 / 未上竞价时按量兜底:chips 已灰置,提交体也不能还带着 period
-  // 或 market=spot(后端分别是 400 periodNotEnabled / spotNotEnabled)
+  // 该规格未开包周期 / 未上竞价时按量兜底:提交体不能还带 period 或 market=spot,否则后端 400
   const periodBlocked = !sku.period_enabled;
   const spotBlocked = !sku.spot_enabled || spotPolicy == null;
   const mode: BillingMode =
@@ -295,7 +287,7 @@ function CreatePage() {
   // 竞价单价 = SKU 现价 × spot_discount_pct / 100,与后端 pricing.effective_price_hourly 同算法
   const unitHourly = (isSpot ? spotPriceOf(sku.price_hourly, spotPolicy) : null) ?? sku.price_hourly;
   const hourlyTotal = mulPrice(unitHourly, priceUnits);
-  // 创建页的 base 就是 SKU 现价,与后端下单用的是同一个数,预览与实扣同源
+  // 创建页的 base 就是 SKU 现价,与后端下单用的是同一个数
   const quote = period
     ? periodQuoteOf(
         sku.price_hourly,
@@ -308,9 +300,8 @@ function CreatePage() {
     ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString()
     : null;
 
-  // BigInt 精确比较,禁浮点。按量与后端 require_balance_at_least 同口径(1 小时费用);
-  // 包周期是预付,下单即一次性扣走全额,门槛就是应付额本身。
-  // 三态处理:未就绪 ≠ 余额为 0;报价未就绪(policies 没回来)时不放行,免得按 0 元判够。
+  // BigInt 比较禁浮点:按量门槛 = 1 小时费用(同后端 require_balance_at_least),包周期 = 应付全额;
+  // 报价未就绪必须不放行,否则会按 0 元判够。
   const needAmount = period ? quote?.amount : hourlyTotal;
   const balanceReady = wallet != null && (!period || quote != null);
   const enough =
@@ -344,10 +335,8 @@ function CreatePage() {
     return null;
   };
 
-  /**
-   * 服务形态的提交前置条件。返回一句可读的原因(挂在禁用按钮的 tooltip 上),
-   * 不返回文案 key —— i18next-cli 的 extract 看不见动态键,会把它们当未引用删掉。
-   */
+  /** 服务形态的提交前置条件,返回一句可读原因(挂在禁用按钮的 tooltip 上)。
+   *  必须返回文案而非 key:i18next-cli extract 看不见动态键,会把它们当未引用删掉。 */
   const serviceIssue = ((): string | null => {
     if (!isService) return null;
     if (!imageRef) return t("create.serviceNeedsImage");
@@ -359,7 +348,7 @@ function CreatePage() {
     }
     const bad = envRows.map(envError).find((e) => e != null);
     if (bad != null) return bad;
-    // 开了 SSH 却一把公钥都不选 = 建出一台谁也登不上去的实例(后端同款校验)
+    // 开了 SSH 必须至少选一把公钥(后端同款校验)
     if (withSsh && keyIds.length === 0) return t("create.serviceNeedsKey");
     return null;
   })();
@@ -368,8 +357,7 @@ function CreatePage() {
 
   const doCreate = async () => {
     setSubmitting(true);
-    // 幂等键由本次提交的参数派生,失败时不轮换:响应丢失后重提不会开出第二台;
-    // 参数变了键随之变,不会被上一次的结果遮住
+    // 幂等键由参数派生且失败不轮换:响应丢失后重提不会开出第二台,改了参数才是新单
     const idempotencyKey = idemKeyOf("inst", [
       formNonce,
       sku.id,
@@ -384,7 +372,7 @@ function CreatePage() {
       existingDiskId ?? null,
       diskMode === "new" ? newDiskName.trim() : null,
       diskMode === "new" ? newDiskGb : null,
-      // 服务参数也进快照:改了端口/环境变量再提交必须是一张新单,不能被上一次的结果遮住
+      // 服务参数也进快照:改了端口/环境变量再提交是一张新单
       isService ? "service" : "dev",
       isService ? servicePort : null,
       isService ? commandList.join(" ") : null,
@@ -419,19 +407,17 @@ function CreatePage() {
             sku_id: sku.id,
             gpu_count: gpus,
             image_ref: imageRef ?? "",
-            // 服务实例取消勾选 SSH 后不该还带着公钥:不开 sshd 的容器注入 authorized_keys 没意义
+            // 服务实例取消勾选 SSH 后不带公钥(不开 sshd 的容器注入 authorized_keys 无意义)
             ssh_key_ids: isService && !withSsh ? [] : keyIds,
             name: name || null,
             data_disk_id: diskId,
-            // 按量单里一个周期字段都不能出现:后端按 model_fields_set 判「显式传了」,
-            // 传了就是 422(与服务字段同款契约)。竞价只翻 market,不带周期字段。
+            // 按量单里一个周期字段都不能出现:后端按 model_fields_set 判「显式传了」,传了就 422
             ...(period
               ? { market: "subscription" as const, period, period_count: periodCount }
               : isSpot
                 ? { market: "spot" as const }
                 : {}),
-            // dev 形态一个服务字段都不能出现:后端按 model_fields_set 判「显式传了」,
-            // 传了就是 422(静默忽略会让用户以为启动命令生效了,而实例跑的是镜像原样)
+            // dev 形态一个服务字段都不能出现:后端按 model_fields_set 判「显式传了」,传了就是 422
             ...(isService
               ? {
                   workload_type: "service" as const,
@@ -449,8 +435,7 @@ function CreatePage() {
           idempotencyKey,
         });
       } catch (err) {
-        // 刻意不换键:失败可能只是响应丢了而实例已经建好,换键会让重试开出第二台机器
-        // silentError 模式下这里统一出提示:库存不足给换档引导,其余给错误原文
+        // silentError 模式下提示统一在这里出:库存不足给换档引导,其余给错误原文
         if (isApiError(err) && err.code === "NO_CAPACITY") {
           message.warning(t("copy.noCapacityGuide"), 6);
         } else {
@@ -474,8 +459,7 @@ function CreatePage() {
     void doCreate();
   };
 
-  // 两道知情同意串起来:竞价(可被回收)在前、经济档(性能可能波动)在后 ——
-  // 同一台机器可能两条都占,合成一个 modal 会让用户分不清自己到底同意了几件事
+  // 两道知情同意串起来:竞价(可被回收)在前、经济档(性能可能波动)在后;同一台机器可能两条都占
   const submit = () => {
     if (isSpot) {
       setSpotOpen(true);
@@ -490,17 +474,15 @@ function CreatePage() {
 
   const columns = skuColumns({ fmt, t, cpu: isCpu });
 
-  // 包周期点下去就一次性扣走全额,按钮不能还写「创建并开机」
   const submitLabel = period
     ? t("create.payAndCreate")
     : isService
       ? t("create.deployService")
       : t("create.createAndStart");
 
-  // 开发机形态是一整张卡;服务形态挂在「同时开放 SSH」勾选项下面 —— 同一块 UI,别写两遍
+  // 开发机形态是一整张卡;服务形态挂在「同时开放 SSH」勾选项下面,共用同一块 UI
   const sshKeyPicker = keysQ.isError ? (
-    // SSH key 查询失败绝不伪装成「你还没有密钥」(老客户会看到添加表单,
-    // 提交又被 sshKeyDuplicate 拒绝——购买路径硬停)
+    // SSH key 查询失败绝不伪装成「你还没有密钥」(购买路径硬停)
     <DataErrorAlert onRetry={() => void keysQ.refetch()} />
   ) : (keys ?? []).length === 0 ? (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -561,8 +543,7 @@ function CreatePage() {
         <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
       )}
       {isSpot && <Alert type="warning" showIcon title={t("copy.spotReclaimNotice")} />}
-      {/* 服务形态选竞价只警示不禁止:平台不替用户决定「这个服务能不能中断」,
-          但被回收时那条对外地址会断,这一句必须在下单前出现 */}
+      {/* 服务形态选竞价只警示不禁止,但被回收会断掉对外地址,这一句必须在下单前出现 */}
       {isSpot && isService && (
         <Alert type="warning" showIcon title={t("copy.spotNotForService")} />
       )}
@@ -829,7 +810,7 @@ function CreatePage() {
                         placeholder={t("create.cascadePlaceholder")}
                       />
                       <Typography.Text type="secondary">
-                        {/* CPU 规格落无卡机,平台镜像不在那儿预热(全是 CUDA 镜像,铺过去是死重量)——别对它承诺秒级启动 */}
+                        {/* CPU 规格落无卡机,平台镜像不在那儿预热,不能对它承诺秒级启动 */}
                         {isCpu ? t("create.prewarmedNotForCpu") : t("create.prewarmed")}
                       </Typography.Text>
                     </>

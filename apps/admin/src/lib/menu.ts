@@ -1,8 +1,5 @@
-/**
- * 侧栏菜单可见性(与后端 require_roles 逐端点对齐)。
- * 无权角色不显示入口;直接输 URL 由后端 403 兜底。
- * key 类型收窄到 MenuKey:_app.tsx 的 MENU 新增条目而此表漏登记时,编译期即报错。
- */
+/** 侧栏菜单可见性(与后端 require_roles 逐端点对齐):无权角色不显示入口,直接输 URL 由后端 403 兜底。
+ *  key 收窄到 MenuKey,_app.tsx 的 MENU 新增条目而此表漏登记时编译期即报错。 */
 
 export const ALL_ROLES = ["admin", "ops", "finance", "readonly"] as const;
 

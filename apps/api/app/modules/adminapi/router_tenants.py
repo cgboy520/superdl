@@ -1,4 +1,4 @@
-"""管理端路由(租户管理/配额覆盖/账号注销,自 router.py 拆分)。"""
+"""管理端路由(租户管理/配额覆盖/账号注销)。"""
 
 from typing import Literal
 
@@ -55,12 +55,11 @@ async def admin_list_tenants(
 ) -> Page[TenantOut]:
     """租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
 
-    订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行插在首页最前,
-    手机号后缀命中行保持原序随后。手机号只回掩码。按号码/id 检索是敏感读,显式落一条审计
-    (中间件默认只审计写操作)。
+    id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
+    按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
 
     实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
-    本次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
+    该次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
     """
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
@@ -114,7 +113,7 @@ async def admin_list_tenants(
             )
         )
     if realname_hits:
-        # 明文实名的敏感读留痕:target 只落条数不落内容(内容即 PII,审计里不再复制一份)
+        # 明文实名的敏感读留痕:target 只落条数不落内容(内容即 PII,审计里不复制一份)
         mark_audited_read(request, "tenant-realname:list", detail={"rows": realname_hits})
     return Page[TenantOut](items=out, next_cursor=page.next_cursor)
 

@@ -87,8 +87,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
       onError: (e) => message.error(errText(e, t("login.failed"))),
     },
   });
-  // 进入绑定步即取密钥(服务端复用进行中密钥,StrictMode 重入/页面刷新二维码不变);
-  // TanStack mutate 引用稳定,可直接入依赖
+  // 进入绑定步即取密钥,服务端复用进行中密钥,StrictMode 重入/刷新二维码不变
   const { mutate: beginSetup } = begin;
   useEffect(() => {
     beginSetup({ ticket });
@@ -170,8 +169,7 @@ function LoginPage() {
   const [challenge, setChallenge] = useState<{ status: "mfa_setup" | "mfa_required"; ticket: string } | null>(null);
   const login = useAdminLogin({
     mutation: {
-      // 安全策略开启两步验证时只回挑战票(正式 token 由 setup/confirm 或 login/mfa 签发);
-      // 关闭时直接拿到 token(status=ok)
+      // 开启两步验证时只回挑战票(正式 token 由 setup/confirm 或 login/mfa 签发),关闭时直接拿到 token
       onSuccess: (data) => {
         if (data.status === "ok") finishLogin(data.access_token, data.admin);
         else setChallenge({ status: data.status, ticket: data.ticket });

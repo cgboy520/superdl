@@ -14,8 +14,8 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false   # 只连 PG,不访问 K8s API
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据按指纹覆写
-      # (docs/reference/images.md);项目 public 时 Secret 缺失只是 kubelet 告警,不影响拉取
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
+      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
       imagePullSecrets:
         - {name: superdl-registry-pull}
       securityContext:

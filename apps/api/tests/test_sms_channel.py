@@ -124,7 +124,7 @@ class TestLogRedaction:
 
 
 class TestPlatformQuota:
-    """平台级配额(P1-17):单点限流防不住的分布式滥用,由全局预算池闸门兜底。"""
+    """平台级配额:单点限流防不住的分布式滥用,由全局预算池闸门兜底。"""
 
     async def test_sms_code_blocked_by_platform_quota(self, client: AsyncClient, sm, monkeypatch):
         """配额耗尽时验证码接口 429 RATE_LIMITED,且不落库无效验证码。"""

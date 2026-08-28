@@ -102,7 +102,7 @@ export function useApiMutation<TVars, TData>(
   });
 }
 
-// ---------- auth ----------
+// auth
 export const useSendSmsCode = (o?: { onSuccess?: () => void; silentError?: boolean }) =>
   useApiMutation((body: SmsCodeRequest) => sendSmsCodeApiV1AuthSmsCodePost(body), { ...o, invalidates: [] });
 export const useRegister = (o?: CallerOpts) =>
@@ -113,10 +113,8 @@ export const useLogin = (o?: CallerOpts) =>
 export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), { ...o, invalidates: [] });
 
-/**
- * 登出:current = 撤销本设备 refresh token(一次性消费位);all = 服务端撤销该账号全部会话
- * (token_version+1)。之后清本地并整页刷新;后端对无效 token 也回 204,请求失败不阻断本地登出。
- */
+/** 登出:current = 撤销本设备 refresh token;all = 服务端撤销该账号全部会话(token_version+1)。
+ *  之后清本地并整页刷新;请求失败不阻断本地登出。 */
 export function useLogout() {
   return useCallback(async (scope: "current" | "all" = "current") => {
     try {
@@ -127,7 +125,7 @@ export function useLogout() {
         if (rt) await logoutApiV1AuthLogoutPost({ refresh_token: rt });
       }
     } catch {
-      // 登出是尽力而为:本地清理不依赖远端结果
+      // 登出尽力而为,本地清理不依赖远端结果
     }
     authStore.getState().logout();
     // 整页刷新:清干净全部内存态(查询缓存由 main.tsx 的 token 变更订阅兜底清理)
@@ -135,7 +133,7 @@ export function useLogout() {
   }, []);
 }
 
-// ---------- instances ----------
+// instances
 // 实例写操作影响:实例域(列表/详情/事件/账单)与钱包余额(启停即结算)
 const INSTANCE_INVALIDATES = ["instances", "wallet", "bills", "bill-daily-summary"] as const;
 export const useCreateInstance = (o?: { onSuccess?: (d: unknown) => void; silentError?: boolean }) =>
@@ -167,21 +165,16 @@ export const useRenameInstance = () =>
       renameInstanceApiV1InstancesUuidPatch(uuid, { name }),
     { invalidates: ["instances"] },
   );
-/**
- * 包周期续费:必须带幂等键(响应丢失后重提不会扣两次钱,重放回 200 + X-Idempotent-Replay)。
- * 键由续费 modal 每次打开生成一个 uuid —— 同一次打开内改周期/数量不换键(那是同一张单的改价),
- * 关掉重开才是新单。
- */
+/** 包周期续费必须带幂等键(响应丢失后重提不会扣两次钱,重放回 200 + X-Idempotent-Replay)。
+ *  键由续费 modal 每次打开生成一个 uuid:同一次打开内改周期/数量不换键,关掉重开才是新单。 */
 export const useRenewInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
       renewInstanceApiV1InstancesUuidRenewPost(uuid, body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/**
- * 按量转包周期:与续费同一个入参/响应形态,区别只在起点(这里从现在起算)。
- * 后端会先结清转换前那段按量账再翻 market,所以失效面要连账单一起 —— 那笔尾账立刻出现在账单页。
- */
+/** 按量转包周期:与续费同一入参/响应形态,区别只在起点从现在起算。
+ *  后端会先结清转换前那段按量账再翻 market,失效面必须连账单一起。 */
 export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: InstanceRenew; idempotencyKey: string }) =>
@@ -190,12 +183,8 @@ export const useSubscribeInstance = (uuid: string, o?: CallerOpts<RenewOut>) =>
       }),
     { ...o, invalidates: [...INSTANCE_INVALIDATES] },
   );
-/**
- * 竞价转按量(免被回收):不动 Pod、不重调度,只翻 market 与单价。
- * **不带幂等键** —— 后端对已经是按量的实例原样返回 200,重放天然安全,
- * 多一把键反而要解释「同一台机器为什么会有两张单」。
- * 转换会把当前整点小时整体改按按量价重算,那笔账立刻变,失效面要连账单一起。
- */
+/** 竞价转按量(免被回收):不动 Pod、不重调度,只翻 market 与单价。不带幂等键(后端重放天然安全)。
+ *  转换会把当前整点小时整体改按按量价重算,失效面必须连账单一起。 */
 export const useConvertToOnDemand = (uuid: string, o?: CallerOpts<InstanceOut>) =>
   useApiMutation(
     (_v: void) => convertToOnDemandApiV1InstancesUuidToOnDemandPost(uuid),
@@ -212,10 +201,8 @@ export const useResetJupyterToken = () =>
     invalidates: ["instances"],
   });
 
-/**
- * 新建服务访问 Key:响应里的明文 key 是它这辈子唯一一次露面(库里只有 HMAC 摘要),
- * 调用方必须把它交给一次性展示的成功态,不能顺手丢进缓存或日志。
- */
+/** 新建服务访问 Key:响应里的明文 key 只露面这一次(库里只有 HMAC 摘要),
+ *  调用方必须把它交给一次性展示的成功态,禁止入缓存或日志。 */
 export const useCreateApiKey = (uuid: string, o?: CallerOpts<ApiKeyCreateOut>) =>
   useApiMutation((name: string) => createApiKeyApiV1InstancesUuidApiKeysPost(uuid, { name }), {
     ...o,
@@ -228,7 +215,7 @@ export const useRevokeApiKey = (uuid: string, o?: CallerOpts) =>
     invalidates: ["instances"],
   });
 
-// ---------- wallet / billing ----------
+// wallet / billing
 export const useCreateRecharge = (o?: { onSuccess?: (d: unknown) => void }) =>
   useApiMutation(
     ({ body, idempotencyKey }: { body: RechargeCreate; idempotencyKey: string }) =>
@@ -266,21 +253,20 @@ export const useSetWarnThreshold = (o?: { onSuccess?: () => void }) =>
     { ...o, invalidates: ["me"] },
   );
 
-// ---------- 账号注销 ----------
+// 账号注销
 /** 申请注销:服务端按 (user_id, pending) 幂等,重复提交返回既有申请。 */
 export const useCreateDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
     (body: DeletionRequestCreate) => createDeletionRequestApiV1MeDeletionRequestPost(body),
     { ...o, invalidates: ["deletion-request"] },
   );
-/** 冷静期内撤销注销申请。 */
 export const useCancelDeletionRequest = (o?: { onSuccess?: () => void }) =>
   useApiMutation((_v: void) => cancelDeletionRequestApiV1MeDeletionRequestCancelPost(), {
     ...o,
     invalidates: ["deletion-request"],
   });
 
-// ---------- disks ----------
+// disks
 /** 建盘同样要幂等键:响应丢失后重提不会多出一块按日计费的盘。 */
 export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation(
@@ -299,7 +285,7 @@ export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
     invalidates: ["disks", "wallet", "instances"],
   });
 
-// ---------- ssh keys / notify ----------
+// ssh keys / notify
 export const useAddSshKey = (o?: { onSuccess?: (key: SshKeyOut) => void }) =>
   useApiMutation(
     (body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body),
@@ -318,7 +304,7 @@ export const useMarkAllNotificationsRead = () =>
     invalidates: ["notifications"],
   });
 
-// ---------- tickets ----------
+// tickets
 /** 新建工单:必须带幂等键(按表单快照派生,重放返回既有单)。 */
 export const useCreateTicket = (o?: { onSuccess?: (d: TicketOut) => void }) =>
   useApiMutation(

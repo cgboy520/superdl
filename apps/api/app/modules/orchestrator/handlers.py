@@ -34,7 +34,7 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
     """建 Pod/Service/路由;NodePort 被集群其它对象占用时把端口标 blocked 后重试。"""
     orch = get_orchestrator()
     # 不开 SSH 的实例不进端口池:端口池只有 30000–32767 一段(与 K8s NodePort 同段),
-    # 是全平台硬上限。给每台对外服务白占一个名额,会让这段在实例数远未到配额时就先耗尽
+    # 是全平台硬上限
     if instance.with_ssh:
         instance.ssh_port = await ensure_port(session, instance)
     await orch.ensure_namespace(instance.k8s_namespace)
@@ -164,10 +164,8 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
 async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) -> None:
     """实例盘延迟回收(first_boot 失败的 FAILED 实例 / 释放收尾的 RELEASED 实例入队)。
 
-    delete_instance_disk 的前置条件是 Pod 已消失(pvc-protection 会挂起 LV 回收);
-    Pod 还在就抛错退避重试。死信后由 reconciler 的死信重派兜底。
-    RELEASED 由 reconciler 释放分支统一入队(P1-9):事务内只做状态迁移,盘删除走
-    at-least-once,失败可重派,不会残留孤儿 LV。"""
+    delete_instance_disk 的前置条件是 Pod 已消失(pvc-protection 会挂起 LV 回收),Pod 还在
+    就抛错退避重试;死信后由 reconciler 的死信重派兜底,不会残留孤儿 LV。"""
     instance = await _load(session, task)
     if instance is None or instance.status not in (sm_def.FAILED, sm_def.RELEASED):
         return  # 已被恢复等路径推进,无需再清

@@ -5,7 +5,7 @@
 环境闸:仅 dev/test 可跑——本脚本直调 ensure_bootstrap_admin,绕过生产配置校验,
 误指向生产库会创建弱/随机口令 admin,非 dev/test 一律拒绝执行
 (prod 的首个管理员用 scripts/bootstrap_admin.py)。
-管理员口令:默认 secrets 随机生成且仅本次打印;CI/演示需固定口令时显式设
+管理员口令:默认 secrets 随机生成且只打印一次;CI/演示需固定口令时显式设
 SUPERDL_SEED_ADMIN_PASSWORD(CI 一次性隔离环境,弱口令可接受)。
 """
 
@@ -115,10 +115,9 @@ SKUS = [
 ]
 
 IMAGES = [
-    # 平台默认镜像目录:选版规则与构建命令见 deploy/instance-images/README.md
-    # (框架取「最新稳定版 + 最后一个支持 CUDA 11.8 的稳定版」;CUDA 三条线 13.2 / 12.9 / 11.8;
-    #  Python 取该框架支持的最高版本)。dev 用 Fake 编排不真拉取,host 是占位符,所以这里只写 tag;
-    #  生产目录的 image_ref 必须钉 digest(<repo>:<tag>@sha256:...),别照抄这张表去建生产条目。
+    # 平台默认镜像目录:选版规则与构建命令见 deploy/instance-images/README.md。
+    # dev 用 Fake 编排不真拉取,host 是占位符,这里只写 tag;生产目录的 image_ref 必须钉
+    # digest(<repo>:<tag>@sha256:...),别照抄这张表去建生产条目。
     # (framework, framework_version, python, cuda, image_ref, sort)
     (
         "PyTorch",

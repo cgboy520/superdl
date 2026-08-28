@@ -147,30 +147,18 @@ async def assert_can_afford(
 ) -> None:
     """燃烧率感知的开户前校验:余额须覆盖「在途 + 新增」资源的一个预留期消耗。
 
-    函数契约(调用方必须满足,否则护栏失效):
+    调用契约(不满足护栏即失效):必须在调用方事务内调用,且调用方须在同一事务内完成
+    资源创建/开机并 commit —— 本函数先 FOR UPDATE 锁钱包行再统计在途,锁持有到提交,
+    并发开户请求因此串行。
 
-    - 必须在调用方事务内调用,且调用方须在**同一事务**内完成资源创建/开机并 commit。
-      本函数先 FOR UPDATE 锁钱包行再统计在途燃烧率,锁持有到事务提交:
-      并发开户请求因此串行,后到的请求统计时能看到先到请求新建的资源,被在途项挡住。
-    - `additional_hourly`:本次新增实例的小时费(单价 × 卡数,2 位小数)。
-      开新机/开机传该机费用;实例启动前不算「在途」,必须由调用方显式传入。
-    - `additional_daily_disk`:本次新增数据盘的日均费(disk_daily_charge 均摊口径)。
-    - 预留期:实例 afford_cover_hours 小时(默认 1),数据盘 disk_grace_days 天
-      (暴露上限即「日费 × 宽限天数」)。均为 policies 在线可调。
+    - `additional_hourly`:本次新增实例的小时费(单价 × 卡数,2 位小数);实例启动前不算
+      「在途」,必须由调用方显式传入。`additional_daily_disk`:新增数据盘的日均费。
     - 校验口径:余额 ≥ (在途实例时费 + additional_hourly) × afford_cover_hours
-      + (在途盘日费 + additional_daily_disk) × disk_grace_days。
-      「在途」= running 实例 + active 数据盘(grace 宽限盘已停计费,不计入)。
+      + (在途盘日费 + additional_daily_disk) × disk_grace_days;「在途」= running 实例
+      + active 数据盘(grace 宽限盘已停计费,不计入)。两个预留期均为 policies 在线可调。
     - 不足抛 INSUFFICIENT_BALANCE(billing.insufficientForInFlight),params 含
-      balance / required / inflight(在途部分的预留额),文案写明在途消耗原因。
+      balance / required / inflight。
     - 只校验不扣款:这是护栏不是精确预占,实际消耗由结算扣款(允许透支)兜底。
-
-    替代已退役的 require_balance_at_least(只查余额 ≥ 单笔预估,不看在途,
-    串行开户可绕过);本函数把在途燃烧率计入门槛。
-
-    性能注记:在途统计走 orchestrator 现有的全量只读接口(全表 running 实例 +
-    计费态盘,Python 侧按 user_id 过滤),单次调用两次全表扫;开户/开机都是
-    低频写路径,可接受。若将来成为热点,由 orchestrator 侧加按用户过滤的只读
-    接口再换实现,本函数契约不变。
     """
     # 延迟 import 防循环:orchestrator.service → billing.service → wallet
     from app.modules.orchestrator import service as orchestrator_service
@@ -180,8 +168,7 @@ async def assert_can_afford(
 
     running = (await orchestrator_service.list_running_instances_by_user(session)).get(user_id, [])
     inflight_hourly = sum(
-        # 包周期实例不进燃烧率:它已经付过整段周期的钱,再算作「在途消耗」会让
-        # 一个把余额全买成包月的用户**开不出任何新机**(护栏把他自己已付的钱又扣了一遍)
+        # 包周期实例不进燃烧率:它已付过整段周期的钱,再算作在途会让包月用户开不出新机
         (
             hourly_cost(i.price_hourly, i.gpu_count)
             for i in running
@@ -391,9 +378,8 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
     归属会把 23 点的消费错记到次日;按归属期才与用户账单页、日终核对同口径。
 
     **包周期预付另按收款当日切窗**(subscriptions.created_at):它不产生任何账单行,
-    归属期就是收款那一刻,没有延迟入账的问题。`*_revenue` 是两者之和 —— 少加这一段,
-    包周期上线后运营看到的「今日收入」会把全部预付漏掉;再单独给一个 `*_prepaid`,
-    是因为一笔包年会在当天造成一个尖峰,看环比时必须能把它拆出来。
+    归属期就是收款那一刻,没有延迟入账的问题。`*_revenue` 是两者之和;`*_prepaid` 单列,
+    以便看环比时拆走预付尖峰(一笔包年集中在收款当日)。
     """
     offset = timedelta(minutes=tz_offset_minutes)
     local_now = now_utc() + offset

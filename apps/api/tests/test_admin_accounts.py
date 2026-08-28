@@ -219,7 +219,7 @@ class TestAdminAccounts:
     async def test_require_roles_no_arg_has_own_message(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        """require_roles() 无参(仅超管)的拒绝文案单独成键,不再是半截话「需要角色:」。"""
+        """require_roles() 无参(仅超管)的拒绝文案单独成键,不拼成半截话「需要角色:」。"""
         h_ops = await admin_headers(sm, client, role="ops")
         resp = await client.get("/api/admin/v1/admins", headers=h_ops)
         assert resp.status_code == 403

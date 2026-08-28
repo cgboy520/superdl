@@ -103,9 +103,9 @@ class Settings(BaseSettings):
     max_disks_per_user: int = 20  # 数据盘数量上限
     # 单个 GPU 节点让给 CPU 实例的 vCPU 上限(近似库存口径);0 = 不许 CPU 实例落 GPU 节点
     gpu_node_cpu_instance_vcpu_cap: int = 16
-    # 对外服务端点的边缘限流(每端点每秒请求数)。生效在网关的本地令牌桶里,
-    # 改这个值要重新下发 deploy/app/k8s/04-gateway.yaml 的 BackendTrafficPolicy 才生效 ——
-    # 平台侧改配置中心不会自动同步到网关(与其它策略键不同,这一项是「渲染进清单」的)
+    # 对外服务端点的边缘限流(每端点每秒请求数),生效在网关的本地令牌桶里。改它必须同时
+    # 重新下发 deploy/app/k8s/04-gateway.yaml 的 BackendTrafficPolicy —— 这一项是「渲染进
+    # 清单」的,改配置中心不会同步到网关
     service_endpoint_rps: int = 20
 
     # 包周期折扣(百分数,80 = 8 折);周期越长折扣越深是定价意图,不由代码强制
@@ -165,12 +165,12 @@ class Settings(BaseSettings):
     # 每次 K8s 请求的超时(连接, 读);官方客户端无全局超时,须显式设置
     k8s_connect_timeout_seconds: float = 5.0
     k8s_read_timeout_seconds: float = 30.0
-    # SSH 入口不单独配域名:SSH 协议没有主机名,实例只靠 NodePort 区分,连接串直接用实例自己的域名
-    # (与 Jupyter 同名,见 orchestrator/service.jupyter_host);部署约束:泛域名解析到的地址必须
-    # 同时能转发 ssh_port_range 端口段(单节点即节点本身;多节点为转发该端口段的 LB/VIP)
     # 管理端域名(admin SPA 经该域 nginx 同源反代 /api/admin/);prod 下 /api/admin/*
     # 仅放行 Host 命中本项的请求(公网 api 域不暴露管理端 API)
     admin_host: str = "admin.superdl.example.com"
+    # SSH 入口不单独配域名:实例只靠 NodePort 区分,连接串直接用实例自己的域名(与 Jupyter
+    # 同名,见 orchestrator/service.jupyter_host)。部署约束:泛域名解析到的地址必须同时能
+    # 转发本端口段(单节点即节点本身;多节点为转发该端口段的 LB/VIP)
     ssh_port_range_start: int = 30000
     ssh_port_range_end: int = 32767
     # 已知被集群其它对象占用的 NodePort(端口池与 NodePort 同段),分配器跳过;
@@ -182,16 +182,14 @@ class Settings(BaseSettings):
     # 用前缀把实例域名从共用域里区分出来(如 superdl-)。DNS 通配仍按整段标签匹配(*.<域>)
     jupyter_host_prefix: str = ""
     # Jupyter 入场 URL 与 JUPYTER_ALLOW_ORIGIN 里的端口;443 = URL 不带端口(默认形态)。
-    # 需要改它的只有一种部署:两个 listener 复用同一张**一级**通配证书时,hostname 分不开 ——
-    # Gateway API 的 listener hostname 只允许整标签通配(CRD 正则 `^(\*\.)?…`),写不出
-    # `svc-*.<域>` 这种半标签通配;而两个 listener 必须分得开,因为**只有服务端点那个挂
-    # extAuth**。此时只能靠端口把两类入口分开,占非 443 的那一个要把端口带进 URL。
+    # 只有一种部署要改它:两个 listener 复用同一张一级通配证书时 hostname 分不开
+    # (Gateway API 只允许整标签通配),而两者必须分得开——只有服务端点那个挂 extAuth,
+    # 此时靠端口分流,占非 443 的那一个要把端口带进 URL。
     # 只影响 URL/origin:HTTPRoute 的 hostname 与 SSH 连接串仍是不带端口的主机名。
     jupyter_url_port: int = 443
     # 服务型实例的对外端点后缀:端点主机名 = <slug>.<service_domain_suffix>。
-    # 与 jupyter_domain_suffix 分成两个后缀是刻意的:Gateway 上是两个独立 listener,
-    # 只有服务这个 listener 挂 extAuth 鉴权策略,Jupyter 那个不挂 —— 同后缀就没法
-    # 用 hostname 把两类流量分到不同 listener,只能退化成逐路由挂策略(对象数 O(端点数))
+    # 与 jupyter_domain_suffix 分成两个后缀:两类入口是 Gateway 上两个独立 listener,
+    # 只有服务这个挂 extAuth 鉴权策略(见 core/k8s/base.GATEWAY_SVC_LISTENER)
     service_domain_suffix: str = "svc.superdl.example.com"
 
     # 告警接入

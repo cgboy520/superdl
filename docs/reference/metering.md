@@ -20,9 +20,9 @@ Prometheus 代理查询、`usage_hourly` 聚合、事件计费与指标估算对
 - 指标只做展示与对账,不参与计费;Prometheus 停机时计费不受影响,指标接口优雅降级。
 - 租户只能查自己实例的指标:namespace 由服务端注入,禁止接受任意 PromQL。
 - 批量端点路径必须避开 `/instances/*` 前缀,否则会被 `{uuid}` 路由吞掉。
-- `usage_hourly` 聚合幂等(UNIQUE + ON CONFLICT);单实例查询失败只跳过该实例该小时(continue),不丢整轮;缺口实例记 `usage_aggregation_partial` 日志,不自动回填。对账 diff >2% 的实例进入差异清单。
+- `usage_hourly` 聚合幂等(UNIQUE + ON CONFLICT);单实例查询失败只跳过该实例该小时,不丢整轮;缺口实例记 `usage_aggregation_partial` 日志,不自动回填。对账 diff >2% 的实例进入差异清单。
 - Prometheus 响应形态异常(缺 `data.result`、序列缺 `values` 等)统一归 `PrometheusUnavailable`:详情端点 503,批量/节点端点 `available=false`,绝不击穿成 500。
 - 指标源按实例 spec 的 `pool_label` 选:hami 池用 HAMi vGPUmonitor per-container 指标,查空回落 DCGM;kata / mig 池恒用 DCGM。HAMi 共享卡上 DCGM 的 `{pod=}` 归属不可靠,不得用于 hami 池;判据是池不是档位——mig 池同属「共享」档但走 DCGM。
-- `prom.py` 含 `NODE_QUERIES`(DCGM `hostname` 维度 per-GPU 多序列,dcgm-exporter 4.x 小写标签,常量 `DCGM_NODE_LABEL`)与 `HAMI_QUERIES`,`query_range_multi` 返回多序列;标签常量集中在该文件头部。
+- 标签常量集中在 `prom.py` 文件头部:`DCGM_NODE_LABEL` 是 dcgm-exporter 4.x 的小写 `hostname`(3.x 为 `Hostname`)。`NODE_QUERIES` 走该维度出 per-GPU 多序列,与 `HAMI_QUERIES` 同经 `query_range_multi` 返回多序列。
 - `prometheus_url` 在 prod 下 fail-fast(含 localhost 拒启)。
 - 节点级指标端点见 [observability.md](./observability.md)。

@@ -74,8 +74,8 @@ class TestDiskCrud:
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
     async def test_expand_requires_balance(self, client, sm, fake):
-        """扩容与创建同一条燃烧率护栏:余额不足时不得把日费敞口免费放大(欠费用户
-        此前可把盘扩到 disk_max_gb,日结照扣,形成事实透支)。"""
+        """扩容与创建同一条燃烧率护栏:余额不足时不得把日费敞口免费放大
+        (否则欠费用户可把盘扩到 disk_max_gb,日结照扣,形成事实透支)。"""
         headers, user_id, _key = await create_user_with_key(client, "13500000003")
         await fund_wallet(sm, user_id)  # 100.00
         disk = await create_disk(client, headers, size_gb=100)
@@ -137,7 +137,7 @@ class TestMountLifecycle:
         assert resp.status_code == 202, resp.text
 
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
-        """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不再挂到擦除中的旧 subPath。"""
+        """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不挂到擦除中的旧 subPath。"""
         from tests.test_orchestrator_lifecycle import get_instance
 
         headers, user_id, key_id = await create_user_with_key(client, "13500000011")

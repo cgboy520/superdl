@@ -45,9 +45,9 @@ def get_engine() -> AsyncEngine:
             settings.database_url,
             pool_size=settings.db_pool_size,
             pool_pre_ping=True,
-            # 卡住的 SELECT FOR UPDATE 不能无限期等待:池耗尽 → readiness 超 1s →
-            # 双副本同时 NotReady → 全站 503(DB 其实活着)。三个 timeout 兜底;
-            # 迁移 Job 有自己的更严 PGOPTIONS(lock_timeout=3s),不受此影响
+            # 三个 timeout 必须都有:卡住的 SELECT FOR UPDATE 会耗尽连接池 → 双副本
+            # readiness 同时超时 → 全站 503(DB 其实活着)。
+            # 迁移 Job 另有更严的 PGOPTIONS(lock_timeout=3s),不受此影响
             connect_args={
                 "server_settings": {
                     "statement_timeout": "30000",
@@ -103,8 +103,8 @@ def code_schema_head() -> str:
 def schema_state(db_revisions: list[str]) -> str:
     """比对 DB alembic_version 与代码 head,返回 readyz 判定。
 
-    - ready:一致;或 DB 领先/含代码外的更新版本(发布滚动窗口:迁移 Job 已跑、
-      老代码 Pod 尚未轮换。迁移约定 expand-only,新 schema 对老代码向后兼容,放行);
+    - ready:一致;或 DB 领先/含代码外的更新版本(滚动发布窗口;迁移约定 expand-only,
+      新 schema 对老代码向后兼容,放行);
     - 其余 503:never_migrated(库从未迁移)/ multi_head(仓库事故)/
       schema_mismatch(DB 落后=迁移漏跑,或历史分叉)——新代码不得带病接流量。
     """

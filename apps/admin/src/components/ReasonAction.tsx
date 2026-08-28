@@ -1,7 +1,4 @@
-/**
- * 高危操作统一模式:原因必填 → 二次确认 → 执行 → message 反馈。
- * readonly 等无权角色:按钮可见但禁用 + tooltip 说明。
- */
+/** 高危操作统一模式:原因必填 → 二次确认 → 执行 → message 反馈;无权角色按钮可见但禁用 + tooltip。 */
 
 import { App, Button, Form, Input, Modal, Tooltip } from "antd";
 import { useState } from "react";

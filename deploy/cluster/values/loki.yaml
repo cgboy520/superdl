@@ -1,6 +1,6 @@
 # Loki 日志聚合:Monolithic 单副本,chunks/index 走 filesystem 存 JuiceFS 共享卷。
-# chart 版本钉在 ../helmfile.yaml.gotmpl(grafana-community/loki;2026-03-16 起 OSS chart
-# 迁出 grafana/loki,后者转 GEL 专用 —— OSS 用户唯一受维护来源即社区仓)。
+# chart 版本钉在 ../helmfile.yaml.gotmpl;仓库必须是 grafana-community/loki
+# (grafana/loki 为 GEL 专用,不是 OSS 来源)。
 deploymentMode: Monolithic
 loki:
   auth_enabled: false            # 集群内单租户;采集器直推 Service 3100,不经 gateway
@@ -28,17 +28,17 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: true
-    # RWX 共享卷(同 Prometheus 存储取舍):节点死后可跨节点重调度重挂;
+    # RWX 共享卷(同 Prometheus):节点死后可跨节点重调度重挂;
     # light 档无 JuiceFS,由 values/light/loki-light.yaml 回落 topolvm。
     storageClass: superdl-juicefs
     accessModes: ["ReadWriteMany"]
     size: 50Gi
-  # 资源出处:对照 kps-light.yaml 中 Prometheus 的测试档下限(100m/512Mi 起步,只限内存),
-  # 单二进制 Loki 同量级;日志量上涨后先升 memory limit,再考虑拆 SimpleScalable。
+  # 与 kps-light.yaml 的 Prometheus 同量级(100m/512Mi 起步,只限内存);
+  # 日志量上涨后先升 memory limit,再考虑拆 SimpleScalable。
   resources:
     requests: {cpu: 100m, memory: 512Mi}
     limits: {memory: 1Gi}        # 只限内存:CPU 限速拖慢摄入/查询,OOMKill 反而更可见
-minio: {enabled: false}          # 内置 MinIO 已废弃(chart v17+ 开启即渲染失败)
+minio: {enabled: false}          # 内置 MinIO 不可用(chart v17+ 开启即渲染失败)
 # 单副本砍侧车:memcached 缓存/canary/网关/自检 Pod 一律不装
 chunksCache: {enabled: false}
 resultsCache: {enabled: false}

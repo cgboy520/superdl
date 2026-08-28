@@ -7,9 +7,8 @@ metadata:
   name: superdl
   labels:
     app.kubernetes.io/part-of: superdl
-    # PSA(安全P0-1):audit 先行观察 ≥2 周再转 enforce(与 tenant-* 的 audit/warn 档对齐)。
-    # 平台 Deployment/Job 已全部 restricted 合规(runAsNonRoot + drop ALL + seccomp);
-    # 已知偏差:worker 动态建的预热/磁盘配额 Job 未显式 runAsNonRoot,转 enforce 前须先补。
+    # PSA 停在 audit/warn:平台 Deployment/Job 已 restricted 合规,但 worker 动态建的
+    # 预热/磁盘配额 Job 未显式 runAsNonRoot —— 转 enforce 前必须先补上,否则预热与配额下发全挂。
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/audit-version: latest
     pod-security.kubernetes.io/warn: restricted
@@ -29,23 +28,22 @@ data:
   SUPERDL_LOG_LEVEL: "INFO"
   # 域名按实际环境改(prod 配置校验会拒绝 example.com 占位)
   SUPERDL_PUBLIC_BASE_URL: "https://api.superdl.example.com"
-  # 实例域名 <uuid>.<后缀>:Jupyter 与 SSH 共用(SSH 只靠 NodePort 区分实例,不设单独入口域名);
-  # 泛域名解析到的地址须同时转发 80/443 与 NodePort 30000-32767
+  # 实例域名 <uuid>.<后缀>:Jupyter 与 SSH 共用(SSH 靠 NodePort 区分实例,无单独入口域名)。
+  # 泛域名解析到的地址须同时转发 80/443 与 NodePort 30000-32767。
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   # 服务型实例的对外端点域 <slug>.<后缀>(prod 配置校验同样会拒绝 example.com 占位)。
-  # 必须与 jupyter 后缀是**两个不同的后缀**:Gateway 上是两个独立 listener,
-  # 只有服务这个挂了 SecurityPolicy.extAuth 做 API Key 鉴权。写成同一个后缀,
-  # 两类流量就没法按 hostname 分流,服务端点会落到不鉴权的那个 listener 上 ——
-  # 而且照样通、返回 200,没有任何报错。泛域名解析到网关入口,只需 80/443。
+  # 必须与 jupyter 后缀不同:只有服务这个 listener 挂了 SecurityPolicy.extAuth 做 API Key 鉴权,
+  # 写成同一后缀会让服务端点落到不鉴权的 listener 上,且照样返回 200 不报错。
+  # 泛域名解析到网关入口,只需 80/443。
   SUPERDL_SERVICE_DOMAIN_SUFFIX: "svc.superdl.example.com"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
   # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求(占位域名会被拒绝启动)
   SUPERDL_ADMIN_HOST: "admin.superdl.example.com"
-  # 镜像仓库(Harbor):默认值层,推荐经 管理端·平台配置·镜像仓库 在线维护(机器人 Secret 加密落库);
+  # 镜像仓库(Harbor)默认值层,推荐经 管理端·平台配置·镜像仓库 在线维护(机器人 Secret 加密落库);
   # 镜像来源白名单同在配置中心(image_allowed_registries),Harbor 地址自动放行
   SUPERDL_REGISTRY_HOST: "harbor.superdl.example.com"
   SUPERDL_REGISTRY_PROJECT: "superdl"
-  # 人机校验(阿里云验证码 2.0):开关 captcha_enabled 可随时在 管理端·平台配置·安全策略 切换(此处只是默认值层);
+  # 人机校验(阿里云验证码 2.0)默认值层:开关 captcha_enabled 在 管理端·平台配置·安全策略 切换;
   # scene_id / prefix 是客户端初始化用的公开信息,AccessKey 对在 ../secrets.example.yaml
   SUPERDL_CAPTCHA_ENABLED: "true"
   # 实名认证开关(默认值层;资质与凭据到位后在 管理端·平台配置·安全策略 打开,再视合规要求开「充值前强制实名」)
@@ -56,5 +54,5 @@ data:
   SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
   # uvicorn 信任的前置代理来源(--proxy-headers 白名单,不在名单内则忽略 X-Forwarded-For)。
   # 默认值是 RKE2/k3s 的 Pod CIDR(请求经 Envoy Gateway 数据面 / 前端 nginx 转发,源地址是其 Pod IP)。
-  # 集群 Pod CIDR 不同按实际改;禁止写 "*",等于允许伪造源 IP。
+  # 集群 Pod CIDR 不同按实际改;禁止写 "*",那等于允许伪造源 IP。
   FORWARDED_ALLOW_IPS: "10.42.0.0/16"

@@ -64,12 +64,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
-# warning 即错误,两类点名豁免并注明:
-# - testcontainers 自身的 DeprecationWarning(第三方弃用 API,不受我们控制);
-# - PytestUnraisableExceptionWarning:teardown 期 GC 终结告警(asyncpg/psycopg/docker-py
-#   的连接对象 __del__ 兜底;GC 终结时序随机,会挂到任意在跑测试上)。我们持有的引擎与
-#   客户端已全部显式关闭(dispose_engine、docker client.close),剩余的终结对象是第三方
-#   连接内部状态,从我们的代码无法再关,故豁免。
+# warning 即错误,两类点名豁免:testcontainers 自身的 DeprecationWarning;
+# PytestUnraisableExceptionWarning(第三方连接对象 __del__ 的 GC 终结告警,时序随机会挂到任意在跑测试上;
+# 我们持有的引擎与客户端已全部显式关闭)。
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:testcontainers",
@@ -101,10 +98,8 @@ forbidden_modules = ["app.modules", "app.workers"]
 [[tool.importlinter.contracts]]
 name = "业务模块跨模块访问只经 service/schemas(认证依赖经 account.deps)"
 type = "independence"
-# independence 对列出模块两两断言「无任何(含间接)依赖」,语义即旧 forbidden 矩阵的合取,
-# 且比旧矩阵更严(旧矩阵 allow_indirect_imports 放行间接链)。
-# ignore 用通配表达「只经 service/schemas 的例外」:增删业务模块只需动 modules 清单,
-# 不会像旧矩阵那样每个模块一份 ignore、随模块增减成批腐烂。
+# independence 对列出模块两两断言「无任何(含间接)依赖」;ignore 用通配表达「只经 service/schemas 的例外」。
+# 增删业务模块只需动 modules 清单。
 modules = [
     "app.modules.account",
     "app.modules.catalog",

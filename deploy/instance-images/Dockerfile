@@ -6,7 +6,7 @@
 #      conda / ssh / jupyter 层直接复用父镜像的 layer,推送时只上传框架 wheel 那一层。
 #   ③ 第三方框架基座(如 PaddlePaddle 官方镜像)→ 平台镜像:BASE_IMAGE=<厂商镜像>,只给 JUPYTER_PACKAGES,
 #      用基座自带的 python/pip(不装 conda,也不动 PATH)。
-# BASE_IMAGE 故意不给默认值:没有「默认那一个」,漏传即构建失败(上面的 check 指令是有意跳过校验器告警)。
+# BASE_IMAGE 不给默认值,漏传即构建失败(顶部 check 指令为此跳过校验器告警)。
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
@@ -32,8 +32,8 @@ RUN if [[ -n "$MINICONDA_INSTALLER" ]]; then \
     fi
 
 # ---------- ② sshd(平台契约:仅密钥登录的 22 端口)----------
-# 只在「从外部基座起步」的两种用法里跑(①③):框架镜像的父镜像已经装好,再跑一遍只会白生一层。
-# 基座自带 sshd 时也要走一次 --only-upgrade,否则厂商基座里的 openssh 永远停在打包那天的补丁级。
+# 只在「从外部基座起步」的两种用法里跑(①③):框架镜像的父镜像已装好,再跑一遍只会白生一层。
+# 基座自带 sshd 时也要走一次 --only-upgrade,否则厂商基座里的 openssh 停在打包那天的补丁级。
 ARG JUPYTER_PACKAGES=""
 RUN if [[ -n "${MINICONDA_INSTALLER}${JUPYTER_PACKAGES}" ]]; then \
       apt-get update; \
@@ -76,7 +76,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # 平台契约:HOME 一律 /root(实例盘挂载点)。jupyter docker-stacks 系基座默认 HOME=/home/jovyan,
-# 共享池 userns 下那个目录不可写,ssh / kubectl exec 进去会刷 .bash_profile Permission denied。
+# 而共享池 userns 下那个目录不可写,ssh / kubectl exec 进去会刷 .bash_profile Permission denied。
 ENV HOME=/root
 
 # 平台文件放最后:改 entrypoint / 鉴权扩展 / Lab 默认设置只失效这几层,不触发上面的重装。

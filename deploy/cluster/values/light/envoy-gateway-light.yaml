@@ -1,18 +1,17 @@
 # Envoy Gateway 控制面的 k3s/单机覆盖(叠在 values/envoy-gateway.yaml 之上)。
 # 同样只管控制面;数据面 Envoy 的 light 档取值在 EnvoyProxy CR 侧(deploy/app/k8s/04-gateway.yaml)。
 #
-# 落点不在这里覆盖:k3s server 自己就带 node-role.superdl.io/infra=true
-# (k3s/server-config.yaml 的 node-label),平台其它组件(deploy/app/k8s/02、03)在 light 档
-# 也照这个锚点调度,gateway 单独放开反而会让它跑到 GPU 节点上去。
-# 另有一个必须记住的坑:想删上层的 nodeSelector 键,`{}` 和 `null` 在这里都不管用 ——
-# helm 只在「用户 values 对 chart 默认值」这一层把 null 当删键(values/hami.yaml 的 gpu: null
-# 是那种情形),两份用户 values 之间是纯 map 合并,null 会原样渲染进清单。
+# 落点不在这里覆盖:k3s server 自带 node-role.superdl.io/infra=true(k3s/server-config.yaml
+# 的 node-label),gateway 单独放开反而会让它跑到 GPU 节点上去。
+# ⚠ 想删上层的 nodeSelector 键,`{}` 和 `null` 在这里都不管用:helm 只在「用户 values 对
+# chart 默认值」这一层把 null 当删键(values/hami.yaml 的 gpu: null 是那种情形),
+# 两份用户 values 之间是纯 map 合并,null 会原样渲染进清单。
 deployment:
   # 单机没有第二台可落,2 副本的第二个只是长期挂着的 Pending Pod(反过来把真问题淹掉)。
   replicas: 1
   envoyGateway:
-    # 单机路由规模小,按 light 档惯例收紧。但内存跟 HTTPRoute 条数走(一实例一条),
-    # 单机实例数上不去也就压不出来——真要放量前先压一遍再定值,别照抄。
+    # 单机路由规模小,按 light 档惯例收紧。内存跟 HTTPRoute 条数走(一实例一条),
+    # 放量前先压一遍再定值,别照抄。
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {memory: 512Mi}

@@ -119,8 +119,8 @@ def cpu_spec_error(
 
 class SkuCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    # 下界放开到 0 是给 CPU 档留位置(gpu_model 空串、三项为 0);档位与这几项的配对
-    # 由下面的 model_validator 兜住,GPU 档一项都不许为 0
+    # 下界放开到 0 是给 CPU 档留位置(gpu_model 空串、三项为 0);档位与这几项的配对由
+    # 下面的 model_validator 兜住,GPU 档一项都不许为 0
     gpu_model: str = Field(max_length=32)
     tier: str = Field(pattern=_TIER_PATTERN)
     mig_profile: str | None = None
@@ -192,7 +192,7 @@ class ImageOut(BaseModel):
 
 def _check_image_ref(v: str) -> str:
     """形态非法必须在管理端写入时就拒掉:目录 ref 钉 digest 后是 70+ 字符的手抄串,
-    抄错一位若能入库,要等用户创建实例才报错,而错误落在用户身上、运维看不到。"""
+    抄错一位若能入库,要等用户创建实例才报错。"""
     v = v.strip()
     if not is_valid_image_ref(v):
         raise ValueError(

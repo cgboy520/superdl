@@ -20,31 +20,21 @@
 
 ## 默认镜像目录(平台自带)
 
-平台自带 12 个镜像:PyTorch / TensorFlow / Miniconda / PaddlePaddle × CUDA `13.2` `12.9` `11.8` 三条线,外加一个 CPU 向的 DataScience(R + Julia + scipy 全家桶)。
-**选版规则、逐镜像 tag、构建命令与推送前自检**只写在 `deploy/instance-images/README.md` 一处,以它为准;
+平台自带 12 个镜像:PyTorch / TensorFlow / Miniconda / PaddlePaddle 各自的 CUDA 线,外加一个 CPU 向的 DataScience(R + Julia + scipy 全家桶)。
+各框架的 CUDA 线并不一致(TensorFlow 无 13.x,PaddlePaddle 走厂商自己的线),**镜像矩阵、选版规则、逐镜像 tag、必装 Jupyter 套件、构建命令、推送前自检与取 digest** 只写在 `deploy/instance-images/README.md` 一处,以它为准;
 `apps/api/scripts/seed_dev.py` 的 `IMAGES` 是同一张表的 dev 种子副本(改镜像矩阵两处同一提交一起改)。
-规则要点:框架只上「最新稳定版 + 最后一个支持 CUDA 11.8 的稳定版」(不收 rc/beta),Python 取该框架
-支持的最高版本,框架镜像以同 CUDA 线的 Miniconda 镜像为父镜像(conda / sshd / Jupyter 套件共用 layer)。
-
-每个平台镜像必装的 Jupyter 套件(契约见同一份 README):`jupyterlab` / `jupyter-ai` /
-`jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel`;默认界面 `/lab`,界面语言默认 zh-CN。
 
 ## 规则与不变量
 
 - 公开 `GET /api/v1/images` 的 `is_prewarmed` 是计算值:`prewarm_enabled AND`(无 cache 行 → 等于 prewarm_enabled;有行 → coverage ≥ `prewarm_min_coverage_pct`)。
-- 策略参数(ops 可调):`prewarm_min_coverage_pct` 默认 90、`prewarm_recheck_hours` 默认 24。
+- 策略参数(ops 可调):`prewarm_min_coverage_pct` 与 `prewarm_recheck_hours`,默认值见 [limits.md](./limits.md)。
 - 预热由 `image.prewarm` outbox handler(幂等)+ `prewarm_patrol` 巡检(60s,advisory lock 1008)铺行、收敛与复检;节点增删由巡检自行发现,与装机链路零耦合。
 - 预热执行体是每节点定点 Job,与 `disk.wipe` 同构,不扩 K8s RBAC。
-- **cpu 池不预热。** 平台镜像目录整体是 CUDA 镜像(单个 8~27 GB),铺到无卡机上是百 GB 级的死重量 —— 那台机器永远用不上它们编译进去的 GPU 栈。代价是 CPU 规格首次启动现拉镜像,创建页对 CPU 规格不承诺秒级启动(`prewarm.py` 的 `target_nodes` 排除 `pool_label == cpu`)。
+- **cpu 池不预热**(巡检的 `target_nodes` 排除 `pool_label == cpu`):平台镜像整体是 CUDA 镜像(单个 8~27 GB),无卡机用不上。CPU 规格首次启动现拉镜像,创建页对它不承诺秒级启动。
 - 删除镜像不影响运行中实例:实例存的是 image_ref 快照。
-- **实例的 image_ref 快照终身不变**:创建时定下,停机/开机/重启都用它,没有「实例换镜像」的端点。
-  所以镜像修复(entrypoint 改动等)只对新建实例生效,存量实例必须删掉重建;发布这类镜像时要一并通知用户。
-- 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,故平台镜像一律钉版本 tag。
-- **平台镜像 tag 允许同名重推,但目录 `image_ref` 必须钉 digest**(`<repo>:<tag>@sha256:...`,形态校验本就支持)。
-  按 tag 拉不可靠:k3s 内置 registry(Spegel)按 tag 解析会返回节点缓存的旧 digest,`imagePullPolicy: Always` 也救不回来(实测)。
-  重推后把管理端该镜像的 ref 换成新 digest 即可:`admin_update_image` 同事务清该镜像的 cache 行,巡检按新 ref 重新预热;
-  绕过服务层直接改库(SQL 批量换域名之类)时不会触发清行,由巡检比对 `cached_ref` 兜底作废,≤60s 自愈;
-  已在跑的实例用的是自己的快照,不受影响。构建、自检与取 digest 的命令见 `deploy/instance-images/README.md`。
-- 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律存 Harbor 全限定名并钉 digest:`<host>/<项目>/<名>:<tag>@sha256:<digest>`,没有逻辑名。
-形态校验的单一事实源是 `core/registry.is_valid_image_ref`,创建实例与管理端目录 CRUD 共用同一份判定。拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 之前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与该租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`,指纹相同不覆写),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户(项目 public)则不生成、不引用。轮换 = 配置中心保存新 Secret,节点不落凭据。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
+- **实例的 image_ref 快照终身不变**:创建时定下,停机/开机/重启都用它,没有「实例换镜像」的端点。镜像修复(entrypoint 改动等)只对新建实例生效,存量实例必须删掉重建;发布这类镜像时一并通知用户。
+- 集群内 P2P 缓存用发行版内置 embedded registry mirror(Spegel);`latest` tag 不参与 P2P,平台镜像一律钉版本 tag。
+- **平台镜像 tag 允许同名重推,但目录 `image_ref` 必须钉 digest。** 按 tag 拉不可靠:Spegel 按 tag 解析会返回节点缓存的旧 digest,`imagePullPolicy: Always` 也救不回来。重推后把管理端该镜像的 ref 换成新 digest:`admin_update_image` 同事务清该镜像的 cache 行,巡检按新 ref 重新预热;绕过服务层直接改库不触发清行,由巡检比对 `cached_ref` 兜底作废,≤60s 自愈;已在跑的实例用自己的快照,不受影响。
+- 平台镜像仓是 Harbor(接入参数在平台配置·镜像仓库组,见 [platform-config.md](./platform-config.md)):`image_ref` 一律存全限定名 `<host>/<项目>/<名>:<tag>@sha256:<digest>`,没有逻辑名。形态校验的单一事实源是 `core/registry.is_valid_image_ref`,创建实例与管理端目录 CRUD 共用同一份判定。
+- 拉取凭据由平台托管:worker 在建实例 Pod / 预热 Job 之前按生效配置把 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)按指纹写入 superdl 与该租户 ns(`core/registry.ensure_registry_pull_secret` → `ensure_pull_secret`,指纹相同不覆写),Pod / Job 以 `imagePullSecrets` 引用;未配机器人账户(项目 public)则不生成、不引用。轮换 = 配置中心保存新 Secret,节点不落凭据。节点 registries.yaml 只承担 Spegel P2P / Harbor CA / 代理缓存 mirror,见 [nodes.md](./nodes.md);发布 SOP 见 `deploy/cluster/runbooks/image-prewarm.md`。
 - 创建实例的镜像形态校验与来源白名单见 [security.md](./security.md)。

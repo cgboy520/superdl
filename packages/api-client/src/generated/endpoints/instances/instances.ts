@@ -360,8 +360,7 @@ export const getRenewInstanceApiV1InstancesUuidRenewPostUrl = (uuid: string,) =>
 /**
  * 包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
  *
- * 挂在 instances 下而不是 billing 下:用户的心智是「给这台机器续费」,
- * 而实例状态(冻结中续费即解冻)也只能由 orchestrator 这一侧改。
+ * 冻结中的实例续费即解冻(回到 stopped,由用户自己开机)。
  * @summary Renew Instance
  */
 export const renewInstanceApiV1InstancesUuidRenewPost = async (uuid: string,
@@ -534,8 +533,7 @@ export const getConvertToOnDemandApiV1InstancesUuidToOnDemandPostUrl = (uuid: st
 /**
  * 竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。
  *
- * 当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准),
- * 这一条必须在确认弹窗里写清楚。
+ * 当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准)。
  * @summary Convert To On Demand
  */
 export const convertToOnDemandApiV1InstancesUuidToOnDemandPost = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {

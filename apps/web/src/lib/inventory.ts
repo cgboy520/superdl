@@ -1,7 +1,5 @@
-/** 可用量去重聚合:同一 (池, 型号) 物理池上的互斥规格(50% / 30% 算力份额等)可售数
- * 不可相加——32 张物理卡会被两个规格各自折算成 96/192 台「实例」,直接 sum 高估 43%。
- * 口径:按 (pool_label, gpu_model) 分组取 max,再跨组求和。
- */
+/** 可用量去重聚合:同一 (池, 型号) 物理池上的互斥规格可售数不可相加,直接 sum 会成倍高估。
+ *  口径:按 (pool_label, gpu_model) 分组取 max,再跨组求和。 */
 
 export interface SkuAvailabilityLike {
   pool_label?: string | undefined;
@@ -16,11 +14,8 @@ export function dedupAvailableTotal(skus: readonly SkuAvailabilityLike[]): numbe
   return total;
 }
 
-/**
- * 按型号聚合的可售数(市场页型号筛选 chip):组内 (池, 型号) 取 max,同型号跨池求和。
- * CPU 规格(gpu_model 空串)整条跳过:它按 vCPU/内存卖,混进「型号」维度会多出一个
- * 空名字的 chip,首页「可租 N 张卡」也会把不带卡的实例数算进卡数。
- */
+/** 按型号聚合的可售数(市场页型号筛选 chip):组内 (池, 型号) 取 max,同型号跨池求和。
+ *  CPU 规格(gpu_model 空串)必须整条跳过,否则会多出空名字的 chip 并把不带卡的实例算进卡数。 */
 export function dedupAvailableByModel(skus: readonly SkuAvailabilityLike[]): Map<string, number> {
   const byGroup = new Map<string, { model: string; free: number }>();
   for (const s of skus) {

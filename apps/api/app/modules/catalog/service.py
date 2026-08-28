@@ -34,13 +34,10 @@ logger = get_logger(__name__)
 
 def sellable_per_gpu(pool_label: str, gpu_cores_pct: int, oversell_cores: Decimal) -> int:
     """每张物理卡可售实例数:hami 池 = ⌊100 × oversell_cores ÷ gpu_cores_pct⌋(Decimal 整除,
-    至少 1),kata / mig 池恒 1。
+    至少 1),kata / mig 池恒 1 —— 超卖只发生在 HAMi 软切分上,是池的属性而非档位的。
 
-    按池判而非按档位判:超卖只发生在 HAMi 软切分上,是池的属性(架构硬约束二),
-    档位只是它的售卖名字。
-
-    市场库存、创建软准入、管理端容量预览共用这一份口径:float 路径会把 100 × 1.15 算成
-    114.999…,同一 SKU 在市场页与管理端相差一台。
+    市场库存、创建软准入、管理端容量预览共用这一份口径;必须走 Decimal,float 会把
+    100 × 1.15 算成 114.999…,同一 SKU 在市场页与管理端相差一台。
     """
     if pool_label != POOL_HAMI:
         return 1
@@ -53,21 +50,14 @@ def sellable_cpu_slots(
     """CPU 规格的近似可售实例数:逐 Ready 节点取
     min(⌊预算 vCPU ÷ vcpu⌋, ⌊预算内存 ÷ mem_gb⌋),跨节点求和。
 
-    收 (vcpu, mem_gb) 标量而非 Sku,与 sellable_per_gpu 同款:管理端容量预览要为
-    「表单里还没提交的规格」算这个数,没有 Sku 记录可传。
+    收 (vcpu, mem_gb) 标量而非 Sku:管理端容量预览要为表单里还没提交的规格算这个数。
 
-    预算口径:
-    - cpu 池(无卡机):整机 vCPU 与内存都算 CPU 实例的;
-    - 其它池(cpu 档挂 hami 池跑 GPU 机的空闲 CPU):每节点封顶
-      `gpu_node_cpu_instance_vcpu_cap` 核,内存按同一比例折算(不折算的话,一台
-      16 核/512G 的 CPU 实例会被判成落得下,却把整机内存吃光,卡再多也卖不出去);
-      cap=0 → 该节点一台都不卖。
+    预算口径:cpu 池(无卡机)整机 vCPU 与内存都算;其它池每节点封顶
+    `gpu_node_cpu_instance_vcpu_cap` 核,内存按同一比例折算(不折算会把一台 16 核/512G
+    的实例判成落得下却吃光整机内存),cap=0 → 该节点一台都不卖。
 
-    **这是上限估算,不是实时余量**,与 GPU 库存「台账 60s 粒度、只是近似」同款措辞:
-    台账 `node_specs` 只有 vCPU/内存总量,没有「已用 vCPU」一列(K8s 侧的 `NodeInfo`
-    只报 gpu_used),而 `instances.node_name` 由 reconciler 事后回填、creating/starting
-    期间为空,按节点扣减必然漏算。所以本函数只挡「确定卖不出去」的单,真正裁决在调度器;
-    要变成实时余量得先给节点巡检加一列已用 vCPU,那是另一件事。
+    这是上限估算不是实时余量:台账 `node_specs` 没有「已用 vCPU」一列,`instances.node_name`
+    又由 reconciler 事后回填,按节点扣减必然漏算。只挡「确定卖不出去」的单,真正裁决在调度器。
     """
     if vcpu <= 0 or mem_gb <= 0:
         return 0
@@ -204,10 +194,8 @@ async def admin_list_skus(session: AsyncSession) -> list[Sku]:
 def _checked_price(value: Decimal) -> Decimal:
     """单价统一走 money.as_price(4 位);量化后为 0 直接拒绝(numeric(12,4) 会静默舍成免费)。
 
-    按小时计费的 SKU 强制 2 位语义(price == as_amount(price)):4 位单价逐小时
-    独立舍入会产生单向漂移(1.2345 满月 720h 少收 ¥3.24;0.0051 被按 0.01/时近翻倍
-    收取),4 位精度只留给数据盘 GB·月价。0.0001~0.0099 这类入账恒被舍成 ¥0.00 的
-    「免费价」同样不满足 2 位语义,一并拦在上架/改价时。
+    按小时计费的 SKU 强制 2 位语义(price == as_amount(price)):4 位单价逐小时独立舍入
+    会产生单向漂移(1.2345 满月 720h 少收 ¥3.24),4 位精度只留给数据盘 GB·月价。
     """
     price = as_price(value)
     if price <= 0:
@@ -247,10 +235,8 @@ async def admin_update_sku(
     sku = await get_sku(session, sku_id)
     was_on_sale = sku.status == "on"
     updates = data.model_dump(exclude_unset=True, exclude={"reason"})
-    # 改池或改切片 = 换隔离方式 = 换商品(档位展示名与规格列都跟着变)。在售规格改了会让
-    # 市场页挂着的「共享·标准」静默变成「共享·经济」,新下单的人拿到的不是他看到的那个;
-    # 因此只在下架态放行,在售要改先下架或新建。存量实例走 spec 快照,不受影响。
-    # 放在应用更新之前:不碰 ORM 对象就退出,不依赖会话退出时的回滚
+    # 改池或改切片 = 换隔离方式 = 换商品,只在下架态放行(存量实例走 spec 快照,不受影响)。
+    # 必须放在应用更新之前:不碰 ORM 对象就退出,不依赖会话退出时的回滚
     if was_on_sale and any(
         field in updates and updates[field] != getattr(sku, field)
         for field in ("pool_label", "mig_profile")
@@ -290,8 +276,7 @@ async def admin_update_sku(
         await _alert_large_price_change(
             session, sku, Decimal(before["price_hourly"]), updates["price_hourly"], data.reason
         )
-    # 业务唯一键的 7 列里有 5 列(pool_label / mig_profile / gpu_cores_pct / vcpu / mem_gb)
-    # 可改,改到与另一条重合时要给 409 而不是漏 500 —— 与 admin_create_sku 同款处理
+    # 业务唯一键的 7 列里有 5 列可改,改到与另一条重合时要给 409 而不是漏 500
     try:
         await session.commit()
     except IntegrityError as exc:

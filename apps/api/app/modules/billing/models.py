@@ -160,7 +160,7 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending / paid / closed / failed
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
-    # 管理端人工补单的幂等键:同键重放直接回当前状态,不再报「已入账」409
+    # 管理端人工补单的幂等键:同键重放直接回当前状态,不报「已入账」409
     backfill_idempotency_key: Mapped[str | None] = mapped_column(String(64))
     qr_url: Mapped[str | None] = mapped_column(String(512))
     paid_at: Mapped[datetime | None]
@@ -264,14 +264,12 @@ class RefundRequest(Base):
 class Subscription(Base):
     """包周期订单:一次性预扣的「实例使用权」凭证。
 
-    与小时账单彻底分开是刻意的 —— `bills_hourly` 的结构、幂等键、水位线、缺口机制
-    一行不动,包周期只在候选查询里被跳过(见 orchestrator/queries.billing_candidates)。
-    把预付摊成 720 条零元小时账会让「重复执行零重复扣款」的幂等证明凭空多一个维度,
-    而它换不来任何用户可见的东西。
+    与小时账单分开:`bills_hourly` 的结构、幂等键、水位线、缺口机制不涉及包周期,
+    包周期只在候选查询里被跳过(见 orchestrator/queries.billing_candidates)。
 
     续费链:每次续费**新开一行**并把 renewed_from_id 指向上一行,老行转 expired。
-    不在原行上累加 expires_at,是因为账期归属(哪笔钱属于哪个月的收入)要看得见:
-    跨月续费时,老周期和新周期的金额必须落在各自的行上,否则财务口径只能靠流水反推。
+    不在原行上累加 expires_at:账期归属(哪笔钱属于哪个月的收入)要看得见,
+    跨月续费时老周期与新周期的金额分别落在各自的行上。
     """
 
     __tablename__ = "subscriptions"
@@ -297,21 +295,18 @@ class Subscription(Base):
     sku_id: Mapped[int]
     period: Mapped[str] = mapped_column(String(8))  # day / week / month / year
     period_count: Mapped[int] = mapped_column(default=1)
-    # 下单时的 SKU **原价**时价快照(未打折)。续费按它重新报价:
-    # SKU 涨价不追已购用户,与「变更 SKU 仅影响新实例」同一条口径。
-    # 折后时价不存这儿——它在 instances.price_hourly 上(见 core/pricing.price_for)
+    # 下单时的 SKU 原价时价快照(未打折),续费按它重新报价:SKU 涨价不追已购用户。
+    # 折后时价在 instances.price_hourly 上(见 core/pricing.price_for)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # 实扣(已含折扣)
     started_at: Mapped[datetime]
     expires_at: Mapped[datetime] = mapped_column(index=True)
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
-    # 到期自动续费。默认关:自动扣款必须是用户主动打开的,默认打开等于替用户
-    # 做了一个可以无限重复的扣款授权
+    # 到期自动续费。默认关:可无限重复的扣款授权必须由用户主动开启
     auto_renew: Mapped[bool] = mapped_column(default=False, server_default="false")
     renewed_from_id: Mapped[int | None]  # 续费链上一环,便于账期追溯
-    # 到期预警的去重锚点:巡检每 30 分钟跑一次,没有它就是每半小时一条短信。
-    # 存「最近一次已发预警对应的到期时刻」而不是布尔:续费后 expires_at 变了,
-    # 新周期的预警自然重新可发,不需要额外清位
+    # 到期预警的去重锚点。存「最近一次已发预警对应的到期时刻」而不是布尔:续费后
+    # expires_at 变了,新周期的预警自然重新可发,不需要额外清位
     warned_for_expiry: Mapped[datetime | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

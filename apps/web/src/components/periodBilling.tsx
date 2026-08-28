@@ -1,10 +1,7 @@
 /**
  * 包周期(预付)共用件:折扣读取、本地报价、量词与费用明细三行。
- * 市场页、创建页、续费 modal 三处共用 —— 折扣与口径各写一份,迟早出现
- * 「页面显示 8 折、实际扣 8.5 折」这类没人能复现的差异(与后端 core/pricing.py 同一条纪律)。
- *
- * **本地报价只用于下单前的预览**:成交金额一律以接口返回的 quote 为准,
- * 明细区必须挂 hint 说清楚这一点。
+ * 市场页、创建页、续费 modal 三处共用一份折扣与口径(与后端 core/pricing.py 同源)。
+ * 本地报价只用于下单前的预览,成交金额一律以接口返回的 quote 为准,明细区必须挂 hint 说清这点。
  */
 
 import {
@@ -42,7 +39,7 @@ export function discountOff(pct: number): number {
   return 100 - pct;
 }
 
-/** 本地报价:折扣未就绪就不报价(宁可不显示,也不按硬编码的折扣算一个假数)。 */
+/** 本地报价:折扣未就绪就不报价,不按硬编码折扣估算。 */
 export function periodQuoteOf(
   baseHourly: string | null | undefined,
   opts: { units: number; period: BillingPeriod; periodCount: number },
@@ -52,10 +49,8 @@ export function periodQuoteOf(
   return quoteSubscription(baseHourly, { ...opts, discountPct: discounts[opts.period] });
 }
 
-/**
- * 周期量词(「3 个月」里的「个月」)。四个分支写死而不是拼 key ——
- * i18next-cli 的 extract 看不见动态键,会把它们当未引用删掉。
- */
+/** 周期量词(「3 个月」里的「个月」)。四个分支必须写死而不是拼 key:
+ *  i18next-cli extract 看不见动态键,会把它们当未引用删掉。 */
 export function PeriodCountUnit({ period }: { period: BillingPeriod }) {
   const { t } = useTranslation();
   switch (period) {
@@ -82,10 +77,8 @@ function QuoteRow({ label, value, strong }: { label: ReactNode; value: string; s
   );
 }
 
-/**
- * 费用明细三行:实例费用(原价)→ 周期优惠 → 应付。
- * 三个数由 quoteSubscription 一次算出并自洽(优惠 = 原价 − 应付),这里只渲染,不做乘法。
- */
+/** 费用明细三行:实例费用(原价)→ 周期优惠 → 应付。
+ *  三个数由 quoteSubscription 一次算出并自洽(优惠 = 原价 − 应付),这里只渲染,不做乘法。 */
 export function PeriodQuoteRows({
   quote,
   gpuCount,

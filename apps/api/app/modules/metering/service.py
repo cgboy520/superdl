@@ -159,8 +159,8 @@ async def aggregate_previous_hour(
                 await session.commit()
                 written += 1
         if failed:
-            # 记缺口:该小时对这些实例永久缺失(任务只聚合上一小时),告警靠日志检索;
-            # 不做自动回填(指标不参与计费,重流程收益低),需要时按 hour_start 人工补跑
+            # 记缺口:该小时对这些实例永久缺失(任务只聚合上一小时),不自动回填
+            # (指标不参与计费),需要时按 hour_start 人工补跑
             logger.warning(
                 "usage_aggregation_partial",
                 hour_start=window_start.isoformat(),

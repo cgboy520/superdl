@@ -1,7 +1,4 @@
-/**
- * 底部通栏结算条(sticky,市场页与创建页共用)。
- * 费用项逐项摊开,「日常费用(关机也产生)」与「配置费用」分栏。
- */
+/** 底部通栏结算条(sticky,市场页与创建页共用):费用项逐项摊开,日常费用与配置费用分栏。 */
 
 import { brand, colorPrimary } from "@superdl/ui";
 import { Popover, Space, theme, Typography } from "antd";
@@ -36,7 +33,6 @@ export function CheckoutBar({
   balance?: string | null;
   /** 余额是否已就绪。false 时必须渲染 "—" 而不是假 ¥0.00(查询失败时 data 恒为 undefined)。 */
   balanceReady?: boolean;
-  /** 右侧按钮组 */
   actions: ReactNode;
 }) {
   const { token } = theme.useToken();

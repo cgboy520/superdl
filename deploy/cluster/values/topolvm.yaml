@@ -1,5 +1,5 @@
 # TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁为 lvremove,经 issue_discards=1
-# 对 extent 发 NVMe TRIM(擦除语义,P0-3;大 LV 实测耗时记录见 runbooks/cluster-validation.md D 节)。
+# 对 extent 发 NVMe TRIM(擦除语义;大 LV 实测耗时记录见 runbooks/cluster-validation.md D 节)。
 # 实例盘 PVC 由平台自管生命周期(<instance-uuid>-root,只在释放/回收时删)。
 # reclaimPolicy 显式写死,不取 chart 默认值。
 storageClasses:
@@ -19,8 +19,8 @@ lvmd:
   # lvmd 直接调 LVM CLI、读容器内 /etc/lvm/lvm.conf:ConfigMap 注入 issue_discards=1
   # (manifest 见 ../topolvm/lvm-config.configmap.yaml,由 helmfile presync hook 应用;
   # 宿主机侧 node-join.sh 同款写入作双保险,覆盖运维手工 LVM 操作)。
-  # chart 17 语义:lvmd.volumeMounts 一旦设置就整段替换默认挂载(没有 additionalVolumeMounts),
-  # 所以 socket 目录 /run/topolvm 必须在这里一并写上,否则 lvmd 起不来(bind lvmd.sock: no such file);
+  # chart 17:lvmd.volumeMounts 一旦设置就整段替换默认挂载(没有 additionalVolumeMounts),
+  # socket 目录 /run/topolvm 必须在这里一并写上,否则 lvmd 起不来(bind lvmd.sock: no such file)。
   # 卷侧用 additionalVolumes 追加,默认的 lvmd-socket-dir hostPath 保留
   volumeMounts:
     - name: lvmd-socket-dir

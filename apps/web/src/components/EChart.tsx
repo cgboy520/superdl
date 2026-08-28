@@ -1,7 +1,4 @@
-/**
- * echarts 按需注册封装:只打包本端实际用到的图型/组件。
- * 新增图型时在此登记,勿在页面里直接 import echarts。
- */
+/** echarts 按需注册封装:只打包本端用到的图型/组件。新增图型在此登记,禁止在页面里直接 import echarts。 */
 import { LineChart, PieChart } from "echarts/charts";
 import {
   GridComponent,

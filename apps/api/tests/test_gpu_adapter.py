@@ -126,8 +126,7 @@ def test_userns_hardening_by_pool(pool: str, host_users: bool):
 def test_unknown_pool_is_fail_closed():
     """池标签认不出就不下发 —— 宁可 500 也不建出无 GPU 资源请求的 Pod。
 
-    档位迁移(mig / shared_std / shared_eco → shared)后,旧值若残留在 spec 快照里
-    会走到这里;迁移一次改到位,不留别名兜底。
+    spec 快照里的未知档位值走到这里即抛错,不留别名兜底。
     """
     with pytest.raises(ValueError, match="unknown pool"):
         build_gpu_request(

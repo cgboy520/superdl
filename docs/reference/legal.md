@@ -19,7 +19,7 @@
 | `POST /api/admin/v1/legal-docs/versions/{version_id}/publish` | 仅 admin | 同事务把同 (doc_key, locale) 旧 published 转 archived;审计记版本 + sha256 |
 | `POST /api/admin/v1/legal-docs/versions/{version_id}/archive` | 仅 admin | draft → archived;published 不可直接归档(409) |
 
-前端:用户端 `/legal/terms`、`/legal/privacy`、`/legal/deletion-notice` 渲染 published 正文(en-US 缺失回落 zh-CN);管理端在系统设置「法务文档」维护。
+前端:用户端 `/legal/terms`、`/legal/privacy`、`/legal/deletion-notice` 渲染 published 正文;管理端在系统设置「法务文档」维护。
 
 ## 规则与不变量
 
@@ -27,4 +27,4 @@
 - 注册必勾条款:注册成功同事务按当时 zh-CN published 版本落 terms 与 privacy 各一条 `user_consents`(含 client_ip);前后端都强校验勾选。
 - 「每 (doc_key, locale) 至多一条 published」由部分唯一索引兜底并发发布;发布与归档都是行内状态迁移,不删行。
 - 所有管理端写操作过审计中间件;正文变更以 sha256 留痕,不把全文写进审计。
-- en-US 正文待法务出稿:工程侧版本流已就绪,缺稿时公开端点以 `fallback=true` 回落 zh-CN(`reference/i18n.md`)。
+- en-US 正文待法务出稿,工程侧已按 per-locale 建模(见 [i18n.md](./i18n.md))。

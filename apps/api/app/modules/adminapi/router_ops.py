@@ -1,4 +1,4 @@
-"""管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信,自 router.py 拆分)。"""
+"""管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信)。"""
 
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -57,7 +57,7 @@ router = APIRouter(tags=["admin"])
 async def admin_overview(session: DbSession) -> OverviewOut:
     """值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。
 
-    全是精确计数,替代前端在截断列表(200/500 条)里数数的错误口径。
+    全是精确计数,不从截断列表(200/500 条)推算。
     """
     return OverviewOut.model_validate(await service.overview(session))
 
@@ -251,7 +251,7 @@ async def admin_update_policies(
     body: PolicyUpdateRequest, session: DbSession, request: Request
 ) -> UpdatedKeysOut:
     """在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
-    审计 detail 记变更前后值与原因(改策略与改价同级,须答得出「从多少改成多少」)。"""
+    审计 detail 记变更前后值与原因。"""
     from dataclasses import asdict
 
     from app.core.policies import get_effective_policies, set_policy_overrides

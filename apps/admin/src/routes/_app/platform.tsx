@@ -168,7 +168,8 @@ const GROUP_INTRO: Record<string, string> = {
     "公司主体信息(全称/地址/电话/亮照链接)为《电子商务法》第十五条公示项,页脚持续展示,留空即不展示对应行。",
   cluster:
     "GPU 节点一键加入的集群接入参数:Server 地址与 join token 来自 server 节点" +
-    "(token 执行 cat /var/lib/rancher/<rke2|k3s>/server/node-token 获取,轮换后在此更新)。" +
+    "(token 填专用 agent token,即 server config 里 agent-token 的值;禁止填 node-token —— " +
+    "它能把节点拉进 etcd 环。轮换后在此更新)。" +
     "发行版由平台探测(见「集群」页),无需声明;registries.yaml 平台按 Server 地址自动生成," +
     "该键仅作高级覆盖,建议留空。配置完成后,运维在「节点与 GPU → 添加节点」生成一次性注册命令。",
 };

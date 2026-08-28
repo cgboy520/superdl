@@ -269,7 +269,7 @@ async def reconcile_pending_orders(sm: async_sessionmaker[AsyncSession]) -> int:
                     )
             except Exception as exc:
                 # 单笔入账失败(金额/渠道不符、channel_txn_id 撞唯一约束等)记日志+指标,
-                # 不能中断整轮:后面的订单还要继续收敛
+                # 不中断整轮
                 logger.exception("order_recover_failed", order_no=order.order_no)
                 PAYMENT_RECOVER_FAILED_TOTAL.labels(error=type(exc).__name__).inc()
                 continue
@@ -387,7 +387,7 @@ async def backfill_order(
                 ) from exc
         raise
     if audit_writer is not None:
-        await audit_writer(session)  # 同步审计:与入账同事务,写失败即回滚(P1-8)
+        await audit_writer(session)  # 同步审计:与入账同事务,写失败即回滚
     await session.commit()
     logger.info("order_backfilled", order_no=order.order_no, amount=str(order.amount))
     return order, False

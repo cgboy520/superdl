@@ -14,19 +14,17 @@ JUICEFS_STORAGE_CLASS = "superdl-juicefs"  # 数据盘:JuiceFS 共享后端
 JUICEFS_PVC_NAME = "juicefs-shared"  # 每租户 ns 一只共享 PVC(数据盘按 subPath 切分)
 
 # 北向入口契约:三个名字须与 deploy/app/k8s/04-gateway.yaml 里的 Gateway 逐字一致。
-# 与 StorageClass 同一类问题——写错不报错:HTTPRoute 会一直停在
-# status.parents[].conditions 的 Accepted=False / NotAllowedByListeners,
-# 而 create 调用本身返回 201,实例照常进 running,只是 Jupyter 域名永远 404。
-# 这条链路没有下发门禁(入口不通不影响实例本身与计费),兜底在管理端集群体检的
-# gateway 项:判据是 Gateway 对象的 Programmed 条件,见 probe_cluster。
+# 写错不报错:create 返回 201、实例照常进 running,只有 HTTPRoute 停在
+# status.parents[].conditions 的 Accepted=False,Jupyter 域名永远 404。
+# 这条链路没有下发门禁,兜底在管理端集群体检的 gateway 项(见 probe_cluster)。
 GATEWAY_NAMESPACE = "superdl"  # Gateway 对象所在 ns(= 平台自身 ns)
 GATEWAY_NAME = "superdl"
 # 租户 Jupyter 专用 listener(*.app.<域名>)。平台自身三个入口挂在各自的 listener 上,
 # 租户路由只许挂这一个:它是唯一开了 allowedRoutes.namespaces.from=Selector 的。
 GATEWAY_APP_LISTENER = "app-https"
-# 服务型实例的对外端点 listener(*.svc.<域名>)。与 app-https 分成两个 listener 是刻意的:
-# 只有这一个挂 SecurityPolicy.extAuth(API Key 鉴权)。同 listener 就没法用 hostname 把
-# 两类流量分开,只能退化成逐路由挂策略 —— 对象数从 O(1) 变成 O(端点数)。
+# 服务型实例的对外端点 listener(*.svc.<域名>)。与 app-https 分成两个 listener:
+# 只有这一个挂 SecurityPolicy.extAuth(API Key 鉴权);同 listener 无法用 hostname
+# 分流,只能退化成逐路由挂策略(对象数从 O(1) 变成 O(端点数))。
 GATEWAY_SVC_LISTENER = "svc-https"
 # Gateway API 资源坐标(官方客户端无 typed model,一律走 CustomObjectsApi)
 GATEWAY_API_GROUP = "gateway.networking.k8s.io"
@@ -46,8 +44,8 @@ def jupyter_service_name(instance_name: str) -> str:
 def service_endpoint_service_name(instance_name: str) -> str:
     """服务型实例的 ClusterIP Service 名(网关回源目标)。
 
-    与 SSH(NodePort,同名于实例)和 Jupyter(<name>-jupyter)三者分开:
-    合成一个 type=NodePort Service 会让 K8s 给每个 port 都分配 NodePort,撞 SSH 端口池。
+    与 SSH(NodePort,同名于实例)和 Jupyter(<name>-jupyter)必须三者分开:合成一个
+    type=NodePort Service 会让 K8s 给每个 port 都分配 NodePort,撞 SSH 端口池。
     """
     return f"{instance_name}-svc"
 
@@ -58,11 +56,8 @@ def instance_disk_pvc_name(instance_name: str) -> str:
 
 
 def instance_env_secret_name(instance_name: str) -> str:
-    """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等)。
-
-    与实例同生命周期(delete_instance 一并删除);Pod spec 只以 secretKeyRef 引用,
-    明文不落 spec(不进 etcd 明文面/审计快照,只读 SA 的 pods:get 也读不到)。
-    """
+    """per-instance 敏感 env 的 Secret 名(JUPYTER_TOKEN 等)。与实例同生命周期
+    (delete_instance 一并删除);Pod spec 只以 secretKeyRef 引用,明文不落 spec。"""
     return f"jupyter-{instance_name}"
 
 
@@ -97,18 +92,18 @@ class InstancePodSpec:
     # None = 项目 public / 未配机器人
     image_pull_secret: str | None = None
 
-    # ---- 服务型实例(workload_type='service')。dev 形态全取默认值,行为逐字不变 ----
-    # Never = 容器退出即 Pod 终态(dev:Jupyter 挂了就该判故障);
-    # Always = kubelet 原地重启容器、Pod 不重建 —— 服务要的就是这个,而且它保住了
-    # reconciler 的「Pod 名恒等于实例 uuid」假设(重建 Pod 会换名字,那套全塌)
+    # 服务型实例(workload_type='service')专用;dev 形态全取默认值。
+    # Never = 容器退出即 Pod 终态(dev:Jupyter 挂了即判故障);
+    # Always = kubelet 原地重启容器、Pod 不重建,保住 reconciler 的
+    # 「Pod 名恒等于实例 uuid」假设(重建 Pod 会换名字)
     restart_policy: str = "Never"
     command: tuple[str, ...] | None = None  # 覆盖镜像 ENTRYPOINT;None = 用镜像自带
     args: tuple[str, ...] | None = None
     service_port: int | None = None  # 非空 → 建 <name>-svc ClusterIP + 服务 HTTPRoute
     service_host: str | None = None  # <slug>.svc.<域名>,服务 HTTPRoute 的 hostname
-    # 非空 → 挂 readinessProbe + startupProbe(httpGet)。
-    # startupProbe 不是可选项:只有 readiness 时,加载大模型权重的容器在
-    # 启动阶段就被判 not-ready,而 not-ready 会触发 reconciler 的可用性判定。
+    # 非空 → 挂 readinessProbe + startupProbe(httpGet)。startupProbe 不可省:
+    # 只有 readiness 时,加载大模型权重的容器在启动阶段即被判 not-ready,
+    # 而 not-ready 会触发 reconciler 的可用性判定。
     health_path: str | None = None
     # False → 不建 SSH NodePort Service(服务型实例默认如此,不占端口池)
     with_ssh: bool = True
@@ -130,8 +125,8 @@ class PodStatus:
     """Pod 状态:get_status 单查与 list_instance_pods 全量 LIST 同一形状。
 
     LIST 条目还带归属(namespace/name)与 labels:reconciler 以全量 LIST 替代逐实例
-    get_status(读放大控制);泄漏回收据 labels 豁免受管 Job(wipe/quota)的子孙 Pod——
-    它们带 MANAGED_LABEL 会被 LIST 命中,但名字不是实例 uuid,无 labels 无法与真泄漏区分。
+    get_status;泄漏回收据 labels 豁免受管 Job(wipe/quota)的子孙 Pod —— 它们带
+    MANAGED_LABEL 会被 LIST 命中,但名字不是实例 uuid,无 labels 就与真泄漏分不开。
     """
 
     exists: bool
@@ -306,9 +301,8 @@ GPU_MODEL_NODE_LABEL = (
 )
 POOL_NODE_LABEL = "superdl.io/pool"  # 节点池标签(装机时定死;kata / hami / mig 分池铁律)
 # 平台受管对象标签:实例 Pod/Service/HTTPRoute/受管 Job 均打此标,全量 LIST 的过滤依据。
-# 租户 namespace 也打这一个标签,同时兼作 Gateway `app-https` listener 的
-# allowedRoutes.namespaces.from=Selector 选择器 —— 平台自身 ns 不带此标,
-# 于是该 selector 精确等于「全部租户 ns 且仅租户 ns」,不必再造一个标签。
+# 租户 namespace 也打这一个标签,兼作 Gateway `app-https` listener 的
+# allowedRoutes.namespaces.from=Selector 选择器(平台自身 ns 不带此标)。
 MANAGED_LABEL = "superdl.io/managed"
 # K8s 控制器自动打在 Job 子孙 Pod 上的标签:泄漏回收的豁免依据
 # (Job 泄漏由 ttl_seconds_after_finished 兜底,不属"未知 Pod 强删"范围)

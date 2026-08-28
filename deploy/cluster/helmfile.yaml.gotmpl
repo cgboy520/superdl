@@ -25,8 +25,7 @@ repositories:
     url: https://charts.jetstack.io
   - name: cloudnative-pg
     url: https://cloudnative-pg.github.io/charts
-  # Loki(OSS)自 2026-03-16 起由社区仓维护(grafana/loki 转 GEL 专用);
-  # 采集器 Alloy(promtail 2026-03-02 EOL 后的官方继任)仍在 grafana 仓
+  # Loki(OSS)在社区仓(grafana/loki 转 GEL 专用);采集器 Alloy 在 grafana 仓
   - name: grafana-community
     url: https://grafana-community.github.io/helm-charts
   - name: grafana
@@ -59,14 +58,14 @@ releases:
     disableValidationOnInstall: true
 
   # Kata(dedicated 档运行时):chart 装 shim 二进制、写 containerd drop-in、建 RuntimeClass kata-qemu。
-  # k8sDistribution 决定往哪个 containerd 配置目录写 —— k3s/rke2 的 containerd 配置由发行版自己
-  # 从模板生成,写错目录 = 装在没人读的地方(chart 侧会因与节点自检不符直接拒装)。
+  # k8sDistribution 决定往哪个 containerd 配置目录写,写错 = 装在没人读的地方
+  # (chart 侧会因与节点自检不符直接拒装)。
   # 只装 kata 池节点(values 的 nodeSelector);kata 池为空时 DaemonSet 0 副本,RuntimeClass 照建。
   - name: kata-deploy
     condition: kataDeploy.enabled
     namespace: kube-system
     chart: oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy
-    # 4.x 起只发 helm chart(3.x 的 kata-deploy/overlays/<distro> kustomize 目录已移除)
+    # 4.x 只发 helm chart(无 kustomize overlays)
     version: "4.1.0"
     values: [values/kata-deploy.yaml]
     set:
@@ -116,7 +115,7 @@ releases:
       - values/light/topolvm-light.yaml
       {{- end }}
     hooks:
-      # lvmd 挂载的 lvm.conf ConfigMap(issue_discards=1,P0-3)必须先于 chart 存在
+      # lvmd 挂载的 lvm.conf ConfigMap(issue_discards=1)必须先于 chart 存在
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
@@ -137,20 +136,20 @@ releases:
     disableValidationOnInstall: true
     {{- if .Values.acmeDns.enabled }}
     hooks:
-      # acme-dns(DNS01 中转,P1-6)与 cert-manager 同 ns,先于此 chart 落地。
-      # 只在 acmeDns.enabled 的档位应用:它的 LoadBalancer 53 端口在 k3s(klipper-lb)上会变成节点 hostPort 53,
-      # 把节点自己发往 127.0.0.53 的查询也劫进 acme-dns(只认 auth 子域,其余 NXDOMAIN),节点从此解析不了任何域名
-      # (Harbor 拉取、节点回连全断,light 首装实测);light 档默认不装,证书走平台侧通配证书
+      # acme-dns(DNS01 中转)与 cert-manager 同 ns,先于此 chart 落地。
+      # 只在 acmeDns.enabled 的档位应用:它的 LoadBalancer 53 在 k3s(klipper-lb)上会变成节点
+      # hostPort 53,把节点自己发往 127.0.0.53 的查询也劫进 acme-dns(只认 auth 子域,
+      # 其余 NXDOMAIN),节点从此解析不了任何域名(Harbor 拉取、节点回连全断)。
+      # light 档因此不装,泛域名证书由运维手工灌入现成通配证书
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
         args: ["apply", "-f", "acme-dns.yaml"]
     {{- end }}
 
-  # 北向唯一入口:Envoy Gateway(Gateway API 实现),1:1 顶掉 2026-03 退休的 ingress-nginx
-  # (最后版本 controller-v1.15.1,此后不再修任何 CVE)。数据面 Envoy 与控制面同 ns
-  # (不开 Gateway Namespace Mode),所以 envoy-gateway-system 就是原 ingress-nginx ns 的替代——
-  # 凡是按 ns 名认入口的地方(NetworkPolicy 来源、准入豁免名单)都要跟着换,漏一处就是网关起不来。
+  # 北向唯一入口:Envoy Gateway(Gateway API 实现)。数据面 Envoy 与控制面同 ns
+  # (不开 Gateway Namespace Mode),凡是按 ns 名认入口的地方(NetworkPolicy 来源、
+  # 准入豁免名单)都必须写 envoy-gateway-system,漏一处就是网关起不来。
   - name: envoy-gateway
     condition: envoyGateway.enabled
     namespace: envoy-gateway-system
@@ -165,13 +164,13 @@ releases:
       {{- end }}
     set:
       # chart 自带的 CRD 子 chart 走 helm 的 crds/ 目录,该目录在 helm upgrade 时永不更新:
-      # 跟着 chart 装,CRD 会永远停在首装那一版。改由下面的 presync 钩子单点管理。
+      # 跟着 chart 装,CRD 会永远停在首装那一版。CRD 由下面的 presync 钩子单点管理。
       - name: crds.enabled
         value: "false"
     hooks:
-      # CRD 必须先于 chart 存在:控制面一起来就 list/watch GatewayClass/Gateway,缺 CRD 时
-      # 它反复重启,且本 release 的 diff 阶段先一步失败。channel 首装即定、事后换不回去
-      # (safe-upgrades 策略拒绝 standard→experimental),细节见脚本头注释。
+      # CRD 必须先于 chart 存在:控制面一起来就 list/watch GatewayClass/Gateway,缺 CRD 时它
+      # 反复重启,且本 release 的 diff 阶段先一步失败。channel 首装即定、事后换不回去
+      # (safe-upgrades 策略拒绝 standard→experimental),见脚本头注释。
       - events: ["presync"]
         showlogs: true
         command: "./gateway-api-crds.sh"
@@ -198,7 +197,7 @@ releases:
 
   # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
   # API 审计相关日志经此留存 ≥6 个月(查询方式见 runbooks/loki-logging.md)。
-  # light 档默认同开(可承受资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
+  # light 档同开(资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
   - name: loki
     condition: loki.enabled
     namespace: monitoring
@@ -218,7 +217,7 @@ releases:
     condition: logCollector.enabled
     namespace: monitoring
     chart: grafana/alloy
-    # chart 1.11.1 = Alloy v1.18.1;promtail chart 已废弃,不引入
+    # chart 1.11.1 = Alloy v1.18.1
     version: "1.11.1"
     needs:
       - monitoring/loki
@@ -226,4 +225,4 @@ releases:
 
 # 注:admission/tenant-restrictions.yaml(ValidatingAdmissionPolicy)不是 helm release,
 # 不纳入本文件;由发布流程单独 kubectl apply(步骤见 README 两档「组件」节),
-# preflight.sh 强制校验集群内两个 Binding 存在且 validationActions 含 Deny。
+# preflight.sh 强制校验集群内三个 Binding 存在且 validationActions 含 Deny。

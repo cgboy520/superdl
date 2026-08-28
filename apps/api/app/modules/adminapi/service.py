@@ -37,8 +37,8 @@ _DUMMY_HASH = hash_password_sync("dummy-timing-equalizer")
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 300.0
-# 纯 IP 桶(只计失败):换用户名不换桶,兜住遍历账号的口令喷洒;
-# 阈值放宽到 30/时,别误伤办公网 NAT 出口共享同一 IP 的多名管理员
+# 纯 IP 桶(只计失败):换用户名不换桶,兜住遍历账号的口令喷洒;阈值放宽以免误伤
+# 办公网 NAT 出口共享同一 IP 的多名管理员
 LOGIN_IP_MAX_ATTEMPTS = 30
 LOGIN_IP_WINDOW_SECONDS = 3600.0
 # 纯账号桶:撞库可以换 IP,但换不了目标账号;15 分钟窗成功即清零,日窗只计失败不清零
@@ -53,10 +53,8 @@ PASSWORD_MIN_LENGTH = 12
 PASSWORD_MAX_BYTES = 72
 
 # ---------- TOTP MFA(安全策略 admin_mfa_enabled,默认开,全部管理角色一视同仁) ----------
-# ops 能签发节点接入令牌(→ 集群 join token → 加恶意节点)、readonly 能导出全部
-# 租户流水与审计——免 MFA 的角色等于给口令泄漏开直通车道,开关只有全员开/全员关两档:
-# 开启时登录只签发挑战票,正式 token 只经 confirm_totp_setup / verify_mfa_login 签发;
-# 关闭时密码校验通过即签发(已绑定者也不挑战,重新开启即恢复;不做按账号 opt-in)。
+# 开关只有全员开/全员关两档,不做按角色/按账号 opt-in。开启时登录只签发挑战票,正式 token
+# 只经 confirm_totp_setup / verify_mfa_login 签发;关闭时密码校验通过即签发
 MFA_SETUP_TICKET_SECONDS = 600  # 绑定票 10 分钟,一次性用途(typ=mfa_setup)
 MFA_VERIFY_TICKET_SECONDS = 300  # 二要素票 5 分钟
 MFA_MAX_ATTEMPTS = 5  # 同账号 5 次/10min,防在线爆破 6 位码
@@ -106,7 +104,7 @@ async def login(
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
     buckets = _login_buckets(client_ip, username)
-    # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不再付哈希成本
+    # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不付哈希成本
     for key, max_attempts, window, _ in buckets:
         await ensure_not_rate_limited(key, max_attempts=max_attempts, window_seconds=window)
     password_ok = await verify_password(password, admin.password_hash if admin else _DUMMY_HASH)
@@ -272,9 +270,8 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
     """生成(或复用进行中的)TOTP 密钥,返回 (secret, otpauth_uri)。
     复用让绑定页刷新/重进看到同一二维码;确认绑定前 totp_enabled 恒为 false。
 
-    行锁下读改写:并发 begin(React StrictMode 双发、双击、多标签页)若各自读到
-    totp_secret is None,会各生成一枚密钥、后写者覆盖前者,而页面可能渲染的是被覆盖
-    的那枚 —— 用户照着二维码输的首个动态码必然验不过,首次绑定卡死。
+    行锁下读改写:并发 begin(双发/双击/多标签页)各读到 totp_secret is None 时会各生成
+    一枚密钥、后写者覆盖前者,页面渲染的二维码可能已失效,首个动态码必然验不过。
     """
     import pyotp
 
@@ -501,7 +498,7 @@ async def create_adjustment(
 ) -> tuple["AdminAdjustment", bool]:
     """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。
     幂等键作用域为 (发起人,租户,键);同键重放比对请求体指纹,不一致 409
-    (对齐 Stripe 惯例)——弱键跨租户/跨金额复用从「静默错单」变「显式拒绝」。"""
+    (对齐 Stripe 惯例):弱键跨租户/跨金额复用得到显式拒绝而非静默错单。"""
     import hashlib
 
     from app.core.money import as_amount
@@ -565,7 +562,7 @@ async def review_adjustment(
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ):
     """双人复核:复核人不得是发起人,且须为调账发起前已存在的账号;通过即生效(钱包+流水,同事务)。
-    audit_writer:同步审计钩子(P1-8),approve 分支最终 commit 前调用,写失败即整体回滚。"""
+    audit_writer:同步审计钩子,approve 分支最终 commit 前调用,写失败即整体回滚。"""
     from app.modules.billing import service as billing_service
 
     # 行锁:并发复核时后到者等锁,看到非 pending 即 409
@@ -677,7 +674,7 @@ async def overview(session: AsyncSession) -> dict[str, Any]:
 
     组成受模块边界约束(只许调对方 service):
     - 实例分状态计数:list_instances_by_status 逐状态装载计数;released 终态不统计
-      (历史行无界)。规模上来后应下沉为 orchestrator 的 count 聚合函数。
+      (历史行无界)。
     - 付费租户:ledger consume 全表聚合精确计数;租户总数取 active 用户口径。
     - 包周期在保数:未到期的订阅行数(不是实例状态数)—— 停机的包月实例仍在保,
       按实例状态数会把它漏掉,而它恰恰还占着库存。

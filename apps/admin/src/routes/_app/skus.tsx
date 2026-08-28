@@ -50,9 +50,8 @@ export const Route = createFileRoute("/_app/skus")({
 interface SkuFormValues {
   name: string;
   gpu_model: string;
-  /** 表单只让运营选「展示档位」,提交时派生出 tier 与 pool_label —— 两者能对不齐就是事故。
-   *  tier 刻意不做表单字段:antd 的 validateFields() 只回已挂载 Form.Item 的值,
-   *  靠 setFieldsValue 塞进 store 的字段拿不到(会静默漏字段)。 */
+  /** 表单只让运营选「展示档位」,提交时派生出 tier 与 pool_label。
+   *  tier 不做表单字段:antd validateFields() 只回已挂载 Form.Item 的值,setFieldsValue 塞进去的会静默漏。 */
   variant: SkuVariant;
   mig_profile?: string | null;
   gpu_cores_pct: number;
@@ -66,23 +65,20 @@ interface SkuFormValues {
   price_hourly: string;  // stringMode:单价 4 位小数,不经二进制浮点
   max_gpus_per_instance: number;
   cuda_max?: string | null;
-  /** 是否接受包周期(预付)下单。与档位正交:包周期不是新档位,是同一条 SKU 的另一种买法 */
+  /** 是否接受包周期(预付)下单。与档位正交,是同一条 SKU 的另一种买法 */
   period_enabled: boolean;
-  /** 是否上竞价档(可被平台回收换取折扣)。与包周期同级:仍是同一条 SKU 的另一种买法 */
+  /** 是否上竞价档(可被平台回收换取折扣)。与包周期同级,仍是另一种买法 */
   spot_enabled: boolean;
   /** 编辑必填(入审计);新建端点不接受 reason,提交时不带 */
   reason?: string;
 }
 
-// 展示档位 → (落库档位, 节点池)。隔离机制的事实源是池,档位只是售卖名字;
-// 让运营只选前者、后两者派生,是「卖的隔离强度 = 实际跑的」的唯一保证(后端 catalog
-// 的 _check_tier_pool 是同一份约束的服务端版本)。
+// 展示档位 →(落库档位, 节点池):隔离机制的事实源是池,运营只选档位;后端 catalog._check_tier_pool 同款约束。
 const VARIANT_SPEC: Record<SkuVariant, { tier: SkuTier; pool: string }> = {
   dedicated: { tier: "dedicated", pool: "kata" },
   shared_mig: { tier: "shared", pool: "mig" },
   shared_hami: { tier: "shared", pool: "hami" },
-  // CPU 档默认落 cpu 池(无卡机);要跑 GPU 机的空闲 CPU 就把池改成 hami,
-  // 后端 TIER_POOLS 两者都放行,这里只给默认值
+  // CPU 档默认落 cpu 池(无卡机);改挂 hami 是去吃 GPU 机的空闲 CPU,后端 TIER_POOLS 两者都放行
   cpu: { tier: "cpu", pool: "cpu" },
 };
 const POOL_VARIANTS: Record<string, SkuVariant[]> = {
@@ -93,10 +89,8 @@ const POOL_VARIANTS: Record<string, SkuVariant[]> = {
   cpu: ["cpu"],
 };
 const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
-/** CPU 规格必须落库的 GPU 字段值(后端 catalog.cpu_spec_error 的镜像:任一非 0 即被拒) */
 /** CPU 规格必须落库的值(后端 catalog.cpu_spec_error 的镜像:GPU 三项任一非 0 即被拒)。
- *  超卖也一并钉成 1:CPU 规格没有算力/显存可超卖,而那两个输入框在 cpu 档不挂载 ——
- *  不显式覆盖就会把切档前的旧值(默认 1.5)带进库,管理端超卖列显示成 1.50× 纯属误导。 */
+ *  超卖一并钉成 1:那两个输入框在 cpu 档不挂载,不显式覆盖会把切档前的旧值带进库。 */
 const CPU_ZERO_FIELDS = {
   gpu_model: "",
   mig_profile: null,
@@ -210,8 +204,8 @@ function SkusPage() {
   const isCpuVariant = (wVariant ?? (record ? skuVariant(record.tier, record.pool_label) : undefined)) === "cpu";
   const pModel = wModel ?? record?.gpu_model;
   const pPool = wPool ?? record?.pool_label;
-  // 折算口径只看池(超卖只发生在 HAMi),端点因此不再收 tier。
-  // CPU 规格没有型号:留空 gpu_model 让端点走 vCPU/内存上限口径,别拿空型号去报「未识别」
+  // 折算口径只看池(超卖只发生在 HAMi),端点不收 tier。
+  // CPU 规格必须留空 gpu_model 让端点走 vCPU/内存上限口径,否则会被报「未识别型号」
   const previewParams = useMemo(() => {
     if (editing === null || !pPool) return null;
     if (isCpuVariant) {
@@ -274,9 +268,7 @@ function SkusPage() {
     const { pool } = VARIANT_SPEC[variant];
     form.setFieldsValue({
       variant,
-      // cpu 档在 cpu / hami 两池都合法,但默认必须是 cpu 池:挂 hami 是去吃 GPU 机的空闲 CPU,
-      // 要受 gpu_node_cpu_instance_vcpu_cap 封顶、也会挤占 GPU 实例的配套 CPU ——
-      // 影响更大的那个选项不该是静默默认值,得让运营显式改
+      // cpu 档在 cpu / hami 两池都合法,默认取 cpu 池;挂 hami 会挤占 GPU 实例的配套 CPU,需运营显式改
       pool_label: pool,
       // 切片只属于 mig 池:换走时必须清掉,否则后端 _check_tier_pool 会以「切片与池不符」驳回
       ...(variant === "shared_mig" ? {} : { mig_profile: null }),
@@ -301,11 +293,9 @@ function SkusPage() {
       form.setFieldsValue({
         variant: "shared_hami", gpu_cores_pct: 50, oversell_cores: 1.5, oversell_vram: 1.0,
         disk_gb: 100, max_gpus_per_instance: 1, pool_label: "hami", vcpu: 8, mem_gb: 32,
-        // 默认开:与后端 SkuCreate.period_enabled 默认值一致。默认关会让包周期上线当天
-        // 在市场页完全看不见,得逐条 SKU 手动打开
+        // 默认开:与后端 SkuCreate.period_enabled 默认值一致
         period_enabled: true,
-        // 默认关:与后端 SkuCreate.spot_enabled 默认值一致。竞价意味着这条规格上的实例
-        // 可能被平台回收,不该由「新建时忘了看」变成默认承诺
+        // 默认关:与后端 SkuCreate.spot_enabled 默认值一致
         spot_enabled: false,
         // 草稿覆盖默认值(仅新建):误关抽屉后重开不丢
         ...draft.load(),
@@ -323,20 +313,15 @@ function SkusPage() {
 
   const submit = async () => {
     await form.validateFields();
-    // 取全量 store 而非 validateFields() 的返回值:后者只回**已挂载** Form.Item 的字段,
-    // 而本表单按档位隐藏大半输入框(cpu 档没有型号/显存/份额/超卖/单卡数,非 mig 档没有切片)。
-    // 读返回值会让那些字段变成 undefined 混进 payload —— String(undefined) 就是 "undefined",
-    // 服务端直接 422。这个坑在本文件已经踩过三次,统一走 store。
+    // 取值必须用 getFieldsValue(true) 而非 validateFields() 的返回值:后者只回已挂载 Form.Item 的字段,
+    // 而本表单按档位隐藏大半输入框,漏掉的会变成 undefined 混进 payload(String(undefined) 即 "undefined")而 422。
     const values = form.getFieldsValue(true) as SkuFormValues;
-    // 派生而非读表单:tier 没有 Form.Item,pool_label 的输入框是只读回显,
-    // 两者的事实源都是 variant
+    // tier / pool_label 派生而非读表单:tier 没有 Form.Item,池的输入框只是只读回显,事实源都是 variant
     const { tier, pool: derivedPool } = VARIANT_SPEC[values.variant];
-    // 只有 cpu 档的池是运营可选的(cpu 池 / 蹭 GPU 节点的 hami 池),其余三档恒由档位派生。
-    // 不写成 `values.pool_label || derivedPool`:那个 || 永远不会触发(池的 Form.Item 一直挂载,
-    // 禁用不等于不挂载),留着只会让人以为这里有回落逻辑
+    // 只有 cpu 档的池运营可选,其余三档恒由档位派生;池的 Form.Item 一直挂载(禁用不等于不挂载),
+    // 写成 `values.pool_label || derivedPool` 那个 || 永远不会触发
     const pool = values.variant === "cpu" ? values.pool_label : derivedPool;
-    // CPU 规格的 GPU 字段全部清零:那几个 Form.Item 在 cpu 档不挂载,validateFields()
-    // 拿不到它们的值(antd 只回已挂载项),不显式补零会漏字段
+    // CPU 规格的 GPU 字段必须显式补零:那几个 Form.Item 在 cpu 档不挂载,不补就会漏字段
     const gpuFields =
       tier === "cpu"
         ? CPU_ZERO_FIELDS
@@ -432,12 +417,11 @@ function SkusPage() {
   };
 
   const isNew = editing === "new";
-  // 新建:按选中的集群资源限定池;编辑:tier 不可改(SkuUpdate 无该字段),
-  // 只放行同 tier 的变体 —— 即「共享」在 mig / hami 两池之间改挂
+  // 新建按选中的集群资源限定池;编辑只放行同 tier 的变体(tier 不可改,SkuUpdate 无该字段)
   const variantOptions: SkuVariant[] = isNew
     ? (clusterPick?.pool_label ? (POOL_VARIANTS[clusterPick.pool_label] ?? ALL_VARIANTS) : ALL_VARIANTS)
     : ALL_VARIANTS.filter((v) => VARIANT_SPEC[v].tier === record?.tier);
-  // 改档位就是改池,在售规格后端 409(换池 = 换商品);这里先灰置并说明,不让人白填一遍
+  // 改档位就是改池,在售规格后端 409(换池 = 换商品);这里先灰置并说明
   const variantLocked = !isNew && record?.status === "on";
 
   return (
@@ -505,7 +489,7 @@ function SkusPage() {
           },
           { title: t("skus.colPrice"), dataIndex: "price_hourly", render: (v: string) => formatHourlyPrice(v) },
           {
-            // 与档位正交:包周期不是新档位,是同一条 SKU 的另一种买法,所以单独成列而不塞进档位标签
+            // 与档位正交,单独成列而不塞进档位标签
             title: t("skus.colPeriod"),
             dataIndex: "period_enabled",
             width: 100,
@@ -513,8 +497,7 @@ function SkusPage() {
               v ? <Tag color="blue">{t("skus.periodOn")}</Tag> : <Tag>{t("skus.periodOff")}</Tag>,
           },
           {
-            // 与包周期同一口径:哪些规格上了竞价档,列表要能一眼看出 —— 竞价实例会被回收,
-            // 「哪些规格允许这件事」属于要能对着账查的配置
+            // 与包周期同一口径,竞价档单独成列
             title: t("skus.colSpot"),
             dataIndex: "spot_enabled",
             width: 100,
@@ -529,7 +512,7 @@ function SkusPage() {
                 <Switch
                   checked={v === "on"}
                   disabled={!writable}
-                  // 按行隔离:mutation 级 isPending 会让全表开关一起转,看着像批量生效
+                  // 按行隔离:mutation 级 isPending 会让全表开关一起转
                   loading={toggleSale.isPending && toggleSale.variables?.skuId === r.id}
                   onChange={(on) =>
                     toggleSale.mutate({
@@ -616,8 +599,7 @@ function SkusPage() {
                 />
               </Form.Item>
             )}
-            {/* 档位与切片编辑态也要在:下架规格可在 mig / hami 两池之间改挂。
-                关进 isNew 会让改池不可达,且编辑时 mig_profile 不挂载 = 提交被抹成 null */}
+            {/* 档位与切片编辑态也必须挂载:关进 isNew 会让改池不可达,且 mig_profile 不挂载 = 提交被抹成 null */}
             <Form.Item
               name="variant"
               label={t("skus.colTier")}
@@ -648,9 +630,7 @@ function SkusPage() {
                 />
               </Form.Item>
             )}
-            {/* 池恒由上面的档位派生,不单独可改 —— 两者能各改各的就会卖错隔离强度。
-                唯一例外是 CPU 档:它在 cpu(无卡机)与 hami(GPU 机的空闲 CPU)两池都合法,
-                两者对用户无差别、只影响落在哪批机器上,交由运营选(后端 TIER_POOLS 同样放行) */}
+            {/* 池恒由档位派生,各改各的会卖错隔离强度;唯一例外是 CPU 档,cpu / hami 两池都合法交由运营选 */}
             <Form.Item
               name="pool_label"
               label={t("nodes.poolLabel")}
@@ -664,8 +644,7 @@ function SkusPage() {
                   .map(([value, labelKey]) => ({ value, label: t(labelKey) }))}
               />
             </Form.Item>
-            {/* 算力份额/显存/超卖三项都是卡的属性:CPU 规格整块不挂载,提交时由
-                CPU_ZERO_FIELDS 补零(超卖两列保留 DB 默认 1.00,对不带卡的规格无意义) */}
+            {/* 算力份额/显存/超卖是卡的属性:CPU 规格整块不挂载,提交时由 CPU_ZERO_FIELDS 补零 */}
             {!isCpuVariant && (
               <>
                 <Form.Item
@@ -736,8 +715,7 @@ function SkusPage() {
             <Form.Item name="price_hourly" label={t("skus.priceLabel")} rules={[{ required: true }]}>
               <InputNumber min="0.0001" step="0.01" precision={4} stringMode style={{ width: "100%" }} />
             </Form.Item>
-            {/* 包周期开关跟着单价放:它决定这条 SKU 能不能被预付买走,是定价的一部分,不是档位属性。
-                关掉只挡新单,已在保的包周期实例不受影响(到期前仍占库存) */}
+            {/* 包周期开关是定价的一部分,跟着单价放。关掉只挡新单,已在保的实例到期前仍占库存 */}
             <Form.Item
               name="period_enabled"
               label={t("skus.periodEnabledLabel")}
@@ -746,8 +724,7 @@ function SkusPage() {
             >
               <Switch />
             </Form.Item>
-            {/* 竞价档同理跟着单价放:它决定这条 SKU 能不能按折后价卖。
-                关掉只挡新单,已在跑的竞价实例不受影响(仍可被回收,也仍可自行转按量) */}
+            {/* 竞价档同理。关掉只挡新单,已在跑的竞价实例仍可被回收、也仍可自行转按量 */}
             <Form.Item
               name="spot_enabled"
               label={t("skus.spotEnabledLabel")}

@@ -29,9 +29,8 @@ def verify_password_sync(plain: str, hashed: str) -> bool:
         return False
 
 
-# bcrypt 单次 ~200ms,出让线程池,不阻塞事件循环。
-# 并发信号量把同时进行的哈希压在有界范围(k8s  limit 下 os.cpu_count 不可信,
-# 取固定小上限):撞库/扫号流量排队的请求不再并行抢 CPU,把登录接口打成全站 DoS。
+# bcrypt 单次 ~200ms:必须出让线程池,且并发数取固定小上限(k8s limit 下 os.cpu_count
+# 不可信),撞库/扫号流量排队而非并行抢 CPU,防登录接口被打成全站 DoS
 _BCRYPT_MAX_PARALLEL = 4
 _bcrypt_permits = asyncio.Semaphore(_BCRYPT_MAX_PARALLEL)
 

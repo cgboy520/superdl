@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 实例数 | 10 | 1~1000 | 用户覆盖 → 策略 `max_instances_per_user` → env |
 | GPU 总数 | 8 | 1~1024 | 同上 `max_gpus_per_user`(只计 GPU 实例;CPU 实例 gpu_count=0,不计入这一维) |
-| CPU 实例 vCPU 总数 | 64 | 1~4096 | 策略 `max_vcpus_per_user`(无用户级覆盖列;只计 `gpu_count=0` 的实例,GPU 实例不计入)。超限报 `VCPU_QUOTA_EXCEEDED` |
+| CPU 实例 vCPU 总数 | 64 | 1~4096 | 策略 `max_vcpus_per_user`(无用户级覆盖列;只计 `gpu_count=0` 的实例,GPU 实例不计入)。超限报 `orchestrator.vcpuQuota`(ErrorCode 为 `VALIDATION_ERROR`) |
 | 数据盘数 | 20 | 1~1000 | 同上 `max_disks_per_user` |
 | 单盘容量 | 10~4096 GB | 下限 1~1024,上限 10~65536 | 策略 `disk_min_gb` / `disk_max_gb` |
 | 单实例 GPU 数 | 按 SKU `max_gpus_per_instance`(UI 给 1/2/4/8;CPU 规格为 0,只收 `gpu_count=0`) | — | `skus` |
@@ -29,14 +29,14 @@
 | 开户前余额须覆盖的小时数 | 1h | 策略 `afford_cover_hours`(1~24) |
 | 低余额预警阈值 | 预估可用 <24h | 只存 `users.low_balance_warn_hours`(用户在 1~168h 内自设,默认 24);不设平台级策略键 |
 | 欠费冻结到回收 | 72h | 策略 `freeze_grace_hours`(1~720) |
-| 包周期到期冻结到回收 | 72h | 复用同一个 `freeze_grace_hours`:对用户是同一句承诺「停机后 72 小时内还能救回来」,两条链路给不同天数只会制造投诉 |
-| 包日 / 包周 / 包月 / 包年折扣 | 95 / 90 / 80 / 70(百分数,80 = 8 折) | 策略 `period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`(各 50~100)。**上界 100 = 不打折,不设加价档** —— 预付比按量贵讲不通,写错一个数就是全站涨价。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
+| 包周期到期冻结到回收 | 72h | 复用同一个 `freeze_grace_hours`,与欠费同款 |
+| 包日 / 包周 / 包月 / 包年折扣 | 95 / 90 / 80 / 70(百分数,80 = 8 折) | 策略 `period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`(各 50~100)。**上界 100 = 不打折,不设加价档**。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
 | 包周期到期预警 | 到期前 3 天 | 策略 `period_expire_warn_days`(1~30);短信 + 站内信,每个到期时刻至多一条(去重锚点 `subscriptions.warned_for_expiry`) |
-| 包周期定长小时 | 日 24 / 周 168 / 月 720 / 年 8760 | `core/pricing.py` `PERIOD_HOURS` —— 常量,不可在线改:到期时刻与定价同源,改它等于同时改价与改到期口径 |
-| 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值。它是用户可控的乘数,不封顶一次请求就能算出溢出 `numeric(14,2)` 的应付额 |
-| 竞价折扣 | 40(百分数,40 = 4 折) | 策略 `spot_discount_pct`(10~90)。**上界 90 = 至少打九折** —— 竞价的对价是「可被回收」,不打折的竞价档没有存在理由,只会让用户白担一份风险。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
+| 包周期定长小时 | 日 24 / 周 168 / 月 720 / 年 8760 | `core/pricing.py` `PERIOD_HOURS`,常量不可在线改:到期时刻与定价同源,改它等于同时改价与改到期口径 |
+| 单次下单 / 续费的周期数 | 1~36 | `core/pricing.py` `MAX_PERIOD_COUNT`;契约层同值。用户可控的乘数,不封顶一次请求就能算出溢出 `numeric(14,2)` 的应付额 |
+| 竞价折扣 | 40(百分数,40 = 4 折) | 策略 `spot_discount_pct`(10~90)。**上界 90 = 至少打九折**。经 `GET /api/v1/policies` 下发,前端禁止硬编码 |
 | 抢占宽限窗 | 60s | 策略 `spot_grace_seconds`(静态区间 30~600),**另有比它更紧的跨键上限,见下**;同样经 `/policies` 下发(知情同意里那句「提前 N 秒通知」取它) |
-| 包周期到期巡检 | 30min 一轮 | `workers/main.py` `subscription_patrol`(worker `core` 组件);预警窗以天计,到期后的处置晚半小时不影响任何计费口径 |
+| 包周期到期巡检 | 30min 一轮 | `workers/main.py` `subscription_patrol`(worker `core` 组件) |
 | 数据盘欠费宽限 / 冻结 | 7 天 / 30 天 | 策略 `disk_grace_days` / `disk_frozen_days`(各 1~365) |
 | 数据盘单价 | 0.0350 元/GB·月 | 策略 `disk_price_gb_month`(0.0010~1.0000),建盘时快照 |
 | failed 实例保留 | 7 天后回收 | env `failed_retention_days` |
@@ -58,16 +58,12 @@
 | 节点 Missing 后删行 | 7 天 | `nodes/patrol.py` `MISSING_RETENTION` |
 
 **抢占宽限窗与 creating 超时共用同一段时间预算。** 被抢占的实例迁 `stopping` 后,`instance.stop` 经 outbox
-延迟 `spot_grace_seconds` 才到期执行;而触发这次抢占的请求方此刻已经在 `creating` 里等着,
-`creating_timeout_seconds`(默认 300s)一到就转 failed。宽限窗之外还得留给「删 Pod → terminationGracePeriod
-30s → 释放卡 → 调度请求方 → 拉起」的时间,这段余量是常量 `core/policies.py` 的
-`PREEMPT_TIME_RESERVE_SECONDS = 120`。所以 `spot_grace_seconds` 的**真实上限是
-`creating_timeout_seconds − 120`**(默认 300 − 120 = **180s**),比静态区间的 600 紧得多。
-
-这是**跨键约束,静态区间表达不了**,由 `validate_policy_value` 在保存时拦下,错误文案里带出当时的
-具体上限(前端原样展示,不自己再算一遍)。要调大宽限窗就先调大 `creating_timeout_seconds`,顺序反了
-只会得到一个被拒绝的保存 —— 而真放行的话,等于给自己造一批「竞价实例杀了、请求方还是超时失败」的单:
-两边的用户都输,平台一份容量也没多出来。
+延迟 `spot_grace_seconds` 才到期执行;触发这次抢占的请求方此刻已在 `creating` 里等着,
+`creating_timeout_seconds` 一到就转 failed。宽限窗之外还要留给「删 Pod → terminationGracePeriod → 释放卡 →
+调度请求方 → 拉起」,这段余量是 `core/policies.py` 的常量 `PREEMPT_TIME_RESERVE_SECONDS = 120`。
+所以 `spot_grace_seconds` 的**真实上限是 `creating_timeout_seconds − 120`**(默认 **180s**),比静态区间的 600 紧得多。
+这是静态区间表达不了的跨键约束,由 `validate_policy_value` 在保存时拦下,错误文案带出当时的具体上限
+(前端原样展示,不自己再算一遍)。要调大宽限窗就先调大 `creating_timeout_seconds`。
 
 ## 会话与凭据
 
@@ -85,7 +81,7 @@
 
 固定窗口,计数落 PG(`rate_limit_counters`),多副本共享;429 带 `Retry-After`。边缘层(Envoy Gateway)对公网 API 域另有**每源 IP** 20 rps / 600 rpm 兜底(`deploy/app/k8s/04-gateway.yaml` 的 `BackendTrafficPolicy`,`sourceCIDR.type: Distinct` 才是每 IP 一个桶);管理面不配边缘限流,靠源 IP 白名单。
 
-原 ingress-nginx 的**每源 IP 20 并发连接**这一条已不存在:Envoy Gateway 没有每源 IP 连接数原语,`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000 只作防内存耗尽的兜底,不是 20 的等价值。取舍见 [security.md](./security.md)「限流分层」。
+**没有每源 IP 并发连接限制**:Envoy Gateway 无此原语,`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000 只作防内存耗尽的兜底。取舍见 [security.md](./security.md)「限流分层」。
 
 | 动作 | 维度 | 限额 | 备注 |
 |---|---|---|---|

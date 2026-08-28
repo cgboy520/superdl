@@ -1,23 +1,21 @@
 # 日志与审计留存(Loki)
 
-组件:helmfile 的 `loki`(grafana-community/loki,Monolithic 单副本)+ `alloy`
-(grafana/alloy)。采集面:全部命名空间的容器日志
-(discovery.kubernetes)+ 控制面节点 apiserver
-审计文件(`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
+组件:helmfile 的 `loki`(grafana-community/loki,Monolithic 单副本)+ `alloy`(grafana/alloy)。
+采集面:全部命名空间的容器日志(discovery.kubernetes)+ 控制面节点 apiserver 审计文件
+(`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
 
 ## 留存口径(合规基线)
 
-- **Loki:`retention_period: 4320h`(180 天 ≥ 6 个月)**,`values/loki.yaml`
-  (compactor retention_enabled;磁盘按此容量规划,full 档 50Gi JuiceFS)。
-- DB `audit_log` 表:365 天(`SUPERDL_AUDIT_RETENTION_DAYS`),结构化审计的
-  第一事实源;Loki 侧是请求链/异常/ apiserver 审计的第二路留存。
+- **Loki `retention_period: 4320h`(180 天 ≥ 6 个月)**,`values/loki.yaml`(compactor `retention_enabled`);
+  磁盘按此容量规划,full 档 50Gi JuiceFS,light 档 10Gi TopoLVM。
+- DB `audit_log` 表:365 天(`SUPERDL_AUDIT_RETENTION_DAYS`),结构化审计的第一事实源;
+  Loki 侧是请求链/异常/apiserver 审计的第二路留存。
 - 等保「API 审计日志 ≥6 个月」= DB 审计表(主)+ Loki 180 天容器日志(副)双路。
 
 ## 查询方式
 
-Grafana(full 档)→ Explore → Loki 数据源(或 `logcli`):
-`kubectl -n monitoring port-forward svc/loki 3100:3100`,LogQL 直接打在
-`http://localhost:3100` 上。
+Grafana(full 档)→ Explore → Loki 数据源;或 `logcli`:
+`kubectl -n monitoring port-forward svc/loki 3100:3100` 后 LogQL 直接打在 `http://localhost:3100`。
 
 ```logql
 # 1. 按 request_id 串联一次请求的 API + worker(outbox)全链日志
@@ -38,15 +36,14 @@ Grafana(full 档)→ Explore → Loki 数据源(或 `logcli`):
 {job="kube-apiserver-audit"} |~ `"user":{"username":"system:serviceaccount:superdl`
 ```
 
-平台日志 prod 为 JSON 行(structlog;`request_id`/`level`/`event` 为键),
-`| json` 后可按键过滤,如 `{namespace="superdl"} | json | level="error"`。
+平台日志 prod 为 JSON 行(structlog;`request_id`/`level`/`event` 为键),`| json` 后可按键过滤,
+如 `{namespace="superdl"} | json | level="error"`。
 
 ## 告警
 
-未捕获异常、outbox 死信等已有 Prometheus 指标告警(kps values 的
-`superdl.platform` 规则组:`ApiHighErrorRate`/`OutboxTaskDead` 等,走
-Alertmanager 双通道)。需要按日志内容的告警时,用 Loki ruler 对上面 2/3 号
-查询建 `count_over_time(...) > 0` 规则,接同一 Alertmanager。
+未捕获异常、outbox 死信等已有 Prometheus 指标告警(kps values 的 `superdl.platform` 规则组:
+`ApiHighErrorRate`/`OutboxTaskDead` 等,走 Alertmanager 双通道)。需要按日志内容告警时,
+用 Loki ruler 对上面 2/3 号查询建 `count_over_time(...) > 0` 规则,接同一 Alertmanager。
 
 ## 采集自检
 

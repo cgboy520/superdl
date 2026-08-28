@@ -41,8 +41,7 @@ class FakeOrchestrator:
     # 模拟真实 K8s 的优雅删除:对象在 etcd 里再留 terminationGracePeriodSeconds,期间
     # read 仍 200、phase 仍 Running。默认关,复现「删了又立刻同名重建」的时序问题时打开。
     graceful_delete: bool = False
-    # 池 → 该池合成节点的 GPU 数。cpu 池恒 0 卡:不给它一个节点,纯 CPU 档在 dev 与
-    # e2e 里就是零库存、点不进去,整条 CPU 路径无从验证
+    # 池 → 该池合成节点的 GPU 数。cpu 池恒 0 卡(有此节点 dev/e2e 才有纯 CPU 档库存)
     pool_capacity: dict[str, int] = field(
         default_factory=lambda: {"kata": 16, "hami": 32, "mig": 16, "cpu": 0}
     )
@@ -59,9 +58,8 @@ class FakeOrchestrator:
     # finish_wipe 标记完成后调用返回
     auto_wipe: bool = True
     wipe_completed: set[tuple[str, str]] = field(default_factory=set)
-    # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels。独立于 self.pods:
-    # Job Pod 不是实例(无 InstancePodSpec/NodePort),但 real 里它带 MANAGED_LABEL
-    # 会被全量 LIST 命中——不登记则测试复现不了「泄漏回收误杀擦盘 Job」的场景
+    # 受管 Job(wipe)运行中的 Pod:(ns, pod_name) -> labels。独立于 self.pods,且必须登记:
+    # real 里它带 MANAGED_LABEL 会被全量 LIST 命中,不登记就复现不了「泄漏回收误杀擦盘 Job」
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     # 预热:(node_name, image_ref) -> state;auto_prewarm=True 时创建即 succeeded
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
@@ -78,9 +76,9 @@ class FakeOrchestrator:
     cordoned_nodes: set[str] = field(default_factory=set)
     # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
     endpoints: set[tuple[str, str]] = field(default_factory=set)
-    # 外部占用的 NodePort(非平台对象的 Service,如无 MANAGED_LABEL 的第三方服务):
-    # 撞占时 create_instance 抛 NodePortTaken(对齐 real 的 422 归一化),
-    # used_node_ports 必须看得见它——否则 blocked 端口周期复检会把真占用误判为已释放
+    # 外部占用的 NodePort(非平台对象的 Service):撞占时 create_instance 抛 NodePortTaken
+    # (对齐 real 的 422 归一化);used_node_ports 必须看得见它,否则 blocked 端口复检会把
+    # 真占用误判为已释放
     external_node_ports: set[int] = field(default_factory=set)
     # per-instance 敏感 env 的「Secret」(对齐 real 的 instance_env_secret_name 生命周期):
     # 测试据此断言 token 不落 Pod spec,而是走 secretKeyRef

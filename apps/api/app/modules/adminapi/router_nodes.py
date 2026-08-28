@@ -1,4 +1,4 @@
-"""管理端路由(全局实例/节点注册/节点与集群/超卖报表,自 router.py 拆分)。"""
+"""管理端路由(全局实例/节点注册/节点与集群/超卖报表)。"""
 
 import asyncio
 from typing import Annotated, Any
@@ -73,7 +73,6 @@ async def admin_list_instances(
     )
     items = [AdminInstanceOut.model_validate(i) for i in page.items]
     # 与用户端列表同一条回填路径:管理端也要看得见端点 slug 与包周期到期日
-    # (客服问的第一个问题就是「他这台什么时候到期」)
     await orchestrator_service.attach_instance_details(session, items)
     return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor)
 
@@ -250,7 +249,7 @@ def _helmfile(distro: str | None, release: str) -> str:
 def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.ClusterStatus 行或 None
     """组件体检:每项红了都能一句话答出「哪条用户可见链路断了」,按链路顺序排。
 
-    detail 只写实况(数量、名字),不写「预期如此」这类判断——档位差异已经不存在了。
+    detail 只写实况(数量、名字),不写「预期如此」这类判断。
     """
     hami_ok = bool(row and row.hami_ready)
     kps_ok = bool(row and row.kps_present)
@@ -319,8 +318,8 @@ def _cluster_components(row: Any) -> list[ClusterComponentOut]:  # nodes.Cluster
         ClusterComponentOut(
             key="gateway",
             ok=gateway_ok,
-            # 判据是 Gateway 对象的 Programmed 条件,不是控制器活着:listener 的证书 Secret
-            # 缺失或 hostname 撞车时控制器一切正常,而实例入口一条流量都进不来
+            # 判据是 Gateway 对象的 Programmed 条件而非控制器活着:证书 Secret 缺失或
+            # hostname 撞车时控制器一切正常,而实例入口一条流量都进不来
             detail=None if gateway_ok else "Gateway 未 Programmed(实例入口不可达)",
             fix_hint=None if gateway_ok else _helmfile(distro, "envoy-gateway"),
         ),

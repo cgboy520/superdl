@@ -19,9 +19,8 @@ from app.core.ratelimit import check_rate_limit
 
 logger = get_logger(__name__)
 
-# 平台级配额(验证码与通知短信共享预算池,计数落 PG,多副本共享):
-# 单手机号/单 IP 限流防的是点对点滥用,防不住分布式号码池撞库、通知环路或重试风暴
-# 把通道预算打穿——预算维度必须有一道全局闸门。小时窗护突发,日窗护预算。
+# 平台级短信预算闸门(验证码与通知共享一个池;计数落 PG,多副本共享)。
+# 单手机号/单 IP 限流挡不住分布式号码池与重试风暴:小时窗护突发,日窗护预算
 SMS_PLATFORM_HOURLY_MAX = 1000
 SMS_PLATFORM_DAILY_MAX = 5000
 
@@ -29,8 +28,7 @@ SMS_PLATFORM_DAILY_MAX = 5000
 async def ensure_sms_platform_quota() -> None:
     """平台级短信闸门(计数即准入,原子无竞态)。超限抛 RATE_LIMITED(429)。
 
-    所有 channel.send 调用点之前必须先过此闸。计数含失败尝试:防线语义是
-    限制对通道的调用速率,渠道失败重试同样消耗配额,防重试风暴放大损失。
+    每个 channel.send 调用点之前必须先过此闸;计数含失败尝试,渠道重试同样消耗配额。
     """
     await check_rate_limit(
         "sms-platform:hourly", max_attempts=SMS_PLATFORM_HOURLY_MAX, window_seconds=3600.0

@@ -1,7 +1,5 @@
-/**
- * 短信发码三件套:人机校验 → 发码 → 60s 重发倒计时(登录页与改密弹窗共用)。
- * 倒计时递减只走 updater 纯函数;清零与卸载的清 timer 都在 effect 里(StrictMode 双调安全)。
- */
+/** 短信发码三件套:人机校验 → 发码 → 60s 重发倒计时(登录页与改密弹窗共用)。
+ *  倒计时递减只走 updater 纯函数,清零与卸载的清 timer 都在 effect 里(StrictMode 双调安全)。 */
 import type { SmsCodeRequest } from "@superdl/api-client";
 import { App } from "antd";
 import { useEffect, useRef, useState } from "react";

@@ -1,7 +1,5 @@
-/**
- * GPU 利用率迷你 sparkline(实例列表列,近 1h),自绘 SVG。
- * 纵轴固定 0~100%;points 为 (unix_ts, util%) 稀疏序列,空序列由调用方过滤。
- */
+/** GPU 利用率迷你 sparkline(实例列表列,近 1h),自绘 SVG。
+ *  纵轴固定 0~100%;points 为 (unix_ts, util%) 稀疏序列,空序列由调用方过滤。 */
 
 import { colorPrimary } from "@superdl/ui";
 

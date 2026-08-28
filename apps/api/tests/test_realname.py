@@ -135,8 +135,8 @@ class TestRealName:
             settings.real_name_enabled = False
 
     async def test_create_instance_gate_when_required(self, client: AsyncClient, sm):
-        """强制实名开启时:算力开通同样拦截(监管对算力服务的要求不低于预收款),
-        此前只拦充值,匿名账号可绕过实名直接租 GPU。"""
+        """强制实名开启时:算力开通同样拦截(监管对算力服务的要求不低于预收款);
+        只拦充值的话,匿名账号可绕过实名直接租 GPU。"""
         from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
 
         settings = get_settings()

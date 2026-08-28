@@ -83,12 +83,10 @@ async def _patrol_frozen_tenants(
 async def _unsettled_burn(
     session: AsyncSession, inst, now: datetime, settled_through: datetime | None
 ) -> Decimal:
-    """该实例「已跑未出账」的实时估算消耗(2 位小数)。
+    """该实例「已跑未出账」的实时估算消耗(2 位小数)。估算只用于停机/预警判据,永不入账。
 
-    窗口下界取 min(当前自然小时, 水位线+1h):结算停摆或水位线卡在失败窗口之前时,
-    更早的未落账小时同样计入停机判据——结算故障不得放大为无界免费算力。
-    与结算同口径:事件重建窗口 running 秒数,减去窗口内已出账秒数(中途尾账),
-    按单价折算。估算只用于停机/预警判据,永不入账。
+    窗口下界取 min(当前自然小时, 水位线+1h):结算停摆时更早的未落账小时同样计入停机判据。
+    与结算同口径:事件重建窗口 running 秒数,减去窗口内已出账秒数,按单价折算。
     """
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -120,9 +118,8 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
         settled_through = await get_watermark(session, "hourly")
 
     for user_id, all_instances in by_user.items():
-        # 包周期实例整段周期已预付:既不参与燃烧率,也不该被欠费停机。
-        # 三处配套过滤之一(另两处:wallet.assert_can_afford、billing.edge_listener),
-        # 漏这一处的后果最直接 —— 余额为 0 的包月用户会被巡检当成欠费户停机
+        # 包周期实例整段周期已预付:既不参与燃烧率,也不该被欠费停机。三处配套过滤之一
+        # (另两处:wallet.assert_can_afford、billing.edge_listener),漏了会误停包月实例
         instances = [i for i in all_instances if i.market != MARKET_SUBSCRIPTION]
         if not instances:
             continue
@@ -133,18 +130,16 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     (hourly_cost(i.price_hourly, i.gpu_count) for i in instances),
                     Decimal("0.00"),
                 )
-                # 停机判据:余额 − 未结算消耗 ≤ 0。小时结算次小时 :02 才落账,
-                # 只看余额会有最长约 65 分钟的停机盲区;实时估算把盲区压到巡检周期内。
-                # 估算窗口随结算水位线下探:结算停摆时停机判据不失灵。
+                # 停机判据:余额 − 未结算消耗 ≤ 0。只看余额会有约 65 分钟的停机盲区
+                # (小时结算次小时 :02 才落账),实时估算把盲区压到巡检周期内
                 now = now_utc()
                 unsettled = Decimal("0.00")
                 for inst in instances:
                     unsettled += await _unsettled_burn(session, inst, now, settled_through)
                 effective = as_amount(balance - unsettled)
                 if effective <= 0:
-                    # 锁内二次读(P2):无锁粗筛到提交停机之间,用户可能刚完成充值
-                    # (credit 与本锁互斥)。不重读会按旧余额误停机——锁内确认仍为
-                    # 非正才真正执行停机链
+                    # 必须锁内二次读:粗筛到提交停机之间用户可能刚充值(credit 与本锁互斥),
+                    # 不重读会按旧余额误停机
                     locked = await wallet.lock_wallet(session, user_id)
                     effective = as_amount(locked.balance - unsettled)
                 if effective <= 0:
@@ -162,8 +157,8 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     await session.commit()
                 elif burn_per_hour > 0:
                     est_hours = float(effective / burn_per_hour)
-                    # 阈值只存 users.low_balance_warn_hours(NOT NULL,默认 24,用户自设);
-                    # 用户行只匿名化不删,巡检到的每个 user_id 必有阈值行
+                    # 阈值只存 users.low_balance_warn_hours(NOT NULL);用户行只匿名化不删,
+                    # 巡检到的每个 user_id 必有阈值行
                     if est_hours < thresholds[user_id]:
                         await notify_service.send_low_balance_warning(
                             session, user_id, est_hours=est_hours, balance=format(balance, "f")
@@ -187,10 +182,8 @@ async def _patrol_frozen_and_arrears_stopped(
         stopped = await orchestrator_service.list_instances_by_status(session, "stopped")
         frozen = await orchestrator_service.list_instances_by_status(session, "frozen")
 
-    # 欠费用户的 stopped 实例 → 冻结(72h 倒计时)。
-    # 包周期实例不走这条:它的冻结条件是「周期到期」不是「余额为 0」,由
-    # billing/subscriptions.subscription_patrol 负责(那边一样写 frozen_deadline,
-    # 回收仍由下面的 frozen 分支统一做,状态机只有一处实现)
+    # 欠费用户的 stopped 实例 → 冻结。包周期实例不走这条:它的冻结条件是「周期到期」而非
+    # 「余额为 0」,由 subscriptions.subscription_patrol 写 frozen_deadline,回收仍归下面统一做
     for inst in (i for i in stopped if i.market != MARKET_SUBSCRIPTION):
         try:
             async with sm() as session:
@@ -221,9 +214,8 @@ async def _patrol_frozen_and_arrears_stopped(
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
                 if fresh.status != "frozen":
                     continue
-                # 解冻条件按购买模式分:按量看「有没有回款」,包周期看「有没有续费」。
-                # 给包周期也按余额解冻,会让一个到期没续费但余额充足的用户被无限解冻,
-                # 冻结倒计时永远走不到头 —— 等于免费续期
+                # 解冻条件按购买模式分:按量看回款,包周期看续费。给包周期也按余额解冻会让
+                # 到期未续费但余额充足的用户无限解冻,等于免费续期
                 balance = await wallet.get_balance(session, inst.user_id)
                 if balance > 0 and fresh.market != MARKET_SUBSCRIPTION:
                     await orchestrator_service.unfreeze_instance(session, fresh)

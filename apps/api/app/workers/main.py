@@ -61,8 +61,7 @@ async def heartbeat_loop() -> None:
 async def outbox_loop(worker_id: str, task_types: frozenset[str] | None = None) -> None:
     """N 条并发领取协程(SKIP LOCKED 保证不重复);领取按 next_retry_at, id 公平排序。
 
-    task_types 非空时按组件过滤(P1-18):本进程只领自己的任务类型,
-    其它组件的任务在查询层不可见(不阻塞、不误领)。"""
+    task_types 非空时按组件过滤:其它组件的任务在查询层不可见,不阻塞也不误领。"""
     sm = get_sessionmaker()
     logger.info(
         "outbox_worker_started",
@@ -185,8 +184,8 @@ def _timed_job(
 def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     """各模块定时任务注册(结算/巡检/聚合)。callable 一律经 _timed_job 包耗时观测。
 
-    按 SUPERDL_WORKER_COMPONENT 过滤(P1-18):组件进程只注册自己的任务,
-    组件映射集中在 workers/components.py;ALL(默认)全量注册,行为与拆分前一致。"""
+    按 SUPERDL_WORKER_COMPONENT 过滤:组件进程只注册自己的任务,
+    组件映射集中在 workers/components.py;ALL(默认)全量注册。"""
     from app.modules.billing.patrol import balance_patrol
     from app.modules.billing.payment_service import close_expired_orders, reconcile_pending_orders
     from app.modules.billing.reconcile import reconcile_funds
@@ -205,9 +204,8 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
     enabled = scheduled_jobs_for(component)
 
     def add_job(*args: Any, **kwargs: Any) -> None:
-        """组件过滤:非本组件的任务不注册(组件映射见 workers/components.py)。"""
         if enabled is None or kwargs["id"] in enabled:
-            scheduler.add_job(*args, **kwargs)  # 注意:此处必须直呼 scheduler,勿改名
+            scheduler.add_job(*args, **kwargs)  # 必须直呼 scheduler.add_job(写成 add_job 即自递归)
 
     add_job(
         _timed_job("outbox_reaper", reap_stuck_running, 300),
@@ -329,8 +327,7 @@ def register_scheduled_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
     )
-    # 包周期到期链路:预警 → 自动续费 → 到期停机 → 冻结(回收仍由 balance_patrol 做)。
-    # 30 分钟一轮足够:预警窗以天计,到期后的处置晚半小时不影响任何计费口径
+    # 包周期到期链路:预警 → 自动续费 → 到期停机 → 冻结(回收仍由 balance_patrol 做)
     add_job(
         _timed_job("subscription_patrol", subscription_patrol, 1800),
         "interval",

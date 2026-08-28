@@ -294,9 +294,8 @@ class TestApproveSuccess:
         refresh = await client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"
-        # 登录 → 拒绝(手机号已释放,查无此号)。注意:登录路径按仓库防枚举口径
-        # 统一 loginFailed(400),不可区分「已注销」与「未注册/凭证错」——
-        # 「账号已注销」文案只出现在持有凭证的 access/refresh 路径(见上两条断言)。
+        # 登录 → 拒绝(手机号已释放)。登录路径按防枚举口径统一 loginFailed(400),
+        # 「账号已注销」文案只出现在持有凭证的 access/refresh 路径
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},
@@ -306,9 +305,8 @@ class TestApproveSuccess:
         )
         assert relogin.status_code == 400
         assert relogin.json()["message_key"] == "account.loginFailed"
-        # 同手机号可重新注册(匿名化释放了唯一约束)。
-        # 上面 relogin 因「查无此号」在消费验证码后未 commit(上游 login 既有行为),
-        # 该码未落消费标记会触发同号发码退避:回拨 created_at 越过 60s 窗口。
+        # 同手机号可重新注册(匿名化释放了唯一约束)。上面 relogin 消费验证码后未 commit,
+        # 该码未落消费标记会触发同号发码退避:回拨 created_at 越过窗口
         await age_sms_codes(sm)
         send = await client.post(
             "/api/v1/auth/sms-code",

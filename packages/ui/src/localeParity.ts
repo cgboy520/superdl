@@ -1,7 +1,6 @@
 /**
- * locale 目录守护(三端 locales.test 共用):zh/en 键集相等(复数后缀归一)、值非空、
- * {{占位符}} 逐键一致。`i18next-cli extract --ci` 只核对代码里出现的键,preservePatterns
- * 保护的动态键与 shared/errors 目录只有这里守。不依赖测试框架:问题一次性全部抛出。
+ * locale 目录守护(三端 locales.test 共用):zh/en 键集相等(复数后缀归一)、值非空、{{占位符}} 逐键一致。
+ * `i18next-cli extract --ci` 只核对代码里出现的键,preservePatterns 保护的动态键与 shared/errors 目录只有这里守。
  */
 
 type Catalog = Record<string, unknown>;

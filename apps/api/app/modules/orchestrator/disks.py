@@ -61,8 +61,8 @@ async def create_disk(
     # 数量配额与余额校验都放进锁内,不存在 TOCTOU
     try:
         await billing_service.assert_can_afford(session, user_id, additional_daily_disk=daily)
-        # 数量配额:建盘只校验余额(日结才扣),故另设上限;
-        # 生效值走统一校验链(用户覆盖 → 平台策略 → env 默认)
+        # 数量配额:建盘只校验余额(日结才扣),故另设上限;生效值走
+        # account.get_user_limits(用户覆盖 → 平台策略 → env 默认)
         limits = await account_service.get_user_limits(session, user_id)
         max_disks = limits.max_disks
         live = (
@@ -169,9 +169,8 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
     if new_size_gb > max_gb:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.sizeMax", params={"max": max_gb})
     await _settle_pending_days(session, disk)  # 先按旧容量结清,扩容不追溯涨价
-    # 扩容护栏:增量日费必须过燃烧率校验,与容量更新/配额入队同一事务——
-    # 创建盘有 assert_can_afford,扩容此前绕过同一条护栏,
-    # 欠费用户可把日费敞口免费放大到 disk_max_gb
+    # 扩容护栏:增量日费必须过燃烧率校验,与容量更新/配额入队同一事务;
+    # 绕过它欠费用户可把日费敞口免费放大到 disk_max_gb
     delta_daily = disk_daily_charge(disk.price_gb_month, new_size_gb) - disk_daily_charge(
         disk.price_gb_month, disk.size_gb
     )
@@ -187,9 +186,8 @@ async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_g
 
 async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDisk:
     """删除(前端多级防护后调用)。挂载中禁止;进入 deleting,由 outbox 擦除后置 deleted。"""
-    # FOR UPDATE 锁盘行(对齐 attach_for_instance 纪律,P2):否则并发 attach/delete
-    # 存在「边挂边擦」窗口——attach 锁内看到 active 完成挂载,delete 无锁改 deleting,
-    # 擦盘 Job 会与新挂 Pod 并发读写同一 subPath
+    # 必须 FOR UPDATE 锁盘行(与 attach_for_instance 同纪律):否则并发 attach/delete 存在
+    # 「边挂边擦」窗口,擦盘 Job 会与新挂 Pod 并发读写同一 subPath
     disk = (
         await session.execute(
             select(DataDisk)
@@ -210,8 +208,8 @@ async def delete_disk(session: AsyncSession, user_id: int, uuid: str) -> DataDis
         return disk
     await _settle_pending_days(session, disk)  # 末日账:当日建当日删不能免单
     disk.status = "deleting"
-    # 同事务摘除所有实例的挂载引用:否则停机实例仍按旧 id 挂 subPath,
-    # 用户会挂到擦除后重建的空目录(且擦盘 Job 可能与新 Pod 并发读写)
+    # 必须同事务摘除所有实例的挂载引用:否则停机实例仍按旧 id 挂 subPath,
+    # 会挂到擦除后重建的空目录
     await session.execute(
         update(Instance).where(Instance.data_disk_id == disk.id).values(data_disk_id=None)
     )
@@ -231,8 +229,7 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.notMountable")
     # 配额未下发成功的盘不得挂载:JuiceFS 目录硬配额是唯一的容量强制点,
-    # 无配额挂载 = 用户可写穿声明容量挤爆共享文件系统。
-    # 扩容窗口内按旧额度继续限制(JuiceFS 侧配额未变),reconciler 重派成功后再挂
+    # 无配额挂载 = 用户可写穿声明容量挤爆共享文件系统
     if not disk.quota_synced:
         raise AppError(ErrorCode.CONFLICT, key="disks.quotaNotSynced", http_status=409)
     if disk.mounted_instance_id is not None and disk.mounted_instance_id != instance_id:
@@ -277,9 +274,8 @@ async def list_billable_disks(session: AsyncSession) -> list[DataDisk]:
 async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrears: bool) -> int:
     """欠费巡检钩子:active↔grace→frozen→deleting 链路。返回变更数。
 
-    计时口径:grace_started_at 首次进入宽限后不再清零(充值不重置冻结倒计时),
-    防止「欠费 → 小额充值 → 再欠费」循环让宽限钟永远归零;frozen_started_at 是
-    删除倒计时,每次进入 frozen 重新起算(回款解冻即清零)。
+    计时口径:grace_started_at 首次进入宽限后不再清零(否则「欠费 → 小额充值 → 再欠费」
+    循环让宽限钟永远归零);frozen_started_at 是删除倒计时,每次进入 frozen 重新起算。
     """
     policies = await get_effective_policies(session)
     now = now_utc()

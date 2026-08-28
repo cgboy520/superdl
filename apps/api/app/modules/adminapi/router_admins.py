@@ -1,4 +1,4 @@
-"""管理端路由(管理员账号 CRUD,自 router.py 拆分)。"""
+"""管理端路由(管理员账号 CRUD)。"""
 
 from fastapi import APIRouter, Request
 

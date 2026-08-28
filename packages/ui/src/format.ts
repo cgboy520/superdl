@@ -1,8 +1,7 @@
 /**
  * 金额/时长/倒计时统一格式化。
  * 金额入参为后端 numeric 序列化出的字符串,禁止在前端做浮点运算;locale 只决定符号与量词。
- * 本模块保持零外部依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts);
- * 包内只 import ./status 的周期枚举(枚举值域只该有一处定义,复制一份迟早对不齐)。
+ * 零外部依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts)。
  */
 
 import { isBillingPeriod, type BillingPeriod } from "./status";
@@ -36,10 +35,8 @@ export function currencySymbol(locale: string): string {
   return locale.startsWith("zh") ? "¥" : "CN¥";
 }
 
-/**
- * "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en);负数符号在最前。
- * null/undefined 一律渲染为零;「数据未就绪」由调用方套 moneyOr 显示 "—"。
- */
+/** "1234.5" → "¥1,234.50"(zh)/ "CN¥1,234.50"(en),负数符号在最前。
+ *  null/undefined 一律渲染为零;「数据未就绪」必须由调用方套 moneyOr 显示 "—"。 */
 export function formatMoney(amount: string | null | undefined, locale: string): string {
   const currency = currencySymbol(locale);
   if (amount == null || amount === "") return `${currency}0.00`;
@@ -83,15 +80,13 @@ export function mulPrice(price: string | null | undefined, count: number): strin
   return unscale4(scaled4(price) * BigInt(count));
 }
 
-/**
- * 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_EVEN 到分)。
- * 展示层估算,入账以后端日结为准;舍入模式与后端 as_amount 一致。
- */
+/** 「约 ¥X/日」估算:GB·月单价 × GB ÷ 30(BigInt 万分位中间值,HALF_EVEN 到分,与后端 as_amount 同舍入)。
+ *  展示层估算,入账以后端日结为准。 */
 export function diskDailyEstimate(priceGbMonth: string | null | undefined, gb: number): string {
   if (!priceGbMonth || gb <= 0 || !Number.isInteger(gb)) return "0.00";
   const [int = "0", frac = ""] = priceGbMonth.split(".");
   const monthlyScaled = BigInt(int + (frac + "0000").slice(0, 4)) * BigInt(gb); // 万分位
-  // ÷30(天)÷100(万分位→分):先取整商与余数,再按 HALF_EVEN 决定进位
+  // ÷30(天)÷100(万分位→分)
   const cents = halfEvenDiv(monthlyScaled, 3000n);
   const s = cents.toString().padStart(3, "0");
   return `${s.slice(0, -2)}.${s.slice(-2)}`;
@@ -103,13 +98,10 @@ function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   const twice = (numerator - q * denominator) * 2n;
   if (twice > denominator) return q + 1n;
   if (twice < denominator) return q;
-  return q % 2n === 0n ? q : q + 1n; // 恰好一半:向偶
+  return q % 2n === 0n ? q : q + 1n;
 }
 
-/**
- * 周期长度取**定长小时**(与后端 core/pricing.py 的 PERIOD_HOURS 逐值一致)。
- * 到期时刻与定价同源:按自然月算到期而按 30 天算价,会算出「二月的包月比一月便宜三天」。
- */
+/** 周期长度取定长小时(与后端 core/pricing.py 的 PERIOD_HOURS 逐值一致);到期时刻与定价同源。 */
 export const PERIOD_HOURS: Record<BillingPeriod, number> = {
   day: 24,
   week: 24 * 7,
@@ -117,10 +109,7 @@ export const PERIOD_HOURS: Record<BillingPeriod, number> = {
   year: 24 * 365,
 };
 
-/**
- * 单次下单/续费的周期数上限(与后端 pricing.MAX_PERIOD_COUNT 一致)。
- * 不设上限时 period_count 是用户可控的乘数,一次请求就能算出天文数字的应付额。
- */
+/** 单次下单/续费的周期数上限(与后端 pricing.MAX_PERIOD_COUNT 一致)。 */
 export const MAX_PERIOD_COUNT = 36;
 
 /** 一小时收几份 price_hourly(与后端 money.billing_units 同口径:CPU 实例恒 1 份)。 */
@@ -128,10 +117,8 @@ export function billingUnits(gpuCount: number): number {
   return gpuCount || 1;
 }
 
-/**
- * 包周期报价的展示副本(字段与后端 SubscriptionQuoteOut 同名同序)。
- * **只用于下单/续费前的预览**:成交金额一律以接口返回的 quote 为准。
- */
+/** 包周期报价的展示副本(字段与后端 SubscriptionQuoteOut 同名同序)。
+ *  只用于下单/续费前的预览,成交金额一律以接口返回的 quote 为准。 */
 export interface PeriodQuote {
   period: BillingPeriod;
   periodCount: number;
@@ -144,13 +131,9 @@ export interface PeriodQuote {
   amount: string;
 }
 
-/**
- * 本地报价(BigInt 全程精确,禁浮点),运算顺序与后端 pricing.quote_subscription 逐步对齐:
- * 折后时价先量化到 4 位,再乘份数与小时数量化到分 —— 顺序换一下,边界上就会差出分。
- *
- * base 一律取后端下单时用的那个数:市场页/创建页是 SKU 现价,续费是
- * `subscription.unit_price`(下单时的原价快照)。三处的预览因此与实扣逐分相同。
- */
+/** 本地报价(BigInt 全程精确,禁浮点)。运算顺序必须与后端 pricing.quote_subscription 一致:
+ *  折后时价先量化到 4 位,再乘份数与小时数量化到分,换顺序会在边界差出分。
+ *  base 一律取后端下单用的那个数:下单是 SKU 现价,续费是 `subscription.unit_price`。 */
 export function quoteSubscription(
   baseHourly: string | null | undefined,
   opts: { units: number; period: BillingPeriod; periodCount: number; discountPct: number },
@@ -176,11 +159,8 @@ export function quoteSubscription(
   };
 }
 
-/**
- * 竞价时价 = 按量时价 × `spot_discount_pct` / 100(BigInt 万分位,HALF_EVEN 到 4 位)。
- * 运算与后端 `pricing.effective_price_hourly` 的 `as_price(price * pct / 100)` 逐值一致 ——
- * 折扣是运营在线可调的策略,页面上那个数只能从 `/policies` 现算,不能硬编码任何一档。
- */
+/** 竞价时价 = 按量时价 × `spot_discount_pct` / 100(BigInt 万分位,HALF_EVEN 到 4 位),
+ *  与后端 `pricing.effective_price_hourly` 逐值一致。折扣只从 `/policies` 现算,不许硬编码。 */
 export function spotHourlyPrice(
   baseHourly: string | null | undefined,
   discountPct: number,
@@ -188,11 +168,8 @@ export function spotHourlyPrice(
   return unscale4(halfEvenDiv(scaled4(baseHourly) * BigInt(discountPct), 100n));
 }
 
-/**
- * 折扣力度的**本地化短语**:zh 说「4 折」,en 说「40% of on-demand」。
- * 与 currencySymbol 同一条口径 —— 中文的「折」是按剩下几成算的,英文没有对应说法,
- * 硬塞同一个数字会在其中一端读成反义(4 折 ≠ 4% off)。调用方把它当成一段值嵌进整句。
- */
+/** 折扣力度的本地化短语:zh 说「4 折」,en 说「40% of on-demand」。
+ *  「折」按剩下几成算,与 en 的 % off 不是同一个数(4 折 ≠ 4% off);调用方当一段值嵌进整句。 */
 export function formatSpotDiscount(discountPct: number, t: SharedT, locale: string): string {
   if (!locale.startsWith("zh")) return t("shared:format.spotDiscount", { off: discountPct });
   const whole = Math.trunc(discountPct / 10);
@@ -241,10 +218,7 @@ export function formatDaysUntil(deadline: string | Date, t: SharedT, now: Date =
   return days === 0 ? t("shared:format.daysLeft.dueToday") : t("shared:format.daysLeft.count", { count: days });
 }
 
-/**
- * 天级倒计时:起点 + 天数(存储宽限/冻结列用)。
- * 返回 null 表示起点缺失(调用方自行兜底)。
- */
+/** 天级倒计时:起点 + 天数(存储宽限/冻结列用)。返回 null 表示起点缺失,由调用方兜底。 */
 export function formatDaysLeft(
   startedAt: string | null | undefined,
   totalDays: number,
@@ -255,10 +229,8 @@ export function formatDaysLeft(
   return formatDaysUntil(new Date(new Date(startedAt).getTime() + totalDays * 86_400_000), t, now);
 }
 
-/**
- * 包周期价:"2298.24" + month + 1 → "¥2,298.24/月";份数 > 1 → "¥6,894.72/3 月"。
- * 未知周期只回金额,不编造量词(后端加了新周期而前端没跟上时,宁可少一个字)。
- */
+/** 包周期价:"2298.24" + month + 1 → "¥2,298.24/月";份数 > 1 → "¥6,894.72/3 月"。
+ *  未知周期只回金额,不编造量词。 */
 export function formatPeriodPrice(
   amount: string | null | undefined,
   period: string,
@@ -274,10 +246,7 @@ export function formatPeriodPrice(
     : t("shared:format.perPeriod", { price, unit });
 }
 
-/**
- * 包周期到期倒计时:"剩 23 天" / "今日到期" / "已到期"。
- * 到期时刻缺失(非包周期实例)返回 null —— 调用方手里的 subscription 本来就是可空的。
- */
+/** 包周期到期倒计时:"剩 23 天" / "今日到期" / "已到期";到期时刻缺失(非包周期实例)返回 null。 */
 export function formatExpiry(
   expiresAt: string | null | undefined,
   t: SharedT,
@@ -357,7 +326,7 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
   };
 }
 
-/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。仅 formatDateTime 与其测试使用。 */
+/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
 export function tzSuffix(d: Date = new Date()): string {
   const offsetMin = -d.getTimezoneOffset(); // getTimezoneOffset 以西为正,取反成 UTC 以东为正
   const sign = offsetMin >= 0 ? "+" : "-";

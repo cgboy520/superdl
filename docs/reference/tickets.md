@@ -27,9 +27,9 @@
 
 ## 规则与不变量
 
-- 每用户进行中(open/pending_*)工单 ≤10(`MAX_OPEN_TICKETS`),创建 5 次/时/用户(`ticket-create:{user_id}`);幂等重放不计数。
+- 每用户进行中(open/pending_*)工单数与创建频次有上限(`MAX_OPEN_TICKETS` 与 `ticket-create:{user_id}` 限流键,数值见 [limits.md](./limits.md));幂等重放不计数。
 - 所有状态迁移在行锁(`FOR UPDATE`)内进行,并发回复不会把 resolved 单改活。
 - 用户回复落一条 admin_alert(info)进管理端告警流;客服回复落用户站内信。
-- 滞留巡检(30 分钟一轮,advisory lock):pending_staff 超 24h 的单落一条 admin_alert(warning),`dedup_key = ticket-stale:{ticket_id}` 保证整个生命周期只报一次;确认后仍滞留由值班在工单页跟进,不靠重复告警提醒。
+- 滞留巡检(30 分钟一轮,advisory lock):pending_staff 超 24h 的单落一条 admin_alert(warning),`dedup_key = ticket-stale:{ticket_id}` 保证整个生命周期只报一次。
 - ticket_no 的日内序列由服务层计数 + 唯一冲突重试生成,不依赖序列对象。
 - 管理端写操作过审计中间件;工单正文不进审计 detail。

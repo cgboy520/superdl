@@ -70,14 +70,12 @@ def is_valid_image_ref(image_ref: str) -> bool:
 def is_pinned_image_ref(image_ref: str) -> bool:
     """引用是否钉死到一个具体版本(带 digest,或带一个不是 latest 的 tag)。
 
-    只对**服务型实例**要求(orchestrator.create_instance)。理由是形态差异,不是洁癖:
-    服务容器的 restartPolicy 是 Always,kubelet 会在容器退出时原地重启 —— 若 tag 可变,
-    某次半夜的 OOM 重启就能让线上服务悄悄换成另一个版本的镜像,而实例状态、事件流水、
-    账单全都看不出任何变化。开发机是 Never + 用户手动重开,不存在这条无人值守的换版路径。
+    只对**服务型实例**要求(orchestrator.create_instance):服务容器 restartPolicy=Always,
+    kubelet 原地重启时可变 tag 会换掉镜像版本,而实例状态、事件流水、账单均无变化;
+    开发机是 Never + 用户手动重开,无此路径。
 
-    `:latest` 与不写 tag 是同一件事(不写即隐含 latest),两者一起拒。
-    注意这只挡住了「显式可变」的那一类:`:v1` 这种 tag 同样可以被重新推送,
-    真要绝对可复现只能用 digest —— 那是给用户的建议,不是这里的硬闸。
+    不写 tag = 隐含 latest,与 `:latest` 一起拒;只挡显式可变的一类,`:v1` 同样可被重新
+    推送,绝对可复现只能用 digest(建议,非硬闸)。
     """
     if not is_valid_image_ref(image_ref):
         return False

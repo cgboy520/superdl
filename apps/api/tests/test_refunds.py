@@ -48,7 +48,7 @@ async def finance_pair(sm, client: AsyncClient) -> tuple[dict, dict]:
 
 
 class TestSyncAudit:
-    """出金同步审计(P1-8):审计写失败即出金失败回滚;成功时审计与业务同事务,中间件不双写。"""
+    """出金同步审计:审计写失败即出金失败回滚;成功时审计与业务同事务,中间件不双写。"""
 
     async def _approved_refund(self, client, sm, phone: str, payer_name: str) -> tuple[dict, int]:
         headers = await user_headers(client, phone)

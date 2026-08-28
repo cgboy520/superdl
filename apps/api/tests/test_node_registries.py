@@ -11,7 +11,7 @@ CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
 
 
 def test_default_is_spegel_only_without_harbor():
-    """未配 Harbor:只剩 Spegel P2P,不再指向任何历史 NodePort。"""
+    """未配 Harbor:只剩 Spegel P2P,不指向任何 NodePort。"""
     out = render_registries_yaml({})
     assert yaml.safe_load(out) == {"mirrors": {"*": {}}}
     assert "30500" not in out

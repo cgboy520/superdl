@@ -1,14 +1,8 @@
 """购买模式与计费周期:折扣口径的唯一计算点。
 
-`market`(怎么买:按量 / 竞价 / 包周期)与 `skus.tier`(买什么档)正交 —— 一条 SKU
-同时供三种模式售卖,不需要 3× SKU 行。
+`market`(怎么买:按量 / 竞价 / 包周期)与 `skus.tier`(买什么档)正交,一条 SKU 同时供三种模式售卖。
 
-**折扣只在这里算。** 市场页报价、创建预估、实例落库快照、续费四处共用同一组函数:
-四处各算各的,迟早出现「页面显示 8 折、实际扣 8.5 折」这类没人能复现的差异
-(与 catalog.sellable_per_gpu 同一条口径纪律)。
-
-放 core 而不是 catalog:三个业务模块都要用(catalog 报价、orchestrator 落库快照、
-billing 续费),放进任何一个都会逼另外两个跨模块 import 非 service/schemas 的文件。
+**折扣只在这里算**:市场页报价、创建预估、实例落库快照、续费四处共用同一组函数。
 """
 
 from dataclasses import dataclass
@@ -18,25 +12,22 @@ from decimal import Decimal
 from app.core.money import as_amount, as_price, billing_units
 from app.core.policies import EffectivePolicies
 
-# ---------- 购买模式(instances.market) ----------
+# 购买模式(instances.market)
 MARKET_ON_DEMAND = "on_demand"  # 按量:小时结算,唯一进 bills_hourly 的模式
-MARKET_SPOT = "spot"  # 竞价:折扣价 + 可被平台回收(批次 C)
+MARKET_SPOT = "spot"  # 竞价:折扣价 + 可被平台回收
 MARKET_SUBSCRIPTION = "subscription"  # 包周期:下单一次性预扣,小时结算跳过
 MARKETS: tuple[str, ...] = (MARKET_ON_DEMAND, MARKET_SPOT, MARKET_SUBSCRIPTION)
 
-# ---------- 计费周期(subscriptions.period) ----------
+# 计费周期(subscriptions.period)
 PERIOD_DAY = "day"
 PERIOD_WEEK = "week"
 PERIOD_MONTH = "month"
 PERIOD_YEAR = "year"
 PERIODS: tuple[str, ...] = (PERIOD_DAY, PERIOD_WEEK, PERIOD_MONTH, PERIOD_YEAR)
 
-# 周期长度取**定长小时**,不取自然月/自然年。
-# 定价与到期时刻必须同源:按自然月算到期(8-31 + 1 月 = ?)而按 30 天算价,
-# 就会出现「二月买的包月比一月便宜三天」和「1-31 续费到 2-28 还是 3-3」两类
-# 谁也说不清的争议。定长把两者钉死成同一个数,代价是 31 天的月份平台少收一天 ——
-# 这是定价模型的一部分(与 disk_daily_charge 的「月按 30 天」同款取舍),写进
-# docs/reference/billing.md。
+# 周期长度取定长小时,不取自然月/自然年:定价与到期时刻必须同源,否则两者分叉。
+# 31 天的月份少收一天,属定价模型(同 disk_daily_charge 的「月按 30 天」),
+# 见 docs/reference/billing.md。
 PERIOD_HOURS: dict[str, int] = {
     PERIOD_DAY: 24,
     PERIOD_WEEK: 24 * 7,
@@ -52,8 +43,8 @@ _PERIOD_DISCOUNT_KEYS: dict[str, str] = {
     PERIOD_YEAR: "period_discount_year",
 }
 
-# 单次下单/续费的周期数上限。不设上限的话,period_count 是用户可控的乘数,
-# 一次请求就能算出天文数字的应付额并把它写进 numeric(14,2)(溢出报 500)
+# 单次下单/续费的周期数上限:period_count 是用户可控的乘数,
+# 无上限时应付额可溢出 numeric(14,2)(报 500)
 MAX_PERIOD_COUNT = 36
 
 
@@ -88,9 +79,8 @@ def price_for(
 ) -> Decimal:
     """该购买模式下的**有效时价**(4 位小数)。base_hourly 为 SKU 原价。
 
-    `instances.price_hourly` 落的就是这个值 —— 「这台实例的有效时价」在三种模式下
-    含义一致(按量与竞价据此出账,包周期不出账但展示与报表按它算),读的人不用
-    先看 market 再决定这个数是什么意思。
+    `instances.price_hourly` 落的就是这个值,三种模式下含义一致(按量与竞价据此出账,
+    包周期不出账但展示与报表按它算)。
     续费的重新定价基准另存在 `subscriptions.unit_price`(原价快照),不从这里反推。
     """
     price = as_price(base_hourly)
@@ -105,10 +95,9 @@ def price_for(
 
 @dataclass(frozen=True)
 class SubscriptionQuote:
-    """一次包周期下单/续费的报价。前端逐行渲染,不自己做乘法。
+    """一次包周期下单/续费的报价。前端逐行渲染、不自己做乘法(舍入差会对不齐)。
 
     金额三件套由构造保证自洽:`discount_amount == list_amount - amount`。
-    前端各算各的必然在边界上对不齐(4 位单价 × 8760 小时的舍入差能到分级)。
     """
 
     period: str

@@ -445,8 +445,7 @@ function AdjustmentsTab() {
               amount: values.amount,
               reason: values.reason,
             },
-            // 幂等键从表单快照派生、失败不轮换:双击/重试安全重放,
-            // 改掉任一字段再提交才是真正的新调账(后端有唯一约束兜底)
+            // 幂等键从表单快照派生且失败不轮换:双击/重试安全重放,改掉任一字段才是新调账
             idempotencyKey: idemKeyOf("adj", [values.user_id, values.amount, values.reason]),
           });
         }}

@@ -1,4 +1,4 @@
-"""管理端路由(SKU 与镜像/预热,自 router.py 拆分)。"""
+"""管理端路由(SKU 与镜像/预热)。"""
 
 from decimal import ROUND_HALF_EVEN, Decimal
 

@@ -7,8 +7,7 @@
 #   node-mgr    1 副本  cordon/巡检/注册收敛  SA superdl-node-mgr
 #   prewarm     1 副本  镜像预热 Job         SA superdl-prewarm
 #   disk-ops    1 副本  配额下发/擦除 Job    SA superdl-disk-ops
-# 单副本组件:巡检类本就靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED 天然安全;
-# 需要更高可用时直接加副本,无需改代码。升级路径见 01-rbac.yaml 头注释。
+# 单副本组件按需直接加副本,无需改代码:巡检靠 advisory lock 单 leader,outbox 领取 SKIP LOCKED。
 # liveness 用心跳文件 mtime(worker 循环每轮触碰,2 分钟未更新即重启)。
 apiVersion: apps/v1
 kind: Deployment
@@ -19,9 +18,8 @@ metadata:
 spec:
   replicas: 2
   strategy:
-    # RollingUpdate 安全:定时任务由 PG advisory lock 保证单 leader(同刻只有一副本执行),
-    # outbox 领取走 SELECT ... FOR UPDATE SKIP LOCKED(多副本不重复领同一任务),
-    # 滚动期间新旧副本并存不会重复执行。
+    # 滚动期间新旧副本并存不会重复执行:定时任务由 PG advisory lock 保证单 leader,
+    # outbox 领取走 SELECT ... FOR UPDATE SKIP LOCKED。
     type: RollingUpdate
   selector:
     matchLabels: {app: superdl-worker, superdl.io/component: core}
@@ -30,21 +28,20 @@ spec:
       labels: {app: superdl-worker, superdl.io/component: core}
     spec:
       serviceAccountName: superdl-worker   # core:纯 DB + 外部渠道,零 K8s 权限(01-rbac.yaml)
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据按指纹覆写
-      # (docs/reference/images.md);项目 public 时 Secret 缺失只是 kubelet 告警,不影响拉取
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
+      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
       imagePullSecrets:
         - {name: superdl-registry-pull}
-      # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod,
-      # 节点资源紧张时不与租户同级被驱逐。
+      # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一走 infra 标签(P0-1:与 control-plane 角色解耦,平台组件不再
-        # 绑死控制面)。full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
-        # node-label 自动携带;自建独立 infra 节点打同款标签 + CriticalAddonsOnly taint。
+        # 平台组件落点统一锚点(full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
+        # 的 node-label 自动携带;自建 infra 节点打同款标签 + CriticalAddonsOnly taint)。
         # GPU 节点严禁打此标签。
         node-role.superdl.io/infra: "true"
       tolerations:
-        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
+        # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
         # 2 副本尽量跨节点/跨可用区摊开(对齐 02-api);小集群不满足时仍可调度(ScheduleAnyway)
@@ -84,7 +81,7 @@ spec:
                 - test $(( $(date +%s) - $(stat -c %Y /tmp/superdl-worker-heartbeat) )) -lt 120
             initialDelaySeconds: 30
             periodSeconds: 30
-          # requests==limits → Guaranteed(同 02-api.yaml):结算/巡检是计费要害,不得先被 evict
+          # requests==limits → Guaranteed:结算/巡检是计费要害,不得先被 evict
           resources:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}

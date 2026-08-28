@@ -57,7 +57,6 @@ export function PricingSection() {
         tiers: [...new Set(list.map((s) => skuVariant(s.tier, s.pool_label)))],
       });
     }
-    // 型号按代表价升序:低价在前
     return out.sort((a, b) => Number(a.representative.price_hourly) - Number(b.representative.price_hourly));
   }, [skus, tab]);
 

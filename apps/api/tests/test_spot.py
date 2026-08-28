@@ -3,10 +3,10 @@
 每条用例要能答出「它挂了说明什么坏了」:
 
 - 选择规则:知情同意里写的那句「按创建时间从新到旧回收」变成假话。
-- 凑不够一台不动:既杀了竞价用户又没救成请求方,两头落空。
-- 同池同型号:回收一台 4090 腾不出 A100 的位置,白杀一台。
+- 凑不够一台不动:回收了竞价实例,按量请求仍然开不出来。
+- 同池同型号:回收一台 4090 腾不出 A100 的位置,回收即无效。
 - 宽限窗:通知发了但 Pod 当场就没了,用户来不及保存进度。
-- 结算:被抢占的实例被免单(平台白送)或被多收(为宽限期买单)。
+- 结算:被抢占的实例被免单,或被多收(为宽限期买单)。
 - 转按量:跨价小时留下一行 `unit_price × seconds ≠ amount` 的账。
 """
 
@@ -151,7 +151,7 @@ class TestVictimSelection:
         assert [p.uuid for p in picked] == ["vic2", "vic1"]
 
     async def test_all_or_nothing(self, sm):
-        """凑不够就一台都不动:半途回收两头落空。"""
+        """凑不够就一台都不动:半途回收既腾不出容量,又回收了竞价实例。"""
         async with sm() as s:
             s.add(
                 Instance(
@@ -178,7 +178,7 @@ class TestVictimSelection:
             )
 
     async def test_never_crosses_pool_model_or_market(self, sm):
-        """不同池 / 不同型号 / 非竞价 / 非 running 的实例都不是候选 —— 选错就是白杀一台。"""
+        """不同池 / 不同型号 / 非竞价 / 非 running 的实例都不是候选 —— 选错等于无效回收。"""
         async with sm() as s:
             common = {
                 "user_id": 1,
@@ -313,7 +313,7 @@ class TestPreemptionFlow:
     async def test_victim_is_billed_for_actual_seconds_only(self, client, sm, fake):
         """被抢占按实际运行秒数出尾账 —— 不免单,也不为宽限窗那 60 秒买单。
 
-        挂了 = 平台白送算力,或者向用户收了它单方面决定的等待时间。
+        挂了 = 这段算力免费,或者向用户收了平台单方面决定的等待时间。
         """
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p3", pool_label="kata", gpu_count=1)
@@ -365,7 +365,7 @@ class TestPreemptionFlow:
         assert victim.status == "running"
 
     async def test_failed_order_rolls_back_the_preemption(self, client, sm, fake):
-        """请求方后续失败(余额不够),回收一起回滚 —— 不能出现「杀了人但单没开成」。"""
+        """请求方后续失败(余额不够),回收一起回滚 —— 不能出现「回收了实例但单没开成」。"""
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-p5", pool_label="kata", gpu_count=1)
         _, victim_uuid, _ = await running_spot(client, sm, fake, "13922200018", sku_id)
@@ -521,9 +521,8 @@ class TestPreemptedBillingEqualsNormalStop:
     async def test_amount_matches_a_normally_stopped_twin(self, client, sm, fake):
         """被抢占的实例与「自己关机的同款实例」出账逐分相等。
 
-        这是「结算引擎不知道抢占这回事」的直接证明:抢占只是一次普通的
-        running → stopping 迁移,尾账走的是同一条 edge_listener。
-        挂了 = 抢占走了另一条计费路径(要么免单、要么多收),而那条路径没人在维护。
+        抢占只是一次普通的 running → stopping 迁移,尾账走同一条 edge_listener。
+        挂了 = 抢占走了另一条计费路径(要么免单、要么多收)。
         """
         sku_id = await spot_sku(sm)
         await seed_node_spec(sm, node_name="node-twin", pool_label="kata", gpu_count=8)
@@ -581,8 +580,7 @@ class TestPreemptedBillingEqualsNormalStop:
     ):
         """降价路径整行不动 —— 只改单价不改金额,写出的正是这个函数要避免的那种行。
 
-        经 /to-on-demand 不可达(竞价必然涨价),但这个原语一旦被复用就会踩到,
-        而那种账单行事后没人查得出来。
+        经 /to-on-demand 不可达(竞价必然涨价),但这个原语一旦被复用就会踩到。
         """
         from app.modules.billing.settlement import bill_amount, reprice_current_hour
 

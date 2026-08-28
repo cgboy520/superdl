@@ -1,6 +1,6 @@
 # SuperDL 架构参考
 
-GPU 算力租赁平台的架构事实:技术栈、模块边界、数据模型、核心流程与硬约束。
+技术栈、模块边界、数据模型、核心流程与硬约束。
 各模块的接口契约见 [`reference/`](./reference/),UI/UX 规格见 [`ui-ux-spec.md`](./ui-ux-spec.md),文档地图与维护约定见 [`README.md`](./README.md)。
 
 ## 1. 系统上下文
@@ -24,20 +24,21 @@ flowchart LR
 
 **后端**:Python 3.13(uv 管理)+ FastAPI + SQLAlchemy 2.0(async)+ asyncpg + Alembic + PostgreSQL 18;
 定时与队列 APScheduler + 自研事务性 outbox;K8s 官方 `kubernetes` 客户端;支付 `wechatpayv3` + `alipay-sdk-python`;
-观测 structlog + prometheus-client;质量闸门 ruff + pyright + pytest + import-linter。
+观测 structlog + prometheus-client。
 
 **前端**:React 19 + Vite + Ant Design 6 + TanStack Router / Query + Zustand + ECharts;i18n 用 i18next +
-react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd 6 原生组件自封装,不引
+react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo。antd 6 原生组件自封装,不引
 `@ant-design/pro-components`;管理端监控图一律自绘(ECharts),Grafana 只作可选外链。
 
-**平台层**:两档集群。**full** = RKE2 多机生产;**light** = k3s 单机。两档组件集相同(全档位可用),差异只在 k3s 侧的 values 覆盖。发行版由
-平台探测,业务侧无需声明。
+**平台层**:两档集群。**full** = RKE2 多机生产;**light** = k3s 单机。两档组件集相同,差异只在 k3s 侧的
+values 覆盖;发行版由平台探测,业务侧无需声明。
 
-依赖版本的单一事实源:`apps/api/pyproject.toml`(后端)、`package.json`(前端)、`deploy/cluster/helmfile.yaml.gotmpl`(chart),升级走变更评审。
+依赖版本的单一事实源:`apps/api/pyproject.toml`(后端)、`package.json`(前端)、
+`deploy/cluster/helmfile.yaml.gotmpl`(chart)。
 
 | 组件 | 角色 |
 |---|---|
-| RKE2 / k3s | 容器平台,发行版钉 v1.36(userns `hostUsers: false` 所需的最低版本) |
+| RKE2 / k3s | 容器平台,发行版钉 v1.36(userns `hostUsers: false` 已 GA) |
 | Cilium | 仅 full 档;light 档用 k3s 内置 flannel |
 | GPU Operator | 两档同装(NFD/GFD/DCGM/MIG/VFIO);light 档关掉 toolkit,宿主 toolkit 由装机基线装、k3s 自行探测 |
 | kata-deploy | 两档同装,dedicated 档运行时;只落 kata 池节点 |
@@ -46,10 +47,10 @@ react-i18next(zh-CN / en-US);工程链 pnpm + Turborepo + ESLint/Prettier。antd
 | kube-prometheus-stack | Prometheus 本地留 15 天,长期数据进 PostgreSQL |
 | JuiceFS CSI | 数据盘;后端云 OSS 或自建 SeaweedFS |
 | TopoLVM | 实例盘本地 NVMe,销毁为 lvremove(未清零;擦盘需节点开 issue_discards) |
-| Envoy Gateway | 北向唯一入口(Gateway API 实现,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名。顶替 2026-03 退休的 ingress-nginx(最后版本 controller-v1.15.1,此后不再修 CVE) |
-| cert-manager + acme-dns | 平台三域与 Jupyter 泛域名证书(DNS01 经 acme-dns 中转,集群内凭据只能改 `_acme-challenge` TXT);Gateway 的 `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 里显式声明的 Certificate,不走 ingress-shim 那种「注解自动生成」 |
+| Envoy Gateway | 北向唯一入口(Gateway API 实现,`GatewayClass superdl`):三个平台域 + 租户 Jupyter 泛域名 + 对外服务端点泛域名 |
+| cert-manager + acme-dns | 平台三域与泛域名证书(DNS01 经 acme-dns 中转,集群内凭据只能改 `_acme-challenge` TXT);Gateway 的 `certificateRefs` 引 `deploy/app/k8s/05-cert-manager.yaml` 里显式声明的 Certificate |
 
-GPU 资源申请的 device-plugin 语法集中在 `app/core/gpu_adapter`;切 DRA 还需改 PodSpec 的 resourceClaims(`core/k8s/real.py`),不止这一层。
+GPU 资源申请的 device-plugin 语法集中在 `app/core/gpu_adapter`;切 DRA 还需改 PodSpec 的 resourceClaims(`core/k8s/real.py`)。
 
 ## 3. 模块化单体
 
@@ -61,7 +62,7 @@ apps/api/app/
 ├─ modules/
 │  ├─ account/      # 注册登录、JWT、SSH 公钥、实名字段
 │  ├─ catalog/      # SKU、镜像目录、库存近似查询、镜像预热
-│  ├─ orchestrator/ # 实例状态机、K8s 编排、reconciler、SSH 端口池、数据盘
+│  ├─ orchestrator/ # 实例状态机、K8s 编排、reconciler、SSH 端口池、数据盘、服务端点
 │  ├─ billing/      # 钱包、账本、小时结算、数据盘日结、余额巡检、支付渠道与回调、资金核对
 │  ├─ metering/     # Prometheus 代理查询、usage_hourly 聚合
 │  ├─ nodes/        # 节点注册(node-join.sh)、规格巡检、集群状态
@@ -73,32 +74,39 @@ apps/api/app/
 ```
 
 模块之间只许 import 对方的 `service.py` 与 `schemas.py`,禁止跨模块 import 其他文件或跨模块查表;
-唯一例外是 `account/deps.py`(全站鉴权依赖)。import-linter 以通配契约强制(`app.modules.** -> app.modules.*.service|schemas`)。
+唯一例外是 `account/deps.py`(全站鉴权依赖)。import-linter 以通配契约强制
+(`app.modules.** -> app.modules.*.service|schemas`)。
 
 对外契约 OpenAPI-first:FastAPI schema 导出 `openapi.json`,orval 生成 `packages/api-client`。用户 API
 `/api/v1/*` 与管理 API `/api/admin/v1/*` 物理分离,独立 JWT audience、限流与审计动作前缀。
 
-## 4. 控制面正确性的两根支柱
+## 4. outbox 与 reconciler
 
-**支柱一:事务性 outbox。** 所有「改 DB + 动 K8s」的操作,在同一事务里完成业务写入与 `outbox_tasks` 插入,worker
-用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(带重试、退避、死信)。
+**事务性 outbox。** 所有「改 DB + 动 K8s」的操作,在同一事务里完成业务写入与 `outbox_tasks` 插入,worker
+用 `SELECT ... FOR UPDATE SKIP LOCKED` 领取后异步调 K8s(带重试、退避、死信)。领取条件是
+`next_retry_at` 到期,`core/outbox.py` 的 `enqueue(delay_seconds=...)` 把它写到未来即得延迟任务。
 
-**支柱二:reconciler 对账循环。** 每 30s 比对「DB 期望状态 ↔ K8s 实际状态」(按租户 namespace 前缀 list):Pod 消失
+**reconciler 对账循环。** 每 30s 比对「DB 期望状态 ↔ K8s 实际状态」(按租户 namespace 前缀 list):Pod 消失
 而 DB 是 running → 记 `failed` 事件、停止计费并告警;Pod 存在而 DB 已 released → 强制删除并告警;
 `creating` 超时未调度 → 失败退款。reconciler 不得关闭。
 
-worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、包周期到期巡检、支付查单与超时关单、
-镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。定时任务一律先抢 pg advisory lock,多副本下单实例执行。
+worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日结、资金核对、usage 聚合、余额巡检、包周期到期巡检、
+支付查单与超时关单、镜像预热巡检、节点规格巡检与入网 reconciler、工单滞留巡检、数据保洁。
+定时任务一律先抢 pg advisory lock,多副本下单实例执行;周期与触发时刻见 `apps/api/app/workers/main.py`。
 
 ## 5. 接入层
 
 | 通道 | 机制 |
 |---|---|
-| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。SSH 与 Jupyter 必须拆成两个 Service:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 随机占走端口池号段 |
-| JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂平台 Gateway 的 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张。路由条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量 |
-| 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权。**鉴权结果无缓存**,控制面是全部端点的同步依赖 —— 见 [reference/services.md](./reference/services.md) |
-| 安全边界 | 租户 Pod 默认拒东西向 NetworkPolicy,入方向仅放行 Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明,平台事先不知道);禁访节点网段 / Service 网段 / 云元数据;放行出公网。控制面 ServiceAccount 仅限 `tenant-*` namespace 前缀 |
-| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、全局超时与连接兜底三条策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**、apply 照样成功,只是策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;5 个 listener 名因此锁死 |
+| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。**SSH 与 Jupyter 必须拆成两个 Service**:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 随机占走端口池号段 |
+| JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
+| 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
+| 租户 NetworkPolicy | 默认拒东西向。入方向只放行两处:Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明),以及 TCP 22(SSH NodePort,来源不能排私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口黑名单、UDP 走白名单,私网与云元数据网段一律拒 |
+| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、服务端点鉴权与限流、全局超时与连接兜底,5 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**、apply 照样成功,只是策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名因此锁死 |
+
+控制面 ServiceAccount 按 worker 组件拆分;租户资源的写权限是 ClusterRole,实际可达面由
+`deploy/cluster/admission/tenant-restrictions.yaml` 的 ValidatingAdmissionPolicy 收窄到 `superdl` / `tenant-*`
+namespace 与 nodes,二者叠加才是完整最小权限。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量。
 
 ## 6. 数据模型
 
@@ -123,10 +131,13 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 - 结算幂等键:`bills_hourly` UNIQUE(instance_id, hour_start)、`bills_daily_disk` UNIQUE(disk_id, day)、`usage_hourly` UNIQUE(instance_id, hour_start)。
 - 支付与创建幂等:`orders.channel_txn_id` / `order_no` 唯一;`orders`、`instances`、`data_disks` 均带
   UNIQUE(user_id, idempotency_key)。
-- `instance_events`、`balance_ledger` 追加式不可改,后者带 `balance_after` 快照;`balance_ledger.ref_type` 的白名单含 `subscription`(包周期预扣的流水)。
-- **`instances.market`(on_demand / subscription / spot,CHECK 兜底)是「怎么买」,`skus.tier` 是「买什么档」,两者正交** —— 一条 SKU 同时供多种购买模式售卖,不为包周期另建 SKU 行。包周期的预付凭证落 `subscriptions`:续费**新开一行**并用 `renewed_from_id` 串链、老行转 expired,不在原行上累加到期时刻(跨月续费的账期归属要在行上看得见,不靠流水反推)。
-- 订阅行的 UNIQUE(user_id, idempotency_key) 只服务**续费**:下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保(两张表共用一个键会在 24h 窗口过后撞车)。
-- 服务端点凭据只存带密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
+- `instance_events`、`balance_ledger` 追加式不可改,后者带 `balance_after` 快照;`balance_ledger.ref_type` 有 CHECK 白名单(含 `subscription`)。
+- **`instances.market`(on_demand / subscription / spot,CHECK 兜底)是「怎么买」,`skus.tier` 是「买什么档」,两者正交** ——
+  一条 SKU 同时供多种购买模式售卖,不为包周期另建 SKU 行。包周期的预付凭证落 `subscriptions`:续费**新开一行**
+  并用 `renewed_from_id` 串链、老行转 expired,不在原行上累加到期时刻。
+- 订阅行的 UNIQUE(user_id, idempotency_key) 只服务**续费**;下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保。
+- 服务端点凭据只存密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,
+  吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
 - `skus.oversell_cores` / `oversell_vram` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。
 
 ## 7. 核心流程
@@ -136,7 +147,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 | 状态 | 允许迁移到 |
 |---|---|
 | creating | running(Pod Ready,计费开始)/ failed(调度或拉镜像超时,全额退)/ releasing(用户取消) |
-| running | stopping(关机 / 欠费 / 到期)/ failed(pod_lost,仅系统) |
+| running | stopping(关机 / 欠费 / 到期 / 竞价被回收)/ failed(pod_lost,仅系统) |
 | stopping | stopped(Pod 删除,出尾账)/ releasing(悬挂超时或用户直接放弃) |
 | stopped | starting(校验余额)/ frozen(欠费)/ releasing(用户释放,二次确认) |
 | starting | running / failed(库存不足) |
@@ -149,19 +160,22 @@ UPDATE status。`stopped` 保留实例盘(节点本地 LV,重开机 pin 回原�
 
 ### 7.2 创建实例
 
-`POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额 ≥ 1 小时预估费用,写 `instances(creating)` +
-`instance_events` + `outbox_tasks`,立即返回 202。worker 领取任务后 ensure Namespace / NetworkPolicy / Quota /
-JuiceFS PVC,再建 Pod(RuntimeClass 按档位、GPU 资源经 gpu_adapter、注入公钥与 jupyter token)、SSH 与 Jupyter 两个
-Service、HTTPRoute;Pod Ready 后同事务转 `running` 并写计费起点事件。超时未 Ready 转 `failed`,退款并清理。
-包周期下单(`market='subscription'`)在同一事务里多做两件事:按周期总价一次性预扣 + 落一行 `subscriptions`,见 §7.5。
+`POST /api/v1/instances`(带 `Idempotency-Key`)在一个事务里校验余额覆盖 `afford_cover_hours`(默认 1)小时的预估费用,
+写 `instances(creating)` + `instance_events` + `outbox_tasks`,立即返回 202。worker 领取后 ensure Namespace /
+NetworkPolicy / Quota / JuiceFS PVC,再建 Pod(RuntimeClass 与 GPU 资源语法按**节点池**经 gpu_adapter 派发,注入公钥与
+jupyter token)、SSH 与 Jupyter 两个 Service、HTTPRoute;Pod Ready 后同事务转 `running` 并写计费起点事件,超时未 Ready
+转 `failed` 并退款清理。包周期下单在同一事务里多做两件事:按周期总价一次性预扣 + 落一行 `subscriptions`(§7.5)。
 
 ### 7.3 小时结算
+
+**计费的事实源是 `instance_events`**(running ↔ 非 running 的边);Prometheus 指标只做展示与对账,不参与计费。
 
 每小时 :02 触发(advisory lock 单实例执行),结算窗口由 `settlement_watermarks` 水位线推进,漏掉的窗口下一轮自动补上
 (追平有上限,超出需人工补,`SETTLEMENT_LAG` 指标持续告警)。每个窗口扫 `instance_events` 重建 running 秒数 → 幂等
 upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance_ledger`。离开 running 时由计费边监听器即时出尾账,
-与状态迁移同事务。数据盘每日 00:10 UTC 日结,00:30 UTC 跑资金核对(只报不改)。usage 聚合独立运行:Prometheus
-全挂,计费不停。口径与参数见 [`reference/billing.md`](./reference/billing.md)。
+与状态迁移同事务。数据盘日结与资金核对按**北京日界**跑(北京 00:10 / 00:30,即 UTC 16:10 / 16:30,见
+`core/timeutil.billing_day_floor`);资金核对只报不改。usage 聚合独立运行:Prometheus 全挂,计费不停。
+口径与参数见 [`reference/billing.md`](./reference/billing.md)。
 
 ### 7.4 欠费与回收
 
@@ -172,33 +186,28 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 
 ### 7.5 包周期(预付订阅)
 
-`market='subscription'` 的实例在下单时一次性预扣整段周期的费用,不走小时结算。周期取**定长小时**
+`market='subscription'` 的实例下单时一次性预扣整段周期的费用,不走小时结算。周期取**定长小时**
 (日 24 / 周 168 / 月 720 / 年 8760),定价与到期时刻同源;折扣按周期长度分四档,是可在线调整的策略参数。
 下单、续费与到期链路都在 `app/modules/billing/subscriptions.py`,折扣与报价的唯一计算点在 `app/core/pricing.py`。
 
-进入包周期有两条路:创建时直接买,或把已经在跑的按量实例**就地转过来**
-(`POST /api/v1/instances/{uuid}/subscribe`)。转换在同一事务里**先结清转换前那段按量账、再翻 `market`** ——
-顺序反了那段账就永远没人结(结算候选按实例当前的 market 挑),而账面上看不出少了什么。
+进入包周期有两条路:创建时直接买,或把在跑的按量实例就地转过来(`POST /api/v1/instances/{uuid}/subscribe`)。
+转换在同一事务里**先结清转换前那段按量账、再翻 `market`** —— 结算候选按实例当前的 market 挑,顺序反了那段账没人结。
 
-到期链路由 `subscription_patrol`(30 分钟一轮)驱动:临期预警 → 到期且开了自动续费则扣款续期 →
-否则停机 → 冻结并写 `frozen_deadline`。**回收那一步仍由余额巡检的 frozen 分支做**,状态机与回收逻辑
-只有一处实现。预付语义的三条后果(中途释放不退款、到期不自动转按量、余额为零不停机)与四处配套过滤
-见 [`reference/billing.md`](./reference/billing.md)。
+到期链路由 `subscription_patrol`(30 分钟一轮)驱动:临期预警 → 到期且开了自动续费则扣款续期 → 否则停机 →
+冻结并写 `frozen_deadline`;回收那一步仍由余额巡检的 frozen 分支做,状态机与回收逻辑只有一处实现。
+预付语义的三条后果(中途释放不退款、到期不自动转按量、余额为零不停机)与四处配套过滤见
+[`reference/billing.md`](./reference/billing.md)。
 
 ### 7.6 竞价(抢占与回收)
 
 `market='spot'` 的实例拿折后价(按量价 × `spot_discount_pct`,默认 4 折),对价是**容量紧张时可被平台回收**。
 折扣只落在 `instances.price_hourly` 上,其余一切与按量实例相同:进小时结算、出尾账、走同一条欠费链 ——
-**计费引擎不知道有竞价这回事**。
+计费引擎不感知竞价。
 
-按量或包周期用户建实例而软准入判定容量不足时,`orchestrator/preempt.py` 在**同池同型号**内按 `created_at`
-从新到旧挑竞价实例,凑够卡数就回收,**凑不够一台都不动**(请求方照旧拿 409)。回收与请求方的建实例在
-**同一个事务**里:请求方后面任何一步失败,回收一起回滚,不会出现「杀了人但单没开成」。
-
-宽限窗不用新机制:状态机立刻迁 `stopping`(用户当即看到并收到短信与站内信),删 Pod 的 outbox 任务延迟
-`spot_grace_seconds` 才到期 —— `core/outbox.py` 的 `enqueue(delay_seconds=...)` 只是把 `next_retry_at` 写到未来,
-而领取条件本来就是它。宽限窗内 Pod 还在、SSH 还能登。终态是 `stopped` 而不是 `frozen`(它没欠费),
-实例盘保留,有容量时用户可自行开机;**已运行时长按实际秒数正常结算,不免单**。
+按量或包周期用户建实例而软准入判定容量不足时,`orchestrator/preempt.py` 挑竞价实例回收(候选规则见 §8.7),
+凑不够则请求方照旧拿 409。宽限窗不用新机制:状态机立刻迁 `stopping`(用户当即看到并收到短信与站内信),
+删 Pod 的 outbox 任务延迟 `spot_grace_seconds` 才到期,窗内 Pod 还在、SSH 还能登。终态是 `stopped` 而非
+`frozen`(它没欠费),实例盘保留,有容量时用户可自行开机。
 
 用户可随时 `POST /api/v1/instances/{uuid}/to-on-demand` 转按量免除回收风险,不动 Pod、零中断,代价是
 **当前整点小时整体改按按量价结算**(`bills_hourly` 一小时只有一个单价)。口径见
@@ -213,15 +222,15 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** cpu 档允许挂 hami 池吃 GPU 机的空闲 CPU,按池分支走
    就会替一台不用卡的实例申请 `nvidia.com/gpu`。同理,计费份数走 `core/money.billing_units`(GPU 实例 = 卡数,
    CPU 实例 = 1 份整机):直接写 `单价 × gpu_count` 会让 CPU 实例每小时算出 ¥0.00。
-3. **超卖分维度,且只发生在 HAMi 池;显存超卖 ≤1.2。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。
+3. **超卖分维度,且只发生在 HAMi 池。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。超卖参数是纯定价参数,
+   不下发调度;显存超卖 >1.2 由管理端二次确认(schema 上界 9.99)。
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
 5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
-6. **包周期实例只在 `orchestrator/queries.py::billing_candidates` 一处跳过小时结算。** `upsert_hour_bill`、水位线、缺口机制一行不动;
-   加一种购买模式不必再碰结算引擎。跳过点散开就是对预付用户二次收费,而这类错误在账单出来之前没人会发现。
-7. **竞价抢占只在同池同型号内选,按 `created_at` 从新到旧,凑不够一台都不动。** 这三条不是实现细节,
-   是逐字写进知情同意给用户看的承诺 —— 用户据「创建得越早越安全」安排自己的任务,任何「更聪明」的
-   排序都会让那句话变成无法验证的话。凑不够就半途回收更糟:既杀了竞价用户,又没救成请求方。
-   抢占与请求方的建实例**同事务**,请求方失败即整体回滚;被抢占实例按实际运行秒数正常结算,不免单。
+6. **包周期实例只在 `orchestrator/queries.py::billing_candidates` 一处跳过小时结算。** `upsert_hour_bill`、水位线、
+   缺口机制一行不动;跳过点散开就是对预付用户二次收费。
+7. **竞价抢占只在同池同型号内选,按 `created_at` 从新到旧,凑不够一台都不动。** 这三条逐字写进知情同意给用户看,
+   改排序或候选谓词等同于改用户可见文案,两边同提交。抢占与请求方的建实例**同事务**,请求方失败即整体回滚;
+   被抢占实例按实际运行秒数正常结算,不免单。
 
-金额、时间、钱包加锁、outbox、状态机、计费依据等编码级硬性规范见 `CLAUDE.md`。
+金额与时间口径、钱包加锁、模块边界等编码级硬性规范与闸门见 `CLAUDE.md`。

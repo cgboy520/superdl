@@ -119,8 +119,8 @@ class TestAdjustments:
         assert w["balance"] == "100.00"  # 驳回不动账
 
     async def test_idempotency_scope_and_fingerprint(self, client, sm, fake):
-        """幂等键加固(P2):同键同体重放 → replay;同键异体 → 409 指纹不符;
-        同键同体跨租户 → 各开各的单(作用域含 user_id,弱键跨租户不再误判重放)。"""
+        """幂等键加固:同键同体重放 → replay;同键异体 → 409 指纹不符;
+        同键同体跨租户 → 各开各的单(作用域含 user_id,弱键跨租户不误判重放)。"""
         _h1, _u1, user1 = await _provision_running(client, sm, fake)
         _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
         finance = await second_admin_headers(sm, client, "fin-idem")
@@ -259,11 +259,10 @@ class TestAdjustments:
 
 class TestTenantAggregations:
     async def test_tenant_rows_carry_own_aggregates(self, client, sm, fake):
-        """租户列表每行的余额/累计消费/实例数是该租户自己的聚合值,手机号只回掩码;
+        """租户列表每行的余额/累计消费/实例数是该租户自己的聚合值,手机号只回掩码,
         无钱包/无消费的租户金额也按 2 位小数字符串出参。
 
-        挂了 = 按 user 分组的三个聚合键值错位(如 GROUP BY 漏 user_id),客服看到的是别人的账;
-        或缺省金额没走 as_amount 渲染成 "0.000000" 之类的非账面形态。
+        挂了 = 按 user 分组的聚合键值错位(客服看到别人的账),或缺省金额没走 as_amount。
         """
         from app.modules.billing import service as billing_service
         from tests.helpers import fund_wallet
@@ -426,7 +425,7 @@ class TestRevenueReport:
             hour=0, minute=0, second=0, microsecond=0
         ) - timedelta(hours=8)
         expected_today = "12.50" if hour >= beijing_day_start else "0"
-        assert body["today_revenue"] == expected_today  # 缺省 tz_offset=480(原默认 0 已修正)
+        assert body["today_revenue"] == expected_today  # 缺省 tz_offset=480
         assert body["month_revenue"] == "12.50"
         assert body["today_signups"] >= 1
 
@@ -470,7 +469,7 @@ class TestAnnouncement:
     ):
         """群发是批量 INSERT(单事务 ⌈N/1000⌉ 条语句),且只触达 active 用户。
 
-        逐用户 INSERT...RETURNING 的 N+1 若回潮,本用例经 monkeypatch 直接失败。
+        改回逐用户 INSERT...RETURNING 的 N+1 写法时,本用例经 monkeypatch 直接失败。
         """
         from app.modules.account import service as account_service
         from app.modules.notify import service as notify_service
@@ -543,10 +542,8 @@ class TestTenantBillingDrilldown:
 
 class TestFreezeStopsInstances:
     async def test_freeze_stops_running_instances(self, client, sm, fake):
-        """封禁必须同时停机、停计费。
-
-        只改 status + 撤 token 的话,计费主链路不看用户状态,被封账号会继续跑并继续扣费。
-        """
+        """封禁必须同时停机、停计费(计费主链路不看用户状态,只改 status
+        + 撤 token 的话被封账号继续跑、继续扣费)。"""
         h = await admin_headers(sm, client)
         user_headers, uuid, user_id = await _provision_running(client, sm, fake, "13600000090")
 
@@ -557,7 +554,7 @@ class TestFreezeStopsInstances:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "frozen"
-        # 回显本次停掉的 running 台数,前端据此提示影响面
+        # 回显停掉的 running 台数,前端据此提示影响面
         assert resp.json()["instances_stopped"] == 1
         # 冻结即刻生效:用户端凭据被拒
         assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 403

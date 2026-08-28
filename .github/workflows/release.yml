@@ -14,9 +14,9 @@ permissions:
   contents: read
 
 jobs:
-  # 发布闸门:tag 构建前重跑 CI 的 api/frontend/security 等全部闸门 job,
-  # 任一红则整个 release 中止。跨 workflow 不能直接 needs 对方 job,故经 workflow_call
-  # 复用 ci.yml(其 on: 已加 workflow_call);发布闸门与 PR 闸门同源,不维护第二份定义。
+  # 发布闸门:tag 构建前重跑 CI 的全部闸门 job,任一红则整个 release 中止。
+  # 跨 workflow 不能直接 needs 对方 job,故经 workflow_call 复用 ci.yml(其 on: 已加
+  # workflow_call);发布闸门与 PR 闸门同源,不维护第二份定义。
   ci-gates:
     uses: ./.github/workflows/ci.yml
     permissions:

@@ -2,11 +2,10 @@
 
 钱包余额与 `balance_ledger` 都在此库,恢复演练每季度一次。
 
-> **上线前强制项(公众生产闸)**:逻辑备份层 RPO=24h 不满足资金库要求,分钟级 RPO 必须
-> 二者其一——① 托管 PG:书面确认 PITR 与保留策略已开(preflight 以
-> `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记);② 自建 cnpg 档:启用 `cnpg.enabled` 且
-> preflight 全绿(S3 归档无占位符、ScheduledBackup 在跑)。首次切流前必须按本文件
-> 「恢复步骤」+「PITR 抽检」完整演练一次并填 RTO 记录表。
+> **上线前强制项(公众生产闸)**:逻辑备份层 RPO=24h 不满足资金库要求,分钟级 RPO 二选一 ——
+> ① 托管 PG:书面确认 PITR 与保留策略已开(preflight 以 `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记);
+> ② 自建 cnpg 档:启用 `cnpg.enabled` 且 preflight 全绿(S3 归档无占位符、ScheduledBackup 在跑)。
+> 首次切流前必须按本文件「恢复步骤」+「PITR 抽检」完整演练一次并填 RTO 记录表。
 
 ## 备份分层
 
@@ -62,14 +61,11 @@ kubectl -n superdl scale deploy superdl-worker-node-mgr superdl-worker-prewarm \
 
 - [ ] 日常冒烟在线:近 7 日 `pg-backup-daily` Job 全部成功(含 restore 冒烟步骤),
       `PgBackupFailed` / `PgBackupStale` 告警静默期内无触发
-- [ ] 完整恢复计时:从对象存储取最近一次备份,按「恢复步骤」恢复到隔离库并计时,
-      结果填入下方 RTO 记录表
-- [ ] 资金一致性:抽 3 个用户核对 余额 = 流水链尾部 `balance_after`;
-      `alembic check` 通过
-- [ ] PITR 抽检(连续归档层):从 WAL 归档恢复到指定时间点,验证可精确落在
-      目标事务前后(cnpg 档用 recovery 模式集群演练;托管 PG 用控制台时间点恢复)
-- [ ] 告警链路:手工 fail 一次备份(如临时改错 S3 凭据)确认 `PgBackupFailed`
-      触达值班多渠道,随后恢复
+- [ ] 完整恢复计时:从对象存储取最近一次备份,按「恢复步骤」恢复到隔离库并计时,结果填入下方 RTO 记录表
+- [ ] 资金一致性:抽 3 个用户核对 余额 = 流水链尾部 `balance_after`;`alembic check` 通过
+- [ ] PITR 抽检(连续归档层):从 WAL 归档恢复到指定时间点,验证可精确落在目标事务前后
+      (cnpg 档用 recovery 模式集群演练;托管 PG 用控制台时间点恢复)
+- [ ] 告警链路:手工 fail 一次备份(如临时改错 S3 凭据)确认 `PgBackupFailed` 触达值班多渠道,随后恢复
 - [ ] 记录归档:RTO 记录表更新 + 演练结论写入运维周报;耗时超标时扩资源或改方案
 
 ## RTO 记录表

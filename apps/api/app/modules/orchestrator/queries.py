@@ -1,4 +1,4 @@
-"""编排查询聚合(从 service.py 拆出,门面再导出):
+"""编排查询聚合(由 service.py 门面再导出):
 
 billing 结算/对账只读接口(事件是计费主依据,经 service 层暴露)、
 管理端/巡检聚合查询、数据盘门面(模块边界)。
@@ -64,14 +64,11 @@ async def billing_candidates(
 ) -> list[tuple[int, int, Any, int]]:
     """小时结算候选:(instance_id, user_id, price_hourly, gpu_count)。
 
-    候选 = 当前 running 的实例 ∪ 自窗口起点以来离开过 running 的实例。
-    完备性论证:「窗口末仍在 running」= 现在仍 running ∪ 窗口末之后才离开 running;
-    每个已结束的 running 区间都有一条 from_status='running' 的离开事件。
-    两条腿都走索引(instances.status / instance_events.created_at)。
+    候选 = 当前 running 的实例 ∪ 自窗口起点以来离开过 running 的实例;每个已结束的
+    running 区间都有一条 from_status='running' 的离开事件,两条腿都走索引。
 
-    **包周期实例在这里、也只在这里被跳过。** 它下单时已一次性预扣整段周期,
-    再走小时结算就是二次收费。`upsert_hour_bill` / 水位线 / 缺口机制一行不动 ——
-    跳过点只有这一处,加一种购买模式不必再碰结算引擎(见 billing/subscriptions)。
+    包周期实例在这里、也只在这里被跳过:它下单时已一次性预扣整段周期,再走小时结算
+    就是二次收费。
     """
     running_now = select(Instance.id.label("iid")).where(Instance.status == sm_def.RUNNING)
     exited = (
@@ -264,14 +261,11 @@ async def running_gpu_share_by_pool(session: AsyncSession) -> dict[str, float]:
 async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
     """池 → 正在跑的竞价实例占用的卡数合计(总览的「其中竞价(可回收)」那一段)。
 
-    与节点台账的 `gpu_used` 同一单位(都是 device 计数:HAMi 共享实例申请的也是整数张
-    device,只是限了算力份额)。但**超卖档下这个数可能大于 gpu_used** —— 多个共享实例
-    共用一张卡时,台账只记一张、实例侧却各记一张。调用方按「不超过已租」截断,
-    别把一段画得比它所在的容器还长。
+    与节点台账的 `gpu_used` 同一单位(device 计数)。但超卖档下这个数可能大于 gpu_used ——
+    多个共享实例共用一张卡时台账只记一张,调用方必须按「不超过已租」截断。
     """
     # 在 Python 侧聚合而不是 GROUP BY:PG 不认「SELECT spec ->> $1 … GROUP BY spec ->> $1」
-    # 里的参数化表达式相等(实测 GroupingError),而竞价 running 实例是小集合 ——
-    # 与紧邻的 running_gpu_share_by_pool 同一写法,不为一个小聚合另造一套 SQL 技巧
+    # 里的参数化表达式相等(GroupingError),而竞价 running 实例是小集合
     rows = (
         (
             await session.execute(

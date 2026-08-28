@@ -40,7 +40,7 @@ AM_PAYLOAD = {
 
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
-        """未读数轻端点(P2):DB count 与列表分页解耦,标记已读后减少。"""
+        """未读数轻端点:DB count 与列表分页解耦,标记已读后减少。"""
         headers, _uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             for i in range(3):
@@ -161,7 +161,7 @@ class TestBalanceWarnNotification:
         assert by_title["other"].read_at is None
 
     async def test_list_pagination_beyond_50(self, client, sm, fake):
-        """站内信不再封顶最新 50 条:limit/cursor 游标翻页,降序不重不漏。"""
+        """站内信不封顶条数:limit/cursor 游标翻页,降序不重不漏。"""
         headers, _uuid, user_id = await _provision_running(client, sm, fake)
         async with sm() as session:
             for i in range(60):

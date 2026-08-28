@@ -4,8 +4,8 @@
 开启后凭据与场景走平台配置中心(env SUPERDL_CAPTCHA_* 为默认值层)。没有 mock 渠道:
 关闭即跳过,测试经 set_captcha_channel 注入假渠道。
 
-安全语义:校验门 fail-closed——渠道故障(网络/签名/欠费)抛 CaptchaError,调用方
-一律拒绝后续动作(短信口子宁可短时不可用,不向轰炸敞开;告警经统一异常日志上监控)。
+安全语义:校验门 fail-closed —— 渠道故障(网络/签名/欠费)抛 CaptchaError,
+调用方一律拒绝后续动作。
 """
 
 from typing import Protocol

@@ -1,4 +1,4 @@
-"""SSH 端口池(从 service.py 拆出,门面再导出):
+"""SSH 端口池(由 service.py 门面再导出):
 
 端口池 30000–32767 与 K8s NodePort 同段,集群其它对象会硬占其中某些端口,两道防护:
 `ssh_port_excluded` 预先跳过已知占用;`blocked` 由 handle_create 在运行期撞占后标记。

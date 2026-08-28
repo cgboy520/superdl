@@ -44,11 +44,8 @@ vi.mock("../api/queries", () => ({
 const STARTED_AT = "2026-08-04T04:00:00Z";
 const EXPIRES_AT = "2026-09-03T04:00:00Z";
 
-/**
- * 包月实例。price_hourly 是**折后**时价(3.99 × 0.8),unit_price 是**原价**快照 ——
- * 报价基准必须取后者,拿前者当基准会把折扣叠两遍。
- * SKU 现价刻意设成 9.99(已涨价):基准若误取现价,下面的断言立刻红。
- */
+/** 包月实例。price_hourly 是折后时价(3.99 × 0.8),unit_price 是原价快照,
+ *  报价基准必须取后者,拿前者会把折扣叠两遍;SKU 现价设成 9.99,误取现价则断言立刻红。 */
 function makeInstance(): InstanceOut {
   return {
     uuid: "u-2",

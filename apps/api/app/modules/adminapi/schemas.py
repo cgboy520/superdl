@@ -23,9 +23,8 @@ class AdminOut(BaseModel):
 
 AdminRole = Literal["admin", "ops", "finance", "readonly"]
 
-# 只含 reason 的高危操作请求体(撤回公告/忽略与重放死信/冻结解冻租户/删镜像/重置 MFA/补单/
-# 停止恢复调度/吊销注册)共用的原因长度上限。不合并成一个 ReasonBody:orval 按 schema 名
-# 生成前端类型,各自的名字有页面在引用。
+# 只含 reason 的高危操作请求体共用的原因长度上限。不合并成一个 ReasonBody:orval 按
+# schema 名生成前端类型,各自的名字有页面在引用
 REASON_MAX_LENGTH = 256
 
 
@@ -184,9 +183,8 @@ class OverviewPoolOut(BaseModel):
     pool: str
     gpu_total: int
     gpu_used: int
-    # 已租的那段里属于竞价实例的卡数(可回收容量)。已按 gpu_used 截断:
-    # 超卖档下多个共享实例共用一张卡,台账只记一张、实例侧各记一张,不截断会画出
-    # 一段比它所在容器还长的堆叠条
+    # 已租的那段里属于竞价实例的卡数(可回收容量),必须按 gpu_used 截断:超卖档下多个
+    # 共享实例共用一张卡,台账只记一张,不截断会画出一段比它所在容器还长的堆叠条
     gpu_spot_used: int
     ready_gpu_total: int
 
@@ -383,8 +381,7 @@ class AuditLogOut(BaseModel):
 class RevenueReportOut(BaseModel):
     """收入口径:`*_revenue` = 计量出账(按量 + 盘费,按账单归属期)+ 包周期预付(按收款当日)。
 
-    `*_prepaid` 是其中的预付部分,单独给出来是因为一笔包年会在当天造成一个尖峰,
-    看环比时必须能把它拆出来。
+    `*_prepaid` 是其中的预付部分,单列以便看环比时拆走预付尖峰(一笔包年集中在收款当日)。
     """
 
     today_revenue: str

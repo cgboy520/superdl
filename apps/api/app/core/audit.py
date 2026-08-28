@@ -24,9 +24,8 @@ from app.core.metrics import AUDIT_WRITE_FAILED_TOTAL
 logger = get_logger(__name__)
 
 AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-# 不审计的路径前缀(高频只读或基础设施)。
-# endpoint-auth 是网关对**每一次**服务调用的同步鉴权回调,方法跟着客户端走(含 POST):
-# 审计它等于按服务实例的 QPS 往 audit_log 灌行,真正要查的写操作会被埋掉。
+# 不审计的路径前缀(高频只读或基础设施)。endpoint-auth 是网关对每一次服务调用的同步
+# 鉴权回调(方法跟着客户端走,含 POST),审计它等于按服务 QPS 往 audit_log 灌行;
 # 端点侧的可观测走结构化日志与网关访问日志,不走审计表。
 AUDIT_EXCLUDE_PREFIXES = (
     "/healthz",
@@ -63,8 +62,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        # 未捕获异常由内层 Uniform500Middleware 渲染成 500 响应(main.py 的中间件顺序),
-        # 到这里已是普通响应:按状态码落行,500 同样留痕
+        # 未捕获异常已被内层 Uniform500Middleware 渲成 500 响应,到这里按状态码落行
         response = await call_next(request)
         await _write_audit_row(request, response.status_code)
         return response

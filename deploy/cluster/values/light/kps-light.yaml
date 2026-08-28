@@ -1,6 +1,5 @@
-# kps 轻量档:k3s 单机/小规模。与 full 同 chart,只砍占用 —— 短 retention /
-# 关 Grafana / 资源限额收紧。Alertmanager 必须保留:webhook 告警链路是业务功能
-# (管理端告警流与铃铛)。
+# kps 轻量档:k3s 单机/小规模。与 full 同 chart,只砍占用(短 retention / 关 Grafana /
+# 收紧限额)。Alertmanager 必须保留:webhook 告警链路是业务功能(管理端告警流与铃铛)。
 prometheus:
   prometheusSpec:
     retention: 3d

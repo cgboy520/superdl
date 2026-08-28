@@ -7,7 +7,7 @@
 - 结算跳过:预付过的实例又被按小时扣了一遍(二次收费)。
 - 三处配套过滤:包月用户余额为 0 时被欠费巡检误停机 / 开不出新机 / 关机时被出尾账。
 - 库存预留:包月用户关机一晚,早上开不了机(容量被别人买走)。
-- 到期链路:到期不停机(白送算力)或停机后永不回收(实例盘泄漏)。
+- 到期链路:到期不停机(免费继续跑)或停机后永不回收(实例盘泄漏)。
 """
 
 from datetime import timedelta
@@ -147,7 +147,7 @@ class TestQuoteArithmetic:
         assert q.amount == (q.unit_price * 2 * q.hours).quantize(Decimal("0.01"))
 
     def test_cpu_instance_bills_one_unit(self):
-        """CPU 实例 gpu_count=0 收 1 份(billing_units),不是 0 份 —— 收 0 就是白送。"""
+        """CPU 实例 gpu_count=0 收 1 份(billing_units),不是 0 份 —— 收 0 份即整档免费。"""
         policies = EffectivePolicies(
             **{
                 **{
@@ -414,7 +414,7 @@ class TestRenewal:
     async def test_renew_extends_from_old_expiry_and_chains(self, client, sm, fake):
         """提前续费从**老到期时刻**起算,并串上 renewed_from_id。
 
-        挂了 = 提前续费的用户白丢手上剩余的天数(于是没人愿意提前续)。
+        挂了 = 提前续费的用户白丢手上剩余的天数。
         """
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100040")
         async with sm() as s:
@@ -518,7 +518,7 @@ class TestExpiryChain:
     async def test_expire_stops_then_freezes_then_reclaims(self, client, sm, fake):
         """到期 → 停机 → 冻结 → 回收全链路。
 
-        挂在第一步 = 到期后白送算力;挂在后两步 = 实例盘永远收不回来。
+        挂在第一步 = 到期后仍免费在跑;挂在后两步 = 实例盘永远收不回来。
         """
         _headers, uuid, user_id, _, _ = await provision_subscription(
             client, sm, fake, "13911100050"
@@ -583,7 +583,7 @@ class TestExpiryChain:
         assert inst.status == "frozen"
 
     async def test_expired_subscription_cannot_start(self, client, sm, fake):
-        """到期后开机被拒(先续费):放行等于白送算力。"""
+        """到期后开机被拒(先续费):放行等于到期后免费续跑。"""
         headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100052")
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -841,7 +841,7 @@ class TestConvertToSubscription:
         assert inst.price_hourly < unit
 
     async def test_after_conversion_settlement_skips_the_instance(self, client, sm, fake):
-        """转换后小时结算不再碰它:两段口径互斥,不能又收包月又收小时。"""
+        """转换后小时结算不碰它:两段口径互斥,不能又收包月又收小时。"""
         from app.core.timeutil import hour_floor
         from app.modules.billing.settlement import settle_due_hours
         from app.modules.orchestrator.models import InstanceEvent

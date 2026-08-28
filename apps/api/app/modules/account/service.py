@@ -276,15 +276,15 @@ async def login(
             await session.commit()
         elif password is not None:
             # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求
-            # 不再付哈希成本(只读预检,不计数,不影响正常登录的配额语义)
+            # 不付哈希成本(只读预检,不计数,不影响正常登录的配额语义)
             await ensure_not_rate_limited(
                 f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
             )
             await ensure_not_rate_limited(
                 f"user-login:{client_ip or '-'}:{phone}", max_attempts=5, window_seconds=300.0
             )
-            # 纯账号维度:撞库可以换 IP,但换不了目标账号——
-            # 只按 IP+账号的桶在 N 个源地址下是 5×N 次/5 分钟,必须有账号级锁定
+            # 纯账号维度:撞库可以换 IP 但换不了目标账号,只按 IP+账号的桶在 N 个源地址下
+            # 是 5×N 次/5 分钟,必须有账号级锁定
             await ensure_not_rate_limited(
                 f"user-login-acct:{phone}", max_attempts=10, window_seconds=900.0
             )
@@ -301,8 +301,8 @@ async def login(
             raise AppError(ErrorCode.VALIDATION_ERROR, key="account.credentialRequired")
     except AppError as exc:
         if exc.code == ErrorCode.LOGIN_FAILED:
-            # 只在失败后计数,成功登录不消耗配额;
-            # 含手机号的键遍历号段即换桶,故再加一个只按 IP 切分的桶
+            # 只在失败后计数,成功登录不消耗配额;含手机号的键遍历号段即换桶,
+            # 故再加一个只按 IP 切分的桶
             await check_rate_limit(
                 f"user-login-ip:{client_ip or '-'}", max_attempts=60, window_seconds=3600.0
             )
@@ -338,7 +338,7 @@ async def login(
                 severity="warning",
                 dedup_key=f"login-anomaly:{user.id}:{now_utc():%Y%m%d}",
             )
-            await session.commit()  # 通知落库(password 路径此前无提交点)
+            await session.commit()  # 通知落库(password 路径无其它提交点)
         await _clear_login_failures(f"user-login-acct:{phone}")
     # 已注销账号的 phone 已改写为 del:…,按手机号查不到,不必再判 deleted(持凭证路径见 deps/refresh)
     if user.status == "frozen":
@@ -386,9 +386,8 @@ async def reset_password(
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair:
     """轮换式刷新:refresh 一次性消费(jti 落库),重放视为泄露 → 撤销全部在外 token。
 
-    宽限窗:同 jti 在 REFRESH_REPLAY_GRACE_SECONDS 内被重复消费视为并发重试
-    (多标签页/客户端网络重试),回首消费事务登记的同一对 token——不为同一旧 token
-    另开第二条长期有效的轮换链。
+    宽限窗:同 jti 在 REFRESH_REPLAY_GRACE_SECONDS 内被重复消费视为并发重试,回首消费
+    事务登记的同一对 token,不为同一旧 token 另开第二条长期有效的轮换链。
     """
     payload = decode_token(refresh_token, "user", expected_type="refresh")
     # 行锁:token_version 读-改-写与改密/登出全部/并发刷新互斥,防并发丢更新

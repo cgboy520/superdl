@@ -1,7 +1,5 @@
-/**
- * 工单详情:对话流(用户/客服气泡区分)+ 关联实例链接 + [关闭工单]。
- * resolved/closed 不可再回复(提示新建);关闭入口仅在 resolved 出现。
- */
+/** 工单详情:对话流(用户/客服气泡区分)+ 关联实例链接 + [关闭工单]。
+ *  resolved/closed 不可再回复(提示新建);关闭入口仅在 resolved 出现。 */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";

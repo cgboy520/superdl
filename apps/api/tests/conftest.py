@@ -1,7 +1,6 @@
 """测试基建:testcontainers 起真 PG18,create_all 建表,函数级 TRUNCATE 隔离。
 
-迁移与模型的一致性由 CI 的 `alembic upgrade head && alembic check` 把关,
-单测走 create_all 换速度。
+迁移与模型的一致性由 CI 的 `alembic upgrade head && alembic check` 把关,单测走 create_all。
 """
 
 import os
@@ -13,11 +12,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
 
-# 静态测试环境变量:conftest 导入即就位,不挂在 pg_url fixture 上——
-# 不消费数据库 fixture 的用例(纯函数/Settings 单测)单独运行时也需要它们;
-# 挂 fixture 上会让"窄选集先跑无 DB 用例"的顺序组合炸 Settings 校验(顺序依赖)。
-# 一律强制赋值(非 setdefault):shell 里残留的同名贵方(如手工导过 SUPERDL_ENVIRONMENT)
-# 不得渗进测试会话——测试环境必须确定性。
+# 静态测试环境变量:conftest 导入即就位,不挂在 pg_url fixture 上 —— 不消费数据库 fixture
+# 的用例单独运行时也需要它们,挂 fixture 上会让窄选集的顺序组合炸 Settings 校验。
+# 一律强制赋值(非 setdefault):shell 里残留的同名变量不得渗进测试会话
 os.environ["SUPERDL_ENVIRONMENT"] = "test"
 os.environ["SUPERDL_K8S_BACKEND"] = "fake"  # 单测一律 FakeOrchestrator,隔离本地 .env 的 real 配置
 # 超时用例按默认 5 分钟断言,钉死不受 .env 影响

@@ -1,9 +1,9 @@
-"""worker 组件划分(P1-18/安全P0-1):单 Pod 单 SA 的前提是 outbox 按任务组件拆 Deployment。
+"""worker 组件划分:单 Pod 单 SA 的前提是 outbox 按任务组件拆 Deployment。
 
 outbox 任务类型与定时任务按组件分片:每个 Deployment 经 SUPERDL_WORKER_COMPONENT
 声明身份,只领/只跑本组件的活,K8s 写权限随之按组件收窄(01-rbac.yaml 的
-superdl-tenant-mgr / -node-mgr / -prewarm / -disk-ops)。ALL 是全量模式
-(dev/test 单进程默认值,生产勿用——生产各 Deployment 必须显式声明组件)。
+superdl-tenant-mgr / -node-mgr / -prewarm / -disk-ops)。
+ALL 是 dev/test 单进程的全量模式,生产各 Deployment 必须显式声明组件。
 
 分片的完备性由 tests/test_workers_components.py 锚定:新增 outbox handler /
 定时任务必须登记到某个组件,否则测试红(未登记的任务在生产会静默停摆)。
@@ -23,7 +23,6 @@ class WorkerComponent(StrEnum):
 
 
 # outbox 任务类型 → 组件。handler 归属模块不改,映射集中在这里
-# (与 outbox.TASK_TIMEOUT_OVERRIDES 同哲学:handler 实现与运维映射分离)。
 COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     WorkerComponent.CORE: frozenset({"notify.sms"}),
     WorkerComponent.TENANT_MGR: frozenset(
@@ -79,7 +78,7 @@ def current_component() -> WorkerComponent:
 
 
 def outbox_types_for(component: WorkerComponent) -> frozenset[str] | None:
-    """组件的 outbox 领取集合;ALL 返回 None(不过滤,与拆分前行为一致)。"""
+    """组件的 outbox 领取集合;ALL 返回 None(不过滤)。"""
     if component is WorkerComponent.ALL:
         return None
     return COMPONENT_OUTBOX_TYPES[component]

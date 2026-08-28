@@ -1,7 +1,6 @@
 # TopoLVM 的 k3s/单机覆盖(叠在 values/topolvm.yaml 之上)。
 # chart 默认 controller 2 副本 + 按 hostname 的 required 反亲和,单节点上第二个副本永远
-# Pending —— 功能不受影响(另一个在跑),但集群里长期挂着一个红 Pod,会把真问题淹掉,
-# 也让「全部 Pod Running」这类巡检判据失效。light 档按单机取 1 副本。
-# 多节点的 light 集群要恢复高可用,把这里改回 2 即可。
+# Pending:功能不受影响,但集群里长期挂着一个红 Pod,会把真问题淹掉,也让「全部 Pod
+# Running」这类巡检判据失效。多节点的 light 集群恢复高可用把这里改回 2。
 controller:
   replicaCount: 1

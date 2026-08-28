@@ -1,8 +1,7 @@
 /**
  * 状态枚举 → 徽标色 / 文案 key 的单一映射表。
- * 枚举值与后端 status 严格一致,新增状态先改后端再同步这里与 locales 下两语言的 shared.json。
- * labelKey 内嵌 "shared:" 前缀,任意默认 ns 的 t() 均可直接解析;
- * 文案值在 packages/ui/locales/{zh-CN,en-US}/shared.json,键集由 src/locales.test.ts 守护。
+ * 枚举值与后端 status 严格一致,新增状态先改后端再同步这里与两语言的 shared.json。
+ * labelKey 内嵌 "shared:" 前缀,任意默认 ns 的 t() 均可直接解析;键集由 src/locales.test.ts 守护。
  */
 
 import { colorPrimary, statusColors } from "./tokens";
@@ -61,10 +60,9 @@ export function isTransientInstanceStatus(status: string): boolean {
 export type SkuTier = "dedicated" | "shared" | "cpu";
 
 /**
- * 用户可见的档位:tier × pool_label 的合并键。
- * 隔离机制的事实源是节点池(后端 core/gpu_adapter 同款口径),「共享」既可能是 mig 池的
- * 硬切分(标准),也可能是 hami 池的软切分超卖(经济),两者性能承诺不同,必须分开展示。
- * cpu 档不带卡,落 cpu 池还是 hami 池对用户无差别(都不申请 GPU),因此不按池分化。
+ * 用户可见的档位:tier × pool_label 的合并键。隔离机制的事实源是节点池(与后端 core/gpu_adapter 同口径)。
+ * 「共享」在 mig 池是硬切分(标准)、在 hami 池是软切分超卖(经济),性能承诺不同必须分开展示;
+ * cpu 档不申请 GPU,不按池分化。
  */
 export type SkuVariant = "dedicated" | "shared_mig" | "shared_hami" | "cpu";
 
@@ -83,12 +81,8 @@ export const skuTierMap = {
   cpu: { labelKey: "shared:status.tier.cpu", color: "#475569", hintKey: "shared:status.tierHint.cpu" },
 } as const satisfies Record<SkuVariant, { labelKey: string; color: string; hintKey?: string }>;
 
-/**
- * 实例形态,与 instances.workload_type 严格一致。
- * dev = SSH + JupyterLab 开发机;service = 对外 HTTPS 服务容器(端点 + API Key)。
- * 只有 service 需要在列表里挂标记,dev 是默认形态、不加视觉噪声 —— 但两项都进表,
- * 免得调用方对着裸字符串判等。
- */
+/** 实例形态,与 instances.workload_type 严格一致。dev = SSH + JupyterLab 开发机(默认形态,列表不挂标记),
+ *  service = 对外 HTTPS 服务容器(端点 + API Key)。 */
 export type WorkloadType = "dev" | "service";
 
 export const workloadTypeMap = {
@@ -97,15 +91,13 @@ export const workloadTypeMap = {
   service: { labelKey: "shared:status.workload.service", color: colorPrimary },
 } as const satisfies Record<WorkloadType, { labelKey: string; color: string }>;
 
-/**
- * 购买模式,与 instances.market 严格一致(后端 core/pricing.py 的 MARKETS)。
- * 与 tier 正交:同一条 SKU 可以按量买、也可以包周期买,不是新档位。
- */
+/** 购买模式,与 instances.market 严格一致(后端 core/pricing.py 的 MARKETS)。
+ *  与 tier 正交:同一条 SKU 可以按量买也可以包周期买,不是新档位。 */
 export type Market = "on_demand" | "spot" | "subscription";
 
 export const marketMap = {
   on_demand: { labelKey: "shared:status.market.on_demand", color: statusColors.gray },
-  // 橙 = 「这台机器随时可能被收走」,与 frozen 同色系:两者都是「还在跑,但不保证跑到底」
+  // 橙:与 frozen 同色系(还在跑,但不保证跑到底)
   spot: {
     labelKey: "shared:status.market.spot",
     color: statusColors.orange,
@@ -114,11 +106,7 @@ export const marketMap = {
   subscription: { labelKey: "shared:status.market.subscription", color: colorPrimary },
 } as const satisfies Record<Market, { labelKey: string; color: string; hintKey?: string }>;
 
-/**
- * 竞价实例的「可回收」行内标记(用户端列表/详情、管理端实例 Tab 共用)。
- * 与 `marketMap.spot` 同色 —— 「竞价」和「可回收」说的是同一件事的两面,
- * 分成两种颜色会让人以为是两个互不相干的状态。
- */
+/** 竞价实例的「可回收」行内标记(两端共用),与 `marketMap.spot` 同色。 */
 export const spotReclaimTag = {
   labelKey: "shared:status.market.spotReclaimable",
   hintKey: "shared:status.marketHint.spot",
@@ -126,10 +114,9 @@ export const spotReclaimTag = {
 } as const satisfies { labelKey: string; hintKey: string; color: string };
 
 /**
- * 实例事件 `reason` → 文案。值与后端 `transition(reason=...)` 传的字面量严格一致
- * (orchestrator/service.py、reconciler.py、preempt.py、billing/subscriptions.py)。
- * 后端还有少量自由文本 reason(如调度器回填的失败详情),取不到就原样渲染 ——
- * 调用方一律走 `metaOf(instanceEventReasonMap, e.reason)?.labelKey ?? e.reason`。
+ * 实例事件 `reason` → 文案。值与后端 `transition(reason=...)` 传的字面量严格一致。
+ * 后端还有少量自由文本 reason,调用方一律走
+ * `metaOf(instanceEventReasonMap, e.reason)?.labelKey ?? e.reason` 以便取不到时原样渲染。
  */
 export const instanceEventReasonMap = {
   create: { labelKey: "shared:status.eventReason.create" },
@@ -174,11 +161,8 @@ export const periodMap = {
   year: { labelKey: "shared:status.period.year" },
 } as const satisfies Record<BillingPeriod, { labelKey: string }>;
 
-/**
- * 「怎么买的」这一格该显示什么:包周期按周期分化成 包日/包周/包月/包年,其余取 market。
- * 用户心智里「包月」是一种买法而不是「包周期 + 月」两个字段,两端的列表列都照这里取,
- * 不各自拼一遍。未知 market 返回 undefined(调用方回退渲染原始值)。
- */
+/** 「怎么买的」这一格显示什么:包周期按周期分化成 包日/包周/包月/包年,其余取 market。
+ *  两端列表列统一取这里;未知 market 返回 undefined,调用方回退渲染原始值。 */
 export function marketLabelKey(market: string, period?: string | null) {
   if (market === "subscription" && isBillingPeriod(period)) return periodMap[period].labelKey;
   return metaOf(marketMap, market)?.labelKey;
@@ -193,11 +177,8 @@ export const subscriptionStatusMap = {
   cancelled: { labelKey: "shared:status.subscription.cancelled", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<SubscriptionStatus, StatusMeta>;
 
-/**
- * 包周期已到期(开机门禁的前端判据,与后端 subscriptions.assert_active 同口径)。
- * 非包周期实例恒为 false;缺 subscription 字段的包周期实例判为已到期 —— 与后端同样 fail-closed,
- * 让按钮灰着最坏是提一张工单,放行则是白送一台机器。
- */
+/** 包周期已到期(开机门禁的前端判据,与后端 subscriptions.assert_active 同口径)。非包周期实例恒为 false;
+ *  缺 subscription 字段的包周期实例必须判为已到期(与后端同样 fail-closed)。 */
 export function isSubscriptionExpired(
   market: string,
   subscription: { status: string; expires_at: string } | null | undefined,

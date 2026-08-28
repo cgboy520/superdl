@@ -131,9 +131,7 @@ def enqueue(
     跨进程请求链:当前 contextvar 的 request_id 随 payload 落库(_request_id 键),
     worker 执行 handler 时回填日志上下文(API 请求与异步执行日志可按同一 id 串联)。
 
-    delay_seconds:推迟到期时刻(领取条件就是 `next_retry_at <= now`,不需要新机制)。
-    竞价抢占用它实现宽限窗 —— 状态机立刻迁到 stopping 让用户看到「即将回收」,
-    Pod 却要到宽限期满才真删,期间用户还能登进去保存进度。
+    delay_seconds:推迟到期时刻(领取条件即 `next_retry_at <= now`);竞价抢占的宽限窗用它。
     """
     if REQUEST_ID_KEY not in payload and (request_id := _current_request_id()):
         payload = {**payload, REQUEST_ID_KEY: request_id}
@@ -147,8 +145,8 @@ def enqueue(
 async def _claim_one(
     session: AsyncSession, worker_id: str, task_types: frozenset[str] | None = None
 ) -> OutboxTask | None:
-    """领取一个到期任务。task_types 非空时按组件过滤(P1-18):过滤是取数层语义,
-    其它组件的任务对本次查询不可见(不会被误领,也不会被排序阻塞)。"""
+    """领取一个到期任务。task_types 非空时按组件过滤:过滤是取数层语义,
+    其它组件的任务对本查询不可见(不会被误领,也不会被排序阻塞)。"""
     stmt = (
         select(OutboxTask)
         .where(OutboxTask.status == "pending", OutboxTask.next_retry_at <= now_utc())
@@ -295,9 +293,8 @@ async def process_one(
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
     """把超时的 running 任务打回 pending(worker 崩溃遗留)。定时任务调用。
 
-    复活必须计一次失败(retries+1 + 指数退避,预算耗尽进 dead):
-    杀进程的任务(OOM、段错误)若不计数,每 5 分钟被无限重投,
-    永远进不了 dead 队列、不触发 OUTBOX_DEAD_TOTAL、不上管理端。
+    复活必须计一次失败(retries+1 + 指数退避,预算耗尽进 dead):不计数则杀进程的任务
+    (OOM、段错误)每 5 分钟被无限重投,永远进不了死信、不触发 OUTBOX_DEAD_TOTAL。
     """
     async with sm() as session:
         rows = list(

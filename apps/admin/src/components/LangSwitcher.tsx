@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 
 import { SUPPORTED_LANGS } from "../i18n";
 
-/** 语言切换器(顶栏)。 */
 export function LangSwitcher() {
   const { t, i18n } = useTranslation();
   const value = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";

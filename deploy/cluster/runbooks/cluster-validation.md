@@ -43,10 +43,10 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 ## E. 监控与告警
 
 - [ ] kube-prometheus-stack:DCGM 指标可查;导入 grafana.com **24450** 大盘
-- [ ] 5 条 GPU 告警规则触发测试(人工触发 GPUHighTemperature 或用 amtool 注入)
+- [ ] `superdl.gpu` 规则组 6 条告警各触发一次(人工触发 GPUHighTemperature 或用 amtool 注入)
 - [ ] Alertmanager → 平台 webhook:`POST /api/v1/webhooks/alertmanager`(带 Bearer token)出现在管理端告警流
 - [ ] 停 HAMi scheduler → 5 分钟内 HamiSchedulerDown 进管理端告警流
-- [ ] `kubectl -n kube-system get svc hami-scheduler -o yaml`:monitor 端口名与端口(默认 31993/monitor)与 `values/kps.yaml` 的 additionalScrapeConfigs 一致;不一致改 values
+- [ ] `kubectl -n kube-system get svc hami-scheduler -o yaml`:存在名为 `monitor` 的端口(`values/kps.yaml` 的 additionalScrapeConfigs 按**端口名**保留目标,端口号无关);名字对不上就改 values
 - [ ] Prometheus 里查 `hami_container_device_utilization_ratio` / `hami_vgpu_memory_used_bytes`(HAMi 2.9 命名;容器维标签 `namespace`/`pod`/`container`):不一致只改 `apps/api/app/modules/metering/prom.py` 顶部常量与 HAMI_QUERIES;vGPUmonitor 容器不声明端口,kps 抓取按容器名 + podIP:9394 拼地址(`values/kps.yaml`)
 - [ ] `DCGM_FI_DEV_GPU_UTIL` 的节点标签为小写 `hostname`(dcgm-exporter 4.x;3.x 为 `Hostname`)且值等于 K8s 节点名;不一致改 prom.py 的 DCGM_NODE_LABEL。注意 XID:DCGM 对不支持的卡型(如 CMP 系列)不产出 `DCGM_FI_DEV_XID_ERRORS`,节点页 XID 计数恒 0、XID 告警不触发
 - [ ] 共享档实例跑负载:用户端详情页 GPU 利用率曲线出数,与 `nvidia-smi` 观测一致
@@ -61,10 +61,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] `registries.yaml` 已落到 `/etc/rancher/<rke2|k3s>/` 并生效(Harbor 自签时 `harbor-ca.crt` 同目录 0644,`configs.tls.ca_file` 指向它)
 - [ ] 管理端 cordon/uncordon 落到真实节点(patch_node)
 - [ ] server 侧 agent token(非 node-token)录入管理端的引导路径可走通
-- [ ] **先装 gpu-operator 再加节点**:operator 首次安装时会给尚无 `nvidia.com/gpu.deploy.*`
-      标签的节点铺一套默认值(container 负载 → device-plugin=true),把先打好的
-      `device-plugin=false` 覆盖掉(单机 light 上 server 节点先于组件装机时实测撞到)。
-      顺序颠倒时重打一次即可,之后 operator 不再改动已有值
+- [ ] 装机顺序:gpu-operator 先于节点加入(顺序颠倒时 operator 铺的默认标签会覆盖 `device-plugin=false`,
+      重打一次标签即可;单机 light 上 server 节点先于组件装机时会撞到)
 - [ ] GPU Operator 工作负载标签就位(node-join 随池标签自动打,契约见 `values/gpu-operator.yaml` 头注释):
       kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、hami 池 `nvidia.com/gpu.deploy.device-plugin=false`;
       kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin,hami 池上无官方 device-plugin
@@ -91,7 +89,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] **light 档 gpu-operator(k3s)**:`toolkit.enabled=false` 下 operand 全部 Running,
       且 `kubectl get node -o json | jq '.items[].metadata.labels'` 里 `nvidia.com/gpu.count`
       与 `nvidia.com/cuda.driver-version.full` 仍在 —— 缺 `gpu.count` 时 hami 池按 0 卡纳管,
-      在售 SKU 会当场无货(切换 GPU 栈后第一件要看的事)
+      在售 SKU 会当场无货
 - [ ] **light 档 kata-deploy(k3s)**:`kubectl get runtimeclass kata-qemu` 存在;kata 池有节点时
       `kata-deploy` DaemonSet Ready,节点上 `/var/lib/rancher/k3s/agent/etc/containerd/` 下有
       kata 的 drop-in,且真跑一个 `runtimeClassName: kata-qemu` 的 Pod(k3s 不自动探测 kata 运行时,
@@ -125,7 +123,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       注意本地限流是每 Envoy 实例计数,2 副本时全局上限约为配置值 × 副本数
 - [ ] **Jupyter 长连接熬过 5 分钟**:开一个实例的 JupyterLab,跑一段 >6 分钟无输出的 cell,期间不操作页面,
       内核不得断连。`streamIdleTimeout` 未配时 EG 默认 5 分钟掐 WebSocket/SSE,症状(「用着用着内核断了 /
-      页面反复重连」)极像 token 过期或网络抖动,不实测就发现不了
+      页面反复重连」)极像 token 过期或网络抖动
 - [ ] 租户路由跨 ns 挂载:`kubectl -n tenant-<uuid> get httproute <实例uuid> -o yaml` 的
       `status.parents[].conditions` 为 `Accepted=True`(不是 `NotAllowedByListeners`);删实例后该路由随之消失
       (`kubectl get httproute -A -l superdl.io/managed=true` 无孤儿)
@@ -143,7 +141,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] **服务端泛域名证书已签发**:`kubectl -n superdl get certificate superdl-svc-wildcard` 为 `Ready=True`。
       长期 False 基本只有一个原因:`*.svc.<域>` 的 acme-dns 前置没做(新账户 + `_acme-challenge.svc.<域>`
       CNAME 委托 + 往 `acme-dns-account` 的 acmedns.json **追加** `svc.<域>` 这个键,见 `05-cert-manager.yaml`
-      与 `runbooks/acme-dns.md`)。`preflight.sh` 只校验该 secret 存在、不看里面有哪些键,漏了不会告警;
+      与 `runbooks/acme-dns.md`;`preflight.sh` 会校验这个键存在)。
       证书没签发时 `svc-https` 不 Programmed,**全部服务端点 TLS 直接握手失败,且没有兜底证书**
 - [ ] **合法 Key 通**:`curl -H 'Authorization: Bearer <明文 Key>' https://svc-<slug>.svc.<域>/<容器自己的路径>`
       返回容器的真实响应。同时用 `-H 'X-API-Key: <明文 Key>'` 再打一遍 —— 两种写法都必须通过。
@@ -155,7 +153,7 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] **不带 Key 必须 401**,而 `require_api_key=false` 的端点不带 Key 也应 200(需要各造一个端点各打一次)
 - [ ] **控制面挂了不会伪装成「Key 不对」**:临时把 API 副本缩到 0
       (`kubectl -n superdl scale deploy/superdl-api --replicas=0`,验完立刻恢复),此时打端点应返回 **503**
-      而不是 403。返回 403 说明 `statusOnError` 漏配(EG 默认就是 403),用户会拿着一把好 Key 反复排查
+      而不是 403。返回 403 说明 `statusOnError` 漏配(EG 默认就是 403)
 - [ ] **鉴权回调本身没被边缘收口挡掉**:上面那条恢复后端点立刻恢复 200。若恢复后仍是 503,查
       `superdl-api` 日志里 `/api/internal/v1/endpoint-auth` 是不是 404 —— 那是 `headersToExtAuth`
       被人加了 `x-forwarded-for`,触发了 `app/core/edge_guard.py` 对 `/api/internal` 的 404 收口
@@ -173,6 +171,6 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 
 ## K. 发布检查单(每次上线)
 
-- [ ] **CSP 与第三方 SDK 域核对**:staging 用真实 aliyun captcha provider 走通 注册/登录/找回密码 全链路(发码 → 弹窗验证 → 收码),浏览器控制台无 CSP 违规报告;若有新增域,先切 `Content-Security-Policy-Report-Only` 收敛清单再 enforce(见 `deploy/app/security-headers-web-csp.conf` 注释)
+- [ ] **CSP 与第三方 SDK 域核对**:用真实 aliyun captcha provider 走通 注册/登录/找回密码 全链路(发码 → 弹窗验证 → 收码),浏览器控制台无 CSP 违规报告;若有新增域,先切 `Content-Security-Policy-Report-Only` 收敛清单再 enforce(见 `deploy/app/security-headers-web-csp.conf` 注释)
 - [ ] admin 站响应头含 `X-Robots-Tag: noindex, nofollow`,web 站 CSP 含 `o.alicdn.com` 与 `*.captcha-open.aliyuncs.com`
 - [ ] 资金库 PITR:托管 PG 书面确认已开(设 `SUPERDL_MANAGED_PG_PITR_ACK`)或 cnpg 档启用且预检全绿(见 `preflight.sh`)

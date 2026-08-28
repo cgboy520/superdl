@@ -1,14 +1,14 @@
 # Cilium 1.20:CNI + LB(SSH 端口池)。北向入口(含 JupyterLab 泛域名)走 Envoy Gateway
 kubeProxyReplacement: true
-# kubeProxyReplacement 下 Cilium 直连 apiserver:HA 集群必须填控制面 VIP(P0-1),
+# kubeProxyReplacement 下 Cilium 直连 apiserver:HA 集群必须填控制面 VIP,
 # 填单台 server IP 等于把控制面单点固化进每个节点的数据面。端口 6443。
 k8sServiceHost: "CHANGE_ME_API_VIP"
 k8sServicePort: 6443
 gatewayAPI:
   # 保持 false:Gateway API 的数据面是 Envoy Gateway(GatewayClass superdl 的 controllerName
-  # 指向它),不是 Cilium。Gateway API CRD 由 EG 侧单点管(../gateway-api-crds.sh,experimental
-  # channel);这里再开一个控制器,两边会 reconcile 同一批 Gateway/HTTPRoute 并互相覆盖
-  # status 与 LB 地址——现象是入口地址来回翻,两边日志都「一切正常」。
+  # 指向它),CRD 由 ../gateway-api-crds.sh 单点管。这里再开一个控制器,两边会 reconcile
+  # 同一批 Gateway/HTTPRoute 并互相覆盖 status 与 LB 地址——现象是入口地址来回翻,
+  # 两边日志都「一切正常」。
   enabled: false
 l2announcements:
   enabled: true            # 裸金属 LB 通告(或按机房改 BGP)
@@ -17,9 +17,8 @@ hubble:
   enabled: true
   relay:
     enabled: true
-  # hubble-ui(可选,报告评估结论:默认关):流量可视化排障好用,但自身无认证,
-  # 绝不可经 Ingress 暴露;需要时开 enabled 并仅 `kubectl -n kube-system port-forward
-  # svc/hubble-ui 12000:80` 本地用,用完关回。
+  # hubble-ui(默认关):自身无认证,绝不可经入口暴露。需要时开 enabled 并只用
+  # `kubectl -n kube-system port-forward svc/hubble-ui 12000:80` 本地访问,用完关回。
   # ui:
   #   enabled: true
 operator:

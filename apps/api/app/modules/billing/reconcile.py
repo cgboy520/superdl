@@ -218,10 +218,9 @@ async def bills_vs_consume(
     归属期 —— 与入账时间(created_at)解耦。BillHourly.amount 会被补差价原地更新、
     追平补账的 created_at 落在后来某天,按 created_at 切窗在跨日/追平场景必误报。
 
-    包周期预付是第三条腿:它不产生账单行,「出账」侧取 `subscriptions.amount_paid`,
-    切窗用 `subscriptions.created_at`(下单与扣款同一事务,不存在延迟入账)。
-    不把它算进来,`ref_type='subscription'` 的 consume 流水就成了**全无对账的一段钱** ——
-    金额写错、写重、写漏都没有任何机制会发现。
+    包周期预付是第三条腿:它不产生账单行,「出账」侧取 `subscriptions.amount_paid`,切窗用
+    `subscriptions.created_at`(下单与扣款同一事务)。漏了它,`ref_type='subscription'` 的
+    consume 流水就成了全无对账的一段钱。
     """
     billed_hourly = (
         await session.execute(

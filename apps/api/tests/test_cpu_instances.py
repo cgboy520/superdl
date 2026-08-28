@@ -2,7 +2,7 @@
 
 这一档与 GPU 档的差别集中在四个「0 是合法值」的位置,每处坏掉的后果都不一样:
 - 资源申请:漏判会替不用卡的实例申请 nvidia.com/gpu,占掉真正卖卡的名额
-- 计费份数:漏判会按 单价 × 0 卡 算出 ¥0.00,白送算力
+- 计费份数:漏判会按 单价 × 0 卡 算出 ¥0.00,整档免费
 - Pod 规格:漏判会把 0 卡当 1 卡「放大」,结果碰巧对、语义全错
 - 配额:漏判会拿 0 去比 GPU 上限,等于没有闸门
 """
@@ -117,9 +117,8 @@ class TestGpuRequest:
     async def test_cpu_on_hami_pool_not_gated_on_hami(self, sm, fake):
         """HAMi 未就绪时,挂 hami 池的 CPU 实例仍可下发。
 
-        挂了说明:门禁又退回「跟池走」—— HAMi 一挂,连一批根本不申请 GPU、
-        `schedulerName` 为空走默认调度器的 CPU 实例也开不出来。门禁判据必须与
-        build_gpu_request 同源:先看要不要卡(gpu_count),再看落哪个池。
+        挂了说明:门禁按池判而非按「要不要卡」判 —— HAMi 一挂,连根本不申请 GPU 的
+        CPU 实例也开不出来。门禁判据必须与 build_gpu_request 同源:先看要不要卡,再看落哪个池。
         """
         from app.core.errors import AppError, ErrorCode
         from app.modules.nodes import service as nodes_service
@@ -168,8 +167,7 @@ class TestPodSpec:
     def test_cpu_instance_does_not_scale_vcpu_mem(self):
         """CPU 档倍率恒 1(不是「把 0 卡当 1 卡放大」)。
 
-        挂了 = 说明有人把倍率写回了 max(1, gpu_count):数值碰巧一样,但语义是
-        「0 卡按 1 卡放大」,下一个人给 CPU 档加多份规格时会照着 gpu_count 乘。
+        挂了 = 倍率跟着 gpu_count 走,给 CPU 档加多份规格时会照着 0 卡乘。
         """
         pod = build_pod_spec(_instance(_cpu_spec()))
         assert pod.vcpu == 8 and pod.mem_gb == 16
@@ -255,7 +253,7 @@ class TestCpuSkuValidation:
             assert resp.status_code == 422, (field, resp.text)
 
     async def test_cpu_tier_cannot_take_kata_pool(self, client: AsyncClient, sm):
-        """档位×池配对表照旧生效:cpu 档只许 cpu / hami 两池。"""
+        """档位×池配对表对 CPU 档同样生效:cpu 档只许 cpu / hami 两池。"""
         headers = await admin_headers(sm, client)
         resp = await self._create(client, headers, pool_label="kata")
         assert resp.status_code == 400, resp.text
@@ -460,7 +458,7 @@ class TestFullChain:
         assert resp.json()["message_key"] == "orchestrator.cpuSkuNoGpu"
 
     async def test_gpu_sku_rejects_zero_gpu_count(self, client: AsyncClient, sm, fake):
-        """契约层放开到 ge=0 之后,GPU 规格的「0 卡实例」必须被服务层挡住。
+        """契约层允许 gpu_count ge=0,GPU 规格的「0 卡实例」必须被服务层挡住。
 
         挂了 = 用户能以 0 卡下单 GPU 规格,拿到一台不带卡却按整机价计费的机器。
         """

@@ -1,7 +1,5 @@
-/**
- * InstanceActions / ReleaseModal 组件测试:状态驱动的禁用态、关机确认弹窗、
- * 释放多级防护(键入实例名才解锁)。写操作 hooks 全部 mock 掉,不走网络。
- */
+/** InstanceActions / ReleaseModal 组件测试:状态驱动的禁用态、关机确认弹窗、释放多级防护。
+ *  写操作 hooks 全部 mock,不走网络。 */
 import type { InstanceOut } from "@superdl/api-client";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

@@ -282,7 +282,7 @@ class TestAdmin:
         assert [r["id"] for r in rows] == [t2["id"]]
 
     async def test_search_by_user_id_and_ticket_no(self, client: AsyncClient, sm):
-        """user_id/ticket_no 检索(P2):替代固定截断 200 的翻找式定位。"""
+        """user_id/ticket_no 检索:替代固定截断 200 的翻找式定位。"""
         headers = await user_headers(client, "13700000335")
         t1 = (await create_ticket(client, headers, category="instance")).json()
         t2 = (await create_ticket(client, headers, category="billing", subject="账单咨询")).json()

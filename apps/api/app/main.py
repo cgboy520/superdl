@@ -31,8 +31,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             hint="这些 SUPERDL_* 变量不匹配任何配置项,将被忽略;请核对拼写",
         )
     if settings.environment == "prod":
-        # 非阻断项只打告警,不 fail-fast:webhook 端点未配 token 本就拒收(notify/router.py),
-        # 指标子系统按设计优雅降级(计费不依赖 Prometheus)
+        # 非阻断项只打告警,不 fail-fast:webhook 未配 token 本就拒收,指标子系统优雅降级
         if not settings.alertmanager_token:
             log.warning(
                 "alertmanager_token_missing",
@@ -44,8 +43,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 prometheus_url=settings.prometheus_url,
                 hint="监控代理仍指向本地默认地址:计费不受影响,但用量面板与对账全空",
             )
-        # cluster 键不做启动 fail-fast(经 DB 覆盖层维护,查 env 会误报):
-        # DB 就绪后查 effective 配置,缺键打 error;集群页红牌与加节点 409 兜底
+        # cluster 键经 DB 覆盖层维护,查 env 会误报:改查 effective 配置,缺键只打 error
         from app.core.db import get_sessionmaker
         from app.core.platform_config import (
             compute_config_warnings,
@@ -166,7 +164,6 @@ def create_app() -> FastAPI:
 
 
 def _register_module_routers(app: FastAPI) -> None:
-    """各业务模块的路由注册。"""
     from app.modules.account.router import router as account_router
     from app.modules.adminapi.router import router as admin_router
     from app.modules.billing.router import router as billing_router
@@ -193,8 +190,7 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(tickets_router, prefix="/api/v1")
     app.include_router(legal_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/admin/v1")
-    # 网关 extAuth 回调:独立前缀 /api/internal —— 它是边缘收口(core/edge_guard)
-    # 的判据,也把「集群内才调得到」写进了路径本身
+    # 网关 extAuth 回调:独立前缀 /api/internal,边缘收口(core/edge_guard)据此判定
     app.include_router(endpoint_auth_router, prefix="/api/internal/v1")
 
 

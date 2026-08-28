@@ -56,13 +56,12 @@ MAX_CATCHUP_DAYS = 14
 # 同一 (窗口, 对象) 连续失败这么多轮即死信:记缺口后水位线允许越过,
 # 防一个坏对象永久卡住水位线(进而在追平上限外触发整段截断)
 DEAD_LETTER_AFTER = 3
-# worker/DB 时钟允许的最大偏差:计费时间线跑 worker 时钟(now_utc()),流水落 DB 时钟
-# (server_default=func.now());水位线严格单调,worker 时钟前跳一次就永久烧掉那几个
-# 小时的窗(无 gap 无恢复)。超阈值宁可本轮不结算,也不冒烧账期的险。
+# worker/DB 时钟允许的最大偏差:计费时间线跑 worker 时钟、流水落 DB 时钟,水位线严格
+# 单调,worker 时钟前跳一次就永久烧掉那几个小时的窗(无 gap 无恢复),超阈值本轮不结算
 CLOCK_SKEW_MAX_SECONDS = 30.0
 
-# (kind, window_start, object_id) → 连续失败轮数。进程内存:worker 重启只是多验几轮
-# (方向安全);多副本由 advisory lock 串行,各副本各记各的,最坏死信推迟几轮
+# (kind, window_start, object_id) → 连续失败轮数。放进程内存:worker 重启只是多验几轮
+# (方向安全),多副本由 advisory lock 串行
 _failure_streaks: dict[tuple[str, datetime, int], int] = {}
 
 
@@ -71,11 +70,9 @@ def _billing_view(
 ) -> list[tuple[datetime, str | None, str]]:
     """事件流水 → 计费视图(3 元组)。
 
-    node_lost/pod_lost 的退出边带 metadata.unready_since(Pod 首次 not-ready 时刻):
-    判定前的宽限观察期实例已不可用,属平台责任时段,计费截断到该时刻而非判定时刻。
-    截断写在事件重建层,尾账/整点/追平三条结算路径口径天然一致(整点重算不会把
-    尾账已截断的秒数再补回来)。unready_since 只在当前 running 段内由 reconciler 写入
-    (每条进入 running 的路径都先清零),不会早于本段的进入时刻。
+    node_lost/pod_lost 的退出边带 metadata.unready_since(Pod 首次 not-ready 时刻),属平台
+    责任时段,计费截断到该时刻而非判定时刻。截断写在事件重建层,尾账/整点/追平三条结算
+    路径口径天然一致。
     """
     out: list[tuple[datetime, str | None, str]] = []
     for created_at, from_status, to_status, meta in events:
@@ -260,8 +257,7 @@ async def settle_instance_window(
 
 
 # 转包周期前允许结清的最大滞后小时数。正常运行下水位线至多落后 1 小时(整点 :02 结算);
-# 超过两天说明结算本身出了事,这时候翻 market 会把那段真实消费永久免掉 —— 拒绝转换、
-# 让运营先去看结算,远好过悄悄替用户抹账
+# 超过两天说明结算本身出了事:此时翻 market 会把那段真实消费永久免掉,故拒绝转换
 MAX_CONVERT_SETTLE_HOURS = 48
 
 
@@ -276,11 +272,9 @@ async def settle_on_demand_up_to(
 ) -> Decimal:
     """把该实例截至 `at` 的按量账逐小时结清(水位线之后的第一个小时起)。返回本次扣款合计。
 
-    **转包周期前必须调它。** `billing_candidates` 按实例**当前**的 market 挑候选:market 一旦
-    翻成 subscription,水位线之后那些还没出账的小时就再也没人管 —— 用户会白拿转换前那段算力。
-    逐小时切是因为 `bills_hourly` 的幂等键是 (instance_id, hour_start),一个窗口只能落一行。
-
-    滞后超过 MAX_CONVERT_SETTLE_HOURS 直接抛 CONFLICT:那不是用户的问题,但也不该由用户免单。
+    转包周期前必须调它:`billing_candidates` 按实例当前的 market 挑候选,market 一旦翻成
+    subscription,水位线之后没出账的小时就再也没人管。逐小时切是因为 `bills_hourly` 的
+    幂等键是 (instance_id, hour_start)。滞后超过 MAX_CONVERT_SETTLE_HOURS 直接抛 CONFLICT。
     """
     watermark = await get_watermark(session, "hourly")
     last_hour = hour_floor(at)
@@ -323,16 +317,11 @@ async def reprice_current_hour(
 ) -> Decimal:
     """把当前自然小时**已出的**账单行改按新单价重算,补扣差价。返回补扣金额。
 
-    竞价转按量会让一个自然小时横跨两个单价,而 `bills_hourly` 一小时只有一行、
-    只有一个 `unit_price`。定下的口径是「**一小时一价,以结算时的实例单价为准**」:
-    转换会把当前整点小时整体改按新价(转换确认页与 docs/reference/billing.md 都写明)。
-    不改的话,后续整点结算会用新价重算秒数、只更新 amount 不更新 unit_price,
-    留下一行 `unit_price × seconds ≠ amount` 的账 —— 那种行没法向任何人解释。
+    口径是「一小时一价,以结算时的实例单价为准」:`bills_hourly` 一小时只有一个 unit_price,
+    转换把当前整点小时整体改按新价。不改的话后续整点结算只更新 amount 不更新 unit_price,
+    留下一行 `unit_price × seconds ≠ amount` 的账。
 
-    **只在涨价时动这一行**:竞价转按量必然涨价(spot_discount_pct 上界 90),降价路径
-    经 `/to-on-demand` 不可达。真出现了(手工改价、将来复用本函数)就整行不动 ——
-    只改 unit_price 不改 amount,写出的正是这个函数存在的意义所要避免的那种行;
-    而退款要走人工流程,不该由一个结算原语顺手写一笔负数流水。
+    只在涨价时动这一行:降价时整行不动(退款走人工流程,结算原语不写负数流水)。
     """
     row = (
         await session.execute(
@@ -369,11 +358,8 @@ async def get_watermark(session: AsyncSession, key: str) -> datetime | None:
 
 
 async def _clock_skew_exceeded(sm: async_sessionmaker[AsyncSession]) -> bool:
-    """worker/DB 时钟比对:偏差超阈值时拒绝本轮结算并告警(返回 True)。
-
-    计费时间线跑 worker 时钟,流水落 DB 时钟,两者从不比较的话,worker 时钟前跳
-    一次就永久烧掉那几个小时(_advance_watermark 严格单调,无 gap 无恢复)。
-    """
+    """worker/DB 时钟比对:偏差超阈值时拒绝本轮结算并告警(返回 True)。口径见
+    CLOCK_SKEW_MAX_SECONDS。"""
     async with sm() as session:
         db_now = ensure_utc((await session.execute(select(func.now()))).scalar_one())
     skew = abs((db_now - now_utc()).total_seconds())
@@ -530,11 +516,9 @@ async def _catchup_settle(
         async with sm() as session:
             watermark = await get_watermark(session, kind)
         if watermark is None:
-            # 无水位线两种来源不可区分:首次部署引导(正常)/ 水位线行被误删或库回退(异常)。
-            # 两种情形本轮都只结最近窗口,更早窗口不自动补,显式留痕供告警匹配。
-            # 与其余跳窗路径同口径登记 settlement_gaps(幂等,单调可告警):
-            # 首次部署会留下一行 watermark_missing,验收时人工确认核销;此后该 reason 再出现
-            # 即水位线丢失事故(小时窗静默烧掉,账务无迹)。
+            # 无水位线两种来源不可区分:首次部署引导 / 水位线行被误删或库回退。两种情形都
+            # 只结最近窗口并登记 settlement_gaps(watermark_missing),首次部署那行由验收人工
+            # 核销;此后该 reason 再出现即水位线丢失事故
             logger.warning(
                 f"{kind}_watermark_missing",
                 hint="无结算水位线:首次部署属正常引导;若非首次部署则水位线已丢失,"

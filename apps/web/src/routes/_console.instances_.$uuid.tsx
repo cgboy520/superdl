@@ -1,8 +1,7 @@
 /** 实例详情:监控(降级文案)/服务/连接/事件时间线(=计费依据)/账单 + 危险区释放。
- * 事件/账单两 Tab 走游标分页;面包屑返回列表不丢筛选态。
- *
- * 「服务」Tab 只对 workload_type='service' 出;服务形态的「连接」按 with_ssh 决定出不出
- * SSH 卡,Jupyter 卡一律不出(服务型实例根本没建 Jupyter 入口)。 */
+ *  事件/账单两 Tab 走游标分页;面包屑返回列表不丢筛选态。
+ *  「服务」Tab 只对 workload_type='service' 出;服务形态的「连接」按 with_ssh 决定出不出 SSH 卡,
+ *  Jupyter 卡一律不出(服务型实例根本没建 Jupyter 入口)。 */
 
 import {
   isApiError,
@@ -142,10 +141,8 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   );
 }
 
-/**
- * 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出。
- * 接入信息的每个字段都是可空的(契约「拿到什么渲染什么」),不能按「恒有值」写。
- */
+/** 连接:SSH 卡按 with_ssh 出,Jupyter 卡只对开发机出。
+ *  接入信息的每个字段都可空,必须按「拿到什么渲染什么」写。 */
 function AccessTab({ instance, running }: { instance: InstanceOut; running: boolean }) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
@@ -208,11 +205,8 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
   );
 }
 
-/**
- * 服务:端点 + API Key + 调用示例 + 容器配置回显。仅 workload_type='service' 渲染。
- * 就绪为「否」不是故障态:服务实例持续 not-ready 也留在 running(平台不替用户杀实例),
- * 这里如实显示并把人指向日志与健康检查路径,不渲染成红色报错。
- */
+/** 服务:端点 + API Key + 调用示例 + 容器配置回显,仅 workload_type='service' 渲染。
+ *  就绪为「否」不是故障态(持续 not-ready 也留在 running),必须如实显示而不渲染成红色报错。 */
 function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLogs: () => void }) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
@@ -239,8 +233,7 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
       ].join(" \\\n")
     : "";
 
-  // 容器配置回显的环境变量:明文项来自 env(有值),密文项只有键名 —— 后端不回密文的值,
-  // 「勾了密文就不再回显」是创建页对用户的承诺,这个端点不能成为读回明文的口子
+  // 容器配置回显的环境变量:明文项来自 env(有值),密文项只有键名(后端不回密文的值)
   const envRows = ep
     ? [
         ...Object.entries(ep.env).map(([name, value]) => ({ name, value, secret: false })),
@@ -282,7 +275,7 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
             </Space>
             {!running && <Alert type="info" showIcon title={t("instances.serviceNotRunning")} />}
             {running && !ep.ready && (
-              // 平台刻意不把持续 not-ready 的服务实例判 failed —— 这里也就不能渲染成错误态
+              // 持续 not-ready 的服务实例不判 failed,这里不渲染成错误态
               <Alert
                 type="info"
                 showIcon
@@ -686,7 +679,7 @@ function InstanceDetail() {
   if (instanceError && !instance) {
     return <DataErrorAlert onRetry={() => void refetchInstance()} />;
   }
-  // 首载骨架:白屏会被读成页面挂掉
+  // 首载骨架,不留白屏
   if (!instance) {
     return (
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -789,7 +782,7 @@ function InstanceDetail() {
             label: t("instances.tabMetrics"),
             children: <MetricsTab uuid={uuid} running={running} />,
           },
-          // 「服务」只对服务型实例出:开发机没有端点也没有 Key,出一张空 Tab 是噪声
+          // 「服务」只对服务型实例出:开发机没有端点也没有 Key
           ...(isService
             ? [
                 {

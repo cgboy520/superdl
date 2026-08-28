@@ -18,7 +18,7 @@
 | `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、`subscriptions_active`(**在保订阅数**,精确 COUNT)、池级 GPU 台账(含非 Ready 段;每池另带 `gpu_spot_used` = 已租那段里属于竞价实例的卡数,**已按 `gpu_used` 截断**,见下)、节点 Ready/Missing 计数 |
 | `/` 运营总览 | 全角色 | KPI 行(接 /overview 精确计数,含节点健康卡)+ 「实际超卖率 vs 真实利用率」双曲线(60%/85% 辅助线)+ GPU 池占用条(含未就绪段,已租那段内再分出「其中竞价(可回收)」)+ 告警流 + 收入 KPI(计量出账 + 包周期预付之和,另有 `today_prepaid` / `month_prepaid` 拆出预付部分,口径见 [billing.md](./billing.md))+ 死信卡(重放/忽略都需原因) |
 | `/nodes` 节点与 GPU | ops/readonly | 节点表(台账;最近心跳列/排序/池与状态筛选;cordon 需原因)+ 每卡热力网格 + 添加节点 + 注册记录(进行中/全部) |
-| `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览;含 `period_enabled` 开关「包周期」,关掉后该规格只能按量购买、已售出的订阅不受影响;含 `spot_enabled` 开关「竞价档」,**新建时默认关**,开启后该规格可按竞价价售卖、而竞价实例在容量紧张时会被平台回收)+ 从集群资源创建 + 容量预览 |
+| `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览;含 `period_enabled` 开关「包周期」;含 `spot_enabled` 开关「竞价档」,**新建时默认关**)+ 从集群资源创建 + 容量预览 |
 | `GET /api/admin/v1/skus/{sku_id}/impact` | ops/finance/readonly | 改价影响面(只读):活跃实例数/涉及用户数/占用卡数 |
 | `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;**强制回收**,只对 `market='spot'` 且 running 的实例可用;**购买模式**列 = 按量 / 竞价 / 包日 / 包周 / 包月 / 包年);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
 | `POST /api/admin/v1/tenants/{user_id}/freeze` `/unfreeze` | ops | `{reason}` 必填;冻结与 status 变更同事务对该用户全部实例下发停机(经 outbox),响应回显 `instances_stopped`(creating/starting 由巡检收敛,不计入);解冻不自动开机,站内信告知用户手动开机 |
@@ -53,7 +53,7 @@
 ## 规则与不变量
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
-- 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 5 次/5 分钟与 `admin-login-acct:{username}` 10 次/15 分钟(成功即清零),`admin-login-ip:{ip}` 30 次/时与 `admin-login-acct-daily:{username}` 30 次/日(只计失败、不清零;账号维桶让换 IP 的口令喷洒也逃不掉)。TOTP 校验 `admin-mfa:{admin_id}` 5 次/10 分钟。全部限额汇总见 [limits.md](./limits.md)。
+- 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 与 `admin-login-acct:{username}` 成功即清零,`admin-login-ip:{ip}` 与 `admin-login-acct-daily:{username}` 不清零;TOTP 校验走 `admin-mfa:{admin_id}`。限额数值见 [limits.md](./limits.md)。
 - readonly 全站只读;finance 只在财务区可写。
 - 调账复核必须以 `with_for_update` 行锁读取:并发复核的后到者见非 pending 即返 409,保证恰一次入账、ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号。
 - 调账发起与人工补单均支持 Idempotency-Key(调账落 `(created_by, idempotency_key)` 唯一约束;补单落 `orders.backfill_idempotency_key`,同键重放回当前状态而非 409)。
@@ -61,37 +61,28 @@
 - 补单为渠道核验制:服务端实时查渠道,已支付且金额一致才入账,不接受人工填写的支付结果。
 - 「超卖率 vs 利用率」按池加权聚合(metering 出 per-instance 小时聚合,orchestrator 出实例→池映射,adminapi 组装);无数据的池返 `null`,不用全集群均值代替。
 - 管理端所见账单与用户所见同源。
-- 策略参数页含包周期五键:`period_discount_day` / `period_discount_week` / `period_discount_month` / `period_discount_year`
-  (各 50~100,百分数)与 `period_expire_warn_days`(1~30);改动即时生效,只作用于**之后**的报价 ——
-  已售出的订阅按下单时的原价快照续费,不追已购用户。取值与承载见 [limits.md](./limits.md)。
-- 竞价两键同在策略参数页:`spot_discount_pct`(10~90,百分数,40 = 4 折)与 `spot_grace_seconds`
-  (静态区间 30~600 秒)。**`spot_grace_seconds` 另有跨键上限**(不得超过 `creating_timeout_seconds`
-  减去 120 秒调度余量),越界时后端回一条带具体上限的错误文案,**前端原样展示、不自己再算一遍** ——
-  上限随 `creating_timeout_seconds` 变,前端算的是它自己那份可能已经过期的副本。理由见 [limits.md](./limits.md)。
-  两个值经公开的 `GET /api/v1/policies` 下发给用户端(知情同意里的折扣与通知提前量),改动即时对外生效。
+- 策略参数页含包周期五键(`period_discount_day` / `_week` / `_month` / `_year` 与 `period_expire_warn_days`)
+  与竞价两键(`spot_discount_pct` / `spot_grace_seconds`),取值范围与承载见 [limits.md](./limits.md)。改动即时生效,
+  只作用于**之后**的报价,已售出的订阅按下单时的原价快照续费;竞价两键另经公开的 `GET /api/v1/policies`
+  下发给用户端(知情同意里的折扣与通知提前量),改动即时对外生效。
+- **`spot_grace_seconds` 另有跨键上限**(不得超过 `creating_timeout_seconds` 减去调度余量,随 `creating_timeout_seconds` 变),
+  越界时后端回一条带具体上限的错误文案,**前端原样展示、不自己再算一遍**。
 - 财务对账的日对账卡覆盖包周期:出账侧含 `subscriptions.amount_paid`,消费侧含 `ref_type='subscription'` 的流水,
-  两侧按同一切窗口径(见 [billing.md](./billing.md))。预付那段钱不进对账就等于全无核对。
+  两侧按同一切窗口径(见 [billing.md](./billing.md))。
 - 全局实例表的「购买模式」取 `AdminInstanceOut.market`,到期日取 `AdminInstanceOut.subscription.expires_at` ——
   管理端与用户端**走同一条批量回填路径**(`attach_instance_details`),两端看到的到期时刻恒一致;
   按量实例的 `subscription` 为 null,列里渲染为「—」。
-- **`OverviewPoolOut.gpu_spot_used` 是 `gpu_used` 的子段,不是可与它相减的独立口径。**
-  它来自 `orchestrator/queries.py::running_spot_gpus_by_pool`(running + `market='spot'` 的 `gpu_count` 按池累加,
-  **Python 侧聚合** —— PG 不认参数化的 `spec ->> $1` 在 GROUP BY 里与 SELECT 列相等,实测 GroupingError;
-  竞价 running 是小集合,与紧邻的 `running_gpu_share_by_pool` 同一写法)。两个数**单位相同但来源不同**:
-  `gpu_used` 来自节点台账,`gpu_spot_used` 来自实例侧 —— **超卖档下后者可能大于前者**,多个共享实例共用
-  一张卡时台账只记一张、实例侧却各记一张。所以 service 组装时按 `min(spot, gpu_used)` **截断**:
-  不截断就会画出一段比它所在容器还长的堆叠条。前端把它当作「已租段里的一部分」渲染,
-  **不要拿 `gpu_used − gpu_spot_used` 当作「非竞价已租」的精确值** —— 截断之后那个差值是下界,不是等式。
+- **`OverviewPoolOut.gpu_spot_used` 是 `gpu_used` 的子段,不是可与它相减的独立口径。** 两个数单位相同但来源不同:
+  `gpu_used` 来自节点台账,`gpu_spot_used` 来自实例侧(`orchestrator/queries.py::running_spot_gpus_by_pool`),
+  超卖档下后者可能大于前者(多个共享实例共用一张卡时台账只记一张、实例侧各记一张),故 service 组装时按
+  `min(spot, gpu_used)` **截断**。前端把它当作「已租段里的一部分」渲染,**不要拿 `gpu_used − gpu_spot_used`
+  当作「非竞价已租」的精确值** —— 截断之后那个差值是下界,不是等式。
+- `running_spot_gpus_by_pool` 必须在 **Python 侧聚合**:PG 不认参数化的 `spec ->> $1` 在 GROUP BY 里与 SELECT 列相等
+  (GroupingError)。竞价 running 是小集合,与紧邻的 `running_gpu_share_by_pool` 同一写法。
 - 总览的 `subscriptions_active` 是**在保订阅数,不是实例状态计数**:停机的包月实例只要周期未满就仍在保
   (也仍占库存,见 [orchestrator.md](./orchestrator.md)),拿 `instances_by_status` 里的 running 数替代必然偏小。
 - adminapi 端点全部声明响应模型(kind/group/source 用 Literal 出联合类型);前端行类型一律从生成契约再导出,不手写、不强转。
-- **「强制回收」与「强制停止」是两个入口,不合并。** 强制停止是处置(违规 / 风控),强制回收是履行竞价
-  那份「可能被回收」的约定。同一个 reason 会让用户在自己的事件时间线上分不出是被处置了还是被回收了,
-  也会让「被回收过几次」这类竞价可靠性统计算不出来。两者都走 `ReasonAction`(原因必填 → 二次确认 → 审计),
-  回收另走抢占那条路径(宽限窗 + 通知),口径见 [orchestrator.md](./orchestrator.md)。
-- **原「驱逐重调度」占位已删除,不是兑现。** 实例盘是 TopoLVM 的节点本地 LV,实例重开机要 pin 回原节点 ——
-  **「重调度」对任何带实例盘的实例都不成立**,换节点等于丢盘,那是释放而不是驱逐。`preempt.py` 给出的
-  能力是「回收一台竞价实例腾容量」(终态 stopped、实例盘保留、用户可自行开机),与「换个节点重跑」
-  是两件事。同批删掉 `tenants.evict` / `tenants.evictP1` 两个文案键,在同一位置放「强制回收」。
-  占位去留的判据见 [../ui-ux-spec.md](../ui-ux-spec.md) §1 规则 2 与 [../decisions.md](../decisions.md)。
+- **「强制回收」与「强制停止」是两个入口,不合并**:两者用不同的 reason,用户的事件时间线与竞价可靠性统计才分得开。
+  两者都走 `ReasonAction`(原因必填 → 二次确认 → 审计),回收另走抢占那条路径(宽限窗 + 通知,口径见
+  [orchestrator.md](./orchestrator.md));强制回收的终态是 stopped、实例盘保留、用户可自行开机。
 - 高危操作原因必填 → 二次确认 → 审计;色值集中在 `adminColors` token,message 走 `App.useApp()`。

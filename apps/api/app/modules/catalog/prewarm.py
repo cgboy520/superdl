@@ -70,10 +70,8 @@ async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         orch = get_orchestrator()
         nodes = await orch.list_nodes()
         known_nodes = {n.name for n in nodes}
-        # cpu 池不预热:平台镜像目录整体是 CUDA 镜像(单个 8~27 GB,见 decisions.md
-        # 「平台镜像 tag 语义化」条),铺到无卡机上是百 GB 级的死重量 —— 那台机器永远
-        # 用不上它们编译进去的 GPU 栈。代价是 CPU 实例首次启动现拉镜像(分钟级),
-        # 创建页对 CPU 规格不承诺秒级启动
+        # cpu 池不预热:平台镜像目录整体是 CUDA 镜像,无卡机用不上其中的 GPU 栈。
+        # 代价是 CPU 实例首次启动现拉镜像,创建页对 CPU 规格不承诺秒级启动
         target_nodes = {
             n.name for n in nodes if n.status in TARGET_NODE_STATUSES and n.pool_label != POOL_CPU
         }

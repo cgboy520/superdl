@@ -78,8 +78,7 @@ export const getUnreadCountApiV1NotificationsUnreadCountGetUrl = () => {
 }
 
 /**
- * 未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦
- * (此前角标 = 已加载页的未读数,未读超过一页时偏低)。
+ * 未读数轻端点(顶栏角标轮询):DB count,与列表分页解耦。
  * @summary Unread Count
  */
 export const unreadCountApiV1NotificationsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<UnreadCountOut> => {

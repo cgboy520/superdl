@@ -43,16 +43,14 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     "gpu_node_cpu_instance_vcpu_cap": ("int", Decimal(0), Decimal(1024)),
     # 对外服务端点的边缘限流(每端点每秒请求数)。在网关本地桶生效,不回源平台
     "service_endpoint_rps": ("int", Decimal(1), Decimal(1000)),
-    # 包周期折扣(百分数,80 = 8 折)。上界 100 = 不打折,不设 >100 的「加价」档:
-    # 预付比按量贵在任何定价模型里都讲不通,写错一个数就是全站涨价
+    # 包周期折扣(百分数,80 = 8 折)。上界 100 = 不打折,不设 >100 的「加价」档
     "period_discount_day": ("int", Decimal(50), Decimal(100)),
     "period_discount_week": ("int", Decimal(50), Decimal(100)),
     "period_discount_month": ("int", Decimal(50), Decimal(100)),
     "period_discount_year": ("int", Decimal(50), Decimal(100)),
     # 包周期到期前多少天开始预警(短信 + 站内信,每天至多一条)
     "period_expire_warn_days": ("int", Decimal(1), Decimal(30)),
-    # 竞价价 = 按量价 × pct/100。上界 90 而不是 100:竞价的对价是「可被回收」,
-    # 不打折的竞价档没有任何存在理由,只会让用户白担一份风险
+    # 竞价价 = 按量价 × pct/100。上界 90:竞价的对价是「可被回收」,必须让出折扣
     "spot_discount_pct": ("int", Decimal(10), Decimal(90)),
     # 抢占通知到真删 Pod 的宽限窗(秒)。与 creating_timeout_seconds 有时间预算耦合,
     # 调之前先读 docs/reference/limits.md 那一段
@@ -86,9 +84,8 @@ class EffectivePolicies:
     spot_grace_seconds: int
 
 
-# 抢占宽限窗之外还要留给「删 Pod → 释放卡 → 调度请求方 → 拉起」的时间余量(秒):
-# terminationGracePeriod 30 + 调度与镜像准备。宽限窗吃掉整个 creating 超时预算的话,
-# 请求方会在 victim 的 Pod 还没删完时就超时转 failed —— 杀了人、单还是没开成
+# 抢占宽限窗之外必须留给「删 Pod → 释放卡 → 调度请求方 → 拉起」的时间余量(秒):
+# 宽限窗吃掉整个 creating 超时预算时,请求方会在 victim 的 Pod 删完之前就超时转 failed
 PREEMPT_TIME_RESERVE_SECONDS = 120
 
 
@@ -107,8 +104,7 @@ def validate_policy_value(key: str, value: str) -> str:
     if not lo <= num <= hi:
         raise ValueError(f"{key} 取值须在 {lo}~{hi} 之间")
     if key == "spot_grace_seconds":
-        # 跨键约束,静态区间表达不了:宽限窗必须给「删 Pod + 调度请求方」留够余量,
-        # 否则调大它等于给自己造一批 creating 超时的失败单(见上面的常量注释)
+        # 跨键约束,静态区间表达不了:宽限窗必须给「删 Pod + 调度请求方」留够余量
         budget = get_settings().creating_timeout_seconds - PREEMPT_TIME_RESERVE_SECONDS
         if num > budget:
             raise ValueError(

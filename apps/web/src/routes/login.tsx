@@ -34,8 +34,7 @@ export const Route = createFileRoute("/login")({
         // 非法 redirect 直接丢弃
       }
     }
-    // 「免费注册」CTA 直达注册态:默认短信登录态会让陌生人收到真验证码后被拒,
-    // 再注册要重新要码(未消费码的指数退避已把等待翻倍)——转化漏斗最顶端
+    // 「免费注册」CTA 直达注册态:落在默认短信登录态会让新用户先收一条被拒的验证码
     if (search.mode === "register") out.mode = "register";
     return out;
   },

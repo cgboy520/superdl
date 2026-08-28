@@ -48,7 +48,7 @@ class CaptchaConfigOut(BaseModel):
 
 @router.get("/auth/captcha-config")
 async def captcha_config(session: DbSession) -> CaptchaConfigOut:
-    """验证码 2.0 客户端初始化配置(免鉴权;泄漏面无敏感——prefix/scene_id 本就写进前端 JS)。"""
+    """验证码 2.0 客户端初始化配置(免鉴权;prefix/scene_id 为公开信息)。"""
     from app.core.platform_config import get_effective_platform_config
 
     cfg = await get_effective_platform_config(session)

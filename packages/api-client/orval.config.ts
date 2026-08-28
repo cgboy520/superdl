@@ -9,8 +9,7 @@ export default defineConfig({
       mode: "tags-split",
       target: "src/generated/endpoints",
       schemas: "src/generated/model",
-      // 只生成裸 fetcher 与 model 类型,不生成 TanStack Query hooks:
-      // 两端在各自的 api 层(apps/web/src/api/*.ts、apps/admin/src/api.ts)用 useQuery/useMutation 包 fetcher。
+      // 只生成裸 fetcher 与 model 类型;TanStack Query hooks 由两端在各自 api 层自建
       client: "fetch",
       clean: true,
       indexFiles: true,

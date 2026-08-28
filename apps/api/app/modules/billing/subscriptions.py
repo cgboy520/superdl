@@ -1,16 +1,11 @@
 """包周期(预付)订阅:下单预扣、续费、到期巡检。
 
-**与小时结算彻底分离。** `bills_hourly` 的结构、幂等键、水位线、缺口机制一行不动;
-包周期实例只是在结算候选里被跳过(orchestrator/queries.billing_candidates 一处)。
-把预付摊成 720 条零元小时账,会让「重复执行零重复扣款」的幂等证明凭空多一个维度,
-换不来任何用户看得见的东西。
+与小时结算彻底分离:`bills_hourly` 的结构、幂等键、水位线、缺口机制一行不动,包周期
+实例只在结算候选里被跳过(orchestrator/queries.billing_candidates 一处)。
 
-预付语义的三个后果,三处都必须一致(文案在 locales 里,口径在这里):
-1. **中途释放不退款** —— 释放时订阅转 cancelled,不生成任何退款流水;确需退款走人工
-   `refund_requests`。
-2. **到期不自动转按量** —— 到期即停机。自动转按量等于替用户开了一份他没同意过的持续扣款。
-3. **余额为零不停机** —— 已经付过钱了。停机判据、燃烧率、在途预留、冻结链四处都要把它
-   排除,漏一处就是「包月用户被欠费巡检误停机」。
+预付语义的三个后果:中途释放不退款(订阅转 cancelled,确需退款走人工 `refund_requests`);
+到期不自动转按量,到期即停机;余额为零不停机 —— 停机判据、燃烧率、在途预留、冻结链
+四处都要把它排除,漏一处就是「包月用户被欠费巡检误停机」。
 """
 
 from datetime import datetime, timedelta
@@ -43,7 +38,7 @@ STATUS_EXPIRED = "expired"
 STATUS_CANCELLED = "cancelled"
 
 # 到期未续费的处置理由(instance_events.reason)。与欠费链路的 arrears_* 分开命名:
-# 时间线上「包周期到期」和「欠费」对用户是两件不同的事,合成一个 reason 会让工单无从查起
+# 时间线上「包周期到期」和「欠费」对用户是两件不同的事
 REASON_EXPIRED_STOP = "subscription_expired"
 REASON_EXPIRED_FREEZE = "subscription_freeze"
 
@@ -132,8 +127,8 @@ async def find_replay_row(session: AsyncSession, *, user_id: int, key: str) -> S
     """幂等窗口内同 (user_id, key) 的订阅行。转换/续费的**第一步**就要问它。
 
     转换尤其不能晚问:market 一旦翻成 subscription,重放请求会先撞上「只有按量实例
-    可以转」这条守卫,拿到一个和真实情况毫不相干的 400;更糟的是守卫若在结算之后,
-    重放还会用折后价再去补一次转换前那个小时的账。
+    可以转」这条守卫拿到 400;守卫若排在结算之后,重放还会用折后价再补一次转换前
+    那个小时的账。
     """
     return await find_replay(
         session,
@@ -211,9 +206,8 @@ async def renew(
 
     返回 (新订阅, 报价, created);created=False = 幂等重放。
 
-    新周期从**老周期的到期时刻**起算,不是从「现在」—— 否则提前续费的用户会白白丢掉
-    手上剩余的天数,而提前续费恰恰是我们希望他做的事。只有老周期已经过了(到期后才来续)
-    才从现在起算,不然会续出一个开局就少几天的周期。
+    新周期从**老周期的到期时刻**起算,不是从「现在」(否则提前续费会丢掉手上剩余天数)。
+    只有老周期已过(到期后才来续)才从现在起算,否则会续出一个开局就少几天的周期。
 
     重新定价的基准是 `subscriptions.unit_price`(下单时的 SKU **原价**快照),不是 SKU 现价:
     与「变更 SKU 仅影响新实例」同一条口径,涨价不追已购用户。
@@ -234,8 +228,7 @@ async def renew(
     if current is None:
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="billing.subscriptionMissing")
     if current.status == STATUS_CANCELLED:
-        # 与「压根没买过」分开报:作废只可能是实例被释放过,用户需要知道钱不会回来、
-        # 也不会因为续费而复活这台机器
+        # 与「压根没买过」分开报:作废只可能是实例被释放过,续费不会复活这台机器
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="billing.subscriptionCancelled")
     quoted = await quote(
         session,
@@ -359,9 +352,8 @@ async def reserved_instance_ids(
 ) -> set[int]:
     """仍在保(active 且未到期)的包周期实例 id;给了 instance_ids 就只在其中筛。
 
-    软准入据此把「已停机但周期未满」的实例仍计为占用:平台承诺了整个周期,
-    用户关机一晚回来开不了机,是比超卖更难向他解释的事故。
-    创建路径每次都要问一遍,所以支持先按候选集收窄,别整表扫。
+    软准入据此把「已停机但周期未满」的实例仍计为占用:平台承诺了整个周期。
+    创建路径每次都要问一遍,故支持先按候选集收窄,不整表扫。
     """
     if instance_ids is not None and not instance_ids:
         return set()
@@ -396,7 +388,7 @@ async def assert_active(session: AsyncSession, instance_id: int) -> Subscription
     """包周期实例的开机门禁:周期内才让开机。
 
     行缺失也判过期(fail-closed):market='subscription' 却查不到订阅行是数据不一致,
-    这时候放行等于白送一台机器,而拦下最坏也只是用户来提一张工单。
+    放行等于白送一台机器。
     """
     row = await current_for_instance(session, instance_id)
     if row is None or row.status != STATUS_ACTIVE or ensure_utc(row.expires_at) <= now_utc():
@@ -614,8 +606,8 @@ async def _expire_instance(
 
 
 async def _freeze(session: AsyncSession, instance: "Instance") -> None:
-    """冻结窗口复用 `freeze_grace_hours`(欠费同款):对用户是同一句承诺 ——
-    「停机后 72 小时内还能救回来」,两条链路给出不同天数只会制造投诉。"""
+    """冻结窗口复用 `freeze_grace_hours`(欠费同款):两条链路对用户是同一句承诺
+    ——「停机后 72 小时内还能救回来」。"""
     from app.modules.orchestrator import service as orchestrator_service
 
     policies = await get_effective_policies(session)

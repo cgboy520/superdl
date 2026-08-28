@@ -1,7 +1,5 @@
-/**
- * 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。
- * 新建工单走 Modal(分类/关联实例可选/主题/内容),详情为独立对话页。
- */
+/** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。
+ *  新建工单走 Modal,详情为独立对话页。 */
 
 import { formatDateTime, idemKeyOf, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";

@@ -1,9 +1,7 @@
 """创建类接口的幂等键重放:按 (归属列, 键) 查已有行,窗内则重放。
 
-实例 / 数据盘 / 充值单 / 发票 / 退款 / 工单 / 节点注册令牌 / 公告的创建入口共用这段
-「查已有行 → 有则重放 / 无则新建」;重放的响应形态(200 + X-Idempotent-Replay)由路由经
-core/http.mark_idempotent_replay 统一。并发同键由各表 UNIQUE(归属列, idempotency_key)
-兜底,撞约束后各调用方再以本函数回查胜出方。
+重放的响应形态(200 + X-Idempotent-Replay)由路由经 core/http.mark_idempotent_replay 统一;
+并发同键由各表 UNIQUE(归属列, idempotency_key) 兜底,撞约束后再以本函数回查胜出方。
 """
 
 from datetime import datetime, timedelta

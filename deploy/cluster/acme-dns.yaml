@@ -1,7 +1,8 @@
-# acme-dns(DNS01 中转,cert-manager 经其 HTTP API 更新 TXT;acmeDNS solver):替代个人仓 cert-manager-webhook-alidns。
-# 信任模型:全域 RAM DNS 凭据 → acme-dns 账户凭据(仅可更新 _acme-challenge 子域 TXT)。
-# 一次性配置(公网 NS/CNAME 委托 + 账户注册 + TSIG secret + digest 钉死)见
-# runbooks/acme-dns.md;占位符(CHANGE_ME/example.com)由 preflight.sh 强制扫描。
+# acme-dns(DNS01 中转,cert-manager 经其 HTTP API 更新 TXT;acmeDNS solver)。
+# 只在 acmeDns.enabled=true 的档位应用(full):light 档不装,泛域名证书手工灌入通配证书。
+# 信任模型:acme-dns 账户凭据只能更新 _acme-challenge 子域的 TXT,不涉及全域 DNS 凭据。
+# 公网 NS/CNAME 委托 + 账户注册 + 账户 Secret + digest 钉死见 runbooks/acme-dns.md;
+# 占位符(CHANGE_ME/example.com)由 preflight.sh 强制扫描。
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -24,9 +25,8 @@ data:
     engine = "sqlite3"
     connection = "/var/lib/acme-dns/acme-dns.db"
     [api]
-    # 注册/更新 API 仅集群内可达(ClusterIP,与 cert-manager 同 ns):
-    # cert-manager 的 acmeDNS solver 经该 HTTP API 更新 TXT(非 RFC2136 协议本身);
-    # 接口本身要 username/password 凭据,不暴露公网。
+    # 注册/更新 API 仅集群内可达(ClusterIP,与 cert-manager 同 ns):cert-manager 的
+    # acmeDNS solver 经该 HTTP API 更新 TXT,接口要 username/password 凭据,不暴露公网。
     # 键名是 ip/port(listen 是 [general] 段 DNS 监听的键,写在这里会被忽略,API 落到随机端口)
     ip = "0.0.0.0"
     port = "8080"

@@ -32,7 +32,7 @@ export const getCaptchaConfigApiV1AuthCaptchaConfigGetUrl = () => {
 }
 
 /**
- * 验证码 2.0 客户端初始化配置(免鉴权;泄漏面无敏感——prefix/scene_id 本就写进前端 JS)。
+ * 验证码 2.0 客户端初始化配置(免鉴权;prefix/scene_id 为公开信息)。
  * @summary Captcha Config
  */
 export const captchaConfigApiV1AuthCaptchaConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CaptchaConfigOut> => {

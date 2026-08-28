@@ -63,15 +63,13 @@ class PoliciesOut(BaseModel):
     disk_grace_days: int
     disk_frozen_days: int
     freeze_grace_hours: int
-    # 包周期折扣(百分数,80 = 8 折)与到期预警窗。市场页的「包月 -20%」直接读这里 ——
-    # 前端硬编码折扣就意味着运营在管理端调完价、页面还显示旧折扣
+    # 包周期折扣(百分数,80 = 8 折)与到期预警窗;前端一律读这里,不得硬编码折扣
     period_discount_day: int
     period_discount_week: int
     period_discount_month: int
     period_discount_year: int
     period_expire_warn_days: int
-    # 竞价折扣与抢占宽限窗:市场页的「低至 4 折」与知情同意里的「提前 60 秒通知」
-    # 都从这里读,前端硬编码就意味着运营调完、页面还显示旧数
+    # 竞价折扣与抢占宽限窗;市场页与知情同意一律读这里,不得硬编码
     spot_discount_pct: int
     spot_grace_seconds: int
     real_name_enabled: bool = False  # 用户端实名表单是否可用(安全策略开关)

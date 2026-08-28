@@ -63,10 +63,7 @@ export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) 
   return "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
 }
 
-/**
- * 实例形态标记。只有服务型实例出标记 —— 开发机是默认形态,给每一行挂一个「开发机」
- * 徽标只是噪声。
- */
+/** 实例形态标记。只有服务型实例出标记,开发机是默认形态。 */
 export function WorkloadTag({ workloadType }: { workloadType: string }) {
   const { t } = useTranslation(["web", "shared"]);
   if (workloadType !== "service") return null;
@@ -75,11 +72,7 @@ export function WorkloadTag({ workloadType }: { workloadType: string }) {
   return <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
 }
 
-/**
- * 包周期标记:「包月 · 剩 23 天」。按量/竞价实例不出标记 —— 按量是默认买法,
- * 给每一行挂一个「按量」徽标只是噪声(与 WorkloadTag 同一条口径)。
- * 已到期转橙并改显订阅状态:剩余天数对一台已经停掉的机器没有意义。
- */
+/** 包周期标记:「包月 · 剩 23 天」。按量/竞价实例不出标记;已到期转橙并改显订阅状态。 */
 export function SubscriptionTag({
   market,
   subscription,
@@ -104,10 +97,7 @@ export function SubscriptionTag({
   );
 }
 
-/**
- * 实例事件 `reason` → 文案。列表的失败原因与详情页时间线共用一份映射;
- * 表里没有的(后端调度器回填的自由文本)原样渲染 —— 没配文案不是吞掉整句的理由。
- */
+/** 实例事件 `reason` → 文案。列表失败原因与详情页时间线共用一份映射,表里没有的原样渲染。 */
 export function useEventReasonText() {
   const { t } = useTranslation(["web", "shared"]);
   return (reason: string) => {
@@ -116,10 +106,7 @@ export function useEventReasonText() {
   };
 }
 
-/**
- * 竞价标记。只有竞价实例出标记 —— 按量是默认买法(与 WorkloadTag / SubscriptionTag 同口径)。
- * 「可被回收」是这台机器与别人最要紧的区别,tooltip 里写清回收顺序与提前通知。
- */
+/** 竞价标记。只有竞价实例出标记,tooltip 里写清回收顺序与提前通知。 */
 export function SpotTag({ market }: { market: string }) {
   const { t } = useTranslation(["web", "shared"]);
   if (market !== "spot") return null;
@@ -132,7 +119,7 @@ export function SpotTag({ market }: { market: string }) {
   );
 }
 
-/** 「可回收」行内标记(列表计费列):与 SpotTag 同色,说的是同一件事的两面。 */
+/** 「可回收」行内标记(列表计费列):与 SpotTag 同色。 */
 export function SpotReclaimTag({ market }: { market: string }) {
   const { t } = useTranslation(["web", "shared"]);
   if (market !== "spot") return null;

@@ -3,14 +3,14 @@
 write-kubeconfig-mode: "0640"
 cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(CNI + LB)
 disable:
-  - rke2-ingress-nginx       # 内置的是已退休的 ingress-nginx;北向入口改由 helmfile 装
-                             # Envoy Gateway(Gateway API),禁掉以免两个入口控制器并存
+  - rke2-ingress-nginx       # 北向入口统一走 helmfile 装的 Envoy Gateway(Gateway API),
+                             # 禁掉内置入口控制器以免两个入口控制器并存
   - rke2-canal
-# 控制面 HA(3 server 堆叠 etcd,P0-1):apiserver 证书 SAN 必须覆盖 VIP 与全部 server
-# 地址,否则 agent/kubectl 经 VIP 连接时 TLS 校验失败,任一 server 重建后其余成员也失连。
-# 首台与后续 server 的本项必须逐字节一致(成员配置漂移是 HA 最难排查的故障源);
-# 单 server 集群可保持注释。ansible 在定义 api_vip/server_ips 时自动渲染本块(见
-# deploy/ansible/site.yml),手工部署照此格式填真实值:
+# 控制面 HA(3 server 堆叠 etcd):apiserver 证书 SAN 必须覆盖 VIP 与全部 server 地址,
+# 否则 agent/kubectl 经 VIP 连接时 TLS 校验失败,任一 server 重建后其余成员也失连。
+# 首台与后续 server 的本项必须逐字节一致;单 server 集群保持注释。
+# ansible 在定义 api_vip/server_ips 时自动渲染本块(deploy/ansible/site.yml),
+# 手工部署照此格式填真实值:
 #tls-san:
 #  - "<api-vip>"                # 控制面 VIP(kube-vip/keepalived/SLB 任一)
 #  - "<server1-ip>"             # 逐台 server 的 IP(证书签出后增删 server 需重签并滚动重启)
@@ -23,18 +23,14 @@ node-label:
   - "node-role.superdl.io/infra=true"   # 平台组件(api/worker/前端/registry)只落带此标签的
                              # 节点(deploy/app/k8s 各清单的 nodeSelector);GPU 节点严禁打此标签。
                              # 后续扩独立 infra 节点:打同款标签 + CriticalAddonsOnly taint 即等价。
-secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。
-                             # 存量集群开启:RKE2 启动时自动重写加密既有 Secret(滚动重启
-                             # server 逐台做,etcd 快照照常可还原);开启后 etcd 快照虽不再
-                             # 明文含 Secret,快照本体仍含全部集群状态,必须异地加密保存
-                             # (勿只留在本机 /var/lib/rancher)。
+secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。存量集群开启时
+                             # RKE2 启动自动重写加密既有 Secret,滚动重启 server 逐台做。
 etcd-snapshot-schedule-cron: "0 */6 * * *"
 etcd-snapshot-retention: 12
-# etcd 快照异地保存(对齐 deploy/cluster/README.md「etcd 快照托管」的既有要求):
-# 控制面快照含全部集群状态与 token 材料,必须异地加密保存(对象存储开服务端加密/
-# bucket 默认加密,建议另一机房或独立账号),禁止只留 server 本机 /var/lib/rancher。
-# 开启后定时快照自动上传;access/secret key 来自密管下发,仓库内只留 CHANGE_ME 占位,
-# 真实值禁止提交(分发模板由 ansible/装机脚本落盘时替换)。
+# etcd 快照异地保存(见 deploy/cluster/README.md「etcd 快照托管」):控制面快照含全部集群
+# 状态与 token 材料,必须异地加密保存(对象存储开服务端加密,建议另一机房或独立账号),
+# 禁止只留 server 本机 /var/lib/rancher。开启后定时快照自动上传;access/secret key 来自密管
+# 下发,仓库内只留 CHANGE_ME 占位,真实值禁止提交(ansible/装机脚本落盘时替换)。
 etcd-s3: true
 etcd-s3-bucket: "CHANGE_ME_ETCD_SNAPSHOT_BUCKET"      # 来自密管/对象存储控制台
 etcd-s3-region: "CHANGE_ME_ETCD_S3_REGION"            # 如 cn-hangzhou
@@ -43,11 +39,10 @@ etcd-s3-access-key: "CHANGE_ME_ETCD_S3_ACCESS_KEY"  # 来自密管
 etcd-s3-secret-key: "CHANGE_ME_ETCD_S3_SECRET_KEY"  # 来自密管
 etcd-s3-folder: "etcd-snapshots"
 # 节点加入用专用 agent token,禁止把 server token(node-token)下发到 GPU 节点/平台库:
-# server token 可再拉 server 入环(etcd 成员),被泄=集群控制面沦陷;agent token 只能拉 agent。
-# 首装前生成(openssl rand -hex 32),取消下面注释;装机后补设则需滚动重启各 server。
+# server token 可再拉 server 入环(etcd 成员),被泄 = 集群控制面沦陷;agent token 只能拉 agent。
+# 首装前生成(openssl rand -hex 32)并取消下面注释;装机后补设需滚动重启各 server。
 #agent-token: "CHANGE_ME_AGENT_TOKEN"
-# 平台「集群接入」配置项 cluster_join_token 录这个值(应用侧 hint 仍写 node-token,
-# 以本文件与 deploy/cluster/README.md 为准);轮换步骤见 deploy/cluster/README.md。
+# 平台「集群接入」配置项 cluster_join_token 录这个值;轮换步骤见 deploy/cluster/README.md。
 embedded-registry: true      # Spegel P2P 镜像共享:节点间互拉已缓存镜像(TCP 5001/9345 内网互通)
                              # 需配套 registries.yaml 分发到全部节点;latest tag 不参与 P2P
 supervisor-metrics: true     # 暴露 spegel/supervisor 指标供 kps 抓取

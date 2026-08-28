@@ -1,4 +1,4 @@
-"""管理端路由(认证/MFA/自助改密,自 router.py 拆分)。"""
+"""管理端路由(认证/MFA/自助改密)。"""
 
 from fastapi import APIRouter, Request, Response, status
 

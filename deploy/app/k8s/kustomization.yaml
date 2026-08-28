@@ -1,9 +1,8 @@
 # 发布单点:各清单的镜像统一写 CHANGE_IMAGE_PREFIX/superdl-<name>:CHANGE_TAG 占位,
-# 由 scripts/release.sh 用 SUPERDL_IMAGE_PREFIX(Harbor 项目前缀,如 harbor.<域>/superdl)与本次 tag
-# 一步替换后 apply;禁止手改各清单里的镜像与 tag、禁止 latest(不用 images transformer:
-# 迁移 Job 本就绕过 kustomize,两处机制并成一处 sed)。
-# 10-migrate-job.yaml 故意不入 resources:Job 不可 apply 复用(name 带 tag 后缀、
-# backoffLimit: 0),由 release.sh 在滚动前单独 create + wait(顺序铁律见该文件头注释)。
+# 由 scripts/release.sh 用 SUPERDL_IMAGE_PREFIX(Harbor 项目前缀,如 harbor.<域>/superdl)与本次
+# tag 一步替换后 apply;禁止手改各清单里的镜像与 tag、禁止 latest。
+# 10-migrate-job.yaml 不入 resources:Job 不可 apply 复用(name 带 tag 后缀、backoffLimit: 0),
+# 由 release.sh 在滚动前单独 create + wait(顺序铁律见该文件头注释)。
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

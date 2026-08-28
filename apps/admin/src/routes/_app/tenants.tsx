@@ -55,8 +55,8 @@ function TenantsTab() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  // 手机号可检索,但列表仍只回掩码:可查不等于可见;纯数字额外按租户 id 精确命中。
-  // input=输入框即时值,search=已提交的查询(检索是落审计的敏感读,不能逐键触发)
+  // 手机号可检索但列表仍只回掩码;纯数字额外按租户 id 精确命中。
+  // 检索是落审计的敏感读,必须提交才触发:input=输入框即时值,search=已提交的查询
   const urlQ = Route.useSearch({ select: (s) => s.q });
   const [input, setInput] = useState(urlQ ?? "");
   const [search, setSearch] = useState(urlQ ?? "");
@@ -293,9 +293,7 @@ function InstancesTab() {
             },
           },
           {
-            // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍。
-            // 这一列是「强制回收」那个按钮的前提 —— 只有竞价实例可回收,看不出哪台是竞价
-            // 就只剩一排灰按钮
+            // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍;只有竞价实例可回收
             title: t("tenants.colMarket"),
             dataIndex: "market",
             width: 110,
@@ -328,8 +326,7 @@ function InstancesTab() {
                     }}
                   />
                   {/* 强制回收:腾容量用,走与自动抢占同一条路径(通知 + 宽限窗,不是立即删 Pod)。
-                      与强制停止分成两个按钮而不是一个带选项的:用户时间线上「被处置」与
-                      「被回收」是两件事,合并会让竞价可靠性也统计不出来 */}
+                      必须与强制停止分成两个按钮:合并会让「被处置」与「被回收」在时间线上分不开 */}
                   <ReasonAction
                     label={t("tenants.preempt")}
                     danger

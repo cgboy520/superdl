@@ -53,8 +53,8 @@ def decrypt_str(token: str, *, aad: str) -> str:
 def hash_sms_code(phone: str, purpose: str, code: str) -> str:
     """短信验证码的带密钥摘要(HMAC-SHA256,hex)。
 
-    密钥取平台配置主密钥(只走 env、不落库);phone 与 purpose 混进消息做域分离。
-    6 位数字码在无密钥摘要下对拿到库 dump 的攻击者等同明文,故不用裸 sha256。
+    密钥取只走 env 的平台配置主密钥;phone 与 purpose 混进消息做域分离。
+    不可退回裸 sha256:6 位数字码的无密钥摘要对拿到库 dump 的人等同明文。
     """
     import hmac
 
@@ -64,13 +64,8 @@ def hash_sms_code(phone: str, purpose: str, code: str) -> str:
 
 
 def hash_api_key(key: str) -> str:
-    """服务端点 API Key 的带密钥摘要(HMAC-SHA256,hex)。
-
-    与 hash_sms_code 共用主密钥,靠固定前缀做域分离 —— 两种摘要都存在库里,
-    不分域的话一张表里的摘要可以拿到另一张表去比对。
-    Key 本身是高熵随机串,但无密钥摘要对拿到库 dump 的攻击者仍可离线批量比对
-    (彩虹表意义不大,可并行爆破仍成立),故不用裸 sha256。
-    """
+    """服务端点 API Key 的带密钥摘要(HMAC-SHA256,hex)。与 hash_sms_code 共用主密钥,
+    靠固定前缀做域分离(两表摘要不可互相比对);不可退回裸 sha256(可被离线批量比对)。"""
     import hmac
 
     return hmac.new(_master_key(), f"service-api-key|{key}".encode(), hashlib.sha256).hexdigest()

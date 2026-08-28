@@ -46,8 +46,7 @@ if grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml
   check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
   # 光有 secret 不够:acmedns.json 以**被验证的域**为键,两张泛域名证书各要一个键
   # (*.app.<域> 的挑战名是 app.<域>,*.svc.<域> 是 svc.<域>)。少一个键时 cert-manager
-  # 不报错、也不告警,只有那张 Certificate 长期 Ready=False,对应 listener 不 Programmed,
-  # 该域 TLS 握手直接失败——而平台侧看着一切正常。这正是 preflight 该抓的那类静默失败。
+  # 不报错也不告警,只有那张 Certificate 长期 Ready=False、该域 TLS 握手直接失败。
   if kubectl -n cert-manager get secret acme-dns-account >/dev/null 2>&1; then
     acmedns_keys="$(kubectl -n cert-manager get secret acme-dns-account       -o jsonpath='{.data.acmedns\.json}' 2>/dev/null | base64 -d 2>/dev/null || true)"
     for zone in app svc; do
@@ -69,9 +68,9 @@ fi
 # 镜像仓库(Harbor)不在本脚本校验范围:地址/机器人/CA 在管理端「平台配置 · 镜像仓库」录入并「测试连接」;
 # 平台自身镜像的拉取 Secret superdl-registry-pull 由 scripts/release.sh 发布前校验。
 
-# 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,
-# 占位符由 ansible / 一键加入脚本落盘时替换,仓库里保留占位符。
-# kps.yaml 的占位是 Alertmanager webhook token / SMTP / 值班接收端:未替换等于全部告警静默(事故盲区)。
+# 只查 helmfile apply 直接消费的 values/ 与 raw manifest;rke2/*.yaml 是分发模板,占位符由
+# ansible / 一键加入脚本落盘时替换。kps.yaml 的占位是 Alertmanager webhook token / SMTP /
+# 值班接收端,未替换等于全部告警静默。
 say "== values/ 占位符残留(未替换直接 apply 会让组件起不来;kps.yaml 未替换则告警静默)=="
 placeholder_files=(values/cilium.yaml values/kps.yaml acme-dns.yaml)
 for f in "${placeholder_files[@]}"; do
@@ -94,12 +93,10 @@ for f in "${placeholder_files[@]}"; do
 done
 
 say "== Gateway API CRD(channel 首装即定,事后换不回去)=="
-# 北向入口是 Envoy Gateway,平台用到的策略对象(BackendTrafficPolicy 的每源 IP 本地限流等)
-# 落在 experimental channel。CRD 由 helmfile presync 的 ./gateway-api-crds.sh 装:
-# 首装时集群里还没有 CRD 属正常,不算缺项。但装成 standard 就换不回来了——随 CRD 一起装的
-# safe-upgrades ValidatingAdmissionPolicy 用 CEL 拒绝 standard→experimental,唯一出路是把
-# CRD 删净重装,而删 CRD 会连带删掉集群内全部 Gateway/HTTPRoute(平台三域名 + 全部租户
-# Jupyter 入口一起消失)。所以这一项发现不符要当场停,别等到某条策略静默失效才发现。
+# 平台用到的策略对象(BackendTrafficPolicy 的每源 IP 本地限流等)落在 experimental channel。
+# CRD 由 helmfile presync 的 ./gateway-api-crds.sh 装,首装时集群里还没有 CRD 属正常。
+# 装成 standard 就换不回来:safe-upgrades VAP 用 CEL 拒绝 standard→experimental,唯一出路是
+# 删净 CRD 重装,而删 CRD 会连带删掉集群内全部 Gateway/HTTPRoute。本项不符当场停。
 gw_crd=gateways.gateway.networking.k8s.io
 if kubectl get crd "$gw_crd" >/dev/null 2>&1; then
   gw_channel=$(kubectl get crd "$gw_crd" \
@@ -122,11 +119,8 @@ fi
 
 say "== 应用入口(../app)=="
 app_gateway=../app/k8s/04-gateway.yaml
-# 管理端白名单的占位符不是 CHANGE_ME_* 而是 192.0.2.0/24(RFC 5737 文档网段):
-# SecurityPolicy 的 clientCIDRs 在 CRD 里带 CIDR 正则,非法字符串会被 apiserver 单独拒收,
-# 而 apply 是逐对象的——结果会是「只有白名单这一个对象没建起来,其余全部生效」,
-# 管理端就此无声敞开。换成合法但不存在任何真实主机的网段,忘了替换时是 fail-closed
-# (管理端谁也进不去,当场发现),这道检查负责在 apply 之前就拦住。
+# 管理端白名单的占位符是 192.0.2.0/24(RFC 5737 文档网段)而非 CHANGE_ME_*,见
+# ../app/k8s/04-gateway.yaml 的 superdl-admin-allowlist;这道检查在 apply 前拦住未替换。
 if [[ -f "$app_gateway" ]]; then
   if grep -q '192\.0\.2\.0/24' "$app_gateway"; then
     miss "$app_gateway 管理端白名单仍是 192.0.2.0/24 占位(替换为办公网/跳板机出口 CIDR)"
@@ -154,16 +148,15 @@ else
   if [[ "${SUPERDL_MANAGED_PG_PITR_ACK:-}" == "yes" ]]; then
     ok "托管 PG PITR 已书面确认(SUPERDL_MANAGED_PG_PITR_ACK=yes)"
   else
-    # 提示不阻断:托管 PG 是否已开 PITR 只有其控制台能证明,脚本查不到;书面确认由人核
+    # 提示不阻断:托管 PG 是否已开 PITR 只有其控制台能证明,脚本查不到,书面确认由人核
     # (runbooks/cluster-validation.md 发布检查单、runbooks/pg-backup-restore.md 上线前强制项)
     say "  ⚠ cnpg.enabled=false 且未登记托管 PG PITR 确认:确认托管 PG 已开 PITR+保留策略后以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑可消除本提示;或启用 cnpg 档(environments/$env_name.yaml)。提示项,不阻断"
   fi
 fi
 
 say "== 准入策略(ValidatingAdmissionPolicy 必须 Deny 生效)=="
-# 首次上线可先 [Audit] 观察一周(见 admission/tenant-restrictions.yaml 头注释),
-# 但正式发布前必须改回 Deny——本检查按 Deny 卡。
-# superdl-global-pod-guard 仍处 Audit 观察期(面大且覆盖第三方 ns),毕业后再补进本清单。
+# 正式发布前三个 Binding 必须是 Deny,本检查按 Deny 卡。
+# superdl-global-pod-guard 面大且覆盖第三方 ns,仍在 Audit 观察期,转 Deny 后补进本清单。
 for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope; do
   actions=$(kubectl get validatingadmissionpolicybinding "$binding" \
     -o jsonpath='{.spec.validationActions[*]}' 2>/dev/null || true)
@@ -189,7 +182,7 @@ fi
 
 if [[ "$env_name" == "full" ]]; then
   say "== 控制面 HA(3 server 堆叠 etcd + VIP)=="
-  # server 节点数:奇数且 ≥3(etcd 法定人数;偶数台不抗脑裂,双台等于没有 HA)
+  # server 节点数须奇数且 ≥3(etcd 法定人数;偶数台不抗脑裂,双台等于没有 HA)
   cp_nodes=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name 2>/dev/null | grep -c . || true)
   if [[ "$cp_nodes" -ge 3 && $((cp_nodes % 2)) -eq 1 ]]; then
     ok "控制面节点 $cp_nodes 台(奇数 ≥3)"

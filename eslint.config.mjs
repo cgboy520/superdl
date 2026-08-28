@@ -32,8 +32,8 @@ export default tseslint.config(
     },
   },
   {
-    // 「无手写 URL 绕过」闸门的另一半:apps/*/src 的数据访问一律走 @superdl/api-client 的生成
-    // fetcher/hooks,不许拿 customFetch 自己拼 URL,也不许绕过包入口直接 import mutator。
+    // apps/*/src 的数据访问一律走 @superdl/api-client 的生成 fetcher/hooks:
+    // 不许拿 customFetch 自己拼 URL,也不许绕过包入口直接 import mutator
     files: ["apps/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [

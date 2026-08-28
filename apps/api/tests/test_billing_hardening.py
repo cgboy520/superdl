@@ -1,7 +1,4 @@
-"""计费/钱包硬化批次:燃烧率开户校验、巡检实时估算停机、结算缺口、增量核对、营收归属。
-
-每条用例对应一份审计论断的修复验收。
-"""
+"""计费与钱包:燃烧率开户校验、巡检实时估算停机、结算缺口、增量核对、营收归属。"""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -47,8 +44,8 @@ async def _fund(sm, user_id: int, amount: str) -> None:
 
 
 class TestWalletLockGuards:
-    """钱路行锁变异守护:实测去掉 with_for_update 后 876 条测试只有 1 条会红,
-    这三条是必须存在的最低守护集(它们挂了 = 行锁被改回去了/锁内读到旧值)。"""
+    """钱路行锁变异守护:去掉 with_for_update 后只有这三条会红,是最低守护集
+    (它们挂了 = 行锁没了,或锁内读到旧值)。"""
 
     async def test_concurrent_credit_debit_no_lost_update(self, sm):
         """同一钱包并发 credit/debit:无丢失更新,且 balance_after 链单调接续。"""
@@ -346,7 +343,7 @@ class TestPatrolUnsettledBurn:
             )
             await session.commit()
         # 未结算 4h × 1.68 = 6.72;1.00 − 6.72 ≤ 0 → 停机
-        # (旧口径只看当前小时 0.98,1.00 − 0.98 > 0 会漏停)
+        # (只看当前小时的 0.98 会漏停,故未落账小时必须全量计入)
         counts = await patrol.balance_patrol(sm)
         assert counts["stopped"] == 1
 

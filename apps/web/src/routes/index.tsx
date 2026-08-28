@@ -1,7 +1,5 @@
-/**
- * 公开主页(未登录默认落地页;已登录照常显示,顶栏换「进入控制台」)。
- * 分区:Hero / 快捷入口 / GPU 价格墙 / 算力排名 / CTA 横幅 / 三栏页脚。
- */
+/** 公开主页(未登录默认落地页;已登录顶栏换「进入控制台」)。
+ *  分区:Hero / 快捷入口 / GPU 价格墙 / 算力排名 / CTA 横幅 / 三栏页脚。 */
 
 import { brand } from "@superdl/ui";
 import { createFileRoute } from "@tanstack/react-router";

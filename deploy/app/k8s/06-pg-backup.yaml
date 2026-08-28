@@ -2,9 +2,9 @@
 # 保留策略:对象存储桶生命周期管理——建议 daily/ 前缀 30 天滚动删除 + 每月 1 日转低频/归档层
 # 留存 12 个月(在桶控制台/IaC 配置,不在本清单);恢复演练每季度一次,见 runbooks/pg-backup-restore.md。
 # 这是 RPO=24h 的最低保障;钱包/账本库的 PITR 方案见 runbooks/pg-backup-restore.md。
-# 上传后内置 restore 冒烟(恢复到 Pod 内临时库,断言 pg_restore 成功且要害表可查询;行数只打印
-# 不判定——钱包按需创建、结算水位线首轮结算才有行,新库为 0 属正常):失败则 Job 非零
-# 退出 → PgBackupFailed 告警;未验证的备份视为不存在。
+# 上传后内置 restore 冒烟(恢复到 Pod 内临时库,断言 pg_restore 成功且要害表可查询;
+# 行数只打印不判定,新库为 0 属正常):失败则 Job 非零退出 → PgBackupFailed 告警。
+# 未验证的备份视为不存在。
 # 凭据 Secret(superdl-pg-backup)模板见 ../secrets.example.yaml,不在整目录 apply 路径内。
 apiVersion: batch/v1
 kind: CronJob
@@ -25,8 +25,7 @@ spec:
         spec:
           restartPolicy: Never
           automountServiceAccountToken: false   # 只连 PG 与对象存储,不访问 K8s API
-          # 非 root 运行(pg_dump / aws s3 cp 都不需要 root);fsGroup 让两个容器
-          # 都能读写交接用的 emptyDir
+          # 非 root 运行;fsGroup 让两个容器都能读写交接用的 emptyDir
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
@@ -34,9 +33,8 @@ spec:
             fsGroup: 999
             seccompProfile: {type: RuntimeDefault}
           # 转储与上传各用官方镜像、经 emptyDir 交接;禁止在运行期 apt-get 装工具。
-          # 为何不走 `pg_dump | aws s3 cp -` 流式:postgres 镜像无 aws cli、aws-cli 镜像无
-          # pg_dump,流式需自制镜像(构建链多一个维护面);落盘 + sizeLimit 已能兜住磁盘打满
-          # 风险,将来库体积接近 sizeLimit 一半时再评估自制镜像改流式。
+          # 不走 `pg_dump | aws s3 cp -` 流式:两个官方镜像各缺对方的工具,流式需自制镜像;
+          # 落盘 + sizeLimit 已兜住磁盘打满风险。
           initContainers:
             - name: dump
               image: postgres:18
@@ -86,9 +84,9 @@ spec:
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 512Mi}
-            # restore 冒烟:把刚上传的 dump 恢复进 Pod 内一次性 PG 实例,pg_restore 成功且
-            # 三张资金要害表 SELECT count(*) 可执行即计成功(行数只打印);任一环节失败非零退出
-            # → Job Failed → PgBackupFailed 告警(kps.yaml)。镜像复用 dump 容器(postgres:18),不新增镜像。
+            # restore 冒烟:把刚上传的 dump 恢复进 Pod 内一次性 PG 实例,pg_restore 成功且三张
+            # 资金要害表 SELECT count(*) 可执行即计成功;任一环节失败非零退出 → Job Failed
+            # → PgBackupFailed 告警(kps.yaml)。镜像复用 dump 容器,不新增镜像。
             - name: restore-smoke
               image: postgres:18
               imagePullPolicy: IfNotPresent

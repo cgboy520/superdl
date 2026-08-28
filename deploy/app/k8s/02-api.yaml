@@ -14,21 +14,20 @@ spec:
       labels: {app: superdl-api}
     spec:
       serviceAccountName: superdl-api   # 只读身份(见 01-rbac.yaml;写权限全在 worker)
-      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据按指纹覆写
-      # (docs/reference/images.md);项目 public 时 Secret 缺失只是 kubelet 告警,不影响拉取
+      # Harbor 拉取凭据:首装按 ../secrets.example.yaml 手建,之后由平台按配置中心的机器人凭据
+      # 按指纹覆写(docs/reference/images.md);Harbor 项目 public 时缺它只是 kubelet 告警
       imagePullSecrets:
         - {name: superdl-registry-pull}
-      # 平台组件与租户隔离:只落控制面/infra 节点,优先级压过租户 Pod,
-      # 节点资源紧张时不与租户同级被驱逐。
+      # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一走 infra 标签(P0-1:与 control-plane 角色解耦,平台组件不再
-        # 绑死控制面)。full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
-        # node-label 自动携带;自建独立 infra 节点打同款标签 + CriticalAddonsOnly taint。
+        # 平台组件落点统一锚点(full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
+        # 的 node-label 自动携带;自建 infra 节点打同款标签 + CriticalAddonsOnly taint)。
         # GPU 节点严禁打此标签。
         node-role.superdl.io/infra: "true"
       tolerations:
-        # 容忍控制面/infra 节点的 CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint)
+        # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
+        # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
         # 2 副本尽量跨节点/跨可用区摊开;小集群不满足时仍可调度(ScheduleAnyway)
@@ -65,13 +64,11 @@ spec:
             failureThreshold: 3
           lifecycle:
             # 滚动/缩容先摘流再退出:preStop 等 Endpoints 摘除传播到 Envoy Gateway/iptables,
-            # 避免在途请求被 SIGTERM 直接掐断。
+            # 否则在途请求被 SIGTERM 直接掐断
             preStop:
               exec:
                 command: ["sh", "-c", "sleep 10"]
-          # requests==limits → Guaranteed:节点资源紧张时平台控制面与租户 Pod 同级,不先被 evict;
-          # 叠加 pod 级 priorityClassName=system-cluster-critical(见上)压过租户。
-          # 内存取原 limits 值(eviction 看内存);CPU 可压缩,取请求与上限的中档。
+          # requests==limits → Guaranteed:节点资源紧张时不先于租户 Pod 被 evict
           resources:
             requests: {cpu: "1", memory: 1Gi}
             limits: {cpu: "1", memory: 1Gi}

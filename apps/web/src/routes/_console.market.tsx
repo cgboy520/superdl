@@ -1,10 +1,7 @@
 /**
  * 算力市场:GPU / CPU 分栏 + 筛选链 chips + 表格 radio 单选 + 底部结算条,数据行 = SKU。
  * CTA 即库存,售罄行灰置不隐藏。未登录可看,结算条 CTA 变「登录后租用」。
- *
- * 两栏的筛选维度不同,不是同一条链的子集:GPU 按「型号 / 档位 / 显存 / 卡数」选,
- * CPU 不带卡,只按「vCPU / 内存」选,价格也是整机时价而非单卡价。混在一栏里,
- * 型号与显存两行对 CPU 恒为空,卡数行还会算出「× 0 卡 = ¥0」。
+ * 两栏筛选维度不同:GPU 按「型号 / 档位 / 显存 / 卡数」,CPU 只按「vCPU / 内存」且价格是整机时价。
  */
 
 import {
@@ -130,8 +127,7 @@ function MarketPage() {
       : billingMode;
   const isSpot = mode === "spot";
   const period = isBillingPeriod(mode) ? mode : null;
-  // 竞价档选中时,没上竞价的规格整行灰置而不是过滤掉:表格是「这条卡还有哪些买法」的全景,
-  // 抽掉行会让用户以为规格下架了(与「售罄行灰置不隐藏」同一条口径)
+  // 竞价档选中时,没上竞价的规格整行灰置而不是过滤掉(与「售罄行灰置不隐藏」同一条口径)
   const selectable = (s: SkuMarketOut) => rentable(s) && (!isSpot || s.spot_enabled);
   // 明细区摊开的单价:竞价档报折后价(与结算条大字同一个数),其余报 SKU 原价
   const unitPrice =
@@ -188,7 +184,7 @@ function MarketPage() {
             options={kindOptions}
             onChange={(v) => {
               setKind(v);
-              setSelectedId(undefined); // 换栏必须清选中:上一栏的行不在本栏表里,结算条会挂着幽灵规格
+              setSelectedId(undefined); // 换栏必须清选中:上一栏的行不在本栏表里
             }}
           />
           {isCpu ? (
@@ -314,8 +310,7 @@ function MarketPage() {
         actions={
           loggedIn ? (
             <>
-              {/* 服务形态与开发机走同一条创建流,只是带上 workload=service —— 选规格这一步没有区别,
-                  分成两个入口页会让用户先挑形态再挑卡,而库存约束在卡这一侧 */}
+              {/* 服务形态与开发机走同一条创建流,只是带上 workload=service */}
               <Tooltip title={selected ? t("market.deployServiceHint") : t("market.selectFirst")}>
                 <Button
                   size="large"
@@ -347,8 +342,7 @@ function MarketPage() {
                     void navigate({
                       to: "/market/create/$skuId",
                       params: { skuId: String(selected.id) },
-                      // CPU 规格不带卡数:创建页按 SKU 的 max_gpus_per_instance=0 提交 gpu_count: 0
-                      // 计费方式随选择带过去,创建页不用再选一次
+                      // CPU 规格不带卡数(创建页按 max_gpus_per_instance=0 提交 gpu_count: 0);计费方式随选择带过去
                       search: {
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),

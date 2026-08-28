@@ -226,11 +226,8 @@ class TestStopStartRestart:
         assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
 
     async def test_restart_waits_for_pod_to_actually_disappear(self, client, sm, fake):
-        """真实集群里删除是优雅删除:对象要在 etcd 里再留 30 秒。
-
-        重启必须等对象真正消失再同名重建,否则撞 409 被当幂等跳过 = Pod 没建出来。
-        Fake 默认把删除建模成同步瞬时(pods.pop),本用例显式打开 graceful_delete。
-        """
+        """重启必须等对象真正消失再同名重建,否则撞 409 被当幂等跳过 = Pod 没建出来。
+        Fake 默认把删除建模成同步瞬时,本用例显式打开 graceful_delete。"""
         from app.core.outbox import OutboxTask
 
         headers, uuid, user_id = await _provision_running(client, sm, fake)
@@ -299,10 +296,8 @@ class TestFailureModes:
         assert all(p is None for p in ports)
 
     async def test_node_lost_stops_billing_and_notifies(self, client, sm, fake):
-        """节点断电/失联:kubelet 不可达,Pod 停在 phase=Running 只有 Ready 转 False。
-
-        验 RUNNING 分支不能只看 exists 与 phase,否则实例会一直显示运行中并持续计费。
-        """
+        """节点失联时 Pod 停在 phase=Running 只有 Ready 转 False:RUNNING 分支若只看
+        exists 与 phase,实例会一直显示运行中并持续计费。"""
         headers, uuid, user_id = await _provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         fake.mark_unready(ns, uuid)
@@ -380,12 +375,12 @@ class TestFailureModes:
         await drain(sm)
         await reconcile_once(sm)
         assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
-        # 创建失败主动通知用户(未计费),不再等刷新才发现
+        # 创建失败主动通知用户(未计费),不必等用户刷新才发现
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("调度超时" in n["title"] for n in notes)
 
     async def test_leaked_pod_reclaimed(self, client, sm, fake):
-        """验收:DB 无主的泄漏 Pod 被回收(泄漏=白送算力)。"""
+        """验收:DB 无主的泄漏 Pod 被回收(泄漏的 Pod 占着算力却无账可计)。"""
         headers, uuid, user_id = await _provision_running(client, sm, fake)
         ns = f"tenant-{user_id}"
         leaked_spec = fake.pods[(ns, uuid)].spec
@@ -418,7 +413,7 @@ class TestRelease:
         instances = (await client.get("/api/v1/instances", headers=headers)).json()["items"]
         assert uuid not in [i["uuid"] for i in instances]
 
-        # 盘真的被销毁了(P1-9 两阶段:盘删除走 instance.disk_cleanup outbox,drain 后落终态)
+        # 盘真的被销毁了(两阶段:盘删除走 instance.disk_cleanup outbox,drain 后落终态)
         await drain(sm)
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
@@ -439,7 +434,7 @@ class TestRelease:
         assert resp.json()["code"] == "INSTANCE_NOT_STOPPED"
 
     async def test_release_is_idempotent(self, client, sm, fake):
-        """重复 DELETE 不再 400:releasing/released 态直接回当前状态(照 delete_disk 写法)。"""
+        """重复 DELETE 不报 400:releasing/released 态直接回当前状态(照 delete_disk 写法)。"""
         headers, uuid, _user_id = await _provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
@@ -565,10 +560,8 @@ class TestPortPool:
         assert (await get_instance(client, headers, data["uuid"]))["ssh_port"] == 31502
 
     async def test_taken_node_port_is_blocked_and_recovered(self, client, sm, fake, monkeypatch):
-        """撞上被占 NodePort 后必须能自愈:端口标 blocked 并换一个重试。
-
-        否则高水位线永远停在被占端口前面,此后所有触顶的新建实例全部失败。
-        """
+        """撞上被占 NodePort 后必须能自愈(端口标 blocked 并换一个重试),否则高水位线
+        永远停在被占端口前面,此后所有触顶的新建实例全部失败。"""
         from app.core.config import get_settings
         from app.core.k8s import NodePortTaken
 
@@ -666,11 +659,8 @@ class TestInventoryProvider:
 
 class TestImageRefValidation:
     def test_digest_pinned_ref_accepted(self):
-        """目录 image_ref 钉 digest 是不可变量:形态校验必须同时收 tag + digest。
-
-        它挂了说明什么坏了:镜像目录钉不了 digest,按 tag 拉又会经 Spegel 拿到节点缓存的
-        旧镜像(见 docs/decisions.md),等于重推的修复永远到不了实例。
-        """
+        """形态校验必须同时收 tag + digest:钉不了 digest 就只能按 tag 拉,会经 Spegel 拿到
+        节点缓存的旧镜像,重推的修复永远到不了实例。"""
         from app.core.registry import is_valid_image_ref
 
         d = "a" * 64
@@ -686,8 +676,7 @@ class TestImageRefValidation:
         assert not is_valid_image_ref(f"harbor.example.com/superdl/pytorch:t@sha512:{d}")
 
     def test_admin_image_schema_rejects_malformed_ref(self):
-        """管理端写入路径也要挡:ref 钉 digest 后是 70+ 字符的手抄串,抄错若能入库,
-        要等用户创建实例才报错,而错误落在用户身上、运维看不到。"""
+        """管理端写入路径也要挡:抄错的 ref 若能入库,要等用户创建实例才报错。"""
         import pytest as _pytest
         from pydantic import ValidationError
 
@@ -765,15 +754,10 @@ class TestImageRefValidation:
 
 
 class TestServiceWorkloadUnreadyExemption:
-    """服务型实例持续 not-ready 时**不判故障**(reconciler._running_pod_lost_reason)。
+    """服务型实例持续 not-ready 时不判故障(reconciler._running_pod_lost_reason)。
 
-    它挂了说明什么坏了:平台在替用户杀自己的付费实例。服务型实例的 not-ready 判据是
-    用户自己声明的 readinessProbe —— 健康检查路径写错、权重下载失败、进程起不来,
-    全是用户容器的 bug。判成 failed 之后卡还占着、钱照扣,状态却成了故障,
-    而用户改一行重启就好。dev 实例没有这个歧义:它 not-ready 就是 Jupyter 没起来。
-
-    pod_lost(Pod 消失/被驱逐)与 node_lost(节点失联)两支对两种形态一视同仁 ——
-    豁免只针对「节点好好的、就是这个容器不就绪」这一种情形。
+    它挂了说明:平台把用户容器自己的问题(readinessProbe 不过)判成实例故障。豁免只针对
+    「节点好好的、就是这个容器不就绪」,pod_lost 与 node_lost 两支对两种形态一视同仁。
     """
 
     @staticmethod
@@ -828,8 +812,7 @@ class TestServiceWorkloadUnreadyExemption:
         assert reason is None
 
     async def test_service_still_fails_when_node_lost(self):
-        """节点真失联时不豁免:那不是用户容器的问题,而且实例已经不可用了,
-        继续计费才是错的。"""
+        """节点真失联时不豁免:那不是用户容器的问题,实例已不可用,继续计费才是错的。"""
         reason = await self._reason(
             self._stale_instance("service"), self._UNREADY, node_not_ready=True
         )

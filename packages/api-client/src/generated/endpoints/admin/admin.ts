@@ -1950,7 +1950,7 @@ export const getAdminOverviewApiAdminV1OverviewGetUrl = () => {
 /**
  * 值班首屏聚合:实例分状态 COUNT、付费租户 COUNT、池级 GPU(含非 Ready)台账。
  *
- * 全是精确计数,替代前端在截断列表(200/500 条)里数数的错误口径。
+ * 全是精确计数,不从截断列表(200/500 条)推算。
  * @summary Admin Overview
  */
 export const adminOverviewApiAdminV1OverviewGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OverviewOut> => {
@@ -2097,7 +2097,7 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
 
 /**
  * 在线调整策略参数(即时生效,GET /policies 与计费/回收同步跟随)。
- * 审计 detail 记变更前后值与原因(改策略与改价同级,须答得出「从多少改成多少」)。
+ * 审计 detail 记变更前后值与原因。
  * @summary Admin Update Policies
  */
 export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
@@ -2492,12 +2492,11 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 /**
  * 租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
  *
- * 订单/调账/异常/实例全以 user_id 指代租户,运营常拿着 id 找人:id 命中行插在首页最前,
- * 手机号后缀命中行保持原序随后。手机号只回掩码。按号码/id 检索是敏感读,显式落一条审计
- * (中间件默认只审计写操作)。
+ * id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
+ * 按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
  *
  * 实名信息:readonly 脱敏;其余角色明文 —— 响应里只要真含实名字段(有人已实名),
- * 本次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
+ * 该次明文读就落一条审计;全空实名或脱敏响应不记,避免列表页刷审计写放大。
  * @summary Admin List Tenants
  */
 export const adminListTenantsApiAdminV1TenantsGet = async (params?: AdminListTenantsApiAdminV1TenantsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageTenantOut> => {

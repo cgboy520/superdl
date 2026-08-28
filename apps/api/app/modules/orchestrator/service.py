@@ -1,12 +1,10 @@
 """编排服务:实例生命周期的唯一入口(门面)。
 
-事务纪律:
-- 状态变更只走 transition()(乐观锁 + 同事务 instance_events + 迁移监听器)
-- 「改 DB + 动 K8s」一律 outbox;请求路径绝不直接调 K8s
+事务纪律:状态变更只走 transition()(乐观锁 + 同事务 instance_events + 迁移监听器);
+「改 DB + 动 K8s」一律 outbox,请求路径绝不直接调 K8s。
 
-拆分:状态迁移原语 → transitions.py;SSH 端口池 → ports.py;billing/管理端
-查询聚合 → queries.py。本文件保留创建/操作/接入/日志主链路,并再导出全部拆出符号,
-跨模块仍只经 app.modules.orchestrator.service 访问(lint-imports 契约不变)。
+状态迁移原语在 transitions.py、SSH 端口池在 ports.py、查询聚合在 queries.py,本文件
+再导出它们:跨模块只经 app.modules.orchestrator.service 访问(lint-imports 强制)。
 """
 
 import base64
@@ -164,8 +162,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# 单实例访问密钥上限。密钥行永不删(吊销只写 revoked_at,审计要看得见谁在什么时候
-# 吊销了哪把),没有上限就等于给已鉴权用户开了一条无限追加写的口子
+# 单实例活跃密钥上限;密钥行永不删(吊销只写 revoked_at),没有上限即一条无限追加写的口子
 MAX_API_KEYS_PER_INSTANCE = 20
 # 端点公网域名左标签前缀,与 deploy 侧 Gateway listener 的 hostname 通配同一形态
 ENDPOINT_SLUG_PREFIX = "svc-"
@@ -182,11 +179,8 @@ def jupyter_host(instance_uuid: str, settings: Settings | None = None) -> str:
 def jupyter_origin(instance_uuid: str, settings: Settings | None = None) -> str:
     """实例 Jupyter 的浏览器 origin:`https://<主机名>` 或 `https://<主机名>:<端口>`。
 
-    与 `jupyter_host` 分开是因为两者的使用面正好相反:HTTPRoute 的 hostname 与 SSH 连接串
-    只认**不带端口**的主机名(Gateway API 的 hostname 里写端口直接被 CRD 拒收),而入场票据
-    URL 与 JUPYTER_ALLOW_ORIGIN 必须带端口 —— 浏览器的同源判定把端口算进 origin。
-    少一个端口号的表现极具迷惑性:页面打得开,内核的 WebSocket 却被自己的 CORS 全挡掉,
-    看上去像「内核连不上」。
+    入场票据 URL 与 JUPYTER_ALLOW_ORIGIN 必须带端口(浏览器同源判定把端口算进 origin),
+    HTTPRoute hostname 与 SSH 连接串只认不带端口的 `jupyter_host`,两者不可互换。
     """
     s = settings or get_settings()
     host = jupyter_host(instance_uuid, s)
@@ -197,19 +191,13 @@ def jupyter_origin(instance_uuid: str, settings: Settings | None = None) -> str:
 
 def service_endpoint_host(slug: str, settings: Settings | None = None) -> str:
     """服务端点主机名:<slug>.<service_domain_suffix>。
-
-    HTTPRoute hostname / 用户看到的 URL / 鉴权回调解析 slug 三处同一口径,只从这里拼。
-    """
+    HTTPRoute hostname / 用户看到的 URL / 鉴权回调解析 slug 三处同一口径,只从这里拼。"""
     s = settings or get_settings()
     return f"{slug}.{s.service_domain_suffix}"
 
 
 def endpoint_slug_from_host(host: str | None) -> str | None:
-    """从 Host 头反解端点 slug。不匹配本环境的服务域名后缀一律 None(交调用方拒绝)。
-
-    比对后缀而不是「取第一段」:后者会把 <slug>.app.<域名>(Jupyter 域)也认成端点,
-    等于让 Jupyter 域名成为鉴权端点的别名。
-    """
+    """从 Host 头反解端点 slug;不匹配本环境的服务域名后缀一律 None(交调用方拒绝)。"""
     if not host:
         return None
     name = host.split(":")[0].strip().rstrip(".").lower()
@@ -217,10 +205,8 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
     if not name.endswith(suffix):
         return None
     slug = name[: -len(suffix)]
-    # 只收单段左标签:多段说明是 <x>.<slug>.svc.<域名> 这种,不属本平台签发的端点。
-    # 再卡一道 ep- 前缀:当部署把 Jupyter 与端点放在**同一个**后缀下(两类入口靠端口
-    # 分开,见 config.jupyter_url_port)时,后缀比对不再能把两类域名分开 —— 少了这一条,
-    # Jupyter 域名就成了鉴权端点的别名(查不到 slug 仍是 401,但函数的契约已经假了)。
+    # 只收单段左标签 + svc- 前缀:部署可把 Jupyter 与端点放在同一后缀下(靠端口分开),
+    # 少了这两条 Jupyter 域名就成了鉴权端点的别名
     if "." in slug or not slug.startswith(ENDPOINT_SLUG_PREFIX):
         return None
     return slug
@@ -229,9 +215,8 @@ def endpoint_slug_from_host(host: str | None) -> str | None:
 def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
     return {
         "sku_name": sku.name,
-        # SKU **原价**时价快照(字符串,JSONB 不存 Decimal)。instances.price_hourly 落的是
-        # 折后有效价,竞价转按量要把它还原成原价 —— 拿折后价 ÷ 当时的折扣反推不行:
-        # 策略是在线可调的,反推用的是「现在的折扣」而不是「当时的折扣」
+        # SKU 原价时价快照(字符串,JSONB 不存 Decimal);折扣策略在线可调,竞价转按量
+        # 只能读它还原原价,不能拿折后价反推
         "base_price_hourly": format(sku.price_hourly, "f"),
         "gpu_model": sku.gpu_model,
         "tier": sku.tier,
@@ -255,16 +240,11 @@ async def _require_cluster_for_pool(
     *,
     with_data_disk: bool = False,
 ) -> None:
-    """下发门禁:能力缺位即时 409,而非等 Pod Pending 到超时。
+    """下发门禁:能力缺位即时 409,而非等 Pod Pending 到超时。判据与 `build_gpu_request` 同源。
 
-    判据与 `build_gpu_request` 完全同源 —— **先看要不要卡,再看落哪个池**:
-    - `gpu_count == 0`(CPU 实例)不申请任何 `nvidia.com/*`、`scheduler_name` 为 None,
-      走默认调度器。**即使它挂在 hami 池上,hami-scheduler 也不是它落地的前置**,
-      拿 HAMi 就绪去拦它,等于让 HAMi 挂掉连带挡住一批根本不用 GPU 的实例。
-    - 其余按池判:HAMi 只有 hami 池依赖,Kata RuntimeClass 只有 kata 池依赖
-      (mig 池由 gpu-operator 的 MIG manager 管,无独立门禁项)。
-
-    StorageClass 实例盘人人要挂,数据盘按需 —— 这一条与要不要卡无关。
+    先看要不要卡再看落哪个池:gpu_count == 0(CPU 实例)走默认调度器,即使挂在 hami 池上
+    也不查 HAMi 就绪;其余按池判,hami 池查 HAMi、kata 池查 RuntimeClass(mig 池由
+    gpu-operator 的 MIG manager 管,无独立门禁项)。StorageClass 实例盘人人要挂,数据盘按需。
     """
     if gpu_count > 0:
         if pool_label == POOL_HAMI:
@@ -293,10 +273,7 @@ def _env_aad(instance_uuid: str) -> str:
 
 def _encode_env(env: dict[str, str], secret_keys: set[str], *, instance_uuid: str) -> str:
     """用户环境变量的落库形态:整包 JSON 的 AES-GCM 密文,AAD 绑实例 uuid。
-
-    明文项也一起加密:分两列存会让「哪些键是密文」这件事本身泄漏给任何能读这张表的
-    身份,而分列没有任何收益 —— 明文项的值同样是用户数据。
-    """
+    明文项一起加密不分列存:分列会把「哪些键是密文」本身泄漏给能读这张表的身份。"""
     payload = {
         "plain": {k: v for k, v in env.items() if k not in secret_keys},
         "secret": {k: v for k, v in env.items() if k in secret_keys},
@@ -313,11 +290,10 @@ def instance_env(instance: Instance) -> tuple[dict[str, str], dict[str, str]]:
 
 
 def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
-    """一次性入场票据:code(单次)+ 60s TTL + HMAC 签名(密钥=Jupyter token 本体)。
+    """一次性入场票据:code(单次)+ TTL + HMAC 签名(密钥=Jupyter token 本体)。
 
-    票据 URL 落在实例自己的域名上,由镜像内 bootstrap handler 验签、核销并
-    Set-Cookie 第一方会话 cookie;token 从此不进 URL(访问日志/浏览器历史/Referer)。
-    验签密钥随 token 轮换(reset-jupyter-token),旧票据即全部作废。
+    镜像内 bootstrap handler 验签核销后 Set-Cookie 第一方会话 cookie,token 不进 URL
+    (访问日志/浏览器历史/Referer);验签密钥随 token 轮换,旧票据即全部作废。
     """
     settings = get_settings()
     code = secrets.token_urlsafe(12)
@@ -340,8 +316,8 @@ async def _validate_image_ref(
     """
     if not is_valid_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
-    # 服务型实例要求版本钉死:它 restartPolicy=Always,可变 tag 会让一次无人值守的
-    # 容器重启把线上服务换成另一个版本(见 core.registry.is_pinned_image_ref)
+    # 服务型实例要求版本钉死:它 restartPolicy=Always,可变 tag 会让一次无人值守的容器重启
+    # 换掉线上版本
     if require_pinned and not is_pinned_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefNotPinned")
     allowed = effective_image_allowlist(await get_effective_platform_config(session))
@@ -363,12 +339,9 @@ async def _check_user_quota(
 ) -> None:
     """每用户配额(实例数 / GPU 总数 / CPU 实例 vCPU 总数);K8s 侧 ResourceQuota 为兜底。
 
-    生效值走统一校验链(account.get_user_limits:用户覆盖 → 平台策略 → env 默认);
-    vCPU 维只有平台策略层(`max_vcpus_per_user`),无用户级覆盖列。
-
-    两维刻意互不相交:GPU 实例只吃 `max_gpus_per_user`,CPU 实例只吃
-    `max_vcpus_per_user`。让 GPU 实例也计 vCPU,会让一个 8 卡户被 CPU 额度先卡死;
-    让 CPU 实例计 GPU,则是拿 0 去比上限,等于没有闸门。
+    生效值走 account.get_user_limits(用户覆盖 → 平台策略 → env 默认);vCPU 维只有平台
+    策略层 `max_vcpus_per_user`,无用户级覆盖列。GPU 实例只计 GPU 维、CPU 实例只计 vCPU 维,
+    两维互不相交。
     """
 
     limits = await account_service.get_user_limits(session, user_id)
@@ -422,16 +395,12 @@ async def _check_user_quota(
 def _sku_free_capacity(
     sku: "Sku", specs: list["NodeSpec"], *, gpu_node_vcpu_cap: int
 ) -> tuple[int | None, int]:
-    """该 SKU 的近似可分配量:返回 (匹配台账行数据是否存在的哨兵, 可售实例数)。
+    """该 SKU 的近似可分配量:返回 (台账哨兵, 可售实例数)。
 
-    第一项为 None 表示台账无此池(×型号)数据,调用方据此放行交调度器裁决;
-    GPU 档下第一项是「Ready 空闲卡合计」,CPU 档下只是匹配到的节点行数(无卡可数)。
-    只有 Ready 节点计入:NotReady/Cordoned/Missing 不卖。
-
-    GPU 档:(池, 型号) 匹配 + 按算力份额折算可售实例数(超卖生效在调度层)。
-    CPU 档:**不按型号匹配**(gpu_model 是空串,按型号匹配对它恒不成立),只按池;
-    可售数走 catalog.sellable_cpu_slots 的 vCPU/内存上限口径。
-    两条都走 nodes/catalog 的公共口径,与管理端容量预览同一份算法。
+    哨兵为 None 表示台账无此池(×型号)数据,调用方据此放行交调度器裁决。
+    GPU 档按 (池, canonical 型号) 匹配,哨兵是 Ready 空闲卡合计(NotReady/Cordoned/Missing
+    不卖),可售数按算力份额折算;CPU 档只按池匹配(gpu_model 是空串),哨兵是匹配到的节点
+    行数,可售数走 catalog.sellable_cpu_slots。与管理端容量预览同一份算法。
     """
     if sku.tier == TIER_CPU:
         matching = nodes_service.pool_specs(specs, sku.pool_label)
@@ -459,14 +428,11 @@ async def _soft_admit_capacity(
     market: str = MARKET_ON_DEMAND,
     user_id: int | None = None,
 ) -> None:
-    """创建软准入:台账明确显示该 (池, 型号) 可分配量不足 → 先尝试抢占竞价实例,仍不足则 409。
+    """创建软准入:台账显示该 (池, 型号) 可分配量不足 → 先尝试抢占竞价实例,仍不足则 409。
 
-    台账 60s 粒度,只是近似:无数据(巡检未覆盖/全新集群)一律放行,交调度器裁决;
-    放行后仍可能调度超时转 failed,本判断只挡「确定卖不出去」的单。
-
-    抢占只对 **GPU 档的非竞价请求**生效:竞价买的就是「有富余才给」,让它去抢别人
-    等于把风险转嫁给更早下单的人;CPU 档的容量口径是 vCPU/内存而不是卡数,套不上
-    「腾几张卡」这套换算。
+    台账 60s 粒度只是近似:无数据一律放行交调度器裁决,本判断只挡「确定卖不出去」的单。
+    抢占只对 GPU 档的非竞价请求生效:竞价请求不许抢别人,CPU 档的容量口径是 vCPU/内存
+    而非卡数,套不上「腾几张卡」的换算。
     """
     policies = await get_effective_policies(session)
     specs = await nodes_service.list_node_specs(session)
@@ -476,8 +442,7 @@ async def _soft_admit_capacity(
     if matching_free is None:
         return
     sellable -= await _reserved_slots(session, sku)
-    # 要占几份容量:GPU 实例按卡数,CPU 实例(gpu_count=0)占 1 台的位置。
-    # 写成 max(1, gpu_count) 会让「0 卡要 0 份」这种恒成立的比较悄悄放行所有 CPU 单
+    # 要占几份容量:GPU 实例按卡数,CPU 实例(gpu_count=0)占 1 台的位置
     needed = gpu_count if gpu_count > 0 else 1
     if sellable < needed and market != MARKET_SPOT and sku.tier != TIER_CPU:
         from app.modules.orchestrator import preempt as preempt_mod
@@ -507,15 +472,11 @@ async def _soft_admit_capacity(
 
 
 async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> dict[int, int]:
-    """sku_id → 被未到期包周期实例占住的槽位数(**一次查询**,市场页按 SKU 批量取)。
+    """sku_id → 被未到期包周期实例占住的槽位数(一次查询,市场页按 SKU 批量取)。
 
-    台账里 `gpu_used` 只数真在跑的 Pod,包月用户关一晚机,他那张卡在台账上就是空闲的;
-    别人买走之后他早上开不了机 —— 那是比超卖更难向他解释的事故。这里在控制面层面
-    把周期内的实例继续算作占用(**物理层不预留**,卡确实空着,这一点必须在创建页
-    与 docs/reference/billing.md 里写明)。
-
-    只算**同一条 SKU** 的停机/冻结实例:同池同型号但规格不同的实例,槽位大小不一样,
-    折算成本 SKU 的槽位数只会给出一个假精确的值,而软准入本来就是近似闸门。
+    台账 `gpu_used` 只数真在跑的 Pod,包月用户关机时那张卡在台账上是空闲的;这里在控制面
+    层面把周期内的停机/冻结实例继续算作占用(物理层不预留,见 docs/reference/billing.md),
+    只算同一条 SKU 的实例。
     """
     if not sku_ids:
         return {}
@@ -545,21 +506,13 @@ async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> d
 
 
 async def _reserved_slots(session: AsyncSession, sku: "Sku") -> int:
-    """单条 SKU 的包周期预留槽位(创建软准入用)。口径见 _reserved_slots_by_sku。
-
-    台账里 `gpu_used` 只数真在跑的 Pod,包月用户关一晚机,他那张卡在台账上就是空闲的;
-    别人买走之后他早上开不了机 —— 那是比超卖更难向他解释的事故。这里在控制面层面
-    把周期内的实例继续算作占用(**物理层不预留**,卡确实空着,这一点必须在创建页
-    与 docs/reference/billing.md 里写明)。
-
-    """
+    """单条 SKU 的包周期预留槽位(创建软准入用)。口径见 _reserved_slots_by_sku。"""
     return (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
 
 
 async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
-    """该用户 creating/starting 实例的时费合计:尚未跑起来不算「在途」,
-    assert_can_afford 看不到它们,由调用方并入 additional_hourly 防止连续开户绕过护栏。
-    """
+    """该用户 creating/starting 实例的时费合计:它们还没跑起来,assert_can_afford 看不到,
+    调用方必须并入 additional_hourly,否则连续开户可绕过余额护栏。"""
     rows = (
         (
             await session.execute(
@@ -578,11 +531,8 @@ async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
 
 
 def _new_endpoint_slug() -> str:
-    """公网端点左标签:svc- + 10 位 base32(约 50 bit 熵)。
-
-    刻意不用 instance.uuid:内部主键不该出现在公网域名、TLS SNI、访问日志与
-    第三方 Referer 里 —— 那等于把「有多少台实例、编号怎么排」白送出去。
-    """
+    """公网端点左标签:svc- + 10 位 base32(约 50 bit 熵)。不用 instance.uuid:内部主键
+    不该出现在公网域名、TLS SNI、访问日志与第三方 Referer 里。"""
     raw = base64.b32encode(secrets.token_bytes(7)).decode().lower().rstrip("=")
     return f"{ENDPOINT_SLUG_PREFIX}{raw[:10]}"
 
@@ -595,11 +545,8 @@ async def _create_service_endpoint(
     health_path: str | None,
     require_api_key: bool,
 ) -> ServiceEndpoint:
-    """建服务端点行。slug 撞 UNIQUE 就换一个重试,最多 3 次。
-
-    每次插入包在 SAVEPOINT 里:不包的话一次碰撞会把整笔建实例事务打成
-    rollback-only,重试的第二次插入必然再炸,「重试 3 次」形同虚设。
-    """
+    """建服务端点行,slug 撞 UNIQUE 就换一个重试(最多 3 次)。
+    每次插入必须包在 SAVEPOINT 里,否则一次碰撞会把整笔建实例事务打成 rollback-only。"""
     for attempt in range(_SLUG_ATTEMPTS):
         endpoint = ServiceEndpoint(
             instance_id=instance.id,
@@ -648,12 +595,9 @@ async def create_instance(
     """创建实例(202 异步)。返回 (实例, created):created=False = 幂等重放,
     路由据此回 200 + X-Idempotent-Replay 而非 202。
 
-    service 形态额外落一行 service_endpoints,并按 with_ssh 决定要不要 SSH 入口;
-    dev 形态的入参与行为逐字不变。
-
-    market='subscription' 时同事务里再多做两件事:落一行 subscriptions、按周期总价
-    一次性扣款(不允许透支)。扣完还要过一遍在途燃烧率校验 —— 「买得起包月、但买完
-    连正在跑的按量实例都撑不到下一小时」不是我们该放行的单。
+    service 形态额外落一行 service_endpoints,按 with_ssh 决定要不要 SSH 入口。
+    market='subscription' 时同事务再落一行 subscriptions、按周期总价一次性扣款(不许透支),
+    扣完还要过一遍在途燃烧率校验。
     """
     if idempotency_key:
         existing = await find_replay(
@@ -671,8 +615,8 @@ async def create_instance(
     await _require_cluster_for_pool(
         session, sku.pool_label, gpu_count, with_data_disk=data_disk_id is not None
     )
-    # gpu_count 的下界随 SKU 形态走:CPU 规格(max_gpus_per_instance=0)只收 0,
-    # GPU 规格只收 1..max。契约层放开到 ge=0 之后,这里是「0 卡的 GPU 实例」的唯一闸门
+    # CPU 规格(max_gpus_per_instance=0)只收 0 卡,GPU 规格只收 1..max;契约层放到 ge=0,
+    # 这里是「0 卡的 GPU 实例」的唯一闸门
     if sku.max_gpus_per_instance == 0:
         if gpu_count != 0:
             raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
@@ -687,9 +631,8 @@ async def create_instance(
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
     # 抢占在本函数内下发,与建实例同事务:后面任何一步失败都会把回收一起回滚
     await _soft_admit_capacity(session, sku, gpu_count, market=market, user_id=user_id)
-    # 服务端口的三层同源闸门之一(另两层:契约层 InstanceCreate、DB CHECK)。
-    # service 层这层不是冗余:service.create_instance 是唯一入口,巡检/管理端/脚本
-    # 绕过契约层直调时,只有这里还挡着
+    # 服务端口三层同源闸门之一(另两层:契约层 InstanceCreate、DB CHECK);巡检/管理端/脚本
+    # 绕过契约层直调 service 层时,只有这里还挡着
     is_service = workload_type == WORKLOAD_SERVICE
     if is_service:
         if service_port is None:
@@ -708,8 +651,7 @@ async def create_instance(
         if period is None:
             raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodRequired")
         if not sku.period_enabled:
-            # 运营对稀缺型号关掉包周期:不许有人一次把它锁走一年。
-            # 市场页会把 chips 置灰,这里兜住直调接口
+            # 运营对稀缺型号关掉包周期;市场页置灰 chips,这里兜住直调接口
             raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
     # 有效时价:按量即原价,包周期按周期折扣打折(唯一折扣计算点在 core/pricing)
     policies = await get_effective_policies(session)
@@ -758,8 +700,7 @@ async def create_instance(
             image_ref=image_ref,
             status=sm_def.CREATING,
             k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
-            # service 形态没有 Jupyter,但列非空:照常签一把(不进 Pod spec),
-            # 免得为一个用不到的字段开一次可空迁移
+            # service 形态不用 Jupyter,但该列非空:照常签一把,不进 Pod spec
             jupyter_token=_encode_token(jupyter_token, instance_uuid=instance_uuid),
             authorized_keys=selected,
             data_disk_id=disk_id_validated,
@@ -796,9 +737,8 @@ async def create_instance(
             raise
         if is_subscription:
             assert period is not None  # 上面已拦,这里给类型收敛
-            # 先扣款(余额不够即 INSUFFICIENT_BALANCE,文案直指余额),再校验在途:
-            # 此刻钱包行上的余额已是扣后值,assert_can_afford 校验的正是「付完这一单
-            # 还撑不撑得住已经在跑的按量资源」
+            # 必须先扣款再校验在途:此刻钱包余额已是扣后值,校验的才是「付完这一单还撑不
+            # 撑得住已经在跑的按量资源」
             await billing_service.charge_new_subscription(
                 session,
                 user_id=user_id,
@@ -810,8 +750,7 @@ async def create_instance(
                 period=period,
                 period_count=period_count,
                 # 订阅行不带幂等键:整笔创建的幂等由 instances 那行担保(同事务),
-                # 两张表共用一个键反而会在 24h 窗口过后撞车 —— 实例行到期释放键位、
-                # 订阅行还占着,同一个键第二次用就炸在这里
+                # 两张表共用一个键会在幂等窗口过后撞车
                 idempotency_key=None,
             )
             await billing_service.assert_can_afford(
@@ -901,11 +840,8 @@ async def list_instances_page(
     cursor: str | None = None,
     limit: int | None = None,
 ):
-    """用户端实例列表:降序(最新在前)游标分页 + status 精确/name 模糊过滤。
-
-    name 同时匹配 uuid 前缀(照 admin_list_instances 的 q 语义),与资金流水/账单
-    同一套分页语义;released 终态永不出列表。
-    """
+    """用户端实例列表:降序游标分页 + status 精确 / name 模糊过滤。
+    name 同时匹配 uuid 前缀(同 admin_list_instances 的 q 语义);released 终态永不出列表。"""
     from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
     from app.modules.orchestrator.schemas import InstanceOut
 
@@ -920,7 +856,6 @@ async def list_instances_page(
         stmt = stmt.where(Instance.status == status)
     name = (name or "").strip()
     if name:
-        # uuid 前缀可走索引;实例名是短串,量级由 limit 兜住;
         # LIKE 元字符转义:name 里的 %/_ 按字面匹配,不当通配符
         stmt = stmt.where(
             Instance.name.ilike(f"%{like_escape(name)}%", escape="\\")
@@ -937,11 +872,8 @@ async def list_instances_page(
 
 
 async def attach_instance_details(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """回填两个「住在别处」的字段:服务端点 slug 与包周期概要。
-
-    两次批量查询(各自在无相关实例时直接返回),与列表长度无关。
-    列表页和详情页共用同一条路径,免得详情少一个字段、前端为它单开一个请求。
-    """
+    """回填两个住在别处的字段:服务端点 slug 与包周期概要。两次批量查询,与列表长度无关;
+    列表页与详情页共用同一条路径。"""
     await _attach_service_slugs(session, items)
     await _attach_subscriptions(session, items)
 
@@ -956,18 +888,12 @@ async def instance_view(session: AsyncSession, instance: Instance) -> "InstanceO
 
 
 async def _attach_service_slugs(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """给列表项回填端点 slug:**一次查询**,不是每行一次。
-
-    列表页要内联「[服务] svc-xxxx」,而 slug 在另一张表。逐行查是 N+1,
-    让前端逐行打 /service 是把 N+1 搬到网络上(web.md 明令禁止接口调用随行数放大)。
-    """
+    """给列表项回填端点 slug:一次查询,不是每行一次(接口调用不得随行数放大)。"""
     ids = [i.id for i in items if i.workload_type == WORKLOAD_SERVICE]
     if not ids:
         return
-    # .tuples().all() 而不是直接 dict(session.execute(...)):Result 带 .keys()(列名),
-    # dict() 见到 .keys() 就按映射协议对它做下标访问,报的是
-    # "'ChunkedIteratorResult' object is not subscriptable" —— 跟真实原因毫无关系。
-    # .tuples() 还顺带把行类型收成 tuple[int, str],dict() 的返回类型才推得出来
+    # 必须 .tuples().all():直接 dict(Result) 会走映射协议报 "not subscriptable",
+    # .tuples() 还把行类型收成 tuple[int, str],dict() 的返回类型才推得出来
     slugs = dict(
         (
             await session.execute(
@@ -984,11 +910,7 @@ async def _attach_service_slugs(session: AsyncSession, items: "Sequence[Instance
 
 
 async def _attach_subscriptions(session: AsyncSession, items: "Sequence[InstanceOut]") -> None:
-    """给列表项回填包周期概要:**一次查询**,理由同 _attach_service_slugs。
-
-    列表页要在计费列里内联「包月 · 剩 23 天」和续费入口 —— 那要求每行都知道自己的
-    到期时刻,而 subscriptions 在另一张表(还在另一个模块)。逐行查是 N+1。
-    """
+    """给列表项回填包周期概要:一次查询,理由同 _attach_service_slugs。"""
     from app.modules.orchestrator.schemas import InstanceSubscriptionOut
 
     ids = [i.id for i in items if i.market == MARKET_SUBSCRIPTION]
@@ -1048,10 +970,9 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
 
 
 async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
-    """(重新)占用数据盘标记。failed 恢复开机时:失败边缘已解挂(detach),盘若还在就重新占用;
-    盘已被用户删掉则放弃挂载点(系统盘数据仍在,实例照常能开)。
-    FOR UPDATE 锁盘行:否则恢复开机与 delete_disk 并发时存在「边挂边擦」窗口。
-    挂载校验(active / 配额已下发 / 未挂他处)与创建时同一入口 attach_for_instance,不另抄一份。"""
+    """(重新)占用数据盘标记:盘还在就重新占用,已被用户删掉则放弃挂载点(实例照常能开)。
+    必须 FOR UPDATE 锁盘行,否则与 delete_disk 并发存在「边挂边擦」窗口;
+    挂载校验(active / 配额已下发 / 未挂他处)走与创建同一入口 attach_for_instance。"""
     if instance.data_disk_id is None:
         return
     disk = await session.get(DataDisk, instance.data_disk_id, with_for_update=True)
@@ -1071,9 +992,8 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
     recovered = instance.status == sm_def.FAILED
     if instance.status != sm_def.STOPPED and not recovered:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
-    # 实例盘钉在原节点(TopoLVM node affinity):节点失联(Missing)时开机会 Pending 到
-    # 超时转 failed,前置拦截给可执行说明。台账无该行(巡检未覆盖/测试集群)一律放行,
-    # 交调度器裁决(与软准入口径一致);NotReady 属瞬时态,不拦
+    # 实例盘钉在原节点(TopoLVM node affinity):节点 Missing 时开机必 Pending 到超时转
+    # failed,前置拦掉;台账无该行一律放行交调度器裁决,NotReady 属瞬时态不拦
     if instance.node_name:
         node = await nodes_service.get_node_spec(session, instance.node_name)
         if node is not None and node.status == "Missing":
@@ -1089,8 +1009,7 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
         with_data_disk=instance.data_disk_id is not None,
     )
     if instance.market == MARKET_SUBSCRIPTION:
-        # 包周期已预付整段周期,开机不看余额;但周期已过就不能再开
-        # (到期链路会停机 → 冻结 → 回收,允许开机等于白送算力)
+        # 包周期已预付整段周期,开机不看余额;但周期已过不能再开,否则等于白送算力
         await billing_service.assert_subscription_active(session, instance.id)
     else:
         estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
@@ -1098,12 +1017,11 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
     if recovered:
         # 故障恢复:failed → stopped(复用同一块实例盘)→ 走正常开机链路
         await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
-    # 所有开机路径统一校验数据盘挂载:盘已删则放弃挂载点(实例照常开),
-    # 盘处于非 active(deleting/grace/frozen)即拒绝并提示,防止挂到擦除中的目录
+    # 所有开机路径统一校验数据盘挂载:盘已删则放弃挂载点,非 active 即拒绝,防止挂到擦除中的目录
     await _rebind_data_disk(session, instance)
     await transition(session, instance, sm_def.STARTING, reason="user_start", actor="user")
-    # 新一轮就绪观察从零起算:陈旧 unready_since(上次失联 episode 的残留)会把
-    # 新 running 段的计费截断到过去时刻,也会让 reconciler 的宽限判定立即超时
+    # 必须清 unready_since:残留值会把新 running 段的计费截断到过去时刻,
+    # 也会让 reconciler 的宽限判定立即超时
     instance.unready_since = None
     enqueue(session, "instance.start", {"instance_id": instance.id})
     await session.commit()
@@ -1139,10 +1057,8 @@ async def renew_instance(
 ) -> tuple[Instance, Any, bool]:
     """续费包周期实例。返回 (实例, 报价, created);created=False = 幂等重放。
 
-    续费同时刷新 `instances.price_hourly` —— 用户可以换周期续(包月转包年),
-    有效时价随之变;不刷新的话列表页会一直显示上一个周期的折后价。
-    冻结中的实例续费即解冻(回到 stopped,由用户自己开机):
-    自动开机要过容量与调度,失败了反而给出「续费成功但机器没起来」的坏体验。
+    换周期续(包月转包年)会改有效时价,故同时刷新 `instances.price_hourly`;
+    冻结中的实例续费即解冻回 stopped,由用户自己开机。
     """
     instance = await get_instance(session, user_id, uuid)
     if instance.market != MARKET_SUBSCRIPTION:
@@ -1186,21 +1102,14 @@ async def subscribe_instance(
 ) -> tuple[Instance, Any, bool]:
     """按量实例转包周期。返回 (实例, 报价, created);created=False = 幂等重放。
 
-    **顺序是这个函数的全部要害**:先把转换前那段按量账结清,再翻 `market`。
-    反过来的话,`billing_candidates` 会按翻新后的 market 把这台实例整个排除掉,
-    水位线之后还没出账的小时就永远没人结了 —— 用户白拿转换前那段算力。
-    结清用的是转换前的按量时价(此刻 `instance.price_hourly` 还没被改),这也是
-    「先结后翻」的另一个理由。
-
-    只收 running / stopped 两种状态:creating/starting/stopping/releasing 是在途,
-    翻 market 会和收敛路径抢同一行;frozen 是欠费处置中,那笔账得先还清而不是转成预付。
+    必须先结清转换前那段按量账再翻 `market`:反过来 `billing_candidates` 会按新 market
+    排除该实例,水位线之后未出账的小时永远没人结;结算也要用转换前的按量时价。
+    只收 running / stopped:在途状态翻 market 会和收敛路径抢同一行,frozen 得先还清欠账。
     """
     instance = await get_instance(session, user_id, uuid)
     if idempotency_key:
-        # 重放必须最先问:转换成功后 market 已经是 subscription,重放请求会撞上下面
-        # 「只有按量实例可以转」那条守卫,拿到一个与真实情况毫不相干的 400;更糟的是
-        # 它还会先跑一遍结算,而此刻 price_hourly 已是折后价 —— 等于拿包周期的价格
-        # 去补一笔本该按按量收的账
+        # 重放必须最先问:转换后 market 已是 subscription,重放会撞上「只有按量实例可以转」
+        # 拿到 400,还会拿已是折后价的 price_hourly 再补一笔本该按按量收的账
         replayed = await billing_service.find_subscription_replay(
             session, user_id=user_id, key=idempotency_key
         )
@@ -1258,20 +1167,13 @@ async def subscribe_instance(
 async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     """竞价实例转按量(免被回收)。已经是按量则原样返回(幂等,不报错)。
 
-    `market` 是「怎么买」而不是资源形态,翻过来不动 Pod、不重调度 —— 用户跑到一半
-    发现任务快完了、不想被回收,这一步必须是零中断的。
-
-    计价口径:**一小时一价,以结算时的实例单价为准**。转换会把当前整点小时整体改按
-    按量价(见 billing.reprice_current_hour)—— `bills_hourly` 一小时只有一行、
-    只有一个 unit_price,横跨两个价的小时没有第二种表达方式,而留一行
-    `unit_price × seconds ≠ amount` 的账没法向任何人解释。这条要写进确认弹窗。
-
-    原价从 `spec.base_price_hourly` 取,不从折后价反推:折扣是在线可调的策略,
-    反推用的是「现在的折扣」而不是「当时的折扣」,改过一次策略就再也还原不回去。
+    翻 `market` 不动 Pod、不重调度,零中断。计价口径是一小时一价:转换把当前整点小时整体
+    改按按量价(billing.reprice_current_hour),`bills_hourly` 一小时只有一个 unit_price。
+    原价从 `spec.base_price_hourly` 取,不从折后价反推(折扣策略在线可调)。
     """
     instance = await get_instance(session, user_id, uuid)
     if instance.market == MARKET_ON_DEMAND:
-        return instance  # 幂等:目标状态已达成,重试不该拿到一个莫名其妙的 400
+        return instance  # 幂等:目标状态已达成
     if instance.market != MARKET_SPOT:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.toOnDemandNotSpot")
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
@@ -1293,8 +1195,7 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
         )
     instance.market = MARKET_ON_DEMAND
     instance.price_hourly = base
-    # 转按量后单价涨了,余额得撑得住新的燃烧率 —— 撑不住的话转完立刻会被欠费巡检停机,
-    # 那不如现在就告诉他去充值
+    # 转按量后单价涨了,余额得撑得住新的燃烧率:撑不住的话转完立刻会被欠费巡检停机
     await billing_service.assert_can_afford(session, user_id)
     await session.commit()
     logger.info("spot_converted_to_on_demand", instance_id=instance.id, user_id=user_id)
@@ -1322,8 +1223,7 @@ async def release_instance(
 ) -> Instance:
     instance = await get_instance(session, user_id, uuid)
     if instance.status in (sm_def.RELEASING, sm_def.RELEASED):
-        # 幂等释放:释放中/已释放直接回当前状态(照 delete_disk 的 deleting 写法),
-        # 重试/双击不报 400
+        # 幂等释放:释放中/已释放直接回当前状态,重试/双击不报 400
         return instance
     if instance.status not in (
         sm_def.STOPPED,
@@ -1350,13 +1250,11 @@ def build_pod_spec(
     image_pull_secret: str | None = None,
     endpoint: ServiceEndpoint | None = None,
 ) -> InstancePodSpec:
-    """构造 Pod spec。data_disk_subpath 由调用方从盘记录读出后传入:
-    subPath 的唯一事实源是 `data_disks.juicefs_subpath`,就地重算会与擦除路径对不上。
-    image_pull_secret 是平台已托管到该 ns 的拉取凭据 Secret 名(core/registry)。
+    """构造 Pod spec。data_disk_subpath 必须由调用方从 `data_disks.juicefs_subpath` 读出传入,
+    就地重算会与擦除路径对不上;image_pull_secret 是托管到该 ns 的拉取凭据 Secret 名;
     endpoint 是服务型实例的端点行(service 形态必传,dev 形态恒 None)。
 
-    两形态的差别集中在本函数,不散到 k8s 层:k8s 层只按 spec 字段建对象,
-    「dev 有 Jupyter、service 有对外端点」这条业务口径不该在那边再判一次。
+    dev/service 两形态的差别集中在本函数,k8s 层只按 spec 字段建对象。
     """
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
@@ -1368,9 +1266,8 @@ def build_pod_spec(
     is_service = instance.workload_type == WORKLOAD_SERVICE
     if is_service and endpoint is None:
         raise RuntimeError(f"service instance {instance.uuid} has no service_endpoints row")
-    # 「这台开没开 SSH」是落库的事实(instances.with_ssh),不从 ssh_port 是否为空反推:
-    # 端口是 outbox 建 Pod 时才分配的,创建那一刻两者都是空
-    # 不要 SSH 的实例本就不进端口池,ssh_port 恒 None 是正常态,不是漏分配
+    # 开没开 SSH 只认 instances.with_ssh,不从 ssh_port 反推:端口是 outbox 建 Pod 时才分配的,
+    # 不要 SSH 的实例不进端口池,ssh_port 恒 None 属正常态
     if instance.with_ssh and instance.ssh_port is None:
         raise RuntimeError("build_pod_spec requires allocated ssh_port")
     plain_env, secret_env = instance_env(instance)
@@ -1387,9 +1284,7 @@ def build_pod_spec(
         # spec 会进 etcd/审计快照,任何 pods:get/list 身份(含只读 SA)都能读走
         secrets_ = {"JUPYTER_TOKEN": _token_plain(instance)}
     # 规格倍率:GPU 实例按卡数放大 CPU/内存(N 卡收 N 倍价,Guaranteed QoS 下 CPU 是硬限,
-    # 否则多卡被单份 CPU 饿死、节点侧资源被低估占用);CPU 实例(gpu_count=0)规格就是
-    # SKU 本身,倍率恒 1。写 max(1, gpu_count) 结果碰巧一样,但那是「把 0 卡当 1 卡放大」,
-    # 语义与这里要表达的「不放大」是两回事。系统盘任何形态都不随卡数放大。
+    # 否则多卡被单份 CPU 饿死);CPU 实例倍率恒 1。系统盘任何形态都不随卡数放大
     spec_n = instance.gpu_count if instance.gpu_count > 0 else 1
     return InstancePodSpec(
         namespace=instance.k8s_namespace,
@@ -1402,8 +1297,7 @@ def build_pod_spec(
         mem_gb=instance.spec["mem_gb"] * spec_n,
         disk_gb=instance.spec["disk_gb"],
         ssh_node_port=instance.ssh_port,
-        # service 形态不建 Jupyter 路由(k8s 层按 service_port 分叉),这里照常填:
-        # 它同时是 SSH 的展示主机名,而 dataclass 上它是必填字段
+        # service 形态不建 Jupyter 路由,但这里照常填:它同时是 SSH 的展示主机名
         jupyter_host=jupyter_host(instance.uuid, settings),
         env=env,
         secret_env=secrets_,
@@ -1413,8 +1307,8 @@ def build_pod_spec(
         scheduler_name=gpu_req.scheduler_name,
         annotations=gpu_req.annotations,
         image_pull_secret=image_pull_secret,
-        # 服务容器退出必须原地重启(Always):Never 会让一次崩溃变成实例终结,
-        # 而 Pod 重建会换名字,reconciler「Pod 名 = 实例 uuid」的假设整套塌掉
+        # 服务容器必须 Always 原地重启:Never 会让一次崩溃变成实例终结,而 Pod 重建换名字后
+        # reconciler「Pod 名 = 实例 uuid」的假设会整套塌掉
         restart_policy="Always" if is_service else "Never",
         command=tuple(instance.container_command) if instance.container_command else None,
         args=tuple(instance.container_args) if instance.container_args else None,
@@ -1475,8 +1369,7 @@ def build_access(instance: Instance, endpoint: ServiceEndpoint | None = None) ->
         out["ssh_port"] = instance.ssh_port
         out["ssh_command"] = f"ssh root@{ssh_host} -p {instance.ssh_port}"
     if instance.workload_type == WORKLOAD_DEV:
-        # 一次性入场票据(单次、60s):浏览器打在实例域名的 bootstrap handler 上,
-        # 验签核销后 Set-Cookie 第一方会话 cookie 再跳 Jupyter;token 不出现在 URL。
+        # 一次性入场票据:bootstrap handler 验签核销后 Set-Cookie 再跳 Jupyter,token 不进 URL
         out["jupyter_url"] = _new_jupyter_ticket(instance, _token_plain(instance))
     if endpoint is not None:
         out["endpoint_url"] = f"https://{service_endpoint_host(endpoint.public_slug, settings)}"
@@ -1534,8 +1427,7 @@ async def service_endpoint_view(
         ready=instance.status == sm_def.RUNNING and instance.unready_since is None,
         container_command=list(instance.container_command) if instance.container_command else None,
         container_args=list(instance.container_args) if instance.container_args else None,
-        # 密文项只回键名不回值:回了值这个端点就成了「把密文变量读回明文」的入口,
-        # 而「勾了密文就不再回显」是创建页对用户的明确承诺
+        # 密文项只回键名不回值:回值就成了「把密文变量读回明文」的入口
         env=plain_env,
         env_secret_keys=sorted(secret_env),
         created_at=endpoint.created_at,
@@ -1560,10 +1452,7 @@ async def create_api_key(
     session: AsyncSession, user_id: int, uuid: str, *, name: str
 ) -> tuple[ServiceApiKey, str]:
     """新建访问密钥。返回 (行, 明文);明文只此一次,库里只有 HMAC 摘要。
-
-    刻意不支持 Idempotency-Key:重放要能回同一份明文,就得把明文留在库里 ——
-    与「只存摘要」直接冲突。重复提交最多多出一把可吊销的密钥,代价远小于存明文。
-    """
+    不支持 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与只存摘要冲突。"""
     instance, _ = await _require_service_endpoint(session, user_id, uuid)
     live = (
         await session.execute(
@@ -1632,10 +1521,7 @@ async def verify_endpoint_key(
     session: AsyncSession, *, slug: str | None, key: str | None
 ) -> EndpointAuthResult:
     """网关 extAuth 回调的校验链:端点存在 → 实例 running → 密钥有效且属于该端点。
-
-    任一环节不过都抛同一个 401(同码同文案):区分「密钥错」与「端点不存在」等于
-    给任意第三方一个枚举平台端点的预言机。
-    """
+    任一环节不过都抛同一个 401(同码同文案),区分开等于给第三方一个枚举平台端点的预言机。"""
     if not slug:
         raise _endpoint_denied()
     endpoint = (
@@ -1644,8 +1530,7 @@ async def verify_endpoint_key(
     if endpoint is None:
         raise _endpoint_denied()
     instance = await session.get(Instance, endpoint.instance_id)
-    # 非 running(关机/欠费冻结/释放中)一律拒:Pod 可能还在优雅删除期里活着,
-    # 光靠删 HTTPRoute 收口有窗口
+    # 非 running 一律拒:Pod 可能还在优雅删除期里活着,光靠删 HTTPRoute 收口有窗口
     if instance is None or instance.status != sm_def.RUNNING:
         raise _endpoint_denied()
     if not endpoint.require_api_key:
@@ -1661,8 +1546,7 @@ async def verify_endpoint_key(
     # 高熵串,查得到不等于用得上
     if row is None or row.revoked_at is not None or row.instance_id != endpoint.instance_id:
         raise _endpoint_denied()
-    # 回源即直写,不节流也不加进程内缓存:网关侧每次调用都回源(extAuth 结果不可缓存),
-    # 叠缓存只会把吊销延迟拉长,却换不来什么 —— 这是主键级单行 UPDATE
+    # 回源即直写不节流:叠缓存只会把吊销延迟拉长,而这只是主键级单行 UPDATE
     row.last_used_at = now_utc()
     await session.commit()
     return EndpointAuthResult(slug=endpoint.public_slug, key_id=row.id)
@@ -1735,12 +1619,8 @@ async def read_instance_logs(
 async def estimate_available_many(session: AsyncSession, skus: list["Sku"]) -> dict[int, int]:
     """市场近似库存(批量):sku_id → 可售实例数。
 
-    数据源是节点台账(node_specs,巡检 60s 粒度),按 (池, canonical 型号) 双维度
-    聚合 Ready 节点空闲卡;请求路径不碰 K8s,台账一次查询供全部 SKU。
-    台账无该池×型号数据 → 0(与市场页「无货」语义一致)。
-
-    要减掉包周期预留:软准入减了而这里不减,市场页就会显示「可开 16 台」、点进去建的时候
-    409 —— 两个数必须同源,否则用户只能靠试错才知道到底有没有货。
+    数据源是节点台账(node_specs,巡检 60s 粒度),请求路径不碰 K8s,一次查询供全部 SKU;
+    台账无该池×型号数据 → 0。必须减掉包周期预留(与软准入同源),否则市场页显示有货而创建 409。
     """
     specs = await nodes_service.list_node_specs(session)
     cap = (await get_effective_policies(session)).gpu_node_cpu_instance_vcpu_cap
@@ -1779,7 +1659,6 @@ async def admin_list_instances(
         stmt = stmt.where(Instance.node_name == node_name)
     q = (q or "").strip()
     if q:
-        # uuid 前缀可走索引;实例名是短串,量级由 limit 兜住;
         # LIKE 元字符转义:q 里的 %/_ 按字面匹配,不当通配符
         stmt = stmt.where(
             Instance.uuid.like(f"{like_escape(q)}%", escape="\\")
@@ -1831,13 +1710,8 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
 
 
 async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: str) -> Instance:
-    """管理端强制回收一台竞价实例(腾容量用)。走与自动抢占**同一条**回收路径。
-
-    与 admin_force_stop 分开一个入口而不是复用它:两者对用户的含义不同 ——
-    强制停止是处置(违规/风控),回收是履行竞价那份「可能被回收」的约定。
-    用同一个 reason 会让用户的时间线上分不出自己是被处置了还是被回收了,
-    也会让「被回收过几次」这类竞价可靠性指标算不出来。
-    """
+    """管理端强制回收一台竞价实例(腾容量用),走与自动抢占同一条回收路径。
+    与 admin_force_stop 分开:两者 reason 不同,用户时间线与竞价可靠性指标要分得开。"""
     from app.modules.orchestrator import preempt as preempt_mod
 
     instance = await admin_get_instance(session, instance_uuid)
@@ -1861,10 +1735,7 @@ async def admin_preempt(session: AsyncSession, instance_uuid: str, *, reason: st
 
 async def system_stop(session: AsyncSession, instance: Instance, *, reason: str) -> None:
     """平台侧停机(巡检调用,actor=system)。同事务落事件 + outbox,不 commit。
-
-    reason 由调用方给:欠费是 arrears_stop,包周期到期是 subscription_expired。
-    两者在用户时间线上是不同的事,共用一个 reason 会让工单无从查起。
-    """
+    reason 由调用方给(欠费 arrears_stop / 到期 subscription_expired),不共用。"""
     await transition(session, instance, sm_def.STOPPING, reason=reason, actor="system")
     enqueue(session, "instance.stop", {"instance_id": instance.id})
 
@@ -1901,10 +1772,7 @@ async def reclaim_frozen(session: AsyncSession, instance: Instance) -> None:
 
 async def stop_all_for_user(session: AsyncSession, user_id: int, *, reason: str) -> int:
     """停掉该用户全部 running 实例(封禁/风控处置用)。同事务落事件 + outbox,不 commit。
-
-    返回被停的台数。creating/starting 本轮停不了(状态机不允许),它们收敛到 running 后
-    由巡检兜住(见 billing.patrol 的冻结用户处置)。
-    """
+    返回被停的台数;creating/starting 本轮停不了,收敛到 running 后由 billing.patrol 兜住。"""
     rows = list(
         (
             await session.execute(

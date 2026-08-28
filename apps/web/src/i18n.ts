@@ -1,7 +1,5 @@
-/**
- * i18n 运行时初始化(main.tsx 顶部副作用引入,先于首次 render)。
- * 语言探测:localStorage("superdl.lang") → navigator;缺译回落 zh-CN(基准语言)。
- */
+/** i18n 运行时初始化(main.tsx 顶部副作用引入,先于首次 render)。
+ *  语言探测:localStorage("superdl.lang") → navigator;缺译回落 zh-CN(基准语言)。 */
 import errorsEn from "@superdl/ui/locales/en-US/errors.json";
 import sharedEn from "@superdl/ui/locales/en-US/shared.json";
 import errorsZh from "@superdl/ui/locales/zh-CN/errors.json";

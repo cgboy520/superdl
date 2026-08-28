@@ -69,9 +69,8 @@ class TestPrewarmFullChain:
     async def test_cpu_pool_nodes_are_never_prewarmed(self, sm, fake: FakeOrchestrator) -> None:
         """无卡机不铺预热行。
 
-        挂了说明:平台镜像目录整体是 CUDA 镜像(单个 8~27 GB),会被整套铺到
-        cpu 池的无卡机上 —— 百 GB 级磁盘换一批那台机器永远用不上 GPU 栈的镜像。
-        fake 的 cpu 节点是 Ready 的,所以这条只可能被「预热选点漏了池维度」挂掉。
+        挂了说明:整套 CUDA 镜像会被铺到 cpu 池的无卡机上。fake 的 cpu 节点是 Ready 的,
+        这条只会被「预热选点漏了池维度」挂掉。
         """
         await make_image(sm)
         await prewarm_patrol(sm)
@@ -213,8 +212,8 @@ class TestPrewarmLifecycle:
     ) -> None:
         """绕过服务层直接改 image_ref(SQL 批量换域名 / 数据修复)时,缓存行必须作废重拉。
 
-        它挂了说明什么坏了:管理端会报「已预热」,而节点上留着旧 digest 的镜像——
-        重推的镜像修复永远到不了实例(admin_update_image 的清行只覆盖走接口那条路)。
+        挂了说明:管理端报「已预热」而节点上留着旧 digest 的镜像,重推的修复到不了实例
+        (admin_update_image 的清行只覆盖走接口那条路)。
         """
         image_id = await make_image(sm)
         await prewarm_patrol(sm)
@@ -278,7 +277,7 @@ class TestPrewarmLifecycle:
         image_id = await make_image(sm)
         counts = await prewarm_patrol(sm)
         assert counts["planned"] == 3  # 只铺 Ready 三节点,sick-node 不在期望集
-        # 手工种一条 sick-node 的 failed 行(模拟它曾经 Ready 过):重试不应派发
+        # 手工种一条 sick-node 的 failed 行(节点转 NotReady 前铺下的行):重试不应派发
         async with sm() as session:
             session.add(
                 ImageNodeCache(

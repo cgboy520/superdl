@@ -151,9 +151,9 @@ async def send_subscription_notice(
 ) -> None:
     """包周期到期链路通知(站内信 + 短信)。
 
-    dedup_key 带 subscription/instance id 而不是只按天分桶:同一天名下两台实例先后到期,
-    只按天去重会让第二条被吞掉 —— 用户以为只有一台要停。日桶仍在,防的是巡检每 30 分钟
-    重复发同一条(自动续费失败会连着几轮都失败)。
+    dedup_key 带 subscription/instance id 而不是只按天分桶:同一天名下两台实例先后到期时,
+    只按天去重会吞掉第二条。日桶仍在,防的是巡检每 30 分钟重复发同一条
+    (自动续费失败会连着几轮都失败)。
     """
     titles = {
         "expiring": "包周期即将到期",
@@ -185,7 +185,7 @@ async def send_preemption_notice(
     """竞价实例被抢占的通知(站内信 + 短信)。
 
     dedup_key 带 instance_id 且**不按天分桶**:同一台实例一天内可能被抢占、用户重开、
-    再被抢占,按天去重会把第二次吞掉 —— 而第二次恰恰是用户最需要知道的那条。
+    再被抢占,按天去重会把第二次吞掉。
     去重靠 dedup_key 里的实例 id + 当前时刻分钟位:同一次抢占的重试不会重复发,
     不同次抢占各发各的。
     """
@@ -354,7 +354,7 @@ async def list_notifications(
 
 
 async def unread_count(session: AsyncSession, user_id: int) -> int:
-    """未读站内信条数(顶栏角标):DB count,与列表游标分页解耦(P2)。"""
+    """未读站内信条数(顶栏角标):DB count,与列表游标分页解耦。"""
     from sqlalchemy import func
 
     return int(

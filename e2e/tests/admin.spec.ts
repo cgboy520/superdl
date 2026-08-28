@@ -85,16 +85,14 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   const maskedPhone = `${phone.slice(0, 3)}****${phone.slice(-4)}`;
   const tenantId = await registerTenant(request, phone);
 
-  // ── 1. seed admin 首登:强制 MFA 绑定(TOTP 现算)────────────────────
+  // ── 1. seed admin 首登:强制 MFA 绑定(TOTP 现算)
   const adminSecret = await loginAndBindMfa(page, SEED_ADMIN.username, SEED_ADMIN.password);
   const adminToken = await readToken(page);
 
-  // ── 2. 复核人 finance 建号(经 API,理由入审计)──────────────────────
-  // 必须早于调账发起:服务端拒绝「发起后才创建的账号」当第二人
-  // (adminapi/service.py 的 adjustReviewerTooNew,防自建第二账号绕复核)
+  // ── 2. 复核人 finance 建号(经 API,理由入审计)
+  // 必须早于调账发起:服务端拒绝「发起后才创建的账号」当第二人(adjustReviewerTooNew)
   const financeName = `fin-e2e-${String(Date.now()).slice(-6)}`;
-  // 调账原因同样要带随机后缀:它是本用例定位表格行的唯一依据,写死的话第二次跑会同时
-  // 命中上一轮留下的那条,strict mode 直接判失败 —— 只在全新库上能过的用例不是闸门
+  // 调账原因必须带随机后缀:它是定位表格行的唯一依据,写死会同时命中上一轮那条而 strict mode 失败
   const adjReason = `e2e 冒烟调账 ${String(Date.now()).slice(-6)}`;
   const created = await request.post(`${API}/api/admin/v1/admins`, {
     headers: { Authorization: `Bearer ${adminToken}` },
@@ -107,7 +105,7 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   });
   expect(created.status(), await created.text()).toBe(201);
 
-  // ── 3. 调账发起(admin 经 UI)────────────────────────────────────────
+  // ── 3. 调账发起(admin 经 UI)
   await page.goto(`${ADMIN}/finance`);
   await page.getByRole("tab", { name: /调账/ }).click();
   await page.getByRole("button", { name: "发起调账" }).click();
@@ -126,7 +124,7 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   // 自复核禁手(双人制衡):发起人行的「通过」必须禁用
   await expect(adjRow.getByRole("button", { name: /^通\s*过$/ })).toBeDisabled();
 
-  // ── 4. 复核人 finance 首登同样强制绑定 TOTP;绑定后进调账页复核 ────────
+  // ── 4. 复核人 finance 首登同样强制绑定 TOTP;绑定后进调账页复核
   await loginAndBindMfa(page, financeName, "finance-e2e-pass1");
   await page.goto(`${ADMIN}/finance`);
   await page.getByRole("tab", { name: /调账/ }).click();
@@ -139,7 +137,7 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
     page.locator(".ant-table-row", { hasText: adjReason }).getByText("已生效"),
   ).toBeVisible({ timeout: 10_000 });
 
-  // ── 5. 冻结租户(ops 写权限;seed admin 经已绑定 TOTP 重新登录)────────
+  // ── 5. 冻结租户(ops 写权限;seed admin 经已绑定 TOTP 重新登录)
   await loginWithMfa(page, SEED_ADMIN.username, SEED_ADMIN.password, adminSecret);
   await page.goto(`${ADMIN}/tenants`);
   const tenantRow = page.locator(".ant-table-row", { hasText: maskedPhone });
@@ -155,7 +153,7 @@ test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验�
   });
   await expect(tenantRow.getByText("已冻结")).toBeVisible({ timeout: 15_000 });
 
-  // ── 6. 安全策略·两步验证开关:关闭 → 新管理员密码即登录;重新开启 → 回到强制绑定 ──
+  // ── 6. 安全策略·两步验证开关:关闭 → 新管理员密码即登录;重新开启 → 回到强制绑定
   const setMfa = (enabled: boolean) =>
     request.put(`${API}/api/admin/v1/platform-config`, {
       headers: { Authorization: `Bearer ${adminToken}` },

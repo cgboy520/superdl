@@ -3,10 +3,9 @@
 Fake 恒跑;Real 由 SUPERDL_TEST_KUBECONFIG 门控(与 test_k8s_real_smoke.py 一致,
 CI kind job 驱动;未设置时 real 参数跳过、fake 照常)。
 
-kind 上 JuiceFS 作业永不完成(无 SC/PVC):Real 侧「完成返回」路径用 patch Job
-status 注入成功态 —— conformance 关心协议状态机(进行中抛错/完成返回/幂等),
-不依赖存储后端。Job 命名规则取自 real.py 实现(wipe-/quota-set-/quota-del-),
-real.py 改名即红,属有意为之的契约钉死。
+kind 上 JuiceFS 作业永不完成(无 SC/PVC):Real 侧「完成返回」路径用 patch Job status 注入
+成功态 —— conformance 只关心协议状态机(进行中抛错/完成返回/幂等)。Job 命名规则取自
+real.py(wipe-/quota-set-/quota-del-),改名即红,属有意为之的契约钉死。
 """
 
 import os
@@ -151,8 +150,7 @@ class TestDiskQuotaContract:
 class TestReadInstanceLogsContract:
     """read_instance_logs:成功路径的形状契约(str、行数受 tail_lines 约束、参数透传)。
 
-    注:Fake 对不存在的 Pod 也合成日志(dev 联调需要,见 fake.py 注释),
-    Real 直通 K8s 错误 —— 这是两侧有意的行为差,本套件分别钉死。
+    Fake 对不存在的 Pod 也合成日志(见 fake.py),Real 直通 K8s 错误 —— 有意的行为差,分别钉死。
     """
 
     async def test_logs_shape(self, backend: Backend) -> None:

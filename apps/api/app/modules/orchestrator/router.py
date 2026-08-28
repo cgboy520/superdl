@@ -39,8 +39,7 @@ async def create_instance(
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> InstanceOut:
-    # 与充值同一条强制实名开关:开启时算力开通同样拦截(监管对「算力服务」的要求
-    # 不低于「预收款」);此前只拦充值,不开通算力的匿名账号可绕过
+    # 与充值同一条强制实名开关:开启时算力开通同样拦截
     cfg = await get_effective_platform_config(session)
     if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
         raise AppError(
@@ -145,8 +144,7 @@ async def renew_instance(
 ) -> RenewOut:
     """包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
 
-    挂在 instances 下而不是 billing 下:用户的心智是「给这台机器续费」,
-    而实例状态(冻结中续费即解冻)也只能由 orchestrator 这一侧改。
+    冻结中的实例续费即解冻(回到 stopped,由用户自己开机)。
     """
     instance, quoted, created = await service.renew_instance(
         session,
@@ -203,8 +201,7 @@ async def convert_to_on_demand(
 ) -> InstanceOut:
     """竞价实例转按量(免被回收)。已经是按量则原样返回,重试不报错。
 
-    当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准),
-    这一条必须在确认弹窗里写清楚。
+    当前整点小时会整体改按按量价结算(一小时一价,以结算时的实例单价为准)。
     """
     instance = await service.convert_to_on_demand(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")

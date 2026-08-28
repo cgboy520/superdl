@@ -25,8 +25,7 @@ const WHITE = { color: "#fff" } as const;
 
 function NotificationBell() {
   const { t } = useTranslation();
-  // 角标 = unread-count 轻端点(P2):与列表分页解耦,未读超过一页也准确;
-  // 弹层列表走游标分页,底部「加载更多」向下翻页
+  // 角标必须走 unread-count 轻端点而非列表长度,否则未读超过一页就不准;弹层列表另走游标分页
   const countQ = useUnreadCount({ refetchInterval: 30_000 });
   const pagesQ = useNotificationPages();
   const items = (pagesQ.data?.pages ?? []).flatMap((p) => p.items);

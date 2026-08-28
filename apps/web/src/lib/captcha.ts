@@ -1,12 +1,7 @@
-/** 人机校验(阿里云验证码 2.0)前端接入。
- *
- * 行为按 /auth/captcha-config 的 enabled 决定(平台配置·安全策略 captcha_enabled):
- * - 关闭:不加载 SDK,发码请求不带 token;
- * - 开启:动态加载 AliyunCaptcha.js(仅一次),经隐藏触发按钮拉起弹窗验证,
- *   通过回调 captchaVerifyParam 取得一次性 token 后随业务请求提交。
- *
- * token 一次性且 20 分钟内有效(阿里云约束):每次发码都重新拉起验证,不复用。
- */
+/** 人机校验(阿里云验证码 2.0)前端接入。行为按 /auth/captcha-config 的 enabled 决定:
+ *  关闭则不加载 SDK、发码不带 token;开启则动态加载 AliyunCaptcha.js(仅一次),
+ *  经隐藏触发按钮拉起弹窗,回调 captchaVerifyParam 取得的一次性 token 随业务请求提交。
+ *  token 一次性且 20 分钟内有效(阿里云约束),每次发码都必须重新拉起验证,不许复用。 */
 import { captchaConfigApiV1AuthCaptchaConfigGet } from "@superdl/api-client";
 import type { CaptchaConfigOut } from "@superdl/api-client";
 

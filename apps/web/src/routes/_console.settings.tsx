@@ -279,7 +279,7 @@ function DeletionZone({ phone }: { phone: string }) {
 
   const pending = req?.status === "pending";
   const statusMeta = req ? metaOf(deletionStatusMap, req.status) : undefined;
-  // 冷静期截止由服务端给出(cooldown_ends_at),前端不再自行加 7 天
+  // 冷静期截止由服务端给出(cooldown_ends_at),前端不自行加 7 天
   const countdown = pending ? formatDaysUntil(req.cooldown_ends_at) : null;
 
   return (

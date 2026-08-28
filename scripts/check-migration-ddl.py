@@ -160,8 +160,7 @@ def check_file(path: str) -> list[str]:
 
 
 # 这三个 helper 都渲染成 ALTER TABLE ... ADD CONSTRAINT,且都没有 NOT VALID 参数可传。
-# create_primary_key 不在列表里:主键只在建表时加,加在既有表上是另一类问题(要求列非空),
-# 拦它反而会把正常的建表迁移误伤。
+# create_primary_key 不在列表里:主键只在建表时加,拦它会误伤正常的建表迁移
 _CONSTRAINT_HELPERS = frozenset(
     {"create_check_constraint", "create_unique_constraint", "create_foreign_key"}
 )

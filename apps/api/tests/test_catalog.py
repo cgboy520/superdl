@@ -127,7 +127,7 @@ class TestMarket:
 class TestSellablePerGpu:
     def test_decimal_floor_division(self):
         """每卡可售数必须走 Decimal 整除:float 会把 100×1.15 算成 114.999…→ 22,
-        同一 SKU 市场库存与管理端容量预览各差一台(挂了 = 两处口径再次分叉)。"""
+        同一 SKU 市场库存与管理端容量预览各差一台(挂了 = 两处口径分叉)。"""
         from app.modules.catalog.service import sellable_per_gpu
 
         assert sellable_per_gpu("hami", 5, Decimal("1.15")) == 23
@@ -169,9 +169,8 @@ class TestAdminSku:
     async def test_isolation_change_only_when_off_sale(self, client: AsyncClient, sm):
         """在售规格不许改池、也不许改 MIG 切片;下架后两者可一起改。
 
-        挂了说明:市场页挂着的「共享·标准」能被静默改成「共享·经济」、或切片从
-        1g.10gb 变成 2g.20gb ——展示名、规格列与性能承诺都变了,新下单的人拿到的
-        不是他看到的那件商品。
+        挂了说明:在售 SKU 的池与切片能被静默改掉(展示名、规格列与性能承诺随之变),
+        新下单的人拿到的不是市场页上那件商品。
         """
         from tests.helpers import seed_node_spec
 

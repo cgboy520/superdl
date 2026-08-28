@@ -1,7 +1,5 @@
-/**
- * 「对某一行做一次带表单的动作」弹窗(登记打款 / 开票等同形弹窗共用):
- * 顶部说明条 + 表单;校验 → 提交 → 成功提示 + onDone + 关闭,失败走 message_key 目录映射。
- */
+/** 「对某一行做一次带表单的动作」弹窗(登记打款 / 开票共用):顶部说明条 + 表单,
+ *  校验 → 提交 → 成功提示 + onDone + 关闭,失败走 message_key 目录映射。 */
 
 import { Alert, App, Form, type FormInstance, Modal, Space } from "antd";
 import type { ReactNode } from "react";

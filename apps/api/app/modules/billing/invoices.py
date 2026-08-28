@@ -12,8 +12,7 @@
   已开票(issued)账期的 paid 订单不可申请退款,须先红冲(refunds._order_has_issued_invoice,
   申请时对该账期的活跃申请行 FOR UPDATE,与本模块 issue_invoice 的行锁串行);
   开票(issue_invoice)行锁内按当前口径重算金额(在途退款已预扣),申请到开票之间发生退款
-  即 409 驳回重申。登记打款不再复查账期是否已开票:能走到打款的退款早已从票额里扣掉,
-  复查只会把它打成死胡同(只能取消,再申请又被已开票拦下)。
+  即 409 驳回重申。登记打款不复查账期是否已开票:能走到打款的退款早已从票额里扣掉。
 """
 
 from datetime import datetime
@@ -306,9 +305,8 @@ async def issue_invoice(
             params={"status": req.status},
             http_status=409,
         )
-    # 行锁内按当前口径重算:申请到开票之间若发生退款(申请/打款),可开票额已变,
-    # 按旧额开票后用户再拿退款 = 票款双重兑现;不符即 409,驳回由用户按新额重新申请
-    # (create_refund 对本行 FOR UPDATE:在途退款要么已计入本次重算,要么在锁后看到 issued 被拒)
+    # 必须行锁内按当前口径重算:申请到开票之间若发生退款,按旧额开票 = 票款双重兑现;
+    # 不符即 409,由用户按新额重新申请
     current = await _period_billable_amount(session, req.user_id, req.period, excluding=req.amount)
     if current != req.amount:
         raise AppError(

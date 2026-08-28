@@ -1,8 +1,7 @@
 /**
- * 容器实例列表(默认落地页):策略提示条 + 动作行(租用/刷新/密钥设置/状态过滤/搜索)+ 密集表格
- * (名称/状态/规格/GPU利用率 sparkline/计费+今日消费/操作)。
- * 列表走服务端游标分页 + status/name 过滤(状态入 URL);
- * access/events 在行展开时按需加载,不在行内预取;轮询只回刷第一页(摘要列),旧页不重取。
+ * 容器实例列表(默认落地页):策略提示条 + 动作行 + 密集表格。
+ * 列表走服务端游标分页 + status/name 过滤(状态入 URL);access/events 只在行展开时按需加载,
+ * 不在行内预取;轮询只回刷第一页(摘要列),旧页不重取。
  */
 
 import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
@@ -90,11 +89,8 @@ export const Route = createFileRoute("/_console/instances")({
   component: InstancesPage,
 });
 
-/**
- * 展开行(running):SSH / Jupyter / 服务地址快捷工具,access 仅在展开时拉取。
- * 接入信息的字段随形态出现或缺席(服务型没有 Jupyter,没开 SSH 时连 ssh_command 都没有),
- * 一律按「拿到什么渲染什么」写,不能假定字段恒有值。
- */
+/** 展开行(running):SSH / Jupyter / 服务地址快捷工具,access 仅在展开时拉取。
+ *  接入信息的字段随形态出现或缺席,必须按「拿到什么渲染什么」写,不能假定字段恒有值。 */
 function ExpandedTools({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -189,10 +185,7 @@ function ExpandedFailed({ instance }: { instance: InstanceOut }) {
   );
 }
 
-/**
- * 到期横幅正文。auto_renew 已开的实例只留「立即续费」——「开启自动续费」对它是个空动作,
- * 灰着比不出更让人困惑。
- */
+/** 到期横幅正文。auto_renew 已开的实例只留「立即续费」。 */
 function ExpiryBannerBody({
   instance,
   more,
@@ -249,11 +242,8 @@ function ExpiryBannerBody({
   );
 }
 
-/**
- * 到期提醒:名下有临期(active 且剩余 ≤ period_expire_warn_days)的包周期实例时出。
- * 数据源刻意用整表视图而不是本页的分页/筛选结果 —— 横幅不能因为「筛了 running」
- * 或「还没翻到那一页」就消失;它是一次整表查询,不随行数放大接口调用。
- */
+/** 到期提醒:名下有临期(active 且剩余 ≤ period_expire_warn_days)的包周期实例时出。
+ *  数据源必须用整表视图而非本页分页/筛选结果,否则筛了状态或没翻到那页时横幅就不出。 */
 function ExpiryBanner({ onRenew }: { onRenew: (i: InstanceOut) => void }) {
   const { data: policies } = usePolicies();
   const { data: all } = useInstances();
@@ -307,10 +297,8 @@ function UtilCell({
   );
 }
 
-/**
- * 规格列。服务型实例挂 [服务] 标记 + 端点 slug;slug 直接取自 InstanceOut(列表侧一次批量
- * 回填),不为它多打一次请求 —— 列表页仍是「不按行数放大接口调用」。
- */
+/** 规格列。服务型实例挂 [服务] 标记 + 端点 slug;slug 直接取自 InstanceOut,
+ *  不为它多打一次请求(列表页不按行数放大接口调用)。 */
 function SpecCell({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation(["web", "shared"]);
   return (
@@ -354,7 +342,6 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   const [value, setValue] = useState(instance.name);
   const rename = useRenameInstance();
   const { message } = App.useApp();
-  // 失焦即保存(仅在有改动时)
   const save = async () => {
     if (rename.isPending) return;
     const name = value.trim();
@@ -418,8 +405,8 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   );
 }
 
-// 轮询行 memo:react-query 结构共享保证数据未变时引用不变,
-// 5s/30s 轮询只重渲真正变化的行;onDetail 每次渲染都新建,但从 uuid 派生,比较时排除
+// 轮询行 memo:react-query 结构共享保证数据未变时引用不变,只重渲真正变化的行;
+// onDetail 每次渲染都新建但从 uuid 派生,比较时必须排除
 const UtilCellMemo = memo(
   UtilCell,
   (prev, next) =>
@@ -649,8 +636,7 @@ function InstancesPage() {
                   </Button>
                 </Space>
               ) : (
-                // 竞价与按量共用这一支:两者都按秒出小时账,差别只在标记与「可回收」这一句。
-                // price_hourly 在竞价实例上已经是折后价(后端建实例时锁定),这里不再折一次。
+                // 竞价与按量共用这一支,差别只在标记;price_hourly 在竞价实例上已是折后价,不能再折一次
                 <Space orientation="vertical" size={0}>
                   <Space size={6}>
                     {r.market === "spot" ? (

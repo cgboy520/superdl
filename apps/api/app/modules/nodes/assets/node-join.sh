@@ -28,8 +28,8 @@ STATE_DIR="${SUPERDL_JOIN_STATE_DIR:-/var/lib/superdl-node-join}"
 LOG_FILE="${SUPERDL_JOIN_LOG_FILE:-/var/log/superdl-node-join.log}"
 ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
 LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"  # loop 兜底镜像目录(仅显式选择时用)
-# IOMMU 分组目录:非空 = 直通已生效。做成可覆盖是为了让 bats 能造这个状态 ——
-# 直接读宿主 sysfs 会让 kata 用例在任何没开 VT-d 的机器(VM / WSL)上永久红
+# IOMMU 分组目录:非空 = 直通已生效。可覆盖仅为 bats 造状态(直接读宿主 sysfs 会让 kata
+# 用例在任何没开 VT-d 的机器上永久红);生产一律默认值
 IOMMU_GROUPS_DIR="${SUPERDL_JOIN_IOMMU_DIR:-/sys/kernel/iommu_groups}"
 RESUME_UNIT="superdl-node-join-resume"
 TOKEN=""
@@ -41,9 +41,9 @@ NEED_REBOOT=0
 DRIVER_VERSION=""
 CUDA_VERSION=""
 
-# k3s/rke2 安装器 sha256 pin(固定 URL + 校验后执行,替代裸 curl|sh;与 NVIDIA 源 GPG
-# 验证同一信任模型)。上游安装器更新会校验失败并按 failed 上报,需核对上游后更新 pin。
-# SUPERDL_JOIN_PIN_* 仅为 bats 测试与应急处置留的覆盖口(需本机 root,不削弱威胁模型)。
+# k3s/rke2 安装器 sha256 pin(固定 URL + 校验后执行,替代裸 curl|sh;与 NVIDIA 源 GPG 验证
+# 同一信任模型)。上游安装器更新会校验失败并按 failed 上报,核对上游后同步更新本值与
+# deploy/ansible/site.yml 的同名 pin。SUPERDL_JOIN_PIN_* 是 bats 与应急处置的覆盖口(需 root)。
 PIN_K3S_OFFICIAL="${SUPERDL_JOIN_PIN_K3S_OFFICIAL:-ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b}"
 PIN_K3S_CN="${SUPERDL_JOIN_PIN_K3S_CN:-3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863}"
 PIN_RKE2_OFFICIAL="${SUPERDL_JOIN_PIN_RKE2_OFFICIAL:-42983c86d1da64a92061d83afb57630cedd69241989f1b0673f3db6c3d92ee6b}"
@@ -62,15 +62,15 @@ done
 [[ "$(id -u)" == "0" ]] || { echo "必须 root 执行(sudo bash ...)" >&2; exit 2; }
 
 # ---------- 卸载(本地拆除,不碰业务数据) ----------
-# 逆向拆除本脚本安装的一切;superdl-nvme VG 与 loop 镜像属业务数据,一律保留
-# (节点清退后盘数据由平台另行处置,本地脚本绝不自动 vgremove)
+# 逆向拆除本脚本安装的一切。superdl-nvme VG 与 loop 镜像属业务数据,一律保留:
+# 节点清退后盘数据由平台另行处置,本地脚本绝不自动 vgremove
 if [[ "$UNINSTALL" == "1" ]]; then
   echo "==== $(date -Is) node-join --uninstall ===="
   DISTRO_NAME=""
   for d in rke2 k3s; do
     if [[ -d "$ETC_DIR/rancher/$d" ]] || command -v "$d" >/dev/null 2>&1; then DISTRO_NAME="$d"; fi
   done
-  # 本机同时是 server(单机 light):agent 相关一律不动——发行版卸载脚本会把整个控制面拆掉,
+  # 本机同时是 server(单机 light)时 agent 相关一律不动:发行版卸载脚本会把整个控制面拆掉,
   # server 的 config.yaml / registries.yaml 也不属本脚本所有
   SERVER_HERE=0
   if [[ "$DISTRO_NAME" == "k3s" ]] && systemctl is-active --quiet k3s.service 2>/dev/null; then SERVER_HERE=1; fi
@@ -272,7 +272,7 @@ step_precheck() {
   command -v python3 >/dev/null || { echo "缺少 python3"; return 1; }
   command -v systemctl >/dev/null || { echo "需要 systemd"; return 1; }
   # 不用 grep -q:pipefail 下 grep 命中即退出会让仍在输出的 lspci 收到 SIGPIPE,整条判为失败
-  # (PCI 设备多的多卡机必现);grep 读完全部输出再判定。cpu 池本就无卡,不做这一检查
+  # (PCI 设备多的多卡机必现);让 grep 读完全部输出再判定。cpu 池本就无卡,不做这一检查
   if is_cpu_pool; then
     echo "-- cpu 池:跳过 NVIDIA GPU 探测"
   else
@@ -394,7 +394,7 @@ step_nvme_vg() {
       _write_loop_unit
       echo "-- 按登记选择:用 loop 文件做实例盘(${size}G,仅测试,非专用盘性能)"
     else
-      # pvcreate 前硬检查(P2):设备必须存在且为空盘(无文件系统/RAID/分区签名)。
+      # pvcreate 前硬检查:设备必须存在且为空盘(无文件系统/RAID/分区签名)。
       # 登记错设备时 wipefs 能发现签名——宁可入群失败,不可误格有数据的盘
       if [[ ! -b "$dev" ]]; then
         echo "!! NVMe 设备不存在:$dev(登记信息有误?管理端核对节点 NVMe 登记)" >&2
@@ -413,10 +413,9 @@ step_nvme_vg() {
   vgcreate superdl-nvme "${pvs[@]}"
 }
 
-# 实例盘擦除语义(P0-3):lvremove 对 extent 发 NVMe TRIM。TopoLVM lvmd 容器内
-# 由 ConfigMap 注入(见 deploy/cluster/topolvm/lvm-config.configmap.yaml),此处保证
-# 宿主机直接执行 LVM 时同语义(双保险)。幂等:已含 issue_discards 配置则跳过;
-# 追加独立 devices 段,LVM 同键重复段后者生效,与既有配置合并安全。
+# 实例盘擦除语义:lvremove 对 extent 发 NVMe TRIM。TopoLVM lvmd 容器内由 ConfigMap 注入
+# (deploy/cluster/topolvm/lvm-config.configmap.yaml),此处保证宿主机直接执行 LVM 时同语义。
+# 幂等:已含 issue_discards 配置则跳过;追加独立 devices 段,LVM 同键重复段后者生效。
 step_lvm_discards() {
   local conf="$ETC_DIR/lvm/lvm.conf"
   if grep -q "^[[:space:]]*issue_discards[[:space:]]*=" "$conf" 2>/dev/null; then
@@ -533,8 +532,8 @@ step_agent_config() {
     # server 的 config.yaml 不能被 agent 配置覆盖;池标签用本机 kubectl 打到节点对象上
     # (Node 标签持久在集群数据库里,与 server 启动参数无关),对账器据此判定 joined
     echo "-- 本机是 $SERVER_UNIT:不写 agent config,池标签直接打到节点 $(hostname)"
-    # 节点早已 Ready:池标签一落,对账器(30s)立即判 joined(终态,之后的上报一律 404),
-    # 所以驱动/CUDA 版本要在打标签之前上报,否则台账永远缺这两列
+    # 池标签一落,对账器(30s)立即判 joined(终态,之后的上报一律 404),
+    # 所以驱动/CUDA 版本必须在打标签之前上报,否则台账永远缺这两列
     collect_driver_versions
     report agent_config running "server 本机:先上报驱动版本,再打池标签"
     server_kubectl label node "$(hostname)" "superdl.io/pool=$pool" "${extra[@]}" --overwrite

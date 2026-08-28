@@ -1,8 +1,7 @@
-# cnpg-cluster(cloudnative-pg/cluster chart):平台库(钱包/账本)进 K8s 的唯一受支持
-# 形态(deploy/README.md「生产数据库要求」)——3 实例 + S3 持续 WAL 归档(RPO 分钟级)
-# + 每日定时基础备份;禁止单实例上生产。仅 environments/<档>.yaml 置 cnpg.enabled=true 时安装。
-# 键名已对照所钉 chart cluster-v0.8.1 模板逐一核验(backups.* / cluster.monitoring /
-# scheduledBackups[].method);升版时以新版模板为准,先 helm template 验证。
+# cnpg-cluster(cloudnative-pg/cluster chart):平台库(钱包/账本)进 K8s 的唯一受支持形态
+# (deploy/README.md「生产数据库要求」)——3 实例 + S3 持续 WAL 归档(RPO 分钟级)+ 每日定时
+# 基础备份,禁止单实例上生产。仅 environments/<档>.yaml 置 cnpg.enabled=true 时安装。
+# 键名按所钉 chart cluster-v0.8.1 的模板写;升版时以新版模板为准,先 helm template 验证。
 version:
   postgresql: "18"            # 与 dev/test、备份镜像(postgres:18)对齐
 cluster:
@@ -32,8 +31,7 @@ backups:
     region: "CHANGE_ME_S3_REGION"        # 如 cn-hangzhou
     bucket: "CHANGE_ME_BUCKET"
     path: "/cnpg"
-  # 凭据不落 values:预建 Secret(键名 ACCESS_KEY_ID / ACCESS_SECRET_KEY,
-  # 以所钉 chart 版本模板为准):
+  # 凭据不落 values:预建 Secret(键名 ACCESS_KEY_ID / ACCESS_SECRET_KEY,以所钉 chart 模板为准)
   #   kubectl -n superdl create secret generic cnpg-backup-s3 \
   #     --from-literal=ACCESS_KEY_ID=<ak> --from-literal=ACCESS_SECRET_KEY=<sk>
   secret:

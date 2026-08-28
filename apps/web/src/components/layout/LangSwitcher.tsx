@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { SUPPORTED_LANGS } from "../../i18n";
 
-/** 语言切换器(顶栏深色 / 登录页等浅色面用 variant="light")。 */
+/** 浅色面(登录页等)须传 variant="light",默认按顶栏深底渲染。 */
 export function LangSwitcher({ variant = "dark" }: { variant?: "dark" | "light" }) {
   const { t, i18n } = useTranslation();
   const value = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";

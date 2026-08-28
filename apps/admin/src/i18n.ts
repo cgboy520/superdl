@@ -1,7 +1,5 @@
-/**
- * 管理端 i18n 运行时:admin ns + 共享 shared/errors 目录。
- * 语言探测同 web(localStorage "superdl.lang" → navigator),fallback zh-CN。
- */
+/** 管理端 i18n 运行时:admin ns + 共享 shared/errors 目录。
+ *  语言探测同 web(localStorage "superdl.lang" → navigator),fallback zh-CN。 */
 import errorsEn from "@superdl/ui/locales/en-US/errors.json";
 import sharedEn from "@superdl/ui/locales/en-US/shared.json";
 import errorsZh from "@superdl/ui/locales/zh-CN/errors.json";

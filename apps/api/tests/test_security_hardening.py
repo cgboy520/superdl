@@ -20,7 +20,7 @@ class TestLoginRateLimit:
         assert resp.json()["code"] == "RATE_LIMITED"
         # 限流响应必须告诉客户端窗口剩余秒数(Retry-After)
         assert resp.headers["retry-after"].isdigit()
-        # 封禁期内连正确密码也 429:廉价准入先于 bcrypt,封禁中的请求不再付哈希成本
+        # 封禁期内连正确密码也 429:廉价准入先于 bcrypt,封禁中的请求不付哈希成本
         resp = await client.post(
             "/api/admin/v1/auth/login", json={"username": "admin-user", "password": "pass1234"}
         )
@@ -70,7 +70,7 @@ class TestLoginRateLimit:
 
 
 class TestAccountLevelLock:
-    """账号级锁定(P1-16):撞库可以换 IP,但换不了目标账号。
+    """账号级锁定:撞库可以换 IP,但换不了目标账号。
 
     直连对端 IP 不可经 HTTP 头伪造(信任边界为直连),测试层换 IP 只能直接调 service。
     """
@@ -188,8 +188,8 @@ class TestProdConfigValidation:
     def _complete_prod_kwargs() -> dict:
         """能通过 prod 校验的最小配置;各用例在此基础上注入一个坏值。
 
-        只含 provider 选择与基础设施项:短信/验证码凭据不在启动期校验(可经平台配置中心
-        在线录入),alertmanager_token 与 prometheus_url 只在 lifespan 打 WARNING。
+        只含 provider 选择与基础设施项:短信/验证码凭据不在启动期校验,
+        alertmanager_token 与 prometheus_url 只在 lifespan 打 WARNING。
         """
         return {
             "_env_file": None,  # 运行时参数,stub 未暴露
@@ -609,7 +609,7 @@ class TestAuthenticateHeader:
 class TestAuditOnUnhandledException:
     async def test_500_is_audited(self, sm):
         """未捕获异常(result=500)也要落审计行:500 恰恰是最需要留痕的结果。
-        Uniform500Middleware 在链内层渲染 500(异常不再穿透审计中间件),
+        Uniform500Middleware 在链内层渲染 500(异常不穿透审计中间件),
         审计走正常响应路径留痕,result 仍为 500。"""
         from httpx import ASGITransport
         from sqlalchemy import select

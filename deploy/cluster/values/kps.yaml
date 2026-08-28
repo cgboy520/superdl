@@ -1,40 +1,33 @@
 # kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
 prometheus:
   prometheusSpec:
-    # chart 默认 0,进 Prometheus CR 会被 CRD 拒(须 ≥60),helm upgrade 直接失败。
-    # 900 = prometheus-operator 未设该字段时的自身默认(启动探针最长等待 15 分钟),
-    # 写死只为让 upgrade 能过,不改变现网行为。
+    # 必须显式给值:chart 默认 0,进 Prometheus CR 会被 CRD 拒(须 ≥60),helm upgrade 直接失败。
+    # 900 即 prometheus-operator 自身的默认(启动探针最长等 15 分钟),写死不改变现网行为。
     maximumStartupDurationSeconds: 900
     retention: 15d
     retentionSize: "40GB"      # 约为 PVC 的 80%,到量先删最旧块,与 retention 双闸
-    # 持久化:默认 emptyDir 意味着 Pod 重建丢全部指标历史(用量对账曲线断档)。
-    # 升级路径(已部署集群):StatefulSet 的 volumeClaimTemplates 不可变,需先
+    # 持久化必配:默认 emptyDir,Pod 重建即丢全部指标历史(用量对账曲线断档)。
+    # 改本节存储参数须先删 StatefulSet(volumeClaimTemplates 不可变):
     # `kubectl -n monitoring delete sts prometheus-kube-prometheus-stack-prometheus --cascade=orphan`
-    # 再 helmfile apply(或接受重建;空窗期告警仍由 Alertmanager 工作,历史指标可放弃)。
+    # 再 helmfile apply;空窗期告警仍由 Alertmanager 工作。
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # 共享存储(JuiceFS,RWX)而非节点本地 NVMe——节点死后可跨节点重调度
-          # 重挂载(本地卷随节点一起丢)。取舍记录:监控指标可重建(长期数据已进 PG
-          # usage_hourly)、JuiceFS 性能对监控查询足够,节点复活前历史查询断档可接受。
-          # light 档默认无 JuiceFS,由 values/light/kps-light.yaml 覆盖回 topolvm。
+          # 共享存储(JuiceFS,RWX)而非节点本地 NVMe:节点死后可跨节点重调度重挂载。
+          # light 档无 JuiceFS,由 values/light/kps-light.yaml 覆盖回 topolvm。
           storageClassName: superdl-juicefs
           accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 50Gi}
-    # 副本数 1:可用性由 JuiceFS 底层(元数据走 PG、数据走对象存储)
-    # 与跨节点重调度提供;双副本 Prometheus 需双份存储 + 查询去重,对「可重建的监控数据」
-    # 不抵成本。判据变化(如对监控查询连续性有 SLA)再评 Thanos/双副本。
+    # 单副本:可用性由 JuiceFS 底层(元数据走 PG、数据走对象存储)与跨节点重调度提供。
     replicas: 1
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
       requests: {cpu: 500m, memory: 2Gi}
       limits: {memory: 4Gi}    # 只限内存:CPU 限速会拖慢查询/规则评估,OOMKill 反而更可见
-    # postgres_exporter(最小方案记录):cnpg 进集群时 operator 自带监控
-    # (values/cnpg-cluster.yaml monitoring.enabled=true,生成 PodMonitor + 默认规则,
-    # 无需另起 exporter);托管 PG 走云厂商指标,不在本栈抓取——故此处不重复加
-    # postgres_exporter additionalScrapeConfigs。
+    # 不加 postgres_exporter:cnpg 由 operator 自带监控(values/cnpg-cluster.yaml
+    # monitoring.enabled=true 生成 PodMonitor + 默认规则),托管 PG 走云厂商指标。
     # HAMi 自带指标:scheduler 的池级 vGPU 分配 + vGPUmonitor 的容器级利用率
     # (共享档实例曲线的数据源;端口/标签为 HAMi v2.9 默认值)
     additionalScrapeConfigs:
@@ -78,8 +71,8 @@ grafana:
     passwordKey: admin-password
   grafana.ini:
     security:
-      # 管理端节点页是自绘曲线 + 「在 Grafana 打开」外链,不做 iframe 嵌入,
-      # 故不放开内嵌、cookie 不跨站;改用 iframe 方案时这三项须一起改。
+      # 管理端节点页是自绘曲线 + 「在 Grafana 打开」外链,不做 iframe 嵌入,故不放开内嵌、
+      # cookie 不跨站;改用 iframe 方案时这三项须一起改。
       allow_embedding: false
       content_security_policy: true
       content_security_policy_template: >-
@@ -90,9 +83,9 @@ grafana:
       cookie_samesite: lax
     auth.anonymous:
       enabled: false
-  # Dashboard as code:SuperDL 基础大盘随监控栈 provisioning(sidecar 发现 grafana_dashboard
-  # ConfigMap),实例/账单/节点三面板起步。改盘 = 改本 values(随仓库评审);Grafana UI 内
-  # 手改不落盘、Pod 重启即失,需要长期盘一律回写这里。light 档 grafana.enabled=false 时忽略。
+  # Dashboard as code:基础大盘随监控栈 provisioning(sidecar 发现 grafana_dashboard ConfigMap)。
+  # 改盘只能改本 values:Grafana UI 内手改不落盘、Pod 重启即失,长期盘一律回写这里。
+  # light 档 grafana.enabled=false 时忽略。
   dashboards:
     superdl:
       superdl-overview:
@@ -205,8 +198,8 @@ alertmanager:
         - matchers: ['severity=~".+"']
           receiver: superdl-api
     inhibit_rules:
-      # Watchdog 抑制:任一真实告警 firing 期间,探活 Watchdog 不再重复通知(降噪);
-      # Watchdog 本身路由到 null,这里兜底多通道/未来路由变更时的刷屏
+      # Watchdog 抑制:任一真实告警 firing 期间,探活 Watchdog 不再重复通知;
+      # Watchdog 本身已路由到 null,这条兜住多通道或路由变更后的刷屏
       - source_matchers: ['severity=~"warning|critical"']
         target_matchers: ['alertname="Watchdog"']
       # 同故障只报最高级:critical 抑制同名同租户的 warning
@@ -234,9 +227,9 @@ alertmanager:
             auth_username: "alertmanager@superdl.example.com"  # CHANGE_ME
             auth_password_file: /etc/alertmanager/secrets/superdl-smtp-password/password
             require_tls: true
-      # 第三通道(仅 critical):钉钉群机器人。Alertmanager 原生不签发钉钉格式,
-      # 经 prometheus-webhook-dingtalk 转换器中转,sidecar 部署方式见 alertmanagerSpec 注释;
-      # 转换器不可用时本通道静默失败,邮件 + 平台 webhook 仍兜底。
+      # 第三通道(仅 critical):钉钉群机器人。Alertmanager 原生不签发钉钉格式,须经
+      # prometheus-webhook-dingtalk 转换器中转(sidecar,见 alertmanagerSpec 注释);
+      # 转换器不可用时本通道静默失败,邮件 + 平台 webhook 兜底。
       - name: superdl-dingtalk
         webhook_configs:
           - url: "http://localhost:8060/dingtalk/oncall/send"
@@ -245,8 +238,7 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          # 同 Prometheus——共享存储(JuiceFS,RWX),节点死后单副本可跨节点重调度;
-          # 取舍记录见上方 prometheusSpec 存储/副本注释。
+          # 同 Prometheus:共享存储(JuiceFS,RWX),节点死后单副本可跨节点重调度。
           storageClassName: superdl-juicefs
           accessModes: ["ReadWriteMany"]
           resources:
@@ -256,9 +248,9 @@ alertmanager:
       # kubectl -n monitoring create secret generic superdl-smtp-password \
       #   --from-literal=password=<SMTP 口令>
       - superdl-smtp-password
-    # 钉钉触达:prometheus-webhook-dingtalk 转换器以 sidecar 进 Alertmanager Pod
-    # (不新增 helm release;superdl-dingtalk receiver 已指 http://localhost:8060/dingtalk/oncall/send)。
-    # 上线时取消下面注释,镜像钉版本;access_token 不落 values,经 Secret 注入:
+    # 钉钉触达:转换器以 sidecar 进 Alertmanager Pod(不新增 helm release;superdl-dingtalk
+    # receiver 已指 http://localhost:8060/dingtalk/oncall/send)。
+    # 启用时取消下面注释并把镜像钉死版本;access_token 不落 values,经 Secret 注入:
     #   kubectl -n monitoring create secret generic superdl-dingtalk-token \
     #     --from-literal=token=<钉钉机器人 access_token>
     # containers:

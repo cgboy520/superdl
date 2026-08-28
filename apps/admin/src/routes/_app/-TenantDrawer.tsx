@@ -1,8 +1,6 @@
 /** 租户下钻抽屉:实名摘要 + 账单/流水/订单/实例/配额/事件 六 Tab + 跳审计。
- *
- * 从 tenants.tsx 拆出(dash 前缀 = 非路由组件,与 -AdminsTab 同款约定):
- * 抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。
- */
+ *  文件名 dash 前缀 = 非路由组件,不进 TanStack Router 的路由树。
+ *  抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。 */
 
 import {
   formatDate,
@@ -324,11 +322,8 @@ function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
           },
         },
         {
-          // 购买模式:包周期按周期分化成 包日/包周/包月/包年,标签取 packages/ui 的同一份映射,
-          // 不在管理端另拼一遍。到期信息已内联在 subscription 里(按量与已释放实例为 null),
-          // 不逐行再打接口。
-          // 第二行分两种写法:在保给到期日(还能续多久是运营要看的),失效给状态词并上色 ——
-          // 只给一个过去的日期,在密表里一眼扫过去和在保行长得一模一样
+          // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍;到期信息已内联在
+          // subscription 里(按量与已释放实例为 null),不逐行再打接口。在保给到期日,失效给状态词并上色
           title: t("tenants.colMarket"),
           width: 150,
           render: (_, r) => {

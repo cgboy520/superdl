@@ -1,7 +1,4 @@
-/**
- * 筛选链 chip 行(市场/创建页)。单选;禁用项可见但灰置 + tooltip 原因。
- * 「全部」这类聚合项由调用方用哨兵值表达。
- */
+/** 筛选链 chip 行(市场/创建页)。单选,禁用项可见但灰置 + tooltip 原因;聚合项由调用方用哨兵值表达。 */
 
 import { brand, colorPrimary } from "@superdl/ui";
 import { Button, Space, theme, Tooltip, Typography } from "antd";

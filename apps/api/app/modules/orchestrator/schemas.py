@@ -10,8 +10,8 @@ from app.core.pricing import MARKET_ON_DEMAND, MARKET_SUBSCRIPTION, MAX_PERIOD_C
 from app.modules.billing.schemas import SubscriptionQuoteOut
 from app.modules.orchestrator import statemachine as sm_def
 
-# 非终态清单(released 是唯一终态,历史行无界):状态机是唯一事实源,这里只做跨模块导出
-# (模块边界只放行 service/schemas;管理端总览按它逐状态计数)
+# 非终态清单(released 是唯一终态):状态机是唯一事实源,这里只为跨模块导出
+# (模块边界只放行 service/schemas)
 NON_TERMINAL_STATUSES: tuple[str, ...] = tuple(sm_def.TRANSITIONS)
 
 # 实例形态。dev = SSH + JupyterLab 开发机;service = 对外 HTTPS 服务容器。
@@ -19,9 +19,8 @@ NON_TERMINAL_STATUSES: tuple[str, ...] = tuple(sm_def.TRANSITIONS)
 WORKLOAD_DEV = "dev"
 WORKLOAD_SERVICE = "service"
 
-# 平台在实例容器内占用的端口:22 = sshd,8888 = JupyterLab。用户服务落在这两个上,
-# 服务 Service 的 targetPort 会与 SSH / Jupyter 撞车。三层同源:契约层(本常量)、
-# service 层(create_instance)、DB CHECK(models.ServiceEndpoint)
+# 平台在实例容器内占用的端口:22 = sshd,8888 = JupyterLab,用户服务落上去会与其
+# targetPort 撞车。三层同源:契约层(本常量)、service 层、DB CHECK(models.ServiceEndpoint)
 RESERVED_SERVICE_PORTS: tuple[int, ...] = (22, 8888)
 
 # 平台自己往容器里注入的环境变量名段:JUPYTER_*(Jupyter 配置与 token)、SUPERDL_*(自留)、
@@ -30,8 +29,8 @@ _RESERVED_ENV_PREFIXES = ("JUPYTER_", "SUPERDL_")
 _RESERVED_ENV_NAMES = frozenset({"AUTHORIZED_KEYS"})
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# service 形态专属入参。dev 形态显式传任何一项都 422:build_pod_spec 的 dev 分支根本不读
-# 它们,静默忽略会让用户以为「启动命令/环境变量已生效」,而实例跑的是镜像原样
+# service 形态专属入参。dev 形态显式传任何一项都 422:build_pod_spec 的 dev 分支不读它们,
+# 静默忽略会让用户以为「启动命令/环境变量已生效」
 _SERVICE_ONLY_FIELDS: tuple[str, ...] = (
     "container_command",
     "container_args",
@@ -49,9 +48,8 @@ class InstanceSubscriptionOut(BaseModel):
 
     period: str
     period_count: int
-    # 下单时的 SKU **原价**时价快照。下发它是为了让续费预览与实扣同源:
-    # 续费在后端就是按这个数重新报价的,前端拿不到它就只能用「折后价 ÷ 当前周期折扣」
-    # 反推 —— 4 位单价的量化不可逆,反推值在长周期大卡数上会与实扣差到分级
+    # 下单时的 SKU 原价时价快照。下发它让续费预览与实扣同源:4 位单价的量化不可逆,
+    # 前端拿折后价反推会在长周期大卡数上与实扣差到分级
     unit_price: MoneyOut
     started_at: datetime
     expires_at: datetime
@@ -82,12 +80,12 @@ class RenewOut(BaseModel):
 
 class InstanceCreate(BaseModel):
     sku_id: int
-    # 0 = CPU 实例(SKU 的 max_gpus_per_instance 也为 0);下界与上界的实际配对
-    # 按 SKU 形态在 service.create_instance 判,契约层只挡明显越界
+    # 0 = CPU 实例(SKU 的 max_gpus_per_instance 也为 0);实际配对按 SKU 形态在
+    # service.create_instance 判,契约层只挡明显越界
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
-    # 不带 min_length:不开 SSH 的服务型实例本就没有公钥可选。「什么时候必须非空」
-    # 由下面的 model_validator 按形态判(dev 恒需要,service 只在 with_ssh 时需要)
+    # 不带 min_length:不开 SSH 的服务型实例没有公钥可选;何时必须非空由下面的
+    # model_validator 按形态判(dev 恒需要,service 只在 with_ssh 时需要)
     ssh_key_ids: list[int] = Field(default_factory=list)
     name: str | None = Field(default=None, max_length=64)
     data_disk_id: int | None = None
@@ -107,8 +105,7 @@ class InstanceCreate(BaseModel):
     with_ssh: bool = False
 
     # ---- 购买模式 ----
-    # spot 与 subscription 互斥(market 是单值):竞价的对价是可被回收,
-    # 而包周期的对价是买断一段时间,两者放一起没有任何自洽的语义
+    # spot 与 subscription 互斥(market 是单值):可被回收与买断一段时间没有自洽的合并语义
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
     period_count: int = Field(default=1, ge=1, le=MAX_PERIOD_COUNT)
@@ -119,16 +116,15 @@ class InstanceCreate(BaseModel):
             if self.period is None:
                 raise ValueError(render_message("orchestrator.periodRequired", None))
         elif "period" in self.model_fields_set or "period_count" in self.model_fields_set:
-            # 按量单里带周期字段一律拒:静默忽略会让用户以为自己买的是包月,
-            # 直到月底看见按小时出的账单才发现
+            # 按量单里带周期字段一律拒,静默忽略会让用户以为自己买的是包月
             raise ValueError(render_message("orchestrator.periodOnOnDemand", None))
         return self
 
     @model_validator(mode="after")
     def _workload_shape(self) -> "InstanceCreate":
         if self.workload_type == WORKLOAD_DEV:
-            # 判「显式传了」而不是「值非默认」:require_api_key/with_ssh 是布尔,
-            # 按值判分不出「没传」与「传了刚好等于默认值」,后者会被静默放过
+            # 必须判「显式传了」而不是「值非默认」:布尔字段按值判分不出「没传」与
+            # 「传了刚好等于默认值」
             extra = [f for f in _SERVICE_ONLY_FIELDS if f in self.model_fields_set]
             if extra:
                 raise ValueError(
@@ -178,9 +174,8 @@ class InstanceOut(BaseModel):
     # 不拿 ssh_port 是否为空代替:端口是 outbox 建 Pod 时才分配的,creating 期间恒空
     with_ssh: bool
     ssh_port: int | None
-    # 服务型实例的端点 slug(dev 恒 None)。放在列表项里是为了让列表页零成本内联
-    # 「[服务] svc-xxxx」——不然前端只能逐行去打 /service,而那正是 web.md 明令
-    # 禁止的「接口调用随行数放大」。列表侧由一次批量查询回填(见 service._attach_slugs)
+    # 服务型实例的端点 slug(dev 恒 None)。放在列表项里让列表页零成本内联,免得前端逐行
+    # 打 /service(接口调用不得随行数放大);由一次批量查询回填(service._attach_service_slugs)
     service_slug: str | None = None
     data_disk_id: int | None
     frozen_deadline: datetime | None
@@ -231,13 +226,11 @@ class ServiceEndpointOut(BaseModel):
     protocol: str
     health_path: str | None
     require_api_key: bool
-    # 就绪 = 实例 running 且巡检没观察到 Pod not-ready。服务实例持续 not-ready 不再判
-    # failed(用户容器自己的 bug 不是平台故障),所以这一位是用户判断「我的服务起来没有」
-    # 的唯一真相,不能拿 status 代替
+    # 就绪 = 实例 running 且巡检没观察到 Pod not-ready。服务实例持续 not-ready 不判 failed,
+    # 所以这一位是用户判断「我的服务起来没有」的唯一真相,不能拿 status 代替
     ready: bool
-    # 容器配置回显(创建时写入,之后不可改)。env 只回明文项;密文项**只回键名**
-    # (env_secret_keys)——回了值就等于给了一个把密文变量读回明文的端点,
-    # 那正是「密文项落库即加密、不回显」这条承诺要防的事
+    # 容器配置回显(创建时写入,之后不可改)。env 只回明文项,密文项只回键名
+    # (env_secret_keys):回值就等于给了一个把密文变量读回明文的端点
     container_command: list[str] | None
     container_args: list[str] | None
     env: dict[str, str]

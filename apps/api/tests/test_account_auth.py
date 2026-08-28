@@ -17,7 +17,7 @@ PHONE = "13800000001"
 async def send_code(client: AsyncClient, phone: str = PHONE, purpose: str = "register") -> None:
     resp = await client.post(
         "/api/v1/auth/sms-code",
-        # mock 渠道固定放行串(P1-17 人机校验闸门;与 MOCK_SMS_CODE "123456" 同哲学)
+        # mock 渠道固定放行串(人机校验闸门;与 MOCK_SMS_CODE "123456" 同哲学)
         json={"phone": phone, "purpose": purpose},
     )
     assert resp.status_code == 204, resp.text
@@ -156,8 +156,7 @@ class TestLogin:
     async def test_login_failure_is_indistinguishable(self, client: AsyncClient):
         """未注册的号 与 已注册但密码错,响应必须逐字节相同。
 
-        可区分即是一个免登录的手机号枚举 oracle。
-        (request_id 是每请求随机值、不含账号信息,比对时剔除。)
+        可区分即是一个免登录的手机号枚举 oracle(request_id 每请求随机,比对时剔除)。
         """
         await register(client, password="secret123456")
         registered = await client.post(
@@ -235,7 +234,7 @@ class TestLogin:
 
     async def test_locked_bucket_blocks_before_password_check(self, client: AsyncClient):
         """桶已封禁时连正确密码也 429:封禁期内的请求在 bcrypt 之前被拦下,
-        不再为撞库流量支付哈希成本。"""
+        不为撞库流量支付哈希成本。"""
         phone = "13800000083"
         await register(client, phone, password="secret123456")
         for _ in range(5):
@@ -343,12 +342,12 @@ class TestSmsQuotaAndBackoff:
     ):
         """代耗回归:攻击者替受害者请求验证码,耗不到受害者的 10 次/日配额。
 
-        日配额只按「消费」计(攻击者读不到码,永远计不上);发送侧由 IP 限流与
-        同号递增退避兜底轰炸成本。挂了 = 受害者当日收不到码也登不上。
+        日配额只按「消费」计(攻击者读不到码,永远计不上),发送侧由 IP 限流与同号递增
+        退避兜底。挂了 = 受害者当日收不到码也登不上。
         """
         phone = "13800000096"
         async with sm() as session:
-            # 同号已有 10 条未消费验证码(旧口径下该号当日配额已被耗尽)
+            # 同号已有 10 条未消费验证码
             for _ in range(10):
                 session.add(
                     SmsCode(

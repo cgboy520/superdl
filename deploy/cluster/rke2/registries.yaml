@@ -1,10 +1,9 @@
-# /etc/rancher/<rke2|k3s>/registries.yaml —— server 节点由 ansible 分发(改动后重启 server 服务生效);
-# GPU 节点不用本文件:一键加入脚本按「平台配置 · 镜像仓库」自动生成落位(node-join.sh)。
+# /etc/rancher/<rke2|k3s>/registries.yaml —— server 节点由 ansible 分发(改动后重启 server 生效);
+# GPU 节点不用本文件,一键加入脚本按「平台配置 · 镜像仓库」自动生成落位(node-join.sh)。
 # 作用:①声明参与 Spegel P2P 共享的仓库(embedded-registry,见 server-config.yaml)
-#      ②可选:把 Docker Hub 等公网上游 mirror 到 Harbor 代理缓存项目(拉不到时 containerd 回落上游)
+#      ②可选:把 Docker Hub 等公网上游 mirror 到 Harbor 代理缓存项目(拉不到时回落上游)
 #      ③可选:Harbor 自签/私有 CA(公信证书不需要;ansible 变量 harbor_ca_pem 非空即落盘)
-# 不含任何 auth:平台镜像与租户镜像的拉取凭据由平台托管为 K8s Secret superdl-registry-pull
-# (../../app/secrets.example.yaml 首装手建,之后配置中心录入机器人后按指纹覆写),节点不落凭据。
+# 不含任何 auth:拉取凭据由平台托管为 K8s Secret superdl-registry-pull,节点不落凭据。
 mirrors:
   "*": {}                    # 所有仓库参与 P2P:任一节点已缓存的镜像,其余节点内网互拉(latest tag 除外)
   # docker.io:               # 与管理端「平台配置 · 镜像仓库」的 registry_proxy_projects 保持一致

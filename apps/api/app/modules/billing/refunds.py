@@ -7,7 +7,7 @@
 - 打款时在钱包行锁内再校验余额 ≥ 退款额:审批后用户可能已消费,不足则 409,
   管理端可取消该单(余额不动)。
 - 出金动作的审计行与业务同事务(audit_writer 钩子,commit 前调用):
-  审计写失败即出金失败回滚——宁可不出金,不可无留痕(P1-8)。
+  审计写失败即出金失败回滚——宁可不出金,不可无留痕。
 """
 
 from collections.abc import Awaitable, Callable
@@ -43,10 +43,9 @@ async def _order_has_issued_invoice(
     发票申请即视为「该账期已开票」——已开票账期的订单不可退,须先红冲
     (服务层抛 billing.refundInvoiceIssued,文案引导联系客服)。
 
-    仅拦截 issued:submitted(申请中)不拦截——开票完成前退款仍是自由出口。
-    lock=True(申请退款时用):对该账期的活跃申请行 FOR UPDATE,与 issue_invoice 的
-    行锁串行——要么本次申请等开票提交后看到 issued 被拒,要么开票重算时已能看到
-    本笔在途退款并扣除。没有这道锁,申请与开票交错提交会让退款既不从票额扣除又能打款。
+    仅拦截 issued,submitted(申请中)不拦截。lock=True(申请退款时用)对该账期的活跃申请行
+    FOR UPDATE,与 issue_invoice 的行锁串行;没有这道锁,申请与开票交错提交会让退款既不从
+    票额扣除又能打款。
     """
     if order.paid_at is None:
         return False
@@ -321,7 +320,7 @@ async def payout_refund(
     audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
 ) -> RefundRequest:
     """登记打款:唯一出金点。同事务完成钱包负向调账 + 状态置 paid + 回写 wallet_entry_id。
-    audit_writer:同步审计钩子(P1-8),最终 commit 前调用,写失败即整体回滚。"""
+    audit_writer:同步审计钩子,最终 commit 前调用,写失败即整体回滚。"""
     req = await _get_for_update(session, refund_id)
     if req.status != "approved":
         raise AppError(
@@ -340,8 +339,7 @@ async def payout_refund(
     ).scalar_one_or_none()
     if order is not None and order.channel_reversed_at is not None:
         raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
-    # 不复查账期是否已开票:能走到打款的退款在开票重算时已从票额扣除(申请时拒已开票账期
-    # 并与开票串行),再拦只会把它打成死胡同(只能取消,再申请又被已开票拦下)
+    # 不复查账期是否已开票:能走到打款的退款在开票重算时已从票额扣除
     # 钱包行锁内再校验:审批后用户可能已消费,余额不足坚决不出金(不允许负余额核销)
     locked = await wallet.lock_wallet(session, req.user_id)
     if locked.balance < req.amount:

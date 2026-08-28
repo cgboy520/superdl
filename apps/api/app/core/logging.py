@@ -6,7 +6,7 @@
   (request_id 绑定见 observability 中间件)。
 - 级别统一由 SUPERDL_LOG_LEVEL 控制(默认 INFO;structlog 过滤与 root level 同源)。
 - PII/凭据全局兜底:_mask_sensitive_processor 按字段名打码
-  (phone/id_number/token/secret/password/code),防新增日志点漏脱敏(P1-13)。
+  (phone/id_number/token/secret/password/code),防新增日志点漏脱敏。
 """
 
 import logging
@@ -97,18 +97,11 @@ def setup_logging() -> None:
         structlog.stdlib.ProcessorFormatter.remove_processors_meta,
     ]
     if settings.environment == "prod":
-        # prod JSON 里把 logger.exception 渲染成结构化栈帧(否则生产 traceback
-        # 只剩一行 event,排障无栈无行号)。dev 的 ConsoleRenderer 自己渲染 exc_info,
-        # 不能加(它产 list,ConsoleRenderer 按 str 拼接会 TypeError)。
-        #
-        # **show_locals 必须关掉**,不能图省事用 structlog.processors.dict_tracebacks ——
-        # 那个快捷方式的 ExceptionDictTransformer 默认 show_locals=True,会把每个栈帧的
-        # 局部变量原样写进日志。异步栈里几乎每一帧都握着 Settings / session /
-        # 配置对象,于是 `database_url` 的口令与 `jwt_secret` 就直接落进 journald
-        # (实测:一条 reconciler 的 404 异常里两者都是明文)。
-        # 上面的 _mask_sensitive_processor 拦不住:它在 shared_processors 里、
-        # 先于本处理器跑,栈帧字典是它跑完之后才生成的。
-        # 代价是丢掉局部变量,而排障真正要的栈与行号都还在。
+        # prod JSON 里把 logger.exception 渲染成结构化栈帧(否则只剩一行 event,无栈无行号)。
+        # show_locals 必须关(ExceptionDictTransformer 默认为 True):异步栈帧握着 Settings /
+        # session,局部变量入日志即把 database_url 口令与 jwt_secret 写成明文,而
+        # _mask_sensitive_processor 拦不住(它先于本处理器跑,栈帧字典在其后才生成)。
+        # 只能加在 prod:ConsoleRenderer 自己渲染 exc_info,叠加本处理器会 TypeError(list 拼 str)。
         formatter_processors.append(
             structlog.processors.ExceptionRenderer(
                 structlog.tracebacks.ExceptionDictTransformer(show_locals=False)

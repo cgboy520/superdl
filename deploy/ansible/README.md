@@ -3,13 +3,12 @@
 只做一件事:第一台(HA 时含后续两台)server 的 rke2/k3s server 安装。GPU 节点不走 ansible,
 一律用管理端「添加节点」生成的一键命令(`../node-join/README.md`;脚本本体
 `apps/api/app/modules/nodes/assets/node-join.sh` 覆盖内核参数、NVIDIA 驱动与 container toolkit、
-NVMe VG、registries.yaml 与 agent 加入,并有 bats 测试)。
+NVMe VG、registries.yaml 与 agent 加入)。
 
 ## OS 基线
 
 - **Ubuntu Server 22.04 / 24.04 LTS**(其它发行版未验证),x86_64。
-- 目标机:root 或 sudo(`become: true`)、python3、ssh 可达、可出公网
-  (从 rancher 镜像 `rancher-mirror.rancher.cn` 下载安装器)。
+- 目标机:root 或 sudo(`become: true`)、python3、ssh 可达、可出公网(从 `rancher-mirror.rancher.cn` 下载安装器)。
 
 ## inventory 分组
 
@@ -31,9 +30,11 @@ ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s    # k3s(light 
 
 ## 行为约定
 
-- audit-policy.yaml → server config(仓库模板渲染,占位符无残留才落盘,0600)→
-  安装 rke2/k3s server(安装器先落盘、sha256 校验、再执行;幂等,已装跳过)→ enable+start。
-  config 变更才 `restart-server`。装完按 `../cluster/README.md` 路径 A/B 继续
-  (平台接入 → helmfile → 准入策略)。
-- 驱动版本单一事实源是平台配置 `node_driver_version`(管理端·平台配置),由 node-join.sh
-  按服务端下发的版本安装;本目录不持有它的镜像值。
+- 顺序:audit-policy.yaml + registries.yaml(+ 非空时的 harbor-ca.crt)→ server config(仓库模板渲染,
+  占位符无残留才落盘,0600)→ 安装 rke2/k3s server(安装器先落盘、sha256 校验、再执行;幂等,已装跳过)→ enable+start。
+  config 变更才 `restart-server`。
+- HA 参数成对:`api_vip` 与 `server_ips` 必须同时给且奇数台 ≥3,否则 playbook 直接断言失败;
+  单 server 集群把 `api_vip` 留空(tls-san 维持注释)。
+- 装完按 `../cluster/README.md` 路径 A/B 继续(平台接入 → helmfile → 准入策略)。
+- 驱动版本单一事实源是平台配置 `node_driver_version`(管理端·平台配置),由 node-join.sh 按服务端下发的版本安装;
+  本目录不持有它的镜像值。

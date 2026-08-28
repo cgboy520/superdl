@@ -12,11 +12,9 @@ class Sku(Base):
 
     __tablename__ = "skus"
     # 业务唯一键:同一 (型号, 档位, 池, MIG 切片, 算力份额, vCPU, 内存) 只允许一条,
-    # mig_profile 为空也算相等(NULLS NOT DISTINCT),防并发/重试建出同义 SKU 把库存口径搅浑。
-    # 带上池是因为「共享」档同名却可能落 mig(硬切分)或 hami(软切分)两种池;带上
-    # vCPU/内存是为了让同一张卡能出不同配套规格(纯 CPU 规格更是只能靠这两列区分)。
-    # 用唯一索引而非 UniqueConstraint:后者的 ADD CONSTRAINT 要全表校验锁,
-    # 唯一索引可以 CONCURRENTLY 在线建(见 scripts/check-migration-ddl.py)。
+    # mig_profile 为空也算相等(NULLS NOT DISTINCT),防重试建出同义 SKU 把库存口径搅浑。
+    # 必须用唯一索引而非 UniqueConstraint:后者的 ADD CONSTRAINT 要全表校验锁,
+    # 唯一索引可以 CONCURRENTLY 在线建(见 scripts/check-migration-ddl.py)
     __table_args__ = (
         Index(
             "uq_skus_business_key",
@@ -36,7 +34,7 @@ class Sku(Base):
     name: Mapped[str] = mapped_column(String(64))
     gpu_model: Mapped[str] = mapped_column(String(32), index=True)  # e.g. RTX4090 / A100
     # dedicated(专用整卡)/ shared(共享切分);标准 vs 经济由 pool_label 派生
-    # (mig 池 = 硬切分标准档,hami 池 = 软切分经济档),不再单列枚举值
+    # (mig 池 = 硬切分标准档,hami 池 = 软切分经济档),不单列枚举值
     tier: Mapped[str] = mapped_column(String(16), index=True)
     mig_profile: Mapped[str | None] = mapped_column(String(32))  # e.g. 1g.10gb(仅 mig 档)
     gpu_cores_pct: Mapped[int] = mapped_column(default=100)  # 算力份额 %(共享档 <100)
@@ -50,11 +48,10 @@ class Sku(Base):
     price_hourly: Mapped[Decimal] = mapped_column(Numeric(12, 4))
     max_gpus_per_instance: Mapped[int] = mapped_column(default=1)
     cuda_max: Mapped[str | None] = mapped_column(String(16))  # 支持的最高 CUDA 版本
-    # 这条 SKU 是否接受包周期(预付)下单。默认开:关掉是例外(稀缺型号不想被人一次锁一年),
-    # 默认关会让功能上线当天在页面上完全看不见,得逐条 SKU 手动打开
+    # 这条 SKU 是否接受包周期(预付)下单。默认开;关掉是例外(稀缺型号不想被人一次锁一年)
     period_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
-    # 这条 SKU 是否上竞价档。**默认关**,与 period_enabled 相反:竞价的对价是「可被回收」,
-    # 那是要在下单前跟用户讲清楚的承诺,不该因为新建了一条 SKU 就自动生效
+    # 这条 SKU 是否上竞价档。**默认关**(与 period_enabled 相反):竞价的对价是「可被回收」,
+    # 属下单前须讲清的承诺,只能逐条显式开启
     spot_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(8), default="off", index=True)  # on / off
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

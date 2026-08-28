@@ -1,4 +1,4 @@
-"""管理端子路由共享的响应/参数辅助(自 router.py 拆分)。"""
+"""管理端子路由共享的响应/参数辅助。"""
 
 from datetime import datetime
 
