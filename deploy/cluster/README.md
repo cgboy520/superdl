@@ -10,7 +10,7 @@
 `gpu_node_cpu_instance_vcpu_cap` 封顶(0 = 不许)。详见 `docs/reference/nodes.md` 与 `docs/reference/catalog.md`。
 
 chart 版本钉在 `helmfile.yaml.gotmpl`,K8s 版本钉在 `rke2/` 与 `k3s/` 的 server-config;升级走变更评审。
-唯一不跟 chart 走的是 Gateway API 的 CRD,由 `gateway-api-crds.sh` 单点管 —— 它有一个**首装即定、事后换不回去**的
+Gateway API 的 CRD 不跟 chart 走,由 `gateway-api-crds.sh` 单点管 —— 它有一个**首装即定、事后换不回去**的
 选择,首装前先读下面「北向入口」一节。
 
 ## 前置检查(两档通用)
@@ -106,7 +106,7 @@ chart 侧 `crds.enabled=false`,顺序反了就是「新控制面 + 旧 CRD」:�
    ```
 6. 验证:`runbooks/cluster-validation.md`。
 
-`apply.sh` 是 `helmfile apply` 的薄包装,只为固定两个必带开关(漏一个 apply 会中途失败,报错不指向真正的原因):
+`apply.sh` 是 `helmfile apply` 的薄包装,固定两个必带开关(漏一个 apply 会中途失败,报错不指向真正的原因):
 `HELM_DIFF_USE_UPGRADE_DRY_RUN=true` 让 helm-diff 走服务端 dry-run(否则模板里的 `lookup` 恒空,
 kata-deploy 的身份校验会误判成「无法确认上一次安装」而拒绝升级),`--skip-diff-on-install` 跳过首装时的 diff
 (gpu-operator 首装时 ClusterPolicy CRD 还不存在)。单个 release:`./apply.sh light -l name=gpu-operator`。
@@ -161,7 +161,7 @@ kata-deploy 的身份校验会误判成「无法确认上一次安装」而拒�
      JuiceFS 可选(只有数据盘用),要数据盘时在 `environments/light.yaml` 打开。
 4. **GPU 节点**:同 full 第 5 步。单机时 server 本机直接跑管理端生成的 node-join 命令:脚本检测到本机
    `k3s.service` 在运行即走 server 路径(不装 agent、不改 server config,池标签经 `k3s kubectl` 打到节点;
-   首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 若不由 node-join 建(令牌未登记 NVMe),
+   首次装 toolkit 后会重启一次 k3s)。实例盘 VG `superdl-nvme` 不由 node-join 建时(令牌未登记 NVMe),
    须在 `./apply.sh light` 之前手工建好(空盘 `pvcreate`/`vgcreate`,或 loop 文件兜底),否则 TopoLVM lvmd 起不来。
 5. 能力边界:组件面没有阉割(kata / mig 池同样可用),但档位可用性看的是**池里有没有 Ready 节点** ——
    单机只有一个池标签,选了 hami 就没有 kata/mig 池,专用整卡与共享·标准的 SKU 上架会被上架硬校验拦下。

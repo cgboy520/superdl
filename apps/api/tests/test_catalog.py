@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from httpx import AsyncClient
 
-from tests.helpers import admin_headers, seed_skus
+from tests.helpers import admin_headers, seed_node_spec, seed_skus
 
 
 class TestMarket:
@@ -76,8 +76,6 @@ class TestAdminSku:
         挂了说明:在售 SKU 的池与切片能被静默改掉(展示名、规格列与性能承诺随之变),
         新下单的人拿到的不是市场页上那件商品。
         """
-        from tests.helpers import seed_node_spec
-
         await seed_node_spec(sm, pool_label="mig", gpu_model="H100")
         headers = await admin_headers(sm, client)
         body = {

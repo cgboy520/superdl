@@ -34,7 +34,6 @@ check_secret() { # <ns> <name> <用途>
     miss "$1/$2($3)—— 建法见 README「前置检查」节"
   fi
 }
-# JuiceFS 只在 juicefs.enabled=true 的档位需要(light 默认关:无数据盘即无 JuiceFS,凭据也不必存在)
 if grep -qE '^\s*juicefs:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_secret kube-system superdl-juicefs-secret "JuiceFS 元数据/对象存储凭据"
 else
@@ -94,8 +93,7 @@ done
 
 say "== 分发模板卫生(rke2/k3s server-config 是模板,不是渲染产物)=="
 # 反向检查:模板里 agent-token/etcd-s3 必须保持注释/占位。取消注释意味着真实凭据
-# 被提交进仓库(任何能读仓库的人即持集群加入凭据);site.yml 的渲染前断言要求
-# agent_token 经 group_vars/servers.yml 或 -e 注入,绝不落模板。
+# 被提交进仓库;site.yml 的渲染前断言要求 agent_token 经 group_vars/servers.yml 或 -e 注入,绝不落模板。
 for tpl in rke2/server-config.yaml k3s/server-config.yaml; do
   [[ -f "$tpl" ]] || continue
   if grep -qE '^agent-token:' "$tpl"; then
@@ -207,14 +205,12 @@ fi
 
 if [[ "$env_name" == "full" ]]; then
   say "== 控制面 HA(3 server 堆叠 etcd + VIP)=="
-  # server 节点数须奇数且 ≥3(etcd 法定人数;偶数台不抗脑裂,双台等于没有 HA)
   cp_nodes=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name 2>/dev/null | grep -c . || true)
   if [[ "$cp_nodes" -ge 3 && $((cp_nodes % 2)) -eq 1 ]]; then
     ok "控制面节点 $cp_nodes 台(奇数 ≥3)"
   else
     miss "控制面节点 $cp_nodes 台:堆叠 etcd 需奇数台且 ≥3(单 server 集群禁止公众生产,见 README「路径 A」)"
   fi
-  # etcd 静态 Pod 全部 Running(成员与 server 一一对应;少了说明有成员没入环或不健康)
   etcd_running=$(kubectl -n kube-system get pods -l component=etcd,tier=control-plane \
     --field-selector=status.phase=Running -o name 2>/dev/null | grep -c . || true)
   if [[ "$etcd_running" -eq "$cp_nodes" && "$cp_nodes" -gt 0 ]]; then
@@ -222,7 +218,6 @@ if [[ "$env_name" == "full" ]]; then
   else
     miss "etcd Pod Running $etcd_running/$cp_nodes:有控制面成员的 etcd 未入环或不健康(kubectl -n kube-system get pods -l component=etcd)"
   fi
-  # VIP 可达:cilium.yaml 的 k8sServiceHost 是仓内唯一录 VIP 的位置(占位检查已在上方拦截)
   vip=$(grep -E '^\s*k8sServiceHost:' values/cilium.yaml 2>/dev/null | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
   if [[ -n "$vip" && "$vip" != *CHANGE_ME* && "$vip" != *'<'* ]]; then
     if curl -sk --max-time 5 "https://$vip:6443/healthz" 2>/dev/null | grep -q 'ok'; then
@@ -233,7 +228,6 @@ if [[ "$env_name" == "full" ]]; then
   else
     miss "values/cilium.yaml k8sServiceHost 未配真实 VIP(HA 集群 Cilium 必须直连 VIP,单 server IP 是数据面单点)"
   fi
-  # 全节点 Ready:任一 NotReady 都可能是 etcd 成员半死或池节点失联
   notready=$(kubectl get nodes --no-headers 2>/dev/null | grep -v ' Ready ' | grep -c . || true)
   if [[ "$notready" -eq 0 ]]; then
     ok "全部节点 Ready"

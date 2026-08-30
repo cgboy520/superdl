@@ -28,7 +28,7 @@ export interface AuditFilters {
   actor_type?: string;
   actor_id?: string;
   q?: string;
-  /** 时间窗(ISO,分钟级);与 limit 一并入 URL(ui-ux-spec §1.8) */
+  /** 时间窗(ISO,分钟级);与 limit 一并入 URL */
   since?: string;
   until?: string;
   limit?: number;

@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   Alert,
-  App,
   Badge,
   Button,
   Card,
@@ -32,7 +31,6 @@ import {
   type OversellRow,
   type OverviewOut,
   isApiError,
-  useAckAlert,
   useAlertUnreadCount,
   useAlerts,
   useDeadTasks,
@@ -43,8 +41,7 @@ import {
   useRevenueReport,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { alertLink, SEVERITY_LABEL_KEY } from "../../lib/alertLink";
-import { useApiErrorText } from "@superdl/ui";
+import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
@@ -292,23 +289,11 @@ function DeadTasksCard() {
 /** 实时告警流:severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户(深链与顶栏铃铛共用 lib/alertLink)。 */
 function AlertStreamCard() {
   const { t } = useTranslation();
-  const errText = useApiErrorText();
-  const { message } = App.useApp();
-  const qc = useQueryClient();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [severity, setSeverity] = useState<string | undefined>();
-  const { data, queryKey, isError, refetch } = useAlerts(severity ? { severity } : undefined);
-  const ack = useAckAlert({
-    mutation: {
-      onSuccess: () => {
-        message.success(t("overview.ackDone"));
-        void qc.invalidateQueries({ queryKey });
-        void qc.invalidateQueries({ queryKey: ["admin", "alerts", "unread-count"] });
-      },
-      onError: (e) => message.error(errText(e, t("overview.ackFailed"))),
-    },
-  });
+  const { data, isError, refetch } = useAlerts(severity ? { severity } : undefined);
+  const ack = useAckAlertWithFeedback();
   const alerts: AlertRow[] = data ?? [];
 
   return (
@@ -341,7 +326,7 @@ function AlertStreamCard() {
             return (
               <div key={a.id} style={{ marginBottom: 12 }}>
                 <Badge
-                  color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
+                  color={severityColor(a.severity)}
                   text={
                     link ? (
                       <Link to={link.to} search={link.search}>

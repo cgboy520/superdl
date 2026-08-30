@@ -136,7 +136,7 @@ export function AdminsTab() {
               disabled={!isSuperAdmin || isSelf}
               options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
               onChange={(role: Role) => {
-                // 改角色必须手输原因(审计只记新值,常量原因答不出「为什么改」):弹表单收集
+                // 改角色必须手输原因(入审计):弹表单收集
                 setRoleTarget({ row, role });
               }}
             />
@@ -198,7 +198,7 @@ export function AdminsTab() {
           {(data ?? []).find((a) => a.id === me?.id)?.totp_enabled && (
             <Button
               onClick={() =>
-                // L2:重新生成后旧恢复码立即失效,先复述后果再执行
+                // 重新生成后旧恢复码立即失效,先复述后果再执行
                 modal.confirm({
                   title: t("admins.regenCodesConfirmTitle"),
                   content: t("admins.regenCodesConfirmDesc"),

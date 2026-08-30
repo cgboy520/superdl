@@ -85,7 +85,7 @@ async def send_sms_code(
             raise AppError(ErrorCode.CAPTCHA_REQUIRED, key="account.captchaRequired")
         try:
             channel = await get_captcha_channel(session)
-            captcha_ok = await channel.verify(captcha_token, client_ip)
+            captcha_ok = await channel.verify(captcha_token)
         except CaptchaError as exc:
             logger.error("captcha_channel_error", error=str(exc))
             raise AppError(

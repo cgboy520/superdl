@@ -1,4 +1,4 @@
-# 平台主密钥轮换 SOP(crypto.py,#18)
+# 平台主密钥轮换 SOP
 
 `SUPERDL_CONFIG_ENCRYPTION_KEY` 保护:`platform_settings` secret 行(渠道/云凭据)、
 `admin_users.totp_secret`、`instances.jupyter_token` 与 `env_encrypted`;同一把钥匙还派生

@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay, request_fingerprint
+from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, paginate_by_id
@@ -227,24 +227,18 @@ async def create_invoice(
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
     )
-    session.add(req)
     try:
-        await session.commit()
-        logger.info("invoice_created", invoice_id=req.id, user_id=user_id, period=period)
-        return req, True
+        result = await insert_idempotent(
+            session,
+            req,
+            model=InvoiceRequest,
+            owner_col=InvoiceRequest.user_id,
+            owner_id=user_id,
+            key=idempotency_key,
+            fingerprint=fingerprint,
+            commit=True,
+        )
     except IntegrityError:
-        await session.rollback()
-        if idempotency_key:
-            winner = await find_replay(
-                session,
-                InvoiceRequest,
-                owner_col=InvoiceRequest.user_id,
-                owner_id=user_id,
-                key=idempotency_key,
-                fingerprint=fingerprint,
-            )
-            if winner is not None:
-                return winner, False  # 同键并发:返回胜出方的单
         # 撞的是部分唯一索引(并发重复申请同一账期)
         raise AppError(
             ErrorCode.CONFLICT,
@@ -252,6 +246,10 @@ async def create_invoice(
             params={"period": period},
             http_status=409,
         ) from None
+    if result is not req:
+        return result, False  # 同键并发:返回胜出方的单
+    logger.info("invoice_created", invoice_id=req.id, user_id=user_id, period=period)
+    return req, True
 
 
 async def list_my_invoices(

@@ -1,13 +1,13 @@
 from datetime import datetime
-from typing import Annotated
 
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.money import MoneyOut
+from app.core.params import IdempotencyKey
 from app.core.ratelimit import check_rate_limit
 from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
@@ -49,7 +49,7 @@ async def create_disk(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> DiskOut:
     # 实名闸门:建数据盘=开通存储,与开通算力同一条强制实名开关
     await account_service.require_real_name_if_required(session, user, key="disks.realNameRequired")

@@ -1,12 +1,10 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Header, Query, Request, Response, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.params import Cursor, Limit
+from app.core.params import Cursor, IdempotencyKey, Limit
 from app.core.ratelimit import check_rate_limit
 from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
@@ -38,7 +36,7 @@ async def create_instance(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> InstanceOut:
     # 实名闸门(统一实现):创建/开机/续费/转包周期/建盘同口径,勿逐端点复制
     await account_service.require_real_name_if_required(
@@ -154,7 +152,7 @@ async def renew_instance(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> RenewOut:
     """包周期续费:按新周期的折扣重新报价并即时扣款(不足即 402/400,不进欠费)。
 
@@ -189,7 +187,7 @@ async def subscribe_instance(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> RenewOut:
     """按量转包周期:结清转换前的按量账,再按周期折扣一次性预扣。
 

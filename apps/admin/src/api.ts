@@ -151,7 +151,6 @@ import type {
   OutboxDiscardRequest,
   PlatformConfigUpdateRequest,
   PolicyUpdateRequest,
-  ReconciliationExportApiAdminV1ReconciliationExportGetParams,
   SmsTestRequest,
   AdjustmentReview,
   InvoiceIssue,
@@ -281,7 +280,7 @@ export function useGpuModelAggregates(options?: { enabled?: boolean }) {
 }
 
 export function useSkuCapacityPreview(
-  // 入参类型取生成契约,不手写:端点增删 query 参数时这里编译期就红
+  // 入参类型取生成契约:端点增删 query 参数时编译期即报错
   params: SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams | null,
 ) {
   return useQuery<CapacityPreviewOut>({
@@ -554,7 +553,7 @@ export function useTickets(
   return { ...q, queryKey };
 }
 
-/** 待客服工单计数轻端点(60s 轮询):替代摘除的列表全量轮询,DB count 不拉行。 */
+/** 待客服工单计数(60s 轮询):轻量 count 端点,不拉行。 */
 export function useTicketPendingCount() {
   const queryKey = ["admin", "tickets-count"] as const;
   const q = useQuery({
@@ -666,7 +665,7 @@ export function useAuditLog(filters: AuditFilters) {
         limit,
         ...(pageParam ? { cursor: pageParam } : {}),
       }),
-    // 后端数组不按 Page 包装:满页视为还有更早,游标取末行 id
+    // 满页视为还有更早,游标取末行 id
     getNextPageParam: (last) =>
       last.length >= limit ? btoa(String(last[last.length - 1]!.id)) : undefined,
   });
@@ -895,9 +894,9 @@ export function usePlatformConfig(options?: { enabled?: boolean }) {
   const q = useQuery({
     queryKey,
     queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
-    // 非 admin 角色读它注定 403:调用方按角色传 enabled,不发必败请求
+    // 非 admin 角色读它必 403:调用方按角色传 enabled
     enabled: options?.enabled ?? true,
-    // 编辑中的表单不能被后台重取覆盖,必须关掉焦点重取
+    // 关掉焦点重取:避免后台重取覆盖编辑中的表单
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -982,90 +981,72 @@ export function useSkuImpact(skuId: number | null) {
 
 // CSV 导出(生成 fetcher,文本响应;截断判定见 @superdl/ui downloadCsvChecked)
 
-/** 订单导出:跟随当前筛选(status/order_no/user_id/day)。 */
-export async function exportOrdersCsv(
-  params: AdminOrdersExportApiAdminV1OrdersExportGetParams | undefined,
-  tz: number,
-  lang: "zh-CN" | "en-US",
-) {
-  const text = (await adminOrdersExportApiAdminV1OrdersExportGet({
-    ...params,
-    tz_offset_minutes: tz,
-    lang,
-  })) as string;
-  return downloadCsvChecked(`superdl-orders-${params?.day ?? "all"}.csv`, text);
+type CsvLang = "zh-CN" | "en-US";
+
+/** CSV 导出工厂:fetcher 取文本响应 → downloadCsvChecked 落盘;name 为串或按入参派生文件名。 */
+function makeCsvExporter<A extends unknown[]>(
+  fetcher: (...args: A) => Promise<unknown>,
+  name: string | ((...args: A) => string),
+): (...args: A) => Promise<"ok" | "truncated"> {
+  return async (...args: A) => {
+    const text = (await fetcher(...args)) as string;
+    return downloadCsvChecked(typeof name === "function" ? name(...args) : name, text);
+  };
 }
+
+/** 列表类导出的参数合并:当前筛选 + 时区 + 语言(导出参数类型已含可选 tz_offset_minutes/lang)。 */
+const withTzLang = <P extends object>(params: P | undefined, tz: number, lang: CsvLang): P =>
+  ({ ...params, tz_offset_minutes: tz, lang }) as P;
+
+/** 订单导出:跟随当前筛选(status/order_no/user_id/day)。 */
+export const exportOrdersCsv = makeCsvExporter(
+  (params: AdminOrdersExportApiAdminV1OrdersExportGetParams | undefined, tz: number, lang: CsvLang) =>
+    adminOrdersExportApiAdminV1OrdersExportGet(withTzLang(params, tz, lang)),
+  (params: AdminOrdersExportApiAdminV1OrdersExportGetParams | undefined) =>
+    `superdl-orders-${params?.day ?? "all"}.csv`,
+);
 
 /** 调账导出:跟随当前筛选(status)。 */
-export async function exportAdjustmentsCsv(
-  params: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams | undefined,
-  tz: number,
-  lang: "zh-CN" | "en-US",
-) {
-  const text = (await adminAdjustmentsExportApiAdminV1AdjustmentsExportGet({
-    ...params,
-    tz_offset_minutes: tz,
-    lang,
-  })) as string;
-  return downloadCsvChecked("superdl-adjustments.csv", text);
-}
+export const exportAdjustmentsCsv = makeCsvExporter(
+  (params: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams | undefined, tz: number, lang: CsvLang) =>
+    adminAdjustmentsExportApiAdminV1AdjustmentsExportGet(withTzLang(params, tz, lang)),
+  "superdl-adjustments.csv",
+);
 
 /** 退款导出:跟随当前筛选(status/channel)。 */
-export async function exportRefundsCsv(
-  params: AdminRefundsExportApiAdminV1RefundsExportGetParams | undefined,
-  tz: number,
-  lang: "zh-CN" | "en-US",
-) {
-  const text = (await adminRefundsExportApiAdminV1RefundsExportGet({
-    ...params,
-    tz_offset_minutes: tz,
-    lang,
-  })) as string;
-  return downloadCsvChecked("superdl-refunds.csv", text);
-}
+export const exportRefundsCsv = makeCsvExporter(
+  (params: AdminRefundsExportApiAdminV1RefundsExportGetParams | undefined, tz: number, lang: CsvLang) =>
+    adminRefundsExportApiAdminV1RefundsExportGet(withTzLang(params, tz, lang)),
+  "superdl-refunds.csv",
+);
 
 /** 发票导出:跟随当前筛选(status)。 */
-export async function exportInvoicesCsv(
-  params: AdminInvoicesExportApiAdminV1InvoicesExportGetParams | undefined,
-  tz: number,
-  lang: "zh-CN" | "en-US",
-) {
-  const text = (await adminInvoicesExportApiAdminV1InvoicesExportGet({
-    ...params,
-    tz_offset_minutes: tz,
-    lang,
-  })) as string;
-  return downloadCsvChecked("superdl-invoices.csv", text);
-}
+export const exportInvoicesCsv = makeCsvExporter(
+  (params: AdminInvoicesExportApiAdminV1InvoicesExportGetParams | undefined, tz: number, lang: CsvLang) =>
+    adminInvoicesExportApiAdminV1InvoicesExportGet(withTzLang(params, tz, lang)),
+  "superdl-invoices.csv",
+);
 
 /** 租户资金流水导出(抽屉「流水」Tab)。 */
-export async function exportTenantLedgerCsv(userId: number, tz: number, lang: "zh-CN" | "en-US") {
-  const text = (await adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet(userId, {
-    tz_offset_minutes: tz,
-    lang,
-  })) as string;
-  return downloadCsvChecked(`superdl-tenant-${userId}-ledger.csv`, text);
-}
+export const exportTenantLedgerCsv = makeCsvExporter(
+  (userId: number, tz: number, lang: CsvLang) =>
+    adminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGet(userId, {
+      tz_offset_minutes: tz,
+      lang,
+    }),
+  (userId: number) => `superdl-tenant-${userId}-ledger.csv`,
+);
 
 /** 审计检索导出:跟随当前筛选(actor_type/actor_id/q/since/until)。 */
-export async function exportAuditCsv(
-  filters: AdminAuditExportApiAdminV1AuditExportGetParams | undefined,
-  tz: number,
-  lang: "zh-CN" | "en-US",
-) {
-  const text = (await adminAuditExportApiAdminV1AuditExportGet({
-    ...filters,
-    tz_offset_minutes: tz,
-    lang,
-  })) as string;
-  return downloadCsvChecked("superdl-audit.csv", text);
-}
+export const exportAuditCsv = makeCsvExporter(
+  (filters: AdminAuditExportApiAdminV1AuditExportGetParams | undefined, tz: number, lang: CsvLang) =>
+    adminAuditExportApiAdminV1AuditExportGet(withTzLang(filters, tz, lang)),
+  "superdl-audit.csv",
+);
 
-export async function exportReconciliationCsv(
-  day: string,
-  lang: "zh-CN" | "en-US",
-) {
-  const params: ReconciliationExportApiAdminV1ReconciliationExportGetParams = { day, lang };
-  const text = (await reconciliationExportApiAdminV1ReconciliationExportGet(params)) as string;
-  return downloadCsvChecked(`superdl-reconciliation-${day}.csv`, text);
-}
+/** 对账导出(按日,无 tz 参数)。 */
+export const exportReconciliationCsv = makeCsvExporter(
+  (day: string, lang: CsvLang) =>
+    reconciliationExportApiAdminV1ReconciliationExportGet({ day, lang }),
+  (day: string) => `superdl-reconciliation-${day}.csv`,
+);

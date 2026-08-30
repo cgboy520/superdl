@@ -10,7 +10,9 @@ from app.core.errors import AppError
 from app.core.security import create_token, decode_token
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode, User
-from tests.helpers import PHONE, age_sms_codes, issue_code, register, send_code
+from tests.helpers import age_sms_codes, issue_code, refresh_via_cookie, register, send_code
+
+PHONE = "13800000001"
 
 
 class TestRegister:
@@ -176,13 +178,14 @@ class TestLogin:
     async def test_access_token_cannot_refresh(self, client: AsyncClient):
         """access token 充当 refresh(cookie 通道):类型不符,401。"""
         data = await register(client)
-        from tests.helpers import refresh_via_cookie
-
         resp = await refresh_via_cookie(client, data["access_token"])
         assert resp.status_code == 401
 
-    async def test_failure_counter_reset_by_success(self, client: AsyncClient):
-        """失败才计数,成功一次清零:手滑几次后登成功,不应背着之前的失败配额。"""
+    async def test_failure_counter_reset_then_lock_blocks_even_correct_password(
+        self, client: AsyncClient
+    ):
+        """失败才计数、成功一次清零;桶满后连正确密码也 429 —— 封禁期请求在 bcrypt
+        之前被拦下,不为撞库流量支付哈希成本。"""
         phone = "13800000082"
         await register(client, phone, password="secret123456")
         for _ in range(4):
@@ -194,29 +197,13 @@ class TestLogin:
             "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )
         assert ok.status_code == 200, ok.text
-        # 计数已清零:再错 5 次仍是 LOGIN_FAILED,第 6 次才 429
+        # 计数已清零:再错 5 次仍是 LOGIN_FAILED(若没清零,第 2 次就该 429 了),桶满 5/5
         for _ in range(5):
             resp = await client.post(
                 "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
             )
             assert resp.json()["code"] == "LOGIN_FAILED"
-        resp = await client.post(
-            "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
-        )
-        assert resp.status_code == 429
-        assert resp.json()["code"] == "RATE_LIMITED"
-
-    async def test_locked_bucket_blocks_before_password_check(self, client: AsyncClient):
-        """桶已封禁时连正确密码也 429:封禁期内的请求在 bcrypt 之前被拦下,
-        不为撞库流量支付哈希成本。"""
-        phone = "13800000083"
-        await register(client, phone, password="secret123456")
-        for _ in range(5):
-            resp = await client.post(
-                "/api/v1/auth/login", json={"phone": phone, "password": "wrong-pass"}
-            )
-            assert resp.json()["code"] == "LOGIN_FAILED"
-        # 桶已满(5/5):正确密码同样 429 —— 证明廉价准入先于凭据校验
+        # 桶已满:正确密码同样 429 —— 证明廉价准入先于凭据校验
         resp = await client.post(
             "/api/v1/auth/login", json={"phone": phone, "password": "secret123456"}
         )

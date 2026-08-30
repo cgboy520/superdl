@@ -20,7 +20,7 @@
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`,**必须先于滚动**:`/readyz` 比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都在这一关现形;
    - 第 2 步 `kubectl kustomize` 渲染后把两个占位换成 Harbor 项目前缀与本次 tag 再 apply;
    - 第 3 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不重复探测);
-   - 第 4 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,多验 DNS / TLS / 网关路由一层:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败按下方回滚指引处理。
+   - 第 4 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,验 DNS / TLS / 网关路由:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败按下方回滚指引处理。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(prod 可跑;`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
 5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
@@ -92,9 +92,9 @@ max_connections ≥ 进程数 × (db_pool_size + max_overflow) + 迁移/运维�
 ## 前端可用性与 HPA 结论
 
 web/admin 前端:各 2 副本 + PDB `minAvailable: 1` + liveness/readiness 同探 `/`(见 `app/k8s/07-frontends.yaml`)。
-**不配置 HPA 的书面结论**:双端 `requests == limits`(Guaranteed QoS,防驱逐优先于弹性),
-而 CPU 型 HPA 依赖 requests 基线计算利用率,与 Guaranteed 语义冲突;静态 nginx 无 CPU 弹性需求
-(单副本 50m 请求即远够,瓶颈永远在 API 不在静态托管)。若未来引入 SSR/BFF 再重估。
+**不配置 HPA**:双端 `requests == limits`(Guaranteed QoS),CPU 型 HPA 依赖 requests 基线计算利用率,
+与 Guaranteed 语义冲突;静态 nginx 无 CPU 弹性需求(单副本 50m 请求即远够,瓶颈在 API 不在静态托管)。
+若未来引入 SSR/BFF 再重估。
 
 ## 独立环境副本(预发/演示)
 

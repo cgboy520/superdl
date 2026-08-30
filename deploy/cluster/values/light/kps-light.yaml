@@ -3,7 +3,7 @@
 prometheus:
   prometheusSpec:
     retention: 3d
-    retentionSize: "3GB"     # 覆盖 full 档的 40GB(单机盘小)
+    retentionSize: "3GB"     # 覆盖 full 档的 40GB
     storageSpec:             # 覆盖 full 档的 50Gi
       volumeClaimTemplate:
         spec:

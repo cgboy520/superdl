@@ -1,4 +1,4 @@
-/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号等走后端 site-config(管理端·平台配置在线维护)。 */
+/** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号等走后端 site-config。 */
 
 import { fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -30,7 +30,6 @@ function FooterCol({
       {links.map((l) => (
         <div key={l.label} style={{ marginBottom: 8 }}>
           {l.hash != null ? (
-            // 首页锚点走 TanStack hash 导航(整页刷新会丢掉 SPA 态),落地页负责 scrollIntoView
             <Link to="/" hash={l.hash} style={{ color: token.colorTextSecondary }}>
               {l.label}
             </Link>
@@ -55,7 +54,6 @@ export function SiteFooter() {
   const { data: site } = useSiteConfig();
   const icp = site?.icp_number;
   const police = site?.police_record_number;
-  // 经营主体公示(《电子商务法》第十五条):留空的项不展示
   const companyName = site?.company_name;
   const companyAddress = site?.company_address;
   const companyPhone = site?.company_phone;
@@ -65,7 +63,6 @@ export function SiteFooter() {
     { label: t("footer.linkPricing"), to: "/", hash: "pricing" },
     { label: t("footer.linkRanking"), to: "/", hash: "ranking" },
   ];
-  // 只列真实存在的入口,不放 to="" 的占位链接
   const supportLinks: FooterLink[] = [
     { label: t("footer.linkHelp"), to: "/help" },
     ...(site?.support_email

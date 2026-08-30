@@ -77,8 +77,7 @@ alloy:
           url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
         }
       }
-  # 采集 agent 每节点一只,按 kps-light 的 node-exporter 量级(20m/32Mi)留一倍余量;
-  # 日志洪峰靠 Loki 侧摄入限流兜底。
+  # 采集 agent 每节点一只,按 kps-light 的 node-exporter 量级(20m/32Mi)留一倍余量
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 256Mi}

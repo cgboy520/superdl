@@ -895,12 +895,10 @@ function BillingPage() {
   const { data: wallet } = walletQ;
   const { data: me } = useMe();
   const { data: policies } = usePolicies();
-  // 本地时区取当月(toISOString 是 UTC 切片,+08:00 月初凌晨会切到上个月)
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const month = monthParam ?? currentMonth;
   const { date, tzOffsetMinutes } = localToday();
-  // 月汇总/环图/小时账单必须共用同一个本地时区口径,否则 31 天日账单之和 ≠ 月账单
   const summaryQ = useBillSummary(month, tzOffsetMinutes);
   const { data: summary } = summaryQ;
   const dailyQ = useDailySummary(date, tzOffsetMinutes);
@@ -918,7 +916,6 @@ function BillingPage() {
       replace: true,
     });
 
-  // 服务端流式导出:小时账单跟随所选月份;触顶标记行 → 截断提示
   const { doExport: exportCsv, exporting } = useCsvExport(async (tz, lang) => {
     const isBills = activeTab === "bills";
     const csv = (await exportBillingApiV1BillingExportGet(
@@ -929,7 +926,6 @@ function BillingPage() {
     return downloadCsvChecked(isBills ? `superdl-hourly-${month}.csv` : "superdl-ledger.csv", csv);
   });
 
-  // 同名实例(重建/多台同名)在环图图例会重名:按显示名合并为一项,金额字符串相加(不过浮点)
   const pieData = useMemo(() => {
     const byName = new Map<string, string>();
     for (const i of summary?.items ?? []) {

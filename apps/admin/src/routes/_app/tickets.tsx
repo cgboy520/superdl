@@ -2,8 +2,14 @@
  * 读:全管理角色;写:ops/admin(canWriteOps),其余角色按钮置灰(后端 403 兜底)。
  */
 
-import { fontSize, formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
-import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import {
+  formatDateTime,
+  isTicketRepliable,
+  metaOf,
+  ticketCategoryMap,
+  ticketStatusMap,
+} from "@superdl/ui";
+import { HexTag, LoadMore, PageContainer, TableErrorEmpty, TicketBubble } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -21,14 +27,13 @@ import {
   Space,
   Table,
   Tag,
-  theme,
   Tooltip,
   Typography,
 } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { AdminTicketDetailOut, AdminTicketOut } from "@superdl/api-client";
+import type { AdminTicketOut } from "@superdl/api-client";
 import {
   isApiError,
   useReplyTicket,
@@ -45,7 +50,7 @@ const TICKET_STATUSES = Object.keys(ticketStatusMap);
 const TICKET_CATEGORIES = Object.keys(ticketCategoryMap);
 
 export const Route = createFileRoute("/_app/tickets")({
-  // status/category/user_id/ticket_no 筛选入 URL(0.3 规范);id = 告警深链(自动开详情抽屉)
+  // status/category/user_id/ticket_no 筛选入 URL;id = 告警深链(自动开详情抽屉)
   validateSearch: (search: Record<string, unknown>): {
     status?: string;
     category?: string;
@@ -79,32 +84,6 @@ export const Route = createFileRoute("/_app/tickets")({
   component: TicketsPage,
 });
 
-// resolved/closed 终态不可再回复(服务端同口径 409,此处只是不渲染输入框)
-const REPLIABLE = new Set(["open", "pending_staff", "pending_user"]);
-
-function Bubble({ msg }: { msg: NonNullable<AdminTicketDetailOut["messages"]>[number] }) {
-  const { t } = useTranslation();
-  const { token } = theme.useToken();
-  const staff = msg.sender_kind === "staff";
-  return (
-    <div style={{ display: "flex", justifyContent: staff ? "flex-end" : "flex-start" }}>
-      <div
-        style={{
-          maxWidth: "85%",
-          padding: "8px 12px",
-          borderRadius: 8,
-          background: staff ? token.colorPrimaryBg : token.colorFillTertiary,
-        }}
-      >
-        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {staff ? t("tickets.msgStaff") : t("tickets.msgUser")} · {formatDateTime(msg.created_at)}
-        </Typography.Text>
-        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.body}</div>
-      </div>
-    </div>
-  );
-}
-
 function TicketDrawer({
   ticketId,
   onClose,
@@ -130,7 +109,7 @@ function TicketDrawer({
   const ticket = detail.data;
   const sm = ticket ? metaOf(ticketStatusMap, ticket.status) : undefined;
   const cm = ticket ? metaOf(ticketCategoryMap, ticket.category) : undefined;
-  const repliable = ticket != null && REPLIABLE.has(ticket.status);
+  const repliable = ticket != null && isTicketRepliable(ticket.status);
   const noPerm = t("tickets.opsOnly");
 
   const sendReply = () => {
@@ -209,7 +188,14 @@ function TicketDrawer({
           </div>
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             {(ticket.messages ?? []).map((m) => (
-              <Bubble key={m.id} msg={m} />
+              <TicketBubble
+                key={m.id}
+                side={m.sender_kind === "staff" ? "right" : "left"}
+                label={m.sender_kind === "staff" ? t("tickets.msgStaff") : t("tickets.msgUser")}
+                time={formatDateTime(m.created_at)}
+                body={m.body}
+                maxWidth="85%"
+              />
             ))}
           </Space>
           {repliable ? (
@@ -294,7 +280,7 @@ function TicketsPage() {
     ...(ticketNo.trim() ? { ticket_no: ticketNo.trim() } : {}),
   });
   const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = ticketsQ;
-  // 待客服计数角标(60s 轻端点轮询):替代摘除的列表全量轮询;点击即按该口径过滤
+  // 待客服计数角标(60s 轻端点轮询);点击即按该口径过滤
   const pendingQ = useTicketPendingCount();
   const rows: AdminTicketOut[] = (data?.pages ?? []).flatMap((p) => p.items);
   const [openId, setOpenId] = useState<number | null>(null);

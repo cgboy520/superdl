@@ -80,7 +80,6 @@ async function registerTenant(request: APIRequestContext, phone: string): Promis
 }
 
 test("管理端冒烟:MFA → 调账双人复核 → 冻结租户 → 两步验证开关", async ({ page, request }) => {
-  test.setTimeout(300_000);
   const phone = `137${String(Date.now()).slice(-8)}`;
   const maskedPhone = `${phone.slice(0, 3)}****${phone.slice(-4)}`;
   const tenantId = await registerTenant(request, phone);

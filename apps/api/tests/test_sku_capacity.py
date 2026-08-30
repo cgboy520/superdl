@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import NodeSpec
-from tests.helpers import admin_headers, make_sku
+from tests.helpers import admin_headers, make_sku, seed_instance
 
 
 async def seed_spec(sm: async_sessionmaker[AsyncSession], **overrides) -> None:
@@ -147,25 +147,16 @@ class TestSkuListAssembly:
     async def test_capacity_and_sold_columns(self, client: AsyncClient, sm):
         await seed_spec(sm)  # RTX4090×hami 4 卡 Ready
         sku_id = await seed_one_sku(sm)  # 共享 50%, oversell 1.50
-        async with sm() as session:
-            from app.modules.orchestrator.models import Instance
-
-            session.add(
-                Instance(
-                    user_id=1,
-                    sku_id=sku_id,
-                    k8s_namespace="tenant-1",
-                    uuid="i-cap-test",
-                    name="cap-test",
-                    status="running",
-                    gpu_count=2,
-                    image_ref="img:latest",
-                    spec={},
-                    jupyter_token="t",
-                    price_hourly=Decimal("1.6800"),
-                )
-            )
-            await session.commit()
+        await seed_instance(
+            sm,
+            user_id=1,
+            sku_id=sku_id,
+            name="cap-test",
+            status="running",
+            gpu_count=2,
+            spec={},
+            wallet_credit=False,
+        )
         headers = await admin_headers(sm, client)
         resp = await client.get("/api/admin/v1/skus", headers=headers)
         row = next(r for r in resp.json() if r["id"] == sku_id)

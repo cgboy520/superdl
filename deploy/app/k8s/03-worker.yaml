@@ -118,7 +118,7 @@ spec:
       serviceAccountName: superdl-tenant-mgr   # 租户资源编排写权限(01-rbac.yaml)
       priorityClassName: system-cluster-critical
       nodeSelector:
-        node-role.superdl.io/infra: "true"     # 落点说明同 core worker
+        node-role.superdl.io/infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:

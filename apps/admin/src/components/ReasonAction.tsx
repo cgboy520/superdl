@@ -39,8 +39,7 @@ export function ReasonAction({
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [loading, setLoading] = useState(false);
-  // 原因快照:第一步弹窗 destroyOnHidden 销毁后 getFieldsValue 只回已挂载字段,
-  // 第二步提交必须从快照取(销毁竞态下直接读 store 会丢值)
+  // 原因快照:第一步弹窗 destroyOnHidden 销毁后 getFieldsValue 只回已挂载字段,第二步提交须从快照取
   const [reasonSnapshot, setReasonSnapshot] = useState("");
   const [form] = Form.useForm<{ reason: string }>();
 

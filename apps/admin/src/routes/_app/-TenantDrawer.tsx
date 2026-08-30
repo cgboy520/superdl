@@ -349,7 +349,7 @@ function TenantInstancesTab({
   const { t } = useTranslation(["admin", "shared"]);
   return (
     <>
-      {/* 截断必明示:超过 100 台时账单过滤/事件选择器同样只能选到前 100 台,不能静默 */}
+      {/* 截断必明示:超过 100 台时账单过滤/事件选择器同样只能选到前 100 台 */}
       {total !== null && total > instances.length && (
         <Typography.Text
           type="warning"

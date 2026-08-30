@@ -46,7 +46,6 @@ export function RowActionModal<Values>({
       okText={okText}
       okButtonProps={{ loading }}
       onCancel={close}
-      // 表单随弹窗销毁:同一弹窗组件服务多行目标时,上一目标的已填值不得残留到下一目标
       destroyOnHidden
       onOk={async () => {
         let values: Values;

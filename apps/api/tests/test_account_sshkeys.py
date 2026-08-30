@@ -1,6 +1,6 @@
 from httpx import AsyncClient
 
-from tests.helpers import register
+from tests.helpers import register, seed_instance
 
 # 合法的 ed25519 测试公钥(ssh-keygen 真实生成)
 ED25519_KEY = (
@@ -72,8 +72,6 @@ class TestSshKeys:
     async def test_same_key_allowed_across_users(self, client: AsyncClient):
         """指纹唯一性收窄为 (user_id, fingerprint):全局唯一是跨租户枚举面
         (可探测/占位阻断他租户添加自己的钥匙)。挂了 = 枚举面重新打开。"""
-        from tests.helpers import register
-
         h1 = await auth_client(client)
         data = await register(client, "13800000010")
         h2 = {"Authorization": f"Bearer {data['access_token']}"}
@@ -87,7 +85,6 @@ class TestSshKeys:
         """删除公钥同步摘除未释放实例的 authorized_keys 快照(重启不复活);
         已释放实例不动(其快照是历史留痕);运行中 Pod 待下次重启生效(无 exec 通道)。"""
         from app.modules.orchestrator.models import Instance
-        from tests.helpers import register, seed_instance
 
         data = await register(client, "13800000011")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
@@ -97,8 +94,8 @@ class TestSshKeys:
         assert resp.status_code == 201, resp.text
         key_id = resp.json()["id"]
         stored_key = resp.json()["public_key"]  # 规范化后的形态(与实例快照同口径)
-        live_id = await seed_instance(sm, user_id=data["user"]["id"], status="running")
-        released_id = await seed_instance(sm, user_id=data["user"]["id"], status="released")
+        live_id, _ = await seed_instance(sm, user_id=data["user"]["id"], status="running")
+        released_id, _ = await seed_instance(sm, user_id=data["user"]["id"], status="released")
         async with sm() as session:
             for iid in (live_id, released_id):
                 inst = await session.get(Instance, iid)

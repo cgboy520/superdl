@@ -2,7 +2,7 @@
 
 from httpx import AsyncClient
 
-from tests.helpers import admin_headers
+from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 
 
 class TestPolicyOverrides:
@@ -28,8 +28,6 @@ class TestPolicyOverrides:
 
     async def test_new_disk_snapshots_overridden_price(self, client: AsyncClient, sm):
         """铁律:盘价是建盘时快照 —— 覆盖后新盘用新价。"""
-        from tests.helpers import create_order, pay_mock, user_headers
-
         ah = await admin_headers(sm, client, role="ops")
         await client.put(
             "/api/admin/v1/policies",
@@ -54,21 +52,13 @@ class TestPolicyOverrides:
             headers=ah,
         )
         assert resp.status_code == 400
-        # 未知键
+        # 未知键(非 ops 角色 403 由 route×role 矩阵覆盖)
         resp = await client.put(
             "/api/admin/v1/policies",
             json={"updates": {"jwt_secret": "hack"}, "reason": "越权"},
             headers=ah,
         )
         assert resp.status_code == 400
-        # 非 ops 角色拒绝
-        fh = await admin_headers(sm, client, role="finance")
-        resp = await client.put(
-            "/api/admin/v1/policies",
-            json={"updates": {"disk_grace_days": "10"}, "reason": "无权"},
-            headers=fh,
-        )
-        assert resp.status_code == 403
 
 
 class TestPublicPolicies:

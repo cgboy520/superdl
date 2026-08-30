@@ -16,6 +16,16 @@ TokenScope = Literal["user", "admin"]
 # access/refresh 之外:mfa_setup(绑定票 10min)/mfa_ticket(登录二要素票 5min)
 TokenType = Literal["access", "refresh", "mfa_setup", "mfa_ticket"]
 
+# bcrypt 只认前 72 字节,超长会在哈希层抛错;schema 的 max_length 按字符计,
+# 中文等多字节口令必须再按字节数拦一道(用户端与管理端共用)
+PASSWORD_MAX_BYTES = 72
+
+
+def check_password_bytes(plain: str) -> None:
+    """哈希前按字节数拦截超长口令,否则 bcrypt 5.x 在哈希层抛 ValueError 变 500。"""
+    if len(plain.encode()) > PASSWORD_MAX_BYTES:
+        raise ValueError("密码过长:UTF-8 编码后不得超过 72 字节")
+
 
 def hash_password_sync(plain: str) -> str:
     """同步版本:只给模块级常量(如时序拉平用的假哈希)用,请求路径一律用异步版。"""

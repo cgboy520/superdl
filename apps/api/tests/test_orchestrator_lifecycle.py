@@ -1,5 +1,4 @@
 from datetime import timedelta
-from decimal import Decimal
 from typing import Any, cast
 
 import pytest
@@ -14,6 +13,8 @@ from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
+    IMAGE_PYTORCH,
+    admin_headers,
     create_instance_api,
     create_test_sku,
     create_user_with_key,
@@ -21,7 +22,9 @@ from tests.helpers import (
     drain_strict,
     fund_wallet,
     get_instance,
+    make_instance,
     provision_running,
+    register,
     seed_node_spec,
 )
 
@@ -38,7 +41,7 @@ class TestCreateLifecycle:
         body = {
             "sku_id": sku_id,
             "gpu_count": 1,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "image_ref": IMAGE_PYTORCH,
             "ssh_key_ids": [key_id],
         }
         a = await client.post("/api/v1/instances", json=body, headers=h)
@@ -125,8 +128,6 @@ class TestCreateLifecycle:
         assert resp.json()["code"] == "INSUFFICIENT_BALANCE"
 
     async def test_requires_ssh_key(self, client, sm):
-        from tests.helpers import register
-
         data = await register(client, "13900000002")
         headers = {"Authorization": f"Bearer {data['access_token']}"}
         await fund_wallet(sm, data["user"]["id"])
@@ -569,8 +570,6 @@ class TestPortPool:
 
 class TestAdminOps:
     async def test_admin_list_and_force_stop(self, client, sm, fake):
-        from tests.helpers import admin_headers
-
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="ops")
 
@@ -708,7 +707,7 @@ class TestImageRefValidation:
             "/api/v1/instances",
             json={
                 "sku_id": sku_id,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key_id],
             },
             headers=headers,
@@ -724,28 +723,8 @@ class TestServiceWorkloadUnreadyExemption:
     """
 
     @staticmethod
-    def _stale_instance(workload_type: str) -> Instance:
-        return Instance(
-            uuid="u1",
-            user_id=1,
-            name="n",
-            sku_id=1,
-            spec={},
-            price_hourly=Decimal("1.0000"),
-            gpu_count=1,
-            image_ref="img",
-            status="running",
-            k8s_namespace="tenant-1",
-            jupyter_token="enc:v1:x",
-            authorized_keys=[],
-            workload_type=workload_type,
-            # 已经超过下面传入的宽限窗
-            unready_since=now_utc() - timedelta(hours=1),
-        )
-
-    @staticmethod
     async def _reason(
-        instance: Instance, st: PodStatus, *, node_not_ready: bool | None
+        workload_type: str, st: PodStatus, *, node_not_ready: bool | None
     ) -> str | None:
         from app.modules.orchestrator.reconciler import _running_pod_lost_reason
 
@@ -754,7 +733,16 @@ class TestServiceWorkloadUnreadyExemption:
 
         return await _running_pod_lost_reason(
             cast(Any, _Session()),
-            instance,
+            make_instance(
+                uuid="u1",
+                spec={},
+                image_ref="img",
+                status="running",
+                jupyter_token="enc:v1:x",
+                workload_type=workload_type,
+                # 已经超过下面传入的宽限窗
+                unready_since=now_utc() - timedelta(hours=1),
+            ),
             st,
             timedelta(minutes=5),
             node_not_ready,
@@ -763,34 +751,26 @@ class TestServiceWorkloadUnreadyExemption:
     _UNREADY = PodStatus(exists=True, ready=False, phase="Running", node_name="n1")
 
     async def test_dev_unready_on_healthy_node_fails(self):
-        reason = await self._reason(
-            self._stale_instance("dev"), self._UNREADY, node_not_ready=False
-        )
+        reason = await self._reason("dev", self._UNREADY, node_not_ready=False)
         assert reason == "pod_unready"
 
     async def test_service_unready_on_healthy_node_survives(self):
-        reason = await self._reason(
-            self._stale_instance("service"), self._UNREADY, node_not_ready=False
-        )
+        reason = await self._reason("service", self._UNREADY, node_not_ready=False)
         assert reason is None
 
     async def test_service_still_fails_when_node_lost(self):
         """节点真失联时不豁免:那不是用户容器的问题,实例已不可用,继续计费才是错的。"""
-        reason = await self._reason(
-            self._stale_instance("service"), self._UNREADY, node_not_ready=True
-        )
+        reason = await self._reason("service", self._UNREADY, node_not_ready=True)
         assert reason == "node_lost"
 
     async def test_service_still_fails_when_pod_gone(self):
-        reason = await self._reason(
-            self._stale_instance("service"), PodStatus(exists=False), node_not_ready=False
-        )
+        reason = await self._reason("service", PodStatus(exists=False), node_not_ready=False)
         assert reason == "pod_lost"
 
     async def test_service_still_fails_when_pod_evicted(self):
         """running 态的删除一定不是我们发起的(被驱逐/被外部删除)。"""
         reason = await self._reason(
-            self._stale_instance("service"),
+            "service",
             PodStatus(exists=True, ready=False, phase="Running", deleting=True),
             node_not_ready=False,
         )

@@ -38,7 +38,9 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pyright
       - run: uv run lint-imports
-      - run: uv run pytest
+      # not real_k8s:真实集群用例由 k8s-real-smoke job 跑;此处再跑会让 conformance 的
+      # fake 侧(恒跑参数)与 kind job 重复,real 侧则只能靠 skipif 空转收集
+      - run: uv run pytest -m "not real_k8s"
       # schema diff 双保险之一:单测基建走 create_all(tests/conftest.py),它与迁移链的一致性
       # 由此步把关——upgrade head 后 alembic check 以 Base.metadata 为基准做 autogenerate diff,
       # 模型 ≠ 迁移即非零退出。「带数据升级不丢数」由下方 alembic-populated-upgrade job 覆盖。
@@ -246,8 +248,9 @@ jobs:
           uv sync --frozen
           uv run pytest tests/test_k8s_real_smoke.py -v
           # 编排协议契约一致性套件的 Real 侧(同 SUPERDL_TEST_KUBECONFIG 门控):
-          # kind 上 JuiceFS 作业永不完成,完成分支由套件 patch Job status 注入(见文件头注释)
-          uv run pytest tests/test_orchestrator_conformance.py -v
+          # kind 上 JuiceFS 作业永不完成,完成分支由套件 patch Job status 注入(见文件头注释)。
+          # -m real_k8s:只跑 real 参数;fake 侧归 api job 的全量 pytest,此处不重复
+          uv run pytest -m real_k8s tests/test_orchestrator_conformance.py -v
 
   e2e:
     runs-on: ubuntu-latest

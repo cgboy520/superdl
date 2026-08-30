@@ -187,9 +187,8 @@ function ImagesPage() {
     if (editing === "new") {
       create.mutate({ data: values });
     } else if (editing) {
-      // 审计缺口(后端):ImageUpdate(apps/api catalog/schemas.py)暂无 reason 字段,
-      // 编辑不收「变更原因」——收集了却无法随请求落审计就是伪功能;
-      // 待后端补字段后参照 skus.tsx 编辑必填 reason 模式在此加输入并提交。
+      // 后端 ImageUpdate(catalog/schemas.py)暂无 reason 字段,编辑不收「变更原因」;
+      // 后端补字段后参照 skus.tsx 的编辑必填 reason 模式补上
       update.mutate({ imageId: editing.id, data: values });
     }
   };

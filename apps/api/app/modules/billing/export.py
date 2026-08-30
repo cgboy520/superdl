@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.csvexport import fmt_money, fmt_ts, stream_rows
+from app.core.csvexport import TRUNCATED_NOTES, fmt_money, fmt_ts, stream_rows
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.billing.models import (
     BalanceLedger,
@@ -93,26 +93,6 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
         "Email",
         "Applied at",
     ],
-    ("admin_adjustments", "zh-CN"): [
-        "ID",
-        "用户ID",
-        "金额(元)",
-        "状态",
-        "事由",
-        "发起人",
-        "复核人",
-        "创建时间",
-    ],
-    ("admin_adjustments", "en-US"): [
-        "ID",
-        "User ID",
-        "Amount (CNY)",
-        "Status",
-        "Reason",
-        "Created by",
-        "Reviewed by",
-        "Created at",
-    ],
 }
 
 _LEDGER_TYPE_LABEL: dict[str, dict[str, str]] = {
@@ -171,16 +151,8 @@ _INVOICE_STATUS_LABEL: dict[str, dict[str, str]] = {
     "en-US": {"submitted": "In review", "issued": "Issued", "rejected": "Rejected"},
 }
 
-_TRUNCATED_NOTE: dict[str, str] = {
-    "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小时间范围分次导出",
-    "en-US": (
-        "Export cap reached: only the first {limit} rows included;"
-        " narrow the time range and export in parts"
-    ),
-}
 
-
-async def stream_hourly_csv(
+def stream_hourly_csv(
     session: AsyncSession,
     user_id: int,
     *,
@@ -205,18 +177,17 @@ async def stream_hourly_csv(
             fmt_money(r.amount),
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         stmt,
         BillHourly.id,
         row,
         _HEADERS[("hourly", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )
 
 
-async def stream_ledger_csv(
+def stream_ledger_csv(
     session: AsyncSession,
     user_id: int,
     *,
@@ -236,18 +207,17 @@ async def stream_ledger_csv(
             r.remark or "",
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         select(BalanceLedger).where(BalanceLedger.user_id == user_id),
         BalanceLedger.id,
         row,
         _HEADERS[("ledger", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )
 
 
-async def stream_admin_orders_csv(
+def stream_admin_orders_csv(
     session: AsyncSession,
     *,
     status: str | None = None,
@@ -281,18 +251,17 @@ async def stream_admin_orders_csv(
             fmt_ts(r.created_at, tz_offset_minutes),
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         stmt,
         Order.id,
         row,
         _HEADERS[("admin_orders", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )
 
 
-async def stream_admin_refunds_csv(
+def stream_admin_refunds_csv(
     session: AsyncSession,
     *,
     status: str | None = None,
@@ -324,18 +293,17 @@ async def stream_admin_refunds_csv(
             fmt_ts(r.created_at, tz_offset_minutes),
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         stmt,
         RefundRequest.id,
         row,
         _HEADERS[("admin_refunds", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )
 
 
-async def stream_admin_invoices_csv(
+def stream_admin_invoices_csv(
     session: AsyncSession,
     *,
     status: str | None = None,
@@ -364,12 +332,11 @@ async def stream_admin_invoices_csv(
             fmt_ts(r.created_at, tz_offset_minutes),
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         stmt,
         InvoiceRequest.id,
         row,
         _HEADERS[("admin_invoices", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )

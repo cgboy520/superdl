@@ -1,12 +1,10 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Request, Response
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.params import Cursor, Limit
+from app.core.params import Cursor, IdempotencyKey, Limit
 from app.modules.account.deps import CurrentUser
 from app.modules.tickets import service
 from app.modules.tickets.schemas import (
@@ -27,7 +25,7 @@ async def create_ticket(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> TicketOut:
     """创建工单(首条消息同单提交)。Idempotency-Key 重放返回既有单(200 +
     X-Idempotent-Replay);进行中 ≤10,限流 5/h。"""

@@ -411,8 +411,7 @@ function CreatePage() {
     return null;
   };
 
-  /** 服务形态的提交前置条件,返回一句可读原因(挂在禁用按钮的 tooltip 上)。
-   *  必须返回文案而非 key:i18next-cli extract 看不见动态键,会把它们当未引用删掉。 */
+  /** 服务形态的提交前置条件,返回一句可读原因(挂在禁用按钮的 tooltip 上)。 */
   const serviceIssue = ((): string | null => {
     if (!isService) return null;
     if (!imageRef) return t("create.serviceNeedsImage");
@@ -429,7 +428,6 @@ function CreatePage() {
     return null;
   })();
 
-  /** 批量粘贴环境变量:逐行解析 KEY=VALUE;非法名/保留名/重名(含批内重复)跳过并计数 */
   const submitEnvBulk = () => {
     const existing = new Set(envRows.map((r) => r.name.trim()).filter((n) => n !== ""));
     const seen = new Set<string>();
@@ -461,7 +459,6 @@ function CreatePage() {
     if (skipped === 0) setEnvBulkOpen(false);
   };
 
-  /** 批量粘贴启动参数:每行一个,空行忽略 */
   const submitArgBulk = () => {
     const toAdd = argBulkText
       .split(/\r?\n/)
@@ -555,13 +552,11 @@ function CreatePage() {
             ssh_key_ids: isService && !withSsh ? [] : keyIds,
             name: name || null,
             data_disk_id: diskId,
-            // 按量单里一个周期字段都不能出现:后端按 model_fields_set 判「显式传了」,传了就 422
             ...(period
               ? { market: "subscription" as const, period, period_count: periodCount }
               : isSpot
                 ? { market: "spot" as const }
                 : {}),
-            // dev 形态一个服务字段都不能出现:后端按 model_fields_set 判「显式传了」,传了就是 422
             ...(isService
               ? {
                   workload_type: "service" as const,
@@ -1243,7 +1238,6 @@ function CreatePage() {
         }
       />
 
-      {/* 批量粘贴:环境变量(KEY=VALUE,跳过行在 Modal 内报数)/ 启动参数(每行一个) */}
       <Modal
         title={t("create.bulkAddEnvTitle")}
         open={envBulkOpen}
@@ -1292,7 +1286,6 @@ function CreatePage() {
         </Space>
       </Modal>
 
-      {/* 竞价知情同意在前:确认后再走经济档那道(两条都占的规格要连过两关) */}
       <SpotConsentModal
         open={spotOpen}
         policy={spotPolicy}
@@ -1321,7 +1314,6 @@ function CreatePage() {
           void doCreate();
         }}
       />
-      {/* 路由离开拦截(useBlocker):脏表单跳走时确认;页内「取消」按钮走 onCancel 的 modal.confirm */}
       <Modal
         open={leaveStatus === "blocked"}
         title={t("create.discardConfirmTitle")}

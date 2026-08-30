@@ -21,8 +21,6 @@ cluster:
     enabled: true             # 生成 PodMonitor + 默认告警规则(kps 已全命名空间发现)
 backups:
   enabled: true
-  # barmanObjectStore 为内置方法;CNPG 1.26+ 正逐步迁往 barman-cloud 插件
-  # (method: plugin + cluster.plugins 声明),升级 operator 时按官方迁移指南切换。
   method: barmanObjectStore
   provider: s3
   endpointURL: "CHANGE_ME_S3_ENDPOINT"   # 对象存储 endpoint(如 OSS/S3 兼容网关)
@@ -42,11 +40,11 @@ backups:
     maxParallel: 2
   data:
     compression: gzip
-  retentionPolicy: "30d"      # 对象存储侧另配生命周期(低频/归档层),同 06-pg-backup.yaml 头注释
+  retentionPolicy: "30d"      # 对象存储侧另配生命周期(低频/归档层)
   scheduledBackups:
     - name: daily-basebackup
-      # CNPG schedule 遵循 Go cron 规范:首字段是秒(6 字段,非 Unix 5 字段)——
+      # CNPG schedule 遵循 Go cron 规范:首字段是秒(6 字段,非 Unix 5 字段)
       # 写 5 字段会被整体错位解析,备份静默不按预期触发
       schedule: "0 30 18 * * *"   # 每日 02:30 北京(与逻辑备份 CronJob 同刻;负载冲突再错峰)
-      method: barmanObjectStore   # chart 模板无条件渲染 method,缺省会产出 null 字段
+      method: barmanObjectStore
       backupOwnerReference: self

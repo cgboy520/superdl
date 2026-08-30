@@ -46,7 +46,7 @@ document.documentElement.style.setProperty("--admin-accent", adminColors.dataAcc
 const router = createRouter({
   routeTree,
   defaultPreload: "intent",
-  // 慢网切换菜单的等待反馈:beforeLoad(/me)未完成时居中 Spin,不再白屏无响应
+  // beforeLoad(/me) 未完成时的等待反馈:居中 Spin,避免白屏无响应
   defaultPendingComponent: () => (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <Spin size="large" />

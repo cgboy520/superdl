@@ -10,6 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.billing.models import BillDailyDisk, BillHourly
+from tests.helpers import user_headers_with_id
 
 
 async def seed_hourly(
@@ -52,13 +53,6 @@ async def seed_disk_daily(
         await session.commit()
 
 
-async def register_user(client: AsyncClient, phone: str) -> tuple[dict[str, str], int]:
-    from tests.helpers import register
-
-    data = await register(client, phone)
-    return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
-
-
 async def get_summary(
     client: AsyncClient, headers: dict[str, str], date: str, offset: int = 480
 ) -> dict:
@@ -76,7 +70,7 @@ class TestDailySummary:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """东八区本地日 D = UTC [D-1 16:00, D 16:00):边界内计入,边界外排除。"""
-        headers, uid = await register_user(client, "13900010001")
+        headers, uid = await user_headers_with_id(client, "13900010001")
         inside_first = datetime(2026, 8, 18, 16, 0, tzinfo=UTC)  # 本地 8-19 00:00
         inside_last = datetime(2026, 8, 19, 15, 0, tzinfo=UTC)  # 本地 8-19 23:00
         before = datetime(2026, 8, 18, 15, 0, tzinfo=UTC)  # 本地 8-18 23:00
@@ -94,7 +88,7 @@ class TestDailySummary:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """0.01 级金额累加 10 次无浮点误差(0.10 而非 0.09999…)。"""
-        headers, uid = await register_user(client, "13900010002")
+        headers, uid = await user_headers_with_id(client, "13900010002")
         for h in range(10):
             await seed_hourly(sm, uid, 102, datetime(2026, 8, 19, h, 0, tzinfo=UTC), "0.01")
         body = await get_summary(client, headers, "2026-08-19")
@@ -103,7 +97,7 @@ class TestDailySummary:
         assert body["items"][0]["total_seconds"] == 36000
 
     async def test_empty_returns_zero(self, client: AsyncClient):
-        headers, _ = await register_user(client, "13900010003")
+        headers, _ = await user_headers_with_id(client, "13900010003")
         body = await get_summary(client, headers, "2026-08-19")
         assert body["gpu_total"] == "0.00"
         assert body["disk_total"] == "0.00"
@@ -113,7 +107,7 @@ class TestDailySummary:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """当日窗口内的数据盘日结计入 disk_total(UTC 零点落在东八区当日窗口内)。"""
-        headers, uid = await register_user(client, "13900010005")
+        headers, uid = await user_headers_with_id(client, "13900010005")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 19, 0, 0, tzinfo=UTC), "3.50")
         await seed_disk_daily(sm, uid, datetime(2026, 8, 20, 0, 0, tzinfo=UTC), "3.50")
         body = await get_summary(client, headers, "2026-08-19")
@@ -122,7 +116,7 @@ class TestDailySummary:
     async def test_multi_instance_grouping(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers, uid = await register_user(client, "13900010006")
+        headers, uid = await user_headers_with_id(client, "13900010006")
         t = datetime(2026, 8, 19, 2, 0, tzinfo=UTC)
         await seed_hourly(sm, uid, 201, t, "1.50")
         await seed_hourly(sm, uid, 202, t, "2.50")
@@ -134,8 +128,8 @@ class TestDailySummary:
     async def test_tenant_isolation(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
-        headers_a, uid_a = await register_user(client, "13900010007")
-        headers_b, uid_b = await register_user(client, "13900010008")
+        headers_a, uid_a = await user_headers_with_id(client, "13900010007")
+        headers_b, uid_b = await user_headers_with_id(client, "13900010008")
         t = datetime(2026, 8, 19, 3, 0, tzinfo=UTC)
         await seed_hourly(sm, uid_a, 301, t, "9.00")
         await seed_hourly(sm, uid_b, 302, t, "1.00")
@@ -151,7 +145,7 @@ class TestMonthMatchesDays:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         """把整月的日账单加起来必须等于月账单:两个接口的日界口径必须一致。"""
-        headers, uid = await register_user(client, "13900010009")
+        headers, uid = await user_headers_with_id(client, "13900010009")
         # 边界四点(东八区):本地 7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
         await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 14, 0, tzinfo=UTC), "100.00")
         await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 16, 0, tzinfo=UTC), "1.00")

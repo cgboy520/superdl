@@ -10,9 +10,8 @@ from app.core.gpu_adapter import (
     spec_to_gpu_request,
 )
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL
-from app.modules.orchestrator.models import Instance
-from app.modules.orchestrator.service import _encode_token, build_pod_spec
-from tests.helpers import gpu_spec
+from app.modules.orchestrator.service import build_pod_spec
+from tests.helpers import gpu_spec, make_instance
 
 
 def test_gpu_model_pins_node_selector():
@@ -59,39 +58,24 @@ def test_hami_gputype_annotation_hami_pool_only_and_raw_value():
     assert dedicated.annotations == {}
 
 
-def _instance(spec: dict) -> Instance:
-    return Instance(
-        user_id=1,
-        uuid="i-test",
-        image_ref="img:latest",
-        spec=spec,
-        gpu_count=1,
-        ssh_port=30022,
-        jupyter_token=_encode_token("tok", instance_uuid="i-test"),
-        authorized_keys=[],
-        data_disk_id=None,
-        k8s_namespace="tenant-1",
-        status="creating",
-        sku_id=1,
-    )
-
-
 def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
     monkeypatch.setattr(get_settings(), "hami_use_gputype", True)
-    pod = build_pod_spec(_instance(gpu_spec("shared", "hami", gpu_model_selector="RTX4090")))
+    pod = build_pod_spec(
+        make_instance(spec=gpu_spec("shared", "hami", gpu_model_selector="RTX4090"))
+    )
     assert pod.node_selector[GPU_MODEL_NODE_LABEL] == "RTX4090"
     assert pod.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
 
 
 def test_build_pod_spec_multi_gpu_scales_cpu_mem():
     """N 卡实例 Pod limits = N × SKU(收 N 倍价即给 N 份资源);系统盘不放大。"""
-    inst = _instance(gpu_spec("dedicated", "kata"))
+    inst = make_instance(spec=gpu_spec("dedicated", "kata"))
     inst.gpu_count = 8
     pod = build_pod_spec(inst)
     assert pod.vcpu == 8 * 8  # SKU 8 vCPU/卡 × 8 卡
     assert pod.mem_gb == 32 * 8
     assert pod.disk_gb == 100
-    single = build_pod_spec(_instance(gpu_spec("dedicated", "kata")))
+    single = build_pod_spec(make_instance(spec=gpu_spec("dedicated", "kata")))
     assert single.vcpu == 8 and single.mem_gb == 32
 
 

@@ -19,7 +19,7 @@ from app.core.config import get_settings
 from app.core.gpu_models import canonical_gpu_model, default_vram_gb
 from app.core.k8s import get_orchestrator
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import LIGHT_DISTRO_IN_PROD, NODE_POOL_LABEL_MISMATCH_TOTAL
 from app.core.timeutil import now_utc
@@ -71,10 +71,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         "cordon_converged": 0,
         "pool_label_corrected": 0,
     }
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.NODE_SPEC_PATROL) as got,
-    ):
+    async with advisory_lock(sm, LockKey.NODE_SPEC_PATROL) as got:
         if not got:
             return counts
         orch = get_orchestrator()

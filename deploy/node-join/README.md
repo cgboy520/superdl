@@ -44,7 +44,7 @@ join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即�
 
 脚本读到的系统路径一律经 `SUPERDL_JOIN_*` 环境变量覆盖(状态目录 / `/etc` / loop 镜像目录 /
 IOMMU 分组目录),bats 在 setup 里把它们指向临时目录。**新增读宿主路径的代码必须照此加覆盖点**
-(直读如 `/sys/kernel/iommu_groups` 会让 kata 用例在没开 VT-d 的机器(VM / WSL)上永久红)。
+(直读 `/sys/kernel/iommu_groups` 会让 kata 用例在没开 VT-d 的机器(VM / WSL)上永久红)。
 
 覆盖:参数错误 / 全流程免重启 / 令牌不进 argv 与完成后落盘清理 / 完成后重跑直退 /
 --force 重装 / 断点续跑(令牌切换)/ 旧服务端无 progress_token 兼容 / 重启断点

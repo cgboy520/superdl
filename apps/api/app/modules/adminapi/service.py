@@ -8,12 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
+from app.core.idempotency import request_fingerprint
 from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
+    PASSWORD_MAX_BYTES,
+    check_password_bytes,
     create_token,
     decode_token,
     hash_password,
@@ -45,8 +48,6 @@ LOGIN_ACCT_DAILY_WINDOW_SECONDS = 86400.0
 
 # 与 AdminCreateRequest.password 的 min_length 对齐(引导口令不经 schema,需自查)
 PASSWORD_MIN_LENGTH = 12
-# bcrypt 上限 72 字节;schema 的 max_length 按字符计,多字节口令会绕过
-PASSWORD_MAX_BYTES = 72
 
 # ---------- TOTP MFA(安全策略 admin_mfa_enabled,默认开,全部管理角色一视同仁) ----------
 # 开关只有全员开/全员关两档,不做按角色/按账号 opt-in。开启时登录只签发挑战票,正式 token
@@ -63,8 +64,10 @@ ADJUST_MAX_ABS = Decimal("100000.00")
 
 def _check_password_bytes(password: str) -> None:
     """哈希前按字节数拦截超长口令,否则 bcrypt 5.x 在哈希层抛 ValueError 变 500。"""
-    if len(password.encode()) > PASSWORD_MAX_BYTES:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation")
+    try:
+        check_password_bytes(password)
+    except ValueError:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation") from None
 
 
 def _login_buckets(client_ip: str | None, username: str) -> list[tuple[str, int, float, bool]]:
@@ -513,15 +516,14 @@ async def create_adjustment(
     """发起调账。返回 (调账单, created):created=False = 幂等重放,路由回 200 + 重放区分头。
     幂等键作用域为 (发起人,租户,键);同键重放比对请求体指纹,不一致 409
     (对齐 Stripe 惯例):弱键跨租户/跨金额复用得到显式拒绝而非静默错单。"""
-    import hashlib
-
     from app.core.money import as_amount
     from app.modules.account import service as account_service
 
     amount = as_amount(Decimal(str(amount)))
-    fingerprint = hashlib.sha256(f"{user_id}|{amount}|{reason}".encode()).hexdigest()
+    fingerprint = request_fingerprint(user_id, amount, reason)
 
     if idempotency_key:
+        # 归属是 (created_by, user_id) 双列,find_replay 只支持单列:重放查询保持手写
         existing = (
             await session.execute(
                 select(AdminAdjustment).where(
@@ -535,7 +537,7 @@ async def create_adjustment(
             if existing.request_fingerprint != fingerprint:
                 raise AppError(
                     ErrorCode.CONFLICT,
-                    key="adminapi.idempotencyKeyMismatch",
+                    key="common.idempotencyKeyMismatch",
                     http_status=409,
                 )
             return existing, False  # 幂等重放:返回已受理的调账单,不重复开单
@@ -652,10 +654,13 @@ async def resolve_reversal(
     风险方向是「少收」,由审计行与异常清单闭环追溯。
     """
     from app.modules.billing import service as billing_service
-    from app.modules.billing.models import Order
 
     order = (
-        await session.execute(select(Order).where(Order.order_no == order_no).with_for_update())
+        await session.execute(
+            select(billing_service.Order)
+            .where(billing_service.Order.order_no == order_no)
+            .with_for_update()
+        )
     ).scalar_one_or_none()
     if order is None:
         raise not_found("订单不存在")

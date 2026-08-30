@@ -1,9 +1,9 @@
 """管理端路由(全局实例/节点注册/节点与集群/超卖报表)。"""
 
 import asyncio
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Header, Request, status
+from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
@@ -17,7 +17,7 @@ from app.core.k8s.base import (
     ClusterProbe,
 )
 from app.core.pagination import Page
-from app.core.params import Cursor, Limit
+from app.core.params import Cursor, IdempotencyKey, Limit
 from app.core.platform_config import get_effective_platform_config
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
@@ -150,7 +150,7 @@ async def admin_create_enrollment(
     session: DbSession,
     request: Request,
     admin: CurrentAdmin,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> EnrollmentCommandOut:
     """生成节点注册命令。token 明文仅本响应出现一次;审计不落 token。
     Idempotency-Key 重放不建新行(轮换该行 token 后返回)。"""

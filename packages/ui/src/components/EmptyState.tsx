@@ -1,5 +1,5 @@
 /** 空态(两端统一):品牌线稿插画 + 一句话 + 至多两个动作(主动作 + 次动作)。
- *  文案规范:空态 = 一句话 + 一个动作(见 docs/copy-style-guide.md);
+ *  文案规范:空态 = 一句话 + 一个动作;
  *  「错误」不归这里 —— 查询失败用 TableErrorEmpty/DataErrorAlert,绝不渲染成空数据。
  *
  *  插画:自绘线稿 SVG,stroke=currentColor 随 antd colorTextDescription 自适应浅/暗/深色三主题,

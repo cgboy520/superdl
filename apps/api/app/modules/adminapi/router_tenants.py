@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target
+from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import mask_phone_value
@@ -18,7 +19,7 @@ from app.modules.account.schemas import AdminDeletionReject, AdminDeletionReques
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.router_shared import ExportLang, csv_response
+from app.modules.adminapi.router_shared import ExportLang
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
     AdjustContextOut,

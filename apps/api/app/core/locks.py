@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from enum import IntEnum
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 class LockKey(IntEnum):
@@ -34,3 +34,10 @@ async def try_advisory_lock(session: AsyncSession, key: LockKey) -> AsyncIterato
     finally:
         if got:
             await session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": int(key)})
+
+
+@asynccontextmanager
+async def advisory_lock(sm: async_sessionmaker[AsyncSession], key: LockKey) -> AsyncIterator[bool]:
+    """定时任务标准锁骨架:开独立会话拿 try-lock,yield 是否拿到(未拿到调用方 return 跳过本轮)。"""
+    async with sm() as lock_session, try_advisory_lock(lock_session, key) as got:
+        yield got

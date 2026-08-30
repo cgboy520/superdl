@@ -14,7 +14,7 @@ rules:
     verbs: ["get", "list", "watch"]
   # Secret/ConfigMap/Token 必须先于 system:nodes 降噪规则:审计策略首条匹配即生效,
   # 若 nodes 的 None 在前,流氓节点批量读各租户 Secret 的唯一检测信号会被静默抹掉。
-  # 只记元数据,永不把内容写进审计日志。
+  # 只记元数据。
   - level: Metadata
     resources:
       - group: ""

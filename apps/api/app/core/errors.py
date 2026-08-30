@@ -7,12 +7,16 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+from app.core.logging import get_logger
+from app.core.messages import render_message
 
 
 class ErrorCode(StrEnum):
@@ -92,8 +96,6 @@ class AppError(Exception):
         headers: Mapping[str, str] | None = None,
     ) -> None:
         if key is not None:
-            from app.core.messages import render_message
-
             message = render_message(key, params)
         elif message is None:
             raise ValueError("AppError 需要 message 或 key 之一")
@@ -141,8 +143,6 @@ def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[
 
 def current_request_id() -> str | None:
     """错误体回带 request_id(observability 中间件绑定的 contextvar),便于凭单排障。"""
-    import structlog
-
     value = structlog.contextvars.get_contextvars().get("request_id")
     return str(value) if value else None
 
@@ -173,9 +173,6 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
     """未捕获异常的统一渲染(结构化留痕 + 统一错误体);exception handler 与
     Uniform500Middleware 共用同一出口。留痕经 structlog 进 Loki
     (见 deploy/cluster/runbooks/loki-logging.md),异常告警由 Loki 侧规则承接。"""
-    from app.core.logging import get_logger
-    from app.core.messages import render_message
-
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -212,8 +209,6 @@ class Uniform500Middleware:
 
 def payload_too_large_response() -> JSONResponse:
     """413 统一错误体。中间件直渲专用:该层在路由之外,抛 AppError 到不了 exception handler。"""
-    from app.core.messages import render_message
-
     return JSONResponse(
         status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         content=_error_body(
@@ -228,8 +223,6 @@ def payload_too_large_response() -> JSONResponse:
 
 def audit_unavailable_response() -> JSONResponse:
     """503 统一错误体:审计闸 fail-closed(中间件直渲,同 payload_too_large_response)。"""
-    from app.core.messages import render_message
-
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content=_error_body(
@@ -262,8 +255,6 @@ def install_error_handlers(app: FastAPI) -> None:
         _request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
         """路由层 404/405 等框架异常也渲染统一错误体(否则前端拿到的是另一种形状)。"""
-        from app.core.messages import render_message
-
         code, key = _HTTP_STATUS_MAP.get(
             exc.status_code,
             (ErrorCode.VALIDATION_ERROR, "common.validation")
@@ -280,8 +271,6 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-        from app.core.messages import render_message
-
         # 只回位置/原因/类型:pydantic errors() 的 input 是提交原值,回显即泄露凭据
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()

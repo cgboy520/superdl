@@ -169,7 +169,7 @@ spec:
 # 策略三:平台 SA 对 Node 的字段级写白名单。K8s RBAC 无法限字段,而 nodes:patch 全字段可写
 # 等于能改 taints 驱逐任意节点负载、改寻址字段伪装节点身份;这里收窄到平台真实使用的两项:
 # spec.unschedulable(cordon)与 superdl.io/* 标签。CEL 对 typed 字段无 map 宏,spec 侧按危险
-# 字段显式锁,labels/annotations 用白名单收敛。人类运维身份非 SA,break-glass 通道保留。
+# 字段显式锁,labels/annotations 用白名单收敛。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -282,8 +282,8 @@ spec:
       message: "非豁免命名空间禁止 hostNetwork/hostPID/hostIPC"
     - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
       message: "非豁免命名空间禁止 hostUsers: true"
-    # nodeName 绕过调度器:仅 superdl ns 的镜像预热 Job(定点拉取,平台镜像)放行;
-    # 注意 DaemonSet 控制器建 Pod 自带 nodeName——非豁免 ns 新增 DaemonSet 前须先扩豁免
+    # 仅 superdl ns 的镜像预热 Job(定点拉取,平台镜像)放行;
+    # DaemonSet 控制器建 Pod 自带 nodeName——非豁免 ns 新增 DaemonSet 前须先扩豁免
     - expression: >-
         !has(object.spec.nodeName) ||
         (request.operation == 'UPDATE' && has(oldObject.spec.nodeName) && object.spec.nodeName == oldObject.spec.nodeName) ||
@@ -302,7 +302,6 @@ metadata:
   name: superdl-global-pod-guard
 spec:
   policyName: superdl-global-pod-guard
-  # 全局面大且覆盖第三方命名空间,先 [Audit] 观察 ≥2 周(apiserver 审计日志按
-  # validating_admission_policy 与 events 过滤),零误伤后改 [Deny] 并把本 Binding
+  # 全局面大且覆盖第三方命名空间,先 [Audit] 观察 ≥2 周,零误伤后改 [Deny] 并把本 Binding
   # 补进 preflight.sh 的 Deny 强制清单。
   validationActions: [Audit]

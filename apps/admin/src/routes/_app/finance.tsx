@@ -102,7 +102,7 @@ interface FinanceSearch {
 }
 
 export const Route = createFileRoute("/_app/finance")({
-  // Tab 与订单/退款/发票/调账四个 Tab 的筛选条件入 URL(0.3 规范):白名单校验,非法值剥离
+  // Tab 与订单/退款/发票/调账四个 Tab 的筛选条件入 URL:白名单校验,非法值剥离
   validateSearch: (search: Record<string, unknown>): FinanceSearch => ({
     tab: FINANCE_TABS.includes(search.tab as FinanceTab) ? (search.tab as FinanceTab) : undefined,
     o_status:
@@ -463,7 +463,6 @@ function AdjustmentsTab() {
   // 新建草稿(sessionStorage):误关弹窗不丢;发起成功后清除
   const draft = useFormDraft<{ user_id: number; amount: string; reason: string }>("adjustment-new");
   const refresh = () => void qc.invalidateQueries({ queryKey });
-  // 导出口径与列表接口一致(status/user_id/day)
   const params = {
     ...(status ? { status } : {}),
     ...(search.a_day ? { day: search.a_day } : {}),
@@ -952,7 +951,7 @@ function RefundsTab() {
   const status = search.r_status;
   const day = search.r_day ? dayjs(search.r_day) : null;
   const channel = search.r_channel;
-  // 导出口径与列表接口一致(status/day;渠道是客户端过滤,不进导出)
+  // 渠道是客户端过滤,不进导出参数
   const params = {
     ...(status ? { status } : {}),
     ...(search.r_day ? { day: search.r_day } : {}),
@@ -1233,7 +1232,6 @@ function InvoicesTab() {
   }
   // 宽松校验:非 YYYY-MM 格式标红提示,但不阻止提交(后端对非法账期只会回空,不会误操作)
   const periodBad = periodInput.trim() !== "" && !PERIOD_RE.test(periodInput.trim());
-  // 导出口径与列表接口一致(status/period)
   const params = {
     ...(status ? { status } : {}),
     ...(urlPeriod ? { period: urlPeriod } : {}),

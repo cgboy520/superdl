@@ -1,7 +1,7 @@
 # 平台组件(版本锁定,升级须走变更评审)。双档:
 #   helmfile -e full apply    # RKE2 生产全组件
 #   helmfile -e light apply   # k3s 单机/小规模(组件集同 full,k3s 侧 values 覆盖见 values/light/)
-# 必须显式 -e;前置检查:./preflight.sh <full|light>
+# 前置检查:./preflight.sh <full|light>
 environments:
   full:
     values: [environments/full.yaml]
@@ -44,7 +44,6 @@ releases:
     namespace: gpu-operator
     chart: nvidia/gpu-operator
     # 不得低于 v26.3.3:更低版本 device-plugin 会误注 ibverbs 设备。
-    # HAMi 池节点以 nvidia.com/gpu.deploy.device-plugin=false 排斥官方插件
     # (见 values/gpu-operator.yaml 头注释);升版前复核 release notes 的 labels/ClusterPolicy 字段变化。
     version: "v26.3.3"
     values:
@@ -53,14 +52,14 @@ releases:
       - values/light/gpu-operator-light.yaml
       {{- end }}
     # values 开了 ServiceMonitor:CRD 来自 kube-prometheus-stack,新集群首装必须排在它之后,
-    # 且首装 diff 不做 API 校验(kind 尚不存在时 helm diff/install 会直接失败)
+    # 且首装 diff 不做 API 校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
 
   # Kata(dedicated 档运行时):chart 装 shim 二进制、写 containerd drop-in、建 RuntimeClass kata-qemu。
   # k8sDistribution 决定往哪个 containerd 配置目录写,写错 = 装在没人读的地方
   # (chart 侧会因与节点自检不符直接拒装)。
-  # 只装 kata 池节点(values 的 nodeSelector);kata 池为空时 DaemonSet 0 副本,RuntimeClass 照建。
+  # 只装 kata 池节点;kata 池为空时 DaemonSet 0 副本,RuntimeClass 照建。
   - name: kata-deploy
     condition: kataDeploy.enabled
     namespace: kube-system
@@ -93,8 +92,8 @@ releases:
       {{- if eq .Environment.Name "light" }}
       - values/light/kps-light.yaml
       {{- end }}
-    # chart 的 CRD 在 crds/ 目录(helm install 先装 CRD 再装模板),但 helm diff 只干跑渲染不装 CRD,
-    # 它自己的 Prometheus/Alertmanager/PrometheusRule/ServiceMonitor 在新集群首装的 diff 阶段必然校验失败
+    # chart 的 CRD 在 crds/ 目录,但 helm diff 只干跑渲染不装 CRD,
+    # 新集群首装的 diff 阶段必然校验失败
     disableValidationOnInstall: true
 
   - name: juicefs-csi-driver
@@ -130,8 +129,7 @@ releases:
     set:
       - name: crds.enabled
         value: "true"
-    # values 开了 ServiceMonitor(monitoring.coreos.com CRD 由 kube-prometheus-stack 装):
-    # 新集群首装必须排在 kps 之后,且首装 diff 不做 API 校验,否则整轮 apply 在 diff 阶段就失败
+    # values 开了 ServiceMonitor:新集群首装必须排在 kps 之后,且首装 diff 不做 API 校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
     {{- if .Values.acmeDns.enabled }}
@@ -176,7 +174,7 @@ releases:
         command: "./gateway-api-crds.sh"
 
   # CloudNativePG:平台库进 K8s 时的唯一受支持形态(见 ../README.md「生产数据库要求」)。
-  # 默认关闭(cnpg.enabled=false,用托管 PG 时不装);启用时 operator 与业务集群两个 release 一起进。
+  # 默认关闭(cnpg.enabled=false);启用时 operator 与业务集群两个 release 一起进。
   - name: cloudnative-pg
     condition: cnpg.enabled
     namespace: cnpg-system
@@ -196,8 +194,7 @@ releases:
     values: [values/cnpg-cluster.yaml]
 
   # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
-  # API 审计相关日志经此留存 ≥6 个月(查询方式见 runbooks/loki-logging.md)。
-  # light 档同开(资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
+    # light 档同开(资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
   - name: loki
     condition: loki.enabled
     namespace: monitoring
@@ -213,8 +210,7 @@ releases:
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
     hooks:
-      # Loki 访问边界(auth_enabled 的头是自声明的,网络层才是真隔离):
-      # 需在 monitoring ns 已存在(kps 先行)后 apply;幂等,每次 sync 重放
+      # Loki 访问边界:需在 monitoring ns 已存在(kps 先行)后 apply;幂等,每次 sync 重放
       - events: ["presync"]
         showlogs: true
         command: "kubectl"
@@ -231,5 +227,5 @@ releases:
     values: [values/alloy.yaml]
 
 # 注:admission/tenant-restrictions.yaml(ValidatingAdmissionPolicy)不是 helm release,
-# 不纳入本文件;由发布流程单独 kubectl apply(步骤见 README 两档「组件」节),
+# 由发布流程单独 kubectl apply(步骤见 README 两档「组件」节),
 # preflight.sh 强制校验集群内三个 Binding 存在且 validationActions 含 Deny。

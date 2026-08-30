@@ -7,6 +7,8 @@ export * from "./idemKey";
 export * from "./localeParity";
 export * from "./csv";
 export * from "./formDraft";
+export { initAppI18n, SUPPORTED_LANGS } from "./i18n";
+export type { AppLang } from "./i18n";
 export * from "./hooks/useNow";
 export * from "./hooks/useCsvExport";
 export * from "./hooks/useFormat";

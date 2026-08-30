@@ -1,8 +1,8 @@
 # kube-prometheus-stack 88.x:Prometheus 本地 15 天,长期数据进 PostgreSQL(usage_hourly)
 prometheus:
   prometheusSpec:
-    # 必须显式给值:chart 默认 0,进 Prometheus CR 会被 CRD 拒(须 ≥60),helm upgrade 直接失败。
-    # 900 即 prometheus-operator 自身的默认(启动探针最长等 15 分钟),写死不改变现网行为。
+    # chart 默认 0,进 Prometheus CR 会被 CRD 拒(须 ≥60),helm upgrade 直接失败。
+    # 900 即 prometheus-operator 自身的默认(启动探针最长等 15 分钟)。
     maximumStartupDurationSeconds: 900
     retention: 15d
     retentionSize: "40GB"      # 约为 PVC 的 80%,到量先删最旧块,与 retention 双闸
@@ -19,7 +19,7 @@ prometheus:
           accessModes: ["ReadWriteMany"]
           resources:
             requests: {storage: 50Gi}
-    # 单副本:可用性由 JuiceFS 底层(元数据走 PG、数据走对象存储)与跨节点重调度提供。
+    # 单副本:可用性由 JuiceFS 底层与跨节点重调度提供。
     replicas: 1
     ruleSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
@@ -62,7 +62,7 @@ prometheus:
           - source_labels: [__meta_kubernetes_pod_node_name]
             target_label: node
 grafana:
-  # 管理员口令不落 values,经 Secret 注入(默认 prom-operator 口令必须废弃):
+  # 管理员口令不落 values,经 Secret 注入:
   #   kubectl -n monitoring create secret generic grafana-admin \
   #     --from-literal=admin-user=admin --from-literal=admin-password=<强口令>
   admin:
@@ -212,8 +212,7 @@ alertmanager:
         - matchers: ['severity="critical"']
           receiver: superdl-dingtalk
           continue: true
-        # Watchdog(severity=none)只用于链路探活,直接进 null 不通知;
-        # 排在通配路由之前,不匹配 continue,到此为止
+        # Watchdog(severity=none)只用于链路探活,直接进 null 不通知
         - matchers: ['severity="none"']
           receiver: "null"
         # warning 只走平台 webhook(管理端告警中心)
@@ -277,7 +276,7 @@ alertmanager:
     #     --from-literal=token=<钉钉机器人 access_token>
     # containers:
     #   - name: dingtalk-transformer
-    #     image: timonwong/prometheus-webhook-dingtalk:v2.1.0   # TODO(上线前钉死最新稳定版)
+    #     image: timonwong/prometheus-webhook-dingtalk:v2.1.0   # 上线前钉死最新稳定版
     #     args:
     #       - --ding.profile=oncall=https://oapi.dingtalk.com/robot/send?access_token=$(DINGTALK_TOKEN)
     #     env:

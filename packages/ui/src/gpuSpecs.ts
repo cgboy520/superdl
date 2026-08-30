@@ -30,8 +30,13 @@ export const gpuSpecs: Record<string, GpuSpec> = {
 /** 可选卡数档位(市场筛选 chip 与创建页卡数选择共用);SKU 上限不在档位内时创建页额外补一档。 */
 export const GPU_COUNT_STEPS: readonly number[] = [1, 2, 4, 8];
 
-/** 型号串归一查询:去空格/连字符,大写;查不到返回 undefined(调用方自行隐藏该行)。 */
+/** 型号串归一:去空格/连字符,大写(getGpuSpec 查询键与市场「在售」标记分组同口径)。 */
+export function normalizeGpuModel(model: string): string {
+  return model.replace(/[\s-]/g, "").toUpperCase();
+}
+
+/** 归一后查表;查不到返回 undefined(调用方自行隐藏该行)。 */
 export function getGpuSpec(model: string | null | undefined): GpuSpec | undefined {
   if (!model) return undefined;
-  return gpuSpecs[model.replace(/[\s-]/g, "").toUpperCase()];
+  return gpuSpecs[normalizeGpuModel(model)];
 }

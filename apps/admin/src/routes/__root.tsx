@@ -1,6 +1,7 @@
 import { adminThemeComponents, adminThemeToken } from "@superdl/ui";
-import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
-import { App as AntApp, Button, ConfigProvider, Result, theme } from "antd";
+import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
+import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
+import { App as AntApp, ConfigProvider, theme } from "antd";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -38,36 +39,12 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:渲染异常兜底,不白屏。
- *  不直出 error.message(技术文本对值班无意义),技术详情折叠供排查。 */
+/** 全局错误边界:渲染异常兜底,不白屏(Result 体与 web 共用 RouteErrorFallbackView)。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
-  const detail = error instanceof Error ? error.message : null;
   return (
     <DarkShell>
-      <Result
-        status="500"
-        title={t("errorPage.title")}
-        subTitle={
-          <>
-            {t("errorPage.subtitle")}
-            {detail ? (
-              <details style={{ marginTop: 8, fontSize: 12, opacity: 0.65 }}>
-                <summary>{t("errorPage.techDetail")}</summary>
-                <code>{detail}</code>
-              </details>
-            ) : null}
-          </>
-        }
-        extra={
-          <>
-            <Button type="primary" onClick={() => reset()}>
-              {t("common.retry")}
-            </Button>
-            <Button onClick={() => (window.location.href = "/")}>{t("common.backOverview")}</Button>
-          </>
-        }
-      />
+      <RouteErrorFallbackView error={error} reset={reset} homeLabel={t("common.backOverview")} />
     </DarkShell>
   );
 }
@@ -76,15 +53,7 @@ function NotFoundPage() {
   const { t } = useTranslation();
   return (
     <DarkShell>
-      <Result
-        status="404"
-        title={t("notFound.title")}
-        extra={
-          <Link to="/">
-            <Button type="primary">{t("common.backOverview")}</Button>
-          </Link>
-        }
-      />
+      <NotFoundView homeTo="/" homeLabel={t("common.backOverview")} />
     </DarkShell>
   );
 }

@@ -87,7 +87,7 @@ spec:
 # ⚠ 首装前先把本域的 acme-dns 前置做完(注册账户、`_acme-challenge.svc.<域> CNAME <fulldomain>`
 # 委托、往 acmedns.json 追加 `svc.<域>` 键;步骤见 cluster/runbooks/acme-dns.md)。
 # 缺任一步本证书永远 Ready=False,svc-https listener 不 Programmed,全部服务端点 TLS 握手
-# 直接失败且无兜底证书,而平台侧看起来一切正常。
+# 直接失败且无兜底证书。
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

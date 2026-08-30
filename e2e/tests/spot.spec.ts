@@ -7,23 +7,20 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  addSshKeyViaUi,
+  addSshKeyViaApi,
   fillCustomImageForm,
+  loginViaApi,
   pickSharedStandardSku,
-  rechargeViaUi,
-  registerViaUi,
+  rechargeViaApi,
   uniquePhone,
   waitFirstRowRunning,
 } from "./helpers";
 
 test("买竞价并转按量", async ({ page }) => {
-  test.setTimeout(300_000);
-  const phone = uniquePhone();
-
-  // ── 注册 + 充值 + 公钥(与 smoke 同款前置)
-  await registerViaUi(page, phone);
-  await rechargeViaUi(page);
-  await addSshKeyViaUi(page);
+  // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
+  const token = await loginViaApi(page, uniquePhone());
+  await rechargeViaApi(page, token, "100");
+  await addSshKeyViaApi(page, token);
 
   // ── 市场:切竞价 → 常驻警示 + 折后价
   await pickSharedStandardSku(page);
@@ -45,7 +42,6 @@ test("买竞价并转按量", async ({ page }) => {
 
   const consent = page.getByRole("dialog").filter({ hasText: /回收/ }).first();
   await expect(consent).toBeVisible({ timeout: 15_000 });
-  // 这一条是本文件最该守的:没勾知情同意就买不到竞价
   const proceed = consent.getByRole("button", { name: /继续创建|继续|确认/ }).last();
   await expect(proceed).toBeDisabled();
   await consent.getByRole("checkbox").first().check();

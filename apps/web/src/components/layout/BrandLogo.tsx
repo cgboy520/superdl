@@ -1,4 +1,4 @@
-/** 品牌标:SVG 图形(与 favicon 同形)+ 词标。light=深底白字(顶栏/Hero),dark=浅底靛字。 */
+/** 品牌标:SVG 图形(与 favicon 同形)+ 词标。light=深底白字,dark=浅底靛字。 */
 
 import { brandGradientStops, colorPrimary, fontSize, textOnAccent } from "@superdl/ui";
 
@@ -8,7 +8,7 @@ const S_PATH =
   "5.9-1.8 5.9-4.5 0-2.2-1.5-3.4-4.7-4.1l-1.8-.4c-1.8-.4-2.6-1-2.6-1.9 0-1.1 1.1-1.9 " +
   "2.8-1.9 1.6 0 2.8.7 3.1 1.9h2.6z";
 
-const BRAND_NAME = "SuperDL"; // 品牌字标,任何语言不译
+const BRAND_NAME = "SuperDL";
 
 export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) {
   const light = variant === "light";

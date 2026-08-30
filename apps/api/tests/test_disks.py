@@ -14,7 +14,14 @@ from app.modules.billing.patrol import balance_patrol
 from app.modules.billing.settlement import settle_daily_disks
 from app.modules.orchestrator.models import DataDisk
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_disk, create_test_sku, create_user_with_key, drain, fund_wallet
+from tests.helpers import (
+    create_disk,
+    create_test_sku,
+    create_user_with_key,
+    drain,
+    fund_wallet,
+    get_instance,
+)
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -85,8 +92,6 @@ class TestMountLifecycle:
     async def test_attach_rejected_until_quota_synced(self, client, sm, fake):
         """配额未下发成功的盘不得挂载:JuiceFS 目录硬配额是唯一容量强制点,
         无配额挂载 = 可写穿声明容量挤爆共享文件系统;同步完成后即可挂。"""
-        from tests.helpers import get_instance  # noqa: F401
-
         headers, user_id, key_id = await create_user_with_key(client, "13500000013")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -120,8 +125,6 @@ class TestMountLifecycle:
 
     async def test_start_after_delete_disk_detaches(self, client, sm, fake):
         """停机→删盘→开机:挂载引用随删盘同事务摘除,开机不挂到擦除中的旧 subPath。"""
-        from tests.helpers import get_instance
-
         headers, user_id, key_id = await create_user_with_key(client, "13500000011")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -167,8 +170,6 @@ class TestMountLifecycle:
 
     async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
         """盘处于 deleting(擦除中)时开机被拒绝:不能挂到正在被擦除的目录。"""
-        from tests.helpers import get_instance
-
         headers, user_id, key_id = await create_user_with_key(client, "13500000012")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -209,8 +210,6 @@ class TestMountLifecycle:
 
     async def test_cross_instance_mount(self, client, sm, fake):
         """验收:A 挂载 → A 释放(盘保留)→ B 挂载同一块盘。"""
-        from tests.helpers import get_instance
-
         headers, user_id, key_id = await create_user_with_key(client, "13500000010")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)

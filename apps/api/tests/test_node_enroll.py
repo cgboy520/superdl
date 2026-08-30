@@ -9,11 +9,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.audit import AuditLog
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
 from app.modules.nodes import service as nodes_service
 from app.modules.nodes.models import NodeEnrollment
 from app.modules.nodes.schemas import EnrollmentCreate
-from tests.helpers import CREATE_BODY, admin_headers, set_cluster_config
+from tests.helpers import CREATE_BODY, admin_headers, drain, drain_strict
+
+
+async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
+    """写入节点接入所需的集群配置(server_url + join_token);仅本文件使用。"""
+    async with sm() as session:
+        await set_platform_settings(
+            session,
+            {
+                "cluster_server_url": "https://10.0.0.10:9345",
+                "cluster_join_token": "K10abcdef0123456789::server:secrettoken",
+            },
+            updated_by=None,
+        )
+        await session.commit()
 
 
 async def enrollment_rows(sm: async_sessionmaker[AsyncSession]) -> list[NodeEnrollment]:
@@ -643,7 +658,6 @@ class TestNodeCordon:
         from app.core.k8s import set_orchestrator
         from app.core.k8s.fake import FakeOrchestrator
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.helpers import drain, drain_strict
 
         fake = FakeOrchestrator()
         set_orchestrator(fake)
@@ -690,16 +704,7 @@ class TestNodeCordon:
             )
             await drain(sm)
             assert "fake-hami-node-1" not in fake.cordoned_nodes
-
-            # readonly 不可写
-            ro = await admin_headers(sm, client, role="readonly")
-            assert (
-                await client.post(
-                    "/api/admin/v1/nodes/fake-hami-node-1/cordon",
-                    json={"reason": "越权"},
-                    headers=ro,
-                )
-            ).status_code == 403
+            # readonly 写节点 403 由 route×role 矩阵(test_admin_route_role_matrix)覆盖
         finally:
             set_orchestrator(None)
 
@@ -711,7 +716,6 @@ class TestNodeCordon:
         from app.core.outbox import OutboxTask
         from app.modules.nodes.models import NodeSpec
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.helpers import drain
 
         fake = FakeOrchestrator()
         set_orchestrator(fake)

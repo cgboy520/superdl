@@ -17,8 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode
-from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, insert_idempotent
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
 from app.core.policies import get_effective_policies
@@ -280,32 +280,28 @@ async def renew(
         idempotency_key=idempotency_key,
     )
     current.status = STATUS_EXPIRED
-    session.add(row)
     if idempotency_key:
-        try:
-            await session.flush()
-        except IntegrityError:
-            # 并发同幂等键:UNIQUE(user_id, idempotency_key) 兜住,回查胜出方按重放返回。
-            # rollback 是必须的(事务已 rollback-only),它同时撤掉上面对 current 的改动
-            await session.rollback()
-            raced = await find_replay(
-                session,
-                Subscription,
-                owner_col=Subscription.user_id,
-                owner_id=instance.user_id,
-                key=idempotency_key,
-            )
-            if raced is None:
-                raise
-            return raced, await _quote_of(session, raced, instance.gpu_count), False
+        result = await insert_idempotent(
+            session,
+            row,
+            model=Subscription,
+            owner_col=Subscription.user_id,
+            owner_id=instance.user_id,
+            key=idempotency_key,
+        )
+        if result is not row:
+            # 并发同幂等键:UNIQUE(user_id, idempotency_key) 兜住,胜出方按重放返回。
+            # insert_idempotent 内部 rollback 同时撤掉上面对 current 的改动
+            return result, await _quote_of(session, result, instance.gpu_count), False
     else:
         try:
-            await session.flush()
+            await insert_idempotent(
+                session, row, model=Subscription, owner_col=None, owner_id=None, key=None
+            )
         except IntegrityError:
             # 防御层(理论不可达:钱包锁 + 行锁已串行化):部分唯一索引
             # uq_subscriptions_active_instance 兜住第二条 active 行时,回查链头
             # 按「已被并发续费」返回,绝不二次扣款
-            await session.rollback()
             raced = await current_for_instance(session, instance.id)
             if raced is None or raced.status != STATUS_ACTIVE:
                 raise
@@ -487,10 +483,7 @@ async def subscription_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str,
     这里只负责把实例送进 frozen 并写好 frozen_deadline。
     """
     counts = {"warned": 0, "renewed": 0, "renew_failed": 0, "stopped": 0, "frozen": 0}
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.SUBSCRIPTION_PATROL) as got,
-    ):
+    async with advisory_lock(sm, LockKey.SUBSCRIPTION_PATROL) as got:
         if not got:
             return counts
         await _patrol_due(sm, counts)
@@ -659,10 +652,10 @@ async def _expire_instance(
     stopped → 直接冻结起回收倒计时;其余状态本轮不动,下轮再来。"""
     from app.modules.orchestrator import service as orchestrator_service
 
-    if instance.status == "running":
+    if instance.status == orchestrator_service.RUNNING:
         await orchestrator_service.system_stop(session, instance, reason=REASON_EXPIRED_STOP)
         counts["stopped"] += 1
-    elif instance.status == "stopped":
+    elif instance.status == orchestrator_service.STOPPED:
         await _freeze(session, instance)
         counts["frozen"] += 1
     else:

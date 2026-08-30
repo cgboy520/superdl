@@ -63,7 +63,6 @@ export function SpotPriceInline({
   );
 }
 
-/** 「低至 4 折」角标(zh)/「as low as 40% of on-demand」(en);折数由 packages/ui 按语言给。 */
 export function SpotOffLabel({ policy }: { policy: SpotPolicy | undefined }) {
   const { t } = useTranslation();
   const { formatSpotDiscount } = useFormat();
@@ -75,8 +74,6 @@ export function SpotOffLabel({ policy }: { policy: SpotPolicy | undefined }) {
   );
 }
 
-/** 竞价知情同意(创建页提交前弹,与经济档同一套 ConsentModal 形态)。
- *  五条逐字对应后端真正的行为,策略未就绪时不渲染。 */
 export function SpotConsentModal({
   open,
   policy,

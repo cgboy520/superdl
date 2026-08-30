@@ -13,14 +13,12 @@ from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, hour_floor
 from app.modules.billing import subscriptions
 from app.modules.billing.settlement import settle_instance_window
+from app.modules.orchestrator.service import RELEASING, RUNNING
 
 if TYPE_CHECKING:
     from app.modules.orchestrator.models import Instance, InstanceEvent
 
 logger = get_logger(__name__)
-
-RUNNING = "running"
-RELEASING = "releasing"
 
 # 平台责任失联(节点失联/Pod 丢失):计费截断到 Pod 首次 not-ready 的时刻,
 # 判定前的宽限观察期不向用户计费。pod_unready(节点正常,负载自身问题)不在此列。

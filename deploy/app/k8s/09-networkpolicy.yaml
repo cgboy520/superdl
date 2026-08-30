@@ -154,7 +154,7 @@ spec:
         - {protocol: TCP, port: 9000}
 ---
 # worker 出向:PG / 对象存储 / 支付·短信网关(查单、回调补单)/ K8s API(编排写)。
-# 短信/支付网关域名同 api-egress 注释:apply 时解析为 CIDR,漂移时同步更新。
+# 短信/支付网关域名同 api-egress:apply 时解析为 CIDR,漂移时同步更新。
 # preset(按需启用):平台若开 SMTP 发信,追加一条 465/587 到邮件服务商 CIDR 的规则。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -193,8 +193,7 @@ spec:
 ---
 # 一次性 Job(迁移 / PG 备份 / 数据盘配额下发)出向:PG + 对象存储(备份上传);无入向。
 # 标签在 10-migrate-job.yaml / 06-pg-backup.yaml 的 Pod 模板上;
-# superdl-disk-quota 是 worker 创建的 JuiceFS CLI Job(core/k8s/real.py set_disk_quota),
-# 其 PG 出向即 JuiceFS 元数据引擎。
+# superdl-disk-quota 是 worker 创建的 JuiceFS CLI Job。
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

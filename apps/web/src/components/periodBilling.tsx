@@ -50,8 +50,6 @@ export function periodQuoteOf(
   return quoteSubscription(baseHourly, { ...opts, discountPct: discounts[opts.period] });
 }
 
-/** 周期量词(「3 个月」里的「个月」)。四个分支必须写死而不是拼 key:
- *  i18next-cli extract 看不见动态键,会把它们当未引用删掉。 */
 export function PeriodCountUnit({ period }: { period: BillingPeriod }) {
   const { t } = useTranslation();
   switch (period) {
@@ -66,7 +64,6 @@ export function PeriodCountUnit({ period }: { period: BillingPeriod }) {
   }
 }
 
-/** 明细一行:左标签 + 右金额,金额右对齐(三行的小数点要对齐才读得出加减关系)。 */
 function QuoteRow({ label, value, strong }: { label: ReactNode; value: string; strong?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 24 }}>
@@ -78,8 +75,7 @@ function QuoteRow({ label, value, strong }: { label: ReactNode; value: string; s
   );
 }
 
-/** 费用明细三行:实例费用(原价)→ 周期优惠 → 应付。
- *  三个数由 quoteSubscription 一次算出并自洽(优惠 = 原价 − 应付),这里只渲染,不做乘法。 */
+/** 费用明细三行:实例费用(原价)→ 周期优惠 → 应付。 */
 export function PeriodQuoteRows({
   quote,
   gpuCount,

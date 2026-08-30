@@ -10,6 +10,7 @@ import secrets
 import struct
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import httpx
 import pyotp
@@ -27,8 +28,12 @@ from app.modules.adminapi.service import create_admin
 from app.modules.billing import service as billing_service
 from app.modules.billing import wallet
 from app.modules.catalog.models import PlatformImage, Sku
-from app.modules.orchestrator.models import Instance, InstanceEvent
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
+from app.modules.orchestrator.service import _encode_token
+
+# 平台预置镜像(seed_skus 的 PlatformImage 同源):创建请求体里的统一 image_ref
+IMAGE_PYTORCH = "registry.superdl.local/pytorch:2.9.0-cu128"
 
 
 async def drain(
@@ -48,20 +53,11 @@ async def drain(
     return n
 
 
-class OutboxDrainError(RuntimeError):
-    """drain_strict 冲刷到未成功的任务(dead 或退避回 pending),携带 (done, failed) 计数。"""
-
-    def __init__(self, done_count: int, failed_count: int) -> None:
-        self.done_count = done_count
-        self.failed_count = failed_count
-        super().__init__(f"outbox drain 未全成功: done={done_count}, failed={failed_count}")
-
-
 async def drain_strict(
     sm: async_sessionmaker[AsyncSession], *, limit: int = 100
 ) -> tuple[int, int]:
     """drain 的严格变体:返回 (done_count, failed_count);任一任务未成功
-    (dead,或失败退避回 pending 等下轮)即抛 OutboxDrainError。"""
+    (dead,或失败退避回 pending 等下轮)即抛 RuntimeError(消息含 done/failed 计数)。"""
     done = failed = 0
     while done + failed < limit:
         result = await outbox._process_one(sm)
@@ -72,7 +68,7 @@ async def drain_strict(
         else:
             failed += 1
     if failed:
-        raise OutboxDrainError(done, failed)
+        raise RuntimeError(f"outbox drain 未全成功: done={done}, failed={failed}")
     return done, failed
 
 
@@ -182,10 +178,9 @@ async def seed_node_spec(
         await session.commit()
 
 
-PHONE = "13800000001"
-
-
-async def send_code(client: AsyncClient, phone: str = PHONE, purpose: str = "register") -> None:
+async def send_code(
+    client: AsyncClient, phone: str = "13800000001", purpose: str = "register"
+) -> None:
     resp = await client.post(
         "/api/v1/auth/sms-code",
         # mock 渠道固定放行串(人机校验闸门;与 MOCK_SMS_CODE "123456" 同哲学)
@@ -201,7 +196,9 @@ async def age_sms_codes(sm: async_sessionmaker[AsyncSession]) -> None:
         await session.commit()
 
 
-async def register(client: AsyncClient, phone: str = PHONE, password: str | None = None) -> dict:
+async def register(
+    client: AsyncClient, phone: str = "13800000001", password: str | None = None
+) -> dict:
     await send_code(client, phone, "register")
     body: dict = {"phone": phone, "sms_code": "123456", "accept_terms": True}
     if password:
@@ -233,13 +230,6 @@ async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> R
     if token is not None:
         client.cookies.set(REFRESH_COOKIE, token, path="/")
     return await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
-
-
-async def logout_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
-    """cookie 通道登出:同 refresh 的提交纪律。token 给定时先覆写 jar。"""
-    if token is not None:
-        client.cookies.set(REFRESH_COOKIE, token, path="/")
-    return await client.post("/api/v1/auth/logout", headers={"X-Requested-With": "fetch"})
 
 
 async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
@@ -308,7 +298,7 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
                 framework_version="2.9.0",
                 python_version="3.12",
                 cuda_version="12.8",
-                image_ref="registry.superdl.local/pytorch:2.9.0-cu128",
+                image_ref=IMAGE_PYTORCH,
             )
         )
         await session.commit()
@@ -347,6 +337,14 @@ async def admin_headers(
     return {"Authorization": f"Bearer {token}"}
 
 
+def _with_idem(headers: dict[str, str], idem: str | None) -> dict[str, str]:
+    """复制 headers 并按需并入 Idempotency-Key(不改调用方原 dict)。"""
+    h = dict(headers)
+    if idem:
+        h["Idempotency-Key"] = idem
+    return h
+
+
 async def create_instance_api(
     client: AsyncClient,
     headers: dict[str, str],
@@ -356,18 +354,15 @@ async def create_instance_api(
     gpu_count: int = 1,
     idem: str | None = None,
 ) -> dict:
-    h = dict(headers)
-    if idem:
-        h["Idempotency-Key"] = idem
     resp = await client.post(
         "/api/v1/instances",
         json={
             "sku_id": sku_id,
             "gpu_count": gpu_count,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "image_ref": IMAGE_PYTORCH,
             "ssh_key_ids": [key_id],
         },
-        headers=h,
+        headers=_with_idem(headers, idem),
     )
     assert resp.status_code == 202, resp.text
     return resp.json()
@@ -394,6 +389,12 @@ async def provision_running(client, sm, fake, phone="13900000010") -> tuple[dict
 async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[str, str]:
     data = await register(client, phone)
     return {"Authorization": f"Bearer {data['access_token']}"}
+
+
+async def user_headers_with_id(client: AsyncClient, phone: str) -> tuple[dict[str, str], int]:
+    """user_headers 的同路变体:连带返回 user_id(注册响应本就带,省一次 GET /me)。"""
+    data = await register(client, phone)
+    return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
 
 
 async def create_order(client: AsyncClient, headers: dict, amount: str = "50.00") -> dict:
@@ -426,11 +427,10 @@ async def apply_refund(
     amount: str = "50.00",
     idem: str | None = None,
 ):
-    h = {**headers, **({"Idempotency-Key": idem} if idem else {})}
     return await client.post(
         "/api/v1/wallet/refunds",
         json={"order_no": order_no, "amount": amount, "reason": "用不完,申请退款"},
-        headers=h,
+        headers=_with_idem(headers, idem),
     )
 
 
@@ -483,18 +483,26 @@ async def seed_instance(
     events: list[tuple] | None = None,
     status: str = "stopped",
     market: str = "on_demand",
-) -> int:
-    """直接落库实例 + 事件(合成时间戳),返回 instance_id。
+    *,
+    wallet_credit: bool = True,
+    name: str = "t",
+    spec: dict | None = None,
+    sku_id: int = 1,
+) -> tuple[int, str]:
+    """直接落库实例 + 事件(合成时间戳),返回 (instance_id, uuid)。
 
     events 元素:(ts, from, to) 或 (ts, from, to, metadata)。
+    wallet_credit=True 顺带预存 100.00(计费用例要余额);注销/列表类用例传 False。
     """
     async with sm() as session:
         inst = Instance(
-            uuid=f"u{user_id}i{datetime.now(UTC).timestamp()}".replace(".", ""),
+            uuid=f"u{user_id}i{uuid4().hex[:12]}",
             user_id=user_id,
-            name="t",
-            sku_id=1,
-            spec={
+            name=name,
+            sku_id=sku_id,
+            spec=spec
+            if spec is not None
+            else {
                 "tier": "shared",
                 "vram_gb": 8,
                 "vcpu": 8,
@@ -527,9 +535,38 @@ async def seed_instance(
                     created_at=ts,
                 )
             )
-        await wallet.credit(session, user_id, Decimal("100.00"), type_="recharge", remark="seed")
+        if wallet_credit:
+            await wallet.credit(
+                session, user_id, Decimal("100.00"), type_="recharge", remark="seed"
+            )
         await session.commit()
-        return inst.id
+        return inst.id, inst.uuid
+
+
+async def seed_disk(
+    sm: async_sessionmaker[AsyncSession],
+    user_id: int,
+    *,
+    status: str = "active",
+    size_gb: int = 100,
+    price: str = "0.3500",
+    created_at: datetime | None = None,
+) -> tuple[int, str]:
+    """直接落库一块数据盘,返回 (disk_id, uuid)。"""
+    async with sm() as session:
+        disk = DataDisk(
+            uuid=f"d{user_id}{now_utc().timestamp()}".replace(".", ""),
+            user_id=user_id,
+            name="t",
+            size_gb=size_gb,
+            juicefs_subpath=f"disk-{user_id}-{now_utc().timestamp()}".replace(".", ""),
+            price_gb_month=Decimal(price),
+            status=status,
+            created_at=created_at or now_utc(),
+        )
+        session.add(disk)
+        await session.commit()
+        return disk.id, disk.uuid
 
 
 def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = False):
@@ -554,16 +591,10 @@ def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = F
 CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "ttl_hours": 24}
 
 
-async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
+async def set_platform_setting(sm: async_sessionmaker[AsyncSession], key: str, value: str) -> None:
+    """单行平台配置覆盖(走 set_platform_settings 的校验/加密,不裸 add PlatformSetting)。"""
     async with sm() as session:
-        await set_platform_settings(
-            session,
-            {
-                "cluster_server_url": "https://10.0.0.10:9345",
-                "cluster_join_token": "K10abcdef0123456789::server:secrettoken",
-            },
-            updated_by=None,
-        )
+        await set_platform_settings(session, {key: value}, updated_by=None)
         await session.commit()
 
 
@@ -625,6 +656,33 @@ def gpu_spec(tier: str, pool: str, **extra):
     return base
 
 
+def make_instance(**overrides) -> Instance:
+    """不落库构造 Instance(纯内存对象,供 build_pod_spec / reconciler 分支单测)。
+
+    默认值取既有调用方的交集;差异一律经 overrides 传入。
+    jupyter_token 默认按最终 uuid 现签,保证密文与 AAD 自洽。
+    """
+    uuid = overrides.get("uuid") or f"inst-{uuid4().hex[:8]}"
+    defaults: dict = {
+        "user_id": 1,
+        "uuid": uuid,
+        "name": "t",
+        "sku_id": 1,
+        "spec": gpu_spec("shared", "hami"),
+        "price_hourly": Decimal("1.0000"),
+        "gpu_count": 1,
+        "image_ref": "img:latest",
+        "ssh_port": 30022,
+        "jupyter_token": _encode_token("tok", instance_uuid=uuid),
+        "authorized_keys": [],
+        "data_disk_id": None,
+        "k8s_namespace": "tenant-1",
+        "status": "creating",
+    }
+    defaults.update(overrides)
+    return Instance(**defaults)
+
+
 async def buy_subscription(
     client,
     headers,
@@ -635,21 +693,18 @@ async def buy_subscription(
     period_count: int = 1,
     idem: str | None = None,
 ) -> tuple[int, dict]:
-    h = dict(headers)
-    if idem:
-        h["Idempotency-Key"] = idem
     resp = await client.post(
         "/api/v1/instances",
         json={
             "sku_id": sku_id,
             "gpu_count": 1,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "image_ref": IMAGE_PYTORCH,
             "ssh_key_ids": [key_id],
             "market": "subscription",
             "period": period,
             "period_count": period_count,
         },
-        headers=h,
+        headers=_with_idem(headers, idem),
     )
     return resp.status_code, resp.json()
 

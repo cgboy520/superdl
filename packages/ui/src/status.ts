@@ -305,6 +305,13 @@ export const ticketStatusMap = {
   closed: { labelKey: "shared:status.ticket.closed", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<TicketStatus, StatusMeta>;
 
+/** resolved/closed 终态不可再回复(服务端同口径 409,前端只是不渲染输入框);用户/管理端共用。 */
+const REPLIABLE_TICKET_STATUSES: readonly string[] = ["open", "pending_staff", "pending_user"];
+
+export function isTicketRepliable(status: string): boolean {
+  return REPLIABLE_TICKET_STATUSES.includes(status);
+}
+
 /** 工单分类(与 tickets.category 严格一致) */
 export type TicketCategory = "instance" | "billing" | "data" | "account" | "other";
 

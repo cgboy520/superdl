@@ -8,7 +8,7 @@ import { AUDIT_DEFAULT_LIMIT } from "../../api";
 import { AuditTable } from "../../components/AuditTable";
 
 export const Route = createFileRoute("/_app/audit")({
-  // 租户抽屉「跳审计」带预筛跳入:actor_type/actor_id/q 落进筛选框;筛选提交后回写 URL(0.3 规范);
+  // 租户抽屉「跳审计」带预筛跳入:actor_type/actor_id/q 落进筛选框;筛选提交后回写 URL;
   // 时间窗/limit 同样入 URL(运营面互相转达的视图必须可还原)
   validateSearch: (search: Record<string, unknown>): {
     actor_type?: string;

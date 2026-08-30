@@ -8,27 +8,21 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  addSshKeyViaUi,
+  addSshKeyViaApi,
   fillCustomImageForm,
+  loginViaApi,
   pickSharedStandardSku,
-  rechargeViaUi,
-  registerViaUi,
+  rechargeViaApi,
   uniquePhone,
   waitFirstRowRunning,
 } from "./helpers";
 
 test("买包月并续费", async ({ page }) => {
-  test.setTimeout(300_000);
-  const phone = uniquePhone();
-
-  // ── 注册 + 充值(与 smoke 同款前置)
-  await registerViaUi(page, phone);
-
-  // 包月一次性预扣整段周期,默认的 ¥100 不够,显式充一个够大的数
-  await rechargeViaUi(page, "5000");
-
-  // ── SSH 公钥(开发机形态必须选一把)
-  await addSshKeyViaUi(page);
+  // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
+  // 包月一次性预扣整段周期,充一个够大的数
+  const token = await loginViaApi(page, uniquePhone());
+  await rechargeViaApi(page, token, "5000");
+  await addSshKeyViaApi(page, token);
 
   // ── 市场:选规格 → 计费方式切「包月」→ 下一步
   await pickSharedStandardSku(page);
@@ -56,12 +50,11 @@ test("买包月并续费", async ({ page }) => {
   const balance = await page.getByText(/¥\s*[\d,]+\.\d{2}/).first().innerText();
   expect(Number(balance.replace(/[^\d.]/g, ""))).toBeLessThan(5000);
 
-  // ── 续费:更多 → 续费 → 确认 → 扣款回执
+  // ── 续费:更多 → 续费 → 确认 → 扣款回执(报价明细展示由 RenewModal.test.tsx 覆盖)
   await page.goto("/instances");
   await page.locator(".ant-table-row").first().getByRole("button", { name: /更\s*多/ }).click();
   await page.getByRole("menuitem", { name: /^续\s*费$/ }).click();
-  await expect(page.getByText("续费时长")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("应付")).toBeVisible();
+  await expect(page.getByText("应付")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: /^确认续费$/ }).click();
   await expect(page.getByText(/续费成功,本次扣款/)).toBeVisible({ timeout: 20_000 });
 });

@@ -98,11 +98,11 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 
 | 通道 | 机制 |
 |---|---|
-| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。**SSH 与 Jupyter 必须拆成两个 Service**:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 随机占走端口池号段 |
+| SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。**SSH 与 Jupyter 必须拆成两个 Service**:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 会占走端口池号段 |
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
 | 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
 | 租户 NetworkPolicy | 默认拒东西向。入方向只放行两处:Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明),以及 TCP 22(SSH NodePort,来源不能排私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口黑名单、UDP 走白名单,私网与云元数据网段一律拒 |
-| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、服务端点鉴权与限流、全局超时与连接兜底,5 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**、apply 照样成功,只是策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名因此锁死 |
+| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、服务端点鉴权与限流、全局超时与连接兜底,5 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**:apply 照样成功,策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名锁死 |
 
 控制面 ServiceAccount 按 worker 组件拆分;租户资源的写权限是 ClusterRole,实际可达面由
 `deploy/cluster/admission/tenant-restrictions.yaml` 的 ValidatingAdmissionPolicy 收窄到 `superdl` / `tenant-*`
@@ -191,7 +191,7 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
 下单、续费与到期链路都在 `app/modules/billing/subscriptions.py`,折扣与报价的唯一计算点在 `app/core/pricing.py`。
 
 进入包周期有两条路:创建时直接买,或把在跑的按量实例就地转过来(`POST /api/v1/instances/{uuid}/subscribe`)。
-转换在同一事务里**先结清转换前那段按量账、再翻 `market`** —— 结算候选按实例当前的 market 挑,顺序反了那段账没人结。
+转换在同一事务里**先结清转换前那段按量账、再翻 `market`**(结算候选按实例当前的 market 挑,顺序不可颠倒)。
 
 到期链路由 `subscription_patrol`(30 分钟一轮)驱动:临期预警 → 到期且开了自动续费则扣款续期 → 否则停机 →
 冻结并写 `frozen_deadline`;回收那一步仍由余额巡检的 frozen 分支做,状态机与回收逻辑只有一处实现。
@@ -220,15 +220,15 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
    决定 RuntimeClass、资源语法、userns 与调度器;`skus.tier`(dedicated / shared / cpu)只是售卖分类,两者的合法
    配对由 `TIER_POOLS` 与 catalog 的 `_check_tier_pool` 收口。
 2. **`gpu_count == 0`(纯 CPU 实例)的判定先于池分支。** cpu 档允许挂 hami 池吃 GPU 机的空闲 CPU,按池分支走
-   就会替一台不用卡的实例申请 `nvidia.com/gpu`。同理,计费份数走 `core/money.billing_units`(GPU 实例 = 卡数,
-   CPU 实例 = 1 份整机):直接写 `单价 × gpu_count` 会让 CPU 实例每小时算出 ¥0.00。
+   会替一台不用卡的实例申请 `nvidia.com/gpu`。计费份数同理收口到 `core/money.billing_units`(GPU 实例 = 卡数,
+   CPU 实例 = 1 份整机),不散写 `单价 × gpu_count`。
 3. **超卖只发生在 HAMi 池。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。`oversell_cores` 是纯定价参数,
    不下发调度(schema 上界 9.99)。
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
 5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。
 6. **包周期实例只在 `orchestrator/queries.py::billing_candidates` 一处跳过小时结算。** `upsert_hour_bill`、水位线、
-   缺口机制一行不动;跳过点散开就是对预付用户二次收费。
+   缺口机制一行不动;跳过点禁止散开。
 7. **竞价抢占只在同池同型号内选,按 `created_at` 从新到旧,凑不够一台都不动。** 这三条逐字写进知情同意给用户看,
    改排序或候选谓词等同于改用户可见文案,两边同提交。抢占与请求方的建实例**同事务**,请求方失败即整体回滚;
    被抢占实例按实际运行秒数正常结算,不免单。

@@ -2,7 +2,7 @@ import base64
 
 from httpx import AsyncClient
 
-from tests.helpers import admin_headers
+from tests.helpers import admin_headers, register
 
 
 class TestLoginRateLimit:
@@ -81,7 +81,6 @@ class TestAccountLevelLock:
 
         from app.core.errors import AppError, ErrorCode
         from app.modules.account import service as account_service
-        from tests.helpers import register
 
         await register(client, "13800000081", password="secret123456")
         for i in range(10):
@@ -134,7 +133,6 @@ class TestAccountLevelLock:
         from app.core.ratelimit import read_hits
         from app.modules.account import service as account_service
         from app.modules.notify.models import Notification
-        from tests.helpers import register
 
         data = await register(client, "13800000082", password="secret123456")
         # 攻击者从另外两个 IP 撞库失败 2 次
@@ -174,13 +172,6 @@ class TestEnvironmentFailClosed:
         monkeypatch.delenv("SUPERDL_ENVIRONMENT", raising=False)
         with pytest.raises(ValidationError, match="environment"):
             Settings(_env_file=None)  # type: ignore[call-arg]
-
-    def test_real_backend_not_bound_to_prod(self):
-        """真实集群不绑定 prod:实机验证需要 dev + real,暴露面由部署拓扑决定而非 environment。"""
-        from app.core.config import Settings
-
-        s = Settings(_env_file=None, environment="dev", k8s_backend="real")  # type: ignore[call-arg]
-        assert s.k8s_backend == "real"
 
 
 class TestProdConfigValidation:
@@ -379,8 +370,6 @@ class TestSmsCodeBruteForce:
 
     async def test_sms_login_rate_limited(self, client: AsyncClient):
         """验证码登录路径与密码路径同限流(否则可穷举 6 位码)。"""
-        from tests.helpers import register
-
         phone = "13800000089"
         await register(client, phone)
         for _ in range(5):
@@ -698,8 +687,6 @@ class TestAdminTokenRenewal:
         garbage = await client.post("/api/admin/v1/auth/refresh", json={"access_token": "xx"})
         assert garbage.status_code == 401
         # 用户端 token 不可换管理端(audience 物理隔离)
-        from tests.helpers import register
-
         data = await register(client, "13900000071")
         cross = await client.post(
             "/api/admin/v1/auth/refresh", json={"access_token": data["access_token"]}

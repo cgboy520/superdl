@@ -3,7 +3,7 @@ scheduler:
   kubeScheduler:
     # k3s 的 kube-scheduler 不作为独立镜像存在,HAMi 用上游 scheduler 镜像:chart 会按集群版本
     # 自动去掉 +k3s 后缀取 tag,这里仍显式钉死与集群同版本(键是 image.tag,不是 imageTag),
-    # 避免集群升级时镜像悄悄漂移;升级 k3s 时必须同步改这里
+    # 升级 k3s 时必须同步改这里
     image:
       tag: "v1.36.3"
 devicePlugin:

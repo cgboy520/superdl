@@ -19,10 +19,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay, request_fingerprint
+from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.pagination import Page, paginate_by_id
+from app.core.sqlutil import next_daily_seq
 from app.core.timeutil import now_utc
 from app.modules.billing import invoices, wallet
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
@@ -92,15 +93,6 @@ async def _paid_total_of_order(session: AsyncSession, order_no: str) -> Decimal:
         )
     ).scalar_one()
     return Decimal(total)
-
-
-async def _next_daily_seq(session: AsyncSession, prefix: str) -> int:
-    count = (
-        await session.execute(
-            select(func.count()).where(RefundRequest.refund_no.like(f"{prefix}-%"))
-        )
-    ).scalar_one()
-    return count + 1
 
 
 async def create_refund(
@@ -174,8 +166,9 @@ async def create_refund(
     # refund_no = R+yyyymmdd+两位日内序列。并发同序列由唯一索引兜底,撞车换下一个序列重试
     prefix = f"R{now_utc():%Y%m%d}"
     for _ in range(8):
+        seq = await next_daily_seq(session, RefundRequest.refund_no, prefix)
         req = RefundRequest(
-            refund_no=f"{prefix}-{await _next_daily_seq(session, prefix):02d}",
+            refund_no=f"{prefix}-{seq:02d}",
             user_id=user_id,
             order_no=order_no,
             amount=amount,
@@ -183,30 +176,28 @@ async def create_refund(
             idempotency_key=idempotency_key,
             request_fingerprint=fingerprint,
         )
-        session.add(req)
         try:
-            await session.commit()
-            logger.info("refund_created", refund_no=req.refund_no, order_no=order_no)
-            return req, True
+            result = await insert_idempotent(
+                session,
+                req,
+                model=RefundRequest,
+                owner_col=RefundRequest.user_id,
+                owner_id=user_id,
+                key=idempotency_key,
+                fingerprint=fingerprint,
+                commit=True,
+            )
         except IntegrityError:
-            await session.rollback()
-            if idempotency_key:
-                winner = await find_replay(
-                    session,
-                    RefundRequest,
-                    owner_col=RefundRequest.user_id,
-                    owner_id=user_id,
-                    key=idempotency_key,
-                    fingerprint=fingerprint,
-                )
-                if winner is not None:
-                    return winner, False  # 同键并发:返回胜出方的单
             if await _active_refund_of_order(session, order_no) is not None:
                 # 撞的是部分唯一索引(并发重复申请同一订单)
                 raise AppError(
                     ErrorCode.CONFLICT, key="billing.refundAlreadyApplied", http_status=409
                 ) from None
-            # 否则按 refund_no 序列撞车处理:重试下一序列
+            continue  # 按 refund_no 序列撞车处理:重试下一序列
+        if result is not req:
+            return result, False  # 同键并发:返回胜出方的单
+        logger.info("refund_created", refund_no=req.refund_no, order_no=order_no)
+        return req, True
     raise AppError(ErrorCode.INTERNAL, key="common.internal", http_status=500)
 
 

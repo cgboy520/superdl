@@ -1,6 +1,6 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径,脚注声明);在售型号标记联动价格墙。 */
 
-import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, layout, medalColors } from "@superdl/ui";
+import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, layout, medalColors, normalizeGpuModel } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Grid, Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
@@ -20,7 +20,7 @@ export function GpuRankSection() {
   const wide = Grid.useBreakpoint().md;
 
   const onSale = useMemo(
-    () => new Set((skus ?? []).map((s) => s.gpu_model.replace(/[\s-]/g, "").toUpperCase())),
+    () => new Set((skus ?? []).map((s) => normalizeGpuModel(s.gpu_model))),
     [skus],
   );
 

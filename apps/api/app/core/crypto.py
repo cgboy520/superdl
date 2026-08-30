@@ -23,7 +23,7 @@ import hashlib
 import hmac
 import os
 
-from app.core.config import get_settings
+from app.core.config import decode_master_key, get_settings
 
 _PREFIX_V1 = "enc:v1:"
 _PREFIX_V2 = "enc:v2:"
@@ -36,13 +36,7 @@ _KDF_SALT = b"superdl-crypto"
 
 
 def _decode_key(raw: str, *, env_name: str) -> bytes:
-    try:
-        key = base64.urlsafe_b64decode(raw)
-    except ValueError as exc:
-        raise ValueError(f"{env_name} 不是合法 urlsafe-base64") from exc
-    if len(key) != 32:
-        raise ValueError(f"{env_name} 解码后须为 32 字节")
-    return key
+    return decode_master_key(raw, label=env_name)
 
 
 def _active_key() -> bytes:

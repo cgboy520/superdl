@@ -1,21 +1,22 @@
 """管理端路由(总览/工单/审计/策略/平台配置/公告/outbox 死信)。"""
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import mark_audited_read, set_audit_target
 from app.core.config import get_settings
+from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
 from app.core.outbox import OutboxTask
 from app.core.pagination import Page
-from app.core.params import Cursor, Limit, TzOffset
+from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.registry import probe_harbor
 from app.core.timeutil import now_utc
@@ -23,7 +24,7 @@ from app.modules.adminapi import export as admin_export
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.router_shared import ExportLang, csv_response
+from app.modules.adminapi.router_shared import ExportLang
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
     AnnouncementOut,
@@ -451,7 +452,7 @@ async def admin_publish_announcement(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> AnnouncementResultOut:
     """公告群发(站内信 announcement 类型,全部 active 用户);落公告级记录供历史/撤回。
     Idempotency-Key 重放不新建公告(否则全员收到重复站内信),回 200 + X-Idempotent-Replay。"""

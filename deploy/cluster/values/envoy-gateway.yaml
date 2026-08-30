@@ -16,8 +16,8 @@ deployment:
   # Guaranteed 只防同优先级驱逐,priorityClass 才保证资源紧张时先于租户 Pod 被保。
   priorityClassName: system-cluster-critical
   envoyGateway:
-    # 显式写死(值同 chart 默认):控制面内存随 HTTPRoute 条数涨(一实例一条),要跟着规模
-    # 按实测复核,写死后升 chart 版本也不会被默认值变动改掉。
+    # 控制面内存随 HTTPRoute 条数涨(一实例一条),要跟着规模按实测复核,写死后升 chart 版本
+    # 也不会被默认值变动改掉。
     # 只限内存不限 CPU:批量 HTTPRoute 变更时 reconcile 会短时打满,卡 CPU limit 只会把收敛
     # 时间拖长,表现为「新实例的 Jupyter 域名要等很久才通」。
     resources:

@@ -77,7 +77,7 @@ export function SettlementGapsTab() {
           <Switch checked={unresolvedOnly} onChange={setUnresolvedOnly} />
           <Typography.Text type="secondary">{t("finance.gapUnresolvedOnly")}</Typography.Text>
         </Space>
-        {/* 游标列表不挂轮询(0.4):手动刷新重置回第一页 */}
+        {/* 游标列表不挂轮询:手动刷新重置回第一页 */}
         <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
       </Space>
       <Table<AdminSettlementGapOut>
@@ -148,7 +148,7 @@ export function SettlementGapsTab() {
             render: (_, row) =>
               row.resolved_at ? null : (
                 <Space size={4}>
-                  {/* 重放保持 Popconfirm(L1):该端点无 reason 负载,ReasonAction 收的原因无处可记;
+                  {/* 重放用 Popconfirm 而非 ReasonAction:该端点无 reason 负载;
                       审计由服务端落操作者与缺口原因(replay_gap + set_audit_target) */}
                   <Popconfirm
                     title={t("finance.gapReplayConfirm")}

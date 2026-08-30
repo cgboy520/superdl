@@ -1,13 +1,13 @@
 """refresh 轮换与撤销:一次性消费、宽限窗内并发重试放行、窗外重放全撤、冻结即失效、登出。
 
 refresh token 只走 HttpOnly Cookie(响应体不含):测试经 cookie jar 取/覆写
-(见 tests/helpers.py 的 REFRESH_COOKIE / refresh_via_cookie / logout_via_cookie)。
+(见 tests/helpers.py 的 REFRESH_COOKIE / refresh_via_cookie)。
 """
 
 import asyncio
 from datetime import timedelta
 
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,10 +18,16 @@ from tests.helpers import (
     admin_headers,
     current_refresh_token,
     issue_code,
-    logout_via_cookie,
     refresh_via_cookie,
     register,
 )
+
+
+async def logout_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
+    """cookie 通道登出:同 refresh 的提交纪律。token 给定时先覆写 jar。仅本文件使用。"""
+    if token is not None:
+        client.cookies.set(REFRESH_COOKIE, token, path="/")
+    return await client.post("/api/v1/auth/logout", headers={"X-Requested-With": "fetch"})
 
 
 async def _age_used_refresh_tokens(sm: async_sessionmaker[AsyncSession]) -> None:

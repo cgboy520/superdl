@@ -12,7 +12,16 @@ from app.core.config import get_settings
 from app.modules.billing.models import BalanceLedger
 from app.modules.orchestrator.models import PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, drain, gen_ed25519_key, seed_node_spec
+from tests.helpers import (
+    IMAGE_PYTORCH,
+    backdate_running_event,
+    create_test_sku,
+    create_user_with_key,
+    drain,
+    fund_wallet,
+    gen_ed25519_key,
+    seed_node_spec,
+)
 
 
 async def test_full_lifecycle_drill(client, sm, fake):
@@ -65,7 +74,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
             "/api/v1/instances",
             json={
                 "sku_id": sku_id,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key["id"]],
                 "data_disk_id": disk["id"],
             },
@@ -105,8 +114,6 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert pod_spec.data_disk_subpath == f"disk-{disk['uuid']}"
 
     # ── 6. 跑 30 分钟后停机 → 尾账 ─────────────────────────
-    from tests.helpers import backdate_running_event
-
     expected_secs = await backdate_running_event(sm, uuid, 30)
     await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)
     await drain(sm)
@@ -164,7 +171,6 @@ async def test_pull_secret_managed_per_tenant_when_registry_configured(client, s
     改 Secret 后指纹变化(轮换靠它触发覆写)。挂了说明私有项目的镜像会拉不下来,或轮换不生效。"""
     from app.core.platform_config import set_platform_settings
     from app.core.registry import PULL_SECRET_NAME, pull_secret_fingerprint
-    from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
 
     async with sm() as session:
         await set_platform_settings(
@@ -398,7 +404,7 @@ async def test_subscription_drill(client, sm, fake):
         json={
             "sku_id": sku_id,
             "gpu_count": 1,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "image_ref": IMAGE_PYTORCH,
             "ssh_key_ids": [key.json()["id"]],
             "market": "subscription",
             "period": "month",

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.modules.billing import wallet
 from app.modules.billing.patrol import balance_patrol
 from app.modules.notify.models import Notification
-from tests.helpers import admin_headers, provision_running
+from tests.helpers import admin_headers, provision_running, register, set_platform_setting
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -216,11 +216,8 @@ class TestAlertmanagerWebhook:
     async def test_critical_alert_sms_to_oncall(self, client, sm, fake):
         """critical 平台告警:配置值班手机号后经 outbox 短信直发(不依赖站内信流),重放幂等。"""
         from app.core.outbox import OutboxTask
-        from app.core.platform_config import PlatformSetting
 
-        async with sm() as session:
-            session.add(PlatformSetting(key="oncall_phone", value="13900001111", updated_by=None))
-            await session.commit()
+        await set_platform_setting(sm, "oncall_phone", "13900001111")
         resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
         assert resp.status_code == 200
         assert resp.json()["ingested"] == 1
@@ -313,8 +310,6 @@ class TestAlertAck:
         assert again.json()["message_key"] == "adminapi.alertAlreadyAcked"
 
     async def test_unread_count_tracks_ack(self, client, sm, fake):
-        from tests.helpers import register
-
         user = await register(client, "13900000991")
         await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
         ops = await admin_headers(sm, client, role="ops")
@@ -342,8 +337,6 @@ class TestAlertAck:
         assert [r.type for r in rows] == ["admin_alert"]
 
     async def test_severity_filter(self, client, sm, fake):
-        from tests.helpers import register
-
         user = await register(client, "13900000992")
         await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
         ops = await admin_headers(sm, client, role="ops")

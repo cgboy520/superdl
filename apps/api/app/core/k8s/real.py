@@ -352,7 +352,10 @@ class RealOrchestrator:
             ),
             subjects=[
                 client.RbacV1Subject(
-                    kind="ServiceAccount", name=TENANT_MGR_SA_NAME, namespace=PLATFORM_NAMESPACE
+                    # 平台 ns 单一事实源是 settings.k8s_platform_namespace(与 Job 落点同口径)
+                    kind="ServiceAccount",
+                    name=TENANT_MGR_SA_NAME,
+                    namespace=self.settings.k8s_platform_namespace,
                 )
             ],
         )
@@ -777,8 +780,8 @@ class RealOrchestrator:
         """SSH Service 创建冲突(409/422)的核对:同名对象存在 ≠ 幂等成功,nodePort 必须
         与期望一致(写法对照 _create_pod_sync 的 deletion_timestamp 核对)。漂移则 patch 回期望端口。
 
-        422 走到这里是因为分配器先于 AlreadyExists 命中:同名 Service 不存在才说明
-        端口真被集群其它对象占用,那时才归一化成 NodePortTaken 交编排层换端口。
+        422 走到这里即分配器先于 AlreadyExists 命中:同名 Service 不存在才说明
+        端口真被集群其它对象占用,此时归一化成 NodePortTaken 交编排层换端口。
         """
         # 让「端口必然已分配」这条不变量在本函数内自证(下面两处 NodePortTaken 都要拿它)
         port = spec.ssh_node_port

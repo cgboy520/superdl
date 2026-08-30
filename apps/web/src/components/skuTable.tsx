@@ -166,7 +166,6 @@ export function BillingModeCard({
   const spotPolicy = useSpotPolicy();
   const showCount = count != null && onCountChange != null && isBillingPeriod(value);
   return (
-    // 不再挂 Card title:ChipRow 行内标签已是同一文案,双写就是重复
     <Card styles={{ body: { paddingBlock: 16 } }}>
       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
         <ChipRow<BillingMode>

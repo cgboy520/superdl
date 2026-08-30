@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.notify import service as notify_service
@@ -22,10 +22,7 @@ STALE_AFTER = timedelta(hours=24)
 async def stale_ticket_patrol(sm: async_sessionmaker[AsyncSession]) -> int:
     """扫描滞留工单并落 warning 告警。返回本轮新增告警数。"""
     alerted = 0
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.TICKET_STALE_PATROL) as got,
-    ):
+    async with advisory_lock(sm, LockKey.TICKET_STALE_PATROL) as got:
         if not got:
             return 0
         async with sm() as session:

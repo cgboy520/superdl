@@ -6,10 +6,14 @@ from typing import Annotated
 
 from pydantic import PlainSerializer
 
+
+def money_str(v: Decimal) -> str:
+    """Decimal → 字符串(保 scale,不科学计数)。API 出参与 CSV 导出共用同一规则。"""
+    return format(v, "f")
+
+
 # API 出参金额一律序列化为字符串(保 scale、避免 float);前端按字符串渲染
-MoneyOut = Annotated[
-    Decimal, PlainSerializer(lambda v: format(v, "f"), return_type=str, when_used="json")
-]
+MoneyOut = Annotated[Decimal, PlainSerializer(money_str, return_type=str, when_used="json")]
 
 PRICE_QUANT = Decimal("0.0001")
 AMOUNT_QUANT = Decimal("0.01")

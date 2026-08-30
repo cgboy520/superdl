@@ -53,16 +53,7 @@ jobs:
           build-args: ${{ matrix.build_args }}
           load: true
           tags: scan-target:latest
-      - name: Trivy scan(HIGH/CRITICAL 阻断,扫描对象即待发布镜像)
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
-        with:
-          image-ref: scan-target:latest
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          # 阻断闸只盯「可修复」:上游未修复的 CVE 没有可升级版本,把它算进阻断闸
-          # 等于让发布被上游节奏绑架(可用性风险);未修复项由下方全量报告归档盯评审
-          ignore-unfixed: true
-      - name: Trivy 全量报告(含未修复;归档供安全评审,不阻断)
+      - name: Trivy 全量扫描(HIGH/CRITICAL 含未修复;归档与阻断判定同源)
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: scan-target:latest
@@ -70,7 +61,18 @@ jobs:
           ignore-unfixed: false
           format: json
           output: trivy-full.json
-          exit-code: "0"  # 归档不阻断:阻断闸是上一条(ignore-unfixed)
+          exit-code: "0" # 扫描只负责落盘,阻断由下一步判定:同一 JSON 既归档又判定,不扫两遍
+      - name: 阻断判定(只拦可修复的 HIGH/CRITICAL)
+        run: |
+          # 阻断闸只盯「可修复」(FixedVersion 非空):上游未修复的 CVE 没有可升级版本,
+          # 把它算进阻断闸等于让发布被上游节奏绑架(可用性风险);未修复项由归档报告盯评审
+          hits=$(jq -r '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "")] | .[] | "\(.VulnerabilityID) (\(.Severity)) \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion)"' trivy-full.json)
+          if [ -n "$hits" ]; then
+            while IFS= read -r line; do echo "::error::$line"; done <<< "$hits"
+            echo "::error::Trivy 发现可修复的 HIGH/CRITICAL 漏洞,阻断发布(完整清单见归档 trivy-full.json)"
+            exit 1
+          fi
+          echo "无可修复的 HIGH/CRITICAL 漏洞,放行"
       - name: Upload full vuln report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

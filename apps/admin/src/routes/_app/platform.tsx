@@ -125,7 +125,6 @@ const FIELD_EXTRA_KEYS = {
   support_wechat: "platform.fieldExtra.support_wechat",
 } as const;
 type FieldExtraKey = (typeof FIELD_EXTRA_KEYS)[keyof typeof FIELD_EXTRA_KEYS];
-const FIELD_EXTRA_BY_KEY: Record<string, FieldExtraKey> = FIELD_EXTRA_KEYS;
 
 const PROVIDER_LABELS: Record<string, string> = {
   mock: "开发模式(不发短信,固定码 123456 写日志;仅开发环境)",
@@ -151,7 +150,7 @@ const GROUP_INTRO_KEYS = {
 /** 字段级指引文案:locale 查表(fieldExtra.*) + 服务端 hint 拼一行。 */
 function FieldExtraText({ itemKey, hint }: { itemKey: string; hint?: string | null }) {
   const { t } = useTranslation();
-  const key = FIELD_EXTRA_BY_KEY[itemKey];
+  const key = (FIELD_EXTRA_KEYS as Record<string, FieldExtraKey>)[itemKey];
   return <>{[key ? t(key) : null, hint].filter(Boolean).join(";")}</>;
 }
 
@@ -851,7 +850,7 @@ function PlatformConfigPage() {
             const { reason } = await reasonForm.validateFields();
             update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
           } catch {
-            // 校验失败:antd 已在字段下给出红字反馈,静默停留
+            /* 校验失败:antd 已在字段下给出红字 */
           }
         }}
       >

@@ -25,7 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
     SETTLEMENT_FAILED_TOTAL,
@@ -273,8 +273,8 @@ async def settle_on_demand_up_to(
     """把该实例截至 `at` 的按量账逐小时结清(水位线之后的第一个小时起)。返回本次扣款合计。
 
     转包周期前必须调它:`billing_candidates` 按实例当前的 market 挑候选,market 一旦翻成
-    subscription,水位线之后没出账的小时就再也没人管。逐小时切是因为 `bills_hourly` 的
-    幂等键是 (instance_id, hour_start)。滞后超过 MAX_CONVERT_SETTLE_HOURS 直接抛 CONFLICT。
+    subscription,水位线之后没出账的小时就再也没人管。逐小时切分的依据是 `bills_hourly`
+    的幂等键 (instance_id, hour_start)。滞后超过 MAX_CONVERT_SETTLE_HOURS 直接抛 CONFLICT。
     """
     watermark = await get_watermark(session, "hourly")
     last_hour = hour_floor(at)
@@ -507,10 +507,7 @@ async def _catchup_settle(
     截断与死信的跳窗都登记 settlement_gaps(告警按未核销缺口数持续判,不自愈)。
     """
     settled = 0
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, lock_key) as got,
-    ):
+    async with advisory_lock(sm, lock_key) as got:
         if not got:
             return 0
         async with sm() as session:

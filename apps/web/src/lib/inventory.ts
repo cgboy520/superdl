@@ -1,11 +1,10 @@
 /** 可用量去重聚合:同一 (池, 型号) 物理池上的互斥规格可售数不可相加,直接 sum 会成倍高估。
  *  口径:按 (pool_label, gpu_model) 分组取 max,再跨组求和。 */
 
-export interface SkuAvailabilityLike {
-  pool_label?: string | undefined;
-  gpu_model: string;
-  available_count?: number | undefined;
-}
+import type { SkuMarketOut } from "@superdl/api-client";
+
+/** 入参即 SkuMarketOut(市场/落地页全部调用方同源),只取去重所需三字段。 */
+export type SkuAvailabilityLike = Pick<SkuMarketOut, "pool_label" | "gpu_model" | "available_count">;
 
 /** 全局可售上限(去重后):首页/CTA 横幅的对外数字。 */
 export function dedupAvailableTotal(skus: readonly SkuAvailabilityLike[]): number {

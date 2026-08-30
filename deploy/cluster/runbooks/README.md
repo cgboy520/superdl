@@ -19,7 +19,7 @@
 ## 告警 → 第一步
 
 告警规则在 `deploy/cluster/values/kps.yaml`(`superdl.platform` 与 GPU 规则组),critical 必走 webhook + 外部 SMTP 双通道,可选钉钉与值班短信通道见 `docs/reference/observability.md`。
-有专属 runbook 的告警在规则里带 `runbook_url` 注解(指向本目录);其余告警的第一步写在 summary 与下表里,不为每条告警单独生造一页。
+有专属 runbook 的告警在规则里带 `runbook_url` 注解(指向本目录);其余告警的第一步写在 summary 与下表里。
 平台指标含义见 `docs/reference/observability.md`。
 
 | 告警 | 含义 | 第一步 | 文档 |

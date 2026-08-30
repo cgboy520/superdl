@@ -9,6 +9,8 @@
 from collections.abc import Mapping
 from typing import Any
 
+from app.core.logging import get_logger
+
 MESSAGES: dict[str, str] = {
     # 账户
     "account.accountDeleted": "账号已注销",
@@ -46,9 +48,6 @@ MESSAGES: dict[str, str] = {
     "adminapi.announcementAlreadyRevoked": "公告已撤回,无需重复操作",
     "adminapi.adjustSecondReviewer": "调账必须由第二位管理员复核",
     "adminapi.adjustReviewerTooNew": "复核账号在调账发起后才创建,不构成双人复核",
-    "adminapi.idempotencyKeyMismatch": (
-        "同一幂等键对应了不同的请求内容(金额/租户/事由不一致),已按冲突拒绝——如需新调账请更换幂等键"
-    ),
     "adminapi.badDayFormat": "day 格式应为 YYYY-MM-DD",
     "adminapi.adminUsernameTaken": "该用户名已存在",
     "adminapi.cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
@@ -303,8 +302,6 @@ MESSAGES: dict[str, str] = {
 
 def render_message(key: str, params: Mapping[str, Any] | None) -> str:
     """按目录渲染中文兜底文案。缺键/缺参回落并留痕,绝不因此 500。"""
-    from app.core.logging import get_logger
-
     template = MESSAGES.get(key)
     if template is None:
         get_logger("app.messages").warning("message_key_missing", key=key)

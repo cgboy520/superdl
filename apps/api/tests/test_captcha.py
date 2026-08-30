@@ -5,7 +5,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.captcha import AliyunCaptchaChannel, CaptchaError, set_captcha_channel
-from app.core.platform_config import PlatformSetting
+from tests.helpers import set_platform_setting
 
 
 @pytest.fixture(autouse=True)
@@ -15,20 +15,13 @@ def _reset_channel():
 
 
 class _FailingChannel:
-    async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
+    async def verify(self, captcha_verify_param: str) -> bool:
         raise CaptchaError("provider down")
 
 
 class _RejectingChannel:
-    async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
+    async def verify(self, captcha_verify_param: str) -> bool:
         return False
-
-
-async def _set(sm, **rows: str) -> None:
-    async with sm() as session:
-        for key, value in rows.items():
-            session.add(PlatformSetting(key=key, value=value))
-        await session.commit()
 
 
 class TestAliyunChannel:
@@ -41,7 +34,7 @@ class TestAliyunChannel:
             return httpx.Response(200, json={"Code": "Success", "Result": {"VerifyResult": True}})
 
         ch = AliyunCaptchaChannel("ak", "sk", "scene-1", transport=httpx.MockTransport(handler))
-        assert await ch.verify("token-abc", None) is True
+        assert await ch.verify("token-abc") is True
         assert seen[0]["Action"] == "VerifyIntelligentCaptcha"
         assert seen[0]["Version"] == "2023-03-05"
         assert seen[0]["SceneId"] == "scene-1"  # 服务端强制写场景,防前端篡改
@@ -52,7 +45,7 @@ class TestAliyunChannel:
             return httpx.Response(200, json={"Code": "Success", "Result": {"VerifyResult": False}})
 
         ch = AliyunCaptchaChannel("ak", "sk", "s", transport=httpx.MockTransport(handler))
-        assert await ch.verify("bot-token", None) is False
+        assert await ch.verify("bot-token") is False
 
     async def test_rejected_and_malformed_raise(self):
         def rejected(request: httpx.Request) -> httpx.Response:
@@ -60,14 +53,14 @@ class TestAliyunChannel:
 
         ch = AliyunCaptchaChannel("ak", "sk", "s", transport=httpx.MockTransport(rejected))
         with pytest.raises(CaptchaError, match="Throttling"):
-            await ch.verify("t", None)
+            await ch.verify("t")
 
         def malformed(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"Code": "Success"})  # 缺 Result
 
         ch2 = AliyunCaptchaChannel("ak", "sk", "s", transport=httpx.MockTransport(malformed))
         with pytest.raises(CaptchaError, match="unexpected"):
-            await ch2.verify("t", None)
+            await ch2.verify("t")
 
 
 class TestSmsCodeGate:
@@ -82,7 +75,7 @@ class TestSmsCodeGate:
 
     async def test_enabled_requires_token(self, client: AsyncClient, sm):
         """开关开启:缺 token 即 400 CAPTCHA_REQUIRED——挂了说明开关没接到发码路径。"""
-        await _set(sm, captcha_enabled="true")
+        await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_RejectingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code", json={"phone": "13800000095", "purpose": "register"}
@@ -91,7 +84,7 @@ class TestSmsCodeGate:
         assert resp.json()["code"] == "CAPTCHA_REQUIRED"
 
     async def test_wrong_token_rejected(self, client: AsyncClient, sm):
-        await _set(sm, captcha_enabled="true")
+        await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_RejectingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code",
@@ -106,7 +99,7 @@ class TestSmsCodeGate:
 
         from app.modules.account.models import SmsCode
 
-        await _set(sm, captcha_enabled="true")
+        await set_platform_setting(sm, "captcha_enabled", "true")
         set_captcha_channel(_FailingChannel())
         resp = await client.post(
             "/api/v1/auth/sms-code",
@@ -122,7 +115,7 @@ class TestSmsCodeGate:
 
     async def test_enabled_without_credentials_is_fail_closed(self, client: AsyncClient, sm):
         """开启但凭据未配:按配置构造渠道即失败 → 502,不静默放行。"""
-        await _set(sm, captcha_enabled="true")
+        await set_platform_setting(sm, "captcha_enabled", "true")
         resp = await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": "13800000096", "purpose": "register", "captcha_token": "t"},
@@ -135,7 +128,9 @@ class TestSmsCodeGate:
         resp = await client.get("/api/v1/auth/captcha-config")
         assert resp.status_code == 200
         assert resp.json() == {"enabled": False, "scene_id": None, "prefix": None}
-        await _set(sm, captcha_enabled="true", captcha_scene_id="scene-1", captcha_prefix="pfx")
+        await set_platform_setting(sm, "captcha_enabled", "true")
+        await set_platform_setting(sm, "captcha_scene_id", "scene-1")
+        await set_platform_setting(sm, "captcha_prefix", "pfx")
         assert (await client.get("/api/v1/auth/captcha-config")).json() == {
             "enabled": True,
             "scene_id": "scene-1",

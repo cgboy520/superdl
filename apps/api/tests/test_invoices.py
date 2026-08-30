@@ -10,7 +10,14 @@ from sqlalchemy import select, update
 
 from app.core.timeutil import now_utc
 from app.modules.billing.models import InvoiceRequest, Order
-from tests.helpers import admin_headers, create_order, pay_mock, user_headers
+from tests.helpers import (
+    admin_headers,
+    apply_refund,
+    create_order,
+    finance_pair,
+    pay_mock,
+    user_headers,
+)
 
 
 def past_period(months_ago: int = 1) -> tuple[str, datetime]:
@@ -129,8 +136,6 @@ class TestRefundDeduction:
 
     async def _approve_and_payout(self, client, sm, rid: int) -> tuple[dict, dict]:
         """审批 + 登记打款(打款落在当前账期,总晚于历史账期的订单)。返回 (审批人, 打款人) 头。"""
-        from tests.helpers import finance_pair
-
         reviewer, payer = await finance_pair(sm, client)
         resp = await client.post(
             f"/api/admin/v1/refunds/{rid}/review",
@@ -147,8 +152,6 @@ class TestRefundDeduction:
         return reviewer, payer
 
     async def _refund_paid(self, client, sm, headers, order_no: str, amount: str) -> None:
-        from tests.helpers import apply_refund
-
         rid = (await apply_refund(client, headers, order_no, amount)).json()["id"]
         await self._approve_and_payout(client, sm, rid)
 
@@ -175,8 +178,6 @@ class TestRefundDeduction:
         """P1 订单的退款:pending 时从 P1 预扣,在之后的账期打款后仍从 P1 扣(不随打款时间挪走),
         期间按预扣额申请的发票开票重算一致。挂了 = 已打款退款按 payout_at 归期:P1 重算变大 →
         开票 409 → 驳回重申后 P1 全额开票,而打款账期又被扣一次(票款双重兑现)。"""
-        from tests.helpers import apply_refund
-
         headers = await user_headers(client, "13700000206")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)
@@ -220,10 +221,10 @@ class TestCreate:
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "billing.invoicePeriodAlreadyApplied"
 
-    async def test_company_title_requires_tax_id(self, client: AsyncClient, sm):
+    async def test_company_title_requires_tax_id(self, client: AsyncClient):
         headers = await user_headers(client, "13700000213")
-        p1, at1 = past_period(1)
-        await paid_order_at(client, sm, headers, "50.00", at1)
+        p1, _ = past_period(1)
+        # schema 422 在业务之前拦,无需造单
         resp = await apply_invoice(client, headers, p1, tax_id=None)
         assert resp.status_code == 422
         resp = await apply_invoice(client, headers, p1, tax_id="   ")
@@ -532,8 +533,6 @@ class TestDoubleSpendGate:
     ):
         """先申请退款 → 开票(票额已扣该笔在途退款)→ 登记打款成功,账期无剩余可开
         (挂了 = 打款侧又按「账期已开票」拦下:已预扣的退款只能取消,再申请被已开票拒,资金死胡同)。"""
-        from tests.helpers import finance_pair
-
         headers = await user_headers(client, "13700000245")
         p1, at1 = past_period(1)
         order = await paid_order_at(client, sm, headers, "50.00", at1)

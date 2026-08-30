@@ -38,7 +38,7 @@ class EdgeGuardMiddleware:
                 host = (headers.get("host") or "").split(":")[0].lower()
                 # prod 启动校验已 fail-fast 保证密钥非空;compare_digest 防时序侧信道
                 edge = settings.admin_edge_token
-                token_ok = bool(edge) and hmac.compare_digest(
+                token_ok = hmac.compare_digest(
                     (headers.get("x-admin-edge-token") or "").encode(), edge.encode()
                 )
                 if host != settings.admin_host.lower() or not token_ok:

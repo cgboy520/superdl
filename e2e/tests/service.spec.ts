@@ -8,15 +8,12 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { pickSharedStandardSku, rechargeViaUi, registerViaUi, uniquePhone, waitFirstRowRunning } from "./helpers";
+import { loginViaApi, pickSharedStandardSku, rechargeViaApi, uniquePhone, waitFirstRowRunning } from "./helpers";
 
 test("部署服务并拿到端点与 API Key", async ({ page }) => {
-  test.setTimeout(300_000);
-  const phone = uniquePhone();
-
-  // ── 注册 + 充值(与 smoke 同款前置)
-  await registerViaUi(page, phone);
-  await rechargeViaUi(page);
+  // ── 建号 + 充值(API 直达;UI 链路由 smoke 覆盖)
+  const token = await loginViaApi(page, uniquePhone());
+  await rechargeViaApi(page, token, "100");
 
   // ── 市场:选规格 → 结算条「部署服务」进服务形态创建流
   await pickSharedStandardSku(page);
@@ -55,11 +52,9 @@ test("部署服务并拿到端点与 API Key", async ({ page }) => {
   await expect(page.getByText("关闭后无法再查看")).toBeVisible({ timeout: 15_000 });
   const plainKey = page.getByText(/^sk-[A-Za-z0-9_-]{8,}$/);
   await expect(plainKey).toBeVisible();
-  // 这一条是本文件最该守的:没勾「我已保存」就关不掉窗
+  // 「未勾选保存则关不掉」的禁用闸由 ApiKeyModal.test.tsx 覆盖,这层只走通流程
   const closeBtn = page.getByRole("button", { name: "已保存,关闭" });
-  await expect(closeBtn).toBeDisabled();
   await page.getByRole("checkbox", { name: "我已保存这把 Key" }).check();
-  await expect(closeBtn).toBeEnabled();
   await closeBtn.click();
 
   // 关窗后明文再也不出现在页面上(列表只回前缀)

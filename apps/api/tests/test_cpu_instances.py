@@ -26,13 +26,17 @@ from app.modules.catalog.models import Sku
 from app.modules.nodes.models import NodeSpec
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.reconciler import reconcile_once
-from app.modules.orchestrator.service import _encode_token, build_pod_spec
+from app.modules.orchestrator.service import build_pod_spec
 from tests.helpers import (
+    IMAGE_PYTORCH,
     admin_headers,
+    backdate_running_event,
     create_test_sku,
     create_user_with_key,
     drain,
     fund_wallet,
+    gpu_spec,
+    make_instance,
     seed_node_spec,
 )
 
@@ -68,23 +72,6 @@ def _cpu_spec(pool: str = "cpu", **extra) -> dict:
     }
     base.update(extra)
     return base
-
-
-def _instance(spec: dict, gpu_count: int = 0) -> Instance:
-    return Instance(
-        user_id=1,
-        uuid="i-cpu",
-        image_ref="img:latest",
-        spec=spec,
-        gpu_count=gpu_count,
-        ssh_port=30022,
-        jupyter_token=_encode_token("tok", instance_uuid="i-cpu"),
-        authorized_keys=[],
-        data_disk_id=None,
-        k8s_namespace="tenant-1",
-        status="creating",
-        sku_id=1,
-    )
 
 
 class TestGpuRequest:
@@ -157,15 +144,13 @@ class TestPodSpec:
 
         挂了 = 倍率跟着 gpu_count 走,给 CPU 档加多份规格时会照着 0 卡乘。
         """
-        pod = build_pod_spec(_instance(_cpu_spec()))
+        pod = build_pod_spec(make_instance(spec=_cpu_spec(), gpu_count=0))
         assert pod.vcpu == 8 and pod.mem_gb == 16
         assert pod.gpu_resources == {}
         assert pod.disk_gb == 100
 
     def test_gpu_instance_still_scales(self):
-        from tests.helpers import gpu_spec
-
-        inst = _instance(gpu_spec("dedicated", "kata"), gpu_count=4)
+        inst = make_instance(spec=gpu_spec("dedicated", "kata"), gpu_count=4)
         pod = build_pod_spec(inst)
         assert pod.vcpu == 8 * 4 and pod.mem_gb == 32 * 4
 
@@ -316,7 +301,7 @@ class TestCapacity:
             json={
                 "sku_id": sku_id,
                 "gpu_count": 0,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key_id],
             },
             headers=headers,
@@ -380,7 +365,7 @@ class TestFullChain:
             json={
                 "sku_id": sku_id,
                 "gpu_count": 0,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key_id],
             },
             headers=headers,
@@ -403,8 +388,6 @@ class TestFullChain:
         ] == "running"
 
         # 跑 30 分钟后停机 → 尾账必须 > 0(0.49/时 × 0.5h ≈ 0.25)
-        from tests.helpers import backdate_running_event
-
         await backdate_running_event(sm, uuid, 30)
         assert (await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)).status_code
         async with sm() as session:
@@ -437,7 +420,7 @@ class TestFullChain:
             json={
                 "sku_id": sku_id,
                 "gpu_count": 1,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key_id],
             },
             headers=headers,
@@ -459,7 +442,7 @@ class TestFullChain:
             json={
                 "sku_id": sku_id,
                 "gpu_count": 0,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key_id],
             },
             headers=headers,
@@ -491,7 +474,7 @@ class TestVcpuQuota:
                 json={
                     "sku_id": sku_id,
                     "gpu_count": 0,
-                    "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                    "image_ref": IMAGE_PYTORCH,
                     "ssh_key_ids": [key_id],
                 },
                 headers=headers,
@@ -536,7 +519,7 @@ class TestVcpuQuota:
             json={
                 "sku_id": sku_id,
                 "gpu_count": 1,
-                "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+                "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key_id],
             },
             headers=headers,

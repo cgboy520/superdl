@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.money import as_amount
 from app.core.timeutil import now_utc, prev_hour_range
@@ -85,10 +85,7 @@ async def aggregate_previous_hour(
 
     window_start, window_end = prev_hour_range(at or now_utc())
     written = 0
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.USAGE_AGGREGATION) as got,
-    ):
+    async with advisory_lock(sm, LockKey.USAGE_AGGREGATION) as got:
         if not got:
             return 0
         async with sm() as session:

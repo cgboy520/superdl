@@ -163,7 +163,7 @@ docker run -d --name jcheck --cap-drop=ALL --cap-add=SYS_CHROOT --cap-add=SETUID
 curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:18888/superdl-bootstrap?code=x&exp=1&sig=y'   # 期望 403
 TIK=$(python3 -c 'import hmac,hashlib,time;e=str(int(time.time())+60);print(f"code=c0&exp={e}&sig="+hmac.new(b"selfcheck",f"c0.{e}".encode(),hashlib.sha256).hexdigest())')
 curl -s -o /dev/null -D - -c /tmp/jar "http://127.0.0.1:18888/superdl-bootstrap?$TIK" | grep -i '^location:'  # 期望 /lab
-# 界面语言要验「默认值」而不是「语言包装了没」——那是两件事,装了包但 overrides 没落位时后者照样过
+# 界面语言要验「默认值」而不是「语言包装了没」:装了包但 overrides 没落位时后者照样过
 curl -s -b /tmp/jar 'http://127.0.0.1:18888/lab/api/settings/@jupyterlab/translation-extension:plugin' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["schema"]["properties"]["locale"]["default"])'   # 期望 zh_CN
 # ④ 真连一次 SSH(平台承诺的入口;只验 sshd 起没起是不够的,认证会被 /root 权限单独挡掉)

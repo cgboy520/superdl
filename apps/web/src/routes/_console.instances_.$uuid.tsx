@@ -121,7 +121,6 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
       />
       {Object.entries(SERIES_META).map(([key, meta]) => (
         <Card key={key} size="small" title={t(meta.nameKey)} loading={isLoading}>
-          {/* 主题随全局(浅色/暗色两套注册预设);加载完成但序列无数据给空态而非空坐标系 */}
           {!isLoading && (series[key]?.length ?? 0) === 0 ? (
             <Typography.Text type="secondary" style={{ display: "block", padding: "24px 0" }}>
               {t("instances.metricsNoData")}
@@ -182,7 +181,6 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
           </Space>
         </Card>
       )}
-      {/* 服务型实例不建 Jupyter 入口:这张卡一律不出,而不是出一个点了没反应的按钮 */}
       {!isService && (
         <Card size="small" title="JupyterLab">
           <Space>
@@ -289,7 +287,6 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
             </Space>
             {!running && <Alert type="info" showIcon title={t("instances.serviceNotRunning")} />}
             {running && !ep.ready && (
-              // 持续 not-ready 的服务实例不判 failed,这里不渲染成错误态
               <Alert
                 type="info"
                 showIcon
@@ -475,7 +472,6 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
               },
             ]}
           />
-          {/* 密文变量的值后端刻意不回:回了这个端点就成了「把密文读回明文」的入口 */}
           <Typography.Text type="secondary">{t("instances.containerConfigImmutable")}</Typography.Text>
         </Space>
       </Card>

@@ -1,7 +1,6 @@
 # TopoLVM chart 17.x:实例盘 = 节点本地 NVMe LV;销毁为 lvremove,经 issue_discards=1
 # 对 extent 发 NVMe TRIM(擦除语义;大 LV 实测耗时记录见 runbooks/cluster-validation.md D 节)。
 # 实例盘 PVC 由平台自管生命周期(<instance-uuid>-root,只在释放/回收时删)。
-# reclaimPolicy 显式写死,不取 chart 默认值。
 storageClasses:
   - name: topolvm-provisioner
     storageClass:

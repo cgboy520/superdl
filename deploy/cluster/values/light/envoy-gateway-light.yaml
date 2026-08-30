@@ -11,7 +11,7 @@ deployment:
   replicas: 1
   envoyGateway:
     # 单机路由规模小,按 light 档惯例收紧。内存跟 HTTPRoute 条数走(一实例一条),
-    # 放量前先压一遍再定值,别照抄。
+    # 放量前先压一遍再定值。
     resources:
       requests: {cpu: 50m, memory: 128Mi}
       limits: {memory: 512Mi}

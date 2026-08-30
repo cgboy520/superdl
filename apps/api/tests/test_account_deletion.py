@@ -14,8 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.billing.models import BalanceLedger, Wallet
-from app.modules.orchestrator.models import DataDisk, Instance
-from tests.helpers import admin_headers, age_sms_codes, create_user_with_key, fund_wallet
+from tests.helpers import (
+    admin_headers,
+    age_sms_codes,
+    create_user_with_key,
+    current_refresh_token,
+    fund_wallet,
+    refresh_via_cookie,
+    seed_disk,
+    seed_instance,
+)
 
 PHONE = "13800000060"
 
@@ -39,55 +47,6 @@ async def _backdate_request(sm: async_sessionmaker[AsyncSession], user_id: int, 
             .values(requested_at=now_utc() - timedelta(days=days))
         )
         await session.commit()
-
-
-async def _seed_instance(
-    sm: async_sessionmaker[AsyncSession], user_id: int, *, status: str = "running"
-) -> str:
-    async with sm() as session:
-        inst = Instance(
-            uuid=f"u{user_id}i{now_utc().timestamp()}".replace(".", "")[:32],
-            user_id=user_id,
-            name="t",
-            sku_id=1,
-            spec={
-                "tier": "shared",
-                "vram_gb": 8,
-                "vcpu": 8,
-                "mem_gb": 32,
-                "disk_gb": 100,
-                "pool_label": "hami",
-                "gpu_cores_pct": 50,
-            },
-            price_hourly=Decimal("1.6800"),
-            gpu_count=1,
-            image_ref="img",
-            status=status,
-            k8s_namespace=f"tenant-{user_id}",
-            jupyter_token="tok",
-            authorized_keys=[],
-        )
-        session.add(inst)
-        await session.commit()
-        return inst.uuid
-
-
-async def _seed_disk(
-    sm: async_sessionmaker[AsyncSession], user_id: int, *, status: str = "active"
-) -> str:
-    async with sm() as session:
-        disk = DataDisk(
-            uuid=f"d{user_id}{now_utc().timestamp()}".replace(".", "")[:32],
-            user_id=user_id,
-            name="t",
-            size_gb=100,
-            juicefs_subpath=f"disk-{user_id}-{now_utc().timestamp()}".replace(".", ""),
-            price_gb_month=Decimal("0.3500"),
-            status=status,
-        )
-        session.add(disk)
-        await session.commit()
-        return disk.uuid
 
 
 class TestCreate:
@@ -183,7 +142,7 @@ class TestApproveGuards:
     async def test_running_instance_blocks(self, client: AsyncClient, sm):
         headers, user_id, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
-        uuid = await _seed_instance(sm, user_id, status="running")
+        _, uuid = await seed_instance(sm, user_id, status="running", wallet_credit=False)
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
         resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
@@ -201,9 +160,9 @@ class TestApproveGuards:
         """released/failed 实例与 deleted 数据盘均为终态,不构成残留。"""
         headers, user_id, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
-        await _seed_instance(sm, user_id, status="released")
-        await _seed_instance(sm, user_id, status="failed")
-        await _seed_disk(sm, user_id, status="deleted")
+        await seed_instance(sm, user_id, status="released", wallet_credit=False)
+        await seed_instance(sm, user_id, status="failed", wallet_credit=False)
+        await seed_disk(sm, user_id, status="deleted")
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
         resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
@@ -212,7 +171,7 @@ class TestApproveGuards:
     async def test_active_disk_blocks(self, client: AsyncClient, sm):
         headers, user_id, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
-        uuid = await _seed_disk(sm, user_id, status="active")
+        _, uuid = await seed_disk(sm, user_id, status="active")
         await _backdate_request(sm, user_id, days=8)
         admin = await admin_headers(sm, client)
         resp = await client.post(f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin)
@@ -261,8 +220,6 @@ class TestApproveSuccess:
         )
         login = await client.post("/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"})
         assert login.status_code == 200, login.text
-        from tests.helpers import current_refresh_token
-
         old_refresh = current_refresh_token(client)
         old_access = login.json()["access_token"]
 
@@ -291,8 +248,6 @@ class TestApproveSuccess:
         assert me.json()["message_key"] == "account.accountDeleted"
         assert me.json()["message"] == "账号已注销"
         # 旧 refresh → 401「账号已注销」
-        from tests.helpers import refresh_via_cookie
-
         refresh = await refresh_via_cookie(client, old_refresh)
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"

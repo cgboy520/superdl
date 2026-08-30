@@ -17,7 +17,7 @@ from app.modules.account.realname import (
     RealNameError,
     get_realname_provider,
 )
-from tests.helpers import admin_headers
+from tests.helpers import admin_headers, user_headers
 
 
 class TestCrypto:
@@ -209,8 +209,6 @@ class TestAdminApi:
 
     async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
         """开关走平台配置:公开 policies 即时跟随,充值门禁即时生效(免重启)。"""
-        from tests.helpers import user_headers
-
         ah = await admin_headers(sm, client, role="admin")
         base = (await client.get("/api/v1/policies")).json()
         assert base["real_name_enabled"] is False
@@ -242,8 +240,6 @@ class TestAdminApi:
 class TestChannelGate:
     async def test_disabled_channel_rejected(self, client: AsyncClient, sm):
         """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒(不产生脏单)。"""
-        from tests.helpers import user_headers
-
         headers = await user_headers(client, "13700000202")
         resp = await client.post(
             "/api/v1/wallet/recharges",

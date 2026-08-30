@@ -9,7 +9,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
 from app.core.money import as_amount, hourly_cost
@@ -38,10 +38,7 @@ async def balance_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         "unfrozen": 0,
         "disks": 0,
     }
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.BALANCE_PATROL) as got,
-    ):
+    async with advisory_lock(sm, LockKey.BALANCE_PATROL) as got:
         if not got:
             return counts
         await _patrol_frozen_tenants(sm, counts)
@@ -145,7 +142,7 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                 if effective <= 0:
                     for inst in instances:
                         fresh = await orchestrator_service.get_instance(session, user_id, inst.uuid)
-                        if fresh.status == "running":
+                        if fresh.status == orchestrator_service.RUNNING:
                             await orchestrator_service.system_stop(
                                 session, fresh, reason="arrears_stop"
                             )
@@ -181,8 +178,12 @@ async def _patrol_frozen_and_arrears_stopped(
     now = now_utc()
 
     async with sm() as session:
-        stopped = await orchestrator_service.list_instances_by_status(session, "stopped")
-        frozen = await orchestrator_service.list_instances_by_status(session, "frozen")
+        stopped = await orchestrator_service.list_instances_by_status(
+            session, orchestrator_service.STOPPED
+        )
+        frozen = await orchestrator_service.list_instances_by_status(
+            session, orchestrator_service.FROZEN
+        )
 
     # 欠费用户的 stopped 实例 → 冻结。包周期实例不走这条:它的冻结条件是「周期到期」而非
     # 「余额为 0」,由 subscriptions.subscription_patrol 写 frozen_deadline,回收仍归下面统一做
@@ -193,7 +194,7 @@ async def _patrol_frozen_and_arrears_stopped(
                 if balance > 0:
                     continue
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
-                if fresh.status != "stopped":
+                if fresh.status != orchestrator_service.STOPPED:
                     continue
                 deadline = now + timedelta(hours=policies.freeze_grace_hours)
                 await orchestrator_service.freeze_instance(session, fresh, deadline)
@@ -214,7 +215,7 @@ async def _patrol_frozen_and_arrears_stopped(
         try:
             async with sm() as session:
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
-                if fresh.status != "frozen":
+                if fresh.status != orchestrator_service.FROZEN:
                     continue
                 # 解冻条件按购买模式分:按量看回款,包周期看续费。给包周期也按余额解冻会让
                 # 到期未续费但余额充足的用户无限解冻,等于免费续期

@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from app.core.config import get_settings
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
+    IMAGE_PYTORCH,
     create_test_sku,
     create_user_with_key,
     drain,
@@ -29,7 +30,7 @@ async def _create(client: AsyncClient, headers: dict, sku_id: int, key_id: int):
         json={
             "sku_id": sku_id,
             "gpu_count": 1,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "image_ref": IMAGE_PYTORCH,
             "ssh_key_ids": [key_id],
         },
         headers=headers,

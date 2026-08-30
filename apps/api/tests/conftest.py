@@ -132,7 +132,7 @@ def fake() -> Iterator["FakeOrchestrator"]:
     用例之间会串状态)。
 
     auto_ready=False 是全局基线:Pod 不自动就绪,creating → running 的时序由用例自己驱动。
-    需要「建出来即 Ready」的模块(集群巡检、节点台账)在本文件外就地覆盖同名 fixture。
+    需要「建出来即 Ready」的模块(集群巡检、节点台账)用下面的 fake_auto_ready。
     """
     from app.core.k8s import set_orchestrator
     from app.core.k8s.fake import FakeOrchestrator
@@ -141,3 +141,27 @@ def fake() -> Iterator["FakeOrchestrator"]:
     set_orchestrator(orch)
     yield orch
     set_orchestrator(None)
+
+
+@pytest.fixture
+def fake_auto_ready() -> Iterator["FakeOrchestrator"]:
+    """auto_ready=True 的 FakeOrchestrator(Pod 建出即 Ready):集群巡检/节点台账类用例用。
+
+    与基线 fake 互斥:同一用例只取其一(两者都会 set_orchestrator 覆盖全局注入)。
+    """
+    from app.core.k8s import set_orchestrator
+    from app.core.k8s.fake import FakeOrchestrator
+
+    orch = FakeOrchestrator(auto_ready=True)
+    set_orchestrator(orch)
+    yield orch
+    set_orchestrator(None)
+
+
+@pytest.fixture(autouse=True)
+def _reset_prom_client() -> Iterator[None]:
+    """进程内 Prometheus 客户端是全局态:逐用例清空防串测试。"""
+    yield
+    from app.modules.metering import prom
+
+    prom.set_client(None)

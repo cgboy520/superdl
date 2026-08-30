@@ -2,8 +2,15 @@
  *  resolved/closed 不可再回复(提示新建);关闭入口仅在 resolved 出现。 */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
-import { fontSize, formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
-import { DataErrorAlert } from "@superdl/ui/components";
+import {
+  fontSize,
+  formatDateTime,
+  isTicketRepliable,
+  metaOf,
+  ticketCategoryMap,
+  ticketStatusMap,
+} from "@superdl/ui";
+import { DataErrorAlert, isMacPlatform, TicketBubble } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -16,12 +23,10 @@ import {
   Skeleton,
   Space,
   Tag,
-  theme,
   Typography,
 } from "antd";
 import { useEffect, useRef, useState } from "react";
 
-import type { TicketMessageOut } from "@superdl/api-client";
 import { useAppendTicketMessage, useCloseTicket } from "../api/mutations";
 import { useTicketDetail } from "../api/queries";
 import { requireAuth } from "../lib/guard";
@@ -31,35 +36,8 @@ export const Route = createFileRoute("/_console/support_/$ticketId")({
   component: TicketDetailPage,
 });
 
-// resolved/closed 终态不可再回复(服务端同口径 409,此处只是不渲染输入框)
-const REPLIABLE = new Set(["open", "pending_staff", "pending_user"]);
-
 /** 发送快捷键的平台提示(与 CommandPalette 的 COMMAND_KBD_HINT 同一判定) */
-const SEND_KBD_HINT =
-  typeof navigator !== "undefined" && /mac/i.test(navigator.platform) ? "⌘⏎" : "Ctrl+Enter";
-
-function Bubble({ msg }: { msg: TicketMessageOut }) {
-  const { t } = useTranslation();
-  const { token } = theme.useToken();
-  const mine = msg.sender_kind === "user";
-  return (
-    <div style={{ display: "flex", justifyContent: mine ? "flex-end" : "flex-start" }}>
-      <div
-        style={{
-          maxWidth: "75%",
-          padding: "8px 12px",
-          borderRadius: 8,
-          background: mine ? token.colorPrimaryBg : token.colorFillTertiary,
-        }}
-      >
-        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-          {mine ? t("support.msgMe") : t("support.msgStaff")} · {formatDateTime(msg.created_at)}
-        </Typography.Text>
-        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.body}</div>
-      </div>
-    </div>
-  );
-}
+const SEND_KBD_HINT = isMacPlatform() ? "⌘⏎" : "Ctrl+Enter";
 
 function TicketDetailPage() {
   const { t } = useTranslation(["web", "shared"]);
@@ -104,7 +82,7 @@ function TicketDetailPage() {
   }
   const sm = metaOf(ticketStatusMap, ticket.status);
   const cm = metaOf(ticketCategoryMap, ticket.category);
-  const repliable = REPLIABLE.has(ticket.status);
+  const repliable = isTicketRepliable(ticket.status);
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -157,7 +135,13 @@ function TicketDetailPage() {
           >
             <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               {(ticket.messages ?? []).map((m) => (
-                <Bubble key={m.id} msg={m} />
+                <TicketBubble
+                  key={m.id}
+                  side={m.sender_kind === "user" ? "right" : "left"}
+                  label={m.sender_kind === "user" ? t("support.msgMe") : t("support.msgStaff")}
+                  time={formatDateTime(m.created_at)}
+                  body={m.body}
+                />
               ))}
             </Space>
           </div>

@@ -33,7 +33,7 @@ class RawPage[T]:
     total: int | None = None
 
 
-def encode_cursor(value: int | str) -> str:
+def encode_cursor(value: int) -> str:
     return base64.urlsafe_b64encode(str(value).encode()).decode()
 
 

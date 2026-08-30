@@ -4,7 +4,7 @@ bootstrap 下发 registry_ca_pem。"""
 import yaml
 
 from app.modules.nodes.service import render_registries_yaml
-from tests.helpers import CREATE_BODY, admin_headers, set_cluster_config
+from tests.helpers import CREATE_BODY, admin_headers, set_platform_setting
 
 CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
 
@@ -52,7 +52,8 @@ async def test_bootstrap_carries_registries_and_ca(client, sm):
     """注册链路下发渲染后的 registries.yaml 与 CA,但不带机器人 Secret(拉取凭据不出注册链路)。"""
     from app.core.platform_config import set_platform_settings
 
-    await set_cluster_config(sm)
+    await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
+    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
     async with sm() as session:
         await set_platform_settings(
             session,

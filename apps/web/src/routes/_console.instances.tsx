@@ -113,7 +113,6 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
       {access?.endpoint_url && (
         <CopyButton text={access.endpoint_url} label={t("instances.copyEndpoint")} />
       )}
-      {/* 服务型实例不建 Jupyter 入口:按钮整个不出,不留一个点了没反应的灰按钮 */}
       {!isService && (
         <Button
           size="small"
@@ -513,8 +512,6 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   );
 }
 
-// 轮询行 memo:react-query 结构共享保证数据未变时引用不变,只重渲真正变化的行;
-// onDetail 每次渲染都新建但从 uuid 派生,比较时必须排除
 const UtilCellMemo = memo(
   UtilCell,
   (prev, next) =>

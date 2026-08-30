@@ -11,7 +11,7 @@ from app.core.timeutil import now_utc
 from app.modules.notify.models import Notification
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.patrol import stale_ticket_patrol
-from tests.helpers import admin_headers, user_headers
+from tests.helpers import admin_headers, user_headers, user_headers_with_id
 
 
 async def create_ticket(
@@ -65,8 +65,7 @@ class TestCreate:
 
     async def test_open_limit_10_conflict(self, client: AsyncClient, sm):
         """进行中(open/pending_staff/pending_user)工单 >10 时第 11 单 409。"""
-        headers = await user_headers(client, "13700000303")
-        uid = await _user_id(client, headers)
+        headers, uid = await user_headers_with_id(client, "13700000303")
         # 直接播种 10 张进行中工单(绕过 5/h 限流:上限校验独立于限流)
         async with sm() as session:
             for i in range(10):
@@ -106,12 +105,6 @@ class TestCreate:
         assert created[0].severity == "info"
         assert ticket_no in created[0].content
         assert created[0].user_id is None  # 平台级告警,不属于任何租户
-
-
-async def _user_id(client: AsyncClient, headers: dict) -> int:
-    resp = await client.get("/api/v1/me", headers=headers)
-    assert resp.status_code == 200, resp.text
-    return resp.json()["id"]
 
 
 class TestConversation:

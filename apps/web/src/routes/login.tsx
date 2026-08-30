@@ -22,13 +22,11 @@ import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): { redirect?: string; mode?: "register" } => {
-    // 回跳白名单:解析后必须仍属本站 origin(防 /\evil.com 这类绕过),归一化为 path+query+hash
     const out: { redirect?: string; mode?: "register" } = {};
     const r = search.redirect;
     if (typeof r === "string" && r !== "") {
       try {
         const u = new URL(r, window.location.origin);
-        // origin 必须仍属本站;"/\evil.com" 这类会被 URL 解析归一成 "//evil.com",一并拒掉
         if (u.origin === window.location.origin && !u.pathname.startsWith("//")) {
           out.redirect = `${u.pathname}${u.search}${u.hash}`;
         }
@@ -36,7 +34,6 @@ export const Route = createFileRoute("/login")({
         // 非法 redirect 直接丢弃
       }
     }
-    // 「免费注册」CTA 直达注册态:落在默认短信登录态会让新用户先收一条被拒的验证码
     if (search.mode === "register") out.mode = "register";
     return out;
   },
@@ -136,10 +133,8 @@ function LoginPage() {
   const { token } = theme.useToken();
   const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
   const [form] = Form.useForm();
-  // 注册/重置模式的密码强度实时反馈(登录模式不评强度)
   const watchedPassword: string = Form.useWatch("password", form) ?? "";
 
-  // 模式切换清掉跨模式字段(Form 共用实例的残留),手机号保留
   const switchMode = (next: Mode) => {
     setMode(next);
     form.setFieldsValue({ sms_code: undefined, password: undefined, accept_terms: undefined });

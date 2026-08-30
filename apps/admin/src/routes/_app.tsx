@@ -1,6 +1,6 @@
 import { AlertOutlined, LogoutOutlined, MenuOutlined, SearchOutlined } from "@ant-design/icons";
 import { adminLogoutApiAdminV1AuthLogoutPost } from "@superdl/api-client";
-import { adminColors, fontSize, formatDateTime, metaOf, useApiErrorText } from "@superdl/ui";
+import { adminColors, fontSize, formatDateTime, metaOf } from "@superdl/ui";
 import { LangSwitcher } from "@superdl/ui/components";
 import {
   Link,
@@ -11,7 +11,6 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import {
-  App,
   Badge,
   Button,
   Dropdown,
@@ -28,13 +27,13 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { type AlertRow, fetchAdminMe, useAckAlert, useAlertUnreadCount, useAlerts } from "../api";
+import { type AlertRow, fetchAdminMe, useAlertUnreadCount, useAlerts } from "../api";
 import {
   COMMAND_KBD_HINT,
   COMMAND_PALETTE_OPEN_EVENT,
   CommandPalette,
 } from "../components/CommandPalette";
-import { alertLink } from "../lib/alertLink";
+import { alertLink, severityColor, useAckAlertWithFeedback } from "../lib/alertLink";
 import { MENU, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
 import { queryClient } from "../lib/queryClient";
 import { authStore, canWriteOps, useAdminRole, useAuth } from "../stores/auth";
@@ -65,25 +64,15 @@ export const Route = createFileRoute("/_app")({
 
 function AlertBell() {
   const { t } = useTranslation();
-  const errText = useApiErrorText();
-  const { message } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [popoverOpen, setPopoverOpen] = useState(false);
-  // 告警列表只在 Popover 打开时取数(0.4:折叠 UI 不空转);
+  // 告警列表只在 Popover 打开时取数(折叠 UI 不空转);
   // 角标 = 未确认告警数(独立计数端点,不用当页长度推算),保留 30s 轮询(角标常显需要)
   const alertsQ = useAlerts(undefined, { enabled: popoverOpen });
   const { data: unread, isError: unreadError } = useAlertUnreadCount({ refetchInterval: 30_000 });
-  // 确认闭环与总览告警流同范式:成功后列表与角标一起失效(["admin","alerts"] 前缀覆盖两者)
-  const ack = useAckAlert({
-    mutation: {
-      onSuccess: () => {
-        message.success(t("overview.ackDone"));
-        void queryClient.invalidateQueries({ queryKey: ["admin", "alerts"] });
-      },
-      onError: (e) => message.error(errText(e, t("overview.ackFailed"))),
-    },
-  });
+  // 确认闭环同总览告警流/告警中心范式(见 lib/alertLink)
+  const ack = useAckAlertWithFeedback();
   const alerts: AlertRow[] = alertsQ.data ?? [];
   return (
     // click 触发 + Button 包裹图标:hover 触发键盘与读屏不可达(web 端通知铃同为此形态)
@@ -115,7 +104,7 @@ function AlertBell() {
                     style={{ padding: "6px 0", borderBottom: `1px solid ${adminColors.divider}` }}
                   >
                     <Badge
-                      color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
+                      color={severityColor(a.severity)}
                       text={
                         <Typography.Text style={{ fontSize: fontSize.body }} delete={a.acked_at != null}>
                           {/* 深链与总览告警流同构;点击后关闭 Popover(受控 open) */}
@@ -219,9 +208,8 @@ function AppLayout() {
   const { admin } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // 收起态拆两份:桌面手动收起(antd 底部 trigger,持久化 localStorage)与窄屏汉堡开合(瞬态)。
-  // 断点(responsive)收展由 screens.lg 派生,不写状态也不落盘——否则断点往返会把
-  // 「断点自动收」误存成「手动收」,回到桌面就是错误的初始态
+  // 收起态拆两份:桌面手动收起(antd 底部 trigger,持久化 localStorage)与窄屏汉堡开合(瞬态);
+  // 断点收展由 screens.lg 派生,不落盘——否则断点往返会把「自动收」误存成「手动收」
   const [manualCollapsed, setManualCollapsed] = useState(
     () => localStorage.getItem(SIDER_COLLAPSED_KEY) === "1",
   );
@@ -328,7 +316,7 @@ function AppLayout() {
                       try {
                         await adminLogoutApiAdminV1AuthLogoutPost();
                       } catch {
-                        // 登出不受阻
+                        /* 登出不受阻 */
                       }
                       authStore.getState().logout();
                       void navigate({ to: "/login" });

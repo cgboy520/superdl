@@ -12,6 +12,7 @@ from app.modules.billing.invoices import (
     issue_invoice,
     reject_invoice,
 )
+from app.modules.billing.models import Order as Order
 from app.modules.billing.payment_service import (
     backfill_order,
     list_payment_anomalies,
@@ -80,6 +81,7 @@ from app.modules.billing.wallet import (
 )
 
 __all__ = [
+    "Order",
     "admin_list_gaps",
     "admin_list_invoices",
     "admin_list_orders",

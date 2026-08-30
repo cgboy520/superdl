@@ -42,6 +42,6 @@ SKU 管理(管理端 CRUD)、用户端市场查询、平台镜像目录与近似
 - off 架 SKU 用户端不可见;readonly 角色全站只读,finance 不能改 SKU。
 - **档位是售卖分类,隔离机制的事实源是 `pool_label`。** `tier` 只有 dedicated / shared / cpu 三值;用户看到的「共享·标准 / 共享·经济」由池派生(mig 池 = 硬切分标准档,hami 池 = 软切分经济档),前端在 `packages/ui/src/status.ts::skuVariant` 一处映射。cpu 档不按池分化展示(落 cpu 池还是 hami 池都不申请显卡,只影响落在哪批机器上)。
 - **在售规格不能改池、也不能改 MIG 切片**:两者决定隔离方式与用户看到的档位徽标,在售改动会把市场页挂着的商品静默换成另一件。要改先下架或新建规格,`force` 不放行(存量实例走 spec 快照,不受影响)。
-- 档位与池必须配对(`dedicated⇔kata`、`shared⇔mig|hami`、`cpu⇔cpu|hami`),mig 切片与 mig 池同时有或同时无:建 SKU 与改池两条路径共用 `catalog/service.py::_check_tier_pool`,配对表在 `core/gpu_adapter.TIER_POOLS`。共享档再叠加运营开关 `SUPERDL_SHARED_TIER_ALLOWED_POOLS`(默认 `mig,hami`;摘掉 hami 即「共享档只卖 MIG 硬切分」,置空即停售共享档)——HAMi 软切分的租户间隔离弱于 MIG,公网上线前须定共享档产品边界(D-1)。管理端表单只让运营选展示档位,tier 与 pool_label 由它派生。
+- 档位与池必须配对(`dedicated⇔kata`、`shared⇔mig|hami`、`cpu⇔cpu|hami`),mig 切片与 mig 池同时有或同时无:建 SKU 与改池两条路径共用 `catalog/service.py::_check_tier_pool`,配对表在 `core/gpu_adapter.TIER_POOLS`。共享档再叠加运营开关 `SUPERDL_SHARED_TIER_ALLOWED_POOLS`(默认 `mig,hami`;摘掉 hami 即「共享档只卖 MIG 硬切分」,置空即停售共享档)——HAMi 软切分的租户间隔离弱于 MIG,公网上线前须定共享档产品边界。管理端表单只让运营选展示档位,tier 与 pool_label 由它派生。
 - SKU name 结构化(gpu_model + 档位拼展示名),DB 不存中文名。
 - 从集群资源创建 SKU 时型号下拉取自节点台账,见 [nodes.md](./nodes.md)。

@@ -34,6 +34,7 @@ from app.modules.notify.models import Notification
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
+    IMAGE_PYTORCH,
     buy_subscription,
     create_test_sku,
     create_user_with_key,
@@ -47,7 +48,7 @@ from tests.helpers import (
 
 pytestmark = pytest.mark.usefixtures("fake")
 
-IMAGE = "registry.superdl.local/pytorch:2.9.0-cu128"
+IMAGE = IMAGE_PYTORCH
 
 
 class TestExpiringEndpoint:
@@ -489,8 +490,6 @@ class TestRenewal:
         assert len(consume) == 2
 
     async def test_renew_rejects_on_demand_instance(self, client, sm, fake):
-        from tests.helpers import provision_running
-
         headers, uuid, _ = await provision_running(client, sm, fake, phone="13911100043")
         resp = await client.post(
             f"/api/v1/instances/{uuid}/renew",
@@ -921,8 +920,6 @@ class TestConvertToSubscription:
     """按量转包周期。要害只有一个:转换那一刀两侧的账,不重复也不留缝。"""
 
     async def _on_demand_running(self, client, sm, fake, phone: str):
-        from tests.helpers import provision_running
-
         headers, uuid, user_id = await provision_running(client, sm, fake, phone=phone)
         await fund_wallet(sm, user_id, "5000.00")
         return headers, uuid, user_id

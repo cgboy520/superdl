@@ -19,8 +19,6 @@ import { useThemeMode, useThemeToggle } from "../../stores/theme";
 import { BrandLogo } from "./BrandLogo";
 import { CONSOLE_NAV, consoleNavSelected } from "./consoleNav";
 
-/** 主题切换(状态存 localStorage,初值跟系统,见 stores/theme)。
- *  brand = 顶栏品牌渐变底上的白色图标;plain = 浅色容器底(登录页等)跟随文本色。 */
 export function ThemeToggle({ variant = "brand" }: { variant?: "brand" | "plain" }) {
   const { t } = useTranslation();
   const mode = useThemeMode();
@@ -58,7 +56,6 @@ export function AppTopBar({
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navSelected = consoleNavSelected(pathname);
-  // 抽屉导航链接:颜色走 antd token(暗色主题自适应),布局/hover/focus 在 styles.css 类里
   const drawerLinkStyle = (active: boolean): CSSProperties => ({
     display: "block",
     padding: "10px 12px",
@@ -77,7 +74,6 @@ export function AppTopBar({
   };
   return (
     <header className="app-topbar" style={{ background: brand.topBarBg }}>
-      {/* 汉堡断点跟侧栏走:侧栏 lg(992)收为 0 宽,768~992 区间只能靠汉堡 Drawer 进控制台页 */}
       {!screens.lg && (
         <Button
           type="text"
@@ -89,7 +85,6 @@ export function AppTopBar({
       <Link to="/" style={{ display: "inline-flex", textDecoration: "none" }}>
         <BrandLogo variant="light" />
       </Link>
-      {/* 内联 display 会压过窄屏媒体查询的 display:none,布局须走 CSS 类 */}
       <nav className="topbar-nav-center">
         <Link to="/market" className="topbar-link">
           {t("topbar.market")}

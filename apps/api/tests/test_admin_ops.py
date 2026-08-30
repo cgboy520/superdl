@@ -17,7 +17,16 @@ from app.modules.adminapi.service import create_admin
 from app.modules.billing.models import BalanceLedger
 from app.modules.notify.models import Notification
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import admin_headers, create_user_with_key, drain, provision_running, register
+from tests.helpers import (
+    admin_headers,
+    create_disk,
+    create_user_with_key,
+    drain,
+    fund_wallet,
+    provision_running,
+    register,
+    set_platform_setting,
+)
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -125,7 +134,7 @@ class TestAdjustments:
             headers={**finance, "Idempotency-Key": "k-1"},
         )
         assert r3.status_code == 409
-        assert r3.json()["message_key"] == "adminapi.idempotencyKeyMismatch"
+        assert r3.json()["message_key"] == "common.idempotencyKeyMismatch"
         # 同键同体跨租户 → 新单(作用域 (发起人,租户,键))
         r4 = await client.post(
             "/api/admin/v1/adjustments",
@@ -244,7 +253,6 @@ class TestTenantAggregations:
         挂了 = 按 user 分组的聚合键值错位(客服看到别人的账),或缺省金额没走 as_amount。
         """
         from app.modules.billing import service as billing_service
-        from tests.helpers import fund_wallet
 
         _headers, _uuid, id1 = await provision_running(client, sm, fake, "13600000061")
         id2 = (await register(client, "13600000062"))["user"]["id"]
@@ -883,7 +891,6 @@ class TestTenantRealnameExposure:
 
     async def _realname_user(self, client, sm) -> int:
         """开启安全策略 real_name_enabled 并注入恒过的假渠道,经正式提交路径落脱敏实名字段。"""
-        from app.core.platform_config import PlatformSetting
         from app.modules.account import service as account_service
         from app.modules.account.realname import set_realname_provider
 
@@ -895,9 +902,8 @@ class TestTenantRealnameExposure:
         uid = data["user"]["id"]
         set_realname_provider(_Pass())
         try:
+            await set_platform_setting(sm, "real_name_enabled", "true")
             async with sm() as session:
-                session.add(PlatformSetting(key="real_name_enabled", value="true"))
-                await session.commit()
                 user = await account_service.get_user(session, uid)
                 await account_service.submit_real_name(session, user, "张三", "110101199001011234")
         finally:
@@ -976,8 +982,6 @@ class TestTenantQuotaOverride:
     """配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库。"""
 
     async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
-        from tests.helpers import create_disk, create_user_with_key, fund_wallet
-
         headers, user_id, _key = await create_user_with_key(client, "13655550002")
         await fund_wallet(sm, user_id)
         ah = await admin_headers(sm, client, role="ops")

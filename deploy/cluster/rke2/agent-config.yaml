@@ -9,4 +9,4 @@ server: https://<api-vip>:9345
 # 钥匙挂在最不安全的机器上。平台「集群接入」的 cluster_join_token 录的也是 agent token。
 token: <cluster-token>
 node-label:
-  - "superdl.io/pool=<kata|hami|mig|cpu>" # 分池铁律:装机时定池,Kata 与 HAMi 永不混布;cpu = 无卡机池
+  - "superdl.io/pool=<kata|hami|mig|cpu>" # 装机时定池,Kata 与 HAMi 永不混布;cpu = 无卡机池

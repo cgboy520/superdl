@@ -11,12 +11,6 @@ from tests.helpers import prom_mock, provision_running
 pytestmark = pytest.mark.usefixtures("fake")
 
 
-@pytest.fixture(autouse=True)
-def _reset_prom_client():
-    yield
-    prom.set_client(None)
-
-
 class TestMetricsSummary:
     async def test_running_instance_series_and_last(self, client, sm, fake):
         headers, uuid, _user_id = await provision_running(client, sm, fake)

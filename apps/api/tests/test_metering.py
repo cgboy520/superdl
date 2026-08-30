@@ -10,15 +10,9 @@ from sqlalchemy import select
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
 from app.modules.metering.service import aggregate_previous_hour
-from tests.helpers import prom_mock, provision_running
+from tests.helpers import prom_mock, provision_running, register
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-@pytest.fixture(autouse=True)
-def _reset_prom_client():
-    yield
-    prom.set_client(None)
 
 
 class TestMetricsProxy:
@@ -41,8 +35,6 @@ class TestMetricsProxy:
 
     async def test_cannot_read_others_metrics(self, client, sm, fake):
         _headers, uuid, _user_id = await provision_running(client, sm, fake)
-        from tests.helpers import register
-
         other = await register(client, "13600000001")
         resp = await client.get(
             f"/api/v1/instances/{uuid}/metrics",

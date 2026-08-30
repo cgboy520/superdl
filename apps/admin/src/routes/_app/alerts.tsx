@@ -1,26 +1,19 @@
 /** 告警中心:全量告警列表(顶栏 AlertBell Popover 的完整版)。
- *  severity 服务端过滤、确认状态客户端过滤,全部入 URL(0.3 规范,运营面转达的视图必须可还原);
+ *  severity 服务端过滤、确认状态客户端过滤,全部入 URL(运营面转达的视图必须可还原);
  *  深链目标与 AlertBell/总览告警流共用 alertLink;确认闭环与两者同一范式(ops/admin 可写)。 */
 
-import { adminColors, fontSize, formatDateTime, space, useApiErrorText } from "@superdl/ui";
+import { fontSize, formatDateTime, space } from "@superdl/ui";
 import { EmptyState, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { App, Badge, Button, List, Select, Space, Tooltip, Typography } from "antd";
+import { Badge, Button, List, Select, Space, Tooltip, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { type AlertRow, useAckAlert, useAlerts } from "../../api";
-import { alertLink, SEVERITY_LABEL_KEY } from "../../lib/alertLink";
-import { queryClient } from "../../lib/queryClient";
+import { type AlertRow, useAlerts } from "../../api";
+import { alertLink, SEVERITY_LABEL_KEY, severityColor, useAckAlertWithFeedback } from "../../lib/alertLink";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 const SEVERITIES = ["info", "warning", "critical"] as const;
 const ACK_FILTERS = ["unacked", "acked"] as const;
-
-const SEVERITY_COLOR: Record<string, string> = {
-  critical: adminColors.critical,
-  warning: adminColors.alertAccent,
-  info: adminColors.dataAccent,
-};
 
 export const Route = createFileRoute("/_app/alerts")({
   validateSearch: (search: Record<string, unknown>): { severity?: string; acked?: string } => ({
@@ -38,8 +31,6 @@ export const Route = createFileRoute("/_app/alerts")({
 
 function AlertsPage() {
   const { t } = useTranslation(["admin", "shared"]);
-  const errText = useApiErrorText();
-  const { message } = App.useApp();
   const navigate = useNavigate({ from: "/alerts" });
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -49,16 +40,8 @@ function AlertsPage() {
   const rows = (alertsQ.data ?? []).filter((a) =>
     acked === "acked" ? a.acked_at != null : acked === "unacked" ? a.acked_at == null : true,
   );
-  const ack = useAckAlert({
-    mutation: {
-      onSuccess: () => {
-        message.success(t("overview.ackDone"));
-        void queryClient.invalidateQueries({ queryKey: ["admin", "alerts"] });
-      },
-      // 错误文案走后端 message_key(与 AlertBell/总览同一 apiErrorText 通道)
-      onError: (e) => message.error(errText(e, t("overview.ackFailed"))),
-    },
-  });
+  // 确认闭环同 AlertBell/总览告警流范式(见 lib/alertLink)
+  const ack = useAckAlertWithFeedback();
   const setFilters = (next: { severity?: string; acked?: string }) =>
     void navigate({ to: "/alerts", replace: true, search: (prev) => ({ ...prev, ...next }) });
 
@@ -130,7 +113,7 @@ function AlertsPage() {
               <List.Item.Meta
                 title={
                   <Space size={8} wrap>
-                    <Badge color={SEVERITY_COLOR[a.severity] ?? adminColors.chartNeutral} />
+                    <Badge color={severityColor(a.severity)} />
                     {link ? (
                       <Link to={link.to} search={link.search}>
                         {a.title}

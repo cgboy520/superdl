@@ -1,5 +1,5 @@
 # cert-manager:指标暴露 + kps 抓取(证书过期告警规则在 values/kps.yaml 的
-# superdl-certmanager 组;两者缺一,证书静默过期就只能等 TLS 报错才发现)。
+# superdl-certmanager 组)。
 prometheus:
   enabled: true
   servicemonitor:

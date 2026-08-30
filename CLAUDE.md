@@ -74,9 +74,9 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 
 ## 提交约定
 
-- 所有工作直接在 `main` 提交,不新建分支、不发 PR(原因见 `docs/decisions.md`)。
+- 所有工作直接在 `main` 提交,不新建分支、不发 PR(见 `docs/decisions.md`)。
 - commit message 前缀按性质:`feat:` / `fix:` / `chore:` / `docs:` / `test:` / `ci:` / `refactor:`,一句话说清改了什么。
-- 一个提交一件事:自身能过全部闸门、能被单独回滚。纯机械改动(重命名、格式化)单独成提交;**契约再生成(openapi.json / orval 产物 / errors 文案 / i18n 类型)随引发它的改动同一提交**——拆开会让其中一个提交过不了契约闸门。
+- 一个提交一件事:自身能过全部闸门、能被单独回滚。纯机械改动(重命名、格式化)单独成提交;契约再生成(openapi.json / orval 产物 / errors 文案 / i18n 类型)随引发它的改动同一提交。
 - 闸门按改动范围跑,带红不许提交;不要每改一行就跑全量。以本地执行为准:
   - 后端代码:ruff format/check → pyright → import-linter → pytest;动了模型/迁移再加 `alembic check` + `check-migration-ddl.py`,动了路由/schema 再加 openapi.json 无 diff
   - 前端代码:eslint → tsc → vitest;动了文案或 locale 再加 `pnpm i18n`,动了构建配置再加 build

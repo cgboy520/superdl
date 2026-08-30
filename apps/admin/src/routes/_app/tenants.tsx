@@ -9,6 +9,7 @@ import {
   metaOf,
   skuTierMap,
   skuVariant,
+  useDebouncedValue,
   useNow,
   type InstanceStatus,
 } from "@superdl/ui";
@@ -16,7 +17,7 @@ import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/co
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -83,36 +84,29 @@ function TenantsTab() {
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   // 手机号可检索但列表仍只回掩码;纯数字额外按租户 id 精确命中。
-  // 检索是落审计的敏感读,必须提交才触发:input=输入框即时值,search=已提交的查询
+  // 检索是落审计的敏感读,必须提交才触发:input=输入框即时值,已提交的查询 = URL 的 q
   const urlQ = Route.useSearch({ select: (s) => s.q });
   const [input, setInput] = useState(urlQ ?? "");
-  const [search, setSearch] = useState(urlQ ?? "");
   // URL q 变化(user_id 链接跳入)时同步进输入框:渲染期派生态,不进 effect
   const [prevUrlQ, setPrevUrlQ] = useState(urlQ);
   if (urlQ !== prevUrlQ) {
     setPrevUrlQ(urlQ);
     if (urlQ !== undefined) {
       setInput(urlQ);
-      setSearch(urlQ);
     }
   }
-  // 输入 300ms 防抖回写 ?q=(双向同步:控件→URL);防抖期间不触发查询
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  }, []);
-  const onInputChange = (v: string) => {
-    setInput(v);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setSearch(v);
-      void navigate({
-        to: "/tenants",
-        replace: true,
-        search: (prev) => ({ ...prev, q: v || undefined }),
-      });
-    }, 300);
-  };
+  // 输入 300ms 防抖回写 ?q=(双向同步:控件→URL,共享 useDebouncedValue);防抖期间不触发查询,
+  // 已提交查询态以 URL 为唯一事实源(useTenants 直接读 urlQ,不再有中间 state)
+  const debouncedInput = useDebouncedValue(input, 300);
+  useEffect(() => {
+    // 与 URL 已一致(初载/深链跳入/回车立即提交后的回声)不再回写,避免多余导航
+    if (debouncedInput === (urlQ ?? "")) return;
+    void navigate({
+      to: "/tenants",
+      replace: true,
+      search: (prev) => ({ ...prev, q: debouncedInput || undefined }),
+    });
+  }, [debouncedInput, urlQ, navigate]);
   // 状态筛选与注册排序:服务端参数入 URL(游标分页下客户端 filters/sorter 只作用于已加载页,是假筛选/假排序)
   const statusFilter = Route.useSearch({ select: (s) => s.tstatus });
   const order = Route.useSearch({ select: (s) => s.order });
@@ -138,7 +132,7 @@ function TenantsTab() {
   const [reasonInput, setReasonInput] = useState("");
   const tenantsQ = useTenants(
     {
-      ...(search ? { q: search } : {}),
+      ...(urlQ ? { q: urlQ } : {}),
       ...(statusFilter ? { status: statusFilter } : {}),
       ...(order ? { order } : {}),
       ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
@@ -158,11 +152,10 @@ function TenantsTab() {
       placeholder={tt("tenants.searchPhonePlaceholder")}
       style={{ width: 280 }}
       value={input}
-      onChange={(e) => onInputChange(e.target.value)}
+      onChange={(e) => setInput(e.target.value)}
       onSearch={(v) => {
-        // 回车/点按钮立即提交(不等防抖),与防抖回写同一条路径
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        setSearch(v);
+        // 回车/点按钮立即提交(不等防抖),与防抖回写同一条路径(随后的防抖回声因与 URL 一致被跳过)
+        setInput(v);
         void navigate({
           to: "/tenants",
           replace: true,
@@ -359,7 +352,7 @@ function InstancesTab() {
   const navigate = useNavigate({ from: "/tenants" });
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  // status/node_name/实例名检索全部入 URL(commit 制,0.3 规范);输入框经渲染期派生回流
+  // status/node_name/实例名检索全部入 URL(commit 制);输入框经渲染期派生回流
   const status = Route.useSearch({ select: (s) => s.istatus });
   const nodeName = Route.useSearch({ select: (s) => s.inode });
   const instQ = Route.useSearch({ select: (s) => s.iq });
@@ -463,7 +456,7 @@ function InstancesTab() {
             },
           },
           {
-            // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍;只有竞价实例可回收
+            // 购买模式:标签取 packages/ui 的同一份映射,不在管理端另拼一遍
             title: t("tenants.colMarket"),
             dataIndex: "market",
             width: 110,

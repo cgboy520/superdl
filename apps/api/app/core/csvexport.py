@@ -13,14 +13,36 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from fastapi.responses import StreamingResponse
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
+
+from app.core.money import money_str
 
 EXPORT_MAX_ROWS = 50_000
 TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#"
 # 单次导出批拉粒度
 EXPORT_BATCH = 1_000
+
+# 触顶截断提示(双语,billing 用户端与 adminapi 管理端导出共用)
+TRUNCATED_NOTES: dict[str, str] = {
+    "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小范围分次导出",
+    "en-US": (
+        "Export cap reached: only the first {limit} rows included;"
+        " narrow the scope and export in parts"
+    ),
+}
+
+
+def csv_response(stream: AsyncIterator[str], filename: str) -> StreamingResponse:
+    """CSV 流式响应:Content-Disposition 附件;截断标记行由流内部在触顶时追加。"""
+    return StreamingResponse(
+        stream,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 _FORMULA_LEAD = frozenset("=+@\t\r")
 _PLAIN_NUMBER = re.compile(r"^-?\d+(\.\d+)?$")
@@ -52,7 +74,7 @@ def fmt_ts(ts: datetime, offset_minutes: int) -> str:
 
 
 def fmt_money(value: Decimal) -> str:
-    return format(value, "f")
+    return money_str(value)
 
 
 async def stream_rows(

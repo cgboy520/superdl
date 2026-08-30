@@ -1,4 +1,12 @@
 export { TableErrorEmpty } from "./TableErrorEmpty";
+export { TicketBubble } from "./TicketBubble";
+export { RouteErrorFallbackView, NotFoundView } from "./ErrorPages";
+export { CommandPaletteShell, COMMAND_KBD_HINT, isMacPlatform } from "./CommandPaletteShell";
+export type {
+  CommandPaletteGroup,
+  CommandPaletteItem,
+  CommandPaletteShellProps,
+} from "./CommandPaletteShell";
 export { LegalMarkdown } from "./LegalMarkdown";
 export { LangSwitcher } from "./LangSwitcher";
 export { default as EChart } from "./EChart";

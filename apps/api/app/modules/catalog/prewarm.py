@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.gpu_adapter import POOL_CPU
 from app.core.k8s import get_orchestrator
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.policies import get_effective_policies
@@ -64,7 +64,7 @@ async def handle_image_prewarm(session: AsyncSession, task: OutboxTask) -> None:
 async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
     """单轮巡检。advisory lock 保证多副本单实例执行。返回动作计数(测试/日志用)。"""
     counts = {"planned": 0, "cached": 0, "failed": 0, "requeued": 0, "removed": 0}
-    async with sm() as lock_session, try_advisory_lock(lock_session, LockKey.PREWARM_PATROL) as got:
+    async with advisory_lock(sm, LockKey.PREWARM_PATROL) as got:
         if not got:
             return counts
         orch = get_orchestrator()

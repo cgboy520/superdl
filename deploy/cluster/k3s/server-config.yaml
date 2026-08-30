@@ -23,7 +23,7 @@ kube-apiserver-arg:
   - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
   - audit-log-maxage=30
 kubelet-arg:
-  # 单 Pod PID 上限:light 档 server 兼跑业务负载,fork bomb 会直接打死控制面同机进程。
+  # 单 Pod PID 上限:fork bomb 会耗尽节点进程表。
   # 与 node-join.sh / rke2 server-config.yaml 同值,改时同步。
   - podPidsLimit=4096
 # 单机时 server 兼跑业务负载,不打 CriticalAddonsOnly taint(与 RKE2 server 相反);

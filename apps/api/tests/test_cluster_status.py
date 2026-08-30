@@ -3,19 +3,12 @@
 import pytest
 from sqlalchemy import func, select
 
-from app.core.k8s import set_orchestrator
 from app.core.k8s.base import derive_distro
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.nodes import service
 from app.modules.nodes.models import ClusterStatus
+from tests.helpers import admin_headers, create_user_with_key, fund_wallet, seed_skus
 
-
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator()
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
+pytestmark = pytest.mark.usefixtures("fake_auto_ready")
 
 
 @pytest.mark.parametrize(
@@ -31,13 +24,13 @@ def test_derive_distro(git_version, expected):
     assert derive_distro(git_version) == expected
 
 
-async def test_save_probe_upserts_single_row(sm, fake):
-    probe = await fake.probe_cluster()
+async def test_save_probe_upserts_single_row(sm, fake_auto_ready):
+    probe = await fake_auto_ready.probe_cluster()
     async with sm() as session:
         await service.save_cluster_probe(session, probe)
         await session.commit()
-    fake.probe_hami_ready = False
-    probe2 = await fake.probe_cluster()
+    fake_auto_ready.probe_hami_ready = False
+    probe2 = await fake_auto_ready.probe_cluster()
     async with sm() as session:
         await service.save_cluster_probe(session, probe2)
         await session.commit()
@@ -48,24 +41,21 @@ async def test_save_probe_upserts_single_row(sm, fake):
     assert row is not None and row.hami_ready is False and row.distro == "rke2"
 
 
-async def test_patrol_unreachable_saves_error_skips_nodes(sm, fake):
-    from sqlalchemy import func
-    from sqlalchemy import select as sa_select
-
+async def test_patrol_unreachable_saves_error_skips_nodes(sm, fake_auto_ready):
     from app.modules.nodes.models import NodeSpec
     from app.modules.nodes.patrol import node_spec_patrol
 
-    fake.fail_probe = True
+    fake_auto_ready.fail_probe = True
     counts = await node_spec_patrol(sm)
     assert counts["probe_ok"] == 0 and counts["upserted"] == 0
     async with sm() as session:
         row = await service.get_cluster_status(session)
-        specs = (await session.execute(sa_select(func.count()).select_from(NodeSpec))).scalar()
+        specs = (await session.execute(select(func.count()).select_from(NodeSpec))).scalar()
     assert row is not None and row.api_reachable is False and row.error
     assert specs == 0
 
 
-async def test_require_hami_ready_gate(sm, fake):
+async def test_require_hami_ready_gate(sm, fake_auto_ready):
     from datetime import timedelta
 
     from app.core.errors import AppError, ErrorCode
@@ -82,22 +72,22 @@ async def test_require_hami_ready_gate(sm, fake):
         assert exc.value.code == ErrorCode.CLUSTER_NOT_READY
     # 新鲜且就绪 → 放行
     async with sm() as session:
-        await service.save_cluster_probe(session, await fake.probe_cluster())
+        await service.save_cluster_probe(session, await fake_auto_ready.probe_cluster())
         await session.commit()
     async with sm() as session:
         await service.require_hami_ready(session)
     # HAMi 未就绪 → 拒
-    fake.probe_hami_ready = False
+    fake_auto_ready.probe_hami_ready = False
     async with sm() as session:
-        await service.save_cluster_probe(session, await fake.probe_cluster())
+        await service.save_cluster_probe(session, await fake_auto_ready.probe_cluster())
         await session.commit()
     async with sm() as session:
         with pytest.raises(AppError):
             await service.require_hami_ready(session)
     # 陈旧 → 拒(即使 hami_ready=True)
-    fake.probe_hami_ready = True
+    fake_auto_ready.probe_hami_ready = True
     async with sm() as session:
-        row = await service.save_cluster_probe(session, await fake.probe_cluster())
+        row = await service.save_cluster_probe(session, await fake_auto_ready.probe_cluster())
         await session.commit()
     async with sm() as session:
         row = await service.get_cluster_status(session)
@@ -113,9 +103,8 @@ async def test_require_hami_ready_gate(sm, fake):
 class TestGateWiring:
     """三入口门禁与 k3s runtimeClassName 下发。"""
 
-    async def test_shared_create_blocked_when_hami_down(self, sm, fake, client):
+    async def test_shared_create_blocked_when_hami_down(self, sm, fake_auto_ready, client):
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import create_user_with_key, fund_wallet, seed_skus
 
         await seed_skus(sm)
         headers, user_id, key_id = await create_user_with_key(client)
@@ -144,14 +133,15 @@ class TestGateWiring:
         )
         assert resp2.status_code == 202, resp2.text
 
-    async def test_dedicated_create_blocked_when_kata_runtimeclass_missing(self, sm, fake, client):
+    async def test_dedicated_create_blocked_when_kata_runtimeclass_missing(
+        self, sm, fake_auto_ready, client
+    ):
         """dedicated 档缺 RuntimeClass kata-qemu → 即时 409;shared 档不受影响。
 
         挂了 = Pod 带 runtimeClassName: kata-qemu 下发后被 kubelet 直接拒,
         用户侧表现成开机几十秒后转 failed(而不是当场告诉他集群没这个档位)。
         """
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import create_user_with_key, fund_wallet, seed_skus
 
         await seed_skus(sm)
         headers, user_id, key_id = await create_user_with_key(client)
@@ -179,13 +169,12 @@ class TestGateWiring:
         )
         assert resp2.status_code == 202, resp2.text
 
-    async def test_create_blocked_when_storage_class_missing(self, sm, fake, client):
+    async def test_create_blocked_when_storage_class_missing(self, sm, fake_auto_ready, client):
         """SC 名对不上/档位没装 → 即时 409,而不是让用户等 300 秒 Pending 超时判 failed。
 
         门禁必须按名核对,不能只判「集群里有任意一个 SC」。
         """
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import create_user_with_key, fund_wallet, seed_skus
 
         await seed_skus(sm)
         headers, user_id, key_id = await create_user_with_key(client, "13900000077")
@@ -215,7 +204,7 @@ class TestGateWiring:
         )
         assert resp.status_code == 409, resp.text
 
-    async def test_k3s_hami_pod_gets_nvidia_runtime(self, sm, fake):
+    async def test_k3s_hami_pod_gets_nvidia_runtime(self, sm, fake_auto_ready):
         from app.core.gpu_adapter import build_gpu_request
 
         k3s = build_gpu_request(
@@ -246,7 +235,7 @@ class TestGateWiring:
         )
         assert kata.runtime_class == "kata-qemu"
 
-    async def test_build_pod_spec_with_cluster_reads_distro(self, sm, fake):
+    async def test_build_pod_spec_with_cluster_reads_distro(self, sm, fake_auto_ready):
         from app.core.k8s.base import ClusterProbe
         from app.modules.orchestrator.models import Instance
         from app.modules.orchestrator.service import _encode_token, build_pod_spec_with_cluster
@@ -284,7 +273,7 @@ class TestGateWiring:
         assert pod.runtime_class == "nvidia"
 
 
-async def test_derive_node_distro_chain(sm, fake):
+async def test_derive_node_distro_chain(sm, fake_auto_ready):
     """派生链:探测缓存 > agent 版本后缀 > rke2 兜底。"""
     from app.core.k8s.base import ClusterProbe
 
@@ -313,9 +302,8 @@ async def test_derive_node_distro_chain(sm, fake):
 
 
 class TestClusterEndpoints:
-    async def test_status_endpoint_reads_cache(self, sm, fake, client):
+    async def test_status_endpoint_reads_cache(self, sm, fake_auto_ready, client):
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.helpers import admin_headers
 
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
@@ -332,7 +320,6 @@ class TestClusterEndpoints:
 
     async def test_status_empty_cache_shows_checklist(self, sm, client):
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import admin_headers
 
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
@@ -348,13 +335,12 @@ class TestClusterEndpoints:
         # 无探测缓存时不知道档位:留占位让人自己挑,不猜一个可能装错档的命令
         assert "apply.sh <full|light>" in comp["monitoring"]["fix_hint"]
 
-    async def test_fix_hint_env_follows_probed_distro(self, sm, fake, client):
+    async def test_fix_hint_env_follows_probed_distro(self, sm, fake_auto_ready, client):
         """修复命令的档位跟实测发行版走:k3s → -e light。给 full 档命令等于让人装不上。"""
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.helpers import admin_headers
 
-        fake.probe_hami_ready = False
-        fake.probe_k8s_version = "v1.36.3+k3s1"
+        fake_auto_ready.probe_hami_ready = False
+        fake_auto_ready.probe_k8s_version = "v1.36.3+k3s1"
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
@@ -362,13 +348,14 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert comp["hami"]["fix_hint"] == "deploy/cluster/apply.sh light -l name=hami"
 
-    async def test_storage_component_uses_the_same_names_as_the_gate(self, sm, fake, client):
+    async def test_storage_component_uses_the_same_names_as_the_gate(
+        self, sm, fake_auto_ready, client
+    ):
         """体检页 storage 与 require_storage_classes 同一口径(按名核对)。
 
         挂了 = 集群里有任意一个 SC 就给绿灯,而用户创建实例时才撞 409,运维在体检页看不出端倪。
         """
         from app.modules.nodes.models import ClusterStatus
-        from tests.helpers import admin_headers
 
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
@@ -391,12 +378,11 @@ class TestClusterEndpoints:
         assert comp["storage"]["ok"] is True
         assert "数据盘不可售" in comp["storage"]["detail"]
 
-    async def test_kata_component_calls_out_empty_pool(self, sm, fake, client):
+    async def test_kata_component_calls_out_empty_pool(self, sm, fake_auto_ready, client):
         """RuntimeClass 在、kata 池没节点:独享档一样开不了机,detail 要说出来。"""
         from app.modules.nodes.patrol import node_spec_patrol
-        from tests.helpers import admin_headers
 
-        fake.pool_capacity.pop("kata", None)
+        fake_auto_ready.pool_capacity.pop("kata", None)
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
@@ -404,9 +390,7 @@ class TestClusterEndpoints:
         assert comp["kata_runtimeclass"]["ok"] is True
         assert "无节点" in comp["kata_runtimeclass"]["detail"]
 
-    async def test_test_connection_upserts_and_returns(self, sm, fake, client):
-        from tests.helpers import admin_headers
-
+    async def test_test_connection_upserts_and_returns(self, sm, fake_auto_ready, client):
         headers = await admin_headers(sm, client)
         resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
         assert resp.status_code == 200, resp.text
@@ -415,10 +399,8 @@ class TestClusterEndpoints:
             row = await service.get_cluster_status(session)
         assert row is not None and row.hami_ready
 
-    async def test_test_connection_unreachable_502(self, sm, fake, client):
-        from tests.helpers import admin_headers
-
-        fake.fail_probe = True
+    async def test_test_connection_unreachable_502(self, sm, fake_auto_ready, client):
+        fake_auto_ready.fail_probe = True
         headers = await admin_headers(sm, client)
         resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
         assert resp.status_code == 502, resp.text

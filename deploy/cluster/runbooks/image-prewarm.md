@@ -33,13 +33,13 @@
 这里只写推完之后怎么上线:
 
 1. 管理端「镜像与预热」新建/编辑条目,`image_ref` 填 `harbor.<域>/superdl/<名>:<tag>@sha256:<digest>`。
-   编辑已有条目时页面提示「变更镜像地址将清空全部节点缓存记录并按新地址重新预热」,这正是预期行为。
+   编辑已有条目时页面提示「变更镜像地址将清空全部节点缓存记录并按新地址重新预热」。
 2. 等巡检铺开(≤60s 发现节点),页面看每节点覆盖率;失败行有错误原因,可一键重试。
 
 规则:
 
 - **`image_ref` 必须钉 digest,禁止只写 tag,禁止 latest。** 按 tag 拉会经 Spegel 命中节点自己缓存的旧 digest,
-  `imagePullPolicy: Always` 也救不回来(见 `docs/decisions.md`);latest 更是被 Spegel 显式排除出 P2P。
+  `imagePullPolicy: Always` 也救不回来;latest 被 Spegel 显式排除出 P2P。
 - **重推同名 tag 之后必须回到第 1 步换 ref**,否则节点上跑的还是旧镜像,而管理端会显示「已预热」。
 - **实例的 ref 是创建时快照且终身不变**:停机/开机/重启都用旧 digest。带 entrypoint 修复的镜像上线后,
   存量实例必须由用户删掉重建才能拿到修复,发布时要一并通知。

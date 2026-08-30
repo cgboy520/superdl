@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.db import Base, get_sessionmaker
+from app.core.errors import audit_unavailable_response
 from app.core.http import client_ip
 from app.core.logging import get_logger
 from app.core.metrics import AUDIT_WRITE_FAILED_TOTAL
@@ -110,8 +111,6 @@ class AuditMiddleware:
             and not request.url.path.startswith(AUDIT_EXCLUDE_PREFIXES)
             and not audit_gate_open()
         ):
-            from app.core.errors import audit_unavailable_response
-
             if await audit_probe_ok():
                 reset_audit_gate()
             else:
@@ -159,7 +158,7 @@ async def _write_audit_row(request: Request, result: int) -> None:
         async with get_sessionmaker()() as session:
             session.add(_build_audit_row(request, result))
             await session.commit()
-        _audit_consecutive_failures_reset()
+        reset_audit_gate()
     except Exception:
         # 审计失败不得影响业务响应;但必须可告警(失败即留痕缺口,资金域已改同步审计)
         # 连续失败累计进 fail-closed 闸(见 AuditMiddleware 的审计闸)
@@ -167,11 +166,6 @@ async def _write_audit_row(request: Request, result: int) -> None:
         _audit_consecutive_failures += 1
         AUDIT_WRITE_FAILED_TOTAL.inc()
         logger.exception("audit_write_failed", path=path)
-
-
-def _audit_consecutive_failures_reset() -> None:
-    global _audit_consecutive_failures
-    _audit_consecutive_failures = 0
 
 
 async def write_audit_sync(request: Request, session: AsyncSession, *, result: int = 200) -> None:

@@ -34,7 +34,6 @@
     "announcementAlreadyRevoked": "公告已撤回,无需重复操作",
     "badDayFormat": "day 格式应为 YYYY-MM-DD",
     "cannotChangeSelf": "不能停用或降低自己的权限,请让另一位超级管理员操作",
-    "idempotencyKeyMismatch": "同一幂等键对应了不同的请求内容(金额/租户/事由不一致),已按冲突拒绝——如需新调账请更换幂等键",
     "loginFailed": "用户名或密码错误",
     "mfaCodeInvalid": "动态码错误或已过期,请重试",
     "mfaNotBound": "该账号未绑定动态口令",

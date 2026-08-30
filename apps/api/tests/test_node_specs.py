@@ -6,22 +6,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from app.core.k8s import set_orchestrator
 from app.core.k8s.base import NodeInfo
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.nodes.models import NodeSpec
 from app.modules.nodes.patrol import node_spec_patrol
+from tests.helpers import set_platform_setting
+
+pytestmark = pytest.mark.usefixtures("fake_auto_ready")
 
 
-@pytest.fixture
-def fake():
-    orch = FakeOrchestrator()
-    set_orchestrator(orch)
-    yield orch
-    set_orchestrator(None)
-
-
-async def test_patrol_converges_and_labels(sm, fake):
+async def test_patrol_converges_and_labels(sm, fake_auto_ready):
     counts = await node_spec_patrol(sm)
     assert counts["upserted"] == 4  # fake 四池各一节点(kata / hami / mig / cpu)
     async with sm() as session:
@@ -33,7 +26,7 @@ async def test_patrol_converges_and_labels(sm, fake):
     assert rows["fake-cpu-node-1"].gpu_count == 0
     assert not rows["fake-cpu-node-1"].gpu_model
     # label 收敛已写入 fake
-    assert fake.node_labels["fake-hami-node-1"]["superdl.io/gpu-model"] == "RTX4090"
+    assert fake_auto_ready.node_labels["fake-hami-node-1"]["superdl.io/gpu-model"] == "RTX4090"
     async with sm() as session:
         row = (
             await session.execute(select(NodeSpec).where(NodeSpec.node_name == "fake-hami-node-1"))
@@ -44,8 +37,8 @@ async def test_patrol_converges_and_labels(sm, fake):
     assert counts2["upserted"] == 4 and counts2["removed"] == 0
 
 
-async def test_unlabeled_node_visible(sm, fake):
-    fake.unlabeled_nodes.append(
+async def test_unlabeled_node_visible(sm, fake_auto_ready):
+    fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="rogue-node",
             pool_label="unknown",
@@ -64,8 +57,8 @@ async def test_unlabeled_node_visible(sm, fake):
     assert row.gpu_model == "RTX4090"  # GFD 标签兜底归一化
 
 
-async def test_missing_then_removed(sm, fake):
-    fake.unlabeled_nodes.append(
+async def test_missing_then_removed(sm, fake_auto_ready):
+    fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="gone-node",
             pool_label="hami",
@@ -75,7 +68,7 @@ async def test_missing_then_removed(sm, fake):
         )
     )
     await node_spec_patrol(sm)
-    fake.unlabeled_nodes.clear()
+    fake_auto_ready.unlabeled_nodes.clear()
     counts = await node_spec_patrol(sm)
     assert counts["missing"] == 1
     async with sm() as session:
@@ -94,10 +87,10 @@ async def test_missing_then_removed(sm, fake):
         ).scalar_one_or_none() is None
 
 
-async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake):
+async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake_auto_ready):
     """驱动/CUDA 两列以 GFD 标签为准:没有这条路径,收尾上报晚于对账器判 joined(终态,上报 404)
     的节点两列恒空,且驱动升级后台账不跟随。"""
-    fake.unlabeled_nodes.append(
+    fake_auto_ready.unlabeled_nodes.append(
         NodeInfo(
             name="gfd-node",
             pool_label="hami",
@@ -116,8 +109,10 @@ async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake):
         ).scalar_one()
     assert row.driver_version == "580.65" and row.cuda_version == "12.8"
     # 节点升级驱动 → GFD 标签变 → 下一轮巡检跟随(装机快照永远停在首装那次)
-    fake.unlabeled_nodes[-1] = replace(
-        fake.unlabeled_nodes[-1], driver_version_label="610.57.04", cuda_version_label="13.3"
+    fake_auto_ready.unlabeled_nodes[-1] = replace(
+        fake_auto_ready.unlabeled_nodes[-1],
+        driver_version_label="610.57.04",
+        cuda_version_label="13.3",
     )
     await node_spec_patrol(sm)
     async with sm() as session:
@@ -127,7 +122,7 @@ async def test_gfd_version_labels_fill_and_follow_upgrade(sm, fake):
     assert row.driver_version == "610.57.04" and row.cuda_version == "13.3"
 
 
-async def test_enrollment_report_wins_over_gfd(sm, fake):
+async def test_enrollment_report_wins_over_gfd(sm, fake_auto_ready):
     """装机登记(bootstrap 的 nvidia-smi 全卡清单 + 收尾上报的驱动/CUDA 版本)优先于 GFD 型号标签;
     显存取卡清单最大值。版本走 report_progress → 登记快照 → 巡检落台账整条链
     (无 GFD 版本标签时的回落):
@@ -135,9 +130,9 @@ async def test_enrollment_report_wins_over_gfd(sm, fake):
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.nodes.schemas import EnrollmentCreate
-    from tests.helpers import set_cluster_config
 
-    await set_cluster_config(sm)
+    await set_platform_setting(sm, "cluster_server_url", "https://10.0.0.10:9345")
+    await set_platform_setting(sm, "cluster_join_token", "K10abcdef0123456789::server:secrettoken")
     async with sm() as session:
         _e, token = await service.create_enrollment(
             session,

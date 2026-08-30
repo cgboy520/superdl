@@ -6,10 +6,17 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.core.platform_config import PlatformSetting
 from app.modules.account.models import User
 from app.modules.account.realname import set_realname_provider
-from tests.helpers import register
+from tests.helpers import (
+    create_test_sku,
+    create_user_with_key,
+    fund_wallet,
+    seed_instance,
+    seed_node_spec,
+    set_platform_setting,
+    user_headers_with_id,
+)
 
 
 class _Provider:
@@ -26,22 +33,11 @@ def _reset_provider():
     set_realname_provider(None)
 
 
-async def _enable(sm) -> None:
-    async with sm() as session:
-        session.add(PlatformSetting(key="real_name_enabled", value="true"))
-        await session.commit()
-
-
-async def _headers(client: AsyncClient, phone: str) -> tuple[dict, int]:
-    data = await register(client, phone)
-    return {"Authorization": f"Bearer {data['access_token']}"}, data["user"]["id"]
-
-
 class TestRealName:
     async def test_verify_success_masks_id_number(self, client: AsyncClient, sm):
-        await _enable(sm)
+        await set_platform_setting(sm, "real_name_enabled", "true")
         set_realname_provider(_Provider(True))
-        headers, user_id = await _headers(client, "13800000160")
+        headers, user_id = await user_headers_with_id(client, "13800000160")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "张三", "id_number": "110101199001011234"},
@@ -67,9 +63,9 @@ class TestRealName:
         assert resp.json()["code"] == "CONFLICT"
 
     async def test_mismatch_rejected(self, client: AsyncClient, sm):
-        await _enable(sm)
+        await set_platform_setting(sm, "real_name_enabled", "true")
         set_realname_provider(_Provider(False))
-        headers, _ = await _headers(client, "13800000161")
+        headers, _ = await user_headers_with_id(client, "13800000161")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "李四", "id_number": "110101199001010000"},
@@ -81,7 +77,7 @@ class TestRealName:
     async def test_disabled_is_409_without_touching_provider(self, client: AsyncClient):
         """开关关闭(默认):明确 409,渠道不被调用——挂了说明关闭没有短路提交路径。"""
         set_realname_provider(_Provider(True))
-        headers, _ = await _headers(client, "13800000166")
+        headers, _ = await user_headers_with_id(client, "13800000166")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "张三", "id_number": "110101199001011234"},
@@ -93,8 +89,8 @@ class TestRealName:
     async def test_enabled_without_credentials_is_502_not_500(self, client: AsyncClient, sm):
         """开关开启但凭据未配置:取 provider 即抛 RealNameError,必须走设计好的 502
         渠道故障(与 verify 失败同径),不能漏成 500。"""
-        await _enable(sm)
-        headers, _ = await _headers(client, "13800000164")
+        await set_platform_setting(sm, "real_name_enabled", "true")
+        headers, _ = await user_headers_with_id(client, "13800000164")
         resp = await client.post(
             "/api/v1/me/real-name",
             json={"name": "张三", "id_number": "110101199001011234"},
@@ -109,7 +105,7 @@ class TestRealName:
         settings.real_name_required_for_recharge = True
         set_realname_provider(_Provider(True))
         try:
-            headers, _ = await _headers(client, "13800000162")
+            headers, _ = await user_headers_with_id(client, "13800000162")
             resp = await client.post(
                 "/api/v1/wallet/recharges",
                 json={"amount": "50.00", "channel": "mock"},
@@ -137,8 +133,6 @@ class TestRealName:
     async def test_create_instance_gate_when_required(self, client: AsyncClient, sm):
         """强制实名开启时:算力开通同样拦截(监管对算力服务的要求不低于预收款);
         只拦充值的话,匿名账号可绕过实名直接租 GPU。"""
-        from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
-
         settings = get_settings()
         settings.real_name_enabled = True
         settings.real_name_required_for_recharge = True
@@ -175,8 +169,6 @@ class TestRealName:
 
     async def test_start_and_disk_gates_when_required(self, client: AsyncClient, sm):
         """闸门覆盖(#43):开机与建盘同闸——只挂创建/充值则匿名用户可绕到存量资源。"""
-        from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
-
         settings = get_settings()
         settings.real_name_enabled = True
         settings.real_name_required_for_recharge = True
@@ -193,15 +185,7 @@ class TestRealName:
             assert resp.status_code == 403
             assert resp.json()["message_key"] == "disks.realNameRequired"
             # 开机:未实名 403(实例由实名前的创建路径落库——直接 seed 一台 stopped)
-            from tests.helpers import seed_instance
-
-            iid = await seed_instance(sm, user_id=user_id, status="stopped")
-            async with sm() as session:
-                from app.modules.orchestrator.models import Instance
-
-                uuid = (
-                    await session.execute(select(Instance.uuid).where(Instance.id == iid))
-                ).scalar_one()
+            _, uuid = await seed_instance(sm, user_id=user_id, status="stopped")
             resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
             assert resp.status_code == 403
             assert resp.json()["message_key"] == "orchestrator.realNameRequired"

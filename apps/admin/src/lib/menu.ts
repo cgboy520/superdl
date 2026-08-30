@@ -52,7 +52,7 @@ export function canSeeMenu(key: MenuKey, role: string): boolean {
 }
 
 /** 侧栏菜单项(单一事实源):_app.tsx 侧栏与 CommandPalette 页面导航组共用;
- *  icon 存组件引用(非 JSX),本文件保持 .ts 免 JSX 运行时耦合。 */
+ *  icon 存组件引用(非 JSX),本文件得以保持纯 .ts。 */
 export const MENU = [
   { key: "/", icon: DashboardOutlined, labelKey: "menu.overview" },
   { key: "/nodes", icon: ClusterOutlined, labelKey: "menu.nodes" },

@@ -1,37 +1,13 @@
 /** i18n 运行时初始化(main.tsx 顶部副作用引入,先于首次 render)。
- *  语言探测:localStorage("superdl.lang") → navigator;缺译回落 zh-CN(基准语言)。 */
-import errorsEn from "@superdl/ui/locales/en-US/errors.json";
-import sharedEn from "@superdl/ui/locales/en-US/shared.json";
-import errorsZh from "@superdl/ui/locales/zh-CN/errors.json";
-import sharedZh from "@superdl/ui/locales/zh-CN/shared.json";
-import i18n from "i18next";
-import LanguageDetector from "i18next-browser-languagedetector";
-import { initReactI18next } from "react-i18next";
+ *  初始化壳(探测顺序/fallback/共享 shared+errors 目录)在 @superdl/ui 的 initAppI18n,这里只挂 web ns 语言包。 */
+import { initAppI18n, SUPPORTED_LANGS } from "@superdl/ui";
 
 import enUS from "./locales/en-US/web.json";
 import zhCN from "./locales/zh-CN/web.json";
 
-export const SUPPORTED_LANGS = ["zh-CN", "en-US"] as const;
-export type AppLang = (typeof SUPPORTED_LANGS)[number];
+const i18n = initAppI18n({ appNs: "web", appResources: { "zh-CN": zhCN, "en-US": enUS } });
 
-void i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    resources: {
-      "zh-CN": { web: zhCN, shared: sharedZh, errors: errorsZh },
-      "en-US": { web: enUS, shared: sharedEn, errors: errorsEn },
-    },
-    fallbackLng: "zh-CN",
-    supportedLngs: [...SUPPORTED_LANGS],
-    defaultNS: "web",
-    interpolation: { escapeValue: false },
-    detection: {
-      order: ["localStorage", "navigator"],
-      caches: ["localStorage"],
-      lookupLocalStorage: "superdl.lang",
-    },
-    returnNull: false,
-  });
+export { SUPPORTED_LANGS };
+export type { AppLang } from "@superdl/ui";
 
 export default i18n;

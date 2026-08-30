@@ -269,7 +269,7 @@ function PasswordModal({
   );
 }
 
-/** 危险区·账号注销:申请(L3 双闸 = 原因必填 + 键入手机号,收编共享 TypeConfirmModal)/
+/** 危险区·账号注销:申请(原因必填 + 键入手机号,收编共享 TypeConfirmModal)/
  *  冷静期倒计时 + 撤销。 */
 function DeletionZone({ phone }: { phone: string }) {
   const { t } = useTranslation(["web", "shared"]);
@@ -384,7 +384,6 @@ function DeletionZone({ phone }: { phone: string }) {
             </Space>
           </Space>
         }
-        // 第三道闸:原因必填(键入手机号之外,后端也要求 reason ≥2 字)
         extraDisabled={reason.trim().length < 2}
         confirmLabel={t("settings.deletion.confirmText")}
         cancelLabel={t("create.cancel")}

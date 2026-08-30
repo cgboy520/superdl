@@ -25,12 +25,40 @@ from app.modules.nodes.models import NodeSpec
 from app.modules.orchestrator import preempt as preempt_mod
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
+from tests.helpers import (
+    IMAGE_PYTORCH,
+    create_test_sku,
+    create_user_with_key,
+    drain,
+    fund_wallet,
+    provision_running,
+    provision_subscription,
+    seed_node_spec,
+)
 from tests.helpers import admin_headers as make_admin_headers
-from tests.helpers import create_test_sku, create_user_with_key, drain, fund_wallet, seed_node_spec
 
 pytestmark = pytest.mark.usefixtures("fake")
 
-IMAGE = "registry.superdl.local/pytorch:2.9.0-cu128"
+IMAGE = IMAGE_PYTORCH
+
+
+def _victim(uuid: str, **kw) -> Instance:
+    """一台 running 竞价实例(抢占候选构造的共同底座;差异经 kw 覆盖)。"""
+    base: dict = {
+        "user_id": 1,
+        "name": "v",
+        "sku_id": 1,
+        "spec": {"pool_label": "kata", "gpu_model_selector": "RTX4090"},
+        "price_hourly": Decimal("1.0000"),
+        "gpu_count": 1,
+        "image_ref": IMAGE,
+        "market": MARKET_SPOT,
+        "status": "running",
+        "k8s_namespace": "t",
+        "jupyter_token": "x",
+    }
+    base.update(kw)
+    return Instance(uuid=uuid, **base)
 
 
 async def spot_sku(sm, **overrides) -> int:
@@ -117,23 +145,7 @@ class TestVictimSelection:
         """按 created_at 从新到旧 —— 知情同意里写的就是这一句。"""
         async with sm() as s:
             for i in range(3):
-                s.add(
-                    Instance(
-                        uuid=f"vic{i}",
-                        user_id=1,
-                        name=f"v{i}",
-                        sku_id=1,
-                        spec={"pool_label": "kata", "gpu_model_selector": "RTX4090"},
-                        price_hourly=Decimal("1.0000"),
-                        gpu_count=1,
-                        image_ref=IMAGE,
-                        market=MARKET_SPOT,
-                        status="running",
-                        k8s_namespace="t",
-                        jupyter_token="x",
-                        created_at=now_utc() - timedelta(hours=3 - i),
-                    )
-                )
+                s.add(_victim(f"vic{i}", created_at=now_utc() - timedelta(hours=3 - i)))
             await s.commit()
             picked = await preempt_mod.pick_victims(
                 s, pool_label="kata", gpu_model_selector="RTX4090", need_cards=2
@@ -143,22 +155,7 @@ class TestVictimSelection:
     async def test_all_or_nothing(self, sm):
         """凑不够就一台都不动:半途回收既腾不出容量,又回收了竞价实例。"""
         async with sm() as s:
-            s.add(
-                Instance(
-                    uuid="lonely",
-                    user_id=1,
-                    name="v",
-                    sku_id=1,
-                    spec={"pool_label": "kata", "gpu_model_selector": "RTX4090"},
-                    price_hourly=Decimal("1.0000"),
-                    gpu_count=1,
-                    image_ref=IMAGE,
-                    market=MARKET_SPOT,
-                    status="running",
-                    k8s_namespace="t",
-                    jupyter_token="x",
-                )
-            )
+            s.add(_victim("lonely"))
             await s.commit()
             assert (
                 await preempt_mod.pick_victims(
@@ -170,46 +167,18 @@ class TestVictimSelection:
     async def test_never_crosses_pool_model_or_market(self, sm):
         """不同池 / 不同型号 / 非竞价 / 非 running 的实例都不是候选 —— 选错等于无效回收。"""
         async with sm() as s:
-            common = {
-                "user_id": 1,
-                "name": "v",
-                "sku_id": 1,
-                "price_hourly": Decimal("1.0000"),
-                "gpu_count": 1,
-                "image_ref": IMAGE,
-                "k8s_namespace": "t",
-                "jupyter_token": "x",
-            }
             s.add_all(
                 [
-                    Instance(
-                        uuid="other-pool",
+                    _victim(
+                        "other-pool",
                         spec={"pool_label": "hami", "gpu_model_selector": "RTX4090"},
-                        market=MARKET_SPOT,
-                        status="running",
-                        **common,
                     ),
-                    Instance(
-                        uuid="other-model",
+                    _victim(
+                        "other-model",
                         spec={"pool_label": "kata", "gpu_model_selector": "A100"},
-                        market=MARKET_SPOT,
-                        status="running",
-                        **common,
                     ),
-                    Instance(
-                        uuid="on-demand",
-                        spec={"pool_label": "kata", "gpu_model_selector": "RTX4090"},
-                        market=MARKET_ON_DEMAND,
-                        status="running",
-                        **common,
-                    ),
-                    Instance(
-                        uuid="stopped-spot",
-                        spec={"pool_label": "kata", "gpu_model_selector": "RTX4090"},
-                        market=MARKET_SPOT,
-                        status="stopped",
-                        **common,
-                    ),
+                    _victim("on-demand", market=MARKET_ON_DEMAND),
+                    _victim("stopped-spot", status="stopped"),
                 ]
             )
             await s.commit()
@@ -446,8 +415,6 @@ class TestConvertToOnDemand:
 
     async def test_on_demand_instance_refuses(self, client, sm, fake):
         """按量实例本来就不会被回收,转不了 —— 但已是按量的那条走幂等分支,这里测的是包周期。"""
-        from tests.helpers import provision_subscription
-
         headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13922200023")
         resp = await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)
         assert resp.status_code == 400
@@ -484,8 +451,6 @@ class TestAdminPreempt:
 
     async def test_admin_cannot_preempt_non_spot(self, client, sm, fake):
         """非竞价实例不走回收路径:回收是履行竞价的约定,不是处置手段(那是强制停止)。"""
-        from tests.helpers import provision_running
-
         _, uuid, _ = await provision_running(client, sm, fake, phone="13922200031")
         admin_headers = await make_admin_headers(sm, client, "ops")
         resp = await client.post(

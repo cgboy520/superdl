@@ -72,9 +72,6 @@ spec:
                 - sh
                 - -ec
                 - |
-                  # 加密:以桶级默认加密(SSE-KMS / OSS 服务端加密)为准,务必在桶侧开启。
-                  # 如需显式请求头加密可追加 --sse aws:kms(先用小文件验证:部分 S3 兼容
-                  # 端点不支持该头,直接加可能整个上传失败)。
                   aws s3 cp /backup/ "s3://$S3_BUCKET/daily/" --recursive \
                     --exclude "*" --include "superdl-*.dump" --endpoint-url "$S3_ENDPOINT"
                   echo "upload done"
@@ -123,6 +120,5 @@ spec:
                 limits: {cpu: "1", memory: 1Gi}
           volumes:
             # sizeLimit 兜住「dump 把节点磁盘打满」:按 库体积×2 预估并随增长上调
-            # (kubelet 按 du 周期性检查,超限先 evict Pod,不会写穿节点磁盘)。
             - {name: backup, emptyDir: {sizeLimit: 20Gi}}
             - {name: tmp, emptyDir: {sizeLimit: 1Gi}}

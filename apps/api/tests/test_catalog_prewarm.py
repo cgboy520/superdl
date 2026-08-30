@@ -11,11 +11,11 @@ from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
 from app.modules.catalog.models import ImageNodeCache, PlatformImage
 from app.modules.catalog.prewarm import prewarm_patrol
-from tests.helpers import drain, drain_strict
+from tests.helpers import IMAGE_PYTORCH, drain, drain_strict
 
 pytestmark = pytest.mark.usefixtures("fake")
 
-IMAGE_REF = "registry.superdl.local/pytorch:2.9.0-cu128"
+IMAGE_REF = IMAGE_PYTORCH
 
 
 async def make_image(

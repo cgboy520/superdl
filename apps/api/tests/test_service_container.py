@@ -8,8 +8,11 @@
 - dev 分支:挂了说明开发机的 Pod spec 被服务型分支改坏了
 """
 
+from typing import Any
+
 import pytest
 from cryptography.exceptions import InvalidTag
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -17,6 +20,7 @@ from app.core.crypto import decrypt_str
 from app.modules.orchestrator import service
 from app.modules.orchestrator.models import Instance, PortAllocation, ServiceEndpoint
 from app.modules.orchestrator.reconciler import reconcile_once
+from app.modules.orchestrator.schemas import InstanceCreate
 from tests.helpers import drain, drain_strict, new_user, provision_service, service_body
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -275,7 +279,11 @@ class TestPinnedImage:
 
 
 class TestCreateContract:
-    """契约矩阵。每条挂了都意味着一类错误配置能被建出来。"""
+    """契约矩阵。每条挂了都意味着一类错误配置能被建出来。
+
+    纯 schema 断言:422 全由 InstanceCreate 的字段约束/model_validator 拦下,
+    直接实例化请求模型即可,不需要走 HTTP 与开户准备。
+    """
 
     @pytest.mark.parametrize(
         "field,value",
@@ -290,95 +298,64 @@ class TestCreateContract:
             ("with_ssh", False),  # 同上:按值判会把它静默放过
         ],
     )
-    async def test_dev_rejects_service_fields(self, client, sm, field, value):
+    def test_dev_rejects_service_fields(self, field, value):
         """dev 传服务字段一律 422,不静默忽略。
 
         挂了说明用户以为「启动命令已生效」,而实例跑的是镜像原样。
         """
-        headers, _user_id, key_id, sku_id = await new_user(client, sm, "13900000320")
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": IMAGE,
-                "ssh_key_ids": [key_id],
-                field: value,
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 422, resp.text
-        assert field in resp.text
+        body: dict[str, Any] = {
+            "sku_id": 1,
+            "image_ref": IMAGE,
+            "ssh_key_ids": [1],
+            field: value,
+        }
+        with pytest.raises(ValidationError) as excinfo:
+            InstanceCreate(**body)
+        assert field in str(excinfo.value)
 
-    async def test_service_requires_port(self, client, sm):
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000321")
-        body = service_body(sku_id)
+    def test_service_requires_port(self):
+        body = service_body(1)
         del body["service_port"]
-        resp = await client.post("/api/v1/instances", json=body, headers=headers)
-        assert resp.status_code == 422, resp.text
+        with pytest.raises(ValidationError):
+            InstanceCreate(**body)
 
     @pytest.mark.parametrize("port", [22, 8888])
-    async def test_reserved_ports_rejected(self, client, sm, port):
+    def test_reserved_ports_rejected(self, port):
         """22 = sshd,8888 = JupyterLab:放行会让服务 Service 与平台入口撞 targetPort。"""
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000322")
-        resp = await client.post(
-            "/api/v1/instances", json=service_body(sku_id, service_port=port), headers=headers
-        )
-        assert resp.status_code == 422, resp.text
+        with pytest.raises(ValidationError):
+            InstanceCreate(**service_body(1, service_port=port))
 
-    async def test_health_path_needs_leading_slash(self, client, sm):
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000324")
-        resp = await client.post(
-            "/api/v1/instances",
-            json=service_body(sku_id, health_path="health"),
-            headers=headers,
-        )
-        assert resp.status_code == 422, resp.text
+    def test_health_path_needs_leading_slash(self):
+        with pytest.raises(ValidationError):
+            InstanceCreate(**service_body(1, health_path="health"))
 
     @pytest.mark.parametrize(
         "name",
         ["JUPYTER_TOKEN", "SUPERDL_ANYTHING", "AUTHORIZED_KEYS", "1BAD", "BAD-KEY", "with space"],
     )
-    async def test_env_key_blacklist(self, client, sm, name):
+    def test_env_key_blacklist(self, name):
         """平台注入项与非法标识符逐条拒。
 
         放行 JUPYTER_/SUPERDL_/AUTHORIZED_KEYS = 用户能覆盖平台往容器里注入的东西。
         """
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000325")
-        resp = await client.post(
-            "/api/v1/instances", json=service_body(sku_id, env={name: "x"}), headers=headers
-        )
-        assert resp.status_code == 422, resp.text
+        with pytest.raises(ValidationError):
+            InstanceCreate(**service_body(1, env={name: "x"}))
 
-    async def test_env_secret_keys_must_be_subset(self, client, sm):
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000326")
-        resp = await client.post(
-            "/api/v1/instances",
-            json=service_body(sku_id, env={"A": "1"}, env_secret_keys=["B"]),
-            headers=headers,
-        )
-        assert resp.status_code == 422, resp.text
+    def test_env_secret_keys_must_be_subset(self):
+        with pytest.raises(ValidationError):
+            InstanceCreate(**service_body(1, env={"A": "1"}, env_secret_keys=["B"]))
 
-    async def test_dev_still_requires_ssh_key(self, client, sm):
+    def test_dev_still_requires_ssh_key(self):
         """契约层 min_length 不设限,dev 的「至少一把公钥」由 model_validator 接住。
 
         挂了说明能建出一台谁也登不上去的开发机(镜像不收口令登录)。
         """
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000327")
-        resp = await client.post(
-            "/api/v1/instances",
-            json={"sku_id": sku_id, "image_ref": IMAGE, "ssh_key_ids": []},
-            headers=headers,
-        )
-        assert resp.status_code == 422, resp.text
+        with pytest.raises(ValidationError):
+            InstanceCreate(sku_id=1, image_ref=IMAGE, ssh_key_ids=[])
 
-    async def test_service_with_ssh_requires_ssh_key(self, client, sm):
-        headers, _user_id, _key_id, sku_id = await new_user(client, sm, "13900000328")
-        resp = await client.post(
-            "/api/v1/instances",
-            json=service_body(sku_id, with_ssh=True, ssh_key_ids=[]),
-            headers=headers,
-        )
-        assert resp.status_code == 422, resp.text
+    def test_service_with_ssh_requires_ssh_key(self):
+        with pytest.raises(ValidationError):
+            InstanceCreate(**service_body(1, with_ssh=True, ssh_key_ids=[]))
 
 
 class TestServiceEndpointApi:

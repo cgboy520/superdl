@@ -25,8 +25,19 @@ from app.modules.billing.settlement import (
     settle_daily_disks,
     settle_due_hours,
 )
-from app.modules.orchestrator.models import DataDisk
-from tests.helpers import H_END, H, fund_wallet, seed_instance
+from tests.helpers import (
+    H_END,
+    H,
+    apply_refund,
+    drain,
+    finance_pair,
+    fund_wallet,
+    paid_order,
+    register,
+    seed_disk,
+    seed_instance,
+    user_headers,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -96,7 +107,6 @@ class TestWalletLockGuards:
         from app.modules.adminapi.models import AdminUser
         from app.modules.billing import refunds
         from app.modules.billing.models import Order
-        from tests.helpers import apply_refund, finance_pair, paid_order, user_headers
 
         headers = await user_headers(client, "13700000116")
         order = await paid_order(client, headers, "50.00")
@@ -132,31 +142,6 @@ class TestWalletLockGuards:
         async with sm() as s:
             w = (await s.execute(select(Wallet).where(Wallet.user_id == uid))).scalar_one()
         assert w.balance == Decimal("20.00")  # 未出金,未被写成 10(50−40 的错觉)
-
-
-async def _seed_disk(
-    sm,
-    user_id: int,
-    *,
-    size_gb: int = 100,
-    price: str = "0.3500",
-    status: str = "active",
-    created_at: datetime | None = None,
-) -> int:
-    async with sm() as session:
-        disk = DataDisk(
-            uuid=f"d{user_id}{now_utc().timestamp()}".replace(".", ""),
-            user_id=user_id,
-            name="t",
-            size_gb=size_gb,
-            juicefs_subpath=f"disk-{user_id}-{now_utc().timestamp()}".replace(".", ""),
-            price_gb_month=Decimal(price),
-            status=status,
-            created_at=created_at or now_utc(),
-        )
-        session.add(disk)
-        await session.commit()
-        return disk.id
 
 
 class TestAffordGuard:
@@ -218,7 +203,7 @@ class TestAffordGuard:
     async def test_inflight_disk_daily_fee_counted(self, sm):
         """在途数据盘按「日费 × 宽限天数」计入门槛(宽限期内盘仍在计费)。"""
         # 100GB × 0.35/GB·月 → 均摊日费 1.17;× 默认 7 天宽限 = 8.19
-        await _seed_disk(sm, 1, size_gb=100, price="0.3500")
+        await seed_disk(sm, 1, size_gb=100, price="0.3500")
         await fund_wallet(sm, 1, "5.00")
         async with sm() as session:
             with pytest.raises(AppError) as exc:
@@ -249,7 +234,7 @@ class TestAffordGuard:
 
     async def test_frozen_disk_not_counted(self, sm):
         """frozen 盘不计费(见 disks.BILLABLE_STATUSES),不应占燃烧率额度。"""
-        await _seed_disk(sm, 1, status="frozen")
+        await seed_disk(sm, 1, status="frozen")
         await fund_wallet(sm, 1, "0.01")
         async with sm() as session:
             await wallet.assert_can_afford(session, 1)
@@ -284,7 +269,7 @@ class TestPatrolUnsettledBurn:
     async def test_unsettled_burn_triggers_stop_before_settlement(self, sm, _freeze_now):
         """余额 > 0 但盖不住当前小时已跑消耗 → 当轮停机(不等次小时 :02 落账)。"""
         h0 = hour_floor(self.FIXED_NOW)  # 10:00
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm,
             user_id=1,
             price="1.6800",
@@ -315,7 +300,7 @@ class TestPatrolUnsettledBurn:
         """当前小时已尾账出费的时段不得重复估进「未结算消耗」(否则会误停机)。"""
         h0 = hour_floor(self.FIXED_NOW)
         # 10:00–10:10 跑过一段(已尾账 600 秒),10:30 又开机至今(10:35,300 秒未结)
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm,
             user_id=1,
             price="1.6800",
@@ -376,7 +361,7 @@ class TestPatrolUnsettledBurn:
         from app.modules.billing.settlement import _advance_watermark
 
         h0 = hour_floor(self.FIXED_NOW)
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm,
             user_id=1,
             price="1.6800",
@@ -437,13 +422,13 @@ class TestSettlementGaps:
         """单实例连续失败 N 轮 → 死信记缺口,水位线越过,不再反复重试。"""
         from app.modules.orchestrator import service as orchestrator_service
 
-        good = await seed_instance(
+        good, _ = await seed_instance(
             sm,
             user_id=1,
             events=[(H - timedelta(hours=1), "creating", "running")],
             status="running",
         )
-        bad = await seed_instance(
+        bad, _ = await seed_instance(
             sm,
             user_id=2,
             events=[(H - timedelta(hours=1), "creating", "running")],
@@ -488,13 +473,13 @@ class TestSettlementGaps:
         from app.modules.billing.settlement import _advance_watermark
         from app.modules.orchestrator import service as orchestrator_service
 
-        good = await seed_instance(
+        good, _ = await seed_instance(
             sm,
             user_id=1,
             events=[(H - timedelta(hours=1), "creating", "running")],
             status="running",
         )
-        bad = await seed_instance(
+        bad, _ = await seed_instance(
             sm,
             user_id=2,
             events=[(H - timedelta(hours=1), "creating", "running")],
@@ -548,7 +533,7 @@ class TestSettlementGaps:
         from app.modules.billing.settlement import MAX_CATCHUP_DAYS, _advance_watermark
 
         old_day = billing_day_floor(now_utc()) - timedelta(days=MAX_CATCHUP_DAYS + 10)
-        await _seed_disk(sm, 1, created_at=old_day)
+        await seed_disk(sm, 1, created_at=old_day)
         await fund_wallet(sm, 1, "100.00")
         await _advance_watermark(sm, "daily_disk", old_day)
         await settle_daily_disks(sm)
@@ -760,7 +745,6 @@ class TestSmsOutbox:
         from app.core.outbox import OutboxTask
         from app.core.sms import set_sms_channel
         from app.modules.notify import service as notify_service
-        from tests.helpers import drain, register
 
         sent: list[dict] = []
 
@@ -799,7 +783,6 @@ class TestSmsOutbox:
     async def test_notify_without_sms_enqueues_nothing(self, client, sm):
         from app.core.outbox import OutboxTask
         from app.modules.notify import service as notify_service
-        from tests.helpers import register
 
         data = await register(client, "13900000078")
         async with sm() as session:

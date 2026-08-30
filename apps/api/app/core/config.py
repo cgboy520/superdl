@@ -1,3 +1,4 @@
+import base64
 import os
 from functools import lru_cache
 from typing import Literal
@@ -6,6 +7,20 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
+
+
+def decode_master_key(raw: str, *, label: str) -> bytes:
+    """主密钥解码的单一事实源(urlsafe-base64,解码后须 32 字节)。
+
+    Settings 启动校验与 crypto 运行期解密共用;label 供错误消息定位(字段名或 env 名)。
+    """
+    try:
+        key = base64.urlsafe_b64decode(raw)
+    except ValueError as exc:
+        raise ValueError(f"{label} 不是合法 urlsafe-base64") from exc
+    if len(key) != 32:
+        raise ValueError(f"{label} 解码后须为 32 字节")
+    return key
 
 
 class Settings(BaseSettings):
@@ -275,14 +290,7 @@ class Settings(BaseSettings):
     @staticmethod
     def _check_master_key_format(name: str, raw: str) -> None:
         """主密钥格式(环境无关,配错即拒启):urlsafe-base64 且解码后 32 字节。"""
-        import base64
-
-        try:
-            decoded = base64.urlsafe_b64decode(raw)
-        except ValueError as exc:
-            raise ValueError(f"{name} 不是合法 urlsafe-base64") from exc
-        if len(decoded) != 32:
-            raise ValueError(f"{name} 解码后须为 32 字节")
+        decode_master_key(raw, label=name)
 
     def parsed_shared_tier_pools(self) -> tuple[str, ...]:
         """共享档允许池的解析视图(逗号分隔,去空白去空项;catalog._check_tier_pool 消费)。"""

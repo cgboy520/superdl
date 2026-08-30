@@ -8,7 +8,7 @@ from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
 from app.modules.catalog.models import ImageNodeCache
 from app.modules.catalog.prewarm import prewarm_patrol
-from tests.helpers import admin_headers, drain
+from tests.helpers import IMAGE_PYTORCH, admin_headers, drain
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -17,7 +17,7 @@ IMAGE_BODY = {
     "framework_version": "2.9.0",
     "python_version": "3.12",
     "cuda_version": "12.8",
-    "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+    "image_ref": IMAGE_PYTORCH,
 }
 
 

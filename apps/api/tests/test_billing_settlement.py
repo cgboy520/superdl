@@ -16,7 +16,7 @@ from app.modules.billing.settlement import (
     upsert_hour_bill,
 )
 from app.modules.orchestrator.models import Instance, InstanceEvent
-from tests.helpers import H_END, H, seed_instance
+from tests.helpers import H_END, H, admin_headers, seed_instance
 
 
 def ev(minute: float, from_s: str | None, to_s: str) -> tuple[datetime, str | None, str]:
@@ -117,7 +117,7 @@ class TestBillAmount:
 
 class TestUpsertIdempotency:
     async def test_repeat_execution_no_double_charge(self, sm):
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[ev(0, "creating", "running"), ev(30, "running", "stopping")]
         )
         for _ in range(3):  # 重复执行 3 次
@@ -145,7 +145,7 @@ class TestUpsertIdempotency:
 
     async def test_growth_tops_up_delta(self, sm):
         """同小时先尾账(30min)后整点结算(50min)→ 只补差价。"""
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[ev(0, "creating", "running"), ev(30, "running", "stopping")]
         )
         async with sm() as session:
@@ -215,7 +215,7 @@ class TestUpsertIdempotency:
         assert w.balance == Decimal("98.60")
 
     async def test_concurrent_settlement_single_charge(self, sm):
-        inst_id = await seed_instance(sm, events=[ev(0, "creating", "running")])
+        inst_id, _ = await seed_instance(sm, events=[ev(0, "creating", "running")])
 
         # 屏障对齐起跑线:三路同时冲出,把撞唯一约束的窗口拉到最大,不靠调度器碰巧交错
         gate = asyncio.Barrier(4)
@@ -244,7 +244,7 @@ class TestUpsertIdempotency:
 
     async def test_concurrent_growth_tops_up_delta_once(self, sm):
         """已 charged 的账单行并发增量补足(先尾账后续跑):差价只加一次(重复执行零重复扣款)。"""
-        inst_id = await seed_instance(sm, events=[ev(0, "creating", "running")])
+        inst_id, _ = await seed_instance(sm, events=[ev(0, "creating", "running")])
         async with sm() as session:  # 先按半小时入账(1.00)并标记 charged
             await upsert_hour_bill(
                 session,
@@ -291,7 +291,7 @@ class TestUpsertIdempotency:
 
         upsert_hour_bill 单调只增,高估值回不去,所以结算读事件前必须先拿实例行锁。
         """
-        inst_id = await seed_instance(sm, events=[ev(-30, "creating", "running")])
+        inst_id, _ = await seed_instance(sm, events=[ev(-30, "creating", "running")])
         started = asyncio.Event()
         release = asyncio.Event()
 
@@ -349,7 +349,7 @@ class TestUpsertIdempotency:
         assert charged == Decimal("3.57")
 
     async def test_zero_seconds_no_bill(self, sm):
-        inst_id = await seed_instance(sm, events=[ev(5, None, "creating")])
+        inst_id, _ = await seed_instance(sm, events=[ev(5, None, "creating")])
         async with sm() as session:
             charged = await settle_instance_window(
                 session,
@@ -429,7 +429,7 @@ class TestHourlySettlementJob:
 class TestTinyDurationTail:
     async def test_seconds_rounding_to_zero_amount_no_crash(self, sm):
         """运行数秒即关机:金额舍入 0.00 → 留账单行不扣款,后续补差从 0 起算。"""
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[ev(0, "creating", "running"), ev(5 / 60, "running", "stopping")]
         )
         async with sm() as session:
@@ -574,7 +574,7 @@ class TestWindowBoundaries:
 
     async def test_catchup_walks_over_boundary(self, sm, anchor):
         """水位线追平必须能连续跨过午夜/月末,而不是停在边界上。"""
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[(anchor - timedelta(hours=2), "creating", "running")], status="running"
         )
         assert inst_id
@@ -633,7 +633,7 @@ class TestNodeLostBillingTruncation:
 
     async def test_reconstruction_truncates_at_unready_since(self, sm):
         unready = H + timedelta(minutes=5)
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm,
             status="failed",
             events=[
@@ -664,7 +664,9 @@ class TestNodeLostBillingTruncation:
         from app.modules.billing.edge_listener import on_instance_transition
 
         unready = H + timedelta(minutes=5)
-        inst_id = await seed_instance(sm, status="failed", events=[ev(-30, "creating", "running")])
+        inst_id, _ = await seed_instance(
+            sm, status="failed", events=[ev(-30, "creating", "running")]
+        )
         async with sm() as session:
             inst = await session.get(Instance, inst_id)
             assert inst is not None
@@ -710,7 +712,9 @@ class TestNodeLostBillingTruncation:
         维持按事件时刻结算 —— 截断只发生在有依据时。"""
         from app.modules.billing.edge_listener import on_instance_transition
 
-        inst_id = await seed_instance(sm, status="failed", events=[ev(-30, "creating", "running")])
+        inst_id, _ = await seed_instance(
+            sm, status="failed", events=[ev(-30, "creating", "running")]
+        )
         async with sm() as session:
             inst = await session.get(Instance, inst_id)
             assert inst is not None and inst.unready_since is None
@@ -752,7 +756,7 @@ class TestGapClosure:
     async def test_replay_single_hourly_gap_settles_and_resolves(self, sm):
         from app.modules.billing.settlement import replay_gap
 
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
         )
         gap_id = await self._make_gap(sm, object_id=inst_id)
@@ -768,7 +772,7 @@ class TestGapClosure:
     async def test_replay_is_idempotent_no_double_charge(self, sm):
         from app.modules.billing.settlement import replay_gap
 
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
         )
         gap_id = await self._make_gap(sm, object_id=inst_id)
@@ -828,9 +832,8 @@ class TestGapEndpoints:
 
     async def test_list_replay_resolve_flow(self, client, sm):
         from app.modules.billing.models import SettlementGap
-        from tests.helpers import admin_headers
 
-        inst_id = await seed_instance(
+        inst_id, _ = await seed_instance(
             sm, events=[ev(10, "creating", "running"), ev(40, "running", "stopping")]
         )
         async with sm() as session:
@@ -891,18 +894,9 @@ class TestGapEndpoints:
         rows = (await client.get("/api/admin/v1/finance/settlement-gaps", headers=finance)).json()
         assert rows["items"] == []
 
-    async def test_readonly_can_list_cannot_write(self, client, sm):
-        from tests.helpers import admin_headers
-
+    async def test_readonly_can_list(self, client, sm):
+        """readonly 可读缺口列表(矩阵只断言「非 401/403」,这里钉住 200;写路径 403 由矩阵覆盖)。"""
         ro = await admin_headers(sm, client, role="readonly")
         assert (
             await client.get("/api/admin/v1/finance/settlement-gaps", headers=ro)
         ).status_code == 200
-        resp = await client.post("/api/admin/v1/finance/settlement-gaps/1/replay", headers=ro)
-        assert resp.status_code == 403
-        resp = await client.post(
-            "/api/admin/v1/finance/settlement-gaps/1/resolve",
-            json={"note": "x"},
-            headers=ro,
-        )
-        assert resp.status_code == 403

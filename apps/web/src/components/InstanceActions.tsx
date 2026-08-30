@@ -99,7 +99,6 @@ export function ReleaseModal({
   );
 }
 
-/** 灰置项 label 统一包 antd Tooltip。 */
 function tipped(label: string, tip?: string) {
   return tip ? <Tooltip title={tip}>{label}</Tooltip> : label;
 }
@@ -135,7 +134,6 @@ export function InstanceActions({
   const sub = instance.subscription;
   const isSubscription = instance.market === "subscription";
   const isSpot = instance.market === "spot";
-  // 到期后开机后端直接 409(subscriptions.assert_active),按钮先灰掉并说明原因
   const expired = isSubscriptionExpired(instance.market, sub);
 
   // 转包周期只对按量实例出;状态不合适时灰置带原因(与后端 subscribe_instance 同款判据)
@@ -209,8 +207,7 @@ export function InstanceActions({
                   { type: "divider" as const },
                 ]
               : []),
-            // 转按量:竞价档的退出口,点开先把「当前整点小时整体改按按量价」讲清楚
-            ...(isSpot
+                  ...(isSpot
               ? [
                   {
                     key: "to-on-demand",
@@ -225,7 +222,6 @@ export function InstanceActions({
                   { type: "divider" as const },
                 ]
               : []),
-            // 在途状态与 frozen 后端一律拒:前者会和收敛路径抢同一行,后者那笔欠费得先还清
             ...(canConvert
               ? [
                   {
@@ -271,7 +267,6 @@ export function InstanceActions({
             } else if (key === "to-period") {
               setConvertOpen(true);
             } else if (key === "to-on-demand") {
-              // 转按量:三条后果逐条前置(重算整点小时 / 不再被回收 / 不会自动重启)
               confirm({
                 title: t("spot.toOnDemandTitle"),
                 consequences: [
@@ -297,7 +292,6 @@ export function InstanceActions({
         </Button>
       </Dropdown>
       <ReleaseModal instance={instance} open={releaseOpen} onClose={() => setReleaseOpen(false)} />
-      {/* 按需挂载:关掉即卸载,重开就是一张新单(幂等键随之换新) */}
       {isSubscription && renewOpen && (
         <RenewModal instance={instance} open onClose={() => setRenewOpen(false)} />
       )}

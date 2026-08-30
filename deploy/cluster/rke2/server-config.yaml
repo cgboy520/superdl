@@ -3,8 +3,7 @@
 write-kubeconfig-mode: "0640"
 cni: none                    # 禁内置 CNI,由 helmfile 装 Cilium 1.20(CNI + LB)
 disable:
-  - rke2-ingress-nginx       # 北向入口统一走 helmfile 装的 Envoy Gateway(Gateway API),
-                             # 禁掉内置入口控制器以免两个入口控制器并存
+  - rke2-ingress-nginx       # 北向入口统一走 helmfile 装的 Envoy Gateway(Gateway API)
   - rke2-canal
 # 控制面 HA(3 server 堆叠 etcd):apiserver 证书 SAN 必须覆盖 VIP 与全部 server 地址,
 # 否则 agent/kubectl 经 VIP 连接时 TLS 校验失败,任一 server 重建后其余成员也失连。
@@ -22,7 +21,6 @@ disable:
 node-label:
   - "node-role.superdl.io/infra=true"   # 平台组件(api/worker/前端/registry)只落带此标签的
                              # 节点(deploy/app/k8s 各清单的 nodeSelector);GPU 节点严禁打此标签。
-                             # 后续扩独立 infra 节点:打同款标签 + CriticalAddonsOnly taint 即等价。
 secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。存量集群开启时
                              # RKE2 启动自动重写加密既有 Secret,滚动重启 server 逐台做。
 etcd-snapshot-schedule-cron: "0 */6 * * *"

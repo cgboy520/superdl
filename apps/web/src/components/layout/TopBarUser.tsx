@@ -10,16 +10,17 @@ import {
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
-import { adminColors, colorPrimary, fontSize, formatDateTime, maskPhone } from "@superdl/ui";
+import { adminColors, colorPrimary, fontSize, maskPhone } from "@superdl/ui";
 import { LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Badge, Button, Dropdown, List, Popover, Space, theme, Typography } from "antd";
+import { Badge, Button, Dropdown, List, Popover, Space, theme } from "antd";
 import { useState } from "react";
 
 import { useTranslation } from "react-i18next";
 
 import { useFormat } from "@superdl/ui";
 import { COMMAND_KBD_HINT, COMMAND_PALETTE_OPEN_EVENT } from "../CommandPalette";
+import { NotificationListItem } from "../NotificationListItem";
 import { useNotificationOpen } from "../notificationNav";
 import { useLogout, useMarkAllNotificationsRead } from "../../api/mutations";
 import { useMe, useNotificationPages, useUnreadCount, useWallet } from "../../api/queries";
@@ -30,13 +31,11 @@ const WHITE = { color: "#fff" } as const;
 function NotificationBell() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
-  // 角标必须走 unread-count 轻端点而非列表长度,否则未读超过一页就不准;弹层列表另走游标分页
   const countQ = useUnreadCount({ refetchInterval: 30_000 });
   const pagesQ = useNotificationPages();
   const items = (pagesQ.data?.pages ?? []).flatMap((p) => p.items);
   const unreadCount = countQ.data?.unread_count ?? 0;
   const markAllRead = useMarkAllNotificationsRead();
-  // 条目点击行为与通知中心同一条路径(标已读+深链);跳转后关闭 Popover
   const [open, setOpen] = useState(false);
   const openNotification = useNotificationOpen(() => setOpen(false));
   return (
@@ -68,49 +67,7 @@ function NotificationBell() {
               style={{ maxHeight: 420, overflow: "auto" }}
               dataSource={items}
               locale={{ emptyText: t("topbar.noNotifications") }}
-              renderItem={(n) => {
-                const isUnread = n.read_at == null;
-                return (
-                  <List.Item
-                    style={{
-                      cursor: "pointer",
-                      // 已读/未读视觉与通知中心同语言:未读 = 左色点 + 浅底 + 左边框
-                      background: isUnread ? token.colorPrimaryBg : undefined,
-                      borderInlineStart: isUnread
-                        ? `3px solid ${token.colorPrimary}`
-                        : "3px solid transparent",
-                      paddingInline: 12,
-                    }}
-                    onClick={() => openNotification(n)}
-                    // 整行点击必须有键盘语义(与通知中心/工单列表同一标准)
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        openNotification(n);
-                      }
-                    }}
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space size={8}>
-                          {isUnread && <Badge color={token.colorPrimary} />}
-                          <Typography.Text strong={isUnread}>{n.title}</Typography.Text>
-                        </Space>
-                      }
-                      description={
-                        <>
-                          <div>{n.content}</div>
-                          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                            {formatDateTime(n.created_at)}
-                          </Typography.Text>
-                        </>
-                      }
-                    />
-                  </List.Item>
-                );
-              }}
+              renderItem={(n) => <NotificationListItem n={n} onOpen={openNotification} />}
             />
             <LoadMore
               hasNextPage={pagesQ.hasNextPage ?? false}
@@ -134,8 +91,6 @@ function NotificationBell() {
         )
       }
     >
-      {/* 失败态 ≠ 0 角标:查询失败显示告警标记,未读数未知绝不显示 0;
-          告警色走 token(深底品牌顶栏上 alertAccent 才够亮,antd 默认 #faad14 非 token 不硬编码) */}
       {countQ.isError ? (
         <Badge
           size="small"
@@ -177,11 +132,9 @@ export function TopBarUser() {
       <Link to="/billing" className="topbar-link">
         <Space size={4}>
           <WalletOutlined />
-          {/* 未就绪必须显示 —,不能渲染假 ¥0.00:查询失败时 data 恒为 undefined */}
           <span>{moneyOr(formatMoney(wallet?.balance), wallet != null)}</span>
         </Space>
       </Link>
-      {/* Cmd+K 命令面板触发器(全局快捷键在 CommandPalette 内监听);kbd 提示徽章窄屏隐藏(右区防溢出) */}
       <Button
         type="text"
         aria-label={t("command.trigger")}
@@ -203,7 +156,6 @@ export function TopBarUser() {
         </span>
       </Button>
       <NotificationBell />
-      {/* 帮助直达:公开 /help 页(FAQ/联系方式);窄屏收进用户菜单(右区五件防溢出) */}
       <Link to="/help" aria-label={t("topbar.help")} className="topbar-help-link">
         <Button type="text" icon={<QuestionCircleOutlined style={WHITE} />} />
       </Link>

@@ -34,7 +34,6 @@
     "announcementAlreadyRevoked": "Announcement already revoked — no need to repeat",
     "badDayFormat": "day must be YYYY-MM-DD",
     "cannotChangeSelf": "You cannot disable or downgrade your own account — ask another super admin to do it",
-    "idempotencyKeyMismatch": "The same idempotency key was used with different request content (amount/tenant/reason) — rejected as a conflict; use a new key for a new adjustment",
     "loginFailed": "Wrong username or password",
     "mfaCodeInvalid": "Incorrect or expired verification code — try again",
     "mfaNotBound": "This account has no authenticator bound",

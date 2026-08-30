@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.k8s import PodStatus, get_orchestrator
 from app.core.k8s.base import JOB_NAME_LABEL
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
     INSTANCE_NODE_LOST_TOTAL,
@@ -69,7 +69,7 @@ async def reconcile_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         "wipe_redriven": 0,
         "quota_redriven": 0,
     }
-    async with sm() as lock_session, try_advisory_lock(lock_session, LockKey.RECONCILER) as got:
+    async with advisory_lock(sm, LockKey.RECONCILER) as got:
         if not got:
             return counts
         await _reconcile_instances(sm, counts)

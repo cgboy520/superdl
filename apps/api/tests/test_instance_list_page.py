@@ -1,13 +1,9 @@
 """用户端实例列表:游标分页 + status/name 过滤。"""
 
-import secrets
-from decimal import Decimal
-
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.modules.orchestrator.models import Instance
-from tests.helpers import create_user_with_key
+from tests.helpers import create_user_with_key, seed_instance
 
 
 async def _insert_instance(
@@ -17,25 +13,9 @@ async def _insert_instance(
     name: str,
     status: str = "running",
 ) -> str:
-    uuid = secrets.token_hex(16)
-    async with sm() as session:
-        session.add(
-            Instance(
-                uuid=uuid,
-                user_id=user_id,
-                name=name,
-                sku_id=1,
-                spec={"gpu_model": "RTX4090"},
-                price_hourly=Decimal("1.6800"),
-                gpu_count=1,
-                image_ref="img",
-                status=status,
-                k8s_namespace=f"tenant-{user_id}",
-                jupyter_token="enc:v1:test",
-                authorized_keys=[],
-            )
-        )
-        await session.commit()
+    _id, uuid = await seed_instance(
+        sm, user_id, name=name, status=status, spec={"gpu_model": "RTX4090"}, wallet_credit=False
+    )
     return uuid
 
 

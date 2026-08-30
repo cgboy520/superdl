@@ -4,11 +4,15 @@ from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, request_fingerprint
+from app.core.idempotency import (
+    IDEMPOTENCY_WINDOW,
+    find_replay,
+    insert_idempotent,
+    request_fingerprint,
+)
 from app.core.logging import get_logger
 from app.core.money import as_price, disk_daily_charge
 from app.core.outbox import enqueue
@@ -89,27 +93,18 @@ async def create_disk(
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
     )
-    session.add(disk)
-    try:
-        await session.flush()
-    except IntegrityError:
-        # 并发同幂等键:对方已落库,回滚后按重放返回既有盘(不多开一块)
-        await session.rollback()
-        raced = (
-            await find_replay(
-                session,
-                DataDisk,
-                owner_col=DataDisk.user_id,
-                owner_id=user_id,
-                key=idempotency_key,
-                fingerprint=fingerprint,
-            )
-            if idempotency_key
-            else None
-        )
-        if raced is not None:
-            return raced, False
-        raise
+    result = await insert_idempotent(
+        session,
+        disk,
+        model=DataDisk,
+        owner_col=DataDisk.user_id,
+        owner_id=user_id,
+        key=idempotency_key,
+        fingerprint=fingerprint,
+    )
+    if result is not disk:
+        # 并发同幂等键:对方已落库,按重放返回既有盘(不多开一块)
+        return result, False
     # JuiceFS 目录硬配额下发(同事务 outbox):handler 成功才置 quota_synced
     enqueue(session, "disk.quota", {"disk_id": disk.id})
     await session.commit()

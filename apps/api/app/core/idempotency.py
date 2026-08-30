@@ -10,9 +10,10 @@
 
 import hashlib
 from datetime import datetime, timedelta
-from typing import Any, Protocol, overload
+from typing import Any, Protocol, cast, overload
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Mapped
 
@@ -106,3 +107,52 @@ async def find_replay(
                 http_status=409,
             )
     return existing
+
+
+async def insert_idempotent[RowT: _HasIdempotencyKey](
+    session: AsyncSession,
+    row: RowT,
+    *,
+    model: type[RowT],
+    owner_col: InstrumentedAttribute[int] | None,
+    owner_id: int | None,
+    key: str | None,
+    window: timedelta | None = None,
+    fingerprint: str | None = None,
+    commit: bool = False,
+) -> RowT:
+    """幂等插入的收敛骨架:add + flush/commit,撞 (归属列, key) 唯一约束时回滚并回查胜出方。
+
+    返回对象 `is row` 即新插入;否则为同键并发的胜出方(调用方按幂等重放处理)。
+    撞的是幂等键以外的约束(如日内单号序列、业务部分唯一索引)时重抛 IntegrityError,
+    由调用方决定换序列重试或转 409。key 为 None 时等价于普通插入。
+    """
+    session.add(row)
+    try:
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        if key is not None:
+            if fingerprint is not None:
+                # 带指纹路径要求 model 落库了 request_fingerprint 列(调用方契约),
+                # RowT 静态绑定表达不了该约束,经 Any 过桥到指纹版 overload
+                winner = await find_replay(
+                    session,
+                    cast(type[Any], model),
+                    owner_col=owner_col,
+                    owner_id=owner_id,
+                    key=key,
+                    window=window,
+                    fingerprint=fingerprint,
+                )
+            else:
+                winner = await find_replay(
+                    session, model, owner_col=owner_col, owner_id=owner_id, key=key, window=window
+                )
+            if winner is not None:
+                return cast(RowT, winner)
+        raise
+    return row

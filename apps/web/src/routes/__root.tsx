@@ -1,6 +1,7 @@
 import { brand, cssVars, webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
-import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
-import { App as AntApp, Button, ConfigProvider, Result, theme as antdTheme } from "antd";
+import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
+import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
+import { App as AntApp, ConfigProvider, theme as antdTheme } from "antd";
 import { MotionConfig } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -52,36 +53,12 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:渲染异常兜底为可恢复页面,不白屏。
- *  不直出 error.message(英文技术文本对用户无意义),技术详情折叠供排查。 */
+/** 全局错误边界:渲染异常兜底为可恢复页面,不白屏(Result 体与 admin 共用 RouteErrorFallbackView)。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
-  const detail = error instanceof Error ? error.message : null;
   return (
     <AppProviders>
-      <Result
-        status="500"
-        title={t("errorPage.title")}
-        subTitle={
-          <>
-            {t("errorPage.subtitle")}
-            {detail ? (
-              <details style={{ marginTop: 8, fontSize: 12, opacity: 0.65 }}>
-                <summary>{t("errorPage.techDetail")}</summary>
-                <code>{detail}</code>
-              </details>
-            ) : null}
-          </>
-        }
-        extra={
-          <>
-            <Button type="primary" onClick={() => reset()}>
-              {t("common.retry")}
-            </Button>
-            <Button onClick={() => (window.location.href = "/")}>{t("common.backHome")}</Button>
-          </>
-        }
-      />
+      <RouteErrorFallbackView error={error} reset={reset} homeLabel={t("common.backHome")} />
     </AppProviders>
   );
 }
@@ -90,15 +67,10 @@ function NotFoundPage() {
   const { t } = useTranslation();
   return (
     <AppProviders>
-      <Result
-        status="404"
-        title={t("notFound.title")}
-        subTitle={t("notFound.subtitle")}
-        extra={
-          <Link to="/dashboard">
-            <Button type="primary">{t("common.backConsole")}</Button>
-          </Link>
-        }
+      <NotFoundView
+        homeTo="/dashboard"
+        homeLabel={t("common.backConsole")}
+        subtitle={t("notFound.subtitle")}
       />
     </AppProviders>
   );

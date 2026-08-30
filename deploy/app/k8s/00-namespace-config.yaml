@@ -43,8 +43,7 @@ data:
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
   # 管理端域:prod 下 /api/admin/* 只放行 Host 命中本项的请求(占位域名会被拒绝启动)
   SUPERDL_ADMIN_HOST: "admin.superdl.example.com"
-  # 镜像仓库(Harbor)默认值层,推荐经 管理端·平台配置·镜像仓库 在线维护(机器人 Secret 加密落库);
-  # 镜像来源白名单同在配置中心(image_allowed_registries),Harbor 地址自动放行
+  # 镜像仓库(Harbor)默认值层,推荐经 管理端·平台配置·镜像仓库 在线维护(机器人 Secret 加密落库)
   SUPERDL_REGISTRY_HOST: "harbor.superdl.example.com"
   SUPERDL_REGISTRY_PROJECT: "superdl"
   # 人机校验(阿里云验证码 2.0)默认值层:开关 captcha_enabled 在 管理端·平台配置·安全策略 切换;

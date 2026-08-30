@@ -1,13 +1,14 @@
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.core.audit import set_audit_target
+from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.params import Cursor, Limit, TzOffset
+from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
 from app.core.ratelimit import check_rate_limit
@@ -155,15 +156,7 @@ async def export_billing(
         stream = billing_export.stream_ledger_csv(
             session, user.id, tz_offset_minutes=tz_offset_minutes, lang=lang
         )
-    return StreamingResponse(
-        stream,
-        media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="superdl-{dataset}-{month or "all"}.csv"'
-            )
-        },
-    )
+    return csv_response(stream, f"superdl-{dataset}-{month or 'all'}.csv")
 
 
 # ---------- 充值 ----------
@@ -176,7 +169,7 @@ async def create_recharge(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> RechargeOut:
     # 实名闸门(统一实现,勿逐端点复制)
     await account_service.require_real_name_if_required(
@@ -216,7 +209,7 @@ async def create_refund(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> RefundOut:
     """申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);
     同订单活跃申请被部分唯一索引拦截。"""
@@ -263,7 +256,7 @@ async def create_invoice(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> InvoiceOut:
     """申请开票。amount 由服务端按账期计算;Idempotency-Key 重放返回既有单
     (200 + X-Idempotent-Replay)。"""

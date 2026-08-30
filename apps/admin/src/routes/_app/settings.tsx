@@ -48,7 +48,7 @@ const SETTINGS_TABS = ["policies", "announcement", "legal", "admins"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const Route = createFileRoute("/_app/settings")({
-  // Tab 入 URL(0.3 规范):白名单校验,非法值回落默认 Tab
+  // Tab 入 URL:白名单校验,非法值回落默认 Tab
   validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => ({
     tab: SETTINGS_TABS.includes(search.tab as SettingsTab)
       ? (search.tab as SettingsTab)
@@ -203,7 +203,7 @@ function PoliciesTab() {
             const { reason } = await reasonForm.validateFields();
             update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
           } catch {
-            // 校验失败:antd 已在字段下给出红字反馈,静默停留
+            /* 校验失败:antd 已在字段下给出红字 */
           }
         }}
       >
@@ -293,7 +293,7 @@ function AnnouncementTab() {
           loading={publish.isPending}
           disabled={!writable}
           onClick={() => {
-            // L2:复述影响面 + 公告标题,确认后才真正群发
+            // 复述影响面 + 公告标题,确认后才真正群发
             modal.confirm({
               title: t("settings.confirmAnnounce"),
               content: t("settings.confirmAnnounceDetail", {
@@ -309,7 +309,7 @@ function AnnouncementTab() {
                     idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
                   });
                 } catch {
-                  // 校验失败:antd 已在字段下给出红字反馈,弹窗关闭后回到表单可见
+                  /* 校验失败:antd 已在字段下给出红字 */
                 }
               },
             });
@@ -345,7 +345,6 @@ function AnnouncementTab() {
           {
             title: t("settings.colAnnTitle"),
             dataIndex: "title",
-            // 长标题截断不撑列,hover 看全文
             ellipsis: true,
             render: (v: string) => (
               <Tooltip title={v}>

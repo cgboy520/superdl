@@ -66,7 +66,6 @@ function MountOverview({ priceText }: { priceText: string }) {
   );
   return (
     <Card size="small" title={t("storage.mountOverviewTitle")}>
-      {/* 只列真实存在的挂载点:后端 Pod 只挂实例盘(/root)与数据盘(/root/data) */}
       <div style={{ display: "flex", gap: 8, flexDirection: screens.md ? "row" : "column" }}>
         {seg("/root", t("storage.segRoot"), statusColors.blue)}
         {seg("/root/data", t("storage.segData", { price: priceText }), colorPrimary)}
@@ -319,7 +318,6 @@ function StoragePage() {
           <Typography.Text type="secondary">
             {t("storage.createNote", { price: priceText })}
           </Typography.Text>
-          {/* 容量对应的日费实时折算 */}
           <Typography.Text strong style={{ display: "block", marginTop: 8 }}>
             {t("storage.dailyEstimate", {
               size: sizeWatch ?? 0,

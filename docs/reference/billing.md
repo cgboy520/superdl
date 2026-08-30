@@ -96,7 +96,7 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
 | `billing/patrol.py` `_patrol_frozen_and_arrears_stopped` 的两支 | stopped→frozen 那支会按「余额 ≤ 0」把在保实例提前冻结;frozen 的「充值即解冻」那支会让到期没续费但余额充足的用户被无限解冻,冻结倒计时永远走不到头(等于免费续期) |
 | `billing/edge_listener.py` 的尾账 | 离开 running 时再出一次小时尾账,对已预付的用户二次收费 |
 
-**frozen 到期回收那一支刻意不过滤**:回收仍由余额巡检统一做,状态机与回收逻辑只有一处实现。
+**frozen 到期回收那一支不过滤**:回收仍由余额巡检统一做,状态机与回收逻辑只有一处实现。
 创建路径上还有一处相关过滤:`_pending_hourly`(creating/starting 的待燃时费)同样排除包周期实例。
 
 ### 按量转包周期(`POST /api/v1/instances/{uuid}/subscribe`)

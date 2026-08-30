@@ -9,7 +9,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.modules.adminapi.schemas import AdminRole
-from tests.helpers import admin_headers, complete_mfa_setup
+from tests.helpers import admin_headers, complete_mfa_setup, set_platform_setting
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -50,9 +50,7 @@ class TestMfaEnforcement:
         await _create(client, sm, "sw-unbound", "ops")
         await complete_mfa_setup(client, (await _login(client, "sw-bound")).json()["ticket"])
 
-        async with sm() as session:
-            session.add(PlatformSetting(key="admin_mfa_enabled", value="false"))
-            await session.commit()
+        await set_platform_setting(sm, "admin_mfa_enabled", "false")
         for name in ("sw-bound", "sw-unbound"):
             body = (await _login(client, name)).json()
             assert body["status"] == "ok", (name, body)

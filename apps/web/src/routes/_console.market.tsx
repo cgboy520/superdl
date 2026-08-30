@@ -52,7 +52,6 @@ export interface MarketSearch {
   count?: number;
 }
 
-/** 正整数解析(非法/非正一律丢弃) */
 function posInt(v: unknown): number | undefined {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : undefined;
@@ -177,7 +176,6 @@ function MarketPage() {
   );
 
   const selected = skus.find((s) => s.id === selectedId);
-  // CPU 实例一台占一份库存(不带卡),GPU 实例按卡数占
   const needed = isCpu ? 1 : gpuCount;
   const rentable = (s: SkuMarketOut) => (s.available_count ?? 0) >= needed;
 
@@ -379,7 +377,6 @@ function MarketPage() {
                 ) : isSpot ? (
                   <Space size={8} align="baseline">
                     <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
-                    {/* 「低至 X 折」角标不能只挂在 chip 上:结算条是用户最后看到价格的地方 */}
                     <SpotOffLabel policy={spotPolicy} />
                   </Space>
                 ) : (
@@ -399,7 +396,6 @@ function MarketPage() {
             ) : (
               <Space orientation="vertical" size={4}>
                 <span>
-                  {/* 竞价档摊开的是折后时价:结算条大字与明细报两个不同的数,只会让人以为算错了 */}
                   {isCpu
                     ? t("instances.pricePerInstance", { price: formatHourlyPrice(unitPrice) })
                     : t("instances.pricePerCard", {
@@ -451,7 +447,6 @@ function MarketPage() {
                     void navigate({
                       to: "/market/create/$skuId",
                       params: { skuId: String(selected.id) },
-                      // CPU 规格不带卡数(创建页按 max_gpus_per_instance=0 提交 gpu_count: 0);计费方式与时长随选择带过去
                       search: {
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),

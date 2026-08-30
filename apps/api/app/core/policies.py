@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import String, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -121,30 +121,11 @@ async def get_effective_policies(session: AsyncSession) -> EffectivePolicies:
     for row in (await session.execute(select(PolicyOverride))).scalars():
         if row.key in eff:
             eff[row.key] = row.value
-    return EffectivePolicies(
-        disk_price_gb_month=Decimal(eff["disk_price_gb_month"]),
-        disk_min_gb=int(eff["disk_min_gb"]),
-        disk_max_gb=int(eff["disk_max_gb"]),
-        disk_grace_days=int(eff["disk_grace_days"]),
-        disk_frozen_days=int(eff["disk_frozen_days"]),
-        freeze_grace_hours=int(eff["freeze_grace_hours"]),
-        afford_cover_hours=int(eff["afford_cover_hours"]),
-        prewarm_min_coverage_pct=int(eff["prewarm_min_coverage_pct"]),
-        prewarm_recheck_hours=int(eff["prewarm_recheck_hours"]),
-        max_instances_per_user=int(eff["max_instances_per_user"]),
-        max_gpus_per_user=int(eff["max_gpus_per_user"]),
-        max_vcpus_per_user=int(eff["max_vcpus_per_user"]),
-        max_disks_per_user=int(eff["max_disks_per_user"]),
-        gpu_node_cpu_instance_vcpu_cap=int(eff["gpu_node_cpu_instance_vcpu_cap"]),
-        service_endpoint_rps=int(eff["service_endpoint_rps"]),
-        period_discount_day=int(eff["period_discount_day"]),
-        period_discount_week=int(eff["period_discount_week"]),
-        period_discount_month=int(eff["period_discount_month"]),
-        period_discount_year=int(eff["period_discount_year"]),
-        period_expire_warn_days=int(eff["period_expire_warn_days"]),
-        spot_discount_pct=int(eff["spot_discount_pct"]),
-        spot_grace_seconds=int(eff["spot_grace_seconds"]),
-    )
+    # 按 POLICY_SPECS 的类型列统一转换:新增策略键只需动 SPECS 与 dataclass 两处
+    converted: dict[str, Any] = {
+        k: (Decimal(v) if POLICY_SPECS[k][0] == "decimal" else int(v)) for k, v in eff.items()
+    }
+    return EffectivePolicies(**converted)
 
 
 async def set_policy_overrides(session: AsyncSession, updates: dict[str, str]) -> None:

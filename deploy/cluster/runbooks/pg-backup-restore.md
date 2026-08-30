@@ -25,7 +25,7 @@
 aws s3 ls s3://superdl-pg-backup/daily/ --endpoint-url $S3_ENDPOINT | tail -5
 aws s3 cp s3://superdl-pg-backup/daily/superdl-<ts>.dump /tmp/ --endpoint-url $S3_ENDPOINT
 
-# 2. 停写入(摘 api 流量 + 停全部 worker 组件),防止恢复期间产生分叉账
+# 2. 停写入(摘 api 流量 + 停全部 worker 组件)
 #    (worker 共 5 个 Deployment:core/tenant-mgr/node-mgr/prewarm/disk-ops,
 #     漏停任何一个,outbox 任务仍在写库)
 kubectl -n superdl scale deploy superdl-api --replicas=0

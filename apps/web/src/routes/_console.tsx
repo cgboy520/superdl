@@ -26,9 +26,7 @@ function ConsoleLayout() {
   const screens = Grid.useBreakpoint();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const selected = consoleNavSelected(pathname);
-  // 全局快捷键:/ 聚焦页内搜索框,g+序列导航(d/i/b/m)
   useGlobalHotkeys();
-  // 侧栏「通知」未读角标与顶栏铃铛同一轻端点(react-query 30s 轮询共享缓存,不增发请求)
   const { data: unread } = useUnreadCount({ refetchInterval: 30_000 });
   const unreadCount = unread?.unread_count ?? 0;
 
@@ -65,7 +63,6 @@ function ConsoleLayout() {
           />
         </Layout.Sider>
         <Layout>
-          {/* 内容区 padding 随断点:<md 收紧为 16(space.lg) */}
           <Layout.Content style={{ padding: screens.md ? layout.contentPadding : space.lg }}>
             <PageContainer>
               <Outlet />

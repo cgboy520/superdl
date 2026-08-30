@@ -1,7 +1,8 @@
 /** 跨 spec 文件共用的小工具与「同款前置」步骤。
-
-前置(注册 → 充值 → 公钥 → 市场选规格)四条 spec 逐字相同,抄在各自文件里的代价是:
-改一处文案要同步改四遍,漏一遍就是一条随机红的用例。 */
+ *
+ * UI 前置(registerViaUi/rechargeViaUi/addSshKeyViaUi)只由 smoke 使用,守住 UI 链路本身;
+ * 其余 spec 用 API 直达版(loginViaApi/rechargeViaApi/addSshKeyViaApi)跳过 UI 步骤,
+ * 省下每条几十秒,也消掉与用例无关的失败点。 */
 
 import { expect, type Locator, type Page } from "@playwright/test";
 
@@ -43,6 +44,50 @@ export async function registerViaUi(page: Page, phone: string): Promise<void> {
   await page.getByRole("checkbox").check(); // 同意用户协议/隐私政策
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
+}
+
+/** 经 API 建号并注入登录态:access token 由 addInitScript 在应用脚本前写入 localStorage,
+ *  refresh cookie 经 context 共享的 cookie jar 由浏览器托管。返回 access token 供后续 API 前置用。 */
+export async function loginViaApi(page: Page, phone: string): Promise<string> {
+  const code = await page.request.post("/api/v1/auth/sms-code", {
+    // dev 环境安全策略 captcha_enabled 默认关闭:发码不带人机校验 token
+    data: { phone, purpose: "register" },
+  });
+  expect(code.status(), await code.text()).toBe(204);
+  const resp = await page.request.post("/api/v1/auth/register", {
+    data: { phone, sms_code: "123456", accept_terms: true },
+  });
+  expect(resp.status(), await resp.text()).toBe(201);
+  const data = (await resp.json()) as { access_token: string };
+  // 键名对齐 apps/web stores/auth.ts 的 TOKEN_KEY(函数体序列化进浏览器,无法引用本模块常量)
+  await page.addInitScript(
+    (token) => window.localStorage.setItem("superdl.web.accessToken", token),
+    data.access_token,
+  );
+  return data.access_token;
+}
+
+/** mock 渠道经 API 充值:建单 → mock 回调标记支付成功(需 dev 的 payment_mock 开启,同 UI 链路)。 */
+export async function rechargeViaApi(page: Page, token: string, amount: string): Promise<void> {
+  const order = await page.request.post("/api/v1/wallet/recharges", {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { amount, channel: "mock" },
+  });
+  expect(order.status(), await order.text()).toBe(201);
+  const { order_no } = (await order.json()) as { order_no: string };
+  const paid = await page.request.post("/api/v1/webhooks/mock", {
+    data: { order_no, amount, txn_id: `tx-${order_no}` },
+  });
+  expect(paid.status(), await paid.text()).toBe(200);
+}
+
+/** 经 API 添加一把 e2e 公钥(开发机形态创建时必须选一把)。 */
+export async function addSshKeyViaApi(page: Page, token: string): Promise<void> {
+  const resp = await page.request.post("/api/v1/ssh-keys", {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { name: "e2e-key", public_key: genEd25519Key() },
+  });
+  expect(resp.status(), await resp.text()).toBe(201);
 }
 
 /** mock 渠道充值并关掉弹窗。amount 省略 = 用弹窗默认额(¥100);

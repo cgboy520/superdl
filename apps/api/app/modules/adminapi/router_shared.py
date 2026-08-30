@@ -3,20 +3,10 @@
 from datetime import datetime
 
 from fastapi import Query
-from fastapi.responses import StreamingResponse
 
 from app.core.errors import AppError, ErrorCode
 
 ExportLang = Query(default="zh-CN")
-
-
-def csv_response(stream, filename: str) -> StreamingResponse:
-    """CSV 流式响应:Content-Disposition 附件;截断标记行由流内部在触顶时追加。"""
-    return StreamingResponse(
-        stream,
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 def parse_day(day: str) -> tuple[datetime, datetime]:

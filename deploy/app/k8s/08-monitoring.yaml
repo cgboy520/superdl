@@ -14,7 +14,7 @@ spec:
     matchLabels: {app: superdl-api}
   endpoints:
     - port: http
-      path: /metrics/   # 尾斜杠必须:Starlette mount 对 /metrics 裸路径先 307 跳 /metrics/
+      path: /metrics/   # Starlette mount 对 /metrics 裸路径先 307 跳 /metrics/
       interval: 30s
       authorization:
         type: Bearer
@@ -36,7 +36,7 @@ spec:
     matchLabels: {app: superdl-worker}
   podMetricsEndpoints:
     - port: metrics
-      path: /metrics/   # 与 API ServiceMonitor 对齐(避免 307)
+      path: /metrics/
       interval: 30s
       authorization:
         type: Bearer

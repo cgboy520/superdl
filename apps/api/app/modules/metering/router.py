@@ -21,7 +21,9 @@ async def instances_metrics_summary(
     断源降级为 available=false(200),详情端点维持 503 语义。
     """
     instances = await orchestrator_service.list_instances(session, user.id)
-    targets = [(i.uuid, i.k8s_namespace) for i in instances if i.status == "running"]
+    targets = [
+        (i.uuid, i.k8s_namespace) for i in instances if i.status == orchestrator_service.RUNNING
+    ]
     return await service.instances_gpu_summary(targets)
 
 

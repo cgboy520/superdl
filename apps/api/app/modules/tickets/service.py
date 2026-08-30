@@ -19,10 +19,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay
+from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.pagination import Page, paginate_by_id
 from app.core.ratelimit import check_rate_limit
+from app.core.sqlutil import next_daily_seq
 from app.core.timeutil import now_utc
 from app.modules.notify import service as notify_service
 from app.modules.tickets.models import Ticket, TicketMessage
@@ -56,13 +57,6 @@ async def list_stale_pending_staff(session: AsyncSession, *, older_than: datetim
             )
         ).scalars()
     )
-
-
-async def _next_daily_seq(session: AsyncSession, prefix: str) -> int:
-    count = (
-        await session.execute(select(func.count()).where(Ticket.ticket_no.like(f"{prefix}-%")))
-    ).scalar_one()
-    return count + 1
 
 
 async def _admin_alert(session: AsyncSession, *, title: str, content: str, dedup_key: str) -> None:
@@ -121,25 +115,27 @@ async def create_ticket(
     prefix = f"T{now_utc():%Y%m%d}"
     for _ in range(8):
         ticket = Ticket(
-            ticket_no=f"{prefix}-{await _next_daily_seq(session, prefix):02d}",
+            ticket_no=f"{prefix}-{await next_daily_seq(session, Ticket.ticket_no, prefix):02d}",
             user_id=user_id,
             category=category,
             subject=subject,
             instance_uuid=instance_uuid,
             idempotency_key=idempotency_key,
         )
-        session.add(ticket)
         try:
-            await session.flush()  # 唯一约束在 flush 即校验;拿到自增 id 供首条消息引用
+            result = await insert_idempotent(
+                session,
+                ticket,
+                model=Ticket,
+                owner_col=Ticket.user_id,
+                owner_id=user_id,
+                key=idempotency_key,
+            )
         except IntegrityError:
-            await session.rollback()
-            if idempotency_key:
-                winner = await find_replay(
-                    session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
-                )
-                if winner is not None:
-                    return winner, False  # 同键并发:返回胜出方的单
             continue  # 按 ticket_no 序列撞车处理:重试下一序列
+        if result is not ticket:
+            return result, False  # 同键并发:返回胜出方的单
+        # insert_idempotent 只 flush 出 ticket.id;首条消息照旧同单 commit
         session.add(
             TicketMessage(ticket_id=ticket.id, sender_kind="user", sender_id=user_id, body=body)
         )

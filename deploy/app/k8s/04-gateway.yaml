@@ -40,8 +40,7 @@ spec:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}
         pod:
-          # 平台组件落点统一走 infra 标签(与 02-api.yaml / 03-worker.yaml / 07-frontends.yaml
-          # 同锚点);GPU 节点严禁打此标签。
+          # 平台组件落点统一走 infra 标签;GPU 节点严禁打此标签。
           nodeSelector:
             node-role.superdl.io/infra: "true"
           tolerations:
@@ -93,7 +92,7 @@ metadata:
 spec:
   gatewayClassName: superdl
   # listener 的 name 就是各策略的 sectionName,**锁死不许改**:名字对不上不报错、apply 照样
-  # 成功,只是策略静默不生效(白名单、限流全没了)。改动本段后必须
+  # 成功,只是策略静默不生效。改动本段后必须
   # `kubectl describe securitypolicy/backendtrafficpolicy/clienttrafficpolicy -n superdl`
   # 确认 Accepted=True 再收工。
   #
@@ -320,7 +319,6 @@ spec:
 # 匿名支付回调:更严请求体上限 256Ki(微信/支付宝通知实载仅数 KB;超 256Ki → 413)。
 # 回调走最长前缀匹配只命中 superdl-api-webhooks 路由,superdl-api-ratelimit 对它
 # 不适用,边缘限流在此同款重写(应用层另有 120/min/IP,见 billing/webhooks_router.py)。
-# 规则写法约束(两条都带 selector、单位整数倍)同 superdl-api-ratelimit 头部注释。
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -381,7 +379,6 @@ spec:
     # 鉴权服务自己返回 5xx 也走这条(不透传),所以平台 API 的 500 到客户端是 503。
     statusOnError: 503
     # 保持 false:true 时**连策略配置非法都整个绕过鉴权**,一个手误就能让全部付费端点变成公开。
-    # 宁可整片 503 也不裸奔。
     failOpen: false
     # 默认只发 :authority / :method / :path / content-length / authorization 五个头,
     # `x-api-key` 不在其中——漏配的现象是「用 Authorization 的客户端正常、用 X-API-Key 的
@@ -490,5 +487,4 @@ spec:
     connectionLimit:
       # **每个 Envoy 实例的连接总量**,不是每源 IP 并发连接数(EG 没有对应原语):
       # 只做防内存耗尽的总量兜底,每 IP 维度的压制由上面的 RPS/RPM 承担。
-      # 别按「每 IP 并发」的直觉把它调到几十,那会瞬间打死全站。
       value: 10000

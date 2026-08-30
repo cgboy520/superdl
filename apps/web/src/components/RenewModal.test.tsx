@@ -192,8 +192,8 @@ describe("RenewModal", () => {
   it("转包周期:基准取按量实例锁定的 price_hourly,金额与建包周期实例逐分相同", async () => {
     renderConvert();
     const dialog = await screen.findByRole("dialog");
-    // 3.99/时 × 1 卡 × 720 小时 = 2872.80,包月 8 折后 2298.24 —— 与续费那单同价,
-    // 因为两边的基准都是同一个原价快照
+    // 3.99/时 × 1 卡 × 720 小时 = 2872.80,包月 8 折后 2298.24 —— 与续费那单同价
+    // (基准为同一原价快照)
     expect(within(dialog).getByText("¥2,872.80")).toBeInTheDocument();
     expect(within(dialog).getByText("¥2,298.24")).toBeInTheDocument();
   });

@@ -4,18 +4,17 @@
 采集面:全部命名空间的容器日志(discovery.kubernetes)+ 控制面节点 apiserver 审计文件
 (`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
 
-多租户(`auth_enabled: true`,审计 #40):Alloy 按 namespace 打租户——平台组件与
+多租户(`auth_enabled: true`):Alloy 按 namespace 打租户——平台组件与
 apiserver 审计进 `platform` 租户,`tenant-*` 工作负载进 `tenant` 租户;摄入限流按租户
 独立计,租户日志洪峰挤不垮平台/审计流。头是自声明的,真实边界是
 `../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
 
 ## 留存口径(合规基线)
 
-- **Loki `retention_period: 4320h`(180 天 ≥ 6 个月)**,`values/loki.yaml`(compactor `retention_enabled`);
+- **Loki `retention_period: 4320h`(180 天)**,`values/loki.yaml`(compactor `retention_enabled`);
   磁盘按此容量规划,full 档 50Gi JuiceFS,light 档 10Gi TopoLVM。
 - DB `audit_log` 表:365 天(`SUPERDL_AUDIT_RETENTION_DAYS`),结构化审计的第一事实源;
   Loki 侧是请求链/异常/apiserver 审计的第二路留存。
-- 等保「API 审计日志 ≥6 个月」= DB 审计表(主)+ Loki 180 天容器日志(副)双路。
 
 ## 查询方式
 

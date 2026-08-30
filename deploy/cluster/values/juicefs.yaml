@@ -18,7 +18,6 @@ storageClasses:
     reclaimPolicy: Retain
     existingSecret: superdl-juicefs-secret
     # 不开 writeback:异步写回下节点崩溃会丢未上传写入,而该 SC 承载用户付费数据盘。
-    # 性能基线以 fio 实测为准(runbooks/cluster-validation.md D 节);若非开不可,
-    # 须同时在购买页与文档明示「异步写回,节点故障可能丢失最近写入」
+    # 性能基线以 fio 实测为准(runbooks/cluster-validation.md D 节)
     mountOptions:
       - cache-size=102400        # 热数据本地缓存 100G(读缓存,无写丢失面)

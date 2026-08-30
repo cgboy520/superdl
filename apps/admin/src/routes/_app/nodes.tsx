@@ -513,7 +513,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
           {
             title: t("nodes.colHeartbeat"),
             dataIndex: "last_report_at",
-            // 保留秒级手拼:进行中注册 5s 轮询,心跳需要秒精度才能分辨「卡住」与「存活」(formatDateTime 只到分)
+            // 秒级精度:进行中注册 5s 轮询,靠秒级心跳分辨「卡住」与「存活」(formatDateTime 只到分)
             render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm:ss") : "-"),
           },
           {
@@ -536,7 +536,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             width: 190,
             render: (_, r) => (
               <Space>
-                {/* L2 升为 ReasonAction(收原因):重新生成会让旧命令立即失效,先复述后果再执行 */}
+                {/* 重新生成会让旧命令立即失效,先收原因并复述后果再执行 */}
                 <ReasonAction
                   label={t("nodes.regenerate")}
                   title={t("nodes.regenerateConfirmTitle")}
@@ -608,8 +608,8 @@ function NodesPage() {
     () => (kw ? nodes.filter((n) => n.name.toLowerCase().includes(kw)) : nodes),
     [nodes, kw],
   );
-  // 深链目标校验(列表就绪后判定):?node= 目标不存在时顶部提示且不回落首节点——
-  // 静默落在首节点会把「目标节点已移除」误读成「一切正常」
+  // 深链目标校验(列表就绪后判定):?node= 目标不存在时顶部提示而不静默落在首节点
+  // (那会把「目标节点已移除」误读成「一切正常」)
   const deepLinkMissing =
     nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
   const node =
@@ -629,7 +629,7 @@ function NodesPage() {
     const row = document.querySelector(`[data-row-key="${CSS.escape(nodeParam)}"]`);
     row?.scrollIntoView({ block: "center" });
   }, [nodeParam, nodes.length]);
-  // cordon 经 outbox 异步生效:3s 后补拉一次;组件卸载必须清定时器
+  // cordon 经 outbox 异步生效:3s 后补拉一次;组件卸载时清定时器
   const cordonTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {

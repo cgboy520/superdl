@@ -36,5 +36,5 @@ ansible-playbook -i inventory.ini site.yml -e cluster_distro=k3s    # k3s(light 
 - HA 参数成对:`api_vip` 与 `server_ips` 必须同时给且奇数台 ≥3,否则 playbook 直接断言失败;
   单 server 集群把 `api_vip` 留空(tls-san 维持注释)。
 - 装完按 `../cluster/README.md` 路径 A/B 继续(平台接入 → helmfile → 准入策略)。
-- 驱动版本单一事实源是平台配置 `node_driver_version`(管理端·平台配置),由 node-join.sh 按服务端下发的版本安装;
+- 驱动版本由平台配置 `node_driver_version`(管理端·平台配置)下发,node-join.sh 按服务端下发的版本安装;
   本目录不持有它的镜像值。

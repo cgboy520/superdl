@@ -1,23 +1,24 @@
 """管理端路由(对账/告警/调账/退款/发票/订单/收入/补单)。"""
 
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import set_audit_target, write_audit_sync
+from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.params import Cursor, Limit, TzOffset
+from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.ratelimit import check_rate_limit
 from app.modules.adminapi import export as admin_export
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.models import AdminUser
-from app.modules.adminapi.router_shared import ExportLang, csv_response, parse_day
+from app.modules.adminapi.router_shared import ExportLang, parse_day
 from app.modules.adminapi.schemas import (
     REASON_MAX_LENGTH,
     AdjustmentOut,
@@ -223,7 +224,7 @@ async def admin_create_adjustment(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdjustmentStatusOut:
     """发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单
@@ -367,7 +368,7 @@ async def admin_payout_refund(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
     """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
@@ -608,7 +609,7 @@ async def admin_backfill_order(
     session: DbSession,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKey = None,
 ) -> OrderBackfillOut:
     """人工补单:服务端实时向渠道核验已支付且金额一致才入账。同幂等键重放回当前状态
     (X-Idempotent-Replay 头区分)。审计行与入账同事务(write_audit_sync)。"""

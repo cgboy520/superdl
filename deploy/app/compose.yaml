@@ -5,8 +5,7 @@ name: superdl
 services:
   postgres:
     image: postgres:18
-    # 不设则宿主机/Docker 重启后 PG 不回来,API 与 worker 静默进无限重启循环
-    # (unit 状态仍是 active,线索只在 journal 的重启计数里)。
+    # 不设则宿主机/Docker 重启后 PG 不回来,API 与 worker 静默进无限重启循环。
     # 用 unless-stopped 不用 always:显式 stop 后不自作主张拉起。
     restart: unless-stopped
     environment:

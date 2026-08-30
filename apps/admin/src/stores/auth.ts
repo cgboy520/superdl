@@ -42,7 +42,7 @@ export const authStore = createStore<AuthState>()((set) => ({
   setAdmin: (admin) => set({ admin }),
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
-    // /me 等查询缓存一并清掉:换号重登后不得看到上一个账号的角色/数据残影
+    // 清掉查询缓存:换号重登后不得看到上一个账号的角色/数据残影
     queryClient.clear();
     set({ accessToken: null, admin: null });
   },

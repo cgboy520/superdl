@@ -16,7 +16,7 @@ from sqlalchemy import String, cast, func, select, true
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import FUND_RECONCILE_MISMATCH_TOTAL
 from app.core.timeutil import billing_day_floor, now_utc
@@ -322,10 +322,7 @@ async def reconcile_funds(
 ) -> dict[str, int]:
     """每日资金账实核对。返回 {"wallet_mismatch": n, "bill_mismatch": 0/1}。"""
     counts = {"wallet_mismatch": 0, "bill_mismatch": 0}
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.FUND_RECONCILE) as got,
-    ):
+    async with advisory_lock(sm, LockKey.FUND_RECONCILE) as got:
         if not got:
             return counts
         until = billing_day_floor(at or now_utc())  # 与盘费日界同口径(北京日)

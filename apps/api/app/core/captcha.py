@@ -24,7 +24,7 @@ class CaptchaError(RuntimeError):
 
 
 class CaptchaChannel(Protocol):
-    async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
+    async def verify(self, captcha_verify_param: str) -> bool:
         """验签一次通过性校验(CaptchaVerifyParam 一次性,重复调用返 F008)。
         渠道故障抛 CaptchaError;人/机判定不通过返回 False。"""
         ...
@@ -59,7 +59,7 @@ class AliyunCaptchaChannel:
             "CaptchaVerifyParam": captcha_verify_param,
         }
 
-    async def verify(self, captcha_verify_param: str, client_ip: str | None) -> bool:
+    async def verify(self, captcha_verify_param: str) -> bool:
         body = await rpc_call(
             self.ENDPOINT,
             self.request_params(captcha_verify_param),

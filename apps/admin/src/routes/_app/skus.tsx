@@ -168,7 +168,7 @@ function SkusPage() {
       onError: (e) => message.error(errText(e, t("common.saveFailed"))),
     },
   });
-  // 上架独立 mutation:不带 onError,错误提示统一由 ReasonAction 弹出(避免与 mutation 回调双提示)
+  // 不带 onError:错误提示统一由 ReasonAction 弹出(避免双提示)
   const onSale = useUpdateSku({
     mutation: { onSuccess: refresh },
   });
@@ -329,7 +329,7 @@ function SkusPage() {
           };
     const doSubmit = () => {
       if (editing === "new") {
-        // 新建端点不接受 reason(编辑才必填,入审计)
+        // 新建端点不接受 reason
         const createPayload: SkuCreate = {
           name: values.name,
           tier,
@@ -500,7 +500,7 @@ function SkusPage() {
             dataIndex: "status",
             render: (v: string, r) =>
               v === "on" ? (
-                // 下架 = L2(手输原因 + 影响说明)
+                // 下架收原因 + 影响说明
                 <ReasonAction
                   label={t("skus.offSale")}
                   danger
@@ -516,7 +516,7 @@ function SkusPage() {
                   }}
                 />
               ) : (
-                // 上架同为 L2(手输原因,与下架同范式;弃用常量原因);规格缺要素被后端拒绝时给「强制上架」出口
+                // 上架与下架同范式(手输原因);规格缺要素被后端拒绝时给「强制上架」出口
                 <ReasonAction
                   label={t("skus.onSale")}
                   title={t("skus.onSaleTitle")}

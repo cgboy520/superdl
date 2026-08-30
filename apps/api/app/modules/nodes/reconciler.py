@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.k8s import get_orchestrator
-from app.core.locks import LockKey, try_advisory_lock
+from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.nodes.models import NodeEnrollment
@@ -25,10 +25,7 @@ ACTIVE_STATUSES = ("pending", "installing", "rebooting", "joining")
 async def reconcile_enrollments_once(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
     """单轮对账。advisory lock 保证多副本单实例执行。返回动作计数(测试/日志用)。"""
     counts = {"joined": 0, "failed": 0, "expired": 0}
-    async with (
-        sm() as lock_session,
-        try_advisory_lock(lock_session, LockKey.NODE_ENROLL_RECONCILER) as got,
-    ):
+    async with advisory_lock(sm, LockKey.NODE_ENROLL_RECONCILER) as got:
         if not got:
             return counts
         nodes = {n.name: n for n in await get_orchestrator().list_nodes()}

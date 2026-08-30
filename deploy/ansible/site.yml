@@ -92,7 +92,7 @@
       when: harbor_ca_pem | length > 0
       notify: restart-server
 
-    # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘(幂等)。
+    # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘。
     - name: 渲染 rke2 server config
       set_fact:
         server_config: >-

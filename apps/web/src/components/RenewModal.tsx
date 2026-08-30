@@ -40,7 +40,7 @@ import {
   usePeriodDiscounts,
 } from "./periodBilling";
 
-export type PeriodPurchaseMode = "renew" | "subscribe";
+type PeriodPurchaseMode = "renew" | "subscribe";
 
 export function RenewModal({
   instance,
@@ -65,7 +65,6 @@ export function RenewModal({
   const [period, setPeriod] = useState(current);
   const [count, setCount] = useState(1);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  // 「现在」在挂载时定一次:每次重渲染都取一遍会让新到期时间在用户眼皮底下抖
   const [mountedAt] = useState(() => Date.now());
   const { data: wallet } = useWallet();
   const discounts = usePeriodDiscounts();
@@ -84,8 +83,6 @@ export function RenewModal({
   const subscribe = useSubscribeInstance(instance.uuid, { onSuccess: onPaid });
   const submit = isConvert ? subscribe : renew;
 
-  // 报价基准:转换取建实例时锁定的按量价,续费取下单时的原价快照;
-  // 两条都不能是 SKU 现价或折后价(instance.price_hourly 在包周期实例上已被折过)
   const baseHourly = isConvert ? instance.price_hourly : sub?.unit_price;
   const quote =
     isConvert || sub
@@ -96,7 +93,6 @@ export function RenewModal({
         )
       : undefined;
 
-  // 起点:转换从现在起算;续费必须从老到期时刻接上,老周期过了才从现在算,否则会续出开局就少几天的周期
   const startFrom = isConvert
     ? mountedAt
     : Math.max(sub ? new Date(sub.expires_at).getTime() : mountedAt, mountedAt);
@@ -120,7 +116,6 @@ export function RenewModal({
         <Space>
           <Button onClick={onClose}>{t("instances.actions.cancel")}</Button>
           {quote != null && balance != null && !enough ? (
-            // 余额不足不做死按钮:指到费用中心的可点链接(与创建页结算条同款)
             <Link to="/billing">
               <Button type="primary" danger onClick={onClose}>
                 {t("create.notEnoughGoRecharge")}
@@ -149,7 +144,6 @@ export function RenewModal({
             isConvert
               ? {
                   label: t("period.currentBilling"),
-                  // 转换前是按量,时价就是建实例时锁定的那个数(也正是下面的报价基准)
                   children: t("instances.pricePerCard", {
                     price: fmt.formatHourlyPrice(instance.price_hourly),
                     count: instance.gpu_count,

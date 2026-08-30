@@ -98,7 +98,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
       onError: (e) => message.error(errText(e, t("login.failed"))),
     },
   });
-  // 进入绑定步即取密钥,服务端复用进行中密钥,StrictMode 重入/刷新二维码不变
+  // 进入绑定步即取密钥(服务端复用进行中密钥,StrictMode 重入/刷新二维码不变)
   const { mutate: beginSetup } = begin;
   useEffect(() => {
     beginSetup({ ticket });

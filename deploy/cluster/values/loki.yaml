@@ -1,11 +1,10 @@
 # Loki 日志聚合:Monolithic 单副本,chunks/index 走 filesystem 存 JuiceFS 共享卷。
-# chart 版本钉在 ../helmfile.yaml.gotmpl;仓库必须是 grafana-community/loki
-# (grafana/loki 为 GEL 专用,不是 OSS 来源)。
+# chart 版本钉在 ../helmfile.yaml.gotmpl;仓库必须是 grafana-community/loki。
 deploymentMode: Monolithic
 loki:
-  # 多租户开(审计 #40):X-Scope-OrgID 由 Alloy 按 namespace 打(平台组件+控制面审计 =
+  # 多租户:X-Scope-OrgID 由 Alloy 按 namespace 打(平台组件+控制面审计 =
   # platform;tenant-* 租户工作负载 = tenant)。注意它不是鉴权——头是自声明的,
-  # 真正的边界是 monitoring-netpol.yaml:只有 alloy/grafana 能到 loki:3100。
+  # 真正的边界是 monitoring-netpol.yaml:只有 alloy/grafana 能到 loki:3100)。
   # 隔离收益:租户日志洪峰只烧 tenant 租户的配额,platform(含 apiserver 审计)不受挤兑;
   # 查询侧按租户 datasource 分开(Grafana 两个 Loki 源,见 kps.yaml)。
   auth_enabled: true
@@ -24,10 +23,7 @@ loki:
   limits_config:
     allow_structured_metadata: true
     volume_enabled: true
-    # API 审计相关日志留存 ≥6 个月(等保;查询方式见 ../runbooks/loki-logging.md):
     retention_period: 4320h      # 180 天
-    # 摄入限流按租户独立计(auth_enabled=true 后 limits 是 per-tenant 口径):
-    # 任一租户(含 tenant 池整体)打满自己的配额不影响其它租户的留存
     ingestion_rate_mb: 8         # 每租户摄入速率上限(MB/s)
     ingestion_burst_size_mb: 16  # 突发余量
     per_stream_rate_limit: 3MB   # 单 stream(单容器日产出)限速,防一个失控容器独占租户配额
@@ -51,7 +47,6 @@ singleBinary:
     requests: {cpu: 100m, memory: 512Mi}
     limits: {memory: 1Gi}        # 只限内存:CPU 限速拖慢摄入/查询,OOMKill 反而更可见
 minio: {enabled: false}          # 内置 MinIO 不可用(chart v17+ 开启即渲染失败)
-# 单副本砍侧车:memcached 缓存/canary/网关/自检 Pod 一律不装
 chunksCache: {enabled: false}
 resultsCache: {enabled: false}
 lokiCanary: {enabled: false}
@@ -59,9 +54,7 @@ gateway: {enabled: false}
 test: {enabled: false}       # chart 键是 test.enabled(写成 testPod 不生效:test 默认开且要求 canary,渲染直接 fail)
 monitoring:
   serviceMonitor:
-    # kps 已开全命名空间 Monitor 发现(serviceMonitorSelectorNilUsesHelmValues: false)
     enabled: true
-# 其它部署模式副本清零(官方 Monolithic 文档的显式写法,防 chart 默认改动漂移)
 backend: {replicas: 0}
 read: {replicas: 0}
 write: {replicas: 0}

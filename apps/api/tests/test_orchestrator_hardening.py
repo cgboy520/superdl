@@ -22,12 +22,18 @@ from app.modules.billing.settlement import settle_daily_disks
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
+    H_END,
+    IMAGE_PYTORCH,
+    H,
+    backdate_running_event,
+    create_disk,
     create_test_sku,
     create_user_with_key,
     drain,
     fund_wallet,
     get_instance,
     provision_running,
+    seed_instance,
     seed_node_spec,
 )
 
@@ -42,7 +48,7 @@ async def _raw_create(client, headers, sku_id, key_id, *, idem=None):
         "/api/v1/instances",
         json={
             "sku_id": sku_id,
-            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "image_ref": IMAGE_PYTORCH,
             "ssh_key_ids": [key_id],
         },
         headers=h,
@@ -182,8 +188,6 @@ class TestFailedRecovery:
     async def test_start_from_failed_rejects_unsynced_disk(self, client, sm, fake):
         """failed 恢复开机走与创建同一道挂载门禁:数据盘配额未下发(quota_synced=false)→ 409,
         实例留在 failed(挂了 = 恢复开机绕过配额门禁,挂上创建时会被拒的盘)。"""
-        from tests.helpers import create_disk
-
         headers, user_id, key_id = await create_user_with_key(client, "13900000109")
         await fund_wallet(sm, user_id, "500.00")
         sku_id = await create_test_sku(sm)
@@ -510,15 +514,13 @@ class TestBillingCandidatesCompleteness:
         覆盖「窗口末仍 running、之后才停机」:这类实例靠 from_status='running' 事件命中,
         漏了就是少结账。
         """
-        from tests.helpers import H_END, H, seed_instance
-
-        a = await seed_instance(  # 窗口前进入,至今仍 running
+        a, _ = await seed_instance(  # 窗口前进入,至今仍 running
             sm,
             user_id=1,
             events=[(H - timedelta(hours=1), "creating", "running")],
             status="running",
         )
-        b = await seed_instance(  # 窗口内离开 running
+        b, _ = await seed_instance(  # 窗口内离开 running
             sm,
             user_id=2,
             events=[
@@ -526,7 +528,7 @@ class TestBillingCandidatesCompleteness:
                 (H + timedelta(minutes=30), "running", "stopping"),
             ],
         )
-        c = await seed_instance(  # 窗口末仍 running,之后才停机(核心回归)
+        c, _ = await seed_instance(  # 窗口末仍 running,之后才停机(核心回归)
             sm,
             user_id=3,
             events=[
@@ -534,10 +536,10 @@ class TestBillingCandidatesCompleteness:
                 (H_END + timedelta(minutes=30), "running", "stopping"),
             ],
         )
-        d = await seed_instance(  # 从未 running(窗口内 creating 即失败)
+        d, _ = await seed_instance(  # 从未 running(窗口内 creating 即失败)
             sm, user_id=4, events=[(H + timedelta(minutes=5), None, "creating")]
         )
-        e = await seed_instance(  # 窗口前已完整跑完离开
+        e, _ = await seed_instance(  # 窗口前已完整跑完离开
             sm,
             user_id=5,
             events=[
@@ -615,8 +617,6 @@ class TestDiskArrearsHardening:
 
         挂了 = 欠费用户的盘继续累计欠费(grace 计费),或水位线越过宽限日后被追回补回。
         """
-        from tests.helpers import create_disk
-
         headers, user_id, _key = await create_user_with_key(client, "13900000131")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers)
@@ -661,7 +661,6 @@ class TestDiskArrearsHardening:
         边界日(进入/恢复当日)照常出账。"""
         from app.modules.billing.models import SettlementGap
         from app.modules.billing.settlement import _advance_watermark
-        from tests.helpers import create_disk
 
         headers, user_id, _key = await create_user_with_key(client, "13900000132")
         await fund_wallet(sm, user_id)
@@ -718,9 +717,7 @@ class TestDiskArrearsHardening:
 
     async def test_grace_clock_not_reset_by_recharge(self, client, sm, fake):
         """宽限钟累计:充值恢复不清零 grace_started_at(挂了 = 欠费-充值循环永远不到 frozen)。"""
-        from tests.helpers import create_disk
-
-        headers, user_id, _key = await create_user_with_key(client, "13900000132")
+        headers, user_id, _key = await create_user_with_key(client, "13900000133")
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers)
         await self._drain_wallet(sm, user_id)
@@ -748,7 +745,6 @@ class TestDiskArrearsHardening:
 
     async def test_wipe_namespace_missing_is_done(self, client, sm, fake, monkeypatch):
         """租户 ns 不存在(从未建过实例)时擦盘视为完成(挂了 = 这类删盘任务全进死信)。"""
-        from tests.helpers import create_disk
 
         class _Api404(Exception):
             status = 404
@@ -771,8 +767,6 @@ class TestRestartPortConflict:
 
         挂了 = 尾账丢失(少计停机前费用)且实例卡在 stopping 无法自愈。
         """
-        from tests.helpers import backdate_running_event
-
         headers, uuid, user_id = await provision_running(client, sm, fake, "13900000141")
         await backdate_running_event(sm, uuid, 30)  # 已跑约 30 分钟,尾账非零
         original = fake.create_instance

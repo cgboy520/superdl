@@ -8,12 +8,11 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.idempotency import find_replay
+from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.platform_config import get_effective_platform_config
@@ -252,19 +251,16 @@ async def publish_announcement(
         reached=0,
         idempotency_key=idempotency_key,
     )
-    session.add(announcement)
-    try:
-        await session.flush()  # 先取公告 id:fanout dedup_key 以其为前缀
-    except IntegrityError:
-        await session.rollback()
-        # 同键并发:返回胜出方的公告(唯一约束兜底)
-        if idempotency_key:
-            winner = await find_replay(
-                session, Announcement, owner_col=None, owner_id=None, key=idempotency_key
-            )
-            if winner is not None:
-                return winner.reached, False
-        raise
+    result = await insert_idempotent(
+        session,
+        announcement,
+        model=Announcement,
+        owner_col=None,
+        owner_id=None,
+        key=idempotency_key,
+    )
+    if result is not announcement:
+        return result.reached, False  # 同键并发:返回胜出方的公告
     user_ids = await list_active_user_ids(session)
     announcement.reached = len(user_ids)
     for i in range(0, len(user_ids), _ANNOUNCEMENT_CHUNK):

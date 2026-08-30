@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditLog
-from app.core.csvexport import csv_line, fmt_money, fmt_ts, stream_rows
+from app.core.csvexport import TRUNCATED_NOTES, csv_line, fmt_money, fmt_ts, stream_rows
 from app.core.sqlutil import like_escape
 from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
 from app.modules.adminapi.models import AdminAdjustment
@@ -74,14 +74,6 @@ _ADJUSTMENT_STATUS_LABEL: dict[str, dict[str, str]] = {
     "en-US": {"pending": "Pending review", "approved": "Effective", "rejected": "Rejected"},
 }
 
-_TRUNCATED_NOTE: dict[str, str] = {
-    "zh-CN": "已达单次导出上限({limit} 行),仅导出前 {limit} 行;请缩小检索范围分次导出",
-    "en-US": (
-        "Export cap reached: only the first {limit} rows included;"
-        " narrow the filters and export in parts"
-    ),
-}
-
 _TOTAL_LABEL = {"zh-CN": "合计", "en-US": "TOTAL"}
 
 
@@ -105,7 +97,7 @@ def audit_filters(stmt, *, actor_type, actor_id, q, since, until):
     return stmt
 
 
-async def stream_audit_csv(
+def stream_audit_csv(
     session: AsyncSession,
     *,
     actor_type: str | None = None,
@@ -134,15 +126,14 @@ async def stream_audit_csv(
             fmt_ts(r.created_at, tz_offset_minutes),
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         stmt,
         AuditLog.id,
         row,
         _HEADERS[("audit", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )
 
 
 async def stream_reconciliation_csv(
@@ -164,7 +155,7 @@ async def stream_reconciliation_csv(
         yield csv_line([o["instance_id"], o["billed"], o["estimated"], o["diff_pct"]])
 
 
-async def stream_adjustments_csv(
+def stream_adjustments_csv(
     session: AsyncSession,
     *,
     status: str | None = None,
@@ -198,12 +189,11 @@ async def stream_adjustments_csv(
             fmt_ts(r.created_at, tz_offset_minutes),
         ]
 
-    async for line in stream_rows(
+    return stream_rows(
         session,
         stmt,
         AdminAdjustment.id,
         row,
         _HEADERS[("adjustments", lang)],
-        truncated_note=_TRUNCATED_NOTE[lang],
-    ):
-        yield line
+        truncated_note=TRUNCATED_NOTES[lang],
+    )

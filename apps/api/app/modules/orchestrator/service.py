@@ -29,7 +29,12 @@ from app.core.crypto import decrypt_str, encrypt_str, hash_api_key, hash_api_key
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, TIER_CPU, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
-from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, request_fingerprint
+from app.core.idempotency import (
+    IDEMPOTENCY_WINDOW,
+    find_replay,
+    insert_idempotent,
+    request_fingerprint,
+)
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
 from app.core.money import hourly_cost
@@ -145,6 +150,18 @@ from app.modules.orchestrator.queries import (
 from app.modules.orchestrator.schemas import (
     WORKLOAD_DEV,
     WORKLOAD_SERVICE,
+)
+from app.modules.orchestrator.statemachine import (
+    FROZEN as FROZEN,
+)
+from app.modules.orchestrator.statemachine import (
+    RELEASING as RELEASING,
+)
+from app.modules.orchestrator.statemachine import (
+    RUNNING as RUNNING,
+)
+from app.modules.orchestrator.statemachine import (
+    STOPPED as STOPPED,
 )
 from app.modules.orchestrator.transitions import (
     register_transition_listener as register_transition_listener,
@@ -731,27 +748,18 @@ async def create_instance(
             else None
         ),
     )
-    session.add(instance)
-    try:
-        await session.flush()
-    except IntegrityError:
-        # 并发同幂等键:对方已落库,回滚后按重放返回既有实例(不多开一台)
-        await session.rollback()
-        raced = (
-            await find_replay(
-                session,
-                Instance,
-                owner_col=Instance.user_id,
-                owner_id=user_id,
-                key=idempotency_key,
-                fingerprint=fingerprint,
-            )
-            if idempotency_key
-            else None
-        )
-        if raced is not None:
-            return raced, False
-        raise
+    result = await insert_idempotent(
+        session,
+        instance,
+        model=Instance,
+        owner_col=Instance.user_id,
+        owner_id=user_id,
+        key=idempotency_key,
+        fingerprint=fingerprint,
+    )
+    if result is not instance:
+        # 并发同幂等键:对方已落库,按重放返回既有实例(不多开一台)
+        return result, False
     if is_subscription:
         assert period is not None  # 契约层已拦,这里给类型收敛
         # 必须先扣款再校验在途:此刻钱包余额已是扣后值,校验的才是「付完这一单还撑不

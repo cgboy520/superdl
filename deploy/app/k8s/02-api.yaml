@@ -76,7 +76,7 @@ spec:
             preStop:
               exec:
                 command: ["sh", "-c", "sleep 10"]
-          # requests==limits → Guaranteed:节点资源紧张时不先于租户 Pod 被 evict
+          # requests==limits → Guaranteed
           resources:
             requests: {cpu: "1", memory: 1Gi}
             limits: {cpu: "1", memory: 1Gi}
