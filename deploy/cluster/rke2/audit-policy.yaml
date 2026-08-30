@@ -12,6 +12,14 @@ rules:
   - level: None
     users: ["system:kube-proxy", "system:apiserver", "system:kube-scheduler", "system:kube-controller-manager"]
     verbs: ["get", "list", "watch"]
+  # Secret/ConfigMap/Token 必须先于 system:nodes 降噪规则:审计策略首条匹配即生效,
+  # 若 nodes 的 None 在前,流氓节点批量读各租户 Secret 的唯一检测信号会被静默抹掉。
+  # 只记元数据,永不把内容写进审计日志。
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps", "serviceaccounts/token"]
+  # 节点身份的其余高频读(kubelet 常规 reconcile)不记
   - level: None
     userGroups: ["system:nodes"]
     verbs: ["get", "list", "watch"]
@@ -22,11 +30,6 @@ rules:
     resources:
       - group: "coordination.k8s.io"
         resources: ["leases"]
-  # Secret/ConfigMap/Token:只记元数据,永不把内容写进审计日志
-  - level: Metadata
-    resources:
-      - group: ""
-        resources: ["secrets", "configmaps", "serviceaccounts/token"]
   # 平台与租户命名空间内的写操作:记请求体(排查「谁改了租户 Pod/NetPol」)
   - level: Request
     verbs: ["create", "update", "patch", "delete", "deletecollection"]

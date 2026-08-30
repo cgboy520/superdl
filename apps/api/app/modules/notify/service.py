@@ -17,6 +17,7 @@ from app.core.idempotency import find_replay
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
 from app.core.platform_config import get_effective_platform_config
+from app.core.ratelimit import check_rate_limit
 from app.core.sms import ensure_sms_platform_quota, get_sms_channel
 from app.core.timeutil import now_utc
 from app.modules.notify.models import Announcement, Notification
@@ -41,12 +42,16 @@ async def notify(
     content: str,
     severity: str = "info",
     dedup_key: str | None = None,
+    target_id: str | None = None,
     sms: bool = False,
 ) -> bool:
     """写站内信(可选发短信)。dedup_key 冲突 = 已通知过,返回 False。不 commit。
 
     短信不在本事务里发:同事务 enqueue 一条 notify.sms,由 outbox worker 异步投递
     (渠道网络调用可能秒级,持锁/持连接期间调外部渠道会放大故障面)。
+
+    target_id: 结构化跳转目标(instance 类 = 实例 uuid,ticket 类 = 工单 id),
+    通知中心行点击精确深链用;无目标的类型(balance/account/announcement)留空。
     """
     result = (
         await session.execute(
@@ -58,6 +63,7 @@ async def notify(
                 content=content,
                 severity=severity,
                 dedup_key=dedup_key,
+                target_id=target_id,
             )
             .on_conflict_do_nothing(index_elements=["dedup_key"])
             .returning(Notification.id)
@@ -151,12 +157,14 @@ async def send_subscription_notice(
     action: str,
     detail: str,
     dedup_suffix: str,
+    target_id: str | None = None,
 ) -> None:
     """包周期到期链路通知(站内信 + 短信)。
 
     dedup_key 带 subscription/instance id 而不是只按天分桶:同一天名下两台实例先后到期时,
     只按天去重会吞掉第二条。日桶仍在,防的是巡检每 30 分钟重复发同一条
     (自动续费失败会连着几轮都失败)。
+    target_id 传实例 uuid:通知中心可直接跳到该实例详情。
     """
     titles = {
         "expiring": "包周期即将到期",
@@ -172,6 +180,7 @@ async def send_subscription_notice(
         content=detail,
         severity="info" if action == "renewed" else "warning",
         dedup_key=f"subscription:{action}:{dedup_suffix}:{_day_bucket(now_utc())}",
+        target_id=target_id,
         sms=True,
     )
     # 巡检的事务里调用,由调用方 commit;与 send_arrears_notice 同口径
@@ -184,6 +193,7 @@ async def send_preemption_notice(
     instance_name: str,
     grace_seconds: int,
     instance_id: int,
+    instance_uuid: str,
 ) -> None:
     """竞价实例被抢占的通知(站内信 + 短信)。
 
@@ -203,6 +213,7 @@ async def send_preemption_notice(
         ),
         severity="warning",
         dedup_key=f"preempt:{instance_id}:{now_utc():%Y%m%d%H%M}",
+        target_id=instance_uuid,
         sms=True,
     )
 
@@ -334,23 +345,19 @@ async def list_notifications(
 ) -> "Page[NotificationOut]":
     """站内信列表:降序(最新在前)游标分页,与流水/账单同一套分页语义。
     只读 published:被撤回公告(status=revoked)对用户不可见。"""
-    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+    from app.core.pagination import Page, paginate_by_id
     from app.modules.notify.schemas import NotificationOut
 
-    lim = clamp_limit(limit)
     stmt = (
         select(Notification)
         .where(Notification.user_id == user_id, Notification.status == "published")
         .order_by(Notification.id.desc())
-        .limit(lim + 1)
     )
     if unread_only:
         stmt = stmt.where(Notification.read_at.is_(None))
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(Notification.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Notification.id, cursor=cursor, limit=limit
+    )
     return Page[NotificationOut](
         items=[NotificationOut.model_validate(r) for r in page_items], next_cursor=next_cursor
     )
@@ -358,8 +365,6 @@ async def list_notifications(
 
 async def unread_count(session: AsyncSession, user_id: int) -> int:
     """未读站内信条数(顶栏角标):DB count,与列表游标分页解耦。"""
-    from sqlalchemy import func
-
     return int(
         (
             await session.execute(
@@ -451,15 +456,18 @@ async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int
     return row
 
 
-async def unread_alert_count(session: AsyncSession) -> int:
-    """未确认告警计数(顶栏铃铛角标口径:告警流中尚未 ack 的行数)。"""
-    return (
+async def unread_alert_count(session: AsyncSession) -> tuple[int, int]:
+    """未确认告警计数(顶栏铃铛角标):(总数, 其中 critical)。
+    critical 单列:总览 KPI 红色高亮要精确口径,不能从截断的告警流列表推导。"""
+    row = (
         await session.execute(
-            select(func.count()).where(
-                Notification.type.in_(ALERT_STREAM_TYPES), Notification.acked_at.is_(None)
-            )
+            select(
+                func.count(),
+                func.count().filter(Notification.severity == "critical"),
+            ).where(Notification.type.in_(ALERT_STREAM_TYPES), Notification.acked_at.is_(None))
         )
-    ).scalar_one()
+    ).one()
+    return int(row[0]), int(row[1])
 
 
 async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
@@ -509,6 +517,18 @@ async def ingest_alertmanager(session: AsyncSession, payload: dict) -> int:
                 user_id = int(ns.removeprefix(prefix))
             except ValueError:
                 continue
+            # label 是提交方写得的:归属必须查库核实(存在且活跃),否则伪造 namespace
+            # 可向任意 user_id 发短信;再按用户限流,伪造刷屏烧不了短信预算
+            from app.modules.account import service as account_service
+
+            if not await account_service.is_active_user(session, user_id):
+                continue
+            try:
+                await check_rate_limit(
+                    f"am-gpu-tenant:{user_id}", max_attempts=5, window_seconds=3600.0
+                )
+            except AppError:
+                continue  # 该用户此路径已超频:跳过(平台告警流在上方已落,不受影响)
             await notify(
                 session,
                 user_id,

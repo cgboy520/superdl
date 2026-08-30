@@ -1,6 +1,22 @@
 /** 侧栏菜单可见性(与后端 require_roles 逐端点对齐):无权角色不显示入口,直接输 URL 由后端 403 兜底。
  *  key 收窄到 MenuKey,_app.tsx 的 MENU 新增条目而此表漏登记时编译期即报错。 */
 
+import {
+  AlertOutlined,
+  ApiOutlined,
+  AuditOutlined,
+  CloudDownloadOutlined,
+  ClusterOutlined,
+  CustomerServiceOutlined,
+  DeploymentUnitOutlined,
+  DashboardOutlined,
+  PayCircleOutlined,
+  TagsOutlined,
+  TeamOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
+import type { ComponentType } from "react";
+
 export const ALL_ROLES = ["admin", "ops", "finance", "readonly"] as const;
 
 export type Role = (typeof ALL_ROLES)[number];
@@ -25,6 +41,7 @@ export const MENU_ROLES = {
   "/tickets": ALL_ROLES, // 读全角色;写操作(ops/admin)由按钮级 disable + 后端 403 兜底
   "/audit": ALL_ROLES,
   "/platform": ["admin"], // 渠道凭据仅超管
+  "/alerts": ["admin", "ops", "readonly"], // finance 无告警权限
   "/settings": ALL_ROLES,
 } as const satisfies Record<string, readonly Role[]>;
 
@@ -33,3 +50,20 @@ export type MenuKey = keyof typeof MENU_ROLES;
 export function canSeeMenu(key: MenuKey, role: string): boolean {
   return (MENU_ROLES[key] as readonly string[]).includes(role);
 }
+
+/** 侧栏菜单项(单一事实源):_app.tsx 侧栏与 CommandPalette 页面导航组共用;
+ *  icon 存组件引用(非 JSX),本文件保持 .ts 免 JSX 运行时耦合。 */
+export const MENU = [
+  { key: "/", icon: DashboardOutlined, labelKey: "menu.overview" },
+  { key: "/nodes", icon: ClusterOutlined, labelKey: "menu.nodes" },
+  { key: "/cluster", icon: DeploymentUnitOutlined, labelKey: "menu.cluster" },
+  { key: "/skus", icon: TagsOutlined, labelKey: "menu.skus" },
+  { key: "/images", icon: CloudDownloadOutlined, labelKey: "menu.images" },
+  { key: "/tenants", icon: TeamOutlined, labelKey: "menu.tenants" },
+  { key: "/finance", icon: PayCircleOutlined, labelKey: "menu.finance" },
+  { key: "/tickets", icon: CustomerServiceOutlined, labelKey: "menu.tickets" },
+  { key: "/audit", icon: AuditOutlined, labelKey: "menu.audit" },
+  { key: "/platform", icon: ApiOutlined, labelKey: "menu.platform" },
+  { key: "/alerts", icon: AlertOutlined, labelKey: "menu.alerts" },
+  { key: "/settings", icon: SettingOutlined, labelKey: "menu.settings" },
+] as const satisfies readonly { key: MenuKey; icon: ComponentType; labelKey: string }[];

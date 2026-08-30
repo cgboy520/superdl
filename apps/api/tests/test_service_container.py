@@ -10,63 +10,18 @@
 
 import pytest
 from cryptography.exceptions import InvalidTag
-from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.crypto import decrypt_str
-from app.core.k8s.fake import FakeOrchestrator
 from app.modules.orchestrator import service
 from app.modules.orchestrator.models import Instance, PortAllocation, ServiceEndpoint
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import create_test_sku, create_user_with_key, drain, drain_strict, fund_wallet
+from tests.helpers import drain, drain_strict, new_user, provision_service, service_body
 
 pytestmark = pytest.mark.usefixtures("fake")
 
 IMAGE = "registry.superdl.local/vllm:0.11.0"
-
-
-def service_body(sku_id: int, **over) -> dict:
-    body = {
-        "sku_id": sku_id,
-        "gpu_count": 1,
-        "image_ref": IMAGE,
-        "ssh_key_ids": [],
-        "workload_type": "service",
-        "service_port": 8000,
-    }
-    body.update(over)
-    return body
-
-
-async def new_user(client: AsyncClient, sm, phone: str) -> tuple[dict[str, str], int, int, int]:
-    """注册 + 充值 + 建 SKU。返回 (headers, user_id, ssh_key_id, sku_id)。"""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
-    await fund_wallet(sm, user_id)
-    return headers, user_id, key_id, await create_test_sku(sm)
-
-
-async def provision_service(
-    client: AsyncClient,
-    sm: async_sessionmaker[AsyncSession],
-    fake: FakeOrchestrator,
-    *,
-    phone: str = "13900000301",
-    **over,
-) -> tuple[dict[str, str], str, int]:
-    """建一台 running 的服务型实例。返回 (headers, uuid, user_id)。"""
-    headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
-    over.setdefault("ssh_key_ids", [key_id] if over.get("with_ssh") else [])
-    resp = await client.post(
-        "/api/v1/instances", json=service_body(sku_id, **over), headers=headers
-    )
-    assert resp.status_code == 202, resp.text
-    uuid = resp.json()["uuid"]
-    await drain_strict(sm)
-    fake.mark_ready(f"tenant-{user_id}", uuid)
-    await reconcile_once(sm)
-    return headers, uuid, user_id
 
 
 async def load_instance(sm, uuid: str) -> Instance:
@@ -213,7 +168,7 @@ class TestEnvHandling:
         )
         instance = await load_instance(sm, uuid)
         blob = instance.env_encrypted
-        assert blob is not None and blob.startswith("enc:v1:")
+        assert blob is not None and blob.startswith("enc:v2:")
         assert "HF_TOKEN" not in blob and "hf_super_secret" not in blob
         # AAD 绑实例 uuid:密文不能跨实例搬运
         plain, secret = service.instance_env(instance)

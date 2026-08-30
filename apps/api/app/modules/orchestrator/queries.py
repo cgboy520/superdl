@@ -140,6 +140,36 @@ async def list_running_instances_by_user(session: AsyncSession) -> dict[int, lis
     return by_user
 
 
+async def running_instances_of_user(session: AsyncSession, user_id: int) -> list[Instance]:
+    """单用户 running 实例。assert_can_afford 持钱包行锁期间调用:
+    全平台分组扫描(list_running_instances_by_user)会把锁持有时间拖到全表规模,
+    并发开户在钱包行上排队 × 全表扫描 = 雪崩。"""
+    return list(
+        (
+            await session.execute(
+                select(Instance).where(
+                    Instance.user_id == user_id, Instance.status == sm_def.RUNNING
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def billable_disks_of_user(session: AsyncSession, user_id: int) -> list[DataDisk]:
+    """单用户计费态盘(口径同 disks.BILLABLE_STATUSES;锁内路径不扫全平台)。"""
+    return list(
+        (
+            await session.execute(
+                select(DataDisk).where(DataDisk.user_id == user_id, DataDisk.status == "active")
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 async def list_instances_by_status(session: AsyncSession, status: str) -> list[Instance]:
     return list(
         (await session.execute(select(Instance).where(Instance.status == status))).scalars()

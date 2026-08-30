@@ -173,6 +173,54 @@ class TestRealName:
             settings.real_name_required_for_recharge = False
             settings.real_name_enabled = False
 
+    async def test_start_and_disk_gates_when_required(self, client: AsyncClient, sm):
+        """闸门覆盖(#43):开机与建盘同闸——只挂创建/充值则匿名用户可绕到存量资源。"""
+        from tests.helpers import create_test_sku, create_user_with_key, fund_wallet, seed_node_spec
+
+        settings = get_settings()
+        settings.real_name_enabled = True
+        settings.real_name_required_for_recharge = True
+        set_realname_provider(_Provider(True))
+        try:
+            headers, user_id, _key_id = await create_user_with_key(client, "13800000166")
+            await fund_wallet(sm, user_id)
+            await create_test_sku(sm)
+            await seed_node_spec(sm)
+            # 建盘:未实名 403
+            resp = await client.post(
+                "/api/v1/disks", json={"name": "d1", "size_gb": 10}, headers=headers
+            )
+            assert resp.status_code == 403
+            assert resp.json()["message_key"] == "disks.realNameRequired"
+            # 开机:未实名 403(实例由实名前的创建路径落库——直接 seed 一台 stopped)
+            from tests.helpers import seed_instance
+
+            iid = await seed_instance(sm, user_id=user_id, status="stopped")
+            async with sm() as session:
+                from app.modules.orchestrator.models import Instance
+
+                uuid = (
+                    await session.execute(select(Instance.uuid).where(Instance.id == iid))
+                ).scalar_one()
+            resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
+            assert resp.status_code == 403
+            assert resp.json()["message_key"] == "orchestrator.realNameRequired"
+            # 实名后两路放行
+            await client.post(
+                "/api/v1/me/real-name",
+                json={"name": "钱七", "id_number": "110101199001013333"},
+                headers=headers,
+            )
+            resp = await client.post(
+                "/api/v1/disks", json={"name": "d1", "size_gb": 10}, headers=headers
+            )
+            assert resp.status_code == 201, resp.text
+            resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
+            assert resp.status_code == 200, resp.text
+        finally:
+            settings.real_name_required_for_recharge = False
+            settings.real_name_enabled = False
+
     async def test_register_requires_terms(self, client: AsyncClient):
         await client.post(
             "/api/v1/auth/sms-code",

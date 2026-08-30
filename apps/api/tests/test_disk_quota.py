@@ -8,8 +8,7 @@ from sqlalchemy import select, update
 
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
-from tests.helpers import create_user_with_key, drain, fund_wallet
-from tests.test_disks import create_disk
+from tests.helpers import create_disk, create_user_with_key, drain, fund_wallet
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -27,7 +26,7 @@ class TestQuotaDispatch:
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
             assert row.quota_synced is True
-            assert fake.disk_quotas[row.juicefs_subpath] == 100
+            assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 100
 
     async def test_expand_redispatches_new_capacity(self, client: AsyncClient, sm, fake):
         headers, user_id, _key = await create_user_with_key(client)
@@ -47,7 +46,7 @@ class TestQuotaDispatch:
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
             assert row.quota_synced is True
-            assert fake.disk_quotas[row.juicefs_subpath] == 200
+            assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 200
 
 
 class TestQuotaFailureAndReconcile:
@@ -78,7 +77,7 @@ class TestQuotaFailureAndReconcile:
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
             assert row.quota_synced is True
-            assert fake.disk_quotas[row.juicefs_subpath] == 100
+            assert fake.disk_quotas[(f"tenant-{user_id}", row.juicefs_subpath)] == 100
 
     async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake):
         """管理端人工 discarded 的 disk.quota 不会被对账环复活:reconciler 只重派 dead,
@@ -139,7 +138,7 @@ class TestQuotaFailureAndReconcile:
         counts = await reconcile_once(sm)
         assert counts["quota_redriven"] == 1
         await drain(sm)
-        assert fake.disk_quotas[subpath] == 100
+        assert fake.disk_quotas[(f"tenant-{user_id}", subpath)] == 100
 
 
 class TestQuotaDeleteOnWipe:
@@ -156,9 +155,9 @@ class TestQuotaDeleteOnWipe:
                     select(DataDisk.juicefs_subpath).where(DataDisk.uuid == disk["uuid"])
                 )
             ).scalar_one()
-        assert fake.disk_quotas[subpath] == 100
+        assert fake.disk_quotas[(f"tenant-{user_id}", subpath)] == 100
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
-        assert subpath not in fake.disk_quotas  # 配额已摘除
+        assert (f"tenant-{user_id}", subpath) not in fake.disk_quotas  # 配额已摘除
         assert any(sp == subpath for _ns, sp in fake.wiped_disks)  # 目录已擦除

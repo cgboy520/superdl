@@ -118,6 +118,7 @@ async def preempt(
             instance_name=inst.name,
             grace_seconds=grace_seconds,
             instance_id=inst.id,
+            instance_uuid=inst.uuid,
         )
         SPOT_PREEMPTED_TOTAL.inc()
         logger.warning(

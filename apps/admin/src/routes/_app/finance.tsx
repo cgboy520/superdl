@@ -1,7 +1,8 @@
-import { addAmounts, adjustmentStatusMap, adminColors, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { WarningOutlined } from "@ant-design/icons";
+import { addAmounts, adjustmentStatusMap, adminColors, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
+import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
@@ -37,8 +38,12 @@ import {
   type ReconciliationReport,
   type RefundPayout,
   type RefundRow,
+  exportAdjustmentsCsv,
+  exportInvoicesCsv,
   exportOrdersCsv,
   exportReconciliationCsv,
+  exportRefundsCsv,
+  isApiError,
   useAdjustContext,
   useAdjustments,
   useAnomalies,
@@ -57,31 +62,112 @@ import {
   useVerifyOrder,
 } from "../../api";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
-import { LoadMoreButton } from "../../components/LoadMore";
 import { ReasonAction } from "../../components/ReasonAction";
-import { useApiErrorText } from "../../lib/apiError";
-import { useCsvExport } from "../../lib/csvExport";
-import { useFormDraft } from "../../lib/formDraft";
-import { useFormat } from "../../lib/format";
+import { useApiErrorText } from "@superdl/ui";
+import { useCsvExport, useFormDraft } from "@superdl/ui";
+import { useFormat } from "@superdl/ui";
+import { isValidReason, REASON_MAX_LEN } from "../../lib/validators";
 import { AuditTable } from "../../components/AuditTable";
 import { useOrderColumns } from "../../components/orderColumns";
 import { RowActionModal } from "../../components/RowActionModal";
 import { SignedAmount } from "../../components/SignedAmount";
-import { StatusTag } from "../../components/StatusTag";
 import { TenantLink, tenantColumn } from "../../components/TenantLink";
 import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { SettlementGapsTab } from "./-SettlementGapsTab";
 
+const FINANCE_TABS = ["orders", "refunds", "invoices", "adjustments", "gaps", "anomalies", "audit"] as const;
+type FinanceTab = (typeof FINANCE_TABS)[number];
+
+// 筛选入 URL 的白名单口径:状态枚举以共享映射表为准,日期 YYYY-MM-DD / 账期 YYYY-MM 卡格式,租户 id 收正整数
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PERIOD_RE = /^\d{4}-\d{2}$/;
+
+interface FinanceSearch {
+  tab?: FinanceTab;
+  // 订单 Tab
+  o_status?: string;
+  o_no?: string;
+  o_day?: string;
+  // 退款 Tab
+  r_status?: string;
+  r_day?: string;
+  r_channel?: string;
+  // 发票 Tab
+  i_status?: string;
+  i_period?: string;
+  // 调账 Tab
+  a_status?: string;
+  a_day?: string;
+  a_uid?: number;
+}
+
 export const Route = createFileRoute("/_app/finance")({
+  // Tab 与订单/退款/发票/调账四个 Tab 的筛选条件入 URL(0.3 规范):白名单校验,非法值剥离
+  validateSearch: (search: Record<string, unknown>): FinanceSearch => ({
+    tab: FINANCE_TABS.includes(search.tab as FinanceTab) ? (search.tab as FinanceTab) : undefined,
+    o_status:
+      typeof search.o_status === "string" && search.o_status in orderStatusMap
+        ? search.o_status
+        : undefined,
+    o_no: typeof search.o_no === "string" && search.o_no ? search.o_no : undefined,
+    o_day:
+      typeof search.o_day === "string" && DAY_RE.test(search.o_day) ? search.o_day : undefined,
+    r_status:
+      typeof search.r_status === "string" && search.r_status in refundStatusMap
+        ? search.r_status
+        : undefined,
+    r_day:
+      typeof search.r_day === "string" && DAY_RE.test(search.r_day) ? search.r_day : undefined,
+    r_channel:
+      typeof search.r_channel === "string" && search.r_channel in payoutChannelMap
+        ? search.r_channel
+        : undefined,
+    i_status:
+      typeof search.i_status === "string" && search.i_status in invoiceStatusMap
+        ? search.i_status
+        : undefined,
+    i_period:
+      typeof search.i_period === "string" && PERIOD_RE.test(search.i_period)
+        ? search.i_period
+        : undefined,
+    a_status:
+      typeof search.a_status === "string" && search.a_status in adjustmentStatusMap
+        ? search.a_status
+        : undefined,
+    a_day:
+      typeof search.a_day === "string" && DAY_RE.test(search.a_day) ? search.a_day : undefined,
+    a_uid:
+      typeof search.a_uid === "number" && Number.isInteger(search.a_uid) && search.a_uid > 0
+        ? search.a_uid
+        : typeof search.a_uid === "string" && /^\d+$/.test(search.a_uid)
+          ? Number(search.a_uid)
+          : undefined,
+  }),
   component: FinancePage,
 });
+
+/** 各 Tab 共用的 URL 筛选读写:replace:true 不堆历史记录,prev 展开保留他项。 */
+function useFinanceFilters() {
+  const navigate = useNavigate({ from: "/finance" });
+  const search = Route.useSearch();
+  const setFilters = (next: Partial<FinanceSearch>) =>
+    void navigate({
+      to: "/finance",
+      replace: true,
+      search: (prev) => ({ ...prev, ...next }),
+    });
+  return { search, setFilters };
+}
+
+// 对账 diff 告警阈值(%):事件计费与指标估算的相对偏差超过该值时 diff% 列标红提示人工复核
+const RECONCILE_DIFF_WARN_PCT = 2;
 
 function ReconciliationCard() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report, isError, refetch } = useReconciliation(day.format("YYYY-MM-DD"));
-  const diffHigh = report != null && report.diff_pct > 2;
+  const diffHigh = report != null && report.diff_pct > RECONCILE_DIFF_WARN_PCT;
   const { doExport, exporting } = useCsvExport((_tz, lang) =>
     exportReconciliationCsv(day.format("YYYY-MM-DD"), lang),
   );
@@ -91,7 +177,13 @@ function ReconciliationCard() {
       title={t("finance.reconTitle")}
       extra={
         <Space>
-          <DatePicker value={day} onChange={(d) => d && setDay(d)} allowClear={false} />
+          {/* 对账是历史口径:禁选未来日期 */}
+          <DatePicker
+            value={day}
+            onChange={(d) => d && setDay(d)}
+            allowClear={false}
+            disabledDate={(d) => d.isAfter(dayjs(), "day")}
+          />
           <Button onClick={() => void doExport()} loading={exporting}>
             {t("common.exportCsv")}
           </Button>
@@ -121,9 +213,13 @@ function ReconciliationCard() {
             value={report ? report.diff_pct : "—"}
             suffix={report ? "%" : undefined}
             styles={{
-              content: diffHigh
-                ? { color: adminColors.negative }
-                : { color: adminColors.positive },
+              // 无数据(reconcile 为 null)不染任何色:"—" 套绿色会被读成「对账正常」
+              content:
+                report == null
+                  ? undefined
+                  : diffHigh
+                    ? { color: adminColors.negative }
+                    : { color: adminColors.positive },
             }}
           />
         </Col>
@@ -154,13 +250,23 @@ function ReconciliationCard() {
 function OrdersTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const orderColumns = useOrderColumns({ withTenant: true });
-  const [status, setStatus] = useState<string | undefined>();
-  const [orderNo, setOrderNo] = useState("");
-  const [day, setDay] = useState<Dayjs | null>(null);
+  // 筛选条件入 URL(status/订单号/下单日);导出与当前筛选同口径
+  const { search, setFilters } = useFinanceFilters();
+  const status = search.o_status;
+  const orderNo = search.o_no ?? "";
+  // 检索 commit 制(同工单页):输入只改本地值,回车/点搜索/清空才写 URL;
+  // URL 值变化(前进/后退)回流输入框走渲染期派生态
+  const [orderNoInput, setOrderNoInput] = useState(orderNo);
+  const [prevOrderNo, setPrevOrderNo] = useState(orderNo);
+  if (orderNo !== prevOrderNo) {
+    setPrevOrderNo(orderNo);
+    setOrderNoInput(orderNo);
+  }
+  const day = search.o_day ? dayjs(search.o_day) : null;
   const params = {
     ...(status ? { status } : {}),
     ...(orderNo ? { order_no: orderNo } : {}),
-    ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
+    ...(search.o_day ? { day: search.o_day } : {}),
   };
   const q = useOrders(params);
   const orders: OrderRow[] = q.data?.pages.flatMap((p) => p.items) ?? [];
@@ -170,19 +276,25 @@ function OrdersTab() {
       <Space wrap style={{ marginBottom: 12 }}>
       <Select
         allowClear
-        placeholder={t("tenants.statusFilter")}
+        placeholder={t("common.statusFilter")}
         style={{ width: 160 }}
         value={status}
-        onChange={setStatus}
+        onChange={(v) => setFilters({ o_status: v })}
         options={Object.entries(orderStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
       />
       <Input.Search
         allowClear
         placeholder={t("finance.searchOrderPlaceholder")}
         style={{ width: 260 }}
-        onSearch={setOrderNo}
+        value={orderNoInput}
+        onChange={(e) => setOrderNoInput(e.target.value)}
+        onSearch={(v) => setFilters({ o_no: v.trim() || undefined })}
       />
-      <DatePicker value={day} onChange={(d) => setDay(d)} allowClear />
+      <DatePicker
+        value={day}
+        onChange={(d) => setFilters({ o_day: d ? d.format("YYYY-MM-DD") : undefined })}
+        allowClear
+      />
       <Button onClick={() => void doExport()} loading={exporting}>
         {t("common.exportCsv")}
       </Button>
@@ -193,14 +305,22 @@ function OrdersTab() {
         dataSource={orders}
         loading={q.isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={q.isError} onRetry={() => void q.refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={q.isError}
+              isForbidden={isApiError(q.error) && q.error.status === 403}
+              onRetry={() => void q.refetch()}
+            />
+          ),
         }}
         columns={orderColumns}
       />
-      <LoadMoreButton
-        visible={Boolean(q.hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(q.hasNextPage)}
         loading={q.isFetchingNextPage}
-        onClick={() => void q.fetchNextPage()}
+        isError={q.isFetchNextPageError}
+        loadedCount={orders.length}
+        onLoadMore={() => void q.fetchNextPage()}
       />
     </>
   );
@@ -209,7 +329,7 @@ function OrdersTab() {
 // 与 adminapi/service.ADJUST_MAX_ABS 对齐:单笔绝对值上限,超出走对公/线下流程
 const ADJUST_MAX_ABS = 100000;
 
-/** 复核确认框:列出租户/当前余额/调账后余额/发起人/原因。 */
+/** 复核确认框:列出租户/当前余额/调账后余额/发起人/原因;驳回必须手输理由(入审计,回显给用户)。 */
 function ReviewConfirmModal({
   target,
   onClose,
@@ -224,10 +344,12 @@ function ReviewConfirmModal({
   const { formatMoney } = useFormat();
   const { message } = App.useApp();
   const ctx = useAdjustContext(target?.adj.user_id ?? null);
+  const [rejectReason, setRejectReason] = useState("");
   const review = useReviewAdjustment({
     mutation: {
       onSuccess: () => {
         message.success(t("finance.reviewed"));
+        setRejectReason("");
         onReviewed();
         onClose();
       },
@@ -244,14 +366,18 @@ function ReviewConfirmModal({
       open
       title={approve ? t("finance.approveTitle") : t("finance.rejectTitle")}
       okText={approve ? t("finance.approve") : t("finance.reject")}
-      okButtonProps={{ danger: !approve, loading: review.isPending, disabled: ctx.isError }}
+      okButtonProps={{
+        danger: !approve,
+        loading: review.isPending,
+        disabled: ctx.isError || (!approve && !isValidReason(rejectReason)),
+      }}
       onCancel={onClose}
       onOk={() =>
         review.mutate({
           adjustmentId: adj.id,
           data: approve
             ? { approve: true }
-            : { approve: false, comment: t("finance.rejectComment") },
+            : { approve: false, comment: rejectReason.trim() },
         })
       }
     >
@@ -275,6 +401,29 @@ function ReviewConfirmModal({
         <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
         <Descriptions.Item label={t("finance.colReason")}>{adj.reason}</Descriptions.Item>
       </Descriptions>
+      {!approve && (
+        <Form layout="vertical" style={{ marginTop: 12 }}>
+          <Form.Item
+            label={t("finance.rejectReasonLabel")}
+            required
+            validateStatus={rejectReason !== "" && !isValidReason(rejectReason) ? "error" : undefined}
+            help={
+              rejectReason !== "" && !isValidReason(rejectReason)
+                ? t("common.reasonRule")
+                : undefined
+            }
+          >
+            <Input.TextArea
+              rows={2}
+              maxLength={REASON_MAX_LEN}
+              showCount
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder={t("finance.rejectReasonPlaceholder")}
+            />
+          </Form.Item>
+        </Form>
+      )}
       {ctx.isError && (
         <Alert
           type="error"
@@ -296,22 +445,34 @@ function AdjustmentsTab() {
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  const [status, setStatus] = useState<string | undefined>();
-  const [day, setDay] = useState<Dayjs | null>(null);
-  const [userId, setUserId] = useState<number | null>(null);
-  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useAdjustments({
-      ...(status ? { status } : {}),
-      ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
-      ...(userId ? { user_id: userId } : {}),
-    });
-  const rows: AdjustmentRow[] = data?.pages.flatMap((p) => p.items) ?? [];
+  // 筛选条件入 URL(status/发起日/租户 id)
+  const { search, setFilters } = useFinanceFilters();
+  const status = search.a_status;
+  const day = search.a_day ? dayjs(search.a_day) : null;
+  // 租户 id commit 制(同工单页):逐键触发会把游标列表打回第一页 N 次;URL 回流走渲染期派生态
+  const [uidInput, setUidInput] = useState<number | null>(search.a_uid ?? null);
+  const [prevUid, setPrevUid] = useState(search.a_uid);
+  if (search.a_uid !== prevUid) {
+    setPrevUid(search.a_uid);
+    setUidInput(search.a_uid ?? null);
+  }
+  const commitUid = () => setFilters({ a_uid: uidInput ?? undefined });
   const [creating, setCreating] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{ adj: AdjustmentRow; approve: boolean } | null>(null);
   const [form] = Form.useForm<{ user_id: number; amount: string; reason: string }>();
   // 新建草稿(sessionStorage):误关弹窗不丢;发起成功后清除
   const draft = useFormDraft<{ user_id: number; amount: string; reason: string }>("adjustment-new");
   const refresh = () => void qc.invalidateQueries({ queryKey });
+  // 导出口径与列表接口一致(status/user_id/day)
+  const params = {
+    ...(status ? { status } : {}),
+    ...(search.a_day ? { day: search.a_day } : {}),
+    ...(search.a_uid ? { user_id: search.a_uid } : {}),
+  };
+  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } =
+    useAdjustments(params);
+  const { doExport, exporting } = useCsvExport((tz, lang) => exportAdjustmentsCsv(params, tz, lang));
+  const rows: AdjustmentRow[] = data?.pages.flatMap((p) => p.items) ?? [];
 
   // 输入 user_id 即时回显租户身份与资金现状;不存在则阻止提交
   const wUserId = Form.useWatch("user_id", form);
@@ -336,21 +497,31 @@ function AdjustmentsTab() {
       <Space wrap style={{ marginBottom: 12 }}>
         <Select
           allowClear
-          placeholder={t("tenants.statusFilter")}
+          placeholder={t("common.statusFilter")}
           style={{ width: 150 }}
           value={status}
-          onChange={setStatus}
+          onChange={(v) => setFilters({ a_status: v })}
           options={Object.entries(adjustmentStatusMap).map(([v, m]) => ({ value: v, label: t(m.labelKey) }))}
         />
         <InputNumber
           min={1}
           precision={0}
+          controls={false}
           placeholder={t("finance.filterTenantId")}
           style={{ width: 140 }}
-          value={userId}
-          onChange={(v) => setUserId(v ?? null)}
+          value={uidInput}
+          onChange={(v) => setUidInput(v ?? null)}
+          onBlur={commitUid}
+          onPressEnter={commitUid}
         />
-        <DatePicker value={day} onChange={(d) => setDay(d)} allowClear />
+        <DatePicker
+          value={day}
+          onChange={(d) => setFilters({ a_day: d ? d.format("YYYY-MM-DD") : undefined })}
+          allowClear
+        />
+        <Button onClick={() => void doExport()} loading={exporting}>
+          {t("common.exportCsv")}
+        </Button>
         <Tooltip title={writable ? "" : t("finance.financeOnlyCreate")}>
           <Button
             type="primary"
@@ -371,7 +542,13 @@ function AdjustmentsTab() {
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={rows}
         columns={[
@@ -388,7 +565,7 @@ function AdjustmentsTab() {
             dataIndex: "status",
             render: (v: string) => {
               const m = metaOf(adjustmentStatusMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
             },
           },
           { title: t("finance.colCreatedBy"), dataIndex: "created_by", width: 80 },
@@ -438,10 +615,12 @@ function AdjustmentsTab() {
           { title: t("finance.colCreatedAtShort"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
-      <LoadMoreButton
-        visible={Boolean(hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(hasNextPage)}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void fetchNextPage()}
       />
       <ReviewConfirmModal
         target={reviewTarget}
@@ -504,7 +683,7 @@ function AdjustmentsTab() {
                     ctx.data.recent_ledger.length > 0 ? (
                       <Space orientation="vertical" size={2} style={{ width: "100%" }}>
                         {ctx.data.recent_ledger.map((l) => (
-                          <span key={l.id} style={{ fontSize: 12 }}>
+                          <span key={l.id} style={{ fontSize: fontSize.caption }}>
                             {formatDateTime(l.created_at)} ·{" "}
                             {(() => {
                               const m = metaOf(ledgerTypeMap, l.type);
@@ -566,7 +745,7 @@ function AnomaliesTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  const { data, queryKey, isLoading, isError, refetch } = useAnomalies();
+  const { data, queryKey, isLoading, isError, error, refetch } = useAnomalies();
   const rows: AnomalyRow[] = data ?? [];
   const verify = useVerifyOrder();
   const backfill = useBackfillOrder();
@@ -605,7 +784,11 @@ function AnomaliesTab() {
         dataSource={rows}
         locale={{
           emptyText: (
-            <TableErrorEmpty isError={isError} onRetry={() => void refetch()}>
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            >
               {t("finance.noAnomalies")}
             </TableErrorEmpty>
           ),
@@ -624,7 +807,7 @@ function AnomaliesTab() {
             render: (_, r) => (
               <>
                 {r.order_no ?? <TenantLink id={r.user_id} />}
-                <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.detail}</div>
+                <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{r.detail}</div>
               </>
             ),
           },
@@ -715,6 +898,11 @@ function PayoutModal({
   const { formatMoney } = useFormat();
   const [form] = Form.useForm<RefundPayout>();
   const payout = usePayoutRefund();
+  // 幂等键随目标单生成(渲染期派生):同一轮表单重试同键重放不出金,换单即换键
+  const [idemFor, setIdemFor] = useState<{ id: number; key: string } | null>(null);
+  if (target && idemFor?.id !== target.id) {
+    setIdemFor({ id: target.id, key: crypto.randomUUID() });
+  }
   if (!target) return null;
   return (
     <RowActionModal
@@ -725,7 +913,9 @@ function PayoutModal({
         reviewer: `#${target.review_by ?? "-"}`,
       })}
       form={form}
-      submit={(values) => payout.mutateAsync({ refundId: target.id, data: values })}
+      submit={(values) =>
+        payout.mutateAsync({ refundId: target.id, data: values, idempotencyKey: idemFor?.key })
+      }
       successText={t("finance.payoutDone")}
       failText={t("finance.payoutFailed")}
       onClose={onClose}
@@ -757,14 +947,18 @@ function RefundsTab() {
   const { admin } = useAuth();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  const [status, setStatus] = useState<string | undefined>();
-  const [day, setDay] = useState<Dayjs | null>(null);
-  // 渠道过滤在客户端做(接口口径只有 status/day;对已加载页生效)
-  const [channel, setChannel] = useState<string | undefined>();
-  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = useRefunds({
+  // 筛选条件入 URL(status/发起日/渠道);渠道过滤在客户端做(接口口径只有 status/day;对已加载页生效)
+  const { search, setFilters } = useFinanceFilters();
+  const status = search.r_status;
+  const day = search.r_day ? dayjs(search.r_day) : null;
+  const channel = search.r_channel;
+  // 导出口径与列表接口一致(status/day;渠道是客户端过滤,不进导出)
+  const params = {
     ...(status ? { status } : {}),
-    ...(day ? { day: day.format("YYYY-MM-DD") } : {}),
-  });
+    ...(search.r_day ? { day: search.r_day } : {}),
+  };
+  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = useRefunds(params);
+  const { doExport, exporting } = useCsvExport((tz, lang) => exportRefundsCsv(params, tz, lang));
   const all: RefundRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const rows = channel ? all.filter((r) => r.payout_channel === channel) : all;
   const [payoutTarget, setPayoutTarget] = useState<RefundRow | null>(null);
@@ -778,10 +972,10 @@ function RefundsTab() {
       <Space wrap style={{ marginBottom: 12 }}>
         <Select
           allowClear
-          placeholder={t("tenants.statusFilter")}
+          placeholder={t("common.statusFilter")}
           style={{ width: 150 }}
           value={status}
-          onChange={setStatus}
+          onChange={(v) => setFilters({ r_status: v })}
           options={Object.entries(refundStatusMap).map(([v, m]) => ({
             value: v,
             label: t(m.labelKey),
@@ -792,20 +986,33 @@ function RefundsTab() {
           placeholder={t("finance.filterPayoutChannel")}
           style={{ width: 150 }}
           value={channel}
-          onChange={setChannel}
+          onChange={(v) => setFilters({ r_channel: v })}
           options={Object.entries(payoutChannelMap).map(([v, m]) => ({
             value: v,
             label: t(m.labelKey),
           }))}
         />
-        <DatePicker value={day} onChange={(d) => setDay(d)} allowClear />
+        <DatePicker
+          value={day}
+          onChange={(d) => setFilters({ r_day: d ? d.format("YYYY-MM-DD") : undefined })}
+          allowClear
+        />
+        <Button onClick={() => void doExport()} loading={exporting}>
+          {t("common.exportCsv")}
+        </Button>
       </Space>
       <Table<RefundRow>
         scroll={{ x: 1100 }}
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={rows}
         columns={[
@@ -824,7 +1031,7 @@ function RefundsTab() {
             width: 90,
             render: (v: string) => {
               const m = metaOf(refundStatusMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
             },
           },
           { title: t("finance.colReason"), dataIndex: "reason", ellipsis: true },
@@ -849,7 +1056,7 @@ function RefundsTab() {
               return (
                 <span>
                   {m ? t(m.labelKey) : r.payout_channel} · {r.payout_ref}
-                  <div style={{ color: adminColors.textMuted, fontSize: 12 }}>
+                  <div style={{ color: adminColors.textMuted, fontSize: fontSize.caption }}>
                     #{r.payout_by} · {r.payout_at ? formatDateTime(r.payout_at) : ""}
                   </div>
                 </span>
@@ -938,11 +1145,23 @@ function RefundsTab() {
           { title: t("finance.colCreatedAt"), dataIndex: "created_at", width: 150, render: formatDateTime },
         ]}
       />
-      <LoadMoreButton
-        visible={Boolean(hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(hasNextPage)}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        // 渠道客户端过滤激活时,收尾计数取「已加载」(与表内行数对不上)或「筛选后」(把未加载伪装成不存在)
+        // 都会误导,此时不再展示 LoadMore 自带计数,由下方一行把两个口径并列说明;未过滤时维持原口径
+        loadedCount={channel ? undefined : all.length}
+        onLoadMore={() => void fetchNextPage()}
       />
+      {channel && !hasNextPage && !isFetchNextPageError && all.length > 0 && (
+        <Typography.Text
+          type="secondary"
+          style={{ display: "block", textAlign: "center", padding: "8px 0" }}
+        >
+          {t("finance.loadedFilteredNote", { loaded: all.length, shown: rows.length })}
+        </Typography.Text>
+      )}
       <PayoutModal
         target={payoutTarget}
         onClose={() => setPayoutTarget(null)}
@@ -1001,12 +1220,26 @@ function InvoicesTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
   const qc = useQueryClient();
-  const [status, setStatus] = useState<string | undefined>();
-  const [period, setPeriod] = useState("");
-  const { data, queryKey, isLoading, isError, refetch } = useInvoices({
+  // 筛选条件入 URL(status/账期)
+  const { search, setFilters } = useFinanceFilters();
+  const status = search.i_status;
+  const urlPeriod = search.i_period ?? "";
+  // 账期 commit 制检索:输入只改本地值,回车/点搜索/清空才写 URL;URL 回流走渲染期派生态
+  const [periodInput, setPeriodInput] = useState(urlPeriod);
+  const [prevPeriod, setPrevPeriod] = useState(urlPeriod);
+  if (urlPeriod !== prevPeriod) {
+    setPrevPeriod(urlPeriod);
+    setPeriodInput(urlPeriod);
+  }
+  // 宽松校验:非 YYYY-MM 格式标红提示,但不阻止提交(后端对非法账期只会回空,不会误操作)
+  const periodBad = periodInput.trim() !== "" && !PERIOD_RE.test(periodInput.trim());
+  // 导出口径与列表接口一致(status/period)
+  const params = {
     ...(status ? { status } : {}),
-    ...(period ? { period } : {}),
-  });
+    ...(urlPeriod ? { period: urlPeriod } : {}),
+  };
+  const { data, queryKey, isLoading, isError, error, refetch } = useInvoices(params);
+  const { doExport, exporting } = useCsvExport((tz, lang) => exportInvoicesCsv(params, tz, lang));
   const rows: InvoiceRow[] = data ?? [];
   const [issueTarget, setIssueTarget] = useState<InvoiceRow | null>(null);
   const reject = useRejectInvoice();
@@ -1015,31 +1248,48 @@ function InvoicesTab() {
 
   return (
     <>
-      <Space wrap style={{ marginBottom: 12 }}>
+      <Space wrap style={{ marginBottom: 12 }} align="start">
         <Select
           allowClear
-          placeholder={t("tenants.statusFilter")}
+          placeholder={t("common.statusFilter")}
           style={{ width: 150 }}
           value={status}
-          onChange={setStatus}
+          onChange={(v) => setFilters({ i_status: v })}
           options={Object.entries(invoiceStatusMap).map(([v, m]) => ({
             value: v,
             label: t(m.labelKey),
           }))}
         />
-        <Input.Search
-          allowClear
-          placeholder={t("finance.filterPeriod")}
-          style={{ width: 200 }}
-          onSearch={setPeriod}
-        />
+        <Form.Item
+          style={{ marginBottom: 0 }}
+          validateStatus={periodBad ? "error" : undefined}
+          help={periodBad ? t("finance.periodFormatHint") : undefined}
+        >
+          <Input.Search
+            allowClear
+            placeholder={t("finance.filterPeriod")}
+            style={{ width: 200 }}
+            value={periodInput}
+            onChange={(e) => setPeriodInput(e.target.value)}
+            onSearch={(v) => setFilters({ i_period: v.trim() || undefined })}
+          />
+        </Form.Item>
+        <Button onClick={() => void doExport()} loading={exporting}>
+          {t("common.exportCsv")}
+        </Button>
       </Space>
       <Table<InvoiceRow>
         scroll={{ x: 1100 }}
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={rows}
         columns={[
@@ -1057,7 +1307,7 @@ function InvoicesTab() {
             render: (_, r) => (
               <>
                 {r.title}
-                <div style={{ color: adminColors.textMuted, fontSize: 12 }}>
+                <div style={{ color: adminColors.textMuted, fontSize: fontSize.caption }}>
                   {r.title_type === "company"
                     ? t("finance.invoiceTitleTypeCompany")
                     : t("finance.invoiceTitleTypePersonal")}
@@ -1073,7 +1323,7 @@ function InvoicesTab() {
             width: 90,
             render: (v: string) => {
               const m = metaOf(invoiceStatusMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
             },
           },
           {
@@ -1084,7 +1334,7 @@ function InvoicesTab() {
                 return (
                   <span>
                     {r.invoice_no}
-                    <div style={{ color: adminColors.textMuted, fontSize: 12 }}>
+                    <div style={{ color: adminColors.textMuted, fontSize: fontSize.caption }}>
                       #{r.issued_by} · {r.issued_at ? formatDateTime(r.issued_at) : ""}
                     </div>
                   </span>
@@ -1144,13 +1394,24 @@ function InvoicesTab() {
 
 function FinancePage() {
   const { t } = useTranslation();
-  const { data: anomalies } = useAnomalies();
+  const navigate = useNavigate();
+  const tab = Route.useSearch({ select: (s) => s.tab });
+  const anomaliesQ = useAnomalies();
+  const { data: anomalies, isError: anomaliesError } = anomaliesQ;
   const anomalyCount = anomalies?.length ?? 0;
   return (
-    <>
+    <PageContainer title={t("menu.finance")}>
       <ReconciliationCard />
       <Card style={{ marginTop: 16 }}>
         <Tabs
+          activeKey={tab ?? "orders"}
+          onChange={(key) =>
+            void navigate({
+              to: "/finance",
+              replace: true,
+              search: key === "orders" ? {} : { tab: key as FinanceTab },
+            })
+          }
           items={[
             { key: "orders", label: t("finance.tabOrders"), children: <OrdersTab /> },
             { key: "refunds", label: t("finance.tabRefunds"), children: <RefundsTab /> },
@@ -1162,7 +1423,14 @@ function FinancePage() {
               label: (
                 <Space size={6}>
                   {t("finance.tabAnomalies")}
-                  {anomalyCount > 0 && <Tag color="red">{anomalyCount}</Tag>}
+                  {/* 计数查询失败绝不静默为 0(无红 Tag 会被读成「没有异常」):警示图标顶替,红 Tag 仅成功时按真实计数显示(同 AlertBell「失败显示 ?」) */}
+                  {anomaliesError ? (
+                    <Tooltip title={t("common.loadFailed")}>
+                      <WarningOutlined style={{ color: adminColors.alertAccent }} />
+                    </Tooltip>
+                  ) : (
+                    anomalyCount > 0 && <Tag color="red">{anomalyCount}</Tag>
+                  )}
                 </Space>
               ),
               children: <AnomaliesTab />,
@@ -1171,6 +1439,6 @@ function FinancePage() {
           ]}
         />
       </Card>
-    </>
+    </PageContainer>
   );
 }

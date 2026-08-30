@@ -3,6 +3,7 @@
 
 import {
   AppstoreOutlined,
+  BellOutlined,
   CloudServerOutlined,
   DashboardOutlined,
   HddOutlined,
@@ -19,6 +20,7 @@ export const CONSOLE_NAV = [
   { key: "/storage", icon: <HddOutlined />, labelKey: "storage.title" },
   { key: "/billing", icon: <WalletOutlined />, labelKey: "billing.title" },
   { key: "/support", icon: <QuestionCircleOutlined />, labelKey: "support.title" },
+  { key: "/notifications", icon: <BellOutlined />, labelKey: "notifications.title" },
   { key: "/settings", icon: <SettingOutlined />, labelKey: "settings.title" },
 ] as const satisfies readonly { key: string; icon: ReactNode; labelKey: string }[];
 

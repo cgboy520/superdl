@@ -9,4 +9,5 @@ import type { InvoiceOut } from './invoiceOut';
 export interface PageInvoiceOut {
   items: InvoiceOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

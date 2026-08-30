@@ -67,7 +67,12 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # core:计费/通知/保洁——DB + 配置解密 + 短信渠道 + 支付渠道(对账/查单)
+            - secretRef: {name: superdl-db}
+            - secretRef: {name: superdl-crypto}
+            - secretRef: {name: superdl-metrics}
+            - secretRef: {name: superdl-cloud}
+            - secretRef: {name: superdl-payment}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: core}
@@ -139,7 +144,11 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # tenant-mgr:租户编排——DB + 配置解密 + Harbor 机器人(拉取凭据托管到租户 ns)
+            - secretRef: {name: superdl-db}
+            - secretRef: {name: superdl-crypto}
+            - secretRef: {name: superdl-metrics}
+            - secretRef: {name: superdl-registry}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: tenant-mgr}
@@ -199,7 +208,10 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # node-mgr:cordon/巡检/注册收敛——DB + 配置解密(集群接入凭据)
+            - secretRef: {name: superdl-db}
+            - secretRef: {name: superdl-crypto}
+            - secretRef: {name: superdl-metrics}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: node-mgr}
@@ -259,7 +271,11 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # prewarm:镜像预热 Job——DB + 配置解密 + Harbor 机器人
+            - secretRef: {name: superdl-db}
+            - secretRef: {name: superdl-crypto}
+            - secretRef: {name: superdl-metrics}
+            - secretRef: {name: superdl-registry}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: prewarm}
@@ -319,7 +335,10 @@ spec:
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # disk-ops:配额下发/擦除——仅 DB + 指标;JuiceFS metaurl 不进 worker 进程,
+            # 由配额 Job 按 key 引用 superdl-db(core/k8s/real.py set_disk_quota)
+            - secretRef: {name: superdl-db}
+            - secretRef: {name: superdl-metrics}
           env:
             - {name: SUPERDL_WORKER_HEARTBEAT, value: /tmp/superdl-worker-heartbeat}
             - {name: SUPERDL_WORKER_COMPONENT, value: disk-ops}

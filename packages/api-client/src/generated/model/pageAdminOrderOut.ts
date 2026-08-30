@@ -9,4 +9,5 @@ import type { AdminOrderOut } from './adminOrderOut';
 export interface PageAdminOrderOut {
   items: AdminOrderOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

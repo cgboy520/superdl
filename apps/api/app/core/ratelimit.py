@@ -5,9 +5,10 @@
 """
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import status
-from sqlalchemy import String, delete, func, text
+from sqlalchemy import Row, String, delete, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, get_sessionmaker
@@ -45,6 +46,23 @@ _HIT_SQL = text("""
 """)
 
 
+def _raise_429(retry_after: int) -> None:
+    raise AppError(
+        ErrorCode.RATE_LIMITED,
+        key="common.rateLimited",
+        http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+        headers={"Retry-After": str(max(1, retry_after))},
+    )
+
+
+async def _fetch_window_row(key: str, window_seconds: float) -> Row[Any] | None:
+    """只读预检取窗口行(不命中不建行、不计数),供 ensure_not_rate_limited/read_hits 共用。"""
+    async with get_sessionmaker()() as session:
+        return (
+            await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
+        ).one_or_none()
+
+
 async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float) -> None:
     """记一次命中并判定。超限抛 RATE_LIMITED(429,带 Retry-After 窗口剩余秒数)。"""
     async with get_sessionmaker()() as session:
@@ -52,12 +70,7 @@ async def check_rate_limit(key: str, *, max_attempts: int, window_seconds: float
         await session.commit()
     hits, retry_after = row.hits, row.retry_after
     if hits > max_attempts:
-        raise AppError(
-            ErrorCode.RATE_LIMITED,
-            key="common.rateLimited",
-            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
-            headers={"Retry-After": str(max(1, retry_after))},
-        )
+        _raise_429(retry_after)
 
 
 async def clear_rate_limit(key: str) -> None:
@@ -81,23 +94,12 @@ _BLOCKED_SQL = text("""
 async def ensure_not_rate_limited(key: str, *, max_attempts: int, window_seconds: float) -> None:
     """已达上限的键直接 429(不计数)。与 check_rate_limit 的口径对齐:
     现有 hits ≥ max_attempts 时,下一次计数判定必然超限。"""
-    async with get_sessionmaker()() as session:
-        row = (
-            await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
-        ).one_or_none()
+    row = await _fetch_window_row(key, window_seconds)
     if row is not None and row.hits >= max_attempts:
-        raise AppError(
-            ErrorCode.RATE_LIMITED,
-            key="common.rateLimited",
-            http_status=status.HTTP_429_TOO_MANY_REQUESTS,
-            headers={"Retry-After": str(max(1, row.retry_after))},
-        )
+        _raise_429(row.retry_after)
 
 
 async def read_hits(key: str, *, window_seconds: float) -> int:
     """窗口内当前命中数(只读,不计数):用于「成功登录前是否有失败记录」类判定。"""
-    async with get_sessionmaker()() as session:
-        row = (
-            await session.execute(_BLOCKED_SQL, {"key": key[:128], "window": window_seconds})
-        ).one_or_none()
+    row = await _fetch_window_row(key, window_seconds)
     return 0 if row is None else int(row.hits)

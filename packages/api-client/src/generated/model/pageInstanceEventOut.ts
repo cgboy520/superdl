@@ -9,4 +9,5 @@ import type { InstanceEventOut } from './instanceEventOut';
 export interface PageInstanceEventOut {
   items: InstanceEventOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

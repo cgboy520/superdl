@@ -5,6 +5,7 @@
  */
 
 import {
+  fontSize,
   periodMap,
   quoteSubscription,
   type BillingPeriod,
@@ -15,7 +16,7 @@ import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { usePolicies } from "../api/queries";
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 
 /** 四个周期的折扣百分数(80 = 8 折);policies 未就绪时返回 undefined,调用方不出报价。 */
 export function usePeriodDiscounts(): Record<BillingPeriod, number> | undefined {
@@ -121,7 +122,7 @@ export function PeriodQuoteRows({
       />
       <QuoteRow label={t("period.rowPayable")} value={formatMoney(quote.amount)} strong />
       {hint && (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {hint}
         </Typography.Text>
       )}

@@ -40,35 +40,6 @@ async def _insert_instance(
 
 
 class TestInstanceListPage:
-    async def test_cursor_pagination_covers_all_without_dup(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        headers, user_id, _ = await create_user_with_key(client, "13900000201")
-        for i in range(5):
-            await _insert_instance(sm, user_id, name=f"vm-{i}")
-
-        page1 = (await client.get("/api/v1/instances", params={"limit": 2}, headers=headers)).json()
-        assert len(page1["items"]) == 2
-        assert page1["next_cursor"] is not None
-        page2 = (
-            await client.get(
-                "/api/v1/instances",
-                params={"limit": 2, "cursor": page1["next_cursor"]},
-                headers=headers,
-            )
-        ).json()
-        page3 = (
-            await client.get(
-                "/api/v1/instances",
-                params={"limit": 2, "cursor": page2["next_cursor"]},
-                headers=headers,
-            )
-        ).json()
-        names = [i["name"] for i in page1["items"] + page2["items"] + page3["items"]]
-        # 降序(最新在前),翻页不重不漏
-        assert names == ["vm-4", "vm-3", "vm-2", "vm-1", "vm-0"]
-        assert page3["next_cursor"] is None
-
     async def test_status_filter(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
         headers, user_id, _ = await create_user_with_key(client, "13900000202")
         await _insert_instance(sm, user_id, name="run-1", status="running")

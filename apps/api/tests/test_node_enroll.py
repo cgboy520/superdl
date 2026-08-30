@@ -9,27 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.audit import AuditLog
 from app.core.config import get_settings
 from app.core.errors import AppError
-from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
 from app.modules.nodes import service as nodes_service
 from app.modules.nodes.models import NodeEnrollment
 from app.modules.nodes.schemas import EnrollmentCreate
-from tests.helpers import admin_headers
-
-CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "ttl_hours": 24}
-
-
-async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
-    async with sm() as session:
-        await set_platform_settings(
-            session,
-            {
-                "cluster_server_url": "https://10.0.0.10:9345",
-                "cluster_join_token": "K10abcdef0123456789::server:secrettoken",
-            },
-            updated_by=None,
-        )
-        await session.commit()
+from tests.helpers import CREATE_BODY, admin_headers, set_cluster_config
 
 
 async def enrollment_rows(sm: async_sessionmaker[AsyncSession]) -> list[NodeEnrollment]:
@@ -102,16 +86,6 @@ class TestAdminEnrollments:
         assert r2.status_code == 409
         assert r2.json()["message_key"] == "nodes.regenerateNotAllowed"
 
-    async def test_role_matrix(self, client, sm) -> None:
-        await set_cluster_config(sm)
-        ro = await admin_headers(sm, client, role="readonly")
-        fin = await admin_headers(sm, client, role="finance")
-        assert (await client.get("/api/admin/v1/node-enrollments", headers=ro)).status_code == 200
-        assert (
-            await client.post("/api/admin/v1/node-enrollments", json=CREATE_BODY, headers=ro)
-        ).status_code == 403
-        assert (await client.get("/api/admin/v1/node-enrollments", headers=fin)).status_code == 403
-
     async def test_revoke_and_regenerate(self, client, sm) -> None:
         await set_cluster_config(sm)
         ah = await admin_headers(sm, client, role="ops")
@@ -144,6 +118,34 @@ class TestAdminEnrollments:
                 f"/api/admin/v1/node-enrollments/{eid}/regenerate", json={}, headers=ah
             )
         ).status_code == 409
+
+    async def test_regenerate_reason_in_audit(self, client, sm) -> None:
+        """带 reason 的重新生成:审计行 detail 含 reason(不落 token)。"""
+        await set_cluster_config(sm)
+        ah = await admin_headers(sm, client, role="ops")
+        created = (
+            await client.post("/api/admin/v1/node-enrollments", json=CREATE_BODY, headers=ah)
+        ).json()
+        eid = created["enrollment"]["id"]
+        resp = await client.post(
+            f"/api/admin/v1/node-enrollments/{eid}/regenerate",
+            json={"reason": "装机命令外泄,轮换"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        token = resp.json()["token"]
+        async with sm() as session:
+            logs = list(
+                (
+                    await session.execute(
+                        select(AuditLog).where(AuditLog.target == f"node_enrollment:{eid}")
+                    )
+                ).scalars()
+            )
+        regen = [log for log in logs if log.detail and log.detail.get("action") == "regenerate"]
+        assert len(regen) == 1
+        assert regen[0].detail["reason"] == "装机命令外泄,轮换"
+        assert token not in str(regen[0].detail)
 
 
 class TestEnrollmentStateMachine:

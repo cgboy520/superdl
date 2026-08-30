@@ -14,7 +14,7 @@
 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`(Harbor 项目前缀)与 `CHANGE_TAG` 再 apply → rollout status →
 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
 
-1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 建 `superdl-api-secrets` 与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)等 Secret。值不入库;字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
+1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。值不入库;字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
 2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME`(push 机器人)/ `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
 3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`:
    - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`,**必须先于滚动**:`/readyz` 比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都在这一关现形;
@@ -58,7 +58,7 @@
 - [ ] `curl -s https://<api-domain>/api/admin/v1/auth/login -X POST` 返回 404(管理端 API 不经公网 api 域暴露)
 - [ ] `curl -s https://<api-domain>/metrics` 返回 404 或 401(不带集群内 Bearer 不得取到指标)
 - [ ] Alertmanager critical 告警端到端实测一次(管理端告警流与值班邮箱必须到人;启用了钉钉 sidecar 或 `oncall_phone` 值班短信的一并验证)
-- [ ] `superdl-api-secrets` 含 `juicefs-metaurl` 键(值同 kube-system/superdl-juicefs-secret 的 metaurl):缺失则数据盘配额 Job 永远死信(管理端死信页 + `superdl_juicefs_quota_failed_total` 可见),容量上限不被强制
+- [ ] `superdl-db` 含 `juicefs-metaurl` 键(值同 kube-system/superdl-juicefs-secret 的 metaurl):缺失则数据盘配额 Job 永远死信(管理端死信页 + `superdl_juicefs_quota_failed_total` 可见),容量上限不被强制
 
 ## 生产数据库要求(必读)
 

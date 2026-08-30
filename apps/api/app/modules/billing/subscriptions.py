@@ -543,8 +543,22 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
         return
 
     instance = await orchestrator_service.instance_by_id(session, row.instance_id)
-    if row.auto_renew and await _try_auto_renew(session, row, instance, counts):
-        return
+    # 锁序 instance → wallet → subscription:_try_auto_renew 先锁钱包再动订阅行,
+    # 不先锁实例则本事务是 wallet → instance,与停机/结算链路
+    # (instance → bill → wallet)交叉成死锁对。
+    # 锁后 refresh:锁函数只锁不刷属性,transition 的乐观锁要新鲜 version
+    await orchestrator_service.lock_instance_for_billing(session, instance.id)
+    await session.refresh(instance)
+    if row.auto_renew:
+        if await _try_auto_renew(session, row, instance, counts):
+            return
+        # 续费失败(余额不足):先提交释放钱包锁——到期停机的尾账要拿账单行锁,
+        # 持钱包锁进 expire 会留下 wallet → bill 边(与小时结算 bill → wallet 成环)。
+        # 停机链路在下一事务按 instance → bill → wallet 重新持锁
+        await session.commit()
+        await session.refresh(row)  # 等锁/提交期间用户可能已手动续费(老行转 expired)
+        if row.status != STATUS_ACTIVE:
+            return
     row.status = STATUS_EXPIRED
     await _expire_instance(session, instance, counts)
 
@@ -558,6 +572,10 @@ async def _warn_expiring(
         return False
     row.warned_for_expiry = expires
     days = max(0, round((expires - now).total_seconds() / 86400))
+    # 深链目标(实例 uuid):临期订阅量小,逐条按主键取代价可忽略
+    from app.modules.orchestrator import service as orchestrator_service
+
+    instance = await orchestrator_service.instance_by_id(session, row.instance_id)
     await notify_service.send_subscription_notice(
         session,
         row.user_id,
@@ -567,6 +585,7 @@ async def _warn_expiring(
             f"(剩 {days} 天),到期后自动停机。请及时续费。"
         ),
         dedup_suffix=str(row.id),
+        target_id=instance.uuid,
     )
     return True
 
@@ -605,6 +624,7 @@ async def _try_auto_renew(
             action="renew_failed",
             detail="余额不足,自动续费失败,实例将停机。充值后可手动续费。",
             dedup_suffix=str(row.id),
+            target_id=instance.uuid,
         )
         return False
     _new_row, _quote, created = await renew(
@@ -627,6 +647,7 @@ async def _try_auto_renew(
             f"已自动续费 包{period_label(row.period)}×{row.period_count},扣款 ¥{quoted.amount}。"
         ),
         dedup_suffix=str(row.id),
+        target_id=instance.uuid,
     )
     return True
 
@@ -654,6 +675,7 @@ async def _expire_instance(
         action="expired",
         detail="包周期已到期,实例已停机;72 小时内未续费将回收实例盘(数据盘不受影响)。",
         dedup_suffix=str(instance.id),
+        target_id=instance.uuid,
     )
 
 

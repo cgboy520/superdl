@@ -105,7 +105,7 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert pod_spec.data_disk_subpath == f"disk-{disk['uuid']}"
 
     # ── 6. 跑 30 分钟后停机 → 尾账 ─────────────────────────
-    from tests.test_billing_flow import backdate_running_event
+    from tests.helpers import backdate_running_event
 
     expected_secs = await backdate_running_event(sm, uuid, 30)
     await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)

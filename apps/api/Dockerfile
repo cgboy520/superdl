@@ -19,4 +19,7 @@ EXPOSE 8000
 # 同一镜像双入口:serve(默认)/ worker(compose 里覆盖 command)
 # --proxy-headers 配合 FORWARDED_ALLOW_IPS(deploy/app/k8s/00-namespace-config.yaml);
 # 不配则只信任 127.0.0.1,client.host 恒为代理 IP。
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# --limit-concurrency:单进程在途连接硬顶。请求体已有 1MiB 上限(app/core/body_limit.py),
+# 连接数兜底内存:1024 在途 × (≤1MiB body + 连接开销) 仍远低于 Pod 1GiB;
+# 超限 uvicorn 直接 503 不进路由。正常流量远不及此(DB 池 10 才是真实瓶颈)。
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--limit-concurrency", "1024"]

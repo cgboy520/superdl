@@ -1,8 +1,8 @@
 /** 法务文档 Tab:doc_key × locale 状态格 + 左编辑右预览 + 版本历史。
  * 写操作仅 admin;发布确认弹窗带与现版的行级 diff 统计(+/−)。 */
 
-import { adminColors, formatDateTime, legalDocStatusMap, metaOf } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, formatDateTime, legalDocStatusMap, metaOf, useApiErrorText, useFormDraft } from "@superdl/ui";
+import { HexTag, LegalMarkdown, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -12,16 +12,16 @@ import {
   Collapse,
   Input,
   Modal,
-  Popconfirm,
   Space,
   Table,
   Tooltip,
   Typography,
 } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  isApiError,
   useArchiveLegalDocVersion,
   useCreateLegalDocVersion,
   useLegalDocs,
@@ -31,9 +31,7 @@ import {
   type LegalDocCell,
   type LegalDocVersion,
 } from "../../api";
-import { LegalMarkdown } from "../../components/LegalMarkdown";
-import { StatusTag } from "../../components/StatusTag";
-import { useApiErrorText } from "../../lib/apiError";
+import { ReasonAction } from "../../components/ReasonAction";
 import { useAdminRole } from "../../stores/auth";
 
 const DOC_KEYS = ["terms", "privacy", "deletion_notice"] as const;
@@ -172,15 +170,26 @@ function CellEditor({
   const [content, setContent] = useState("");
   const [note, setNote] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
+  // 编辑器草稿(sessionStorage,markdown 正文非敏感可入):误刷新/误切换不丢;保存/发布成功后清除
+  const localDraft = useFormDraft<{ title: string; content: string; note: string }>(
+    `legal-doc-${docKey}-${locale}`,
+  );
   // 数据源(draft/published)切换时同步表单:渲染期间调整状态,避免 effect 级联渲染
   const sourceKey = draft ? `d${draft.id}` : published ? `p${published.id}` : "none";
   const [loadedKey, setLoadedKey] = useState("");
   if (!versionsQ.isLoading && loadedKey !== sourceKey) {
     setLoadedKey(sourceKey);
-    setTitle(draft?.title ?? published?.title ?? "");
-    setContent(draft?.content_md ?? published?.content_md ?? "");
-    setNote(draft?.effective_note ?? "");
+    // 本地未提交草稿优先于服务端值:它就是用户上次没来得及保存的内容
+    const saved = localDraft.load();
+    setTitle(saved?.title ?? draft?.title ?? published?.title ?? "");
+    setContent(saved?.content ?? draft?.content_md ?? published?.content_md ?? "");
+    setNote(saved?.note ?? draft?.effective_note ?? "");
   }
+  // 编辑即存草稿(首次从服务端灌入时写一遍同值,无害)
+  useEffect(() => {
+    if (loadedKey !== "") localDraft.save({ title, content, note });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- localDraft 引用稳定(纯 storage 封装)
+  }, [loadedKey, title, content, note]);
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: versionsQ.queryKey });
@@ -196,6 +205,7 @@ function CellEditor({
     mutation: {
       onSuccess: () => {
         message.success(t("settings.legal.saved"));
+        localDraft.clear();
         invalidate();
       },
       onError: (e) => message.error(errText(e, t("common.requestFailed"))),
@@ -205,6 +215,7 @@ function CellEditor({
     mutation: {
       onSuccess: (v) => {
         message.success(t("settings.legal.publishDone", { version: v.version }));
+        localDraft.clear();
         setPublishOpen(false);
         invalidate();
       },
@@ -213,11 +224,8 @@ function CellEditor({
   });
   const archive = useArchiveLegalDocVersion({
     mutation: {
-      onSuccess: () => {
-        message.success(t("settings.legal.archiveDone"));
-        invalidate();
-      },
-      onError: (e) => message.error(errText(e, t("common.requestFailed"))),
+      // 成功/失败反馈由 ReasonAction 统一承担;这里只负责数据刷新
+      onSuccess: () => invalidate(),
     },
   });
 
@@ -267,15 +275,18 @@ function CellEditor({
               >
                 {t("settings.legal.publish")}
               </Button>
-              <Popconfirm
-                title={t("settings.legal.confirmArchive")}
-                onConfirm={() => archive.mutate({ versionId: draft.id })}
+              <ReasonAction
+                label={t("settings.legal.archive")}
+                title={t("settings.legal.archive")}
+                confirmText={t("settings.legal.confirmArchive")}
+                danger
+                size="middle"
                 disabled={!writable}
-              >
-                <Button danger disabled={!writable} loading={archive.isPending}>
-                  {t("settings.legal.archive")}
-                </Button>
-              </Popconfirm>
+                disabledReason={t("settings.legal.adminOnlyTip")}
+                onSubmit={async (reason) => {
+                  await archive.mutateAsync({ versionId: draft.id, data: { reason } });
+                }}
+              />
             </>
           )}
         </Space>
@@ -337,6 +348,7 @@ function CellEditor({
                   emptyText: (
                     <TableErrorEmpty
                       isError={versionsQ.isError}
+                      isForbidden={isApiError(versionsQ.error) && versionsQ.error.status === 403}
                       onRetry={() => void versionsQ.refetch()}
                     />
                   ),
@@ -351,7 +363,7 @@ function CellEditor({
                     width: 100,
                     render: (s: string) => {
                       const m = metaOf(legalDocStatusMap, s);
-                      return <StatusTag color={m?.color}>{m ? t(m.labelKey) : s}</StatusTag>;
+                      return <HexTag color={m?.color}>{m ? t(m.labelKey) : s}</HexTag>;
                     },
                   },
                   {

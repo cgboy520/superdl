@@ -11,6 +11,7 @@
 | [image-prewarm.md](./image-prewarm.md) | SOP | Harbor 接入与拉取凭据、平台镜像上线、Spegel P2P 与预热 |
 | [acme-dns.md](./acme-dns.md) | SOP | 泛域名证书 DNS01(acme-dns)部署与凭据轮换;**仅 full 档** |
 | [loki-logging.md](./loki-logging.md) | 参考 | 日志留存口径、LogQL 排障查询、采集自检 |
+| [key-rotation.md](./key-rotation.md) | SOP | 平台主密钥(crypto)双密钥读轮换与 PREVIOUS 摘除条件 |
 | [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
 
 发布与回滚在 [`../../README.md`](../../README.md);集群装机与 token 轮换在 [`../README.md`](../README.md)。

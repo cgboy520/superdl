@@ -7,7 +7,7 @@ import {
   DatabaseOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { colorPrimary } from "@superdl/ui";
+import { colorPrimary, fontSize, layout } from "@superdl/ui";
 import { useNavigate } from "@tanstack/react-router";
 import { Card, Col, Row, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -54,7 +54,13 @@ export function QuickEntrySection() {
   } as const;
 
   return (
-    <section style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px 16px" }}>
+    <section
+      style={{
+        maxWidth: layout.pageMaxWidthWide,
+        margin: "0 auto",
+        padding: `${layout.sectionPaddingY}px 24px 16px`,
+      }}
+    >
       <Row gutter={[16, 16]}>
         {ENTRIES.map((e) => (
           <Col key={e.key} xs={12} md={6}>
@@ -74,11 +80,13 @@ export function QuickEntrySection() {
                 }
               }}
             >
-              <div style={{ fontSize: 22, color: colorPrimary, marginBottom: 8 }}>{e.icon}</div>
+              <div style={{ fontSize: fontSize.pageTitle, color: colorPrimary, marginBottom: 8 }}>
+                {e.icon}
+              </div>
               <Typography.Text strong style={{ display: "block", marginBottom: 4 }}>
                 {TITLE[e.key]}
               </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {DESC[e.key]}
               </Typography.Text>
             </Card>

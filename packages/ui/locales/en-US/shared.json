@@ -1,7 +1,39 @@
 {
   "common": {
     "loadFailed": "Failed to load. Please try again.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "loadedAll_one": "{{count}} item loaded, all shown",
+    "loadedAll_other": "All {{count}} items loaded",
+    "forbidden": "No permission",
+    "forbiddenDesc": "Your role does not have access to this data. Contact an administrator if you need access.",
+    "requestFailed": "Request failed"
+  },
+  "csv": {
+    "exportDone": "CSV exported",
+    "exportFailed": "Export failed; please retry later",
+    "exporting": "Exporting…",
+    "exportTruncated": "Export cap reached; the file ends with a truncation marker — narrow the range and export in parts"
+  },
+  "chart": {
+    "degraded": "Data temporarily unavailable",
+    "empty": "No data yet"
+  },
+  "empty": {
+    "disk": "No data disks yet",
+    "list": "Nothing here yet",
+    "notification": "No notifications",
+    "search": "No matching results — try adjusting the filters",
+    "ticket": "No tickets yet"
+  },
+  "lang": {
+    "en": "English",
+    "switchLabel": "Switch language",
+    "zh": "中文"
+  },
+  "query": {
+    "partialFailed": "Some data failed to load",
+    "partialFailedDesc": "Amounts and lists on this page may be incomplete. Trust the results only after a successful retry."
   },
   "format": {
     "countdown": {
@@ -39,6 +71,9 @@
       "year_other": "years"
     },
     "spotDiscount": "{{off}}% of on-demand"
+  },
+  "confirm": {
+    "typeNameToConfirm": "Type {{name}} to confirm"
   },
   "status": {
     "announcement": {

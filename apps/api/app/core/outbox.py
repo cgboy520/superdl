@@ -68,6 +68,13 @@ def retry_policy_for(task_type: str) -> RetryPolicy:
     return _retry_policies.get(task_type, DEFAULT_RETRY_POLICY)
 
 
+def backoff_delay(policy: RetryPolicy, attempt: int) -> timedelta:
+    """第 attempt 次失败后的指数退避(带封顶)。重试与 running 回收共用同一公式。"""
+    return timedelta(
+        seconds=min(policy.backoff_base_seconds * 2 ** (attempt - 1), policy.backoff_max_seconds)
+    )
+
+
 class OutboxTask(Base):
     __tablename__ = "outbox_tasks"
 
@@ -235,16 +242,10 @@ async def _process_one(
     if outcome == "done":
         new_values: dict[str, Any] = {"status": "done"}
     elif outcome == "retry":
-        backoff = timedelta(
-            seconds=min(
-                policy.backoff_base_seconds * 2 ** (attempt - 1),
-                policy.backoff_max_seconds,
-            )
-        )
         new_values = {
             "status": "pending",
             "retries": attempt,
-            "next_retry_at": now_utc() + backoff,
+            "next_retry_at": now_utc() + backoff_delay(policy, attempt),
             "last_error": error,
         }
     else:
@@ -308,15 +309,9 @@ async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
             policy = retry_policy_for(task.type)
             attempt = task.retries + 1
             if attempt <= policy.max_retries:
-                backoff = timedelta(
-                    seconds=min(
-                        policy.backoff_base_seconds * 2 ** (attempt - 1),
-                        policy.backoff_max_seconds,
-                    )
-                )
                 task.status = "pending"
                 task.retries = attempt
-                task.next_retry_at = now_utc() + backoff
+                task.next_retry_at = now_utc() + backoff_delay(policy, attempt)
                 task.last_error = "reaped: running timeout (worker lost)"
             else:
                 task.status = "dead"

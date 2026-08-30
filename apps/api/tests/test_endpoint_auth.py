@@ -14,8 +14,7 @@ from app.core.audit import AuditLog
 from app.core.config import get_settings
 from app.modules.orchestrator.models import Instance, ServiceApiKey
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import drain
-from tests.test_service_container import new_user, provision_service
+from tests.helpers import drain, new_user, provision_service
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -85,7 +84,7 @@ class TestAuthMatrix:
         assert (await call_auth(client, slug=slug)).status_code == 401
 
     async def test_revoked_key_denied(self, client, sm, fake):
-        """吊销即刻生效:鉴权回源不加缓存,就是为了这一条。"""
+        """吊销即刻生效:缓存条目被主动失效,不靠等 TTL。"""
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000405")
         slug = await endpoint_of(client, headers, uuid)
         resp = await client.post(
@@ -155,12 +154,66 @@ class TestAuthMatrix:
 
 
 class TestLastUsed:
-    async def test_last_used_written_on_每次回源(self, client, sm, fake):
-        """last_used_at 回源即直写:它是排查「这把钥匙还在被谁用」的唯一线索。"""
+    async def test_last_used_written_on_首次回源(self, client, sm, fake):
+        """last_used_at 首次回源即落库:它是排查「这把钥匙还在被谁用」的唯一线索。"""
         headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000420")
         slug = await endpoint_of(client, headers, uuid)
         key = await issue_key(client, headers, uuid)
         assert (await call_auth(client, slug=slug, key=key)).status_code == 200
+        async with sm() as session:
+            row = (await session.execute(select(ServiceApiKey))).scalar_one()
+        assert row.last_used_at is not None
+
+    async def test_last_used_throttled_per_key(self, client, sm, fake):
+        """节流:60s 窗口内的重复鉴权不再直写 last_used_at(写放大从 rps 降为 key 数/分钟)。"""
+        headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000421")
+        slug = await endpoint_of(client, headers, uuid)
+        key = await issue_key(client, headers, uuid)
+        assert (await call_auth(client, slug=slug, key=key)).status_code == 200
+        async with sm() as session:
+            first = (await session.execute(select(ServiceApiKey))).scalar_one().last_used_at
+        # 窗口内再次鉴权(缓存命中):last_used_at 不前进
+        assert (await call_auth(client, slug=slug, key=key)).status_code == 200
+        async with sm() as session:
+            again = (await session.execute(select(ServiceApiKey))).scalar_one().last_used_at
+        assert again == first
+
+
+class TestAuthCache:
+    async def test_cache_hit_skips_db(self, client, sm, fake):
+        """缓存命中不回源:首次鉴权后删掉钥匙行,窗口内仍放行(TTL 收敛的明示取舍)。
+
+        这是设计内的陈旧窗口(≤5s/进程),不是免死金牌:吊销走 revoke_api_key
+        会主动失效本进程条目(见 test_revoked_key_denied),这里绕过它直改库,
+        模拟的是「另一副本上的吊销」——跨进程收敛上界就是 TTL。
+        """
+        headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000422")
+        slug = await endpoint_of(client, headers, uuid)
+        key = await issue_key(client, headers, uuid)
+        assert (await call_auth(client, slug=slug, key=key)).status_code == 200
+        # 直改库(绕过 revoke_api_key 的主动失效):窗口内缓存仍放行
+        async with sm() as session:
+            from app.core.timeutil import now_utc
+
+            row = (await session.execute(select(ServiceApiKey))).scalar_one()
+            row.revoked_at = now_utc()
+            await session.commit()
+        assert (await call_auth(client, slug=slug, key=key)).status_code == 200
+        # TTL 到期后回源:拒
+        from app.modules.orchestrator import service as orch_service
+
+        orch_service.clear_endpoint_auth_cache()  # 等效 TTL 到期(不睡 5s)
+        assert (await call_auth(client, slug=slug, key=key)).status_code == 401
+
+    async def test_concurrent_same_key_all_pass(self, client, sm, fake):
+        """并发一致性:同 key 并发 20 次鉴权全部 200,且只落一次 last_used 直写。"""
+        import asyncio
+
+        headers, uuid, _ = await provision_service(client, sm, fake, phone="13900000423")
+        slug = await endpoint_of(client, headers, uuid)
+        key = await issue_key(client, headers, uuid)
+        results = await asyncio.gather(*(call_auth(client, slug=slug, key=key) for _ in range(20)))
+        assert [r.status_code for r in results] == [200] * 20
         async with sm() as session:
             row = (await session.execute(select(ServiceApiKey))).scalar_one()
         assert row.last_used_at is not None
@@ -246,6 +299,40 @@ class TestPathShapes:
                 AUTH_PATH, headers={"host": host_for(slug), "x-api-key": key}
             )
             assert resp.status_code == 200, f"{method}: {resp.text}"
+
+
+class TestApiKeyQuotaRace:
+    async def test_concurrent_create_cannot_exceed_quota(self, client, sm, fake, monkeypatch):
+        """count-then-insert 必须在实例行锁内:并发建钥不越过上限(否则 20 把形同虚设)。"""
+        import asyncio
+
+        from app.core.errors import AppError, ErrorCode
+        from app.modules.orchestrator import service as orch_service
+
+        headers, uuid, user_id = await provision_service(client, sm, fake, phone="13900000460")
+        monkeypatch.setattr(orch_service, "MAX_API_KEYS_PER_INSTANCE", 2)
+        await issue_key(client, headers, uuid)  # 已有 1 把,余量 1
+
+        async def create() -> None:
+            async with sm() as session:
+                await orch_service.create_api_key(session, user_id, uuid, name="race")
+
+        results = await asyncio.gather(create(), create(), return_exceptions=True)
+        oks = [r for r in results if r is None]
+        rejected = [
+            r for r in results if isinstance(r, AppError) and r.code is ErrorCode.VALIDATION_ERROR
+        ]
+        assert len(oks) == 1
+        assert len(rejected) == 1
+        async with sm() as session:
+            live = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(ServiceApiKey)
+                    .where(ServiceApiKey.revoked_at.is_(None))
+                )
+            ).scalar_one()
+        assert live == 2
 
 
 class TestNoAuthRequired:

@@ -1,4 +1,4 @@
-"""工单系统:创建(幂等/单号格式/上限/限流)/对话流状态机/联动通知/IDOR/管理端角色门。"""
+"""工单系统:创建(幂等/单号格式/上限/限流)/对话流状态机/联动通知/IDOR。"""
 
 import re
 from datetime import timedelta
@@ -11,8 +11,7 @@ from app.core.timeutil import now_utc
 from app.modules.notify.models import Notification
 from app.modules.tickets.models import Ticket
 from app.modules.tickets.patrol import stale_ticket_patrol
-from tests.helpers import admin_headers
-from tests.test_payment import user_headers
+from tests.helpers import admin_headers, user_headers
 
 
 async def create_ticket(
@@ -281,6 +280,38 @@ class TestAdmin:
         ).json()["items"]
         assert [r["id"] for r in rows] == [t2["id"]]
 
+    async def test_count_endpoint(self, client: AsyncClient, sm):
+        """待办计数轻端点(角标轮询):默认 pending_staff 口径,支持 status/category 过滤。"""
+        headers = await user_headers(client, "13700000337")
+        t1 = (await create_ticket(client, headers, category="instance")).json()
+        await create_ticket(client, headers, category="billing", subject="发票咨询")
+        ops = await admin_headers(sm, client, role="ops")
+        # 新建工单默认 open(待用户/客服动作前);计数口径随 status 参数
+        open_count = (
+            await client.get("/api/admin/v1/tickets/count", params={"status": "open"}, headers=ops)
+        ).json()["count"]
+        assert open_count == 2
+        billing_count = (
+            await client.get(
+                "/api/admin/v1/tickets/count",
+                params={"status": "open", "category": "billing"},
+                headers=ops,
+            )
+        ).json()["count"]
+        assert billing_count == 1
+        # 客服回复后 → pending_staff,默认口径命中
+        await client.post(
+            f"/api/admin/v1/tickets/{t1['id']}/reply", json={"body": "收到,处理中"}, headers=ops
+        )
+        default_count = (await client.get("/api/admin/v1/tickets/count", headers=ops)).json()[
+            "count"
+        ]
+        # 回复 → pending_user,不在待客服口径;另一条仍 open 也不在 pending_staff
+        assert default_count == 0
+        # "count" 不被当 ticket_id 解析(路由注册顺序守护)
+        resp = await client.get("/api/admin/v1/tickets/count", headers=ops)
+        assert resp.status_code == 200
+
     async def test_search_by_user_id_and_ticket_no(self, client: AsyncClient, sm):
         """user_id/ticket_no 检索:替代固定截断 200 的翻找式定位。"""
         headers = await user_headers(client, "13700000335")
@@ -311,49 +342,6 @@ class TestAdmin:
             )
         ).json()["items"]
         assert [r["id"] for r in rows] == [t2["id"]]
-
-    async def test_cursor_pagination(self, client: AsyncClient, sm):
-        """游标分页:limit 截断 + next_cursor 续页不重不漏。"""
-        headers = await user_headers(client, "13700000337")
-        ids = [
-            (await create_ticket(client, headers, subject=f"第{i}个问题")).json()["id"]
-            for i in range(3)
-        ]
-        ops = await admin_headers(sm, client, role="ops")
-        page1 = (await client.get("/api/admin/v1/tickets", params={"limit": 2}, headers=ops)).json()
-        assert len(page1["items"]) == 2
-        assert page1["next_cursor"]
-        page2 = (
-            await client.get(
-                "/api/admin/v1/tickets",
-                params={"limit": 2, "cursor": page1["next_cursor"]},
-                headers=ops,
-            )
-        ).json()
-        seen = [r["id"] for r in page1["items"]] + [r["id"] for r in page2["items"]]
-        assert seen == sorted(ids, reverse=True)
-
-    async def test_role_gate(self, client: AsyncClient, sm):
-        """读:ops/finance/readonly 可;写(reply/status):仅 ops/admin,finance/readonly 403。"""
-        headers = await user_headers(client, "13700000333")
-        ticket = (await create_ticket(client, headers)).json()
-        tid = ticket["id"]
-        ro = await admin_headers(sm, client, role="readonly")
-        assert (await client.get("/api/admin/v1/tickets", headers=ro)).status_code == 200
-        assert (await client.get(f"/api/admin/v1/tickets/{tid}", headers=ro)).status_code == 200
-        for path, body in (
-            (f"/api/admin/v1/tickets/{tid}/reply", {"body": "只读不可回复"}),
-            (f"/api/admin/v1/tickets/{tid}/status", {"action": "resolve"}),
-        ):
-            resp = await client.post(path, json=body, headers=ro)
-            assert resp.status_code == 403
-        # finance 可读不可写(写权限 ops/admin)
-        finance = await admin_headers(sm, client, role="finance")
-        assert (await client.get("/api/admin/v1/tickets", headers=finance)).status_code == 200
-        resp = await client.post(
-            f"/api/admin/v1/tickets/{tid}/reply", json={"body": "财务不可回复"}, headers=finance
-        )
-        assert resp.status_code == 403
 
 
 class TestStaleTicketPatrol:

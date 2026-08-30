@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -223,6 +224,8 @@ InvoiceTitleType = Literal["personal", "company"]
 INVOICE_PERIOD_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 # 宽松的邮箱格式校验(契约层挡明显畸形;真实可达性由开票人工核对)
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+# 统一社会信用代码(GB 32100-2015):18 位,字符集为数字与大写字母(不含 I/O/Z/S/V)
+TAX_ID_PATTERN = r"^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$"
 
 
 class InvoiceCreate(BaseModel):
@@ -231,7 +234,9 @@ class InvoiceCreate(BaseModel):
     period: str = Field(pattern=INVOICE_PERIOD_PATTERN)
     title_type: InvoiceTitleType
     title: str = Field(min_length=2, max_length=128)
-    tax_id: str | None = Field(default=None, min_length=4, max_length=32)
+    # 企业抬头为 18 位统一社会信用代码(格式校验在 model_validator:个人抬头入参直接忽略,
+    # 不能放 Field pattern 层——那会让 personal 带脏值也 422)
+    tax_id: str | None = Field(default=None, max_length=32)
     email: str = Field(pattern=EMAIL_PATTERN, max_length=128)
 
     @field_validator("title", "tax_id", mode="before")
@@ -241,8 +246,11 @@ class InvoiceCreate(BaseModel):
 
     @model_validator(mode="after")
     def _company_needs_tax_id(self) -> "InvoiceCreate":
-        if self.title_type == "company" and not self.tax_id:
-            raise ValueError("tax_id is required for company title")
+        if self.title_type == "company":
+            if not self.tax_id:
+                raise ValueError("tax_id is required for company title")
+            if not re.fullmatch(TAX_ID_PATTERN, self.tax_id):
+                raise ValueError("tax_id must be an 18-character unified social credit code")
         if self.title_type == "personal":
             self.tax_id = None  # 个人抬头无税号:忽略入参,不落库
         return self

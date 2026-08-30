@@ -9,4 +9,5 @@ import type { TenantOut } from './tenantOut';
 export interface PageTenantOut {
   items: TenantOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

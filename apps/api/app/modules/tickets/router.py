@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Header, Request, Response
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
+from app.core.params import Cursor, Limit
 from app.modules.account.deps import CurrentUser
 from app.modules.tickets import service
 from app.modules.tickets.schemas import (
@@ -53,8 +54,8 @@ async def create_ticket(
 async def list_my_tickets(
     user: CurrentUser,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[TicketOut]:
     """本人工单(游标分页)。"""
     return await service.list_my_tickets(session, user.id, cursor=cursor, limit=limit)

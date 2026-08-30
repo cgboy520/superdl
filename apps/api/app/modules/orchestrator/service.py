@@ -20,19 +20,19 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import status as http_status
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, cast, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.crypto import decrypt_str, encrypt_str, hash_api_key
+from app.core.crypto import decrypt_str, encrypt_str, hash_api_key, hash_api_key_candidates
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, TIER_CPU, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
 from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, request_fingerprint
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
-from app.core.money import as_amount, hourly_cost
+from app.core.money import hourly_cost
 from app.core.outbox import enqueue
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
@@ -86,6 +86,9 @@ from app.modules.orchestrator.queries import (
     billable_disks as billable_disks,
 )
 from app.modules.orchestrator.queries import (
+    billable_disks_of_user as billable_disks_of_user,
+)
+from app.modules.orchestrator.queries import (
     billing_candidates as billing_candidates,
 )
 from app.modules.orchestrator.queries import (
@@ -132,6 +135,9 @@ from app.modules.orchestrator.queries import (
 )
 from app.modules.orchestrator.queries import (
     running_gpu_share_by_pool as running_gpu_share_by_pool,
+)
+from app.modules.orchestrator.queries import (
+    running_instances_of_user as running_instances_of_user,
 )
 from app.modules.orchestrator.queries import (
     running_spot_gpus_by_pool as running_spot_gpus_by_pool,
@@ -506,9 +512,10 @@ async def _reserved_slots(session: AsyncSession, sku: "Sku") -> int:
     return (await _reserved_slots_by_sku(session, [sku.id])).get(sku.id, 0)
 
 
-async def _pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
-    """该用户 creating/starting 实例的时费合计:它们还没跑起来,assert_can_afford 看不到,
-    调用方必须并入 additional_hourly,否则连续开户可绕过余额护栏。"""
+async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
+    """该用户 creating/starting 实例的时费合计:它们还没跑起来,RUNNING 口径的在途统计
+    看不到。由 wallet.assert_can_afford 内部统一并入(调用方无从遗漏:漏并 = 连续开户/
+    循环开机可绕过余额护栏)。"""
     rows = (
         (
             await session.execute(
@@ -665,17 +672,25 @@ async def create_instance(
     policies = await get_effective_policies(session)
     unit_price = price_for(sku.price_hourly, market=market, policies=policies, period=period)
 
+    disk_id_validated: int | None = None
+    if data_disk_id is not None:
+        from app.modules.orchestrator import disks as disks_service
+
+        # 先校验归属与状态;实例 id 生成后再占用(attach 在下方,同事务重入此锁)。
+        # FOR UPDATE 提前锁盘:锁序 disk → wallet——若等到钱包锁(下方临界区)之后
+        # 才锁盘,则成 wallet → disk,与删盘/扩盘链路(disk → bill → wallet)交叉成死锁对
+        disk = await disks_service.lock_disk_for_attach(session, user_id, data_disk_id)
+        disk_id_validated = disk.id
+
     # 临界区开始:FOR UPDATE 锁钱包行并持有到本事务 commit,同用户并发开户串行。
     # 在途统计与配额校验必须在锁内做(先算后锁即 TOCTOU)。
-    # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增。
+    # 余额口径:在途(running 实例 + 计费态盘)+ creating/starting 待燃 + 本次新增,
+    # 待燃部分由 assert_can_afford 内部经 pending_hourly 统一并入(调用方无从遗漏)。
     # 异常路径不需要手动 rollback:session 出上下文管理器时未提交事务自动回滚。
     estimate = hourly_cost(unit_price, gpu_count)
     await billing_service.lock_wallet(session, user_id)
-    pending = await _pending_hourly(session, user_id)
     if not is_subscription:
-        await billing_service.assert_can_afford(
-            session, user_id, additional_hourly=as_amount(estimate + pending)
-        )
+        await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     # CPU 实例才计 vCPU 维(GPU 实例的 vCPU 是配卡的附属,不单独设闸)
     await _check_user_quota(session, user_id, gpu_count, sku.vcpu if gpu_count == 0 else 0)
 
@@ -685,14 +700,6 @@ async def create_instance(
         selected = [k.public_key for k in keys if k.id in set(ssh_key_ids)]
         if not selected:
             raise AppError(ErrorCode.SSH_KEY_INVALID, key="orchestrator.sshKeyRequired")
-
-    disk_id_validated: int | None = None
-    if data_disk_id is not None:
-        from app.modules.orchestrator import disks as disks_service
-
-        # 先校验归属与状态;实例 id 生成后再占用
-        disk = await disks_service.get_disk_by_id_for_user(session, user_id, data_disk_id)
-        disk_id_validated = disk.id
 
     instance_uuid = uuid4().hex
     jupyter_token = secrets.token_urlsafe(24)
@@ -748,7 +755,7 @@ async def create_instance(
     if is_subscription:
         assert period is not None  # 契约层已拦,这里给类型收敛
         # 必须先扣款再校验在途:此刻钱包余额已是扣后值,校验的才是「付完这一单还撑不
-        # 撑得住已经在跑的按量资源」
+        # 撑得住已经在跑的按量资源」;creating/starting 待燃由 assert_can_afford 内部并入。
         await billing_service.charge_new_subscription(
             session,
             user_id=user_id,
@@ -763,9 +770,7 @@ async def create_instance(
             # 两张表共用一个键会在幂等窗口过后撞车
             idempotency_key=None,
         )
-        await billing_service.assert_can_afford(
-            session, user_id, additional_hourly=as_amount(pending)
-        )
+        await billing_service.assert_can_afford(session, user_id)
     if disk_id_validated is not None:
         from app.modules.orchestrator import disks as disks_service
 
@@ -841,15 +846,13 @@ async def list_instances_page(
 ):
     """用户端实例列表:降序游标分页 + status 精确 / name 模糊过滤。
     name 同时匹配 uuid 前缀(同 admin_list_instances 的 q 语义);released 终态永不出列表。"""
-    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+    from app.core.pagination import Page, paginate_by_id
     from app.modules.orchestrator.schemas import InstanceOut
 
-    lim = clamp_limit(limit)
     stmt = (
         select(Instance)
         .where(Instance.user_id == user_id, Instance.status != sm_def.RELEASED)
         .order_by(Instance.id.desc())
-        .limit(lim + 1)
     )
     if status is not None:
         stmt = stmt.where(Instance.status == status)
@@ -860,11 +863,9 @@ async def list_instances_page(
             Instance.name.ilike(f"%{like_escape(name)}%", escape="\\")
             | Instance.uuid.like(f"{like_escape(name)}%", escape="\\")
         )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(Instance.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Instance.id, cursor=cursor, limit=limit
+    )
     items = [InstanceOut.model_validate(i) for i in page_items]
     await attach_instance_details(session, items)
     return Page[InstanceOut](items=items, next_cursor=next_cursor)
@@ -954,21 +955,17 @@ async def list_events(
     session: AsyncSession, instance_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
     """实例事件时间线:降序(最新在前)游标分页,与资金流水/账单同一套分页语义。"""
-    from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+    from app.core.pagination import Page, paginate_by_id
     from app.modules.orchestrator.schemas import InstanceEventOut
 
-    lim = clamp_limit(limit)
     stmt = (
         select(InstanceEvent)
         .where(InstanceEvent.instance_id == instance_id)
         .order_by(InstanceEvent.id.desc())
-        .limit(lim + 1)
     )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(InstanceEvent.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=InstanceEvent.id, cursor=cursor, limit=limit
+    )
     return Page[InstanceEventOut](
         items=[InstanceEventOut.model_validate(e) for e in page_items], next_cursor=next_cursor
     )
@@ -1014,6 +1011,13 @@ async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
 
 async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Instance:
     instance = await get_instance(session, user_id, uuid)
+    # 锁序 instance → disk → wallet(与停机尾账 instance→bill→wallet、删盘
+    # disk→bill→wallet 同向):先锁实例行,挂载校验(盘锁)先于余额校验(钱包锁)。
+    # 先钱包后盘/后实例会与其成交叉死锁对;锁内重读(populate_existing),
+    # 状态判定对加锁后的新鲜值成立
+    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
+    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
+    instance = locked
     if instance.status == sm_def.FROZEN:
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     recovered = instance.status == sm_def.FAILED
@@ -1038,14 +1042,15 @@ async def start_instance(session: AsyncSession, user_id: int, uuid: str) -> Inst
     if instance.market == MARKET_SUBSCRIPTION:
         # 包周期已预付整段周期,开机不看余额;但周期已过不能再开,否则等于白送算力
         await billing_service.assert_subscription_active(session, instance.id)
-    else:
-        estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
-        await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     if recovered:
         # 故障恢复:failed → stopped(复用同一块实例盘)→ 走正常开机链路
         await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
-    # 所有开机路径统一校验数据盘挂载:盘已删则放弃挂载点,非 active 即拒绝,防止挂到擦除中的目录
+    # 所有开机路径统一校验数据盘挂载:盘已删则放弃挂载点,非 active 即拒绝,防止挂到擦除中的目录。
+    # 盘锁必须在钱包锁(assert_can_afford)之前(instance → disk → wallet)
     await _rebind_data_disk(session, instance)
+    if instance.market != MARKET_SUBSCRIPTION:
+        estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
+        await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
     await transition(session, instance, sm_def.STARTING, reason="user_start", actor="user")
     # 必须清 unready_since:残留值会把新 running 段的计费截断到过去时刻,
     # 也会让 reconciler 的宽限判定立即超时
@@ -1088,6 +1093,13 @@ async def renew_instance(
     冻结中的实例续费即解冻回 stopped,由用户自己开机。
     """
     instance = await get_instance(session, user_id, uuid)
+    # 锁序 instance → wallet → subscription:末尾 transition 要拿实例写锁,
+    # 先钱包后实例会与停机尾账(instance→bill→wallet)交叉成死锁对;
+    # 续费的余额扣减仍在钱包锁内完成(renew 契约不变)。
+    # 状态判定对锁内重读(populate_existing)的新鲜值成立
+    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
+    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
+    instance = locked
     if instance.market != MARKET_SUBSCRIPTION:
         raise AppError(
             ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.renewNotSubscription"
@@ -1148,6 +1160,13 @@ async def subscribe_instance(
                 ),
                 False,
             )
+    # 锁序 instance → bill → wallet:结清(settle_on_demand_up_to)内部经
+    # lock_instance_for_billing 重入实例锁、经扣款拿钱包锁;若在此先锁钱包,
+    # 则成 wallet → instance,与停机尾账/小时结算(instance→bill→wallet)
+    # 交叉成死锁对。状态判定必须对锁内重读(populate_existing)的新鲜值成立
+    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
+    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
+    instance = locked
     if instance.market != MARKET_ON_DEMAND:
         raise AppError(ErrorCode.SUBSCRIPTION_NOT_RENEWABLE, key="orchestrator.convertNotOnDemand")
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
@@ -1160,16 +1179,18 @@ async def subscribe_instance(
     if not sku.period_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
 
-    await billing_service.lock_wallet(session, user_id)
-    if instance.status == sm_def.RUNNING:
-        await billing_service.settle_on_demand_up_to(
-            session,
-            instance_id=instance.id,
-            user_id=user_id,
-            unit_price=instance.price_hourly,
-            gpu_count=instance.gpu_count,
-            at=now_utc(),
-        )
+    # 转订阅前逐小时结清(含 48h 滞后熔断):billing_candidates 按**当前** market 挑
+    # 候选,market 一翻成 subscription,水位线后未出账的小时永远没人结。
+    # stopped 同样要结:停机尾账只补停机那一小时,结算滞后时的在账窗口不能孤儿化;
+    # 停机后的窗口按事件重建秒数为 0(空账行,不扣款),滞后健康时只有当前一小时
+    await billing_service.settle_on_demand_up_to(
+        session,
+        instance_id=instance.id,
+        user_id=user_id,
+        unit_price=instance.price_hourly,
+        gpu_count=instance.gpu_count,
+        at=now_utc(),
+    )
     row, quoted, created = await billing_service.convert_to_subscription(
         session,
         instance=instance,
@@ -1201,6 +1222,13 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
     instance = await get_instance(session, user_id, uuid)
     if instance.market == MARKET_ON_DEMAND:
         return instance  # 幂等:目标状态已达成
+    # 锁序 instance → bill → wallet:reprice_current_hour 经账单行锁与扣款拿
+    # 钱包锁;若在此先锁钱包,则成 wallet → bill,与小时结算
+    # (upsert_hour_bill:账单行锁 → 钱包锁)交叉成死锁对。
+    # 状态判定对锁内重读(populate_existing)的新鲜值成立
+    locked = await session.get(Instance, instance.id, with_for_update=True, populate_existing=True)
+    assert locked is not None  # get_instance 刚取到,同事务内不可能消失
+    instance = locked
     if instance.market != MARKET_SPOT:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.toOnDemandNotSpot")
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPED):
@@ -1210,7 +1238,6 @@ async def convert_to_on_demand(session: AsyncSession, user_id: int, uuid: str) -
             http_status=http_status.HTTP_409_CONFLICT,
         )
     base = Decimal(str(instance.spec.get("base_price_hourly") or instance.price_hourly))
-    await billing_service.lock_wallet(session, user_id)
     if instance.status == sm_def.RUNNING:
         await billing_service.reprice_current_hour(
             session,
@@ -1480,6 +1507,9 @@ async def create_api_key(
     """新建访问密钥。返回 (行, 明文);明文只此一次,库里只有 HMAC 摘要。
     不支持 Idempotency-Key:重放要回同一份明文就得把明文留在库里,与只存摘要冲突。"""
     instance, _ = await _require_service_endpoint(session, user_id, uuid)
+    # 计数必须串行:FOR UPDATE 锁实例行(实例:密钥 = 1:N),并发建钥在实例行上排队;
+    # 否则 count-then-insert 两请求同见 19 把、各插一把越过上限
+    await session.execute(select(Instance.id).where(Instance.id == instance.id).with_for_update())
     live = (
         await session.execute(
             select(func.count())
@@ -1507,6 +1537,33 @@ async def create_api_key(
     return row, plaintext
 
 
+async def strip_ssh_key_from_instances(session: AsyncSession, user_id: int, public_key: str) -> int:
+    """把某把公钥从该用户全部未释放实例的 authorized_keys 快照里摘掉。返回摘除的实例数。
+
+    供删除 SSH 公钥调用(账号侧):运行中 Pod 的容器内 authorized_keys 由 entrypoint
+    在建 Pod 时写定,平台无 exec 通道,运行实例要等下次重启才失效;但此后的任何
+    重启/重建都不再把已删的钥匙带回来。
+    """
+    rows = list(
+        (
+            await session.execute(
+                select(Instance).where(
+                    Instance.user_id == user_id,
+                    Instance.status != sm_def.RELEASED,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    stripped = 0
+    for inst in rows:
+        if public_key in inst.authorized_keys:
+            inst.authorized_keys = [k for k in inst.authorized_keys if k != public_key]
+            stripped += 1
+    return stripped
+
+
 async def revoke_api_key(
     session: AsyncSession, user_id: int, uuid: str, key_id: int
 ) -> ServiceApiKey:
@@ -1524,6 +1581,8 @@ async def revoke_api_key(
     if row.revoked_at is None:  # 重复吊销幂等:不刷新时刻,首次吊销的时点才是审计事实
         row.revoked_at = now_utc()
         await session.commit()
+        # 鉴权缓存主动失效:本进程即刻拒,跨副本最坏一个 TTL(5s)收敛
+        invalidate_endpoint_auth_cache(key_id=row.id)
     return row
 
 
@@ -1543,6 +1602,87 @@ def _endpoint_denied() -> AppError:
     )
 
 
+# ---------- extAuth 鉴权缓存 ----------
+# extAuth 回调挂在每个 svc-https 请求的同步路径上:无缓存时每请求 3 次 SELECT +
+# 一次 UPDATE+commit(last_used_at),数据面流量直接放大成中央库写压。
+# 正向结果进程内缓存 5s:
+# - 吊销:revoke_api_key 主动失效本进程条目,跨副本最坏一个 TTL 收敛;
+# - 停机:RUNNING 迁出经 transition 监听器失效(同进程),跨副本 TTL 兜底;
+#   停机同时删 svc HTTPRoute(网关 404),缓存只影响优雅删除窗口;
+# - 负结果不缓存:爆破每次回源(主键级 SELECT、无写),新建密钥立即可用。
+# last_used_at 从「每请求直写」降为「每 key 每 60s 至多一写」:它是排查
+# 「钥匙还被谁用」的审计线索,分钟级粒度足够,写放大从 rps 降为 key 数/分钟。
+_ENDPOINT_AUTH_CACHE_TTL_SECONDS = 5.0
+_ENDPOINT_AUTH_CACHE_MAX = 4096
+_LAST_USED_WRITE_INTERVAL_SECONDS = 60.0
+
+
+@dataclass(frozen=True)
+class _EndpointAuthCacheEntry:
+    result: EndpointAuthResult
+    instance_id: int
+    key_id: int | None
+    expires_at: float  # time.monotonic 口径
+
+
+_endpoint_auth_cache: dict[tuple[str, str], _EndpointAuthCacheEntry] = {}
+_endpoint_key_last_write: dict[int, float] = {}
+
+
+def _endpoint_auth_cache_get(slug: str, key_hash: str) -> _EndpointAuthCacheEntry | None:
+    entry = _endpoint_auth_cache.get((slug, key_hash))
+    if entry is None or entry.expires_at <= time.monotonic():
+        return None
+    return entry
+
+
+def _endpoint_auth_cache_put(slug: str, key_hash: str, entry: _EndpointAuthCacheEntry) -> None:
+    cache = _endpoint_auth_cache
+    if len(cache) >= _ENDPOINT_AUTH_CACHE_MAX:
+        # key 来自任意外网输入,表必须有界:先清过期,仍满则整表清空(宁可回源不可无界)
+        now = time.monotonic()
+        for k in [k for k, v in cache.items() if v.expires_at <= now]:
+            del cache[k]
+        if len(cache) >= _ENDPOINT_AUTH_CACHE_MAX:
+            cache.clear()
+    cache[(slug, key_hash)] = entry
+
+
+def invalidate_endpoint_auth_cache(
+    *, key_id: int | None = None, instance_id: int | None = None
+) -> None:
+    """主动失效(吊销按 key、停机按实例);表 ≤4096,全扫代价可忽略。"""
+    doomed = [
+        k
+        for k, v in _endpoint_auth_cache.items()
+        if (key_id is not None and v.key_id == key_id)
+        or (instance_id is not None and v.instance_id == instance_id)
+    ]
+    for k in doomed:
+        del _endpoint_auth_cache[k]
+
+
+def clear_endpoint_auth_cache() -> None:
+    """测试隔离用:函数级 TRUNCATE 清库清不到进程内缓存。"""
+    _endpoint_auth_cache.clear()
+    _endpoint_key_last_write.clear()
+
+
+async def _touch_key_last_used(session: AsyncSession, key_id: int | None) -> None:
+    """last_used_at 节流直写:每 key 每进程 60s 至多一次 UPDATE+commit。"""
+    if key_id is None:
+        return
+    now = time.monotonic()
+    last = _endpoint_key_last_write.get(key_id)
+    if last is not None and now - last < _LAST_USED_WRITE_INTERVAL_SECONDS:
+        return
+    await session.execute(
+        update(ServiceApiKey).where(ServiceApiKey.id == key_id).values(last_used_at=now_utc())
+    )
+    await session.commit()
+    _endpoint_key_last_write[key_id] = now
+
+
 async def verify_endpoint_key(
     session: AsyncSession, *, slug: str | None, key: str | None
 ) -> EndpointAuthResult:
@@ -1550,6 +1690,13 @@ async def verify_endpoint_key(
     任一环节不过都抛同一个 401(同码同文案),区分开等于给第三方一个枚举平台端点的预言机。"""
     if not slug:
         raise _endpoint_denied()
+    # candidates 兼读主密钥轮换/legacy 世代(见 crypto.py);缓存键取当前世代([0]),稳定
+    key_hashes = hash_api_key_candidates(key) if key else []
+    key_hash = key_hashes[0] if key_hashes else ""
+    cached = _endpoint_auth_cache_get(slug, key_hash)
+    if cached is not None:
+        await _touch_key_last_used(session, cached.key_id)
+        return cached.result
     endpoint = (
         await session.execute(select(ServiceEndpoint).where(ServiceEndpoint.public_slug == slug))
     ).scalar_one_or_none()
@@ -1559,23 +1706,49 @@ async def verify_endpoint_key(
     # 非 running 一律拒:Pod 可能还在优雅删除期里活着,光靠删 HTTPRoute 收口有窗口
     if instance is None or instance.status != sm_def.RUNNING:
         raise _endpoint_denied()
+    expires = time.monotonic() + _ENDPOINT_AUTH_CACHE_TTL_SECONDS
     if not endpoint.require_api_key:
-        return EndpointAuthResult(slug=endpoint.public_slug, key_id=None)
+        result = EndpointAuthResult(slug=endpoint.public_slug, key_id=None)
+        _endpoint_auth_cache_put(
+            slug, key_hash, _EndpointAuthCacheEntry(result, instance.id, None, expires)
+        )
+        return result
     if not key:
         raise _endpoint_denied()
     row = (
         await session.execute(
-            select(ServiceApiKey).where(ServiceApiKey.key_hash == hash_api_key(key))
+            select(ServiceApiKey).where(ServiceApiKey.key_hash.in_(key_hashes)).limit(1)
         )
     ).scalar_one_or_none()
     # instance_id 比对是「A 用户的密钥打 B 用户端点」的唯一闸门:密钥是全局唯一的
     # 高熵串,查得到不等于用得上
     if row is None or row.revoked_at is not None or row.instance_id != endpoint.instance_id:
         raise _endpoint_denied()
-    # 回源即直写不节流:叠缓存只会把吊销延迟拉长,而这只是主键级单行 UPDATE
-    row.last_used_at = now_utc()
-    await session.commit()
-    return EndpointAuthResult(slug=endpoint.public_slug, key_id=row.id)
+    result = EndpointAuthResult(slug=endpoint.public_slug, key_id=row.id)
+    _endpoint_auth_cache_put(
+        slug, key_hash, _EndpointAuthCacheEntry(result, instance.id, row.id, expires)
+    )
+    await _touch_key_last_used(session, row.id)
+    return result
+
+
+_endpoint_cache_listener_registered = False
+
+
+def register_endpoint_auth_cache_listener() -> None:
+    """RUNNING 迁出即失效该实例的鉴权缓存(幂等注册;跨进程副本由 TTL 兜底收敛)。"""
+    global _endpoint_cache_listener_registered
+    if _endpoint_cache_listener_registered:
+        return
+
+    async def _drop_on_leave_running(
+        _session: AsyncSession, instance: Instance, event: InstanceEvent
+    ) -> None:
+        if event.from_status == sm_def.RUNNING:
+            invalidate_endpoint_auth_cache(instance_id=instance.id)
+
+    register_transition_listener(_drop_on_leave_running)
+    _endpoint_cache_listener_registered = True
 
 
 async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) -> Instance:
@@ -1666,10 +1839,9 @@ async def admin_list_instances(
     limit: int | None = None,
 ) -> RawPage[Instance]:
     """管理端实例列表(游标分页,降序)。q 按实例名或 uuid 前缀匹配,node_name 精确。"""
-    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
+    from app.core.pagination import paginate_by_id
 
-    lim = clamp_limit(limit)
-    stmt = select(Instance).order_by(Instance.id.desc()).limit(lim + 1)
+    stmt = select(Instance).order_by(Instance.id.desc())
     if status_filter:
         stmt = stmt.where(Instance.status == status_filter)
     if user_id:
@@ -1683,11 +1855,9 @@ async def admin_list_instances(
             Instance.uuid.like(f"{like_escape(q)}%", escape="\\")
             | Instance.name.ilike(f"%{like_escape(q)}%", escape="\\")
         )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(Instance.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Instance.id, cursor=cursor, limit=limit
+    )
     return RawPage(items=page_items, next_cursor=next_cursor)
 
 
@@ -1723,6 +1893,7 @@ async def admin_force_stop(session: AsyncSession, instance_uuid: str, *, reason:
         title="实例已被管理员强制停止",
         content=f"实例「{instance.name}」已被强制停止并结算尾账。原因:{reason}",
         severity="warning",
+        target_id=instance.uuid,
     )
     await session.commit()
     return instance

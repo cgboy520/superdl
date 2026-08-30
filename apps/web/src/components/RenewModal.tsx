@@ -23,13 +23,14 @@ import {
   PERIOD_HOURS,
   periodMap,
 } from "@superdl/ui";
+import { Link } from "@tanstack/react-router";
 import { App, Button, Descriptions, InputNumber, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useRenewInstance, useSubscribeInstance } from "../api/mutations";
 import { useWallet } from "../api/queries";
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import { ChipRow } from "./ChipRow";
 import {
   discountOff,
@@ -118,20 +119,25 @@ export function RenewModal({
       footer={
         <Space>
           <Button onClick={onClose}>{t("instances.actions.cancel")}</Button>
-          <Button
-            type="primary"
-            disabled={!enough}
-            loading={submit.isPending}
-            onClick={() =>
-              submit.mutate({ body: { period, period_count: count }, idempotencyKey })
-            }
-          >
-            {!enough && quote != null
-              ? t("create.notEnoughGoRecharge")
-              : isConvert
-                ? t("period.convertConfirm")
-                : t("period.renewConfirm")}
-          </Button>
+          {quote != null && balance != null && !enough ? (
+            // 余额不足不做死按钮:指到费用中心的可点链接(与创建页结算条同款)
+            <Link to="/billing">
+              <Button type="primary" danger onClick={onClose}>
+                {t("create.notEnoughGoRecharge")}
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              type="primary"
+              disabled={!enough}
+              loading={submit.isPending}
+              onClick={() =>
+                submit.mutate({ body: { period, period_count: count }, idempotencyKey })
+              }
+            >
+              {isConvert ? t("period.convertConfirm") : t("period.renewConfirm")}
+            </Button>
+          )}
         </Space>
       }
     >

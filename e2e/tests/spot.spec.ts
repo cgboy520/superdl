@@ -8,10 +8,12 @@ import { expect, test } from "@playwright/test";
 
 import {
   addSshKeyViaUi,
+  fillCustomImageForm,
   pickSharedStandardSku,
   rechargeViaUi,
   registerViaUi,
   uniquePhone,
+  waitFirstRowRunning,
 } from "./helpers";
 
 test("买竞价并转按量", async ({ page }) => {
@@ -35,11 +37,7 @@ test("买竞价并转按量", async ({ page }) => {
   await expect(page).toHaveURL(/market=spot/);
 
   // ── 创建页:提交前弹知情同意,不勾选过不去
-  await page.getByText("自定义镜像").click();
-  await page
-    .getByPlaceholder("registry.example.com/your/image:tag")
-    .fill("registry.superdl.local/pytorch:2.9.0-cu128");
-  await page.getByRole("checkbox", { name: /e2e-key/ }).check();
+  await fillCustomImageForm(page);
   await page
     .getByRole("button", { name: /创建并开机|支付并创建/ })
     .first()
@@ -55,9 +53,7 @@ test("买竞价并转按量", async ({ page }) => {
   await proceed.click();
 
   // ── 列表:竞价 + 可回收标记
-  await expect(page).toHaveURL(/instances/, { timeout: 20_000 });
-  const row = page.locator(".ant-table-row").first();
-  await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
+  const row = await waitFirstRowRunning(page);
   await expect(row.getByText(/竞价/).first()).toBeVisible();
   await expect(row.getByText("可回收")).toBeVisible();
 

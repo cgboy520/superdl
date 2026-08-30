@@ -51,7 +51,15 @@ spec:
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # 按爆炸半径分域引用(secrets.example.yaml 头部的消费矩阵是唯一事实源)
+            - secretRef: {name: superdl-db}
+            - secretRef: {name: superdl-auth}
+            - secretRef: {name: superdl-crypto}
+            - secretRef: {name: superdl-metrics}
+            - secretRef: {name: superdl-edge}
+            - secretRef: {name: superdl-cloud}
+            - secretRef: {name: superdl-payment}
+            - secretRef: {name: superdl-registry}
           ports:
             - {containerPort: 8000, name: http}
           livenessProbe:

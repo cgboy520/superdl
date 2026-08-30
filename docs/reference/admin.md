@@ -20,13 +20,13 @@
 | `/nodes` 节点与 GPU | ops/readonly | 节点表(台账;最近心跳列/排序/池与状态筛选;cordon 需原因)+ 每卡热力网格 + 添加节点 + 注册记录(进行中/全部) |
 | `/skus` SKU 与定价 | ops 可写 | SKU 表(容量/已售/实际超卖率列,行内上下架开关)+ 编辑抽屉(改价必填原因+二次确认+影响预览;含 `period_enabled` 开关「包周期」;含 `spot_enabled` 开关「竞价档」,**新建时默认关**)+ 从集群资源创建 + 容量预览 |
 | `GET /api/admin/v1/skus/{sku_id}/impact` | ops/finance/readonly | 改价影响面(只读):活跃实例数/涉及用户数/占用卡数 |
-| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;**强制回收**,只对 `market='spot'` 且 running 的实例可用;**购买模式**列 = 按量 / 竞价 / 包日 / 包周 / 包月 / 包年);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
+| `/tenants` 租户与实例 | ops 可写 | 租户表(q 纯数字按 id 精确命中+手机号后缀;`order=asc|desc` 注册先后服务端排序——余额/消费等聚合列按页拼装,不提供排序;冻结文案含影响预览、响应回显 instances_stopped)+ 账单下钻侧滑(游标加载更多)+ 全局实例表(强制停止;**强制回收**,只对 `market='spot'` 且 running 的实例可用;**购买模式**列 = 按量 / 竞价 / 包日 / 包周 / 包月 / 包年);各页 user_id 单元格一律链接到 `/tenants?q=<id>` |
 | `POST /api/admin/v1/tenants/{user_id}/freeze` `/unfreeze` | ops | `{reason}` 必填;冻结与 status 变更同事务对该用户全部实例下发停机(经 outbox),响应回显 `instances_stopped`(creating/starting 由巡检收敛,不计入);解冻不自动开机,站内信告知用户手动开机 |
 | `POST /api/admin/v1/instances/{uuid}/force-stop` | ops | `{reason}` 必填;仅 running(其余 409),下发关机并结算尾账 |
 | `POST /api/admin/v1/instances/{uuid}/preempt` | ops | `{reason}` 必填;**强制回收一台竞价实例**(腾容量)。仅 `market='spot'`(否则 `orchestrator.preemptNotSpot`)且 running(否则 409)。走与自动抢占**同一条**回收路径:同一个 reason `preempted`、同样的宽限窗与短信 / 站内信通知,宽限窗内 Pod 仍在,尾账按实际运行秒数结算 |
 | `GET /api/admin/v1/tenants/{user_id}/adjust-context` | ops/finance/readonly | 调账前置上下文(只读,敏感读落审计):掩码手机号/当前余额/近 3 条流水/在跑台数;不存在 → 404 |
 | `/finance` 财务对账 | finance 可写 | 日对账卡(diff% >2% 标红)+ 充值流水 + 小时账单 + 调账(发起回显租户上下文,不存在的租户前端禁提交+后端 404;单笔绝对值上限 `ADJUST_MAX_ABS`;复核框列出租户/余额/调账后余额/发起人/原因)+ 异常清单 |
-| `/images` `/cluster` `/tickets` `/platform` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置(左侧分组导航:安全 / 第三方渠道 / 基础设施 / 站点信息;顶部服务端配置风险告警;安全策略页为开关行)、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
+| `/images` `/cluster` `/tickets` `/platform` `/alerts` `/settings` `/audit` | 见各页 | 镜像与预热、集群、工单(读全角色/写 ops·admin)、平台配置(左侧分组导航:安全 / 第三方渠道 / 基础设施 / 站点信息;顶部服务端配置风险告警;安全策略页为开关行)、告警中心(全量告警列表:severity 服务端过滤 + acked 客户端过滤,均入 URL;读 ops/readonly,写 ops·admin,finance 无入口)、系统设置(策略参数 / 公告 / 法务文档 / 管理员账号)、审计(limit 选择 + 游标翻页 + 分钟级时间窗) |
 | `GET /api/admin/v1/tenants/{user_id}/ledger` `/bills` `/ledger/export` | ops/finance/readonly | 游标分页;与用户端同一函数(`billing.wallet.ledger_page` / `hourly_bills_page`);`/ledger/export` 为流式 CSV,行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/outbox/dead` `POST .../{task_id}/retry` `/discard` | ops(读含 readonly) | 死信列表、重放(需原因)、忽略(需原因) |
 | `POST /api/admin/v1/announcements` | ops | 公告群发 |
@@ -39,20 +39,24 @@
 | `GET /api/admin/v1/finance/settlement-gaps?kind=&reason=&unresolved=` | finance/readonly | 结算缺口列表(游标分页,默认只看未核销;口径见 [billing.md](./billing.md)) |
 | `POST /api/admin/v1/finance/settlement-gaps/{gap_id}/replay` `/resolve` | finance | replay 重放该窗口的幂等入账原语(人工触发,不自动改账),成功回写 resolved_at,grace_overlap / 对象已不存在 409;resolve 为人工核销不重放,`{note}` 必填 |
 | `POST /api/admin/v1/finance/orders/{order_no}/verify` `/backfill` | finance | 渠道核验与补单 |
-| `POST /api/admin/v1/adjustments` `/{adjustment_id}/review` | finance 发起,复核双人 | 调账双管理员复核 |
-| `GET /api/admin/v1/refunds` `POST .../{refund_id}/review` `/payout` `/cancel` | finance/admin | 退款审批与登记打款分人:审批不动钱包,登记打款成功才负向核销 |
-| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` | 读 ops/finance/readonly,写 finance/admin | 人工开票(填发票号)/ 驳回,站内信告知 |
+| `POST /api/admin/v1/adjustments` `/{adjustment_id}/review` | finance 发起,复核双人 | 调账双管理员复核;发起支持 Idempotency-Key(重放 200 + X-Idempotent-Replay) |
+| `GET /api/admin/v1/refunds` `POST .../{refund_id}/review` `/payout` `/cancel` `/refunds/export` | finance/admin | 退款审批与登记打款分人:审批不动钱包,登记打款成功才负向核销;payout 支持 Idempotency-Key(同键同参重放不重复出金,同键异参 409);export 为流式 CSV,筛选口径一致 |
+| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` `/invoices/export` | 读 ops/finance/readonly,写 finance/admin | 人工开票(填发票号)/ 驳回,站内信告知;export 为流式 CSV(status/period 口径) |
+| `GET /api/admin/v1/adjustments/export` | finance/readonly | 调账流式 CSV(status/user_id/day 口径),行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/tickets` `/{ticket_id}` `POST .../reply` `/status` | 读 ops/finance/readonly,写 ops/admin | 工单对话流与状态流转 |
-| `GET/POST/PUT/POST /api/admin/v1/legal-docs*` | 读全角色,写仅 admin | 法务文档草稿 → 发布 → 归档;每 (doc_key, locale) 仅一条 published |
+| `GET /api/admin/v1/tickets/count?status=&category=` | ops/finance/readonly | 待办工单计数轻端点(DB count,默认 `pending_staff` 口径;列表页角标 60s 轮询用它,不拉列表全页) |
+| `GET/POST/PUT/POST /api/admin/v1/legal-docs*` | 读全角色,写仅 admin | 法务文档草稿 → 发布 → 归档(归档 `{reason}` 必填,入审计);每 (doc_key, locale) 仅一条 published |
 | `GET/PUT /api/admin/v1/tenants/{user_id}/quota` | 读全角色,写 ops | 用户级配额覆盖(留空 = 该维走 policy → env 默认链) |
 | `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行 |
-| `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环 |
+| `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环;unread-count 回 `{count, critical_count}`(critical 单列供总览 KPI 红色高亮,不从截断列表推导) |
 | `GET /api/admin/v1/nodes/port-pool` | ops/readonly | SSH 端口池水位 `{total, assigned, blocked}`;blocked = 被集群其它对象撞占(周期复检自动放回),持续上涨要查孤儿端点 |
 | `GET /api/admin/v1/audit?actor_type=&actor_id=&q=&since=&until=` `/audit/export` | readonly/ops/finance | 审计检索(actor / 动作前缀 / 时间区间,游标向前翻页);export 为流式 CSV,筛选口径同,行数硬上限 + 截断标记行,导出动作本身落一条检索审计(只记筛选参数) |
 
 ## 规则与不变量
 
 - 管理端与用户端 API 物理分离,token 不通用;侧栏菜单按角色过滤(`lib/menu.ts` 与后端 `require_roles` 逐端点对齐),直接输 URL 由后端 403 兜底。
+- 菜单项单一事实源是 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 命令面板共用,icon 存组件引用),可见性由同文件 `MENU_ROLES` 按角色过滤;两者键集一致性由 `lib/menu.test.ts` 守护。
+- `src/routes/` 目录下的非路由文件(测试/工具)必须以 `-` 开头(tanstack router 的 routeFileIgnorePrefix),否则会被误收入路由树并告警。
 - 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 与 `admin-login-acct:{username}` 成功即清零,`admin-login-ip:{ip}` 与 `admin-login-acct-daily:{username}` 不清零;TOTP 校验走 `admin-mfa:{admin_id}`。限额数值见 [limits.md](./limits.md)。
 - readonly 全站只读;finance 只在财务区可写。
 - 调账复核必须以 `with_for_update` 行锁读取:并发复核的后到者见非 pending 即返 409,保证恰一次入账、ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号。

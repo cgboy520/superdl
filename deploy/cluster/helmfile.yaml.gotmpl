@@ -212,6 +212,13 @@ releases:
     # values 开了 ServiceMonitor:同 cert-manager,排在 kps 之后、首装免校验
     needs: [monitoring/kube-prometheus-stack]
     disableValidationOnInstall: true
+    hooks:
+      # Loki 访问边界(auth_enabled 的头是自声明的,网络层才是真隔离):
+      # 需在 monitoring ns 已存在(kps 先行)后 apply;幂等,每次 sync 重放
+      - events: ["presync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "monitoring-netpol.yaml"]
 
   - name: alloy
     condition: logCollector.enabled

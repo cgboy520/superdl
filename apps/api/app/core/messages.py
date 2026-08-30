@@ -109,7 +109,13 @@ MESSAGES: dict[str, str] = {
     "billing.realNameRequiredForRecharge": "按监管要求,充值前需完成实名认证",
     "billing.refundAlreadyApplied": "该订单已有进行中的退款申请,请勿重复提交",
     "billing.refundAmountExceeded": (
-        "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},已退 ¥{refunded},当前余额 ¥{balance})"
+        "退款金额不能超过可退上限 ¥{max}(订单金额 ¥{order},已退 ¥{refunded},可退余额 ¥{refundable})"
+    ),
+    "billing.refundNotRefundable": (
+        "可退余额不足(渠道实付扣除已消费/已退后剩 ¥{refundable},应退 ¥{amount});请取消该退款单"
+    ),
+    "billing.refundPayoutChannelMismatch": (
+        "打款渠道须与订单支付渠道原路一致(应为 {expected});确需线下打款请选 offline 并留存凭证"
     ),
     "billing.refundCumulativeExceeded": (
         "累计退款将超过订单金额(订单 ¥{order},已退 ¥{refunded},本次 ¥{amount}):"
@@ -175,6 +181,8 @@ MESSAGES: dict[str, str] = {
     "common.methodNotAllowed": "该接口不支持此请求方法",
     "common.networkError": "网络连接失败,请检查网络后重试",
     "common.notFound": "资源不存在",
+    "common.payloadTooLarge": "请求体过大,请精简内容后重试",
+    "common.auditUnavailable": "审计写入持续失败,写操作已暂时拒绝;请稍后重试或联系平台",
     "common.unauthorized": "未登录或凭证已过期",
     "common.badCursor": "无效的分页游标",
     "common.idempotencyKeyMismatch": (
@@ -185,6 +193,7 @@ MESSAGES: dict[str, str] = {
     "common.validation": "参数校验失败",
     # 数据盘
     "disks.countQuota": "数据盘数量已达上限({max} 块),请删除不用的盘或联系客服提额",
+    "disks.realNameRequired": "按监管要求,开通存储前需完成实名认证",
     "disks.expandNeedsActive": "仅正常状态的数据盘可以扩容",
     "disks.inUseDelete": "数据盘挂载中,请先释放对应实例",
     "disks.mountedElsewhere": "数据盘已挂载到其他实例",

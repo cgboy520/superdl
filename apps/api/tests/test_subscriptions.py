@@ -34,61 +34,20 @@ from app.modules.notify.models import Notification
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
+    buy_subscription,
     create_test_sku,
     create_user_with_key,
     drain,
     fund_wallet,
     get_instance,
     provision_running,
+    provision_subscription,
     seed_node_spec,
 )
 
 pytestmark = pytest.mark.usefixtures("fake")
 
 IMAGE = "registry.superdl.local/pytorch:2.9.0-cu128"
-
-
-async def buy_subscription(
-    client,
-    headers,
-    sku_id: int,
-    key_id: int,
-    *,
-    period: str = "month",
-    period_count: int = 1,
-    idem: str | None = None,
-) -> tuple[int, dict]:
-    h = dict(headers)
-    if idem:
-        h["Idempotency-Key"] = idem
-    resp = await client.post(
-        "/api/v1/instances",
-        json={
-            "sku_id": sku_id,
-            "gpu_count": 1,
-            "image_ref": IMAGE,
-            "ssh_key_ids": [key_id],
-            "market": "subscription",
-            "period": period,
-            "period_count": period_count,
-        },
-        headers=h,
-    )
-    return resp.status_code, resp.json()
-
-
-async def provision_subscription(client, sm, fake, phone: str, *, period: str = "month", **kw):
-    """建好一台 running 的包周期实例。返回 (headers, uuid, user_id, sku_id, key_id)。"""
-    headers, user_id, key_id = await create_user_with_key(client, phone)
-    await fund_wallet(sm, user_id, kw.pop("fund", "5000.00"))
-    sku_id = await create_test_sku(sm, **kw.pop("sku", {}))
-    await seed_node_spec(sm, node_name=f"node-{phone[-4:]}")
-    code, data = await buy_subscription(client, headers, sku_id, key_id, period=period)
-    assert code == 202, data
-    await drain(sm)
-    fake.mark_ready(f"tenant-{user_id}", data["uuid"])
-    await reconcile_once(sm)
-    return headers, data["uuid"], user_id, sku_id, key_id
 
 
 class TestExpiringEndpoint:
@@ -747,13 +706,9 @@ class TestRenewConcurrency:
     或同一周期(同一 renewed_from_id)被续出两行、二次扣款。
     """
 
-    async def test_concurrent_manual_and_auto_renew_never_double_charges(
-        self, client, sm, fake
-    ):
+    async def test_concurrent_manual_and_auto_renew_never_double_charges(self, client, sm, fake):
         """无论谁先赢:一实例仅一行 active,同一周期不被续两次,余额与链上实扣自洽。"""
-        headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100096"
-        )
+        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100096")
         async with sm() as s:
             await s.execute(
                 update(Subscription)
@@ -791,9 +746,7 @@ class TestRenewConcurrency:
 
         挂了 = 巡检把已续过的周期再续一遍(老行 expired 仍被 UPDATE、插入第二条 active)。
         """
-        headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100097"
-        )
+        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100097")
         async with sm() as s:
             await s.execute(
                 update(Subscription)
@@ -832,9 +785,7 @@ class TestRestartGate:
 
     async def test_subscription_restart_ignores_balance(self, client, sm, fake):
         """包月实例余额为 0 重启照常:整周期已预付,余额门禁不该拦。"""
-        headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100090"
-        )
+        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100090")
         async with sm() as s:
             await s.execute(update(Wallet).where(Wallet.user_id == user_id).values(balance=0))
             await s.commit()
@@ -848,9 +799,7 @@ class TestRestartGate:
 
     async def test_expired_subscription_restart_aborts_at_stopped(self, client, sm, fake):
         """到期包月实例重启:停在 stopped 并发通知,不能重建 Pod 绕过有效期门禁。"""
-        headers, uuid, user_id, _, _ = await provision_subscription(
-            client, sm, fake, "13911100091"
-        )
+        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100091")
         async with sm() as s:
             await s.execute(
                 update(Subscription)

@@ -5,7 +5,7 @@ import { Alert, App, Form, type FormInstance, Modal, Space } from "antd";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-import { useApiErrorText } from "../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 
 export function RowActionModal<Values>({
   title,
@@ -33,21 +33,35 @@ export function RowActionModal<Values>({
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
+  // form 实例由调用方持有(常驻),卸载/关闭时清空 store:destroyOnHidden 只销毁 DOM,
+  // 不重置外部 store,不在这里 reset 会让上一目标的已填值残留到下一目标
+  const close = () => {
+    form.resetFields();
+    onClose();
+  };
   return (
     <Modal
       open
       title={title}
       okText={okText}
       okButtonProps={{ loading }}
-      onCancel={onClose}
+      onCancel={close}
+      // 表单随弹窗销毁:同一弹窗组件服务多行目标时,上一目标的已填值不得残留到下一目标
+      destroyOnHidden
       onOk={async () => {
-        const values = await form.validateFields();
+        let values: Values;
+        try {
+          values = await form.validateFields();
+        } catch {
+          // 校验失败:antd 已在字段下给出红字反馈,静默停留
+          return;
+        }
         setLoading(true);
         try {
           await submit(values);
           message.success(successText);
           onDone();
-          onClose();
+          close();
         } catch (e) {
           message.error(errText(e, failText));
         } finally {

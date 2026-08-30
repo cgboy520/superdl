@@ -7,8 +7,12 @@ metadata:
   name: superdl
   labels:
     app.kubernetes.io/part-of: superdl
-    # PSA 停在 audit/warn:平台 Deployment/Job 已 restricted 合规,但 worker 动态建的
-    # 预热/磁盘配额 Job 未显式 runAsNonRoot —— 转 enforce 前必须先补上,否则预热与配额下发全挂。
+    # PSA enforce=restricted:平台 Deployment/Job 本已合规;动态 Job 已同步加固——
+    # 预热/配额 Job 显式 runAsNonRoot(real.py platform_job_security_context),
+    # 擦除 Job 在租户 ns(enforce=baseline)执行,不经过本 ns 的准入。
+    # 无 enforce 时任何失陷的平台 SA 都能在本 ns 种 privileged/hostPath Pod 直上节点 root。
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/audit-version: latest
     pod-security.kubernetes.io/warn: restricted

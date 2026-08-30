@@ -9,4 +9,5 @@ import type { AdminTicketOut } from './adminTicketOut';
 export interface PageAdminTicketOut {
   items: AdminTicketOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

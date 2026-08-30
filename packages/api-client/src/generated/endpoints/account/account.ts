@@ -11,12 +11,11 @@ import type {
   LoginRequest,
   PasswordResetRequest,
   RealNameRequest,
-  RefreshRequest,
   RegisterRequest,
   SmsCodeRequest,
   SshKeyCreate,
   SshKeyOut,
-  TokenPair,
+  TokenPairOut,
   UserOut,
   WarnThresholdUpdate
 } from '../../model';
@@ -58,9 +57,9 @@ export const getLoginApiV1AuthLoginPostUrl = () => {
 /**
  * @summary Login
  */
-export const loginApiV1AuthLoginPost = async (loginRequest: LoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
+export const loginApiV1AuthLoginPost = async (loginRequest: LoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPair>(getLoginApiV1AuthLoginPostUrl(),
+  return customFetch<TokenPairOut>(getLoginApiV1AuthLoginPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -82,14 +81,14 @@ export const getLogoutApiV1AuthLogoutPostUrl = () => {
  * 登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。
  * @summary Logout
  */
-export const logoutApiV1AuthLogoutPost = async (refreshRequestNull?: RefreshRequest | null, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const logoutApiV1AuthLogoutPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
   return customFetch<void>(getLogoutApiV1AuthLogoutPostUrl(),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(refreshRequestNull)
+    method: 'POST'
+
+
   }
 );}
 
@@ -130,9 +129,9 @@ export const getResetPasswordApiV1AuthPasswordResetPostUrl = () => {
  * 设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。
  * @summary Reset Password
  */
-export const resetPasswordApiV1AuthPasswordResetPost = async (passwordResetRequest: PasswordResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
+export const resetPasswordApiV1AuthPasswordResetPost = async (passwordResetRequest: PasswordResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPair>(getResetPasswordApiV1AuthPasswordResetPostUrl(),
+  return customFetch<TokenPairOut>(getResetPasswordApiV1AuthPasswordResetPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -151,18 +150,18 @@ export const getRefreshApiV1AuthRefreshPostUrl = () => {
 }
 
 /**
- * 轮换刷新:refresh 经 HttpOnly Cookie(首选)或 body(存量旁路)提交;
- * 成功即轮换 Cookie 与 body 双写。
+ * 轮换刷新:refresh 只经 HttpOnly Cookie 提交(X-Requested-With 双提交头强制);
+ * 成功即轮换写回新 Cookie。
  * @summary Refresh
  */
-export const refreshApiV1AuthRefreshPost = async (refreshRequestNull?: RefreshRequest | null, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
+export const refreshApiV1AuthRefreshPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPair>(getRefreshApiV1AuthRefreshPostUrl(),
+  return customFetch<TokenPairOut>(getRefreshApiV1AuthRefreshPostUrl(),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(refreshRequestNull)
+    method: 'POST'
+
+
   }
 );}
 
@@ -178,9 +177,9 @@ export const getRegisterApiV1AuthRegisterPostUrl = () => {
 /**
  * @summary Register
  */
-export const registerApiV1AuthRegisterPost = async (registerRequest: RegisterRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPair> => {
+export const registerApiV1AuthRegisterPost = async (registerRequest: RegisterRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPair>(getRegisterApiV1AuthRegisterPostUrl(),
+  return customFetch<TokenPairOut>(getRegisterApiV1AuthRegisterPostUrl(),
   {
     ...options,
     method: 'POST',

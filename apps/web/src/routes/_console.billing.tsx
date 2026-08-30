@@ -12,7 +12,8 @@ import {
   type RefundOut,
   type RefundableOrderOut,
 } from "@superdl/api-client";
-import { addAmounts, amountToScaledNumber, compareAmounts, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, localToday, metaOf, payoutChannelMap, refundStatusMap, statusColors } from "@superdl/ui";
+import { addAmounts, amountToScaledNumber, compareAmounts, downloadCsvChecked, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, localToday, metaOf, payoutChannelMap, refundStatusMap, useCsvExport } from "@superdl/ui";
+import { DataErrorAlert, EChart, EmptyState, LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
@@ -23,7 +24,6 @@ import {
   Card,
   Col,
   DatePicker,
-  Empty,
   Input,
   InputNumber,
   Modal,
@@ -36,18 +36,16 @@ import {
   Table,
   Tabs,
   Tag,
+  theme,
   Tooltip,
   Typography,
 } from "antd";
-import { useFormat } from "../lib/format";
-import EChart from "../components/EChart";
+import { useFormat } from "@superdl/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { useCreateInvoice, useCreateRecharge, useCreateRefund, useMockPay } from "../api/mutations";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
-import { LoadMoreButton } from "../components/LoadMore";
-import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { WarnThresholdField } from "../components/WarnThresholdField";
 import {
   useBillSummary,
@@ -63,32 +61,44 @@ import {
   useSiteConfig,
   useWallet,
 } from "../api/queries";
-import { downloadCsv } from "../lib/csv";
 import { requireAuth } from "../lib/guard";
+import { useThemeMode } from "../stores/theme";
 
 const BILLING_TABS = ["bills", "ledger", "refunds", "invoices"] as const;
 type BillingTab = (typeof BILLING_TABS)[number];
 
-/** 服务端 CSV 截断标记(与 apps/api billing/export.py TRUNCATED_MARKER 一致)。 */
-const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
+/** 收支明细类型筛选(URL ?ledger=);值域与后端 LedgerType 一致 */
+const LEDGER_FILTERS = ["recharge", "consume", "refund", "adjust"] as const;
+type LedgerFilter = (typeof LEDGER_FILTERS)[number];
+
+/** 充值档位与单笔限额:与后端口径一致(apps/api billing schemas),后端限额变更需同步。 */
+const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
+const RECHARGE_MIN_AMOUNT = "1";
+const RECHARGE_MAX_AMOUNT = "50000";
 
 export const Route = createFileRoute("/_console/billing")({
   beforeLoad: requireAuth,
-  // Tab/月份入 URL:可分享、返回不丢;非法值丢弃回默认
-  validateSearch: (search: Record<string, unknown>): { tab?: BillingTab; month?: string } => {
-    const out: { tab?: BillingTab; month?: string } = {};
+  // Tab/月份/流水类型入 URL:可分享、返回不丢;非法值丢弃回默认
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab?: BillingTab; month?: string; ledger?: LedgerFilter } => {
+    const out: { tab?: BillingTab; month?: string; ledger?: LedgerFilter } = {};
     if (typeof search.tab === "string" && (BILLING_TABS as readonly string[]).includes(search.tab)) {
       out.tab = search.tab as BillingTab;
     }
     if (typeof search.month === "string" && /^\d{4}-\d{2}$/.test(search.month)) {
       out.month = search.month;
     }
+    if (
+      typeof search.ledger === "string" &&
+      (LEDGER_FILTERS as readonly string[]).includes(search.ledger)
+    ) {
+      out.ledger = search.ledger as LedgerFilter;
+    }
     return out;
   },
   component: BillingPage,
 });
-
-const PRESET_AMOUNTS = ["50.00", "100.00", "500.00"] as const;
 
 /** 进行中的充值订单号(sessionStorage):支付中途关窗后重开可恢复轮询。 */
 const PENDING_ORDER_KEY = "superdl.web.pendingRecharge";
@@ -243,8 +253,8 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
           />
           <InputNumber
             style={{ width: 200 }}
-            min="1"
-            max="50000"
+            min={RECHARGE_MIN_AMOUNT}
+            max={RECHARGE_MAX_AMOUNT}
             precision={2}
             stringMode
             value={amount}
@@ -291,7 +301,23 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
             }
           />
           <div style={{ display: "flex", justifyContent: "center" }}>
-            <QRCode value={shown.qr_url ?? shown.order_no} size={168} />
+            {shown.qr_url ? (
+              <QRCode value={shown.qr_url} size={168} />
+            ) : (
+              // qr_url 空串/缺失时绝不渲染一个扫不出来的码:错误态 + 重新获取(回表单重新下单)
+              <Space orientation="vertical" size={12} align="center">
+                <Typography.Text type="danger">{t("billing.qrFailed")}</Typography.Text>
+                <Button
+                  onClick={() => {
+                    sessionStorage.removeItem(PENDING_ORDER_KEY);
+                    setOrder(null);
+                    setResumedNo("");
+                  }}
+                >
+                  {t("billing.qrRetry")}
+                </Button>
+              </Space>
+            )}
           </div>
           {shown.channel === "wechat" && (
             <Typography.Text type="secondary" style={{ display: "block", textAlign: "center" }}>
@@ -314,7 +340,7 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
               {t("billing.mockPayNow")}
             </Button>
           )}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("billing.pollNote")}
           </Typography.Text>
         </Space>
@@ -327,24 +353,69 @@ function RechargeModal({ open, onClose }: { open: boolean; onClose: () => void }
 function LedgerTable() {
   const { t } = useTranslation(["web", "shared"]);
   const { formatMoney } = useFormat();
-  const { data, isLoading, isError, refetch, isFetchingNextPage, hasNextPage, fetchNextPage } =
-    useLedgerPages(20);
+  const { token } = theme.useToken();
+  const navigate = useNavigate();
+  const { ledger: ledgerFilter } = Route.useSearch();
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    hasNextPage,
+    fetchNextPage,
+  } = useLedgerPages(20);
   const merged = useMemo<LedgerEntryOut[]>(
     () => (data?.pages ?? []).flatMap((p) => p.items),
     [data],
   );
+  // 类型筛选为客户端筛选:只作用于已加载页,未加载的旧页不受筛选影响
+  const filtered = useMemo<LedgerEntryOut[]>(
+    () => (ledgerFilter ? merged.filter((r) => r.type === ledgerFilter) : merged),
+    [merged, ledgerFilter],
+  );
 
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
+      <Select
+        style={{ width: 160 }}
+        aria-label={t("billing.colType")}
+        value={ledgerFilter ?? "all"}
+        onChange={(v: string) =>
+          void navigate({
+            to: "/billing",
+            search: (prev) => ({
+              // LedgerTable 挂在 /billing 下,prev 必带本页 search;tab 在此文件内联合类型收窄
+              tab: prev.tab as BillingTab | undefined,
+              month: prev.month,
+              ledger: v === "all" ? undefined : (v as LedgerFilter),
+            }),
+            replace: true,
+          })
+        }
+        options={[
+          { value: "all", label: t("billing.ledgerFilterAll") },
+          ...LEDGER_FILTERS.map((f) => {
+            const meta = metaOf(ledgerTypeMap, f);
+            // 裸类型码不进 t():extract 会把它当成新键收集
+            return { value: f, label: meta ? t(meta.labelKey) : f };
+          }),
+        ]}
+      />
       <Table
         rowKey="id"
         size="small"
         pagination={false}
         scroll={{ x: 760 }}
         loading={isLoading}
-        dataSource={merged}
+        dataSource={filtered}
         locale={{
-          emptyText: isError ? <TableErrorEmpty onRetry={() => void refetch()} /> : undefined,
+          emptyText: isError ? (
+            <TableErrorEmpty isError onRetry={() => void refetch()} />
+          ) : (
+            <EmptyState scene="list" compact description={t("billing.ledgerEmpty")} />
+          ),
         }}
         columns={[
           { title: t("billing.colTime"), render: (_, r) => formatDateTime(r.created_at) },
@@ -358,8 +429,9 @@ function LedgerTable() {
           {
             title: t("billing.colAmount"),
             render: (_, r) => (
+              // 收入绿/支出红双色对称(antd colorSuccess/Error,暗色自适应)
               <span
-                style={{ color: r.amount.startsWith("-") ? undefined : statusColors.green }}
+                style={{ color: r.amount.startsWith("-") ? token.colorError : token.colorSuccess }}
               >
                 {r.amount.startsWith("-") ? "" : "+"}
                 {formatMoney(r.amount)}
@@ -373,10 +445,12 @@ function LedgerTable() {
           { title: t("billing.colRemark"), dataIndex: "remark" },
         ]}
       />
-      <LoadMoreButton
-        visible={hasNextPage}
+      <LoadMore
+        hasNextPage={hasNextPage ?? false}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={filtered.length}
+        onLoadMore={() => void fetchNextPage()}
       />
     </Space>
   );
@@ -437,7 +511,7 @@ function RefundTab() {
           // 加载失败绝不能伪装成「无充值订单」
           <DataErrorAlert onRetry={() => void ordersQ.refetch()} />
         ) : orders.length === 0 && !ordersQ.isLoading ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("billing.refundNoOrders")} />
+          <EmptyState scene="list" compact description={t("billing.refundNoOrders")} />
         ) : (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Select
@@ -472,7 +546,7 @@ function RefundTab() {
                 aria-label={t("billing.refundAmount")}
               />
               {selected && (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                   {t("billing.refundMaxHint", { amount: formatMoney(selected.max_amount) })}
                 </Typography.Text>
               )}
@@ -486,15 +560,21 @@ function RefundTab() {
               maxLength={256}
             />
             <Space align="center" wrap>
-              <Button
-                type="primary"
-                loading={create.isPending}
-                disabled={!selected || reason.trim().length < 2}
-                onClick={submit}
+              <Tooltip
+                title={
+                  selected && reason.trim().length < 2 ? t("billing.refundReasonTooShort") : undefined
+                }
               >
-                {t("billing.refundSubmit")}
-              </Button>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <Button
+                  type="primary"
+                  loading={create.isPending}
+                  disabled={!selected || reason.trim().length < 2}
+                  onClick={submit}
+                >
+                  {t("billing.refundSubmit")}
+                </Button>
+              </Tooltip>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {t("billing.refundRuleNote")}
               </Typography.Text>
             </Space>
@@ -510,7 +590,7 @@ function RefundTab() {
         dataSource={rows}
         locale={{
           emptyText: refunds.isError ? (
-            <TableErrorEmpty onRetry={() => void refunds.refetch()} />
+            <TableErrorEmpty isError onRetry={() => void refunds.refetch()} />
           ) : (
             t("billing.refundNone")
           ),
@@ -544,10 +624,12 @@ function RefundTab() {
           },
         ]}
       />
-      <LoadMoreButton
-        visible={refunds.hasNextPage}
+      <LoadMore
+        hasNextPage={refunds.hasNextPage ?? false}
         loading={refunds.isFetchingNextPage}
-        onClick={() => void refunds.fetchNextPage()}
+        isError={refunds.isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void refunds.fetchNextPage()}
       />
     </Space>
   );
@@ -555,6 +637,8 @@ function RefundTab() {
 
 /** 发票申请弹窗:账期(仅 eligible 列表)+ 抬头信息;金额由服务端按账期计算。 */
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/; // 与服务端契约同一口径
+// 统一社会信用代码(GB 32100-2015):18 位,数字与大写字母(不含 I/O/Z/S/V);与服务端 schemas.TAX_ID_PATTERN 同口径
+const TAX_ID_RE = /^[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}$/;
 
 function InvoiceApplyModal({
   periods,
@@ -588,11 +672,8 @@ function InvoiceApplyModal({
   });
 
   const emailOk = EMAIL_RE.test(email.trim());
-  const canSubmit =
-    period != null &&
-    title.trim().length >= 2 &&
-    emailOk &&
-    (titleType === "personal" || taxId.trim().length >= 4);
+  const taxIdOk = titleType === "personal" || TAX_ID_RE.test(taxId.trim());
+  const canSubmit = period != null && title.trim().length >= 2 && emailOk && taxIdOk;
 
   return (
     <Modal
@@ -648,16 +729,31 @@ function InvoiceApplyModal({
           onChange={(e) => setTitle(e.target.value)}
           placeholder={t("billing.invoiceTitlePlaceholder")}
           maxLength={128}
+          status={title !== "" && title.trim().length < 2 ? "error" : undefined}
           aria-label={t("billing.invoiceTitleLabel")}
         />
+        {/* 红框必须配文字:只变色不说原因,用户不知道错在哪(与税号字段同一标准) */}
+        {title !== "" && title.trim().length < 2 ? (
+          <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
+            {t("billing.invoiceTitleInvalid")}
+          </Typography.Text>
+        ) : null}
         {titleType === "company" && (
-          <Input
-            value={taxId}
-            onChange={(e) => setTaxId(e.target.value)}
-            placeholder={t("billing.invoiceTaxIdPlaceholder")}
-            maxLength={32}
-            aria-label={t("billing.invoiceTaxId")}
-          />
+          <>
+            <Input
+              value={taxId}
+              onChange={(e) => setTaxId(e.target.value.toUpperCase())}
+              placeholder={t("billing.invoiceTaxIdPlaceholder")}
+              maxLength={18}
+              status={taxId !== "" && !TAX_ID_RE.test(taxId.trim()) ? "error" : undefined}
+              aria-label={t("billing.invoiceTaxId")}
+            />
+            {taxId !== "" && !TAX_ID_RE.test(taxId.trim()) ? (
+              <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
+                {t("billing.invoiceTaxIdInvalid")}
+              </Typography.Text>
+            ) : null}
+          </>
         )}
         <Input
           value={email}
@@ -667,6 +763,11 @@ function InvoiceApplyModal({
           status={email !== "" && !emailOk ? "error" : undefined}
           aria-label={t("billing.invoiceEmail")}
         />
+        {email !== "" && !emailOk ? (
+          <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
+            {t("billing.invoiceEmailInvalid")}
+          </Typography.Text>
+        ) : null}
       </Space>
     </Modal>
   );
@@ -722,7 +823,10 @@ function InvoiceTab() {
             </Typography.Text>
           )
         )}
-        <Typography.Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+        <Typography.Text
+          type="secondary"
+          style={{ display: "block", marginTop: 8, fontSize: fontSize.caption }}
+        >
           {t("billing.invoiceEligibleHint")}
           {" · "}
           {t("billing.invoiceManualNote")}
@@ -737,7 +841,7 @@ function InvoiceTab() {
         dataSource={rows}
         locale={{
           emptyText: invoices.isError ? (
-            <TableErrorEmpty onRetry={() => void invoices.refetch()} />
+            <TableErrorEmpty isError onRetry={() => void invoices.refetch()} />
           ) : (
             t("billing.invoiceNone")
           ),
@@ -767,10 +871,12 @@ function InvoiceTab() {
           { title: t("billing.colTime"), dataIndex: "created_at", render: formatDateTime },
         ]}
       />
-      <LoadMoreButton
-        visible={invoices.hasNextPage}
+      <LoadMore
+        hasNextPage={invoices.hasNextPage ?? false}
         loading={invoices.isFetchingNextPage}
-        onClick={() => void invoices.fetchNextPage()}
+        isError={invoices.isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void invoices.fetchNextPage()}
       />
       <InvoiceApplyModal periods={periods} open={applyOpen} onClose={() => setApplyOpen(false)} />
     </Space>
@@ -779,13 +885,12 @@ function InvoiceTab() {
 
 function BillingPage() {
   const { formatMoney } = useFormat();
-  const { t, i18n } = useTranslation();
-  const { message } = App.useApp();
+  const { t } = useTranslation();
+  const mode = useThemeMode();
   const navigate = useNavigate();
   const { tab, month: monthParam } = Route.useSearch();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const activeTab: BillingTab = tab ?? "bills";
-  const [exporting, setExporting] = useState(false);
   const walletQ = useWallet({ refetchInterval: 10_000 });
   const { data: wallet } = walletQ;
   const { data: me } = useMe();
@@ -804,42 +909,39 @@ function BillingPage() {
   const setSearch = (patch: { tab?: BillingTab; month?: string }) =>
     void navigate({
       to: "/billing",
-      search: (prev: { tab?: string; month?: string }) => ({
+      search: (prev: { tab?: string; month?: string; ledger?: LedgerFilter }) => ({
         tab: patch.tab ?? (prev.tab as BillingTab | undefined),
         month: patch.month ?? prev.month,
+        // 流水类型筛选跟 Tab/月份切换共存,不被清掉
+        ledger: prev.ledger,
       }),
       replace: true,
     });
 
   // 服务端流式导出:小时账单跟随所选月份;触顶标记行 → 截断提示
-  const exportCsv = async () => {
-    setExporting(true);
-    try {
-      const lang = i18n.resolvedLanguage === "en-US" ? ("en-US" as const) : ("zh-CN" as const);
-      const isBills = activeTab === "bills";
-      const csv = (await exportBillingApiV1BillingExportGet(
-        isBills
-          ? { dataset: "hourly", month, tz_offset_minutes: tzOffsetMinutes, lang }
-          : { dataset: "ledger", tz_offset_minutes: tzOffsetMinutes, lang },
-      )) as string;
-      downloadCsv(isBills ? `superdl-hourly-${month}.csv` : "superdl-ledger.csv", csv);
-      if (csv.includes(TRUNCATED_MARKER)) {
-        message.warning(t("billing.csvTruncated"));
-      } else {
-        message.success(t("billing.csvExported"));
-      }
-    } catch {
-      message.error(t("billing.csvExportFailed"));
-    } finally {
-      setExporting(false);
-    }
-  };
+  const { doExport: exportCsv, exporting } = useCsvExport(async (tz, lang) => {
+    const isBills = activeTab === "bills";
+    const csv = (await exportBillingApiV1BillingExportGet(
+      isBills
+        ? { dataset: "hourly", month, tz_offset_minutes: tz, lang }
+        : { dataset: "ledger", tz_offset_minutes: tz, lang },
+    )) as string;
+    return downloadCsvChecked(isBills ? `superdl-hourly-${month}.csv` : "superdl-ledger.csv", csv);
+  });
 
-  const pieData = (summary?.items ?? []).map((i) => ({
-    name: i.instance_name ?? t("billing.instanceRef", { id: i.instance_id }),
-    // 万分位整数做图值:占比与 compareAmounts 同口径,parseFloat 的浮点误差(0.1+0.2≠0.3)不进图表
-    value: amountToScaledNumber(i.total_amount),
-  }));
+  // 同名实例(重建/多台同名)在环图图例会重名:按显示名合并为一项,金额字符串相加(不过浮点)
+  const pieData = useMemo(() => {
+    const byName = new Map<string, string>();
+    for (const i of summary?.items ?? []) {
+      const name = i.instance_name ?? t("billing.instanceRef", { id: i.instance_id });
+      byName.set(name, addAmounts(byName.get(name) ?? "0", i.total_amount));
+    }
+    return [...byName.entries()].map(([name, total]) => ({
+      name,
+      // 万分位整数做图值:占比与 compareAmounts 同口径,parseFloat 的浮点误差(0.1+0.2≠0.3)不进图表
+      value: amountToScaledNumber(total),
+    }));
+  }, [summary, t]);
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -875,7 +977,7 @@ function BillingPage() {
               <Statistic
                 title={t("billing.availableBalance")}
                 value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
-                styles={{ content: { fontSize: 32 } }}
+                styles={{ content: { fontSize: fontSize.kpi } }}
               />
               <Button type="primary" size="large" onClick={() => setRechargeOpen(true)}>
                 {t("billing.recharge")}
@@ -910,7 +1012,7 @@ function BillingPage() {
                 <Statistic
                   title={t("billing.diskTotal")}
                   value={moneyOr(formatMoney(summary?.disk_total), summary != null)}
-                  styles={{ content: { fontSize: 16 } }}
+                  styles={{ content: { fontSize: fontSize.sectionTitle } }}
                 />
                 <Statistic
                   title={t("instances.labelToday")}
@@ -918,28 +1020,27 @@ function BillingPage() {
                     formatMoney(daily ? addAmounts(daily.gpu_total, daily.disk_total) : null),
                     daily != null,
                   )}
-                  styles={{ content: { fontSize: 16 } }}
+                  styles={{ content: { fontSize: fontSize.sectionTitle } }}
                 />
               </Col>
               <Col xs={24} md={14}>
-                {pieData.length ? (
-                  <EChart
-                    style={{ height: 160 }}
-                    option={{
-                      tooltip: { trigger: "item" },
-                      series: [
-                        {
-                          type: "pie",
-                          radius: ["45%", "70%"],
-                          data: pieData,
-                          label: { fontSize: 11 },
-                        },
-                      ],
-                    }}
-                  />
-                ) : (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("billing.noSpendThisMonth")} />
-                )}
+                <EChart
+                  theme={mode === "dark" ? "web-dark" : "web-light"}
+                  style={{ height: 160 }}
+                  ariaLabel={t("billing.monthSpend", { month })}
+                  empty={pieData.length === 0 ? t("billing.noSpendThisMonth") : false}
+                  option={{
+                    tooltip: { trigger: "item" },
+                    series: [
+                      {
+                        type: "pie",
+                        radius: ["45%", "70%"],
+                        data: pieData,
+                        label: { fontSize: fontSize.caption },
+                      },
+                    ],
+                  }}
+                />
               </Col>
             </Row>
           </Card>
@@ -974,7 +1075,7 @@ function BillingPage() {
             { key: "invoices", label: t("billing.tabInvoices"), children: <InvoiceTab /> },
           ]}
         />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {t("copy.dailyCostNote")}
           {" · "}
           {t("copy.billingDayBoundary")}

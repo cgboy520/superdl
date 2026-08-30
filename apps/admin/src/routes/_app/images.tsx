@@ -1,5 +1,5 @@
-import { imageCacheStatusMap, metaOf, type ImageCacheStatus } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { imageCacheStatusMap, fontSize, formatDateTime, metaOf, type ImageCacheStatus } from "@superdl/ui";
+import { PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -20,13 +20,13 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import dayjs from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   type ImageNodeRow,
   type ImageRow,
+  isApiError,
   useAdminImages,
   useClusterStatus,
   useCreateImage,
@@ -35,7 +35,7 @@ import {
   usePrewarmImage,
   useUpdateImage,
 } from "../../api";
-import { useApiErrorText } from "../../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -53,10 +53,10 @@ interface ImageFormValues {
   prewarm_enabled: boolean;
 }
 
-/** 行展开:该镜像的每节点缓存明细(展开期间 10s 轮询看拉取进度) */
+/** 行展开:该镜像的每节点缓存明细(展开期间 30s 轮询看拉取进度;组件随行展开才挂载,收起即停) */
 function ImageNodesPanel({ imageId }: { imageId: number }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const { data, isError, refetch } = useImageNodes(imageId, { refetchInterval: 10_000 });
+  const { data, isError, error, refetch } = useImageNodes(imageId, { refetchInterval: 30_000 });
   return (
     <Table<ImageNodeRow>
       size="small"
@@ -65,7 +65,11 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
       pagination={false}
       locale={{
         emptyText: (
-          <TableErrorEmpty isError={isError} onRetry={() => void refetch()}>
+          <TableErrorEmpty
+            isError={isError}
+            isForbidden={isApiError(error) && error.status === 403}
+            onRetry={() => void refetch()}
+          >
             {t("images.nodesEmpty")}
           </TableErrorEmpty>
         ),
@@ -98,12 +102,12 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
         {
           title: t("images.colCheckedAt"),
           dataIndex: "checked_at",
-          render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm") : "-"),
+          render: (v: string | null) => (v ? formatDateTime(v) : "-"),
         },
         {
           title: t("images.colUpdatedAt"),
           dataIndex: "updated_at",
-          render: (v: string) => dayjs(v).format("MM-DD HH:mm"),
+          render: (v: string) => formatDateTime(v),
         },
       ]}
     />
@@ -118,7 +122,7 @@ function ImagesPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: images, queryKey, isLoading, isError, refetch } = useAdminImages({ refetchInterval: 15_000 });
+  const { data: images, queryKey, isLoading, isError, error, refetch } = useAdminImages({ refetchInterval: 15_000 });
   const [editing, setEditing] = useState<ImageRow | "new" | null>(null);
   // 新建镜像的默认仓库前缀:Harbor 地址与平台项目来自平台配置(经集群状态透出,ops 可读)
   const { data: cluster } = useClusterStatus();
@@ -135,17 +139,20 @@ function ImagesPage() {
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(errText(e, t("skus.createFailed"))),
+      onError: (e) => message.error(errText(e, t("common.createFailed"))),
     },
   });
   const update = useUpdateImage({
     mutation: {
-      onSuccess: () => {
-        message.success(t("images.saved"));
+      onSuccess: (_d, v) => {
+        // 预热开关(单字段补丁)与抽屉整表保存共用本 mutation:反馈文案按补丁形态分开,
+        // 开关切换不说「已保存」这种泛话(与 skus.tsx 开关文案分立同款)
+        const toggleOnly = Object.keys(v.data).length === 1 && "prewarm_enabled" in v.data;
+        message.success(t(toggleOnly ? "images.prewarmToggled" : "images.saved"));
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
+      onError: (e) => message.error(errText(e, t("common.saveFailed"))),
     },
   });
   const del = useDeleteImage({
@@ -180,21 +187,25 @@ function ImagesPage() {
     if (editing === "new") {
       create.mutate({ data: values });
     } else if (editing) {
+      // 审计缺口(后端):ImageUpdate(apps/api catalog/schemas.py)暂无 reason 字段,
+      // 编辑不收「变更原因」——收集了却无法随请求落审计就是伪功能;
+      // 待后端补字段后参照 skus.tsx 编辑必填 reason 模式在此加输入并提交。
       update.mutate({ imageId: editing.id, data: values });
     }
   };
 
   return (
-    <Card
+    <PageContainer
       title={t("menu.images")}
       extra={
-        <Tooltip title={writable ? "" : t("skus.readonlyNoCreate")}>
+        <Tooltip title={writable ? "" : t("common.readonlyNoCreate")}>
           <Button type="primary" disabled={!writable} onClick={() => openEdit("new")}>
             {t("images.newImage")}
           </Button>
         </Tooltip>
       }
     >
+    <Card>
       <Alert
         type="info"
         showIcon
@@ -207,7 +218,13 @@ function ImagesPage() {
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={images ?? []}
         pagination={false}
@@ -239,6 +256,8 @@ function ImagesPage() {
                 <Switch
                   checked={v}
                   disabled={!writable}
+                  // 行级 loading:只转本行开关,不连带其他行(与 skus.tsx 按 variables 隔离同范式)
+                  loading={update.isPending && update.variables?.imageId === r.id}
                   onChange={(on) =>
                     update.mutate({ imageId: r.id, data: { prewarm_enabled: on } })
                   }
@@ -259,7 +278,7 @@ function ImagesPage() {
                     style={{ width: 120 }}
                     status={r.failed_nodes > 0 ? "exception" : undefined}
                   />
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {r.coverage.cached}/{r.coverage.total}
                   </Typography.Text>
                   {r.failed_nodes > 0 && <Tag color="red">{t("images.failedCount", { count: r.failed_nodes })}</Tag>}
@@ -282,7 +301,7 @@ function ImagesPage() {
                     {t("images.prewarmNow")}
                   </Button>
                 </Tooltip>
-                <Tooltip title={writable ? "" : t("skus.readonlyNoEdit")}>
+                <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
                   <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
                     {t("skus.edit")}
                   </Button>
@@ -363,5 +382,6 @@ function ImagesPage() {
         </Form>
       </Drawer>
     </Card>
+    </PageContainer>
   );
 }

@@ -1,5 +1,5 @@
-import { adminColors, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, fontSize, metaOf, skuTierMap, skuVariant, type SkuTier, type SkuVariant } from "@superdl/ui";
+import { HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -37,11 +37,12 @@ import {
   useSkuImpact,
   useUpdateSku,
 } from "../../api";
-import { useFormat } from "../../lib/format";
-import { useApiErrorText } from "../../lib/apiError";
-import { useFormDraft } from "../../lib/formDraft";
+import { useFormat } from "@superdl/ui";
+import { useApiErrorText } from "@superdl/ui";
+import { useFormDraft } from "@superdl/ui";
 import { POOL_LABEL_KEY } from "../../lib/pools";
-import { StatusTag } from "../../components/StatusTag";
+import { REASON_MAX_LEN } from "../../lib/validators";
+import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/skus")({
@@ -129,7 +130,7 @@ function SkusPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data: skus, queryKey, isLoading, isError, refetch } = useAdminSkus();
+  const { data: skus, queryKey, isLoading, isError, error, refetch } = useAdminSkus();
   // 聚合端点只放 ops/readonly:finance 可看 SKU 页但拉它会 403,按角色关停查询
   const { data: aggregates } = useGpuModelAggregates({
     enabled: canWriteOps(role) || role === "readonly",
@@ -154,7 +155,7 @@ function SkusPage() {
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(errText(e, t("skus.createFailed"))),
+      onError: (e) => message.error(errText(e, t("common.createFailed"))),
     },
   });
   const update = useUpdateSku({
@@ -164,28 +165,24 @@ function SkusPage() {
         setEditing(null);
         refresh();
       },
-      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
+      onError: (e) => message.error(errText(e, t("common.saveFailed"))),
     },
   });
-  // 上架开关独立 mutation:SKU_NOT_SELLABLE 走「强制上架」确认,不复用编辑弹窗的报错
-  const toggleSale = useUpdateSku({
+  // 上架独立 mutation:不带 onError,错误提示统一由 ReasonAction 弹出(避免与 mutation 回调双提示)
+  const onSale = useUpdateSku({
+    mutation: { onSuccess: refresh },
+  });
+  // 强制上架独立 mutation:modal.confirm 流程自带成功/失败提示(与 ReasonAction 流程并行)
+  const forceOnSale = useUpdateSku({
     mutation: {
       onSuccess: refresh,
-      onError: (e, vars) => {
-        const code = isApiError(e) ? e.code : undefined;
-        if (code === "SKU_NOT_SELLABLE" && !vars.force) {
-          modal.confirm({
-            title: t("skus.notSellableTitle"),
-            content: errText(e, t("skus.toggleFailed")),
-            okText: t("skus.forceOn"),
-            okButtonProps: { danger: true },
-            onOk: () => toggleSale.mutate({ ...vars, force: true }),
-          });
-          return;
-        }
-        message.error(errText(e, t("skus.toggleFailed")));
-      },
+      onError: (e) => message.error(errText(e, t("skus.toggleFailed"))),
     },
+  });
+
+  // 下架独立 mutation:不带 onError,错误提示统一由 ReasonAction 弹出(避免与 mutation 回调双提示)
+  const offSale = useUpdateSku({
+    mutation: { onSuccess: refresh },
   });
 
   // 表单联动:实时容量预览参数(编辑态型号/档位不在表单里,取自记录)
@@ -393,12 +390,14 @@ function SkusPage() {
                 })
               : t("skus.priceChangeImpactPending")}
           </span>
-          <span style={{ color: adminColors.textSecondary, fontSize: 12 }}>
+          <span style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>
             {t("skus.priceChangeScope")}
           </span>
         </Space>
       ),
       okText: t("skus.confirmSubmit"),
+      // 影响面查询在途时禁点确认:影响数字未到就放行,二次确认形同虚设
+      okButtonProps: { disabled: impact.isPending },
       onOk: doSubmit,
     });
   };
@@ -412,22 +411,29 @@ function SkusPage() {
   const variantLocked = !isNew && record?.status === "on";
 
   return (
-    <Card
+    <PageContainer
       title={t("menu.skus")}
       extra={
-        <Tooltip title={writable ? "" : t("skus.readonlyNoCreate")}>
+        <Tooltip title={writable ? "" : t("common.readonlyNoCreate")}>
           <Button type="primary" disabled={!writable} onClick={() => openEdit("new")}>
             {t("skus.newSku")}
           </Button>
         </Tooltip>
       }
     >
+    <Card>
       <Table<SkuAdminOut>
         scroll={{ x: 1440 }}
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={skus ?? []}
         pagination={false}
@@ -439,7 +445,7 @@ function SkusPage() {
             render: (_, r) => {
               const v = skuVariant(r.tier, r.pool_label);
               const m = metaOf(skuTierMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
             },
           },
           {
@@ -492,27 +498,64 @@ function SkusPage() {
           {
             title: t("skus.colOnSale"),
             dataIndex: "status",
-            render: (v: string, r) => (
-              <Tooltip title={writable ? "" : t("nodes.readonlyNoOp")}>
-                <Switch
-                  checked={v === "on"}
+            render: (v: string, r) =>
+              v === "on" ? (
+                // 下架 = L2(手输原因 + 影响说明)
+                <ReasonAction
+                  label={t("skus.offSale")}
+                  danger
+                  title={t("skus.offSaleTitle")}
+                  confirmText={t("skus.offSaleConfirm", { name: r.name })}
                   disabled={!writable}
-                  // 按行隔离:mutation 级 isPending 会让全表开关一起转
-                  loading={toggleSale.isPending && toggleSale.variables?.skuId === r.id}
-                  onChange={(on) =>
-                    toggleSale.mutate({
+                  disabledReason={t("nodes.readonlyNoOp")}
+                  onSubmit={async (reason) => {
+                    await offSale.mutateAsync({
                       skuId: r.id,
-                      data: { status: on ? "on" : "off", reason: t("skus.reasonToggle") },
-                    })
-                  }
+                      data: { status: "off", reason },
+                    });
+                  }}
                 />
-              </Tooltip>
-            ),
+              ) : (
+                // 上架同为 L2(手输原因,与下架同范式;弃用常量原因);规格缺要素被后端拒绝时给「强制上架」出口
+                <ReasonAction
+                  label={t("skus.onSale")}
+                  title={t("skus.onSaleTitle")}
+                  confirmText={t("skus.onSaleConfirm", { name: r.name })}
+                  disabled={!writable}
+                  disabledReason={t("nodes.readonlyNoOp")}
+                  onSubmit={async (reason) => {
+                    try {
+                      await onSale.mutateAsync({
+                        skuId: r.id,
+                        data: { status: "on", reason },
+                      });
+                    } catch (e) {
+                      // SKU_NOT_SELLABLE:后端给出缺要素清单,确认后带 force 重放(沿用本次手输原因);
+                      // 错误继续抛出,由 ReasonAction 弹统一错误提示
+                      if (isApiError(e) && e.code === "SKU_NOT_SELLABLE") {
+                        modal.confirm({
+                          title: t("skus.notSellableTitle"),
+                          content: errText(e, t("skus.toggleFailed")),
+                          okText: t("skus.forceOn"),
+                          okButtonProps: { danger: true },
+                          onOk: () =>
+                            forceOnSale.mutate({
+                              skuId: r.id,
+                              data: { status: "on", reason },
+                              force: true,
+                            }),
+                        });
+                      }
+                      throw e;
+                    }
+                  }}
+                />
+              ),
           },
           {
             title: t("skus.colActions"),
             render: (_, r) => (
-              <Tooltip title={writable ? "" : t("skus.readonlyNoEdit")}>
+              <Tooltip title={writable ? "" : t("common.readonlyNoEdit")}>
                 <Button size="small" disabled={!writable} onClick={() => openEdit(r)}>
                   {t("skus.edit")}
                 </Button>
@@ -532,7 +575,7 @@ function SkusPage() {
           </Button>
         }
       >
-        <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <Form
             form={form}
             layout="vertical"
@@ -716,7 +759,7 @@ function SkusPage() {
               <Form.Item
                 name="reason"
                 label={t("skus.reasonLabel")}
-                rules={[{ required: true, min: 2, max: 200, message: t("skus.reasonRequired") }]}
+                rules={[{ required: true, min: 2, max: REASON_MAX_LEN, message: t("skus.reasonRequired") }]}
               >
                 <Input.TextArea rows={2} placeholder={t("skus.reasonPlaceholder")} />
               </Form.Item>
@@ -775,5 +818,6 @@ function SkusPage() {
         </div>
       </Drawer>
     </Card>
+    </PageContainer>
   );
 }

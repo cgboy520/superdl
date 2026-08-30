@@ -1205,6 +1205,20 @@
         "title": "AdminSettlementGapOut",
         "type": "object"
       },
+      "AdminTicketCountOut": {
+        "description": "工单计数轻端点(待办角标轮询):DB count,不拉列表全页。",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "AdminTicketCountOut",
+        "type": "object"
+      },
       "AdminTicketDetailOut": {
         "properties": {
           "category": {
@@ -1445,10 +1459,15 @@
         "type": "object"
       },
       "AlertUnreadCountOut": {
-        "description": "未确认告警数(顶栏铃铛角标)。",
+        "description": "未确认告警数(顶栏铃铛角标)。critical_count 单独给出:\n总览「告警(总)」卡的红色高亮要用精确口径,不能从截断的告警流列表推导。",
         "properties": {
           "count": {
             "title": "Count",
+            "type": "integer"
+          },
+          "critical_count": {
+            "default": 0,
+            "title": "Critical Count",
             "type": "integer"
           }
         },
@@ -2683,6 +2702,18 @@
       },
       "EnrollmentRegenerateRequest": {
         "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "ttl_hours": {
             "default": 24,
             "maximum": 168.0,
@@ -3739,7 +3770,6 @@
             "anyOf": [
               {
                 "maxLength": 32,
-                "minLength": 4,
                 "type": "string"
               },
               {
@@ -4068,6 +4098,22 @@
           "published_at"
         ],
         "title": "LegalDocOut",
+        "type": "object"
+      },
+      "LegalDocVersionArchive": {
+        "description": "归档草稿的请求体:原因必填(审计落库,与 ReasonAction 全站口径一致)。",
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "LegalDocVersionArchive",
         "type": "object"
       },
       "LegalDocVersionBrief": {
@@ -4874,6 +4920,17 @@
             "title": "Severity",
             "type": "string"
           },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -5176,6 +5233,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5203,6 +5271,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5230,6 +5309,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5257,6 +5347,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5284,6 +5385,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5311,6 +5423,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5338,6 +5461,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5365,6 +5499,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5392,6 +5537,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5419,6 +5575,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5446,6 +5613,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5473,6 +5651,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5500,6 +5689,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5527,6 +5727,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -5554,6 +5765,17 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -6295,19 +6517,6 @@
         "title": "RecoveryCodesOut",
         "type": "object"
       },
-      "RefreshRequest": {
-        "properties": {
-          "refresh_token": {
-            "title": "Refresh Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "refresh_token"
-        ],
-        "title": "RefreshRequest",
-        "type": "object"
-      },
       "RefundCancel": {
         "properties": {
           "reason": {
@@ -6715,6 +6924,31 @@
           "yesterday_signups"
         ],
         "title": "RevenueReportOut",
+        "type": "object"
+      },
+      "ReversalResolve": {
+        "description": "渠道冲正核销:release=噪音单解冻(订单恢复退款资格);chargeback=确认反转,解冻+等额扣回。",
+        "properties": {
+          "action": {
+            "enum": [
+              "release",
+              "chargeback"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "reason"
+        ],
+        "title": "ReversalResolve",
         "type": "object"
       },
       "ServiceEndpointOut": {
@@ -8235,14 +8469,11 @@
         "title": "TicketOut",
         "type": "object"
       },
-      "TokenPair": {
+      "TokenPairOut": {
+        "description": "认证响应:refresh token 全程只走 HttpOnly Cookie,不出现在 JS 可读面。",
         "properties": {
           "access_token": {
             "title": "Access Token",
-            "type": "string"
-          },
-          "refresh_token": {
-            "title": "Refresh Token",
             "type": "string"
           },
           "user": {
@@ -8251,10 +8482,9 @@
         },
         "required": [
           "access_token",
-          "refresh_token",
           "user"
         ],
-        "title": "TokenPair",
+        "title": "TokenPairOut",
         "type": "object"
       },
       "UnreadCountOut": {
@@ -8586,6 +8816,122 @@
           }
         ],
         "summary": "Admin Create Adjustment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/adjustments/export": {
+      "get": {
+        "description": "调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。\n注册在 /adjustments/{adjustment_id} 动态路由之前,export 不被当 id 解析。",
+        "operationId": "admin_adjustments_export_api_admin_v1_adjustments_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 480,
+              "maximum": 720,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "default": "zh-CN",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "title": "Lang",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "CSV 导出"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Adjustments Export",
         "tags": [
           "admin"
         ]
@@ -8957,7 +9303,7 @@
     },
     "/api/admin/v1/alerts/unread-count": {
       "get": {
-        "description": "未确认告警计数(顶栏铃铛角标;独立计数端点)。",
+        "description": "未确认告警计数(顶栏铃铛角标;独立计数端点)。critical_count 供总览 KPI 红色高亮。",
         "operationId": "admin_alerts_unread_count_api_admin_v1_alerts_unread_count_get",
         "responses": {
           "200": {
@@ -9577,6 +9923,26 @@
         ]
       }
     },
+    "/api/admin/v1/auth/logout": {
+      "post": {
+        "description": "服务端登出:token_version+1,该管理员全部在外会话即刻失效(含其它标签页/机器)。",
+        "operationId": "admin_logout_api_admin_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Logout",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/auth/mfa/setup/begin": {
       "post": {
         "description": "首次绑定:凭绑定票换 TOTP 密钥与 otpauth URI(前端渲染二维码)。",
@@ -10101,6 +10467,68 @@
           }
         ],
         "summary": "Admin Verify Order",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/finance/reversals/{order_no}/resolve": {
+      "post": {
+        "description": "核销渠道冲正(异常清单 channel_reversed 分桶):解冻或解冻+等额扣回,\n审计行与核销同事务。",
+        "operationId": "admin_resolve_reversal_api_admin_v1_finance_reversals__order_no__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_no",
+            "required": true,
+            "schema": {
+              "title": "Order No",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversalResolve"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Admin Resolve Reversal Api Admin V1 Finance Reversals  Order No  Resolve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Resolve Reversal",
         "tags": [
           "admin"
         ]
@@ -11019,6 +11447,106 @@
         ]
       }
     },
+    "/api/admin/v1/invoices/export": {
+      "get": {
+        "description": "发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。\n注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。",
+        "operationId": "admin_invoices_export_api_admin_v1_invoices_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 480,
+              "maximum": 720,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "default": "zh-CN",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "title": "Lang",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "CSV 导出"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Invoices Export",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/invoices/{invoice_id}/issue": {
       "post": {
         "description": "开票:回填发票号(人工开票,发票经邮箱送达),站内信告知用户。",
@@ -11226,7 +11754,7 @@
     },
     "/api/admin/v1/legal-docs/versions/{version_id}/archive": {
       "post": {
-        "description": "归档草稿(draft → archived);published 不可直接归档(409)。",
+        "description": "归档草稿(draft → archived,原因必填入审计);published 不可直接归档(409)。",
         "operationId": "admin_archive_legal_doc_version_api_admin_v1_legal_docs_versions__version_id__archive_post",
         "parameters": [
           {
@@ -11239,6 +11767,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalDocVersionArchive"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -12870,6 +13408,106 @@
         ]
       }
     },
+    "/api/admin/v1/refunds/export": {
+      "get": {
+        "description": "退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。\n注册在 /refunds/{refund_id} 动态路由之前,export 不被当 id 解析。",
+        "operationId": "admin_refunds_export_api_admin_v1_refunds_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "day",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tz_offset_minutes",
+            "required": false,
+            "schema": {
+              "default": 480,
+              "maximum": 720,
+              "minimum": -720,
+              "title": "Tz Offset Minutes",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "default": "zh-CN",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "title": "Lang",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "CSV 导出"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Refunds Export",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/refunds/{refund_id}/cancel": {
       "post": {
         "description": "取消退款单(仅 pending/approved;余额不足无法核销时的出口)。不动钱包。",
@@ -12930,7 +13568,7 @@
     },
     "/api/admin/v1/refunds/{refund_id}/payout": {
       "post": {
-        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。\n审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。",
+        "description": "登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。\n审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。\n支持 Idempotency-Key:同键同参重放返回 200 + X-Idempotent-Replay(不重复出金),\n同键异参 409;出金动作的防重保护与调账/补单同口径。",
         "operationId": "admin_payout_refund_api_admin_v1_refunds__refund_id__payout_post",
         "parameters": [
           {
@@ -12940,6 +13578,22 @@
             "schema": {
               "title": "Refund Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -13452,7 +14106,7 @@
     },
     "/api/admin/v1/tenants": {
       "get": {
-        "description": "租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。\n\nid 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。\n按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。\n\n实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填\n(ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——\n「客服日常浏览列表」不再批量接触明文 PII。",
+        "description": "租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。\n\nid 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。\n按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。\norder = 注册先后(id)正/倒序;聚合列(余额/消费/实例数)按页拼装,不支持排序。\n\n实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填\n(ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——\n「客服日常浏览列表」不再批量接触明文 PII。",
         "operationId": "admin_list_tenants_api_admin_v1_tenants_get",
         "parameters": [
           {
@@ -13518,6 +14172,20 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
             }
           },
           {
@@ -14238,6 +14906,71 @@
         ]
       }
     },
+    "/api/admin/v1/tickets/count": {
+      "get": {
+        "description": "待办工单计数轻端点(角标轮询替代全量列表轮询):默认 pending_staff 口径。\n\n注意须注册在 /tickets/{ticket_id} 之前,否则 \"count\" 会被当 id 解析。",
+        "operationId": "admin_tickets_count_api_admin_v1_tickets_count_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending_staff",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTicketCountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Tickets Count",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/tickets/{ticket_id}": {
       "get": {
         "description": "工单详情 + 消息流(时间升序)。",
@@ -14442,7 +15175,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "$ref": "#/components/schemas/TokenPairOut"
                 }
               }
             },
@@ -14469,36 +15202,9 @@
       "post": {
         "description": "登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。",
         "operationId": "logout_api_v1_auth_logout_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/RefreshRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "204": {
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Logout",
@@ -14546,7 +15252,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "$ref": "#/components/schemas/TokenPairOut"
                 }
               }
             },
@@ -14571,45 +15277,18 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "轮换刷新:refresh 经 HttpOnly Cookie(首选)或 body(存量旁路)提交;\n成功即轮换 Cookie 与 body 双写。",
+        "description": "轮换刷新:refresh 只经 HttpOnly Cookie 提交(X-Requested-With 双提交头强制);\n成功即轮换写回新 Cookie。",
         "operationId": "refresh_api_v1_auth_refresh_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/RefreshRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "$ref": "#/components/schemas/TokenPairOut"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Refresh",
@@ -14636,7 +15315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenPair"
+                  "$ref": "#/components/schemas/TokenPairOut"
                 }
               }
             },

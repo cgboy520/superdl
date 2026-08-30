@@ -10,6 +10,7 @@ import type {
   AdjustmentReview,
   AdjustmentStatusOut,
   AdminAccountOut,
+  AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams,
   AdminAlertOut,
   AdminAlertsApiAdminV1AlertsGetParams,
   AdminAuditExportApiAdminV1AuditExportGetParams,
@@ -23,6 +24,7 @@ import type {
   AdminForceStopRequest,
   AdminImageOut,
   AdminInvoiceOut,
+  AdminInvoicesExportApiAdminV1InvoicesExportGetParams,
   AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,
   AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
   AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,
@@ -40,20 +42,25 @@ import type {
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
   AdminOrdersExportApiAdminV1OrdersExportGetParams,
   AdminOut,
+  AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostHeaders,
   AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders,
   AdminRefreshOut,
   AdminRefreshRequest,
   AdminRefundOut,
+  AdminRefundsExportApiAdminV1RefundsExportGetParams,
   AdminResetPasswordRequest,
+  AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200,
   AdminSelfPasswordRequest,
   AdminSettlementGapOut,
   AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
   AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminTenantLedgerExportApiAdminV1TenantsUserIdLedgerExportGetParams,
+  AdminTicketCountOut,
   AdminTicketDetailOut,
   AdminTicketOut,
   AdminTicketReply,
   AdminTicketStatusUpdate,
+  AdminTicketsCountApiAdminV1TicketsCountGetParams,
   AdminUpdateRequest,
   AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams,
   AlertUnreadCountOut,
@@ -78,6 +85,7 @@ import type {
   InvoiceIssue,
   InvoiceReject,
   LegalDocCellOut,
+  LegalDocVersionArchive,
   LegalDocVersionCreate,
   LegalDocVersionOut,
   LegalDocVersionUpdate,
@@ -128,6 +136,7 @@ import type {
   RegistryTestOut,
   RevenueReportApiAdminV1ReportsRevenueGetParams,
   RevenueReportOut,
+  ReversalResolve,
   SettlementGapResolve,
   SkuAdminOut,
   SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
@@ -198,6 +207,38 @@ export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentC
     method: 'POST',
     headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(adjustmentCreate)
+  }
+);}
+
+
+export const getAdminAdjustmentsExportApiAdminV1AdjustmentsExportGetUrl = (params?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/adjustments/export?${stringifiedParams}` : `/api/admin/v1/adjustments/export`
+}
+
+/**
+ * 调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。
+ * 注册在 /adjustments/{adjustment_id} 动态路由之前,export 不被当 id 解析。
+ * @summary Admin Adjustments Export
+ */
+export const adminAdjustmentsExportApiAdminV1AdjustmentsExportGet = async (params?: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getAdminAdjustmentsExportApiAdminV1AdjustmentsExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
   }
 );}
 
@@ -387,7 +428,7 @@ export const getAdminAlertsUnreadCountApiAdminV1AlertsUnreadCountGetUrl = () => 
 }
 
 /**
- * 未确认告警计数(顶栏铃铛角标;独立计数端点)。
+ * 未确认告警计数(顶栏铃铛角标;独立计数端点)。critical_count 供总览 KPI 红色高亮。
  * @summary Admin Alerts Unread Count
  */
 export const adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<AlertUnreadCountOut> => {
@@ -610,6 +651,30 @@ export const mfaLoginVerifyApiAdminV1AuthLoginMfaPost = async (mfaCodeRequest: M
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(mfaCodeRequest)
+  }
+);}
+
+
+export const getAdminLogoutApiAdminV1AuthLogoutPostUrl = () => {
+
+
+
+
+  return `/api/admin/v1/auth/logout`
+}
+
+/**
+ * 服务端登出:token_version+1,该管理员全部在外会话即刻失效(含其它标签页/机器)。
+ * @summary Admin Logout
+ */
+export const adminLogoutApiAdminV1AuthLogoutPost = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminLogoutApiAdminV1AuthLogoutPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 );}
 
@@ -911,6 +976,32 @@ export const adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost = async (o
     method: 'POST'
 
 
+  }
+);}
+
+
+export const getAdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePostUrl = (orderNo: string,) => {
+
+
+
+
+  return `/api/admin/v1/finance/reversals/${orderNo}/resolve`
+}
+
+/**
+ * 核销渠道冲正(异常清单 channel_reversed 分桶):解冻或解冻+等额扣回,
+ * 审计行与核销同事务。
+ * @summary Admin Resolve Reversal
+ */
+export const adminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost = async (orderNo: string,
+    reversalResolve: ReversalResolve, options?: Parameters<typeof customFetch>[1]): Promise<AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200> => {
+
+  return customFetch<AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200>(getAdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePostUrl(orderNo),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reversalResolve)
   }
 );}
 
@@ -1287,6 +1378,38 @@ export const adminListInvoicesApiAdminV1InvoicesGet = async (params?: AdminListI
 );}
 
 
+export const getAdminInvoicesExportApiAdminV1InvoicesExportGetUrl = (params?: AdminInvoicesExportApiAdminV1InvoicesExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/invoices/export?${stringifiedParams}` : `/api/admin/v1/invoices/export`
+}
+
+/**
+ * 发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
+ * 注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。
+ * @summary Admin Invoices Export
+ */
+export const adminInvoicesExportApiAdminV1InvoicesExportGet = async (params?: AdminInvoicesExportApiAdminV1InvoicesExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getAdminInvoicesExportApiAdminV1InvoicesExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
 export const getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl = (invoiceId: number,) => {
 
 
@@ -1395,17 +1518,18 @@ export const getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdA
 }
 
 /**
- * 归档草稿(draft → archived);published 不可直接归档(409)。
+ * 归档草稿(draft → archived,原因必填入审计);published 不可直接归档(409)。
  * @summary Admin Archive Legal Doc Version
  */
-export const adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost = async (versionId: number, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
+export const adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost = async (versionId: number,
+    legalDocVersionArchive: LegalDocVersionArchive, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
 
   return customFetch<LegalDocVersionOut>(getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostUrl(versionId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(legalDocVersionArchive)
   }
 );}
 
@@ -2205,6 +2329,38 @@ export const adminListRefundsApiAdminV1RefundsGet = async (params?: AdminListRef
 );}
 
 
+export const getAdminRefundsExportApiAdminV1RefundsExportGetUrl = (params?: AdminRefundsExportApiAdminV1RefundsExportGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/refunds/export?${stringifiedParams}` : `/api/admin/v1/refunds/export`
+}
+
+/**
+ * 退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。
+ * 注册在 /refunds/{refund_id} 动态路由之前,export 不被当 id 解析。
+ * @summary Admin Refunds Export
+ */
+export const adminRefundsExportApiAdminV1RefundsExportGet = async (params?: AdminRefundsExportApiAdminV1RefundsExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
+
+  return customFetch<unknown | string>(getAdminRefundsExportApiAdminV1RefundsExportGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
 export const getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl = (refundId: number,) => {
 
 
@@ -2241,16 +2397,19 @@ export const getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl = (refun
 /**
  * 登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
  * 审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。
+ * 支持 Idempotency-Key:同键同参重放返回 200 + X-Idempotent-Replay(不重复出金),
+ * 同键异参 409;出金动作的防重保护与调账/补单同口径。
  * @summary Admin Payout Refund
  */
 export const adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost = async (refundId: number,
-    refundPayout: RefundPayout, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
+    refundPayout: RefundPayout,
+    headers?: AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
 
   return customFetch<AdminRefundOut>(getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl(refundId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
     body: JSON.stringify(refundPayout)
   }
 );}
@@ -2490,10 +2649,11 @@ export const getAdminListTenantsApiAdminV1TenantsGetUrl = (params?: AdminListTen
 }
 
 /**
- * 租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
+ * 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
  *
  * id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
  * 按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
+ * order = 注册先后(id)正/倒序;聚合列(余额/消费/实例数)按页拼装,不支持排序。
  *
  * 实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填
  * (ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——
@@ -2754,6 +2914,39 @@ export const getAdminListTicketsApiAdminV1TicketsGetUrl = (params?: AdminListTic
 export const adminListTicketsApiAdminV1TicketsGet = async (params?: AdminListTicketsApiAdminV1TicketsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminTicketOut> => {
 
   return customFetch<PageAdminTicketOut>(getAdminListTicketsApiAdminV1TicketsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getAdminTicketsCountApiAdminV1TicketsCountGetUrl = (params?: AdminTicketsCountApiAdminV1TicketsCountGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/tickets/count?${stringifiedParams}` : `/api/admin/v1/tickets/count`
+}
+
+/**
+ * 待办工单计数轻端点(角标轮询替代全量列表轮询):默认 pending_staff 口径。
+ *
+ * 注意须注册在 /tickets/{ticket_id} 之前,否则 "count" 会被当 id 解析。
+ * @summary Admin Tickets Count
+ */
+export const adminTicketsCountApiAdminV1TicketsCountGet = async (params?: AdminTicketsCountApiAdminV1TicketsCountGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketCountOut> => {
+
+  return customFetch<AdminTicketCountOut>(getAdminTicketsCountApiAdminV1TicketsCountGetUrl(params),
   {
     ...options,
     method: 'GET'

@@ -20,15 +20,13 @@
     "colTitle": "Title",
     "colType": "Type",
     "credited": "Credited {{amount}}",
-    "csvExported": "CSV exported",
-    "csvExportFailed": "Export failed — try again later",
-    "csvTruncated": "Export cap reached: the CSV contains only the first rows (truncation marker at the end); narrow the month range and export in parts",
     "diskTotal": "Daily costs (data disks)",
     "done": "Done",
     "exportCsv": "Export CSV",
     "genQr": "Generate payment QR",
     "goVerify": "Verify now",
     "gpuTotal": "GPU hours",
+    "hourlyEmpty": "No hourly bills yet",
     "instanceRef": "Instance #{{id}}",
     "invoiceApply": "Request invoice",
     "invoiceApplyTitle": "Request invoice",
@@ -36,6 +34,7 @@
     "invoiceEligibleHint": "Consolidated from paid top-ups by period; the current month opens next month",
     "invoiceEligibleTotal": "Invoiceable amount",
     "invoiceEmail": "Receiving email",
+    "invoiceEmailInvalid": "Invalid email address",
     "invoiceEmailPlaceholder": "Email to receive the invoice",
     "invoiceManualNote": "Issued manually and emailed within 1-3 business days",
     "invoiceNoEligible": "No invoiceable periods",
@@ -43,11 +42,15 @@
     "invoicePeriodSelect": "Select period",
     "invoiceSubmit": "Submit request",
     "invoiceTaxId": "Tax ID",
+    "invoiceTaxIdInvalid": "The unified social credit code is 18 digits and uppercase letters",
     "invoiceTaxIdPlaceholder": "Unified social credit code / tax ID (required for company)",
+    "invoiceTitleInvalid": "Title must be at least 2 characters",
     "invoiceTitleLabel": "Invoice title",
-    "invoiceTitlePlaceholder": "Personal name or company legal name",
+    "invoiceTitlePlaceholder": "Personal name or company full name",
     "invoiceTitleTypeCompany": "Company",
     "invoiceTitleTypePersonal": "Personal",
+    "ledgerEmpty": "No transactions yet",
+    "ledgerFilterAll": "All types",
     "mockChannel": "Mock payment (dev)",
     "mockPayNow": "Simulate payment success (dev)",
     "mockPaySent": "Mock payment sent",
@@ -59,6 +62,8 @@
     "payCountdown": "Time left to pay: {{time}}",
     "paySuccess": "Payment received",
     "pollNote": "This window confirms payment automatically; unpaid orders close after 2 hours",
+    "qrFailed": "The payment QR code could not be generated. Please try again",
+    "qrRetry": "Try again",
     "realNameRequired": "Regulations require identity verification before topping up",
     "recharge": "Top up",
     "rechargeAmount": "Top-up amount",
@@ -74,10 +79,12 @@
     "refundOrderNoBalance": "Balance too low to refund",
     "refundOrderNotPaid": "Not paid",
     "refundReasonPlaceholder": "Tell us why (required)",
+    "refundReasonTooShort": "Enter a refund reason (at least 2 characters)",
     "refundRuleNote": "After approval, finance pays out manually; once paid, the amount is debited from your balance",
     "refundSelectOrder": "Select the top-up order to refund",
     "refundSubmit": "Submit request",
     "save": "Save",
+    "saved": "Saved",
     "scanWithAlipay": "Scan with Alipay to pay",
     "scanWithWechat": "Scan with WeChat to pay",
     "tabBills": "Hourly bills",
@@ -88,10 +95,23 @@
     "title": "Billing",
     "wechat": "WeChat Pay"
   },
+  "command": {
+    "actionRecharge": "Recharge",
+    "actionRent": "Rent a new instance",
+    "actionTicket": "New ticket",
+    "groupActions": "Actions",
+    "groupInstances": "Instances",
+    "groupPages": "Pages",
+    "hint": "↑↓ move · ↵ open · esc close",
+    "hintShortcuts": "/ focus search · g then d/i/b/m jump to a page",
+    "noResults": "No matching results",
+    "trigger": "Search pages, instances, or actions…"
+  },
   "common": {
     "backConsole": "Back to console",
     "backHome": "Back to home",
     "balance": "Balance",
+    "close": "Close",
     "copied": "Copied",
     "costDetail": "Cost breakdown",
     "dailyApprox": "≈CN¥{{amount}}/day",
@@ -100,8 +120,6 @@
     "goRent": "Rent now",
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
     "jupyter": "JupyterLab",
-    "loadMore": "Load more",
-    "requestFailed": "Request failed",
     "retry": "Retry"
   },
   "copy": {
@@ -162,7 +180,7 @@
       "c5": "You can start it again yourself once capacity frees up; spot is not suited to production services or long jobs that cannot be interrupted"
     },
     "spotNotForService": "Spot instances can be reclaimed and are not recommended for public-facing services: a reclaim stops the instance and its endpoint goes down with it",
-    "spotReclaimNotice": "Spot instances can be reclaimed by the platform: when capacity runs short they are reclaimed newest-first, with advance notice",
+    "spotReclaimNotice": "Spot instances can be reclaimed by the platform: when capacity runs short they are reclaimed newest-first, with SMS and in-app notification {{seconds}} seconds before reclaim",
     "spotToOnDemandNoReclaim": "After the switch this instance is no longer subject to reclaim",
     "spotToOnDemandNoRestart": "The container is not touched and not rescheduled: no interruption",
     "spotToOnDemandRepriceHour": "The current clock hour is re-billed entirely at the pay-as-you-go price (an hourly bill has one row and one unit price)",
@@ -171,6 +189,7 @@
     "stockAvailable_one": "1 instance available",
     "stockAvailable_other": "{{count}} instances available",
     "stopConfirm": "Stopping releases the GPU and stops GPU billing immediately; instance disk data is kept, and any attached data disk keeps accruing daily charges. Restarting later may require waiting or switching specs if this one sells out",
+    "stopConfirmSubscription": "Stopping during the term is not refunded, but the platform keeps this instance's capacity reserved — you can start it again later. Instance disk data is kept, and any attached data disk keeps accruing daily charges",
     "stopNeedsRunning": "Only running instances can be stopped"
   },
   "create": {
@@ -186,6 +205,14 @@
     "authRequire": "Require an API key",
     "balanceNeedNote": "Balance must cover at least 1 hour before boot. Pay as you go: metered per second while Running, down to the moment you stop; stopping ends GPU charges",
     "balanceNeedNotePeriod": "Subscriptions are prepaid: the full amount is charged at checkout. Top up first if your balance is short",
+    "bulkAdd": "Bulk add",
+    "bulkAddArgsHint": "One argument per line. Empty lines are ignored",
+    "bulkAddArgsTitle": "Bulk add arguments",
+    "bulkAddConfirm": "Add",
+    "bulkAddEnvHint": "One KEY=VALUE pair per line. Lines with invalid, reserved, or duplicate names are skipped",
+    "bulkAddEnvTitle": "Bulk add environment variables",
+    "bulkAddSkipped_one": "Skipped 1 line with an invalid or duplicate name",
+    "bulkAddSkipped_other": "Skipped {{count}} lines with invalid or duplicate names",
     "cancel": "Cancel",
     "cascadePlaceholder": "Framework / version / Python / CUDA",
     "changeSpec": "Change spec",
@@ -207,12 +234,17 @@
     "detailInstanceLine_one": "Instance: {{unit}} × {{count}} = {{total}}",
     "detailInstanceLine_other": "Instance: {{unit}} × {{count}} = {{total}}",
     "detailInstanceLineCpu": "Instance: {{total}} per instance",
+    "discardConfirmBody": "The image, command, and arguments you entered will be discarded. Leave this page?",
+    "discardConfirmCancel": "Keep editing",
+    "discardConfirmOk": "Discard and leave",
+    "discardConfirmTitle": "Discard what you entered?",
     "diskAutoCreateNote": "created automatically on submit and mounted with the instance",
     "diskCard": "Data disk (optional)",
     "diskExisting": "Mount existing",
     "diskIndependentNote": "Data disks outlive instances: kept through stop and release, and bill per day even while stopped",
     "diskNew": "New data disk",
     "diskNone": "None",
+    "diskSizeAria": "Data disk size (GB)",
     "ecoAgree": "I have read and accept the terms above",
     "ecoConfirm": "Understood, continue",
     "ecoModalTitle": "Shared·Economy service terms",
@@ -271,6 +303,7 @@
     "tabCustom": "Custom image",
     "tabPlatform": "Platform images",
     "title": "Create instance",
+    "walletQueryFailedRetry": "Balance query failed. Retry before creating.",
     "withSsh": "Also open SSH",
     "withSshHint": "Handy for debugging; takes one SSH port. Without it the instance runs no sshd"
   },
@@ -296,8 +329,9 @@
     "unread": "Unread notifications"
   },
   "errorPage": {
-    "title": "Something went wrong",
-    "unknown": "An unexpected error occurred. Retry or go back home."
+    "subtitle": "The page ran into a problem. Retry or go back home.",
+    "techDetail": "Technical details",
+    "title": "Something went wrong"
   },
   "footer": {
     "complianceTitle": "Compliance",
@@ -374,6 +408,7 @@
       "releaseMenu": "Release instance",
       "releaseModalTitle": "Release instance",
       "releaseStarted": "Release started",
+      "releaseSubscriptionNote": "The prepaid subscription is not refunded, and the remaining {{days}} days are forfeited.",
       "restart": "Restart",
       "restartConfirmBody": "Brief downtime during restart; billing settles a tail bill at stop and restarts the clock at boot.",
       "restartConfirmTitle": "Restart this instance?",
@@ -382,8 +417,7 @@
       "stopConfirmTitle": "Stop this instance?",
       "stopOk": "Stop",
       "stopped": "Stop requested",
-      "toPeriod": "Switch to a subscription",
-      "typeNameToConfirm": "Type the instance name {{name}} to confirm"
+      "toPeriod": "Switch to a subscription"
     },
     "apiKeyCancel": "Cancel",
     "apiKeyCard": "API keys",
@@ -442,11 +476,14 @@
     "curlKeyPlaceholderNote": "The key in the example is a prefix placeholder — swap in the full value you saved",
     "dangerNote": "Releasing wipes the instance disk permanently (data disks are unaffected).",
     "dangerZone": "Danger zone",
+    "dblclickHint": "Double-click a row to view instance details",
     "detail": "Details",
     "emptyHint": "Pay-as-you-go — no GPU charges while stopped; data disks persist",
     "emptyTitle": "No instances yet",
     "eventMetaLine": "{{time}} · {{reason}} · by {{actor}}",
+    "eventsEmpty": "No status change events yet",
     "failedRanNote": "Runtime failure — billing stopped; charged for actual runtime only",
+    "failedReason": "Failure reason",
     "goMarket": "Go to marketplace",
     "imageLine": "Image: {{ref}}",
     "keySettings": "SSH key settings",
@@ -456,11 +493,15 @@
     "labelSpec": "Spec",
     "labelToday": "Today",
     "logsAutoRefresh": "Auto-refresh (10s)",
+    "logsBackToBottom": "Back to bottom",
+    "logsBackToBottomNew_one": "Back to bottom · {{count}} new line",
+    "logsBackToBottomNew_other": "Back to bottom · {{count}} new lines",
     "logsDownload": "Download .log",
     "logsEmpty": "No log output yet",
     "logsNotRunning": "Container logs are available while the instance is running or stopping",
     "logsTail": "Lines",
     "logsTruncatedNote": "Large log volume — showing the last {{lines}} lines",
+    "metricsNoData": "No metrics data",
     "metricsNotRunning": "Instance not running — no live metrics",
     "monitorLink": "Metrics",
     "noMatch": "No matching instances",
@@ -470,6 +511,7 @@
     "pricePerCard_one": "{{price}} × {{count}} GPU",
     "pricePerCard_other": "{{price}} × {{count}} GPUs",
     "pricePerInstance": "{{price}} per instance",
+    "quickTools": "Quick tools",
     "range1h": "1 hour",
     "range24h": "24 hours",
     "range6h": "6 hours",
@@ -569,11 +611,6 @@
       "title": "GPU Compute Ranking"
     }
   },
-  "lang": {
-    "en": "English",
-    "switchLabel": "Switch language",
-    "zh": "中文"
-  },
   "legal": {
     "backHome": "Back to home",
     "docDeletionNotice": "Data Deletion Notice",
@@ -602,6 +639,9 @@
     "passwordRequired": "Enter your password",
     "passwordResetPlaceholder": "New password (12+ characters)",
     "passwordSetPlaceholder": "Set password (optional, 12+ chars)",
+    "passwordStrengthMedium": "Strength: medium",
+    "passwordStrengthStrong": "Strength: strong",
+    "passwordStrengthWeak": "Strength: weak",
     "phoneInvalid": "Enter a valid phone number",
     "phonePlaceholder": "Phone number",
     "resetDone": "Password updated",
@@ -652,6 +692,13 @@
     "subtitle": "The page you are looking for does not exist or has been removed.",
     "title": "Page not found"
   },
+  "notifications": {
+    "empty": "No notifications yet",
+    "emptyUnread": "No unread notifications",
+    "filterAll": "All",
+    "filterUnread": "Unread",
+    "title": "Notifications"
+  },
   "period": {
     "autoRenewOff": "Auto-renew turned off",
     "autoRenewOffMenu": "Turn off auto-renew",
@@ -696,9 +743,7 @@
     "unitYear": "years"
   },
   "query": {
-    "loadFailed": "Failed to load — network issue or service unavailable",
-    "partialFailed": "Some data failed to load",
-    "partialFailedDesc": "Amounts and lists on this page may be incomplete; retry for accurate results."
+    "loadFailed": "Failed to load — network issue or service unavailable"
   },
   "settings": {
     "accountCard": "Account",
@@ -710,7 +755,7 @@
     "codeSent": "Code sent",
     "colAddedAt": "Added",
     "colFingerprint": "Fingerprint",
-    "deleteKeyConfirm": "Delete this key? authorized_keys inside existing instances are unaffected",
+    "deleteKeyConfirm": "Delete this key? New and restarted instances will no longer accept it; running instances keep it until their next restart — restart them to revoke immediately",
     "deletion": {
       "apply": "Delete account",
       "cancel": "Withdraw request",
@@ -726,9 +771,6 @@
       "noteResources": "All instances must be released and all data disks deleted first, or the request will be rejected",
       "notesTitle": "Please confirm before deleting",
       "pendingLine": "Deletion requested: cooling-off {{countdown}} (until {{date}}) — you may withdraw anytime",
-      "phoneLabel": "Type your full phone number to confirm",
-      "phoneMismatch": "Phone number does not match this account",
-      "phoneRequired": "Please enter your phone number",
       "reasonLabel": "Reason for deletion",
       "reasonRequired": "Please provide a reason (at least 2 characters)",
       "rejectedLine": "Previous request rejected: {{note}}",
@@ -746,6 +788,7 @@
     "logoutAll": "Log out of all devices",
     "logoutAllConfirm": "This signs the account out on every device (including this one). Continue?",
     "logoutAllHint": "Use this if your phone is lost or you suspect account theft. Sessions last at most 7 days; changing your password also revokes all sessions immediately",
+    "logoutConfirm": "Sign out of this device?",
     "newPasswordPlaceholder": "New password (12+ characters)",
     "noKeys": "No keys yet — add one below (generate with ssh-keygen -t ed25519)",
     "notifyCard": "Notifications",
@@ -833,8 +876,7 @@
     "segData": "Data disk · {{price}} · kept independently",
     "segRoot": "Instance disk · 100G included · kept on stop · wiped on release · free",
     "sizeLabel": "Size (GB)",
-    "title": "Storage",
-    "typeNameToConfirm": "Type the disk name {{name}} to confirm deletion"
+    "title": "Storage"
   },
   "support": {
     "backToList": "Back to tickets",
@@ -859,13 +901,17 @@
     "fieldInstancePlaceholder": "Pick the instance with the problem",
     "fieldSubject": "Subject",
     "fieldSubjectPlaceholder": "One-line summary of the problem",
+    "filterAll": "All",
+    "filterStatus": "Filter by status",
     "linkedInstance": "View linked instance",
     "msgMe": "Me",
     "msgStaff": "Support",
     "myTickets": "My tickets",
     "none": "No tickets yet",
+    "noneWithStatus": "No tickets with this status",
     "replyPlaceholder": "Add details or reply to support…",
     "replySend": "Send",
+    "replySendHint": "Press {{kbd}} to send",
     "selfHelp": {
       "arrears": "What happens when my balance runs out?",
       "billingStart": "When does billing start?",
@@ -892,6 +938,7 @@
     "register": "Sign up free",
     "siteSection": "Site",
     "themeToDark": "Switch to dark theme",
-    "themeToLight": "Switch to light theme"
+    "themeToLight": "Switch to light theme",
+    "viewAllNotifications": "View all notifications"
   }
 }

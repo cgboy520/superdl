@@ -5,7 +5,9 @@
  * secret 类永不回显明文:只显示"已配置 + 尾 4 位",输入留空 = 保持不变。
  */
 
-import { adminColors, formatDateTime } from "@superdl/ui";
+import { ArrowLeftOutlined } from "@ant-design/icons";
+import { adminColors, fontSize, formatDateTime, useFormDraft } from "@superdl/ui";
+import { PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -15,6 +17,7 @@ import {
   Button,
   Card,
   Form,
+  Grid,
   Input,
   Menu,
   Modal,
@@ -36,7 +39,7 @@ import {
   useTestSms,
   useUpdatePlatformConfig,
 } from "../../api";
-import { useApiErrorText } from "../../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 import { useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/platform")({
@@ -210,7 +213,7 @@ function FieldControl({
   if (item.kind === "text") {
     return (
       <Input.TextArea
-        style={{ maxWidth: 640, fontFamily: "monospace", fontSize: 12 }}
+        style={{ maxWidth: 640, fontFamily: "monospace", fontSize: fontSize.caption }}
         rows={4}
         disabled={disabled}
         value={draft ?? item.value ?? ""}
@@ -235,6 +238,7 @@ function GroupPanel({
   setDraft,
   disabled,
   extraContent,
+  origin,
 }: {
   group: Group;
   items: PlatformConfigItem[];
@@ -242,10 +246,23 @@ function GroupPanel({
   setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   disabled: boolean;
   extraContent?: React.ReactNode;
+  /** 从安全组开关「前往」跳入时带来源分组,渲染返回回链 */
+  origin?: { group: Group; onBack: () => void };
 }) {
   const { t } = useTranslation();
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%", maxWidth: 760 }}>
+      {origin && (
+        <Button
+          type="link"
+          size="small"
+          icon={<ArrowLeftOutlined />}
+          style={{ paddingInline: 0 }}
+          onClick={origin.onBack}
+        >
+          {t("platform.backToGroup", { group: t(GROUP_LABEL_KEY[origin.group]) })}
+        </Button>
+      )}
       <Collapse
         size="small"
         items={[
@@ -269,14 +286,14 @@ function GroupPanel({
                 {FIELD_LABELS[item.key] ?? item.key}
                 <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
                 {item.updated_at && (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {t("platform.updatedAt", { time: formatDateTime(item.updated_at) })}
                   </Typography.Text>
                 )}
               </Space>
             }
             extra={
-              <span style={{ fontSize: 12 }}>
+              <span style={{ fontSize: fontSize.caption }}>
                 <FieldExtraText itemKey={item.key} hint={item.hint} />
               </span>
             }
@@ -342,7 +359,7 @@ function SmsTestCard({ disabled }: { disabled: boolean }) {
           {t("platform.testSmsSend")}
         </Button>
       </Space.Compact>
-      <div style={{ color: adminColors.textSecondary, fontSize: 12, marginTop: 8 }}>
+      <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption, marginTop: 8 }}>
         {t("platform.testSmsNote")}
       </div>
     </Card>
@@ -373,7 +390,7 @@ function RegistryTestCard({ disabled }: { disabled: boolean }) {
               : t("platform.registryFailed", { step: r.step, detail: r.detail })}
           </Typography.Text>
         )}
-        <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{t("platform.testRegistryNote")}</div>
+        <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{t("platform.testRegistryNote")}</div>
       </Space>
     </Card>
   );
@@ -493,7 +510,7 @@ function SwitchRow({
             <Typography.Text strong>{FIELD_LABELS[item.key] ?? item.key}</Typography.Text>
             <Tag color={SOURCE_TAG[item.source].color}>{t(SOURCE_TAG[item.source].textKey)}</Tag>
             {item.updated_at && (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {t("platform.updatedAt", { time: formatDateTime(item.updated_at) })}
               </Typography.Text>
             )}
@@ -511,14 +528,14 @@ function SwitchRow({
               <Tag color="orange">{t("platform.clearOverrideTag")}</Tag>
             )}
           </Space>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             <FieldExtraText itemKey={item.key} hint={item.hint} />
           </Typography.Text>
           {deps && (
             <Space size={4}>
               <Typography.Text
                 style={{
-                  fontSize: 12,
+                  fontSize: fontSize.caption,
                   color: missing.length > 0 ? adminColors.alertAccent : adminColors.positive,
                 }}
               >
@@ -536,7 +553,7 @@ function SwitchRow({
             </Space>
           )}
           {requires && !requiresOn && (
-            <Typography.Text style={{ fontSize: 12, color: adminColors.alertAccent }}>
+            <Typography.Text style={{ fontSize: fontSize.caption, color: adminColors.alertAccent }}>
               {t("platform.needsSwitch", { label: FIELD_LABELS[requires] ?? requires })}
             </Typography.Text>
           )}
@@ -544,7 +561,7 @@ function SwitchRow({
             <Typography.Text
               key={w.message}
               style={{
-                fontSize: 12,
+                fontSize: fontSize.caption,
                 color: w.level === "error" ? adminColors.negative : adminColors.alertAccent,
               }}
             >
@@ -611,14 +628,59 @@ function PlatformConfigPage() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
   const { message } = App.useApp();
+  const screens = Grid.useBreakpoint();
   const role = useAdminRole();
   const isAdmin = role === "admin";
   const qc = useQueryClient();
   const { data, queryKey, isLoading, isError, error } = usePlatformConfig();
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const items = data?.items ?? [];
+  const warnings: ConfigWarning[] = data?.warnings ?? [];
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  // 非 secret 字段变更草稿(sessionStorage):页面卸载/刷新后回来能恢复;
+  // secret 凭据禁入(会话级存储也是泄露面,见 formDraft 注释约定)
+  const configDraft = useFormDraft<Record<string, string>>("platform-config");
+  const [draftState, setDraftState] = useState<Record<string, string>>(() => {
+    const d = configDraft.load();
+    // load() 的 Partial 只是宽限标记:本处草稿值一律为 string,收窄回 Record
+    return d
+      ? Object.fromEntries(
+          Object.entries(d).filter((e): e is [string, string] => typeof e[1] === "string"),
+        )
+      : {};
+  });
   const [reasonOpen, setReasonOpen] = useState(false);
   const [active, setActive] = useState<Group>("security");
+  // 安全组开关「前往」跳入的来源分组:目标分组页显示「返回安全组」回链
+  const [originGroup, setOriginGroup] = useState<Group | null>(null);
   const [reasonForm] = Form.useForm<{ reason: string }>();
+  // 配置项到达后清洗一次恢复出的草稿:剔除 secret 字段与已下线的键(渲染期派生态,不进 effect)
+  const [draftSanitized, setDraftSanitized] = useState(false);
+  if (!draftSanitized && items.length > 0) {
+    setDraftSanitized(true);
+    setDraftState((d) =>
+      Object.fromEntries(
+        Object.entries(d).filter(([k]) => {
+          const item = byKey.get(k);
+          return item != null && item.kind !== "secret";
+        }),
+      ),
+    );
+  }
+  // 包装 setState:每次变更同步写草稿(只落非 secret 字段;空草稿直接移除存储键)
+  const setDraft: React.Dispatch<React.SetStateAction<Record<string, string>>> = (updater) => {
+    setDraftState((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (items.length > 0) {
+        const persistable = Object.fromEntries(
+          Object.entries(next).filter(([k]) => byKey.get(k)?.kind !== "secret"),
+        );
+        if (Object.keys(persistable).length === 0) configDraft.clear();
+        else configDraft.save(persistable);
+      }
+      return next;
+    });
+  };
+  const draft = draftState;
 
   const update = useUpdatePlatformConfig({
     mutation: {
@@ -629,13 +691,10 @@ function PlatformConfigPage() {
         reasonForm.resetFields();
         void qc.invalidateQueries({ queryKey });
       },
-      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
+      onError: (e) => message.error(errText(e, t("common.saveFailed"))),
     },
   });
 
-  const items = data?.items ?? [];
-  const warnings: ConfigWarning[] = data?.warnings ?? [];
-  const byKey = new Map(items.map((i) => [i.key, i]));
   const changed = Object.entries(draft).filter(([k, v]) => {
     const item = byKey.get(k);
     if (!item) return false;
@@ -647,17 +706,19 @@ function PlatformConfigPage() {
 
   if (isError) {
     return (
-      <Card>
-        <Alert
-          type="error"
-          showIcon
-          title={
-            isApiError(error) && error.status === 403
-              ? t("platform.adminOnly")
-              : t("platform.loadFailed", { message: errText(error, t("platform.networkError")) })
-          }
-        />
-      </Card>
+      <PageContainer title={t("menu.platform")}>
+        <Card>
+          <Alert
+            type="error"
+            showIcon
+            title={
+              isApiError(error) && error.status === 403
+                ? t("platform.adminOnly")
+                : t("platform.loadFailed", { message: errText(error, t("platform.networkError")) })
+            }
+          />
+        </Card>
+      </PageContainer>
     );
   }
 
@@ -681,7 +742,11 @@ function PlatformConfigPage() {
         disabled={disabled}
         byKey={byKey}
         warnings={warnings}
-        onGoTo={setActive}
+        // 开关「前往」带出来源分组:目标分组页显示「返回安全组」回链
+        onGoTo={(g) => {
+          setOriginGroup("security");
+          setActive(g);
+        }}
       />
     ) : (
       <GroupPanel
@@ -690,6 +755,17 @@ function PlatformConfigPage() {
         draft={draft}
         setDraft={setDraft}
         disabled={disabled}
+        origin={
+          originGroup
+            ? {
+                group: originGroup,
+                onBack: () => {
+                  setActive(originGroup);
+                  setOriginGroup(null);
+                },
+              }
+            : undefined
+        }
         extraContent={
           active === "sms" ? (
             <SmsTestCard disabled={disabled} />
@@ -701,8 +777,7 @@ function PlatformConfigPage() {
     );
 
   return (
-    <Card
-      loading={isLoading}
+    <PageContainer
       title={t("menu.platform")}
       extra={
         <Tooltip title={isAdmin ? "" : t("platform.adminOnlyEdit")}>
@@ -716,6 +791,7 @@ function PlatformConfigPage() {
         </Tooltip>
       }
     >
+    <Card loading={isLoading}>
       {warnings.length > 0 && (
         <Space orientation="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
           {warnings.map((w) => (
@@ -739,15 +815,31 @@ function PlatformConfigPage() {
           ))}
         </Space>
       )}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+      {/* 窄屏(lg 以下)左 Menu 改顶部横排,上下折行;桌面左竖排右表单 */}
+      <div
+        style={{
+          display: "flex",
+          gap: 24,
+          alignItems: "flex-start",
+          flexDirection: screens.lg ? "row" : "column",
+        }}
+      >
         <Menu
-          mode="inline"
+          mode={screens.lg ? "inline" : "horizontal"}
           selectedKeys={[active]}
           items={menuItems}
-          onClick={(e) => setActive(e.key as Group)}
-          style={{ width: 220, flex: "none", background: "transparent" }}
+          // 手动切分组即作废来源回链,避免回链指去过时的入口
+          onClick={(e) => {
+            setOriginGroup(null);
+            setActive(e.key as Group);
+          }}
+          style={
+            screens.lg
+              ? { width: 220, flex: "none", background: "transparent" }
+              : { width: "100%", flex: "none", background: "transparent" }
+          }
         />
-        <div style={{ flex: 1, minWidth: 0 }}>{panel}</div>
+        <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{panel}</div>
       </div>
       <Modal
         title={t("platform.confirmTitle")}
@@ -755,8 +847,12 @@ function PlatformConfigPage() {
         onCancel={() => setReasonOpen(false)}
         okButtonProps={{ loading: update.isPending }}
         onOk={async () => {
-          const { reason } = await reasonForm.validateFields();
-          update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
+          try {
+            const { reason } = await reasonForm.validateFields();
+            update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
+          } catch {
+            // 校验失败:antd 已在字段下给出红字反馈,静默停留
+          }
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
@@ -799,5 +895,6 @@ function PlatformConfigPage() {
         </Space>
       </Modal>
     </Card>
+    </PageContainer>
   );
 }

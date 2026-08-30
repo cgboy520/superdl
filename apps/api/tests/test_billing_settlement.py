@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.billing import wallet
 from app.modules.billing.models import BalanceLedger, BillHourly, Wallet
@@ -17,9 +16,7 @@ from app.modules.billing.settlement import (
     upsert_hour_bill,
 )
 from app.modules.orchestrator.models import Instance, InstanceEvent
-
-H = datetime(2026, 8, 19, 10, 0, tzinfo=UTC)  # 结算窗口 [10:00, 11:00)
-H_END = datetime(2026, 8, 19, 11, 0, tzinfo=UTC)
+from tests.helpers import H_END, H, seed_instance
 
 
 def ev(minute: float, from_s: str | None, to_s: str) -> tuple[datetime, str | None, str]:
@@ -116,61 +113,6 @@ class TestBillAmount:
             bill_amount(Decimal("1.0000"), 1, 3601)
         with pytest.raises(ValueError):
             bill_amount(Decimal("1.0000"), 1, -1)
-
-
-async def seed_instance(
-    sm: async_sessionmaker[AsyncSession],
-    user_id: int = 1,
-    price: str = "1.6800",
-    gpu_count: int = 1,
-    events: list[tuple] | None = None,
-    status: str = "stopped",
-) -> int:
-    """直接落库实例 + 事件(合成时间戳),返回 instance_id。
-
-    events 元素:(ts, from, to) 或 (ts, from, to, metadata)。
-    """
-    async with sm() as session:
-        inst = Instance(
-            uuid=f"u{user_id}i{datetime.now(UTC).timestamp()}".replace(".", ""),
-            user_id=user_id,
-            name="t",
-            sku_id=1,
-            spec={
-                "tier": "shared",
-                "vram_gb": 8,
-                "vcpu": 8,
-                "mem_gb": 32,
-                "disk_gb": 100,
-                "pool_label": "hami",
-                "gpu_cores_pct": 50,
-            },
-            price_hourly=Decimal(price),
-            gpu_count=gpu_count,
-            image_ref="img",
-            status=status,
-            k8s_namespace=f"tenant-{user_id}",
-            jupyter_token="tok",
-            authorized_keys=[],
-        )
-        session.add(inst)
-        await session.flush()
-        for e in events or []:
-            ts, from_s, to_s = e[0], e[1], e[2]
-            session.add(
-                InstanceEvent(
-                    instance_id=inst.id,
-                    from_status=from_s,
-                    to_status=to_s,
-                    reason="seed",
-                    actor="system",
-                    event_metadata=e[3] if len(e) > 3 else None,
-                    created_at=ts,
-                )
-            )
-        await wallet.credit(session, user_id, Decimal("100.00"), type_="recharge", remark="seed")
-        await session.commit()
-        return inst.id
 
 
 class TestUpsertIdempotency:

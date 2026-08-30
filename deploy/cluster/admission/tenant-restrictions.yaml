@@ -117,13 +117,30 @@ spec:
         (!has(object.spec.hostPID) || object.spec.hostPID == false) &&
         (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
       message: "租户 Pod 禁止 hostNetwork/hostPID/hostIPC"
-    # dedicated(Kata)档不传 hostUsers(VM 级隔离);shared/mig 档必须显式 false(userns)。
-    # 规则只禁「显式 true」,两档行为均不受影响。
-    - expression: "!has(object.spec.hostUsers) || object.spec.hostUsers == false"
-      message: "租户 Pod 禁止 hostUsers: true"
+    # dedicated(Kata)档不传 hostUsers(VM 级隔离,hostUsers 与 Kata 互斥);
+    # 共享路径(shared/mig/cpu,runc)必须显式 false:userns 是容器 root 与宿主 root
+    # 之间唯一的边界,字段缺失 = 静默退回共享宿主 uid 命名空间,比显式 true 更隐蔽。
+    - expression: >-
+        (has(object.spec.runtimeClassName) && object.spec.runtimeClassName == 'kata-qemu') ||
+        (has(object.spec.hostUsers) && object.spec.hostUsers == false)
+      message: "非 Kata 租户 Pod 必须显式 hostUsers: false(userns 隔离);Kata 档由 VM 隔离,不传该字段"
     # 平台创建租户 Pod 时恒为 false;禁止任何 SA token 挂进租户容器
     - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
       message: "租户 Pod 必须 automountServiceAccountToken: false"
+    # 以下三条把 pod builder 的加固(real.py tenant_security_context)从「约定」升级为
+    # 「准入强制」:编排逻辑出 bug 或被注入时,缺加固的 Pod 在创建时即被拒。
+    - expression: >-
+        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) && c.securityContext.allowPrivilegeEscalation == false)
+      message: "租户容器必须显式 allowPrivilegeEscalation: false"
+    - expression: >-
+        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.capabilities) &&
+          has(c.securityContext.capabilities.drop) && c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
+          (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.all(a, a in ['SYS_CHROOT', 'SETUID', 'SETGID'])))
+      message: "租户容器必须 drop ALL capabilities,仅允许 add SYS_CHROOT/SETUID/SETGID(sshd 特权分离所需)"
+    - expression: >-
+        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.seccompProfile) &&
+          has(c.securityContext.seccompProfile.type) && c.securityContext.seccompProfile.type == 'RuntimeDefault')
+      message: "租户容器必须 seccompProfile: RuntimeDefault"
     # 租户 Pod 一律走 nodeSelector(独享池经标签绑节点):nodeName 是调度器旁路,
     # 平台创建路径从不设置(real.py 仅 node_selector),CREATE 时出现即异常。
     # UPDATE 必须放行「已绑定且未变」的 nodeName:调度器 Bind 之后 Pod 天然带 nodeName,

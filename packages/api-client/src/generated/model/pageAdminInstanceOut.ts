@@ -9,4 +9,5 @@ import type { AdminInstanceOut } from './adminInstanceOut';
 export interface PageAdminInstanceOut {
   items: AdminInstanceOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

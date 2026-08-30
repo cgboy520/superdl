@@ -11,6 +11,7 @@ export interface NotificationOut {
   id: number;
   read_at: string | null;
   severity: string;
+  target_id?: string | null;
   title: string;
   type: string;
 }

@@ -28,7 +28,7 @@ class PlatformSetting(Base):
     __tablename__ = "platform_settings"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(Text)  # secret 类为 enc:v1: 密文
+    value: Mapped[str] = mapped_column(Text)  # secret 类为 enc:v2:<kid>: 密文(v1 只读兼容)
     updated_by: Mapped[int | None]  # AdminUser.id(仅追溯,不建外键)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -54,7 +54,8 @@ class SettingSpec:
     group: SettingGroup
     kind: SettingKind
     choices: tuple[str, ...] = ()
-    pattern: str | None = None  # fullmatch 校验(str/secret 适用)
+    pattern: str | None = None  # fullmatch 校验(str/secret 适用;必须为无线性外迭代的简单模式)
+    line_pattern: str | None = None  # text 多行值:逐行 fullmatch(锚定单行,防嵌套量词 ReDoS)
     must_contain: str | None = None  # 子串校验(PEM 头等)
     forbid_contains: str | None = None  # 反向校验(如支付宝密钥禁 PEM 头)
     max_len: int = 8192
@@ -64,14 +65,14 @@ class SettingSpec:
 
 # key 与 Settings 同名字段一一对应(env 即默认值层;K8s Secret 注入仍有效)
 SETTING_SPECS: dict[str, SettingSpec] = {
-    # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;env 层 prod 关闭只告警不拒启动,
-    # 在线写库层 prod 一律禁关——单管理员一次请求即降防的口子必须堵死) ----
+    # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;在线写库层 prod 一律禁关——
+    # 单管理员一次请求即降防的口子必须堵死;人机验证/实名再叠加 prod 启动 fail-fast(D-4)) ----
     "captcha_enabled": SettingSpec(
         "security",
         "bool",
         prod_forbidden=("false",),
         hint="开启后 /auth/sms-code 必须带阿里云验证码 2.0 的一次性 token(凭据在「人机验证」组);"
-        "关闭 = 不做人机校验,发码口子只剩 IP/手机号限流;prod 在线关闭已禁(需部署层变更)",
+        "关闭 = 发码口子只剩 IP/手机号限流;prod 在线关闭已禁,env 层关闭启动 fail-fast(D-4)",
     ),
     "admin_mfa_enabled": SettingSpec(
         "security",
@@ -85,12 +86,14 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "bool",
         prod_forbidden=("false",),
         hint="开启后用户端「账户设置」可提交三要素核验(凭据在「实名认证」组,缺失即 502);"
-        "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁(需部署层变更)",
+        "关闭 = 提交返 409,不影响已实名用户;prod 在线关闭已禁,env 层关闭启动 fail-fast(D-4)",
     ),
     "real_name_required_for_recharge": SettingSpec(
         "security",
         "bool",
-        hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合)",
+        prod_forbidden=("false",),
+        hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合);"
+        "prod 在线关闭已禁且启动 fail-fast(境内合规 D-4)",
     ),
     # ---- 微信支付(APIv3;公钥模式与平台证书模式二选一,新商户仅公钥模式) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
@@ -299,7 +302,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "registry_proxy_projects": SettingSpec(
         "registry",
         "text",
-        pattern=r"(?:[a-z0-9.-]+=[a-z0-9]+(?:[._-][a-z0-9]+)*\n?)*",
+        line_pattern=r"[a-z0-9.-]+=[a-z0-9]+([._-][a-z0-9]+)*",
         max_len=2048,
         hint="Harbor 代理缓存:每行 <上游>=<代理项目>,如 docker.io=dockerhub、ghcr.io=ghcr"
         "(项目须先在 Harbor 建好并设 public);节点 containerd 对该上游做 mirror,拉不到回落上游",
@@ -307,7 +310,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
     "image_allowed_registries": SettingSpec(
         "registry",
         "text",
-        pattern=r"(?:[a-z0-9][a-z0-9.\-:/_]*\n?)*",
+        line_pattern=r"[a-z0-9][a-z0-9.\-:/_]*",
         max_len=4096,
         hint="创建实例的镜像来源白名单,每行一个仓库前缀(如 docker.io/);留空 = 不限制;"
         "Harbor 地址自动放行,平台镜像目录内的引用恒放行",
@@ -405,6 +408,24 @@ def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[Co
     return out
 
 
+# D-4 合规闸门(prod 启动 fail-fast;在线写库层由 prod_forbidden 禁关,这里兜 env/部署层)
+PROD_REQUIRED_SWITCHES = ("captcha_enabled", "real_name_enabled", "real_name_required_for_recharge")
+
+
+def assert_prod_compliance_gates(cfg: Mapping[str, str], environment: str) -> None:
+    """prod 下人机验证/实名/充值强制实名必须全开(境内合规),否则拒绝启动。
+    首次部署经 env 满足(SUPERDL_CAPTCHA_ENABLED=true 等),渠道凭据可后在配置中心补录。"""
+    if environment != "prod":
+        return
+    gated_off = [k for k in PROD_REQUIRED_SWITCHES if cfg.get(k) != "true"]
+    if gated_off:
+        raise RuntimeError(
+            "生产环境合规开关未全开,拒绝启动:"
+            + ",".join(gated_off)
+            + "(境内合规要求;经 env 或平台配置中心开启后再启动)"
+        )
+
+
 def validate_setting_value(key: str, value: str) -> str:
     """校验并归一化(strip)。未知键/格式不符抛 ValueError(调用方转 AppError)。"""
     spec = SETTING_SPECS.get(key)
@@ -426,6 +447,13 @@ def validate_setting_value(key: str, value: str) -> str:
         raise ValueError(f"{key} 生产环境禁止取值 {value}{suffix}")
     if spec.pattern and not re.fullmatch(spec.pattern, value):
         raise ValueError(f"{key} 格式不符{suffix}")
+    if spec.line_pattern is not None:
+        # 逐行锚定校验:多行 text 不许用嵌套量词整串匹配(指数回溯 → 事件循环停摆)。
+        # 逗号与换行同为分隔符(与读取侧 effective_image_allowlist 的归一化同口径)。
+        for line in value.replace(",", "\n").splitlines():
+            line = line.strip()
+            if line and not re.fullmatch(spec.line_pattern, line):
+                raise ValueError(f"{key} 含非法行:{line[:64]!r}{suffix}")
     if spec.must_contain and spec.must_contain not in value:
         raise ValueError(f"{key} 格式不符{suffix}")
     if spec.forbid_contains and spec.forbid_contains in value:
@@ -446,14 +474,15 @@ def _env_layer() -> dict[str, str]:
     return {key: _env_default(key) for key in SETTING_SPECS}
 
 
-def _decrypt_row(key: str, value: str, *, aad: str) -> str | None:
-    """单行解密;密文损坏(主密钥换错/手工改库)返回 None 让调用方回落 env,
-    不得拖垮整份配置(prod lifespan 也走这里)。"""
+def _decrypt_row(key: str, value: str, *, aad: str) -> str:
+    """单行解密,fail-closed:密文损坏/主密钥不配套即抛,禁止静默回落 env——
+    轮换窗口里回落等于悄悄用回旧值,且故障被埋成「配置莫名没生效」。
+    (轮换时旧密钥挂 SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS,见 crypto.py 头注释)"""
     try:
         return crypto.decrypt_str(value, aad=aad)
-    except Exception:
-        logger.error("platform_setting_decrypt_failed", key=key, fallback="env")
-        return None
+    except Exception as exc:
+        logger.error("platform_setting_decrypt_failed", key=key)
+        raise ValueError(f"平台配置项 {key} 解密失败(主密钥不配套或密文损坏)") from exc
 
 
 async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]:
@@ -467,8 +496,7 @@ async def get_effective_platform_config(session: AsyncSession) -> dict[str, str]
         if spec is None:
             continue  # 不在白名单内的键忽略
         if spec.kind == "secret":
-            if (plain := _decrypt_row(row.key, row.value, aad=row.key)) is not None:
-                eff[row.key] = plain
+            eff[row.key] = _decrypt_row(row.key, row.value, aad=row.key)
         else:
             eff[row.key] = row.value
     return eff

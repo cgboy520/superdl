@@ -43,21 +43,17 @@ import type {
   InstanceLogsOut,
   InstanceOut,
   ListHourlyBillsApiV1BillsHourlyGetParams,
-  PageBillHourlyOut,
+  ListInstanceEventsApiV1InstancesUuidEventsGetParams,
   PageInstanceEventOut,
   PageInstanceOut,
-  PageInvoiceOut,
-  PageLedgerEntryOut,
-  PageNotificationOut,
-  PageRefundOut,
-  PageTicketOut,
   RechargeOut,
   ServiceEndpointOut,
   TicketDetailOut,
 } from "@superdl/api-client";
 import { isTransientInstanceStatus } from "@superdl/ui";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef } from "react";
 
 interface QueryOpts<T = unknown> {
   enabled?: boolean;
@@ -81,6 +77,29 @@ function useApiQuery<T>(key: unknown[], fn: () => Promise<T>, opts?: QueryOpts<N
   });
 }
 
+/** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor。 */
+type CursorParams = { limit?: number; cursor?: string };
+type CursorPage = { next_cursor?: string | null };
+
+/** 游标分页骨架:收敛「加载更多」列表的 useInfiniteQuery 同构样板(limit+cursor 拼接/翻页判定)。
+ *  轮询三律③:infinite 查询禁止轮询(每轮放大为已加载页数个请求),window focus 重拉同理放大;
+ *  列表新鲜度靠手动刷新/既有轮询。 */
+function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
+  key: readonly unknown[],
+  fetcher: (params?: P) => Promise<TPage>,
+  params: Omit<P, "cursor" | "limit"> | undefined,
+  limit: number,
+) {
+  return useInfiniteQuery<TPage, ApiError, InfiniteData<TPage>, readonly unknown[], string | undefined>({
+    queryKey: key,
+    initialPageParam: undefined,
+    // 组合对象即 P(页面参数 + limit/cursor);TS 证不出泛型展开,仅此处单点断言
+    queryFn: ({ pageParam }) => fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchOnWindowFocus: false,
+  });
+}
+
 
 export const useMe = (opts?: QueryOpts) => useApiQuery(["me"], () => meApiV1MeGet(), opts);
 /** 我的注销申请:pending 或最近一条;null = 从未申请。 */
@@ -94,17 +113,7 @@ export const useUnreadCount = (opts?: QueryOpts) =>
   useApiQuery(["notifications", "unread-count"], () => unreadCountApiV1NotificationsUnreadCountGet(), opts);
 /** 通知弹层游标分页:「加载更多」向下翻页。 */
 export const useNotificationPages = (params?: { unread?: boolean }) =>
-  useInfiniteQuery<PageNotificationOut, ApiError, InfiniteData<PageNotificationOut>, unknown[], string | undefined>({
-    queryKey: ["notifications", "pages", params ?? null],
-    initialPageParam: undefined,
-    queryFn: ({ pageParam }) =>
-      listNotificationsApiV1NotificationsGet({
-        ...params,
-        limit: 20,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(["notifications", "pages", params ?? null], listNotificationsApiV1NotificationsGet, params, 20);
 export const useSkus = (opts?: QueryOpts) => useApiQuery(["skus"], () => listSkusApiV1SkusGet(), opts);
 export const useImages = () => useApiQuery(["images"], () => listImagesApiV1ImagesGet());
 export const useSshKeys = () => useApiQuery(["ssh-keys"], () => listSshKeysApiV1SshKeysGet());
@@ -127,32 +136,53 @@ export const useExpiringInstances = (withinDays: number | undefined, opts?: Quer
     { ...opts, enabled: withinDays !== undefined && (opts?.enabled ?? true) },
   );
 /** 实例列表游标分页:status 精确/name 模糊服务端过滤,「加载更多」向下翻页。
- *  轮询交给 refetchInterval:过渡态 5s、稳态 30s,窗口失焦自动停(默认
- *  refetchIntervalInBackground=false),失败态由查询自身承担,不必自己拿 setInterval
- *  + setQueryData 手工合并首页。 */
+ *  轮询三律③:infinite 查询不挂 refetchInterval(每轮放大为已加载页数个请求);
+ *  过渡态新鲜度由 useTransientInstanceRefresh 逐台单实例轮询驱动,迁移时失效本查询回刷。 */
 export const useInstancePages = (params?: { status?: string; name?: string }) => {
   const status = params?.status;
   const name = params?.name?.trim() || undefined;
-  return useInfiniteQuery<
-    PageInstanceOut,
-    ApiError,
-    InfiniteData<PageInstanceOut>,
-    unknown[],
-    string | undefined
-  >({
-    queryKey: ["instances", "pages", { status, name }],
-    queryFn: ({ pageParam }) =>
-      listInstancesApiV1InstancesGet({ status, name, cursor: pageParam, limit: 20 }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-    refetchInterval: (q) =>
-      (q.state.data?.pages ?? []).some((p) =>
-        p.items.some((i) => isTransientInstanceStatus(i.status)),
-      )
-        ? 5_000
-        : 30_000,
-  });
+  return useCursorPages(["instances", "pages", { status, name }], listInstancesApiV1InstancesGet, { status, name }, 20);
 };
+/** 过渡态实例逐台轻轮询:infinite 列表挂 refetchInterval 会把每轮放大为已加载页数个请求,
+ *  故改为从当前已加载行派生过渡态(creating/starting/stopping/releasing)uuid,
+ *  逐台轮询单实例端点(5s,到终态即停);任一台 status 迁移即失效列表查询回刷。
+ *  迁移由「本轮轮询值 vs 上轮轮询值」判定,首轮只落基线,列表挂载时的自刷新不误触发。 */
+export function useTransientInstanceRefresh(rows: InstanceOut[]) {
+  const queryClient = useQueryClient();
+  const transientKey = rows
+    .filter((i) => isTransientInstanceStatus(i.status))
+    .map((i) => i.uuid)
+    .join(",");
+  const transientUuids = useMemo(() => (transientKey ? transientKey.split(",") : []), [transientKey]);
+  const results = useQueries({
+    queries: transientUuids.map((uuid) => ({
+      queryKey: ["instances", uuid] as const,
+      queryFn: () => getInstanceApiV1InstancesUuidGet(uuid),
+      // 函数式:到终态即停(该 uuid 随后也随列表回刷退出轮询集合)
+      refetchInterval: (q: { state: { data: InstanceOut | undefined } }) =>
+        q.state.data && isTransientInstanceStatus(q.state.data.status) ? 5_000 : false,
+    })),
+  });
+  const statusesKey = results.map((r) => r.data?.status ?? "").join(",");
+  const lastSeen = useRef(new Map<string, string>());
+  useEffect(() => {
+    let changed = false;
+    const alive = new Set(transientUuids);
+    transientUuids.forEach((uuid, i) => {
+      const status = results[i]?.data?.status;
+      if (!status) return;
+      const prev = lastSeen.current.get(uuid);
+      lastSeen.current.set(uuid, status);
+      if (prev !== undefined && prev !== status) changed = true;
+    });
+    // 退出过渡态集合的 uuid 清出基线,避免再次进入时拿陈旧基线误判
+    for (const uuid of [...lastSeen.current.keys()]) {
+      if (!alive.has(uuid)) lastSeen.current.delete(uuid);
+    }
+    if (changed) void queryClient.invalidateQueries({ queryKey: ["instances", "pages"] });
+    // statusesKey 聚合轮询结果变化;results 仅作取值通道
+  }, [statusesKey, transientUuids, results, queryClient]);
+}
 export const useInstance = (uuid: string, opts?: QueryOpts<InstanceOut>) =>
   useApiQuery(["instances", uuid], () => getInstanceApiV1InstancesUuidGet(uuid), opts);
 export const useInstanceEvents = (uuid: string, opts?: QueryOpts<PageInstanceEventOut>) =>
@@ -162,21 +192,17 @@ export const useInstanceEvents = (uuid: string, opts?: QueryOpts<PageInstanceEve
     () => listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { limit: 200 }),
     opts,
   );
-/** 事件时间线游标分页(与费用中心小时账单同构):详情页「事件」Tab 加载更多。 */
+/** 事件时间线游标分页(与费用中心小时账单同构):详情页「事件」Tab 加载更多。
+ *  轮询三律③:不挂 refetchInterval;事件只在状态迁移时产生,详情页实例轮询检测到
+ *  status 迁移后失效 ["instances", uuid, "events"] 前缀刷新(立即 + 延迟各一次)。 */
 export const useInstanceEventPages = (uuid: string) =>
-  useInfiniteQuery<
-    PageInstanceEventOut,
-    ApiError,
-    InfiniteData<PageInstanceEventOut>,
-    unknown[],
-    string | undefined
-  >({
-    queryKey: ["instances", uuid, "events", "pages"],
-    queryFn: ({ pageParam }) =>
-      listInstanceEventsApiV1InstancesUuidEventsGet(uuid, { cursor: pageParam, limit: 50 }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(
+    ["instances", uuid, "events", "pages"],
+    (p?: ListInstanceEventsApiV1InstancesUuidEventsGetParams) =>
+      listInstanceEventsApiV1InstancesUuidEventsGet(uuid, p),
+    undefined,
+    50,
+  );
 export const useInstanceAccess = (uuid: string, opts?: QueryOpts) =>
   useApiQuery(["instances", uuid, "access"], () => getInstanceAccessApiV1InstancesUuidAccessGet(uuid), opts);
 /** 服务端点(仅 workload_type='service' 的实例有,dev 实例调用会 404)。
@@ -213,21 +239,10 @@ export const useInstanceMetrics = (
   );
 /** 小时账单游标分页(费用中心/实例详情账单 Tab「加载更多」)。 */
 export const useHourlyBillPages = (params?: Omit<ListHourlyBillsApiV1BillsHourlyGetParams, "cursor" | "limit">) =>
-  useInfiniteQuery<PageBillHourlyOut, ApiError, InfiniteData<PageBillHourlyOut>, unknown[], string | undefined>({
-    queryKey: ["bills", "pages", params ?? null],
-    queryFn: ({ pageParam }) =>
-      listHourlyBillsApiV1BillsHourlyGet({ ...params, cursor: pageParam, limit: 50 }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(["bills", "pages", params ?? null], listHourlyBillsApiV1BillsHourlyGet, params, 50);
 /** 资金流水游标分页。必须走 useInfiniteQuery:自行把页累积进 useState 后,缓存失效不会刷新。 */
 export const useLedgerPages = (limit = 20) =>
-  useInfiniteQuery<PageLedgerEntryOut, ApiError, InfiniteData<PageLedgerEntryOut>, unknown[], string | undefined>({
-    queryKey: ["ledger", limit],
-    queryFn: ({ pageParam }) => getLedgerApiV1WalletLedgerGet({ cursor: pageParam, limit }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(["ledger", limit], getLedgerApiV1WalletLedgerGet, undefined, limit);
 /** 月度汇总:窗口按本地月界切,offset 与「今日消费」取同一来源,两个数字才对得上。 */
 export const useBillSummary = (month: string, tzOffsetMinutes: number) =>
   useApiQuery(["bill-summary", month, tzOffsetMinutes], () =>
@@ -258,31 +273,16 @@ export const useRefundableOrders = (opts?: QueryOpts) =>
   useApiQuery(["refundable-orders"], () => listRefundableOrdersApiV1WalletRefundsEligibleOrdersGet(), opts);
 /** 我的退款单游标分页(与收支明细同构)。 */
 export const useRefundPages = (limit = 20) =>
-  useInfiniteQuery<PageRefundOut, ApiError, InfiniteData<PageRefundOut>, unknown[], string | undefined>({
-    queryKey: ["refunds", limit],
-    queryFn: ({ pageParam }) => listMyRefundsApiV1WalletRefundsGet({ cursor: pageParam, limit }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(["refunds", limit], listMyRefundsApiV1WalletRefundsGet, undefined, limit);
 /** 各账期可开票额度预览(发票 Tab 申请弹窗数据源;仅 amount > 0 的已结束账期)。 */
 export const useInvoiceEligible = (opts?: QueryOpts) =>
   useApiQuery(["invoice-eligible"], () => listInvoiceEligibleApiV1BillingInvoicesEligibleGet(), opts);
 /** 我的发票申请游标分页(与退款单同构)。 */
 export const useInvoicePages = (limit = 20) =>
-  useInfiniteQuery<PageInvoiceOut, ApiError, InfiniteData<PageInvoiceOut>, unknown[], string | undefined>({
-    queryKey: ["invoices", limit],
-    queryFn: ({ pageParam }) => listMyInvoicesApiV1BillingInvoicesGet({ cursor: pageParam, limit }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(["invoices", limit], listMyInvoicesApiV1BillingInvoicesGet, undefined, limit);
 /** 我的工单游标分页(与退款单同构)。 */
 export const useTicketPages = (limit = 20) =>
-  useInfiniteQuery<PageTicketOut, ApiError, InfiniteData<PageTicketOut>, unknown[], string | undefined>({
-    queryKey: ["tickets", limit],
-    queryFn: ({ pageParam }) => listMyTicketsApiV1TicketsGet({ cursor: pageParam, limit }),
-    initialPageParam: undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  useCursorPages(["tickets", limit], listMyTicketsApiV1TicketsGet, undefined, limit);
 /** 工单详情 + 消息流(对话页;他人工单 404 由错误页兜底)。 */
 export const useTicketDetail = (ticketId: number, opts?: QueryOpts<TicketDetailOut>) =>
   useApiQuery(["tickets", ticketId], () => getMyTicketApiV1TicketsTicketIdGet(ticketId), opts);

@@ -13,9 +13,9 @@ from app.core.timeutil import now_utc
 from app.modules.billing import wallet
 from app.modules.billing.models import BillHourly, Wallet
 from app.modules.billing.patrol import balance_patrol
-from app.modules.orchestrator.models import Instance, InstanceEvent
+from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.reconciler import reconcile_once
-from tests.helpers import drain, get_instance, provision_running, register
+from tests.helpers import backdate_running_event, drain, get_instance, provision_running, register
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -37,28 +37,6 @@ class TestWalletFirstCreate:
             rows = (await s.execute(select(Wallet).where(Wallet.user_id == 424242))).scalars().all()
         assert len(rows) == 1
         assert rows[0].balance == Decimal("40.00")
-
-
-async def backdate_running_event(
-    sm: async_sessionmaker[AsyncSession], uuid: str, minutes: int
-) -> int:
-    """把进入 running 的事件回拨(钳制在当前自然小时内,尾账只覆盖当前小时)。
-
-    返回预期已运行秒数(近似,断言时留余量)。
-    """
-    from app.core.timeutil import hour_floor
-
-    now = now_utc()
-    start = max(hour_floor(now), now - timedelta(minutes=minutes))
-    async with sm() as session:
-        inst = (await session.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
-        await session.execute(
-            update(InstanceEvent)
-            .where(InstanceEvent.instance_id == inst.id, InstanceEvent.to_status == "running")
-            .values(created_at=start)
-        )
-        await session.commit()
-    return int((now - start).total_seconds())
 
 
 class TestTailBilling:

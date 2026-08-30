@@ -2,7 +2,7 @@
 # CRD 由 kube-prometheus-stack 提供;kps values 已设 serviceMonitorSelectorNilUsesHelmValues:
 # false,全命名空间的 ServiceMonitor/PodMonitor 均会被发现。
 # API /metrics 有 Bearer 门禁(SUPERDL_METRICS_TOKEN),凭据引用同命名空间的
-# superdl-api-secrets(prometheus-operator 从 Monitor 所在命名空间解析 Secret)。
+# superdl-metrics(prometheus-operator 从 Monitor 所在命名空间解析 Secret)。
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -19,7 +19,7 @@ spec:
       authorization:
         type: Bearer
         credentials:
-          name: superdl-api-secrets
+          name: superdl-metrics
           key: SUPERDL_METRICS_TOKEN
 ---
 # worker 无 Service(不接流量),用 PodMonitor 直抓 Pod 的 metrics 端口;
@@ -41,5 +41,5 @@ spec:
       authorization:
         type: Bearer
         credentials:
-          name: superdl-api-secrets
+          name: superdl-metrics
           key: SUPERDL_METRICS_TOKEN

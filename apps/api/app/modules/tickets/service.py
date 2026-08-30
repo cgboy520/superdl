@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.idempotency import find_replay
 from app.core.logging import get_logger
-from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+from app.core.pagination import Page, paginate_by_id
 from app.core.ratelimit import check_rate_limit
 from app.core.timeutil import now_utc
 from app.modules.notify import service as notify_service
@@ -163,13 +163,10 @@ async def list_my_tickets(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[TicketOut]:
     """本人工单(游标分页,语义与退款单/发票一致)。"""
-    lim = clamp_limit(limit)
-    stmt = select(Ticket).where(Ticket.user_id == user_id).order_by(Ticket.id.desc()).limit(lim + 1)
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(Ticket.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    stmt = select(Ticket).where(Ticket.user_id == user_id).order_by(Ticket.id.desc())
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Ticket.id, cursor=cursor, limit=limit
+    )
     return Page[TicketOut](
         items=[TicketOut.model_validate(r) for r in page_items], next_cursor=next_cursor
     )
@@ -277,8 +274,7 @@ async def admin_list_tickets(
     limit: int | None = None,
 ) -> Page[AdminTicketOut]:
     """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
-    lim = clamp_limit(limit)
-    stmt = select(Ticket).order_by(Ticket.id.desc()).limit(lim + 1)
+    stmt = select(Ticket).order_by(Ticket.id.desc())
     if status:
         stmt = stmt.where(Ticket.status == status)
     if category:
@@ -287,14 +283,24 @@ async def admin_list_tickets(
         stmt = stmt.where(Ticket.user_id == user_id)
     if ticket_no:
         stmt = stmt.where(Ticket.ticket_no == ticket_no.strip())
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(Ticket.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Ticket.id, cursor=cursor, limit=limit
+    )
     return Page[AdminTicketOut](
         items=[AdminTicketOut.model_validate(r) for r in page_items], next_cursor=next_cursor
     )
+
+
+async def admin_count_tickets(
+    session: AsyncSession, status: str | None = None, category: str | None = None
+) -> int:
+    """工单计数(待办角标轻端点):与列表同一过滤口径的 DB count,不拉行。"""
+    stmt = select(func.count()).select_from(Ticket)
+    if status:
+        stmt = stmt.where(Ticket.status == status)
+    if category:
+        stmt = stmt.where(Ticket.category == category)
+    return int((await session.execute(stmt)).scalar_one())
 
 
 async def _get_for_update(session: AsyncSession, ticket_id: int) -> Ticket:
@@ -331,6 +337,7 @@ async def admin_reply(
         title="工单有新回复",
         content=f"您的工单 {ticket.ticket_no}({ticket.subject})客服已回复,请前往「支持」查看。",
         dedup_key=f"ticket:staff-reply:{msg.id}",
+        target_id=str(ticket.id),
     )
     await session.commit()
     logger.info("ticket_staff_reply", ticket_no=ticket.ticket_no, operator_id=operator_id)

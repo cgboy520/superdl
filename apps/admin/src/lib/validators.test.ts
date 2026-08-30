@@ -1,0 +1,31 @@
+/** 手输原因校验(finance 调账驳回等):必填、trim 后 ≥2 字、≤200 字。
+ *  挂了 = 驳回可以空理由/常量理由进审计,「为什么驳回」答不上来。 */
+import { describe, expect, it } from "vitest";
+
+import { isValidReason } from "./validators";
+
+describe("isValidReason(调账驳回理由必填)", () => {
+  it("空值/纯空白/单字均不通过", () => {
+    expect(isValidReason(undefined)).toBe(false);
+    expect(isValidReason(null)).toBe(false);
+    expect(isValidReason("")).toBe(false);
+    expect(isValidReason("   ")).toBe(false);
+    expect(isValidReason("错")).toBe(false);
+    expect(isValidReason(" 错 ")).toBe(false);
+  });
+
+  it("两字及以上通过(首尾空白不计)", () => {
+    expect(isValidReason("误调")).toBe(true);
+    expect(isValidReason(" 金额录错了 ")).toBe(true);
+  });
+
+  it("超过 200 字不通过", () => {
+    expect(isValidReason("很".repeat(200))).toBe(true);
+    expect(isValidReason("很".repeat(201))).toBe(false);
+  });
+
+  it("首尾空格不计入长度", () => {
+    expect(isValidReason(`  ${"很".repeat(198)}  `)).toBe(true);
+    expect(isValidReason(`  ${"很".repeat(201)}  `)).toBe(false);
+  });
+});

@@ -1,12 +1,13 @@
 /** 概览:轻量首屏 —— 实例数/余额/今日消费/未读通知 + 快捷入口。 */
 
 import { addAmounts, localToday } from "@superdl/ui";
+import { DataErrorAlert, KpiGrid, moneyOr } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Alert, Button, Card, Col, Row, Space, Statistic, Steps, Typography } from "antd";
+import { Alert, Button, Card, Skeleton, Space, Statistic, Steps, Typography } from "antd";
 
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import {
   useDailySummary,
   useInstances,
@@ -15,7 +16,6 @@ import {
   useUnreadCount,
   useWallet,
 } from "../api/queries";
-import { DataErrorAlert, moneyOr } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/dashboard")({
@@ -24,6 +24,19 @@ export const Route = createFileRoute("/_console/dashboard")({
 });
 
 const ONBOARDING_DISMISS_KEY = "superdl.web.onboardingDismissed";
+
+/** 逐卡 KPI 骨架:各卡只等自己的 query——整体 loading 会让先就绪的卡先出「—」再跳数,
+ *  也会被最慢的一张拖住;失败语义留在各卡内(DataErrorAlert 或 moneyOr 「—」,不伪装成数据)。 */
+function KpiCard({ pending, children }: { pending: boolean; children?: ReactNode }) {
+  if (pending) {
+    return (
+      <Card>
+        <Skeleton active title={{ width: "40%" }} paragraph={{ rows: 1, width: "70%" }} />
+      </Card>
+    );
+  }
+  return <Card>{children}</Card>;
+}
 
 /** 新用户引导:无实例且无已支付充值时显示 充值→选规格→开机 三步卡;
  * 有实例即永久隐藏(后端状态派生),手动关闭记 localStorage。 */
@@ -87,7 +100,8 @@ function Overview() {
   const { data: wallet } = walletQ;
   // 未读列表只用于余额告警/公告横幅;未读数走轻端点(与顶栏角标同一缓存)
   const { data: unread } = useNotifications({ unread: true });
-  const { data: unreadCount } = useUnreadCount();
+  const unreadCountQ = useUnreadCount();
+  const { data: unreadCount } = unreadCountQ;
   const { date, tzOffsetMinutes } = localToday();
   const dailyQ = useDailySummary(date, tzOffsetMinutes);
   const { data: daily } = dailyQ;
@@ -96,7 +110,6 @@ function Overview() {
   const running = instances?.filter((i) => i.status === "running").length ?? 0;
   const hasWarn = (unread?.items ?? []).some((n) => n.type === "balance_warn" || n.type === "arrears");
   const announcement = (unread?.items ?? []).find((n) => n.type === "announcement");
-  const hasError = instancesQ.isError || walletQ.isError || dailyQ.isError;
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -104,15 +117,6 @@ function Overview() {
         {t("dashboard.title")}
       </Typography.Title>
       <OnboardingCard />
-      {hasError && (
-        <DataErrorAlert
-          onRetry={() => {
-            void instancesQ.refetch();
-            void walletQ.refetch();
-            void dailyQ.refetch();
-          }}
-        />
-      )}
       {announcement && (
         <Alert
           type="info"
@@ -133,34 +137,51 @@ function Overview() {
           }
         />
       )}
-      <Row gutter={[16, 16]}>
-        <Col xs={12} lg={6}>
-          <Card>
-            <Statistic title={t("dashboard.totalInstances")} value={instances ? instances.length : "—"} />
-            <Typography.Text type="secondary">
-              {instances ? t("dashboard.runningCount", { count: running }) : " "}
-            </Typography.Text>
-          </Card>
-        </Col>
-        <Col xs={12} lg={6}>
-          <Card>
-            <Statistic
-              title={t("billing.availableBalance")}
-              value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} lg={6}>
-          <Card>
-            <Statistic title={t("instances.labelToday")} value={todayTotal} />
-          </Card>
-        </Col>
-        <Col xs={12} lg={6}>
-          <Card>
-            <Statistic title={t("dashboard.unread")} value={unreadCount ? unreadCount.unread_count : "—"} />
-          </Card>
-        </Col>
-      </Row>
+      {/* 逐卡骨架:不再整体 loading(AND 会让先就绪的卡先出「—」再跳数);
+          各卡 isPending 骨架 / 失败嵌 DataErrorAlert 或 moneyOr「—」 */}
+      <KpiGrid
+        items={[
+          <KpiCard key="instances" pending={instancesQ.isPending}>
+            {instancesQ.isError ? (
+              <DataErrorAlert onRetry={() => void instancesQ.refetch()} />
+            ) : (
+              <>
+                <Statistic title={t("dashboard.totalInstances")} value={instances ? instances.length : "—"} />
+                <Typography.Text type="secondary">
+                  {instances ? t("dashboard.runningCount", { count: running }) : " "}
+                </Typography.Text>
+              </>
+            )}
+          </KpiCard>,
+          <KpiCard key="balance" pending={walletQ.isPending}>
+            {walletQ.isError ? (
+              <DataErrorAlert onRetry={() => void walletQ.refetch()} />
+            ) : (
+              <Statistic
+                title={t("billing.availableBalance")}
+                value={moneyOr(formatMoney(wallet?.balance), wallet != null)}
+              />
+            )}
+          </KpiCard>,
+          <KpiCard key="today" pending={dailyQ.isPending}>
+            {dailyQ.isError ? (
+              <DataErrorAlert onRetry={() => void dailyQ.refetch()} />
+            ) : (
+              <Statistic title={t("instances.labelToday")} value={todayTotal} />
+            )}
+          </KpiCard>,
+          <KpiCard key="unread" pending={unreadCountQ.isPending}>
+            {/* 与其它三卡同一纪律:查询失败明示可重试,「—」只表达未就绪 */}
+            {unreadCountQ.isError ? (
+              <DataErrorAlert onRetry={() => void unreadCountQ.refetch()} />
+            ) : (
+              <Link to="/notifications" style={{ color: "inherit" }}>
+                <Statistic title={t("dashboard.unread")} value={unreadCount ? unreadCount.unread_count : "—"} />
+              </Link>
+            )}
+          </KpiCard>,
+        ]}
+      />
       <Card title={t("dashboard.quickEntries")}>
         <Space wrap>
           <Link to="/market">

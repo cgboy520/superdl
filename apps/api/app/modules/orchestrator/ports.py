@@ -2,11 +2,13 @@
 
 端口池 30000–32767 与 K8s NodePort 同段,集群其它对象会硬占其中某些端口,两道防护:
 `ssh_port_excluded` 预先跳过已知占用;`blocked` 由 handle_create 在运行期撞占后标记。
+分配在段内随机(复用空闲行与扩段都随机,不再按端口升序):顺序分配让在用的 SSH 入口
+恒占低段、可枚举(审计 #24);随机只是过渡减面,统一入口/连接审计是 SSH gateway(D-5)。
 """
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -41,11 +43,12 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     if mine is not None:
         return mine.port
     for _ in range(8):
+        # 复用空闲行:随机取而非升序顶头(顺序分配让在用 SSH 端口恒聚在低段,可枚举)
         free = (
             await session.execute(
                 select(PortAllocation)
                 .where(PortAllocation.instance_id.is_(None), PortAllocation.blocked.is_(False))
-                .order_by(PortAllocation.port)
+                .order_by(func.random())
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
@@ -54,23 +57,36 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
             free.instance_id = instance.id
             await session.flush()
             return free.port
-        max_port = (await session.execute(select(func.max(PortAllocation.port)))).scalar_one()
-        next_port = settings.ssh_port_range_start if max_port is None else max_port + 1
-        while next_port in settings.ssh_port_excluded:
-            next_port += 1
-        if next_port > settings.ssh_port_range_end:
+        # 扩段:段内随机挑未占端口(generate_series 差集),替代 max+1 顶格。
+        # 段长 ≤2768,差集+随机排序是微秒级;撞唯一索引由重试预算消化(并发同挑一个口)。
+        candidate = (
+            await session.execute(
+                text(
+                    "SELECT p FROM generate_series(CAST(:start AS int), CAST(:end AS int)) AS p"
+                    " WHERE p <> ALL(CAST(:excluded AS int[]))"
+                    " AND NOT EXISTS (SELECT 1 FROM port_allocations WHERE port = p)"
+                    " ORDER BY random() LIMIT 1"
+                ),
+                {
+                    "start": settings.ssh_port_range_start,
+                    "end": settings.ssh_port_range_end,
+                    "excluded": sorted(settings.ssh_port_excluded),
+                },
+            )
+        ).scalar_one_or_none()
+        if candidate is None:
             raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
         inserted = (
             await session.execute(
                 pg_insert(PortAllocation)
-                .values(port=next_port, instance_id=instance.id)
+                .values(port=candidate, instance_id=instance.id)
                 .on_conflict_do_nothing(index_elements=["port"])
                 .returning(PortAllocation.port)
             )
         ).scalar_one_or_none()
         if inserted is not None:
             return inserted
-        # 撞段:胜出方可能扩了段或新标了 blocked,下一轮重查空闲行/最大值
+        # 撞段:胜出方可能扩了段或新标了 blocked,下一轮重查空闲行/随机候选
     raise AppError(ErrorCode.NO_CAPACITY, key="orchestrator.sshPortsExhausted")
 
 

@@ -9,4 +9,5 @@ import type { AdjustmentOut } from './adjustmentOut';
 export interface PageAdjustmentOut {
   items: AdjustmentOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

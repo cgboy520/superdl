@@ -5,23 +5,29 @@
 """
 
 import base64
+import json
 import secrets
 import struct
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import httpx
 import pyotp
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import outbox
 from app.core.crypto import hash_sms_code
+from app.core.k8s.fake import FakeOrchestrator
+from app.core.platform_config import set_platform_settings
 from app.core.timeutil import now_utc
 from app.modules.account.models import SmsCode
 from app.modules.adminapi.service import create_admin
 from app.modules.billing import service as billing_service
+from app.modules.billing import wallet
 from app.modules.catalog.models import PlatformImage, Sku
+from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.reconciler import reconcile_once
 
 
@@ -205,6 +211,37 @@ async def register(client: AsyncClient, phone: str = PHONE, password: str | None
     return resp.json()
 
 
+# refresh token 的 cookie 名(非 prod;prod 为 __Host- 前缀,见 account/router.py)。
+# 响应体不含 refresh_token,测试从 cookie jar 取
+REFRESH_COOKIE = "superdl_refresh"
+
+
+def current_refresh_token(client: AsyncClient) -> str:
+    """jar 里的当前 refresh token(注册/登录/刷新成功后由 Set-Cookie 种下)。"""
+    token = next(
+        (c.value for c in client.cookies.jar if c.name == REFRESH_COOKIE),
+        None,
+    )
+    assert token is not None, "jar 里没有 refresh cookie(注册/登录后会自动种下)"
+    return token
+
+
+async def refresh_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
+    """cookie 通道刷新(强制 X-Requested-With 双提交头):给定 token 先覆写 jar
+    (重放/轮换测试)。并发多路刷新请各起一个 client(独立 jar,见 test_token_rotation):
+    共享 jar 会让「响应 Set-Cookie 先落 jar」与「请求取 cookie」形成竞态。"""
+    if token is not None:
+        client.cookies.set(REFRESH_COOKIE, token, path="/")
+    return await client.post("/api/v1/auth/refresh", headers={"X-Requested-With": "fetch"})
+
+
+async def logout_via_cookie(client: AsyncClient, token: str | None = None) -> Response:
+    """cookie 通道登出:同 refresh 的提交纪律。token 给定时先覆写 jar。"""
+    if token is not None:
+        client.cookies.set(REFRESH_COOKIE, token, path="/")
+    return await client.post("/api/v1/auth/logout", headers={"X-Requested-With": "fetch"})
+
+
 async def issue_code(sm, phone: str, purpose: str, code: str = "123456") -> None:
     """直接落一条验证码(绕开 60s 发送间隔;注册助手刚发过码时不能再发)。"""
     async with sm() as session:
@@ -352,3 +389,280 @@ async def provision_running(client, sm, fake, phone="13900000010") -> tuple[dict
     fake.mark_ready(f"tenant-{user_id}", data["uuid"])
     await reconcile_once(sm)
     return headers, data["uuid"], user_id
+
+
+async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[str, str]:
+    data = await register(client, phone)
+    return {"Authorization": f"Bearer {data['access_token']}"}
+
+
+async def create_order(client: AsyncClient, headers: dict, amount: str = "50.00") -> dict:
+    resp = await client.post(
+        "/api/v1/wallet/recharges", json={"amount": amount, "channel": "mock"}, headers=headers
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def pay_mock(client: AsyncClient, order_no: str, amount: str, txn_id: str | None = None):
+    return await client.post(
+        "/api/v1/webhooks/mock",
+        json={"order_no": order_no, "amount": amount, "txn_id": txn_id or f"tx-{order_no}"},
+    )
+
+
+async def paid_order(client: AsyncClient, headers: dict, amount: str = "50.00") -> dict:
+    """mock 渠道充值并支付,返回已入账订单。"""
+    order = await create_order(client, headers, amount)
+    resp = await pay_mock(client, order["order_no"], amount)
+    assert resp.status_code == 200, resp.text
+    return order
+
+
+async def apply_refund(
+    client: AsyncClient,
+    headers: dict,
+    order_no: str,
+    amount: str = "50.00",
+    idem: str | None = None,
+):
+    h = {**headers, **({"Idempotency-Key": idem} if idem else {})}
+    return await client.post(
+        "/api/v1/wallet/refunds",
+        json={"order_no": order_no, "amount": amount, "reason": "用不完,申请退款"},
+        headers=h,
+    )
+
+
+async def finance_pair(sm, client: AsyncClient) -> tuple[dict, dict]:
+    """两名 finance 管理员(审批人与打款人必须不同)。"""
+    reviewer = await admin_headers(sm, client, role="finance")
+    payer = await admin_headers(sm, client, role="finance", username="finance-payer")
+    return reviewer, payer
+
+
+async def create_disk(client, headers, name="data-1", size_gb=100) -> dict:
+    resp = await client.post(
+        "/api/v1/disks", json={"name": name, "size_gb": size_gb}, headers=headers
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def backdate_running_event(
+    sm: async_sessionmaker[AsyncSession], uuid: str, minutes: int
+) -> int:
+    """把进入 running 的事件回拨(钳制在当前自然小时内,尾账只覆盖当前小时)。
+
+    返回预期已运行秒数(近似,断言时留余量)。
+    """
+    from app.core.timeutil import hour_floor
+
+    now = now_utc()
+    start = max(hour_floor(now), now - timedelta(minutes=minutes))
+    async with sm() as session:
+        inst = (await session.execute(select(Instance).where(Instance.uuid == uuid))).scalar_one()
+        await session.execute(
+            update(InstanceEvent)
+            .where(InstanceEvent.instance_id == inst.id, InstanceEvent.to_status == "running")
+            .values(created_at=start)
+        )
+        await session.commit()
+    return int((now - start).total_seconds())
+
+
+H = datetime(2026, 8, 19, 10, 0, tzinfo=UTC)  # 结算窗口 [10:00, 11:00)
+H_END = datetime(2026, 8, 19, 11, 0, tzinfo=UTC)
+
+
+async def seed_instance(
+    sm: async_sessionmaker[AsyncSession],
+    user_id: int = 1,
+    price: str = "1.6800",
+    gpu_count: int = 1,
+    events: list[tuple] | None = None,
+    status: str = "stopped",
+    market: str = "on_demand",
+) -> int:
+    """直接落库实例 + 事件(合成时间戳),返回 instance_id。
+
+    events 元素:(ts, from, to) 或 (ts, from, to, metadata)。
+    """
+    async with sm() as session:
+        inst = Instance(
+            uuid=f"u{user_id}i{datetime.now(UTC).timestamp()}".replace(".", ""),
+            user_id=user_id,
+            name="t",
+            sku_id=1,
+            spec={
+                "tier": "shared",
+                "vram_gb": 8,
+                "vcpu": 8,
+                "mem_gb": 32,
+                "disk_gb": 100,
+                "pool_label": "hami",
+                "gpu_cores_pct": 50,
+            },
+            price_hourly=Decimal(price),
+            gpu_count=gpu_count,
+            market=market,
+            image_ref="img",
+            status=status,
+            k8s_namespace=f"tenant-{user_id}",
+            jupyter_token="tok",
+            authorized_keys=[],
+        )
+        session.add(inst)
+        await session.flush()
+        for e in events or []:
+            ts, from_s, to_s = e[0], e[1], e[2]
+            session.add(
+                InstanceEvent(
+                    instance_id=inst.id,
+                    from_status=from_s,
+                    to_status=to_s,
+                    reason="seed",
+                    actor="system",
+                    event_metadata=e[3] if len(e) > 3 else None,
+                    created_at=ts,
+                )
+            )
+        await wallet.credit(session, user_id, Decimal("100.00"), type_="recharge", remark="seed")
+        await session.commit()
+        return inst.id
+
+
+def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = False):
+    """构造假 Prometheus:MockTransport 注入。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if fail:
+            return httpx.Response(500, text="down")
+        body = {
+            "status": "success",
+            "data": {
+                "result": (
+                    [{"metric": {}, "values": [[ts, str(v)] for ts, v in values]}] if values else []
+                )
+            },
+        }
+        return httpx.Response(200, text=json.dumps(body))
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://prom")
+
+
+CREATE_BODY = {"pool": "hami", "hostname": "gpu-node-7", "note": "机柜 A3", "ttl_hours": 24}
+
+
+async def set_cluster_config(sm: async_sessionmaker[AsyncSession]) -> None:
+    async with sm() as session:
+        await set_platform_settings(
+            session,
+            {
+                "cluster_server_url": "https://10.0.0.10:9345",
+                "cluster_join_token": "K10abcdef0123456789::server:secrettoken",
+            },
+            updated_by=None,
+        )
+        await session.commit()
+
+
+def service_body(sku_id: int, **over) -> dict:
+    body = {
+        "sku_id": sku_id,
+        "gpu_count": 1,
+        "image_ref": "registry.superdl.local/vllm:0.11.0",
+        "ssh_key_ids": [],
+        "workload_type": "service",
+        "service_port": 8000,
+    }
+    body.update(over)
+    return body
+
+
+async def new_user(client: AsyncClient, sm, phone: str) -> tuple[dict[str, str], int, int, int]:
+    """注册 + 充值 + 建 SKU。返回 (headers, user_id, ssh_key_id, sku_id)。"""
+    headers, user_id, key_id = await create_user_with_key(client, phone)
+    await fund_wallet(sm, user_id)
+    return headers, user_id, key_id, await create_test_sku(sm)
+
+
+async def provision_service(
+    client: AsyncClient,
+    sm: async_sessionmaker[AsyncSession],
+    fake: FakeOrchestrator,
+    *,
+    phone: str = "13900000301",
+    **over,
+) -> tuple[dict[str, str], str, int]:
+    """建一台 running 的服务型实例。返回 (headers, uuid, user_id)。"""
+    headers, user_id, key_id, sku_id = await new_user(client, sm, phone)
+    over.setdefault("ssh_key_ids", [key_id] if over.get("with_ssh") else [])
+    resp = await client.post(
+        "/api/v1/instances", json=service_body(sku_id, **over), headers=headers
+    )
+    assert resp.status_code == 202, resp.text
+    uuid = resp.json()["uuid"]
+    await drain_strict(sm)
+    fake.mark_ready(f"tenant-{user_id}", uuid)
+    await reconcile_once(sm)
+    return headers, uuid, user_id
+
+
+def gpu_spec(tier: str, pool: str, **extra):
+    base = {
+        "tier": tier,
+        "pool_label": pool,
+        "vram_gb": 24,
+        "gpu_cores_pct": 50,
+        "mig_profile": "1g.10gb" if pool == "mig" else None,
+        "vcpu": 8,
+        "mem_gb": 32,
+        "disk_gb": 100,
+        "gpu_model": "NVIDIA GeForce RTX 4090",
+    }
+    base.update(extra)
+    return base
+
+
+async def buy_subscription(
+    client,
+    headers,
+    sku_id: int,
+    key_id: int,
+    *,
+    period: str = "month",
+    period_count: int = 1,
+    idem: str | None = None,
+) -> tuple[int, dict]:
+    h = dict(headers)
+    if idem:
+        h["Idempotency-Key"] = idem
+    resp = await client.post(
+        "/api/v1/instances",
+        json={
+            "sku_id": sku_id,
+            "gpu_count": 1,
+            "image_ref": "registry.superdl.local/pytorch:2.9.0-cu128",
+            "ssh_key_ids": [key_id],
+            "market": "subscription",
+            "period": period,
+            "period_count": period_count,
+        },
+        headers=h,
+    )
+    return resp.status_code, resp.json()
+
+
+async def provision_subscription(client, sm, fake, phone: str, *, period: str = "month", **kw):
+    """建好一台 running 的包周期实例。返回 (headers, uuid, user_id, sku_id, key_id)。"""
+    headers, user_id, key_id = await create_user_with_key(client, phone)
+    await fund_wallet(sm, user_id, kw.pop("fund", "5000.00"))
+    sku_id = await create_test_sku(sm, **kw.pop("sku", {}))
+    await seed_node_spec(sm, node_name=f"node-{phone[-4:]}")
+    code, data = await buy_subscription(client, headers, sku_id, key_id, period=period)
+    assert code == 202, data
+    await drain(sm)
+    fake.mark_ready(f"tenant-{user_id}", data["uuid"])
+    await reconcile_once(sm)
+    return headers, data["uuid"], user_id, sku_id, key_id

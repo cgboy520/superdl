@@ -16,27 +16,35 @@
     "test": "vitest run"
   },
   "peerDependencies": {
+    "@ant-design/icons": "^6.1.0",
     "antd": "^6.6.1",
+    "dayjs": "^1.11.23",
     "echarts": "^6.1.0",
-    "echarts-for-react": "^3.0.6",
+    "motion": "^12.23.24",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-i18next": "^17.0.12"
+    "react-i18next": "^17.0.12",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0"
   },
   "devDependencies": {
+    "@ant-design/icons": "^6.1.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "antd": "^6.6.1",
+    "dayjs": "^1.11.23",
     "echarts": "^6.1.0",
-    "echarts-for-react": "^3.0.6",
     "i18next": "^26.4.0",
     "jsdom": "^30.0.0",
+    "motion": "^12.23.24",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.12",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.0"
   }

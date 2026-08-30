@@ -1,6 +1,7 @@
 /** GPU 算力排名:gpuSpecs 静态表驱动(理论峰值口径,脚注声明);在售型号标记联动价格墙。 */
 
-import { colorPrimary, gpuSpecs, medalColors } from "@superdl/ui";
+import { chartAccentColors, colorPrimary, fontSize, gpuSpecs, layout, medalColors } from "@superdl/ui";
+import { Link } from "@tanstack/react-router";
 import { Grid, Tabs, Tag, theme, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -33,7 +34,13 @@ export function GpuRankSection() {
 
   return (
     <section id="ranking" style={{ background: token.colorBgContainer }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
+      <div
+        style={{
+          maxWidth: layout.pageMaxWidthWide,
+          margin: "0 auto",
+          padding: `${layout.sectionPaddingY}px 24px`,
+        }}
+      >
         <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 4 }}>
           {t("landing.ranking.title")}
         </Typography.Title>
@@ -60,7 +67,7 @@ export function GpuRankSection() {
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 12,
+                  fontSize: fontSize.caption,
                   fontWeight: 700,
                   flexShrink: 0,
                   color: i < 3 ? "#fff" : token.colorTextSecondary,
@@ -76,7 +83,7 @@ export function GpuRankSection() {
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
-                  fontSize: wide ? 14 : 13,
+                  fontSize: wide ? fontSize.body : fontSize.caption,
                 }}
               >
                 {t("landing.ranking.modelVram", { label: r.spec.label, vram: r.spec.vramGb })}
@@ -87,27 +94,37 @@ export function GpuRankSection() {
                     width: `${Math.max((r.value / max) * 100, 2)}%`,
                     height: "100%",
                     borderRadius: 4,
-                    background: `linear-gradient(90deg, ${colorPrimary}, #818CF8)`,
+                    background: `linear-gradient(90deg, ${colorPrimary}, ${chartAccentColors.indigo})`,
                   }}
                 />
               </div>
-              <span style={{ width: wide ? 170 : 56, textAlign: "right", flexShrink: 0, fontSize: wide ? 14 : 13 }}>
+              <span
+                style={{
+                  width: wide ? 170 : 56,
+                  textAlign: "right",
+                  flexShrink: 0,
+                  fontSize: wide ? fontSize.body : fontSize.caption,
+                }}
+              >
                 {r.value}
                 {wide ? (metric === "fp16" ? " Tensor TFLOPS" : " TFLOPS") : ""}
               </span>
-              <span style={{ width: wide ? 56 : 40, flexShrink: 0, fontSize: wide ? 14 : 12 }}>
+              <span style={{ width: wide ? 56 : 40, flexShrink: 0, fontSize: wide ? fontSize.body : fontSize.caption }}>
                 {onSale.has(r.model) && (
-                  <a href="/#pricing">
+                  <Link to="/" hash="pricing">
                     <Tag color={colorPrimary} style={{ marginInlineEnd: 0 }}>
                       {t("landing.ranking.onSale")}
                     </Tag>
-                  </a>
+                  </Link>
                 )}
               </span>
             </div>
           ))}
         </div>
-        <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginTop: 24, fontSize: 12 }}>
+        <Typography.Paragraph
+          type="secondary"
+          style={{ textAlign: "center", marginTop: 24, fontSize: fontSize.caption }}
+        >
           {t("landing.ranking.footnote")}
         </Typography.Paragraph>
       </div>

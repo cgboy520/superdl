@@ -13,7 +13,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.logging import mask_phone_value
 from app.core.money import as_amount
 from app.core.pagination import Page
-from app.core.params import TzOffset
+from app.core.params import Cursor, Limit, TzOffset
 from app.modules.account.schemas import AdminDeletionReject, AdminDeletionRequestOut
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
@@ -50,15 +50,17 @@ async def admin_list_tenants(
     admin: CurrentAdmin,
     q: str | None = None,
     status: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
+    order: Literal["asc", "desc"] = "desc",
     reveal: bool = False,
     reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
 ) -> Page[TenantOut]:
-    """租户列表(游标分页,降序)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
+    """租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按租户 id 精确命中。
 
     id 命中行插在首页最前,手机号后缀命中行保持原序随后。手机号只回掩码。
     按号码/id 检索是敏感读,显式落一条审计(中间件默认只审计写操作)。
+    order = 注册先后(id)正/倒序;聚合列(余额/消费/实例数)按页拼装,不支持排序。
 
     实名信息默认全角色脱敏;明文查看是逐次显式动作:reveal=true 且 reason 必填
     (ops/finance;readonly 不可 reveal),每次明文读按条数+事由落审计——
@@ -80,7 +82,7 @@ async def admin_list_tenants(
         masked = mask_phone_value(q)
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
     page = await account_service.admin_list_users(
-        session, q=q, status=status, cursor=cursor, limit=limit
+        session, q=q, status=status, cursor=cursor, limit=limit, order=order
     )
     users = list(page.items)
     q_digits = (q or "").strip()
@@ -138,8 +140,8 @@ async def admin_list_tenants(
 async def admin_tenant_ledger(
     user_id: int,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[LedgerEntryOut]:
     """租户资金流水下钻。与用户端同一实现,同一游标语义。"""
     from app.modules.billing import service as billing_service
@@ -176,8 +178,8 @@ async def admin_tenant_bills(
     user_id: int,
     session: DbSession,
     instance_id: int | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[BillHourlyOut]:
     """租户小时账单下钻(可按实例过滤;金额与用户端所见同源)。"""
     from app.modules.billing import service as billing_service

@@ -1,4 +1,4 @@
-"""管理端 CSV 导出:审计检索 / 日对账。
+"""管理端 CSV 导出:审计检索 / 日对账 / 调账单。
 
 - 转义/上限/截断标记/流式骨架与用户端账单导出同一套(app.core.csvexport);
   时间按调用方时区偏移折算并带 (UTC+x) 后缀;
@@ -16,8 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditLog
-from app.core.csvexport import csv_line, fmt_ts, stream_rows
+from app.core.csvexport import csv_line, fmt_money, fmt_ts, stream_rows
 from app.core.sqlutil import like_escape
+from app.core.timeutil import BILLING_TZ_OFFSET_MINUTES
+from app.modules.adminapi.models import AdminAdjustment
 
 _HEADERS: dict[tuple[str, str], list[str]] = {
     ("audit", "zh-CN"): [
@@ -44,6 +46,32 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
     ],
     ("reconciliation", "zh-CN"): ["实例ID", "事件计费(元)", "指标估算(元)", "diff%"],
     ("reconciliation", "en-US"): ["Instance ID", "Billed (CNY)", "Estimated (CNY)", "diff%"],
+    ("adjustments", "zh-CN"): [
+        "ID",
+        "用户ID",
+        "金额(元)",
+        "状态",
+        "事由",
+        "发起人",
+        "复核人",
+        "创建时间",
+    ],
+    ("adjustments", "en-US"): [
+        "ID",
+        "User ID",
+        "Amount (CNY)",
+        "Status",
+        "Reason",
+        "Created by",
+        "Reviewed by",
+        "Created at",
+    ],
+}
+
+# 状态文案与 packages/ui shared.json 同一口径(管理端列表页标签)
+_ADJUSTMENT_STATUS_LABEL: dict[str, dict[str, str]] = {
+    "zh-CN": {"pending": "待复核", "approved": "已生效", "rejected": "已驳回"},
+    "en-US": {"pending": "Pending review", "approved": "Effective", "rejected": "Rejected"},
 }
 
 _TRUNCATED_NOTE: dict[str, str] = {
@@ -85,7 +113,7 @@ async def stream_audit_csv(
     q: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
-    tz_offset_minutes: int = 480,
+    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
     lang: str = "zh-CN",
 ) -> AsyncIterator[str]:
     """审计日志 CSV(降序,最新在前;按 id 批拉直至上限或穷尽,触顶写截断标记行)。"""
@@ -134,3 +162,48 @@ async def stream_reconciliation_csv(
     )
     for o in report["outliers"]:
         yield csv_line([o["instance_id"], o["billed"], o["estimated"], o["diff_pct"]])
+
+
+async def stream_adjustments_csv(
+    session: AsyncSession,
+    *,
+    status: str | None = None,
+    user_id: int | None = None,
+    day_range: tuple[datetime, datetime] | None = None,
+    tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
+    lang: str = "zh-CN",
+) -> AsyncIterator[str]:
+    """调账单 CSV(降序;筛选口径与 GET /admin/v1/adjustments 一致)。"""
+    stmt = select(AdminAdjustment)
+    if status:
+        stmt = stmt.where(AdminAdjustment.status == status)
+    if user_id is not None:
+        stmt = stmt.where(AdminAdjustment.user_id == user_id)
+    if day_range is not None:
+        stmt = stmt.where(
+            AdminAdjustment.created_at >= day_range[0],
+            AdminAdjustment.created_at < day_range[1],
+        )
+    status_labels = _ADJUSTMENT_STATUS_LABEL[lang]
+
+    def row(r: AdminAdjustment) -> list[object]:
+        return [
+            r.id,
+            r.user_id,
+            fmt_money(r.amount),
+            status_labels.get(r.status, r.status),
+            r.reason,
+            r.created_by,
+            r.reviewed_by if r.reviewed_by is not None else "",
+            fmt_ts(r.created_at, tz_offset_minutes),
+        ]
+
+    async for line in stream_rows(
+        session,
+        stmt,
+        AdminAdjustment.id,
+        row,
+        _HEADERS[("adjustments", lang)],
+        truncated_note=_TRUNCATED_NOTE[lang],
+    ):
+        yield line

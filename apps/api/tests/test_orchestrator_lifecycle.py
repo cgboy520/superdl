@@ -106,7 +106,7 @@ class TestCreateLifecycle:
             inst = (
                 await session.execute(select(Instance).where(Instance.uuid == uuid))
             ).scalar_one()
-        assert inst.jupyter_token.startswith("enc:v1:")
+        assert inst.jupyter_token.startswith("enc:v2:")
         expected_sig = hmac.new(
             _token_plain(inst).encode(),
             f"{qs['code'][0]}.{qs['exp'][0]}".encode(),
@@ -498,7 +498,8 @@ class TestPortPool:
         assert data["ssh_port"] is None
 
     async def test_excluded_port_is_skipped(self, client, sm, fake, monkeypatch):
-        """已知被集群其它对象占用的 NodePort 一开始就不分配。"""
+        """已知被集群其它对象占用的 NodePort 一开始就不分配。
+        (分配是段内随机的——审计 #24;断言不落 excluded、不低于 start,不钉具体端口)"""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -510,11 +511,13 @@ class TestPortPool:
         sku_id = await create_test_sku(sm)
         data = await create_instance_api(client, headers, sku_id, key_id)
         await drain(sm)
-        assert (await get_instance(client, headers, data["uuid"]))["ssh_port"] == 31502
+        port = (await get_instance(client, headers, data["uuid"]))["ssh_port"]
+        assert port not in (31500, 31501) and 31500 < port <= 32767
 
     async def test_taken_node_port_is_blocked_and_recovered(self, client, sm, fake, monkeypatch):
-        """撞上被占 NodePort 后必须能自愈(端口标 blocked 并换一个重试),否则高水位线
-        永远停在被占端口前面,此后所有触顶的新建实例全部失败。"""
+        """撞上被占 NodePort 后必须能自愈(端口标 blocked 并换一个重试),否则撞占端口
+        反复被分出,此后所有命中的新建实例全部失败。
+        (分配是段内随机的:首个分出端口动态拦截,不再钉死 31800)"""
         from app.core.config import get_settings
         from app.core.k8s import NodePortTaken
 
@@ -522,11 +525,13 @@ class TestPortPool:
         monkeypatch.setattr(settings, "ssh_port_range_start", 31800)
         monkeypatch.setattr(settings, "ssh_port_excluded", set())
 
-        taken = {31800}
+        taken: set[int] = set()
         original = fake.create_instance
 
         async def guarded(spec):
-            if spec.ssh_node_port in taken:
+            # 首个分出的端口模拟被集群其它对象硬占(只撞这一次),之后放行
+            if not taken:
+                taken.add(spec.ssh_node_port)
                 raise NodePortTaken(spec.ssh_node_port)
             await original(spec)
 
@@ -539,9 +544,13 @@ class TestPortPool:
         await drain(sm)
 
         # 第一次撞上 → 端口被标 blocked(独立事务,不随失败事务回滚)
+        assert len(taken) == 1
+        taken_port = next(iter(taken))
         async with sm() as session:
             row = (
-                await session.execute(select(PortAllocation).where(PortAllocation.port == 31800))
+                await session.execute(
+                    select(PortAllocation).where(PortAllocation.port == taken_port)
+                )
             ).scalar_one()
         assert row.blocked is True and row.instance_id is None
 
@@ -554,7 +563,8 @@ class TestPortPool:
             )
             await session.commit()
         await drain(sm)
-        assert (await get_instance(client, headers, data["uuid"]))["ssh_port"] == 31801
+        port = (await get_instance(client, headers, data["uuid"]))["ssh_port"]
+        assert port is not None and port != taken_port
 
 
 class TestAdminOps:

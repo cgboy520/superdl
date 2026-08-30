@@ -11,6 +11,7 @@ token 直接铸造不经登录;MFA 绑定与登录链路由 test_admin_mfa.py �
 import re
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import create_token
@@ -26,6 +27,7 @@ _FIN_RO: frozenset[str] = frozenset({"finance", "readonly"})
 # 角色矩阵:"anon" = 匿名可达;"any" = 任意已认证管理角色;frozenset = 白名单(admin 恒许)
 MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/adjustments": _FIN_RO,
+    "GET /api/admin/v1/adjustments/export": _FIN_RO,
     "POST /api/admin/v1/adjustments": _FIN,
     "POST /api/admin/v1/adjustments/{adjustment_id}/review": _FIN,
     "GET /api/admin/v1/admins": _ADMIN_ONLY,
@@ -43,6 +45,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/audit/export": _ANY_READ,
     "POST /api/admin/v1/auth/login": "anon",
     "POST /api/admin/v1/auth/login/mfa": "anon",
+    "POST /api/admin/v1/auth/logout": "any",
     "POST /api/admin/v1/auth/mfa/setup/begin": "anon",
     "POST /api/admin/v1/auth/mfa/setup/confirm": "anon",
     "POST /api/admin/v1/auth/refresh": "anon",
@@ -55,6 +58,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/finance/anomalies": _FIN_RO,
     "POST /api/admin/v1/finance/orders/{order_no}/backfill": _FIN,
     "POST /api/admin/v1/finance/orders/{order_no}/verify": _FIN,
+    "POST /api/admin/v1/finance/reversals/{order_no}/resolve": _FIN,
     "GET /api/admin/v1/finance/settlement-gaps": _FIN_RO,
     "POST /api/admin/v1/finance/settlement-gaps/{gap_id}/replay": _FIN,
     "POST /api/admin/v1/finance/settlement-gaps/{gap_id}/resolve": _FIN,
@@ -69,6 +73,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "POST /api/admin/v1/instances/{uuid}/force-stop": _OPS,
     "POST /api/admin/v1/instances/{uuid}/preempt": _OPS,
     "GET /api/admin/v1/invoices": _ANY_READ,
+    "GET /api/admin/v1/invoices/export": _ANY_READ,
     "POST /api/admin/v1/invoices/{invoice_id}/issue": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/reject": _FIN,
     "GET /api/admin/v1/legal-docs": _ANY_READ,
@@ -104,6 +109,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/reconciliation": _FIN_RO,
     "GET /api/admin/v1/reconciliation/export": _FIN_RO,
     "GET /api/admin/v1/refunds": _FIN_RO,
+    "GET /api/admin/v1/refunds/export": _FIN_RO,
     "POST /api/admin/v1/refunds/{refund_id}/cancel": _FIN,
     "POST /api/admin/v1/refunds/{refund_id}/payout": _FIN,
     "POST /api/admin/v1/refunds/{refund_id}/review": _FIN,
@@ -124,6 +130,7 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "PUT /api/admin/v1/tenants/{user_id}/quota": _OPS,
     "POST /api/admin/v1/tenants/{user_id}/unfreeze": _OPS,
     "GET /api/admin/v1/tickets": _ANY_READ,
+    "GET /api/admin/v1/tickets/count": _ANY_READ,
     "GET /api/admin/v1/tickets/{ticket_id}": _ANY_READ,
     "POST /api/admin/v1/tickets/{ticket_id}/reply": _OPS,
     "POST /api/admin/v1/tickets/{ticket_id}/status": _OPS,
@@ -176,12 +183,19 @@ def _sample_url(path: str) -> str:
 
 async def _mint_admin_headers(sm: async_sessionmaker[AsyncSession], role: str) -> dict[str, str]:
     """直接落 AdminUser 行 + 铸造 admin audience token(跳过登录的 bcrypt 成本;
-    登录/MFA 链路本身由 test_admin_mfa.py 覆盖)。token_version 默认 0,与 ver 一致。"""
+    登录/MFA 链路本身由 test_admin_mfa.py 覆盖)。幂等:logout 端点会 bump
+    token_version 吊销已铸 token,同角色重铸须取已有行的当前 ver。"""
     async with sm() as session:
-        admin = AdminUser(username=f"matrix-{role}", password_hash="x", role=role, status="active")
-        session.add(admin)
-        await session.commit()
-        await session.refresh(admin)
+        admin = (
+            await session.execute(select(AdminUser).where(AdminUser.username == f"matrix-{role}"))
+        ).scalar_one_or_none()
+        if admin is None:
+            admin = AdminUser(
+                username=f"matrix-{role}", password_hash="x", role=role, status="active"
+            )
+            session.add(admin)
+            await session.commit()
+            await session.refresh(admin)
         token = create_token(str(admin.id), "admin", extra={"ver": admin.token_version})
     return {"Authorization": f"Bearer {token}"}
 
@@ -230,6 +244,10 @@ async def test_endpoint_role_gate(
                     )
             elif status != 403:
                 failures.append(f"{role} 应被 403 拦截:{endpoint} -> {status}")
+
+        # 登出即吊销(token_version+1):四个角色的 token 都被这条端点作废,重铸供后续端点用
+        if endpoint == "POST /api/admin/v1/auth/logout":
+            headers_by_role = {role: await _mint_admin_headers(sm, role) for role in _ROLES}
 
     joined = "\n".join(failures)
     assert not failures, f"角色门矩阵不符(共 {len(failures)} 处):\n{joined}"

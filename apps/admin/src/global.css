@@ -1,9 +1,9 @@
-/* 全局基础样式(深色 NOC):antd token 不管的部分。色值与 packages/ui adminColors 同源。 */
+/* 全局基础样式(深色 NOC):antd token 不管的部分。色值经 main.tsx 从 packages/ui adminColors 注入 CSS 变量。 */
 
 body {
   margin: 0;
   /* 首屏未挂载前不闪白(index.html 内联同款,防 FOUC 双写) */
-  background: #0b1220;
+  background: var(--admin-bg);
 }
 
 /* 表格与 KPI 数字等宽:列宽不随数值抖动 */
@@ -18,23 +18,21 @@ body {
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--admin-chart-neutral);
   border-radius: 4px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 html {
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: var(--admin-chart-neutral) transparent;
   scrollbar-width: thin;
 }
 
-/* Sider 汉堡钮只在窄屏(lg 断点以下)出现;桌面 Sider 常驻,不需要它 */
-.shell-sider-trigger {
-  display: none !important;
+/* Cmd+K 命令面板(cmdk):选中行底色 = 主色 12% 透明(--admin-accent 由 main.tsx 注入,与 web 端同范式) */
+.command-palette [cmdk-item][data-selected="true"] {
+  background: color-mix(in srgb, var(--admin-accent) 12%, transparent);
 }
-@media (max-width: 991.98px) {
-  .shell-sider-trigger {
-    display: inline-flex !important;
-  }
+.command-palette [cmdk-item][data-disabled="true"] {
+  opacity: 0.45;
 }

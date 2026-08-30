@@ -10,8 +10,7 @@ from sqlalchemy import select, update
 
 from app.core.timeutil import now_utc
 from app.modules.billing.models import InvoiceRequest, Order
-from tests.helpers import admin_headers
-from tests.test_payment import create_order, pay_mock, user_headers
+from tests.helpers import admin_headers, create_order, pay_mock, user_headers
 
 
 def past_period(months_ago: int = 1) -> tuple[str, datetime]:
@@ -130,7 +129,7 @@ class TestRefundDeduction:
 
     async def _approve_and_payout(self, client, sm, rid: int) -> tuple[dict, dict]:
         """审批 + 登记打款(打款落在当前账期,总晚于历史账期的订单)。返回 (审批人, 打款人) 头。"""
-        from tests.test_refunds import finance_pair
+        from tests.helpers import finance_pair
 
         reviewer, payer = await finance_pair(sm, client)
         resp = await client.post(
@@ -148,7 +147,7 @@ class TestRefundDeduction:
         return reviewer, payer
 
     async def _refund_paid(self, client, sm, headers, order_no: str, amount: str) -> None:
-        from tests.test_refunds import apply_refund
+        from tests.helpers import apply_refund
 
         rid = (await apply_refund(client, headers, order_no, amount)).json()["id"]
         await self._approve_and_payout(client, sm, rid)
@@ -176,7 +175,7 @@ class TestRefundDeduction:
         """P1 订单的退款:pending 时从 P1 预扣,在之后的账期打款后仍从 P1 扣(不随打款时间挪走),
         期间按预扣额申请的发票开票重算一致。挂了 = 已打款退款按 payout_at 归期:P1 重算变大 →
         开票 409 → 驳回重申后 P1 全额开票,而打款账期又被扣一次(票款双重兑现)。"""
-        from tests.test_refunds import apply_refund
+        from tests.helpers import apply_refund
 
         headers = await user_headers(client, "13700000206")
         p1, at1 = past_period(1)
@@ -229,6 +228,18 @@ class TestCreate:
         assert resp.status_code == 422
         resp = await apply_invoice(client, headers, p1, tax_id="   ")
         assert resp.status_code == 422
+
+    async def test_company_tax_id_format(self, client: AsyncClient, sm):
+        """企业抬头税号必须是 18 位统一社会信用代码(GB 32100 字符集)。"""
+        headers = await user_headers(client, "13700000217")
+        p1, at1 = past_period(1)
+        await paid_order_at(client, sm, headers, "50.00", at1)
+        # 非法:长度不足 / 含排除字符 I / 含小写
+        for bad in ("TAX-123", "91310000MA1K0000XI", "91310000ma1k0000x0"):
+            resp = await apply_invoice(client, headers, p1, tax_id=bad)
+            assert resp.status_code == 422, bad
+        resp = await apply_invoice(client, headers, p1, tax_id="91310000MA1K0000X0")
+        assert resp.status_code == 201, resp.text
 
     async def test_personal_title_needs_no_tax_id(self, client: AsyncClient, sm):
         """个人抬头:税号不需要,即使夹带也不落库。"""
@@ -521,7 +532,7 @@ class TestDoubleSpendGate:
     ):
         """先申请退款 → 开票(票额已扣该笔在途退款)→ 登记打款成功,账期无剩余可开
         (挂了 = 打款侧又按「账期已开票」拦下:已预扣的退款只能取消,再申请被已开票拒,资金死胡同)。"""
-        from tests.test_refunds import finance_pair
+        from tests.helpers import finance_pair
 
         headers = await user_headers(client, "13700000245")
         p1, at1 = past_period(1)

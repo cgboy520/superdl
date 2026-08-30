@@ -1,7 +1,8 @@
 /** 账户设置:SSH 公钥管理 / 通知阈值(保存按钮) / 账号(实名、登录密码、登出、注销)。 */
 
-import type { TokenPair } from "@superdl/api-client";
-import { deletionStatusMap, formatDateTime, maskPhone, metaOf } from "@superdl/ui";
+import type { TokenPairOut } from "@superdl/api-client";
+import { deletionStatusMap, fontSize, formatDateTime, maskPhone, metaOf } from "@superdl/ui";
+import { DataErrorAlert, TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -32,10 +33,10 @@ import {
   useSubmitRealName,
 } from "../api/mutations";
 import { useMe, useMyDeletionRequest, usePolicies, useSshKeys } from "../api/queries";
-import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
 import { WarnThresholdField } from "../components/WarnThresholdField";
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import { requireAuth } from "../lib/guard";
+import { useHashScroll } from "../lib/useHashScroll";
 import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
@@ -62,6 +63,8 @@ function SettingsPage() {
     },
   });
   const delKey = useDeleteSshKey();
+  // /settings#ssh 深链:滚动到 SSH 卡并高亮 2s(实例列表「密钥设置」入口)
+  useHashScroll({ highlight: true });
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
@@ -84,7 +87,7 @@ function SettingsPage() {
             dataSource={keys ?? []}
             locale={{
               emptyText: isError ? (
-                <TableErrorEmpty onRetry={() => void refetch()} />
+                <TableErrorEmpty isError onRetry={() => void refetch()} />
               ) : (
                 t("settings.noKeys")
               ),
@@ -160,10 +163,15 @@ function SettingsPage() {
 
       <Card title={t("settings.accountCard")}>
         <Space orientation="vertical" size={12}>
-          <Typography.Text>{t("settings.phoneLine", { phone: me ? maskPhone(me.phone) : "" })}</Typography.Text>
+          {/* 手机号未就绪渲染骨架,不留一行空白 */}
+          {me ? (
+            <Typography.Text>{t("settings.phoneLine", { phone: maskPhone(me.phone) })}</Typography.Text>
+          ) : (
+            <Skeleton.Input active size="small" style={{ width: 200 }} />
+          )}
           <Space>
             <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("settings.changePasswordHint")}
             </Typography.Text>
           </Space>
@@ -175,13 +183,17 @@ function SettingsPage() {
             >
               <Button danger>{t("settings.logoutAll")}</Button>
             </Popconfirm>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("settings.logoutAllHint")}
             </Typography.Text>
           </Space>
-          <Button danger onClick={() => void logout()}>
-            {t("settings.logout")}
-          </Button>
+          <Popconfirm
+            title={t("settings.logoutConfirm")}
+            okText={t("settings.logout")}
+            onConfirm={() => void logout()}
+          >
+            <Button danger>{t("settings.logout")}</Button>
+          </Popconfirm>
           <DeletionZone phone={me?.phone ?? ""} />
         </Space>
       </Card>
@@ -206,7 +218,7 @@ function PasswordModal({
   const sms = useSmsCode("reset_password", t("settings.codeSent"));
   const reset = useResetPassword({
     onSuccess: (data) => {
-      const pair = data as TokenPair;
+      const pair = data as TokenPairOut;
       // 改密会撤销全部在外会话,本设备用返回的新 token 继续(refresh 经 Cookie 下发)
       authStore.getState().login(pair.access_token);
       message.success(t("settings.passwordChanged"));
@@ -257,7 +269,8 @@ function PasswordModal({
   );
 }
 
-/** 危险区·账号注销:申请(弹窗内联说明 + 键入手机号二次确认)/ 冷静期倒计时 + 撤销。 */
+/** 危险区·账号注销:申请(L3 双闸 = 原因必填 + 键入手机号,收编共享 TypeConfirmModal)/
+ *  冷静期倒计时 + 撤销。 */
 function DeletionZone({ phone }: { phone: string }) {
   const { t } = useTranslation(["web", "shared"]);
   const { message } = App.useApp();
@@ -265,12 +278,15 @@ function DeletionZone({ phone }: { phone: string }) {
   const reqQ = useMyDeletionRequest();
   const req = reqQ.data;
   const [open, setOpen] = useState(false);
-  const [form] = Form.useForm<{ phone: string; reason: string }>();
+  const [reason, setReason] = useState("");
+  const close = () => {
+    setOpen(false);
+    setReason("");
+  };
   const create = useCreateDeletionRequest({
     onSuccess: () => {
       message.success(t("settings.deletion.submitted"));
-      setOpen(false);
-      form.resetFields();
+      close();
     },
   });
   const cancel = useCancelDeletionRequest({
@@ -284,7 +300,7 @@ function DeletionZone({ phone }: { phone: string }) {
 
   return (
     <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("settings.deletion.dangerZone")}
       </Typography.Text>
       {pending && req ? (
@@ -313,7 +329,7 @@ function DeletionZone({ phone }: { phone: string }) {
             <Space size={8}>
               <Tag color={statusMeta.color}>{t(statusMeta.labelKey)}</Tag>
               {req.status === "rejected" && req.note && (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                   {t("settings.deletion.rejectedLine", { note: req.note })}
                 </Typography.Text>
               )}
@@ -325,65 +341,57 @@ function DeletionZone({ phone }: { phone: string }) {
         </Space>
       )}
 
-      <Modal
-        title={t("settings.deletion.modalTitle")}
+      <TypeConfirmModal
         open={open}
-        onCancel={() => setOpen(false)}
-        okText={t("settings.deletion.confirmText")}
-        okButtonProps={{ danger: true }}
-        confirmLoading={create.isPending}
-        onOk={() => {
-          void form.validateFields().then((v) =>
-            create.mutate({ phone: v.phone.trim(), reason: v.reason.trim() }),
-          );
-        }}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical">
-          <Alert
-            type="error"
-            showIcon
-            title={t("settings.deletion.notesTitle")}
-            style={{ marginBottom: 16 }}
-            description={
-              <>
-                <ul style={{ margin: 0, paddingInlineStart: 20 }}>
-                  <li>{t("settings.deletion.noteResources")}</li>
-                  <li>{t("settings.deletion.noteBalance")}</li>
-                  <li>{t("settings.deletion.noteAnonymize")}</li>
-                  <li>{t("settings.deletion.noteLedger")}</li>
-                  <li>{t("settings.deletion.noteCooldown")}</li>
-                </ul>
-                <Link to="/legal/deletion-notice" target="_blank" style={{ fontSize: 12 }}>
-                  {t("settings.deletion.viewFullNotice")}
-                </Link>
-              </>
-            }
-          />
-          <Form.Item
-            name="reason"
-            label={t("settings.deletion.reasonLabel")}
-            rules={[{ required: true, min: 2, message: t("settings.deletion.reasonRequired") }]}
-          >
-            <Input.TextArea rows={2} maxLength={256} />
-          </Form.Item>
-          <Form.Item
-            name="phone"
-            label={t("settings.deletion.phoneLabel")}
-            rules={[
-              { required: true, message: t("settings.deletion.phoneRequired") },
-              {
-                validator: (_, v: string) =>
-                  v?.trim() === phone
-                    ? Promise.resolve()
-                    : Promise.reject(new Error(t("settings.deletion.phoneMismatch"))),
-              },
-            ]}
-          >
-            <Input placeholder={phone} maxLength={11} autoComplete="off" />
-          </Form.Item>
-        </Form>
-      </Modal>
+        title={t("settings.deletion.modalTitle")}
+        targetName={phone}
+        maxLength={11}
+        body={
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <Alert
+              type="error"
+              showIcon
+              title={t("settings.deletion.notesTitle")}
+              description={
+                <>
+                  <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                    <li>{t("settings.deletion.noteResources")}</li>
+                    <li>{t("settings.deletion.noteBalance")}</li>
+                    <li>{t("settings.deletion.noteAnonymize")}</li>
+                    <li>{t("settings.deletion.noteLedger")}</li>
+                    <li>{t("settings.deletion.noteCooldown")}</li>
+                  </ul>
+                  <Link to="/legal/deletion-notice" target="_blank" style={{ fontSize: fontSize.caption }}>
+                    {t("settings.deletion.viewFullNotice")}
+                  </Link>
+                </>
+              }
+            />
+            <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+              <Typography.Text>{t("settings.deletion.reasonLabel")}</Typography.Text>
+              <Input.TextArea
+                rows={2}
+                maxLength={256}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                aria-label={t("settings.deletion.reasonLabel")}
+              />
+              {reason !== "" && reason.trim().length < 2 && (
+                <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
+                  {t("settings.deletion.reasonRequired")}
+                </Typography.Text>
+              )}
+            </Space>
+          </Space>
+        }
+        // 第三道闸:原因必填(键入手机号之外,后端也要求 reason ≥2 字)
+        extraDisabled={reason.trim().length < 2}
+        confirmLabel={t("settings.deletion.confirmText")}
+        cancelLabel={t("create.cancel")}
+        loading={create.isPending}
+        onConfirm={() => create.mutate({ phone, reason: reason.trim() })}
+        onCancel={close}
+      />
     </Space>
   );
 }

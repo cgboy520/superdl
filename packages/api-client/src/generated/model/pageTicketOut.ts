@@ -9,4 +9,5 @@ import type { TicketOut } from './ticketOut';
 export interface PageTicketOut {
   items: TicketOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

@@ -115,6 +115,14 @@ async def admin_me(admin: CurrentAdmin) -> AdminOut:
     return AdminOut.model_validate(admin)
 
 
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_logout(admin: CurrentAdmin, session: DbSession, request: Request) -> Response:
+    """服务端登出:token_version+1,该管理员全部在外会话即刻失效(含其它标签页/机器)。"""
+    await service.logout(session, admin.id)
+    set_audit_target(request, f"admin:{admin.id}", detail={"action": "logout"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_change_own_password(
     body: AdminSelfPasswordRequest, admin: CurrentAdmin, session: DbSession, request: Request

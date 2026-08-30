@@ -251,12 +251,14 @@ class K8sOrchestrator(Protocol):
         未完成时抛异常交 outbox 退避重试,下次执行看到已完成即返回。"""
         ...
 
-    async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
+    async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
         """下发 JuiceFS 目录硬配额(平台 ns 的 CLI Job,纯元数据操作)。幂等;
-        Job 进行中/失败抛异常交 outbox 退避重试。配额是纯元数据,不挂卷。"""
+        Job 进行中/失败抛异常交 outbox 退避重试。配额是纯元数据,不挂卷。
+        namespace 用于定位该租户共享 PVC 绑定的 PV 子目录:CSI 动态供给把每租户 PVC
+        落在文件系统根下的独立子目录,配额路径必须带这层前缀才与数据同视图。"""
         ...
 
-    async def delete_disk_quota(self, subpath: str) -> None:
+    async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
         """删盘前摘除目录配额(无配额记录视为成功)。幂等;失败抛异常。"""
         ...
 

@@ -3,7 +3,7 @@
 import asyncio
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, Query, Request, status
+from fastapi import APIRouter, Header, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
@@ -17,6 +17,7 @@ from app.core.k8s.base import (
     ClusterProbe,
 )
 from app.core.pagination import Page
+from app.core.params import Cursor, Limit
 from app.core.platform_config import get_effective_platform_config
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
 from app.modules.adminapi.schemas import (
@@ -58,8 +59,8 @@ async def admin_list_instances(
     user_id: int | None = None,
     q: str | None = None,
     node_name: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[AdminInstanceOut]:
     """q:实例名或 uuid 前缀。node_name:精确。游标分页(降序)。"""
     page = await orchestrator_service.admin_list_instances(
@@ -74,7 +75,8 @@ async def admin_list_instances(
     items = [AdminInstanceOut.model_validate(i) for i in page.items]
     # 与用户端列表同一条回填路径:管理端也要看得见端点 slug 与包周期到期日
     await orchestrator_service.attach_instance_details(session, items)
-    return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor)
+    # total 仅租户视角(service 层只在 user_id 过滤时算):抽屉区分「正好 N 条」与「被截断」
+    return Page[AdminInstanceOut](items=items, next_cursor=page.next_cursor, total=page.total)
 
 
 @router.post("/instances/{uuid}/force-stop", dependencies=[require_roles("ops")])
@@ -102,8 +104,8 @@ async def admin_preempt(
 async def admin_list_instance_events(
     uuid: str,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[InstanceEventOut]:
     """管理端实例事件时间线(排障):与用户端同一实现,降序游标分页;不限租户。"""
     instance = await orchestrator_service.admin_get_instance(session, uuid)
@@ -119,6 +121,8 @@ class EnrollmentRevokeRequest(BaseModel):
 
 class EnrollmentRegenerateRequest(BaseModel):
     ttl_hours: int = Field(default=24, ge=1, le=168)
+    # 可选原因(只落审计 detail;换令牌会让旧命令立即失效,留痕便于追溯)
+    reason: str | None = Field(default=None, max_length=200)
 
 
 def _command_out(enrollment, token: str) -> EnrollmentCommandOut:
@@ -172,7 +176,11 @@ async def admin_regenerate_enrollment(
     enrollment, token = await nodes_service.regenerate_enrollment(
         session, enrollment_id, ttl_hours=body.ttl_hours
     )
-    set_audit_target(request, f"node_enrollment:{enrollment_id}", detail={"action": "regenerate"})
+    set_audit_target(
+        request,
+        f"node_enrollment:{enrollment_id}",
+        detail={"action": "regenerate", **({"reason": body.reason} if body.reason else {})},
+    )
     return _command_out(enrollment, token)
 
 

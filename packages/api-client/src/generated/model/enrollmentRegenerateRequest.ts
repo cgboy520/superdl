@@ -6,6 +6,7 @@
  */
 
 export interface EnrollmentRegenerateRequest {
+  reason?: string | null;
   /**
      * @minimum 1
      * @maximum 168

@@ -12,22 +12,7 @@ from app.core.gpu_adapter import (
 from app.core.k8s.base import GPU_MODEL_NODE_LABEL
 from app.modules.orchestrator.models import Instance
 from app.modules.orchestrator.service import _encode_token, build_pod_spec
-
-
-def _spec(tier: str, pool: str, **extra):
-    base = {
-        "tier": tier,
-        "pool_label": pool,
-        "vram_gb": 24,
-        "gpu_cores_pct": 50,
-        "mig_profile": "1g.10gb" if pool == "mig" else None,
-        "vcpu": 8,
-        "mem_gb": 32,
-        "disk_gb": 100,
-        "gpu_model": "NVIDIA GeForce RTX 4090",
-    }
-    base.update(extra)
-    return base
+from tests.helpers import gpu_spec
 
 
 def test_gpu_model_pins_node_selector():
@@ -56,20 +41,20 @@ def test_no_gpu_model_keeps_pool_only_selector():
 
 
 def test_snapshot_selector_pins_model():
-    req = spec_to_gpu_request(_spec("dedicated", "kata", gpu_model_selector="H100-80G"), 2)
+    req = spec_to_gpu_request(gpu_spec("dedicated", "kata", gpu_model_selector="H100-80G"), 2)
     assert req.node_selector[GPU_MODEL_NODE_LABEL] == "H100-80G"
     assert req.resources == {"nvidia.com/gpu": "2"}
 
 
 def test_hami_gputype_annotation_hami_pool_only_and_raw_value():
     """开关开启时仅 hami 池注 annotation,且值为 SKU 原文串(非 canonical)。"""
-    spec = _spec("shared", "hami", gpu_model_selector="RTX4090")
+    spec = gpu_spec("shared", "hami", gpu_model_selector="RTX4090")
     on = spec_to_gpu_request(spec, 1, hami_use_gputype=True)
     assert on.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
     off = spec_to_gpu_request(spec, 1)
     assert off.annotations == {}
     dedicated = spec_to_gpu_request(
-        _spec("dedicated", "kata", gpu_model_selector="RTX4090"), 1, hami_use_gputype=True
+        gpu_spec("dedicated", "kata", gpu_model_selector="RTX4090"), 1, hami_use_gputype=True
     )
     assert dedicated.annotations == {}
 
@@ -93,20 +78,20 @@ def _instance(spec: dict) -> Instance:
 
 def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
     monkeypatch.setattr(get_settings(), "hami_use_gputype", True)
-    pod = build_pod_spec(_instance(_spec("shared", "hami", gpu_model_selector="RTX4090")))
+    pod = build_pod_spec(_instance(gpu_spec("shared", "hami", gpu_model_selector="RTX4090")))
     assert pod.node_selector[GPU_MODEL_NODE_LABEL] == "RTX4090"
     assert pod.annotations == {HAMI_USE_GPUTYPE_ANNOTATION: "NVIDIA GeForce RTX 4090"}
 
 
 def test_build_pod_spec_multi_gpu_scales_cpu_mem():
     """N 卡实例 Pod limits = N × SKU(收 N 倍价即给 N 份资源);系统盘不放大。"""
-    inst = _instance(_spec("dedicated", "kata"))
+    inst = _instance(gpu_spec("dedicated", "kata"))
     inst.gpu_count = 8
     pod = build_pod_spec(inst)
     assert pod.vcpu == 8 * 8  # SKU 8 vCPU/卡 × 8 卡
     assert pod.mem_gb == 32 * 8
     assert pod.disk_gb == 100
-    single = build_pod_spec(_instance(_spec("dedicated", "kata")))
+    single = build_pod_spec(_instance(gpu_spec("dedicated", "kata")))
     assert single.vcpu == 8 and single.mem_gb == 32
 
 

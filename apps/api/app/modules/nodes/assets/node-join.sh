@@ -343,9 +343,16 @@ step_nvidia_toolkit() {
   if is_cpu_pool; then echo "-- cpu 池:跳过 nvidia-container-toolkit"; return 0; fi
   # NVIDIA Container Toolkit:k8s 认卡的前置(驱动之外的容器运行时依赖)。装好后
   # k3s/rke2 的 containerd 下次启动会探测 nvidia-container-runtime 并生成 nvidia RuntimeClass。
-  if command -v nvidia-ctk >/dev/null 2>&1; then
-    echo "-- nvidia-container-toolkit 已安装($(nvidia-ctk --version 2>/dev/null | head -1))"
+  # 版本下限收敛:已装但低于 NVCTK_MIN_VERSION 的必须升级(上游安全修复),
+  # 不得以 command -v 短路让节点永久停在旧包上。
+  local installed
+  installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
+  if [[ -n "$installed" ]] && dpkg --compare-versions "$installed" ge "$NVCTK_MIN_VERSION"; then
+    echo "-- nvidia-container-toolkit $installed ≥ $NVCTK_MIN_VERSION,跳过"
   else
+    if [[ -n "$installed" ]]; then
+      echo "-- nvidia-container-toolkit $installed 低于下限 $NVCTK_MIN_VERSION,升级"
+    fi
     local key="$ETC_DIR/apt/keyrings/nvidia-container-toolkit-keyring.gpg"
     mkdir -p "$ETC_DIR/apt/keyrings" "$ETC_DIR/apt/sources.list.d"
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
@@ -356,6 +363,12 @@ step_nvidia_toolkit() {
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -y -qq nvidia-container-toolkit
+    installed="$(dpkg-query -W -f='${Version}' nvidia-container-toolkit 2>/dev/null || true)"
+    # 装/升完仍低于下限 = 源里没有足够新的包,立即失败而不是带病入群
+    if [[ -z "$installed" ]] || dpkg --compare-versions "$installed" lt "$NVCTK_MIN_VERSION"; then
+      echo "!! nvidia-container-toolkit 版本 ${installed:-缺失} 低于安全下限 $NVCTK_MIN_VERSION" >&2
+      return 1
+    fi
   fi
   # 若 agent 已在跑(重跑/补装场景),重启一次让 containerd 重新探测 nvidia runtime;
   # server 本机同理(单机 light),重启的是 server 服务
@@ -540,13 +553,25 @@ step_agent_config() {
     return 0
   fi
   mkdir -p "$RANCHER_DIR"
+  # join token 必须非空:空 token 会让 agent 安装以残缺配置启动(且平台侧若误把
+  # server token 录进「集群接入」,下发的就是能拉 server 入 etcd 的凭据——此处是最后一道闸)
+  local join_token
+  join_token="$(cfg_get rke2_join_token)"
+  if [[ -z "$join_token" ]]; then
+    echo "!! bootstrap 下发的 rke2_join_token 为空:拒绝写 agent 配置。" \
+         "检查管理端「平台配置 · 集群接入」与 ansible agent_token(site.yml 有渲染前断言)" >&2
+    return 1
+  fi
   {
     echo "server: $(cfg_get rke2_server_url)"
-    echo "token: $(cfg_get rke2_join_token)"
+    echo "token: $join_token"
     echo "node-label:"
     echo "  - \"superdl.io/pool=$pool\""
     local l
     for l in "${extra[@]}"; do echo "  - \"$l\""; done
+    # 单 Pod PID 上限:fork bomb 可耗尽节点进程表拖垮 kubelet/containerd,殃及同机租户
+    echo "kubelet-arg:"
+    echo "  - \"podPidsLimit=$POD_PIDS_LIMIT\""
   } > "$RANCHER_DIR"/config.yaml
   chmod 600 "$RANCHER_DIR"/config.yaml
 }

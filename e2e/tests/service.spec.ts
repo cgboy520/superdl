@@ -8,7 +8,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { pickSharedStandardSku, rechargeViaUi, registerViaUi, uniquePhone } from "./helpers";
+import { pickSharedStandardSku, rechargeViaUi, registerViaUi, uniquePhone, waitFirstRowRunning } from "./helpers";
 
 test("部署服务并拿到端点与 API Key", async ({ page }) => {
   test.setTimeout(300_000);
@@ -35,9 +35,7 @@ test("部署服务并拿到端点与 API Key", async ({ page }) => {
   await page.getByRole("button", { name: "部署服务" }).click();
 
   // ── 列表:创建中 → 运行中
-  await expect(page).toHaveURL(/instances/, { timeout: 15_000 });
-  const row = page.locator(".ant-table-row").first();
-  await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
+  const row = await waitFirstRowRunning(page);
   // 服务型实例在列表里带标记,slug 随 InstanceOut 一起下发(不额外打接口)
   await expect(row.getByText(/svc-[a-z0-9]+/)).toBeVisible();
 

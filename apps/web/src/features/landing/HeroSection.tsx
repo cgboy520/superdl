@@ -1,18 +1,17 @@
-/** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。 */
+/** 主页 Hero:单帧深靛渐变 + 网格纹理 + 右侧玻璃拟态实时数据卡。
+ *  数据卡三态:未就绪骨架 / 失败降级为「前往算力市场」CTA(与价格墙同口径) / 实时数据。
+ *  库存/底价绝不在查询失败时渲染成假 0。 */
 
-import { brand, colorPrimary, compareAmounts } from "@superdl/ui";
+import { brand, colorPrimary, compareAmounts, fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
-import { Button, Grid, Space, Typography } from "antd";
+import { Button, Grid, Skeleton, Space, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../../lib/format";
+import { useFormat } from "@superdl/ui";
+import { GRID_TEXTURE } from "../../components/gridTexture";
 import { dedupAvailableTotal } from "../../lib/inventory";
 import { useSkus } from "../../api/queries";
 import { useIsLoggedIn } from "../../stores/auth";
-
-const GRID_TEXTURE = `url("data:image/svg+xml,${encodeURIComponent(
-  `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><path d='M40 0H0v40' fill='none' stroke='rgba(255,255,255,0.07)'/></svg>`,
-)}")`;
 
 function GlassCard({ label, value }: { label: string; value: string }) {
   return (
@@ -27,8 +26,8 @@ function GlassCard({ label, value }: { label: string; value: string }) {
         minWidth: 200,
       }}
     >
-      <div style={{ fontSize: 13, opacity: 0.8 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: fontSize.caption, opacity: 0.8 }}>{label}</div>
+      <div style={{ fontSize: fontSize.kpi, fontWeight: 700, marginTop: 4 }}>{value}</div>
     </div>
   );
 }
@@ -38,7 +37,8 @@ export function HeroSection() {
   const { formatHourlyPrice } = useFormat();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
-  const { data: skus } = useSkus({ refetchInterval: 60_000 });
+  const skusQ = useSkus({ refetchInterval: 60_000 });
+  const { data: skus } = skusQ;
 
   const minPrice = (skus ?? []).reduce<string | null>(
     // 金额比较走 compareAmounts(BigInt 万分位):价格墙排序不受浮点精度影响
@@ -57,7 +57,7 @@ export function HeroSection() {
     >
       <div
         style={{
-          maxWidth: 1200,
+          maxWidth: layout.pageMaxWidthWide,
           margin: "0 auto",
           display: "flex",
           alignItems: "center",
@@ -67,12 +67,12 @@ export function HeroSection() {
       >
         <div>
           <Typography.Title
-            style={{ color: "#fff", fontSize: 44, marginBottom: 12, marginTop: 0 }}
+            style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 12, marginTop: 0 }}
           >
             {t("landing.hero.title")}
           </Typography.Title>
           <Typography.Paragraph
-            style={{ color: "rgba(255,255,255,0.85)", fontSize: 18, marginBottom: 32 }}
+            style={{ color: "rgba(255,255,255,0.85)", fontSize: fontSize.pageTitle, marginBottom: 32 }}
           >
             {t("landing.hero.subtitle")}
           </Typography.Paragraph>
@@ -101,8 +101,32 @@ export function HeroSection() {
         </div>
         {screens.lg && (
           <Space orientation="vertical" size={16}>
-            {minPrice && <GlassCard label={t("landing.hero.minPriceLabel")} value={formatHourlyPrice(minPrice)} />}
-            <GlassCard label={t("landing.hero.freeLabel")} value={t("landing.hero.freeCards", { count: freeCards })} />
+            {skusQ.isError ? (
+              // 实时数据查询失败:整卡降级为市场入口,不渲染假 0 库存
+              <Link to="/market">
+                <Button size="large" ghost>
+                  {t("landing.pricing.fallbackCta")}
+                </Button>
+              </Link>
+            ) : !skus ? (
+              <>
+                <Skeleton.Input active style={{ width: 200, height: 88 }} />
+                <Skeleton.Input active style={{ width: 200, height: 88 }} />
+              </>
+            ) : (
+              <>
+                {minPrice && (
+                  <GlassCard
+                    label={t("landing.hero.minPriceLabel")}
+                    value={formatHourlyPrice(minPrice)}
+                  />
+                )}
+                <GlassCard
+                  label={t("landing.hero.freeLabel")}
+                  value={t("landing.hero.freeCards", { count: freeCards })}
+                />
+              </>
+            )}
           </Space>
         )}
       </div>

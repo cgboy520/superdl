@@ -4,7 +4,8 @@
  */
 
 import { type DiskOut } from "@superdl/api-client";
-import { colorPrimary, diskDailyEstimate, formatDateTime, formatSizeGb, idemKeyOf, statusColors } from "@superdl/ui";
+import { colorPrimary, diskDailyEstimate, fontSize, formatDateTime, formatSizeGb, idemKeyOf, statusColors } from "@superdl/ui";
+import { TableErrorEmpty, TypeConfirmModal } from "@superdl/ui/components";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -14,6 +15,7 @@ import {
   Drawer,
   Empty,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -27,11 +29,10 @@ import {
 } from "antd";
 import { useState } from "react";
 
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import { useCreateDisk, useDeleteDisk, useExpandDisk } from "../api/mutations";
 import { useDisks, useInstances, usePolicies } from "../api/queries";
 import { DiskStatusBadge } from "../components/common";
-import { TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/storage")({
@@ -39,9 +40,14 @@ export const Route = createFileRoute("/_console/storage")({
   component: StoragePage,
 });
 
+/** 扩容抽屉打开时的默认步进(GB):默认目标 = 当前 +50,给价格感知的常规增量;滑块仍可自由调。 */
+const EXPAND_DEFAULT_STEP_GB = 50;
+
 function MountOverview({ priceText }: { priceText: string }) {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  // 窄屏两段 flex:1 会互相挤压:md 以下改竖排
+  const screens = Grid.useBreakpoint();
   const seg = (title: string, desc: string, color: string) => (
     <div
       style={{
@@ -53,16 +59,16 @@ function MountOverview({ priceText }: { priceText: string }) {
     >
       <Typography.Text strong>{title}</Typography.Text>
       <br />
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {desc}
       </Typography.Text>
     </div>
   );
   return (
     <Card size="small" title={t("storage.mountOverviewTitle")}>
-      {/* 只列真实存在的挂载点:后端 Pod 只挂实例盘与数据盘 */}
-      <div style={{ display: "flex", gap: 8 }}>
-        {seg("/", t("storage.segRoot"), statusColors.blue)}
+      {/* 只列真实存在的挂载点:后端 Pod 只挂实例盘(/root)与数据盘(/root/data) */}
+      <div style={{ display: "flex", gap: 8, flexDirection: screens.md ? "row" : "column" }}>
+        {seg("/root", t("storage.segRoot"), statusColors.blue)}
         {seg("/root/data", t("storage.segData", { price: priceText }), colorPrimary)}
       </div>
     </Card>
@@ -71,8 +77,6 @@ function MountOverview({ priceText }: { priceText: string }) {
 
 function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () => void }) {
   const { t } = useTranslation();
-  // 破坏确认:键入资源名才解锁删除
-  const [typed, setTyped] = useState("");
   const { message } = App.useApp();
   const del = useDeleteDisk({
     onSuccess: () => {
@@ -80,48 +84,25 @@ function DeleteDiskModal({ disk, onClose }: { disk: DiskOut | null; onClose: () 
       onClose();
     },
   });
-  const nameMatched = disk != null && typed.trim() === disk.name;
+  // 破坏确认只有键入盘名一道闸;取消键复用 create.cancel(与 ConsentModal 同款)
   return (
-    <Modal
-      title={t("storage.deleteModalTitle")}
+    <TypeConfirmModal
       open={Boolean(disk)}
-      onCancel={() => {
-        setTyped("");
-        onClose();
-      }}
-      footer={
-        <Button
-          danger
-          type="primary"
-          disabled={!nameMatched}
-          loading={del.isPending}
-          onClick={() => disk && del.mutate(disk.uuid)}
-        >
-          {t("storage.confirmDelete")}
-        </Button>
-      }
-    >
-      <Typography.Paragraph>
+      title={t("storage.deleteModalTitle")}
+      body={
         <Trans
           i18nKey="storage.deleteBody"
           values={{ name: disk?.name ?? "", size: formatSizeGb(disk?.size_gb ?? 0) }}
           components={{ b: <Typography.Text strong /> }}
         />
-      </Typography.Paragraph>
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">
-          {t("storage.typeNameToConfirm", { name: disk?.name ?? "" })}
-        </Typography.Text>
-        <Input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          placeholder={disk?.name ?? ""}
-          maxLength={64}
-          autoComplete="off"
-          aria-label={t("storage.typeNameToConfirm", { name: disk?.name ?? "" })}
-        />
-      </Space>
-    </Modal>
+      }
+      targetName={disk?.name ?? ""}
+      confirmLabel={t("storage.confirmDelete")}
+      cancelLabel={t("create.cancel")}
+      loading={del.isPending}
+      onConfirm={() => disk && del.mutate(disk.uuid)}
+      onCancel={onClose}
+    />
   );
 }
 
@@ -170,7 +151,8 @@ function ExpiryCell({
 function StoragePage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: 10_000 });
+  // 数据盘状态由欠费巡检驱动(小时级):稳态 30s 单档,不挂快档
+  const { data: disks, isLoading, isError, refetch } = useDisks({ refetchInterval: 30_000 });
   const { data: instances } = useInstances();
   const { data: policies } = usePolicies();
   const [createOpen, setCreateOpen] = useState(false);
@@ -218,7 +200,7 @@ function StoragePage() {
       <MountOverview priceText={priceText} />
       <Card>
         {isError ? (
-          <TableErrorEmpty onRetry={() => void refetch()} />
+          <TableErrorEmpty isError onRetry={() => void refetch()} />
         ) : (disks ?? []).length === 0 && !isLoading ? (
           <Empty description={t("copy.diskRetention")}>
             <Button type="primary" onClick={() => setCreateOpen(true)}>
@@ -240,7 +222,7 @@ function StoragePage() {
                 render: (_, r) => (
                   <Space orientation="vertical" size={0}>
                     <span>{t("common.gbMonthPrice", { price: r.price_gb_month })}</span>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {t("common.dailyApprox", { amount: diskDailyEstimate(r.price_gb_month, r.size_gb) })}
                     </Typography.Text>
                   </Space>
@@ -278,7 +260,7 @@ function StoragePage() {
                           size="small"
                           disabled={!canExpand}
                           onClick={() => {
-                            setNewSize(r.size_gb + 50);
+                            setNewSize(r.size_gb + EXPAND_DEFAULT_STEP_GB);
                             setExpandTarget(r);
                           }}
                         >
@@ -351,7 +333,7 @@ function StoragePage() {
         title={t("storage.expandDrawerTitle", { name: expandTarget?.name ?? "" })}
         open={Boolean(expandTarget)}
         onClose={() => setExpandTarget(null)}
-        width={420}
+        width="min(420px, 100vw)"
         footer={
           <Button
             type="primary"

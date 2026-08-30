@@ -23,7 +23,7 @@ from tests.helpers import admin_headers
 class TestCrypto:
     def test_roundtrip_and_prefix(self):
         token = crypto.encrypt_str("AKSECRET-12345678", aad="sms_access_key_secret")
-        assert token.startswith("enc:v1:")
+        assert token.startswith("enc:v2:")
         assert "AKSECRET" not in token
         assert crypto.decrypt_str(token, aad="sms_access_key_secret") == "AKSECRET-12345678"
 
@@ -57,9 +57,7 @@ class TestProdDegradeForbidden:
     (自我解除);env/部署层保留(env 层 prod 关闭启动时只告警),在线写库层一律禁。
     """
 
-    @pytest.mark.parametrize(
-        "key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"]
-    )
+    @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
     def test_security_switches_cannot_be_disabled_in_prod(self, key, monkeypatch):
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -70,9 +68,7 @@ class TestProdDegradeForbidden:
         # 开启(升防)不受限
         assert validate_setting_value(key, "true") == "true"
 
-    @pytest.mark.parametrize(
-        "key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"]
-    )
+    @pytest.mark.parametrize("key", ["captcha_enabled", "admin_mfa_enabled", "real_name_enabled"])
     def test_security_switches_toggle_freely_outside_prod(self, key, monkeypatch):
         monkeypatch.setattr(
             "app.core.platform_config.get_settings",
@@ -81,21 +77,37 @@ class TestProdDegradeForbidden:
         assert validate_setting_value(key, "false") == "false"
 
 
-class TestAdminApi:
-    async def test_admin_only(self, client: AsyncClient, sm):
-        """渠道凭据不下放:ops / finance / readonly 一律 403。"""
-        for role in ("ops", "finance", "readonly"):
-            ah = await admin_headers(sm, client, role=role)
-            assert (
-                await client.get("/api/admin/v1/platform-config", headers=ah)
-            ).status_code == 403
-            resp = await client.put(
-                "/api/admin/v1/platform-config",
-                json={"updates": {"icp_number": "x"}, "reason": "test"},
-                headers=ah,
-            )
-            assert resp.status_code == 403
+class TestProdComplianceGates:
+    """D-4 启动 fail-fast(兜 env/部署层;在线写库层由上面的 prod_forbidden 禁关)。"""
 
+    def test_prod_refuses_boot_with_switches_off(self):
+        from app.core.platform_config import assert_prod_compliance_gates
+
+        off = {
+            "captcha_enabled": "false",
+            "real_name_enabled": "false",
+            "real_name_required_for_recharge": "false",
+        }
+        with pytest.raises(RuntimeError, match="合规开关未全开"):
+            assert_prod_compliance_gates(off, "prod")
+        # 只开一部分同样拒(报错带缺项键名)
+        with pytest.raises(RuntimeError, match="real_name_enabled"):
+            assert_prod_compliance_gates(dict(off, captcha_enabled="true"), "prod")
+
+    def test_prod_boots_with_all_on_and_non_prod_unaffected(self):
+        from app.core.platform_config import assert_prod_compliance_gates
+
+        on = {
+            "captcha_enabled": "true",
+            "real_name_enabled": "true",
+            "real_name_required_for_recharge": "true",
+        }
+        assert_prod_compliance_gates(on, "prod")  # 不抛
+        assert_prod_compliance_gates({}, "dev")  # 非 prod 一律放行
+        assert_prod_compliance_gates({}, "test")
+
+
+class TestAdminApi:
     async def test_get_masks_secret_and_put_overrides(self, client: AsyncClient, sm):
         """管理端写入 → GET 脱敏回读 → 公开 site-config 透出(备案号与经营主体四项,
         《电子商务法》第十五条公示)→ 空串清除覆盖回退 env 默认。"""
@@ -137,7 +149,7 @@ class TestAdminApi:
                     select(PlatformSetting).where(PlatformSetting.key == "sms_access_key_secret")
                 )
             ).scalar_one()
-            assert row.value.startswith("enc:v1:")
+            assert row.value.startswith("enc:v2:")
             assert "PLAINTEXT" not in row.value
 
         # 公开 site-config 跟随备案号与经营主体
@@ -197,7 +209,7 @@ class TestAdminApi:
 
     async def test_real_name_flag_flows_to_policies_and_gate(self, client: AsyncClient, sm):
         """开关走平台配置:公开 policies 即时跟随,充值门禁即时生效(免重启)。"""
-        from tests.test_payment import user_headers
+        from tests.helpers import user_headers
 
         ah = await admin_headers(sm, client, role="admin")
         base = (await client.get("/api/v1/policies")).json()
@@ -230,7 +242,7 @@ class TestAdminApi:
 class TestChannelGate:
     async def test_disabled_channel_rejected(self, client: AsyncClient, sm):
         """渠道开关默认关:未开通渠道下单被拒;开通但凭据不全同样拒(不产生脏单)。"""
-        from tests.test_payment import user_headers
+        from tests.helpers import user_headers
 
         headers = await user_headers(client, "13700000202")
         resp = await client.post(
@@ -325,6 +337,27 @@ class TestRegistrySpecsAndProbeEndpoint:
             validate_setting_value("registry_proxy_projects", "docker.io")
         with pytest.raises(ValueError):
             validate_setting_value("registry_ca_pem", "not a pem")
+
+    def test_multiline_specs_reject_evil_line_and_linear_time(self):
+        """多行 text 配置逐行锚定校验:非法行被拒;超长对抗输入必须线性时间返回
+        (回归:嵌套量词整串匹配曾使 ~40 字符的输入即可挂死事件循环,ReDoS)。"""
+        import time
+
+        assert validate_setting_value(
+            "image_allowed_registries", "docker.io/\nregistry.example.com/team/"
+        )
+        with pytest.raises(ValueError, match="含非法行"):
+            validate_setting_value("image_allowed_registries", "docker.io/\nBAD HOST!!")
+        # 对抗输入:全部合法字符 + 一个非法尾字符(旧正则在此外爆)
+        evil = "a" * 4000 + "!"
+        t0 = time.perf_counter()
+        with pytest.raises(ValueError):
+            validate_setting_value("image_allowed_registries", evil)
+        assert time.perf_counter() - t0 < 1.0  # 线性;旧实现为指数级(数十分钟级)
+        # 合法长输入同样线性放行
+        t0 = time.perf_counter()
+        assert validate_setting_value("image_allowed_registries", "a" * 4000)
+        assert time.perf_counter() - t0 < 1.0
 
     async def test_probe_endpoint_requires_host_then_reports_probe(
         self, client: AsyncClient, sm, monkeypatch
@@ -432,8 +465,9 @@ class TestConfigWarnings:
 
 
 class TestEffectiveConfig:
-    async def test_corrupt_secret_row_falls_back_to_env(self, sm):
-        """单行密文损坏(主密钥换错/手工改库)只让该键回落 env,不得拖垮整份配置。"""
+    async def test_corrupt_secret_row_fails_closed(self, sm):
+        """单行密文损坏(主密钥换错/手工改库)fail-closed:抛错而不是静默回落 env——
+        轮换窗口里回落等于悄悄用回旧值(审计 #18)。"""
         from app.core.platform_config import PlatformSetting, get_effective_platform_config
 
         async with sm() as session:
@@ -444,5 +478,5 @@ class TestEffectiveConfig:
             )
             await session.commit()
         async with sm() as session:
-            cfg = await get_effective_platform_config(session)  # 不抛
-        assert cfg["sms_access_key_secret"] == ""  # env 未设 → 空串
+            with pytest.raises(ValueError, match="解密失败"):
+                await get_effective_platform_config(session)

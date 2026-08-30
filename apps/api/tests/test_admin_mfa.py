@@ -99,6 +99,28 @@ class TestSetupFlow:
         )
         assert resp.json()["code"] == "MFA_CODE_INVALID"
 
+    async def test_bind_raises_platform_alert(self, client: AsyncClient, sm):
+        """TOTP 绑定成功即落平台告警(检测闭环:绑定只靠口令,抢先绑定必须可见)。"""
+        from sqlalchemy import select
+
+        from app.modules.notify.models import Notification
+
+        await _create(client, sm, "alert-admin", "admin")
+        await complete_mfa_setup(client, (await _login(client, "alert-admin")).json()["ticket"])
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(Notification).where(Notification.type == "admin_alert")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1
+        assert "alert-admin" in rows[0].content
+        assert rows[0].severity == "warning"
+
     async def test_ticket_cannot_cross_stage(self, client: AsyncClient, sm):
         """setup 票不能拿去登录验证口(typ 校验),反之亦然。"""
         await _create(client, sm, "cross-admin", "admin")

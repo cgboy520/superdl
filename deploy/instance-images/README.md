@@ -85,11 +85,15 @@ cd deploy/instance-images
 REG=<registry>/superdl
 JUP="jupyterlab==4.6.3 jupyter-ai[jupyternaut,magics]==3.1.3 jupyter-resource-usage==1.3.0 jupyterlab-language-pack-zh-CN==4.5.post3 ipykernel==7.3.0"
 CONDA=/opt/conda/bin:   # 只有自建 conda 的那几步传;厂商基座不传(它们没有 /opt/conda)
+# 安装包 SHA-256 钉版(供应链完整性,缺了构建即拒;值 = 官方发布哈希,换安装包版本时同步换):
+CONDA_SHA313=66f7c434bbdc7a4c5687b7e56cde724f73954d1322ffb273c6e387f12fbcdc03  # Miniconda3-py313_26.5.3-2-Linux-x86_64.sh
+CONDA_SHA311=cdca3dd8440759bb87c60b227e26946263fe2856b30b2bcfdd964c38254fb8eb  # Miniconda3-py311_26.5.3-2-Linux-x86_64.sh
 
 # ---- CUDA 13.2 线 ----
 docker build -t $REG/miniconda:26.5.3-cu132-py313 \
   --build-arg BASE_IMAGE=nvidia/cuda:13.2.1-cudnn-devel-ubuntu24.04 \
   --build-arg MINICONDA_INSTALLER=Miniconda3-py313_26.5.3-2-Linux-x86_64.sh \
+  --build-arg MINICONDA_SHA256=$CONDA_SHA313 \
   --build-arg CONDA_PATH_PREFIX=$CONDA --build-arg JUPYTER_PACKAGES="$JUP" .
 docker build -t $REG/pytorch:2.13.0-cu132-py313 \
   --build-arg BASE_IMAGE=$REG/miniconda:26.5.3-cu132-py313 \

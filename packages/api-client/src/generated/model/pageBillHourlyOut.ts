@@ -9,4 +9,5 @@ import type { BillHourlyOut } from './billHourlyOut';
 export interface PageBillHourlyOut {
   items: BillHourlyOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

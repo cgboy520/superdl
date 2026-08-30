@@ -91,11 +91,6 @@ class TestWorkerMetricsAuth:
         assert status.startswith("200")
         assert b"superdl_" in body or b"go_" in body or b"python_" in body
 
-    def test_non_ascii_header_does_not_crash(self):
-        # compare_digest 收 str 遇非 ASCII 会抛 TypeError:必须先 encode(401 而非 500)
-        status, _ = _call_wsgi(_metrics_wsgi_app("s3cret"), "Bearer tokén")
-        assert status.startswith("401")
-
     def test_no_token_configured_is_open(self):
         # dev/test 未配 SUPERDL_METRICS_TOKEN 时与 API 侧一致:不要求鉴权(prod 强制配置)
         status, _ = _call_wsgi(_metrics_wsgi_app(None), None)

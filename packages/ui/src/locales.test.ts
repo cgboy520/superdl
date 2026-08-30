@@ -56,7 +56,8 @@ describe("packages/ui shared locale", () => {
   });
 
   it("shared.json zh/en 齐平(键集、非空、占位符)", () => {
-    assertLocaleParity(zhCN, enUS);
+    // lang.zh =「中文」是语言固有名称(endonym),en 目录里有意保留 Han 字符
+    assertLocaleParity(zhCN, enUS, { allowCjkInEn: ["lang.zh"] });
   });
 });
 

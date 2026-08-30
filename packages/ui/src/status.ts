@@ -227,7 +227,7 @@ export const ledgerTypeMap = {
   recharge: { labelKey: "shared:status.ledger.recharge", color: statusColors.green },
   consume: { labelKey: "shared:status.ledger.consume", color: statusColors.blue },
   refund: { labelKey: "shared:status.ledger.refund", color: statusColors.orange },
-  adjust: { labelKey: "shared:status.ledger.adjust", color: "purple" },
+  adjust: { labelKey: "shared:status.ledger.adjust", color: statusColors.purple },
 } as const satisfies Record<LedgerType, { labelKey: string; color: string }>;
 
 export type OrderStatus = "pending" | "paid" | "closed" | "failed";

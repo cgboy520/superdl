@@ -9,10 +9,12 @@ import { expect, test } from "@playwright/test";
 
 import {
   addSshKeyViaUi,
+  fillCustomImageForm,
   pickSharedStandardSku,
   rechargeViaUi,
   registerViaUi,
   uniquePhone,
+  waitFirstRowRunning,
 } from "./helpers";
 
 test("买包月并续费", async ({ page }) => {
@@ -39,19 +41,14 @@ test("买包月并续费", async ({ page }) => {
   await expect(page).toHaveURL(/period=month/);
 
   // ── 创建页:主 CTA 是「支付」而不是「创建」
-  await page.getByText("自定义镜像").click();
-  await page
-    .getByPlaceholder("registry.example.com/your/image:tag")
-    .fill("registry.superdl.local/pytorch:2.9.0-cu128");
-  await page.getByRole("checkbox", { name: /e2e-key/ }).check();
+  await fillCustomImageForm(page);
   const submit = page.getByRole("button", { name: "支付并创建" });
   await expect(submit).toBeVisible({ timeout: 15_000 });
   await submit.click();
 
   // ── 列表:包月标记 + 剩余天数(到期信息内联,不逐行打接口)
-  await expect(page).toHaveURL(/instances/, { timeout: 15_000 });
-  const row = page.locator(".ant-table-row").first();
-  await expect(row.getByText(/包月/)).toBeVisible({ timeout: 90_000 });
+  const row = await waitFirstRowRunning(page);
+  await expect(row.getByText(/包月/)).toBeVisible();
   await expect(row.getByText(/剩 \d+ 天/)).toBeVisible();
 
   // ── 余额:一次性扣掉整段周期(不是一小时)

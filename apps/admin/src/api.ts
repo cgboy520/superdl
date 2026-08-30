@@ -57,6 +57,9 @@ import {
   adminForceStopApiAdminV1InstancesUuidForceStopPost,
   adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost,
   adminListAdjustmentsApiAdminV1AdjustmentsGet,
+  adminAdjustmentsExportApiAdminV1AdjustmentsExportGet,
+  adminInvoicesExportApiAdminV1InvoicesExportGet,
+  adminRefundsExportApiAdminV1RefundsExportGet,
   adminListInstancesApiAdminV1InstancesGet,
   adminListNodesApiAdminV1NodesGet,
   adminNodeMetricsApiAdminV1NodesNodeNameMetricsGet,
@@ -77,6 +80,7 @@ import {
   adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost,
   adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost,
   adminListTicketsApiAdminV1TicketsGet,
+  adminTicketsCountApiAdminV1TicketsCountGet,
   adminReplyTicketApiAdminV1TicketsTicketIdReplyPost,
   adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost,
   adminListSkusApiAdminV1SkusGet,
@@ -105,13 +109,15 @@ import {
 } from "@superdl/api-client";
 import type {
   AdjustmentCreate,
+  AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams,
   AdminAlertsApiAdminV1AlertsGetParams,
   AdminAuditExportApiAdminV1AuditExportGetParams,
   AdminAuditLogApiAdminV1AuditGetParams,
   AdminDeletionReject,
-  AdminDeletionRequestOut,
+  AdminInvoicesExportApiAdminV1InvoicesExportGetParams,
   AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,
   AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
+  AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams,
   AdminListInstancesApiAdminV1InstancesGetParams,
   AdminListInvoicesApiAdminV1InvoicesGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
@@ -120,22 +126,19 @@ import type {
   AdminListTenantsApiAdminV1TenantsGetParams,
   AdminListTicketsApiAdminV1TicketsGetParams,
   AdminOrdersExportApiAdminV1OrdersExportGetParams,
-  AdminSettlementGapOut,
-  AdminTicketDetailOut,
+  AdminRefundsExportApiAdminV1RefundsExportGetParams,
+  AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams,
+  AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams,
   AdminTicketReply,
   AdminTicketStatusUpdate,
-  AdminAccountOut,
   AdminCreateRequest,
   AdminOut,
   AdminResetPasswordRequest,
   AdminSelfPasswordRequest,
   AdminUpdateRequest,
   AnnouncementCreate,
-  AnnouncementOut,
-  AnnouncementResultOut,
   AnnouncementRevoke,
   CapacityPreviewOut,
-  EnrollmentCommandOut,
   EnrollmentCreate,
   EnrollmentRegenerateRequest,
   EnrollmentRevokeRequest,
@@ -144,45 +147,33 @@ import type {
   ImageUpdate,
   NodeCordonRequest,
   OutboxRetryRequest,
-  PrewarmEnqueuedOut,
   OrderBackfillRequest,
   OutboxDiscardRequest,
   PlatformConfigUpdateRequest,
   PolicyUpdateRequest,
   ReconciliationExportApiAdminV1ReconciliationExportGetParams,
-  SmsTestOut,
   SmsTestRequest,
   AdjustmentReview,
   InvoiceIssue,
   InvoiceReject,
+  LegalDocVersionArchive,
   LegalDocVersionCreate,
-  LegalDocVersionOut,
   LegalDocVersionUpdate,
   RefundCancel,
   RefundPayout,
   RefundReview,
   AdminForceStopRequest,
   AdminLoginRequest,
-  MfaLoginOut,
-  MfaSetupConfirmOut,
-  MfaSetupOut,
-  RecoveryCodesOut,
   SettlementGapResolve,
   SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
   SkuCreate,
   SkuUpdate,
   TenantFreezeRequest,
   TenantQuotaUpdate,
-  UpdatedKeysOut,
 } from "@superdl/api-client";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  type UseMutationOptions,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, type UseMutationOptions } from "@tanstack/react-query";
 
-import { downloadCsv } from "./lib/csv";
+import { downloadCsvChecked } from "@superdl/ui";
 
 export { isApiError } from "@superdl/api-client";
 export type {
@@ -227,9 +218,37 @@ export type {
 // 查询 hooks
 
 type MutOpts<TData, TVars> = { mutation?: UseMutationOptions<TData, unknown, TVars> };
-type Fetcher = (...args: never[]) => Promise<unknown>;
-/** 结果类型直接取生成 fetcher 的返回值:页面 onSuccess 拿到的就是契约类型,不必再 as 断言。 */
-type MutOptsOf<F extends Fetcher, TVars> = MutOpts<Awaited<ReturnType<F>>, TVars>;
+
+/** 端点变更工厂:收敛「mutationFn + 透传 opts.mutation」的同构样板;TData 取箭头返回(即生成 fetcher 的契约类型)。 */
+function adminMutation<TData, TVars>(mutationFn: (v: TVars) => Promise<TData>) {
+  return function useBoundMutation(opts?: MutOpts<TData, TVars>) {
+    return useMutation({ mutationFn, ...opts?.mutation });
+  };
+}
+
+/** 游标分页公共形状:params 带 limit/cursor,响应带 next_cursor(audit 的 base64 游标是特例,不走这里)。 */
+type CursorParams = { limit?: number; cursor?: string };
+type CursorPage = { next_cursor?: string | null };
+
+/** 游标分页骨架:收敛各列表 hook 的 useInfiniteQuery 同构样板(initialPageParam/getNextPageParam/limit+cursor 拼接)。 */
+function useCursorPages<TPage extends CursorPage, P extends CursorParams>(
+  key: readonly unknown[],
+  fetcher: (params?: P) => Promise<TPage>,
+  params: Omit<P, "cursor" | "limit"> | undefined,
+  opts?: { enabled?: boolean; limit?: number; refetchOnWindowFocus?: boolean },
+) {
+  const limit = opts?.limit ?? 50;
+  return useInfiniteQuery({
+    queryKey: key,
+    enabled: opts?.enabled ?? true,
+    refetchOnWindowFocus: opts?.refetchOnWindowFocus,
+    initialPageParam: undefined as string | undefined,
+    // 组合对象即 P(页面参数 + limit/cursor);TS 证不出泛型展开,仅此处单点断言
+    queryFn: ({ pageParam }) =>
+      fetcher({ ...params, limit, ...(pageParam ? { cursor: pageParam } : {}) } as P),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+}
 
 export function useAdminSkus() {
   const queryKey = ["admin", "skus"] as const;
@@ -247,14 +266,9 @@ export function useClusterStatus() {
   return { ...q, queryKey };
 }
 
-export function useTestClusterConnection(
-  opts?: MutOptsOf<typeof adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost, void>,
-) {
-  return useMutation({
-    mutationFn: () => adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
-    ...opts?.mutation,
-  });
-}
+export const useTestClusterConnection = adminMutation(
+  (_: void) => adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost(),
+);
 
 export function useGpuModelAggregates(options?: { enabled?: boolean }) {
   const queryKey = ["admin", "gpu-models"] as const;
@@ -283,72 +297,41 @@ export function useAdminInstances(
   params?: Omit<AdminListInstancesApiAdminV1InstancesGetParams, "cursor" | "limit">,
   options?: { enabled?: boolean; limit?: number },
 ) {
-  const limit = options?.limit ?? 50;
-  const queryKey = ["admin", "instances", params, limit] as const;
-  const q = useInfiniteQuery({
-    queryKey,
-    enabled: options?.enabled ?? true,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListInstancesApiAdminV1InstancesGet({
-        ...params,
-        limit,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  const queryKey = ["admin", "instances", params, options?.limit ?? 50] as const;
+  const q = useCursorPages(queryKey, adminListInstancesApiAdminV1InstancesGet, params, options);
   return { ...q, queryKey };
 }
 
 /** 租户列表(游标分页)。q = 手机号(完整号码精确,短串按后缀);纯数字额外按 id 命中首页。 */
 export function useTenants(params?: Omit<AdminListTenantsApiAdminV1TenantsGetParams, "cursor" | "limit">) {
   const queryKey = ["admin", "tenants", params] as const;
-  const q = useInfiniteQuery({
-    queryKey,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListTenantsApiAdminV1TenantsGet({
-        ...params,
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  const q = useCursorPages(queryKey, adminListTenantsApiAdminV1TenantsGet, params, undefined);
   return { ...q, queryKey };
 }
 
 /** 租户账单下钻:资金流水与小时账单(游标分页,与用户端同源同实现)。 */
 export function useTenantLedger(userId: number | null) {
   const queryKey = ["admin", "tenant-ledger", userId] as const;
-  const q = useInfiniteQuery({
+  const q = useCursorPages(
     queryKey,
-    enabled: userId !== null,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId as number, {
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+    (p?: AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams) =>
+      adminTenantLedgerApiAdminV1TenantsUserIdLedgerGet(userId as number, p),
+    undefined,
+    { enabled: userId !== null },
+  );
   return { ...q, queryKey };
 }
 
 /** 租户小时账单;instanceId 非空时按实例过滤(排障:只盯一台机的账)。 */
 export function useTenantBills(userId: number | null, instanceId?: number | null) {
   const queryKey = ["admin", "tenant-bills", userId, instanceId ?? null] as const;
-  const q = useInfiniteQuery({
+  const q = useCursorPages(
     queryKey,
-    enabled: userId !== null,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId as number, {
-        limit: 50,
-        ...(instanceId ? { instance_id: instanceId } : {}),
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+    (p?: AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams) =>
+      adminTenantBillsApiAdminV1TenantsUserIdBillsGet(userId as number, p),
+    instanceId ? { instance_id: instanceId } : undefined,
+    { enabled: userId !== null },
+  );
   return { ...q, queryKey };
 }
 
@@ -363,27 +346,20 @@ export function useTenantQuota(userId: number | null) {
   return { ...q, queryKey };
 }
 
-export function useSetTenantQuota() {
-  return useMutation({
-    mutationFn: (v: { userId: number; data: TenantQuotaUpdate }) =>
-      adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut(v.userId, v.data),
-  });
-}
+export const useSetTenantQuota = adminMutation((v: { userId: number; data: TenantQuotaUpdate }) =>
+  adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut(v.userId, v.data),
+);
 
 /** 实例事件时间线(排障;管理端不限租户,游标分页)。 */
 export function useInstanceEvents(uuid: string | null) {
   const queryKey = ["admin", "instance-events", uuid] as const;
-  const q = useInfiniteQuery({
+  const q = useCursorPages(
     queryKey,
-    enabled: uuid !== null,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListInstanceEventsApiAdminV1InstancesUuidEventsGet(uuid as string, {
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+    (p?: AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams) =>
+      adminListInstanceEventsApiAdminV1InstancesUuidEventsGet(uuid as string, p),
+    undefined,
+    { enabled: uuid !== null },
+  );
   return { ...q, queryKey };
 }
 
@@ -451,15 +427,16 @@ export function useReconciliation(day: string) {
   });
 }
 
-/** 告警流:severity 服务端过滤。 */
+/** 告警流:severity 服务端过滤。enabled 关停时不再取数(折叠 UI 不空转)。 */
 export function useAlerts(
   params?: AdminAlertsApiAdminV1AlertsGetParams,
-  options?: { refetchInterval?: number },
+  options?: { refetchInterval?: number; enabled?: boolean },
 ) {
   const queryKey = ["admin", "alerts", params] as const;
   const q = useQuery({
     queryKey,
     queryFn: () => adminAlertsApiAdminV1AlertsGet(params),
+    enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
   });
   return { ...q, queryKey };
@@ -474,15 +451,9 @@ export function useAlertUnreadCount(options?: { refetchInterval?: number }) {
   });
 }
 
-export function useAckAlert(
-  opts?: MutOptsOf<typeof adminAckAlertApiAdminV1AlertsAlertIdAckPost, { alertId: number }>,
-) {
-  return useMutation({
-    mutationFn: (v: { alertId: number }) =>
-      adminAckAlertApiAdminV1AlertsAlertIdAckPost(v.alertId),
-    ...opts?.mutation,
-  });
-}
+export const useAckAlert = adminMutation((v: { alertId: number }) =>
+  adminAckAlertApiAdminV1AlertsAlertIdAckPost(v.alertId),
+);
 
 /** 充值订单(游标分页)。order_no 精确;day=YYYY-MM-DD 按下单日(UTC)过滤。 */
 export function useOrders(
@@ -490,18 +461,7 @@ export function useOrders(
   options?: { enabled?: boolean },
 ) {
   const queryKey = ["admin", "orders", params] as const;
-  const q = useInfiniteQuery({
-    queryKey,
-    enabled: options?.enabled ?? true,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListOrdersApiAdminV1OrdersGet({
-        ...params,
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  const q = useCursorPages(queryKey, adminListOrdersApiAdminV1OrdersGet, params, options);
   return { ...q, queryKey };
 }
 
@@ -510,17 +470,7 @@ export function useAdjustments(
   params?: Omit<AdminListAdjustmentsApiAdminV1AdjustmentsGetParams, "cursor" | "limit">,
 ) {
   const queryKey = ["admin", "adjustments", params] as const;
-  const q = useInfiniteQuery({
-    queryKey,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListAdjustmentsApiAdminV1AdjustmentsGet({
-        ...params,
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  const q = useCursorPages(queryKey, adminListAdjustmentsApiAdminV1AdjustmentsGet, params, undefined);
   return { ...q, queryKey };
 }
 
@@ -529,58 +479,26 @@ export function useRefunds(
   params?: Omit<AdminListRefundsApiAdminV1RefundsGetParams, "cursor" | "limit">,
 ) {
   const queryKey = ["admin", "refunds", params] as const;
-  const q = useInfiniteQuery({
-    queryKey,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListRefundsApiAdminV1RefundsGet({
-        ...params,
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+  const q = useCursorPages(queryKey, adminListRefundsApiAdminV1RefundsGet, params, undefined);
   return { ...q, queryKey };
 }
 
-export function useReviewRefund(
-  opts?: MutOptsOf<
-    typeof adminReviewRefundApiAdminV1RefundsRefundIdReviewPost,
-    { refundId: number; data: RefundReview }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { refundId: number; data: RefundReview }) =>
-      adminReviewRefundApiAdminV1RefundsRefundIdReviewPost(v.refundId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useReviewRefund = adminMutation((v: { refundId: number; data: RefundReview }) =>
+  adminReviewRefundApiAdminV1RefundsRefundIdReviewPost(v.refundId, v.data),
+);
 
-export function usePayoutRefund(
-  opts?: MutOptsOf<
-    typeof adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost,
-    { refundId: number; data: RefundPayout }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { refundId: number; data: RefundPayout }) =>
-      adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost(v.refundId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const usePayoutRefund = adminMutation(
+  (v: { refundId: number; data: RefundPayout; idempotencyKey?: string }) =>
+    adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost(
+      v.refundId,
+      v.data,
+      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+    ),
+);
 
-export function useCancelRefund(
-  opts?: MutOptsOf<
-    typeof adminCancelRefundApiAdminV1RefundsRefundIdCancelPost,
-    { refundId: number; data: RefundCancel }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { refundId: number; data: RefundCancel }) =>
-      adminCancelRefundApiAdminV1RefundsRefundIdCancelPost(v.refundId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useCancelRefund = adminMutation((v: { refundId: number; data: RefundCancel }) =>
+  adminCancelRefundApiAdminV1RefundsRefundIdCancelPost(v.refundId, v.data),
+);
 
 /** 发票申请列表。status/period(YYYY-MM)服务端过滤。 */
 export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams) {
@@ -592,86 +510,57 @@ export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParam
   return { ...q, queryKey };
 }
 
-export function useIssueInvoice(
-  opts?: MutOptsOf<
-    typeof adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost,
-    { invoiceId: number; data: InvoiceIssue }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { invoiceId: number; data: InvoiceIssue }) =>
-      adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost(v.invoiceId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useIssueInvoice = adminMutation((v: { invoiceId: number; data: InvoiceIssue }) =>
+  adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost(v.invoiceId, v.data),
+);
 
-export function useRejectInvoice(
-  opts?: MutOptsOf<
-    typeof adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost,
-    { invoiceId: number; data: InvoiceReject }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { invoiceId: number; data: InvoiceReject }) =>
-      adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost(v.invoiceId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useRejectInvoice = adminMutation((v: { invoiceId: number; data: InvoiceReject }) =>
+  adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost(v.invoiceId, v.data),
+);
 
-/** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true(未核销持续曝光)。 */
+/** 结算缺口列表(游标分页):kind/reason 服务端过滤,unresolved 默认 true(未核销持续曝光)。
+ *  不挂 refetchInterval(infinite 轮询 = 每轮 N 页全拉):新鲜度靠焦点重取 + 表上方手动刷新。 */
 export function useSettlementGaps(
   params?: Omit<AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams, "cursor" | "limit">,
 ) {
   const queryKey = ["admin", "settlement-gaps", params] as const;
-  const q = useInfiniteQuery({
+  const q = useCursorPages(
     queryKey,
-    refetchInterval: 60_000,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet({
-        ...params,
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-  });
+    adminListSettlementGapsApiAdminV1FinanceSettlementGapsGet,
+    params,
+    { refetchOnWindowFocus: true },
+  );
   return { ...q, queryKey };
 }
 
-export function useReplaySettlementGap(opts?: MutOpts<AdminSettlementGapOut, { gapId: number }>) {
-  return useMutation({
-    mutationFn: (v: { gapId: number }) =>
-      adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost(v.gapId),
-    ...opts?.mutation,
-  });
-}
+export const useReplaySettlementGap = adminMutation((v: { gapId: number }) =>
+  adminReplaySettlementGapApiAdminV1FinanceSettlementGapsGapIdReplayPost(v.gapId),
+);
 
-export function useResolveSettlementGap(
-  opts?: MutOpts<AdminSettlementGapOut, { gapId: number; data: SettlementGapResolve }>,
-) {
-  return useMutation({
-    mutationFn: (v: { gapId: number; data: SettlementGapResolve }) =>
-      adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useResolveSettlementGap = adminMutation(
+  (v: { gapId: number; data: SettlementGapResolve }) =>
+    adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost(v.gapId, v.data),
+);
 
-/** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索。 */
+/** 工单列表(游标分页):status/category 过滤,user_id/ticket_no 检索。
+ *  不挂 refetchInterval(infinite 轮询 = 每轮 N 页全拉):新鲜度靠焦点重取 + 表上方手动刷新。 */
 export function useTickets(
   params?: Omit<AdminListTicketsApiAdminV1TicketsGetParams, "cursor" | "limit">,
 ) {
   const queryKey = ["admin", "tickets", params] as const;
-  const q = useInfiniteQuery({
+  const q = useCursorPages(queryKey, adminListTicketsApiAdminV1TicketsGet, params, {
+    refetchOnWindowFocus: true,
+  });
+  return { ...q, queryKey };
+}
+
+/** 待客服工单计数轻端点(60s 轮询):替代摘除的列表全量轮询,DB count 不拉行。 */
+export function useTicketPendingCount() {
+  const queryKey = ["admin", "tickets-count"] as const;
+  const q = useQuery({
     queryKey,
+    queryFn: () => adminTicketsCountApiAdminV1TicketsCountGet({ status: "pending_staff" }),
     refetchInterval: 60_000,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      adminListTicketsApiAdminV1TicketsGet({
-        ...params,
-        limit: 50,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   return { ...q, queryKey };
 }
@@ -687,23 +576,13 @@ export function useDeletionRequests(params?: AdminListDeletionRequestsApiAdminV1
 }
 
 /** 执行注销(仅超管):校验不过 → 409(申请被自动驳回,detail 含残留清单)。 */
-export function useApproveDeletion(opts?: MutOpts<AdminDeletionRequestOut, { requestId: number }>) {
-  return useMutation({
-    mutationFn: (v: { requestId: number }) =>
-      adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(v.requestId),
-    ...opts?.mutation,
-  });
-}
+export const useApproveDeletion = adminMutation((v: { requestId: number }) =>
+  adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost(v.requestId),
+);
 
-export function useRejectDeletion(
-  opts?: MutOpts<AdminDeletionRequestOut, { requestId: number; data: AdminDeletionReject }>,
-) {
-  return useMutation({
-    mutationFn: (v: { requestId: number; data: AdminDeletionReject }) =>
-      adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost(v.requestId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useRejectDeletion = adminMutation((v: { requestId: number; data: AdminDeletionReject }) =>
+  adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost(v.requestId, v.data),
+);
 
 /** 工单详情 + 消息流(详情抽屉数据源;开启时 15s 轮询新回复)。 */
 export function useTicketDetail(ticketId: number | null) {
@@ -742,68 +621,33 @@ export function useLegalDocVersions(docKey: string | null, locale: string | null
   return { ...q, queryKey };
 }
 
-export function useCreateLegalDocVersion(
-  opts?: MutOpts<LegalDocVersionOut, { docKey: string; data: LegalDocVersionCreate }>,
-) {
-  return useMutation({
-    mutationFn: (v: { docKey: string; data: LegalDocVersionCreate }) =>
-      adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost(v.docKey, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useCreateLegalDocVersion = adminMutation(
+  (v: { docKey: string; data: LegalDocVersionCreate }) =>
+    adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost(v.docKey, v.data),
+);
 
-export function useUpdateLegalDocVersion(
-  opts?: MutOpts<LegalDocVersionOut, { versionId: number; data: LegalDocVersionUpdate }>,
-) {
-  return useMutation({
-    mutationFn: (v: { versionId: number; data: LegalDocVersionUpdate }) =>
-      adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut(v.versionId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useUpdateLegalDocVersion = adminMutation(
+  (v: { versionId: number; data: LegalDocVersionUpdate }) =>
+    adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut(v.versionId, v.data),
+);
 
-export function usePublishLegalDocVersion(
-  opts?: MutOpts<LegalDocVersionOut, { versionId: number }>,
-) {
-  return useMutation({
-    mutationFn: (v: { versionId: number }) =>
-      adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost(v.versionId),
-    ...opts?.mutation,
-  });
-}
+export const usePublishLegalDocVersion = adminMutation((v: { versionId: number }) =>
+  adminPublishLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPublishPost(v.versionId),
+);
 
-export function useArchiveLegalDocVersion(
-  opts?: MutOpts<LegalDocVersionOut, { versionId: number }>,
-) {
-  return useMutation({
-    mutationFn: (v: { versionId: number }) =>
-      adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost(v.versionId),
-    ...opts?.mutation,
-  });
-}
+export const useArchiveLegalDocVersion = adminMutation(
+  (v: { versionId: number; data: LegalDocVersionArchive }) =>
+    adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost(v.versionId, v.data),
+);
 
-export function useReplyTicket(
-  opts?: MutOpts<AdminTicketDetailOut, { ticketId: number; data: AdminTicketReply }>,
-) {
-  return useMutation({
-    mutationFn: (v: { ticketId: number; data: AdminTicketReply }) =>
-      adminReplyTicketApiAdminV1TicketsTicketIdReplyPost(v.ticketId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useReplyTicket = adminMutation((v: { ticketId: number; data: AdminTicketReply }) =>
+  adminReplyTicketApiAdminV1TicketsTicketIdReplyPost(v.ticketId, v.data),
+);
 
-export function useUpdateTicketStatus(
-  opts?: MutOptsOf<
-    typeof adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost,
-    { ticketId: number; data: AdminTicketStatusUpdate }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { ticketId: number; data: AdminTicketStatusUpdate }) =>
-      adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(v.ticketId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useUpdateTicketStatus = adminMutation(
+  (v: { ticketId: number; data: AdminTicketStatusUpdate }) =>
+    adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost(v.ticketId, v.data),
+);
 
 /** 审计检索:游标翻页(响应是数组;满页即还有更早,游标=末行 id 的 base64)。 */
 type AuditFilters = Omit<AdminAuditLogApiAdminV1AuditGetParams, "cursor">;
@@ -832,74 +676,39 @@ export function useAuditLog(filters: AuditFilters) {
 // 变更 hooks
 
 /** 登录只返回二要素挑战票(全角色强制 TOTP);正式 token 经 useMfaSetupConfirm / useMfaVerify。 */
-export function useAdminLogin(
-  opts?: MutOptsOf<typeof adminLoginApiAdminV1AuthLoginPost, { data: AdminLoginRequest }>,
-) {
-  return useMutation({
-    mutationFn: (v: { data: AdminLoginRequest }) => adminLoginApiAdminV1AuthLoginPost(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useAdminLogin = adminMutation((v: { data: AdminLoginRequest }) =>
+  adminLoginApiAdminV1AuthLoginPost(v.data),
+);
 
 // TOTP MFA(全部管理角色强制)
-export function useMfaSetupBegin(opts?: MutOpts<MfaSetupOut, { ticket: string }>) {
-  return useMutation({
-    mutationFn: (v: { ticket: string }) =>
-      mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost({ ticket: v.ticket }),
-    ...opts?.mutation,
-  });
-}
+export const useMfaSetupBegin = adminMutation((v: { ticket: string }) =>
+  mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost({ ticket: v.ticket }),
+);
 
-export function useMfaSetupConfirm(opts?: MutOpts<MfaSetupConfirmOut, { ticket: string; code: string }>) {
-  return useMutation({
-    mutationFn: (v: { ticket: string; code: string }) =>
-      mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost({ ticket: v.ticket, code: v.code }),
-    ...opts?.mutation,
-  });
-}
+export const useMfaSetupConfirm = adminMutation((v: { ticket: string; code: string }) =>
+  mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost({ ticket: v.ticket, code: v.code }),
+);
 
-export function useMfaVerify(opts?: MutOpts<MfaLoginOut, { ticket: string; code: string }>) {
-  return useMutation({
-    mutationFn: (v: { ticket: string; code: string }) =>
-      mfaLoginVerifyApiAdminV1AuthLoginMfaPost({ ticket: v.ticket, code: v.code }),
-    ...opts?.mutation,
-  });
-}
+export const useMfaVerify = adminMutation((v: { ticket: string; code: string }) =>
+  mfaLoginVerifyApiAdminV1AuthLoginMfaPost({ ticket: v.ticket, code: v.code }),
+);
 
-export function useRegenerateRecoveryCodes(opts?: MutOpts<RecoveryCodesOut, void>) {
-  return useMutation({
-    mutationFn: () => mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost(),
-    ...opts?.mutation,
-  });
-}
+export const useRegenerateRecoveryCodes = adminMutation(
+  (_: void) => mfaRegenerateRecoveryCodesApiAdminV1MeMfaRecoveryCodesPost(),
+);
 
-export function useResetAdminMfa(opts?: MutOpts<AdminAccountOut, { id: number; reason: string }>) {
-  return useMutation({
-    mutationFn: (v: { id: number; reason: string }) =>
-      mfaResetApiAdminV1AdminsAdminIdMfaResetPost(v.id, { reason: v.reason }),
-    ...opts?.mutation,
-  });
-}
+export const useResetAdminMfa = adminMutation((v: { id: number; reason: string }) =>
+  mfaResetApiAdminV1AdminsAdminIdMfaResetPost(v.id, { reason: v.reason }),
+);
 
-export function useCreateSku(opts?: MutOptsOf<typeof adminCreateSkuApiAdminV1SkusPost, { data: SkuCreate }>) {
-  return useMutation({
-    mutationFn: (v: { data: SkuCreate }) => adminCreateSkuApiAdminV1SkusPost(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useCreateSku = adminMutation((v: { data: SkuCreate }) =>
+  adminCreateSkuApiAdminV1SkusPost(v.data),
+);
 
-export function useUpdateSku(
-  opts?: MutOptsOf<
-    typeof adminUpdateSkuApiAdminV1SkusSkuIdPatch,
-    { skuId: number; data: SkuUpdate; force?: boolean }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { skuId: number; data: SkuUpdate; force?: boolean }) =>
-      adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data, v.force ? { force: true } : undefined),
-    ...opts?.mutation,
-  });
-}
+export const useUpdateSku = adminMutation(
+  (v: { skuId: number; data: SkuUpdate; force?: boolean }) =>
+    adminUpdateSkuApiAdminV1SkusSkuIdPatch(v.skuId, v.data, v.force ? { force: true } : undefined),
+);
 
 export function useEnrollments(options?: { active?: boolean; refetchInterval?: number }) {
   const queryKey = ["admin", "node-enrollments", options?.active] as const;
@@ -914,162 +723,80 @@ export function useEnrollments(options?: { active?: boolean; refetchInterval?: n
   return { ...q, queryKey };
 }
 
-export function useCreateEnrollment(
-  opts?: MutOpts<EnrollmentCommandOut, { data: EnrollmentCreate; idempotencyKey?: string }>,
-) {
-  return useMutation({
-    mutationFn: (v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
-      adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(
-        v.data,
-        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-      ),
-    ...opts?.mutation,
-  });
-}
+export const useCreateEnrollment = adminMutation(
+  (v: { data: EnrollmentCreate; idempotencyKey?: string }) =>
+    adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost(
+      v.data,
+      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+    ),
+);
 
-export function useRegenerateEnrollment(
-  opts?: MutOpts<EnrollmentCommandOut, { enrollmentId: number; data: EnrollmentRegenerateRequest }>,
-) {
-  return useMutation({
-    mutationFn: (v: { enrollmentId: number; data: EnrollmentRegenerateRequest }) =>
-      adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost(
-        v.enrollmentId,
-        v.data,
-      ),
-    ...opts?.mutation,
-  });
-}
+export const useRegenerateEnrollment = adminMutation(
+  (v: { enrollmentId: number; data: EnrollmentRegenerateRequest }) =>
+    adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost(
+      v.enrollmentId,
+      v.data,
+    ),
+);
 
-export function useRevokeEnrollment(
-  opts?: MutOptsOf<
-    typeof adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost,
-    { enrollmentId: number; data: EnrollmentRevokeRequest }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
-      adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(v.enrollmentId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useRevokeEnrollment = adminMutation(
+  (v: { enrollmentId: number; data: EnrollmentRevokeRequest }) =>
+    adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost(v.enrollmentId, v.data),
+);
 
-export function useCordonNode(
-  opts?: MutOptsOf<
-    typeof adminCordonNodeApiAdminV1NodesNodeNameCordonPost,
-    { nodeName: string; on: boolean; data: NodeCordonRequest }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { nodeName: string; on: boolean; data: NodeCordonRequest }) =>
-      v.on
-        ? adminCordonNodeApiAdminV1NodesNodeNameCordonPost(v.nodeName, v.data)
-        : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useCordonNode = adminMutation(
+  (v: { nodeName: string; on: boolean; data: NodeCordonRequest }) =>
+    v.on
+      ? adminCordonNodeApiAdminV1NodesNodeNameCordonPost(v.nodeName, v.data)
+      : adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost(v.nodeName, v.data),
+);
 
-export function useCreateImage(
-  opts?: MutOptsOf<typeof adminCreateImageApiAdminV1ImagesPost, { data: ImageCreate }>,
-) {
-  return useMutation({
-    mutationFn: (v: { data: ImageCreate }) => adminCreateImageApiAdminV1ImagesPost(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useCreateImage = adminMutation((v: { data: ImageCreate }) =>
+  adminCreateImageApiAdminV1ImagesPost(v.data),
+);
 
-export function useUpdateImage(
-  opts?: MutOptsOf<
-    typeof adminUpdateImageApiAdminV1ImagesImageIdPatch,
-    { imageId: number; data: ImageUpdate }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { imageId: number; data: ImageUpdate }) =>
-      adminUpdateImageApiAdminV1ImagesImageIdPatch(v.imageId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useUpdateImage = adminMutation((v: { imageId: number; data: ImageUpdate }) =>
+  adminUpdateImageApiAdminV1ImagesImageIdPatch(v.imageId, v.data),
+);
 
-export function useDeleteImage(
-  opts?: MutOptsOf<
-    typeof adminDeleteImageApiAdminV1ImagesImageIdDelete,
-    { imageId: number; data: ImageDeleteRequest }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { imageId: number; data: ImageDeleteRequest }) =>
-      adminDeleteImageApiAdminV1ImagesImageIdDelete(v.imageId, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useDeleteImage = adminMutation((v: { imageId: number; data: ImageDeleteRequest }) =>
+  adminDeleteImageApiAdminV1ImagesImageIdDelete(v.imageId, v.data),
+);
 
-export function usePrewarmImage(opts?: MutOpts<PrewarmEnqueuedOut, { imageId: number }>) {
-  return useMutation({
-    mutationFn: (v: { imageId: number }) =>
-      adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost(v.imageId),
-    ...opts?.mutation,
-  });
-}
+export const usePrewarmImage = adminMutation((v: { imageId: number }) =>
+  adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost(v.imageId),
+);
 
-export function useForceStop() {
-  return useMutation({
-    mutationFn: (v: { uuid: string; data: AdminForceStopRequest }) =>
-      adminForceStopApiAdminV1InstancesUuidForceStopPost(v.uuid, v.data),
-  });
-}
+export const useForceStop = adminMutation((v: { uuid: string; data: AdminForceStopRequest }) =>
+  adminForceStopApiAdminV1InstancesUuidForceStopPost(v.uuid, v.data),
+);
 
 /** 强制回收一台竞价实例(腾容量)。与强制停止是两条后端路径,时间线 reason 与竞价可靠性统计据此区分。 */
-export function usePreemptInstance() {
-  return useMutation({
-    mutationFn: (v: { uuid: string; data: AdminForceStopRequest }) =>
-      adminPreemptApiAdminV1InstancesUuidPreemptPost(v.uuid, v.data),
-  });
-}
+export const usePreemptInstance = adminMutation((v: { uuid: string; data: AdminForceStopRequest }) =>
+  adminPreemptApiAdminV1InstancesUuidPreemptPost(v.uuid, v.data),
+);
 
 /** 冻结(原因必填)。响应含 instances_stopped:本次一并停掉的 running 实例台数。 */
-export function useFreezeTenant() {
-  return useMutation({
-    mutationFn: (v: { userId: number; data: TenantFreezeRequest }) =>
-      adminFreezeTenantApiAdminV1TenantsUserIdFreezePost(v.userId, v.data),
-  });
-}
+export const useFreezeTenant = adminMutation((v: { userId: number; data: TenantFreezeRequest }) =>
+  adminFreezeTenantApiAdminV1TenantsUserIdFreezePost(v.userId, v.data),
+);
 
-export function useUnfreezeTenant() {
-  return useMutation({
-    mutationFn: (v: { userId: number; data: TenantFreezeRequest }) =>
-      adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost(v.userId, v.data),
-  });
-}
+export const useUnfreezeTenant = adminMutation((v: { userId: number; data: TenantFreezeRequest }) =>
+  adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost(v.userId, v.data),
+);
 
-export function useCreateAdjustment(
-  opts?: MutOptsOf<
-    typeof adminCreateAdjustmentApiAdminV1AdjustmentsPost,
-    { data: AdjustmentCreate; idempotencyKey?: string }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { data: AdjustmentCreate; idempotencyKey?: string }) =>
-      adminCreateAdjustmentApiAdminV1AdjustmentsPost(
-        v.data,
-        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-      ),
-    ...opts?.mutation,
-  });
-}
+export const useCreateAdjustment = adminMutation(
+  (v: { data: AdjustmentCreate; idempotencyKey?: string }) =>
+    adminCreateAdjustmentApiAdminV1AdjustmentsPost(
+      v.data,
+      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+    ),
+);
 
-export function useReviewAdjustment(
-  opts?: MutOptsOf<
-    typeof adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost,
-    { adjustmentId: number; data: AdjustmentReview }
-  >,
-) {
-  return useMutation({
-    mutationFn: (v: { adjustmentId: number; data: AdjustmentReview }) =>
-      adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost(v.adjustmentId, v.data),
-    ...opts?.mutation,
-  });
-}
-
+export const useReviewAdjustment = adminMutation(
+  (v: { adjustmentId: number; data: AdjustmentReview }) =>
+    adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost(v.adjustmentId, v.data),
+);
 
 // 运营:死信重放 / 收入报表 / 公告
 
@@ -1112,51 +839,35 @@ export function useAdminPolicies() {
   return { ...q, queryKey };
 }
 
-export function useVerifyOrder() {
-  return useMutation({
-    mutationFn: (v: { orderNo: string }) =>
-      adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost(v.orderNo),
-  });
-}
+export const useVerifyOrder = adminMutation((v: { orderNo: string }) =>
+  adminVerifyOrderApiAdminV1FinanceOrdersOrderNoVerifyPost(v.orderNo),
+);
 
-export function useBackfillOrder() {
-  return useMutation({
-    mutationFn: (v: { orderNo: string; data: OrderBackfillRequest; idempotencyKey?: string }) =>
-      adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(
-        v.orderNo,
-        v.data,
-        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-      ),
-  });
-}
+export const useBackfillOrder = adminMutation(
+  (v: { orderNo: string; data: OrderBackfillRequest; idempotencyKey?: string }) =>
+    adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost(
+      v.orderNo,
+      v.data,
+      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+    ),
+);
 
 /** 重放死信:需原因(与忽略对齐,handler 幂等)。 */
-export function useRetryDeadTask() {
-  return useMutation({
-    mutationFn: (v: { taskId: number; data: OutboxRetryRequest }) =>
-      adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(v.taskId, v.data),
-  });
-}
+export const useRetryDeadTask = adminMutation((v: { taskId: number; data: OutboxRetryRequest }) =>
+  adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost(v.taskId, v.data),
+);
 
-export function useDiscardDeadTask() {
-  return useMutation({
-    mutationFn: (v: { taskId: number; data: OutboxDiscardRequest }) =>
-      adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost(v.taskId, v.data),
-  });
-}
+export const useDiscardDeadTask = adminMutation((v: { taskId: number; data: OutboxDiscardRequest }) =>
+  adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost(v.taskId, v.data),
+);
 
-export function usePublishAnnouncement(
-  opts?: MutOpts<AnnouncementResultOut, { data: AnnouncementCreate; idempotencyKey?: string }>,
-) {
-  return useMutation({
-    mutationFn: (v: { data: AnnouncementCreate; idempotencyKey?: string }) =>
-      adminPublishAnnouncementApiAdminV1AnnouncementsPost(
-        v.data,
-        v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
-      ),
-    ...opts?.mutation,
-  });
-}
+export const usePublishAnnouncement = adminMutation(
+  (v: { data: AnnouncementCreate; idempotencyKey?: string }) =>
+    adminPublishAnnouncementApiAdminV1AnnouncementsPost(
+      v.data,
+      v.idempotencyKey ? { "Idempotency-Key": v.idempotencyKey } : undefined,
+    ),
+);
 
 /** 公告历史(含已撤回;固定截断 200,页面用 ListCapNote 提示)。 */
 export function useAnnouncements() {
@@ -1168,33 +879,24 @@ export function useAnnouncements() {
   return { ...q, queryKey };
 }
 
-export function useRevokeAnnouncement(
-  opts?: MutOpts<AnnouncementOut, { announcementId: number; data: AnnouncementRevoke }>,
-) {
-  return useMutation({
-    mutationFn: (v: { announcementId: number; data: AnnouncementRevoke }) =>
-      adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost(
-        v.announcementId,
-        v.data,
-      ),
-    ...opts?.mutation,
-  });
-}
+export const useRevokeAnnouncement = adminMutation(
+  (v: { announcementId: number; data: AnnouncementRevoke }) =>
+    adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost(v.announcementId, v.data),
+);
 
-export function useUpdatePolicies(opts?: MutOpts<UpdatedKeysOut, { data: PolicyUpdateRequest }>) {
-  return useMutation({
-    mutationFn: (v: { data: PolicyUpdateRequest }) => adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useUpdatePolicies = adminMutation((v: { data: PolicyUpdateRequest }) =>
+  adminUpdatePoliciesApiAdminV1PoliciesPut(v.data),
+);
 
 // 平台配置(渠道凭据与合规;仅 admin 角色)
 
-export function usePlatformConfig() {
+export function usePlatformConfig(options?: { enabled?: boolean }) {
   const queryKey = ["admin", "platform-config"] as const;
   const q = useQuery({
     queryKey,
     queryFn: () => adminGetPlatformConfigApiAdminV1PlatformConfigGet(),
+    // 非 admin 角色读它注定 403:调用方按角色传 enabled,不发必败请求
+    enabled: options?.enabled ?? true,
     // 编辑中的表单不能被后台重取覆盖,必须关掉焦点重取
     refetchOnWindowFocus: false,
     retry: false,
@@ -1202,32 +904,17 @@ export function usePlatformConfig() {
   return { ...q, queryKey };
 }
 
-export function useUpdatePlatformConfig(
-  opts?: MutOpts<UpdatedKeysOut, { data: PlatformConfigUpdateRequest }>,
-) {
-  return useMutation({
-    mutationFn: (v: { data: PlatformConfigUpdateRequest }) =>
-      adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useUpdatePlatformConfig = adminMutation((v: { data: PlatformConfigUpdateRequest }) =>
+  adminUpdatePlatformConfigApiAdminV1PlatformConfigPut(v.data),
+);
 
-export function useTestRegistry(
-  opts?: MutOptsOf<typeof adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost, void>,
-) {
-  return useMutation({
-    mutationFn: () => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost(),
-    ...opts?.mutation,
-  });
-}
+export const useTestRegistry = adminMutation(
+  (_: void) => adminTestRegistryApiAdminV1PlatformConfigTestRegistryPost(),
+);
 
-export function useTestSms(opts?: MutOpts<SmsTestOut, { data: SmsTestRequest }>) {
-  return useMutation({
-    mutationFn: (v: { data: SmsTestRequest }) =>
-      adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useTestSms = adminMutation((v: { data: SmsTestRequest }) =>
+  adminTestSmsApiAdminV1PlatformConfigTestSmsPost(v.data),
+);
 
 // 管理员账号
 
@@ -1237,40 +924,22 @@ export function useAdminAccounts() {
   return { ...q, queryKey };
 }
 
-export function useCreateAdminAccount(opts?: MutOpts<AdminAccountOut, { data: AdminCreateRequest }>) {
-  return useMutation({
-    mutationFn: (v: { data: AdminCreateRequest }) => adminCreateAdminApiAdminV1AdminsPost(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useCreateAdminAccount = adminMutation((v: { data: AdminCreateRequest }) =>
+  adminCreateAdminApiAdminV1AdminsPost(v.data),
+);
 
-export function useUpdateAdminAccount(
-  opts?: MutOpts<AdminAccountOut, { id: number; data: AdminUpdateRequest }>,
-) {
-  return useMutation({
-    mutationFn: (v: { id: number; data: AdminUpdateRequest }) =>
-      adminUpdateAdminApiAdminV1AdminsAdminIdPatch(v.id, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useUpdateAdminAccount = adminMutation((v: { id: number; data: AdminUpdateRequest }) =>
+  adminUpdateAdminApiAdminV1AdminsAdminIdPatch(v.id, v.data),
+);
 
-export function useResetAdminPassword(
-  opts?: MutOpts<AdminAccountOut, { id: number; data: AdminResetPasswordRequest }>,
-) {
-  return useMutation({
-    mutationFn: (v: { id: number; data: AdminResetPasswordRequest }) =>
-      adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost(v.id, v.data),
-    ...opts?.mutation,
-  });
-}
+export const useResetAdminPassword = adminMutation(
+  (v: { id: number; data: AdminResetPasswordRequest }) =>
+    adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost(v.id, v.data),
+);
 
-export function useChangeOwnPassword(opts?: MutOpts<void, { data: AdminSelfPasswordRequest }>) {
-  return useMutation({
-    mutationFn: (v: { data: AdminSelfPasswordRequest }) =>
-      adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
-    ...opts?.mutation,
-  });
-}
+export const useChangeOwnPassword = adminMutation((v: { data: AdminSelfPasswordRequest }) =>
+  adminChangeOwnPasswordApiAdminV1MePasswordPost(v.data),
+);
 
 // 总览/上下文(全部走生成 fetcher;类型即契约)
 
@@ -1311,15 +980,7 @@ export function useSkuImpact(skuId: number | null) {
   });
 }
 
-// CSV 导出(生成 fetcher,文本响应;截断标记见 lib/csv.ts)
-
-/** 服务端 CSV 截断标记(与 apps/api core/csvexport.py TRUNCATED_MARKER 一致)。 */
-const TRUNCATED_MARKER = "#SUPERDL_EXPORT_TRUNCATED#";
-
-async function downloadCsvText(filename: string, text: string): Promise<"ok" | "truncated"> {
-  downloadCsv(filename, text);
-  return text.includes(TRUNCATED_MARKER) ? "truncated" : "ok";
-}
+// CSV 导出(生成 fetcher,文本响应;截断判定见 @superdl/ui downloadCsvChecked)
 
 /** 订单导出:跟随当前筛选(status/order_no/user_id/day)。 */
 export async function exportOrdersCsv(
@@ -1332,7 +993,49 @@ export async function exportOrdersCsv(
     tz_offset_minutes: tz,
     lang,
   })) as string;
-  return downloadCsvText(`superdl-orders-${params?.day ?? "all"}.csv`, text);
+  return downloadCsvChecked(`superdl-orders-${params?.day ?? "all"}.csv`, text);
+}
+
+/** 调账导出:跟随当前筛选(status)。 */
+export async function exportAdjustmentsCsv(
+  params: AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams | undefined,
+  tz: number,
+  lang: "zh-CN" | "en-US",
+) {
+  const text = (await adminAdjustmentsExportApiAdminV1AdjustmentsExportGet({
+    ...params,
+    tz_offset_minutes: tz,
+    lang,
+  })) as string;
+  return downloadCsvChecked("superdl-adjustments.csv", text);
+}
+
+/** 退款导出:跟随当前筛选(status/channel)。 */
+export async function exportRefundsCsv(
+  params: AdminRefundsExportApiAdminV1RefundsExportGetParams | undefined,
+  tz: number,
+  lang: "zh-CN" | "en-US",
+) {
+  const text = (await adminRefundsExportApiAdminV1RefundsExportGet({
+    ...params,
+    tz_offset_minutes: tz,
+    lang,
+  })) as string;
+  return downloadCsvChecked("superdl-refunds.csv", text);
+}
+
+/** 发票导出:跟随当前筛选(status)。 */
+export async function exportInvoicesCsv(
+  params: AdminInvoicesExportApiAdminV1InvoicesExportGetParams | undefined,
+  tz: number,
+  lang: "zh-CN" | "en-US",
+) {
+  const text = (await adminInvoicesExportApiAdminV1InvoicesExportGet({
+    ...params,
+    tz_offset_minutes: tz,
+    lang,
+  })) as string;
+  return downloadCsvChecked("superdl-invoices.csv", text);
 }
 
 /** 租户资金流水导出(抽屉「流水」Tab)。 */
@@ -1341,7 +1044,7 @@ export async function exportTenantLedgerCsv(userId: number, tz: number, lang: "z
     tz_offset_minutes: tz,
     lang,
   })) as string;
-  return downloadCsvText(`superdl-tenant-${userId}-ledger.csv`, text);
+  return downloadCsvChecked(`superdl-tenant-${userId}-ledger.csv`, text);
 }
 
 /** 审计检索导出:跟随当前筛选(actor_type/actor_id/q/since/until)。 */
@@ -1355,7 +1058,7 @@ export async function exportAuditCsv(
     tz_offset_minutes: tz,
     lang,
   })) as string;
-  return downloadCsvText("superdl-audit.csv", text);
+  return downloadCsvChecked("superdl-audit.csv", text);
 }
 
 export async function exportReconciliationCsv(
@@ -1364,5 +1067,5 @@ export async function exportReconciliationCsv(
 ) {
   const params: ReconciliationExportApiAdminV1ReconciliationExportGetParams = { day, lang };
   const text = (await reconciliationExportApiAdminV1ReconciliationExportGet(params)) as string;
-  return downloadCsvText(`superdl-reconciliation-${day}.csv`, text);
+  return downloadCsvChecked(`superdl-reconciliation-${day}.csv`, text);
 }

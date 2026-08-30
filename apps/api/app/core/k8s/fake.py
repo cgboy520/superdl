@@ -53,7 +53,7 @@ class FakeOrchestrator:
     instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
     wiped_disks: list[tuple[str, str]] = field(default_factory=list)
     # 数据盘目录配额:subpath -> capacity_gb;fail_next_quota 注入一次下发失败
-    disk_quotas: dict[str, int] = field(default_factory=dict)
+    disk_quotas: dict[tuple[str, str], int] = field(default_factory=dict)  # (namespace, subpath)
     fail_next_quota: bool = False
     # 擦除异步语义:auto_wipe=False 时 wipe_disk 进入「进行中」(抛错,对齐真实 Job),
     # finish_wipe 标记完成后调用返回
@@ -148,14 +148,14 @@ class FakeOrchestrator:
         self.wipe_completed.add((namespace, subpath))
         self.job_pods.pop((namespace, f"wipe-{subpath}"), None)
 
-    async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
+    async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
         if self.fail_next_quota:
             self.fail_next_quota = False
             raise RuntimeError("fake: set_disk_quota failed (injected)")
-        self.disk_quotas[subpath] = capacity_gb
+        self.disk_quotas[(namespace, subpath)] = capacity_gb
 
-    async def delete_disk_quota(self, subpath: str) -> None:
-        self.disk_quotas.pop(subpath, None)
+    async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
+        self.disk_quotas.pop((namespace, subpath), None)
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
         if spec.with_ssh and spec.ssh_node_port is None:

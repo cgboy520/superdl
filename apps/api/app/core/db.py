@@ -19,6 +19,25 @@ from app.core.config import get_settings
 if TYPE_CHECKING:
     from alembic.script import ScriptDirectory
 
+
+def _split_db_tls(url: str) -> tuple[str, dict[str, str]]:
+    """摘下 URL 查询串里的 sslmode,翻译成 asyncpg 的 ssl 连接参。
+
+    asyncpg 没有 libpq 的 sslmode 参数(其 ssl 直接接受同款字符串:
+    require/verify-ca/verify-full/...);留在 URL 里会被 SQLAlchemy 透传成
+    connect(sslmode=...) → TypeError。返回 (干净 url, connect_args 增补)。
+    """
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    sslmode = query.pop("sslmode", [None])[0]
+    if sslmode is None:
+        return url, {}
+    clean = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+    return clean, {"ssl": sslmode}
+
+
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_N_name)s",
@@ -41,19 +60,21 @@ def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
         settings = get_settings()
+        url, tls_args = _split_db_tls(settings.database_url)
         _engine = create_async_engine(
-            settings.database_url,
+            url,
             pool_size=settings.db_pool_size,
             pool_pre_ping=True,
             # 三个 timeout 必须都有:卡住的 SELECT FOR UPDATE 会耗尽连接池 → 双副本
             # readiness 同时超时 → 全站 503(DB 其实活着)。
             # 迁移 Job 另有更严的 PGOPTIONS(lock_timeout=3s),不受此影响
             connect_args={
+                **tls_args,
                 "server_settings": {
                     "statement_timeout": "30000",
                     "lock_timeout": "5000",
                     "idle_in_transaction_session_timeout": "60000",
-                }
+                },
             },
         )
     return _engine

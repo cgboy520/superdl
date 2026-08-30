@@ -20,7 +20,8 @@
     rke2_installer_sha256: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
     k3s_installer_sha256: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
     # 控制面敏感值(etcd 快照上传凭据、agent token)一律经 group_vars/servers.yml(不入 git)
-    # 或 -e 注入;留空则渲染残留 CHANGE_ME,assert 直接拦截,不装半残控制面
+    # 或 -e 注入;留空由 tasks 开头的「输入变量完备性」断言直接拦截,不装半残控制面
+    # (断言必须在渲染【前】:replace 会抹掉占位符,渲染后再搜 CHANGE_ME 恒通过)。
     etcd_snapshot_bucket: ""
     etcd_s3_region: ""
     etcd_s3_endpoint: ""
@@ -37,6 +38,30 @@
     # 与 ../cluster/rke2/registries.yaml 的 configs.tls.ca_file 配套;公信证书留空
     harbor_ca_pem: ""
   tasks:
+    # 渲染【前】断言输入:replace() 无条件执行会把占位符直接抹掉,事后搜 CHANGE_ME
+    # 的断言恒通过(曾因此把 agent-token: "" 写进生产 server 配置)。
+    # agent token 缺失时节点回落使用 server token——那是能把新机器拉进 etcd 成员的凭据。
+    - name: 输入变量完备性(渲染前断言,而非断言渲染产物)
+      assert:
+        that:
+          - agent_token | length >= 32
+          - agent_token is not search('CHANGE_ME')
+        fail_msg: >-
+          agent_token 未提供或过短:用 openssl rand -hex 32 生成,经 group_vars/servers.yml
+          (不入 git)或 -e 注入。留空 = 节点回落 server token,节点失陷即集群失陷。
+    - name: etcd-s3 快照凭据完备性(rke2;空值会静默关闭快照异地上传)
+      assert:
+        that:
+          - etcd_snapshot_bucket | length > 0
+          - etcd_s3_region | length > 0
+          - etcd_s3_endpoint | length > 0
+          - etcd_s3_access_key | length > 0
+          - etcd_s3_secret_key | length > 0
+        fail_msg: >-
+          etcd_s3_* 五元组未配齐:模板含 etcd-s3: true,空值会被静默渲染进配置,
+          快照异地上传从未真正工作且无任何告警。经 group_vars/servers.yml 注入。
+      when: cluster_distro == 'rke2'
+
     - name: rancher 配置目录
       file:
         path: "/etc/rancher/{{ cluster_distro }}"

@@ -6,8 +6,7 @@
 import pytest
 
 from app.modules.metering import prom
-from tests.helpers import provision_running
-from tests.test_metering import prom_mock
+from tests.helpers import prom_mock, provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")
 

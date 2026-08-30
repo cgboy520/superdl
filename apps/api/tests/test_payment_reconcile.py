@@ -13,8 +13,7 @@ from app.core.timeutil import now_utc
 from app.modules.billing.models import Order, Wallet
 from app.modules.billing.payment_channels import MockChannel
 from app.modules.billing.payment_service import reconcile_pending_orders
-from tests.helpers import admin_headers
-from tests.test_payment import create_order, user_headers
+from tests.helpers import admin_headers, create_order, user_headers
 
 
 @pytest.fixture(autouse=True)

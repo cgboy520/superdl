@@ -59,7 +59,23 @@ jobs:
           image-ref: scan-target:latest
           severity: HIGH,CRITICAL
           exit-code: "1"
+          # 阻断闸只盯「可修复」:上游未修复的 CVE 没有可升级版本,把它算进阻断闸
+          # 等于让发布被上游节奏绑架(可用性风险);未修复项由下方全量报告归档盯评审
           ignore-unfixed: true
+      - name: Trivy 全量报告(含未修复;归档供安全评审,不阻断)
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          image-ref: scan-target:latest
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: trivy-full.json
+          exit-code: "0"  # 归档不阻断:阻断闸是上一条(ignore-unfixed)
+      - name: Upload full vuln report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-full-${{ matrix.name }}
+          path: trivy-full.json
       - name: SBOM(CycloneDX,随构建产物留档)
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
@@ -91,6 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read # 推送凭据是 Harbor 机器人(仓库 secrets),唯一使用它的 job
+      id-token: write # cosign keyless 的 OIDC 身份(签名进 Rekor 公共账本);仅此 job 持有
     strategy:
       matrix:
         include:
@@ -131,6 +148,23 @@ jobs:
             docker tag scan-target:latest "$t"
             docker push "$t"
           done <<< "$tags"
-      # TODO(供应链加固):对推送后的 digest 做 cosign keyless 签名
-      # (cosign sign <harbor>/<项目>/superdl-<name>@<digest>,需引入 sigstore/cosign-installer),
-      # 部署侧再按 digest + 签名做准入校验。
+      - name: 安装 cosign(keyless 签名)
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: cosign 签名(按 digest 引用,签进 Rekor 公共账本)
+        # 签名对象是 digest 而非可变 tag:tag 可被覆盖,签名跟着 digest 走才锁得住内容。
+        # 验签/准入侧(sigstore policy-controller 或 kyverno)按 digest 验。
+        run: |
+          tags='${{ steps.meta.outputs.tags }}'
+          declare -A seen=()
+          while IFS= read -r t; do
+            [ -z "$t" ] && continue
+            ref=$(docker inspect "$t" --format '{{index .RepoDigests 0}}')
+            if [ -z "$ref" ]; then
+              echo "::error::$t 推送后无 RepoDigest,拒绝签名"
+              exit 1
+            fi
+            if [ -z "${seen[$ref]:-}" ]; then
+              seen[$ref]=1
+              cosign sign --yes "$ref"
+            fi
+          done <<< "$tags"

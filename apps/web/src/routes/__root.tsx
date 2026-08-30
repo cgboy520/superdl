@@ -1,10 +1,11 @@
-import { webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
+import { brand, cssVars, webDarkColors, webDarkTheme, webTheme } from "@superdl/ui";
 import { createRootRoute, Link, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, Button, ConfigProvider, Result, theme as antdTheme } from "antd";
+import { MotionConfig } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useAppLocale } from "../lib/locale";
+import { useAppLocale } from "@superdl/ui";
 import { useThemeMode } from "../stores/theme";
 
 export const Route = createRootRoute({
@@ -19,10 +20,14 @@ function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const mode = useThemeMode();
   useEffect(() => {
-    // CSS 变量面(抽屉链接/滚动条等非 token 覆盖区)与 color-scheme 随动
+    // CSS 变量面(抽屉链接/滚动条/focus 描边/命令面板选中底等非 token 覆盖区)与 color-scheme 随动
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = mode;
-    document.body.style.background = mode === "dark" ? webDarkColors.bgBase : "#F5F6FA";
+    document.body.style.background = mode === "dark" ? webDarkColors.bgBase : brand.pageBg;
+    const vars = mode === "dark" ? cssVars.dark : cssVars.light;
+    for (const [k, v] of Object.entries(vars)) {
+      document.documentElement.style.setProperty(k, v);
+    }
   }, [mode]);
   return (
     <ConfigProvider
@@ -31,7 +36,10 @@ function AppProviders({ children }: { children: ReactNode }) {
         mode === "dark" ? { algorithm: antdTheme.darkAlgorithm, ...webDarkTheme } : webTheme
       }
     >
-      <AntApp>{children}</AntApp>
+      {/* 全局动效策略:尊重系统减弱动态效果设置(transform/layout 动效自动禁用) */}
+      <MotionConfig reducedMotion="user">
+        <AntApp>{children}</AntApp>
+      </MotionConfig>
     </ConfigProvider>
   );
 }
@@ -44,15 +52,27 @@ function RootLayout() {
   );
 }
 
-/** 全局错误边界:渲染异常兜底为可恢复页面,不白屏。 */
+/** 全局错误边界:渲染异常兜底为可恢复页面,不白屏。
+ *  不直出 error.message(英文技术文本对用户无意义),技术详情折叠供排查。 */
 function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const { t } = useTranslation();
+  const detail = error instanceof Error ? error.message : null;
   return (
     <AppProviders>
       <Result
         status="500"
         title={t("errorPage.title")}
-        subTitle={error instanceof Error ? error.message : t("errorPage.unknown")}
+        subTitle={
+          <>
+            {t("errorPage.subtitle")}
+            {detail ? (
+              <details style={{ marginTop: 8, fontSize: 12, opacity: 0.65 }}>
+                <summary>{t("errorPage.techDetail")}</summary>
+                <code>{detail}</code>
+              </details>
+            ) : null}
+          </>
+        }
         extra={
           <>
             <Button type="primary" onClick={() => reset()}>

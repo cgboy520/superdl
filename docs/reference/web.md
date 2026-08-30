@@ -20,10 +20,12 @@
 | `/settings` | 登录 | SSH 公钥、通知阈值、实名入口、危险区账号注销 |
 | `/support` | 登录 | 自助排查 FAQ + 联系客服 + 我的工单 |
 | `/support/:ticketId` | 登录 | 工单对话流(回复 / 关闭) |
+| `/notifications` | 登录 | 通知中心:全部/未读筛选(`?filter=` 入 URL)+ 行点击已读并跳转 + 全部已读;跳转优先结构化 `target_id` 精确深链(instance/preempted/subscription/gpu_fault → 实例详情,ticket → 工单对话),无 `target_id` 按类型落列表页 |
 
 ## 规则与不变量
 
 - 服务端状态全走 TanStack Query,请求一律用生成的 fetcher(hooks 在 `api/queries.ts` / `api/mutations.ts` 自建),禁止手写 fetch;文案与状态映射走 `packages/ui`;antd 6 原生组件自封装,不引 pro-components。
+- `src/routes/` 目录下的非路由文件(测试/工具)必须以 `-` 开头(tanstack router 的 routeFileIgnorePrefix),否则会被误收入路由树并告警;antd 6 已废弃的 props(如 `maskClosable` → `mask={{closable}}`)按 deprecation 警告即时迁移,不留存量。
 - 401 由 mutator 静默续期并重放(single-flight);续期失败才跳登录并带回跳。
 - 查询失败不得伪装成数据:统一走 `components/QueryState.tsx` 的表格错误态与页级横幅,金额未就绪显示 `—`,详情页加载失败为错误横幅 + 重试而非整页白屏。
 - 余额与金额比较走 `compareAmounts`(BigInt),盘费日估算走 `ui.diskDailyEstimate`,前端不做 float 运算。

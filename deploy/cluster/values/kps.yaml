@@ -83,6 +83,28 @@ grafana:
       cookie_samesite: lax
     auth.anonymous:
       enabled: false
+  # Loki 多租户(auth_enabled=true)按租户拆两个数据源:X-Scope-OrgID 自声明,
+  # 边界由 monitoring-netpol.yaml 兜底(只有 grafana/alloy 能到 loki:3100)。
+  # 平台=superdl/系统组件+apiserver 审计;租户=tenant-* 工作负载日志(客服排障用)。
+  additionalDataSources:
+    - name: Loki(平台)
+      uid: loki-platform
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc:3100
+      jsonData:
+        httpHeaderName1: X-Scope-OrgID
+      secureJsonData:
+        httpHeaderValue1: platform
+    - name: Loki(租户)
+      uid: loki-tenant
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc:3100
+      jsonData:
+        httpHeaderName1: X-Scope-OrgID
+      secureJsonData:
+        httpHeaderValue1: tenant
   # Dashboard as code:基础大盘随监控栈 provisioning(sidecar 发现 grafana_dashboard ConfigMap)。
   # 改盘只能改本 values:Grafana UI 内手改不落盘、Pod 重启即失,长期盘一律回写这里。
   # light 档 grafana.enabled=false 时忽略。

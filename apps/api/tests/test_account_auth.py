@@ -174,10 +174,11 @@ class TestLogin:
         assert resp.json()["code"] == "USER_FROZEN"
 
     async def test_access_token_cannot_refresh(self, client: AsyncClient):
+        """access token 充当 refresh(cookie 通道):类型不符,401。"""
         data = await register(client)
-        resp = await client.post(
-            "/api/v1/auth/refresh", json={"refresh_token": data["access_token"]}
-        )
+        from tests.helpers import refresh_via_cookie
+
+        resp = await refresh_via_cookie(client, data["access_token"])
         assert resp.status_code == 401
 
     async def test_failure_counter_reset_by_success(self, client: AsyncClient):

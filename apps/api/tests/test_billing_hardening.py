@@ -26,8 +26,7 @@ from app.modules.billing.settlement import (
     settle_due_hours,
 )
 from app.modules.orchestrator.models import DataDisk
-from tests.helpers import fund_wallet
-from tests.test_billing_settlement import H_END, H, seed_instance
+from tests.helpers import H_END, H, fund_wallet, seed_instance
 
 
 @pytest.fixture(autouse=True)
@@ -97,8 +96,7 @@ class TestWalletLockGuards:
         from app.modules.adminapi.models import AdminUser
         from app.modules.billing import refunds
         from app.modules.billing.models import Order
-        from tests.test_payment import user_headers
-        from tests.test_refunds import apply_refund, finance_pair, paid_order
+        from tests.helpers import apply_refund, finance_pair, paid_order, user_headers
 
         headers = await user_headers(client, "13700000116")
         order = await paid_order(client, headers, "50.00")
@@ -190,6 +188,32 @@ class TestAffordGuard:
             "inflight": "1.68",
         }
         assert "在途资源" in exc.value.message
+
+    async def test_pending_starting_instance_counted(self, sm):
+        """creating/starting 实例计入燃烧率(护栏内聚):起量中但尚未 running 的开机
+        不再对护栏隐身——「先建一批再循环并发开机」的超开路径必须被挡。"""
+        await seed_instance(sm, user_id=1, price="1.6800", status="starting")
+        async with sm() as session:
+            await session.execute(
+                update(Wallet).where(Wallet.user_id == 1).values(balance=Decimal("1.68"))
+            )
+            await session.commit()
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
+        assert exc.value.code is ErrorCode.INSUFFICIENT_BALANCE
+        assert exc.value.params == {
+            "balance": "1.68",
+            "required": "3.36",
+            "inflight": "1.68",
+        }
+
+    async def test_pending_subscription_instance_not_counted(self, sm):
+        """包周期 creating/starting 实例已预付整段周期,不计入待燃(否则包月开户卡死)。"""
+        await seed_instance(sm, user_id=1, price="1.6800", status="starting", market="subscription")
+        await fund_wallet(sm, 1, "1.68")
+        async with sm() as session:
+            await wallet.assert_can_afford(session, 1, additional_hourly=Decimal("1.68"))
 
     async def test_inflight_disk_daily_fee_counted(self, sm):
         """在途数据盘按「日费 × 宽限天数」计入门槛(宽限期内盘仍在计费)。"""

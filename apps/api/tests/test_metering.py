@@ -10,28 +10,9 @@ from sqlalchemy import select
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
 from app.modules.metering.service import aggregate_previous_hour
-from tests.helpers import provision_running
+from tests.helpers import prom_mock, provision_running
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-def prom_mock(values: list[tuple[float, float]] | None = None, *, fail: bool = False):
-    """构造假 Prometheus:MockTransport 注入。"""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if fail:
-            return httpx.Response(500, text="down")
-        body = {
-            "status": "success",
-            "data": {
-                "result": (
-                    [{"metric": {}, "values": [[ts, str(v)] for ts, v in values]}] if values else []
-                )
-            },
-        }
-        return httpx.Response(200, text=json.dumps(body))
-
-    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://prom")
 
 
 @pytest.fixture(autouse=True)

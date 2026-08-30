@@ -1,38 +1,45 @@
 /**
  * 容器实例列表(默认落地页):策略提示条 + 动作行 + 密集表格。
  * 列表走服务端游标分页 + status/name 过滤(状态入 URL);access/events 只在行展开时按需加载,
- * 不在行内预取;轮询只回刷第一页(摘要列),旧页不重取。
+ * 不在行内预取;infinite 查询不挂 refetchInterval(轮询三律③),过渡态实例由
+ * useTransientInstanceRefresh 逐台 5s 轻轮询、检测到 status 迁移即失效列表回刷。
  */
 
-import { CodeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CodeOutlined, CloseOutlined, DownOutlined, ReloadOutlined, SearchOutlined, UpOutlined } from "@ant-design/icons";
 import { type InstanceMetricsSummaryOut, type InstanceOut } from "@superdl/api-client";
 import {
+  fontSize,
   formatDateTime,
   instanceStatusMap,
   isBillingPeriod,
   localToday,
   metaOf,
   periodMap,
+  space,
+  useDebouncedValue,
 } from "@superdl/ui";
+import { LoadMore, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
   Button,
-  Empty,
+  Card,
+  Grid,
   Input,
   Popover,
   Select,
+  Skeleton,
   Space,
   Table,
   Tag,
   Tooltip,
   Typography,
 } from "antd";
-import { useDeferredValue, useEffect, useMemo, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import { useRenameInstance } from "../api/mutations";
 import {
   useDailySummary,
@@ -42,6 +49,7 @@ import {
   useInstancePages,
   useMetricsSummary,
   usePolicies,
+  useTransientInstanceRefresh,
 } from "../api/queries";
 import { useSetAutoRenew } from "../api/mutations";
 import {
@@ -54,9 +62,7 @@ import {
   useEventReasonText,
   WorkloadTag,
 } from "../components/common";
-import { LoadMoreButton } from "../components/LoadMore";
 import { RenewModal } from "../components/RenewModal";
-import { moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { GpuSparkline } from "../components/GpuSparkline";
 import { InstanceActions } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
@@ -95,12 +101,12 @@ export const Route = createFileRoute("/_console/instances")({
 function ExpandedTools({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data: access, isError } = useInstanceAccess(instance.uuid);
+  const { data: access, isError, refetch } = useInstanceAccess(instance.uuid);
   const isService = instance.workload_type === "service";
   return (
     <Space size={12} wrap align="center">
       {isError ? (
-        <Typography.Text type="secondary">{t("query.loadFailed")}</Typography.Text>
+        <TableErrorEmpty compact isError onRetry={() => void refetch()} />
       ) : access?.ssh_command ? (
         <CopyButton text={access.ssh_command} label="SSH" />
       ) : null}
@@ -137,7 +143,7 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
       </Button>
       {/* 这句是 Jupyter 专属的:服务型实例没有 Jupyter,挂上去就是句假话 */}
       {!isService && !access && !isError && (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {t("copy.jupyterNeedsRunning")}
         </Typography.Text>
       )}
@@ -149,9 +155,9 @@ function ExpandedTools({ instance }: { instance: InstanceOut }) {
 function ExpandedFailed({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation();
   const reasonText = useEventReasonText();
-  const { data: events, isError } = useInstanceEvents(instance.uuid);
+  const { data: events, isError, refetch } = useInstanceEvents(instance.uuid);
   if (isError) {
-    return <Typography.Text type="secondary">{t("query.loadFailed")}</Typography.Text>;
+    return <TableErrorEmpty compact isError onRetry={() => void refetch()} />;
   }
   // 服务端降序(最新在前):最新一次 failed 原因取首元素
   const failedEvents = (events?.items ?? []).filter((e) => e.to_status === "failed");
@@ -160,12 +166,12 @@ function ExpandedFailed({ instance }: { instance: InstanceOut }) {
   return (
     <Space orientation="vertical" size={4}>
       {reason ? (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {reasonText(reason)}
         </Typography.Text>
       ) : null}
       {everRan ? (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {t("instances.failedRanNote")}
         </Typography.Text>
       ) : (
@@ -268,7 +274,7 @@ function UtilCell({
   }
   if (summary && !summary.available) {
     return (
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("copy.metricsUnavailableShort")}
       </Typography.Text>
     );
@@ -280,7 +286,96 @@ function UtilCell({
   return (
     <Space size={8} align="center">
       <GpuSparkline points={item.points} />
-      <span style={{ fontSize: 12 }}>{Math.round(item.last ?? 0)}%</span>
+      <span style={{ fontSize: fontSize.caption }}>{Math.round(item.last ?? 0)}%</span>
+    </Space>
+  );
+}
+
+/** 状态列(表格与移动卡片共用):stopped 时 tooltip 给冻结策略,与策略提示条同口径。 */
+function StatusCell({
+  instance,
+  freezeGraceHours,
+}: {
+  instance: InstanceOut;
+  freezeGraceHours?: number;
+}) {
+  const { t } = useTranslation(["web", "shared"]);
+  return (
+    <Tooltip
+      title={
+        instance.status === "stopped"
+          ? freezeGraceHours !== undefined
+            ? t("copy.freezePolicy", { hours: freezeGraceHours })
+            : t("copy.freezePolicyFallback")
+          : undefined
+      }
+    >
+      <span>
+        <InstanceStatusBadge status={instance.status} frozenDeadline={instance.frozen_deadline} />
+      </span>
+    </Tooltip>
+  );
+}
+
+/** 计费列(表格与移动卡片共用):包周期 = 档位标 + 周期价 + 续费入口;按量/竞价 = 标记 + 时价 + 今日消费。
+ *  到期信息内联在 InstanceOut.subscription 里,不逐行再打接口。 */
+function BillingCell({
+  instance,
+  todayByInstance,
+  dailyReady,
+  onRenew,
+}: {
+  instance: InstanceOut;
+  /** instance_id → 当日已出账金额(后端金额是十进制串) */
+  todayByInstance: ReadonlyMap<number, string>;
+  /** 日消费查询是否就绪(失败时 moneyOr 显「—」,不渲染假 ¥0.00) */
+  dailyReady: boolean;
+  onRenew: (i: InstanceOut) => void;
+}) {
+  const { t } = useTranslation(["web", "shared"]);
+  const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
+  const r = instance;
+  return r.market === "subscription" && r.subscription ? (
+    <Space orientation="vertical" size={0} align="start">
+      <SubscriptionTag market={r.market} subscription={r.subscription} />
+      <span>
+        {formatPeriodPrice(
+          r.subscription.amount_paid,
+          r.subscription.period,
+          r.subscription.period_count,
+        )}
+      </span>
+      <Button
+        size="small"
+        type="link"
+        style={{ paddingInline: 0, height: 20, fontSize: fontSize.caption }}
+        onClick={() => onRenew(r)}
+      >
+        {t("period.renewMenu")}
+      </Button>
+    </Space>
+  ) : (
+    // 竞价与按量共用这一支,差别只在标记;price_hourly 在竞价实例上已是折后价,不能再折一次
+    <Space orientation="vertical" size={0}>
+      <Space size={6}>
+        {r.market === "spot" ? (
+          <SpotTag market={r.market} />
+        ) : (
+          <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
+        )}
+        <span>
+          {t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}
+        </span>
+      </Space>
+      <Space size={6}>
+        <SpotReclaimTag market={r.market} />
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
+          {t("instances.todayCost", {
+            amount: moneyOr(formatMoney(todayByInstance.get(r.id)), dailyReady),
+          })}
+        </Typography.Text>
+      </Space>
     </Space>
   );
 }
@@ -291,6 +386,7 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
   const { t } = useTranslation(["web", "shared"]);
   return (
     <Popover
+      trigger={["hover", "focus"]}
       content={
         <Space orientation="vertical" size={2}>
           <span>{instance.spec["sku_name"] as string}</span>
@@ -309,13 +405,14 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
       }
     >
       <Space>
-        <span>
+        {/* Popover 仅 hover 触发时键盘不可达:规格文本可聚焦,focus 同触发 */}
+        <Typography.Text tabIndex={0} style={{ textDecoration: "underline dotted" }}>
           {instance.spec["gpu_model"] as string} × {instance.gpu_count}
-        </span>
+        </Typography.Text>
         <TierTag tier={instance.spec["tier"] as string} pool={instance.spec["pool_label"] as string} />
         <WorkloadTag workloadType={instance.workload_type} />
         {instance.service_slug && (
-          <Typography.Text type="secondary" code style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" code style={{ fontSize: fontSize.caption }}>
             {instance.service_slug}
           </Typography.Text>
         )}
@@ -328,9 +425,15 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(instance.name);
+  // Esc 取消标记:取消后紧接着的 blur 不能再走保存
+  const cancelRef = useRef(false);
   const rename = useRenameInstance();
   const { message } = App.useApp();
   const save = async () => {
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      return;
+    }
     if (rename.isPending) return;
     const name = value.trim();
     if (!name || name === instance.name) {
@@ -351,10 +454,20 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
       <Input
         size="small"
         autoFocus
+        // 与创建页名称框同一上限(后端 64 字符校验前的前端一致反馈)
+        maxLength={64}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => void save()}
         onPressEnter={() => void save()}
+        onKeyDown={(e) => {
+          // Esc 恢复原值不提交(blur 保存由 cancelRef 拦下)
+          if (e.key === "Escape") {
+            cancelRef.current = true;
+            setValue(instance.name);
+            setEditing(false);
+          }
+        }}
         style={{ width: 160 }}
       />
     );
@@ -368,12 +481,14 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
         tabIndex={0}
         aria-label={t("instances.renameAria", { name: instance.name })}
         onClick={() => {
+          cancelRef.current = false;
           setValue(instance.name);
           setEditing(true);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
+            cancelRef.current = false;
             setValue(instance.name);
             setEditing(true);
           }
@@ -382,10 +497,15 @@ function NameCell({ instance, onDetail }: { instance: InstanceOut; onDetail: () 
         {instance.name}
       </Typography.Text>
       <Space size={8}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {instance.uuid.slice(0, 12)}
         </Typography.Text>
-        <Button size="small" type="link" style={{ paddingInline: 0, height: 20, fontSize: 12 }} onClick={onDetail}>
+        <Button
+          size="small"
+          type="link"
+          style={{ paddingInline: 0, height: 20, fontSize: fontSize.caption }}
+          onClick={onDetail}
+        >
           {t("instances.detail")}
         </Button>
       </Space>
@@ -409,24 +529,113 @@ const NameCellMemo = memo(
   (prev, next) => prev.instance.uuid === next.instance.uuid && prev.instance.name === next.instance.name,
 );
 
+/** 移动端实例卡片(<md 替代表格):与表格共用 NameCell/StatusCell/SpecCell/UtilCell/BillingCell,
+ *  不复制渲染逻辑;running 的快捷工具、failed 的失败原因折叠在卡内,展开才按需拉 access/events
+ *  (与表格 rowExpandable 同口径,折叠时不打请求)。 */
+function InstanceCard({
+  instance,
+  summary,
+  todayByInstance,
+  dailyReady,
+  freezeGraceHours,
+  onRenew,
+  onDetail,
+  onShowEvents,
+}: {
+  instance: InstanceOut;
+  summary: InstanceMetricsSummaryOut | undefined;
+  todayByInstance: ReadonlyMap<number, string>;
+  dailyReady: boolean;
+  freezeGraceHours?: number;
+  onRenew: (i: InstanceOut) => void;
+  onDetail: () => void;
+  onShowEvents: () => void;
+}) {
+  const { t } = useTranslation(["web", "shared"]);
+  const [expanded, setExpanded] = useState(false);
+  const expandable = instance.status === "running" || instance.status === "failed";
+  return (
+    <Card size="small">
+      <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+        {/* 第一行:实例名(改名/详情入口在 NameCell 内)+ 状态徽标 */}
+        <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
+          <NameCellMemo instance={instance} onDetail={onDetail} />
+          <StatusCell instance={instance} freezeGraceHours={freezeGraceHours} />
+        </Space>
+        {/* 第二行:规格(GPU 型号×数量 + 档位/形态徽标) */}
+        <SpecCell instance={instance} />
+        {/* 第三行:利用率 sparkline + 计费信息 */}
+        <Space size={space.lg} wrap align="start">
+          <UtilCellMemo instance={instance} summary={summary} />
+          <BillingCell
+            instance={instance}
+            todayByInstance={todayByInstance}
+            dailyReady={dailyReady}
+            onRenew={onRenew}
+          />
+        </Space>
+        {/* 第四行:操作组 + 展开区开关 */}
+        <Space size={space.sm} wrap>
+          <InstanceActions instance={instance} onShowEvents={onShowEvents} />
+          {expandable && (
+            <Button
+              size="small"
+              type="text"
+              aria-expanded={expanded}
+              icon={expanded ? <UpOutlined /> : <DownOutlined />}
+              onClick={() => setExpanded((e) => !e)}
+            >
+              {instance.status === "failed"
+                ? t("instances.failedReason")
+                : t("instances.quickTools")}
+            </Button>
+          )}
+        </Space>
+        {expanded &&
+          (instance.status === "failed" ? (
+            <ExpandedFailed instance={instance} />
+          ) : (
+            <ExpandedTools instance={instance} />
+          ))}
+      </Space>
+    </Card>
+  );
+}
+
+/** 「双击行查看详情」的一次性提示(localStorage 标记,关闭后不再显示) */
+const DBLCLICK_HINT_KEY = "superdl.dblclickHintSeen";
+
 function InstancesPage() {
   const { t } = useTranslation(["web", "shared"]);
-  const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
   const navigate = useNavigate();
+  // <md 表格换卡片流(横向 960px 密集表在手机上只能横滑);数据同源同游标
+  const narrow = !Grid.useBreakpoint().md;
   // 横幅与「计费」列的续费入口共用一个 modal(每行各挂一个只会让 DOM 里多出 N 个隐藏弹窗)
   const [renewTarget, setRenewTarget] = useState<InstanceOut | null>(null);
   const { q, status } = Route.useSearch();
   const [keyword, setKeyword] = useState(q ?? "");
-  // 搜索输入防抖走 useDeferredValue:击键不直接打服务端/写 URL
-  const deferredKeyword = useDeferredValue(keyword);
-  const deferredQ = deferredKeyword.trim();
+  // 搜索输入防抖走共享 useDebouncedValue(300ms):击键不直接打服务端/写 URL
+  const debouncedKeyword = useDebouncedValue(keyword, 300);
+  const deferredQ = debouncedKeyword.trim();
+  const [dblclickHintSeen, setDblclickHintSeen] = useState(
+    () => localStorage.getItem(DBLCLICK_HINT_KEY) === "1",
+  );
   const { data: policies } = usePolicies();
   const pagesQ = useInstancePages({
     status,
     name: deferredQ || undefined,
   });
-  const { data, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    pagesQ;
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    isRefetching,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = pagesQ;
   const { data: metrics } = useMetricsSummary({ refetchInterval: 45_000 });
   const { date, tzOffsetMinutes } = localToday();
   const { data: daily } = useDailySummary(date, tzOffsetMinutes, { refetchInterval: 60_000 });
@@ -449,6 +658,8 @@ function InstancesPage() {
     }
     return out;
   }, [data]);
+  // 过渡态实例逐台轻轮询(5s,终态即停):status 迁移时失效上面的列表查询回刷
+  useTransientInstanceRefresh(rows);
 
   const setSearch = (patch: { q?: string; status?: string }) =>
     void navigate({
@@ -480,6 +691,29 @@ function InstancesPage() {
       search: tab ? { tab } : undefined,
     });
 
+  // 空态表格/卡片共用:查询失败绝不伪装成空数据(错误态 > 筛选无结果 > 真空态一句话+一个动作)
+  const emptyText = isError ? (
+    <TableErrorEmpty isError onRetry={() => void refetch()} />
+  ) : keyword || status ? (
+    t("instances.noMatch")
+  ) : (
+    <TableErrorEmpty
+      isError={false}
+      action={
+        <Link to="/market">
+          <Button type="primary">{t("instances.goMarket")}</Button>
+        </Link>
+      }
+    >
+      <Space orientation="vertical" size={4}>
+        <Typography.Text strong>{t("instances.emptyTitle")}</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("instances.emptyHint")}
+        </Typography.Text>
+      </Space>
+    </TableErrorEmpty>
+  );
+
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Typography.Title level={4} style={{ margin: 0 }}>
@@ -503,6 +737,7 @@ function InstancesPage() {
           <Button
             aria-label={t("instances.refreshList")}
             icon={<ReloadOutlined />}
+            loading={isRefetching}
             onClick={() => void refetch()}
           />
         </Space>
@@ -528,12 +763,60 @@ function InstancesPage() {
             prefix={<SearchOutlined />}
             placeholder={t("instances.searchPlaceholder")}
             aria-label={t("instances.searchPlaceholder")}
+            data-search-input
             style={{ width: 220 }}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
           />
         </Space>
       </Space>
+      {!narrow && !dblclickHintSeen && (
+        // 双击行进详情的一次性可发现性提示:关闭后写 localStorage,不再显示;窄屏是卡片流,无「行」可双击
+        <Space size={4}>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {t("instances.dblclickHint")}
+          </Typography.Text>
+          <Button
+            size="small"
+            type="text"
+            aria-label={t("common.close")}
+            icon={<CloseOutlined style={{ fontSize: fontSize.caption }} />}
+            onClick={() => {
+              localStorage.setItem(DBLCLICK_HINT_KEY, "1");
+              setDblclickHintSeen(true);
+            }}
+          />
+        </Space>
+      )}
+      {narrow ? (
+        isLoading ? (
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+            {[0, 1, 2].map((i) => (
+              <Card key={i} size="small">
+                <Skeleton active title={{ width: "40%" }} paragraph={{ rows: 2 }} />
+              </Card>
+            ))}
+          </Space>
+        ) : rows.length === 0 ? (
+          emptyText
+        ) : (
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+            {rows.map((r) => (
+              <InstanceCard
+                key={r.uuid}
+                instance={r}
+                summary={metrics}
+                todayByInstance={todayByInstance}
+                dailyReady={daily != null}
+                freezeGraceHours={policies?.freeze_grace_hours}
+                onRenew={setRenewTarget}
+                onDetail={() => void openDetail(r.uuid)}
+                onShowEvents={() => void openDetail(r.uuid, "events")}
+              />
+            ))}
+          </Space>
+        )
+      ) : (
       <Table<InstanceOut>
         rowKey="uuid"
         loading={isLoading}
@@ -546,29 +829,7 @@ function InstancesPage() {
           expandedRowRender: (r) =>
             r.status === "failed" ? <ExpandedFailed instance={r} /> : <ExpandedTools instance={r} />,
         }}
-        locale={{
-          emptyText: isError ? (
-            <TableErrorEmpty onRetry={() => void refetch()} />
-          ) : keyword || status ? (
-            t("instances.noMatch")
-          ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <Space orientation="vertical" size={4}>
-                  <Typography.Text strong>{t("instances.emptyTitle")}</Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("instances.emptyHint")}
-                  </Typography.Text>
-                </Space>
-              }
-            >
-              <Link to="/market">
-                <Button type="primary">{t("instances.goMarket")}</Button>
-              </Link>
-            </Empty>
-          ),
-        }}
+        locale={{ emptyText }}
         columns={[
           {
             title: t("instances.colName"),
@@ -577,19 +838,7 @@ function InstancesPage() {
           {
             title: t("instances.colStatus"),
             render: (_, r) => (
-              <Tooltip
-                title={
-                  r.status === "stopped"
-                    ? policies
-                      ? t("copy.freezePolicy", { hours: policies.freeze_grace_hours })
-                      : t("copy.freezePolicyFallback")
-                    : undefined
-                }
-              >
-                <span>
-                  <InstanceStatusBadge status={r.status} frozenDeadline={r.frozen_deadline} />
-                </span>
-              </Tooltip>
+              <StatusCell instance={r} freezeGraceHours={policies?.freeze_grace_hours} />
             ),
           },
           {
@@ -602,51 +851,14 @@ function InstancesPage() {
           },
           {
             title: t("instances.colBilling"),
-            // 到期信息内联在 InstanceOut.subscription 里,不逐行再打接口
-            render: (_, r) =>
-              r.market === "subscription" && r.subscription ? (
-                <Space orientation="vertical" size={0} align="start">
-                  <SubscriptionTag market={r.market} subscription={r.subscription} />
-                  <span>
-                    {formatPeriodPrice(
-                      r.subscription.amount_paid,
-                      r.subscription.period,
-                      r.subscription.period_count,
-                    )}
-                  </span>
-                  <Button
-                    size="small"
-                    type="link"
-                    style={{ paddingInline: 0, height: 20, fontSize: 12 }}
-                    onClick={() => setRenewTarget(r)}
-                  >
-                    {t("period.renewMenu")}
-                  </Button>
-                </Space>
-              ) : (
-                // 竞价与按量共用这一支,差别只在标记;price_hourly 在竞价实例上已是折后价,不能再折一次
-                <Space orientation="vertical" size={0}>
-                  <Space size={6}>
-                    {r.market === "spot" ? (
-                      <SpotTag market={r.market} />
-                    ) : (
-                      <Tag style={{ marginInlineEnd: 0 }}>{t("instances.payAsYouGo")}</Tag>
-                    )}
-                    <span>
-                      {t("instances.pricePerCard", { price: formatHourlyPrice(r.price_hourly), count: r.gpu_count })}
-                    </span>
-                  </Space>
-                  <Space size={6}>
-                    <SpotReclaimTag market={r.market} />
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {/* 日消费查询失败时每行显示假 ¥0.00,与详情页同口径走 moneyOr */}
-                      {t("instances.todayCost", {
-                        amount: moneyOr(formatMoney(todayByInstance.get(r.id)), daily != null),
-                      })}
-                    </Typography.Text>
-                  </Space>
-                </Space>
-              ),
+            render: (_, r) => (
+              <BillingCell
+                instance={r}
+                todayByInstance={todayByInstance}
+                dailyReady={daily != null}
+                onRenew={setRenewTarget}
+              />
+            ),
           },
           {
             title: t("instances.colActions"),
@@ -663,10 +875,13 @@ function InstancesPage() {
           onDoubleClick: () => void openDetail(r.uuid),
         })}
       />
-      <LoadMoreButton
-        visible={hasNextPage}
+      )}
+      <LoadMore
+        hasNextPage={hasNextPage ?? false}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void fetchNextPage()}
       />
       {renewTarget && (
         <RenewModal

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from app.core.audit import AuditMiddleware
+from app.core.body_limit import RequestBodyLimitMiddleware
 from app.core.config import get_settings, unknown_superdl_env_keys
 from app.core.db import dispose_engine
 from app.core.edge_guard import EdgeGuardMiddleware
@@ -21,6 +22,15 @@ from app.wiring import wire_modules
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     settings = get_settings()
+    # 生效的加固面上报成指标:environment/后端/mock 支付的漂移(prod 跑成 dev 口径)
+    # 在 Prometheus 侧可告警,不靠人肉巡检配置页
+    from app.core.metrics import RUNTIME_CONFIG
+
+    RUNTIME_CONFIG.labels(
+        environment=settings.environment,
+        k8s_backend=settings.k8s_backend,
+        payment_mock=str(settings.payment_mock).lower(),
+    ).set(1)
     log = get_logger("app.lifespan")
     # 幽灵 SUPERDL_* 变量(拼写错误/改名残留)会被静默忽略:启动即告警,不 fail
     unknown_keys = unknown_superdl_env_keys()
@@ -46,6 +56,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # cluster 键经 DB 覆盖层维护,查 env 会误报:改查 effective 配置,缺键只打 error
         from app.core.db import get_sessionmaker
         from app.core.platform_config import (
+            assert_prod_compliance_gates,
             compute_config_warnings,
             get_effective_platform_config,
         )
@@ -64,6 +75,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             (log.error if w.level == "error" else log.warning)(
                 "config_warning", key=w.key, hint=w.message
             )
+        # D-4 合规闸门 fail-fast(实现在 platform_config.assert_prod_compliance_gates)
+        assert_prod_compliance_gates(cfg, settings.environment)
     yield
     # Prometheus 代理客户端是全局单例(连接池),进程退出前显式关闭
     from app.modules.metering import prom as metering_prom
@@ -90,6 +103,10 @@ def create_app() -> FastAPI:
     # 最先注册 = 最内层:未捕获异常在此渲染 500 并沿链回传,
     # 安全头(SecurityHeaders)与 x-request-id(Observability)才能挂上错误响应
     app.add_middleware(Uniform500Middleware)
+    # 请求体硬上限(内层防御;外层在 Envoy requestBuffer):流式计数,超限 413 短路。
+    # 注册在次内层:其外的中间件均不读请求流,攻击面在抵达路由前被掐断;
+    # 413 响应沿链外返仍带安全头 / x-request-id / CORS 头(浏览器才读得到错误体)
+    app.add_middleware(RequestBodyLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(ObservabilityMiddleware)
     app.add_middleware(AuditMiddleware)

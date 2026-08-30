@@ -15,7 +15,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
 from app.core.outbox import OutboxTask
 from app.core.pagination import Page
-from app.core.params import TzOffset
+from app.core.params import Cursor, Limit, TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.registry import probe_harbor
 from app.core.timeutil import now_utc
@@ -41,6 +41,7 @@ from app.modules.adminapi.schemas import (
     UpdatedKeysOut,
 )
 from app.modules.tickets.schemas import (
+    AdminTicketCountOut,
     AdminTicketDetailOut,
     AdminTicketOut,
     AdminTicketReply,
@@ -72,8 +73,8 @@ async def admin_list_tickets(
     category: str | None = None,
     user_id: int | None = None,
     ticket_no: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[AdminTicketOut]:
     """工单列表(游标分页,降序):status/category 精确过滤,user_id/ticket_no 检索。"""
     from app.modules.tickets import service as tickets_service
@@ -86,6 +87,23 @@ async def admin_list_tickets(
         ticket_no=ticket_no,
         cursor=cursor,
         limit=limit,
+    )
+
+
+@router.get("/tickets/count", dependencies=[require_roles("ops", "finance", "readonly")])
+async def admin_tickets_count(
+    session: DbSession,
+    status: str = "pending_staff",
+    category: str | None = None,
+) -> AdminTicketCountOut:
+    """待办工单计数轻端点(角标轮询替代全量列表轮询):默认 pending_staff 口径。
+
+    注意须注册在 /tickets/{ticket_id} 之前,否则 "count" 会被当 id 解析。
+    """
+    from app.modules.tickets import service as tickets_service
+
+    return AdminTicketCountOut(
+        count=await tickets_service.admin_count_tickets(session, status=status, category=category)
     )
 
 

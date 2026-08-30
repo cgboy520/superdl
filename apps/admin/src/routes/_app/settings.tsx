@@ -5,10 +5,10 @@
  * - 管理员账号:建号/改角色/停用/重置密码 + 自助改密
  */
 
-import { adminColors, announcementStatusMap, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, announcementStatusMap, fontSize, formatDateTime, idemKeyOf, metaOf } from "@superdl/ui";
+import { HexTag, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
   App,
@@ -18,7 +18,6 @@ import {
   Input,
   InputNumber,
   Modal,
-  Popconfirm,
   Space,
   Table,
   Tabs,
@@ -30,6 +29,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   type AnnouncementRow,
+  isApiError,
   useAdminPolicies,
   useAnnouncements,
   usePublishAnnouncement,
@@ -40,12 +40,20 @@ import { AdminsTab } from "./-AdminsTab";
 import { LegalDocsTab } from "./-LegalDocsTab";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
-import { useApiErrorText } from "../../lib/apiError";
-import { useFormDraft } from "../../lib/formDraft";
+import { useApiErrorText } from "@superdl/ui";
+import { useFormDraft } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
+const SETTINGS_TABS = ["policies", "announcement", "legal", "admins"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
 export const Route = createFileRoute("/_app/settings")({
+  // Tab 入 URL(0.3 规范):白名单校验,非法值回落默认 Tab
+  validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => ({
+    tab: SETTINGS_TABS.includes(search.tab as SettingsTab)
+      ? (search.tab as SettingsTab)
+      : undefined,
+  }),
   component: SettingsPage,
 });
 
@@ -93,7 +101,7 @@ function PoliciesTab() {
         reasonForm.resetFields();
         void qc.invalidateQueries({ queryKey });
       },
-      onError: (e) => message.error(errText(e, t("skus.saveFailed"))),
+      onError: (e) => message.error(errText(e, t("common.saveFailed"))),
     },
   });
 
@@ -141,7 +149,7 @@ function PoliciesTab() {
                 {r.label}
                 {r.overridden && <Tag style={{ marginLeft: 8 }}>{t("settings.overridden")}</Tag>}
                 {r.hint && (
-                  <div style={{ color: adminColors.textSecondary, fontSize: 12 }}>{r.hint}</div>
+                  <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption }}>{r.hint}</div>
                 )}
               </>
             ),
@@ -162,6 +170,9 @@ function PoliciesTab() {
                 style={{ width: 140 }}
                 disabled={!writable}
                 stringMode
+                // 范围列展示的 min~max 必须落到输入约束上,否则越界只能等服务端驳回
+                min={r.spec?.min}
+                max={r.spec?.max}
                 placeholder={r.effective}
                 value={draft[r.key] ?? null}
                 onChange={(v) =>
@@ -188,8 +199,12 @@ function PoliciesTab() {
         onCancel={() => setReasonOpen(false)}
         okButtonProps={{ loading: update.isPending }}
         onOk={async () => {
-          const { reason } = await reasonForm.validateFields();
-          update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
+          try {
+            const { reason } = await reasonForm.validateFields();
+            update.mutate({ data: { updates: Object.fromEntries(changed), reason } });
+          } catch {
+            // 校验失败:antd 已在字段下给出红字反馈,静默停留
+          }
         }}
       >
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
@@ -216,14 +231,14 @@ function PoliciesTab() {
 function AnnouncementTab() {
   const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
   const [form] = Form.useForm<{ title: string; content: string }>();
   // 公告草稿(sessionStorage):刷新/误关不丢;发布成功清除
   const draft = useFormDraft<{ title: string; content: string }>("announcement-new");
-  const { data, queryKey, isLoading, isError, refetch } = useAnnouncements();
+  const { data, queryKey, isLoading, isError, error, refetch } = useAnnouncements();
   const revoke = useRevokeAnnouncement();
   const rows: AnnouncementRow[] = data ?? [];
   // 「上次发布」读接口而非本地缓存:最新一条仍处 published 的公告
@@ -272,24 +287,37 @@ function AnnouncementTab() {
           <Input.TextArea rows={4} placeholder={t("settings.announceContentPlaceholder")} />
         </Form.Item>
       </Form>
-      <Popconfirm
-        title={t("settings.confirmAnnounce")}
-        onConfirm={async () => {
-          const values = await form.validateFields();
-          publish.mutate({
-            data: values,
-            // 幂等键从表单快照派生:重试/网络丢响应不会给全体租户重复推送
-            idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
-          });
-        }}
-        disabled={!writable}
-      >
-        <Tooltip title={writable ? "" : t("settings.opsOnlyAnnounce")}>
-          <Button type="primary" loading={publish.isPending} disabled={!writable}>
-            {t("settings.publish")}
-          </Button>
-        </Tooltip>
-      </Popconfirm>
+      <Tooltip title={writable ? "" : t("settings.opsOnlyAnnounce")}>
+        <Button
+          type="primary"
+          loading={publish.isPending}
+          disabled={!writable}
+          onClick={() => {
+            // L2:复述影响面 + 公告标题,确认后才真正群发
+            modal.confirm({
+              title: t("settings.confirmAnnounce"),
+              content: t("settings.confirmAnnounceDetail", {
+                title: form.getFieldValue("title") ?? "",
+              }),
+              okText: t("settings.publish"),
+              onOk: async () => {
+                try {
+                  const values = await form.validateFields();
+                  publish.mutate({
+                    data: values,
+                    // 幂等键从表单快照派生:重试/网络丢响应不会给全体租户重复推送
+                    idempotencyKey: idemKeyOf("ann", [values.title, values.content]),
+                  });
+                } catch {
+                  // 校验失败:antd 已在字段下给出红字反馈,弹窗关闭后回到表单可见
+                }
+              },
+            });
+          }}
+        >
+          {t("settings.publish")}
+        </Button>
+      </Tooltip>
       {lastPublished && (
         <Alert
           type="success"
@@ -302,7 +330,13 @@ function AnnouncementTab() {
         size="small"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         pagination={false}
         scroll={{ x: 720 }}
@@ -311,8 +345,10 @@ function AnnouncementTab() {
           {
             title: t("settings.colAnnTitle"),
             dataIndex: "title",
-            render: (v: string, r) => (
-              <Tooltip title={r.content}>
+            // 长标题截断不撑列,hover 看全文
+            ellipsis: true,
+            render: (v: string) => (
+              <Tooltip title={v}>
                 <span>{v}</span>
               </Tooltip>
             ),
@@ -341,7 +377,7 @@ function AnnouncementTab() {
                   }
                 >
                   <span>
-                    <StatusTag color={meta?.color}>{meta ? t(meta.labelKey) : v}</StatusTag>
+                    <HexTag color={meta?.color}>{meta ? t(meta.labelKey) : v}</HexTag>
                   </span>
                 </Tooltip>
               );
@@ -379,16 +415,28 @@ function AnnouncementTab() {
 
 function SettingsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const tab = Route.useSearch({ select: (s) => s.tab });
   return (
-    <Card>
-      <Tabs
-        items={[
-          { key: "policies", label: t("settings.tabPolicies"), children: <PoliciesTab /> },
-          { key: "announcement", label: t("settings.tabAnnouncement"), children: <AnnouncementTab /> },
-          { key: "legal", label: t("settings.tabLegal"), children: <LegalDocsTab /> },
-          { key: "admins", label: t("settings.tabAdmins"), children: <AdminsTab /> },
-        ]}
-      />
-    </Card>
+    <PageContainer title={t("menu.settings")}>
+      <Card>
+        <Tabs
+          activeKey={tab ?? "policies"}
+          onChange={(key) =>
+            void navigate({
+              to: "/settings",
+              replace: true,
+              search: key === "policies" ? {} : { tab: key as SettingsTab },
+            })
+          }
+          items={[
+            { key: "policies", label: t("settings.tabPolicies"), children: <PoliciesTab /> },
+            { key: "announcement", label: t("settings.tabAnnouncement"), children: <AnnouncementTab /> },
+            { key: "legal", label: t("settings.tabLegal"), children: <LegalDocsTab /> },
+            { key: "admins", label: t("settings.tabAdmins"), children: <AdminsTab /> },
+          ]}
+        />
+      </Card>
+    </PageContainer>
   );
 }

@@ -100,6 +100,14 @@ async def sm(engine: AsyncEngine) -> AsyncIterator[async_sessionmaker[AsyncSessi
     async with smaker() as session:
         await seed_preset_docs(session)
         await session.commit()
+    # extAuth 鉴权缓存是进程内态:TRUNCATE 清不到,逐用例清空防串测试
+    from app.modules.orchestrator import service as orch_service
+
+    orch_service.clear_endpoint_auth_cache()
+    # 审计 fail-closed 闸门同样是进程内全局态
+    from app.core import audit as audit_mod
+
+    audit_mod.reset_audit_gate()
     yield smaker
 
     async with engine.begin() as conn:

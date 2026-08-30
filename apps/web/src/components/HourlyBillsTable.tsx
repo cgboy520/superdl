@@ -4,14 +4,13 @@
 
 import type { BillHourlyOut, ListHourlyBillsApiV1BillsHourlyGetParams } from "@superdl/api-client";
 import { formatDateTime } from "@superdl/ui";
+import { EmptyState, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { Space, Table } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useHourlyBillPages } from "../api/queries";
-import { useFormat } from "../lib/format";
-import { LoadMoreButton } from "./LoadMore";
-import { TableErrorEmpty } from "./QueryState";
+import { useFormat } from "@superdl/ui";
 
 export function HourlyBillsTable({
   params,
@@ -23,8 +22,16 @@ export function HourlyBillsTable({
 }) {
   const { t } = useTranslation();
   const { formatDuration, formatHourlyPrice, formatMoney } = useFormat();
-  const { data, isLoading, isError, refetch, isFetchingNextPage, hasNextPage, fetchNextPage } =
-    useHourlyBillPages(params);
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    hasNextPage,
+    fetchNextPage,
+  } = useHourlyBillPages(params);
   const rows = useMemo<BillHourlyOut[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   return (
@@ -38,7 +45,11 @@ export function HourlyBillsTable({
         loading={isLoading}
         dataSource={rows}
         locale={{
-          emptyText: isError ? <TableErrorEmpty onRetry={() => void refetch()} /> : undefined,
+          emptyText: isError ? (
+            <TableErrorEmpty isError onRetry={() => void refetch()} />
+          ) : (
+            <EmptyState scene="list" compact description={t("billing.hourlyEmpty")} />
+          ),
         }}
         columns={[
           { title: t("instances.colBillHour"), render: (_, r) => formatDateTime(r.hour_start) },
@@ -66,10 +77,12 @@ export function HourlyBillsTable({
           },
         ]}
       />
-      <LoadMoreButton
-        visible={hasNextPage}
+      <LoadMore
+        hasNextPage={hasNextPage ?? false}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void fetchNextPage()}
       />
     </Space>
   );

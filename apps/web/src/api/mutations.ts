@@ -70,7 +70,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 import { useCallback } from "react";
 
-import { useApiErrorText } from "../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 import { authStore } from "../stores/auth";
 
 interface MutationOpts<TData> {
@@ -122,8 +122,8 @@ export function useLogout() {
       if (scope === "all") {
         await logoutAllApiV1AuthLogoutAllPost();
       } else {
-        // cookie 路径必须带 CSRF 纵深头(服务端强制);body 留空,服务端从 cookie 取
-        await logoutApiV1AuthLogoutPost(null, { headers: { "X-Requested-With": "fetch" } });
+        // cookie 路径必须带 CSRF 纵深头(服务端强制);请求体已废除,服务端从 cookie 取
+        await logoutApiV1AuthLogoutPost({ headers: { "X-Requested-With": "fetch" } });
       }
     } catch {
       // 登出尽力而为,本地清理不依赖远端结果

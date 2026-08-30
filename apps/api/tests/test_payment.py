@@ -10,27 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.timeutil import now_utc
 from app.modules.billing.models import BalanceLedger, Order
 from app.modules.billing.payment_service import close_expired_orders
-from tests.helpers import register
-
-
-async def user_headers(client: AsyncClient, phone: str = "13700000001") -> dict[str, str]:
-    data = await register(client, phone)
-    return {"Authorization": f"Bearer {data['access_token']}"}
-
-
-async def create_order(client: AsyncClient, headers: dict, amount: str = "50.00") -> dict:
-    resp = await client.post(
-        "/api/v1/wallet/recharges", json={"amount": amount, "channel": "mock"}, headers=headers
-    )
-    assert resp.status_code == 201, resp.text
-    return resp.json()
-
-
-async def pay_mock(client: AsyncClient, order_no: str, amount: str, txn_id: str | None = None):
-    return await client.post(
-        "/api/v1/webhooks/mock",
-        json={"order_no": order_no, "amount": amount, "txn_id": txn_id or f"tx-{order_no}"},
-    )
+from tests.helpers import create_order, pay_mock, user_headers
 
 
 class TestRecharge:
@@ -71,6 +51,20 @@ class TestRecharge:
         assert resp.json()["code"] == "PAYMENT_CHANNEL_ERROR"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "0.00"
+
+    async def test_recharge_rate_limited_per_user(self, client: AsyncClient, sm):
+        """资金端点限流:同一用户 1 小时最多 10 张充值单,第 11 张 429 带 Retry-After。"""
+        headers = await user_headers(client)
+        for _ in range(10):
+            await create_order(client, headers, "1.00")
+        resp = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "1.00", "channel": "mock"},
+            headers=headers,
+        )
+        assert resp.status_code == 429
+        assert resp.json()["code"] == "RATE_LIMITED"
+        assert resp.headers["retry-after"].isdigit()
 
     async def test_idempotency_key_same_order(self, client: AsyncClient, sm):
         headers = {**(await user_headers(client)), "Idempotency-Key": "recharge-1"}

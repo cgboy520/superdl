@@ -9,7 +9,9 @@ import {
   type InstanceEventOut,
   type InstanceOut,
 } from "@superdl/api-client";
-import { formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
+import { fontSize, formatDateTime, isTransientInstanceStatus, localToday } from "@superdl/ui";
+import { DataErrorAlert, EChart, LoadMore, moneyOr, TableErrorEmpty, useConfirm } from "@superdl/ui/components";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Alert,
@@ -19,6 +21,7 @@ import {
   Button,
   Card,
   Descriptions,
+  Empty,
   Radio,
   Select,
   Skeleton,
@@ -29,10 +32,10 @@ import {
   Tag,
   theme,
   Timeline,
+  Tooltip,
   Typography,
 } from "antd";
-import { useFormat } from "../lib/format";
-import EChart from "../components/EChart";
+import { useFormat } from "@superdl/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -58,9 +61,8 @@ import {
 } from "../components/common";
 import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
-import { LoadMoreButton } from "../components/LoadMore";
-import { DataErrorAlert, moneyOr, TableErrorEmpty } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
+import { useThemeMode } from "../stores/theme";
 
 // service 只对服务型实例出;白名单照收(dev 实例带 ?tab=service 进来时下面回退默认 Tab)
 const DETAIL_TABS = ["metrics", "service", "access", "logs", "events", "bills"] as const;
@@ -86,6 +88,7 @@ const SERIES_META = {
 
 function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
   const { t } = useTranslation();
+  const mode = useThemeMode();
   const [range, setRange] = useState<"1h" | "6h" | "24h">("1h");
   const { data, error, isLoading, refetch } = useInstanceMetrics(
     uuid,
@@ -118,8 +121,16 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
       />
       {Object.entries(SERIES_META).map(([key, meta]) => (
         <Card key={key} size="small" title={t(meta.nameKey)} loading={isLoading}>
+          {/* 主题随全局(浅色/暗色两套注册预设);加载完成但序列无数据给空态而非空坐标系 */}
+          {!isLoading && (series[key]?.length ?? 0) === 0 ? (
+            <Typography.Text type="secondary" style={{ display: "block", padding: "24px 0" }}>
+              {t("instances.metricsNoData")}
+            </Typography.Text>
+          ) : (
           <EChart
+            theme={mode === "dark" ? "web-dark" : "web-light"}
             style={{ height: 180 }}
+            ariaLabel={t(meta.nameKey)}
             option={{
               grid: { left: 48, right: 16, top: 16, bottom: 24 },
               xAxis: { type: "time" },
@@ -135,6 +146,7 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
               ],
             }}
           />
+          )}
         </Card>
       ))}
     </Space>
@@ -145,7 +157,8 @@ function MetricsTab({ uuid, running }: { uuid: string; running: boolean }) {
  *  接入信息的每个字段都可空,必须按「拿到什么渲染什么」写。 */
 function AccessTab({ instance, running }: { instance: InstanceOut; running: boolean }) {
   const { t } = useTranslation();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const confirm = useConfirm();
   const { data: access } = useInstanceAccess(instance.uuid, { enabled: running });
   const reset = useResetJupyterToken();
   const isService = instance.workload_type === "service";
@@ -186,9 +199,9 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
             </Button>
             <Button
               onClick={() =>
-                modal.confirm({
+                confirm({
                   title: t("instances.resetTokenConfirmTitle"),
-                  content: t("instances.resetTokenConfirmBody"),
+                  consequences: [t("instances.resetTokenConfirmBody")],
                   onOk: async () => {
                     await reset.mutateAsync(instance.uuid);
                     message.success(t("instances.tokenReset"));
@@ -209,7 +222,8 @@ function AccessTab({ instance, running }: { instance: InstanceOut; running: bool
  *  就绪为「否」不是故障态(持续 not-ready 也留在 running),必须如实显示而不渲染成红色报错。 */
 function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLogs: () => void }) {
   const { t } = useTranslation();
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
+  const confirm = useConfirm();
   const running = instance.status === "running";
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const epQ = useServiceEndpoint(instance.uuid, {
@@ -251,7 +265,7 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
         {ep && (
           <Space orientation="vertical" size={8} style={{ width: "100%" }}>
             <Space wrap size={8}>
-              <Typography.Text code style={{ fontSize: 15 }}>
+              <Typography.Text code style={{ fontSize: fontSize.sectionTitle }}>
                 {ep.url}
               </Typography.Text>
               <CopyButton text={ep.url} label={t("instances.copyEndpoint")} />
@@ -310,9 +324,11 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
             pagination={false}
             loading={keysQ.isLoading}
             dataSource={keys}
+            // 五列在窄屏必然溢出卡片,与全站宽表同一处理:横向滚动
+            scroll={{ x: 640 }}
             locale={{
               emptyText: keysQ.isError ? (
-                <TableErrorEmpty onRetry={() => void keysQ.refetch()} />
+                <TableErrorEmpty isError onRetry={() => void keysQ.refetch()} />
               ) : (
                 t("instances.apiKeyEmpty")
               ),
@@ -342,11 +358,13 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
                       size="small"
                       danger
                       onClick={() =>
-                        modal.confirm({
+                        confirm({
                           title: t("instances.apiKeyRevokeConfirmTitle"),
-                          content: t("instances.apiKeyRevokeConfirmBody"),
-                          okButtonProps: { danger: true },
-                          onOk: () => revoke.mutateAsync(r.id),
+                          consequences: [t("instances.apiKeyRevokeConfirmBody")],
+                          danger: true,
+                          onOk: async () => {
+                            await revoke.mutateAsync(r.id);
+                          },
                         })
                       }
                     >
@@ -365,7 +383,7 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
           <pre
             style={{
               margin: 0,
-              fontSize: 13,
+              fontSize: fontSize.caption,
               lineHeight: 1.8,
               whiteSpace: "pre-wrap",
               wordBreak: "break-all",
@@ -444,7 +462,7 @@ function ServiceTab({ instance, onShowLogs }: { instance: InstanceOut; onShowLog
                       <Typography.Text key={row.name} code>
                         {row.name}={row.secret ? "••••••" : row.value}
                         {row.secret && (
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                             {` (${t("instances.containerConfigEnvSecret")})`}
                           </Typography.Text>
                         )}
@@ -475,6 +493,9 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
   const [tail, setTail] = useState(200);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 贴底判定:距底 ≤40px 视为贴底;用户上滚即暂停跟随,新行计数在浮动钮上
+  const [pinned, setPinned] = useState(true);
+  const [newCount, setNewCount] = useState(0);
   const { data, error, refetch } = useInstanceLogs(
     uuid,
     { tail_lines: tail },
@@ -483,11 +504,43 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
   );
   const lines = useMemo(() => data?.lines ?? [], [data]);
 
-  // 自动跟随:新日志到达即滚到底部(最新行在末尾)
-  useEffect(() => {
+  const scrollToBottom = () => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+    setPinned(true);
+    setNewCount(0);
+  };
+
+  // 渲染期派生(react 推荐模式,避免 effect 内级联 setState):
+  // 非贴底时新行数累计到浮动钮上;tail 档变化整体替换内容,复位到贴底跟随
+  const [prevLen, setPrevLen] = useState(lines.length);
+  if (lines.length !== prevLen) {
+    const grew = lines.length - prevLen;
+    setPrevLen(lines.length);
+    if (!pinned && grew > 0) setNewCount((n) => n + grew);
+  }
+  const [prevTail, setPrevTail] = useState(tail);
+  if (tail !== prevTail) {
+    setPrevTail(tail);
+    setPrevLen(0);
+    setPinned(true);
+    setNewCount(0);
+  }
+
+  // 自动跟随:仅在贴底时滚到底部(纯 DOM 操作,不碰 state)
+  useEffect(() => {
+    if (!pinned) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines, pinned]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 40;
+    setPinned(atBottom);
+    if (atBottom) setNewCount(0);
+  };
 
   if (!viewable) {
     return <Alert type="info" showIcon title={t("instances.logsNotRunning")} />;
@@ -531,26 +584,41 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
       {error ? (
         <DataErrorAlert onRetry={() => void refetch()} />
       ) : (
-        <div
-          ref={scrollRef}
-          style={{
-            height: 420,
-            overflow: "auto",
-            padding: "8px 12px",
-            background: token.colorFillQuaternary,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: token.borderRadius,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-            fontSize: 12,
-            lineHeight: 1.7,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}
-        >
-          {lines.length === 0 ? (
-            <Typography.Text type="secondary">{t("instances.logsEmpty")}</Typography.Text>
-          ) : (
-            lines.map((line, i) => <div key={i}>{line}</div>)
+        <div style={{ position: "relative" }}>
+          <div
+            ref={scrollRef}
+            onScroll={onScroll}
+            style={{
+              height: 420,
+              overflow: "auto",
+              padding: "8px 12px",
+              background: token.colorFillQuaternary,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadius,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              fontSize: fontSize.caption,
+              lineHeight: 1.7,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+            }}
+          >
+            {lines.length === 0 ? (
+              <Typography.Text type="secondary">{t("instances.logsEmpty")}</Typography.Text>
+            ) : (
+              lines.map((line, i) => <div key={i}>{line}</div>)
+            )}
+          </div>
+          {!pinned && (
+            <Button
+              size="small"
+              type="primary"
+              onClick={scrollToBottom}
+              style={{ position: "absolute", right: 16, bottom: 12, boxShadow: token.boxShadow }}
+            >
+              {newCount > 0
+                ? t("instances.logsBackToBottomNew", { count: newCount })
+                : t("instances.logsBackToBottom")}
+            </Button>
           )}
         </div>
       )}
@@ -561,24 +629,42 @@ function LogsTab({ uuid, viewable }: { uuid: string; viewable: boolean }) {
 function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
   const { t } = useTranslation();
   const reasonText = useEventReasonText();
-  // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多
-  const { data, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useInstanceEventPages(uuid);
+  const queryClient = useQueryClient();
+  // 时间线即计费依据:过渡态必须跟着状态一起刷新;游标分页 + 加载更多。
+  // 轮询三律③:infinite 查询不挂 refetchInterval;事件只在状态迁移时产生,
+  // 外层实例轮询(过渡态 5s)检测到 status 迁移后失效事件查询 —— 立即 + 3s 延迟各刷一次,
+  // 覆盖「事件行落库略晚于实例行状态翻转」的窗口。
+  const prevStatus = useRef(status);
+  useEffect(() => {
+    if (prevStatus.current === status) return;
+    prevStatus.current = status;
+    const key = ["instances", uuid, "events"];
+    void queryClient.invalidateQueries({ queryKey: key });
+    const timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: key }), 3_000);
+    return () => clearTimeout(timer);
+  }, [status, uuid, queryClient]);
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = useInstanceEventPages(uuid);
   const events = useMemo<InstanceEventOut[]>(
     () => (data?.pages ?? []).flatMap((p) => p.items),
     [data],
   );
-  // 过渡态 5s 轮询(单实例事件量小,重取已加载页代价可忽略);稳态不轮询
-  const transient = status != null && isTransientInstanceStatus(status);
-  useEffect(() => {
-    if (!transient) return;
-    const timer = setInterval(() => void refetch(), 5_000);
-    return () => clearInterval(timer);
-  }, [transient, refetch]);
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert type="info" showIcon title={t("copy.eventsAreBilling")} />
       {isError && <DataErrorAlert onRetry={() => void refetch()} />}
+      {/* 无事件渲染空白会把「实例尚无状态变更」读成加载失败:给一句话空态 */}
+      {!isError && !isLoading && events.length === 0 && (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("instances.eventsEmpty")} />
+      )}
       <Timeline
         items={events.map((e) => ({
           color:
@@ -591,7 +677,7 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
                   <Typography.Text type="secondary">{t("instances.billingBoundary")}</Typography.Text>
                 )}
               </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {t("instances.eventMetaLine", {
                   time: formatDateTime(e.created_at),
                   reason: reasonText(e.reason),
@@ -602,10 +688,12 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
           ),
         }))}
       />
-      <LoadMoreButton
-        visible={hasNextPage}
+      <LoadMore
+        hasNextPage={hasNextPage ?? false}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={events.length}
+        onLoadMore={() => void fetchNextPage()}
       />
     </Space>
   );
@@ -614,6 +702,7 @@ function EventsTab({ uuid, status }: { uuid: string; status?: string }) {
 function InstanceDetail() {
   const { t } = useTranslation();
   const { formatHourlyPrice, formatMoney, formatPeriodPrice } = useFormat();
+  const { token } = theme.useToken();
   const { uuid } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
@@ -729,7 +818,8 @@ function InstanceDetail() {
       <Tabs
         activeKey={activeTab}
         onChange={(k) =>
-          navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k } })
+          // Tab activeKey 入 URL 用 replace(ui-ux-spec §1-8):连点六个 Tab 后退一次就该回列表
+          navigate({ to: "/instances/$uuid", params: { uuid }, search: { tab: k }, replace: true })
         }
         items={[
           {
@@ -786,19 +876,18 @@ function InstanceDetail() {
         ]}
       />
 
-      <Card title={t("instances.dangerZone")} style={{ borderColor: "#ffccc7" }}>
+      <Card title={t("instances.dangerZone")} style={{ borderColor: token.colorErrorBorder }}>
         <Space orientation="vertical">
           <Typography.Text type="secondary">
             {t("instances.dangerNote")}
           </Typography.Text>
-          <Button
-            danger
-            disabled={!canRelease}
-            title={canRelease ? undefined : t("copy.releaseNeedsStopped")}
-            onClick={() => setReleaseOpen(true)}
-          >
-            {t("instances.release")}
-          </Button>
+          {/* 禁用原因走 Tooltip 不用原生 title:disabled 按钮在部分浏览器不触发 mouse 事件,
+              title 不可达(全站其它禁用项同一处理) */}
+          <Tooltip title={canRelease ? undefined : t("copy.releaseNeedsStopped")}>
+            <Button danger disabled={!canRelease} onClick={() => setReleaseOpen(true)}>
+              {t("instances.release")}
+            </Button>
+          </Tooltip>
         </Space>
       </Card>
       <ReleaseModal

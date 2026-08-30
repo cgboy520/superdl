@@ -232,22 +232,51 @@ class TestAdminSku:
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.migProfileMismatch"
 
-    async def test_readonly_cannot_write(self, client: AsyncClient, sm):
-        headers = await admin_headers(sm, client, role="readonly")
-        resp = await client.get("/api/admin/v1/skus", headers=headers)
-        assert resp.status_code == 200
+    async def test_shared_tier_allowed_pools_switch(self, client: AsyncClient, sm, monkeypatch):
+        """D-1 过渡开关:shared_tier_allowed_pools 摘掉 hami 后,共享档只能建 MIG 池 SKU;
+        置空则共享档整体停售。挂了说明:HAMi 软切分池在运营已禁售后仍能开出来卖。"""
+        from app.core.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "shared_tier_allowed_pools", "mig")
+        headers = await admin_headers(sm, client)
+        base = {
+            "gpu_model": "RTX4090",
+            "vram_gb": 24,
+            "vcpu": 8,
+            "mem_gb": 32,
+            "price_hourly": "1.0000",
+        }
+        resp = await client.post(
+            "/api/admin/v1/skus",
+            json={**base, "name": "HAMi 禁售", "tier": "shared", "pool_label": "hami"},
+            headers=headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
         resp = await client.post(
             "/api/admin/v1/skus",
             json={
-                "name": "x",
-                "gpu_model": "x",
+                **base,
+                "name": "MIG 在售",
                 "tier": "shared",
-                "vram_gb": 1,
                 "pool_label": "mig",
-                "vcpu": 1,
-                "mem_gb": 1,
-                "price_hourly": "1",
+                "mig_profile": "1g.10gb",
             },
             headers=headers,
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 201, resp.text
+
+        monkeypatch.setattr(get_settings(), "shared_tier_allowed_pools", "")
+        resp = await client.post(
+            "/api/admin/v1/skus",
+            json={
+                **base,
+                "name": "共享停售",
+                "tier": "shared",
+                "pool_label": "mig",
+                "mig_profile": "1g.10gb",
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["message_key"] == "catalog.tierPoolMismatch"

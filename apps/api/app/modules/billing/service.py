@@ -1,7 +1,12 @@
 """billing 对外服务门面。其他模块只许 import 本文件(与 schemas),不许碰内部实现;
 只导出有跨模块消费者的名字,模块内部与同模块 router 直接 import 实现文件。"""
 
-from app.modules.billing.export import stream_admin_orders_csv, stream_ledger_csv
+from app.modules.billing.export import (
+    stream_admin_invoices_csv,
+    stream_admin_orders_csv,
+    stream_admin_refunds_csv,
+    stream_ledger_csv,
+)
 from app.modules.billing.invoices import (
     admin_list_invoices,
     issue_invoice,
@@ -64,10 +69,13 @@ from app.modules.billing.wallet import (
     consumed_by_user,
     credit,
     debit,
+    freeze,
+    get_available_balance,
     get_balance,
     hourly_bills_page,
     ledger_page,
     lock_wallet,
+    release_freeze,
     revenue_summary,
 )
 
@@ -88,6 +96,8 @@ __all__ = [
     "credit",
     "debit",
     "find_subscription_replay",
+    "freeze",
+    "get_available_balance",
     "get_balance",
     "hourly_bills_page",
     "issue_invoice",
@@ -98,6 +108,7 @@ __all__ = [
     "payout_refund",
     "quote_of_subscription_row",
     "reject_invoice",
+    "release_freeze",
     "renew_subscription",
     "replay_gap",
     "reprice_current_hour",
@@ -108,7 +119,9 @@ __all__ = [
     "set_subscription_auto_renew",
     "settle_disk_pending_days",
     "settle_on_demand_up_to",
+    "stream_admin_invoices_csv",
     "stream_admin_orders_csv",
+    "stream_admin_refunds_csv",
     "stream_ledger_csv",
     "subscriptions_by_instance",
     "verify_order",

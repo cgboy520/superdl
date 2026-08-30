@@ -12,6 +12,7 @@ import { formatMoney, quoteSubscription } from "@superdl/ui";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RenewModal } from "./RenewModal";
@@ -39,6 +40,11 @@ vi.mock("../api/queries", () => ({
       period_expire_warn_days: 3,
     },
   }),
+}));
+
+// 余额不足的 CTA 是 TanStack Link:测试没有 Router 上下文,降级成原生 <a> 断言 href
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
 }));
 
 const STARTED_AT = "2026-08-04T04:00:00Z";
@@ -214,12 +220,22 @@ describe("RenewModal", () => {
     expect(renewMutate).toHaveBeenCalled();
   });
 
-  it("余额不足:确认按钮灰置并改指充值,不把必然失败的请求送出去", async () => {
+  it("余额不足:主按钮改指 /billing 的可点链接(不是死按钮),不把必然失败的请求送出去", async () => {
     walletBalance.current = "10.00";
     renderModal();
     const dialog = await screen.findByRole("dialog");
-    const confirm = within(dialog).getByRole("button", { name: "余额不足,去充值" });
-    expect(confirm).toBeDisabled();
+    const link = within(dialog).getByRole("link", { name: "余额不足,去充值" });
+    expect(link).toHaveAttribute("href", "/billing");
+    // 链接可点(未被 disabled),且不触发续费提交
+    const btn = within(link).getByRole("button");
+    expect(btn).toBeEnabled();
     expect(renewMutate).not.toHaveBeenCalled();
+  });
+
+  it("余额足够:仍是普通确认按钮,不渲染充值链接", async () => {
+    renderModal();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("link", { name: "余额不足,去充值" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "确认续费" })).toBeEnabled();
   });
 });

@@ -9,4 +9,5 @@ import type { RefundOut } from './refundOut';
 export interface PageRefundOut {
   items: RefundOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

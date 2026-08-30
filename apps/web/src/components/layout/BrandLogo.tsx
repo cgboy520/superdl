@@ -1,6 +1,6 @@
 /** 品牌标:SVG 图形(与 favicon 同形)+ 词标。light=深底白字(顶栏/Hero),dark=浅底靛字。 */
 
-import { colorPrimary } from "@superdl/ui";
+import { brandGradientStops, colorPrimary, fontSize, textOnAccent } from "@superdl/ui";
 
 const S_PATH =
   "M21.5 10.6c-.9-1.6-2.7-2.6-5-2.6-3.1 0-5.3 1.7-5.3 4.2 0 2.2 1.5 3.4 4.6 4l1.9.4c1.9.4 " +
@@ -17,8 +17,8 @@ export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) 
       <svg width={26} height={26} viewBox="0 0 32 32" aria-hidden>
         <defs>
           <linearGradient id="sdl-mark" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#4338CA" />
-            <stop offset="1" stopColor="#6D28D9" />
+            <stop offset="0" stopColor={brandGradientStops.topBarFrom} />
+            <stop offset="1" stopColor={brandGradientStops.heroTo} />
           </linearGradient>
         </defs>
         <rect
@@ -27,13 +27,13 @@ export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) 
           rx="7"
           fill={light ? "rgba(255,255,255,0.92)" : "url(#sdl-mark)"}
         />
-        <path d={S_PATH} fill={light ? colorPrimary : "#fff"} />
+        <path d={S_PATH} fill={light ? colorPrimary : textOnAccent} />
       </svg>
       <span
         style={{
-          fontSize: 18,
+          fontSize: fontSize.pageTitle,
           fontWeight: 700,
-          color: light ? "#fff" : colorPrimary,
+          color: light ? textOnAccent : colorPrimary,
           letterSpacing: 0.3,
         }}
       >

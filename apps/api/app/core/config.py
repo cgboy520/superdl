@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # JWT:用户端与管理端物理隔离,audience 不同。
     # 令牌收紧基线:access ≤1h(前端 Web Locks 静默续期,用户无感)、refresh ≤7d;
     # prod 校验在 _validate_prod 兜底上限,防止经 env 放松
-    jwt_secret: str = "dev-secret-change-me"
+    jwt_secret: str = _DEV_JWT_SECRET
     jwt_issuer: str = "superdl"
     jwt_user_audience: str = "superdl:user"
     jwt_admin_audience: str = "superdl:admin"
@@ -67,8 +67,11 @@ class Settings(BaseSettings):
     captcha_access_key_id: str | None = None
     captcha_access_key_secret: str | None = None
 
-    # 平台配置中心:敏感项落库加密主密钥(urlsafe-base64 的 32 字节;只走 env,prod 必配)
+    # 平台配置中心:敏感项落库加密主密钥(urlsafe-base64 的 32 字节;只走 env,prod 必配)。
+    # previous 是轮换窗口内的旧主密钥:只参与解密/摘要回读,写入永远用当前密钥
+    # (crypto.py v2 密文带 kid;轮换步骤见 deploy/cluster/runbooks/key-rotation.md)
     config_encryption_key: str | None = None
+    config_encryption_key_previous: str | None = None
 
     # 合规备案(站点页脚;可被平台配置中心覆盖)
     icp_number: str | None = None
@@ -153,10 +156,14 @@ class Settings(BaseSettings):
 
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
+    # 共享档允许落的池(逗号分隔:mig=硬切分,hami=软切分超卖;空 = 共享档整体停售)。
+    # D-1 过渡开关:HAMi 容器内 root + libvgpu 软限额的租户间隔离弱于 MIG 硬切分,
+    # 产品边界决策落地前,摘掉 hami 即「共享档只卖 MIG」。建 SKU 与改池两条路径同拦。
+    shared_tier_allowed_pools: str = "mig,hami"
     # 共享档 Pod 注 HAMi use-gputype annotation(SKU 原文串);仅混卡节点池需要,默认关
     hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
-    # 平台侧 Job(数据盘配额等 JuiceFS 元数据操作)所在 ns:与 superdl-api-secrets 同 ns,
+    # 平台侧 Job(数据盘配额等 JuiceFS 元数据操作)所在 ns:与 superdl-db 同 ns,
     # Job 以 secretKeyRef 读 juicefs-metaurl,worker 进程零接触明文
     k8s_platform_namespace: str = "superdl"
     # JuiceFS CLI 镜像(quota set/delete):与 deploy/cluster/helmfile 的 CSI chart 钉版对齐
@@ -241,7 +248,45 @@ class Settings(BaseSettings):
                 "real_name_required_for_recharge=true 需要 real_name_enabled=true"
                 "(实名未开通时用户无法完成实名,充值与开通实例会被永久卡住)"
             )
+        if "*" in self.cors_origins:
+            # allow_credentials=True 下通配 Origin 等于把带 Cookie/Authorization 的
+            # API 暴露给任意站点(Starlette 此时回显来源域而非 `*`,浏览器照收)
+            raise ValueError("cors_origins 不允许通配符 *(allow_credentials=true 下等于全网放行)")
+        bad_pools = set(self.parsed_shared_tier_pools()) - {"mig", "hami"}
+        if bad_pools:
+            raise ValueError(
+                f"shared_tier_allowed_pools 含未知池:{sorted(bad_pools)}(只认 mig/hami)"
+            )
+        for name in ("config_encryption_key", "config_encryption_key_previous"):
+            raw = getattr(self, name)
+            if raw is not None:
+                self._check_master_key_format(name, raw)
+        if (
+            self.config_encryption_key
+            and self.config_encryption_key_previous
+            and self.config_encryption_key == self.config_encryption_key_previous
+        ):
+            raise ValueError(
+                "config_encryption_key_previous 与当前主密钥相同:轮换窗口应挂「旧」密钥,"
+                "相同等于没轮换(钥匙串里去重后仍是一把)"
+            )
         return self
+
+    @staticmethod
+    def _check_master_key_format(name: str, raw: str) -> None:
+        """主密钥格式(环境无关,配错即拒启):urlsafe-base64 且解码后 32 字节。"""
+        import base64
+
+        try:
+            decoded = base64.urlsafe_b64decode(raw)
+        except ValueError as exc:
+            raise ValueError(f"{name} 不是合法 urlsafe-base64") from exc
+        if len(decoded) != 32:
+            raise ValueError(f"{name} 解码后须为 32 字节")
+
+    def parsed_shared_tier_pools(self) -> tuple[str, ...]:
+        """共享档允许池的解析视图(逗号分隔,去空白去空项;catalog._check_tier_pool 消费)。"""
+        return tuple(p.strip() for p in self.shared_tier_allowed_pools.split(",") if p.strip())
 
     @model_validator(mode="after")
     def _validate_prod(self) -> "Settings":
@@ -268,6 +313,18 @@ class Settings(BaseSettings):
             problems.append("payment_mock 必须为 false")
         if "superdl:superdl@localhost" in self.database_url:
             problems.append("database_url 仍为本地开发默认")
+        # 非本机 PG 必须 TLS(零信任网络;JuiceFS metaurl 早已 sslmode=require,同口径)。
+        # 本机回环豁免:开发/单节点。asyncpg 侧由 db._split_db_tls 翻译成 ssl 连接参
+        from urllib.parse import parse_qs, urlparse
+
+        db_host = urlparse(self.database_url).hostname or ""
+        if db_host not in ("localhost", "127.0.0.1", "::1"):
+            sslmode = parse_qs(urlparse(self.database_url).query).get("sslmode", [""])[0]
+            if sslmode not in ("require", "verify-ca", "verify-full"):
+                problems.append(
+                    "database_url 指向非本机 PG 但无 TLS:"
+                    "加 ?sslmode=require(或 verify-ca/verify-full)"
+                )
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
             problems.append("cors_origins 含 localhost")
         for name in (
@@ -288,19 +345,10 @@ class Settings(BaseSettings):
         if not self.metrics_token:
             problems.append("metrics_token 未配置(/metrics 将无鉴权暴露)")
         if not self.admin_edge_token:
-            problems.append(
-                "admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)"
-            )
+            problems.append("admin_edge_token 未配置(管理端边缘共享密钥:/api/admin 双闸的其中一闸)")
         if not self.config_encryption_key:
             problems.append("config_encryption_key 未配置(平台配置敏感项加密主密钥)")
-        else:
-            import base64
-
-            try:
-                if len(base64.urlsafe_b64decode(self.config_encryption_key)) != 32:
-                    problems.append("config_encryption_key 解码后须为 32 字节")
-            except ValueError:
-                problems.append("config_encryption_key 不是合法 urlsafe-base64")
+        # 密钥格式校验(非空时的 b64/32 字节)在 _validate_invariants,与环境无关
         if problems:
             raise ValueError("生产配置校验失败:" + ";".join(problems))
         return self

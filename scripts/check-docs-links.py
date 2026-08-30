@@ -33,7 +33,7 @@ import sys
 import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-EXCLUDE_DIRS = {"node_modules", ".venv", ".git", ".claude", "dist", "generated", ".turbo", ".pytest_cache"}
+EXCLUDE_DIRS = {"node_modules", ".venv", ".git", ".claude", ".trae", "dist", "generated", ".turbo", ".pytest_cache"}
 
 TOP_LEVEL = ("apps", "packages", "deploy", "docs", "e2e", "scripts", ".github")
 API_LOCAL = ("app", "alembic", "tests", "scripts")

@@ -3,6 +3,7 @@
  *  抽屉数据全部按 user_id / uuid 反查,实例选择器在账单过滤与事件时间线间复用同一份列表。 */
 
 import {
+  fontSize,
   formatDate,
   formatDateTime,
   instanceStatusMap,
@@ -12,7 +13,7 @@ import {
   metaOf,
   subscriptionStatusMap,
 } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { DataErrorAlert, HexTag, LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -23,8 +24,8 @@ import {
   Input,
   InputNumber,
   Select,
+  Skeleton,
   Space,
-  Spin,
   Table,
   Tabs,
   Tag,
@@ -39,6 +40,7 @@ import {
   type OrderRow,
   type TenantRow,
   exportTenantLedgerCsv,
+  isApiError,
   useAdminInstances,
   useInstanceEvents,
   useOrders,
@@ -47,20 +49,27 @@ import {
   useTenantLedger,
   useTenantQuota,
 } from "../../api";
-import { LoadMoreButton } from "../../components/LoadMore";
 import { useOrderColumns } from "../../components/orderColumns";
 import { SignedAmount } from "../../components/SignedAmount";
-import { StatusTag } from "../../components/StatusTag";
-import { useApiErrorText } from "../../lib/apiError";
-import { useCsvExport } from "../../lib/csvExport";
-import { useFormat } from "../../lib/format";
+import { useApiErrorText } from "@superdl/ui";
+import { useCsvExport } from "@superdl/ui";
+import { useFormat } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
+
+// 抽屉 Tab 白名单(tenants 路由 ?dtab= 校验共用)
+export const DRAWER_TABS = ["bills", "ledger", "orders", "instances", "quota", "events"] as const;
+export type DrawerTab = (typeof DRAWER_TABS)[number];
 
 export function TenantDrawer({
   tenant,
+  dtab,
+  onTabChange,
   onClose,
 }: {
   tenant: TenantRow | null;
+  /** 抽屉 Tab 受控于调用方 URL 参数(?dtab=) */
+  dtab?: DrawerTab;
+  onTabChange?: (tab: DrawerTab) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
@@ -71,6 +80,8 @@ export function TenantDrawer({
     { enabled: tenant !== null, limit: 100 },
   );
   const instances = tenantInstances.data?.pages.flatMap((p) => p.items) ?? [];
+  // 租户实例精确计数(后端 user_id 过滤时附):「正好 100 条」与「被 100 条上限截断」必须分得开
+  const instancesTotal = tenantInstances.data?.pages[0]?.total ?? null;
 
   return (
     <Drawer
@@ -118,6 +129,8 @@ export function TenantDrawer({
             )}
           </Space>
           <Tabs
+            activeKey={dtab ?? "bills"}
+            onChange={(key) => onTabChange?.(key as DrawerTab)}
             items={[
               {
                 key: "bills",
@@ -137,7 +150,7 @@ export function TenantDrawer({
               {
                 key: "instances",
                 label: t("tenants.tabInstances"),
-                children: <TenantInstancesTab instances={instances} />,
+                children: <TenantInstancesTab instances={instances} total={instancesTotal} />,
               },
               {
                 key: "quota",
@@ -186,7 +199,11 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
         loading={bills.isLoading}
         locale={{
           emptyText: (
-            <TableErrorEmpty isError={bills.isError} onRetry={() => void bills.refetch()} />
+            <TableErrorEmpty
+              isError={bills.isError}
+              isForbidden={isApiError(bills.error) && bills.error.status === 403}
+              onRetry={() => void bills.refetch()}
+            />
           ),
         }}
         pagination={false}
@@ -208,10 +225,12 @@ function BillsTab({ userId, instances }: { userId: number; instances: AdminInsta
           { title: t("tenants.colAmount"), dataIndex: "amount", render: (v: string) => formatMoney(v) },
         ]}
       />
-      <LoadMoreButton
-        visible={Boolean(bills.hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(bills.hasNextPage)}
         loading={bills.isFetchingNextPage}
-        onClick={() => void bills.fetchNextPage()}
+        isError={bills.isFetchNextPageError}
+        loadedCount={billRows.length}
+        onLoadMore={() => void bills.fetchNextPage()}
       />
     </>
   );
@@ -237,7 +256,11 @@ function LedgerTab({ userId }: { userId: number }) {
         loading={ledger.isLoading}
         locale={{
           emptyText: (
-            <TableErrorEmpty isError={ledger.isError} onRetry={() => void ledger.refetch()} />
+            <TableErrorEmpty
+              isError={ledger.isError}
+              isForbidden={isApiError(ledger.error) && ledger.error.status === 403}
+              onRetry={() => void ledger.refetch()}
+            />
           ),
         }}
         pagination={false}
@@ -251,7 +274,7 @@ function LedgerTab({ userId }: { userId: number }) {
             width: 90,
             render: (v: string) => {
               const m = metaOf(ledgerTypeMap, v);
-              return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+              return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
             },
           },
           {
@@ -267,10 +290,12 @@ function LedgerTab({ userId }: { userId: number }) {
           { title: t("tenants.colRemark"), dataIndex: "remark", ellipsis: true },
         ]}
       />
-      <LoadMoreButton
-        visible={Boolean(ledger.hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(ledger.hasNextPage)}
         loading={ledger.isFetchingNextPage}
-        onClick={() => void ledger.fetchNextPage()}
+        isError={ledger.isFetchNextPageError}
+        loadedCount={ledgerRows.length}
+        onLoadMore={() => void ledger.fetchNextPage()}
       />
     </>
   );
@@ -290,7 +315,11 @@ function OrdersTab({ userId }: { userId: number }) {
         loading={orders.isLoading}
         locale={{
           emptyText: (
-            <TableErrorEmpty isError={orders.isError} onRetry={() => void orders.refetch()} />
+            <TableErrorEmpty
+              isError={orders.isError}
+              isForbidden={isApiError(orders.error) && orders.error.status === 403}
+              onRetry={() => void orders.refetch()}
+            />
           ),
         }}
         pagination={false}
@@ -298,20 +327,38 @@ function OrdersTab({ userId }: { userId: number }) {
         dataSource={rows}
         columns={columns}
       />
-      <LoadMoreButton
-        visible={Boolean(orders.hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(orders.hasNextPage)}
         loading={orders.isFetchingNextPage}
-        onClick={() => void orders.fetchNextPage()}
+        isError={orders.isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void orders.fetchNextPage()}
       />
     </>
   );
 }
 
 /** 实例反查:只读视图(写操作集中在「全局实例」Tab,口径单一;抽屉取前 100 条)。 */
-function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
+function TenantInstancesTab({
+  instances,
+  total,
+}: {
+  instances: AdminInstanceOut[];
+  total: number | null;
+}) {
   const { t } = useTranslation(["admin", "shared"]);
   return (
-    <Table<AdminInstanceOut>
+    <>
+      {/* 截断必明示:超过 100 台时账单过滤/事件选择器同样只能选到前 100 台,不能静默 */}
+      {total !== null && total > instances.length && (
+        <Typography.Text
+          type="warning"
+          style={{ display: "block", marginBottom: 8, fontSize: fontSize.caption }}
+        >
+          {t("tenants.instancesCapped", { shown: instances.length, total })}
+        </Typography.Text>
+      )}
+      <Table<AdminInstanceOut>
       size="small"
       rowKey="uuid"
       pagination={false}
@@ -323,7 +370,7 @@ function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
           render: (_, r) => (
             <Space size={8}>
               <span>{r.name}</span>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {r.uuid.slice(0, 8)}
               </Typography.Text>
             </Space>
@@ -335,7 +382,7 @@ function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
           width: 110,
           render: (v: string) => {
             const m = metaOf(instanceStatusMap, v);
-            return <StatusTag color={m?.color}>{m ? t(m.labelKey) : v}</StatusTag>;
+            return <HexTag color={m?.color}>{m ? t(m.labelKey) : v}</HexTag>;
           },
         },
         {
@@ -350,14 +397,14 @@ function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
             const lapsed = sub != null && sub.status !== "active";
             return (
               <Space orientation="vertical" size={0}>
-                <StatusTag color={metaOf(marketMap, r.market)?.color}>
+                <HexTag color={metaOf(marketMap, r.market)?.color}>
                   {labelKey ? t(labelKey) : r.market}
-                </StatusTag>
+                </HexTag>
                 {sub && (
                   <Typography.Text
                     type={lapsed ? undefined : "secondary"}
                     style={{
-                      fontSize: 12,
+                      fontSize: fontSize.caption,
                       whiteSpace: "nowrap",
                       ...(lapsed && subMeta ? { color: subMeta.color } : {}),
                     }}
@@ -383,6 +430,7 @@ function TenantInstancesTab({ instances }: { instances: AdminInstanceOut[] }) {
         { title: t("tenants.colCreatedAt"), dataIndex: "created_at", render: formatDateTime },
       ]}
     />
+    </>
   );
 }
 
@@ -403,7 +451,9 @@ function QuotaTab({ userId }: { userId: number }) {
     note: string;
   }>();
 
-  if (quota.isLoading) return <Spin />;
+  if (quota.isLoading) return <Skeleton active paragraph={{ rows: 3 }} />;
+  // 查询失败绝不渲染成「没有配额数据」(静默 null 会被误读成无覆盖)
+  if (quota.isError) return <DataErrorAlert onRetry={() => void quota.refetch()} />;
   const q = quota.data;
   if (!q) return null;
 
@@ -484,7 +534,7 @@ function QuotaTab({ userId }: { userId: number }) {
           </b>
         </span>
         {q.updated_by != null && q.updated_at && (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("tenants.quota.updatedBy", {
               id: q.updated_by,
               time: formatDateTime(q.updated_at),
@@ -528,7 +578,11 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
         dataSource={rows}
         locale={{
           emptyText: (
-            <TableErrorEmpty isError={uuid !== null && events.isError} onRetry={() => void events.refetch()}>
+            <TableErrorEmpty
+              isError={uuid !== null && events.isError}
+              isForbidden={uuid !== null && isApiError(events.error) && events.error.status === 403}
+              onRetry={() => void events.refetch()}
+            >
               {uuid ? t("tenants.events.empty") : t("tenants.events.pickFirst")}
             </TableErrorEmpty>
           ),
@@ -544,7 +598,7 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
                 <Space size={4}>
                   <span>{r.from_status ? (from ? t(from.labelKey) : r.from_status) : "—"}</span>
                   <span>→</span>
-                  <StatusTag color={to?.color}>{to ? t(to.labelKey) : r.to_status}</StatusTag>
+                  <HexTag color={to?.color}>{to ? t(to.labelKey) : r.to_status}</HexTag>
                 </Space>
               );
             },
@@ -553,10 +607,12 @@ function EventsTab({ instances }: { instances: AdminInstanceOut[] }) {
           { title: t("tenants.events.colActor"), dataIndex: "actor", width: 90 },
         ]}
       />
-      <LoadMoreButton
-        visible={Boolean(events.hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(events.hasNextPage)}
         loading={events.isFetchingNextPage}
-        onClick={() => void events.fetchNextPage()}
+        isError={events.isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void events.fetchNextPage()}
       />
     </>
   );

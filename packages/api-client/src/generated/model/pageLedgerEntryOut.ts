@@ -9,4 +9,5 @@ import type { LedgerEntryOut } from './ledgerEntryOut';
 export interface PageLedgerEntryOut {
   items: LedgerEntryOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

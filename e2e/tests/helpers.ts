@@ -3,7 +3,7 @@
 前置(注册 → 充值 → 公钥 → 市场选规格)四条 spec 逐字相同,抄在各自文件里的代价是:
 改一处文案要同步改四遍,漏一遍就是一条随机红的用例。 */
 
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * 生成一个本轮唯一的测试手机号(139 + 8 位)。
@@ -75,4 +75,22 @@ export async function pickSharedStandardSku(page: Page): Promise<void> {
   const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
   await expect(skuRow).toBeVisible({ timeout: 15_000 });
   await skuRow.getByRole("radio").check();
+}
+
+/** 创建页「自定义镜像」表单块:切自定义镜像 + 填 e2e 镜像 + 勾选 e2e 公钥。
+ *  提交按钮文案随计费方式分叉(创建并开机/支付并创建),由各 spec 自己点。 */
+export async function fillCustomImageForm(page: Page): Promise<void> {
+  await page.getByText("自定义镜像").click();
+  await page
+    .getByPlaceholder("registry.example.com/your/image:tag")
+    .fill("registry.superdl.local/pytorch:2.9.0-cu128");
+  await page.getByRole("checkbox", { name: /e2e-key/ }).check();
+}
+
+/** 实例列表等首行进入「运行中」(worker+reconciler 推进),返回首行供后续行内断言。 */
+export async function waitFirstRowRunning(page: Page): Promise<Locator> {
+  await expect(page).toHaveURL(/instances/, { timeout: 20_000 });
+  const row = page.locator(".ant-table-row").first();
+  await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
+  return row;
 }

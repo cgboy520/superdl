@@ -14,12 +14,12 @@ from app.modules.account.schemas import (
     LoginRequest,
     PasswordResetRequest,
     RealNameRequest,
-    RefreshRequest,
     RegisterRequest,
     SmsCodeRequest,
     SshKeyCreate,
     SshKeyOut,
     TokenPair,
+    TokenPairOut,
     UserOut,
     WarnThresholdUpdate,
 )
@@ -28,35 +28,47 @@ router = APIRouter(tags=["account"])
 
 # refresh token 的 HttpOnly Cookie(web SPA 与 API 同源反代,SameSite=Strict 即可):
 # 长期凭据移出 JS 可达面(XSS 偷不走),access token 短 TTL 留前端。
-# body 仍回 refresh_token:存量客户端的迁移期旁路,其自然淘汰后可从契约收窄
-_REFRESH_COOKIE = "superdl_refresh"
+# 响应体不再回 refresh_token:body 旁路让长期凭据持续暴露在 JS 可读面(XSS 一次偷走
+# 7 天会话),存量前端本来就不读它(只取 access_token)。
+#
+# Cookie 名分环境:prod 用 `__Host-` 前缀(浏览器强制 Secure + path=/ + 无 Domain,
+# 租户子域种不了同名 cookie —— 防 cookie tossing;Jupyter 侧同款,见
+# instance-images/superdl_jupyter_auth.py)。非 prod 走 http,`__Host-` 会被浏览器
+# 拒收,退回无前缀名;两侧 path 都是 /(__Host- 规范要求,同名回读不歧义)。
+_REFRESH_COOKIE_PROD = "__Host-superdl_refresh"
+_REFRESH_COOKIE_DEV = "superdl_refresh"
+
+
+def _refresh_cookie_name() -> str:
+    return _REFRESH_COOKIE_PROD if get_settings().environment == "prod" else _REFRESH_COOKIE_DEV
 
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     settings = get_settings()
     response.set_cookie(
-        _REFRESH_COOKIE,
+        _refresh_cookie_name(),
         refresh_token,
         max_age=settings.refresh_token_ttl_seconds,
-        path="/api/v1/auth",
+        path="/",
         httponly=True,
         secure=settings.environment == "prod",  # dev/test 是 http
         samesite="strict",
     )
 
 
-def _refresh_token_from(request: Request, body: RefreshRequest | None) -> str:
-    """body 优先(存量客户端:调用方拿到了 token 值,谈不上 CSRF,不要求自定义头);
-    cookie 为浏览器新路径——必须带自定义头做双提交纵深(跨站表单与简单跨域请求
-    都造不出自定义头;SameSite=Strict 之上的一道)。"""
-    if body is not None:
-        return body.refresh_token
-    cookie_token = request.cookies.get(_REFRESH_COOKIE)
+def _refresh_token_from(request: Request) -> str:
+    """refresh 只收 Cookie(浏览器同源自动随路);必须带自定义头做双提交纵深
+    (跨站表单与简单跨域请求都造不出自定义头;SameSite=Strict 之上的一道)。"""
+    cookie_token = request.cookies.get(_refresh_cookie_name())
     if cookie_token is not None:
         if request.headers.get("x-requested-with") != "fetch":
             raise AppError(ErrorCode.FORBIDDEN, key="common.forbidden", http_status=403)
         return cookie_token
     raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation", http_status=422)
+
+
+def _token_pair_out(pair: TokenPair) -> TokenPairOut:
+    return TokenPairOut(access_token=pair.access_token, user=pair.user)
 
 
 @router.post("/auth/sms-code", status_code=status.HTTP_204_NO_CONTENT)
@@ -96,7 +108,7 @@ async def captcha_config(session: DbSession) -> CaptchaConfigOut:
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest, session: DbSession, request: Request, response: Response
-) -> TokenPair:
+) -> TokenPairOut:
     pair = await service.register(
         session,
         body.phone,
@@ -107,53 +119,49 @@ async def register(
     )
     set_audit_target(request, f"user:{pair.user.id}")
     _set_refresh_cookie(response, pair.refresh_token)
-    return pair
+    return _token_pair_out(pair)
 
 
 @router.post("/auth/login")
 async def login(
     body: LoginRequest, session: DbSession, request: Request, response: Response
-) -> TokenPair:
+) -> TokenPairOut:
     pair = await service.login(
         session, body.phone, body.sms_code, body.password, client_ip=client_ip(request)
     )
     set_audit_target(request, f"user:{pair.user.id}")
     _set_refresh_cookie(response, pair.refresh_token)
-    return pair
+    return _token_pair_out(pair)
 
 
 @router.post("/auth/password/reset")
 async def reset_password(
     body: PasswordResetRequest, session: DbSession, request: Request, response: Response
-) -> TokenPair:
+) -> TokenPairOut:
     """设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。"""
     pair = await service.reset_password(
         session, body.phone, body.sms_code, body.new_password, client_ip=client_ip(request)
     )
     set_audit_target(request, f"user:{pair.user.id}", detail={"action": "password_reset"})
     _set_refresh_cookie(response, pair.refresh_token)
-    return pair
+    return _token_pair_out(pair)
 
 
 @router.post("/auth/refresh")
-async def refresh(
-    session: DbSession, request: Request, response: Response, body: RefreshRequest | None = None
-) -> TokenPair:
-    """轮换刷新:refresh 经 HttpOnly Cookie(首选)或 body(存量旁路)提交;
-    成功即轮换 Cookie 与 body 双写。"""
-    pair = await service.refresh_tokens(session, _refresh_token_from(request, body))
+async def refresh(session: DbSession, request: Request, response: Response) -> TokenPairOut:
+    """轮换刷新:refresh 只经 HttpOnly Cookie 提交(X-Requested-With 双提交头强制);
+    成功即轮换写回新 Cookie。"""
+    pair = await service.refresh_tokens(session, _refresh_token_from(request))
     _set_refresh_cookie(response, pair.refresh_token)
-    return pair
+    return _token_pair_out(pair)
 
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(
-    session: DbSession, request: Request, body: RefreshRequest | None = None
-) -> Response:
+async def logout(session: DbSession, request: Request) -> Response:
     """登出当前会话(refresh token 一次性消费位撤销 + 清 Cookie)。token 无效也回 204,防枚举。"""
-    await service.logout(session, _refresh_token_from(request, body))
+    await service.logout(session, _refresh_token_from(request))
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
-    resp.delete_cookie(_REFRESH_COOKIE, path="/api/v1/auth")
+    resp.delete_cookie(_refresh_cookie_name(), path="/")
     return resp
 
 

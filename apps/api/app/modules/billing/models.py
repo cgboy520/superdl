@@ -18,13 +18,18 @@ from app.core.db import Base
 
 
 class Wallet(Base):
-    """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。"""
+    """余额。更新必须 SELECT FOR UPDATE + 同事务写 ledger。
+
+    frozen:渠道冲正冻结额(已入账充值被渠道反转时等额冻结)。可用余额 = balance - frozen;
+    冻结不记 ledger(不动 balance),核销时 release(解冻)或 chargeback(解冻+等额扣减)。"""
 
     __tablename__ = "wallets"
+    __table_args__ = (CheckConstraint("frozen >= 0", name="frozen_nonneg"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(unique=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    frozen: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
@@ -264,6 +269,11 @@ class RefundRequest(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     # 请求体指纹 sha256(user_id|order_no|amount|reason):同键异参重放 409
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    # 打款登记(管理端出金)的幂等键,与上方申请键分开:申请键已被用户创建占用。
+    # 重放命中(同键同参且已 paid)返回 200 + X-Idempotent-Replay;同键异参 409;
+    # 无键的重复打款走原有状态机 409(refundStateNotPayable)
+    payout_idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    payout_request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

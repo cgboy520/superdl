@@ -23,6 +23,17 @@
    ②③④ 逐条对应 `apps/api/app/modules/orchestrator/preempt.py` 的三条硬规矩与结算口径,
    **改代码等于改文案,两边同提交**;两个数一律从 `/policies` 读,不硬编码。
 6. **给等待路径,不给死胡同**:库存不足给「换个档位」引导;创建失败给「重新创建」按钮与失败原因。
+7. **确认强度分级(L0~L3)**:L3 = 键入名称 + 勾选确认(释放实例、删除数据盘);L2 = `modal.confirm` 或 ReasonAction,
+   后果前置 + 影响说明(关机、重启、SKU 上架与下架、群发公告、重新生成注册命令、重新生成恢复码、调账驳回、改管理员角色);
+   L1 = `Popconfirm` 或同强度 Modal(可附可选评论),可逆且影响面 = 1(删 SSH key、解决/关闭工单、归档法务草稿);
+   L0 = 无确认(开关类可逆操作)。
+   操作定级照此矩阵,禁止「终态动作用轻确认、轻量动作用重确认」的倒挂;审计型原因一律手输,不用常量文案充数。
+8. **URL 即状态**:列表筛选、搜索词、Tab activeKey、深链目标(节点名/工单 id)一律入 URL(`validateSearch` 白名单 +
+   默认值剥离 + `replace: true`);控件与 URL 双向同步(前进/后退回流,输入防抖回写)。抽屉/弹窗态可不入 URL,但
+   运营面需要互相转达的视图(告警 → 节点/工单)必须有深链参数。
+9. **轮询三律**:① 只经 react-query `refetchInterval`,禁止原生 `setInterval` 发请求(页面隐藏不停);
+   ② 一律函数式 —— 过渡态快档、稳态慢档、终态即停(false);③ `useInfiniteQuery` 上禁止轮询(每轮放大为已加载页数个请求),
+   列表新鲜度靠 `refetchOnWindowFocus` + 手动刷新;折叠/未打开的 UI(Popover、收起抽屉)对应查询挂 `enabled` 不空转。
 
 ## 2. 视觉与主题
 
@@ -38,9 +49,19 @@
 **设计 token 纪律(F2)**:`packages/ui/src/tokens.ts` 是唯一事实源 ——
 ① 色值必须走 token(`webTheme`/`webDarkTheme`/`adminColors`/`statusColors` 等),禁止散落硬编码 hex;
 ② 新代码的布局尺寸(padding/gap/margin)必须走 `space`(4 阶梯)与 `layout`(页容器/卡距/圆角),字号走 `fontSize` 五档;
-③ 高频模式组件化:`PageContainer`/`KpiGrid`/`TableErrorEmpty`/`EChart`(packages/ui `src/components/`,两端共用);
-④ 存量 inline style 不强求清空,按「碰到的文件顺手收敛」推进;
-⑤ 对比度底线 WCAG AA ≥4.5:1,新增色值须在 `tokens.test.ts` 补同标准回归。
+③ 高频模式组件化:`PageContainer`(页宽三档 default 1280 / wide 1200 / narrow 880,落地页 section 纵距 `layout.sectionPaddingY`)/
+`KpiGrid`(含 loading 骨架)/`TableErrorEmpty`(含 isForbidden 403 区分与空态 action)/`HexTag`(hex 徽标深底白字压制)/
+`LoadMore`(失败重试 + 「已加载全部」收尾)/`DataErrorAlert`/`EChart`(packages/ui `src/components/`,两端共用);
+④ 确认强度组件化:L2 用 `useConfirm`(后果前置 + 影响说明的统一句式,替手写 `modal.confirm`),
+L3 用 `TypeConfirmModal`(键入名称 + 可选勾选双闸,收编释放实例/删数据盘/注销账号);
+⑤ 动效走 `motion` token(fast 0.15 / normal 0.2 / slow 0.25 + easeOut):仅透明度/位移,禁弹性过冲,
+路由切换不动效,装饰性动效为零;自绘浮层 zIndex 走 `zIndex` token(stickyBar/floatingButton/commandPalette);
+⑥ CSS 覆盖区(滚动条/focus 描边/命令面板选中底)一律 `var(--sdl-*)`,取值经 `cssVars` 桥由 `__root.tsx` 注入,
+禁在 CSS 里硬编码 hex;admin 端同理走 `var(--admin-*)` 桥(`main.tsx` 从 `adminColors` 注入 `--admin-bg`/
+`--admin-chart-neutral`/`--admin-accent`,见 `global.css`);存量 inline style 不强求清空,按「碰到的文件顺手收敛」推进;
+⑦ 对比度底线 WCAG AA ≥4.5:1,新增色值须在 `tokens.test.ts` 补同标准回归;
+⑧ 底色类 token 改动按 tokens.ts 顶部【同步清单】核对防 FOUC 位置(两端 index.html、`__root.tsx`);
+web 端 index.html 内联脚本任何改动同步重算 CSP sha256(`scripts/check-csp-hash.sh` 强制)。
 
 ## 3. 用户端
 
@@ -55,9 +76,13 @@
 ├─ 存储      /storage     # 数据盘 + 挂载全景
 ├─ 费用中心  /billing     # 余额/充值/账单/收支明细/退款/发票
 ├─ 支持      /support     # 自助排查 FAQ / 联系客服 / 我的工单(/support/:ticketId 为对话流)
+├─ 通知      /notifications # 全部/未读筛选 + 行点击已读并按类型跳转 + 全部已读(顶栏 Popover 为最近条,此处为全量)
 └─ 账户设置  /settings    # SSH 公钥 / 通知阈值 / 实名 / 账号(改密·登出·注销)
 创建实例     /market/create/:skuId   ← 全页路由,不用弹窗
 ```
+
+**命令面板(Cmd+K / Ctrl+K)**:顶栏触发器 + 全局快捷键;命中范围 = 控制台页面导航 / 实例(列表缓存前 100 条,名称与
+uuid 模糊)/ 快捷动作(租用新实例、充值、新建工单);双语关键词;无实例缓存时不渲染实例分组。
 
 ### 3.2 首页与登录
 
@@ -240,19 +265,29 @@ Tab 集合与顺序固定为 `监控 / 服务 / 连接 / 日志 / 事件 / 账�
 ### 4.1 信息架构与角色
 
 导航:运营总览 `/` · 节点与 GPU `/nodes` · 集群 `/cluster` · SKU 与定价 `/skus` · 镜像与预热 `/images` · 租户与实例 `/tenants`
-· 财务对账 `/finance` · 工单 `/tickets` · 审计日志 `/audit` · 平台配置 `/platform` · 系统设置 `/settings`。
+· 财务对账 `/finance` · 工单 `/tickets` · 审计日志 `/audit` · 平台配置 `/platform` · 告警中心 `/alerts` · 系统设置 `/settings`。
+菜单项单一事实源是 `apps/admin/src/lib/menu.ts` 的 `MENU`(侧栏与命令面板共用),可见性由同文件 `MENU_ROLES` 按角色过滤;
+`/alerts` 对 finance 不可见。
+
+**命令面板(Cmd+K / Ctrl+K)**:与 web 端同范式(cmdk + Modal,顶栏触发器派发自定义事件 + 全局快捷键);
+命中范围 = 按角色过滤后的页面导航(与侧栏同一 `MENU` 源,新增菜单项自动进面板)/ 快捷动作
+(未确认告警深链 `/alerts?acked=unacked`、刷新当前页数据 `queryClient.invalidateQueries()`);双语关键词;
+选中行底色走 `global.css` 的 `--admin-accent` 变量桥(`main.tsx` 注入,不硬编码 hex)。
+
 角色:admin(全部)/ ops(资源+实例)/ finance(财务区可写 —— 调账发起与复核、订单核验与补单、退款审批与打款登记、
 发票开具与驳回、结算缺口重放与核销,其余只读)/ readonly(全站只读)。逐端点角色见 [`reference/admin.md`](./reference/admin.md)。
 
 高危与不可逆操作统一走 `ReasonAction`(原因必填 → 二次确认 → 审计落库):强制停止、强制回收、冻结·解冻租户、
-cordon·uncordon、吊销注册令牌、死信重放与忽略、删除镜像、撤回公告、注销申请驳回、退款与发票驳回、
-结算缺口核销、管理员停用与重置两步验证。调账另加双人复核才入账,发起人不能自审。
+cordon·uncordon、吊销注册令牌、重新生成注册命令、SKU 上架与下架、死信重放与忽略、删除镜像、撤回公告、
+注销申请驳回、退款与发票驳回、结算缺口核销、管理员停用与重置两步验证。调账另加双人复核才入账,发起人不能自审。
 
 ### 4.2 逐屏要点
 
 - **运营总览**:KPI 行(今日收入含昨日对照 / 本月收入 / 今日新注册带环比箭头 / 活跃实例 / 付费租户 / 告警数);主图表「实际
   超卖率 vs 真实利用率」按池并置(柱 = 实际超卖率,折线 = 24h 平均利用率,60%/85% 阈值辅助线);GPU 池占用堆叠条(按节点池
-  标签分组,已租 / 空闲两段,已租段内再分出「其中竞价(可回收)」);右栏实时告警流;有死信时在 KPI 下方展开任务死信卡(重放 / 忽略)。
+  标签分组,已租 / 空闲两段,已租段内再分出「其中竞价(可回收)」);右栏实时告警流(查询失败如实显示错误态,不伪装成「无告警」;
+  告警条目按 `target_kind` 深链:`node` → `/nodes?node=<名称>` 选中高亮、`ticket` → `/tickets?id=<id>` 直开详情抽屉);
+  有死信时在 KPI 下方展开任务死信卡(重放 / 忽略)。
 - **节点与 GPU**:待入网节点卡(池/主机名/备注/状态/阶段/心跳/错误 + 重新生成加入命令 / 吊销)与「添加节点」生成一次性加入命令;
   节点表(名称/池标签/GPU 型号×数量/显存/已用/驱动/CUDA/vCPU/内存/磁盘/状态/操作 `cordon`·`uncordon`,经 outbox 执行;
   `drain` 只是灰置占位 + tooltip 说明经集群 Runbook 执行);点节点行 → 该节点每卡热力网格(tooltip 给 util%/显存/温度)+ 节点级 ECharts 曲线(每卡 util 与显存,1h/6h/24h,24h XID 计数以红标显示),配了 `grafana_url` 才多一个外链按钮。
@@ -267,3 +302,7 @@ cordon·uncordon、吊销注册令牌、死信重放与忽略、删除镜像、�
 - **平台配置**(仅超管):左侧分组导航(安全 / 第三方渠道 / 基础设施 / 站点信息,导航项带状态点:红 = 有 error 告警、琥珀 = warning、绿 = 开关已开、灰 = 关闭或未配置)+ 顶部服务端配置风险告警(点「前往」跳到对应分组)+ 右侧分组表单;「安全策略」页为开关行(开关 / 说明 / 依赖凭据状态并可跳转 / 风险);全局「保存变更」+ 原因必填,变更中含关闭安全开关时弹窗以红色复述风险。
 - **财务对账**:日对账卡(可选日期)`事件计费合计` vs `指标估算合计`(usage_hourly 推算)+ diff%,diff > 2% 标红并列出差异实例;
   Tab 充值流水(状态与订单号检索,只读)| 调账(发起 → 双人复核 → 入账)| 异常清单(丢回调 / 关单 / 负余额,可渠道核验与补单;负余额只给提示不给动作)| 审计。
+- **告警中心**:顶栏 AlertBell Popover 的完整版。`severity` 走服务端过滤、`确认状态` 在 200 条窗口内客户端过滤
+  (端点无 acked 参数),两个筛选都入 URL(§1 规则 8,运营面转达的视图必须可还原);条目深链与 AlertBell/总览告警流
+  共用 `alertLink`;确认闭环与两者同一范式(写限 ops/admin,成功后 `["admin","alerts"]` 前缀失效列表与角标);
+  已确认条目显示确认人与时刻,错误态用 `TableErrorEmpty` 如实显示,不伪装成「无告警」。

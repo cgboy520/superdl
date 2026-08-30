@@ -80,6 +80,25 @@ def tenant_security_context() -> "client.V1SecurityContext":
     )
 
 
+def platform_job_security_context() -> "client.V1SecurityContext":
+    """superdl ns 一次性 Job(预热/配额)的 restricted 合规上下文:非 root + 零附加 capability。
+
+    与 tenant_security_context 分家:后者为 sshd 预认证特权分离保留
+    SYS_CHROOT/SETUID/SETGID,而 PSA restricted 只允许 add NET_BIND_SERVICE;
+    这两个 Job 不起 sshd,直接走最严口径,使 superdl ns 得以 enforce: restricted。
+    擦除 Job 不在此列:它在租户 ns(enforce=baseline)以 root 运行——租户可把自家文件
+    chmod 成 700 root:root,非 root 擦除会静默残留(跨租户数据泄漏)。
+    """
+    return client.V1SecurityContext(
+        run_as_non_root=True,
+        run_as_user=65534,
+        run_as_group=65534,
+        allow_privilege_escalation=False,
+        capabilities=client.V1Capabilities(drop=["ALL"]),
+        seccomp_profile=client.V1SeccompProfile(type="RuntimeDefault"),
+    )
+
+
 def _is_conflict(exc: client.ApiException) -> bool:
     return exc.status == 409
 
@@ -132,6 +151,17 @@ TENANT_QUOTA = {
     "limits.memory": "1Ti",
     "limits.ephemeral-storage": "500Gi",
 }
+# LimitRange 默认值兜底:Quota 只在校验时计数,不补全;未声明 request/limit 的容器
+# 由这里注入默认,既防配额口径被绕过(未声明即 0 计入),也让突发容器有上限。
+# 租户 Pod 按 SKU 显式声明,默认值只兜平台/异常路径。PID 上限由节点 kubelet
+# podPidsLimit 承担(node-join.sh / server-config.yaml),LimitRange 无 pids 维度。
+TENANT_LIMIT_DEFAULT_REQUEST = {"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"}
+TENANT_LIMIT_DEFAULT = {"cpu": "8", "memory": "32Gi", "ephemeral-storage": "64Gi"}
+# 租户 ns 内授予 tenant-mgr 的 secrets Role/RoleBinding 名(与 01-rbac.yaml 头部注释同源:
+# 集群级 secrets 权限已收回,实例 env/拉取凭据 Secret 的读写只在本租户 ns 内有效)。
+TENANT_MGR_ROLE_NAME = "superdl-tenant-mgr-secrets"
+TENANT_MGR_SA_NAME = "superdl-tenant-mgr"
+PLATFORM_NAMESPACE = "superdl"
 # 租户容器禁访的内网/元数据网段(Egress 放行公网,黑名单私网)。
 # 100.64.0.0/10 = CGNAT,198.18.0.0/15 = 基准测试段,云 metadata 169.254.169.254 含在 169.254.0.0/16。
 # IPv6 不入表:未开双栈时默认拒已覆盖,开双栈需在部署侧评审放行策略。
@@ -246,6 +276,11 @@ class RealOrchestrator:
         self.core = cast(client.CoreV1Api, _TimeoutApi(client.CoreV1Api(), timeout))
         self.net = cast(client.NetworkingV1Api, _TimeoutApi(client.NetworkingV1Api(), timeout))
         self.batch = cast(client.BatchV1Api, _TimeoutApi(client.BatchV1Api(), timeout))
+        # 租户 ns 内 per-namespace Role/RoleBinding 下发(tenant-mgr secrets 权限收窄到本租户)
+        self.rbac = cast(
+            client.RbacAuthorizationV1Api,
+            _TimeoutApi(client.RbacAuthorizationV1Api(), timeout),
+        )
         # Gateway API 无 typed model,HTTPRoute 的增删查一律走 CustomObjectsApi(收发裸 dict)
         self.custom = cast(client.CustomObjectsApi, _TimeoutApi(client.CustomObjectsApi(), timeout))
         # 探测专用 API 提升为实例属性:四个裸客户端共享一个 ApiClient(单 PoolManager),
@@ -275,14 +310,83 @@ class RealOrchestrator:
     def _ensure_namespace_sync(self, namespace: str) -> None:
         labels = {MANAGED_LABEL: "true", **TENANT_NS_PSA_LABELS}
         ns = client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace, labels=labels))
-        # 既有 ns 也要补标:create 只发生一次,标签演进靠 patch 收敛存量租户
+        # 既有 ns 也要补标:create 只发生一次,标签演进靠 patch 收敛存量
         _create_or_patch(
             lambda: self.core.create_namespace(ns),
             lambda: self.core.patch_namespace(namespace, {"metadata": {"labels": labels}}),
         )
+        self._ensure_tenant_rbac_sync(namespace)
         self._ensure_default_netpol_sync(namespace)
         self._ensure_quota_sync(namespace)
+        self._ensure_limit_range_sync(namespace)
         self._ensure_juicefs_pvc_sync(namespace)
+
+    def _ensure_tenant_rbac_sync(self, namespace: str) -> None:
+        """租户 ns 内授予 tenant-mgr 的 secrets 权限(替代原集群级 ClusterRole secrets 规则)。
+
+        per-instance env Secret(JUPYTER_TOKEN)与拉取凭据的读写在租户 ns 内完成;
+        权限随 ns 生命周期(ns 删除即回收),存量 ns 由 create_or_patch 收敛补齐。
+        """
+        role = client.V1Role(
+            metadata=client.V1ObjectMeta(
+                name=TENANT_MGR_ROLE_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
+            ),
+            rules=[
+                client.V1PolicyRule(
+                    api_groups=[""],
+                    resources=["secrets"],
+                    verbs=["get", "create", "patch", "delete"],
+                )
+            ],
+        )
+        _create_or_patch(
+            lambda: self.rbac.create_namespaced_role(namespace, role),
+            lambda: self.rbac.patch_namespaced_role(TENANT_MGR_ROLE_NAME, namespace, role),
+        )
+        binding = client.V1RoleBinding(
+            metadata=client.V1ObjectMeta(
+                name=TENANT_MGR_ROLE_NAME, namespace=namespace, labels={MANAGED_LABEL: "true"}
+            ),
+            role_ref=client.V1RoleRef(
+                api_group="rbac.authorization.k8s.io", kind="Role", name=TENANT_MGR_ROLE_NAME
+            ),
+            subjects=[
+                client.RbacV1Subject(
+                    kind="ServiceAccount", name=TENANT_MGR_SA_NAME, namespace=PLATFORM_NAMESPACE
+                )
+            ],
+        )
+
+        def _patch_binding() -> None:
+            # roleRef 不可变:对存量绑定只收敛 subjects(labels 漂移不敏感,不 patch)
+            self.rbac.patch_namespaced_role_binding(
+                TENANT_MGR_ROLE_NAME, namespace, {"subjects": binding.subjects}
+            )
+
+        _create_or_patch(
+            lambda: self.rbac.create_namespaced_role_binding(namespace, binding),
+            _patch_binding,
+        )
+
+    def _ensure_limit_range_sync(self, namespace: str) -> None:
+        limits = client.V1LimitRange(
+            metadata=client.V1ObjectMeta(
+                name="tenant-defaults", namespace=namespace, labels={MANAGED_LABEL: "true"}
+            ),
+            spec=client.V1LimitRangeSpec(
+                limits=[
+                    client.V1LimitRangeItem(
+                        type="Container",
+                        default=TENANT_LIMIT_DEFAULT,
+                        default_request=TENANT_LIMIT_DEFAULT_REQUEST,
+                    )
+                ]
+            ),
+        )
+        _create_or_patch(
+            lambda: self.core.create_namespaced_limit_range(namespace, limits),
+            lambda: self.core.patch_namespaced_limit_range("tenant-defaults", namespace, limits),
+        )
 
     def _tenant_netpol(self, namespace: str) -> "client.V1NetworkPolicy":
         """入方向:默认拒东西向,放行网关数据面(不限端口)与 SSH(22);
@@ -960,8 +1064,14 @@ class RealOrchestrator:
         raise RuntimeError(f"job created, awaiting completion: {job_name}")
 
     @staticmethod
-    def _batch_container(name: str, image: str, command: list[str], env: list[Any]) -> Any:
-        """一次性 Job 容器基座(wipe/quota/prewarm 共用):资源声明 + 租户同款安全上下文。"""
+    def _batch_container(
+        name: str, image: str, command: list[str], env: list[Any], *, non_root: bool = False
+    ) -> Any:
+        """一次性 Job 容器基座(wipe/quota/prewarm 共用):资源声明 + 安全上下文。
+
+        non_root=True(superdl ns 内的 Job)走 platform_job_security_context 以满足
+        superdl ns 的 PSA enforce=restricted;wipe 在租户 ns 内必须保持 root
+        (见 platform_job_security_context 注释)。"""
         return client.V1Container(
             name=name,
             image=image,
@@ -973,7 +1083,9 @@ class RealOrchestrator:
                 requests={"cpu": "10m", "memory": "16Mi", "ephemeral-storage": "16Mi"},
                 limits={"cpu": "100m", "memory": "64Mi", "ephemeral-storage": "64Mi"},
             ),
-            security_context=tenant_security_context(),
+            security_context=(
+                platform_job_security_context() if non_root else tenant_security_context()
+            ),
         )
 
     async def wipe_disk(self, namespace: str, subpath: str) -> None:
@@ -1003,20 +1115,41 @@ class RealOrchestrator:
 
     # ---------- JuiceFS 目录配额(平台 ns,纯元数据操作,不挂卷) ----------
 
-    async def set_disk_quota(self, subpath: str, capacity_gb: int) -> None:
-        await self._run(self._disk_quota_sync, subpath, capacity_gb, True)
+    def _juicefs_fs_base_sync(self, namespace: str) -> str:
+        """租户共享 PVC 在 JuiceFS 文件系统根下的真实子目录名。
 
-    async def delete_disk_quota(self, subpath: str) -> None:
-        await self._run(self._disk_quota_sync, subpath, 0, False)
+        JuiceFS CSI 动态供给为每只 PVC 建独立子目录(以 PV volumeAttributes.subPath 为准,
+        默认即 PV 名,形如 pvc-<uuid>)。配额 --path 相对文件系统根,而擦除 Job 挂载的是
+        该 PVC(其挂载根 = 本子目录):配额路径不带这层前缀会落到与数据无关的目录上,
+        --create 还会把它建出来,于是任务成功、配额实际从未生效。
+        """
+        pvc: Any = self.core.read_namespaced_persistent_volume_claim(JUICEFS_PVC_NAME, namespace)
+        pv_name = pvc.spec.volume_name if pvc.spec else None
+        if not pv_name:
+            raise RuntimeError(f"pvc {namespace}/{JUICEFS_PVC_NAME} not bound yet")
+        pv: Any = self.core.read_persistent_volume(pv_name)
+        attrs = (pv.spec.csi.volume_attributes if pv.spec and pv.spec.csi else None) or {}
+        base = attrs.get("subPath") or pv_name
+        _check_subpath(base)
+        return base
 
-    def _disk_quota_sync(self, subpath: str, capacity_gb: int, is_set: bool) -> None:
+    async def set_disk_quota(self, namespace: str, subpath: str, capacity_gb: int) -> None:
+        await self._run(self._disk_quota_sync, namespace, subpath, capacity_gb, True)
+
+    async def delete_disk_quota(self, namespace: str, subpath: str) -> None:
+        await self._run(self._disk_quota_sync, namespace, subpath, 0, False)
+
+    def _disk_quota_sync(
+        self, namespace: str, subpath: str, capacity_gb: int, is_set: bool
+    ) -> None:
         """平台 ns 起 juicefs CLI Job 下发/摘除目录配额。幂等(见 _run_managed_job_sync)。
-        metaurl 经 secretKeyRef 注入(superdl-api-secrets 与 Job 同 ns),worker 零接触明文;
+        metaurl 经 secretKeyRef 注入(superdl-db 与 Job 同 ns),worker 零接触明文;
         subpath/capacity 走 env 间接引用,不进 shell 命令串(防注入)。
         密码不得进 argv:shell 内把 metaurl 拆成「无密码 URL(argv)+ META_PASSWORD(env)」
         (juicefs v1.0+ 官方机制),否则元数据引擎凭据会出现在节点上任何进程可读的
         /proc/<pid>/cmdline。"""
         _check_subpath(subpath)
+        fs_base = self._juicefs_fs_base_sync(namespace)
         # 密码拆分在容器内 shell 完成(env 不进 /proc cmdline);metaurl 密码段约定不含 @
         split = (
             'export META_PASSWORD="$(printf \'%s\' "$JUICEFS_METAURL"'
@@ -1026,26 +1159,29 @@ class RealOrchestrator:
         )
         if is_set:
             script = (
-                split + 'juicefs quota set "$METAURL_NOPASS" --path "/$QUOTA_SUBPATH"'
+                split + 'juicefs quota set "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
                 ' --capacity "$QUOTA_CAPACITY_GB" --create'
             )
         else:
             # 删盘链路:无配额记录(存量盘/从未下发成功)不算失败,目录随后由 wipe Job 擦除
             script = (
-                split + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_SUBPATH" || true'
+                split
+                + 'juicefs quota delete "$METAURL_NOPASS" --path "/$QUOTA_BASE/$QUOTA_SUBPATH"'
+                " || true"
             )
         container = self._batch_container(
-            "quota", self.settings.juicefs_cli_image, ["sh", "-c", script], env=[]
+            "quota", self.settings.juicefs_cli_image, ["sh", "-c", script], env=[], non_root=True
         )
         container.env = [
             client.V1EnvVar(
                 name="JUICEFS_METAURL",
                 value_from=client.V1EnvVarSource(
                     secret_key_ref=client.V1SecretKeySelector(
-                        name="superdl-api-secrets", key="juicefs-metaurl"
+                        name="superdl-db", key="juicefs-metaurl"
                     )
                 ),
             ),
+            client.V1EnvVar(name="QUOTA_BASE", value=fs_base),
             client.V1EnvVar(name="QUOTA_SUBPATH", value=subpath),
             client.V1EnvVar(name="QUOTA_CAPACITY_GB", value=str(capacity_gb)),
         ]
@@ -1351,9 +1487,9 @@ class RealOrchestrator:
 
     @staticmethod
     def _prewarm_job_name(node_name: str, image_ref: str) -> str:
-        """确定性命名(≤63 字符):同(节点,镜像)天然幂等。"""
-        ref_hash = hashlib.sha1(image_ref.encode()).hexdigest()[:10]
-        node_hash = hashlib.sha1(node_name.encode()).hexdigest()[:8]
+        """确定性命名(≤63 字符):同(节点,镜像)天然幂等。SHA1 仅作压缩指纹,非安全用途。"""
+        ref_hash = hashlib.sha1(image_ref.encode(), usedforsecurity=False).hexdigest()[:10]
+        node_hash = hashlib.sha1(node_name.encode(), usedforsecurity=False).hexdigest()[:8]
         return f"prewarm-{ref_hash}-{node_hash}"
 
     async def prewarm_image(
@@ -1372,8 +1508,11 @@ class RealOrchestrator:
             404,
         ):
             return  # 幂等:任意状态的既有 Job 都交巡检收敛
-        # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed
-        container = self._batch_container("prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[])
+        # 平台镜像均含 sh;缺 sh 会 StartError,由巡检记 failed。
+        # 纯拉取触发(命令为 true,不碰文件),走 restricted 非 root 上下文。
+        container = self._batch_container(
+            "prewarm", image_ref, ["/bin/sh", "-c", "true"], env=[], non_root=True
+        )
         # IfNotPresent:节点开机/预热不依赖仓库可达。Always 救不了「同名 tag 重推」——
         # Spegel(registries.yaml 里 mirrors "*")按 tag 解析会返回节点缓存的旧 digest;
         # 要换版本只能让目录 image_ref 钉 digest(`<repo>:<tag>@sha256:...`),

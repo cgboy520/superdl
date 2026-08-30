@@ -6,6 +6,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from pydantic import BaseModel
+from sqlalchemy import Select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.errors import AppError, ErrorCode
 
@@ -16,6 +19,9 @@ MAX_LIMIT = 100
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
+    # 可选精确计数(默认不算:全表 COUNT 在大表上不值得;仅调用方确有需要时才附,
+    # 如管理端租户抽屉要区分「正好 100 条」与「被 100 条上限截断」)
+    total: int | None = None
 
 
 @dataclass(frozen=True)
@@ -24,6 +30,7 @@ class RawPage[T]:
 
     items: list[T]
     next_cursor: str | None = None
+    total: int | None = None
 
 
 def encode_cursor(value: int | str) -> str:
@@ -54,3 +61,24 @@ def slice_page[T](
     if len(rows) > lim:
         return list(rows[:lim]), encode_cursor(key(rows[lim - 1]))
     return list(rows), None
+
+
+async def paginate_by_id[RowT](
+    session: AsyncSession,
+    stmt: Select[tuple[RowT]],
+    *,
+    id_col: InstrumentedAttribute[int],
+    cursor: str | None,
+    limit: int | None,
+) -> tuple[list[RowT], str | None]:
+    """id 降序游标分页的标准执行骨架(单一定义点,防各 service 逐字复制)。
+
+    调用方 stmt 只需声明过滤条件与 .order_by(id_col.desc());本函数负责:
+    clamp_limit → 解游标 → 追加 id < last → limit(lim+1) → 取行 → slice_page。
+    返回 (前 lim 行, next_cursor)。"""
+    lim = clamp_limit(limit)
+    last_id = decode_cursor_int(cursor)
+    if last_id is not None:
+        stmt = stmt.where(id_col < last_id)
+    rows = list((await session.execute(stmt.limit(lim + 1))).scalars())
+    return slice_page(rows, lim, key=lambda r: getattr(r, id_col.key))

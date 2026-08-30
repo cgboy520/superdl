@@ -9,4 +9,5 @@ import type { AdminSettlementGapOut } from './adminSettlementGapOut';
 export interface PageAdminSettlementGapOut {
   items: AdminSettlementGapOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

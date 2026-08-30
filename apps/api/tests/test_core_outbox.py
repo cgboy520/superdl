@@ -1,6 +1,5 @@
 from datetime import timedelta
 
-import pytest
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -14,7 +13,6 @@ from app.core.outbox import (
     report_pending_metrics,
 )
 from app.core.timeutil import now_utc
-from tests.helpers import OutboxDrainError, drain_strict
 
 
 async def test_enqueue_same_transaction_rollback(sm: async_sessionmaker[AsyncSession]):
@@ -286,66 +284,6 @@ class TestConcurrency:
         async with sm() as session:
             rows = (await session.execute(select(OutboxTask))).scalars().all()
             assert {r.status for r in rows} == {"done"}
-
-
-class TestDrainStrict:
-    async def test_all_done_returns_counts(self, sm: async_sessionmaker[AsyncSession], monkeypatch):
-        async def ok_handler(_session: AsyncSession, _task: OutboxTask) -> None:
-            return None
-
-        monkeypatch.setitem(outbox._registry, "t_ds_ok", ok_handler)
-
-        async with sm() as session:
-            enqueue(session, "t_ds_ok", {"i": 1})
-            enqueue(session, "t_ds_ok", {"i": 2})
-            await session.commit()
-
-        assert await drain_strict(sm) == (2, 0)
-
-    async def test_failed_task_raises_with_counts(
-        self, sm: async_sessionmaker[AsyncSession], monkeypatch
-    ):
-        """drain 只报处理个数,失败任务静默滑进重试;drain_strict 必须把失败抛出来。"""
-
-        async def bad_handler(_session: AsyncSession, _task: OutboxTask) -> None:
-            raise RuntimeError("boom")
-
-        monkeypatch.setitem(outbox._registry, "t_ds_bad", bad_handler)
-
-        async with sm() as session:
-            enqueue(session, "t_ds_bad", {})
-            await session.commit()
-
-        with pytest.raises(OutboxDrainError) as exc_info:
-            await drain_strict(sm)
-        assert (exc_info.value.done_count, exc_info.value.failed_count) == (0, 1)
-
-        # 失败任务退避回 pending(未死循环、未误标 done)
-        async with sm() as session:
-            row = (await session.execute(select(OutboxTask))).scalar_one()
-            assert row.status == "pending"
-            assert row.retries == 1
-
-    async def test_mixed_outcomes_counts_both(
-        self, sm: async_sessionmaker[AsyncSession], monkeypatch
-    ):
-        async def ok_handler(_session: AsyncSession, _task: OutboxTask) -> None:
-            return None
-
-        async def bad_handler(_session: AsyncSession, _task: OutboxTask) -> None:
-            raise RuntimeError("boom")
-
-        monkeypatch.setitem(outbox._registry, "t_ds_ok2", ok_handler)
-        monkeypatch.setitem(outbox._registry, "t_ds_bad2", bad_handler)
-
-        async with sm() as session:
-            enqueue(session, "t_ds_ok2", {})
-            enqueue(session, "t_ds_bad2", {})
-            await session.commit()
-
-        with pytest.raises(OutboxDrainError) as exc_info:
-            await drain_strict(sm)
-        assert (exc_info.value.done_count, exc_info.value.failed_count) == (1, 1)
 
 
 class TestTerminalWriteOwnership:

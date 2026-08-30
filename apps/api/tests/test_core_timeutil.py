@@ -7,6 +7,8 @@ from app.core.timeutil import (
     billing_month_range,
     ensure_utc,
     hour_floor,
+    local_day_range,
+    parse_local_date,
     prev_hour_range,
 )
 
@@ -42,3 +44,21 @@ def test_prev_hour_range():
     start, end = prev_hour_range(dt)
     assert start == datetime(2026, 8, 19, 9, 0, tzinfo=UTC)
     assert end == datetime(2026, 8, 19, 10, 0, tzinfo=UTC)
+
+
+def test_local_day_range():
+    """参数化本地日界:东八区 8/19 全天 = UTC 8/18 16:00 ~ 8/19 16:00。"""
+    at = datetime(2026, 8, 19, 3, 30, tzinfo=UTC)  # 北京 11:30
+    start, end = local_day_range(480, at=at)
+    assert start == datetime(2026, 8, 18, 16, 0, tzinfo=UTC)
+    assert end == datetime(2026, 8, 19, 16, 0, tzinfo=UTC)
+
+
+def test_parse_local_date():
+    """YYYY-MM-DD 本地日折 UTC 窗口;格式非法报 VALIDATION_ERROR。"""
+    start, end = parse_local_date("2026-08-19", 480)
+    assert start == datetime(2026, 8, 18, 16, 0, tzinfo=UTC)
+    assert end == datetime(2026, 8, 19, 16, 0, tzinfo=UTC)
+    with pytest.raises(AppError) as exc:
+        parse_local_date("2026/08/19", 480)
+    assert exc.value.code is ErrorCode.VALIDATION_ERROR

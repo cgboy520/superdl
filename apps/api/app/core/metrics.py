@@ -58,6 +58,14 @@ RECONCILE_STUCK_INSTANCES = Gauge(
     "悬挂实例数(进入 stopping/releasing 超过第一档超时仍未收敛)",
     ["status"],
 )
+LIGHT_DISTRO_IN_PROD = Gauge(
+    "superdl_light_distro_in_prod",
+    "prod 环境运行在 k3s(light 档)= 1:light 档租户与控制面同宿主,禁止公众生产",
+)
+NODE_POOL_LABEL_MISMATCH_TOTAL = Counter(
+    "superdl_node_pool_label_mismatch_total",
+    "节点自声明池标签与平台注册登记(node_enrollments.pool)不符的纠正次数;非零即异常",
+)
 RECONCILE_LEAK_ABORTED_TOTAL = Counter(
     "superdl_reconcile_leak_aborted_total",
     "泄漏回收因未知 Pod 占比超阈被熔断中止的轮数(单调不降,告警按 increase 判)",
@@ -92,4 +100,12 @@ HTTP_REQUEST_DURATION = Histogram(
     "superdl_http_request_duration_seconds",
     "HTTP 请求时延(route 为路由模板,避免高基数)",
     ["method", "route", "status"],
+)
+# 生效的加固面进指标:environment 漂移(prod 跑成 dev 口径)、mock 支付误开等,
+# 没有它只能等审计时发现。告警口径:environment="prod" 且 payment_mock="true" 即事故;
+# environment 必须非空(fail-closed 必填项,见 config.Settings)
+RUNTIME_CONFIG = Gauge(
+    "superdl_runtime_config",
+    "生效的运行时加固面(恒 1;标签即生效值:environment/k8s_backend/payment_mock)",
+    ["environment", "k8s_backend", "payment_mock"],
 )

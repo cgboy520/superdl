@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
+from app.core.logging import get_logger
 from app.core.money import as_amount, disk_daily_charge, hourly_cost
-from app.core.pagination import Page, RawPage, clamp_limit, decode_cursor_int, slice_page
+from app.core.pagination import Page, RawPage, paginate_by_id
 from app.core.policies import get_effective_policies
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import now_utc
@@ -27,6 +28,8 @@ from app.modules.billing.models import (
     Wallet,
 )
 from app.modules.billing.schemas import BillHourlyOut, BillSummaryItem, LedgerEntryOut
+
+logger = get_logger(__name__)
 
 
 async def _wallet_row(session: AsyncSession, user_id: int, *, lock: bool) -> Wallet:
@@ -138,6 +141,69 @@ async def get_balance(session: AsyncSession, user_id: int) -> Decimal:
     return wallet.balance if wallet else Decimal("0.00")
 
 
+def available_of(wallet: Wallet) -> Decimal:
+    """可用余额 = balance - frozen(渠道冲正冻结额不参与新消费)。"""
+    return as_amount(wallet.balance - wallet.frozen)
+
+
+async def get_available_balance(session: AsyncSession, user_id: int) -> Decimal:
+    wallet = (
+        await session.execute(select(Wallet).where(Wallet.user_id == user_id))
+    ).scalar_one_or_none()
+    return available_of(wallet) if wallet else Decimal("0.00")
+
+
+async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
+    """可退余额(防套现口径):Σ充值 − Σ消费 − Σ已退 − Σ负向调账,下限 0。
+
+    钱包是单池,但能退成现金的只能是「渠道实付且尚未消耗/未退走」的部分:
+    管理端补偿(adjust 正向)不是实付,永不可提现;消费/退款/负向调账(含渠道
+    冲正核销)侵蚀可退额。退款申请与打款两处都按此封顶(申请处提示,打款处硬闸)。
+    """
+    total = (
+        await session.execute(
+            select(
+                func.coalesce(
+                    # adjust 只计负向(调减/冲正核销),正向补偿不进可退额
+                    func.sum(
+                        case(
+                            (BalanceLedger.type == "adjust", func.least(BalanceLedger.amount, 0)),
+                            else_=BalanceLedger.amount,
+                        )
+                    ),
+                    0,
+                )
+            ).where(BalanceLedger.user_id == user_id)
+        )
+    ).scalar_one()
+    return max(Decimal("0.00"), as_amount(Decimal(total)))
+
+
+async def freeze(
+    session: AsyncSession, user_id: int, amount: Decimal, *, ref_id: str, remark: str
+) -> Wallet:
+    """等额冻结(渠道冲正):冻结额不参与新消费,但不动 balance、不记 ledger
+    (钱是否真被渠道拿回尚待人工核销)。frozen 可超过 balance:用户已花掉时
+    可用余额为负,全部新消费被拦,直至管理端核销。幂等由调用方(order 行标记)保证。"""
+    amount = as_amount(amount)
+    if amount <= 0:
+        raise ValueError("freeze amount must be positive")
+    wallet = await lock_wallet(session, user_id)
+    wallet.frozen = as_amount(wallet.frozen + amount)
+    logger.error("wallet_frozen", user_id=user_id, amount=str(amount), ref_id=ref_id, remark=remark)
+    return wallet
+
+
+async def release_freeze(session: AsyncSession, user_id: int, amount: Decimal) -> Wallet:
+    """解冻(核销 release):冲正属渠道噪音,钱还在。floor 0(重复核销不炸)。"""
+    amount = as_amount(amount)
+    if amount <= 0:
+        raise ValueError("release amount must be positive")
+    wallet = await lock_wallet(session, user_id)
+    wallet.frozen = as_amount(max(Decimal("0.00"), wallet.frozen - amount))
+    return wallet
+
+
 async def assert_can_afford(
     session: AsyncSession,
     user_id: int,
@@ -145,17 +211,19 @@ async def assert_can_afford(
     additional_hourly: Decimal = Decimal("0.00"),
     additional_daily_disk: Decimal = Decimal("0.00"),
 ) -> None:
-    """燃烧率感知的开户前校验:余额须覆盖「在途 + 新增」资源的一个预留期消耗。
+    """燃烧率感知的开户前校验:余额须覆盖「在途 + 待燃 + 新增」资源的一个预留期消耗。
 
     调用契约(不满足护栏即失效):必须在调用方事务内调用,且调用方须在同一事务内完成
     资源创建/开机并 commit —— 本函数先 FOR UPDATE 锁钱包行再统计在途,锁持有到提交,
     并发开户请求因此串行。
 
-    - `additional_hourly`:本次新增实例的小时费(单价 × 卡数,2 位小数);实例启动前不算
-      「在途」,必须由调用方显式传入。`additional_daily_disk`:新增数据盘的日均费。
-    - 校验口径:余额 ≥ (在途实例时费 + additional_hourly) × afford_cover_hours
+    - `additional_hourly`:本次新增实例的小时费(单价 × 卡数,2 位小数)。
+      `additional_daily_disk`:新增数据盘的日均费。
+    - 校验口径:余额 ≥ (在途实例时费 + 待燃时费 + additional_hourly) × afford_cover_hours
       + (在途盘日费 + additional_daily_disk) × disk_grace_days;「在途」= running 实例
-      + active 数据盘(grace 宽限盘已停计费,不计入)。两个预留期均为 policies 在线可调。
+      + active 数据盘(grace 宽限盘已停计费,不计入);「待燃」= creating/starting 实例
+      (orchestrator.pending_hourly,在本函数内部统一并入——调用方无从遗漏,
+      遗漏即连续开户/循环开机可绕过护栏)。两个预留期均为 policies 在线可调。
     - 不足抛 INSUFFICIENT_BALANCE(billing.insufficientForInFlight),params 含
       balance / required / inflight。
     - 只校验不扣款:这是护栏不是精确预占,实际消耗由结算扣款(允许透支)兜底。
@@ -166,21 +234,26 @@ async def assert_can_afford(
     locked = await lock_wallet(session, user_id)  # 先锁再统计:并发新增才能互相看见
     policies = await get_effective_policies(session)
 
-    running = (await orchestrator_service.list_running_instances_by_user(session)).get(user_id, [])
-    inflight_hourly = sum(
-        # 包周期实例不进燃烧率:它已付过整段周期的钱,再算作在途会让包月用户开不出新机
-        (
-            hourly_cost(i.price_hourly, i.gpu_count)
-            for i in running
-            if i.market != MARKET_SUBSCRIPTION
-        ),
-        Decimal("0.00"),
+    # 锁内只查本用户(用户级 SQL 过滤):全平台分组/全表扫描会把钱包行锁的
+    # 持有时间拖到全表规模,并发开户在锁上排队 × 扫描 = 雪崩
+    running = await orchestrator_service.running_instances_of_user(session, user_id)
+    pending = await orchestrator_service.pending_hourly(session, user_id)
+    inflight_hourly = (
+        sum(
+            # 包周期实例不进燃烧率:它已付过整段周期的钱,再算作在途会让包月用户开不出新机
+            (
+                hourly_cost(i.price_hourly, i.gpu_count)
+                for i in running
+                if i.market != MARKET_SUBSCRIPTION
+            ),
+            Decimal("0.00"),
+        )
+        + pending
     )
     inflight_daily = sum(
         (
             disk_daily_charge(d.price_gb_month, d.size_gb)
-            for d in await orchestrator_service.billable_disks(session)
-            if d.user_id == user_id
+            for d in await orchestrator_service.billable_disks_of_user(session, user_id)
         ),
         Decimal("0.00"),
     )
@@ -193,12 +266,12 @@ async def assert_can_afford(
         + as_amount(as_amount(additional_hourly) * policies.afford_cover_hours)
         + as_amount(as_amount(additional_daily_disk) * policies.disk_grace_days)
     )
-    if locked.balance < required:
+    if available_of(locked) < required:
         raise AppError(
             ErrorCode.INSUFFICIENT_BALANCE,
             key="billing.insufficientForInFlight",
             params={
-                "balance": format(locked.balance, "f"),
+                "balance": format(available_of(locked), "f"),
                 "required": format(required, "f"),
                 "inflight": format(inflight, "f"),
             },
@@ -209,18 +282,14 @@ async def ledger_page(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ):
     """资金流水游标分页(用户端与管理端下钻共用同一实现)。"""
-    lim = clamp_limit(limit)
     stmt = (
         select(BalanceLedger)
         .where(BalanceLedger.user_id == user_id)
         .order_by(BalanceLedger.id.desc())
-        .limit(lim + 1)
     )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(BalanceLedger.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=BalanceLedger.id, cursor=cursor, limit=limit
+    )
     return Page[LedgerEntryOut](
         items=[LedgerEntryOut.model_validate(r) for r in page_items], next_cursor=next_cursor
     )
@@ -236,24 +305,16 @@ async def hourly_bills_page(
     limit: int | None = None,
 ):
     """小时账单游标分页(用户端与管理端下钻共用同一实现)。"""
-    lim = clamp_limit(limit)
-    stmt = (
-        select(BillHourly)
-        .where(BillHourly.user_id == user_id)
-        .order_by(BillHourly.id.desc())
-        .limit(lim + 1)
-    )
+    stmt = select(BillHourly).where(BillHourly.user_id == user_id).order_by(BillHourly.id.desc())
     if instance_id is not None:
         stmt = stmt.where(BillHourly.instance_id == instance_id)
     if month_range is not None:
         stmt = stmt.where(
             BillHourly.hour_start >= month_range[0], BillHourly.hour_start < month_range[1]
         )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(BillHourly.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=BillHourly.id, cursor=cursor, limit=limit
+    )
     # 补实例名供账单页展示(纯数字 id 对运营/用户都不可读;实例行释放后仍保留,可查)
     from app.modules.orchestrator import service as orchestrator_service
 
@@ -435,8 +496,7 @@ async def admin_list_orders(
     limit: int | None = None,
 ) -> RawPage[Order]:
     """充值订单列表(游标分页,降序)。order_no 精确匹配(unique 索引);day_range 按 created_at 过滤。"""
-    lim = clamp_limit(limit)
-    stmt = select(Order).order_by(Order.id.desc()).limit(lim + 1)
+    stmt = select(Order).order_by(Order.id.desc())
     if status:
         stmt = stmt.where(Order.status == status)
     if order_no:
@@ -445,9 +505,7 @@ async def admin_list_orders(
         stmt = stmt.where(Order.user_id == user_id)
     if day_range is not None:
         stmt = stmt.where(Order.created_at >= day_range[0], Order.created_at < day_range[1])
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(Order.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=Order.id, cursor=cursor, limit=limit
+    )
     return RawPage(items=page_items, next_cursor=next_cursor)

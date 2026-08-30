@@ -1,18 +1,18 @@
-from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
-from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.params import TzOffset
+from app.core.params import Cursor, Limit, TzOffset
 from app.core.platform_config import get_effective_platform_config
 from app.core.policies import get_effective_policies
-from app.core.timeutil import billing_month_range
+from app.core.ratelimit import check_rate_limit
+from app.core.timeutil import billing_month_range, parse_local_date
+from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
 from app.modules.billing import export as billing_export
 from app.modules.billing import invoices, payment_service, refunds, wallet
@@ -71,8 +71,8 @@ async def get_wallet(user: CurrentUser, session: DbSession) -> WalletOut:
 async def get_ledger(
     user: CurrentUser,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[LedgerEntryOut]:
     return await wallet.ledger_page(session, user.id, cursor=cursor, limit=limit)
 
@@ -84,8 +84,8 @@ async def list_hourly_bills(
     instance_id: int | None = None,
     month: str | None = None,
     tz_offset_minutes: int = TzOffset,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[BillHourlyOut]:
     return await wallet.hourly_bills_page(
         session,
@@ -120,12 +120,8 @@ async def bill_daily_summary(
 ) -> DailySummaryOut:
     """当日消费(实例列表「今日 ¥Y.YY」与费用中心数据源),本地日界经 tz_offset 折算。"""
     # hour_start 为 UTC 整点,offset 为整分时窗口边界不会切开小时账单
-    try:
-        local_midnight = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
-    except ValueError as exc:
-        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badDateFormat") from exc
-    start = local_midnight - timedelta(minutes=tz_offset_minutes)
-    s = await wallet.consumption_summary(session, user.id, start, start + timedelta(days=1))
+    start, end = parse_local_date(date, tz_offset_minutes)
+    s = await wallet.consumption_summary(session, user.id, start, end)
     return DailySummaryOut(date=date, gpu_total=s.gpu_total, disk_total=s.disk_total, items=s.items)
 
 
@@ -182,13 +178,12 @@ async def create_recharge(
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> RechargeOut:
-    cfg = await get_effective_platform_config(session)
-    if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
-        raise AppError(
-            ErrorCode.REAL_NAME_REQUIRED,
-            key="billing.realNameRequiredForRecharge",
-            http_status=403,
-        )
+    # 实名闸门(统一实现,勿逐端点复制)
+    await account_service.require_real_name_if_required(
+        session, user, key="billing.realNameRequiredForRecharge"
+    )
+    # 资金端点限流(每用户):每张充值单都占用渠道下单与对账资源
+    await check_rate_limit(f"billing-recharge:{user.id}", max_attempts=10, window_seconds=3600.0)
     order, created = await payment_service.create_recharge(
         session, user.id, body.amount, body.channel, idempotency_key
     )
@@ -225,6 +220,8 @@ async def create_refund(
 ) -> RefundOut:
     """申请退款。Idempotency-Key 重放返回既有单(200 + X-Idempotent-Replay);
     同订单活跃申请被部分唯一索引拦截。"""
+    # 资金端点限流(每用户)
+    await check_rate_limit(f"billing-refund:{user.id}", max_attempts=10, window_seconds=3600.0)
     req, created = await refunds.create_refund(
         session,
         user.id,
@@ -243,8 +240,8 @@ async def create_refund(
 async def list_my_refunds(
     user: CurrentUser,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[RefundOut]:
     """本人退款单(游标分页)。"""
     return await refunds.list_my_refunds(session, user.id, cursor=cursor, limit=limit)
@@ -290,8 +287,8 @@ async def create_invoice(
 async def list_my_invoices(
     user: CurrentUser,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[InvoiceOut]:
     """本人发票申请(游标分页)。"""
     return await invoices.list_my_invoices(session, user.id, cursor=cursor, limit=limit)

@@ -1,11 +1,11 @@
 /** 支持:自助排查(FAQ 锚点)+ 联系客服(平台配置 support 组)+ 我的工单。
  *  新建工单走 Modal,详情为独立对话页。 */
 
-import { formatDateTime, idemKeyOf, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import { fontSize, formatDateTime, idemKeyOf, metaOf, ticketCategoryMap, ticketStatusMap, type TicketStatus } from "@superdl/ui";
+import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
-  Alert,
   App,
   Badge,
   Button,
@@ -26,14 +26,20 @@ import { useMemo, useState } from "react";
 
 import type { TicketCreate, TicketOut } from "@superdl/api-client";
 import { useCreateTicket } from "../api/mutations";
-import { useInstances, useSiteConfig, useTicketPages } from "../api/queries";
-import { CopyButton } from "../components/common";
-import { LoadMoreButton } from "../components/LoadMore";
-import { DataErrorAlert, TableErrorEmpty } from "../components/QueryState";
+import { useInstances, useTicketPages } from "../api/queries";
+import { ContactCard } from "../components/ContactCard";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/support")({
   beforeLoad: requireAuth,
+  // ?new=1:命令面板「新建工单」深链,到达即开创建弹窗(消费后清掉);
+  // ?status=:状态筛选入 URL(白名单=后端状态枚举,非法值剥离)
+  validateSearch: (search: Record<string, unknown>): { new?: "1"; status?: TicketStatus } => ({
+    ...(search.new === "1" ? { new: "1" as const } : {}),
+    ...(typeof search.status === "string" && search.status in ticketStatusMap
+      ? { status: search.status as TicketStatus }
+      : {}),
+  }),
   component: SupportPage,
 });
 
@@ -49,50 +55,14 @@ function SelfHelpCard() {
         dataSource={[...SELF_HELP_KEYS]}
         renderItem={(k) => (
           <List.Item style={{ paddingInline: 0 }}>
-            {/* 动态键:与 help.faq 同款,字面量断言收敛到已登记键 */}
-            <Link to="/help">{t(`support.selfHelp.${k}` as "support.selfHelp.createFailed")}</Link>
+            {/* 锚点直达对应 FAQ 并展开滚动(/help 已实现 faq-<key> 锚);裸跳页首等于没链 */}
+            <Link to="/help" hash={`faq-${k}`}>
+              {t(`support.selfHelp.${k}` as "support.selfHelp.createFailed")}
+            </Link>
           </List.Item>
         )}
       />
       <Link to="/help">{t("support.selfHelpMore")}</Link>
-    </Card>
-  );
-}
-
-function ContactCard() {
-  const { t } = useTranslation();
-  const siteQ = useSiteConfig();
-  const { data: site } = siteQ;
-  const email = site?.support_email;
-  const wechat = site?.support_wechat;
-  return (
-    <Card title={t("support.contactTitle")} style={{ height: "100%" }}>
-      {siteQ.isError ? (
-        // 加载失败绝不伪装成「联系方式未配置」
-        <DataErrorAlert onRetry={() => void siteQ.refetch()} />
-      ) : email || wechat ? (
-        <Space orientation="vertical" size={12}>
-          {wechat && (
-            <Space>
-              <Typography.Text strong>{t("support.contactWechat")}</Typography.Text>
-              <Typography.Text code>{wechat}</Typography.Text>
-              <CopyButton text={wechat} />
-            </Space>
-          )}
-          {email && (
-            <Space>
-              <Typography.Text strong>{t("support.contactEmail")}</Typography.Text>
-              <a href={`mailto:${email}`}>{email}</a>
-              <CopyButton text={email} />
-            </Space>
-          )}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("support.contactHint")}
-          </Typography.Text>
-        </Space>
-      ) : (
-        <Alert type="info" showIcon title={t("support.contactMissing")} />
-      )}
     </Card>
   );
 }
@@ -137,7 +107,7 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
         });
       }}
     >
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("support.createNote")}
       </Typography.Paragraph>
       <Form form={form} layout="vertical" initialValues={{ category: "instance" }}>
@@ -185,16 +155,38 @@ function CreateTicketModal({ open, onClose }: { open: boolean; onClose: () => vo
 function SupportPage() {
   const { t } = useTranslation(["web", "shared"]);
   const navigate = useNavigate();
+  const { new: openNew, status: statusFilter } = Route.useSearch();
   const [creating, setCreating] = useState(false);
+  // ?new=1 到达即开创建弹窗:渲染期派生态(同 help.tsx 锚点模式,防 set-state-in-effect)
+  const [prevNew, setPrevNew] = useState(openNew);
+  if (openNew !== prevNew) {
+    setPrevNew(openNew);
+    if (openNew === "1") setCreating(true);
+  }
+  const closeCreate = () => {
+    setCreating(false);
+    // 深链参数消费后清掉,刷新不再自动开弹窗;状态筛选保留(prev 为跨路由合并类型,status 在本文件内收窄)
+    if (openNew === "1")
+      void navigate({
+        to: "/support",
+        search: (prev) => ({ status: prev.status as TicketStatus | undefined }),
+        replace: true,
+      });
+  };
   const tickets = useTicketPages(20);
   const rows = useMemo<TicketOut[]>(
     () => (tickets.data?.pages ?? []).flatMap((p) => p.items),
     [tickets.data],
   );
+  // 状态筛选为客户端筛选:只作用于已加载页,未加载的旧页不受筛选影响(与费用中心流水类型筛选同口径)
+  const filtered = useMemo<TicketOut[]>(
+    () => (statusFilter ? rows.filter((r) => r.status === statusFilter) : rows),
+    [rows, statusFilter],
+  );
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Typography.Title level={3} style={{ marginBottom: 0 }}>
+      <Typography.Title level={4} style={{ marginBottom: 0 }}>
         {t("support.title")}
       </Typography.Title>
       <Row gutter={16}>
@@ -202,37 +194,92 @@ function SupportPage() {
           <SelfHelpCard />
         </Col>
         <Col xs={24} md={12}>
-          <ContactCard />
+          <ContactCard
+            title={t("support.contactTitle")}
+            emailLabel={t("support.contactEmail")}
+            wechatLabel={t("support.contactWechat")}
+            hint={t("support.contactHint")}
+            missingText={t("support.contactMissing")}
+            style={{ height: "100%" }}
+          />
         </Col>
       </Row>
       <Card
         title={t("support.myTickets")}
         extra={
-          <Button type="primary" onClick={() => setCreating(true)}>
-            {t("support.create")}
-          </Button>
+          <Space>
+            <Select
+              size="small"
+              style={{ width: 150 }}
+              aria-label={t("support.filterStatus")}
+              value={statusFilter ?? "all"}
+              onChange={(v: string) =>
+                void navigate({
+                  to: "/support",
+                  search: (prev) => ({
+                    ...prev,
+                    status: v === "all" ? undefined : (v as TicketStatus),
+                  }),
+                  replace: true,
+                })
+              }
+              options={[
+                { value: "all", label: t("support.filterAll") },
+                // 状态枚举以共享映射表为准;裸状态码不进 t()(extract 会当成新键收集)
+                ...Object.keys(ticketStatusMap).map((s) => {
+                  const meta = metaOf(ticketStatusMap, s);
+                  return { value: s, label: meta ? t(meta.labelKey) : s };
+                }),
+              ]}
+            />
+            <Button type="primary" onClick={() => setCreating(true)}>
+              {t("support.create")}
+            </Button>
+          </Space>
         }
       >
         <List
           loading={tickets.isLoading}
-          dataSource={rows}
+          dataSource={filtered}
           locale={{
             emptyText: tickets.isError ? (
               // 失败绝不伪装成「暂无工单」
-              <TableErrorEmpty onRetry={() => void tickets.refetch()} />
+              <TableErrorEmpty isError onRetry={() => void tickets.refetch()} />
+            ) : statusFilter ? (
+              // 筛选态空 ≠ 没有工单:只说明该状态暂无匹配
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t("support.noneWithStatus")}
+              />
             ) : (
-              <Empty description={t("support.none")} />
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t("support.none")}
+              >
+                <Button type="primary" onClick={() => setCreating(true)}>
+                  {t("support.create")}
+                </Button>
+              </Empty>
             ),
           }}
           renderItem={(r) => {
             const sm = metaOf(ticketStatusMap, r.status);
             const cm = metaOf(ticketCategoryMap, r.category);
+            const open = () =>
+              void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } });
             return (
               <List.Item
                 style={{ cursor: "pointer" }}
-                onClick={() =>
-                  void navigate({ to: "/support/$ticketId", params: { ticketId: String(r.id) } })
-                }
+                onClick={open}
+                // 整行点击必须有键盘语义(同落地页快捷入口卡)
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    open();
+                  }
+                }}
               >
                 <List.Item.Meta
                   title={
@@ -249,13 +296,15 @@ function SupportPage() {
             );
           }}
         />
-        <LoadMoreButton
-          visible={tickets.hasNextPage}
+        <LoadMore
+          hasNextPage={tickets.hasNextPage ?? false}
           loading={tickets.isFetchingNextPage}
-          onClick={() => void tickets.fetchNextPage()}
+          isError={tickets.isFetchNextPageError}
+          loadedCount={filtered.length}
+          onLoadMore={() => void tickets.fetchNextPage()}
         />
       </Card>
-      <CreateTicketModal open={creating} onClose={() => setCreating(false)} />
+      <CreateTicketModal open={creating} onClose={closeCreate} />
     </Space>
   );
 }

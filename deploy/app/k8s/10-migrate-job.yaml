@@ -29,7 +29,8 @@ spec:
           command: ["alembic", "upgrade", "head"]
           envFrom:
             - configMapRef: {name: superdl-api-config}
-            - secretRef: {name: superdl-api-secrets}
+            # 迁移只需要 DB:不拿 JWT/渠道/云凭据(爆炸半径最小化)
+            - secretRef: {name: superdl-db}
           env:
             # 迁移兜底超时:DDL 等锁超 3s 即失败(宁可迁移失败重跑,不可顶着业务锁表);
             # 单条语句 60s 上限,防长迁移拖垮在线库。大数据量变更须走分批小迁移。

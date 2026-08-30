@@ -19,13 +19,21 @@ ARG DEBIAN_FRONTEND=noninteractive
 # CONDA_PATH_PREFIX 与 MINICONDA_INSTALLER 同批传:PATH 无条件前置会让没有 conda 的厂商基座
 # 带上一条不存在的目录,也会让框架镜像把 /opt/conda/bin 重复一遍。
 ARG MINICONDA_INSTALLER=""
+# 供应链完整性:安装包的 SHA-256(与 MINICONDA_INSTALLER 同批传;值取自
+# repo.anaconda.com 对应版本的官方哈希,或本地下载后 sha256 自算)。装 conda 就必须钉:
+# 否则上游 CDN 被污染/劫持时,恶意 installer 会静默进全部实例镜像。
+ARG MINICONDA_SHA256=""
 ARG CONDA_PATH_PREFIX=""
 ENV PATH=${CONDA_PATH_PREFIX}$PATH
 RUN if [[ -n "$MINICONDA_INSTALLER" ]]; then \
-      apt-get update \
+      if [[ -z "$MINICONDA_SHA256" ]]; then \
+        echo "MINICONDA_SHA256 必填(MINICONDA_INSTALLER 的供应链钉版)" >&2; exit 1; \
+      fi \
+      && apt-get update \
       && apt-get install -y --no-install-recommends curl ca-certificates bzip2 \
       && rm -rf /var/lib/apt/lists/* \
       && curl -fsSL -o /tmp/miniconda.sh "https://repo.anaconda.com/miniconda/${MINICONDA_INSTALLER}" \
+      && echo "${MINICONDA_SHA256}  /tmp/miniconda.sh" | sha256sum -c - \
       && bash /tmp/miniconda.sh -b -p /opt/conda \
       && rm -f /tmp/miniconda.sh \
       && /opt/conda/bin/conda clean -afy; \

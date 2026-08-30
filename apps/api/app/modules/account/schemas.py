@@ -65,10 +65,6 @@ class LoginRequest(BaseModel):
     password: str | None = Field(default=None, min_length=1, max_length=64)
 
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
 class PasswordResetRequest(BaseModel):
     """设置/修改/找回密码:凭手机号 + 验证码,不需要旧密码。"""
 
@@ -89,8 +85,17 @@ class UserOut(BaseModel):
 
 
 class TokenPair(BaseModel):
+    """服务层令牌对(refresh_token 只用于路由层种 Cookie,不进响应体)。"""
+
     access_token: str
     refresh_token: str
+    user: UserOut
+
+
+class TokenPairOut(BaseModel):
+    """认证响应:refresh token 全程只走 HttpOnly Cookie,不出现在 JS 可读面。"""
+
+    access_token: str
     user: UserOut
 
 

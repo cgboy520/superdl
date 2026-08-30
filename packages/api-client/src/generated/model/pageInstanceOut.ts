@@ -9,4 +9,5 @@ import type { InstanceOut } from './instanceOut';
 export interface PageInstanceOut {
   items: InstanceOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

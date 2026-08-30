@@ -1,6 +1,6 @@
 /** CTA 横幅:实时空闲卡数,取不到则退化为静态口号。 */
 
-import { brand, colorPrimary } from "@superdl/ui";
+import { brand, colorPrimary, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { Button, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -17,7 +17,9 @@ export function CtaBanner() {
   const text = freeCards > 0 ? t("landing.cta.withStock", { count: freeCards }) : t("landing.cta.fallback");
 
   return (
-    <section style={{ background: brand.heroBg, padding: "48px 24px", textAlign: "center" }}>
+    <section
+      style={{ background: brand.heroBg, padding: `${layout.sectionPaddingY}px 24px`, textAlign: "center" }}
+    >
       <Typography.Title level={3} style={{ color: "#fff", marginTop: 0, marginBottom: 24 }}>
         {text}
       </Typography.Title>

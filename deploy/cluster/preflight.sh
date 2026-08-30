@@ -92,6 +92,31 @@ for f in "${placeholder_files[@]}"; do
   fi
 done
 
+say "== 分发模板卫生(rke2/k3s server-config 是模板,不是渲染产物)=="
+# 反向检查:模板里 agent-token/etcd-s3 必须保持注释/占位。取消注释意味着真实凭据
+# 被提交进仓库(任何能读仓库的人即持集群加入凭据);site.yml 的渲染前断言要求
+# agent_token 经 group_vars/servers.yml 或 -e 注入,绝不落模板。
+for tpl in rke2/server-config.yaml k3s/server-config.yaml; do
+  [[ -f "$tpl" ]] || continue
+  if grep -qE '^agent-token:' "$tpl"; then
+    miss "$tpl 的 agent-token 被取消了注释(真实 token 不得入库;经 ansible 变量注入)"
+  elif ! grep -qE '^#agent-token: "CHANGE_ME_AGENT_TOKEN"$' "$tpl"; then
+    miss "$tpl 缺少 #agent-token CHANGE_ME 占位行(模板被改动?site.yml 渲染依赖该行)"
+  else
+    ok "$tpl agent-token 占位完好"
+  fi
+done
+if [[ "$env_name" == "full" ]]; then
+  etcd_tpl_bad=0
+  for key in SNAPSHOT_BUCKET S3_REGION S3_ENDPOINT S3_ACCESS_KEY S3_SECRET_KEY; do
+    if ! grep -qE "CHANGE_ME_ETCD_${key}" rke2/server-config.yaml; then
+      miss "rke2/server-config.yaml 的 etcd-s3 ${key} 占位被改动(真实凭据不得入库)"
+      etcd_tpl_bad=1
+    fi
+  done
+  [[ "$etcd_tpl_bad" == "0" ]] && ok "rke2/server-config.yaml etcd-s3 占位完好"
+fi
+
 say "== Gateway API CRD(channel 首装即定,事后换不回去)=="
 # 平台用到的策略对象(BackendTrafficPolicy 的每源 IP 本地限流等)落在 experimental channel。
 # CRD 由 helmfile presync 的 ./gateway-api-crds.sh 装,首装时集群里还没有 CRD 属正常。
@@ -232,6 +257,13 @@ fi
 
 if [[ "$env_name" == "light" ]]; then
   say "== light(k3s)专项 =="
+  # light 档租户计算与控制面同宿主:恶意租户的内核/GPU 驱动攻击或资源耗尽直接命中
+  # 控制面。禁止面向公众生产;部署方必须显式书面确认本集群不公网开放。
+  if [[ "${SUPERDL_LIGHT_INTERNAL_ACK:-}" == "yes" ]]; then
+    ok "light 档内网定位已确认(SUPERDL_LIGHT_INTERNAL_ACK=yes)"
+  else
+    miss "light 档仅限内网试点/演示/开发联调,禁止公众生产(租户与控制面同宿主)。确认本集群不对公网开放后,以 SUPERDL_LIGHT_INTERNAL_ACK=yes 重跑"
+  fi
   if kubectl get runtimeclass nvidia >/dev/null 2>&1; then
     ok "RuntimeClass nvidia 存在"
   else

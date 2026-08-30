@@ -2,7 +2,20 @@
 
 import { describe, expect, it } from "vitest";
 
-import { adminColors, heatColors, medalColors, statusColors, webDarkColors, webTheme } from "./tokens";
+import {
+  adminColors,
+  adminThemeComponents,
+  brandGradientStops,
+  chartAccentColors,
+  chartSeriesColors,
+  cssVars,
+  heatColors,
+  medalColors,
+  statusColors,
+  textOnAccent,
+  webDarkColors,
+  webTheme,
+} from "./tokens";
 import { skuTierMap } from "./status";
 
 function relLuminance(hex: string): number {
@@ -83,5 +96,61 @@ describe("tokens 对比度(WCAG AA ≥4.5:1)", () => {
     expect(
       contrast(webDarkColors.menuSelectedColor, webDarkColors.menuSelectedBg)
     ).toBeGreaterThanOrEqual(AA);
+  });
+
+  it("实心徽标文字色恒白(与各状态底配对已在上覆盖,此处锁白值)", () => {
+    expect(textOnAccent).toBe("#FFFFFF");
+  });
+
+  it("CSS 变量桥:主色/文本在各自底色上(focus 描边与选中态按文本级 AA)", () => {
+    // 浅色:主色/文本于 pageBg
+    expect(contrast(cssVars.light["--sdl-color-primary"], cssVars.light["--sdl-color-bg"]))
+      .toBeGreaterThanOrEqual(AA);
+    expect(contrast(cssVars.light["--sdl-color-text"], cssVars.light["--sdl-color-bg"]))
+      .toBeGreaterThanOrEqual(AA);
+    // 暗色:提浅主色/文本于 bgBase
+    expect(contrast(cssVars.dark["--sdl-color-primary"], cssVars.dark["--sdl-color-bg"]))
+      .toBeGreaterThanOrEqual(AA);
+    expect(contrast(cssVars.dark["--sdl-color-text"], cssVars.dark["--sdl-color-bg"]))
+      .toBeGreaterThanOrEqual(AA);
+  });
+
+  it("图表强调色在管理端深底上(非文本图形,AA 要求 ≥3:1)", () => {
+    for (const [k, v] of Object.entries(chartAccentColors)) {
+      expect(contrast(v, adminColors.bgBase), `chartAccentColors.${k}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("品牌渐变端色上的白字(顶栏/Hero/登录左栏大量白字落在渐变上)", () => {
+    for (const [k, v] of Object.entries(brandGradientStops)) {
+      expect(contrast("#FFFFFF", v), `brandGradientStops.${k}`).toBeGreaterThanOrEqual(AA);
+    }
+  });
+
+  it("管理端:数据强调色非文本图形 ≥3:1,菜单选中配对与表头配对 ≥4.5:1", () => {
+    expect(contrast(adminColors.dataAccent, adminColors.bgBase)).toBeGreaterThanOrEqual(3);
+    expect(contrast(adminColors.dataAccent, adminColors.bgElevated)).toBeGreaterThanOrEqual(3);
+    // 菜单选中:青字于深靛底
+    expect(contrast(adminColors.dataAccent, adminColors.menuSelectedBg)).toBeGreaterThanOrEqual(AA);
+    // 表头:次级文本于表头底
+    expect(
+      contrast(adminThemeComponents.Table.headerColor, adminThemeComponents.Table.headerBg)
+    ).toBeGreaterThanOrEqual(AA);
+  });
+
+  it("图表系列色在各自主题底上(非文本图形 ≥3:1)", () => {
+    for (const [k, v] of Object.entries(chartSeriesColors.light)) {
+      expect(contrast(v, "#FFFFFF"), `chartSeriesColors.light.${k}`).toBeGreaterThanOrEqual(3);
+    }
+    for (const [k, v] of Object.entries(chartSeriesColors.dark)) {
+      expect(contrast(v, webDarkColors.bgBase), `chartSeriesColors.dark.${k}`)
+        .toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("用户端暗色:描述文本显式取值(不依赖算法派生)在两种深底上", () => {
+    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgBase)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(webDarkColors.textSecondary, webDarkColors.bgElevated))
+      .toBeGreaterThanOrEqual(AA);
   });
 });

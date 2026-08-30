@@ -6,37 +6,95 @@
 
 import {
   billingUnits,
+  fontSize,
   GPU_COUNT_STEPS,
   isBillingPeriod,
+  MAX_PERIOD_COUNT,
   mulPrice,
   periodMap,
   skuTierMap,
   skuVariant,
 } from "@superdl/ui";
 import type { SkuMarketOut } from "@superdl/api-client";
+import { TableErrorEmpty } from "@superdl/ui/components";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, Modal, Segmented, Space, Table, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import { dedupAvailableByModel } from "../lib/inventory";
-import { TableErrorEmpty } from "../components/QueryState";
 import { usePolicies, useSkus } from "../api/queries";
 import { ChipRow, type ChipOption } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
-import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
+import { SpotOffLabel, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { useIsLoggedIn } from "../stores/auth";
-
-export const Route = createFileRoute("/_console/market")({
-  component: MarketPage,
-});
 
 const ALL = "";
 
 type Kind = "gpu" | "cpu";
+
+/** 市场页 URL 状态:10 个筛选/选中参数,默认值一律剥离(kind=gpu / mode=on_demand /
+ *  chips 空档 / gpus=1 / count=1 不进 URL);非法值丢弃回默认。 */
+export interface MarketSearch {
+  kind?: Kind;
+  mode?: BillingMode;
+  model?: string;
+  tier?: string;
+  vram?: number;
+  gpus?: number;
+  vcpu?: number;
+  mem?: number;
+  sku?: number;
+  /** 购买时长(周期份数,1~36;仅包周期模式有意义) */
+  count?: number;
+}
+
+/** 正整数解析(非法/非正一律丢弃) */
+function posInt(v: unknown): number | undefined {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** 独立导出供单测往返验证(与 Route.validateSearch 同一函数)。 */
+export function marketValidateSearch(search: Record<string, unknown>): MarketSearch {
+  const out: MarketSearch = {};
+  if (search.kind === "cpu") out.kind = "cpu"; // gpu 为默认栏,剥离
+  const mode = search.mode;
+  if (mode === "spot") out.mode = "spot";
+  else if (typeof mode === "string" && isBillingPeriod(mode)) out.mode = mode;
+  // on_demand 为默认计费方式,剥离
+  if (typeof search.model === "string" && search.model !== "") out.model = search.model;
+  if (
+    typeof search.tier === "string" &&
+    search.tier !== "" &&
+    search.tier !== "cpu" &&
+    search.tier in skuTierMap
+  ) {
+    out.tier = search.tier;
+  }
+  const vram = posInt(search.vram);
+  if (vram != null) out.vram = vram;
+  const gpus = posInt(search.gpus);
+  if (gpus != null && gpus > 1) out.gpus = gpus; // 1 卡为默认,剥离
+  const vcpu = posInt(search.vcpu);
+  if (vcpu != null) out.vcpu = vcpu;
+  const mem = posInt(search.mem);
+  if (mem != null) out.mem = mem;
+  const sku = posInt(search.sku);
+  if (sku != null) out.sku = sku;
+  const count = posInt(search.count);
+  // 1 份为默认时长,剥离;超上限非法值丢弃
+  if (count != null && count > 1 && count <= MAX_PERIOD_COUNT) out.count = count;
+  return out;
+}
+
+export const Route = createFileRoute("/_console/market")({
+  validateSearch: marketValidateSearch,
+  component: MarketPage,
+});
 
 function MarketPage() {
   const { t } = useTranslation(["web", "shared"]);
@@ -45,15 +103,21 @@ function MarketPage() {
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [kind, setKind] = useState<Kind>("gpu");
-  const [billingMode, setBillingMode] = useState<BillingMode>("on_demand");
-  const [gpuModel, setGpuModel] = useState<string>(ALL);
-  const [tier, setTier] = useState<string>(ALL);
-  const [vram, setVram] = useState<number>(0);
-  const [gpuCount, setGpuCount] = useState(1);
-  const [vcpu, setVcpu] = useState<number>(0);
-  const [memGb, setMemGb] = useState<number>(0);
-  const [selectedId, setSelectedId] = useState<number>();
+  // 筛选/选中全部入 URL(replace,不产生历史垃圾):可分享、刷新/返回不丢
+  const search = Route.useSearch();
+  const kind: Kind = search.kind ?? "gpu";
+  const billingMode: BillingMode = search.mode ?? "on_demand";
+  const gpuModel = search.model ?? ALL;
+  const tier = search.tier ?? ALL;
+  const vram = search.vram ?? 0;
+  const gpuCount = search.gpus ?? 1;
+  const vcpu = search.vcpu ?? 0;
+  const memGb = search.mem ?? 0;
+  const selectedId = search.sku;
+  // 购买时长(1~36 个周期):入 URL 并透传创建页,与创建页数量选择器同源
+  const periodCount = search.count ?? 1;
+  const update = (next: MarketSearch) =>
+    void navigate({ to: "/market", search: next, replace: true });
 
   const {
     data: allSkus,
@@ -139,16 +203,16 @@ function MarketPage() {
     fmt,
     t,
     availability: true,
-    priceFontSize: 18,
+    priceFontSize: fontSize.pageTitle,
     cpu: isCpu,
     ...(isSpot && spotPolicy ? { spot: spotPolicy } : {}),
   });
-  // 市场页没有报价端点,按 policies 折扣本地估算;数量恒 1(几个周期在创建页选)
+  // 市场页没有报价端点,按 policies 折扣本地估算(展示值,创建页最终报价为准)
   const quote =
     selected && period
       ? periodQuoteOf(
           selected.price_hourly,
-          { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount: 1 },
+          { units: billingUnits(isCpu ? 0 : gpuCount), period, periodCount },
           discounts,
         )
       : undefined;
@@ -163,9 +227,11 @@ function MarketPage() {
 
       <BillingModeCard
         value={mode}
-        onChange={setBillingMode}
+        onChange={(v) => update({ ...search, mode: v === "on_demand" ? undefined : v })}
         periodEnabled={!periodBlocked}
         spotEnabled={!spotUnavailable}
+        count={periodCount}
+        onCountChange={(n) => update({ ...search, count: n > 1 ? n : undefined })}
         extra={
           <Button type="link" size="small" onClick={() => setRulesOpen(true)}>
             {t("market.billingRulesLink")}
@@ -178,8 +244,15 @@ function MarketPage() {
       {spotUnavailable && billingMode === "spot" && (
         <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
       )}
-      {/* 竞价档常驻提示:折扣是拿「可能被回收」换的,选中期间一直摆在页面上 */}
-      {isSpot && <Alert type="warning" showIcon title={t("copy.spotReclaimNotice")} />}
+      {/* 竞价档常驻提示:折扣是拿「可能被回收」换的,选中期间一直摆在页面上;
+          宽限秒数与通知渠道从 /policies 读(与知情同意 modal 同源),策略未就绪不出这句话 */}
+      {isSpot && spotPolicy && (
+        <Alert
+          type="warning"
+          showIcon
+          title={t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
+        />
+      )}
 
       <Card title={t("market.selectSpec")} styles={{ body: { paddingBlock: 16 } }}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -187,24 +260,49 @@ function MarketPage() {
             value={kind}
             options={kindOptions}
             onChange={(v) => {
-              setKind(v);
-              setSelectedId(undefined); // 换栏必须清选中:上一栏的行不在本栏表里
+              // 换栏必须清选中:上一栏的行不在本栏表里(其余筛选保留,回切时仍在)
+              update({ ...search, kind: v === "cpu" ? "cpu" : undefined, sku: undefined });
             }}
           />
           {isCpu ? (
             <>
-              <ChipRow label={t("market.chipVcpu")} value={vcpu} onChange={setVcpu} options={vcpuOptions} />
-              <ChipRow label={t("market.chipMem")} value={memGb} onChange={setMemGb} options={memOptions} />
+              <ChipRow
+                label={t("market.chipVcpu")}
+                value={vcpu}
+                onChange={(v) => update({ ...search, vcpu: v || undefined })}
+                options={vcpuOptions}
+              />
+              <ChipRow
+                label={t("market.chipMem")}
+                value={memGb}
+                onChange={(v) => update({ ...search, mem: v || undefined })}
+                options={memOptions}
+              />
             </>
           ) : (
             <>
-              <ChipRow label={t("market.chipGpuModel")} value={gpuModel} onChange={setGpuModel} options={modelOptions} />
-              <ChipRow label={t("market.chipTier")} value={tier} onChange={setTier} options={tierOptions} />
-              <ChipRow label={t("market.chipVram")} value={vram} onChange={setVram} options={vramOptions} />
+              <ChipRow
+                label={t("market.chipGpuModel")}
+                value={gpuModel}
+                onChange={(v) => update({ ...search, model: v || undefined })}
+                options={modelOptions}
+              />
+              <ChipRow
+                label={t("market.chipTier")}
+                value={tier}
+                onChange={(v) => update({ ...search, tier: v || undefined })}
+                options={tierOptions}
+              />
+              <ChipRow
+                label={t("market.chipVram")}
+                value={vram}
+                onChange={(v) => update({ ...search, vram: v || undefined })}
+                options={vramOptions}
+              />
               <ChipRow
                 label={t("market.chipGpuCount")}
                 value={gpuCount}
-                onChange={setGpuCount}
+                onChange={(v) => update({ ...search, gpus: v > 1 ? v : undefined })}
                 options={GPU_COUNT_STEPS.map((n) => ({ value: n, label: String(n) }))}
               />
             </>
@@ -219,7 +317,7 @@ function MarketPage() {
             pagination={false}
             locale={{
               emptyText: isError ? (
-                <TableErrorEmpty onRetry={() => void refetch()} />
+                <TableErrorEmpty isError onRetry={() => void refetch()} />
               ) : (
                 t("market.noMatch")
               ),
@@ -227,13 +325,13 @@ function MarketPage() {
             rowSelection={{
               type: "radio",
               selectedRowKeys: selected ? [selected.id] : [],
-              onChange: (keys) => setSelectedId(keys[0] as number),
+              onChange: (keys) => update({ ...search, sku: keys[0] as number | undefined }),
               getCheckboxProps: (s) => ({ disabled: !selectable(s) }),
             }}
             onRow={(s) => ({
               style: selectable(s) ? { cursor: "pointer" } : { opacity: 0.5 },
               onClick: () => {
-                if (selectable(s)) setSelectedId(s.id);
+                if (selectable(s)) update({ ...search, sku: s.id });
               },
             })}
           />
@@ -241,6 +339,8 @@ function MarketPage() {
       </Card>
 
       <CheckoutBar
+        // 选中规格/计费方式/时长变化时,汇总/费用数字淡入(动效只在结算条数字区)
+        changeKey={selected ? `${selected.id}-${mode}-${periodCount}` : "none"}
         summary={
           selected
             ? isCpu
@@ -264,10 +364,10 @@ function MarketPage() {
                 label: t("period.costLabel", { period: t(periodMap[period].labelKey) }),
                 value: (
                   <Space size={8} align="baseline">
-                    <Typography.Text type="secondary" delete style={{ fontSize: 14 }}>
+                    <Typography.Text type="secondary" delete style={{ fontSize: fontSize.body }}>
                       {fmt.formatMoney(quote.listAmount)}
                     </Typography.Text>
-                    <span>{fmt.formatPeriodPrice(quote.amount, period, 1)}</span>
+                    <span>{fmt.formatPeriodPrice(quote.amount, period, periodCount)}</span>
                   </Space>
                 ),
               }
@@ -277,7 +377,11 @@ function MarketPage() {
                 value: !selected ? (
                   "--"
                 ) : isSpot ? (
-                  <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
+                  <Space size={8} align="baseline">
+                    <SpotPriceInline baseHourly={selected.price_hourly} units={needed} policy={spotPolicy} />
+                    {/* 「低至 X 折」角标不能只挂在 chip 上:结算条是用户最后看到价格的地方 */}
+                    <SpotOffLabel policy={spotPolicy} />
+                  </Space>
                 ) : (
                   formatHourlyPrice(mulPrice(selected.price_hourly, needed))
                 ),
@@ -327,6 +431,7 @@ function MarketPage() {
                       search: {
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),
+                        ...(period && periodCount > 1 ? { count: periodCount } : {}),
                         ...(isSpot ? { market: "spot" as const } : {}),
                         workload: "service" as const,
                       },
@@ -346,10 +451,11 @@ function MarketPage() {
                     void navigate({
                       to: "/market/create/$skuId",
                       params: { skuId: String(selected.id) },
-                      // CPU 规格不带卡数(创建页按 max_gpus_per_instance=0 提交 gpu_count: 0);计费方式随选择带过去
+                      // CPU 规格不带卡数(创建页按 max_gpus_per_instance=0 提交 gpu_count: 0);计费方式与时长随选择带过去
                       search: {
                         ...(isCpu ? {} : { gpus: gpuCount }),
                         ...(period ? { period } : {}),
+                        ...(period && periodCount > 1 ? { count: periodCount } : {}),
                         ...(isSpot ? { market: "spot" as const } : {}),
                       },
                     });

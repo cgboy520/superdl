@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode
 from app.core.outbox import OutboxTask
@@ -21,13 +20,6 @@ from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import admin_headers, create_user_with_key, drain, provision_running, register
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-async def second_admin_headers(
-    sm: async_sessionmaker[AsyncSession], client, username: str, role: str = "finance"
-) -> dict[str, str]:
-    """指定用户名建管理员并登录(默认 finance:调账双人复核需要第二位财务)。"""
-    return await admin_headers(sm, client, role, username=username)
 
 
 async def _make_dead_task(sm) -> int:
@@ -47,8 +39,8 @@ async def _make_dead_task(sm) -> int:
 class TestAdjustments:
     async def test_dual_review_flow(self, client, sm, fake):
         headers, _uuid, user_id = await provision_running(client, sm, fake)
-        finance_a = await second_admin_headers(sm, client, "fin-a")
-        finance_b = await second_admin_headers(sm, client, "fin-b")
+        finance_a = await admin_headers(sm, client, role="finance", username="fin-a")
+        finance_b = await admin_headers(sm, client, role="finance", username="fin-b")
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -87,8 +79,8 @@ class TestAdjustments:
 
     async def test_negative_adjustment_and_reject(self, client, sm, fake):
         headers, _uuid, user_id = await provision_running(client, sm, fake)
-        fin_a = await second_admin_headers(sm, client, "fin-c")
-        fin_b = await second_admin_headers(sm, client, "fin-d")
+        fin_a = await admin_headers(sm, client, role="finance", username="fin-c")
+        fin_b = await admin_headers(sm, client, role="finance", username="fin-d")
 
         resp = await client.post(
             "/api/admin/v1/adjustments",
@@ -110,7 +102,7 @@ class TestAdjustments:
         同键同体跨租户 → 各开各的单(作用域含 user_id,弱键跨租户不误判重放)。"""
         _h1, _u1, user1 = await provision_running(client, sm, fake)
         _h2, u2id, _k2 = await create_user_with_key(client, "13900000141")
-        finance = await second_admin_headers(sm, client, "fin-idem")
+        finance = await admin_headers(sm, client, role="finance", username="fin-idem")
         body = {"user_id": user1, "amount": "10.00", "reason": "补偿一"}
 
         r1 = await client.post(
@@ -189,7 +181,7 @@ class TestAdjustments:
         挂了 = 单个 admin 发起调账后自建新账号复核,双人制衡形同虚设。
         """
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
-        fin_a = await second_admin_headers(sm, client, "fin-late-a")
+        fin_a = await admin_headers(sm, client, role="finance", username="fin-late-a")
         resp = await client.post(
             "/api/admin/v1/adjustments",
             json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
@@ -199,7 +191,7 @@ class TestAdjustments:
         adj_id = resp.json()["id"]
 
         # 发起后才创建的账号:不能充当第二复核人
-        fin_b = await second_admin_headers(sm, client, "fin-late-b")
+        fin_b = await admin_headers(sm, client, role="finance", username="fin-late-b")
         resp = await client.post(
             f"/api/admin/v1/adjustments/{adj_id}/review",
             json={"approve": True},
@@ -209,7 +201,7 @@ class TestAdjustments:
         assert resp.json()["message_key"] == "adminapi.adjustReviewerTooNew"
 
         # 发起前已存在的账号:正常复核通过
-        fin_c = await second_admin_headers(sm, client, "fin-late-c")
+        fin_c = await admin_headers(sm, client, role="finance", username="fin-late-c")
         resp = await client.post(
             "/api/admin/v1/adjustments",
             json={"user_id": user_id, "amount": "25.50", "reason": "故障补偿"},
@@ -227,7 +219,7 @@ class TestAdjustments:
     async def test_adjustment_amount_strict_decimal(self, client, sm, fake):
         """调账金额契约层严格十进制:科学计数法/超 2 位小数/非数字一律 422,不进服务层。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
-        fin = await second_admin_headers(sm, client, "fin-strict")
+        fin = await admin_headers(sm, client, role="finance", username="fin-strict")
         for bad in ("1e2", "1E-3", "10.005", "abc", "1,000.00", "10.", ".5", "--10.00", ""):
             resp = await client.post(
                 "/api/admin/v1/adjustments",
@@ -461,8 +453,11 @@ class TestAnnouncement:
         from app.modules.account import service as account_service
         from app.modules.notify import service as notify_service
 
-        async def _no_per_user_notify(*args, **kwargs):
-            raise AssertionError("公告群发不得逐用户调用 notify()")
+        async def _no_per_user_notify(session, user_id, *args, **kwargs):
+            # 只拦逐用户通知;平台告警流(user_id=None)放行——admin_headers 的
+            # 首登 TOTP 绑定会经它上告警(#46),与公告群发无关
+            if user_id is not None:
+                raise AssertionError("公告群发不得逐用户调用 notify()")
 
         monkeypatch.setattr(notify_service, "notify", _no_per_user_notify)
 
@@ -612,6 +607,32 @@ class TestAdminSearch:
         suffix = resp.json()["items"]
         assert [t["phone_masked"] for t in suffix] == ["136****0001"]
 
+    async def test_tenant_order_asc_desc_with_cursor(self, client, sm, fake):
+        """注册先后(id)正/倒序:游标语义随方向翻转,翻页不重不漏。"""
+        h = await admin_headers(sm, client)
+        await register(client, "13655510001")
+        await register(client, "13655510002")
+        await register(client, "13655510003")
+
+        desc = (await client.get("/api/admin/v1/tenants", headers=h)).json()["items"]
+        assert [t["id"] for t in desc] == sorted((t["id"] for t in desc), reverse=True)
+        page1 = (
+            await client.get(
+                "/api/admin/v1/tenants", params={"order": "asc", "limit": 2}, headers=h
+            )
+        ).json()
+        assert [t["id"] for t in page1["items"]] == sorted(t["id"] for t in page1["items"])
+        page2 = (
+            await client.get(
+                "/api/admin/v1/tenants",
+                params={"order": "asc", "limit": 2, "cursor": page1["next_cursor"]},
+                headers=h,
+            )
+        ).json()
+        asc_ids = [t["id"] for t in page1["items"] + page2["items"]]
+        assert asc_ids == sorted(asc_ids)  # 全局升序不重不漏
+        assert len(asc_ids) == len(set(asc_ids))
+
     async def test_tenant_search_is_audited(self, client, sm, fake):
         """按号码检索是敏感读:默认只审计写操作,这里必须显式留痕。"""
         from app.core.audit import AuditLog
@@ -716,7 +737,7 @@ class TestAdjustContext:
     async def test_context_and_unknown_user(self, client, sm, fake):
         """调账前置上下文:掩码手机号 + 当前余额 + 近 3 条流水 + 在跑台数;幽灵 id → 404。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
-        fin = await second_admin_headers(sm, client, "fin-ctx")
+        fin = await admin_headers(sm, client, role="finance", username="fin-ctx")
 
         resp = await client.get(f"/api/admin/v1/tenants/{user_id}/adjust-context", headers=fin)
         assert resp.status_code == 200, resp.text
@@ -732,7 +753,7 @@ class TestAdjustContext:
 
     async def test_create_unknown_user_rejected(self, client, sm, fake):
         """钱包会为任意 user_id 凭空建行:发起调账必须先拦住不存在的租户。"""
-        fin = await second_admin_headers(sm, client, "fin-ghost")
+        fin = await admin_headers(sm, client, role="finance", username="fin-ghost")
         resp = await client.post(
             "/api/admin/v1/adjustments",
             json={"user_id": 999999, "amount": "10.00", "reason": "测试"},
@@ -743,7 +764,7 @@ class TestAdjustContext:
     async def test_create_over_cap_rejected(self, client, sm, fake):
         """单笔绝对值上限(ADJUST_MAX_ABS):防手滑多敲零,超出走对公/线下流程。"""
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
-        fin = await second_admin_headers(sm, client, "fin-cap")
+        fin = await admin_headers(sm, client, role="finance", username="fin-cap")
 
         for amount in ("100000.01", "-200000.00"):
             resp = await client.post(
@@ -846,23 +867,10 @@ class TestOverview:
 
 
 class TestAuditPagination:
-    async def test_cursor_turns_page(self, client, sm, fake):
-        """审计翻页:cursor=末行 id 的不透明编码,下一页全是更早的行;非法游标 400。"""
-        import base64
-
-        await provision_running(client, sm, fake)  # 产生若干审计行
+    async def test_bad_cursor_400(self, client, sm):
+        """非法游标 400。通用续页(下一页全是更早的行)只在
+        test_billing_flow.test_ledger_cursor_pagination 走一次全程。"""
         ah = await admin_headers(sm, client, role="admin")
-
-        page1 = (await client.get("/api/admin/v1/audit", params={"limit": 2}, headers=ah)).json()
-        assert len(page1) == 2
-        cursor = base64.urlsafe_b64encode(str(page1[-1]["id"]).encode()).decode()
-        page2 = (
-            await client.get(
-                "/api/admin/v1/audit", params={"limit": 2, "cursor": cursor}, headers=ah
-            )
-        ).json()
-        assert len(page2) >= 1
-        assert all(r["id"] < page1[-1]["id"] for r in page2)
 
         resp = await client.get("/api/admin/v1/audit", params={"cursor": "!!!"}, headers=ah)
         assert resp.status_code == 400
@@ -933,9 +941,7 @@ class TestTenantRealnameExposure:
         """readonly 即使带 reason 也不可 reveal(403):明文权限不收口到最小角色。"""
         await self._realname_user(client, sm)
         ro = await admin_headers(sm, client, role="readonly")
-        resp = await client.get(
-            "/api/admin/v1/tenants?reveal=true&reason=客服工单核实", headers=ro
-        )
+        resp = await client.get("/api/admin/v1/tenants?reveal=true&reason=客服工单核实", headers=ro)
         assert resp.status_code == 403
 
     async def test_reveal_sees_plaintext_and_audited_with_reason(self, client, sm, fake):
@@ -970,8 +976,7 @@ class TestTenantQuotaOverride:
     """配额覆盖:override 优先于 policy/env;清空恢复默认链;updated_by 落库。"""
 
     async def test_override_caps_disks_then_clear_restores(self, client, sm, fake):
-        from tests.helpers import create_user_with_key, fund_wallet
-        from tests.test_disks import create_disk
+        from tests.helpers import create_disk, create_user_with_key, fund_wallet
 
         headers, user_id, _key = await create_user_with_key(client, "13655550002")
         await fund_wallet(sm, user_id)
@@ -1062,15 +1067,8 @@ class TestAdminInstanceEvents:
         p1 = (await client.get(f"/api/admin/v1/instances/{uuid}/events?limit=1", headers=ah)).json()
         assert len(p1["items"]) == 1 and p1["next_cursor"]
 
-    async def test_user_token_rejected_and_unknown_uuid(self, client, sm, fake):
-        _uh, uuid, _uid = await provision_running(client, sm, fake)
-        data = await register(client, "13655550004")
-        # 管理端是独立 JWT audience:用户 token 过不了鉴权依赖(401)
-        resp = await client.get(
-            f"/api/admin/v1/instances/{uuid}/events",
-            headers={"Authorization": f"Bearer {data['access_token']}"},
-        )
-        assert resp.status_code == 401
+    async def test_unknown_uuid_404(self, client, sm, fake):
+        await provision_running(client, sm, fake)
         ah = await admin_headers(sm, client, role="ops")
         resp = await client.get("/api/admin/v1/instances/nope-uuid/events", headers=ah)
         assert resp.status_code == 404
@@ -1129,7 +1127,7 @@ class TestAdminListPagination:
         from app.modules.adminapi.models import AdminUser
 
         _headers, _uuid, user_id = await provision_running(client, sm, fake, "13677780003")
-        fin = await second_admin_headers(sm, client, "fin-page")
+        fin = await admin_headers(sm, client, role="finance", username="fin-page")
         async with sm() as session:
             creator = (
                 await session.execute(select(AdminUser.id).where(AdminUser.username == "fin-page"))

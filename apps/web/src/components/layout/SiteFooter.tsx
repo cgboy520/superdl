@@ -1,5 +1,6 @@
 /** 三栏页脚(仅公开页;控制台保持单行合规页脚)。备案号等走后端 site-config(管理端·平台配置在线维护)。 */
 
+import { fontSize, layout } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
 import { theme, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -11,12 +12,14 @@ function isInternal(to: string): boolean {
   return to.startsWith("/") && !to.startsWith("/#");
 }
 
+type FooterLink = { label: string; to: string; hash?: undefined } | { label: string; to: "/"; hash: string };
+
 function FooterCol({
   title,
   links,
 }: {
   title: string;
-  links: readonly { label: string; to: string }[];
+  links: readonly FooterLink[];
 }) {
   const { token } = theme.useToken();
   return (
@@ -26,7 +29,12 @@ function FooterCol({
       </Typography.Text>
       {links.map((l) => (
         <div key={l.label} style={{ marginBottom: 8 }}>
-          {isInternal(l.to) ? (
+          {l.hash != null ? (
+            // 首页锚点走 TanStack hash 导航(整页刷新会丢掉 SPA 态),落地页负责 scrollIntoView
+            <Link to="/" hash={l.hash} style={{ color: token.colorTextSecondary }}>
+              {l.label}
+            </Link>
+          ) : isInternal(l.to) ? (
             <Link to={l.to} style={{ color: token.colorTextSecondary }}>
               {l.label}
             </Link>
@@ -52,19 +60,19 @@ export function SiteFooter() {
   const companyAddress = site?.company_address;
   const companyPhone = site?.company_phone;
   const licenseUrl = site?.business_license_url;
-  const productLinks = [
+  const productLinks: FooterLink[] = [
     { label: t("footer.linkMarket"), to: "/market" },
-    { label: t("footer.linkPricing"), to: "/#pricing" },
-    { label: t("footer.linkRanking"), to: "/#ranking" },
+    { label: t("footer.linkPricing"), to: "/", hash: "pricing" },
+    { label: t("footer.linkRanking"), to: "/", hash: "ranking" },
   ];
   // 只列真实存在的入口,不放 to="" 的占位链接
-  const supportLinks = [
+  const supportLinks: FooterLink[] = [
     { label: t("footer.linkHelp"), to: "/help" },
     ...(site?.support_email
-      ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` }]
+      ? [{ label: t("footer.linkContact"), to: `mailto:${site.support_email}` as string }]
       : []),
   ];
-  const complianceLinks = [
+  const complianceLinks: FooterLink[] = [
     { label: t("footer.linkTerms"), to: "/legal/terms" },
     { label: t("footer.linkPrivacy"), to: "/legal/privacy" },
   ];
@@ -72,7 +80,7 @@ export function SiteFooter() {
     <footer style={{ background: token.colorBgContainer, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
       <div
         style={{
-          maxWidth: 1200,
+          maxWidth: layout.pageMaxWidthWide,
           margin: "0 auto",
           padding: "40px 24px 24px",
         }}
@@ -82,7 +90,7 @@ export function SiteFooter() {
           <FooterCol title={t("footer.supportTitle")} links={supportLinks} />
           <FooterCol title={t("footer.complianceTitle")} links={complianceLinks} />
           <div style={{ maxWidth: 320 }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("copy.antiMiningNotice")}
             </Typography.Text>
           </div>
@@ -96,7 +104,7 @@ export function SiteFooter() {
           }}
         >
           {(companyName || companyAddress || companyPhone) && (
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+            <Typography.Paragraph type="secondary" style={{ fontSize: fontSize.caption, marginBottom: 4 }}>
               {companyName &&
                 (licenseUrl ? (
                   <a href={licenseUrl} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
@@ -109,7 +117,7 @@ export function SiteFooter() {
               {companyPhone && ` · ${companyPhone}`}
             </Typography.Paragraph>
           )}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("footer.copyright", { year: new Date().getFullYear() })}
             {icp && (
               <>

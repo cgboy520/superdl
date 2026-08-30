@@ -83,3 +83,9 @@ class AdminTicketStatusUpdate(BaseModel):
     """管理端状态操作:resolve=标记解决;close=关闭(仅 resolved 后可)。"""
 
     action: Literal["resolve", "close"]
+
+
+class AdminTicketCountOut(BaseModel):
+    """工单计数轻端点(待办角标轮询):DB count,不拉列表全页。"""
+
+    count: int

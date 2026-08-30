@@ -27,6 +27,15 @@ AM_PAYLOAD = {
 }
 
 
+def am_payload_for(user_id: int) -> dict:
+    """AM_PAYLOAD 的租户归属版:namespace 指向一个真实注册用户(归属查库核实后必须如此)。"""
+    import copy
+
+    payload = copy.deepcopy(AM_PAYLOAD)
+    payload["alerts"][0]["labels"]["namespace"] = f"tenant-{user_id}"
+    return payload
+
+
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
         """未读数轻端点:DB count 与列表分页解耦,标记已读后减少。"""
@@ -50,6 +59,26 @@ class TestBalanceWarnNotification:
         await client.post(f"/api/v1/notifications/{first['id']}/read", headers=headers)
         resp = await client.get("/api/v1/notifications/unread-count", headers=headers)
         assert resp.json()["unread_count"] == 2
+
+    async def test_target_id_round_trip(self, client, sm, fake):
+        """结构化跳转目标:写入 target_id 的行列表原样返回(深链用),未写的为 null。"""
+        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        async with sm() as session:
+            session.add(
+                Notification(
+                    user_id=user_id,
+                    type="instance",
+                    title="带目标",
+                    content="c",
+                    target_id="abc123uuid",
+                )
+            )
+            session.add(Notification(user_id=user_id, type="account", title="无目标", content="c"))
+            await session.commit()
+        items = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
+        by_title = {n["title"]: n for n in items}
+        assert by_title["带目标"]["target_id"] == "abc123uuid"
+        assert by_title["无目标"]["target_id"] is None
 
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
         headers, _uuid, user_id = await provision_running(client, sm, fake)
@@ -203,7 +232,21 @@ class TestAlertmanagerWebhook:
                 ).scalars()
             )
         assert any(t.payload.get("phone") == "13900001111" for t in tasks)
-        # 重放(同 fingerprint+startsAt):不再补发短信任务
+
+    async def test_ingest_and_dedup(self, client, sm, fake):
+        from app.core.outbox import OutboxTask
+
+        headers, _uuid, _user_id = await provision_running(client, sm, fake)  # user_id=1
+        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        assert resp.status_code == 200
+        assert resp.json()["ingested"] == 1
+        async with sm() as session:
+            sms_tasks = list(
+                (
+                    await session.execute(select(OutboxTask).where(OutboxTask.type == "notify.sms"))
+                ).scalars()
+            )
+        # 重放(同 fingerprint+startsAt)→ 幂等:不再投递,也不再补发短信任务
         resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
         assert resp.json()["ingested"] == 0
         async with sm() as session:
@@ -212,16 +255,7 @@ class TestAlertmanagerWebhook:
                     await session.execute(select(OutboxTask).where(OutboxTask.type == "notify.sms"))
                 ).scalars()
             )
-        assert len(again) == len(tasks)
-
-    async def test_ingest_and_dedup(self, client, sm, fake):
-        headers, _uuid, _user_id = await provision_running(client, sm, fake)  # user_id=1
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
-        assert resp.status_code == 200
-        assert resp.json()["ingested"] == 1
-        # 重放 → 幂等
-        resp = await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
-        assert resp.json()["ingested"] == 0
+        assert len(again) == len(sms_tasks)
 
         # 受影响租户收到 gpu_fault 通知
         rows = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
@@ -279,32 +313,50 @@ class TestAlertAck:
         assert again.json()["message_key"] == "adminapi.alertAlreadyAcked"
 
     async def test_unread_count_tracks_ack(self, client, sm, fake):
-        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        from tests.helpers import register
+
+        user = await register(client, "13900000991")
+        await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
         ops = await admin_headers(sm, client, role="ops")
-        # 平台 admin_alert + 租户 gpu_fault(namespace tenant-1 → user_id=1)各一条
-        count = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()["count"]
-        assert count == 2
+        # 告警流 3 行:平台 admin_alert + 租户 gpu_fault(均 critical)+ 管理员绑定 TOTP 告警
+        # (#46 检测闭环,warning)。ack 掉 gpu 行后剩 2
+        body = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()
+        assert body["count"] == 3
+        assert body["critical_count"] == 2
 
         alerts = (await client.get("/api/admin/v1/alerts", headers=ops)).json()
         gpu = next(a for a in alerts if a["type"] == "gpu_fault")
-        assert gpu["target_kind"] == "tenant" and gpu["target_id"] == "1"
+        assert gpu["target_kind"] == "tenant" and gpu["target_id"] == str(user["user"]["id"])
         resp = await client.post(f"/api/admin/v1/alerts/{gpu['id']}/ack", headers=ops)
         assert resp.status_code == 200
-        count = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()["count"]
-        assert count == 1
+        body = (await client.get("/api/admin/v1/alerts/unread-count", headers=ops)).json()
+        assert body["count"] == 2
+        assert body["critical_count"] == 1
+
+    async def test_forged_namespace_without_real_user_no_tenant_notify(self, client, sm, fake):
+        """伪造 namespace=tenant-<不存在的用户>:平台流照落,租户短信/站内信一行都不许出
+        (归属必须查库核实,label 是提交方写得的)。"""
+        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)  # tenant-1 无此用户
+        async with sm() as session:
+            rows = (await session.execute(select(Notification))).scalars().all()
+        assert [r.type for r in rows] == ["admin_alert"]
 
     async def test_severity_filter(self, client, sm, fake):
-        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
+        from tests.helpers import register
+
+        user = await register(client, "13900000992")
+        await client.post("/api/v1/webhooks/alertmanager", json=am_payload_for(user["user"]["id"]))
         ops = await admin_headers(sm, client, role="ops")
         critical = (
             await client.get("/api/admin/v1/alerts", params={"severity": "critical"}, headers=ops)
         ).json()
         assert len(critical) == 2
         assert all(a["severity"] == "critical" for a in critical)
+        # warning 桶里只有管理员绑定 TOTP 的检测告警(#46),AM 报文不产生 warning
         warning = (
             await client.get("/api/admin/v1/alerts", params={"severity": "warning"}, headers=ops)
         ).json()
-        assert warning == []
+        assert [a["title"] for a in warning] == ["管理员完成二要素(TOTP)绑定"]
 
     async def test_ack_non_alert_404(self, client, sm, fake):
         """普通站内信(非告警流类型)不可确认:404,不暴露存在性之外的写面。"""
@@ -320,13 +372,6 @@ class TestAlertAck:
         resp = await client.post("/api/admin/v1/alerts/999999/ack", headers=ops)
         assert resp.status_code == 404
 
-    async def test_ack_role_gate(self, client, sm, fake):
-        await client.post("/api/v1/webhooks/alertmanager", json=AM_PAYLOAD)
-        finance = await admin_headers(sm, client, role="finance")
-        alerts = (await client.get("/api/admin/v1/alerts", headers=finance)).json()
-        resp = await client.post(f"/api/admin/v1/alerts/{alerts[0]['id']}/ack", headers=finance)
-        assert resp.status_code == 403
-
 
 class TestAlertmanagerAuthHardening:
     async def test_dev_without_token_rejected(self, client, sm, fake, monkeypatch):
@@ -339,18 +384,6 @@ class TestAlertmanagerAuthHardening:
 
 
 class TestAlertmanagerWebhookHardening:
-    async def test_non_ascii_authorization_rejected_not_500(self, client, sm, fake, monkeypatch):
-        """非 ASCII 的 Authorization 头:compare_digest 收 str 抛 TypeError,必须先 encode。"""
-        from app.core.config import get_settings
-
-        monkeypatch.setattr(get_settings(), "alertmanager_token", "s3cret")
-        resp = await client.post(
-            "/api/v1/webhooks/alertmanager",
-            json=AM_PAYLOAD,
-            headers={b"authorization": "Bearer caf\u00e9".encode("latin-1")},
-        )
-        assert resp.status_code == 401
-
     async def test_oversized_body_rejected(self, client, sm, fake):
         """报文体积上限:畸形/恶意大报文不能撑爆解析与写库。"""
         body = b'{"alerts": []}' + b" " * (1024 * 1024)

@@ -60,3 +60,25 @@ def prev_hour_range(dt: datetime) -> tuple[datetime, datetime]:
     """上一个完整自然小时 [start, end)。小时结算的扫描窗口。"""
     end = hour_floor(dt)
     return end - timedelta(hours=1), end
+
+
+def local_day_range(
+    tz_offset_minutes: int, *, at: datetime | None = None
+) -> tuple[datetime, datetime]:
+    """本地自然日 [start, end)(以 UTC 时刻表示)。tz_offset_minutes 为本地相对 UTC 的
+    偏移分钟(东八区 480);at 缺省取 now_utc()。注册统计/营收概览的「今日」口径。"""
+    offset = timedelta(minutes=tz_offset_minutes)
+    ref = ensure_utc(at) if at is not None else now_utc()
+    day_start = (ref + offset).replace(hour=0, minute=0, second=0, microsecond=0) - offset
+    return day_start, day_start + timedelta(days=1)
+
+
+def parse_local_date(date: str, tz_offset_minutes: int) -> tuple[datetime, datetime]:
+    """YYYY-MM-DD 本地自然日对应的 UTC [start, end) 窗口(日账单汇总口径);
+    格式非法报 VALIDATION_ERROR(billing.badDateFormat)。"""
+    try:
+        local_midnight = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="billing.badDateFormat") from exc
+    start = local_midnight - timedelta(minutes=tz_offset_minutes)
+    return start, start + timedelta(days=1)

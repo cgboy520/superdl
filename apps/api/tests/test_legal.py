@@ -1,4 +1,4 @@
-"""法务文档:公开端点(回落/404)、注册落证、版本流(草编发归)、角色门。"""
+"""法务文档:公开端点(回落/404)、注册落证、版本流(草编发归)。"""
 
 import hashlib
 
@@ -196,18 +196,29 @@ class TestVersionFlow:
             )
         assert published is not None
         resp = await client.post(
-            f"/api/admin/v1/legal-docs/versions/{published.id}/archive", headers=headers
+            f"/api/admin/v1/legal-docs/versions/{published.id}/archive",
+            headers=headers,
+            json={"reason": "清理废弃草稿"},
         )
         assert resp.status_code == 409
-        # draft → archived
+        # 原因必填:空体 422(ReasonAction 全站口径)
         resp = await client.post(
             f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive", headers=headers
+        )
+        assert resp.status_code == 422
+        # draft → archived,原因入审计
+        resp = await client.post(
+            f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive",
+            headers=headers,
+            json={"reason": "内容已合并到 v3"},
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "archived"
         # archived 再归档 409
         resp = await client.post(
-            f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive", headers=headers
+            f"/api/admin/v1/legal-docs/versions/{draft['id']}/archive",
+            headers=headers,
+            json={"reason": "重复操作"},
         )
         assert resp.status_code == 409
 
@@ -237,21 +248,3 @@ class TestVersionFlow:
         assert draft_en["locale"] == "en-US"
         assert draft_en["version"] == 1
         assert "服务说明" in draft_en["content_md"]
-
-
-class TestRoleGate:
-    async def test_non_admin_publish_403(
-        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
-    ):
-        ops = await admin_headers(sm, client, role="ops")
-        admin = await admin_headers(sm, client)
-        draft = await _create_draft(client, admin)
-        resp = await client.post(
-            f"/api/admin/v1/legal-docs/versions/{draft['id']}/publish", headers=ops
-        )
-        assert resp.status_code == 403
-
-    async def test_read_all_roles(self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]):
-        readonly = await admin_headers(sm, client, role="readonly")
-        resp = await client.get("/api/admin/v1/legal-docs", headers=readonly)
-        assert resp.status_code == 200

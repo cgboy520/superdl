@@ -18,6 +18,8 @@ class Notification(Base):
     # / subscription / preempted / ticket / invoice / refund
     title: Mapped[str] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text)
+    # 结构化跳转目标(通知中心深链):instance 类 = 实例 uuid,ticket 类 = 工单 id;无目标恒空
+    target_id: Mapped[str | None] = mapped_column(String(64))
     severity: Mapped[str] = mapped_column(String(16), default="info")  # info/warning/critical
     # published / revoked:仅 announcement 类型会被撤回,其余类型恒 published
     status: Mapped[str] = mapped_column(String(16), default="published", server_default="published")

@@ -93,8 +93,12 @@ subjects:
     name: superdl-node-mgr   # 巡检 probe_cluster 同用
     namespace: superdl
 ---
-# tenant-mgr 编排面:租户 namespace/Pod/Service/HTTPRoute/NetworkPolicy/PVC/Quota/Secret
-# 全生命周期(instance.* 任务 + reconciler;per-instance JUPYTER_TOKEN 走 Secret)。
+# tenant-mgr 编排面:租户 namespace/Pod/Service/HTTPRoute/NetworkPolicy/PVC/Quota 全生命周期
+# (instance.* 任务 + reconciler)。secrets 已移出 ClusterRole:集群级 secrets:get 一旦随
+# SA token 泄漏即可读全集群(平台主密钥/TLS/控制器凭据),改为由编排器在建 tenant-*
+# namespace 时同步下发同名 Role/RoleBinding(real.py _ensure_tenant_rbac_sync),
+# secrets 权限收窄到本租户 ns 内。残留面:pods:list 仍全集群(reconciler 全量 LIST
+# 需要),但平台侧敏感值恒走 secretKeyRef,Pod 规约只暴露 Secret 名,不含值。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -106,9 +110,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "services", "persistentvolumeclaims", "resourcequotas"]
     verbs: ["get", "list", "create", "delete"]
-  - apiGroups: [""]
-    resources: ["secrets"]  # per-instance 敏感 env(JUPYTER_TOKEN)的创建/收敛/随实例删除
-    verbs: ["get", "create", "delete", "patch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    # 下发租户 ns 内的 secrets Role/RoleBinding;实际落点由 VAP 策略①钉死在
+    # superdl/tenant-* 命名空间,create 无法按 resourceNames 收窄,故不授 get/list。
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "create", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "create", "delete"]
@@ -202,4 +208,36 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: superdl-disk-ops
+    namespace: superdl
+---
+# superdl ns 内的拉取凭据写权限(仅 prewarm 预热 Job 用;配额 Job 的 metaurl 由 kubelet
+# 经 secretKeyRef 注入,磁盘 worker 自身不需要 secrets 权限)。
+# get/patch 按 resourceNames 收窄到 superdl-registry-pull;create 不支持 resourceNames,
+# 只能新建不能读既有(superdl-db 等平台 Secret 对该 SA 仍不可读)。
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: superdl-pull-secret
+  namespace: superdl
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["superdl-registry-pull"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: superdl-pull-secret
+  namespace: superdl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: superdl-pull-secret
+subjects:
+  - kind: ServiceAccount
+    name: superdl-prewarm
     namespace: superdl

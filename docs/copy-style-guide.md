@@ -27,3 +27,8 @@
 - 新增文案必须同时提交 zh-CN 与 en-US;en 语序独立重写,不逐字直译(复数走 `_one/_other`)。
 - 带 `count` 参数的键,en 侧会生成复数变体,提交前跑 `pnpm i18n:write` 并补全。
 - 中国渠道运营域文案(platform 渠道字段/指引、settings 策略参数名)豁免不译,以 `i18n-exempt` 标记。
+
+## 术语表
+
+- 通用技术缩写在两种语言中均保留原文,不逐端翻译:ID、IP、CUDA、Python、GPU、vCPU、SSH、API Key、JupyterLab、diff%。
+- 品牌字标 `SuperDL` 任何语言不译;产品名词「一键加入」「一键添加」按白名单原文使用。

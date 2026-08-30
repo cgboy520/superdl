@@ -1,7 +1,38 @@
 {
   "common": {
     "loadFailed": "加载失败,请重试",
-    "retry": "重试"
+    "retry": "重试",
+    "loadMore": "加载更多",
+    "loadedAll": "已加载全部 {{count}} 条",
+    "forbidden": "无权限查看",
+    "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
+    "requestFailed": "请求失败"
+  },
+  "csv": {
+    "exportDone": "已导出 CSV",
+    "exportFailed": "导出失败,请稍后重试",
+    "exporting": "导出中…",
+    "exportTruncated": "已达单次导出上限,文件末尾有截断标记;请缩小范围分次导出"
+  },
+  "chart": {
+    "degraded": "数据暂不可用",
+    "empty": "暂无数据"
+  },
+  "empty": {
+    "disk": "暂无数据盘",
+    "list": "暂无数据",
+    "notification": "暂无通知",
+    "search": "没有符合条件的结果,试试调整筛选",
+    "ticket": "暂无工单"
+  },
+  "lang": {
+    "en": "English",
+    "switchLabel": "切换语言",
+    "zh": "中文"
+  },
+  "query": {
+    "partialFailed": "部分数据加载失败",
+    "partialFailedDesc": "页面中的金额与列表可能不完整,请以重试后的结果为准。"
   },
   "format": {
     "countdown": {
@@ -34,6 +65,9 @@
       "year": "年"
     },
     "spotDiscount": "{{off}} 折"
+  },
+  "confirm": {
+    "typeNameToConfirm": "键入 {{name}} 以确认"
   },
   "status": {
     "announcement": {

@@ -16,6 +16,11 @@ on:
 env:
   SUPERDL_ENVIRONMENT: dev
 
+# 顶层只读基线:缺省 GITHUB_TOKEN 拿到的是过大权限,CI 任务全是读操作;
+# 需要写权限的 job 在自己名下单独声明(最小权限,一行都不多给)
+permissions:
+  contents: read
+
 jobs:
   api:
     runs-on: ubuntu-latest
@@ -99,6 +104,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm i18n
       - run: pnpm test
+      # CSP 内联脚本 hash 闸门:index.html 防 FOUC 脚本改动必须同步 CSP 的 sha256
+      - run: bash scripts/check-csp-hash.sh
       # orval 生成物必须与入库的 openapi.json 一致(契约漂移即 fail)。
       # openapi.json 本身的新鲜度由 api job 的导出 diff 把关,两个 job 相互印证。
       - run: pnpm api-client

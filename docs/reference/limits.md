@@ -20,7 +20,7 @@
 | 容器临时存储 | 请求 2Gi,上限 64Gi | — | `core/k8s/real.py` |
 | 对外服务端点限流 | 20 rps/端点 | 1~1000 | 策略 `service_endpoint_rps`。**生效在网关的本地令牌桶里**(挂 `svc-https` listener 的 `BackendTrafficPolicy`,桶按路由分),改策略值不会自动同步到网关 —— 必须重新下发 `deploy/app/k8s/04-gateway.yaml`。见 [services.md](./services.md) |
 
-集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例 —— 服务型实例默认 `with_ssh=false`,不进这个池,不占这段名额(`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;运行期撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。
+集群级:SSH NodePort 端口池 30000~32767(排除 30500),即单集群最多约 2767 台**带 SSH 的**实例 —— 服务型实例默认 `with_ssh=false`,不进这个池,不占这段名额(`SUPERDL_SSH_PORT_RANGE_START` / `SUPERDL_SSH_PORT_RANGE_END`,排除集 `SUPERDL_SSH_PORT_EXCLUDED` 默认 `{30500}`;运行期撞占的端口标 blocked 并周期复检放回,水位见 `GET /api/admin/v1/nodes/port-pool`)。分配在段内**随机**(复用与扩段都不按升序):顺序分配会让在用 SSH 入口恒聚低段、可枚举。
 
 ## 计费与回收时钟
 
@@ -83,6 +83,8 @@
 
 **没有每源 IP 并发连接限制**:Envoy Gateway 无此原语,`ClientTrafficPolicy.connection.connectionLimit` 是每个 Envoy 实例的连接总量,现配 10000 只作防内存耗尽的兜底。取舍见 [security.md](./security.md)「限流分层」。
 
+**请求体硬上限(双层)**:边缘层 `BackendTrafficPolicy.requestBuffer` 对平台 API 限 1 MiB、匿名支付回调(`/api/v1/webhooks`,独立路由)限 256 KiB,超限 413;应用层 `RequestBodyLimitMiddleware`(纯 ASGI 流式计数,`app/core/body_limit.py`)统一兜底 1 MiB,防边缘被绕过(集群内直连)。uvicorn 另有 `--limit-concurrency 1024` 兜底在途连接内存。全平台无请求方向流式端点,缓冲不改变的语义;`requestHeadersReceivedTimeout: 10s` / `requestReceivedTimeout: 60s`(慢头/慢体攻击)在 `ClientTrafficPolicy superdl-gateway`。
+
 | 动作 | 维度 | 限额 | 备注 |
 |---|---|---|---|
 | 用户登录 | IP+手机号 / 账号 | 5 次/5min / 10 次/15min | 只计失败,成功清零 |
@@ -97,6 +99,12 @@
 | 管理端 TOTP 校验 | 账号 | 5 次/10min | |
 | 管理端试发短信 | 全局 | 10 次/时 | |
 | 支付回调 | IP | 120 次/分 | `webhooks_router.py` |
+| 充值创建 | 用户 | 10 次/时 | `billing/router.py` |
+| 退款申请 | 用户 | 10 次/时 | 同上 |
+| 实例创建 | 用户 | 30 次/时 | `orchestrator/router.py` |
+| 续费 / 转包周期 | 用户 | 各 20 次/时 | 同上 |
+| 数据盘创建 / 扩容 | 用户 | 各 20 次/时 | `orchestrator/disks_router.py` |
+| 管理端调账发起 | 管理员 | 20 次/时 | `adminapi/router_finance.py` |
 | Alertmanager webhook | IP | 120 次/分;报文 ≤1 MiB;≤500 条;字符串截 1024 | `notify/router.py` |
 | 节点注册脚本 / bootstrap / progress | IP | 30 / 30 / 60 次/分 | `nodes/enroll_router.py` |
 | 工单创建 | 用户 | 5 次/时 | |

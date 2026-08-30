@@ -2,7 +2,8 @@
  *  resolved/closed 不可再回复(提示新建);关闭入口仅在 resolved 出现。 */
 
 import { ArrowLeftOutlined } from "@ant-design/icons";
-import { formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import { fontSize, formatDateTime, metaOf, ticketCategoryMap, ticketStatusMap } from "@superdl/ui";
+import { DataErrorAlert } from "@superdl/ui/components";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -18,12 +19,11 @@ import {
   theme,
   Typography,
 } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { TicketMessageOut } from "@superdl/api-client";
 import { useAppendTicketMessage, useCloseTicket } from "../api/mutations";
 import { useTicketDetail } from "../api/queries";
-import { DataErrorAlert } from "../components/QueryState";
 import { requireAuth } from "../lib/guard";
 
 export const Route = createFileRoute("/_console/support_/$ticketId")({
@@ -33,6 +33,10 @@ export const Route = createFileRoute("/_console/support_/$ticketId")({
 
 // resolved/closed 终态不可再回复(服务端同口径 409,此处只是不渲染输入框)
 const REPLIABLE = new Set(["open", "pending_staff", "pending_user"]);
+
+/** 发送快捷键的平台提示(与 CommandPalette 的 COMMAND_KBD_HINT 同一判定) */
+const SEND_KBD_HINT =
+  typeof navigator !== "undefined" && /mac/i.test(navigator.platform) ? "⌘⏎" : "Ctrl+Enter";
 
 function Bubble({ msg }: { msg: TicketMessageOut }) {
   const { t } = useTranslation();
@@ -48,7 +52,7 @@ function Bubble({ msg }: { msg: TicketMessageOut }) {
           background: mine ? token.colorPrimaryBg : token.colorFillTertiary,
         }}
       >
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
           {mine ? t("support.msgMe") : t("support.msgStaff")} · {formatDateTime(msg.created_at)}
         </Typography.Text>
         <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.body}</div>
@@ -61,10 +65,35 @@ function TicketDetailPage() {
   const { t } = useTranslation(["web", "shared"]);
   const { ticketId } = Route.useParams();
   const id = Number(ticketId);
-  const detail = useTicketDetail(id, { refetchInterval: 15_000 });
+  // 进行中 15s 轮询,resolved/closed 终态即停(不再空转打接口)
+  const detail = useTicketDetail(id, {
+    refetchInterval: (q) => {
+      const status = q.state.data?.status;
+      return status === "open" || status === "pending_staff" || status === "pending_user"
+        ? 15_000
+        : false;
+    },
+  });
   const [draft, setDraft] = useState("");
   const reply = useAppendTicketMessage({ onSuccess: () => setDraft("") });
   const close = useCloseTicket();
+  // 对话容器贴底跟随(与实例详情 LogsTab 同模式):距底 ≤40px 视为贴底,
+  // 新消息到达仅在贴底时自动滚底;上滚阅读时不拽回
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(true);
+
+  const messageCount = detail.data?.messages?.length ?? 0;
+  useEffect(() => {
+    if (!pinned) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messageCount, pinned]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setPinned(el.scrollHeight - el.scrollTop - el.clientHeight <= 40);
+  };
 
   if (detail.isError) {
     return <DataErrorAlert onRetry={() => void detail.refetch()} />;
@@ -121,28 +150,51 @@ function TicketDetailPage() {
       </Card>
       <Card title={t("support.conversation")}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          {(ticket.messages ?? []).map((m) => (
-            <Bubble key={m.id} msg={m} />
-          ))}
+          <div
+            ref={scrollRef}
+            onScroll={onScroll}
+            style={{ maxHeight: 480, overflow: "auto" }}
+          >
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              {(ticket.messages ?? []).map((m) => (
+                <Bubble key={m.id} msg={m} />
+              ))}
+            </Space>
+          </div>
           {repliable ? (
-            <Space.Compact style={{ width: "100%" }}>
-              <Input.TextArea
-                rows={3}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                maxLength={4000}
-                placeholder={t("support.replyPlaceholder")}
-              />
-              <Button
-                type="primary"
-                style={{ height: "auto" }}
-                loading={reply.isPending}
-                disabled={draft.trim().length < 2}
-                onClick={() => reply.mutate({ ticketId: id, body: { body: draft.trim() } })}
-              >
-                {t("support.replySend")}
-              </Button>
-            </Space.Compact>
+            <>
+              <Space.Compact style={{ width: "100%" }}>
+                <Input.TextArea
+                  rows={3}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  aria-label={t("support.replyPlaceholder")}
+                  onKeyDown={(e) => {
+                    // Ctrl/Cmd+Enter 直接发送(与发送按钮同一提交条件)
+                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      if (!reply.isPending && draft.trim().length >= 2) {
+                        reply.mutate({ ticketId: id, body: { body: draft.trim() } });
+                      }
+                    }
+                  }}
+                  maxLength={4000}
+                  placeholder={t("support.replyPlaceholder")}
+                />
+                <Button
+                  type="primary"
+                  style={{ height: "auto" }}
+                  loading={reply.isPending}
+                  disabled={draft.trim().length < 2}
+                  onClick={() => reply.mutate({ ticketId: id, body: { body: draft.trim() } })}
+                >
+                  {t("support.replySend")}
+                </Button>
+              </Space.Compact>
+              <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                {t("support.replySendHint", { kbd: SEND_KBD_HINT })}
+              </Typography.Text>
+            </>
           ) : (
             <Alert type="info" showIcon title={t("support.terminalHint")} />
           )}

@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +11,8 @@ from app.core.audit import set_audit_target, write_audit_sync
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.params import TzOffset
+from app.core.params import Cursor, Limit, TzOffset
+from app.core.ratelimit import check_rate_limit
 from app.modules.adminapi import export as admin_export
 from app.modules.adminapi import service
 from app.modules.adminapi.deps import CurrentAdmin, require_roles
@@ -122,10 +123,11 @@ async def admin_alerts(session: DbSession, severity: str | None = None) -> list[
 
 @router.get("/alerts/unread-count", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_alerts_unread_count(session: DbSession) -> AlertUnreadCountOut:
-    """未确认告警计数(顶栏铃铛角标;独立计数端点)。"""
+    """未确认告警计数(顶栏铃铛角标;独立计数端点)。critical_count 供总览 KPI 红色高亮。"""
     from app.modules.notify import service as notify_service
 
-    return AlertUnreadCountOut(count=await notify_service.unread_alert_count(session))
+    total, critical = await notify_service.unread_alert_count(session)
+    return AlertUnreadCountOut(count=total, critical_count=critical)
 
 
 @router.post("/alerts/{alert_id}/ack", dependencies=[require_roles("ops")])
@@ -158,14 +160,21 @@ class AdjustmentReview(BaseModel):
     comment: str | None = Field(default=None, max_length=256)
 
 
+class ReversalResolve(BaseModel):
+    """渠道冲正核销:release=噪音单解冻(订单恢复退款资格);chargeback=确认反转,解冻+等额扣回。"""
+
+    action: Literal["release", "chargeback"]
+    reason: str = Field(min_length=2, max_length=256)
+
+
 @router.get("/adjustments", dependencies=[require_roles("finance", "readonly")])
 async def admin_list_adjustments(
     session: DbSession,
     status: str | None = None,
     user_id: int | None = None,
     day: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[AdjustmentOut]:
     """调账单列表(游标分页,降序)。status/user_id 精确过滤;day=YYYY-MM-DD 按发起日过滤。"""
     return await service.list_adjustments(
@@ -175,6 +184,36 @@ async def admin_list_adjustments(
         day_range=parse_day(day) if day else None,
         cursor=cursor,
         limit=limit,
+    )
+
+
+@router.get(
+    "/adjustments/export",
+    dependencies=[require_roles("finance", "readonly")],
+    responses={
+        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
+    },
+)
+async def admin_adjustments_export(
+    session: DbSession,
+    status: str | None = None,
+    user_id: int | None = None,
+    day: str | None = None,
+    tz_offset_minutes: int = TzOffset,
+    lang: Literal["zh-CN", "en-US"] = ExportLang,
+) -> StreamingResponse:
+    """调账单 CSV(流式):筛选口径与 GET /adjustments 一致;行数硬上限 + 截断标记行。
+    注册在 /adjustments/{adjustment_id} 动态路由之前,export 不被当 id 解析。"""
+    return csv_response(
+        admin_export.stream_adjustments_csv(
+            session,
+            status=status,
+            user_id=user_id,
+            day_range=parse_day(day) if day else None,
+            tz_offset_minutes=tz_offset_minutes,
+            lang=lang,
+        ),
+        f"superdl-adjustments-{day or 'all'}.csv",
     )
 
 
@@ -189,6 +228,8 @@ async def admin_create_adjustment(
 ) -> AdjustmentStatusOut:
     """发起调账(双人复核前置)。支持 Idempotency-Key:重放返回已受理的单
     (200 + X-Idempotent-Replay)。"""
+    # 资金端点限流(每管理员):调账发起即占复核资源
+    await check_rate_limit(f"admin-adjust:{admin.id}", max_attempts=20, window_seconds=3600.0)
     adj, created = await service.create_adjustment(
         session,
         user_id=body.user_id,
@@ -224,6 +265,30 @@ async def admin_review_adjustment(
     return AdjustmentStatusOut(id=adj.id, status=adj.status)
 
 
+@router.post("/finance/reversals/{order_no}/resolve", status_code=200)
+async def admin_resolve_reversal(
+    order_no: str,
+    body: ReversalResolve,
+    session: DbSession,
+    request: Request,
+    admin: AdminUser = require_roles("finance"),
+) -> dict[str, str]:
+    """核销渠道冲正(异常清单 channel_reversed 分桶):解冻或解冻+等额扣回,
+    审计行与核销同事务。"""
+    set_audit_target(
+        request, f"reversal:{order_no}", detail={"action": body.action, "reason": body.reason}
+    )
+    await service.resolve_reversal(
+        session,
+        order_no,
+        action=body.action,
+        reason=body.reason,
+        operator_id=admin.id,
+        audit_writer=lambda s: write_audit_sync(request, s),
+    )
+    return {"status": "resolved", "action": body.action}
+
+
 # ---------- 退款(审批/打款双人制衡;角色:finance / admin) ----------
 
 
@@ -232,14 +297,44 @@ async def admin_list_refunds(
     session: DbSession,
     status: str | None = None,
     day: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[AdminRefundOut]:
     """退款单列表(游标分页,降序)。day=YYYY-MM-DD 按申请时间过滤。"""
     from app.modules.billing import service as billing_service
 
     return await billing_service.admin_list_refunds(
         session, status, day_range=parse_day(day) if day else None, cursor=cursor, limit=limit
+    )
+
+
+@router.get(
+    "/refunds/export",
+    dependencies=[require_roles("finance", "readonly")],
+    responses={
+        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
+    },
+)
+async def admin_refunds_export(
+    session: DbSession,
+    status: str | None = None,
+    day: str | None = None,
+    tz_offset_minutes: int = TzOffset,
+    lang: Literal["zh-CN", "en-US"] = ExportLang,
+) -> StreamingResponse:
+    """退款单 CSV(流式):筛选口径与 GET /refunds 一致;行数硬上限 + 截断标记行。
+    注册在 /refunds/{refund_id} 动态路由之前,export 不被当 id 解析。"""
+    from app.modules.billing import service as billing_service
+
+    return csv_response(
+        billing_service.stream_admin_refunds_csv(
+            session,
+            status=status,
+            day_range=parse_day(day) if day else None,
+            tz_offset_minutes=tz_offset_minutes,
+            lang=lang,
+        ),
+        f"superdl-refunds-{day or 'all'}.csv",
     )
 
 
@@ -271,10 +366,14 @@ async def admin_payout_refund(
     body: RefundPayout,
     session: DbSession,
     request: Request,
+    response: Response,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     admin: AdminUser = require_roles("finance"),
 ) -> AdminRefundOut:
     """登记打款(唯一出金点):强制双人(与审批人相同则 409);余额不足 409,可取消。
-    审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。"""
+    审计行与出金同事务(write_audit_sync):审计写失败即出金失败回滚。
+    支持 Idempotency-Key:同键同参重放返回 200 + X-Idempotent-Replay(不重复出金),
+    同键异参 409;出金动作的防重保护与调账/补单同口径。"""
     from app.modules.billing import service as billing_service
 
     set_audit_target(
@@ -282,14 +381,18 @@ async def admin_payout_refund(
         f"refund:{refund_id}",
         detail={"channel": body.channel, "ref": body.ref},
     )
-    req = await billing_service.payout_refund(
+    # audit_writer 总是要传:service 重放路径在调用它之前就已返回,重放不会重复写审计
+    req, replayed = await billing_service.payout_refund(
         session,
         refund_id,
         channel=body.channel,
         ref=body.ref,
         operator_id=admin.id,
         audit_writer=lambda s: write_audit_sync(request, s),
+        idempotency_key=idempotency_key,
     )
+    if replayed:
+        mark_idempotent_replay(response)
     return AdminRefundOut.model_validate(req)
 
 
@@ -322,6 +425,36 @@ async def admin_list_invoices(
     from app.modules.billing import service as billing_service
 
     return await billing_service.admin_list_invoices(session, status=status, period=period)
+
+
+@router.get(
+    "/invoices/export",
+    dependencies=[require_roles("ops", "finance", "readonly")],
+    responses={
+        200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
+    },
+)
+async def admin_invoices_export(
+    session: DbSession,
+    status: str | None = None,
+    period: str | None = None,
+    tz_offset_minutes: int = TzOffset,
+    lang: Literal["zh-CN", "en-US"] = ExportLang,
+) -> StreamingResponse:
+    """发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
+    注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。"""
+    from app.modules.billing import service as billing_service
+
+    return csv_response(
+        billing_service.stream_admin_invoices_csv(
+            session,
+            status=status,
+            period=period,
+            tz_offset_minutes=tz_offset_minutes,
+            lang=lang,
+        ),
+        f"superdl-invoices-{period or 'all'}.csv",
+    )
 
 
 @router.post("/invoices/{invoice_id}/issue")
@@ -374,8 +507,8 @@ async def admin_list_orders(
     order_no: str | None = None,
     user_id: int | None = None,
     day: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[AdminOrderOut]:
     """充值订单列表(游标分页,降序)。order_no 精确匹配,是 verify / backfill 两个补救端点的
     入参来源;day=YYYY-MM-DD 按下单日过滤(UTC 日,与对账口径一致)。"""
@@ -502,8 +635,8 @@ async def admin_list_settlement_gaps(
     kind: Literal["hourly", "daily_disk"] | None = None,
     reason: str | None = None,
     unresolved: bool = True,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[AdminSettlementGapOut]:
     """缺口列表(游标分页,降序):默认只看未核销——缺口闭环前需要持续曝光,
     配套持续告警 superdl_settlement_gap_unresolved(DB 口径)。"""

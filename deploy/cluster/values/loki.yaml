@@ -3,7 +3,12 @@
 # (grafana/loki 为 GEL 专用,不是 OSS 来源)。
 deploymentMode: Monolithic
 loki:
-  auth_enabled: false            # 集群内单租户;采集器直推 Service 3100,不经 gateway
+  # 多租户开(审计 #40):X-Scope-OrgID 由 Alloy 按 namespace 打(平台组件+控制面审计 =
+  # platform;tenant-* 租户工作负载 = tenant)。注意它不是鉴权——头是自声明的,
+  # 真正的边界是 monitoring-netpol.yaml:只有 alloy/grafana 能到 loki:3100。
+  # 隔离收益:租户日志洪峰只烧 tenant 租户的配额,platform(含 apiserver 审计)不受挤兑;
+  # 查询侧按租户 datasource 分开(Grafana 两个 Loki 源,见 kps.yaml)。
+  auth_enabled: true
   commonConfig:
     replication_factor: 1        # 单副本必须为 1,否则写入被拒(官方 Monolithic 安装文档明示)
   schemaConfig:
@@ -21,6 +26,13 @@ loki:
     volume_enabled: true
     # API 审计相关日志留存 ≥6 个月(等保;查询方式见 ../runbooks/loki-logging.md):
     retention_period: 4320h      # 180 天
+    # 摄入限流按租户独立计(auth_enabled=true 后 limits 是 per-tenant 口径):
+    # 任一租户(含 tenant 池整体)打满自己的配额不影响其它租户的留存
+    ingestion_rate_mb: 8         # 每租户摄入速率上限(MB/s)
+    ingestion_burst_size_mb: 16  # 突发余量
+    per_stream_rate_limit: 3MB   # 单 stream(单容器日产出)限速,防一个失控容器独占租户配额
+    per_stream_rate_limit_burst: 10MB
+    max_global_streams_per_user: 10000  # 每租户活跃 stream 上限(标签基数爆炸兜底)
   compactor:
     retention_enabled: true      # retention_period 靠 compactor 实际生效
     delete_request_store: filesystem

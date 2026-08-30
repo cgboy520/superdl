@@ -1,4 +1,5 @@
-import { adminColors } from "@superdl/ui";
+import { adminColors, fontSize } from "@superdl/ui";
+import { LangSwitcher } from "@superdl/ui/components";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { App, Button, Card, Checkbox, Form, Input, QRCode, Space, Typography } from "antd";
 import { useEffect, useState } from "react";
@@ -7,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import type { AdminOut } from "@superdl/api-client";
 
 import { useAdminLogin, useMfaSetupBegin, useMfaSetupConfirm, useMfaVerify } from "../api";
-import { useApiErrorText } from "../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 import { authStore } from "../stores/auth";
 
 export const Route = createFileRoute("/login")({
@@ -36,6 +37,7 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
   const { message } = App.useApp();
   const finish = useFinishLogin();
   const [useRecovery, setUseRecovery] = useState(false);
+  const [form] = Form.useForm<{ code: string }>();
   const verify = useMfaVerify({
     mutation: {
       onSuccess: (data) => {
@@ -50,6 +52,7 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
   });
   return (
     <Form
+      form={form}
       layout="vertical"
       onFinish={(v: { code: string }) => verify.mutate({ ticket, code: v.code.trim() })}
     >
@@ -65,7 +68,15 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
       <Button type="primary" htmlType="submit" block loading={verify.isPending}>
         {t("login.mfaVerify")}
       </Button>
-      <Button type="link" block onClick={() => setUseRecovery((v) => !v)}>
+      {/* 切换码型清空已输入:6 位动态码残留进恢复码框(或反之)必校验失败,还是用户的错 */}
+      <Button
+        type="link"
+        block
+        onClick={() => {
+          setUseRecovery((v) => !v);
+          form.resetFields();
+        }}
+      >
         {useRecovery ? t("login.mfaUseTotp") : t("login.mfaUseRecovery")}
       </Button>
     </Form>
@@ -103,7 +114,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
           <Typography.Text code copyable={{ text: codes.join("\n") }}>
             {t("login.recoveryCopy")}
           </Typography.Text>
-          <pre style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.8 }}>{codes.join("\n")}</pre>
+          <pre style={{ margin: "8px 0 0", fontSize: fontSize.caption, lineHeight: 1.8 }}>{codes.join("\n")}</pre>
         </Card>
         <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)}>
           {t("login.recoveryConfirm")}
@@ -132,13 +143,21 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
       <div style={{ textAlign: "center", marginBottom: 12 }}>
         {begin.data ? (
           <QRCode value={begin.data.otpauth_uri} size={168} />
+        ) : begin.isError ? (
+          // 失败必明示(全站纪律):密钥下发失败给重试,不能停在永久「加载中」
+          <Space orientation="vertical" size={8}>
+            <Typography.Text type="danger">{errText(begin.error, t("login.failed"))}</Typography.Text>
+            <Button size="small" onClick={() => beginSetup({ ticket })}>
+              {t("common.retry")}
+            </Button>
+          </Space>
         ) : (
           <Typography.Text type="secondary">{t("common.loading")}</Typography.Text>
         )}
       </div>
       {begin.data && (
         <Typography.Paragraph style={{ textAlign: "center" }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
             {t("login.mfaManualKey")}
           </Typography.Text>
           <br />
@@ -188,10 +207,15 @@ function LoginPage() {
         alignItems: "center",
         justifyContent: "center",
         background: adminColors.bgBase,
+        position: "relative",
       }}
     >
+      {/* en 用户登录页不该只能跟随浏览器语言;深底页用 dark 变体 */}
+      <div style={{ position: "absolute", top: 16, insetInlineEnd: 24 }}>
+        <LangSwitcher variant="dark" />
+      </div>
       <Card
-        style={{ width: 380 }}
+        style={{ width: "min(380px, 92vw)" }}
         title={
           challenge == null
             ? t("app.title")
@@ -201,11 +225,17 @@ function LoginPage() {
         }
       >
         {challenge != null ? (
-          challenge.status === "mfa_setup" ? (
-            <MfaSetupForm ticket={challenge.ticket} />
-          ) : (
-            <MfaVerifyForm ticket={challenge.ticket} />
-          )
+          <>
+            {challenge.status === "mfa_setup" ? (
+              <MfaSetupForm ticket={challenge.ticket} />
+            ) : (
+              <MfaVerifyForm ticket={challenge.ticket} />
+            )}
+            {/* 挑战票不可跨账号复用:换号/放弃 MFA 必须清挑战回登录表单 */}
+            <Button type="link" block onClick={() => setChallenge(null)}>
+              {t("login.backToLogin")}
+            </Button>
+          </>
         ) : (
           <Form
             layout="vertical"

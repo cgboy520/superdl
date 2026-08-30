@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.config import get_settings
-from app.core.crypto import hash_node_token
+from app.core.crypto import hash_node_token, hash_node_token_candidates
 from app.core.errors import AppError, ErrorCode, not_found
 from app.core.gpu_models import model_matches
 from app.core.idempotency import find_replay
@@ -300,11 +300,12 @@ def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
 async def _resolve_by_hash(
     session: AsyncSession, column: InstrumentedAttribute[str | None], token: str
 ) -> NodeEnrollment | None:
-    """按摘要取行(dual-read):先 HMAC;miss 再按裸 SHA-256(迁移前旧行)取,
-    命中即席升级为 HMAC 落库。令牌短 TTL,旧行自然过期后裸验分支可清理。"""
+    """按摘要取行(dual-read):先按 HMAC candidates(当前/legacy 世代与轮换 previous,
+    见 crypto.py)一趟取;miss 再按裸 SHA-256(无密钥摘要迁移前旧行)取,命中即席升级为
+    当前世代 HMAC 落库。令牌短 TTL,旧行自然过期后裸验分支可清理。"""
     row = (
         await session.execute(
-            select(NodeEnrollment).where(column == hash_node_token(token))
+            select(NodeEnrollment).where(column.in_(hash_node_token_candidates(token))).limit(1)
         )
     ).scalar_one_or_none()
     if row is not None:
@@ -314,7 +315,7 @@ async def _resolve_by_hash(
         await session.execute(select(NodeEnrollment).where(column == legacy))
     ).scalar_one_or_none()
     if row is not None:
-        # 即席升级:旧裸摘要行换 HMAC,不让无密钥摘要长期留在库里
+        # 即席升级:旧裸摘要行换当前世代 HMAC,不让无密钥摘要长期留在库里
         upgraded = hash_node_token(token)
         if column is NodeEnrollment.token_hash:
             row.token_hash = upgraded

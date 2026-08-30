@@ -4,12 +4,14 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminListTenantsApiAdminV1TenantsGetOrder } from './adminListTenantsApiAdminV1TenantsGetOrder';
 
 export type AdminListTenantsApiAdminV1TenantsGetParams = {
 q?: string | null;
 status?: string | null;
 cursor?: string | null;
 limit?: number | null;
+order?: AdminListTenantsApiAdminV1TenantsGetOrder;
 reveal?: boolean;
 reason?: string | null;
 };

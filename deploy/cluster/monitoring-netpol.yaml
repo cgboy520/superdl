@@ -1,0 +1,26 @@
+# monitoring 命名空间网络边界(审计 #40):Loki 多租户头 X-Scope-OrgID 是自声明的,
+# 真实隔离靠网络层——只有 Alloy(写入)、Grafana(查询)、Prometheus(抓 /metrics)
+# 能到 loki:3100;租户 Pod(tenant-*)与业务 ns 伪造租户头也摸不到端点。
+# 由 helmfile 的 loki release presync 钩子 apply(见 helmfile.yaml.gotmpl)。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki-access
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: loki}
+  policyTypes: ["Ingress"]
+  ingress:
+    # memberlist 自环(单副本也经 ring 自检;多副本扩容时横向通信同此口)
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: loki}
+      ports:
+        - {protocol: TCP, port: 7946}
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [alloy, grafana, prometheus]}
+      ports:
+        - {protocol: TCP, port: 3100}

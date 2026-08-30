@@ -10,8 +10,6 @@ import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 
 const TOKEN_KEY = "superdl.web.accessToken";
-// 迁移期清理:旧版本把 refresh token 落在 localStorage(C1 后改 HttpOnly Cookie),登出时一并抹除
-const LEGACY_REFRESH_KEY = "superdl.web.refreshToken";
 
 interface AuthState {
   accessToken: string | null;
@@ -27,12 +25,10 @@ export const authStore = createStore<AuthState>()((set) => ({
   accessToken: readAccessToken(),
   login: (accessToken) => {
     localStorage.setItem(TOKEN_KEY, accessToken);
-    localStorage.removeItem(LEGACY_REFRESH_KEY);
     set({ accessToken });
   },
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(LEGACY_REFRESH_KEY);
     set({ accessToken: null });
   },
 }));

@@ -26,7 +26,7 @@ from app.core.errors import AppError, ErrorCode, not_found
 from app.core.idempotency import find_replay, request_fingerprint
 from app.core.logging import get_logger
 from app.core.money import as_amount
-from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+from app.core.pagination import Page, paginate_by_id
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
 from app.modules.billing.schemas import AdminInvoiceOut, InvoiceEligibleOut, InvoiceOut
@@ -258,18 +258,14 @@ async def list_my_invoices(
     session: AsyncSession, user_id: int, *, cursor: str | None = None, limit: int | None = None
 ) -> Page[InvoiceOut]:
     """本人发票申请(游标分页,语义与退款单/资金流水一致)。"""
-    lim = clamp_limit(limit)
     stmt = (
         select(InvoiceRequest)
         .where(InvoiceRequest.user_id == user_id)
         .order_by(InvoiceRequest.id.desc())
-        .limit(lim + 1)
     )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(InvoiceRequest.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=InvoiceRequest.id, cursor=cursor, limit=limit
+    )
     return Page[InvoiceOut](
         items=[InvoiceOut.model_validate(r) for r in page_items], next_cursor=next_cursor
     )

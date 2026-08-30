@@ -8,6 +8,8 @@ from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
 from app.core.money import MoneyOut
+from app.core.ratelimit import check_rate_limit
+from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
 from app.modules.orchestrator import disks as service
 
@@ -49,6 +51,10 @@ async def create_disk(
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> DiskOut:
+    # 实名闸门:建数据盘=开通存储,与开通算力同一条强制实名开关
+    await account_service.require_real_name_if_required(session, user, key="disks.realNameRequired")
+    # 资金相关资源创建限流(每用户):盘单直接绑计费
+    await check_rate_limit(f"disk-create:{user.id}", max_attempts=20, window_seconds=3600.0)
     disk, created = await service.create_disk(
         session, user.id, body.name, body.size_gb, idempotency_key
     )
@@ -68,6 +74,7 @@ async def expand_disk(
     uuid: str, body: DiskExpand, user: CurrentUser, session: DbSession, request: Request
 ) -> DiskOut:
     """扩容(只增不减)。"""
+    await check_rate_limit(f"disk-expand:{user.id}", max_attempts=20, window_seconds=3600.0)
     disk = await service.expand_disk(session, user.id, uuid, body.size_gb)
     set_audit_target(request, f"disk:{uuid}", detail={"size_gb": body.size_gb})
     return DiskOut.model_validate(disk)

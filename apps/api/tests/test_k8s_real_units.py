@@ -176,7 +176,9 @@ class TestDiskQuotaJob:
             captured["container"] = container
 
         monkeypatch.setattr(orch, "_run_managed_job_sync", fake_run_managed)
-        orch._disk_quota_sync("disk-subpath-1", 100, is_set)
+        # 离线单测不建 PVC/PV:桩掉文件系统根子目录解析(契约由 conformance 的 Real 侧覆盖)
+        monkeypatch.setattr(orch, "_juicefs_fs_base_sync", lambda namespace: "pvc-stub")
+        orch._disk_quota_sync("tenant-u1", "disk-subpath-1", 100, is_set)
         return captured["container"]
 
     def test_password_not_in_argv(self, monkeypatch: Any):
@@ -191,13 +193,16 @@ class TestDiskQuotaJob:
             assert "META_PASSWORD" in script
             # metaurl 仍经 secretKeyRef 注入(worker 零接触明文)
             metaurl_env = next(e for e in container.env if e.name == "JUICEFS_METAURL")
-            assert metaurl_env.value_from.secret_key_ref.name == "superdl-api-secrets"
+            assert metaurl_env.value_from.secret_key_ref.name == "superdl-db"
 
     def test_subpath_and_capacity_stay_env_indirect(self, monkeypatch: Any):
         container = self._capture_container(monkeypatch, True)
         script = " ".join(container.command)
         assert "disk-subpath-1" not in script  # 防注入:值只走 env
+        # 配额路径 = 文件系统根下该租户 PVC 的 PV 子目录 + 数据盘子路径(同擦除 Job 的挂载视图)
+        assert '"/$QUOTA_BASE/$QUOTA_SUBPATH"' in script
         env = {e.name: e.value for e in container.env if e.value is not None}
+        assert env["QUOTA_BASE"] == "pvc-stub"
         assert env["QUOTA_SUBPATH"] == "disk-subpath-1"
         assert env["QUOTA_CAPACITY_GB"] == "100"
 

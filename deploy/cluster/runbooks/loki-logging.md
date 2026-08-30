@@ -4,6 +4,11 @@
 采集面:全部命名空间的容器日志(discovery.kubernetes)+ 控制面节点 apiserver 审计文件
 (`/var/lib/rancher/{rke2,k3s}/server/logs/audit.log`)。
 
+多租户(`auth_enabled: true`,审计 #40):Alloy 按 namespace 打租户——平台组件与
+apiserver 审计进 `platform` 租户,`tenant-*` 工作负载进 `tenant` 租户;摄入限流按租户
+独立计,租户日志洪峰挤不垮平台/审计流。头是自声明的,真实边界是
+`../monitoring-netpol.yaml`(仅 alloy/grafana/prometheus 可到 loki:3100)。
+
 ## 留存口径(合规基线)
 
 - **Loki `retention_period: 4320h`(180 天 ≥ 6 个月)**,`values/loki.yaml`(compactor `retention_enabled`);
@@ -14,8 +19,11 @@
 
 ## 查询方式
 
-Grafana(full 档)→ Explore → Loki 数据源;或 `logcli`:
-`kubectl -n monitoring port-forward svc/loki 3100:3100` 后 LogQL 直接打在 `http://localhost:3100`。
+Grafana(full 档)→ Explore → `Loki(平台)` / `Loki(租户)` 数据源(kps.yaml
+additionalDataSources,租户头已预置);或 `logcli` 带 `--org-id`:
+`kubectl -n monitoring port-forward svc/loki 3100:3100` 后
+`logcli --addr=http://localhost:3100 --org-id=platform query ...`
+(下面查询均为 platform 租户口径;查租户实例日志换 `--org-id=tenant`)。
 
 ```logql
 # 1. 按 request_id 串联一次请求的 API + worker(outbox)全链日志

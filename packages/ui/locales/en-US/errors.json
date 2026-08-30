@@ -79,7 +79,9 @@
     "orderStateNotBackfillable": "Order status {{status}} cannot be backfilled",
     "realNameRequiredForRecharge": "Regulations require identity verification before topping up",
     "refundAlreadyApplied": "This order already has an active refund request — do not resubmit",
-    "refundAmountExceeded": "Refund amount exceeds the refundable cap CN¥{{max}} (order CN¥{{order}}, already refunded CN¥{{refunded}}, current balance CN¥{{balance}})",
+    "refundAmountExceeded": "Refund amount exceeds the refundable cap CN¥{{max}} (order CN¥{{order}}, already refunded CN¥{{refunded}}, refundable balance CN¥{{refundable}})",
+    "refundNotRefundable": "Refundable balance is insufficient (CN¥{{refundable}} remains of channel-paid funds after consumption/refunds, CN¥{{amount}} required) — cancel the request instead",
+    "refundPayoutChannelMismatch": "Payout channel must match the order's payment channel (expected {{expected}}); choose offline only when necessary and keep the voucher",
     "refundCumulativeExceeded": "Cumulative refunds would exceed the order amount (order CN¥{{order}}, already refunded CN¥{{refunded}}, this request CN¥{{amount}}) — data anomaly, investigate and cancel this refund",
     "refundBalanceConsumed": "Balance has since been spent and cannot cover this refund (current CN¥{{balance}}, required CN¥{{amount}}) — cancel the request instead",
     "refundChannelReversed": "This order's payment was reversed (charged back) by the payment channel and cannot be refunded — contact support",
@@ -122,6 +124,7 @@
     "tierPoolMismatch": "Tier {{tier}} may only run on the {{pools}} pool, but this is {{pool}}"
   },
   "common": {
+    "auditUnavailable": "Audit writes are failing persistently; write operations are temporarily rejected — retry later or contact the platform",
     "badCursor": "Invalid pagination cursor",
     "forbidden": "You do not have access",
     "idempotencyKeyMismatch": "The same idempotency key was used with different request parameters and was rejected as a conflict — retry with a new key for a new operation",
@@ -130,6 +133,7 @@
     "methodNotAllowed": "This endpoint does not support the request method",
     "networkError": "Network connection failed. Check your connection and try again.",
     "notFound": "Resource not found",
+    "payloadTooLarge": "Request body too large — trim the content and try again",
     "rateLimited": "Too many attempts — try again later",
     "retryableConflict": "Conflicts with another operation in progress — please retry",
     "unauthorized": "Not signed in or session expired",
@@ -137,6 +141,7 @@
   },
   "disks": {
     "countQuota": "Data disk limit reached ({{max}}) — delete unused disks or contact support to raise it",
+    "realNameRequired": "Regulations require identity verification before provisioning storage — complete it under Settings · Identity Verification first",
     "expandNeedsActive": "Only active data disks can be expanded",
     "inUseDelete": "The data disk is mounted — release the instance first",
     "mountedElsewhere": "The data disk is mounted on another instance",

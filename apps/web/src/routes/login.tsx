@@ -5,16 +5,18 @@
  */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
-import type { TokenPair } from "@superdl/api-client";
-import { brand } from "@superdl/ui";
+import type { TokenPairOut } from "@superdl/api-client";
+import { brand, fontSize } from "@superdl/ui";
+import { LangSwitcher } from "@superdl/ui/components";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { App, Button, Checkbox, Form, Grid, Input, Segmented, Space, theme, Typography } from "antd";
+import { App, Button, Checkbox, Form, Grid, Input, Progress, Segmented, Space, theme, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { useLogin, useRegister, useResetPassword } from "../api/mutations";
+import { GRID_TEXTURE } from "../components/gridTexture";
 import { BrandLogo } from "../components/layout/BrandLogo";
-import { LangSwitcher } from "../components/layout/LangSwitcher";
+import { ThemeToggle } from "../components/layout/AppTopBar";
 import { useSmsCode } from "../lib/useSmsCode";
 import { authStore } from "../stores/auth";
 
@@ -43,9 +45,44 @@ export const Route = createFileRoute("/login")({
 
 type Mode = "sms" | "password" | "register" | "reset";
 
-const GRID_TEXTURE = `url("data:image/svg+xml,${encodeURIComponent(
-  `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><path d='M40 0H0v40' fill='none' stroke='rgba(255,255,255,0.07)'/></svg>`,
-)}")`;
+/** 密码强度三档:弱=仅满足长度;中=≥12 位且含两类字符;强=≥14 位且含三类字符 */
+type PasswordStrength = "weak" | "medium" | "strong";
+
+function passwordStrengthOf(pw: string): PasswordStrength {
+  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].reduce(
+    (n, re) => n + (re.test(pw) ? 1 : 0),
+    0,
+  );
+  if (pw.length >= 14 && classes >= 3) return "strong";
+  if (pw.length >= 12 && classes >= 2) return "medium";
+  return "weak";
+}
+
+/** 密码强度实时反馈(注册/重置模式):细进度条 + 分档文案,颜色走 antd token */
+function PasswordStrengthHint({ password }: { password: string }) {
+  const { t } = useTranslation();
+  const { token } = theme.useToken();
+  const level = passwordStrengthOf(password);
+  const meta = {
+    weak: { percent: 34, color: token.colorError, label: t("login.passwordStrengthWeak") },
+    medium: { percent: 67, color: token.colorWarning, label: t("login.passwordStrengthMedium") },
+    strong: { percent: 100, color: token.colorSuccess, label: t("login.passwordStrengthStrong") },
+  }[level];
+  return (
+    <Space size={8} style={{ width: "100%" }}>
+      <Progress
+        percent={meta.percent}
+        showInfo={false}
+        strokeColor={meta.color}
+        size="small"
+        style={{ flex: 1, margin: 0 }}
+      />
+      <Typography.Text style={{ color: meta.color, fontSize: fontSize.caption, whiteSpace: "nowrap" }}>
+        {meta.label}
+      </Typography.Text>
+    </Space>
+  );
+}
 
 function BrandPane() {
   const { t } = useTranslation();
@@ -69,14 +106,18 @@ function BrandPane() {
         </Link>
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <Typography.Title style={{ color: "#fff", fontSize: 36, marginBottom: 32 }}>
+        <Typography.Title style={{ color: "#fff", fontSize: fontSize.kpi, marginBottom: 32 }}>
           {t("login.slogan")}
         </Typography.Title>
         <Space orientation="vertical" size={16}>
           {[t("login.bullets.b1"), t("login.bullets.b2"), t("login.bullets.b3")].map((b) => (
             <Space key={b} size={10}>
-              <CheckCircleOutlined style={{ color: "rgba(255,255,255,0.9)", fontSize: 16 }} />
-              <span style={{ color: "rgba(255,255,255,0.9)", fontSize: 16 }}>{b}</span>
+              <CheckCircleOutlined
+                style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}
+              />
+              <span style={{ color: "rgba(255,255,255,0.9)", fontSize: fontSize.sectionTitle }}>
+                {b}
+              </span>
             </Space>
           ))}
         </Space>
@@ -95,9 +136,17 @@ function LoginPage() {
   const { token } = theme.useToken();
   const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "sms");
   const [form] = Form.useForm();
+  // 注册/重置模式的密码强度实时反馈(登录模式不评强度)
+  const watchedPassword: string = Form.useWatch("password", form) ?? "";
+
+  // 模式切换清掉跨模式字段(Form 共用实例的残留),手机号保留
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    form.setFieldsValue({ sms_code: undefined, password: undefined, accept_terms: undefined });
+  };
 
   const onLoggedIn = (data: unknown) => {
-    const pair = data as TokenPair;
+    const pair = data as TokenPairOut;
     // refresh token 已由服务端经 HttpOnly Cookie 下发,JS 只留 access token
     authStore.getState().login(pair.access_token);
     if (redirectTo) {
@@ -164,7 +213,10 @@ function LoginPage() {
         }}
       >
         <div style={{ position: "absolute", top: 16, right: 16 }}>
-          <LangSwitcher variant="light" />
+          <Space size={4}>
+            <ThemeToggle variant="plain" />
+            <LangSwitcher variant="light" />
+          </Space>
         </div>
         <div style={{ width: "100%", maxWidth: 400 }}>
           {!screens.lg && (
@@ -181,7 +233,7 @@ function LoginPage() {
             <Segmented
               block
               value={mode}
-              onChange={(v) => setMode(v as Mode)}
+              onChange={(v) => switchMode(v as Mode)}
               options={[
                 { label: t("login.modeSms"), value: "sms" },
                 { label: t("login.modePassword"), value: "password" },
@@ -196,7 +248,7 @@ function LoginPage() {
               rules={[{ required: true, pattern: /^1[3-9]\d{9}$/, message: t("login.phoneInvalid") }]}
             >
               <Input
-                prefix={<span style={{ color: "rgba(0,0,0,0.45)" }}>+86</span>}
+                prefix={<span style={{ color: token.colorTextSecondary }}>+86</span>}
                 placeholder={t("login.phonePlaceholder")}
                 maxLength={11}
                 autoComplete="tel-national"
@@ -234,6 +286,12 @@ function LoginPage() {
                       ? [{ required: true, min: 12, message: t("login.passwordMin") }]
                       : [{ min: 12, message: t("login.passwordMin") }]
                 }
+                {...(mode !== "password" && watchedPassword !== ""
+                  ? {
+                      // 强度实时反馈挂在 extra:不占校验错误位
+                      extra: <PasswordStrengthHint password={watchedPassword} />,
+                    }
+                  : {})}
               >
                 <Input.Password
                   autoComplete={mode === "password" ? "current-password" : "new-password"}
@@ -294,12 +352,12 @@ function LoginPage() {
           </Form>
           <div style={{ marginTop: 12, textAlign: "right" }}>
             {mode === "password" && (
-              <Button type="link" size="small" onClick={() => setMode("reset")}>
+              <Button type="link" size="small" onClick={() => switchMode("reset")}>
                 {t("login.forgotPassword")}
               </Button>
             )}
             {mode === "reset" && (
-              <Button type="link" size="small" onClick={() => setMode("password")}>
+              <Button type="link" size="small" onClick={() => switchMode("password")}>
                 {t("login.backToLogin")}
               </Button>
             )}

@@ -33,7 +33,7 @@ from app.core.metrics import (
     SETTLEMENT_LAG,
 )
 from app.core.money import as_amount, as_price, billing_units, disk_daily_charge
-from app.core.pagination import Page, clamp_limit, decode_cursor_int, slice_page
+from app.core.pagination import Page, paginate_by_id
 from app.core.timeutil import (
     BILLING_DAY_OFFSET,
     billing_day_floor,
@@ -852,19 +852,16 @@ async def admin_list_gaps(
     limit: int | None = None,
 ) -> Page[AdminSettlementGapOut]:
     """缺口列表(游标分页,降序)。默认只看未核销(缺口闭环前需要持续曝光)。"""
-    lim = clamp_limit(limit)
-    stmt = select(SettlementGap).order_by(SettlementGap.id.desc()).limit(lim + 1)
+    stmt = select(SettlementGap).order_by(SettlementGap.id.desc())
     if kind:
         stmt = stmt.where(SettlementGap.kind == kind)
     if reason:
         stmt = stmt.where(SettlementGap.reason == reason)
     if unresolved_only:
         stmt = stmt.where(SettlementGap.resolved_at.is_(None))
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(SettlementGap.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=SettlementGap.id, cursor=cursor, limit=limit
+    )
     return Page[AdminSettlementGapOut](
         items=[AdminSettlementGapOut.model_validate(r) for r in page_items],
         next_cursor=next_cursor,

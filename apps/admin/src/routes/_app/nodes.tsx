@@ -1,5 +1,5 @@
-import { adminColors, formatDateTime, heatColors, metaOf, nodeEnrollStatusMap, type NodeEnrollStatus } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, fontSize, formatDateTime, heatColors, metaOf, nodeEnrollStatusMap, space, textOnAccent, type NodeEnrollStatus } from "@superdl/ui";
+import { EChart, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -19,17 +19,18 @@ import {
   Tag,
   Tooltip,
   Typography,
+  theme,
 } from "antd";
 import dayjs from "dayjs";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import EChart from "../../components/EChart";
 import {
   type EnrollmentCommandOut,
   type EnrollmentRow,
   type NodeMetricsOut,
   type NodeRow,
+  isApiError,
   useNodeMetrics,
   useCordonNode,
   useCreateEnrollment,
@@ -39,13 +40,17 @@ import {
   useRegenerateEnrollment,
   useRevokeEnrollment,
 } from "../../api";
-import { useApiErrorText } from "../../lib/apiError";
-import { useFormDraft } from "../../lib/formDraft";
+import { useApiErrorText } from "@superdl/ui";
+import { useFormDraft } from "@superdl/ui";
 import { POOL_LABEL_KEY } from "../../lib/pools";
 import { ReasonAction } from "../../components/ReasonAction";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/nodes")({
+  // node:告警深链(/nodes?node=<name>)定位目标行
+  validateSearch: (search: Record<string, unknown>): { node?: string } => ({
+    node: typeof search.node === "string" && search.node ? search.node : undefined,
+  }),
   component: NodesPage,
 });
 
@@ -70,6 +75,14 @@ const PHASE_LABEL = {
 // 热力格深底浅字(WCAG AA):取值收敛在 packages/ui heatColors,白字对比度 ≥4.5:1
 const HEAT_COLORS = { idle: adminColors.gridLine, ...heatColors };
 
+// 图例档 → 文案键(静态表:admin 的 t() 是严格键类型,动态拼键过不了 tsc)
+const HEAT_LEGEND_KEY = {
+  idle: "nodes.heatLegend.idle",
+  low: "nodes.heatLegend.low",
+  mid: "nodes.heatLegend.mid",
+  high: "nodes.heatLegend.high",
+} as const;
+
 function heatColor(util: number): string {
   if (util < 10) return HEAT_COLORS.idle;
   if (util < 60) return HEAT_COLORS.low;
@@ -82,12 +95,14 @@ function last(points?: [number, number][] | null): number | null {
   return p ? p[1] : null;
 }
 
-/** 每卡热力格:有指标时按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态。 */
+/** 每卡热力格:有指标时按 util 染色(tooltip 给 util/显存/温度);断源回落「已租/空闲」两态。
+ *  断源空闲格用斜纹底,与「util<10%」纯色空闲格区分(同色会把断源误读成低载)。 */
 function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | undefined }) {
   const { t } = useTranslation();
   const byIndex = new Map((metrics?.gpus ?? []).map((g) => [String(g.index), g]));
   const live = Boolean(metrics?.available && byIndex.size > 0);
   return (
+    <>
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
       {Array.from({ length: node.gpu_total }, (_, i) => {
         const g = byIndex.get(String(i));
@@ -109,10 +124,12 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
           ? heatColor(util ?? 0)
           : used
             ? adminColors.dataAccent
-            : adminColors.gridLine;
+            : `repeating-linear-gradient(135deg, ${adminColors.gridLine} 0 6px, transparent 6px 12px)`;
         return (
           <Tooltip key={i} title={title}>
             <div
+              role="img"
+              aria-label={title}
               style={{
                 width: 52,
                 height: 44,
@@ -121,7 +138,7 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 11,
+                fontSize: fontSize.caption,
                 lineHeight: 1.2,
                 background: bg,
                 // 字色随底:深底(热力档/空闲格)浅字;亮青(断源已租)反压深字;断源空闲格深底浅字
@@ -130,7 +147,7 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
                     ? adminColors.bgBase
                     : adminColors.textSecondary
                   : (util ?? 0) >= 10
-                    ? "#fff"
+                    ? textOnAccent
                     : adminColors.textSecondary,
                 fontWeight: 600,
               }}
@@ -142,6 +159,39 @@ function GpuGrid({ node, metrics }: { node: NodeRow; metrics: NodeMetricsOut | u
         );
       })}
     </div>
+    {/* 色阶图例:idle/low/mid/high 四档 + 断源两态(斜纹=断源空闲) */}
+    <Space size={12} wrap style={{ marginTop: 12 }}>
+      {(Object.keys(HEAT_LEGEND_KEY) as (keyof typeof HEAT_LEGEND_KEY)[]).map((key) => (
+        <Space key={key} size={4}>
+          <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: HEAT_COLORS[key] }} />
+          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+            {t(HEAT_LEGEND_KEY[key])}
+          </Typography.Text>
+        </Space>
+      ))}
+      <Space size={4}>
+        <span
+          style={{
+            display: "inline-block",
+            width: 12,
+            height: 12,
+            borderRadius: 3,
+            background: `repeating-linear-gradient(135deg, ${adminColors.gridLine} 0 4px, transparent 4px 8px)`,
+            border: `1px solid ${adminColors.gridLine}`,
+          }}
+        />
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("nodes.heatLegend.offlineFree")}
+        </Typography.Text>
+      </Space>
+      <Space size={4}>
+        <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: adminColors.dataAccent }} />
+        <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+          {t("nodes.heatLegend.offlineUsed")}
+        </Typography.Text>
+      </Space>
+    </Space>
+    </>
   );
 }
 
@@ -161,11 +211,14 @@ function NodeMetricsPanel({
   const gpus = metrics?.gpus ?? [];
   const chart = (key: "util" | "mem_used_mb", title: string, unit: string) => (
     <Card size="small" title={title}>
+      {/* 深色 NOC:轴/图例/tooltip 与 series 色板全走 noc 主题(adminColors 同源),深底上才读得清 */}
       <EChart
         style={{ height: 200 }}
+        theme="noc"
+        ariaLabel={title}
         option={{
           grid: { left: 48, right: 16, top: 28, bottom: 24 },
-          legend: { top: 0, textStyle: { fontSize: 11 } },
+          legend: { top: 0, textStyle: { fontSize: fontSize.caption } },
           xAxis: { type: "time" },
           yAxis: { type: "value", axisLabel: { formatter: `{value}${unit}` } },
           tooltip: { trigger: "axis" },
@@ -233,7 +286,7 @@ function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
         type="warning"
         showIcon
         title={t("nodes.tokenOnce")}
-        description={t("nodes.tokenOnceDesc", { time: dayjs(result.enrollment.expires_at).format("MM-DD HH:mm") })}
+        description={t("nodes.tokenOnceDesc", { time: formatDateTime(result.enrollment.expires_at) })}
       />
       <div>
         <Typography.Text type="secondary">{t("nodes.cmdPiped")}</Typography.Text>
@@ -245,7 +298,7 @@ function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
           {result.wget_command}
         </Typography.Paragraph>
       </div>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("nodes.cmdFootnote")}
       </Typography.Text>
     </Space>
@@ -306,8 +359,12 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
             type="primary"
             loading={create.isPending}
             onClick={async () => {
-              const values = await form.validateFields();
-              create.mutate({ data: values, idempotencyKey: idemKey });
+              try {
+                const values = await form.validateFields();
+                create.mutate({ data: values, idempotencyKey: idemKey });
+              } catch {
+                // 校验失败:antd 已在字段下给出红字反馈,静默停留
+              }
             }}
           >
             {t("nodes.generateCmd")}
@@ -361,32 +418,30 @@ function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => void })
 
 function EnrollmentsCard({ writable }: { writable: boolean }) {
   const { t } = useTranslation(["admin", "shared"]);
-  const errText = useApiErrorText();
-  const { message } = App.useApp();
   const qc = useQueryClient();
   // 进行中=活跃行(5s 轮询);全部=含 joined/expired/revoked 的历史装机记录
   const [scope, setScope] = useState<"active" | "all">("active");
-  const { data, queryKey, isLoading, isError, refetch } = useEnrollments({
+  const { data, queryKey, isLoading, isError, error, refetch } = useEnrollments({
     active: scope === "active" ? true : undefined,
     refetchInterval: scope === "active" ? 5_000 : undefined,
   });
   const rows: EnrollmentRow[] = data ?? [];
   const [regenResult, setRegenResult] = useState<EnrollmentCommandOut | null>(null);
+  // 不带 onError:错误提示统一由 ReasonAction 弹出(避免与 mutation 回调双提示)
   const regenerate = useRegenerateEnrollment({
     mutation: {
       onSuccess: (r) => {
         setRegenResult(r);
         void qc.invalidateQueries({ queryKey });
       },
-      onError: (e) => message.error(errText(e, t("nodes.regenerateFailed"))),
     },
   });
   const revoke = useRevokeEnrollment({
     mutation: { onSuccess: () => void qc.invalidateQueries({ queryKey }) },
   });
 
+  // scope 切换不随数据有无消失:无进行中注册时卡片照常渲染空态,「全部」Tab 永远可达;
   // 查询失败也要露出(进行中注册被误判为「没有」会误导装机值班),错误态由表内空态明示
-  if (rows.length === 0 && scope === "active" && !isError) return null;
   return (
     <Card
       title={scope === "active" ? t("nodes.pendingTitle") : t("nodes.allEnrollmentsTitle")}
@@ -409,7 +464,15 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
         scroll={{ x: 900 }}
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            >
+              {scope === "active" ? t("nodes.noActiveEnrollments") : undefined}
+            </TableErrorEmpty>
+          ),
         }}
         dataSource={rows}
         pagination={false}
@@ -450,6 +513,7 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
           {
             title: t("nodes.colHeartbeat"),
             dataIndex: "last_report_at",
+            // 保留秒级手拼:进行中注册 5s 轮询,心跳需要秒精度才能分辨「卡住」与「存活」(formatDateTime 只到分)
             render: (v: string | null) => (v ? dayjs(v).format("MM-DD HH:mm:ss") : "-"),
           },
           {
@@ -472,24 +536,19 @@ function EnrollmentsCard({ writable }: { writable: boolean }) {
             width: 190,
             render: (_, r) => (
               <Space>
-                <Tooltip
-                  title={
-                    !writable
-                      ? t("nodes.readonlyNoOp")
-                      : ["pending", "expired", "failed"].includes(r.status)
-                        ? t("nodes.regenerateTip")
-                        : t("nodes.regenerateOnly")
+                {/* L2 升为 ReasonAction(收原因):重新生成会让旧命令立即失效,先复述后果再执行 */}
+                <ReasonAction
+                  label={t("nodes.regenerate")}
+                  title={t("nodes.regenerateConfirmTitle")}
+                  confirmText={t("nodes.regenerateConfirmDesc")}
+                  disabled={!writable || !["pending", "expired", "failed"].includes(r.status)}
+                  disabledReason={
+                    !writable ? t("nodes.readonlyNoOp") : t("nodes.regenerateOnly")
                   }
-                >
-                  <Button
-                    size="small"
-                    disabled={!writable || !["pending", "expired", "failed"].includes(r.status)}
-                    loading={regenerate.isPending && regenerate.variables?.enrollmentId === r.id}
-                    onClick={() => regenerate.mutate({ enrollmentId: r.id, data: {} })}
-                  >
-                    {t("nodes.regenerate")}
-                  </Button>
-                </Tooltip>
+                  onSubmit={async (reason) => {
+                    await regenerate.mutateAsync({ enrollmentId: r.id, data: { reason } });
+                  }}
+                />
                 {!["joined", "failed", "expired", "revoked"].includes(r.status) && (
                   <ReasonAction
                     label={t("nodes.revoke")}
@@ -529,17 +588,47 @@ function NodesPage() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data, isLoading, isError, refetch } = useNodes();
-  const nodes: NodeRow[] = data ?? [];
+  const { data, isLoading, isError, error, refetch } = useNodes();
+  // useMemo 稳定引用:data 未就绪时 ?? [] 每次渲染都是新数组,会拖垮下游 filteredNodes 的依赖比较
+  const nodes: NodeRow[] = useMemo(() => data ?? [], [data]);
   const { data: portPool } = usePortPool();
+  const nodeParam = Route.useSearch({ select: (s) => s.node });
   const [selected, setSelected] = useState<string | null>(null);
   const [range, setRange] = useState("1h");
   const [addOpen, setAddOpen] = useState(false);
-  const node = nodes.find((n) => n.name === selected) ?? nodes[0];
+  // 节点名过滤(commit 制,与租户检索同口径):输入只改 kwInput,Enter/点搜索/清空才提交;
+  // 节点表是 useNodes 全量小表(无服务端分页),客户端过滤即可,不为它加检索参数
+  const [kwInput, setKwInput] = useState("");
+  const [kw, setKw] = useState("");
+  const filteredNodes = useMemo(
+    () => (kw ? nodes.filter((n) => n.name.toLowerCase().includes(kw)) : nodes),
+    [nodes, kw],
+  );
+  // 深链目标校验(列表就绪后判定):?node= 目标不存在时顶部提示且不回落首节点——
+  // 静默落在首节点会把「目标节点已移除」误读成「一切正常」
+  const deepLinkMissing =
+    nodeParam !== undefined && data !== undefined && !nodes.some((n) => n.name === nodeParam);
+  const node =
+    deepLinkMissing && selected === nodeParam
+      ? undefined
+      : (nodes.find((n) => n.name === selected) ?? nodes[0]);
   const { data: nodeMetrics } = useNodeMetrics(node?.name ?? null, range);
+  // 告警深链(/nodes?node=<name>):选中目标行并滚动到可视区;行经 data-row-key 定位
+  // (URL→选中态走渲染期派生态,与 tenants 的 prevUrlQ 同款,不进 effect)
+  const [prevNodeParam, setPrevNodeParam] = useState(nodeParam);
+  if (nodeParam !== prevNodeParam) {
+    setPrevNodeParam(nodeParam);
+    if (nodeParam) setSelected(nodeParam);
+  }
+  useEffect(() => {
+    if (!nodeParam || nodes.length === 0) return;
+    const row = document.querySelector(`[data-row-key="${CSS.escape(nodeParam)}"]`);
+    row?.scrollIntoView({ block: "center" });
+  }, [nodeParam, nodes.length]);
   // cordon 经 outbox 异步生效:3s 后补拉一次;组件卸载必须清定时器
   const cordonTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -551,7 +640,11 @@ function NodesPage() {
   const cordon = useCordonNode({
     mutation: {
       onSuccess: (r, v) => {
-        message.success(t("nodes.cordonSubmitted", { action: v.on ? "cordon" : "uncordon" }));
+        message.success(
+          t("nodes.cordonSubmitted", {
+            action: v.on ? t("nodes.actionCordon") : t("nodes.actionUncordon"),
+          }),
+        );
         void qc.invalidateQueries({ queryKey: ["admin", "nodes"] });
         // queued=true:经 outbox 异步执行,3s 后补拉一次看生效
         if ((r as { queued?: boolean }).queued) {
@@ -561,7 +654,12 @@ function NodesPage() {
           );
         }
       },
-      onError: (e) => message.error(errText(e, t("common.actionFailed", { action: "" }))),
+      onError: (e, v) =>
+        message.error(
+          errText(e, t("common.actionFailed", {
+            action: v.on ? t("nodes.actionCordon") : t("nodes.actionUncordon"),
+          })),
+        ),
     },
   });
   const poolFilters = [...new Set(nodes.map((n) => (n.unlabeled ? "" : n.pool_label)))].map((p) =>
@@ -569,44 +667,95 @@ function NodesPage() {
   );
 
   return (
-    <>
-      <EnrollmentsCard writable={writable} />
-      <Card
-        title={t("nodes.title")}
-        extra={
-          <Space size={12}>
-            {portPool && (
-              <Tooltip title={t("nodes.portPoolHint")}>
-                <Tag
-                  color={portPool.blocked > 0 ? "red" : "default"}
-                  style={{ marginInlineEnd: 0 }}
-                >
-                  {t("nodes.portPool", {
-                    assigned: portPool.assigned,
-                    total: portPool.total,
-                    blocked: portPool.blocked,
-                  })}
-                </Tag>
-              </Tooltip>
-            )}
-            <Tooltip title={writable ? "" : t("nodes.readonlyNoAdd")}>
-              <Button type="primary" disabled={!writable} onClick={() => setAddOpen(true)}>
-                {t("nodes.addNode")}
-              </Button>
+    <PageContainer
+      title={t("nodes.title")}
+      extra={
+        <Space size={12}>
+          {portPool && (
+            <Tooltip title={t("nodes.portPoolHint")}>
+              <Tag
+                color={portPool.blocked > 0 ? "red" : "default"}
+                style={{ marginInlineEnd: 0 }}
+              >
+                {t("nodes.portPool", {
+                  assigned: portPool.assigned,
+                  total: portPool.total,
+                  blocked: portPool.blocked,
+                })}
+              </Tag>
             </Tooltip>
-          </Space>
-        }
-      >
+          )}
+          <Tooltip title={writable ? "" : t("nodes.readonlyNoAdd")}>
+            <Button type="primary" disabled={!writable} onClick={() => setAddOpen(true)}>
+              {t("nodes.addNode")}
+            </Button>
+          </Tooltip>
+        </Space>
+      }
+    >
+      {deepLinkMissing && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: space.lg }}
+          title={t("nodes.deepLinkMissing", { name: nodeParam })}
+        />
+      )}
+      <EnrollmentsCard writable={writable} />
+      <Card>
+        <Input.Search
+          allowClear
+          placeholder={t("nodes.searchPlaceholder")}
+          style={{ width: 240, marginBottom: space.md }}
+          value={kwInput}
+          onChange={(e) => {
+            setKwInput(e.target.value);
+            // 清空(allowClear)是显式动作:立即提交回到未筛选列表
+            if (e.target.value === "") setKw("");
+          }}
+          onSearch={(v) => setKw(v.trim().toLowerCase())}
+        />
         <Table<NodeRow>
           scroll={{ x: 1000 }}
           rowKey="name"
           loading={isLoading}
           locale={{
-            emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+            emptyText: kw ? (
+              t("nodes.noMatch")
+            ) : (
+              <TableErrorEmpty
+                isError={isError}
+                isForbidden={isApiError(error) && error.status === 403}
+                onRetry={() => void refetch()}
+              />
+            ),
           }}
-          dataSource={nodes}
-          pagination={false}
-          onRow={(r) => ({ onClick: () => setSelected(r.name), style: { cursor: "pointer" } })}
+          dataSource={filteredNodes}
+          // 规模化取舍:>200 行不上 react-virtual 自绘行(antd Table body 虚拟化要替换
+          // components.body,排序/筛选/行高亮都得跟着适配,代价大);改 100/页分页——
+          // 小集群 hideOnSinglePage 无感知,大集群一屏只渲染一页不卡
+          pagination={
+            filteredNodes.length > 200
+              ? { pageSize: 100, showSizeChanger: false, hideOnSinglePage: true }
+              : false
+          }
+          onRow={(r) => ({
+            onClick: () => setSelected(r.name),
+            // 键盘可达:整行即按钮(Enter/Space 选中),选中行给主色底/边框高亮
+            tabIndex: 0,
+            onKeyDown: (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setSelected(r.name);
+              }
+            },
+            style: {
+              cursor: "pointer",
+              ...(r.name === node?.name
+                ? { background: token.colorPrimaryBg, boxShadow: `inset 0 0 0 1px ${token.colorPrimary}` }
+                : {}),
+            },
+          })}
           columns={[
             {
               title: t("nodes.colNode"),
@@ -729,8 +878,11 @@ function NodesPage() {
                         });
                       }}
                     />
+                    {/* 占位项与全站同形态:可见但禁用 + tooltip 说明(纯文本不可聚焦,灰置语义不统一) */}
                     <Tooltip title={t("nodes.drainDeferred")}>
-                      <Typography.Text type="secondary">{t("nodes.drainBtn")}</Typography.Text>
+                      <Button size="small" disabled>
+                        {t("nodes.drainBtn")}
+                      </Button>
                     </Tooltip>
                   </Space>
                 );
@@ -753,6 +905,6 @@ function NodesPage() {
           />
         </>
       )}
-    </>
+    </PageContainer>
   );
 }

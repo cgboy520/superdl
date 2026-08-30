@@ -4,13 +4,13 @@
  * 接口失败整区降级为「前往算力市场」入口。
  */
 
-import { compareAmounts, getGpuSpec, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
+import { compareAmounts, fontSize, getGpuSpec, layout, metaOf, skuTierMap, skuVariant } from "@superdl/ui";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button, Card, Skeleton, Tabs, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../../lib/format";
+import { useFormat } from "@superdl/ui";
 import { dedupAvailableByModel } from "../../lib/inventory";
 import { useSkus } from "../../api/queries";
 import { TierTag } from "../../components/common";
@@ -70,7 +70,14 @@ export function PricingSection() {
   };
 
   return (
-    <section id="pricing" style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px" }}>
+    <section
+      id="pricing"
+      style={{
+        maxWidth: layout.pageMaxWidthWide,
+        margin: "0 auto",
+        padding: `${layout.sectionPaddingY}px 24px`,
+      }}
+    >
       <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 4 }}>
         {t("landing.pricing.title")}
       </Typography.Title>
@@ -127,7 +134,7 @@ export function PricingSection() {
                   styles={{ body: { display: "flex", flexDirection: "column", gap: 4 } }}
                 >
                   {g.tiers.length > 1 && (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {g.tiers.map((tier) => {
                         const m = metaOf(skuTierMap, tier);
                         return m ? t(m.labelKey) : tier;
@@ -145,14 +152,14 @@ export function PricingSection() {
                         : t("landing.pricing.dedicatedSpec", { vram: sku.vram_gb })}
                   </Typography.Text>
                   {spec && (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {t("landing.pricing.tflops", { fp32: spec.fp32Tflops, fp16: spec.fp16Tflops })}
                     </Typography.Text>
                   )}
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {t("landing.pricing.hostSpec", { vcpu: sku.vcpu, mem: sku.mem_gb, disk: sku.disk_gb })}
                   </Typography.Text>
-                  <div style={{ margin: "8px 0", fontSize: 26, fontWeight: 700 }}>
+                  <div style={{ margin: "8px 0", fontSize: fontSize.kpi, fontWeight: 700 }}>
                     {g.tiers.length > 1
                       ? t("landing.pricing.priceFrom", { price: formatHourlyPrice(sku.price_hourly) })
                       : formatHourlyPrice(sku.price_hourly)}
@@ -166,7 +173,7 @@ export function PricingSection() {
                     {g.available > 0 ? t("copy.stockAvailable", { count: g.available }) : t("copy.outOfStock")}
                   </Button>
                   {meta && "hintKey" in meta && (
-                    <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                    <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
                       {t(meta.hintKey)}
                     </Typography.Text>
                   )}

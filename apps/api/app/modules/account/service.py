@@ -6,13 +6,13 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.captcha import CaptchaError, get_captcha_channel
 from app.core.config import get_settings
-from app.core.crypto import hash_sms_code
+from app.core.crypto import hash_sms_code, hash_sms_code_candidates
 from app.core.errors import AppError, ErrorCode, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
 from app.core.pagination import RawPage
@@ -32,7 +32,7 @@ from app.core.security import (
 )
 from app.core.sms import SmsError, ensure_sms_platform_quota, get_sms_channel
 from app.core.sqlutil import like_escape
-from app.core.timeutil import ensure_utc, now_utc
+from app.core.timeutil import ensure_utc, local_day_range, now_utc
 from app.modules.account.models import (
     AccountDeletionRequest,
     SmsCode,
@@ -97,6 +97,10 @@ async def send_sms_code(
             raise AppError(ErrorCode.CAPTCHA_VERIFY_FAILED, key="account.captchaVerifyFailed")
     # 平台级闸门:分布式 IP/号码池可绕过单点限流,预算池兜底(计数即准入,不落库无效验证码)
     await ensure_sms_platform_quota()
+    # 同号串行化:退避「先查后写」跨请求 TOCTOU——并发请求可双双通过检查各发一条
+    # (短信轰炸/成本攻击)。事务级咨询锁把「查最近→退避判定→落新码」串行到手机号粒度,
+    # 随下方 commit/rollback 释放;渠道发送在 commit 之后,不占锁。
+    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:phone))"), {"phone": phone})
     # 同号递增退避:连续未消费的验证码越多,下一条允许发送的间隔越长;消费一条即归零。
     recent = list(
         (
@@ -172,8 +176,12 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     ).scalar_one_or_none()
     if row is None:
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    expected = hash_sms_code(phone, purpose, code)
-    if not secrets.compare_digest(row.code_hash, expected):
+    # candidates 兼读主密钥轮换/legacy 世代(见 crypto.py);全部算完再 any,不短路
+    matched = [
+        secrets.compare_digest(row.code_hash, c)
+        for c in hash_sms_code_candidates(phone, purpose, code)
+    ]
+    if not any(matched):
         row.attempts += 1
         if row.attempts >= MAX_SMS_CODE_ATTEMPTS:
             # 达上限即作废:否则 used_at 恒空,这条已烧毁的码会被反复选中
@@ -341,9 +349,7 @@ async def login(
             )
             await session.commit()  # 通知落库(password 路径无其它提交点)
         # 异常判定完成后才清零账号桶(先读 hits 再清,顺序不可换)
-        await clear_rate_limit(
-            _LOGIN_ANOMALY_BUCKET[0].format(ip=client_ip or "-", phone=phone)
-        )
+        await clear_rate_limit(_LOGIN_ANOMALY_BUCKET[0].format(ip=client_ip or "-", phone=phone))
     # 已注销账号的 phone 已改写为 del:…,按手机号查不到,不必再判 deleted(持凭证路径见 deps/refresh)
     if user.status == "frozen":
         raise AppError(
@@ -589,7 +595,33 @@ async def delete_ssh_key(session: AsyncSession, user_id: int, key_id: int) -> No
     if key is None or key.user_id != user_id:
         raise not_found()
     await session.delete(key)
+    # 同步摘除该用户未释放实例上的 authorized_keys 快照(实例行是开机下发源,
+    # 不摘则「删了钥匙、重启又回来」)。运行中 Pod 容器内的 authorized_keys 由
+    # entrypoint 在建 Pod 时写定,平台无 exec 通道——运行实例下次重启才生效,
+    # 前端文案按此口径提示(重启即失效)。
+    from app.modules.orchestrator import service as orchestrator_service
+
+    stripped = await orchestrator_service.strip_ssh_key_from_instances(
+        session, user_id, key.public_key
+    )
     await session.commit()
+    if stripped:
+        logger.info("ssh_key_stripped_from_instances", user_id=user_id, instances=stripped)
+
+
+async def is_active_user(session: AsyncSession, user_id: int) -> bool:
+    """归属校验(告警租户映射等):user_id 存在且 active(deleted/frozen 不投递)。"""
+    status = await session.scalar(select(User.status).where(User.id == user_id))
+    return status == "active"
+
+
+async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
+    """实名闸门(充值与算力/存储开通面共用):real_name_required_for_recharge=true 时
+    未实名一律 403。挂点清单:充值、创建实例、开机、续费、转包周期、建数据盘——
+    漏挂一处即绕开合规闸(别按端点复制粘贴,一律经本函数)。"""
+    cfg = await get_effective_platform_config(session)
+    if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
+        raise AppError(ErrorCode.REAL_NAME_REQUIRED, key=key, http_status=403)
 
 
 async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dict[int, int]:
@@ -617,9 +649,7 @@ async def signup_counts(session: AsyncSession, *, tz_offset_minutes: int = 0) ->
     """今日/昨日新注册数(本地日界)。"""
     from sqlalchemy import func
 
-    offset = timedelta(minutes=tz_offset_minutes)
-    local_now = now_utc() + offset
-    day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0) - offset
+    day_start, _ = local_day_range(tz_offset_minutes)
     prev_day_start = day_start - timedelta(days=1)
 
     async def _count(start: datetime, end: datetime | None = None) -> int:
@@ -641,12 +671,18 @@ async def admin_list_users(
     status: str | None = None,
     cursor: str | None = None,
     limit: int | None = None,
+    order: str = "desc",
 ) -> RawPage[User]:
-    """租户列表(游标分页,降序)。q = 手机号:完整 11 位精确匹配走唯一索引,短串按后缀匹配。"""
+    """租户列表(游标分页)。q = 手机号:完整 11 位精确匹配走唯一索引,短串按后缀匹配。
+
+    order = id(= 注册先后)正/倒序;游标语义随方向翻转(asc 时 cursor 之后取 id 更大者)。
+    余额/消费等聚合列在 Python 侧按页拼装,不在 SQL 层,故不支持以其排序(假排序比没有更糟)。
+    """
     from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
 
     lim = clamp_limit(limit)
-    stmt = select(User).order_by(User.id.desc()).limit(lim + 1)
+    ascending = order == "asc"
+    stmt = select(User).order_by(User.id.asc() if ascending else User.id.desc()).limit(lim + 1)
     if status:
         stmt = stmt.where(User.status == status)
     q = (q or "").strip()
@@ -658,7 +694,7 @@ async def admin_list_users(
             stmt = stmt.where(User.phone.like(f"%{like_escape(q)}", escape="\\"))
     last_id = decode_cursor_int(cursor)
     if last_id is not None:
-        stmt = stmt.where(User.id < last_id)
+        stmt = stmt.where(User.id > last_id if ascending else User.id < last_id)
     rows = list((await session.execute(stmt)).scalars())
     page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
     return RawPage(items=page_items, next_cursor=next_cursor)

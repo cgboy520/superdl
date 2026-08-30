@@ -7,7 +7,8 @@ alloy:
         role = "pod"
       }
 
-      // 标签收敛为 namespace/pod/container/app
+      // 标签收敛为 namespace/pod/container/app;再按 namespace 打 Loki 租户标签
+      // (auth_enabled=true 后 X-Scope-OrgID 必填):tenant-* = tenant,其余 = platform
       discovery.relabel "pod_logs" {
         targets = discovery.kubernetes.pods.targets
         rule {
@@ -26,28 +27,49 @@ alloy:
           source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
           target_label  = "app"
         }
+        // 顺序敏感:先全员 platform 兜底,再让 tenant-* 覆盖为 tenant
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "tenant"
+          replacement   = "platform"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          regex         = "tenant-.+"
+          target_label  = "tenant"
+          replacement   = "tenant"
+        }
       }
 
       loki.source.kubernetes "pod_logs" {
         targets    = discovery.relabel.pod_logs.output
-        forward_to = [loki.write.default.receiver]
+        forward_to = [loki.process.tenant.receiver]
       }
 
       // ── 控制面 apiserver 审计日志(rke2/k3s server 节点宿主机文件,
       //    路径见 ../rke2/server-config.yaml 与 ../k3s/server-config.yaml 的
-      //    audit-log-path;卷挂载见本文件 alloy.mounts.extra)──
+      //    audit-log-path;卷挂载已收窄到 server/logs,见本文件 alloy.mounts.extra)──
       local.file_match "apiserver_audit" {
         path_targets = [{
-          __path__   = "/host-logs/rancher/*/server/logs/audit.log",
+          __path__   = "/host-logs/*/server/logs/audit.log",
           job        = "kube-apiserver-audit",
           component  = "kube-apiserver",
+          tenant     = "platform",
         }]
         sync_period = "10s"
       }
 
       loki.source.file "apiserver_audit" {
         targets    = local.file_match.apiserver_audit.targets
+        forward_to = [loki.process.tenant.receiver]
+      }
+
+      // 按 tenant 标签打 X-Scope-OrgID(Loki auth_enabled=true 必需)
+      loki.process "tenant" {
         forward_to = [loki.write.default.receiver]
+        stage.tenant {
+          source = "tenant"
+        }
       }
 
       loki.write "default" {
@@ -62,10 +84,15 @@ alloy:
     limits: {memory: 256Mi}
   mounts:
     extra:
-      # 控制面审计日志目录(rke2/k3s 同在 /var/lib/rancher 下;GPU 节点无此目录,
-      # DirectoryOrCreate 建空目录无妨,file_match 自然无目标)
-      - name: rancher-logs
-        mountPath: /host-logs/rancher
+      # 只挂 apiserver 审计日志目录(server/logs),不挂整棵 /var/lib/rancher:
+      # 后者含 node-token、cluster-admin kubeconfig、集群 CA 与 etcd 快照,
+      # 「只读」挡不住「读到即拥有」的凭据泄漏。rke2/k3s 路径分开挂,
+      # DirectoryOrCreate 对不存在的发行版建空目录,file_match 自然无目标。
+      - name: rke2-audit-logs
+        mountPath: /host-logs/rke2/server/logs
+        readOnly: true
+      - name: k3s-audit-logs
+        mountPath: /host-logs/k3s/server/logs
         readOnly: true
 controller:
   # DaemonSet 每节点一只;控制面节点的 apiserver 审计文件也要采,必须容忍 server 侧 taint
@@ -75,5 +102,7 @@ controller:
     - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
   volumes:
     extra:
-      - name: rancher-logs
-        hostPath: {path: /var/lib/rancher, type: DirectoryOrCreate}
+      - name: rke2-audit-logs
+        hostPath: {path: /var/lib/rancher/rke2/server/logs, type: DirectoryOrCreate}
+      - name: k3s-audit-logs
+        hostPath: {path: /var/lib/rancher/k3s/server/logs, type: DirectoryOrCreate}

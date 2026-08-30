@@ -1,5 +1,6 @@
 import { CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
-import { metaOf } from "@superdl/ui";
+import { adminColors, formatDateTime, metaOf } from "@superdl/ui";
+import { DataErrorAlert, PageContainer } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Alert, App, Badge, Button, Card, Col, Row, Space, Tag, Tooltip, Typography } from "antd";
@@ -10,9 +11,8 @@ import {
   useClusterStatus,
   useTestClusterConnection,
 } from "../../api";
-import dayjs from "dayjs";
 
-import { useApiErrorText } from "../../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 import { POOL_LABEL_KEY } from "../../lib/pools";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
@@ -40,7 +40,7 @@ function ClusterPage() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const qc = useQueryClient();
-  const { data, queryKey } = useClusterStatus();
+  const { data, queryKey, isLoading, isError, refetch } = useClusterStatus();
 
   const test = useTestClusterConnection({
     mutation: {
@@ -59,7 +59,10 @@ function ClusterPage() {
   const isK3s = data?.distro === "k3s";
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <PageContainer title={t("menu.cluster")}>
+    <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      {/* 查询失败必须明示:四卡静默全空会被值班读成「接口就没数据」,全站「失败必明示」纪律 */}
+      {isError && <DataErrorAlert onRetry={() => void refetch()} />}
       {isK3s && <Alert type="warning" showIcon title={t("cluster.lightWarning")} />}
       {data && !data.api_reachable && data.error && (
         <Alert type="error" showIcon title={t("cluster.unreachable")} description={data.error} />
@@ -85,11 +88,16 @@ function ClusterPage() {
               </Tooltip>
             }
           >
-            <Space direction="vertical" size={8}>
+            <Space orientation="vertical" size={8}>
               <Space size={8}>
-                <Badge status={data?.api_reachable ? "success" : "error"} />
+                {/* 首响未到不闪「不可达」(假阴性):加载期渲染探测中,数据到达后按真实值 */}
+                <Badge status={isLoading ? "processing" : data?.api_reachable ? "success" : "error"} />
                 <Typography.Text strong>
-                  {data?.api_reachable ? t("cluster.connected") : t("cluster.unreachable")}
+                  {isLoading
+                    ? t("cluster.probing")
+                    : data?.api_reachable
+                      ? t("cluster.connected")
+                      : t("cluster.unreachable")}
                 </Typography.Text>
                 {data?.k8s_version && <Tag>{data.k8s_version}</Tag>}
                 {data?.distro && (
@@ -101,7 +109,7 @@ function ClusterPage() {
               </Space>
               <Typography.Text type="secondary">
                 {data?.probed_at
-                  ? t("cluster.probedAt", { time: dayjs(data.probed_at).format("YYYY-MM-DD HH:mm:ss") })
+                  ? t("cluster.probedAt", { time: formatDateTime(data.probed_at) })
                   : t("cluster.neverProbed")}
               </Typography.Text>
             </Space>
@@ -109,7 +117,7 @@ function ClusterPage() {
         </Col>
         <Col xs={24} lg={12}>
           <Card title={t("cluster.configCard")}>
-            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
               {(
                 [
                   ["cluster.cfgServer", data?.config.server_url_set],
@@ -119,9 +127,9 @@ function ClusterPage() {
               ).map(([key, ok]) => (
                 <Space key={key} size={8}>
                   {ok ? (
-                    <CheckCircleFilled style={{ color: "#52c41a" }} />
+                    <CheckCircleFilled style={{ color: adminColors.positive }} />
                   ) : (
-                    <CloseCircleFilled style={{ color: "#ff4d4f" }} />
+                    <CloseCircleFilled style={{ color: adminColors.negative }} />
                   )}
                   <Typography.Text>{t(key)}</Typography.Text>
                   <Typography.Text type="secondary">
@@ -142,14 +150,18 @@ function ClusterPage() {
         </Col>
         <Col xs={24} lg={12}>
           <Card title={t("cluster.healthCard")}>
-            <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={10} style={{ width: "100%" }}>
+              {/* 空数组渲染空白会被读成「探测缺失/加载失败」:数据已到但无组件时给一句话空态 */}
+              {data && (data.components ?? []).length === 0 && (
+                <Typography.Text type="secondary">{t("cluster.noComponents")}</Typography.Text>
+              )}
               {(data?.components ?? []).map((c) => (
                 <div key={c.key}>
                   <Space size={8}>
                     {c.ok ? (
-                      <CheckCircleFilled style={{ color: "#52c41a" }} />
+                      <CheckCircleFilled style={{ color: adminColors.positive }} />
                     ) : (
-                      <CloseCircleFilled style={{ color: "#ff4d4f" }} />
+                      <CloseCircleFilled style={{ color: adminColors.negative }} />
                     )}
                     <Typography.Text strong={!c.ok}>{t(COMPONENT_LABEL[c.key])}</Typography.Text>
                     {c.detail && <Typography.Text type="secondary">{c.detail}</Typography.Text>}
@@ -169,7 +181,7 @@ function ClusterPage() {
         </Col>
         <Col xs={24} lg={12}>
           <Card title={t("cluster.poolCard")}>
-            <Space direction="vertical" size={10}>
+            <Space orientation="vertical" size={10}>
               <Space size={8} wrap>
                 {Object.entries(data?.pools ?? {})
                   .filter(([k]) => k !== "unlabeled")
@@ -195,5 +207,6 @@ function ClusterPage() {
         </Col>
       </Row>
     </Space>
+    </PageContainer>
   );
 }

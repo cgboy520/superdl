@@ -4,18 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F5F6FA" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F1420" />
     <meta name="description" content="SuperDL GPU 算力云:即开即用、按量计费、价格透明的 GPU 租用平台" />
+    <link rel="preconnect" href="https://o.alicdn.com" />
     <title>SuperDL · GPU 算力云</title>
   </head>
   <body>
     <script>
-      // 主题预置(FOUC 守护):与 stores/theme.ts 同一判定,先上底色与 color-scheme 再加载 bundle
+      // 主题预置(FOUC 守护):与 stores/theme.ts 同一判定,先上底色与 color-scheme 再加载 bundle;
+      // CSS 变量与 packages/ui tokens.ts cssVars 同源(改动须三处同步:此处 / tokens.ts / CSP hash)
       (function () {
         var m = localStorage.getItem("superdl.theme");
         var dark = m ? m === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
         document.documentElement.dataset.theme = dark ? "dark" : "light";
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
         document.body.style.background = dark ? "#0F1420" : "#F5F6FA";
+        var s = document.documentElement.style;
+        s.setProperty("--sdl-color-primary", dark ? "#A5B4FC" : "#4F46E5");
+        s.setProperty("--sdl-color-bg", dark ? "#0F1420" : "#F5F6FA");
+        s.setProperty("--sdl-color-text", dark ? "#E5E9F2" : "rgba(0,0,0,0.88)");
+        s.setProperty("--sdl-scroll-thumb", dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.25)");
       })();
     </script>
     <div id="root"></div>

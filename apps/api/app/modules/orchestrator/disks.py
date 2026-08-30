@@ -156,7 +156,17 @@ async def _settle_pending_days(session: AsyncSession, disk: DataDisk) -> None:
 
 
 async def expand_disk(session: AsyncSession, user_id: int, uuid: str, new_size_gb: int) -> DataDisk:
-    disk = await get_disk(session, user_id, uuid)
+    # FOR UPDATE 锁盘行(锁序 disk → bill → wallet,与 delete_disk 同向):
+    # 后续 _settle_pending_days 会经扣款拿钱包锁,先钱包后盘会与其成交叉死锁对
+    disk = (
+        await session.execute(
+            select(DataDisk)
+            .where(DataDisk.uuid == uuid, DataDisk.user_id == user_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if disk is None or disk.status == "deleted":
+        raise not_found("数据盘不存在")
     if disk.status != "active":
         raise AppError(ErrorCode.VALIDATION_ERROR, key="disks.expandNeedsActive")
     if new_size_gb <= disk.size_gb:
@@ -319,6 +329,18 @@ async def arrears_transition_disks(session: AsyncSession, user_id: int, in_arrea
 
 async def get_disk_by_id_for_user(session: AsyncSession, user_id: int, disk_id: int) -> DataDisk:
     disk = await session.get(DataDisk, disk_id)
+    if disk is None or disk.user_id != user_id or disk.status == "deleted":
+        raise not_found("数据盘不存在")
+    return disk
+
+
+async def lock_disk_for_attach(session: AsyncSession, user_id: int, disk_id: int) -> DataDisk:
+    """建实例挂盘前的归属校验 + FOR UPDATE 行锁。
+
+    锁序约定 disk → wallet:建实例临界区先锁盘再锁钱包(assert_can_afford),
+    与删盘(delete_disk:盘锁 → 末日账钱包扣款)同向——先钱包后盘会成交叉死锁对。
+    """
+    disk = await session.get(DataDisk, disk_id, with_for_update=True)
     if disk is None or disk.user_id != user_id or disk.status == "deleted":
         raise not_found("数据盘不存在")
     return disk

@@ -5,6 +5,7 @@
  */
 
 import type { ApiKeyCreateOut } from "@superdl/api-client";
+import { fontSize } from "@superdl/ui";
 import { Button, Checkbox, Card, Input, Modal, Space, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -40,7 +41,7 @@ export function ApiKeyModal({
         title={t("instances.apiKeyCreated")}
         // 明文只此一次:X 与遮罩关闭全部封掉,只留勾选后的那个按钮
         closable={false}
-        maskClosable={false}
+        mask={{ closable: false }}
         keyboard={false}
         onCancel={close}
         footer={
@@ -58,7 +59,7 @@ export function ApiKeyModal({
             <pre
               style={{
                 margin: "8px 0 0",
-                fontSize: 15,
+                fontSize: fontSize.sectionTitle,
                 lineHeight: 1.8,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-all",

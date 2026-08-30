@@ -15,11 +15,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.core.gpu_models import canonical_gpu_model, default_vram_gb
 from app.core.k8s import get_orchestrator
-from app.core.k8s.base import GPU_MODEL_NODE_LABEL
+from app.core.k8s.base import GPU_MODEL_NODE_LABEL, POOL_NODE_LABEL
 from app.core.locks import LockKey, try_advisory_lock
 from app.core.logging import get_logger
+from app.core.metrics import LIGHT_DISTRO_IN_PROD, NODE_POOL_LABEL_MISMATCH_TOTAL
 from app.core.timeutil import now_utc
 from app.modules.nodes import service
 from app.modules.nodes.models import NodeEnrollment, NodeSpec
@@ -52,6 +54,7 @@ async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
             "vram_gb": max((_gpu_entry_vram_gb(e) for e in gpu_info), default=0),
             "driver_version": str(os_info.get("driver_version") or "") or None,
             "cuda_version": str(os_info.get("cuda_version") or "") or None,
+            "pool": r.pool,
         }
     return out
 
@@ -66,6 +69,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         "label_failed": 0,
         "probe_ok": 0,
         "cordon_converged": 0,
+        "pool_label_corrected": 0,
     }
     async with (
         sm() as lock_session,
@@ -85,9 +89,19 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
             logger.warning("cluster_probe_unreachable", error=probe.error)
             return counts
         counts["probe_ok"] = 1
+        # light(k3s)档租户计算与控制面同宿主,禁止公众生产:prod 下亮起即需人工处置。
+        # 指标是运行时常驻信号(进程重启不丢),启动日志告警一次性易被淹没。
+        light_violation = get_settings().environment == "prod" and probe.distro == "k3s"
+        LIGHT_DISTRO_IN_PROD.set(1 if light_violation else 0)
+        if light_violation:
+            logger.error(
+                "light_distro_in_prod",
+                hint="prod 环境不得运行在 k3s(light)档:租户与控制面同宿主,应迁移 full(rke2)",
+            )
         nodes = await orch.list_nodes(include_unlabeled=True)
 
         desired_labels: list[tuple[str, str]] = []
+        desired_pool_fix: list[tuple[str, str]] = []
         now = now_utc()
         # ---- B:单事务 DB 收敛 ----
         async with sm() as session:
@@ -140,6 +154,16 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                 else:
                     # 型号未知无法确认标签收敛,不沿用上一轮的真值
                     row.label_synced = False
+                # 池标签对账:kubelet --node-labels 是节点自声明,不可作为隔离档位的事实源
+                # (持 join token 的机器可自称 kata 池吸 VM 隔离负载)。注册登记
+                # (node_enrollments.pool,一次性 token 绑定)才是事实源;不一致即纠正。
+                enrolled_pool = e.get("pool")
+                if (
+                    enrolled_pool
+                    and n.pool_label not in ("", "unknown")
+                    and n.pool_label != enrolled_pool
+                ):
+                    desired_pool_fix.append((n.name, enrolled_pool))
             for name, row in list(rows.items()):
                 if name in seen:
                     continue
@@ -167,6 +191,22 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                     row.label_synced = True
                     await session.commit()
             counts["labeled"] += 1
+
+        # ---- C2:池标签纠偏(注册登记 > 节点自声明;逐节点独立 try,失败下轮自愈) ----
+        for name, pool in desired_pool_fix:
+            try:
+                await orch.set_node_labels(name, {POOL_NODE_LABEL: pool})
+            except Exception:
+                logger.warning("node_pool_label_fix_failed", node=name, pool=pool)
+                continue
+            NODE_POOL_LABEL_MISMATCH_TOTAL.inc()
+            counts["pool_label_corrected"] += 1
+            logger.warning(
+                "node_pool_label_corrected",
+                node=name,
+                pool=pool,
+                hint="节点自声明池标签与注册登记不符,已按登记纠正;频繁出现需排查节点凭据",
+            )
 
         # ---- D:cordon 期望态收敛(实际调度态与台账期望不符即重放,逐节点独立 try) ----
         async with sm() as session:

@@ -4,13 +4,13 @@
  * 折扣与宽限窗一律从 `/policies` 读:知情同意里承诺的值必须与后端真正执行的是同一个来源。
  */
 
-import { mulPrice, spotHourlyPrice } from "@superdl/ui";
+import { fontSize, mulPrice, spotHourlyPrice } from "@superdl/ui";
 import { Space, Typography } from "antd";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { usePolicies } from "../api/queries";
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 import { ConsentModal } from "./ConsentModal";
 
 export interface SpotPolicy {
@@ -55,7 +55,7 @@ export function SpotPriceInline({
   if (!spot) return <>{formatHourlyPrice(mulPrice(baseHourly, units))}</>;
   return (
     <Space size={8} align="baseline">
-      <Typography.Text type="secondary" delete style={{ fontSize: 14 }}>
+      <Typography.Text type="secondary" delete style={{ fontSize: fontSize.body }}>
         {formatHourlyPrice(mulPrice(baseHourly, units))}
       </Typography.Text>
       <span>{formatHourlyPrice(mulPrice(spot, units))}</span>

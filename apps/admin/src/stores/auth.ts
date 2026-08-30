@@ -6,6 +6,8 @@
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 
+import { queryClient } from "../lib/queryClient";
+
 const TOKEN_KEY = "superdl.admin.accessToken";
 
 export interface AdminInfo {
@@ -40,6 +42,8 @@ export const authStore = createStore<AuthState>()((set) => ({
   setAdmin: (admin) => set({ admin }),
   logout: () => {
     localStorage.removeItem(TOKEN_KEY);
+    // /me 等查询缓存一并清掉:换号重登后不得看到上一个账号的角色/数据残影
+    queryClient.clear();
     set({ accessToken: null, admin: null });
   },
 }));

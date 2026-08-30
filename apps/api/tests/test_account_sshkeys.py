@@ -82,3 +82,34 @@ class TestSshKeys:
                 "/api/v1/ssh-keys", json={"name": "k", "public_key": ED25519_KEY}, headers=h
             )
             assert resp.status_code == 201, resp.text
+
+    async def test_delete_strips_key_from_live_instances(self, client: AsyncClient, sm):
+        """删除公钥同步摘除未释放实例的 authorized_keys 快照(重启不复活);
+        已释放实例不动(其快照是历史留痕);运行中 Pod 待下次重启生效(无 exec 通道)。"""
+        from app.modules.orchestrator.models import Instance
+        from tests.helpers import register, seed_instance
+
+        data = await register(client, "13800000011")
+        headers = {"Authorization": f"Bearer {data['access_token']}"}
+        resp = await client.post(
+            "/api/v1/ssh-keys", json={"name": "laptop", "public_key": ED25519_KEY}, headers=headers
+        )
+        assert resp.status_code == 201, resp.text
+        key_id = resp.json()["id"]
+        stored_key = resp.json()["public_key"]  # 规范化后的形态(与实例快照同口径)
+        live_id = await seed_instance(sm, user_id=data["user"]["id"], status="running")
+        released_id = await seed_instance(sm, user_id=data["user"]["id"], status="released")
+        async with sm() as session:
+            for iid in (live_id, released_id):
+                inst = await session.get(Instance, iid)
+                assert inst is not None
+                inst.authorized_keys = [stored_key]
+            await session.commit()
+
+        resp = await client.delete(f"/api/v1/ssh-keys/{key_id}", headers=headers)
+        assert resp.status_code == 204, resp.text
+        async with sm() as session:
+            live = await session.get(Instance, live_id)
+            released = await session.get(Instance, released_id)
+        assert live is not None and live.authorized_keys == []
+        assert released is not None and released.authorized_keys == [stored_key]

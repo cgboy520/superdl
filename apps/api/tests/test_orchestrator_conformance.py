@@ -64,7 +64,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
         real.core.create_namespaced_secret(
             platform_ns,
             k8s_client.V1Secret(
-                metadata=k8s_client.V1ObjectMeta(name="superdl-api-secrets"),
+                metadata=k8s_client.V1ObjectMeta(name="superdl-db"),
                 string_data={"juicefs-metaurl": "postgres://conf:conf@localhost:5432/none"},
             ),
         )
@@ -93,6 +93,31 @@ def _quota_job_name(subpath: str, is_set: bool) -> str:
 def _mark_job_succeeded(real: Any, namespace: str, name: str) -> None:
     """kind 上存储类作业永不成功:patch status 注入完成态,走「完成返回」协议分支。"""
     real.batch.patch_namespaced_job_status(name, namespace, {"status": {"succeeded": 1}})
+
+
+def _bind_juicefs_pvc(real: Any, tenant_ns: str) -> None:
+    """kind 无 JuiceFS SC,PVC 永不绑定:手工建 CSI PV 并把 PVC 绑上,
+    走通配额路径解析(real._juicefs_fs_base_sync 依赖 PV volumeAttributes.subPath)。"""
+    from app.core.k8s.base import JUICEFS_PVC_NAME
+
+    pv_name = f"pvc-conf-{uuid.uuid4().hex[:8]}"
+    real.core.create_persistent_volume(
+        k8s_client.V1PersistentVolume(
+            metadata=k8s_client.V1ObjectMeta(name=pv_name),
+            spec=k8s_client.V1PersistentVolumeSpec(
+                capacity={"storage": "1Gi"},
+                access_modes=["ReadWriteMany"],
+                csi=k8s_client.V1CSIPersistentVolumeSource(
+                    driver="csi.juicefs.com",
+                    volume_handle=pv_name,
+                    volume_attributes={"subPath": pv_name},
+                ),
+            ),
+        )
+    )
+    real.core.patch_namespaced_persistent_volume_claim(
+        JUICEFS_PVC_NAME, tenant_ns, {"spec": {"volumeName": pv_name}}
+    )
 
 
 # ---------- 契约用例(双后端同跑) ----------
@@ -126,25 +151,26 @@ class TestDiskQuotaContract:
     """set/delete_disk_quota:幂等(重放到同值不报错);进行中抛错;完成返回。"""
 
     async def test_idempotent_set_and_delete(self, backend: Backend) -> None:
-        sub = f"confq-{uuid.uuid4().hex[:8]}"
+        ns, sub = backend.namespace, f"confq-{uuid.uuid4().hex[:8]}"
         if backend.kind == "fake":
             assert backend.fake is not None
-            await backend.impl.set_disk_quota(sub, 10)
-            await backend.impl.set_disk_quota(sub, 10)  # 幂等重放
-            assert backend.fake.disk_quotas[sub] == 10
-            await backend.impl.delete_disk_quota(sub)
-            await backend.impl.delete_disk_quota(sub)  # 无配额记录视为成功
-            assert sub not in backend.fake.disk_quotas
+            await backend.impl.set_disk_quota(ns, sub, 10)
+            await backend.impl.set_disk_quota(ns, sub, 10)  # 幂等重放
+            assert backend.fake.disk_quotas[(ns, sub)] == 10
+            await backend.impl.delete_disk_quota(ns, sub)
+            await backend.impl.delete_disk_quota(ns, sub)  # 无配额记录视为成功
+            assert (ns, sub) not in backend.fake.disk_quotas
         else:
+            _bind_juicefs_pvc(backend.real, ns)
             platform_ns: str = backend.real.settings.k8s_platform_namespace
             with pytest.raises(RuntimeError, match="awaiting completion"):
-                await backend.impl.set_disk_quota(sub, 10)  # 已创建,等完成
+                await backend.impl.set_disk_quota(ns, sub, 10)  # 已创建,等完成
             _mark_job_succeeded(backend.real, platform_ns, _quota_job_name(sub, True))
-            await backend.impl.set_disk_quota(sub, 10)  # 完成返回
+            await backend.impl.set_disk_quota(ns, sub, 10)  # 完成返回
             with pytest.raises(RuntimeError, match="awaiting completion"):
-                await backend.impl.delete_disk_quota(sub)
+                await backend.impl.delete_disk_quota(ns, sub)
             _mark_job_succeeded(backend.real, platform_ns, _quota_job_name(sub, False))
-            await backend.impl.delete_disk_quota(sub)  # 完成返回
+            await backend.impl.delete_disk_quota(ns, sub)  # 完成返回
 
 
 class TestReadInstanceLogsContract:

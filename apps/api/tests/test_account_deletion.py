@@ -254,14 +254,16 @@ class TestApproveSuccess:
                 )
             )
             await session.commit()
-        # 登录拿 refresh token(执行后要验证旧凭证全废)
+        # 登录拿 refresh token(执行后要验证旧凭证全废);refresh 只走 Cookie,从 jar 取
         await client.post(
             "/api/v1/auth/sms-code",
             json={"phone": PHONE, "purpose": "login"},
         )
         login = await client.post("/api/v1/auth/login", json={"phone": PHONE, "sms_code": "123456"})
         assert login.status_code == 200, login.text
-        old_refresh = login.json()["refresh_token"]
+        from tests.helpers import current_refresh_token
+
+        old_refresh = current_refresh_token(client)
         old_access = login.json()["access_token"]
 
         req_id = (await _create_request(client, headers)).json()["id"]
@@ -289,7 +291,9 @@ class TestApproveSuccess:
         assert me.json()["message_key"] == "account.accountDeleted"
         assert me.json()["message"] == "账号已注销"
         # 旧 refresh → 401「账号已注销」
-        refresh = await client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
+        from tests.helpers import refresh_via_cookie
+
+        refresh = await refresh_via_cookie(client, old_refresh)
         assert refresh.status_code == 401
         assert refresh.json()["message_key"] == "account.accountDeleted"
         # 登录 → 拒绝(手机号已释放)。登录路径按防枚举口径统一 loginFailed(400),
@@ -353,25 +357,10 @@ class TestApproveSuccess:
 
 
 class TestAdminRoles:
-    async def test_admin_role_gate(self, client: AsyncClient, sm):
+    async def test_admin_can_reject(self, client: AsyncClient, sm):
         headers, _, _ = await create_user_with_key(client, PHONE)
         req_id = (await _create_request(client, headers)).json()["id"]
-        for role in ("readonly", "finance", "ops"):
-            role_headers = await admin_headers(sm, client, role=role)
-            listed = await client.get("/api/admin/v1/deletion-requests", headers=role_headers)
-            assert listed.status_code == 200, f"{role} 应可读"
-            assert any(r["id"] == req_id for r in listed.json())
-            approve = await client.post(
-                f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=role_headers
-            )
-            assert approve.status_code == 403, f"{role} 不可执行注销"
-            reject = await client.post(
-                f"/api/admin/v1/deletion-requests/{req_id}/reject",
-                json={"note": "越权测试"},
-                headers=role_headers,
-            )
-            assert reject.status_code == 403, f"{role} 不可驳回"
-        # 仅 admin 可写(驳回不受冷静期限制,用它验证写通路)
+        # 仅 admin 可写(驳回不受冷静期限制,用它验证写通路;角色门由 route×role 矩阵覆盖)
         admin = await admin_headers(sm, client)
         reject = await client.post(
             f"/api/admin/v1/deletion-requests/{req_id}/reject",

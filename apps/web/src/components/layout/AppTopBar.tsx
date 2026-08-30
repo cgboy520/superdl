@@ -7,24 +7,26 @@
  */
 
 import { MenuOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { brand, colorPrimary } from "@superdl/ui";
+import { brand, colorPrimary, fontSize } from "@superdl/ui";
+import { LangSwitcher } from "@superdl/ui/components";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Button, Drawer, Grid, Space } from "antd";
+import { Button, Drawer, Grid, Space, theme } from "antd";
 import { useTranslation } from "react-i18next";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { useIsLoggedIn } from "../../stores/auth";
 import { useThemeMode, useThemeToggle } from "../../stores/theme";
 import { BrandLogo } from "./BrandLogo";
 import { CONSOLE_NAV, consoleNavSelected } from "./consoleNav";
-import { LangSwitcher } from "./LangSwitcher";
 
-/** 主题切换(顶栏右区图标钮;状态存 localStorage,初值跟系统,见 stores/theme)。 */
-function ThemeToggle() {
+/** 主题切换(状态存 localStorage,初值跟系统,见 stores/theme)。
+ *  brand = 顶栏品牌渐变底上的白色图标;plain = 浅色容器底(登录页等)跟随文本色。 */
+export function ThemeToggle({ variant = "brand" }: { variant?: "brand" | "plain" }) {
   const { t } = useTranslation();
   const mode = useThemeMode();
   const toggle = useThemeToggle();
   const dark = mode === "dark";
+  const color = variant === "brand" ? "#fff" : undefined;
   return (
     <Button
       type="text"
@@ -32,9 +34,9 @@ function ThemeToggle() {
       title={dark ? t("topbar.themeToLight") : t("topbar.themeToDark")}
       icon={
         dark ? (
-          <SunOutlined style={{ color: "#fff", fontSize: 16 }} />
+          <SunOutlined style={{ color, fontSize: fontSize.sectionTitle }} />
         ) : (
-          <MoonOutlined style={{ color: "#fff", fontSize: 16 }} />
+          <MoonOutlined style={{ color, fontSize: fontSize.sectionTitle }} />
         )
       }
       onClick={toggle}
@@ -52,16 +54,35 @@ export function AppTopBar({
   const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
   const screens = Grid.useBreakpoint();
+  const { token } = theme.useToken();
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navSelected = consoleNavSelected(pathname);
+  // 抽屉导航链接:颜色走 antd token(暗色主题自适应),布局/hover/focus 在 styles.css 类里
+  const drawerLinkStyle = (active: boolean): CSSProperties => ({
+    display: "block",
+    padding: "10px 12px",
+    borderRadius: token.borderRadius,
+    color: active ? token.colorPrimary : token.colorText,
+    background: active ? token.colorPrimaryBg : undefined,
+    fontWeight: active ? 600 : 400,
+    textDecoration: "none",
+    fontSize: fontSize.sectionTitle,
+  });
+  const drawerSectionStyle: CSSProperties = {
+    padding: "4px 12px",
+    fontSize: fontSize.caption,
+    color: token.colorTextSecondary,
+    letterSpacing: "0.04em",
+  };
   return (
     <header className="app-topbar" style={{ background: brand.topBarBg }}>
-      {!screens.md && (
+      {/* 汉堡断点跟侧栏走:侧栏 lg(992)收为 0 宽,768~992 区间只能靠汉堡 Drawer 进控制台页 */}
+      {!screens.lg && (
         <Button
           type="text"
           aria-label={t("topbar.openMenu")}
-          icon={<MenuOutlined style={{ color: "#fff", fontSize: 18 }} />}
+          icon={<MenuOutlined style={{ color: "#fff", fontSize: fontSize.pageTitle }} />}
           onClick={() => setMenuOpen(true)}
         />
       )}
@@ -75,12 +96,12 @@ export function AppTopBar({
         </Link>
         {variant === "public" && (
           <>
-            <a href="/#pricing" className="topbar-link">
+            <Link to="/" hash="pricing" className="topbar-link">
               {t("topbar.pricing")}
-            </a>
-            <a href="/#ranking" className="topbar-link">
+            </Link>
+            <Link to="/" hash="ranking" className="topbar-link">
               {t("topbar.ranking")}
-            </a>
+            </Link>
           </>
         )}
       </nav>
@@ -124,34 +145,50 @@ export function AppTopBar({
       >
         {variant === "console" && loggedIn && (
           <>
-            <div className="drawer-section">{t("topbar.consoleSection")}</div>
+            <div style={drawerSectionStyle}>{t("topbar.consoleSection")}</div>
             <nav style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
               {CONSOLE_NAV.map((n) => (
                 <Link
                   key={n.key}
                   to={n.key}
-                  className={
-                    navSelected === n.key ? "drawer-link drawer-link--active" : "drawer-link"
-                  }
+                  className="drawer-link"
+                  style={drawerLinkStyle(navSelected === n.key)}
                   onClick={() => setMenuOpen(false)}
                 >
                   {t(n.labelKey)}
                 </Link>
               ))}
             </nav>
-            <div className="drawer-section">{t("topbar.siteSection")}</div>
+            <div style={drawerSectionStyle}>{t("topbar.siteSection")}</div>
           </>
         )}
         <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Link to="/market" className="drawer-link" onClick={() => setMenuOpen(false)}>
+          <Link
+            to="/market"
+            className="drawer-link"
+            style={drawerLinkStyle(false)}
+            onClick={() => setMenuOpen(false)}
+          >
             {t("topbar.market")}
           </Link>
-          <a href="/#pricing" className="drawer-link" onClick={() => setMenuOpen(false)}>
+          <Link
+            to="/"
+            hash="pricing"
+            className="drawer-link"
+            style={drawerLinkStyle(false)}
+            onClick={() => setMenuOpen(false)}
+          >
             {t("topbar.pricing")}
-          </a>
-          <a href="/#ranking" className="drawer-link" onClick={() => setMenuOpen(false)}>
+          </Link>
+          <Link
+            to="/"
+            hash="ranking"
+            className="drawer-link"
+            style={drawerLinkStyle(false)}
+            onClick={() => setMenuOpen(false)}
+          >
             {t("topbar.ranking")}
-          </a>
+          </Link>
         </nav>
       </Drawer>
     </header>

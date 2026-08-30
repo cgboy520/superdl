@@ -4,8 +4,7 @@ bootstrap 下发 registry_ca_pem。"""
 import yaml
 
 from app.modules.nodes.service import render_registries_yaml
-from tests.helpers import admin_headers
-from tests.test_node_enroll import CREATE_BODY, set_cluster_config
+from tests.helpers import CREATE_BODY, admin_headers, set_cluster_config
 
 CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----"
 

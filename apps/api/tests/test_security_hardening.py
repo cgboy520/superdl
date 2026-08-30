@@ -198,7 +198,7 @@ class TestProdConfigValidation:
             "sms_provider": "aliyun",
             "k8s_backend": "real",
             "payment_mock": False,
-            "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl",
+            "database_url": "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl?sslmode=require",
             "cors_origins": ["https://console.superdl.cn"],
             "admin_host": "admin.superdl.cn",
             "admin_edge_token": "edge-token-for-tests",
@@ -228,7 +228,8 @@ class TestProdConfigValidation:
             assert keyword in msg
 
     def test_prod_accepts_complete_config(self):
-        """最小配置可启动:安全开关默认关不影响启动;凭据齐全性由运行期渠道工厂把关。"""
+        """最小配置过 Settings 校验(本层只管 env;人机验证/实名的 prod 开启是
+        lifespan 合规闸门的职责,见 platform_config.assert_prod_compliance_gates)。"""
         from app.core.config import Settings
 
         s = Settings(**self._complete_prod_kwargs())
@@ -272,6 +273,56 @@ class TestProdConfigValidation:
             alipay_seller_id="2088123456789012",
         )
         assert s.payment_alipay_enabled is True
+
+    def test_cors_wildcard_rejected_in_any_env(self):
+        """CORS 通配 + allow_credentials=true = 带凭证全网放行;任何环境都拒。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValidationError, match="cors_origins"):
+            Settings(
+                _env_file=None,  # pyright: ignore[reportCallIssue] - 运行时参数,stub 未暴露
+                environment="dev",
+                cors_origins=["*"],
+            )
+
+    def test_prod_nonlocal_db_requires_tls(self):
+        """prod 非本机 PG 无 sslmode=require 即拒启(零信任网络;JuiceFS 早已同口径)。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        kwargs = self._complete_prod_kwargs()
+        kwargs["database_url"] = "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl"
+        with pytest.raises(ValidationError, match="sslmode"):
+            Settings(**kwargs)
+        kwargs["database_url"] = (
+            "postgresql+asyncpg://svc:strongpass@pg.internal:5432/superdl?sslmode=verify-full"
+        )
+        assert Settings(**kwargs).environment == "prod"
+        # 本机回环豁免(单节点/开发机房形态)
+        kwargs["database_url"] = "postgresql+asyncpg://svc:strongpass@127.0.0.1:5432/superdl"
+        assert Settings(**kwargs).environment == "prod"
+
+
+class TestDbTlsTranslate:
+    """db._split_db_tls:asyncpg 不认 libpq 的 sslmode 参数名,URL 查询串必须翻译。"""
+
+    def test_sslmode_translated_to_ssl_connect_arg(self):
+        from app.core.db import _split_db_tls
+
+        url, args = _split_db_tls("postgresql+asyncpg://u:p@h:5432/d?sslmode=require")
+        assert args == {"ssl": "require"}
+        assert "sslmode" not in url
+
+    def test_no_sslmode_passthrough(self):
+        from app.core.db import _split_db_tls
+
+        url = "postgresql+asyncpg://u:p@localhost:5432/d"
+        assert _split_db_tls(url) == (url, {})
 
 
 class TestSmsCodeBruteForce:
@@ -358,6 +409,78 @@ class TestSmsCodeBruteForce:
         )
         assert resp.status_code == 429
 
+    async def test_concurrent_same_phone_send_serialized(self, client: AsyncClient, sm):
+        """同号退避的 TOCTOU 回归:两请求并发,一个放行,另一个必撞递增退避 429。
+
+        无 pg_advisory_xact_lock 时,两请求可双双通过「先查」各发一条(轰炸/成本)。
+        """
+        import asyncio
+
+        from app.core.errors import AppError, ErrorCode
+        from app.modules.account import service as account_service
+
+        async def send() -> None:
+            async with sm() as session:
+                await account_service.send_sms_code(
+                    session, "13800000093", "register", client_ip="10.9.0.1"
+                )
+
+        results = await asyncio.gather(send(), send(), return_exceptions=True)
+        oks = [r for r in results if r is None]
+        limited = [
+            r for r in results if isinstance(r, AppError) and r.code is ErrorCode.SMS_TOO_FREQUENT
+        ]
+        assert len(oks) == 1
+        assert len(limited) == 1
+
+
+class TestRequestBodyLimit:
+    """请求体硬上限(1MiB):双层防御的内层(外层 Envoy requestBuffer,测试只守内层)。"""
+
+    async def test_over_limit_declared_content_length_fast_413(self, client: AsyncClient):
+        """Content-Length 已超限:不读 body 直接 413,统一错误体 + 安全头仍在
+        (证明中间件位置在 SecurityHeaders/Observability 之内)。"""
+        resp = await client.post(
+            "/api/v1/auth/login",
+            content=b"x" * (1024 * 1024 + 1),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 413
+        body = resp.json()
+        assert body["code"] == "PAYLOAD_TOO_LARGE"
+        assert body["message_key"] == "common.payloadTooLarge"
+        assert resp.headers["x-content-type-options"] == "nosniff"
+
+    async def test_over_limit_chunked_stream_413(self, client: AsyncClient):
+        """无 Content-Length(chunked)的攻击面:流式计数超限同样 413 短路。"""
+
+        async def stream():
+            chunk = b"y" * (256 * 1024)
+            for _ in range(5):  # 1.25Mi,无 Content-Length
+                yield chunk
+
+        resp = await client.post(
+            "/api/v1/auth/login",
+            content=stream(),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 413
+        assert resp.json()["code"] == "PAYLOAD_TOO_LARGE"
+
+    async def test_exact_limit_passes_to_router(self, client: AsyncClient):
+        """边界:恰好 1MiB 放行进路由(JSON 解析失败归 400 系,绝不是 413)。"""
+        resp = await client.post(
+            "/api/v1/auth/login",
+            content=b"z" * (1024 * 1024),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code != 413
+        assert resp.status_code in (400, 422)
+
+    async def test_normal_request_unaffected(self, client: AsyncClient):
+        resp = await client.get("/healthz")
+        assert resp.status_code == 200
+
 
 class TestSecurityHeaders:
     async def test_headers_on_api_responses(self, client: AsyncClient):
@@ -366,6 +489,10 @@ class TestSecurityHeaders:
         assert resp.headers["x-frame-options"] == "DENY"
         assert "default-src 'none'" in resp.headers["content-security-policy"]
         assert resp.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert "camera=()" in resp.headers["permissions-policy"]
+        assert resp.headers["cross-origin-opener-policy"] == "same-origin"
+        # same-site(非同源):console/admin 与 api 是同站兄弟子域
+        assert resp.headers["cross-origin-resource-policy"] == "same-site"
 
     async def test_docs_exempt_from_csp(self, client: AsyncClient):
         resp = await client.get("/docs")
@@ -619,6 +746,45 @@ class TestAdminTokenRenewal:
             await session.commit()
         resp3 = await client.post("/api/admin/v1/auth/refresh", json={"access_token": expired})
         assert resp3.status_code == 401
+
+
+class TestAuditGate:
+    async def test_consecutive_audit_failures_fail_closed(self, client: AsyncClient, monkeypatch):
+        """审计写持续失败超阈值 → 写操作 fail-closed 503;读不受影响;探活恢复即复位。"""
+        from app.core import audit as audit_mod
+
+        class _Boom:
+            def __call__(self) -> object:
+                raise RuntimeError("audit db down (injected)")
+
+        monkeypatch.setattr(audit_mod, "get_sessionmaker", _Boom())
+        # 每试一号:登录失败计数按 IP+手机号分桶,同号连试会被登录限流(429)抢先
+        for i in range(audit_mod.AUDIT_FAIL_CLOSED_THRESHOLD):
+            resp = await client.post(
+                "/api/v1/auth/login", json={"phone": f"138{i:08d}", "password": "x"}
+            )
+            assert resp.status_code == 400  # 抖动期 fail-open:业务照常,失败只计数
+        # 超阈值:写 fail-closed(统一错误体)
+        resp = await client.post("/api/v1/auth/login", json={"phone": "13800000000"})
+        assert resp.status_code == 503
+        assert resp.json()["code"] == "AUDIT_UNAVAILABLE"
+        # 读与基础设施路径不受影响
+        assert (await client.get("/api/v1/auth/captcha-config")).status_code == 200
+        assert (await client.get("/healthz")).status_code == 200
+        monkeypatch.undo()
+        # 探活自愈:恢复后第一个写请求探活成功 → 复位放行(回到业务错误而非 503)
+        resp = await client.post("/api/v1/auth/login", json={"phone": "13800000000"})
+        assert resp.status_code == 400
+
+
+class TestAdminLogout:
+    async def test_logout_revokes_all_sessions(self, client: AsyncClient, sm):
+        """服务端登出:token_version+1,已签发 token 即刻失效(含本会话)。"""
+        ah = await admin_headers(sm, client, role="ops")
+        assert (await client.get("/api/admin/v1/me", headers=ah)).status_code == 200
+        resp = await client.post("/api/admin/v1/auth/logout", headers=ah)
+        assert resp.status_code == 204
+        assert (await client.get("/api/admin/v1/me", headers=ah)).status_code == 401
 
 
 class TestAuthenticateHeader:

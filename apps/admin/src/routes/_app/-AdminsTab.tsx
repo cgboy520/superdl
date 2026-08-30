@@ -1,8 +1,9 @@
 /** 管理员账号:建号 / 改角色 / 停用 / 重置密码 + 自助改密。 */
 
-import { adminColors, formatDateTime } from "@superdl/ui";
+import { adminColors, fontSize, formatDateTime } from "@superdl/ui";
 import { TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Alert, App, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { AdminAccountOut } from "@superdl/api-client";
 
 import {
+  isApiError,
   useAdminAccounts,
   useChangeOwnPassword,
   useCreateAdminAccount,
@@ -20,8 +22,10 @@ import {
   useUpdateAdminAccount,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { useApiErrorText } from "../../lib/apiError";
+import { RowActionModal } from "../../components/RowActionModal";
+import { useApiErrorText } from "@superdl/ui";
 import { ALL_ROLES, ROLE_LABEL_KEY, type Role } from "../../lib/menu";
+import { REASON_MAX_LEN } from "../../lib/validators";
 import { useAuth } from "../../stores/auth";
 
 const MIN_PASSWORD = 12;
@@ -36,20 +40,24 @@ export function AdminsTab() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
   const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { admin: me, logout } = useAuth();
   const isSuperAdmin = me?.role === "admin";
-  const { data, queryKey, isLoading, isError, refetch } = useAdminAccounts();
+  const { data, queryKey, isLoading, isError, error, refetch } = useAdminAccounts();
   // 安全策略 admin_mfa_enabled(仅超管可读;读不到按「开启」处理,不误标)
+  // 非超管不发该请求(注定 403)
   const mfaEnabled =
-    usePlatformConfig().data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !== "false";
+    usePlatformConfig({ enabled: isSuperAdmin }).data?.items.find((i) => i.key === "admin_mfa_enabled")?.value !== "false";
 
   const [createOpen, setCreateOpen] = useState(false);
   const [pwdTarget, setPwdTarget] = useState<AdminAccountOut | null>(null);
   const [selfOpen, setSelfOpen] = useState(false);
+  const [roleTarget, setRoleTarget] = useState<{ row: AdminAccountOut; role: Role } | null>(null);
   const [createForm] = Form.useForm<{ username: string; password: string; role: Role; reason: string }>();
   const [pwdForm] = Form.useForm<{ password: string; reason: string }>();
   const [selfForm] = Form.useForm<{ current_password: string; new_password: string }>();
+  const [roleForm] = Form.useForm<{ reason: string }>();
 
   const refresh = () => qc.invalidateQueries({ queryKey });
   const create = useCreateAdminAccount();
@@ -68,17 +76,19 @@ export function AdminsTab() {
   const activeAdmins = (data ?? []).filter((a) => a.role === "admin" && a.status === "active").length;
 
   const columns = [
-    { title: t("admins.colUsername"), dataIndex: "username", key: "username" },
+    { title: t("admins.colUsername"), dataIndex: "username", key: "username", width: 160 },
     {
       title: t("admins.colRole"),
       dataIndex: "role",
       key: "role",
+      width: 110,
       render: (role: Role) => <Tag color={roleColor(role)}>{t(ROLE_LABEL_KEY[role])}</Tag>,
     },
     {
       title: t("admins.colStatus"),
       dataIndex: "status",
       key: "status",
+      width: 90,
       render: (s: string) => (
         <Tag color={s === "active" ? adminColors.positive : adminColors.textMuted}>
           {s === "active" ? t("admins.statusActive") : t("admins.statusDisabled")}
@@ -105,11 +115,14 @@ export function AdminsTab() {
       title: t("admins.colCreatedAt"),
       dataIndex: "created_at",
       key: "created_at",
+      width: 170,
       render: (v: string) => formatDateTime(v),
     },
     {
       title: t("admins.colActions"),
       key: "actions",
+      // 操作列 = 角色 Select + 3~4 个按钮,全站最挤的单元格:定宽 + wrap,窄屏经表格横滚保住完整可点
+      width: 420,
       render: (_: unknown, row: AdminAccountOut) => {
         const isSelf = row.id === me?.id;
         const noPerm = !isSuperAdmin ? t("admins.superAdminOnly") : undefined;
@@ -123,21 +136,8 @@ export function AdminsTab() {
               disabled={!isSuperAdmin || isSelf}
               options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))}
               onChange={(role: Role) => {
-                // 改角色必须带 reason:审计只记新值,不带原因就答不出「从什么改成什么」
-                // 用 App.useApp() 的 modal 实例:静态 Modal.confirm 拿不到深色主题 token
-                modal.confirm({
-                  title: t("admins.confirmRoleTitle", { name: row.username, role: t(ROLE_LABEL_KEY[role]) }),
-                  content: t("admins.roleTakesEffectNow"),
-                  onOk: async () => {
-                    try {
-                      await update.mutateAsync({ id: row.id, data: { role, reason: t("admins.reasonRoleChange") } });
-                      message.success(t("admins.updated"));
-                      refresh();
-                    } catch (e) {
-                      message.error(errText(e));
-                    }
-                  },
-                });
+                // 改角色必须手输原因(审计只记新值,常量原因答不出「为什么改」):弹表单收集
+                setRoleTarget({ row, role });
               }}
             />
             <ReasonAction
@@ -148,7 +148,8 @@ export function AdminsTab() {
               }
               danger={row.status === "active"}
               disabled={!isSuperAdmin || isSelf}
-              disabledReason={noPerm ?? selfNote}
+              // 禁用时 noPerm/selfNote 必有一个(disabled 条件即两者之一);兜底与 noPerm 同文案
+              disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
               onSubmit={async (reason) => {
                 await update.mutateAsync({
                   id: row.id,
@@ -174,7 +175,7 @@ export function AdminsTab() {
                 confirmText={t("admins.resetMfaConfirm")}
                 danger
                 disabled={!isSuperAdmin || isSelf}
-                disabledReason={noPerm ?? selfNote}
+                disabledReason={noPerm ?? selfNote ?? t("admins.superAdminOnly")}
                 onSubmit={async (reason) => {
                   await resetMfa.mutateAsync({ id: row.id, reason });
                   message.success(t("admins.resetMfaDone"));
@@ -195,7 +196,18 @@ export function AdminsTab() {
       extra={
         <Space>
           {(data ?? []).find((a) => a.id === me?.id)?.totp_enabled && (
-            <Button onClick={() => regenCodes.mutate()} loading={regenCodes.isPending}>
+            <Button
+              onClick={() =>
+                // L2:重新生成后旧恢复码立即失效,先复述后果再执行
+                modal.confirm({
+                  title: t("admins.regenCodesConfirmTitle"),
+                  content: t("admins.regenCodesConfirmDesc"),
+                  okText: t("admins.regenCodes"),
+                  onOk: () => regenCodes.mutate(),
+                })
+              }
+              loading={regenCodes.isPending}
+            >
               {t("admins.regenCodes")}
             </Button>
           )}
@@ -222,13 +234,50 @@ export function AdminsTab() {
         rowKey="id"
         size="small"
         loading={isLoading}
+        scroll={{ x: 1040 }}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={data ?? []}
         columns={columns}
         pagination={false}
       />
+
+      {roleTarget && (
+        <RowActionModal
+          title={t("admins.confirmRoleTitle", {
+            name: roleTarget.row.username,
+            role: t(ROLE_LABEL_KEY[roleTarget.role]),
+          })}
+          okText={t("admins.confirmRoleOk")}
+          note={t("admins.roleTakesEffectNow")}
+          form={roleForm}
+          submit={async (values) => {
+            await update.mutateAsync({
+              id: roleTarget.row.id,
+              data: { role: roleTarget.role, reason: values.reason },
+            });
+          }}
+          successText={t("admins.updated")}
+          failText={t("admins.updateFailed")}
+          onClose={() => setRoleTarget(null)}
+          onDone={() => void refresh()}
+        >
+          <Form.Item
+            name="reason"
+            label={t("admins.reason")}
+            rules={[{ required: true, min: 2, max: REASON_MAX_LEN, message: t("common.reasonRule") }]}
+          >
+            <Input.TextArea rows={2} maxLength={REASON_MAX_LEN} showCount placeholder={t("admins.reasonPlaceholder")} />
+          </Form.Item>
+        </RowActionModal>
+      )}
 
       <Modal
         open={codes != null}
@@ -250,7 +299,7 @@ export function AdminsTab() {
           <Typography.Text code copyable={{ text: (codes ?? []).join("\n") }}>
             {t("login.recoveryCopy")}
           </Typography.Text>
-          <pre style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.8 }}>
+          <pre style={{ margin: "8px 0 0", fontSize: fontSize.caption, lineHeight: 1.8 }}>
             {(codes ?? []).join("\n")}
           </pre>
         </Card>
@@ -291,7 +340,7 @@ export function AdminsTab() {
           <Form.Item name="role" label={t("admins.colRole")} initialValue="ops" rules={[{ required: true }]}>
             <Select options={ALL_ROLES.map((r) => ({ value: r, label: t(ROLE_LABEL_KEY[r]) }))} />
           </Form.Item>
-          <Form.Item name="reason" label={t("admins.reason")} rules={[{ required: true, min: 2, max: 200 }]}>
+          <Form.Item name="reason" label={t("admins.reason")} rules={[{ required: true, min: 2, max: REASON_MAX_LEN }]}>
             <Input.TextArea rows={2} placeholder={t("admins.reasonPlaceholder")} />
           </Form.Item>
         </Form>
@@ -325,7 +374,7 @@ export function AdminsTab() {
           >
             <Input.Password autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="reason" label={t("admins.reason")} rules={[{ required: true, min: 2, max: 200 }]}>
+          <Form.Item name="reason" label={t("admins.reason")} rules={[{ required: true, min: 2, max: REASON_MAX_LEN }]}>
             <Input.TextArea rows={2} placeholder={t("admins.reasonPlaceholder")} />
           </Form.Item>
         </Form>
@@ -342,8 +391,9 @@ export function AdminsTab() {
             await changeOwn.mutateAsync({ data: v });
             message.success(t("admins.ownPasswordChanged"));
             setSelfOpen(false);
-            // 改密会撤销全部在外会话(含当前这个),因此必须登出重登
+            // 改密会撤销全部在外会话(含当前这个),登出后回登录页重登
             logout();
+            void navigate({ to: "/login" });
           } catch (e) {
             message.error(errText(e));
           }

@@ -1,4 +1,5 @@
-/** 小件:状态徽标 / 档位标 / 复制按钮。 */
+/** 小件:状态徽标 / 档位标 / 复制按钮。
+ *  hex 色 Tag 一律走包内 HexTag(暗色主题下 antd 会把非 preset 色调亮,压成深底白字)。 */
 
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
 import type { InstanceSubscriptionOut } from "@superdl/api-client";
@@ -18,11 +19,12 @@ import {
   subscriptionStatusMap,
   workloadTypeMap,
 } from "@superdl/ui";
+import { HexTag } from "@superdl/ui/components";
 import { App, Badge, Button, Tag, Tooltip } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 
 export function InstanceStatusBadge({
   status,
@@ -38,7 +40,7 @@ export function InstanceStatusBadge({
     <span>
       <Badge status={meta?.badge ?? "default"} text={meta ? t(meta.labelKey) : status} />
       {status === "frozen" && frozenDeadline && (
-        <Tag color="red" style={{ marginLeft: 8 }}>
+        <Tag color="red" style={{ marginInlineStart: 8 }}>
           {formatReclaimCountdown(frozenDeadline)}
         </Tag>
       )}
@@ -58,7 +60,7 @@ export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) 
   const variant = skuVariant(tier, pool);
   const meta = metaOf(skuTierMap, variant);
   if (!meta) return <Tag>{variant}</Tag>;
-  const tag = <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
+  const tag = <HexTag color={meta.color}>{t(meta.labelKey)}</HexTag>;
   // hint(如「性能可能波动」)收进 Tooltip:内联拼进 Tag 不换行,会把表格规格列压爆
   return "hintKey" in meta && meta.hintKey ? <Tooltip title={t(meta.hintKey)}>{tag}</Tooltip> : tag;
 }
@@ -67,9 +69,7 @@ export function TierTag({ tier, pool }: { tier: string; pool?: string | null }) 
 export function WorkloadTag({ workloadType }: { workloadType: string }) {
   const { t } = useTranslation(["web", "shared"]);
   if (workloadType !== "service") return null;
-  const meta = metaOf(workloadTypeMap, workloadType);
-  if (!meta) return null;
-  return <Tag color={meta.color}>{t(meta.labelKey)}</Tag>;
+  return <Tag color={workloadTypeMap.service.color}>{t(workloadTypeMap.service.labelKey)}</Tag>;
 }
 
 /** 包周期标记:「包月 · 剩 23 天」。按量/竞价实例不出标记;已到期转橙并改显订阅状态。 */
@@ -91,9 +91,9 @@ export function SubscriptionTag({
     ? (statusMeta ? t(statusMeta.labelKey) : subscription.status)
     : formatExpiry(subscription.expires_at);
   return (
-    <Tag color={expired ? statusColors.orange : colorPrimary}>
+    <HexTag color={expired ? statusColors.orange : colorPrimary}>
       {tail ? t("period.tagWithExpiry", { period: periodLabel, expiry: tail }) : periodLabel}
-    </Tag>
+    </HexTag>
   );
 }
 
@@ -112,9 +112,7 @@ export function SpotTag({ market }: { market: string }) {
   if (market !== "spot") return null;
   return (
     <Tooltip title={t(marketMap.spot.hintKey)}>
-      <Tag color={marketMap.spot.color} style={{ marginInlineEnd: 0 }}>
-        {t(marketMap.spot.labelKey)}
-      </Tag>
+      <HexTag color={marketMap.spot.color}>{t(marketMap.spot.labelKey)}</HexTag>
     </Tooltip>
   );
 }
@@ -125,9 +123,7 @@ export function SpotReclaimTag({ market }: { market: string }) {
   if (market !== "spot") return null;
   return (
     <Tooltip title={t(spotReclaimTag.hintKey)}>
-      <Tag color={spotReclaimTag.color} style={{ marginInlineEnd: 0 }}>
-        {t(spotReclaimTag.labelKey)}
-      </Tag>
+      <HexTag color={spotReclaimTag.color}>{t(spotReclaimTag.labelKey)}</HexTag>
     </Tooltip>
   );
 }

@@ -11,8 +11,9 @@
 import { DownOutlined } from "@ant-design/icons";
 import type { InstanceOut } from "@superdl/api-client";
 import { isSubscriptionExpired } from "@superdl/ui";
+import { TypeConfirmModal, useConfirm } from "@superdl/ui/components";
 
-import { App, Button, Checkbox, Dropdown, Input, Modal, Space, Tooltip, Typography } from "antd";
+import { App, Button, Dropdown, Space, Tooltip, Typography } from "antd";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -43,80 +44,58 @@ export function ReleaseModal({
   onReleased?: () => void;
 }) {
   const { t } = useTranslation();
-  // 破坏确认两道闸:键入实例名 + 勾选盘数据清除知情;creating 尚未落盘,只过键入这道
-  const [typed, setTyped] = useState("");
-  const [acked, setAcked] = useState(false);
   const { message } = App.useApp();
+  // creating 尚未落盘,只过键入这道闸,不出清盘勾选;两道闸状态由共享件在关闭后自动重置
   const creating = instance.status === "creating";
-  const nameMatched = typed.trim() === instance.name;
-  const unlocked = nameMatched && (creating || acked);
+  // 包周期释放额外写明「预付不退款、剩余天数作废」(ui-ux-spec §3.5):天数由订阅到期时刻算;
+  // 「现在」在挂载时定一次(与 RenewModal 同款),渲染期取 Date.now() 违反 purity
+  const [mountedAt] = useState(() => Date.now());
+  const subExpiresAt = instance.subscription?.expires_at;
+  const subDaysLeft =
+    instance.market === "subscription" && subExpiresAt
+      ? Math.max(0, Math.ceil((new Date(subExpiresAt).getTime() - mountedAt) / 86_400_000))
+      : null;
   const release = useReleaseInstance({
     onSuccess: () => {
       message.success(creating ? t("instances.actions.createCanceled") : t("instances.actions.releaseStarted"));
-      setTyped("");
-      setAcked(false);
       onClose();
       onReleased?.();
     },
   });
   return (
-    <Modal
-      title={creating ? t("instances.actions.cancelModalTitle") : t("instances.actions.releaseModalTitle")}
+    <TypeConfirmModal
       open={open}
-      onCancel={() => {
-        setTyped("");
-        setAcked(false);
-        onClose();
-      }}
-      footer={
-        <Space>
-          <Button onClick={onClose}>{t("instances.actions.cancel")}</Button>
-          <Button
-            danger
-            type="primary"
-            disabled={!unlocked}
-            loading={release.isPending}
-            onClick={() => release.mutate(instance.uuid)}
-          >
-            {creating ? t("instances.actions.confirmCancel") : t("instances.actions.confirmRelease")}
-          </Button>
-        </Space>
-      }
-    >
-      <Typography.Paragraph>
-        {creating ? (
+      title={creating ? t("instances.actions.cancelModalTitle") : t("instances.actions.releaseModalTitle")}
+      body={
+        creating ? (
           <Trans
             i18nKey="instances.actions.cancelBody"
             values={{ name: instance.name, id: instance.uuid.slice(0, 8) }}
             components={{ b: <Typography.Text strong /> }}
           />
         ) : (
-          <Trans
-            i18nKey="instances.actions.releaseBody"
-            values={{ name: instance.name, id: instance.uuid.slice(0, 8) }}
-            components={{ b: <Typography.Text strong /> }}
-          />
-        )}
-      </Typography.Paragraph>
-      <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-        <Typography.Text type="secondary">
-          {t("instances.actions.typeNameToConfirm", { name: instance.name })}
-        </Typography.Text>
-        <Input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          placeholder={instance.name}
-          maxLength={64}
-          autoComplete="off"
-          aria-label={t("instances.actions.typeNameToConfirm", { name: instance.name })}
-        />
-        {creating ? null : (
-          <Checkbox checked={acked} onChange={(e) => setAcked(e.target.checked)}>
-            {t("instances.actions.ackDiskWipe")}
-          </Checkbox>
-        )}
-      </Space>
-    </Modal>
+          <Space orientation="vertical" size={8}>
+            <Trans
+              i18nKey="instances.actions.releaseBody"
+              values={{ name: instance.name, id: instance.uuid.slice(0, 8) }}
+              components={{ b: <Typography.Text strong /> }}
+            />
+            {subDaysLeft != null && (
+              <Typography.Text type="danger">
+                {t("instances.actions.releaseSubscriptionNote", { days: subDaysLeft })}
+              </Typography.Text>
+            )}
+          </Space>
+        )
+      }
+      targetName={instance.name}
+      checkboxLabel={creating ? undefined : t("instances.actions.ackDiskWipe")}
+      confirmLabel={creating ? t("instances.actions.confirmCancel") : t("instances.actions.confirmRelease")}
+      cancelLabel={t("instances.actions.cancel")}
+      loading={release.isPending}
+      onConfirm={() => release.mutate(instance.uuid)}
+      onCancel={onClose}
+    />
   );
 }
 
@@ -135,7 +114,8 @@ export function InstanceActions({
   const { t } = useTranslation();
   // 「包周期已到期,请先续费再开机」的事实源在后端 messages.py,前端不另写一份
   const { t: tErr } = useTranslation("errors");
-  const { modal, message } = App.useApp();
+  const { message } = App.useApp();
+  const confirm = useConfirm();
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [renewOpen, setRenewOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
@@ -176,9 +156,11 @@ export function InstanceActions({
       : t("copy.startNeedsStopped");
 
   const confirmStop = () =>
-    modal.confirm({
+    confirm({
       title: t("instances.actions.stopConfirmTitle"),
-      content: t("copy.stopConfirm"),
+      // 包周期与按量是两件不同的事:按量强调「再开机可能没库存」,包周期恰好相反——
+      // 周期内关机不退费,但平台替他留着这台的库存(ui-ux-spec §3.5)
+      consequences: [t(isSubscription ? "copy.stopConfirmSubscription" : "copy.stopConfirm")],
       okText: t("instances.actions.stopOk"),
       onOk: async () => {
         await stop.mutateAsync(instance.uuid);
@@ -275,10 +257,12 @@ export function InstanceActions({
           ],
           onClick: ({ key }) => {
             if (key === "restart") {
-              modal.confirm({
+              confirm({
                 title: t("instances.actions.restartConfirmTitle"),
-                content: t("instances.actions.restartConfirmBody"),
-                onOk: () => restart.mutateAsync(instance.uuid),
+                consequences: [t("instances.actions.restartConfirmBody")],
+                onOk: async () => {
+                  await restart.mutateAsync(instance.uuid);
+                },
               });
             } else if (key === "events") {
               onShowEvents?.();
@@ -287,17 +271,18 @@ export function InstanceActions({
             } else if (key === "to-period") {
               setConvertOpen(true);
             } else if (key === "to-on-demand") {
-              modal.confirm({
+              // 转按量:三条后果逐条前置(重算整点小时 / 不再被回收 / 不会自动重启)
+              confirm({
                 title: t("spot.toOnDemandTitle"),
-                content: (
-                  <Space orientation="vertical" size={4}>
-                    <span>{t("copy.spotToOnDemandRepriceHour")}</span>
-                    <span>{t("copy.spotToOnDemandNoReclaim")}</span>
-                    <span>{t("copy.spotToOnDemandNoRestart")}</span>
-                  </Space>
-                ),
+                consequences: [
+                  t("copy.spotToOnDemandRepriceHour"),
+                  t("copy.spotToOnDemandNoReclaim"),
+                  t("copy.spotToOnDemandNoRestart"),
+                ],
                 okText: t("spot.toOnDemandConfirm"),
-                onOk: () => toOnDemand.mutateAsync(),
+                onOk: async () => {
+                  await toOnDemand.mutateAsync();
+                },
               });
             } else if (key === "auto-renew") {
               autoRenew.mutate(!sub?.auto_renew);

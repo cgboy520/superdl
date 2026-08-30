@@ -24,6 +24,8 @@ class ErrorCode(StrEnum):
     CONFLICT = "CONFLICT"
     RATE_LIMITED = "RATE_LIMITED"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
+    PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
+    AUDIT_UNAVAILABLE = "AUDIT_UNAVAILABLE"
     INTERNAL = "INTERNAL"
     # 账户
     SMS_CODE_INVALID = "SMS_CODE_INVALID"
@@ -145,6 +147,20 @@ def current_request_id() -> str | None:
     return str(value) if value else None
 
 
+def _error_body(
+    code: ErrorCode, message: str, message_key: str | None, params: Any, detail: Any
+) -> dict[str, Any]:
+    """统一错误体六键结构的单一定义点(四个 handler 共用)。"""
+    return {
+        "code": code.value,
+        "message": message,
+        "message_key": message_key,
+        "params": params,
+        "detail": detail,
+        "request_id": current_request_id(),
+    }
+
+
 # 框架层 HTTPException → 统一错误体的状态码映射;业务侧只抛 AppError,
 # 框架自身只产生路由 404 与方法 405
 _HTTP_STATUS_MAP: dict[int, tuple[ErrorCode, str]] = {
@@ -158,18 +174,18 @@ def _unhandled_response(exc: Exception, *, path: str, method: str) -> JSONRespon
     Uniform500Middleware 共用同一出口。留痕经 structlog 进 Loki
     (见 deploy/cluster/runbooks/loki-logging.md),异常告警由 Loki 侧规则承接。"""
     from app.core.logging import get_logger
+    from app.core.messages import render_message
 
     get_logger("app.errors").exception("unhandled_exception", path=path, method=method)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "code": ErrorCode.INTERNAL.value,
-            "message": "服务器内部错误,请稍后重试",
-            "message_key": "common.internal",
-            "params": None,
-            "detail": None,
-            "request_id": current_request_id(),
-        },
+        content=_error_body(
+            ErrorCode.INTERNAL,
+            render_message("common.internal", None),
+            "common.internal",
+            None,
+            None,
+        ),
     )
 
 
@@ -194,19 +210,50 @@ class Uniform500Middleware:
             await response(scope, receive, send)
 
 
+def payload_too_large_response() -> JSONResponse:
+    """413 统一错误体。中间件直渲专用:该层在路由之外,抛 AppError 到不了 exception handler。"""
+    from app.core.messages import render_message
+
+    return JSONResponse(
+        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        content=_error_body(
+            ErrorCode.PAYLOAD_TOO_LARGE,
+            render_message("common.payloadTooLarge", None),
+            "common.payloadTooLarge",
+            None,
+            None,
+        ),
+    )
+
+
+def audit_unavailable_response() -> JSONResponse:
+    """503 统一错误体:审计闸 fail-closed(中间件直渲,同 payload_too_large_response)。"""
+    from app.core.messages import render_message
+
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=_error_body(
+            ErrorCode.AUDIT_UNAVAILABLE,
+            render_message("common.auditUnavailable", None),
+            "common.auditUnavailable",
+            None,
+            None,
+        ),
+    )
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.http_status,
-            content={
-                "code": exc.code.value,
-                "message": exc.message,
-                "message_key": exc.message_key,
-                "params": jsonable_encoder(exc.params),
-                "detail": jsonable_encoder(exc.detail),
-                "request_id": current_request_id(),
-            },
+            content=_error_body(
+                exc.code,
+                exc.message,
+                exc.message_key,
+                jsonable_encoder(exc.params),
+                jsonable_encoder(exc.detail),
+            ),
             headers=_error_headers(exc.http_status, exc.headers),
         )
 
@@ -225,33 +272,29 @@ def install_error_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content={
-                "code": code.value,
-                "message": render_message(key, None),
-                "message_key": key,
-                "params": None,
-                "detail": jsonable_encoder(exc.detail),
-                "request_id": current_request_id(),
-            },
+            content=_error_body(
+                code, render_message(key, None), key, None, jsonable_encoder(exc.detail)
+            ),
             headers=_error_headers(exc.status_code, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        from app.core.messages import render_message
+
         # 只回位置/原因/类型:pydantic errors() 的 input 是提交原值,回显即泄露凭据
         detail = [
             {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()
         ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content={
-                "code": ErrorCode.VALIDATION_ERROR.value,
-                "message": "参数校验失败",
-                "message_key": "common.validation",
-                "params": None,
-                "detail": jsonable_encoder(detail),
-                "request_id": current_request_id(),
-            },
+            content=_error_body(
+                ErrorCode.VALIDATION_ERROR,
+                render_message("common.validation", None),
+                "common.validation",
+                None,
+                jsonable_encoder(detail),
+            ),
         )
 
     @app.exception_handler(Exception)

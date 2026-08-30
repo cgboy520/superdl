@@ -209,6 +209,23 @@ spec:
     - backendRefs:
         - {name: superdl-api, port: 80}
 ---
+# 匿名支付回调的独立路由:面最薄(无鉴权,验签即鉴权),单独挂更严的请求体上限。
+# Gateway API 最长前缀优先:回调请求只命中本路由,不再吃 superdl-api 的策略,
+# 故边缘限流需在本路由同款重写(见下方 superdl-api-webhooks 策略)。
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-api-webhooks
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: api-https}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api/v1/webhooks}
+      backendRefs:
+        - {name: superdl-api, port: 80}
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -281,9 +298,40 @@ metadata:
 spec:
   targetRefs:
     - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-api}
+  # 请求体上限(超 1Mi → 413;内层另有 ASGI 流式上限,见 app/core/body_limit.py)。
+  # 必须与限流同挂一个对象:EG 对同一 targetRef 的同类策略不合并,拆成两条则
+  # 最老者生效、另一条静默丢弃(状态条件 Conflicted)。
+  # requestBuffer 会把请求收全再转发,不能挂流式/升级流量——superdl-api 全 REST
+  # 无 WS/gRPC 请求流(CSV 导出与日志仅是响应方向流,不受影响)。
+  requestBuffer:
+    limit: 1Mi
   rateLimit:
     # 不写 spec.rateLimit.type(v1.9.0 已 Deprecated):直接给 local/global,两者可并存;
     # 写了反而走 backward-compat 分支,只认这一种。
+    local:
+      rules:
+        - limit: {requests: 20, unit: Second}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+        - limit: {requests: 600, unit: Minute}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+---
+# 匿名支付回调:更严请求体上限 256Ki(微信/支付宝通知实载仅数 KB;超 256Ki → 413)。
+# 回调走最长前缀匹配只命中 superdl-api-webhooks 路由,superdl-api-ratelimit 对它
+# 不适用,边缘限流在此同款重写(应用层另有 120/min/IP,见 billing/webhooks_router.py)。
+# 规则写法约束(两条都带 selector、单位整数倍)同 superdl-api-ratelimit 头部注释。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-api-webhooks
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-api-webhooks}
+  requestBuffer:
+    limit: 256Ki
+  rateLimit:
     local:
       rules:
         - limit: {requests: 20, unit: Second}
@@ -431,6 +479,13 @@ spec:
       # 必配项:EG 默认 5 分钟,会把 Jupyter 的 WebSocket 与 SSE 长连接按时掐断,症状是
       # 「用着用着内核就断了/页面提示重连」,极易误诊成鉴权过期或网络抖动。1h 覆盖正常空闲。
       streamIdleTimeout: 1h
+      # slowloris 双闸(头/完整请求分开计时,EG v1.9.0 HTTPClientTimeout 语义):
+      # - requestHeadersReceivedTimeout:首字节到头部收齐的时限,合法客户端 <1s,10s 已宽;
+      # - requestReceivedTimeout:完整请求(含 body)收齐的时限,响应开始即停表,
+      #   不影响 SSE/长响应;60s 兼容 svc-https 上 MB 级推理请求的慢速上传,
+      #   慢 body 攻击每连接最多占 60s(连接总量另有 connectionLimit 兜底)。
+      requestHeadersReceivedTimeout: 10s
+      requestReceivedTimeout: 60s
   connection:
     connectionLimit:
       # **每个 Envoy 实例的连接总量**,不是每源 IP 并发连接数(EG 没有对应原语):

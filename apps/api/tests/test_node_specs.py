@@ -135,7 +135,7 @@ async def test_enrollment_report_wins_over_gfd(sm, fake):
     from app.modules.nodes import service
     from app.modules.nodes.reconciler import reconcile_enrollments_once
     from app.modules.nodes.schemas import EnrollmentCreate
-    from tests.test_node_enroll import set_cluster_config
+    from tests.helpers import set_cluster_config
 
     await set_cluster_config(sm)
     async with sm() as session:

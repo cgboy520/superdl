@@ -1,6 +1,7 @@
 import {
   adminColors,
   deletionStatusMap,
+  fontSize,
   formatDateTime,
   instanceStatusMap,
   marketLabelKey,
@@ -8,19 +9,21 @@ import {
   metaOf,
   skuTierMap,
   skuVariant,
+  useNow,
   type InstanceStatus,
 } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { App, Badge, Button, Card, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   type AdminInstanceOut,
   type DeletionRow,
   type TenantRow,
+  isApiError,
   useAdminInstances,
   useApproveDeletion,
   useDeletionRequests,
@@ -31,20 +34,42 @@ import {
   useTenants,
   useUnfreezeTenant,
 } from "../../api";
-import { useApiErrorText } from "../../lib/apiError";
-import { useFormat } from "../../lib/format";
+import { useApiErrorText, useFormat } from "@superdl/ui";
 import { LIST_CAPS, ListCapNote } from "../../components/ListCapNote";
-import { LoadMoreButton } from "../../components/LoadMore";
 import { ReasonAction } from "../../components/ReasonAction";
-import { StatusTag } from "../../components/StatusTag";
 import { TenantLink, tenantColumn } from "../../components/TenantLink";
+import { REASON_MAX_LEN } from "../../lib/validators";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
-import { TenantDrawer } from "./-TenantDrawer";
+import { DRAWER_TABS, type DrawerTab, TenantDrawer } from "./-TenantDrawer";
+
+const TENANTS_TABS = ["tenants", "instances", "deletions"] as const;
+type TenantsTab = (typeof TENANTS_TABS)[number];
 
 export const Route = createFileRoute("/_app/tenants")({
-  // q:从其他页的 user_id 链接跳入,按 id 精确找人
-  validateSearch: (search: Record<string, unknown>): { q?: string } => ({
+  // q:从其他页的 user_id 链接跳入,按 id 精确找人;tab/dtab:页内与抽屉 Tab 入 URL;
+  // istatus/inode/iq:全局实例 Tab 的服务端筛选与实例名检索入 URL;tstatus:租户状态筛选;order:注册先后排序
+  validateSearch: (search: Record<string, unknown>): {
+    q?: string;
+    tab?: TenantsTab;
+    dtab?: DrawerTab;
+    istatus?: string;
+    inode?: string;
+    iq?: string;
+    tstatus?: string;
+    order?: "asc";
+  } => ({
     q: typeof search.q === "string" && search.q ? search.q : undefined,
+    tab: TENANTS_TABS.includes(search.tab as TenantsTab) ? (search.tab as TenantsTab) : undefined,
+    dtab: DRAWER_TABS.includes(search.dtab as DrawerTab) ? (search.dtab as DrawerTab) : undefined,
+    istatus:
+      typeof search.istatus === "string" && search.istatus in instanceStatusMap
+        ? search.istatus
+        : undefined,
+    inode: typeof search.inode === "string" && search.inode ? search.inode : undefined,
+    iq: typeof search.iq === "string" && search.iq ? search.iq : undefined,
+    tstatus:
+      search.tstatus === "active" || search.tstatus === "frozen" ? search.tstatus : undefined,
+    order: search.order === "asc" ? "asc" : undefined,
   }),
   component: TenantsPage,
 });
@@ -52,6 +77,7 @@ export const Route = createFileRoute("/_app/tenants")({
 function TenantsTab() {
   const { t: tt } = useTranslation();
   const { formatMoney } = useFormat();
+  const navigate = useNavigate({ from: "/tenants" });
   const [drilldown, setDrilldown] = useState<TenantRow | null>(null);
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -70,18 +96,55 @@ function TenantsTab() {
       setSearch(urlQ);
     }
   }
+  // 输入 300ms 防抖回写 ?q=(双向同步:控件→URL);防抖期间不触发查询
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+  const onInputChange = (v: string) => {
+    setInput(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearch(v);
+      void navigate({
+        to: "/tenants",
+        replace: true,
+        search: (prev) => ({ ...prev, q: v || undefined }),
+      });
+    }, 300);
+  };
+  // 状态筛选与注册排序:服务端参数入 URL(游标分页下客户端 filters/sorter 只作用于已加载页,是假筛选/假排序)
+  const statusFilter = Route.useSearch({ select: (s) => s.tstatus });
+  const order = Route.useSearch({ select: (s) => s.order });
+  const setStatusFilter = (v: string | undefined) =>
+    void navigate({
+      to: "/tenants",
+      replace: true,
+      search: (prev) => ({ ...prev, tstatus: v }),
+    });
+  // 抽屉 Tab 入 URL(?dtab=):刷新/分享后回到同一子页
+  const dtab = Route.useSearch({ select: (s) => s.dtab });
+  const onDrawerTabChange = (key: DrawerTab) =>
+    void navigate({
+      to: "/tenants",
+      replace: true,
+      search: (prev) => ({ ...prev, dtab: key === "bills" ? undefined : key }),
+    });
   // 实名明文查看(全角色默认脱敏):逐次显式动作,必填事由,每次明文读落审计;
   // readonly 不可 reveal(后端 403,这里直接不渲染入口)
   const canReveal = role === "ops" || role === "finance" || role === "admin";
   const [revealReason, setRevealReason] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
   const [reasonInput, setReasonInput] = useState("");
-  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } = useTenants(
+  const tenantsQ = useTenants(
     {
       ...(search ? { q: search } : {}),
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(order ? { order } : {}),
       ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
     },
   );
+  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = tenantsQ;
   const tenants: TenantRow[] = data?.pages.flatMap((p) => p.items) ?? [];
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
@@ -95,11 +158,28 @@ function TenantsTab() {
       placeholder={tt("tenants.searchPhonePlaceholder")}
       style={{ width: 280 }}
       value={input}
-      onChange={(e) => {
-        setInput(e.target.value);
-        if (e.target.value === "") setSearch(""); // 清空即回全量列表
+      onChange={(e) => onInputChange(e.target.value)}
+      onSearch={(v) => {
+        // 回车/点按钮立即提交(不等防抖),与防抖回写同一条路径
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        setSearch(v);
+        void navigate({
+          to: "/tenants",
+          replace: true,
+          search: (prev) => ({ ...prev, q: v || undefined }),
+        });
       }}
-      onSearch={setSearch}
+    />
+    <Select
+      allowClear
+      placeholder={tt("common.statusFilter")}
+      style={{ width: 140 }}
+      value={statusFilter}
+      onChange={setStatusFilter}
+      options={[
+        { value: "active", label: tt("tenants.active") },
+        { value: "frozen", label: tt("tenants.frozen") },
+      ]}
     />
     {canReveal &&
       (revealReason === null ? (
@@ -131,7 +211,7 @@ function TenantsTab() {
           value={reasonInput}
           onChange={(e) => setReasonInput(e.target.value)}
           placeholder={tt("tenants.revealReasonPlaceholder")}
-          maxLength={200}
+          maxLength={REASON_MAX_LEN}
         />
       </Space>
     </Modal>
@@ -140,16 +220,33 @@ function TenantsTab() {
       rowKey="id"
       loading={isLoading}
       locale={{
-        emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+        emptyText: (
+          <TableErrorEmpty
+            isError={isError}
+            isForbidden={isApiError(error) && error.status === 403}
+            onRetry={() => void refetch()}
+          >
+            {tt("tenants.empty")}
+          </TableErrorEmpty>
+        ),
       }}
       dataSource={tenants}
       onRow={(r) => ({ style: { cursor: "pointer" }, onClick: () => setDrilldown(r) })}
+      onChange={(_p, _f, sorter) => {
+        const s = Array.isArray(sorter) ? sorter[0] : sorter;
+        if (s?.columnKey !== "created_at") return;
+        // ascend → asc;descend 与取消排序都回默认 desc(默认值剥离出 URL)
+        void navigate({
+          to: "/tenants",
+          replace: true,
+          search: (prev) => ({ ...prev, order: s.order === "ascend" ? ("asc" as const) : undefined }),
+        });
+      }}
       columns={[
         {
           title: "ID",
           dataIndex: "id",
           width: 80,
-          sorter: (a, b) => a.id - b.id,
           render: (v: number) => (
             <span onClick={(e) => e.stopPropagation()}>
               <TenantLink id={v} />
@@ -160,7 +257,6 @@ function TenantsTab() {
         {
           title: tt("tenants.colBalance"),
           dataIndex: "balance",
-          sorter: (a, b) => Number(a.balance) - Number(b.balance),
           render: (v: string) => (
             <span style={{ color: Number(v) <= 0 ? adminColors.negative : undefined }}>{formatMoney(v)}</span>
           ),
@@ -168,32 +264,29 @@ function TenantsTab() {
         {
           title: tt("tenants.colTotalConsumed"),
           dataIndex: "total_consumed",
-          sorter: (a, b) => Number(a.total_consumed) - Number(b.total_consumed),
           render: (v: string) => formatMoney(v),
         },
         {
           title: tt("tenants.colInstances"),
           dataIndex: "instances",
           width: 70,
-          sorter: (a, b) => a.instances - b.instances,
         },
         { title: tt("tenants.colDisk"), dataIndex: "disk_gb", render: (v: number) => `${v} GB`, width: 90 },
         {
           title: tt("tenants.colStatus"),
           dataIndex: "status",
-          filters: [
-            { text: tt("tenants.active"), value: "active" },
-            { text: tt("tenants.frozen"), value: "frozen" },
-          ],
-          onFilter: (v, r) => r.status === v,
           render: (v: string) =>
             v === "active" ? <Tag color="green">{tt("tenants.active")}</Tag> : <Tag color="red">{tt("tenants.frozen")}</Tag>,
         },
         {
           title: tt("tenants.colCreatedAt"),
           dataIndex: "created_at",
+          key: "created_at",
+          // 服务端排序(注册先后 = id 单调):唯一与游标分页兼容的排序键;
+          // 余额/消费等聚合列按页拼装,不提供排序(假排序比没有更糟)
+          sorter: true,
+          sortOrder: order === "asc" ? "ascend" : "descend",
           render: formatDateTime,
-          sorter: (a, b) => a.created_at.localeCompare(b.created_at),
         },
         {
           title: tt("tenants.colActions"),
@@ -249,30 +342,45 @@ function TenantsTab() {
         },
       ]}
     />
-    <LoadMoreButton
-      visible={Boolean(hasNextPage)}
+    <LoadMore
+      hasNextPage={Boolean(hasNextPage)}
       loading={isFetchingNextPage}
-      onClick={() => void fetchNextPage()}
+      isError={isFetchNextPageError}
+      loadedCount={tenants.length}
+      onLoadMore={() => void fetchNextPage()}
     />
-    <TenantDrawer tenant={drilldown} onClose={() => setDrilldown(null)} />
+    <TenantDrawer tenant={drilldown} dtab={dtab} onTabChange={onDrawerTabChange} onClose={() => setDrilldown(null)} />
     </>
   );
 }
 
 function InstancesTab() {
   const { t } = useTranslation(["admin", "shared"]);
+  const navigate = useNavigate({ from: "/tenants" });
   const role = useAdminRole();
   const writable = canWriteOps(role);
-  const [status, setStatus] = useState<string | undefined>();
-  const [search, setSearch] = useState("");
-  const [nodeName, setNodeName] = useState("");
+  // status/node_name/实例名检索全部入 URL(commit 制,0.3 规范);输入框经渲染期派生回流
+  const status = Route.useSearch({ select: (s) => s.istatus });
+  const nodeName = Route.useSearch({ select: (s) => s.inode });
+  const instQ = Route.useSearch({ select: (s) => s.iq });
+  const [instInput, setInstInput] = useState(instQ ?? "");
+  const [nodeInput, setNodeInput] = useState(nodeName ?? "");
+  const filterKey = `${instQ ?? ""}|${nodeName ?? ""}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setInstInput(instQ ?? "");
+    setNodeInput(nodeName ?? "");
+  }
+  const setUrl = (next: { istatus?: string; inode?: string; iq?: string }) =>
+    void navigate({ to: "/tenants", replace: true, search: (prev) => ({ ...prev, ...next }) });
   const qc = useQueryClient();
-  const { data, queryKey, isLoading, isError, refetch, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useAdminInstances({
-      ...(status ? { status } : {}),
-      ...(search ? { q: search } : {}),
-      ...(nodeName ? { node_name: nodeName } : {}),
-    });
+  const instancesQ = useAdminInstances({
+    ...(status ? { status } : {}),
+    ...(instQ ? { q: instQ } : {}),
+    ...(nodeName ? { node_name: nodeName } : {}),
+  });
+  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = instancesQ;
   const instances: AdminInstanceOut[] = data?.pages.flatMap((p) => p.items) ?? [];
   const forceStop = useForceStop();
   const preempt = usePreemptInstance();
@@ -283,10 +391,10 @@ function InstancesTab() {
       <Space style={{ marginBottom: 12 }}>
         <Select
           allowClear
-          placeholder={t("tenants.statusFilter")}
+          placeholder={t("common.statusFilter")}
           style={{ width: 160 }}
           value={status}
-          onChange={setStatus}
+          onChange={(v) => setUrl({ istatus: v })}
           options={Object.entries(instanceStatusMap).map(([v, m]) => ({
             value: v,
             label: t(m.labelKey),
@@ -296,13 +404,17 @@ function InstancesTab() {
           allowClear
           placeholder={t("tenants.searchInstancePlaceholder")}
           style={{ width: 220 }}
-          onSearch={setSearch}
+          value={instInput}
+          onChange={(e) => setInstInput(e.target.value)}
+          onSearch={(v) => setUrl({ iq: v || undefined })}
         />
         <Input.Search
           allowClear
           placeholder={t("tenants.searchNodePlaceholder")}
           style={{ width: 200 }}
-          onSearch={setNodeName}
+          value={nodeInput}
+          onChange={(e) => setNodeInput(e.target.value)}
+          onSearch={(v) => setUrl({ inode: v || undefined })}
         />
       </Space>
       <Table<AdminInstanceOut>
@@ -310,7 +422,13 @@ function InstancesTab() {
         rowKey="uuid"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={instances}
         columns={[
@@ -339,7 +457,7 @@ function InstancesTab() {
                   <span>
                     {String(r.spec.gpu_model)} × {r.gpu_count}
                   </span>
-                  <StatusTag color={tm?.color}>{tm ? t(tm.labelKey) : String(r.spec.tier)}</StatusTag>
+                  <HexTag color={tm?.color}>{tm ? t(tm.labelKey) : String(r.spec.tier)}</HexTag>
                 </Space>
               );
             },
@@ -352,9 +470,9 @@ function InstancesTab() {
             render: (v: string, r) => {
               const labelKey = marketLabelKey(v, r.subscription?.period);
               return (
-                <StatusTag color={metaOf(marketMap, v)?.color}>
+                <HexTag color={metaOf(marketMap, v)?.color}>
                   {labelKey ? t(labelKey) : v}
-                </StatusTag>
+                </HexTag>
               );
             },
           },
@@ -406,10 +524,12 @@ function InstancesTab() {
           },
         ]}
       />
-      <LoadMoreButton
-        visible={Boolean(hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(hasNextPage)}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={instances.length}
+        onLoadMore={() => void fetchNextPage()}
       />
     </>
   );
@@ -417,16 +537,28 @@ function InstancesTab() {
 
 function TenantsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate({ from: "/tenants" });
+  const tab = Route.useSearch({ select: (s) => s.tab });
   return (
-    <Card title={t("menu.tenants")}>
-      <Tabs
-        items={[
-          { key: "tenants", label: t("tenants.tabTenants"), children: <TenantsTab /> },
-          { key: "instances", label: t("tenants.tabInstances"), children: <InstancesTab /> },
-          { key: "deletions", label: t("tenants.tabDeletions"), children: <DeletionsTab /> },
-        ]}
-      />
-    </Card>
+    <PageContainer title={t("menu.tenants")}>
+      <Card>
+        <Tabs
+          activeKey={tab ?? "tenants"}
+          onChange={(key) =>
+            void navigate({
+              to: "/tenants",
+              replace: true,
+              search: (prev) => ({ ...prev, tab: key === "tenants" ? undefined : (key as TenantsTab) }),
+            })
+          }
+          items={[
+            { key: "tenants", label: t("tenants.tabTenants"), children: <TenantsTab /> },
+            { key: "instances", label: t("tenants.tabInstances"), children: <InstancesTab /> },
+            { key: "deletions", label: t("tenants.tabDeletions"), children: <DeletionsTab /> },
+          ]}
+        />
+      </Card>
+    </PageContainer>
   );
 }
 
@@ -440,15 +572,15 @@ function DeletionsTab() {
   const isAdmin = role === "admin";
   const [status, setStatus] = useState<string | undefined>();
   const qc = useQueryClient();
-  const { data, queryKey, isLoading, isError, refetch } = useDeletionRequests(status ? { status } : undefined);
+  const { data, queryKey, isLoading, isError, error, refetch } = useDeletionRequests(status ? { status } : undefined);
   const rows: DeletionRow[] = data ?? [];
   const approve = useApproveDeletion();
   const reject = useRejectDeletion();
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const [approving, setApproving] = useState<DeletionRow | null>(null);
   const [approveLoading, setApproveLoading] = useState(false);
-  // 渲染期禁调 Date.now(eslint react-hooks/purity):挂载快照即可,服务端仍会二次校验冷静期
-  const [nowTs] = useState(() => Date.now());
+  // 冷静期倒计时按 30s tick 刷新(挂载快照会随页面长开而过期,按钮解禁/倒计时都需要活的时间)
+  const nowTs = useNow(30_000);
 
   const runApprove = async () => {
     if (!approving) return;
@@ -492,7 +624,13 @@ function DeletionsTab() {
         rowKey="id"
         loading={isLoading}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         dataSource={rows}
         columns={[
@@ -547,14 +685,14 @@ function DeletionsTab() {
             render: (_, r) =>
               r.processed_at ? (
                 <Space orientation="vertical" size={0}>
-                  <Typography.Text style={{ fontSize: 12 }}>
+                  <Typography.Text style={{ fontSize: fontSize.caption }}>
                     {t("tenants.deletion.processedBy", {
                       id: r.processed_by ?? "-",
                       time: formatDateTime(r.processed_at),
                     })}
                   </Typography.Text>
                   {r.note && (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {r.note}
                     </Typography.Text>
                   )}

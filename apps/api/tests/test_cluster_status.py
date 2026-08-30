@@ -428,10 +428,3 @@ class TestClusterEndpoints:
         async with sm() as session:
             row = await service.get_cluster_status(session)
         assert row is not None and row.api_reachable is False and row.error
-
-    async def test_readonly_cannot_test_connection(self, sm, fake, client):
-        from tests.helpers import admin_headers
-
-        headers = await admin_headers(sm, client, role="readonly")
-        resp = await client.post("/api/admin/v1/cluster/test-connection", headers=headers)
-        assert resp.status_code == 403

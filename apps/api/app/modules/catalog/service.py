@@ -8,7 +8,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, not_found
-from app.core.gpu_adapter import POOL_CPU, POOL_HAMI, POOL_MIG, TIER_CPU, TIER_POOLS
+from app.core.gpu_adapter import (
+    POOL_CPU,
+    POOL_HAMI,
+    POOL_MIG,
+    TIER_CPU,
+    TIER_POOLS,
+    TIER_SHARED,
+)
 from app.core.gpu_models import canonical_gpu_model
 from app.core.logging import get_logger
 from app.core.money import as_amount, as_price
@@ -79,13 +86,19 @@ def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> Non
 
     隔离机制的派发键是池(见 core/gpu_adapter),档位只是售卖名字——两者不配对时,
     卖出去的隔离强度与实际跑的不是一回事。建 SKU 与改池两条路径共用本函数。
+    共享档再叠加 D-1 运营开关(SUPERDL_SHARED_TIER_ALLOWED_POOLS):摘掉 hami 即
+    「共享档只卖 MIG 硬切分」,空值即停售共享档。
     """
     allowed = TIER_POOLS.get(tier, ())
+    if tier == TIER_SHARED:
+        from app.core.config import get_settings
+
+        allowed = tuple(p for p in allowed if p in get_settings().parsed_shared_tier_pools())
     if pool_label not in allowed:
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="catalog.tierPoolMismatch",
-            params={"tier": tier, "pools": "/".join(allowed), "pool": pool_label},
+            params={"tier": tier, "pools": "/".join(allowed) or "-", "pool": pool_label},
         )
     if (pool_label == POOL_MIG) != bool(mig_profile):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="catalog.migProfileMismatch")

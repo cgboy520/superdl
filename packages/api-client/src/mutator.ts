@@ -81,10 +81,10 @@ export function isApiError(e: unknown): e is ApiError {
 
 /** 直连用户端刷新接口(绕过拦截器,避免 401→refresh 递归)。
  *  refresh 走 HttpOnly Cookie(同源反代自动随路),不带 body;
+ *  响应体只含新 access token(refresh 不进 JS 可读面,服务端轮换并回写 Cookie)。
  *  X-Requested-With 是 cookie 路径的 CSRF 纵深头(服务端强制)。失败返回 null。 */
 export async function requestTokenRefresh(): Promise<{
   access_token: string;
-  refresh_token: string;
 } | null> {
   try {
     const resp = await fetch(`${config.baseUrl}/api/v1/auth/refresh`, {
@@ -93,7 +93,7 @@ export async function requestTokenRefresh(): Promise<{
       headers: { "X-Requested-With": "fetch" },
     });
     if (!resp.ok) return null;
-    return (await resp.json()) as { access_token: string; refresh_token: string };
+    return (await resp.json()) as { access_token: string };
   } catch {
     return null;
   }

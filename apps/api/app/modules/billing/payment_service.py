@@ -177,16 +177,26 @@ async def handle_callback(session: AsyncSession, channel_name: str, result: Call
     if order is None:
         raise not_found("订单不存在")
     if order.status == "paid":
-        if not result.success:
-            # 渠道侧对已入账订单的关单/退款通知(商户后台退款等):不自动冲账,
-            # 但绝不能静默——落标记+error 日志+指标,异常清单分桶供人工核销
+        if not result.success and order.channel_reversed_at is None:
+            # 渠道侧对已入账订单的关单/退款通知(商户后台退款等):不自动冲账(渠道
+            # 通知可能是中间态噪音),但等额冻结钱包阻断继续消费——冲正到人工核销之间
+            # 余额不得继续流出。解冻/扣回走管理端 /finance/reversals/{order_no}/resolve。
+            # 幂等:渠道会重推,只对首次置标的那一次冻结。
             order.channel_reversed_at = now_utc()
+            await wallet.freeze(
+                session,
+                order.user_id,
+                order.amount,
+                ref_id=order.order_no,
+                remark="渠道冲正冻结",
+            )
             await session.commit()
             logger.error(
                 "channel_reversed_on_paid_order",
                 order_no=order.order_no,
                 channel=channel_name,
                 channel_txn_id=result.channel_txn_id,
+                frozen=str(order.amount),
             )
             PAYMENT_CHANNEL_REVERSED_TOTAL.inc()
         return "ok"  # 重放:已入账,直接确认
@@ -492,7 +502,8 @@ async def list_payment_anomalies(session: AsyncSession) -> list[dict]:
                 "order_no": o.order_no,
                 "user_id": o.user_id,
                 "amount": str(o.amount),
-                "detail": "已入账订单收到渠道关单/退款通知:余额未自动核销,请核实后调账冲正",
+                "detail": "已入账订单收到渠道关单/退款通知:钱包已等额冻结阻断消费;"
+                "核实后经 /finance/reversals/{order_no}/resolve 解冻(噪音单)或扣回(确认反转)",
                 "created_at": o.channel_reversed_at,
             }
         )

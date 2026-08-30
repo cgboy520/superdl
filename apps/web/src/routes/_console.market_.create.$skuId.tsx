@@ -9,18 +9,21 @@ import {
   billingUnits,
   compareAmounts,
   diskDailyEstimate,
+  fontSize,
   formatDate,
   formatSizeGb,
   GPU_COUNT_STEPS,
   idemKeyOf,
   isBillingPeriod,
+  MAX_PERIOD_COUNT,
   mulPrice,
   PERIOD_HOURS,
   periodMap,
   skuVariant,
   type BillingPeriod,
 } from "@superdl/ui";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { DataErrorAlert, useConfirm } from "@superdl/ui/components";
+import { createFileRoute, Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -29,9 +32,11 @@ import {
   Card,
   Cascader,
   Checkbox,
+  Flex,
   Form,
   Input,
   InputNumber,
+  Modal,
   Radio,
   Select,
   Skeleton,
@@ -42,15 +47,14 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useFormat } from "../lib/format";
-import { useApiErrorText } from "../lib/apiError";
+import { useFormat } from "@superdl/ui";
+import { useApiErrorText } from "@superdl/ui";
 import { useAddSshKey, useCreateDisk, useCreateInstance } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
-import { DataErrorAlert } from "../components/QueryState";
 import { ConsentModal } from "../components/ConsentModal";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
@@ -60,14 +64,30 @@ import { requireAuth } from "../lib/guard";
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { gpus?: number; workload?: "service"; period?: BillingPeriod; market?: "spot" } => {
+  ): {
+    gpus?: number;
+    workload?: "service";
+    period?: BillingPeriod;
+    market?: "spot";
+    count?: number;
+  } => {
     // 竞价与包周期互斥,两个都带进来时必须以 period 为准
     const g = Number(search.gpus);
-    const out: { gpus?: number; workload?: "service"; period?: BillingPeriod; market?: "spot" } = {};
+    const out: {
+      gpus?: number;
+      workload?: "service";
+      period?: BillingPeriod;
+      market?: "spot";
+      count?: number;
+    } = {};
     if (Number.isInteger(g) && g >= 1 && g <= 8) out.gpus = g;
     if (search.workload === "service") out.workload = "service";
-    if (typeof search.period === "string" && isBillingPeriod(search.period)) out.period = search.period;
-    else if (search.market === "spot") out.market = "spot";
+    if (typeof search.period === "string" && isBillingPeriod(search.period)) {
+      out.period = search.period;
+      // 市场页购买时长选择器透传(1~36,与市场页 URL 同一口径)
+      const c = Number(search.count);
+      if (Number.isInteger(c) && c >= 1 && c <= MAX_PERIOD_COUNT) out.count = c;
+    } else if (search.market === "spot") out.market = "spot";
     return out;
   },
   beforeLoad: requireAuth,
@@ -118,11 +138,12 @@ function CreatePage() {
   const fmt = useFormat();
   const { formatHourlyPrice } = fmt;
   const { skuId } = Route.useParams();
-  const { gpus: gpusFromMarket, workload, period: periodFromMarket, market: marketFromUrl } =
+  const { gpus: gpusFromMarket, workload, period: periodFromMarket, market: marketFromUrl, count: countFromMarket } =
     Route.useSearch();
   const isService = workload === "service";
   const navigate = useNavigate();
   const { message } = App.useApp();
+  const confirm = useConfirm();
 
   const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus();
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
@@ -133,7 +154,8 @@ function CreatePage() {
   const { data: images } = imagesQ;
   const { data: keys } = keysQ;
   const { data: disks } = disksQ;
-  const { data: wallet } = useWallet();
+  const walletQ = useWallet();
+  const { data: wallet } = walletQ;
   const { data: policies } = usePolicies();
   const discounts = usePeriodDiscounts();
   const spotPolicy = useSpotPolicy();
@@ -142,7 +164,7 @@ function CreatePage() {
   const [billingMode, setBillingMode] = useState<BillingMode>(
     periodFromMarket ?? (marketFromUrl === "spot" ? "spot" : "on_demand"),
   );
-  const [periodCount, setPeriodCount] = useState(1);
+  const [periodCount, setPeriodCount] = useState(countFromMarket ?? 1);
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
   const [platformImage, setPlatformImage] = useState<string[]>();
   const [customImage, setCustomImage] = useState("");
@@ -161,13 +183,66 @@ function CreatePage() {
   const [healthPath, setHealthPath] = useState("");
   const [requireApiKey, setRequireApiKey] = useState(true);
   const [withSsh, setWithSsh] = useState(false);
+  // 批量粘贴(环境变量 KEY=VALUE / 启动参数每行一个):skipped 记录最近一次解析跳过的条数
+  const [envBulkOpen, setEnvBulkOpen] = useState(false);
+  const [envBulkText, setEnvBulkText] = useState("");
+  const [envBulkSkipped, setEnvBulkSkipped] = useState<number | null>(null);
+  const [argBulkOpen, setArgBulkOpen] = useState(false);
+  const [argBulkText, setArgBulkText] = useState("");
   const [ecoOpen, setEcoOpen] = useState(false);
   const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 新增动态行后 autoFocus 第一个输入框(记下刚加的行 id)
+  const [lastArgId, setLastArgId] = useState<string | null>(null);
+  const [lastEnvId, setLastEnvId] = useState<string | null>(null);
   const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
   // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
+  // 「取消」脏判定的挂载快照:与初始值逐项比对,任一字段非默认即脏
+  const [mountSnapshot] = useState(() => ({ gpuCount, billingMode, newDiskName }));
+
+  // 表单脏 = 任一字段非挂载初值(服务形态下已填内容多,直接离开会整页丢)
+  const formDirty =
+    gpuCount !== mountSnapshot.gpuCount ||
+    billingMode !== mountSnapshot.billingMode ||
+    // 市场页可透传时长(countFromMarket):初值不是 1,不能一进来就判脏
+    periodCount !== (countFromMarket ?? 1) ||
+    imageTab !== "platform" ||
+    platformImage != null ||
+    customImage.trim() !== "" ||
+    diskMode !== "none" ||
+    newDiskName !== mountSnapshot.newDiskName ||
+    newDiskGb !== 100 ||
+    existingDiskId != null ||
+    keyIds.length > 0 ||
+    name.trim() !== "" ||
+    serviceImage.trim() !== "" ||
+    command.trim() !== "" ||
+    argRows.some((r) => r.value.trim() !== "") ||
+    envRows.some((r) => r.name.trim() !== "" || r.value.trim() !== "") ||
+    servicePort != null ||
+    healthPath.trim() !== "" ||
+    !requireApiKey ||
+    withSsh;
+
+  // 离开防护:脏表单拦截路由跳走(侧栏/浏览器前进后退),刷新与关标签由 beforeunload 兜底;
+  // 提交成功或「取消」已确认后置 bypass 放行,避免同一动作二次确认
+  const leaveBypassRef = useRef(false);
+  const {
+    status: leaveStatus,
+    proceed: proceedLeave,
+    reset: resetLeave,
+  } = useBlocker({
+    shouldBlockFn: () => formDirty && !leaveBypassRef.current,
+    withResolver: true,
+  });
+  useEffect(() => {
+    if (!formDirty) return;
+    const handler = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [formDirty]);
 
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
@@ -205,6 +280,7 @@ function CreatePage() {
       message.success(
         isService ? t("create.deploying", { name: inst.name }) : t("create.creating", { name: inst.name }),
       );
+      leaveBypassRef.current = true;
       void navigate({ to: "/instances" });
     },
   });
@@ -353,7 +429,72 @@ function CreatePage() {
     return null;
   })();
 
-  const canSubmit = isService ? serviceIssue == null : Boolean(imageRef) && keyIds.length > 0;
+  /** 批量粘贴环境变量:逐行解析 KEY=VALUE;非法名/保留名/重名(含批内重复)跳过并计数 */
+  const submitEnvBulk = () => {
+    const existing = new Set(envRows.map((r) => r.name.trim()).filter((n) => n !== ""));
+    const seen = new Set<string>();
+    const toAdd: EnvRow[] = [];
+    let skipped = 0;
+    for (const rawLine of envBulkText.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (line === "") continue;
+      const eq = line.indexOf("=");
+      const name = (eq >= 0 ? line.slice(0, eq) : line).trim();
+      const value = eq >= 0 ? line.slice(eq + 1) : "";
+      if (
+        !ENV_NAME_RE.test(name) ||
+        RESERVED_ENV_NAMES.includes(name) ||
+        RESERVED_ENV_PREFIXES.some((pre) => name.startsWith(pre)) ||
+        existing.has(name) ||
+        seen.has(name)
+      ) {
+        skipped += 1;
+        continue;
+      }
+      seen.add(name);
+      toAdd.push({ id: crypto.randomUUID(), name, value, secret: false });
+    }
+    if (toAdd.length > 0) setEnvRows((rows) => [...rows, ...toAdd]);
+    setEnvBulkText("");
+    // 有跳过行时留在 Modal 内报跳过条数;全部有效才直接关窗
+    setEnvBulkSkipped(skipped);
+    if (skipped === 0) setEnvBulkOpen(false);
+  };
+
+  /** 批量粘贴启动参数:每行一个,空行忽略 */
+  const submitArgBulk = () => {
+    const toAdd = argBulkText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== "")
+      .map((value) => ({ id: crypto.randomUUID(), value }));
+    if (toAdd.length > 0) setArgRows((rows) => [...rows, ...toAdd]);
+    setArgBulkText("");
+    setArgBulkOpen(false);
+  };
+
+  const canSubmit = isService
+    ? serviceIssue == null
+    : // dev 形态后端同判 pinned 硬闸(等 400 才知道太迟),前端同样拦截并即时红框
+      imageRef != null && imageRef !== "" && isPinnedImageRef(imageRef) && keyIds.length > 0;
+
+  const onCancel = () => {
+    if (!formDirty) {
+      void navigate({ to: "/market" });
+      return;
+    }
+    confirm({
+      title: t("create.discardConfirmTitle"),
+      consequences: [t("create.discardConfirmBody")],
+      okText: t("create.discardConfirmOk"),
+      cancelText: t("create.discardConfirmCancel"),
+      danger: true,
+      onOk: () => {
+        leaveBypassRef.current = true;
+        void navigate({ to: "/market" });
+      },
+    });
+  };
 
   const doCreate = async () => {
     // canSubmit 已保证有镜像(两种形态各有一条判据);这里再挡一次是把类型收窄到 string,
@@ -545,7 +686,13 @@ function CreatePage() {
       {!sku.spot_enabled && billingMode === "spot" && (
         <Alert type="info" showIcon title={t("market.spotFallbackToHourly")} />
       )}
-      {isSpot && <Alert type="warning" showIcon title={t("copy.spotReclaimNotice")} />}
+      {isSpot && spotPolicy && (
+        <Alert
+          type="warning"
+          showIcon
+          title={t("copy.spotReclaimNotice", { seconds: spotPolicy.graceSeconds })}
+        />
+      )}
       {/* 服务形态选竞价只警示不禁止,但被回收会断掉对外地址,这一句必须在下单前出现 */}
       {isSpot && isService && (
         <Alert type="warning" showIcon title={t("copy.spotNotForService")} />
@@ -576,7 +723,7 @@ function CreatePage() {
             }))}
             extra={
               gpuCount > (sku.available_count ?? 0) ? (
-                <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                <Typography.Text type="warning" style={{ fontSize: fontSize.caption }}>
                   {t("copy.noStockForGpuCount")}
                 </Typography.Text>
               ) : undefined
@@ -620,11 +767,12 @@ function CreatePage() {
               <Space orientation="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text type="secondary">{t("create.argsLabel")}</Typography.Text>
                 {argRows.map((row, i) => (
-                  <Space key={row.id} size={8} style={{ width: "100%" }}>
+                  <Flex key={row.id} gap={8} wrap style={{ width: "100%" }}>
                     <Input
-                      style={{ width: 420 }}
+                      style={{ flex: "1 1 320px", minWidth: 0 }}
                       placeholder={t("create.argPlaceholder")}
                       aria-label={t("create.argAria", { index: i + 1 })}
+                      autoFocus={row.id === lastArgId}
                       value={row.value}
                       onChange={(e) =>
                         setArgRows((rows) =>
@@ -635,15 +783,20 @@ function CreatePage() {
                     <Button onClick={() => setArgRows((rows) => rows.filter((r) => r.id !== row.id))}>
                       {t("create.rowRemove")}
                     </Button>
-                  </Space>
+                  </Flex>
                 ))}
-                <Button
-                  onClick={() =>
-                    setArgRows((rows) => [...rows, { id: crypto.randomUUID(), value: "" }])
-                  }
-                >
-                  {t("create.addArg")}
-                </Button>
+                <Space size={8}>
+                  <Button
+                    onClick={() => {
+                      const id = crypto.randomUUID();
+                      setArgRows((rows) => [...rows, { id, value: "" }]);
+                      setLastArgId(id);
+                    }}
+                  >
+                    {t("create.addArg")}
+                  </Button>
+                  <Button onClick={() => setArgBulkOpen(true)}>{t("create.bulkAdd")}</Button>
+                </Space>
               </Space>
 
               <Space orientation="vertical" size={8} style={{ width: "100%" }}>
@@ -652,11 +805,12 @@ function CreatePage() {
                   const err = envError(row);
                   return (
                     <Space key={row.id} orientation="vertical" size={2} style={{ width: "100%" }}>
-                      <Space size={8} wrap>
+                      <Flex gap={8} wrap align="center">
                         <Input
-                          style={{ width: 220 }}
+                          style={{ flex: "1 1 180px", minWidth: 140 }}
                           placeholder={t("create.envNamePlaceholder")}
                           aria-label={t("create.envNameAria", { index: i + 1 })}
+                          autoFocus={row.id === lastEnvId}
                           status={err ? "error" : undefined}
                           value={row.name}
                           onChange={(e) =>
@@ -666,7 +820,7 @@ function CreatePage() {
                           }
                         />
                         <Input
-                          style={{ width: 300 }}
+                          style={{ flex: "2 1 240px", minWidth: 180 }}
                           placeholder={t("create.envValuePlaceholder")}
                           aria-label={t("create.envValueAria", { index: i + 1 })}
                           value={row.value}
@@ -689,25 +843,27 @@ function CreatePage() {
                         <Button onClick={() => setEnvRows((rows) => rows.filter((r) => r.id !== row.id))}>
                           {t("create.rowRemove")}
                         </Button>
-                      </Space>
+                      </Flex>
                       {err && (
-                        <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                        <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
                           {err}
                         </Typography.Text>
                       )}
                     </Space>
                   );
                 })}
-                <Button
-                  onClick={() =>
-                    setEnvRows((rows) => [
-                      ...rows,
-                      { id: crypto.randomUUID(), name: "", value: "", secret: false },
-                    ])
-                  }
-                >
-                  {t("create.addEnv")}
-                </Button>
+                <Space size={8}>
+                  <Button
+                    onClick={() => {
+                      const id = crypto.randomUUID();
+                      setEnvRows((rows) => [...rows, { id, name: "", value: "", secret: false }]);
+                      setLastEnvId(id);
+                    }}
+                  >
+                    {t("create.addEnv")}
+                  </Button>
+                  <Button onClick={() => setEnvBulkOpen(true)}>{t("create.bulkAdd")}</Button>
+                </Space>
                 <Typography.Text type="secondary">{t("create.envSecretHint")}</Typography.Text>
               </Space>
             </Space>
@@ -721,7 +877,7 @@ function CreatePage() {
                   <InputNumber
                     min={1}
                     max={65535}
-                    style={{ width: 160 }}
+                    style={{ width: "100%", maxWidth: 160 }}
                     placeholder="8000"
                     aria-label={t("create.servicePortLabel")}
                     status={
@@ -744,7 +900,7 @@ function CreatePage() {
                       { value: "grpc", label: "gRPC", disabled: true },
                     ]}
                   />
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                     {t("create.protocolSoon")}
                   </Typography.Text>
                 </Space>
@@ -754,7 +910,7 @@ function CreatePage() {
               <Space orientation="vertical" size={4} style={{ width: "100%" }}>
                 <Typography.Text type="secondary">{t("create.healthLabel")}</Typography.Text>
                 <Input
-                  style={{ width: 320 }}
+                  style={{ width: "100%", maxWidth: 320 }}
                   placeholder="/healthz"
                   aria-label={t("create.healthLabel")}
                   status={
@@ -811,6 +967,7 @@ function CreatePage() {
                         value={platformImage}
                         onChange={(v) => setPlatformImage(v as string[])}
                         placeholder={t("create.cascadePlaceholder")}
+                        showSearch
                       />
                       <Typography.Text type="secondary">
                         {/* CPU 规格落无卡机,平台镜像不在那儿预热,不能对它承诺秒级启动 */}
@@ -828,9 +985,20 @@ function CreatePage() {
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <Input
                     placeholder="registry.example.com/your/image:tag"
+                    aria-label={t("create.tabCustom")}
                     value={customImage}
                     onChange={(e) => setCustomImage(e.target.value)}
+                    status={
+                      customImage.trim() !== "" && !isPinnedImageRef(customImage.trim())
+                        ? "error"
+                        : undefined
+                    }
                   />
+                  {customImage.trim() !== "" && !isPinnedImageRef(customImage.trim()) ? (
+                    <Typography.Text type="danger">
+                      {tErr("orchestrator.imageRefNotPinned")}
+                    </Typography.Text>
+                  ) : null}
                   <Typography.Text type="secondary">
                     {t("create.customImageHint")}
                   </Typography.Text>
@@ -855,23 +1023,40 @@ function CreatePage() {
           />
           {diskMode === "new" && (
             <>
-              <Space size={12}>
+              <Space size={12} style={{ width: "100%", maxWidth: 420 }}>
                 <Typography.Text type="secondary">{t("storage.nameLabel")}</Typography.Text>
                 <Input
-                  style={{ width: 260 }}
+                  style={{ width: "100%", maxWidth: 260 }}
                   maxLength={64}
+                  aria-label={t("storage.nameLabel")}
                   value={newDiskName}
                   onChange={(e) => setNewDiskName(e.target.value)}
                 />
               </Space>
-              <Slider
-                min={policies?.disk_min_gb}
-                max={policies?.disk_max_gb}
-                step={10}
-                value={newDiskGb}
-                onChange={setNewDiskGb}
-                disabled={!policies}
-              />
+              {/* 容量:Slider 与 InputNumber 联动同值(与存储页新建盘同一录入体验) */}
+              <Flex gap={12} align="center">
+                <Slider
+                  style={{ flex: 1 }}
+                  min={policies?.disk_min_gb}
+                  max={policies?.disk_max_gb}
+                  step={10}
+                  value={newDiskGb}
+                  onChange={setNewDiskGb}
+                  disabled={!policies}
+                />
+                <InputNumber
+                  min={policies?.disk_min_gb}
+                  max={policies?.disk_max_gb}
+                  step={10}
+                  value={newDiskGb}
+                  onChange={(v) => {
+                    if (typeof v === "number") setNewDiskGb(v);
+                  }}
+                  disabled={!policies}
+                  style={{ width: 110 }}
+                  aria-label={t("create.diskSizeAria")}
+                />
+              </Flex>
               <Typography.Text type="secondary">
                 {formatSizeGb(newDiskGb)}
                 {diskPriceGbMonth
@@ -887,7 +1072,7 @@ function CreatePage() {
               <DataErrorAlert onRetry={() => void disksQ.refetch()} />
             ) : (
               <Select
-                style={{ width: 320 }}
+                style={{ width: "100%", maxWidth: 320 }}
                 placeholder={t("create.selectDiskPlaceholder")}
                 value={existingDiskId}
                 onChange={setExistingDiskId}
@@ -913,9 +1098,10 @@ function CreatePage() {
           <Input
             placeholder={t("create.namePlaceholder")}
             maxLength={64}
+            aria-label={t("create.nameCard")}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{ width: 320 }}
+            style={{ width: "100%", maxWidth: 320 }}
           />
           {isService && (
             <>
@@ -930,6 +1116,8 @@ function CreatePage() {
         </Space>
       </Card>
 
+      {/* 余额查询失败绝不静默转圈:结算条上方给可重试错误条,CTA 改普通禁用态 */}
+      {walletQ.isError && <DataErrorAlert onRetry={() => void walletQ.refetch()} />}
       <CheckoutBar
         summary={
           isCpu
@@ -1013,10 +1201,17 @@ function CreatePage() {
         balanceReady={balanceReady}
         actions={
           <>
-            <Button size="large" onClick={() => void navigate({ to: "/market" })}>
+            <Button size="large" onClick={onCancel}>
               {t("create.cancel")}
             </Button>
-            {!balanceReady ? (
+            {walletQ.isError ? (
+              // 余额查询失败:CTA 普通禁用态 + 原因提示(重试入口在上方错误条)
+              <Tooltip title={t("create.walletQueryFailedRetry")}>
+                <Button type="primary" size="large" disabled>
+                  {submitLabel}
+                </Button>
+              </Tooltip>
+            ) : !balanceReady ? (
               // 余额未就绪:主 CTA 保持 primary + loading,不出现红色文案
               <Button type="primary" size="large" loading disabled>
                 {submitLabel}
@@ -1048,6 +1243,55 @@ function CreatePage() {
         }
       />
 
+      {/* 批量粘贴:环境变量(KEY=VALUE,跳过行在 Modal 内报数)/ 启动参数(每行一个) */}
+      <Modal
+        title={t("create.bulkAddEnvTitle")}
+        open={envBulkOpen}
+        okText={t("create.bulkAddConfirm")}
+        onOk={submitEnvBulk}
+        onCancel={() => {
+          setEnvBulkOpen(false);
+          setEnvBulkText("");
+          setEnvBulkSkipped(null);
+        }}
+      >
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">{t("create.bulkAddEnvHint")}</Typography.Text>
+          <Input.TextArea
+            rows={8}
+            value={envBulkText}
+            onChange={(e) => setEnvBulkText(e.target.value)}
+            placeholder={"KEY=VALUE"}
+            aria-label={t("create.bulkAddEnvTitle")}
+          />
+          {envBulkSkipped != null && envBulkSkipped > 0 && (
+            <Typography.Text type="warning">
+              {t("create.bulkAddSkipped", { count: envBulkSkipped })}
+            </Typography.Text>
+          )}
+        </Space>
+      </Modal>
+      <Modal
+        title={t("create.bulkAddArgsTitle")}
+        open={argBulkOpen}
+        okText={t("create.bulkAddConfirm")}
+        onOk={submitArgBulk}
+        onCancel={() => {
+          setArgBulkOpen(false);
+          setArgBulkText("");
+        }}
+      >
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">{t("create.bulkAddArgsHint")}</Typography.Text>
+          <Input.TextArea
+            rows={8}
+            value={argBulkText}
+            onChange={(e) => setArgBulkText(e.target.value)}
+            aria-label={t("create.bulkAddArgsTitle")}
+          />
+        </Space>
+      </Modal>
+
       {/* 竞价知情同意在前:确认后再走经济档那道(两条都占的规格要连过两关) */}
       <SpotConsentModal
         open={spotOpen}
@@ -1077,6 +1321,18 @@ function CreatePage() {
           void doCreate();
         }}
       />
+      {/* 路由离开拦截(useBlocker):脏表单跳走时确认;页内「取消」按钮走 onCancel 的 modal.confirm */}
+      <Modal
+        open={leaveStatus === "blocked"}
+        title={t("create.discardConfirmTitle")}
+        okText={t("create.discardConfirmOk")}
+        cancelText={t("create.discardConfirmCancel")}
+        okButtonProps={{ danger: true }}
+        onOk={proceedLeave}
+        onCancel={resetLeave}
+      >
+        {t("create.discardConfirmBody")}
+      </Modal>
     </div>
   );
 }

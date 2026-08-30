@@ -163,9 +163,9 @@ class TestPodSpec:
         assert pod.disk_gb == 100
 
     def test_gpu_instance_still_scales(self):
-        from tests.test_gpu_adapter import _spec
+        from tests.helpers import gpu_spec
 
-        inst = _instance(_spec("dedicated", "kata"), gpu_count=4)
+        inst = _instance(gpu_spec("dedicated", "kata"), gpu_count=4)
         pod = build_pod_spec(inst)
         assert pod.vcpu == 8 * 4 and pod.mem_gb == 32 * 4
 
@@ -403,7 +403,7 @@ class TestFullChain:
         ] == "running"
 
         # 跑 30 分钟后停机 → 尾账必须 > 0(0.49/时 × 0.5h ≈ 0.25)
-        from tests.test_billing_flow import backdate_running_event
+        from tests.helpers import backdate_running_event
 
         await backdate_running_event(sm, uuid, 30)
         assert (await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)).status_code

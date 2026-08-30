@@ -2,7 +2,7 @@
 
 import { adminColors } from "@superdl/ui";
 
-import { useFormat } from "../lib/format";
+import { useFormat } from "@superdl/ui";
 
 export function SignedAmount({ value, highlightNegative = true }: { value: string; highlightNegative?: boolean }) {
   const { formatMoney } = useFormat();

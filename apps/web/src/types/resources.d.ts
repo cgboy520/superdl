@@ -227,9 +227,34 @@ export default interface Resources {
     }
   },
   "shared": {
+    "chart": {
+      "degraded": "数据暂不可用",
+      "empty": "暂无数据"
+    },
     "common": {
+      "forbidden": "无权限查看",
+      "forbiddenDesc": "当前角色无权查看该数据,如需访问请联系管理员。",
       "loadFailed": "加载失败,请重试",
+      "loadMore": "加载更多",
+      "loadedAll": "已加载全部 {{count}} 条",
+      "requestFailed": "请求失败",
       "retry": "重试"
+    },
+    "confirm": {
+      "typeNameToConfirm": "键入 {{name}} 以确认"
+    },
+    "csv": {
+      "exportDone": "已导出 CSV",
+      "exportFailed": "导出失败,请稍后重试",
+      "exportTruncated": "已达单次导出上限,文件末尾有截断标记;请缩小范围分次导出",
+      "exporting": "导出中…"
+    },
+    "empty": {
+      "disk": "暂无数据盘",
+      "list": "暂无数据",
+      "notification": "暂无通知",
+      "search": "没有符合条件的结果,试试调整筛选",
+      "ticket": "暂无工单"
     },
     "format": {
       "countdown": {
@@ -262,6 +287,15 @@ export default interface Resources {
         "year": "年"
       },
       "spotDiscount": "{{off}} 折"
+    },
+    "lang": {
+      "en": "English",
+      "switchLabel": "切换语言",
+      "zh": "中文"
+    },
+    "query": {
+      "partialFailed": "部分数据加载失败",
+      "partialFailedDesc": "页面中的金额与列表可能不完整,请以重试后的结果为准。"
     },
     "status": {
       "adjustment": {
@@ -451,15 +485,13 @@ export default interface Resources {
       "colTitle": "抬头",
       "colType": "类型",
       "credited": "已到账 {{amount}}",
-      "csvExportFailed": "导出失败,请稍后重试",
-      "csvExported": "已导出 CSV",
-      "csvTruncated": "数据量已达单次导出上限,CSV 仅含前部分数据(文末有截断标记);请缩小月份范围分次导出",
       "diskTotal": "日常费用(数据盘)",
       "done": "完成",
       "exportCsv": "导出 CSV",
       "genQr": "生成支付二维码",
       "goVerify": "去认证",
       "gpuTotal": "GPU 时费",
+      "hourlyEmpty": "暂无小时账单",
       "instanceRef": "实例 #{{id}}",
       "invoiceApply": "申请开票",
       "invoiceApplyTitle": "申请开票",
@@ -467,6 +499,7 @@ export default interface Resources {
       "invoiceEligibleHint": "按已支付充值按账期合并;当月账期请于次月申请",
       "invoiceEligibleTotal": "可开票额度",
       "invoiceEmail": "接收邮箱",
+      "invoiceEmailInvalid": "邮箱格式不正确",
       "invoiceEmailPlaceholder": "接收发票的邮箱",
       "invoiceManualNote": "人工开票,1-3 个工作日发送至邮箱",
       "invoiceNoEligible": "暂无可开票账期",
@@ -474,11 +507,15 @@ export default interface Resources {
       "invoicePeriodSelect": "选择账期",
       "invoiceSubmit": "提交申请",
       "invoiceTaxId": "税号",
+      "invoiceTaxIdInvalid": "统一社会信用代码为 18 位数字与大写字母",
       "invoiceTaxIdPlaceholder": "统一社会信用代码/税号(企业必填)",
+      "invoiceTitleInvalid": "抬头至少 2 个字符",
       "invoiceTitleLabel": "发票抬头",
       "invoiceTitlePlaceholder": "个人姓名或企业全称",
       "invoiceTitleTypeCompany": "企业",
       "invoiceTitleTypePersonal": "个人",
+      "ledgerEmpty": "暂无收支记录",
+      "ledgerFilterAll": "全部类型",
       "mockChannel": "模拟支付(开发环境)",
       "mockPayNow": "模拟支付成功(开发环境)",
       "mockPaySent": "模拟支付已发送",
@@ -490,6 +527,8 @@ export default interface Resources {
       "payCountdown": "支付剩余时间 {{time}}",
       "paySuccess": "支付成功",
       "pollNote": "支付完成后本窗口会自动确认到账;超时未支付订单 2 小时后自动关闭",
+      "qrFailed": "二维码生成失败,请重试",
+      "qrRetry": "重新获取",
       "realNameRequired": "按监管要求,完成实名认证后方可充值",
       "recharge": "充值",
       "rechargeAmount": "充值金额",
@@ -505,10 +544,12 @@ export default interface Resources {
       "refundOrderNoBalance": "当前余额不足,无款可退",
       "refundOrderNotPaid": "未支付成功",
       "refundReasonPlaceholder": "请说明退款原因(必填)",
+      "refundReasonTooShort": "请填写退款原因(至少 2 字)",
       "refundRuleNote": "审核通过后由财务人工打款;打款成功即同时从账户余额扣减相应金额",
       "refundSelectOrder": "选择要退款的充值订单",
       "refundSubmit": "提交申请",
       "save": "保存",
+      "saved": "已保存",
       "scanWithAlipay": "请使用支付宝「扫一扫」完成支付",
       "scanWithWechat": "请使用微信「扫一扫」完成支付",
       "tabBills": "小时账单",
@@ -519,10 +560,23 @@ export default interface Resources {
       "title": "费用中心",
       "wechat": "微信支付"
     },
+    "command": {
+      "actionRecharge": "充值",
+      "actionRent": "租用新实例",
+      "actionTicket": "新建工单",
+      "groupActions": "操作",
+      "groupInstances": "实例",
+      "groupPages": "页面",
+      "hint": "↑↓ 移动 · ↵ 打开 · esc 关闭",
+      "hintShortcuts": "/ 聚焦搜索 · g 后接 d/i/b/m 跳转页面",
+      "noResults": "无匹配结果",
+      "trigger": "搜索页面、实例或操作…"
+    },
     "common": {
       "backConsole": "回控制台",
       "backHome": "回首页",
       "balance": "余额",
+      "close": "关闭",
       "copied": "已复制",
       "costDetail": "费用明细",
       "dailyApprox": "约 ¥{{amount}}/日",
@@ -531,8 +585,6 @@ export default interface Resources {
       "goRent": "去租用",
       "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
       "jupyter": "JupyterLab",
-      "loadMore": "加载更多",
-      "requestFailed": "请求失败",
       "retry": "重试"
     },
     "copy": {
@@ -593,7 +645,7 @@ export default interface Resources {
         "c5": "有容量时可自行开机;竞价不适合线上服务与不可中断的长任务"
       },
       "spotNotForService": "竞价实例可被回收,不建议用于对外服务:被回收时实例关机,服务地址随之中断",
-      "spotReclaimNotice": "竞价实例可被平台回收:容量紧张时按创建时间从新到旧回收,回收前会提前通知",
+      "spotReclaimNotice": "竞价实例可被平台回收:容量紧张时按创建时间从新到旧回收,回收前提前 {{seconds}} 秒发短信与站内信",
       "spotToOnDemandNoReclaim": "转换后这台实例不再被回收",
       "spotToOnDemandNoRestart": "不动容器、不重新调度,任务零中断",
       "spotToOnDemandRepriceHour": "当前整点小时将整体改按按量价结算(账单一小时只有一行、一个单价)",
@@ -601,6 +653,7 @@ export default interface Resources {
       "startNeedsStopped": "仅已关机的实例可以开机",
       "stockAvailable": "可开实例 {{count}}",
       "stopConfirm": "关机后 GPU 立即释放、停止 GPU 计费,实例盘数据保留;已挂载的数据盘继续按日计费。再次开机时若该规格已租完可能需要等待或更换规格",
+      "stopConfirmSubscription": "周期内关机不退费;平台为你保留这台实例的库存,回来可正常开机。实例盘数据保留,已挂载的数据盘继续按日计费",
       "stopNeedsRunning": "仅运行中的实例可以关机"
     },
     "create": {
@@ -616,6 +669,13 @@ export default interface Resources {
       "authRequire": "需要 API Key",
       "balanceNeedNote": "开机前需余额 ≥ 1 小时预估费用;按量计费:「运行中」时段按秒累计,精确到关机瞬间,关机即停 GPU 计费",
       "balanceNeedNotePeriod": "包周期为预付:下单即一次性扣除全部费用,余额不足请先充值",
+      "bulkAdd": "批量添加",
+      "bulkAddArgsHint": "每行一个参数;空行会被忽略",
+      "bulkAddArgsTitle": "批量添加启动参数",
+      "bulkAddConfirm": "添加",
+      "bulkAddEnvHint": "每行一条,格式 KEY=VALUE;非法名、保留名或与现有变量重名的行会被跳过",
+      "bulkAddEnvTitle": "批量添加环境变量",
+      "bulkAddSkipped": "已跳过 {{count}} 行(非法名或重名)",
       "cancel": "取消",
       "cascadePlaceholder": "框架 / 版本 / Python / CUDA",
       "changeSpec": "更换规格",
@@ -636,12 +696,17 @@ export default interface Resources {
       "detailDiskNone": "数据盘:无",
       "detailInstanceLine": "实例:{{unit}} × {{count}} 卡 = {{total}}",
       "detailInstanceLineCpu": "实例:整机 {{total}}",
+      "discardConfirmBody": "已填写的镜像、命令与参数等内容将丢弃,确定离开本页吗?",
+      "discardConfirmCancel": "继续编辑",
+      "discardConfirmOk": "丢弃并离开",
+      "discardConfirmTitle": "丢弃已填写内容?",
       "diskAutoCreateNote": "提交时将自动创建并随实例挂载",
       "diskCard": "数据盘(可选)",
       "diskExisting": "挂载已有盘",
       "diskIndependentNote": "数据盘独立于实例:关机与释放均保留;按日计费,关机也会产生",
       "diskNew": "新建数据盘",
       "diskNone": "不需要",
+      "diskSizeAria": "数据盘容量(GB)",
       "ecoAgree": "我已阅读并同意上述服务说明",
       "ecoConfirm": "我已知悉,继续创建",
       "ecoModalTitle": "共享·经济档服务说明",
@@ -699,6 +764,7 @@ export default interface Resources {
       "tabCustom": "自定义镜像",
       "tabPlatform": "平台镜像",
       "title": "创建实例",
+      "walletQueryFailedRetry": "余额查询失败,重试后可创建",
       "withSsh": "同时开放 SSH",
       "withSshHint": "便于调试,会占用一个 SSH 端口;不勾则实例不开 sshd"
     },
@@ -723,8 +789,9 @@ export default interface Resources {
       "unread": "未读通知"
     },
     "errorPage": {
-      "title": "页面出错了",
-      "unknown": "发生未知错误,请重试或返回首页"
+      "subtitle": "页面出现异常,请重试或返回首页",
+      "techDetail": "技术详情",
+      "title": "页面出错了"
     },
     "footer": {
       "complianceTitle": "合规",
@@ -801,6 +868,7 @@ export default interface Resources {
         "releaseMenu": "释放实例",
         "releaseModalTitle": "释放实例",
         "releaseStarted": "实例已开始释放",
+        "releaseSubscriptionNote": "包周期预付费用不退款,剩余 {{days}} 天将一并作废。",
         "restart": "重启",
         "restartConfirmBody": "重启期间实例短暂不可用,计费在关机瞬间出尾账、开机后重新计时。",
         "restartConfirmTitle": "确认重启?",
@@ -809,8 +877,7 @@ export default interface Resources {
         "stopConfirmTitle": "确认关机?",
         "stopOk": "关机",
         "stopped": "已下发关机",
-        "toPeriod": "转包周期",
-        "typeNameToConfirm": "请输入实例名 {{name}} 以确认"
+        "toPeriod": "转包周期"
       },
       "apiKeyCancel": "取消",
       "apiKeyCard": "API Key",
@@ -869,11 +936,14 @@ export default interface Resources {
       "curlKeyPlaceholderNote": "示例里的 Key 是前缀占位,替换成你保存的完整值",
       "dangerNote": "释放实例将清除实例盘全部数据(数据盘不受影响),不可恢复。",
       "dangerZone": "危险区",
+      "dblclickHint": "双击行查看实例详情",
       "detail": "详情",
       "emptyHint": "按量计费,关机不收 GPU 费用;数据盘独立保留",
       "emptyTitle": "还没有实例",
       "eventMetaLine": "{{time}} · {{reason}} · 操作者 {{actor}}",
+      "eventsEmpty": "暂无状态变更事件",
       "failedRanNote": "运行中故障已停止计费,费用按实际运行结算",
+      "failedReason": "失败原因",
       "goMarket": "去算力市场",
       "imageLine": "镜像:{{ref}}",
       "keySettings": "密钥登录设置",
@@ -883,11 +953,14 @@ export default interface Resources {
       "labelSpec": "规格",
       "labelToday": "今日消费",
       "logsAutoRefresh": "自动刷新(10s)",
+      "logsBackToBottom": "回到底部",
+      "logsBackToBottomNew": "回到底部 · {{count}} 条新日志",
       "logsDownload": "下载 .log",
       "logsEmpty": "暂无日志输出",
       "logsNotRunning": "实例运行中或关机中才能读取容器日志",
       "logsTail": "行数",
       "logsTruncatedNote": "日志较多,仅显示末尾 {{lines}} 行",
+      "metricsNoData": "暂无监控数据",
       "metricsNotRunning": "实例未运行,暂无实时监控",
       "monitorLink": "实例监控",
       "noMatch": "没有匹配的实例",
@@ -896,6 +969,7 @@ export default interface Resources {
       "payAsYouGo": "按量",
       "pricePerCard": "{{price}} × {{count}} 卡",
       "pricePerInstance": "{{price}} × 整机",
+      "quickTools": "快捷工具",
       "range1h": "1 小时",
       "range24h": "24 小时",
       "range6h": "6 小时",
@@ -992,11 +1066,6 @@ export default interface Resources {
         "title": "GPU 算力排名"
       }
     },
-    "lang": {
-      "en": "English",
-      "switchLabel": "切换语言",
-      "zh": "中文"
-    },
     "legal": {
       "backHome": "返回首页",
       "docDeletionNotice": "《数据删除说明》",
@@ -1025,6 +1094,9 @@ export default interface Resources {
       "passwordRequired": "请输入密码",
       "passwordResetPlaceholder": "新密码(至少 12 位)",
       "passwordSetPlaceholder": "设置密码(可选,至少 12 位)",
+      "passwordStrengthMedium": "密码强度:中",
+      "passwordStrengthStrong": "密码强度:强",
+      "passwordStrengthWeak": "密码强度:弱",
       "phoneInvalid": "请输入正确的手机号",
       "phonePlaceholder": "手机号",
       "resetDone": "密码已更新",
@@ -1071,6 +1143,13 @@ export default interface Resources {
       "subtitle": "你访问的地址不存在或已被移除",
       "title": "页面不存在"
     },
+    "notifications": {
+      "empty": "暂无通知",
+      "emptyUnread": "没有未读通知",
+      "filterAll": "全部",
+      "filterUnread": "未读",
+      "title": "通知"
+    },
     "period": {
       "autoRenewOff": "已关闭自动续费",
       "autoRenewOffMenu": "关闭自动续费",
@@ -1113,9 +1192,7 @@ export default interface Resources {
       "unitYear": "年"
     },
     "query": {
-      "loadFailed": "数据加载失败,可能是网络异常或服务暂不可用",
-      "partialFailed": "部分数据加载失败",
-      "partialFailedDesc": "页面中的金额与列表可能不完整,请以重试后的结果为准。"
+      "loadFailed": "数据加载失败,可能是网络异常或服务暂不可用"
     },
     "settings": {
       "accountCard": "账号",
@@ -1143,9 +1220,6 @@ export default interface Resources {
         "noteResources": "名下实例须全部释放、数据盘须全部删除,否则注销将被驳回",
         "notesTitle": "注销前请确认以下事项",
         "pendingLine": "注销申请审核中:冷静期 {{countdown}}(至 {{date}}),期间可随时撤销",
-        "phoneLabel": "键入完整手机号以确认",
-        "phoneMismatch": "手机号与当前账号不一致",
-        "phoneRequired": "请输入手机号",
         "reasonLabel": "注销原因",
         "reasonRequired": "请填写注销原因(至少 2 字)",
         "rejectedLine": "上次申请被驳回:{{note}}",
@@ -1163,6 +1237,7 @@ export default interface Resources {
       "logoutAll": "登出全部设备",
       "logoutAllConfirm": "将退出该账号在全部设备上的登录(含本机),确定继续?",
       "logoutAllHint": "手机丢失或怀疑账号被盗用时使用;会话最长保留 7 天,修改密码也会立即撤销全部会话",
+      "logoutConfirm": "将退出当前设备上的登录,确定继续?",
       "newPasswordPlaceholder": "新密码(至少 12 位)",
       "noKeys": "还没有公钥,先在下方添加(ssh-keygen -t ed25519 生成)",
       "notifyCard": "通知",
@@ -1250,8 +1325,7 @@ export default interface Resources {
       "segData": "数据盘 · {{price}} · 独立保留",
       "segRoot": "实例盘 · 含 100G · 关机保留 · 释放时清除 · 免费",
       "sizeLabel": "容量(GB)",
-      "title": "存储",
-      "typeNameToConfirm": "请输入数据盘名称 {{name}} 以确认删除"
+      "title": "存储"
     },
     "support": {
       "backToList": "返回工单列表",
@@ -1276,13 +1350,17 @@ export default interface Resources {
       "fieldInstancePlaceholder": "选择出问题的实例",
       "fieldSubject": "主题",
       "fieldSubjectPlaceholder": "一句话说明问题",
+      "filterAll": "全部",
+      "filterStatus": "按状态筛选",
       "linkedInstance": "查看关联实例",
       "msgMe": "我",
       "msgStaff": "客服",
       "myTickets": "我的工单",
       "none": "还没有工单",
+      "noneWithStatus": "该状态下暂无工单",
       "replyPlaceholder": "补充说明或回复客服…",
       "replySend": "发送",
+      "replySendHint": "{{kbd}} 发送",
       "selfHelp": {
         "arrears": "余额耗尽会发生什么?",
         "billingStart": "计费从什么时候开始?",
@@ -1309,7 +1387,8 @@ export default interface Resources {
       "register": "免费注册",
       "siteSection": "网站",
       "themeToDark": "切换到暗色主题",
-      "themeToLight": "切换到浅色主题"
+      "themeToLight": "切换到浅色主题",
+      "viewAllNotifications": "查看全部通知"
     }
   }
 }

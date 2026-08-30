@@ -303,6 +303,21 @@ async def confirm_totp_setup(
     plain = _gen_plain_recovery_codes()
     locked.totp_recovery = await _hash_recovery_codes(plain)
     locked.totp_enabled = True
+    # 绑定即告警(检测闭环):绑定只靠口令是结构性事实(平台无管理员带外通道),
+    # 抢先绑定窗口(首登/重置后)内被盗口令可静默换绑——告警流是唯一及时发现面
+    from app.modules.notify import service as notify_service
+
+    await notify_service.notify(
+        session,
+        None,  # 平台告警流(管理端告警页)
+        type_="admin_alert",
+        title="管理员完成二要素(TOTP)绑定",
+        content=(
+            f"管理员 {locked.username} 完成了 TOTP 绑定。若非本人操作:立即由另一位超管"
+            "重置其 MFA 并改密排查口令泄漏。"
+        ),
+        severity="warning",
+    )
     await session.commit()
     logger.info("mfa_bound", admin_id=admin.id)
     token = create_token(
@@ -478,6 +493,14 @@ async def change_own_password(
     await session.commit()
 
 
+async def logout(session: AsyncSession, admin_id: int) -> None:
+    """服务端登出:token_version+1(行锁内),已签发的 access token 即刻全失效。
+    前端只清本地态的登出把被盗 token 留到自然过期;吊销语义必须在服务端。"""
+    admin = await _get_admin(session, admin_id)
+    admin.token_version += 1
+    await session.commit()
+
+
 async def create_adjustment(
     session: AsyncSession,
     *,
@@ -611,6 +634,59 @@ async def review_adjustment(
     return adj
 
 
+async def resolve_reversal(
+    session: AsyncSession,
+    order_no: str,
+    *,
+    action: Literal["release", "chargeback"],
+    reason: str,
+    operator_id: int,
+    audit_writer: Callable[[AsyncSession], Awaitable[None]] | None = None,
+) -> None:
+    """核销渠道冲正(异常清单 channel_reversed 分桶的唯一出口)。
+
+    - release:核实为渠道噪音/误通知——解冻等额冻结额,清标记(订单恢复退款资格);
+    - chargeback:确认钱已被渠道拿回——解冻 + 等额扣减(ledger adjust,允许透支;
+      订单标记保留,永不恢复退款资格)。
+    单操作人 + 同步审计:与调账的双人复核不同,这里不新增资金敞口(只回收或解冻),
+    风险方向是「少收」,由审计行与异常清单闭环追溯。
+    """
+    from app.modules.billing import service as billing_service
+    from app.modules.billing.models import Order
+
+    order = (
+        await session.execute(select(Order).where(Order.order_no == order_no).with_for_update())
+    ).scalar_one_or_none()
+    if order is None:
+        raise not_found("订单不存在")
+    if order.channel_reversed_at is None:
+        raise AppError(ErrorCode.CONFLICT, key="adminapi.reversalNotPending", http_status=409)
+    await billing_service.release_freeze(session, order.user_id, order.amount)
+    if action == "release":
+        order.channel_reversed_at = None
+    else:
+        await billing_service.debit(
+            session,
+            order.user_id,
+            order.amount,
+            type_="adjust",
+            ref_type="reversal",
+            ref_id=order.order_no,
+            remark=f"渠道冲正核销:{reason}",
+            allow_negative=True,  # 用户可能已花掉:核销后余额为负属预期,走欠费链路
+        )
+    if audit_writer is not None:
+        await audit_writer(session)  # 同步审计:与核销同事务,写失败即回滚
+    await session.commit()
+    logger.info(
+        "reversal_resolved",
+        order_no=order_no,
+        action=action,
+        operator_id=operator_id,
+        amount=str(order.amount),
+    )
+
+
 async def list_adjustments(
     session: AsyncSession,
     *,
@@ -621,10 +697,9 @@ async def list_adjustments(
     limit: int | None = None,
 ) -> Page[AdjustmentOut]:
     """调账单列表(游标分页,降序)。status/user_id 精确;day_range 按 created_at 过滤。"""
-    from app.core.pagination import clamp_limit, decode_cursor_int, slice_page
+    from app.core.pagination import paginate_by_id
 
-    lim = clamp_limit(limit)
-    stmt = select(AdminAdjustment).order_by(AdminAdjustment.id.desc()).limit(lim + 1)
+    stmt = select(AdminAdjustment).order_by(AdminAdjustment.id.desc())
     if status:
         stmt = stmt.where(AdminAdjustment.status == status)
     if user_id is not None:
@@ -633,11 +708,9 @@ async def list_adjustments(
         stmt = stmt.where(
             AdminAdjustment.created_at >= day_range[0], AdminAdjustment.created_at < day_range[1]
         )
-    last_id = decode_cursor_int(cursor)
-    if last_id is not None:
-        stmt = stmt.where(AdminAdjustment.id < last_id)
-    rows = list((await session.execute(stmt)).scalars())
-    page_items, next_cursor = slice_page(rows, lim, key=lambda r: r.id)
+    page_items, next_cursor = await paginate_by_id(
+        session, stmt, id_col=AdminAdjustment.id, cursor=cursor, limit=limit
+    )
     return Page[AdjustmentOut](
         items=[
             AdjustmentOut(

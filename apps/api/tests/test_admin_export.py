@@ -1,4 +1,4 @@
-"""管理端 CSV 导出:订单/租户流水/审计/日对账 —— 口径与截断标记(角色门由 route×role 矩阵覆盖)。"""
+"""管理端 CSV 导出:订单/租户流水/审计/日对账 —— 口径(截断标记统一由 test_billing_export 覆盖)。"""
 
 from datetime import timedelta
 from decimal import Decimal
@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core import csvexport
 from app.core.timeutil import now_utc
 from tests.helpers import admin_headers, fund_wallet, register
-from tests.test_admin_ops import second_admin_headers
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -37,7 +36,7 @@ async def _make_orders(sm: async_sessionmaker[AsyncSession], count: int = 2) -> 
 class TestOrdersExport:
     async def test_csv_rows_and_filters(self, client: AsyncClient, sm):
         await _make_orders(sm)
-        fin = await second_admin_headers(sm, client, "fin-exp")
+        fin = await admin_headers(sm, client, role="finance", username="fin-exp")
         resp = await client.get("/api/admin/v1/orders/export", headers=fin)
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/csv")
@@ -54,14 +53,153 @@ class TestOrdersExport:
         only_pending = resp.text
         assert "SDL-EXP-1" in only_pending and "SDL-EXP-0" not in only_pending
 
-    async def test_truncation_marker(self, client: AsyncClient, sm, monkeypatch):
-        await _make_orders(sm, count=3)
-        monkeypatch.setattr(csvexport, "EXPORT_MAX_ROWS", 2)
-        fin = await second_admin_headers(sm, client, "fin-exp-cap")
-        text = (await client.get("/api/admin/v1/orders/export", headers=fin)).text
-        lines = [line for line in text.splitlines() if line.startswith("SDL-")]
-        assert len(lines) == 2  # 触顶只出前 N 行
-        assert text.splitlines()[-1].startswith(csvexport.TRUNCATED_MARKER)
+
+async def _make_refunds(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:
+    from app.modules.billing.models import RefundRequest
+
+    async with sm() as session:
+        for i in range(count):
+            session.add(
+                RefundRequest(
+                    refund_no=f"R20260101-E{i}",
+                    user_id=1,
+                    order_no=f"SDL-EXP-RF{i}",
+                    amount=Decimal("10.00"),
+                    reason="重复扣款",
+                    status="pending" if i == 0 else "paid",
+                    payout_channel=None if i == 0 else "offline",
+                    payout_ref=None if i == 0 else "PAY-REF-1",
+                )
+            )
+        await session.commit()
+
+
+class TestRefundsExport:
+    async def test_csv_rows_and_filters(self, client: AsyncClient, sm):
+        await _make_refunds(sm)
+        fin = await admin_headers(sm, client, role="finance", username="fin-exp-rf")
+        resp = await client.get("/api/admin/v1/refunds/export", headers=fin)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        text = resp.text
+        assert text.startswith("﻿")
+        lines = text.splitlines()
+        assert lines[0].lstrip("﻿").startswith("退款单号")
+        assert "(UTC+8)" in text
+        assert any("R20260101-E0" in line and "待审批" in line for line in lines)
+        # 已打款行带渠道文案与凭证号
+        assert any(
+            "R20260101-E1" in line and "线下转账" in line and "PAY-REF-1" in line for line in lines
+        )
+        # 状态过滤与列表端点同口径
+        resp = await client.get(
+            "/api/admin/v1/refunds/export", params={"status": "paid"}, headers=fin
+        )
+        only_paid = resp.text
+        assert "R20260101-E1" in only_paid and "R20260101-E0" not in only_paid
+        # day 过滤:申请日(UTC 今日)命中,昨日为空(仅表头)
+        today = now_utc().date().isoformat()
+        by_day = (
+            await client.get("/api/admin/v1/refunds/export", params={"day": today}, headers=fin)
+        ).text
+        assert "R20260101-E0" in by_day
+        yesterday = (now_utc() - timedelta(days=1)).date().isoformat()
+        by_yday = (
+            await client.get("/api/admin/v1/refunds/export", params={"day": yesterday}, headers=fin)
+        ).text
+        assert "R20260101-E0" not in by_yday
+
+
+async def _make_invoices(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:
+    from app.modules.billing.models import InvoiceRequest
+
+    async with sm() as session:
+        for i in range(count):
+            session.add(
+                InvoiceRequest(
+                    user_id=1,
+                    # 同 (user_id, period) 非 rejected 唯一:逐行错开账期
+                    period=f"2026-{7 + i:02d}",
+                    title_type="company",
+                    title=f"示例科技(深圳)有限公司{i}号",
+                    tax_id="91440300MA5F000000",
+                    email=f"ap{i}@example.com",
+                    amount=Decimal("100.00"),
+                    status="submitted" if i == 0 else "issued",
+                    invoice_no=None if i == 0 else f"INV-2026-000{i}",
+                )
+            )
+        await session.commit()
+
+
+class TestInvoicesExport:
+    async def test_csv_rows_and_filters(self, client: AsyncClient, sm):
+        await _make_invoices(sm)
+        fin = await admin_headers(sm, client, role="finance", username="fin-exp-iv")
+        resp = await client.get("/api/admin/v1/invoices/export", headers=fin)
+        assert resp.status_code == 200
+        text = resp.text
+        assert text.startswith("﻿")
+        lines = text.splitlines()
+        assert lines[0].lstrip("﻿").startswith("发票号")
+        assert any("2026-07" in line and "审核中" in line for line in lines)
+        assert any("INV-2026-0001" in line and "已开票" in line for line in lines)
+        # status/period 过滤与列表端点同口径
+        by_status = (
+            await client.get(
+                "/api/admin/v1/invoices/export", params={"status": "issued"}, headers=fin
+            )
+        ).text
+        assert "INV-2026-0001" in by_status and "2026-07" not in by_status
+        by_period = (
+            await client.get(
+                "/api/admin/v1/invoices/export", params={"period": "2026-07"}, headers=fin
+            )
+        ).text
+        assert "2026-07" in by_period and "INV-2026-0001" not in by_period
+
+
+async def _make_adjustments(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:
+    from app.modules.adminapi.models import AdminAdjustment
+
+    async with sm() as session:
+        for i in range(count):
+            session.add(
+                AdminAdjustment(
+                    user_id=i + 1,
+                    amount=Decimal("5.00") if i == 0 else Decimal("-3.00"),
+                    reason=f"赔付工单 T2026{i}",
+                    status="pending" if i == 0 else "approved",
+                    created_by=1,
+                    reviewed_by=None if i == 0 else 2,
+                )
+            )
+        await session.commit()
+
+
+class TestAdjustmentsExport:
+    async def test_csv_rows_and_filters(self, client: AsyncClient, sm):
+        await _make_adjustments(sm)
+        fin = await admin_headers(sm, client, role="finance", username="fin-exp-adj")
+        resp = await client.get("/api/admin/v1/adjustments/export", headers=fin)
+        assert resp.status_code == 200
+        text = resp.text
+        assert text.startswith("﻿")
+        lines = text.splitlines()
+        assert lines[0].lstrip("﻿").startswith("ID,用户ID")
+        assert any("赔付工单 T20260" in line and "待复核" in line for line in lines)
+        assert any("赔付工单 T20261" in line and "已生效" in line for line in lines)
+        # status/user_id 过滤与列表端点同口径
+        by_status = (
+            await client.get(
+                "/api/admin/v1/adjustments/export", params={"status": "approved"}, headers=fin
+            )
+        ).text
+        assert "赔付工单 T20261" in by_status and "赔付工单 T20260" not in by_status
+        by_uid = (
+            await client.get("/api/admin/v1/adjustments/export", params={"user_id": 2}, headers=fin)
+        ).text
+        assert "赔付工单 T20261" in by_uid and "赔付工单 T20260" not in by_uid
 
 
 class TestTenantLedgerExport:
@@ -69,7 +207,7 @@ class TestTenantLedgerExport:
         data = await register(client, "13688880001")
         uid = data["user"]["id"]
         await fund_wallet(sm, uid, "66.00")
-        ops = await second_admin_headers(sm, client, "ops-exp-ledger", role="ops")
+        ops = await admin_headers(sm, client, role="ops", username="ops-exp-ledger")
         resp = await client.get(f"/api/admin/v1/tenants/{uid}/ledger/export", headers=ops)
         assert resp.status_code == 200
         text = resp.text
@@ -111,17 +249,10 @@ class TestAuditExport:
             )
         assert len(hits) >= 1
 
-    async def test_truncation_marker(self, client: AsyncClient, sm, monkeypatch):
-        h = await admin_headers(sm, client)
-        await register(client, "13688880003")
-        monkeypatch.setattr(csvexport, "EXPORT_MAX_ROWS", 1)
-        text = (await client.get("/api/admin/v1/audit/export", headers=h)).text
-        assert text.splitlines()[-1].startswith(csvexport.TRUNCATED_MARKER)
-
 
 class TestReconciliationExport:
     async def test_totals_row_and_bad_day(self, client: AsyncClient, sm):
-        fin = await second_admin_headers(sm, client, "fin-exp-recon")
+        fin = await admin_headers(sm, client, role="finance", username="fin-exp-recon")
         day = now_utc().date().isoformat()
         resp = await client.get(
             "/api/admin/v1/reconciliation/export", params={"day": day}, headers=fin

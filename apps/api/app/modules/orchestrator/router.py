@@ -4,10 +4,11 @@ from fastapi import APIRouter, Header, Query, Request, Response, status
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
-from app.core.errors import AppError, ErrorCode
 from app.core.http import mark_idempotent_replay
 from app.core.pagination import Page
-from app.core.platform_config import get_effective_platform_config
+from app.core.params import Cursor, Limit
+from app.core.ratelimit import check_rate_limit
+from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
 from app.modules.billing.schemas import SubscriptionQuoteOut
 from app.modules.orchestrator import service
@@ -39,14 +40,12 @@ async def create_instance(
     response: Response,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> InstanceOut:
-    # 与充值同一条强制实名开关:开启时算力开通同样拦截
-    cfg = await get_effective_platform_config(session)
-    if cfg["real_name_required_for_recharge"] == "true" and user.verification_status != "verified":
-        raise AppError(
-            ErrorCode.REAL_NAME_REQUIRED,
-            key="orchestrator.realNameRequired",
-            http_status=403,
-        )
+    # 实名闸门(统一实现):创建/开机/续费/转包周期/建盘同口径,勿逐端点复制
+    await account_service.require_real_name_if_required(
+        session, user, key="orchestrator.realNameRequired"
+    )
+    # 资源创建按用户限流:额度只管总量,不管刷接口(每张单都是一次调度+计费事件)
+    await check_rate_limit(f"instance-create:{user.id}", max_attempts=30, window_seconds=3600.0)
     instance, created = await service.create_instance(
         session,
         user.id,
@@ -82,8 +81,8 @@ async def list_instances(
     session: DbSession,
     status: str | None = None,
     name: str | None = None,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[InstanceOut]:
     """实例列表:降序游标分页;status 精确过滤,name 模糊匹配(含 uuid 前缀)。"""
     return await service.list_instances_page(
@@ -129,6 +128,10 @@ async def stop_instance(
 async def start_instance(
     uuid: str, user: CurrentUser, session: DbSession, request: Request
 ) -> InstanceOut:
+    # 实名闸门:开机=重新开通算力,与创建同一条强制实名开关
+    await account_service.require_real_name_if_required(
+        session, user, key="orchestrator.realNameRequired"
+    )
     instance = await service.start_instance(session, user.id, uuid)
     set_audit_target(request, f"instance:{uuid}")
     return await service.instance_view(session, instance)
@@ -157,6 +160,10 @@ async def renew_instance(
 
     冻结中的实例续费即解冻(回到 stopped,由用户自己开机)。
     """
+    await account_service.require_real_name_if_required(
+        session, user, key="orchestrator.realNameRequired"
+    )
+    await check_rate_limit(f"instance-renew:{user.id}", max_attempts=20, window_seconds=3600.0)
     instance, quoted, created = await service.renew_instance(
         session,
         user.id,
@@ -189,6 +196,10 @@ async def subscribe_instance(
     与 `/renew` 同一个入参与响应形态(都是「给这台机器买一段周期」),区别只在起点:
     这里从现在起算,续费从老周期到期时刻接上。
     """
+    await account_service.require_real_name_if_required(
+        session, user, key="orchestrator.realNameRequired"
+    )
+    await check_rate_limit(f"instance-subscribe:{user.id}", max_attempts=20, window_seconds=3600.0)
     instance, quoted, created = await service.subscribe_instance(
         session,
         user.id,
@@ -243,8 +254,8 @@ async def list_instance_events(
     uuid: str,
     user: CurrentUser,
     session: DbSession,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[InstanceEventOut]:
     """状态时间线(计费依据)。降序(最新在前)游标分页。"""
     instance = await service.get_instance(session, user.id, uuid)

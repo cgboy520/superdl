@@ -146,10 +146,10 @@ spec:
           env:
             # envsubst 只放行边缘密钥这一个变量(防 $host 等 nginx 变量被替换)
             - {name: NGINX_ENVSUBST_FILTER, value: "ADMIN_EDGE_TOKEN"}
-            # 边缘共享密钥(edge_guard 双闸):按 key 引用而非 envFrom,整套 API Secret 不进 admin Pod
+            # 边缘共享密钥(edge_guard 双闸):按 key 引用而非 envFrom,其它 Secret 不进 admin Pod
             - name: ADMIN_EDGE_TOKEN
               valueFrom:
-                secretKeyRef: {name: superdl-api-secrets, key: SUPERDL_ADMIN_EDGE_TOKEN}
+                secretKeyRef: {name: superdl-edge, key: SUPERDL_ADMIN_EDGE_TOKEN}
           ports:
             - {containerPort: 8080, name: http}
           livenessProbe:

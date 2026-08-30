@@ -1,6 +1,8 @@
 /**
  * locale 目录守护(三端 locales.test 共用):zh/en 键集相等(复数后缀归一)、值非空、{{占位符}} 逐键一致。
  * `i18next-cli extract --ci` 只核对代码里出现的键,preservePatterns 保护的动态键与 shared/errors 目录只有这里守。
+ * 另有两条事故防线:值 = 展平键路径(批量生成后未回读的典型痕迹,界面直接渲染 "skus.onSale");
+ * en 文案混入 Han 字符 = 漏翻(语言固有名称「中文」经 allowCjkInEn 豁免)。
  */
 
 type Catalog = Record<string, unknown>;
@@ -31,7 +33,11 @@ function placeholders(value: string): string {
     .join(",");
 }
 
-export function assertLocaleParity(zh: Catalog, en: Catalog, opts: { allowEmpty?: boolean } = {}): void {
+export function assertLocaleParity(
+  zh: Catalog,
+  en: Catalog,
+  opts: { allowEmpty?: boolean; allowCjkInEn?: string[] } = {},
+): void {
   const zhFlat = normalize(zh);
   const enFlat = normalize(en);
   const problems: string[] = [];
@@ -40,6 +46,14 @@ export function assertLocaleParity(zh: Catalog, en: Catalog, opts: { allowEmpty?
   if (!opts.allowEmpty) {
     for (const [k, v] of zhFlat) if (!v.trim()) problems.push(`zh 空值 ${k}`);
     for (const [k, v] of enFlat) if (!v.trim()) problems.push(`en 空值 ${k}`);
+  }
+  // 值与展平键路径完全相同 = 批量生成后未回填文案,界面会直接渲染键名
+  for (const [k, v] of zhFlat) if (v === k) problems.push(`zh 值等于键名 ${k}`);
+  for (const [k, v] of enFlat) if (v === k) problems.push(`en 值等于键名 ${k}`);
+  // en 文案混入 Han 字符 = 漏翻(语言固有名称等豁免键经 allowCjkInEn 显式登记)
+  const cjkAllowed = new Set(opts.allowCjkInEn ?? []);
+  for (const [k, v] of enFlat) {
+    if (!cjkAllowed.has(k) && /[\u4e00-\u9fff]/.test(v)) problems.push(`en 含中文字符 ${k}`);
   }
   for (const [k, zhV] of zhFlat) {
     const enV = enFlat.get(k);

@@ -245,6 +245,19 @@ describe("InstanceActions · 包周期", () => {
     );
     expect(screen.getByRole("button", { name: BTN_START })).toBeEnabled();
   });
+
+  it("包周期实例点关机:确认文案是「不退费但保留库存」,不是按量那句「再开机可能没库存」", async () => {
+    const user = userEvent.setup();
+    renderWithApp(
+      <InstanceActions instance={makeSubscription("running", { expiresAt: FUTURE })} />,
+    );
+    await user.click(screen.getByRole("button", { name: BTN_STOP }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/周期内关机不退费/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/已租完/)).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: BTN_STOP }));
+    expect(stopMutateAsync).toHaveBeenCalledWith("u-2");
+  });
 });
 
 describe("InstanceActions · 竞价", () => {
@@ -308,5 +321,24 @@ describe("ReleaseModal", () => {
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByPlaceholderText("demo-vm"), "demo-vm");
     expect(confirm).toBeEnabled();
+  });
+
+  it("包周期实例释放:正文额外写明「预付不退款、剩余天数作废」", async () => {
+    renderWithApp(
+      <ReleaseModal
+        instance={makeSubscription("stopped", { expiresAt: FUTURE })}
+        open
+        onClose={() => {}}
+      />,
+    );
+    const dialog = await screen.findByRole("dialog");
+    // FUTURE = 20 天后到期
+    expect(within(dialog).getByText(/预付费用不退款,剩余 20 天将一并作废/)).toBeInTheDocument();
+  });
+
+  it("按量实例释放:不出现包周期专属提示", async () => {
+    renderWithApp(<ReleaseModal instance={makeInstance("stopped")} open onClose={() => {}} />);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/预付费用不退款/)).toBeNull();
   });
 });

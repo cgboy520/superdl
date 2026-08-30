@@ -3,7 +3,7 @@
  */
 
 import { formatDateTime } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { App, Button, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -12,13 +12,13 @@ import { useTranslation } from "react-i18next";
 import type { AdminSettlementGapOut } from "@superdl/api-client";
 
 import {
+  isApiError,
   useReplaySettlementGap,
   useResolveSettlementGap,
   useSettlementGaps,
 } from "../../api";
-import { LoadMoreButton } from "../../components/LoadMore";
 import { ReasonAction } from "../../components/ReasonAction";
-import { useApiErrorText } from "../../lib/apiError";
+import { useApiErrorText } from "@superdl/ui";
 import { canWriteFinance, useAdminRole } from "../../stores/auth";
 
 const REASON_LABEL_KEY = {
@@ -29,6 +29,13 @@ const REASON_LABEL_KEY = {
 } as const;
 type GapReason = keyof typeof REASON_LABEL_KEY;
 
+// 缺口类型 → 文案键(静态表:admin 的 t() 是严格键类型)
+const KIND_LABEL_KEY = {
+  hourly: "finance.gapKindHourly",
+  daily_disk: "finance.gapKindDailyDisk",
+} as const;
+type GapKind = keyof typeof KIND_LABEL_KEY;
+
 export function SettlementGapsTab() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
@@ -37,13 +44,13 @@ export function SettlementGapsTab() {
   const role = useAdminRole();
   const writable = canWriteFinance(role);
 
-  const [kind, setKind] = useState<string | undefined>(undefined);
+  const [kind, setKind] = useState<GapKind | undefined>(undefined);
   const [unresolvedOnly, setUnresolvedOnly] = useState(true);
   const params = {
-    ...(kind ? { kind: kind as "hourly" | "daily_disk" } : {}),
+    ...(kind ? { kind } : {}),
     unresolved: unresolvedOnly,
   };
-  const { data, queryKey, isLoading, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } =
+  const { data, queryKey, isLoading, isError, error, refetch, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } =
     useSettlementGaps(params);
   const refresh = () => qc.invalidateQueries({ queryKey });
 
@@ -61,15 +68,17 @@ export function SettlementGapsTab() {
           style={{ width: 160 }}
           value={kind}
           onChange={(v) => setKind(v)}
-          options={[
-            { value: "hourly", label: "hourly" },
-            { value: "daily_disk", label: "daily_disk" },
-          ]}
+          options={(Object.keys(KIND_LABEL_KEY) as GapKind[]).map((k) => ({
+            value: k,
+            label: t(KIND_LABEL_KEY[k]),
+          }))}
         />
         <Space size={6}>
           <Switch checked={unresolvedOnly} onChange={setUnresolvedOnly} />
           <Typography.Text type="secondary">{t("finance.gapUnresolvedOnly")}</Typography.Text>
         </Space>
+        {/* 游标列表不挂轮询(0.4):手动刷新重置回第一页 */}
+        <Button onClick={() => void qc.resetQueries({ queryKey })}>{t("common.refresh")}</Button>
       </Space>
       <Table<AdminSettlementGapOut>
         rowKey="id"
@@ -78,11 +87,25 @@ export function SettlementGapsTab() {
         dataSource={items}
         pagination={false}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            />
+          ),
         }}
         columns={[
           { title: "ID", dataIndex: "id", width: 80 },
-          { title: t("finance.gapKind"), dataIndex: "kind", width: 110 },
+          {
+            title: t("finance.gapKind"),
+            dataIndex: "kind",
+            width: 110,
+            render: (v: string) => {
+              const labelKey = v in KIND_LABEL_KEY ? KIND_LABEL_KEY[v as GapKind] : undefined;
+              return labelKey ? t(labelKey) : v;
+            },
+          },
           {
             title: t("finance.gapWindow"),
             dataIndex: "window_start",
@@ -125,6 +148,8 @@ export function SettlementGapsTab() {
             render: (_, row) =>
               row.resolved_at ? null : (
                 <Space size={4}>
+                  {/* 重放保持 Popconfirm(L1):该端点无 reason 负载,ReasonAction 收的原因无处可记;
+                      审计由服务端落操作者与缺口原因(replay_gap + set_audit_target) */}
                   <Popconfirm
                     title={t("finance.gapReplayConfirm")}
                     onConfirm={async () => {
@@ -159,10 +184,12 @@ export function SettlementGapsTab() {
           },
         ]}
       />
-      <LoadMoreButton
-        visible={!!hasNextPage}
+      <LoadMore
+        hasNextPage={Boolean(hasNextPage)}
         loading={isFetchingNextPage}
-        onClick={() => void fetchNextPage()}
+        isError={isFetchNextPageError}
+        loadedCount={items.length}
+        onLoadMore={() => void fetchNextPage()}
       />
     </>
   );

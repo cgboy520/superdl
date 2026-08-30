@@ -446,7 +446,7 @@ class TestConvertToOnDemand:
 
     async def test_on_demand_instance_refuses(self, client, sm, fake):
         """按量实例本来就不会被回收,转不了 —— 但已是按量的那条走幂等分支,这里测的是包周期。"""
-        from tests.test_subscriptions import provision_subscription
+        from tests.helpers import provision_subscription
 
         headers, uuid, _, _, _ = await provision_subscription(client, sm, fake, "13922200023")
         resp = await client.post(f"/api/v1/instances/{uuid}/to-on-demand", headers=headers)

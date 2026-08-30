@@ -1,5 +1,5 @@
-import { adminColors, formatDateTime, statusColors } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, fontSize, formatDateTime, statusColors } from "@superdl/ui";
+import { DataErrorAlert, EChart, KpiGrid, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
@@ -13,6 +13,7 @@ import {
   Empty,
   Row,
   Select,
+  Skeleton,
   Space,
   Statistic,
   Table,
@@ -23,14 +24,14 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../../lib/format";
-import EChart from "../../components/EChart";
+import { useFormat } from "@superdl/ui";
 
 import {
   type AlertRow,
   type DeadTaskRow,
   type OversellRow,
   type OverviewOut,
+  isApiError,
   useAckAlert,
   useAlertUnreadCount,
   useAlerts,
@@ -42,7 +43,8 @@ import {
   useRevenueReport,
 } from "../../api";
 import { ReasonAction } from "../../components/ReasonAction";
-import { useApiErrorText } from "../../lib/apiError";
+import { alertLink, SEVERITY_LABEL_KEY } from "../../lib/alertLink";
+import { useApiErrorText } from "@superdl/ui";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export const Route = createFileRoute("/_app/")({
@@ -98,7 +100,14 @@ function OversellChart({ rows }: { rows: OversellRow[] }) {
       },
     ],
   };
-  return <EChart option={option} style={{ height: 320 }} theme={undefined} />;
+  return (
+    <EChart
+      option={option}
+      style={{ height: 320 }}
+      theme="noc"
+      ariaLabel={t("overview.oversellChartTitle")}
+    />
+  );
 }
 
 function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
@@ -130,9 +139,9 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
   };
   return (
     <>
-      <EChart option={option} style={{ height: 220 }} />
+      <EChart option={option} style={{ height: 220 }} theme="noc" ariaLabel={t("overview.poolOccupancy")} />
       {/* 图例里两段是并排的,合计只能靠这句话讲清楚:与收入卡「其中包周期预付」同一写法 */}
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
         {t("overview.spotReclaimable", { used: usedTotal, spot: spotTotal })}
       </Typography.Text>
     </>
@@ -141,20 +150,22 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
 
 /** 值班首屏第二排:任务死信(重放/忽略都需原因 + 二次确认,handler 幂等)。 */
 function DeadTasksCard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const role = useAdminRole();
   const writable = canWriteOps(role);
   // 读死信需 ops/readonly:finance 看不到这张卡,也不发会 403 的轮询
   const canRead = canWriteOps(role) || role === "readonly";
-  const { data, queryKey, isError, refetch } = useDeadTasks({ enabled: canRead });
+  const { data, queryKey, isLoading, isError, error, refetch } = useDeadTasks({ enabled: canRead });
   const rows: DeadTaskRow[] = data ?? [];
   const retry = useRetryDeadTask();
   const discard = useDiscardDeadTask();
   const refresh = () => void qc.invalidateQueries({ queryKey });
 
-  // 查询失败也要露出(值班首屏「没有死信」是最危险的误判),错误态由表内空态明示
-  if (!canRead || (!isError && rows.length === 0)) return null;
+  // 查询失败也要露出(值班首屏「没有死信」是最危险的误判),错误态由表内空态明示;
+  // 首响未到先渲染一行骨架占位(卡片 pop-in 会把下方图表顶下去)
+  if (!canRead) return null;
+  if (!isError && !isLoading && rows.length === 0) return null;
   return (
     <Col span={24}>
     <Collapse
@@ -167,24 +178,40 @@ function DeadTasksCard() {
               <b>{t("overview.deadTasks")}</b>
               {isError ? (
                 <Tag color="orange">{t("common.loadFailed")}</Tag>
-              ) : (
+              ) : isLoading ? null : (
                 <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
               )}
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t("overview.deadTasksSummary", {
-                  types: [...new Set(rows.map((r) => r.type))].join("、"),
-                })}
-              </Typography.Text>
+              {!isLoading && (
+                <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                  {t("overview.deadTasksSummary", {
+                    // 列表串联走 Intl.ListFormat(随界面语言给「、」/「, 」,en 界面不出 CJK 顿号)
+                    types: new Intl.ListFormat(i18n.resolvedLanguage ?? "zh-CN", {
+                      style: "narrow",
+                      type: "conjunction",
+                    }).format([...new Set(rows.map((r) => r.type))]),
+                  })}
+                </Typography.Text>
+              )}
             </Space>
           ),
-          children: (
+          children: isLoading ? (
+            <Skeleton active title={false} paragraph={{ rows: 1 }} />
+          ) : (
       <Table<DeadTaskRow>
         size="small"
         rowKey="id"
         pagination={false}
         scroll={{ x: 860 }}
         locale={{
-          emptyText: <TableErrorEmpty isError={isError} onRetry={() => void refetch()} />,
+          emptyText: (
+            <TableErrorEmpty
+              isError={isError}
+              isForbidden={isApiError(error) && error.status === 403}
+              onRetry={() => void refetch()}
+            >
+              {t("overview.noDeadTasks")}
+            </TableErrorEmpty>
+          ),
         }}
         dataSource={rows}
         columns={[
@@ -193,7 +220,7 @@ function DeadTasksCard() {
             title: t("overview.colPayload"),
             dataIndex: "payload",
             render: (v: Record<string, unknown>) => (
-              <code style={{ fontSize: 12 }}>{JSON.stringify(v)}</code>
+              <code style={{ fontSize: fontSize.caption }}>{JSON.stringify(v)}</code>
             ),
           },
           { title: t("overview.colRetries"), dataIndex: "retries", width: 70 },
@@ -206,7 +233,7 @@ function DeadTasksCard() {
                 <span
                   style={{
                     color: adminColors.negative,
-                    fontSize: 12,
+                    fontSize: fontSize.caption,
                     display: "block",
                     maxWidth: 360,
                     overflow: "hidden",
@@ -262,17 +289,7 @@ function DeadTasksCard() {
   );
 }
 
-/** 告警跳转目标(后端按现有字段派生 target_kind/target_id):无 target 不可点。 */
-function alertLink(a: AlertRow): { to: string; search?: { q: string } } | null {
-  if (a.target_kind === "tenant" && a.target_id) {
-    return { to: "/tenants", search: { q: a.target_id } };
-  }
-  if (a.target_kind === "node") return { to: "/nodes" };
-  if (a.target_kind === "ticket") return { to: "/tickets" };
-  return null;
-}
-
-/** 实时告警流:severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户。 */
+/** 实时告警流:severity 过滤、确认闭环(留确认人+时间)、点击跳受影响节点/租户(深链与顶栏铃铛共用 lib/alertLink)。 */
 function AlertStreamCard() {
   const { t } = useTranslation();
   const errText = useApiErrorText();
@@ -281,7 +298,7 @@ function AlertStreamCard() {
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [severity, setSeverity] = useState<string | undefined>();
-  const { data, queryKey } = useAlerts(severity ? { severity } : undefined);
+  const { data, queryKey, isError, refetch } = useAlerts(severity ? { severity } : undefined);
   const ack = useAckAlert({
     mutation: {
       onSuccess: () => {
@@ -305,55 +322,65 @@ function AlertStreamCard() {
           style={{ width: 120 }}
           value={severity}
           onChange={(v) => setSeverity(v)}
-          options={["info", "warning", "critical"].map((s) => ({ value: s, label: s }))}
+          options={(Object.keys(SEVERITY_LABEL_KEY) as (keyof typeof SEVERITY_LABEL_KEY)[]).map((s) => ({
+            value: s,
+            label: t(SEVERITY_LABEL_KEY[s]),
+          }))}
         />
       }
       styles={{ body: { maxHeight: 560, overflow: "auto" } }}
     >
-      {alerts.length === 0 && <Empty description={t("shell.noAlerts")} />}
-      {alerts.map((a) => {
-        const link = alertLink(a);
-        return (
-          <div key={a.id} style={{ marginBottom: 12 }}>
-            <Badge
-              color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
-              text={
-                link ? (
-                  <Link to={link.to} search={link.search}>
-                    <b>{a.title}</b>
-                  </Link>
-                ) : (
-                  <b>{a.title}</b>
-                )
-              }
-            />
-            <div style={{ color: adminColors.textSecondary, fontSize: 12, paddingLeft: 14 }}>
-              {formatDateTime(a.created_at)} · {a.content}
-            </div>
-            <div style={{ paddingLeft: 14, marginTop: 2 }}>
-              {a.acked_at ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {t("overview.ackedBy", {
-                    name: a.acked_by_username ?? `#${a.acked_by ?? "-"}`,
-                    time: formatDateTime(a.acked_at),
-                  })}
-                </Typography.Text>
-              ) : (
-                <Tooltip title={writable ? "" : t("overview.opsOnly")}>
-                  <Button
-                    size="small"
-                    disabled={!writable}
-                    loading={ack.isPending && ack.variables?.alertId === a.id}
-                    onClick={() => ack.mutate({ alertId: a.id })}
-                  >
-                    {t("overview.ack")}
-                  </Button>
-                </Tooltip>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {/* 查询失败绝不能渲染成「暂无告警」(值班会把故障误读成天下太平) */}
+      {isError ? (
+        <TableErrorEmpty compact isError onRetry={() => void refetch()} />
+      ) : (
+        <>
+          {alerts.length === 0 && <Empty description={t("shell.noAlerts")} />}
+          {alerts.map((a) => {
+            const link = alertLink(a);
+            return (
+              <div key={a.id} style={{ marginBottom: 12 }}>
+                <Badge
+                  color={a.severity === "critical" ? adminColors.critical : adminColors.alertAccent}
+                  text={
+                    link ? (
+                      <Link to={link.to} search={link.search}>
+                        <b>{a.title}</b>
+                      </Link>
+                    ) : (
+                      <b>{a.title}</b>
+                    )
+                  }
+                />
+                <div style={{ color: adminColors.textSecondary, fontSize: fontSize.caption, paddingLeft: 14 }}>
+                  {formatDateTime(a.created_at)} · {a.content}
+                </div>
+                <div style={{ paddingLeft: 14, marginTop: 2 }}>
+                  {a.acked_at ? (
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("overview.ackedBy", {
+                        name: a.acked_by_username ?? `#${a.acked_by ?? "-"}`,
+                        time: formatDateTime(a.acked_at),
+                      })}
+                    </Typography.Text>
+                  ) : (
+                    <Tooltip title={writable ? "" : t("overview.opsOnly")}>
+                      <Button
+                        size="small"
+                        disabled={!writable}
+                        loading={ack.isPending && ack.variables?.alertId === a.id}
+                        onClick={() => ack.mutate({ alertId: a.id })}
+                      >
+                        {t("overview.ack")}
+                      </Button>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
     </Card>
   );
 }
@@ -378,112 +405,139 @@ function LoadFailed({ onRetry }: { onRetry: () => void }) {
 function Overview() {
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
-  const { data: oversell, isError: oversellError, refetch: refetchOversell } = useOversellReport();
+  const oversellQ = useOversellReport();
   // 总览聚合:全部精确 COUNT(全角色可读),不从截断列表推算
-  const { data: ov, isError: ovError, refetch: refetchOv } = useOverview();
-  const { data: alertsData } = useAlerts();
-  const { data: revenue } = useRevenueReport();
+  const ovQ = useOverview();
+  const revenueQ = useRevenueReport();
   // 「告警(总)」 = 未确认告警精确计数(独立计数端点;截断的告警流长度会低估)
-  const { data: unread } = useAlertUnreadCount();
+  const unreadQ = useAlertUnreadCount();
+  const { data: oversell, isError: oversellError, refetch: refetchOversell } = oversellQ;
+  const { data: ov, isError: ovError, refetch: refetchOv } = ovQ;
+  const { data: revenue } = revenueQ;
+  const { data: unread } = unreadQ;
 
   const oversellRows: OversellRow[] = oversell ?? [];
-  const alerts: AlertRow[] = alertsData ?? [];
   const byStatus = ov?.instances_by_status ?? {};
   const activeInstances =
     (byStatus.creating ?? 0) + (byStatus.starting ?? 0) + (byStatus.running ?? 0);
   const signupDelta = revenue ? revenue.today_signups - revenue.yesterday_signups : 0;
+  // KPI 查询失败必须嵌错误条而非 "—" 假阴性;按数据源分卡归属
+  const revenueErr = <DataErrorAlert onRetry={() => void revenueQ.refetch()} />;
+  const ovErr = <DataErrorAlert onRetry={() => void ovQ.refetch()} />;
+  const unreadErr = <DataErrorAlert onRetry={() => void unreadQ.refetch()} />;
 
   return (
+    <PageContainer title={t("menu.overview")}>
     <Row gutter={[16, 16]}>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic title={t("overview.todayRevenue")} value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
-          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
-            {t("overview.yesterdayPrefix", { amount: revenue ? formatMoney(revenue.yesterday_revenue) : "—" })}
-          </Typography.Text>
-          {/* 收入已含包周期预付,必须摊开单列:一笔包年当天就是尖峰,不标出来昨日环比会被读成异常 */}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.today_prepaid) : "—" })}
-          </Typography.Text>
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic title={t("overview.monthRevenue")} value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.month_prepaid) : "—" })}
-          </Typography.Text>
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
-          <Typography.Text
-            style={{ fontSize: 12, color: signupDelta >= 0 ? adminColors.positive : adminColors.negative }}
-          >
-            {signupDelta >= 0 ? "▲" : "▼"} {t("overview.vsYesterday", { count: Math.abs(signupDelta) })}
-          </Typography.Text>
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic
-            title={t("overview.alertsTotal")}
-            value={unread?.count ?? "—"}
-            styles={{
-              content: alerts.some((a) => a.severity === "critical" && !a.acked_at)
-                ? { color: adminColors.negative }
-                : undefined,
-            }}
-          />
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic title={t("overview.activeInstances")} value={ov ? activeInstances : "—"} />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("overview.instanceStatusHint", {
-              stopped: byStatus.stopped ?? 0,
-              failed: byStatus.failed ?? 0,
-            })}
-          </Typography.Text>
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          {/* 按订阅行数而非实例状态数:停机的包月实例仍在保仍占库存,这个数可以大于活跃实例数 */}
-          <Statistic
-            title={t("overview.subscriptionsActive")}
-            value={ov ? ov.subscriptions_active : "—"}
-          />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {t("overview.subscriptionsActiveHint")}
-          </Typography.Text>
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic
-            title={t("overview.payingTenants")}
-            value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
-          />
-        </Card>
-      </Col>
-      <Col xs={12} md={8} xl={6}>
-        <Card>
-          <Statistic
-            title={t("overview.nodesHealth")}
-            value={ov ? `${ov.nodes_ready} / ${ov.nodes_total}` : "—"}
-          />
-          <Typography.Text
-            style={{
-              fontSize: 12,
-              color: ov && ov.nodes_missing > 0 ? adminColors.negative : adminColors.textSecondary,
-            }}
-          >
-            {t("overview.nodesMissing", { count: ov?.nodes_missing ?? 0 })}
-          </Typography.Text>
-        </Card>
+      <Col span={24}>
+        <KpiGrid
+          loading={revenueQ.isLoading || ovQ.isLoading}
+          items={[
+            <Card key="rev-today">
+              {revenueQ.isError ? revenueErr : (
+                <>
+                  <Statistic title={t("overview.todayRevenue")} value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
+                    {t("overview.yesterdayPrefix", { amount: revenue ? formatMoney(revenue.yesterday_revenue) : "—" })}
+                  </Typography.Text>
+                  {/* 收入已含包周期预付,必须摊开单列:一笔包年当天就是尖峰,不标出来昨日环比会被读成异常 */}
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.today_prepaid) : "—" })}
+                  </Typography.Text>
+                </>
+              )}
+            </Card>,
+            <Card key="rev-month">
+              {revenueQ.isError ? revenueErr : (
+                <>
+                  <Statistic title={t("overview.monthRevenue")} value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.month_prepaid) : "—" })}
+                  </Typography.Text>
+                </>
+              )}
+            </Card>,
+            <Card key="signup">
+              {revenueQ.isError ? revenueErr : (
+                <>
+                  <Statistic title={t("overview.todaySignups")} value={revenue ? revenue.today_signups : "—"} />
+                  <Typography.Text
+                    style={{ fontSize: fontSize.caption, color: signupDelta >= 0 ? adminColors.positive : adminColors.negative }}
+                  >
+                    {signupDelta >= 0 ? "▲" : "▼"} {t("overview.vsYesterday", { count: Math.abs(signupDelta) })}
+                  </Typography.Text>
+                </>
+              )}
+            </Card>,
+            <Card key="alerts">
+              {unreadQ.isError ? unreadErr : (
+                <Statistic
+                  title={t("overview.alertsTotal")}
+                  value={unread?.count ?? "—"}
+                  styles={{
+                    // 红色高亮用精确计数端点的 critical 口径:截断的告警流列表会漏报
+                    content: (unread?.critical_count ?? 0) > 0
+                      ? { color: adminColors.negative }
+                      : undefined,
+                  }}
+                />
+              )}
+            </Card>,
+            <Card key="active">
+              {ovQ.isError ? ovErr : (
+                <>
+                  <Statistic title={t("overview.activeInstances")} value={ov ? activeInstances : "—"} />
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    {t("overview.instanceStatusHint", {
+                      stopped: byStatus.stopped ?? 0,
+                      failed: byStatus.failed ?? 0,
+                    })}
+                  </Typography.Text>
+                </>
+              )}
+            </Card>,
+            <Card key="subs">
+              {ovQ.isError ? ovErr : (
+                <>
+                  {/* 按订阅行数而非实例状态数:停机的包月实例仍在保仍占库存,这个数可以大于活跃实例数 */}
+                  <Statistic
+                    title={t("overview.subscriptionsActive")}
+                    value={ov ? ov.subscriptions_active : "—"}
+                  />
+                  <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                    {t("overview.subscriptionsActiveHint")}
+                  </Typography.Text>
+                </>
+              )}
+            </Card>,
+            <Card key="paying">
+              {ovQ.isError ? ovErr : (
+                <Statistic
+                  title={t("overview.payingTenants")}
+                  value={ov ? `${ov.paying_tenants} / ${ov.tenants_total}` : "—"}
+                />
+              )}
+            </Card>,
+            <Card key="nodes">
+              {ovQ.isError ? ovErr : (
+                <>
+                  <Statistic
+                    title={t("overview.nodesHealth")}
+                    value={ov ? `${ov.nodes_ready} / ${ov.nodes_total}` : "—"}
+                  />
+                  <Typography.Text
+                    style={{
+                      fontSize: fontSize.caption,
+                      color: ov && ov.nodes_missing > 0 ? adminColors.negative : adminColors.textSecondary,
+                    }}
+                  >
+                    {t("overview.nodesMissing", { count: ov?.nodes_missing ?? 0 })}
+                  </Typography.Text>
+                </>
+              )}
+            </Card>,
+          ]}
+        />
       </Col>
 
       <DeadTasksCard />
@@ -498,7 +552,7 @@ function Overview() {
           ) : oversellRows.length ? (
             <OversellChart rows={oversellRows} />
           ) : (
-            <Empty />
+            <Empty description={t("overview.oversellEmpty")} />
           )}
         </Card>
         <Card title={t("overview.poolOccupancy")} style={{ marginTop: 16 }}>
@@ -507,7 +561,7 @@ function Overview() {
           ) : ov && ov.pools.length ? (
             <PoolOccupancy pools={ov.pools} />
           ) : (
-            <Empty />
+            <Empty description={t("overview.poolEmpty")} />
           )}
         </Card>
       </Col>
@@ -515,5 +569,6 @@ function Overview() {
         <AlertStreamCard />
       </Col>
     </Row>
+    </PageContainer>
   );
 }

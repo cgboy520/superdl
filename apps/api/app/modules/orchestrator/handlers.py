@@ -121,6 +121,15 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         # 不分开提交会把已完成的迁移和尾账一起回滚掉(尾账丢失 = 少计停机前费用)
         await session.commit()
     if instance.status == sm_def.STOPPED:
+        # 锁序 instance → wallet:余额校验(钱包锁)后还有 transition(实例写锁),
+        # 先钱包后实例会与停机尾账/结算链路(instance→bill→wallet)交叉成死锁对。
+        # 锁内重读:等锁期间 reconciler 可能已推进本实例
+        fresh_stopped = await session.get(
+            Instance, instance.id, with_for_update=True, populate_existing=True
+        )
+        if fresh_stopped is None or fresh_stopped.status != sm_def.STOPPED:
+            return  # 已被并发路径推进/删除,幂等退出
+        instance = fresh_stopped
         try:
             if instance.market == MARKET_SUBSCRIPTION:
                 # 与开机同口径(service.start_instance):包周期已预付整段周期,重启不看余额;
@@ -146,6 +155,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                     ),
                     severity="warning",
                     dedup_key=f"restart_no_balance:{instance.id}",
+                    target_id=instance.uuid,
                 )
                 return
             if exc.code is ErrorCode.SUBSCRIPTION_EXPIRED:
@@ -159,6 +169,7 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
                     content=(f"实例「{instance.name}」已关机;包周期已到期,续费后可自行开机。"),
                     severity="warning",
                     dedup_key=f"restart_subscription_expired:{instance.id}",
+                    target_id=instance.uuid,
                 )
                 return
             raise
@@ -199,12 +210,14 @@ async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) 
 async def handle_disk_quota(session: AsyncSession, task: OutboxTask) -> None:
     """下发 JuiceFS 目录硬配额(CLI Job,纯元数据)。成功置 quota_synced;
     预算耗尽转死信后由 reconciler 周期重派(配额永不留缺口)。"""
+    from app.core.config import get_settings
     from app.modules.orchestrator.models import DataDisk
 
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status in ("deleting", "deleted"):
         return  # 删除链路有自己的配额摘除步,不下发
-    await get_orchestrator().set_disk_quota(disk.juicefs_subpath, disk.size_gb)
+    namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
+    await get_orchestrator().set_disk_quota(namespace, disk.juicefs_subpath, disk.size_gb)
     disk.quota_synced = True
     logger.info("disk_quota_synced", disk_id=disk.id, capacity_gb=disk.size_gb)
 
@@ -221,11 +234,11 @@ async def handle_disk_wipe(session: AsyncSession, task: OutboxTask) -> None:
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return
+    namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
     try:
-        await get_orchestrator().delete_disk_quota(disk.juicefs_subpath)
+        await get_orchestrator().delete_disk_quota(namespace, disk.juicefs_subpath)
     except Exception:
         logger.warning("disk_quota_delete_failed", disk_id=disk.id, exc_info=True)
-    namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
     try:
         await get_orchestrator().wipe_disk(namespace, disk.juicefs_subpath)
     except Exception as exc:

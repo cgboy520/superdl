@@ -9,4 +9,5 @@ import type { NotificationOut } from './notificationOut';
 export interface PageNotificationOut {
   items: NotificationOut[];
   next_cursor?: string | null;
+  total?: number | null;
 }

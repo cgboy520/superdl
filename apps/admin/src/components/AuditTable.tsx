@@ -1,15 +1,14 @@
 /** 审计检索。detail(JSONB)承载各「原因必填」弹窗收上来的原因、变更前后值与金额。 */
 
-import { adminColors, formatDateTime } from "@superdl/ui";
-import { TableErrorEmpty } from "@superdl/ui/components";
+import { adminColors, fontSize, formatDateTime, useCsvExport } from "@superdl/ui";
+import { LoadMore, TableErrorEmpty } from "@superdl/ui/components";
 import { Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, useAuditLog } from "../api";
-import { useCsvExport } from "../lib/csvExport";
-import { LoadMoreButton } from "./LoadMore";
+import { AUDIT_DEFAULT_LIMIT, type AuditRow, exportAuditCsv, isApiError, useAuditLog } from "../api";
 
 /** detail 摘要:优先显示 reason,其次 before→after,最后回落原始 JSON。 */
 function detailSummary(detail: Record<string, unknown> | null | undefined): string {
@@ -25,18 +24,55 @@ function detailSummary(detail: Record<string, unknown> | null | undefined): stri
   return parts.length ? parts.join(" · ") : JSON.stringify(detail);
 }
 
+export interface AuditFilters {
+  actor_type?: string;
+  actor_id?: string;
+  q?: string;
+  /** 时间窗(ISO,分钟级);与 limit 一并入 URL(ui-ux-spec §1.8) */
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
 export function AuditTable({
   initial,
+  onCommit,
 }: {
-  /** 路由 search 预筛(跳审计链接);非受控输入框经 defaultValue 落值。 */
-  initial?: { actor_type?: string; actor_id?: string; q?: string };
+  /** 路由 search 预筛(跳审计链接);变化时回流进筛选框。 */
+  initial?: AuditFilters;
+  /** 筛选提交后回写 URL(/audit 页传入,replace 不产生历史垃圾);不传则纯本地状态 */
+  onCommit?: (filters: AuditFilters) => void;
 }) {
   const { t } = useTranslation();
   const [actorType, setActorType] = useState<string | undefined>(initial?.actor_type);
+  const [actorIdInput, setActorIdInput] = useState(initial?.actor_id ?? "");
   const [actorId, setActorId] = useState(initial?.actor_id ?? "");
+  const [qInput, setQInput] = useState(initial?.q ?? "");
   const [q, setQ] = useState(initial?.q ?? "");
-  const [limit, setLimit] = useState<number>(AUDIT_DEFAULT_LIMIT);
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [limit, setLimit] = useState<number>(initial?.limit ?? AUDIT_DEFAULT_LIMIT);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(() =>
+    initial?.since || initial?.until
+      ? [initial.since ? dayjs(initial.since) : null, initial.until ? dayjs(initial.until) : null]
+      : null,
+  );
+  // URL 预筛变化(外部跳入)回流进受控/输入框:渲染期派生态,不进 effect
+  const initialKey = `${initial?.actor_type ?? ""} ${initial?.actor_id ?? ""} ${initial?.q ?? ""} ${initial?.since ?? ""} ${initial?.until ?? ""} ${initial?.limit ?? ""}`;
+  const [prevKey, setPrevKey] = useState(initialKey);
+  if (initialKey !== prevKey) {
+    setPrevKey(initialKey);
+    setActorType(initial?.actor_type);
+    setActorIdInput(initial?.actor_id ?? "");
+    setActorId(initial?.actor_id ?? "");
+    setQInput(initial?.q ?? "");
+    setQ(initial?.q ?? "");
+    setLimit(initial?.limit ?? AUDIT_DEFAULT_LIMIT);
+    setRange(
+      initial?.since || initial?.until
+        ? [initial.since ? dayjs(initial.since) : null, initial.until ? dayjs(initial.until) : null]
+        : null,
+    );
+  }
+  const commit = (next: AuditFilters) => onCommit?.(next);
   const filters = {
     ...(actorType ? { actor_type: actorType } : {}),
     ...(actorId ? { actor_id: actorId } : {}),
@@ -58,7 +94,10 @@ export function AuditTable({
         placeholder={t("audit.actorTypePlaceholder")}
         style={{ width: 140 }}
         value={actorType}
-        onChange={setActorType}
+        onChange={(v) => {
+          setActorType(v);
+          commit({ actor_type: v, actor_id: actorId || undefined, q: q || undefined, since: filters.since, until: filters.until, limit });
+        }}
         options={[
           { value: "user", label: t("audit.actorUser") },
           { value: "admin", label: t("audit.actorAdmin") },
@@ -69,24 +108,47 @@ export function AuditTable({
         allowClear
         placeholder={t("audit.actorIdPlaceholder")}
         style={{ width: 150 }}
-        defaultValue={initial?.actor_id}
-        onSearch={setActorId}
+        value={actorIdInput}
+        onChange={(e) => setActorIdInput(e.target.value)}
+        onSearch={(v) => {
+          setActorId(v);
+          commit({ actor_type: actorType, actor_id: v || undefined, q: q || undefined, since: filters.since, until: filters.until, limit });
+        }}
       />
       <Input.Search
         allowClear
         placeholder={t("audit.keywordPlaceholder")}
         style={{ width: 200 }}
-        defaultValue={initial?.q}
-        onSearch={setQ}
+        value={qInput}
+        onChange={(e) => setQInput(e.target.value)}
+        onSearch={(v) => {
+          setQ(v);
+          commit({ actor_type: actorType, actor_id: actorId || undefined, q: v || undefined, since: filters.since, until: filters.until, limit });
+        }}
       />
       <DatePicker.RangePicker
         showTime={{ format: "HH:mm" }}
-        onChange={(v) => setRange(v as [Dayjs | null, Dayjs | null] | null)}
+        value={range}
+        onChange={(v) => {
+          const next = v as [Dayjs | null, Dayjs | null] | null;
+          setRange(next);
+          commit({
+            actor_type: actorType,
+            actor_id: actorId || undefined,
+            q: q || undefined,
+            since: next?.[0]?.toISOString(),
+            until: next?.[1]?.toISOString(),
+            limit,
+          });
+        }}
       />
       <Select<number>
         value={limit}
         style={{ width: 130 }}
-        onChange={setLimit}
+        onChange={(v) => {
+          setLimit(v);
+          commit({ actor_type: actorType, actor_id: actorId || undefined, q: q || undefined, since: filters.since, until: filters.until, limit: v });
+        }}
         options={[50, 100, 200, 500].map((v) => ({
           value: v,
           label: t("audit.limitOption", { count: v }),
@@ -104,7 +166,11 @@ export function AuditTable({
         loading={audit.isLoading}
         locale={{
           emptyText: (
-            <TableErrorEmpty isError={audit.isError} onRetry={() => void audit.refetch()} />
+            <TableErrorEmpty
+              isError={audit.isError}
+              isForbidden={isApiError(audit.error) && audit.error.status === 403}
+              onRetry={() => void audit.refetch()}
+            />
           ),
         }}
         pagination={false}
@@ -159,16 +225,18 @@ export function AuditTable({
         expandable={{
           rowExpandable: (r) => r.detail != null && Object.keys(r.detail).length > 0,
           expandedRowRender: (r) => (
-            <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>
+            <pre style={{ margin: 0, fontSize: fontSize.caption, whiteSpace: "pre-wrap" }}>
               {JSON.stringify(r.detail, null, 2)}
             </pre>
           ),
         }}
       />
-      <LoadMoreButton
-        visible={Boolean(audit.hasNextPage)}
+      <LoadMore
+        hasNextPage={Boolean(audit.hasNextPage)}
         loading={audit.isFetchingNextPage}
-        onClick={() => void audit.fetchNextPage()}
+        isError={audit.isFetchNextPageError}
+        loadedCount={rows.length}
+        onLoadMore={() => void audit.fetchNextPage()}
       />
     </>
   );

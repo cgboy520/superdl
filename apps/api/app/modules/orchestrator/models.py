@@ -77,7 +77,7 @@ class Instance(Base):
     k8s_namespace: Mapped[str] = mapped_column(String(64))
     node_name: Mapped[str | None] = mapped_column(String(253))  # 与 node_specs 同宽(K8s 上限 253)
     ssh_port: Mapped[int | None]
-    # AES-GCM 密文(enc:v1: 前缀,约 90 字符),AAD 绑定实例 uuid;重置后随重启轮换
+    # AES-GCM 密文(enc:v2:<kid>: 前缀,约 103 字符),AAD 绑定实例 uuid;重置后随重启轮换
     jupyter_token: Mapped[str] = mapped_column(String(160))
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
     data_disk_id: Mapped[int | None]

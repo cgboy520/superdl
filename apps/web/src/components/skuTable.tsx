@@ -3,6 +3,7 @@
 import type { SkuMarketOut } from "@superdl/api-client";
 import {
   BILLING_PERIODS,
+  compareAmounts,
   isBillingPeriod,
   marketMap,
   MAX_PERIOD_COUNT,
@@ -16,7 +17,7 @@ import { Card, InputNumber, Space, Table, Tag, Tooltip, Typography } from "antd"
 import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ChipRow } from "./ChipRow";
+import { ChipRow, CHIP_LABEL_WIDTH } from "./ChipRow";
 import { skuVariant } from "@superdl/ui";
 
 import { TierTag } from "./common";
@@ -112,7 +113,8 @@ export function skuColumns(
       align: "right" as const,
       // 竞价档一格里放两个价(原价划线 + 折后价),150 放不下会把划线价挤成竖排
       width: opts.spot ? 210 : 150,
-      sorter: (a: SkuMarketOut, b: SkuMarketOut) => Number(a.price_hourly) - Number(b.price_hourly),
+      // 金额不过 Number(BigInt 万分位比较),浮点精度不进排序
+      sorter: (a: SkuMarketOut, b: SkuMarketOut) => compareAmounts(a.price_hourly, b.price_hourly),
       render: (_: unknown, s: SkuMarketOut) =>
         opts.spot && !s.spot_enabled ? (
           <Space size={6} align="baseline">
@@ -164,7 +166,8 @@ export function BillingModeCard({
   const spotPolicy = useSpotPolicy();
   const showCount = count != null && onCountChange != null && isBillingPeriod(value);
   return (
-    <Card title={t("sku.billingModeTitle")} styles={{ body: { paddingBlock: 16 } }}>
+    // 不再挂 Card title:ChipRow 行内标签已是同一文案,双写就是重复
+    <Card styles={{ body: { paddingBlock: 16 } }}>
       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
         <ChipRow<BillingMode>
           label={t("sku.billingModeTitle")}
@@ -210,11 +213,11 @@ export function BillingModeCard({
           extra={extra}
         />
         {showCount && (
-          // 与 ChipRow 同款标签栏(72px 右对齐),数量与周期 chips 上下对齐
+          // 与 ChipRow 同款标签栏(CHIP_LABEL_WIDTH 右对齐),数量与周期 chips 上下对齐
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Typography.Text
               type="secondary"
-              style={{ flexShrink: 0, width: 72, lineHeight: "32px", textAlign: "right" }}
+              style={{ flexShrink: 0, width: CHIP_LABEL_WIDTH, lineHeight: "32px", textAlign: "right" }}
             >
               {t("period.countLabel")}
             </Typography.Text>

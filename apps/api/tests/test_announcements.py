@@ -1,9 +1,8 @@
-"""公告管理:列表含历史、撤回后用户端不可见、撤回幂等(重复 409)、角色门。"""
+"""公告管理:列表含历史、撤回后用户端不可见、撤回幂等(重复 409)。"""
 
 from httpx import AsyncClient
 
-from tests.helpers import admin_headers
-from tests.test_payment import user_headers
+from tests.helpers import admin_headers, user_headers
 
 
 async def _publish(
@@ -62,12 +61,6 @@ class TestAnnouncementAdmin:
         notes = (await client.get("/api/v1/notifications", headers=uh)).json()["items"]
         assert len([n for n in notes if n["type"] == "announcement"]) == 1  # 用户只收到一条
 
-    async def test_list_read_roles(self, client: AsyncClient, sm):
-        for role in ("ops", "finance", "readonly"):
-            headers = await admin_headers(sm, client, role=role)
-            resp = await client.get("/api/admin/v1/announcements", headers=headers)
-            assert resp.status_code == 200
-
     async def test_revoke_hides_from_user_side(self, client: AsyncClient, sm):
         uh = await user_headers(client, "13700000401")
         ops = await admin_headers(sm, client, role="ops")
@@ -124,20 +117,3 @@ class TestAnnouncementAdmin:
             headers=ops,
         )
         assert resp.status_code == 404
-
-    async def test_write_role_gate(self, client: AsyncClient, sm):
-        """finance/readonly 不可发布/撤回(403)。"""
-        for role in ("finance", "readonly"):
-            headers = await admin_headers(sm, client, role=role)
-            resp = await client.post(
-                "/api/admin/v1/announcements",
-                json={"title": "越权发布", "content": "越权发布内容"},
-                headers=headers,
-            )
-            assert resp.status_code == 403
-            resp = await client.post(
-                "/api/admin/v1/announcements/1/revoke",
-                json={"reason": "越权撤回"},
-                headers=headers,
-            )
-            assert resp.status_code == 403

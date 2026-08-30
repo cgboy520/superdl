@@ -3,11 +3,13 @@
 import hashlib
 
 from fastapi import APIRouter, Query, Request, status
+from pydantic import BaseModel, Field
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
 from app.modules.adminapi.deps import require_roles
 from app.modules.adminapi.models import AdminUser
+from app.modules.adminapi.schemas import REASON_MAX_LENGTH
 from app.modules.legal.schemas import (
     LegalDocCellOut,
     LegalDocVersionCreate,
@@ -16,6 +18,12 @@ from app.modules.legal.schemas import (
 )
 
 router = APIRouter(tags=["admin"])
+
+
+class LegalDocVersionArchive(BaseModel):
+    """归档草稿的请求体:原因必填(审计落库,与 ReasonAction 全站口径一致)。"""
+
+    reason: str = Field(min_length=2, max_length=REASON_MAX_LENGTH)
 
 
 # ---------- 法务文档(读全角色,写仅 admin) ----------
@@ -111,17 +119,18 @@ async def admin_publish_legal_doc_version(
 @router.post("/legal-docs/versions/{version_id}/archive")
 async def admin_archive_legal_doc_version(
     version_id: int,
+    body: LegalDocVersionArchive,
     session: DbSession,
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> LegalDocVersionOut:
-    """归档草稿(draft → archived);published 不可直接归档(409)。"""
+    """归档草稿(draft → archived,原因必填入审计);published 不可直接归档(409)。"""
     from app.modules.legal import service as legal_service
 
     row = await legal_service.admin_archive(session, version_id)
     set_audit_target(
         request,
         f"legal:{row.doc_key}:{row.locale}",
-        detail={"action": "archive", "version": row.version},
+        detail={"action": "archive", "version": row.version, "reason": body.reason},
     )
     return LegalDocVersionOut.model_validate(row)

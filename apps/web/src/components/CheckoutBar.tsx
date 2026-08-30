@@ -1,13 +1,21 @@
 /** 底部通栏结算条(sticky,市场页与创建页共用):费用项逐项摊开,日常费用与配置费用分栏。 */
 
-import { brand, colorPrimary } from "@superdl/ui";
-import { Button, Popover, Space, theme, Typography } from "antd";
+import { brand, colorPrimary, fontSize, fontWeight, motion as motionToken, shadow, space, webDarkColors, zIndex } from "@superdl/ui";
+import { moneyOr } from "@superdl/ui/components";
+import { Button, Grid, Popover, Space, theme, Typography } from "antd";
+import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
 
-import { useFormat } from "../lib/format";
-import { moneyOr } from "./QueryState";
+import { useFormat } from "@superdl/ui";
+import { useThemeMode } from "../stores/theme";
+
+/** 选中变更淡入过渡(motion token fast 档;装饰性动效在 reducedMotion 下归零,见根 MotionConfig) */
+const FADE_TRANSITION = {
+  duration: motionToken.fast,
+  ease: [...motionToken.easeOut] as [number, number, number, number],
+};
 
 export interface CheckoutItem {
   label: string;
@@ -22,6 +30,7 @@ export function CheckoutBar({
   balance,
   balanceReady = true,
   actions,
+  changeKey,
 }: {
   /** 左侧规格汇总(靛蓝底块) */
   summary?: ReactNode;
@@ -34,50 +43,83 @@ export function CheckoutBar({
   /** 余额是否已就绪。false 时必须渲染 "—" 而不是假 ¥0.00(查询失败时 data 恒为 undefined)。 */
   balanceReady?: boolean;
   actions: ReactNode;
+  /** 选中变更标识(如 规格id+计费方式):变化时汇总/费用数字淡入;不传则无动效 */
+  changeKey?: string;
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation();
   const { formatMoney } = useFormat();
+  const dark = useThemeMode() === "dark";
+  // <sm 断点:两个动作按钮竖排整行(走类,内联样式选不到子代 button)
+  const narrow = !Grid.useBreakpoint().sm;
   return (
     <div
       style={{
         position: "sticky",
         bottom: 0,
-        zIndex: 50,
+        zIndex: zIndex.stickyBar,
         background: token.colorBgContainer,
         borderTop: `1px solid ${token.colorBorderSecondary}`,
-        boxShadow: "0 -4px 12px rgba(0,0,0,0.06)",
+        boxShadow: dark ? shadow.dark.upMd : shadow.light.upMd,
         borderRadius: `${token.borderRadiusLG}px ${token.borderRadiusLG}px 0 0`,
-        padding: "12px 24px",
+        padding: `${space.md}px ${space.xl}px`,
         display: "flex",
         alignItems: "center",
-        gap: 24,
+        gap: space.xl,
         flexWrap: "wrap",
       }}
     >
       {summary && (
         <div
           style={{
-            background: brand.indigo50,
-            color: colorPrimary,
-            padding: "8px 14px",
+            // 暗色下浅靛块脱节:换暗色「菜单选中」配对(menuSelectedBg/Color 是 tokens.test 回归的 AA 对)
+            background: dark ? webDarkColors.menuSelectedBg : brand.indigo50,
+            color: dark ? webDarkColors.menuSelectedColor : colorPrimary,
+            padding: `${space.sm}px 14px`,
             borderRadius: token.borderRadius,
-            fontSize: 13,
-            fontWeight: 500,
+            fontSize: fontSize.caption,
+            fontWeight: fontWeight.medium,
             maxWidth: 420,
           }}
         >
-          {summary}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={changeKey ?? "summary"}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={FADE_TRANSITION}
+            >
+              {summary}
+            </motion.div>
+          </AnimatePresence>
         </div>
       )}
       <Space size={24} style={{ flex: 1, flexWrap: "wrap" }}>
         {items.map((it) => (
           <div key={it.label}>
-            <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: fontSize.caption, display: "block" }}
+            >
               {it.label}
               {it.hint ? `(${it.hint})` : ""}
             </Typography.Text>
-            <span style={{ fontSize: 20, fontWeight: 700, color: colorPrimary }}>{it.value}</span>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={changeKey ?? it.label}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={FADE_TRANSITION}
+                style={{
+                  display: "inline-block",
+                  fontSize: fontSize.pageTitle,
+                  fontWeight: fontWeight.semibold,
+                  color: colorPrimary,
+                }}
+              >
+                {it.value}
+              </motion.span>
+            </AnimatePresence>
           </div>
         ))}
         {detail && (
@@ -95,7 +137,14 @@ export function CheckoutBar({
           </Typography.Text>
         )}
       </Space>
-      <Space size={12}>{actions}</Space>
+      <Space
+        size={12}
+        orientation={narrow ? "vertical" : "horizontal"}
+        className={narrow ? "checkout-bar-actions-block" : undefined}
+        style={narrow ? { width: "100%" } : undefined}
+      >
+        {actions}
+      </Space>
     </div>
   );
 }

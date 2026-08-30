@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Header, Query, Request, Response, status
+from fastapi import APIRouter, Header, Request, Response, status
 
 from app.core.config import get_settings
 from app.core.db import DbSession
@@ -8,6 +8,7 @@ from app.core.errors import AppError, ErrorCode, unauthorized
 from app.core.http import bearer_matches
 from app.core.http import client_ip as http_client_ip
 from app.core.pagination import Page
+from app.core.params import Cursor, Limit
 from app.core.ratelimit import check_rate_limit
 from app.modules.account.deps import CurrentUser
 from app.modules.notify import service
@@ -29,8 +30,8 @@ async def list_notifications(
     user: CurrentUser,
     session: DbSession,
     unread: bool = False,
-    cursor: str | None = None,
-    limit: int | None = Query(default=None, le=100),
+    cursor: str | None = Cursor,
+    limit: int | None = Limit,
 ) -> Page[NotificationOut]:
     """站内信:降序(最新在前)游标分页。"""
     return await service.list_notifications(

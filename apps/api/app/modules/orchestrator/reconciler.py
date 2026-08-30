@@ -347,6 +347,7 @@ async def _reconcile_instances(
                             ),
                             severity="warning",
                             dedup_key=f"schedule_timeout:{instance.id}",
+                            target_id=instance.uuid,
                         )
                     elif ready:
                         # 开了 SSH 却没有端口落库:不推进 running(/access 与重启都依赖 ssh_port,
@@ -417,6 +418,7 @@ async def _reconcile_instances(
                                 ),
                                 severity="error",
                                 dedup_key=f"node_lost:{instance.id}",
+                                target_id=instance.uuid,
                             )
                         else:
                             logger.error("instance_pod_lost", instance_id=instance.id, reason=lost)
@@ -768,6 +770,7 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                         ),
                         severity="warning",
                         dedup_key=f"failed_retention:{fresh.id}",
+                        target_id=fresh.uuid,
                     )
                     await session.commit()
                     counts["gc_released"] += 1
@@ -792,6 +795,7 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                         ),
                         severity="warning",
                         dedup_key=f"retention_reclaim:{fresh.id}",
+                        target_id=fresh.uuid,
                     )
                     await session.commit()
                     counts["gc_released"] += 1
@@ -810,6 +814,7 @@ async def _gc_retention(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
                         ),
                         severity="warning",
                         dedup_key=f"retention_warn:{instance.id}",
+                        target_id=instance.uuid,
                     )
                     await session.commit()
                     counts["gc_warned"] += 1
