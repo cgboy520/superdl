@@ -6,6 +6,9 @@
 #   ("含 -----BEGIN PRIVATE KEY-----"),该文件只定义配置项校验规格,不含真实密钥
 # - apps/api/tests/test_account_auth.py:改密/找回用例的入参口令("qwerty123456"
 #   "newpass123456"),是断言 200/422 用的字面量,不是任何环境的真凭据
+# - apps/api/tests/test_security_hardening.py:prod 校验用例的 jwt_secret 是「64 位十六进制」
+#   合法形态样本,只喂给 Settings stub,不是任何环境的真密钥
+# - apps/api/tests/test_k8s_real_units.py:命中行断言的是 Secret 对象名(jupyter-inst-1),不是密钥内容
 # 语义(gitleaks v8.25+):condition="AND" + regexTarget="line"
 # = path 命中且「命中行内容」匹配 regexes 才放行 —— 行级指纹,而非整文件豁免。
 [extend]
@@ -55,6 +58,28 @@ regexes = [
   '''"(?:new_)?password": "(?:newpass|qwerty)123456"''',
 ]
 
+[[allowlists]]
+description = "已复核误报(行级):prod 校验用例的 64 位十六进制 jwt_secret 样本(见文件头注释)"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/api/tests/test_security_hardening\.py''',
+]
+regexes = [
+  '''"jwt_secret": "[0-9a-f]{64}"''',
+]
+
+[[allowlists]]
+description = "已复核误报(行级):断言的是 Secret 对象名而非密钥内容(见文件头注释)"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/api/tests/test_k8s_real_units\.py''',
+]
+regexes = [
+  '''secret_key_ref\.name == "jupyter-inst-1"''',
+]
+
 # 该 bcrypt hash(集群内 registry 的 CHANGE_ME 占位口令)已泄漏,禁止以任何形式入库。
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
@@ -67,8 +92,8 @@ paths = [
   '''\.github/gitleaks\.toml''',
   '''deploy/cluster/preflight\.sh''',
 ]
-# 该 hash 存在于 commit 0bbf540 的 registry.yaml,全历史扫描无法避开,故按 commit 级放行。
+# 该 hash 存在于 commit 2985931 的 registry.yaml,全历史扫描无法避开,故按 commit 级放行。
 # 不收窄到 path:未来任何 commit 的 registry.yaml 再含此 hash 仍告警。
 [[rules.allowlists]]
 description = "曾入库该 hash 的历史 commit"
-commits = ["0bbf5403082957d771607458c3a94ed41e7253c2"]
+commits = ["298593134d351607cc12b3ea62232c6dc9480e31"]
