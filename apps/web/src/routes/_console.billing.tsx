@@ -1043,18 +1043,21 @@ function BillingPage() {
         </Col>
       </Row>
 
-      <Card>
+      {/* 导出按钮放 Card 的 extra 而非 Tabs 的 tabBarExtraContent:后者会把 button 放进
+          role="tablist" 内(axe aria-required-children,critical) */}
+      <Card
+        extra={
+          // CSV 导出仅覆盖账单/流水两个口径;退款/发票 Tab 不导出
+          activeTab === "bills" || activeTab === "ledger" ? (
+            <Button size="small" loading={exporting} onClick={() => void exportCsv()}>
+              {t("billing.exportCsv")}
+            </Button>
+          ) : undefined
+        }
+      >
         <Tabs
           activeKey={activeTab}
           onChange={(k) => setSearch({ tab: k as BillingTab })}
-          tabBarExtraContent={
-            // CSV 导出仅覆盖账单/流水两个口径;退款/发票 Tab 不导出
-            activeTab === "bills" || activeTab === "ledger" ? (
-              <Button size="small" loading={exporting} onClick={() => void exportCsv()}>
-                {t("billing.exportCsv")}
-              </Button>
-            ) : undefined
-          }
           items={[
             {
               key: "bills",

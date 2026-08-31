@@ -245,14 +245,22 @@ function PasswordModal({
         <Typography.Paragraph type="secondary">
           {t("settings.changePasswordDesc", { phone })}
         </Typography.Paragraph>
-        <Form.Item name="sms_code" rules={[{ required: true, message: t("settings.codeRequired") }]}>
-          <Space.Compact style={{ width: "100%" }}>
-            <Input
-              placeholder={t("settings.codePlaceholder")}
-              maxLength={6}
-              autoComplete="one-time-code"
-              aria-label={t("settings.codePlaceholder")}
-            />
+        {/* 校验挂内层 Form.Item(唯一控件是 Input):挂外层会把 id/aria-required 注到
+            Space.Compact 的 div 上,div 不支持该 ARIA 属性(axe aria-allowed-attr,critical) */}
+        <Form.Item>
+          <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
+            <Form.Item
+              name="sms_code"
+              rules={[{ required: true, message: t("settings.codeRequired") }]}
+              style={{ flex: 1, marginBottom: 0 }}
+            >
+              <Input
+                placeholder={t("settings.codePlaceholder")}
+                maxLength={6}
+                autoComplete="one-time-code"
+                aria-label={t("settings.codePlaceholder")}
+              />
+            </Form.Item>
             <Button disabled={sms.countdown > 0} loading={sms.sending} onClick={() => sms.send(phone)}>
               {sms.countdown > 0 ? `${sms.countdown}s` : t("settings.getCode")}
             </Button>

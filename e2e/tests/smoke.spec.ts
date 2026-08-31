@@ -54,7 +54,7 @@ test("全生命周期冒烟", async ({ page }) => {
   await expect(row.getByText("已关机")).toBeVisible({ timeout: 90_000 });
 
   await page.goto("/billing");
-  await page.getByText("小时账单").click();
+  await page.getByRole("tab", { name: "小时账单" }).click();
   await expect(page.locator(".ant-table-row").first()).toBeVisible({ timeout: 15_000 });
 
   // ── 释放:多级防护(键入实例名 + 勾选解锁)→ 列表消失

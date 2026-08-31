@@ -251,14 +251,22 @@ function LoginPage() {
               />
             </Form.Item>
             {needsSms && (
-              <Form.Item name="sms_code" rules={[{ required: true, message: t("login.smsRequired") }]}>
-                <Space.Compact style={{ width: "100%" }}>
-                  <Input
-                    placeholder={t("login.smsPlaceholder")}
-                    maxLength={6}
-                    autoComplete="one-time-code"
-                    aria-label={t("login.smsPlaceholder")}
-                  />
+              // 校验挂内层 Form.Item(唯一控件是 Input):挂外层会把 id/aria-required 注到
+              // Space.Compact 的 div 上,div 不支持该 ARIA 属性(axe aria-allowed-attr,critical)
+              <Form.Item>
+                <Space.Compact style={{ width: "100%", alignItems: "flex-start" }}>
+                  <Form.Item
+                    name="sms_code"
+                    rules={[{ required: true, message: t("login.smsRequired") }]}
+                    style={{ flex: 1, marginBottom: 0 }}
+                  >
+                    <Input
+                      placeholder={t("login.smsPlaceholder")}
+                      maxLength={6}
+                      autoComplete="one-time-code"
+                      aria-label={t("login.smsPlaceholder")}
+                    />
+                  </Form.Item>
                   <Button
                     disabled={sms.countdown > 0}
                     loading={sms.sending}
