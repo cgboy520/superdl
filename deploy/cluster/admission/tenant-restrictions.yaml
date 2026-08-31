@@ -74,6 +74,14 @@ spec:
         request.namespace.startsWith('tenant-') ||
         (request.namespace == '' && request.resource.group == '' && request.resource.resource == 'nodes')
       message: "平台 SA 的写操作仅限 superdl/tenant-* 命名空间与 nodes"
+    # roles/rolebindings 再收窄一档到 tenant-*:tenant-mgr 持有 escalate/bind
+    # (不持有集群级 secrets 却要下发租户 ns 内的 secrets Role,否则 apiserver 提权防护 403),
+    # 放开 superdl ns 等于允许它给自己授出平台 ns 的 secrets —— 恰好是不授集群级 secrets 要防的事
+    - expression: >-
+        !(request.resource.group == 'rbac.authorization.k8s.io' &&
+          (request.resource.resource == 'roles' || request.resource.resource == 'rolebindings')) ||
+        request.namespace.startsWith('tenant-')
+      message: "平台 SA 只能在 tenant-* 命名空间写 roles/rolebindings"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

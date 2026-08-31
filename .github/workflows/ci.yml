@@ -257,14 +257,17 @@ jobs:
           # ensure_namespace 的 _create_or_patch 收敛路径需要的最小动词面(与 real.py 一一对应)
           for pair in "patch namespaces" "patch networkpolicies" "patch resourcequotas" \
                       "get limitranges" "create limitranges" "patch limitranges" \
-                      "patch services" "create roles" "patch rolebindings"; do
+                      "patch services" "create roles" "patch rolebindings" \
+                      "escalate roles" "bind roles"; do
             if ! kubectl auth can-i --as="$SA" $pair >/dev/null; then
               echo "::error::superdl-tenant-mgr 缺动词:$pair(01-rbac.yaml 与 real.py 漂移)"
               exit 1
             fi
           done
           # 反向面:刻意不授的动词必须保持不授(最小权限回归闸)
-          for pair in "delete namespaces" "patch nodes" "list secrets"; do
+          # escalate/bind 只开到命名空间级 roles:clusterroles 一旦可 escalate/bind 就是集群级提权
+          for pair in "delete namespaces" "patch nodes" "list secrets" \
+                      "escalate clusterroles" "bind clusterroles"; do
             if kubectl auth can-i --as="$SA" $pair >/dev/null; then
               echo "::error::superdl-tenant-mgr 越权动词被放行了:$pair"
               exit 1

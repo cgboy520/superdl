@@ -121,8 +121,15 @@ rules:
     verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     # 下发租户 ns 内的 secrets Role/RoleBinding;实际落点由 VAP 策略①钉死在
-    # superdl/tenant-* 命名空间,create 无法按 resourceNames 收窄,故不授 get/list。
-    resources: ["roles", "rolebindings"]
+    # tenant-* 命名空间,create 无法按 resourceNames 收窄,故不授 get/list。
+    # escalate(建/改 Role)与 bind(建 RoleBinding 引用它):apiserver 的提权防护不允许
+    # 授出自身未持有的权限 —— tenant-mgr 正是故意不持有集群级 secrets,不授这两个
+    # 动词则 _ensure_tenant_rbac_sync 恒 403(真集群上租户 ns 根本建不起来)。
+    # 可滥用面由 VAP 封在 tenant-* 内(那里本就是 tenant-mgr 的全权域),拿不到平台 ns 的 secrets。
+    resources: ["roles"]
+    verbs: ["get", "create", "patch", "escalate", "bind"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
     verbs: ["get", "create", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
