@@ -19,6 +19,7 @@ from kubernetes import client as k8s_client
 
 from app.core.k8s.base import K8sOrchestrator
 from app.core.k8s.fake import FakeOrchestrator
+from tests.helpers import use_kubeconfig
 
 
 @dataclass
@@ -45,7 +46,7 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
         return
     if not os.environ.get("SUPERDL_TEST_KUBECONFIG"):
         pytest.skip("SUPERDL_TEST_KUBECONFIG 未设置,跳过 Real 侧 conformance")
-    os.environ["KUBECONFIG"] = os.environ["SUPERDL_TEST_KUBECONFIG"]
+    use_kubeconfig(os.environ["SUPERDL_TEST_KUBECONFIG"])
     from app.core.k8s.real import RealOrchestrator
 
     real = RealOrchestrator()

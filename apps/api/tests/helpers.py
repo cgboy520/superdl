@@ -6,6 +6,7 @@
 
 import base64
 import json
+import os
 import secrets
 import struct
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from uuid import uuid4
 import httpx
 import pyotp
 from httpx import AsyncClient, Response
+from kubernetes.config import kube_config
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,6 +36,17 @@ from app.modules.orchestrator.service import _encode_token
 
 # 平台预置镜像(seed_skus 的 PlatformImage 同源):创建请求体里的统一 image_ref
 IMAGE_PYTORCH = "registry.superdl.local/pytorch:2.9.0-cu128"
+
+
+def use_kubeconfig(path: str) -> None:
+    """把 kubeconfig 路径喂给官方客户端(随后构造的 RealOrchestrator 即用此身份)。
+
+    kubernetes 客户端在 import 时就把 KUBECONFIG 固化进了模块常量,之后再改环境变量
+    对 load_kube_config() 无效 —— 只改环境变量的话,受限身份会静默退回默认(admin)
+    kubeconfig,RBAC 对齐闸变成空跑。两者同时改才真正切身份。
+    """
+    os.environ["KUBECONFIG"] = path
+    kube_config.KUBE_CONFIG_DEFAULT_LOCATION = path
 
 
 async def drain(

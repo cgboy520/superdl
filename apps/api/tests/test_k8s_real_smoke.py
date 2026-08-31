@@ -33,6 +33,7 @@ from app.core.k8s.base import (
     jupyter_service_name,
 )
 from app.core.k8s.real import MANAGED_LABEL, PRIVATE_CIDRS, RealOrchestrator
+from tests.helpers import use_kubeconfig
 
 pytestmark = [
     pytest.mark.real_k8s,
@@ -50,7 +51,7 @@ PVC_GONE_TIMEOUT = 30.0
 @pytest.fixture(scope="module")
 def orch() -> RealOrchestrator:
     """直连集群的 RealOrchestrator;SUPERDL_TEST_KUBECONFIG 转标准 KUBECONFIG 供客户端读取。"""
-    os.environ["KUBECONFIG"] = os.environ["SUPERDL_TEST_KUBECONFIG"]
+    use_kubeconfig(os.environ["SUPERDL_TEST_KUBECONFIG"])
     return RealOrchestrator()
 
 
@@ -64,7 +65,7 @@ def orch_restricted() -> RealOrchestrator:
     path = os.environ.get("SUPERDL_TEST_KUBECONFIG_RESTRICTED")
     if not path:
         pytest.skip("SUPERDL_TEST_KUBECONFIG_RESTRICTED 未设置(仅 CI kind job 注入受限身份)")
-    os.environ["KUBECONFIG"] = path
+    use_kubeconfig(path)
     return RealOrchestrator()
 
 

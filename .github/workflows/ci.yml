@@ -235,7 +235,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # kind 起一次性集群;kind-action 不导出 KUBECONFIG 环境变量,kind 默认写 ~/.kube/config,
-      # 下方 SUPERDL_TEST_KUBECONFIG 的 fallback 即指向它
+      # 下方解析 SUPERDL_TEST_KUBECONFIG 时的 fallback 即指向它
       - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
@@ -273,13 +273,16 @@ jobs:
       - name: 生成 superdl-tenant-mgr 受限 kubeconfig
         run: |
           TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)
-          cp "${KUBECONFIG:-$HOME/.kube/config}" /tmp/restricted.kubeconfig
+          admin_kubeconfig="${KUBECONFIG:-$HOME/.kube/config}"
+          cp "$admin_kubeconfig" /tmp/restricted.kubeconfig
           kubectl config set-credentials tenant-mgr --token="$TOKEN" --kubeconfig=/tmp/restricted.kubeconfig
           kubectl config set-context --current --user=tenant-mgr --kubeconfig=/tmp/restricted.kubeconfig
+          # 管理面 kubeconfig 的路径在这里由 shell 展开后传下去:workflow 的 env: 不展开 $HOME,
+          # 写成字面量会让用例拿到一个不存在的路径
+          echo "SUPERDL_TEST_KUBECONFIG=$admin_kubeconfig" >> "$GITHUB_ENV"
       - name: RealOrchestrator 冒烟(kind)
         working-directory: apps/api
         env:
-          SUPERDL_TEST_KUBECONFIG: ${{ env.KUBECONFIG || '$HOME/.kube/config' }}
           SUPERDL_TEST_KUBECONFIG_RESTRICTED: /tmp/restricted.kubeconfig
         run: |
           uv sync --frozen
