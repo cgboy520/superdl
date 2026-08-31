@@ -6,7 +6,7 @@ from uuid import uuid4
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import (
     IDEMPOTENCY_WINDOW,
     find_replay,
@@ -232,7 +232,7 @@ async def attach_for_instance(session: AsyncSession, user_id: int, disk_id: int,
     # 配额未下发成功的盘不得挂载:JuiceFS 目录硬配额是唯一的容量强制点,
     # 无配额挂载 = 用户可写穿声明容量挤爆共享文件系统
     if not disk.quota_synced:
-        raise AppError(ErrorCode.CONFLICT, key="disks.quotaNotSynced", http_status=409)
+        raise conflict(key="disks.quotaNotSynced")
     if disk.mounted_instance_id is not None and disk.mounted_instance_id != instance_id:
         raise AppError(ErrorCode.DISK_IN_USE, key="disks.mountedElsewhere")
     disk.mounted_instance_id = instance_id

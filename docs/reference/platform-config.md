@@ -4,7 +4,7 @@
 
 ## 数据模型
 
-- `platform_settings`:`key`(PK)、`value`(Text,secret 为 `enc:v1:` 密文)、`updated_by`、`updated_at`
+- `platform_settings`:`key`(PK)、`value`(Text,secret 为 `enc:v2:` 密文)、`updated_by`、`updated_at`
 
 ## 契约
 

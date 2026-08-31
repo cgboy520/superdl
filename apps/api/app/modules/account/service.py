@@ -12,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.captcha import CaptchaError, get_captcha_channel
 from app.core.config import get_settings
+from app.core.constants import ADMIN_LIST_CAP
 from app.core.crypto import hash_sms_code, hash_sms_code_candidates
-from app.core.errors import AppError, ErrorCode, not_found, unauthorized
+from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
+from app.core.money import money_str
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import (
@@ -406,7 +408,8 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
         raise unauthorized()
     if user.status == "deleted":
         raise unauthorized(key="account.accountDeleted")
-    if payload.get("ver", 0) != user.token_version:
+    # 撤销闸:签发点恒带 ver,缺失不给默认值(None ≠ 任何版本 → 401)
+    if payload.get("ver") != user.token_version:
         raise unauthorized()
     jti = str(payload.get("jti", ""))
     inserted = (
@@ -432,17 +435,18 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> TokenPair
                 # 全撤会误伤那条在线会话(登出本就不是即时全局失效)
                 logger.warning("logout_consumed_token_replayed", user_id=user.id)
                 raise unauthorized()
-            if used.replaced_refresh_jti is not None and used.replaced_iat is not None:
-                # 宽限窗内的重放 = 并发重试:回首次轮换的同一对 token,不另开有效链
-                return _issue_tokens(
-                    user,
-                    refresh_jti=used.replaced_refresh_jti,
-                    access_jti=used.replaced_access_jti,
-                    iat=ensure_utc(used.replaced_iat),
-                )
-            # refresh 消费但未落替代对(首消费与登记替代对两笔提交之间崩溃):
-            # 维持原补发语义
-            return _issue_tokens(user)
+            if used.consumed_via == "refresh":
+                if used.replaced_refresh_jti is not None and used.replaced_iat is not None:
+                    # 宽限窗内的重放 = 并发重试:回首次轮换的同一对 token,不另开有效链
+                    return _issue_tokens(
+                        user,
+                        refresh_jti=used.replaced_refresh_jti,
+                        access_jti=used.replaced_access_jti,
+                        iat=ensure_utc(used.replaced_iat),
+                    )
+                # refresh 消费但未落替代对(首消费与登记替代对两笔提交之间崩溃):
+                # 维持原补发语义
+                return _issue_tokens(user)
         user.token_version += 1
         await session.commit()
         logger.warning("refresh_token_replayed", user_id=user.id)
@@ -519,7 +523,7 @@ async def submit_real_name(session: AsyncSession, user: User, name: str, id_numb
     )
 
     if user.verification_status == "verified":
-        raise AppError(ErrorCode.CONFLICT, key="account.realNameDone")
+        raise conflict(key="account.realNameDone")
     cfg = await get_effective_platform_config(session)
     if cfg["real_name_enabled"] != "true":
         # 安全策略未开通实名:明确 409,而不是让用户撞到凭据缺失的 502
@@ -801,9 +805,6 @@ def realname_view(user: User, *, masked: bool) -> tuple[str, str | None]:
 
 # ---------- 账号注销 ----------
 
-# 管理端注销申请列表固定截断(与 tickets/refunds 同款)
-ADMIN_DELETION_LIST_CAP = 200
-
 
 async def _pending_deletion_of_user(
     session: AsyncSession, user_id: int
@@ -867,12 +868,7 @@ async def cancel_deletion_request(session: AsyncSession, user_id: int) -> Accoun
     if req is None:
         raise not_found()
     if req.status != "pending":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="account.deletionNotCancellable",
-            params={"status": req.status},
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="account.deletionNotCancellable", params={"status": req.status})
     req.status = "cancelled"
     await session.commit()
     logger.info("deletion_cancelled", user_id=user_id)
@@ -901,7 +897,7 @@ def _deletion_out(
         note=req.note,
         instances_active=leftover_counts["instances"],
         disks_active=leftover_counts["disks"],
-        balance=format(balance, "f"),
+        balance=money_str(balance),
     )
 
 
@@ -916,7 +912,7 @@ async def admin_list_deletion_requests(
     stmt = (
         select(AccountDeletionRequest)
         .order_by(AccountDeletionRequest.id.desc())
-        .limit(ADMIN_DELETION_LIST_CAP)
+        .limit(ADMIN_LIST_CAP)
     )
     if status_:
         stmt = stmt.where(AccountDeletionRequest.status == status_)
@@ -991,20 +987,13 @@ async def approve_deletion(
 
     req = await _get_deletion_for_update(session, request_id)
     if req.status != "pending":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="account.deletionNotPending",
-            params={"status": req.status},
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="account.deletionNotPending", params={"status": req.status})
     remaining = req.cooldown_ends_at - now_utc()
     if remaining.total_seconds() > 0:
         # 冷静期未满:不可执行但不驳回(用户可能还想用满这段时间/撤销)
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="account.deletionCooldown",
             params={"hours": math.ceil(remaining.total_seconds() / 3600)},
-            http_status=status.HTTP_409_CONFLICT,
         )
     # 行锁用户:匿名化与登录/refresh 的 token_version 读-改-写互斥
     user = await session.get(User, req.user_id, with_for_update=True)
@@ -1022,14 +1011,12 @@ async def approve_deletion(
             ),
         )
         await session.commit()
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="account.deletionLeftovers",
             params={
                 "instances": len(leftovers["instances"]),
                 "disks": len(leftovers["disks"]),
             },
-            http_status=status.HTTP_409_CONFLICT,
             detail=leftovers,
         )
     balance = await billing_service.get_balance(session, user.id)
@@ -1037,15 +1024,13 @@ async def approve_deletion(
         _auto_reject_deletion(
             req,
             admin_id=admin_id,
-            note=f"自动驳回:余额 ¥{format(balance, 'f')} 未提现,请先经退款流程提现,到账后重新申请",
+            note=f"自动驳回:余额 ¥{money_str(balance)} 未提现,请先经退款流程提现,到账后重新申请",
         )
         await session.commit()
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="account.deletionBalanceRemaining",
-            params={"balance": format(balance, "f")},
-            http_status=status.HTTP_409_CONFLICT,
-            detail={"balance": format(balance, "f")},
+            params={"balance": money_str(balance)},
+            detail={"balance": money_str(balance)},
         )
     # 匿名化:手机号哈希化(释放唯一约束,原号码可再注册)、身份字段清空、全撤登录态。
     # 账本 balance_ledger/账单按法定义务保留,不动。
@@ -1069,12 +1054,7 @@ async def reject_deletion(
     """驳回注销申请(理由必填,不受冷静期限制)。驳回后用户可重新申请。"""
     req = await _get_deletion_for_update(session, request_id)
     if req.status != "pending":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="account.deletionNotPending",
-            params={"status": req.status},
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="account.deletionNotPending", params={"status": req.status})
     req.status = "rejected"
     req.processed_by = admin_id
     req.processed_at = now_utc()

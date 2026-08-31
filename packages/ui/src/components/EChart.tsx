@@ -1,4 +1,4 @@
-/** echarts 按需注册封装(两端共用,收口原 apps/web 与 apps/admin 两份重复实现)。
+/** echarts 按需注册封装(两端共用)。
  *  新增图型在此登记,禁止在页面里直接 import echarts。
  *
  *  基于 echarts 原生实例的薄封装(echarts-for-react 已停更于 echarts 5 时代):
@@ -142,7 +142,7 @@ export interface EChartProps {
   theme?: string;
   /** 图表的可访问名称:读屏时作为整图替代描述(aria.enabled 常开) */
   ariaLabel?: string;
-  /** 加载中:图表区盖 Spin(首载白屏与图表跳动都出自「没盖这层」) */
+  /** 加载中:图表区盖 Spin */
   loading?: boolean;
   /** 无数据空态:true 渲染默认空态文案,ReactNode 自定义(图表保留挂载但不可见) */
   empty?: boolean | ReactNode;

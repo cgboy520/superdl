@@ -11,7 +11,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.constants import ADMIN_LIST_CAP
+from app.core.errors import AppError, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.outbox import OutboxTask, enqueue, outbox_handler
@@ -220,9 +221,6 @@ async def send_preemption_notice(
 # 群发的单语句行数上限:PG 单条语句 65535 个绑定参数,按 5 列 × 1000 行留足余量
 _ANNOUNCEMENT_CHUNK = 1000
 
-# 管理端公告历史固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.announcements 对齐
-ANNOUNCEMENT_LIST_CAP = 200
-
 
 async def publish_announcement(
     session: AsyncSession, *, title: str, content: str, created_by: int, idempotency_key: str | None
@@ -291,7 +289,7 @@ async def admin_list_announcements(session: AsyncSession) -> list[Announcement]:
     return list(
         (
             await session.execute(
-                select(Announcement).order_by(Announcement.id.desc()).limit(ANNOUNCEMENT_LIST_CAP)
+                select(Announcement).order_by(Announcement.id.desc()).limit(ADMIN_LIST_CAP)
             )
         ).scalars()
     )
@@ -307,11 +305,7 @@ async def revoke_announcement(
     if announcement is None:
         raise not_found()
     if announcement.status != "published":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="adminapi.announcementAlreadyRevoked",
-            http_status=409,
-        )
+        raise conflict(key="adminapi.announcementAlreadyRevoked")
     announcement.status = "revoked"
     announcement.revoked_by = revoked_by
     announcement.revoked_at = now_utc()
@@ -439,11 +433,7 @@ async def ack_admin_alert(session: AsyncSession, alert_id: int, *, acked_by: int
     if row is None or row.type not in ALERT_STREAM_TYPES:
         raise not_found()
     if row.acked_at is not None:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="adminapi.alertAlreadyAcked",
-            http_status=409,
-        )
+        raise conflict(key="adminapi.alertAlreadyAcked")
     row.acked_by = acked_by
     row.acked_at = now_utc()
     await session.commit()

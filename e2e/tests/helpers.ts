@@ -29,7 +29,7 @@ export function genEd25519Key(): string {
   dv.setUint32(4 + typeBytes.length, 32);
   blob.set(keyBytes, 8 + typeBytes.length);
   let bin = "";
-  for (const b of blob) bin += String.fromCharCode(b);
+  for (let i = 0; i < blob.length; i++) bin += String.fromCharCode(blob[i]);
   const b64 = btoa(bin);
   return `${type} ${b64} e2e@smoke`;
 }
@@ -139,3 +139,11 @@ export async function waitFirstRowRunning(page: Page): Promise<Locator> {
   await expect(row.getByText("运行中")).toBeVisible({ timeout: 90_000 });
   return row;
 }
+
+export async function setupUser(page: Page, amount: string): Promise<string> {
+  const token = await loginViaApi(page, uniquePhone());
+  await rechargeViaApi(page, token, amount);
+  await addSshKeyViaApi(page, token);
+  return token;
+}
+

@@ -122,7 +122,7 @@ export function useLogout() {
       if (scope === "all") {
         await logoutAllApiV1AuthLogoutAllPost();
       } else {
-        // cookie 路径必须带 CSRF 纵深头(服务端强制);请求体已废除,服务端从 cookie 取
+        // cookie 路径必须带 CSRF 纵深头(服务端强制);不带请求体,服务端从 cookie 取
         await logoutApiV1AuthLogoutPost({ headers: { "X-Requested-With": "fetch" } });
       }
     } catch {

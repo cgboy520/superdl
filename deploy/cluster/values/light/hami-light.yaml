@@ -1,4 +1,5 @@
-# HAMi light(k3s)叠加值:在 values/hami.yaml 之上生效
+# HAMi light(k3s)叠加值:在 values/hami.yaml 之上生效。
+# 安全定位同 hami.yaml:HAMi 为软件限额/性能隔离,不是安全边界,详见 docs/reference/security.md。
 scheduler:
   kubeScheduler:
     # k3s 的 kube-scheduler 不作为独立镜像存在,HAMi 用上游 scheduler 镜像:chart 会按集群版本

@@ -18,6 +18,7 @@ import structlog.tracebacks
 from structlog.typing import EventDict, WrappedLogger
 
 from app.core.config import get_settings
+from app.core.regex import PHONE_RE_LOOSE
 
 # uvicorn 自带 handler 的日志器:清空其 handler 交给 root 并管,避免一行两格式。
 # access 日志保留(经桥接进同一管道),不静默。
@@ -33,7 +34,7 @@ _LEVELS = {
 
 # 敏感字段名(命中即打码):手机号/证件号/令牌/密钥/口令/验证码
 _SENSITIVE_KEY_RE = re.compile(r"(phone|id_number|token|secret|password|code)", re.IGNORECASE)
-_PHONE_VALUE_RE = re.compile(r"^1\d{10}$")
+_PHONE_VALUE_RE = re.compile(PHONE_RE_LOOSE)
 
 
 def mask_phone_value(value: str) -> str:

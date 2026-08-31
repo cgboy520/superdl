@@ -8,12 +8,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { loginViaApi, pickSharedStandardSku, rechargeViaApi, uniquePhone, waitFirstRowRunning } from "./helpers";
+import { pickSharedStandardSku, setupUser, waitFirstRowRunning } from "./helpers";
 
 test("部署服务并拿到端点与 API Key", async ({ page }) => {
-  // ── 建号 + 充值(API 直达;UI 链路由 smoke 覆盖)
-  const token = await loginViaApi(page, uniquePhone());
-  await rechargeViaApi(page, token, "100");
+  // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
+  await setupUser(page, "500");
 
   // ── 市场:选规格 → 结算条「部署服务」进服务形态创建流
   await pickSharedStandardSku(page);

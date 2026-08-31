@@ -42,4 +42,4 @@
 - 服务端点的就绪为「否」时**不当故障渲染**:服务型实例持续 not-ready 也留在 running,如实显示并提示检查容器日志与健康检查路径(见 [services.md](./services.md))。
 - 月份等日期按本地时区计算;`/instances/:uuid` 直接刷新可达。
 - Jupyter `window.open` 必须带 `noopener,noreferrer`。
-- echarts 按需注册收口在 `components/EChart.tsx`;design tokens 与全局 `styles.css` 统一,不留硬编码色。
+- echarts 按需注册收口在 `packages/ui` 的 `EChart` 组件;design tokens 与全局 `styles.css` 统一,不留硬编码色。

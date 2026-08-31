@@ -32,7 +32,7 @@ POLL_INTERVAL_SECONDS = 1.0
 HEARTBEAT_INTERVAL_SECONDS = 10.0
 # 并发领取协程数:claim 是 FOR UPDATE SKIP LOCKED,多协程不会重复领取;
 # 消除全局串行 FIFO 的队头阻塞(一个慢任务不挡住排在后面的关机请求)
-OUTBOX_CONCURRENCY = int(os.environ.get("SUPERDL_OUTBOX_CONCURRENCY", "4"))
+OUTBOX_CONCURRENCY = get_settings().worker_outbox_concurrency
 
 # worker_id 长度预算:outbox_tasks.locked_by 为 String(128),lane 后缀(-N)至多再占几位。
 # 超长会在 claim 的 commit 抛 StringDataRightTruncation,且所有 lane 共享同一前缀 →
@@ -58,11 +58,11 @@ def make_worker_id() -> str:
 
 # K8s liveness:exec 探针检查该文件 mtime。心跳由独立协程触碰,不挂在 outbox 循环上
 # (挂在循环里长任务会让活着的 worker 被 SIGKILL)。
-HEARTBEAT_FILE = Path(os.environ.get("SUPERDL_WORKER_HEARTBEAT", "/tmp/superdl-worker-heartbeat"))
+HEARTBEAT_FILE = Path(get_settings().worker_heartbeat or "/tmp/superdl-worker-heartbeat")
 
 # /metrics 端口:结算/死信/reconciler 指标产生在 worker 进程内,单独暴露给 PodMonitor 直抓
 # (无 Ingress 路由,仅集群内可达)
-METRICS_PORT = int(os.environ.get("SUPERDL_WORKER_METRICS_PORT", "9000"))
+METRICS_PORT = get_settings().worker_metrics_port
 
 _stop = asyncio.Event()
 

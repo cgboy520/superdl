@@ -1,6 +1,6 @@
 import { WarningOutlined } from "@ant-design/icons";
 import { addAmounts, adjustmentStatusMap, adminColors, fontSize, formatDateTime, idemKeyOf, invoiceStatusMap, ledgerTypeMap, metaOf, orderStatusMap, payoutChannelMap, refundStatusMap } from "@superdl/ui";
-import { HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { moneyOr, HexTag, LoadMore, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -163,7 +163,7 @@ function useFinanceFilters() {
 const RECONCILE_DIFF_WARN_PCT = 2;
 
 function ReconciliationCard() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const { formatMoney } = useFormat();
   const [day, setDay] = useState<Dayjs>(dayjs());
   const { data: report, isError, refetch } = useReconciliation(day.format("YYYY-MM-DD"));
@@ -196,16 +196,16 @@ function ReconciliationCard() {
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          title={t("common.loadFailed")}
-          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry")}</Button>}
+          title={t("common.loadFailed", { ns: "shared" })}
+          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry", { ns: "shared" })}</Button>}
         />
       )}
       <Row gutter={16}>
         <Col xs={24} sm={12} md={8}>
-          <Statistic title={t("finance.billedTotal")} value={report ? formatMoney(report.billed_total) : "—"} />
+          <Statistic title={t("finance.billedTotal")} value={moneyOr(formatMoney(report?.billed_total), report != null)} />
         </Col>
         <Col xs={24} sm={12} md={8}>
-          <Statistic title={t("finance.estimatedTotal")} value={report ? formatMoney(report.estimated_total) : "—"} />
+          <Statistic title={t("finance.estimatedTotal")} value={moneyOr(formatMoney(report?.estimated_total), report != null)} />
         </Col>
         <Col xs={24} sm={12} md={8}>
           <Statistic
@@ -391,11 +391,11 @@ function ReviewConfirmModal({
           <SignedAmount value={adj.amount} />
         </Descriptions.Item>
         <Descriptions.Item label={t("finance.ctxBalance")}>
-          {ctx.isLoading ? "…" : ctx.data ? formatMoney(ctx.data.balance) : "—"}
+          {ctx.isLoading ? "…" : moneyOr(formatMoney(ctx.data?.balance), ctx.data != null)}
         </Descriptions.Item>
         {approve && (
           <Descriptions.Item label={t("finance.ctxBalanceAfter")}>
-            {after === null ? "—" : formatMoney(after)}
+            {moneyOr(formatMoney(after), after !== null)}
           </Descriptions.Item>
         )}
         <Descriptions.Item label={t("finance.colCreatedBy")}>#{adj.created_by}</Descriptions.Item>
@@ -1391,7 +1391,7 @@ function InvoicesTab() {
 }
 
 function FinancePage() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const navigate = useNavigate();
   const tab = Route.useSearch({ select: (s) => s.tab });
   const anomaliesQ = useAnomalies();
@@ -1423,7 +1423,7 @@ function FinancePage() {
                   {t("finance.tabAnomalies")}
                   {/* 计数查询失败绝不静默为 0(无红 Tag 会被读成「没有异常」):警示图标顶替,红 Tag 仅成功时按真实计数显示(同 AlertBell「失败显示 ?」) */}
                   {anomaliesError ? (
-                    <Tooltip title={t("common.loadFailed")}>
+                    <Tooltip title={t("common.loadFailed", { ns: "shared" })}>
                       <WarningOutlined style={{ color: adminColors.alertAccent }} />
                     </Tooltip>
                   ) : (

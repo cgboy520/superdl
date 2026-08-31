@@ -1,7 +1,37 @@
 export * from "./tokens";
 export * from "./status";
-export * from "./format";
-export * from "./apiError";
+// format 显式点名:SharedT(t 签名收窄类型)与模块内私有的 currencySymbol/tzSuffix 不进包面
+export {
+  formatMoney,
+  formatHourlyPrice,
+  mulPrice,
+  diskDailyEstimate,
+  PERIOD_HOURS,
+  MAX_PERIOD_COUNT,
+  billingUnits,
+  quoteSubscription,
+  spotHourlyPrice,
+  formatSpotDiscount,
+  formatDuration,
+  formatCountdown,
+  formatReclaimCountdown,
+  formatDaysUntil,
+  formatDaysLeft,
+  formatPeriodPrice,
+  formatExpiry,
+  makeFormatters,
+  compareAmounts,
+  amountToScaledNumber,
+  addAmounts,
+  localToday,
+  formatDateTime,
+  formatDate,
+  formatSizeGb,
+  maskPhone,
+} from "./format";
+export type { PeriodQuote, Formatters } from "./format";
+// apiError 只暴露入口函数:ApiErrorLike/LooseT 是实现细节(应用侧经 useApiErrorText 单点收窄)
+export { apiErrorText } from "./apiError";
 export * from "./gpuSpecs";
 export * from "./idemKey";
 export * from "./localeParity";

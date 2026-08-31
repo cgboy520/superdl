@@ -59,7 +59,7 @@ class TestRealName:
             json={"name": "张三", "id_number": "110101199001011234"},
             headers=headers,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409
         assert resp.json()["code"] == "CONFLICT"
 
     async def test_mismatch_rejected(self, client: AsyncClient, sm):
@@ -168,7 +168,7 @@ class TestRealName:
             settings.real_name_enabled = False
 
     async def test_start_and_disk_gates_when_required(self, client: AsyncClient, sm):
-        """闸门覆盖(#43):开机与建盘同闸——只挂创建/充值则匿名用户可绕到存量资源。"""
+        """闸门覆盖:开机与建盘同闸——只挂创建/充值则匿名用户可绕到存量资源。"""
         settings = get_settings()
         settings.real_name_enabled = True
         settings.real_name_required_for_recharge = True

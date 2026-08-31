@@ -83,8 +83,8 @@
 - **拒绝时的响应体与响应头原样透传给客户端**(Envoy 默认不截断,EG 未暴露该开关)。好处是可以直接复用
   `core/errors.py` 的统一错误体;**风险是该端点的 4xx 直达公网,绝不能带栈、内网主机名或 `Set-Cookie`**。
 - **限流是每端点独立配额**:一条挂 `svc-https` listener 的 `BackendTrafficPolicy`(local),桶按路由分。
-  限额由策略 `service_endpoint_rps` 决定,但它**渲染进清单**,改策略值不会自动同步到网关 —— 必须重新下发
-  `deploy/app/k8s/04-gateway.yaml`。local 计数是每个 Envoy 实例本地的,多副本时全局上限约为配置值 × 副本数。
+  限额(20/s/端点)手工渲染进清单,不回源平台配置 —— 改值必须改
+  `deploy/app/k8s/04-gateway.yaml` 并重新下发。local 计数是每个 Envoy 实例本地的,多副本时全局上限约为配置值 × 副本数。
   数值见 [limits.md](./limits.md)。
 
 ### 实例侧
@@ -94,7 +94,9 @@
   配套的 `startupProbe` 给 15 分钟启动预算,否则加载大模型权重的容器从第一秒起就 not-ready。
 - 用户 env 整包 AES-GCM 落库(`instances.env_encrypted`,AAD 绑实例 uuid);标为密文的项经 per-instance Secret
   以 `secretKeyRef` 注入,**明文不进 Pod spec**(spec 会进 etcd 与审计快照,任何 `pods:get` 身份都能读走)。
-- 用户 env 键名黑名单:拒 `JUPYTER_` / `SUPERDL_` 前缀与 `AUTHORIZED_KEYS`,防覆盖平台注入项。
+- 用户 env 键名黑名单:拒 `JUPYTER_` / `SUPERDL_` / `NVIDIA_` 前缀与 `AUTHORIZED_KEYS`,防覆盖平台注入项
+  (`NVIDIA_VISIBLE_DEVICES` 可覆盖 device-plugin 的 GPU 分配结果);准入层 `superdl-tenant-pod-baseline`
+  有同口径 CEL 规则双层兜底。
 - 容器端口不得为 22 或 8888(sshd 与 JupyterLab),DB 侧有 CHECK 兜底。
 
 fake 后端测不出的实机验证项(证书签发、`SecurityPolicy` 的 `status.ancestors[].conditions`、

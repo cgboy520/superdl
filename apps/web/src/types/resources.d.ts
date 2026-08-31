@@ -64,6 +64,7 @@ export default interface Resources {
       "callbackChannelMismatch": "回调渠道与订单不符",
       "channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
       "channelStateNotBackfillable": "渠道侧状态为 {{status}},不能补单",
+      "insufficientAvailableFrozen": "可用余额不足:¥{{frozen}} 因支付渠道冲正被冻结,待核销期间不可用于新消费;如有疑问请联系客服",
       "insufficientBalance": "余额不足,请先充值",
       "insufficientForInFlight": "余额不足:在途资源预计还要消耗 ¥{{inflight}},本次操作要求余额不少于 ¥{{required}}(当前 ¥{{balance}}),请先充值",
       "invoiceAmountStale": "可开票金额已变动(当前可开 ¥{{expected}},申请额 ¥{{requested}}):账期内发生了退款,请驳回该申请并通知用户按新金额重新提交",
@@ -260,6 +261,11 @@ export default interface Resources {
       "search": "没有符合条件的结果,试试调整筛选",
       "ticket": "暂无工单"
     },
+    "errorPage": {
+      "subtitle": "页面出现异常,请重试或返回首页",
+      "techDetail": "技术详情",
+      "title": "页面出错了"
+    },
     "format": {
       "countdown": {
         "expired": "已到期",
@@ -296,6 +302,10 @@ export default interface Resources {
       "en": "English",
       "switchLabel": "切换语言",
       "zh": "中文"
+    },
+    "notFound": {
+      "subtitle": "你访问的地址不存在或已被移除",
+      "title": "页面不存在"
     },
     "query": {
       "partialFailed": "部分数据加载失败",
@@ -458,7 +468,7 @@ export default interface Resources {
       },
       "tierHint": {
         "cpu": "不带 GPU",
-        "shared_hami": "性能可能波动",
+        "shared_hami": "软件限额共享,非安全隔离",
         "shared_mig": "显存与算力硬隔离"
       },
       "workload": {
@@ -588,8 +598,7 @@ export default interface Resources {
       "gbMonthPrice": "¥{{price}}/GB·月",
       "goRent": "去租用",
       "hostSpec": "{{vcpu}} vCPU / {{mem}}G 内存 / 实例盘 {{disk}}G",
-      "jupyter": "JupyterLab",
-      "retry": "重试"
+      "jupyter": "JupyterLab"
     },
     "copy": {
       "antiMiningNotice": "严禁将实例用于挖矿等违规用途,违者封号并不予退款(见用户协议)",
@@ -615,10 +624,10 @@ export default interface Resources {
       "diskExpirePolicyFallback": "数据盘到期后先宽限(只读),再冻结,逾期清除",
       "diskRetention": "数据盘独立于实例,释放实例不丢数据",
       "ecoTierConsent": {
-        "c1": "共享·经济档为软件隔离的共享算力,算力份额为均值保障",
-        "c2": "同卡负载高峰时性能可能波动",
+        "c1": "共享·经济档为软件限额共享算力(HAMi LD_PRELOAD CUDA 拦截),算力份额为均值保障;该隔离是性能限额而非安全边界,容器内 root 可绕过配额",
+        "c2": "同卡负载高峰时性能可能波动;多租户共用同一未分区 GPU,存在跨租户显存残留风险",
         "c3": "平台可能在资源紧张时对经济档实例重新调度(会先通知)",
-        "c4": "价格显著低于标准档,适合容错性高的任务"
+        "c4": "价格显著低于标准档,适合容错性高的批处理任务;不适合处理敏感数据或需要强隔离的工作负载"
       },
       "eventsAreBilling": "此事件记录即计费依据:「运行中」时段按秒累计,精确到关机瞬间",
       "freezePolicy": "停止的实例欠费冻结 {{hours}} 小时后将回收实例盘,数据盘不受影响",
@@ -791,11 +800,6 @@ export default interface Resources {
       "title": "概览",
       "totalInstances": "实例总数",
       "unread": "未读通知"
-    },
-    "errorPage": {
-      "subtitle": "页面出现异常,请重试或返回首页",
-      "techDetail": "技术详情",
-      "title": "页面出错了"
     },
     "footer": {
       "complianceTitle": "合规",
@@ -1142,10 +1146,6 @@ export default interface Resources {
       "summaryCpu": "{{vcpu}} vCPU · {{mem}}G 内存 · 实例盘 {{disk}}G",
       "title": "算力市场",
       "vcpuUnit": "{{count}} 核"
-    },
-    "notFound": {
-      "subtitle": "你访问的地址不存在或已被移除",
-      "title": "页面不存在"
     },
     "notifications": {
       "empty": "暂无通知",

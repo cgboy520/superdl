@@ -23,9 +23,19 @@ def upgrade() -> None:
     op.execute(
         "UPDATE instances SET k8s_namespace = 'tenant-' || user_id WHERE k8s_namespace IS NULL"
     )
-    op.alter_column(
+    # SET NOT NULL 的三步法(避免对存量行全表校验的 ACCESS EXCLUSIVE 长锁):
+    # CHECK ... NOT VALID 只约束新写(不扫存量)→ VALIDATE(只持 SHARE UPDATE EXCLUSIVE)
+    # → SET NOT NULL 有 valid CHECK 佐证即跳过全表扫描(PG ≥12)
+    op.execute(
+        "ALTER TABLE instances ADD CONSTRAINT ck_instances_k8s_namespace_not_null "
+        "CHECK (k8s_namespace IS NOT NULL) NOT VALID"
+    )
+    op.execute("ALTER TABLE instances VALIDATE CONSTRAINT ck_instances_k8s_namespace_not_null")
+    # 有 valid CHECK 佐证,PG ≥12 跳过全表扫描(门禁按形式拦,此处标注三步法的最后一步)
+    op.alter_column(  # ddl-risk: reviewed —— valid CHECK 佐证,SET NOT NULL 跳过全表扫描
         "instances", "k8s_namespace", existing_type=sa.String(length=64), nullable=False
     )
+    op.execute("ALTER TABLE instances DROP CONSTRAINT ck_instances_k8s_namespace_not_null")
 
 
 def downgrade() -> None:

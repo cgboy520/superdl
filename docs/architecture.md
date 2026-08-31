@@ -102,7 +102,7 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
 | 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
 | 租户 NetworkPolicy | 默认拒东西向。入方向只放行两处:Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明),以及 TCP 22(SSH NodePort,来源不能排私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口黑名单、UDP 走白名单,私网与云元数据网段一律拒 |
-| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域)、服务端点鉴权与限流、全局超时与连接兜底,5 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**:apply 照样成功,策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名锁死 |
+| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由同款重写 + 更严请求体上限)、服务端点鉴权与限流、全局超时与连接兜底,6 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**:apply 照样成功,策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名锁死 |
 
 控制面 ServiceAccount 按 worker 组件拆分;租户资源的写权限是 ClusterRole,实际可达面由
 `deploy/cluster/admission/tenant-restrictions.yaml` 的 ValidatingAdmissionPolicy 收窄到 `superdl` / `tenant-*`
@@ -223,7 +223,8 @@ upsert `bills_hourly` → 同事务 `wallets` `FOR UPDATE` 扣减并写 `balance
    会替一台不用卡的实例申请 `nvidia.com/gpu`。计费份数同理收口到 `core/money.billing_units`(GPU 实例 = 卡数,
    CPU 实例 = 1 份整机),不散写 `单价 × gpu_count`。
 3. **超卖只发生在 HAMi 池。** kata 与 mig 池不超卖;cpu 档不涉及显卡超卖。`oversell_cores` 是纯定价参数,
-   不下发调度(schema 上界 9.99)。
+   不下发调度(schema 上界 9.99)。HAMi 池的隔离是软件限额(LD_PRELOAD CUDA 拦截),不是安全边界;
+   容器内 root 可绕过配额,且多租户共用同一未分区 GPU 存在显存残留面。详见 `reference/security.md` 隔离级别分级。
 4. **hami / mig / cpu 池的 Pod 必须 `hostUsers: false`(userns)**,容器内 root 映射为宿主非特权 UID;kata 池本身是
    VM 级隔离,不加 userns。
 5. **数据盘独立于实例生命周期**:释放实例不删数据盘,关机也照常计费。

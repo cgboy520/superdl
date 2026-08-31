@@ -1,38 +1,17 @@
 """账单 CSV 导出端点:内容头、行数、月份窗口、时区后缀、截断标记、转义规则。"""
 
 from datetime import UTC, datetime
-from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import csvexport
-from app.modules.billing.models import BillHourly
-from tests.helpers import create_user_with_key, fund_wallet
+from tests.helpers import create_user_with_key, fund_wallet, seed_bill_hourly
 
 
 def _hour(y: int, m: int, d: int, h: int) -> datetime:
     return datetime(y, m, d, h, tzinfo=UTC)
-
-
-async def _seed_hourly(
-    sm: async_sessionmaker[AsyncSession], user_id: int, hours: list[datetime]
-) -> None:
-    async with sm() as session:
-        for h in hours:
-            session.add(
-                BillHourly(
-                    instance_id=1,
-                    user_id=user_id,
-                    hour_start=h,
-                    seconds_used=3600,
-                    unit_price=Decimal("1.6800"),
-                    gpu_count=1,
-                    amount=Decimal("1.68"),
-                )
-            )
-        await session.commit()
 
 
 class TestEscaping:
@@ -63,10 +42,15 @@ class TestHourlyExport:
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
         headers, user_id, _ = await create_user_with_key(client, "13900000301")
-        await _seed_hourly(
+        await seed_bill_hourly(
             sm,
             user_id,
-            [_hour(2026, 8, 1, 0), _hour(2026, 8, 1, 1), _hour(2026, 7, 31, 20)],
+            rows=[
+                (1, _hour(2026, 8, 1, 0), "1.68"),
+                (1, _hour(2026, 8, 1, 1), "1.68"),
+                (1, _hour(2026, 7, 31, 20), "1.68"),
+            ],
+            unit_price="1.6800",
         )
         resp = await client.get(
             "/api/v1/billing/export",
@@ -98,7 +82,12 @@ class TestHourlyExport:
     ):
         headers, user_id, _ = await create_user_with_key(client, "13900000302")
         # 6/30 17:00 UTC = 7/1 01:00 (UTC+8),不属于 6 月窗口
-        await _seed_hourly(sm, user_id, [_hour(2026, 6, 30, 17), _hour(2026, 6, 15, 0)])
+        await seed_bill_hourly(
+            sm,
+            user_id,
+            rows=[(1, _hour(2026, 6, 30, 17), "1.68"), (1, _hour(2026, 6, 15, 0), "1.68")],
+            unit_price="1.6800",
+        )
         resp = await client.get(
             "/api/v1/billing/export",
             params={"dataset": "hourly", "month": "2026-06", "tz_offset_minutes": 480},
@@ -114,7 +103,12 @@ class TestHourlyExport:
         monkeypatch: pytest.MonkeyPatch,
     ):
         headers, user_id, _ = await create_user_with_key(client, "13900000304")
-        await _seed_hourly(sm, user_id, [_hour(2026, 8, 1, h) for h in range(4)])
+        await seed_bill_hourly(
+            sm,
+            user_id,
+            rows=[(1, _hour(2026, 8, 1, h), "1.68") for h in range(4)],
+            unit_price="1.6800",
+        )
         monkeypatch.setattr(csvexport, "EXPORT_MAX_ROWS", 2)
         resp = await client.get(
             "/api/v1/billing/export",
@@ -145,7 +139,7 @@ class TestLedgerExport:
         headers, _user_id, _ = await create_user_with_key(client, "13900000307")
         _headers2, user_id2, _ = await create_user_with_key(client, "13900000308")
         await fund_wallet(sm, user_id2, "888.00")
-        await _seed_hourly(sm, user_id2, [_hour(2026, 8, 1, 0)])
+        await seed_bill_hourly(sm, user_id2, rows=[(1, _hour(2026, 8, 1, 0), "1.68")])
         resp = await client.get(
             "/api/v1/billing/export",
             params={"dataset": "ledger"},

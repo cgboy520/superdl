@@ -1,5 +1,5 @@
 /** antd ConfigProvider locale / dayjs locale / html lang / document.title 四联动的唯一出口(两端共用)。
- *  relativeTime 插件在此统一 extend(幂等):管理端 fromNow 依赖它,原先由 admin lib/locale.ts 副作用引入。 */
+ *  relativeTime 插件在此统一 extend(幂等):管理端 fromNow 依赖它。 */
 import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";

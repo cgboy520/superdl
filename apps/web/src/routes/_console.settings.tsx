@@ -269,7 +269,7 @@ function PasswordModal({
   );
 }
 
-/** 危险区·账号注销:申请(原因必填 + 键入手机号,收编共享 TypeConfirmModal)/
+/** 危险区·账号注销:申请(原因必填 + 键入手机号,走共享 TypeConfirmModal)/
  *  冷静期倒计时 + 撤销。 */
 function DeletionZone({ phone }: { phone: string }) {
   const { t } = useTranslation(["web", "shared"]);

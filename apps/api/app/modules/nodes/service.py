@@ -2,8 +2,8 @@
 
 安全要点:
 - 注册令牌 `sdln_` + token_urlsafe(32)(256-bit 熵),库中只存 HMAC-SHA256
-  (core/crypto.hash_node_token,域分离前缀 node-enroll|;读路径 dual-read:
-  裸 SHA-256 旧行命中即席升级为 HMAC,过渡期后清理裸验分支);
+  (core/crypto.hash_node_token,域分离前缀 node-enroll|;读路径按 candidates
+  覆盖当前世代与轮换 previous);
   明文仅在创建/重生成响应出现一次。首次 bootstrap 即消费:换发窄权限
   progress 令牌 `sdlp_`(仅可上报进度,不能再换装机参数)。
 - 令牌绝对过期:progress 上报只刷新心跳(last_report_at),不延长 expires_at。
@@ -12,7 +12,6 @@
 - 状态迁移集中于 transition_enrollment,非法迁移 409。
 """
 
-import hashlib
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -26,7 +25,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.config import get_settings
 from app.core.crypto import hash_node_token, hash_node_token_candidates
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_models import model_matches
 from app.core.idempotency import find_replay
 from app.core.k8s.base import (
@@ -69,11 +68,9 @@ def transition_enrollment(
         return
     allowed = _ALLOWED_TRANSITIONS.get(enrollment.status, frozenset())
     if new_status not in allowed:
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="nodes.enrollTransition",
             params={"from": enrollment.status, "to": new_status},
-            http_status=http_status.HTTP_409_CONFLICT,
         )
     enrollment.status = new_status
     if phase is not None:
@@ -139,11 +136,7 @@ async def require_cluster_config(session: AsyncSession) -> dict[str, str]:
     """创建注册令牌的前置:cluster 组必须已配置,否则 409 引导去平台配置页。"""
     cfg = await get_effective_platform_config(session)
     if not cfg.get("cluster_server_url") or not cfg.get("cluster_join_token"):
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="nodes.clusterNotConfigured",
-            http_status=http_status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="nodes.clusterNotConfigured")
     return _narrow_cluster_config(cfg)
 
 
@@ -168,12 +161,7 @@ async def create_enrollment(
         if existing is not None:
             # 与 regenerate 同守卫:进行中的令牌被重放轮换会掐断正在装机的脚本
             if existing.status not in REGENERATABLE_STATUSES:
-                raise AppError(
-                    ErrorCode.CONFLICT,
-                    key="nodes.regenerateNotAllowed",
-                    params={"status": existing.status},
-                    http_status=http_status.HTTP_409_CONFLICT,
-                )
+                raise conflict(key="nodes.regenerateNotAllowed", params={"status": existing.status})
             token, existing.token_hash = _new_token()
             existing.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
             await session.commit()
@@ -233,11 +221,8 @@ async def regenerate_enrollment(
     await require_cluster_config(session)
     enrollment = await get_enrollment(session, enrollment_id)
     if enrollment.status not in REGENERATABLE_STATUSES:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="nodes.regenerateNotAllowed",
-            params={"status": enrollment.status},
-            http_status=http_status.HTTP_409_CONFLICT,
+        raise conflict(
+            key="nodes.regenerateNotAllowed", params={"status": enrollment.status}
         )
     token, enrollment.token_hash = _new_token()
     enrollment.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
@@ -253,12 +238,7 @@ async def regenerate_enrollment(
 async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEnrollment:
     enrollment = await get_enrollment(session, enrollment_id)
     if enrollment.status in TERMINAL_STATUSES:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="nodes.alreadyTerminal",
-            params={"status": enrollment.status},
-            http_status=http_status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="nodes.alreadyTerminal", params={"status": enrollment.status})
     transition_enrollment(enrollment, "revoked")
     await session.commit()
     await session.refresh(enrollment)
@@ -300,29 +280,12 @@ def _check_usable(row: NodeEnrollment | None) -> NodeEnrollment:
 async def _resolve_by_hash(
     session: AsyncSession, column: InstrumentedAttribute[str | None], token: str
 ) -> NodeEnrollment | None:
-    """按摘要取行(dual-read):先按 HMAC candidates(当前/legacy 世代与轮换 previous,
-    见 crypto.py)一趟取;miss 再按裸 SHA-256(无密钥摘要迁移前旧行)取,命中即席升级为
-    当前世代 HMAC 落库。令牌短 TTL,旧行自然过期后裸验分支可清理。"""
-    row = (
+    """按摘要取行:按 HMAC candidates(当前世代与轮换 previous,见 crypto.py)一趟取。"""
+    return (
         await session.execute(
             select(NodeEnrollment).where(column.in_(hash_node_token_candidates(token))).limit(1)
         )
     ).scalar_one_or_none()
-    if row is not None:
-        return row
-    legacy = hashlib.sha256(token.encode()).hexdigest()
-    row = (
-        await session.execute(select(NodeEnrollment).where(column == legacy))
-    ).scalar_one_or_none()
-    if row is not None:
-        # 即席升级:旧裸摘要行换当前世代 HMAC,不让无密钥摘要长期留在库里
-        upgraded = hash_node_token(token)
-        if column is NodeEnrollment.token_hash:
-            row.token_hash = upgraded
-        else:
-            row.progress_token_hash = upgraded
-        await session.flush()
-    return row
 
 
 async def _resolve_token(session: AsyncSession, token: str) -> NodeEnrollment:
@@ -361,11 +324,7 @@ async def bootstrap(
             row, "failed", error=f"主机名不符:期望 {row.hostname},实际上报 {hostname}(防令牌串用)"
         )
         await session.commit()
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="nodes.hostnameMismatch",
-            http_status=http_status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="nodes.hostnameMismatch")
     row.node_name = hostname
     row.reported_ip = client_ip
     row.os_info = os_info

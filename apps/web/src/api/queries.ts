@@ -128,7 +128,7 @@ export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
     ...opts,
   });
 /** 临期包周期实例(到期横幅数据源):服务端按 within_days 过滤,不分页——
- *  列表筛选/翻页/首页截断都不会把临期实例藏掉(D3)。 */
+ *  列表筛选/翻页/首页截断都不会把临期实例藏掉。 */
 export const useExpiringInstances = (withinDays: number | undefined, opts?: QueryOpts) =>
   useApiQuery(
     ["instances", "expiring", withinDays ?? null],
@@ -144,7 +144,7 @@ export const useInstancePages = (params?: { status?: string; name?: string }) =>
   return useCursorPages(["instances", "pages", { status, name }], listInstancesApiV1InstancesGet, { status, name }, 20);
 };
 /** 过渡态实例逐台轻轮询:infinite 列表挂 refetchInterval 会把每轮放大为已加载页数个请求,
- *  故改为从当前已加载行派生过渡态(creating/starting/stopping/releasing)uuid,
+ *  故从当前已加载行派生过渡态(creating/starting/stopping/releasing)uuid,
  *  逐台轮询单实例端点(5s,到终态即停);任一台 status 迁移即失效列表查询回刷。
  *  迁移由「本轮轮询值 vs 上轮轮询值」判定,首轮只落基线,列表挂载时的自刷新不误触发。 */
 export function useTransientInstanceRefresh(rows: InstanceOut[]) {

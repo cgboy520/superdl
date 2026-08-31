@@ -667,6 +667,69 @@ class TestExpiryChain:
         assert len(rows) == 1
         assert rows[0].status == "expired"
 
+    async def test_renew_rejected_when_balance_is_frozen(self, client, sm, fake):
+        """渠道冲正冻结额不得用于手动续费:余额看着够、可用余额(余额-冻结)不够 → 拒。
+
+        挂了 = 冻结款被续费吃掉,渠道核销时平台才发现钱已不在。
+        """
+        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100057")
+        async with sm() as s:
+            paid = (
+                (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
+                .scalar_one()
+                .amount_paid
+            )
+            w = await wallet.lock_wallet(s, user_id)
+            # 冻结到「余额够但可用差一分钱」:裸余额口径会放行,可用余额口径必须拦
+            w.frozen = w.balance - paid + Decimal("0.01")
+            await s.commit()
+        resp = await client.post(
+            f"/api/v1/instances/{uuid}/renew",
+            json={"period": "month", "period_count": 1},
+            headers=headers,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "billing.insufficientAvailableFrozen"
+        async with sm() as s:
+            # 老订阅行不被改坏(请求级事务回滚):仍只有一条 active
+            rows = (
+                (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
+                .scalars()
+                .all()
+            )
+            assert [r.status for r in rows] == ["active"]
+
+    async def test_auto_renew_with_frozen_balance_falls_back_to_stop(self, client, sm, fake):
+        """自动续费撞上全额冻结:预检按可用余额口径落 renew_failed 走到期停机,
+        而不是把冻结款扣掉(平台 30 分钟巡检自动跑,无需任何攻击者)。"""
+        headers, uuid, user_id, _, _ = await provision_subscription(client, sm, fake, "13911100058")
+        await client.post(
+            f"/api/v1/instances/{uuid}/auto-renew", json={"enabled": True}, headers=headers
+        )
+        async with sm() as s:
+            w = await wallet.lock_wallet(s, user_id)
+            w.frozen = w.balance  # 全额冻结:可用 0
+            await s.execute(
+                update(Subscription)
+                .where(Subscription.user_id == user_id)
+                .values(expires_at=now_utc() - timedelta(minutes=1))
+            )
+            await s.commit()
+        counts = await subscription_patrol(sm)
+        assert counts["renew_failed"] == 1
+        assert counts["stopped"] == 1
+        async with sm() as s:
+            w2 = await wallet.lock_wallet(s, user_id)
+            assert w2.balance > Decimal("0.00")  # 冻结款分文未动
+            assert w2.frozen == w2.balance
+            rows = (
+                (await s.execute(select(Subscription).where(Subscription.user_id == user_id)))
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1
+        assert rows[0].status == "expired"
+
     async def test_expiring_warning_is_sent_once(self, client, sm, fake):
         """临期预警每个到期时刻只发一条(巡检 30 分钟一轮,不去重就是每半小时一条短信)。"""
         from app.modules.notify.models import Notification

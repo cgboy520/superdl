@@ -37,7 +37,7 @@ TASK_TIMEOUT_SECONDS = 600.0
 # 任务还在正常执行时绝不允许被别的副本认领(否则同一任务双写终态),取 2 倍
 RUNNING_TIMEOUT = timedelta(seconds=2 * TASK_TIMEOUT_SECONDS)
 # 按任务类型的执行超时覆盖(秒):纯删除/通知类快操作不该占满全局上限。
-# 未列出的类型用 TASK_TIMEOUT_SECONDS;handler 归属模块不改,映射集中在这里
+# 未列出的类型用 TASK_TIMEOUT_SECONDS;handler 仍在各模块,超时映射集中在 core 层
 TASK_TIMEOUT_OVERRIDES: dict[str, float] = {
     "instance.stop": 180.0,
     "instance.release": 300.0,

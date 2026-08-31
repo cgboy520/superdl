@@ -70,7 +70,8 @@ function NotFoundPage() {
       <NotFoundView
         homeTo="/dashboard"
         homeLabel={t("common.backConsole")}
-        subtitle={t("notFound.subtitle")}
+        // 404 文案已收敛进 packages/ui shared ns(errorPage/notFound 两端共用)
+        subtitle={t("notFound.subtitle", { ns: "shared" })}
       />
     </AppProviders>
   );

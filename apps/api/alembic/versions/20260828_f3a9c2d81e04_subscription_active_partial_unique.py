@@ -27,18 +27,24 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_index(
-        "uq_subscriptions_active_instance",
-        "subscriptions",
-        ["instance_id"],
-        unique=True,
-        postgresql_where=sa.text("status = 'active'"),
-    )
+    # 在线建部分唯一索引:CONCURRENTLY 不锁写;CONCURRENTLY 不能在事务块内,
+    # 必须 autocommit_block(env.py 整轮单事务)
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_subscriptions_active_instance",
+            "subscriptions",
+            ["instance_id"],
+            unique=True,
+            postgresql_where=sa.text("status = 'active'"),
+            postgresql_concurrently=True,
+        )
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "uq_subscriptions_active_instance",
-        table_name="subscriptions",
-        postgresql_where=sa.text("status = 'active'"),
-    )
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "uq_subscriptions_active_instance",
+            table_name="subscriptions",
+            postgresql_where=sa.text("status = 'active'"),
+            postgresql_concurrently=True,
+        )

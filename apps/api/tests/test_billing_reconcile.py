@@ -86,6 +86,7 @@ class TestMoneyTableConstraints:
                 type_="consume",
                 ref_type="bill_hourly",
                 allow_negative=True,
+                allow_frozen=True,  # 结算扣款场景:对已发生消费的事后收款,冻结只拦新消费
             )
             await session.commit()
         async with sm() as session:

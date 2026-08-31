@@ -6,16 +6,13 @@ SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS(只参与解密/摘要回读),新密钥�
 操作步骤见 deploy/cluster/runbooks/key-rotation.md。
 
 密文格式(加密用钥经 HKDF 独立派生,与摘要用钥、JWT 密钥相互分离):
-- v2(当前写入):`enc:v2:<kid>:<b64(nonce+ct)>`,kid = 主密钥指纹(SHA-256 前 12 hex)。
-  解密按 kid 选钥,未知 kid 直接拒(不逐把试,伪造 kid 不放大计算面)。
-- v1(只读兼容):`enc:v1:<b64(nonce+ct)>`,裸主密钥 AES-GCM;轮换窗口内先试当前再试
-  previous,均失败即抛(禁止静默回落——回落等于轮换后悄悄用回旧值)。
-两种格式的 AAD 都绑定配置键名,防止密文在字段间搬运复用。
+`enc:v2:<kid>:<b64(nonce+ct)>`,kid = 主密钥指纹(SHA-256 前 12 hex)。
+解密按 kid 选钥,未知 kid 直接拒(不逐把试,伪造 kid 不放大计算面)。
+AAD 绑定配置键名,防止密文在字段间搬运复用。
 
 摘要(API Key / 节点令牌 / 短信验证码)是单向的,轮换后无法离线重算,读路径走
-candidates:当前 HKDF 子密钥(写入世代)优先,兼读裸主密钥(legacy 世代);
-挂了 previous 时两个世代一并回读,轮换窗口内既有 API Key / 节点令牌不失效。
-写路径永远只写当前世代。
+candidates:当前 HKDF 子密钥(写入世代)在前;挂了 previous 时旧钥匙派生世代一并回读,
+轮换窗口内既有 API Key / 节点令牌不失效。写路径永远只写当前世代。
 """
 
 import base64
@@ -25,7 +22,6 @@ import os
 
 from app.core.config import decode_master_key, get_settings
 
-_PREFIX_V1 = "enc:v1:"
 _PREFIX_V2 = "enc:v2:"
 
 # HKDF 域分离:加密子密钥与摘要子密钥从同一主密钥独立派生,
@@ -69,7 +65,7 @@ def _derive(key: bytes, info: bytes) -> bytes:
 
 
 def is_encrypted(value: str) -> bool:
-    return value.startswith((_PREFIX_V1, _PREFIX_V2))
+    return value.startswith(_PREFIX_V2)
 
 
 def encrypt_str(plaintext: str, *, aad: str) -> str:
@@ -81,27 +77,9 @@ def encrypt_str(plaintext: str, *, aad: str) -> str:
     return f"{_PREFIX_V2}{_kid_of(master)}:{base64.b64encode(nonce + ct).decode()}"
 
 
-def _decrypt_v1(token: str, *, aad: str) -> str:
-    """v1 密文(裸主密钥):轮换窗口内当前/Previous 双读。"""
-    from cryptography.exceptions import InvalidTag
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    blob = base64.b64decode(token[len(_PREFIX_V1) :])
-    keys = [k for k in (_active_key(), _previous_key()) if k is not None]
-    last_exc: Exception | None = None
-    for key in keys:
-        try:
-            return AESGCM(key).decrypt(blob[:12], blob[12:], aad.encode()).decode()
-        except (InvalidTag, ValueError) as exc:
-            last_exc = exc
-    raise last_exc if last_exc is not None else ValueError("无可用主密钥")
-
-
 def decrypt_str(token: str, *, aad: str) -> str:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-    if token.startswith(_PREFIX_V1):
-        return _decrypt_v1(token, aad=aad)
     if not token.startswith(_PREFIX_V2):
         raise ValueError("密文缺少 enc: 版本前缀")
     kid, sep, b64 = token[len(_PREFIX_V2) :].partition(":")
@@ -125,13 +103,13 @@ def _hmac_hex(mac_key: bytes, domain_msg: str) -> str:
 
 
 def _mac_candidates() -> list[bytes]:
-    """摘要用钥读候选:当前 HKDF 子密钥(写入世代)在前,裸主密钥(legacy 世代)随后;
-    轮换窗口内追加 previous 的两个世代。按值去重(兜底派生与显式配置撞 key 时不重复)。"""
+    """摘要用钥读候选:当前 HKDF 子密钥(写入世代)在前;轮换窗口内追加 previous 派生。
+    按值去重(兜底派生与显式配置撞 key 时不重复)。"""
     out: list[bytes] = []
     for master in dict.fromkeys(k for k in (_active_key(), _previous_key()) if k is not None):
-        for mac_key in (_derive(master, _MAC_INFO), master):
-            if mac_key not in out:
-                out.append(mac_key)
+        mac_key = _derive(master, _MAC_INFO)
+        if mac_key not in out:
+            out.append(mac_key)
     return out
 
 

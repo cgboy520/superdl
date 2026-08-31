@@ -81,6 +81,9 @@ MESSAGES: dict[str, str] = {
     "billing.channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
     "billing.channelStateNotBackfillable": "渠道侧状态为 {status},不能补单",
     "billing.insufficientBalance": "余额不足,请先充值",
+    "billing.insufficientAvailableFrozen": (
+        "可用余额不足:¥{frozen} 因支付渠道冲正被冻结,待核销期间不可用于新消费;如有疑问请联系客服"
+    ),
     "billing.settlementBehind": "结算正在追平,请稍后再转包周期",
     "billing.subscriptionAlreadyActive": "该实例已在包周期内,如需延长请使用续费",
     "billing.subscriptionCancelled": "该实例的包周期已作废,无法续费",

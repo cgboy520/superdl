@@ -63,7 +63,7 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AlertBell() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const role = useAdminRole();
   const writable = canWriteOps(role);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -86,9 +86,9 @@ function AlertBell() {
         <div style={{ width: 360, maxHeight: 400, overflow: "auto" }}>
           {alertsQ.isError ? (
             <Space orientation="vertical" size={8}>
-              <Typography.Text type="secondary">{t("common.loadFailed")}</Typography.Text>
+              <Typography.Text type="secondary">{t("common.loadFailed", { ns: "shared" })}</Typography.Text>
               <Button size="small" onClick={() => void alertsQ.refetch()}>
-                {t("common.retry")}
+                {t("common.retry", { ns: "shared" })}
               </Button>
             </Space>
           ) : (

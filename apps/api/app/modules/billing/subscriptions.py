@@ -1,7 +1,7 @@
 """包周期(预付)订阅:下单预扣、续费、到期巡检。
 
-与小时结算彻底分离:`bills_hourly` 的结构、幂等键、水位线、缺口机制一行不动,包周期
-实例只在结算候选里被跳过(orchestrator/queries.billing_candidates 一处)。
+与小时结算分离:包周期不进 `bills_hourly`,包周期实例只在结算候选里被跳过
+(orchestrator/queries.billing_candidates 一处)。
 
 预付语义的三个后果:中途释放不退款(订阅转 cancelled,确需退款走人工 `refund_requests`);
 到期不自动转按量,到期即停机;余额为零不停机 —— 停机判据、燃烧率、在途预留、冻结链
@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import AppError, ErrorCode, conflict
 from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, insert_idempotent
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
@@ -119,6 +119,7 @@ async def charge_new(
         ref_id=str(row.id),
         remark=f"{instance_name} 包{period_label(period)}×{period_count}",
         allow_negative=False,
+        # 先付后用:默认 allow_frozen=False,冻结额(渠道冲正待核销)不得用于购买
     )
     return row, quoted
 
@@ -299,13 +300,9 @@ async def renew(
                 session, row, model=Subscription, owner_col=None, owner_id=None, key=None
             )
         except IntegrityError:
-            # 防御层(理论不可达:钱包锁 + 行锁已串行化):部分唯一索引
-            # uq_subscriptions_active_instance 兜住第二条 active 行时,回查链头
-            # 按「已被并发续费」返回,绝不二次扣款
-            raced = await current_for_instance(session, instance.id)
-            if raced is None or raced.status != STATUS_ACTIVE:
-                raise
-            return raced, await _quote_of(session, raced, instance.gpu_count), False
+            # 理论不可达(钱包锁 + 行锁已串行化):部分唯一索引
+            # uq_subscriptions_active_instance 兜住第二条 active 行即冲突
+            raise conflict(key="common.retryableConflict") from None
     await wallet.debit(
         session,
         instance.user_id,
@@ -609,7 +606,10 @@ async def _try_auto_renew(
         period=row.period,
         period_count=row.period_count,
     )
-    if await wallet.get_balance(session, row.user_id) < quoted.amount:
+    # 预检口径与 debit 的冻结闸同线:可用余额(balance - frozen)不够即落 renew_failed
+    # 并通知,而不是让 renew 的 debit 在改完老订阅行之后才炸(冻结款是渠道冲正待核销
+    # 的钱,不得用于续费)
+    if await wallet.get_available_balance(session, row.user_id) < quoted.amount:
         counts["renew_failed"] += 1
         await notify_service.send_subscription_notice(
             session,
@@ -620,7 +620,7 @@ async def _try_auto_renew(
             target_id=instance.uuid,
         )
         return False
-    _new_row, _quote, created = await renew(
+    await renew(
         session,
         instance=instance,
         period=row.period,
@@ -628,9 +628,6 @@ async def _try_auto_renew(
         idempotency_key=None,
         actor="system",
     )
-    if not created:
-        # 唯一索引防御层命中(理论不可达:锁序+复核已挡):并发者已续,不重复计数/通知
-        return True
     counts["renewed"] += 1
     await notify_service.send_subscription_notice(
         session,
@@ -689,7 +686,7 @@ async def _freeze(session: AsyncSession, instance: "Instance") -> None:
 async def _patrol_freeze_expired(
     sm: async_sessionmaker[AsyncSession], counts: dict[str, int]
 ) -> None:
-    """已到期且已停稳的包周期实例 → 冻结(起 72h 回收倒计时)。
+    """已到期且已停稳的包周期实例 → 冻结(起回收倒计时,时长见 _freeze)。
 
     单独一趟而不是接在停机后面:停机是异步的(outbox 删 Pod → reconciler 确认),
     到期那一刻实例还在 stopping,当场冻不了。欠费链路的同一步在 balance_patrol 里,

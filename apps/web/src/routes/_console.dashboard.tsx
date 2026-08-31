@@ -137,8 +137,6 @@ function Overview() {
           }
         />
       )}
-      {/* 逐卡骨架:不再整体 loading(AND 会让先就绪的卡先出「—」再跳数);
-          各卡 isPending 骨架 / 失败嵌 DataErrorAlert 或 moneyOr「—」 */}
       <KpiGrid
         items={[
           <KpiCard key="instances" pending={instancesQ.isPending}>
@@ -171,7 +169,6 @@ function Overview() {
             )}
           </KpiCard>,
           <KpiCard key="unread" pending={unreadCountQ.isPending}>
-            {/* 与其它三卡同一纪律:查询失败明示可重试,「—」只表达未就绪 */}
             {unreadCountQ.isError ? (
               <DataErrorAlert onRetry={() => void unreadCountQ.refetch()} />
             ) : (

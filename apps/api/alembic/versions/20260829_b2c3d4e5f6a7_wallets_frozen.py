@@ -30,9 +30,16 @@ def upgrade() -> None:
         "wallets",
         sa.Column("frozen", sa.Numeric(14, 2), server_default="0", nullable=False),
     )
-    op.create_check_constraint("frozen_nonneg", "wallets", "frozen >= 0")
+    # 钱表约束在线姿势:NOT VALID 先行(不锁表校验存量),再独立 VALIDATE
+    # (只持 SHARE UPDATE EXCLUSIVE,不阻塞读写)。约束名带 ck_ 前缀:
+    # core/db.py 的 naming_convention 会把模型里的 frozen_nonneg 渲染成
+    # ck_wallets_frozen_nonneg,迁移必须建同名,否则 alembic check 报漂移
+    op.execute(
+        "ALTER TABLE wallets ADD CONSTRAINT ck_wallets_frozen_nonneg CHECK (frozen >= 0) NOT VALID"
+    )
+    op.execute("ALTER TABLE wallets VALIDATE CONSTRAINT ck_wallets_frozen_nonneg")
 
 
 def downgrade() -> None:
-    op.drop_constraint("frozen_nonneg", "wallets", type_="check")
+    op.drop_constraint("ck_wallets_frozen_nonneg", "wallets", type_="check")
     op.drop_column("wallets", "frozen")

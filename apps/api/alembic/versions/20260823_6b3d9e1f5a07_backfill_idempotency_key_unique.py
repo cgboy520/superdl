@@ -22,8 +22,18 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_unique_constraint(
-        "uq_orders_backfill_idempotency_key", "orders", ["backfill_idempotency_key"]
+    # 在线姿势:并发唯一索引 + USING INDEX 提升为约束(UNIQUE 无 NOT VALID 形态)
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_orders_backfill_idempotency_key",
+            "orders",
+            ["backfill_idempotency_key"],
+            unique=True,
+            postgresql_concurrently=True,
+        )
+    op.execute(
+        "ALTER TABLE orders ADD CONSTRAINT uq_orders_backfill_idempotency_key "
+        "UNIQUE USING INDEX uq_orders_backfill_idempotency_key"
     )
 
 

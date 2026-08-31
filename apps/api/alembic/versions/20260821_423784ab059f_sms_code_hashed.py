@@ -26,8 +26,13 @@ def upgrade() -> None:
     """
     op.add_column("sms_codes", sa.Column("code_hash", sa.String(length=64), nullable=True))
     op.execute("DELETE FROM sms_codes")
-    op.alter_column("sms_codes", "code_hash", nullable=False)
-    op.drop_column("sms_codes", "code")
+    # 清表后全表校验零行零成本,SET NOT NULL 无实际扫描(门禁按形式拦,此处标注理由)
+    op.alter_column(  # ddl-risk: reviewed —— 上一行已 DELETE 全表,校验零行
+        "sms_codes", "code_hash", nullable=False
+    )
+    op.drop_column(  # ddl-risk: reviewed —— 本迁移的语义就是摘除明文列(瞬时 catalog 锁)
+        "sms_codes", "code"
+    )
 
 
 def downgrade() -> None:

@@ -1,8 +1,8 @@
 /** 确认强度组件(ui-ux-spec §1 规则 7 的共享实现):
  *  - useConfirm(L2):modal.confirm 的统一形态,「后果前置 + 影响说明」由结构强制,
  *    替代各页手写 confirm 时自由发挥的句式。
- *  - TypeConfirmModal(L3):「键入名称 + 可选勾选」双闸确认,收编释放实例/删除数据盘/
- *    注销账号三处自实现;勾选闸可省(creating 态取消创建这类「尚未落盘」场景)。 */
+ *  - TypeConfirmModal(L3):「键入名称 + 可选勾选」双闸确认,用于释放实例/删除数据盘/
+ *    注销账号等终态动作;勾选闸可省(creating 态取消创建这类「尚未落盘」场景)。 */
 
 import { App, Button, Checkbox, Input, Modal, Space, Typography } from "antd";
 import { useCallback, useState, type ReactNode } from "react";

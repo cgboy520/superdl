@@ -1,6 +1,6 @@
-/** 游标分页「加载更多」(两端共用,收编两端各自 LoadMoreButton):
- *  - hasNextPage → 加载按钮;isFetchNextPageError → 错误提示 + 重试(原实现失败静默);
- *  - 无下一页且已有数据 → 「已加载全部 N 条」收尾态(原实现直接消失,用户不知是否还有数据)。
+/** 游标分页「加载更多」(两端共用):
+ *  - hasNextPage → 加载按钮;isFetchNextPageError → 错误提示 + 重试;
+ *  - 无下一页且已有数据 → 「已加载全部 N 条」收尾态。
  */
 
 import { Alert, Button, Typography } from "antd";
@@ -15,7 +15,7 @@ export function LoadMore({
 }: {
   hasNextPage: boolean;
   loading: boolean;
-  /** fetchNextPage 失败(给重试入口,不再静默) */
+  /** fetchNextPage 失败(给重试入口) */
   isError?: boolean;
   /** 已加载条数(收尾态文案);0 时不渲染收尾 */
   loadedCount?: number;

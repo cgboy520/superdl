@@ -81,7 +81,7 @@ const POLICY_LABELS: Record<string, { label: string; unit: string; hint?: string
 };
 
 function PoliciesTab() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const role = useAdminRole();
@@ -130,8 +130,8 @@ function PoliciesTab() {
           type="error"
           showIcon
           style={{ marginBottom: 12 }}
-          title={t("common.loadFailed")}
-          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry")}</Button>}
+          title={t("common.loadFailed", { ns: "shared" })}
+          action={<Button size="small" onClick={() => void refetch()}>{t("common.retry", { ns: "shared" })}</Button>}
         />
       )}
       <Table

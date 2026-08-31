@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
-from app.core.money import as_amount
+from app.core.money import as_amount, money_str
 from app.core.timeutil import now_utc, prev_hour_range
 from app.modules.metering import prom
 from app.modules.metering.models import UsageHourly
@@ -178,8 +178,8 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
                 diffs.append(
                     {
                         "instance_id": iid,
-                        "billed": format(b, "f"),
-                        "estimated": format(est, "f"),
+                        "billed": money_str(b),
+                        "estimated": money_str(est),
                         "diff_pct": round(diff_pct, 1),
                     }
                 )
@@ -187,8 +187,8 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> dict[st
     total_diff_pct = float(abs(billed_total - est_total) / total_base * 100) if total_base else 0.0
     return {
         "day": day_start.date().isoformat(),
-        "billed_total": format(billed_total, "f"),
-        "estimated_total": format(est_total, "f"),
+        "billed_total": money_str(billed_total),
+        "estimated_total": money_str(est_total),
         "diff_pct": round(total_diff_pct, 1),
         "outliers": sorted(diffs, key=lambda d: -d["diff_pct"]),
     }

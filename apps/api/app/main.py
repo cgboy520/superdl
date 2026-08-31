@@ -75,7 +75,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             (log.error if w.level == "error" else log.warning)(
                 "config_warning", key=w.key, hint=w.message
             )
-        # D-4 合规闸门 fail-fast(实现在 platform_config.assert_prod_compliance_gates)
+        # 合规闸门 fail-fast(实现在 platform_config.assert_prod_compliance_gates)
         assert_prod_compliance_gates(cfg, settings.environment)
     yield
     # Prometheus 代理客户端是全局单例(连接池),进程退出前显式关闭

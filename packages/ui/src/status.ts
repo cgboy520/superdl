@@ -97,7 +97,6 @@ export type Market = "on_demand" | "spot" | "subscription";
 
 export const marketMap = {
   on_demand: { labelKey: "shared:status.market.on_demand", color: statusColors.gray },
-  // 橙:与 frozen 同色系(还在跑,但不保证跑到底)
   spot: {
     labelKey: "shared:status.market.spot",
     color: statusColors.orange,

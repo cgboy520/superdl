@@ -1,5 +1,5 @@
 import { adminColors, fontSize, formatDateTime, statusColors } from "@superdl/ui";
-import { DataErrorAlert, EChart, KpiGrid, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
+import { moneyOr, DataErrorAlert, EChart, KpiGrid, PageContainer, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
@@ -147,7 +147,7 @@ function PoolOccupancy({ pools }: { pools: OverviewOut["pools"] }) {
 
 /** 值班首屏第二排:任务死信(重放/忽略都需原因 + 二次确认,handler 幂等)。 */
 function DeadTasksCard() {
-  const { t, i18n } = useTranslation();
+  const { t, i18n } = useTranslation(["admin", "shared"]);
   const qc = useQueryClient();
   const role = useAdminRole();
   const writable = canWriteOps(role);
@@ -174,7 +174,7 @@ function DeadTasksCard() {
               <Badge status="error" />
               <b>{t("overview.deadTasks")}</b>
               {isError ? (
-                <Tag color="orange">{t("common.loadFailed")}</Tag>
+                <Tag color="orange">{t("common.loadFailed", { ns: "shared" })}</Tag>
               ) : isLoading ? null : (
                 <Tag color="red">{t("overview.pendingCount", { count: rows.length })}</Tag>
               )}
@@ -421,13 +421,13 @@ function Overview() {
             <Card key="rev-today">
               {revenueQ.isError ? revenueErr : (
                 <>
-                  <Statistic title={t("overview.todayRevenue")} value={revenue ? formatMoney(revenue.today_revenue) : "—"} />
+                  <Statistic title={t("overview.todayRevenue")} value={moneyOr(formatMoney(revenue?.today_revenue), revenue != null)} />
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption, display: "block" }}>
-                    {t("overview.yesterdayPrefix", { amount: revenue ? formatMoney(revenue.yesterday_revenue) : "—" })}
+                    {t("overview.yesterdayPrefix", { amount: moneyOr(formatMoney(revenue?.yesterday_revenue), revenue != null) })}
                   </Typography.Text>
                   {/* 收入已含包周期预付,必须摊开单列:一笔包年当天就是尖峰,不标出来昨日环比会被读成异常 */}
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.today_prepaid) : "—" })}
+                    {t("overview.prepaidPart", { amount: moneyOr(formatMoney(revenue?.today_prepaid), revenue != null) })}
                   </Typography.Text>
                 </>
               )}
@@ -435,9 +435,9 @@ function Overview() {
             <Card key="rev-month">
               {revenueQ.isError ? revenueErr : (
                 <>
-                  <Statistic title={t("overview.monthRevenue")} value={revenue ? formatMoney(revenue.month_revenue) : "—"} />
+                  <Statistic title={t("overview.monthRevenue")} value={moneyOr(formatMoney(revenue?.month_revenue), revenue != null)} />
                   <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                    {t("overview.prepaidPart", { amount: revenue ? formatMoney(revenue.month_prepaid) : "—" })}
+                    {t("overview.prepaidPart", { amount: moneyOr(formatMoney(revenue?.month_prepaid), revenue != null) })}
                   </Typography.Text>
                 </>
               )}

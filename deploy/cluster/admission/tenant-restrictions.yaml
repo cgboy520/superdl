@@ -86,6 +86,8 @@ spec:
 ---
 # 策略二:租户命名空间(平台打标 superdl.io/managed=true)内的 Pod 安全基线,
 # 防的是平台被注入/编排逻辑出 bug 时创建出越权 Pod;正常租户 Pod 全部满足。
+# 含 NVIDIA_* env 禁入(伪造 GPU 可见性 = 看到同机全部显卡;device-plugin 注入
+# 不经 apiserver,零误伤)。
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -156,6 +158,16 @@ spec:
         !has(object.spec.runtimeClassName) ||
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
       message: "租户 Pod 的 runtimeClassName 仅允许 kata-qemu / nvidia"
+    # NVIDIA_* 环境变量禁入:kubelet 合并 env 时 pod spec 中的重复键后写胜出,租户声明
+    # NVIDIA_VISIBLE_DEVICES=all 会覆盖 device-plugin 的分配结果,看到节点上全部物理卡
+    # (含分给他租户的卡)。本规则是唯一不依赖运行时行为的权威控制:device-plugin 注入
+    # 发生在 kubelet Allocate 阶段,不经 apiserver 准入,故此规则对正常分配零误伤;
+    # 应用层(orchestrator/schemas.py _RESERVED_ENV_PREFIXES)另有同口径前置拦截。
+    - expression: >-
+        object.spec.containers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_'))) &&
+        (!has(object.spec.initContainers) ||
+          object.spec.initContainers.all(c, !has(c.env) || !c.env.exists(e, e.name.startsWith('NVIDIA_'))))
+      message: "租户 Pod 禁止 NVIDIA_* 环境变量(GPU 可见性由平台分配链控制;伪造可见性 = 看到同机全部显卡)"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

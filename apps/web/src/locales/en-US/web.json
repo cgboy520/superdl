@@ -119,8 +119,7 @@
     "gbMonthPrice": "CN¥{{price}}/GB·mo",
     "goRent": "Rent now",
     "hostSpec": "{{vcpu}} vCPU / {{mem}}G RAM / {{disk}}G instance disk",
-    "jupyter": "JupyterLab",
-    "retry": "Retry"
+    "jupyter": "JupyterLab"
   },
   "copy": {
     "antiMiningNotice": "Crypto mining is strictly prohibited; violators are banned without refund (see Terms)",
@@ -146,10 +145,10 @@
     "diskExpirePolicyFallback": "Expired data disks get a read-only grace period, then a frozen period before deletion",
     "diskRetention": "Data disks outlive instances — release without losing data",
     "ecoTierConsent": {
-      "c1": "Shared·Economy is software-isolated shared compute; the compute share is a mean guarantee",
-      "c2": "Performance may fluctuate at peak load on the same card",
+      "c1": "Shared·Economy is software-limited shared compute (HAMi LD_PRELOAD CUDA interception); the compute share is a mean guarantee. This is a performance quota, not a security boundary — root inside the container can bypass the limit.",
+      "c2": "Performance may fluctuate at peak load on the same card. Multiple tenants share the same unpartitioned GPU, with a known cross-tenant memory-remanence surface.",
       "c3": "The platform may reschedule Economy instances under resource pressure (with prior notice)",
-      "c4": "Priced well below Standard — suited to fault-tolerant workloads"
+      "c4": "Priced well below Standard — suited to fault-tolerant batch tasks. Not suitable for sensitive data or workloads requiring strong isolation."
     },
     "eventsAreBilling": "This event log is the billing source of truth: running time accrues per second, up to the instant of shutdown",
     "freezePolicy": "Stopped instances frozen for arrears are reclaimed after {{hours}} hours (instance disk only; data disks unaffected)",
@@ -327,11 +326,6 @@
     "title": "Overview",
     "totalInstances": "Instances",
     "unread": "Unread notifications"
-  },
-  "errorPage": {
-    "subtitle": "The page ran into a problem. Retry or go back home.",
-    "techDetail": "Technical details",
-    "title": "Something went wrong"
   },
   "footer": {
     "complianceTitle": "Compliance",
@@ -687,10 +681,6 @@
     "title": "Marketplace",
     "vcpuUnit_one": "{{count}} vCPU",
     "vcpuUnit_other": "{{count}} vCPU"
-  },
-  "notFound": {
-    "subtitle": "The page you are looking for does not exist or has been removed.",
-    "title": "Page not found"
   },
   "notifications": {
     "empty": "No notifications yet",

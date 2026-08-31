@@ -10,7 +10,7 @@ import httpx
 from app.core.config import get_settings
 from app.core.gpu_adapter import POOL_HAMI
 
-# ---- 标签常量:与 dcgm-exporter / HAMi vGPUmonitor 实机形态对齐,如有出入只改这里 ----
+# ---- 标签常量 ----
 # dcgm-exporter 4.x 的节点标签是小写 hostname(3.x 为 Hostname;gpu-operator v26 与独立 chart
 # 均为 4.x)
 DCGM_NODE_LABEL = "hostname"

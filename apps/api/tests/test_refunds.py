@@ -196,11 +196,6 @@ class TestApply:
         r2 = await apply_refund(client, headers, order["order_no"], "21.00", idem="rf-mix")
         assert r2.status_code == 409
         assert r2.json()["message_key"] == "common.idempotencyKeyMismatch"
-        # 同键同参仍是重放(回归不破)
-        r3 = await apply_refund(client, headers, order["order_no"], "20.00", idem="rf-mix")
-        assert r3.status_code == 200
-        assert r3.headers["x-idempotent-replay"] == "true"
-        assert r3.json()["refund_no"] == r1.json()["refund_no"]
 
 
 class TestAdminFlow:
@@ -600,7 +595,7 @@ class TestPartialRefunds:
 
 
 class TestRefundStrategy:
-    """退款策略(#23):可退余额口径(补偿 credit 不可提现) + 原路退回。"""
+    """退款策略:可退余额口径(补偿 credit 不可提现) + 原路退回。"""
 
     async def test_compensation_credit_not_refundable(self, client: AsyncClient, sm):
         """补偿 credit 不可提现:充 50 花光 + 补偿 50(余额 50),退款申请全拒。

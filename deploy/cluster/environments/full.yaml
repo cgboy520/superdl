@@ -9,8 +9,10 @@ topolvm: {enabled: true}
 certManager: {enabled: true}
 acmeDns: {enabled: true}   # DNS01 中转(公网 53 经真实 LB 暴露);随 cert-manager presync 应用
 envoyGateway: {enabled: true}   # 北向唯一入口(Gateway API);ns envoy-gateway-system 控制面与 Envoy 数据面同住
-# 平台库进 K8s(CloudNativePG)时打开;默认关闭 = 用托管 PG(见 deploy/README.md「生产数据库要求」)
-cnpg: {enabled: false}
+# 平台库(钱包/账本)进 K8s(CloudNativePG):3 实例 + S3 持续 WAL 归档(分钟级 RPO),
+# full 档面向公众生产默认启用;改回 false = 用托管 PG,此时 preflight 强制要求
+# SUPERDL_MANAGED_PG_PITR_ACK=yes(书面确认托管侧 PITR 已开),见 deploy/README.md「生产数据库要求」
+cnpg: {enabled: true}
 # 日志栈:Loki + Alloy 采集;API 审计日志经 Loki 留存 ≥6 个月
 loki: {enabled: true}
 logCollector: {enabled: true}

@@ -2,8 +2,8 @@
 
 端口池 30000–32767 与 K8s NodePort 同段,集群其它对象会硬占其中某些端口,两道防护:
 `ssh_port_excluded` 预先跳过已知占用;`blocked` 由 handle_create 在运行期撞占后标记。
-分配在段内随机(复用空闲行与扩段都随机,不再按端口升序):顺序分配让在用的 SSH 入口
-恒占低段、可枚举(审计 #24);随机只是过渡减面,统一入口/连接审计是 SSH gateway(D-5)。
+分配在段内随机(复用空闲行与扩段都随机):顺序分配让在用的 SSH 入口
+恒占低段、可枚举;随机只是过渡减面,统一入口/连接审计由 SSH gateway 承担。
 """
 
 from typing import TYPE_CHECKING, Any
@@ -43,7 +43,7 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
     if mine is not None:
         return mine.port
     for _ in range(8):
-        # 复用空闲行:随机取而非升序顶头(顺序分配让在用 SSH 端口恒聚在低段,可枚举)
+        # 复用空闲行:随机取(顺序分配会让在用 SSH 端口恒聚低段、可枚举,见模块 docstring)
         free = (
             await session.execute(
                 select(PortAllocation)
@@ -57,7 +57,7 @@ async def ensure_port(session: AsyncSession, instance: Instance) -> int:
             free.instance_id = instance.id
             await session.flush()
             return free.port
-        # 扩段:段内随机挑未占端口(generate_series 差集),替代 max+1 顶格。
+        # 扩段:段内随机挑未占端口(generate_series 差集)。
         # 段长 ≤2768,差集+随机排序是微秒级;撞唯一索引由重试预算消化(并发同挑一个口)。
         candidate = (
             await session.execute(

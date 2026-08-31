@@ -28,10 +28,18 @@ def upgrade() -> None:
         "node_enrollments",
         sa.Column("progress_token_hash", sa.String(64), nullable=True),
     )
-    op.create_unique_constraint(
-        "uq_node_enrollments_progress_token_hash",
-        "node_enrollments",
-        ["progress_token_hash"],
+    # 在线姿势:并发唯一索引 + USING INDEX 提升为约束(UNIQUE 无 NOT VALID 形态)
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_node_enrollments_progress_token_hash",
+            "node_enrollments",
+            ["progress_token_hash"],
+            unique=True,
+            postgresql_concurrently=True,
+        )
+    op.execute(
+        "ALTER TABLE node_enrollments ADD CONSTRAINT uq_node_enrollments_progress_token_hash "
+        "UNIQUE USING INDEX uq_node_enrollments_progress_token_hash"
     )
 
 

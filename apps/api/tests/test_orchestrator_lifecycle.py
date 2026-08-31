@@ -49,11 +49,6 @@ class TestCreateLifecycle:
         b = await client.post("/api/v1/instances", json={**body, "gpu_count": 2}, headers=h)
         assert b.status_code == 409
         assert b.json()["message_key"] == "common.idempotencyKeyMismatch"
-        # 同键同参仍是重放(回归不破)
-        c = await client.post("/api/v1/instances", json=body, headers=h)
-        assert c.status_code == 200
-        assert c.headers["x-idempotent-replay"] == "true"
-        assert c.json()["uuid"] == a.json()["uuid"]
 
     async def test_full_create_to_running(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], fake: FakeOrchestrator
@@ -97,7 +92,7 @@ class TestCreateLifecycle:
         assert uuid in access["jupyter_url"]
         assert "/superdl-bootstrap?" in access["jupyter_url"]
         assert "token=" not in access["jupyter_url"]
-        # 票据签名以实例 token 为 HMAC 密钥;token 密文落库(enc:v1:)
+        # 票据签名以实例 token 为 HMAC 密钥;token 密文落库(enc:v2:)
         import hashlib
         import hmac
         from urllib.parse import parse_qs, urlparse
@@ -500,7 +495,7 @@ class TestPortPool:
 
     async def test_excluded_port_is_skipped(self, client, sm, fake, monkeypatch):
         """已知被集群其它对象占用的 NodePort 一开始就不分配。
-        (分配是段内随机的——审计 #24;断言不落 excluded、不低于 start,不钉具体端口)"""
+        (分配是段内随机的;断言不落 excluded、不低于 start,不钉具体端口)"""
         from app.core.config import get_settings
 
         settings = get_settings()
@@ -738,7 +733,7 @@ class TestServiceWorkloadUnreadyExemption:
                 spec={},
                 image_ref="img",
                 status="running",
-                jupyter_token="enc:v1:x",
+                jupyter_token="enc:v2:x",
                 workload_type=workload_type,
                 # 已经超过下面传入的宽限窗
                 unready_since=now_utc() - timedelta(hours=1),

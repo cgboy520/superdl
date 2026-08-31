@@ -120,10 +120,6 @@ class Settings(BaseSettings):
     max_disks_per_user: int = 20  # 数据盘数量上限
     # 单个 GPU 节点让给 CPU 实例的 vCPU 上限(近似库存口径);0 = 不许 CPU 实例落 GPU 节点
     gpu_node_cpu_instance_vcpu_cap: int = 16
-    # 对外服务端点的边缘限流(每端点每秒请求数),生效在网关的本地令牌桶里。改它必须同时
-    # 重新下发 deploy/app/k8s/04-gateway.yaml 的 BackendTrafficPolicy —— 这一项是「渲染进
-    # 清单」的,改配置中心不会同步到网关
-    service_endpoint_rps: int = 20
 
     # 包周期折扣(百分数,80 = 8 折);周期越长折扣越深是定价意图,不由代码强制
     period_discount_day: int = 95
@@ -172,8 +168,12 @@ class Settings(BaseSettings):
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
     # 共享档允许落的池(逗号分隔:mig=硬切分,hami=软切分超卖;空 = 共享档整体停售)。
-    # D-1 过渡开关:HAMi 容器内 root + libvgpu 软限额的租户间隔离弱于 MIG 硬切分,
-    # 产品边界决策落地前,摘掉 hami 即「共享档只卖 MIG」。建 SKU 与改池两条路径同拦。
+    # 安全说明:HAMi 通过 LD_PRELOAD 拦截 CUDA runtime API 实现显存/算力软限额,但容器内
+    # root 可通过 unset LD_PRELOAD、静态链接 CUDA、直接调用 CUDA Driver API 绕过配额
+    # (HAMi 官方 troubleshooting 明确列出这些绕过方式)。因此 hami 池是软件限额/性能隔离,
+    # 不是安全边界,不适合需要强隔离的多租户场景。MIG 为 GPU 硬件强制隔离,租户无法绕过。
+    # 产品边界决策:公网面向不可信租户时建议摘掉 hami(仅保留 mig),或接受 HAMi 的隔离
+    # 弱点并以前端知情同意 modal 明确告知用户。建 SKU 与改池两条路径同拦。
     shared_tier_allowed_pools: str = "mig,hami"
     # 共享档 Pod 注 HAMi use-gputype annotation(SKU 原文串);仅混卡节点池需要,默认关
     hami_use_gputype: bool = False
@@ -225,6 +225,16 @@ class Settings(BaseSettings):
 
     # /metrics 抓取鉴权(Prometheus scrape 配置同一 Bearer;prod 必配)
     metrics_token: str | None = None
+
+    # worker 进程(同一镜像第二入口:outbox 消费 + 定时任务)
+    # 并发领取协程数(claim 走 FOR UPDATE SKIP LOCKED,多协程不重复领取)
+    worker_outbox_concurrency: int = 4
+    # K8s liveness 探针的心跳文件;None = /tmp/superdl-worker-heartbeat
+    worker_heartbeat: str | None = None
+    # worker 进程内 /metrics 监听端口(无 Ingress,PodMonitor 直抓)
+    worker_metrics_port: int = 9000
+    # 组件身份(见 workers/components.py;非法值 fail-closed)
+    worker_component: str = "all"
 
     # 日志级别(structlog 与 stdlib 桥接同受此控;大写,默认 INFO)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
@@ -307,12 +317,24 @@ class Settings(BaseSettings):
         if self.environment != "prod":
             return self
         problems: list[str] = []
-        if self.jwt_secret == _DEV_JWT_SECRET or len(self.jwt_secret) < 32:
-            problems.append("jwt_secret 仍为开发默认值或长度不足 32 字符")
+        # 占位/弱密钥检测:模板占位符(CHANGE_ME 系列)与低熵串都不得上线——纯长度检查拦不住
+        # 「CHANGE_ME_32_CHARS_MINIMUM_______」这类 33 字符占位(唯一字符仅 15 个);真实
+        # openssl rand -hex 32 输出唯一字符期望 ~20+,不受影响。JWT secret 是 opaque bytes,
+        # 不强制编码格式,只查来源痕迹与熵。
+        if (
+            self.jwt_secret == _DEV_JWT_SECRET
+            or "change_me" in self.jwt_secret.lower()
+            or len(self.jwt_secret) < 32
+            or len(set(self.jwt_secret)) < 16
+        ):
+            problems.append(
+                "jwt_secret 仍为开发默认值/占位符/低熵串"
+                "(需 ≥32 字符且唯一字符 ≥16;生成:openssl rand -hex 32)"
+            )
         if self.access_token_ttl_seconds > 3600:
-            problems.append("access_token_ttl_seconds 超过 1 小时上限(令牌收紧基线)")
+            problems.append("access_token_ttl_seconds 超过 1 小时上限")
         if self.refresh_token_ttl_seconds > 7 * 24 * 3600:
-            problems.append("refresh_token_ttl_seconds 超过 7 天上限(令牌收紧基线)")
+            problems.append("refresh_token_ttl_seconds 超过 7 天上限")
         if self.sms_provider == "mock":
             problems.append("sms_provider 不得为 mock(验证码将是固定值)")
         if self.k8s_backend == "fake":
@@ -321,7 +343,7 @@ class Settings(BaseSettings):
             problems.append("payment_mock 必须为 false")
         if "superdl:superdl@localhost" in self.database_url:
             problems.append("database_url 仍为本地开发默认")
-        # 非本机 PG 必须 TLS(零信任网络;JuiceFS metaurl 早已 sslmode=require,同口径)。
+        # 非本机 PG 必须 TLS(零信任网络;JuiceFS metaurl 同样 sslmode=require,同口径)。
         # 本机回环豁免:开发/单节点。asyncpg 侧由 db._split_db_tls 翻译成 ssl 连接参
         from urllib.parse import parse_qs, urlparse
 

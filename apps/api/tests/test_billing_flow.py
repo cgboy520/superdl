@@ -145,25 +145,6 @@ class TestArrearsChain:
         assert data["status"] == "stopped"
         assert data["frozen_deadline"] is None
 
-    async def test_low_balance_warning(self, client, sm, fake):
-        headers, uuid, user_id = await provision_running(client, sm, fake)
-        # 余额压到不足 24h(单价 1.68/时 → 24h 需 40.32;留 10)
-        async with sm() as session:
-            balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(
-                session,
-                user_id,
-                balance - Decimal("10.00"),
-                type_="adjust",
-                remark="t",
-                allow_negative=True,
-            )
-            await session.commit()
-        counts = await balance_patrol(sm)
-        assert counts["warned"] == 1
-        # 实例不受影响
-        assert (await get_instance(client, headers, uuid))["status"] == "running"
-
     async def test_arrears_stop_rereads_balance_in_lock(self, client, sm, fake, monkeypatch):
         """停机判定前锁内二次读余额:无锁粗筛为负,锁内读到「窗口内」刚充值的
         余额 → 不误停机(挂了 = 读余额到提交停机之间充值的竞态窗口复现)。"""

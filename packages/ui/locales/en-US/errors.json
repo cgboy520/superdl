@@ -63,6 +63,7 @@
     "channelNotEnabled": "This payment channel is not enabled — choose another",
     "channelStateNotBackfillable": "Channel-side status is {{status}} — cannot backfill",
     "insufficientBalance": "Insufficient balance — top up first",
+    "insufficientAvailableFrozen": "Insufficient available balance: ¥{{frozen}} is frozen pending chargeback reconciliation and cannot be spent on new purchases; contact support if in doubt",
     "insufficientForInFlight": "Insufficient balance: in-flight resources are expected to burn CN¥{{inflight}} more; this operation requires a balance of at least CN¥{{required}} (current CN¥{{balance}}) — top up first",
     "invoiceAmountStale": "The invoiceable amount has changed (now CN¥{{expected}}, requested CN¥{{requested}}): a refund occurred in this period — reject the request and ask the user to resubmit with the new amount",
     "invoiceNotFound": "Invoice request not found",

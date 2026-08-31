@@ -26,10 +26,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # ddl-risk: reviewed —— 列改名。评审结论:cluster_status 是单行派生缓存
-    # (nodes 巡检每轮整行覆写,陈旧超 10min 即按「未知」处理),改名不丢任何事实,
-    # 且下一轮巡检(≤5min)自动把新列填成真值。改名是纯 catalog 操作,不重写表、不扫行。
-    op.alter_column("cluster_status", "ingress_ready", new_column_name="gateway_ready")
+    # 评审结论:cluster_status 是单行派生缓存(nodes 巡检每轮整行覆写,陈旧超 10min 即按
+    # 「未知」处理),改名不丢任何事实,且下一轮巡检(≤5min)自动把新列填成真值。
+    # 改名是纯 catalog 操作,不重写表、不扫行。
+    op.alter_column(  # ddl-risk: reviewed —— 单行派生缓存改名,零事实损失
+        "cluster_status", "ingress_ready", new_column_name="gateway_ready"
+    )
 
 
 def downgrade() -> None:

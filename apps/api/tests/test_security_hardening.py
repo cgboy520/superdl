@@ -185,7 +185,8 @@ class TestProdConfigValidation:
         return {
             "_env_file": None,  # 运行时参数,stub 未暴露
             "environment": "prod",
-            "jwt_secret": "x" * 40,
+            # 合法形态:64 字符十六进制(openssl rand -hex 32);prod 校验拒绝占位符与低熵串
+            "jwt_secret": "9f4a1c7e2b8d0f63a5e9c417b3d68f02a1c4e7958b0d326f7a9c1e4b58d2f603",
             "sms_provider": "aliyun",
             "k8s_backend": "real",
             "payment_mock": False,
@@ -217,6 +218,23 @@ class TestProdConfigValidation:
         msg = str(ei.value)
         for keyword in ("jwt_secret", "sms_provider", "k8s_backend", "payment_mock"):
             assert keyword in msg
+
+    def test_prod_rejects_placeholder_and_low_entropy_jwt_secret(self):
+        """占位符/低熵 JWT 密钥在 prod 拒启:长度够不代表熵够(33 字符的模板占位也只有
+        15 个唯一字符);占位密钥 = 任何人按公开模板伪造平台令牌(含 admin audience)。"""
+        import pytest
+        from pydantic import ValidationError
+
+        from app.core.config import Settings
+
+        for bad in (
+            "CHANGE_ME_32_CHARS_MINIMUM_______",  # 仓库模板的历史占位
+            "CHANGE_ME",
+            "x" * 40,  # 长度足够但唯一字符 1 个
+        ):
+            kwargs = {**self._complete_prod_kwargs(), "jwt_secret": bad}
+            with pytest.raises(ValidationError, match="jwt_secret"):
+                Settings(**kwargs)
 
     def test_prod_accepts_complete_config(self):
         """最小配置过 Settings 校验(本层只管 env;人机验证/实名的 prod 开启是

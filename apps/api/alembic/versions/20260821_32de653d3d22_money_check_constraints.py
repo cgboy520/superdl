@@ -27,24 +27,28 @@ def upgrade() -> None:
     刻意**不**加 wallets.balance >= 0 —— 透支是设计内的(服务已消费完才结算),
     加了会让合法的结算扣款整批失败。跨模块外键同样不加:CLAUDE.md 第 6 条禁止跨模块查表,
     加外键与那条架构约束相矛盾,收益也很小。
+
+    全部是钱表:ADD CONSTRAINT 一律 NOT VALID 先行(不锁表校验存量),再独立
+    VALIDATE CONSTRAINT(只持 SHARE UPDATE EXCLUSIVE,不阻塞读写)。
     """
-    op.create_check_constraint(
-        op.f("ck_balance_ledger_amount_nonzero"), "balance_ledger", "amount <> 0"
+    # (约束名, 表, 谓词)
+    checks: tuple[tuple[str, str, str], ...] = (
+        ("ck_balance_ledger_amount_nonzero", "balance_ledger", "amount <> 0"),
+        ("ck_bills_daily_disk_amount_nonneg", "bills_daily_disk", "amount >= 0"),
+        ("ck_bills_daily_disk_size_nonneg", "bills_daily_disk", "size_gb >= 0"),
+        ("ck_bills_hourly_amount_nonneg", "bills_hourly", "amount >= 0"),
+        (
+            "ck_bills_hourly_seconds_range",
+            "bills_hourly",
+            "seconds_used >= 0 AND seconds_used <= 3600",
+        ),
+        ("ck_orders_amount_positive", "orders", "amount > 0"),
+        ("ck_wallets_frozen_nonneg", "wallets", "frozen_amount >= 0"),
     )
-    op.create_check_constraint(
-        op.f("ck_bills_daily_disk_amount_nonneg"), "bills_daily_disk", "amount >= 0"
-    )
-    op.create_check_constraint(
-        op.f("ck_bills_daily_disk_size_nonneg"), "bills_daily_disk", "size_gb >= 0"
-    )
-    op.create_check_constraint(op.f("ck_bills_hourly_amount_nonneg"), "bills_hourly", "amount >= 0")
-    op.create_check_constraint(
-        op.f("ck_bills_hourly_seconds_range"),
-        "bills_hourly",
-        "seconds_used >= 0 AND seconds_used <= 3600",
-    )
-    op.create_check_constraint(op.f("ck_orders_amount_positive"), "orders", "amount > 0")
-    op.create_check_constraint(op.f("ck_wallets_frozen_nonneg"), "wallets", "frozen_amount >= 0")
+    for name, table, predicate in checks:
+        op.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({predicate}) NOT VALID")
+    for name, table, _predicate in checks:
+        op.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
 
 
 def downgrade() -> None:

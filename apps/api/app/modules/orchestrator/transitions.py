@@ -6,11 +6,10 @@
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
-from fastapi import status as http_status
 from sqlalchemy import CursorResult, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import conflict
 from app.core.timeutil import now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from app.modules.orchestrator.statemachine import validate_transition
@@ -45,11 +44,7 @@ async def transition(
         ),
     )
     if result.rowcount == 0:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="orchestrator.stateChangedRetry",
-            http_status=http_status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="orchestrator.stateChangedRetry")
     instance.status = to_status
     instance.version += 1
     event = InstanceEvent(

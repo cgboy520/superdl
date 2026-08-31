@@ -163,8 +163,7 @@ export const adminThemeComponents = {
   Tabs: { inkBarColor: adminColors.dataAccent, itemSelectedColor: adminColors.dataAccent },
 } as const;
 
-/** 间距阶梯(4 的倍数)。纪律:新代码的布局尺寸(padding/gap/margin)一律走这里,
- * 不再散落魔法数;存量 inline style 按「碰到的文件顺手收敛」推进(见 docs/ui-ux-spec.md) */
+/** 间距阶梯(4 的倍数)。纪律:布局尺寸(padding/gap/margin)一律走这里,不散落魔法数(见 docs/ui-ux-spec.md) */
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
 /** 阴影阶梯。纪律:内容卡默认 1px 边框 + 无阴影;阴影只给「浮起」语义——
@@ -186,7 +185,7 @@ export const shadow = {
   },
 } as const;
 
-/** 字号层级:页面标题/区块标题/正文/辅助/KPI 五档(散落硬编码的收敛目标) */
+/** 字号层级:页面标题/区块标题/正文/辅助/KPI 五档 */
 export const fontSize = {
   pageTitle: 20,
   sectionTitle: 16,
@@ -195,10 +194,10 @@ export const fontSize = {
   kpi: 28,
 } as const;
 
-/** 字重阶梯(收编散落 500/600/700):正文 regular、按钮与强调 medium、标题与 KPI 大数 semibold */
+/** 字重阶梯:正文 regular、按钮与强调 medium、标题与 KPI 大数 semibold */
 export const fontWeight = { regular: 400, medium: 500, semibold: 600 } as const;
 
-/** 行高:与 fontSize 五档一一配对(标题紧凑、正文透气) */
+/** 行高:与 fontSize 五档一一配对 */
 export const lineHeight = {
   pageTitle: 28,
   sectionTitle: 24,

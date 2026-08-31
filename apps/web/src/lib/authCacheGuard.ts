@@ -21,9 +21,8 @@ function accountOf(token: string): string | null {
  * 登出(含换号、他标签页同步登出)即清查询缓存:必须先取消在途查询再 clear,
  * 否则换号登录会先渲染上一个账号的余额与实例。
  * 静默续期(同账号 access token A→A')不清,否则全站每小时回一次骨架屏。
- * 判定看账号位(sub)而非 token 值:换号登录 A→B 也是「登出 A」,旧版只在
- * token→null 时清,跨账号缓存泄漏正出在这里;token 不可解码且值不同按换号处理
- * (安全方向:拿不准就清)。
+ * 判定看账号位(sub)而非 token 值:换号登录 A→B 也是「登出 A」;token 不可解码
+ * 且值不同按换号处理(安全方向:拿不准就清)。
  */
 export function setupAuthCacheGuard(queryClient: QueryClient): () => void {
   return authStore.subscribe((state, prev) => {

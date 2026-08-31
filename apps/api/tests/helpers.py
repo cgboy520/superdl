@@ -152,6 +152,11 @@ async def seed_node_spec(
     status: str = "Ready",
     vcpu: int = 64,
     mem_gb: int = 256,
+    unlabeled: bool = False,
+    gpu_model_raw: str | None = None,
+    label_synced: bool = False,
+    vram_gb: int = 0,
+    disk_gb: int = 0,
 ) -> None:
     """写一条节点台账(node_specs):市场近似库存与创建软准入的唯一数据源。
 
@@ -165,12 +170,17 @@ async def seed_node_spec(
             NodeSpec(
                 node_name=node_name,
                 pool_label=pool_label,
+                unlabeled=unlabeled,
+                gpu_model_raw=gpu_model_raw,
                 gpu_model=gpu_model,
+                label_synced=label_synced,
                 gpu_count=gpu_count,
                 gpu_used=gpu_used,
+                vram_gb=vram_gb,
                 # vCPU/内存是 CPU 档库存口径的数据源(GPU 档不看这两列)
                 vcpu=vcpu,
                 mem_gb=mem_gb,
+                disk_gb=disk_gb,
                 status=status,
                 last_seen=now_utc(),
             )
@@ -267,6 +277,33 @@ def make_sku(**overrides) -> Sku:
     return Sku(**defaults)
 
 
+async def seed_bill_hourly(
+    sm: async_sessionmaker[AsyncSession],
+    user_id: int,
+    *,
+    rows: list[tuple[int, datetime, str]],  # (instance_id, hour_start, amount)
+    unit_price: str = "1.0000",
+    seconds: int = 3600,
+) -> None:
+    """批量播种小时账单(bill_hourly):日聚合/CSV 导出类用例共用。"""
+    from app.modules.billing.models import BillHourly
+
+    async with sm() as session:
+        for instance_id, hour_start, amount in rows:
+            session.add(
+                BillHourly(
+                    user_id=user_id,
+                    instance_id=instance_id,
+                    hour_start=hour_start,
+                    seconds_used=seconds,
+                    unit_price=Decimal(unit_price),
+                    gpu_count=1,
+                    amount=Decimal(amount),
+                )
+            )
+        await session.commit()
+
+
 async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
     async with sm() as session:
         session.add_all(
@@ -304,8 +341,18 @@ async def seed_skus(sm: async_sessionmaker[AsyncSession]) -> None:
         await session.commit()
 
 
-async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
-    """mfa_setup 票 → begin → confirm(当前 TOTP)→ access token。供管理端测试复用。"""
+async def admin_login(client: AsyncClient, username: str, password: str = "pass1234") -> Response:
+    """管理端密码登录(第一步):返回原始响应(按 status 分支:mfa_setup/mfa_required/ok)。"""
+    return await client.post(
+        "/api/admin/v1/auth/login", json={"username": username, "password": password}
+    )
+
+
+async def complete_mfa_setup_with_secret(client: AsyncClient, ticket: str) -> tuple[str, str]:
+    """mfa_setup 票 → begin → confirm(当前 TOTP)→ (access token, TOTP secret)。
+
+    secret 供「同账号再次登录要走二要素验证」的用例登记(测试进程内保存)。
+    """
     begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
     assert begin.status_code == 200, begin.text
     secret = begin.json()["secret"]
@@ -314,7 +361,13 @@ async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
         json={"ticket": ticket, "code": pyotp.TOTP(secret).now()},
     )
     assert confirm.status_code == 200, confirm.text
-    return confirm.json()["access_token"]
+    return confirm.json()["access_token"], secret
+
+
+async def complete_mfa_setup(client: AsyncClient, ticket: str) -> str:
+    """mfa_setup 票 → begin → confirm(当前 TOTP)→ access token。供管理端测试复用。"""
+    token, _secret = await complete_mfa_setup_with_secret(client, ticket)
+    return token
 
 
 async def admin_headers(
@@ -329,9 +382,7 @@ async def admin_headers(
     name = username or f"{role}-user"
     async with sm() as session:
         await create_admin(session, name, "pass1234", role)
-    resp = await client.post(
-        "/api/admin/v1/auth/login", json={"username": name, "password": "pass1234"}
-    )
+    resp = await admin_login(client, name)
     assert resp.status_code == 200, resp.text
     token = await complete_mfa_setup(client, resp.json()["ticket"])
     return {"Authorization": f"Bearer {token}"}

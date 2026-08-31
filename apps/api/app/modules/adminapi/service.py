@@ -7,9 +7,10 @@ from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found, unauthorized
+from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.idempotency import request_fingerprint
 from app.core.logging import get_logger, mask_phone_value
+from app.core.money import money_str
 from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
 from app.core.ratelimit import check_rate_limit, clear_rate_limit, ensure_not_rate_limited
@@ -403,11 +404,7 @@ async def create_admin(session: AsyncSession, username: str, password: str, role
         await session.commit()
     except IntegrityError as exc:  # username 唯一
         await session.rollback()
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="adminapi.adminUsernameTaken",
-            http_status=status.HTTP_409_CONFLICT,
-        ) from exc
+        raise conflict(key="adminapi.adminUsernameTaken") from exc
     await session.refresh(admin)
     return admin
 
@@ -535,11 +532,7 @@ async def create_adjustment(
         ).scalar_one_or_none()
         if existing is not None:
             if existing.request_fingerprint != fingerprint:
-                raise AppError(
-                    ErrorCode.CONFLICT,
-                    key="common.idempotencyKeyMismatch",
-                    http_status=409,
-                )
+                raise conflict(key="common.idempotencyKeyMismatch")
             return existing, False  # 幂等重放:返回已受理的调账单,不重复开单
 
     # 用户必须存在:否则复核通过时 wallet 会为幽灵 user_id 凭空建钱包并入账
@@ -550,7 +543,7 @@ async def create_adjustment(
         raise AppError(
             ErrorCode.VALIDATION_ERROR,
             key="common.validation",
-            detail={"field": "amount", "max_abs": format(ADJUST_MAX_ABS, "f")},
+            detail={"field": "amount", "max_abs": money_str(ADJUST_MAX_ABS)},
         )
     adj = AdminAdjustment(
         user_id=user_id,
@@ -586,7 +579,7 @@ async def review_adjustment(
     if adj is None:
         raise not_found()
     if adj.status != "pending":
-        raise AppError(ErrorCode.CONFLICT, key="adminapi.adjustAlreadyProcessed", http_status=409)
+        raise conflict(key="adminapi.adjustAlreadyProcessed")
     if adj.created_by == reviewer_id:
         raise AppError(
             ErrorCode.ADMIN_SECOND_REVIEW_REQUIRED,
@@ -665,7 +658,7 @@ async def resolve_reversal(
     if order is None:
         raise not_found("订单不存在")
     if order.channel_reversed_at is None:
-        raise AppError(ErrorCode.CONFLICT, key="adminapi.reversalNotPending", http_status=409)
+        raise conflict(key="adminapi.reversalNotPending")
     await billing_service.release_freeze(session, order.user_id, order.amount)
     if action == "release":
         order.channel_reversed_at = None
@@ -721,7 +714,7 @@ async def list_adjustments(
             AdjustmentOut(
                 id=r.id,
                 user_id=r.user_id,
-                amount=format(r.amount, "f"),
+                amount=money_str(r.amount),
                 reason=r.reason,
                 status=r.status,
                 created_by=r.created_by,
@@ -739,7 +732,7 @@ async def list_adjustments(
 
 
 async def overview(session: AsyncSession) -> dict[str, Any]:
-    """运营总览聚合:精确 COUNT 口径,替代前端在截断列表里数数的做法。
+    """运营总览聚合:精确 COUNT 口径,不从截断列表推算。
 
     组成受模块边界约束(只许调对方 service):
     - 实例分状态计数:list_instances_by_status 逐状态装载计数;released 终态不统计
@@ -814,7 +807,7 @@ async def adjust_context(session: AsyncSession, user_id: int) -> dict[str, Any]:
         "user_id": user.id,
         "phone_masked": mask_phone_value(user.phone),
         "status": user.status,
-        "balance": format(balance, "f"),
+        "balance": money_str(balance),
         "running_instances": len(running_by_user.get(user_id, [])),
         "recent_ledger": recent.items,
     }

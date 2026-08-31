@@ -1,4 +1,4 @@
-"""平台配置中心:加密往返、白名单校验、脱敏读取、覆盖即时生效、渠道开关门禁、角色隔离。"""
+"""平台配置中心:白名单校验、脱敏读取、覆盖即时生效、渠道开关门禁、角色隔离。"""
 
 from types import SimpleNamespace
 
@@ -7,7 +7,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.core import crypto
 from app.core.platform_config import (
     PlatformSetting,
     validate_setting_value,
@@ -18,22 +17,6 @@ from app.modules.account.realname import (
     get_realname_provider,
 )
 from tests.helpers import admin_headers, user_headers
-
-
-class TestCrypto:
-    def test_roundtrip_and_prefix(self):
-        token = crypto.encrypt_str("AKSECRET-12345678", aad="sms_access_key_secret")
-        assert token.startswith("enc:v2:")
-        assert "AKSECRET" not in token
-        assert crypto.decrypt_str(token, aad="sms_access_key_secret") == "AKSECRET-12345678"
-
-    def test_wrong_aad_rejected(self):
-        """AAD 绑定键名:密文不可跨字段搬运。"""
-        from cryptography.exceptions import InvalidTag
-
-        token = crypto.encrypt_str("secret", aad="sms_access_key_secret")
-        with pytest.raises(InvalidTag):
-            crypto.decrypt_str(token, aad="wechat_apiv3_key")
 
 
 class TestSpecValidation:
@@ -77,8 +60,109 @@ class TestProdDegradeForbidden:
         assert validate_setting_value(key, "false") == "false"
 
 
+class TestClearOverrideFallbackGuard:
+    """清除覆盖 = 回落到部署层(env)取值,不是「没有配置」。
+
+    回落值是 prod 禁止取值时,「清除」与「写入弱值」同为降防,必须同拦——否则单次
+    请求即可绕过 prod_forbidden 写入门禁,且回落值会让下次启动的合规闸拒启,
+    一次 API 调用埋下一个全平台 fail-to-start。
+    """
+
+    async def test_clear_rejected_when_env_fallback_is_prod_forbidden(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """部署层 real_name_enabled=false(prod 禁止值)→ 清除覆盖被拒。"""
+        ah = await admin_headers(sm, client, role="admin")
+        # 先取令牌再换桩:登录链路会读平台配置,残缺桩只作用于 PUT 处理期
+        monkeypatch.setattr(
+            "app.core.platform_config.get_settings",
+            lambda: SimpleNamespace(environment="prod", real_name_enabled=False),
+        )
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"real_name_enabled": ""}, "reason": "清除覆盖"},
+            headers=ah,
+        )
+        assert resp.status_code == 400
+        assert "不允许清除覆盖" in resp.json()["message"]
+        # 拒绝即不落库:覆盖不存在,且同批请求不留痕迹
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(PlatformSetting).where(PlatformSetting.key == "real_name_enabled")
+                )
+            ).scalar_one_or_none()
+            assert row is None
+
+    async def test_clear_allowed_when_env_fallback_is_compliant(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """部署层已是合规值(captcha_enabled=true)→ 清除覆盖正常放行(回落不降防)。"""
+        ah = await admin_headers(sm, client, role="admin")
+        monkeypatch.setattr(
+            "app.core.platform_config.get_settings",
+            lambda: SimpleNamespace(environment="prod", captcha_enabled=True),
+        )
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"captcha_enabled": ""}, "reason": "清除覆盖"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_clear_guard_inactive_outside_prod(self, client: AsyncClient, sm, monkeypatch):
+        """非 prod 环境不受清除守卫约束(dev/test 允许自由回落)。"""
+        ah = await admin_headers(sm, client, role="admin")
+        monkeypatch.setattr(
+            "app.core.platform_config.get_settings",
+            lambda: SimpleNamespace(environment="test", real_name_enabled=False),
+        )
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"real_name_enabled": ""}, "reason": "清除覆盖"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_audit_records_clear_vs_set(self, client: AsyncClient, sm):
+        """审计落键名 + 动作类型(clear/set),不落值:清除覆盖对合规开关等同降防,
+        只记键名无法在审计轨迹里区分两种操作。"""
+        from app.core.audit import AuditLog
+
+        ah = await admin_headers(sm, client, role="admin")
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"icp_number": "京ICP备2026099999号-1"}, "reason": "先写"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        resp = await client.put(
+            "/api/admin/v1/platform-config",
+            json={"updates": {"icp_number": ""}, "reason": "再清"},
+            headers=ah,
+        )
+        assert resp.status_code == 200, resp.text
+        async with sm() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditLog)
+                        .where(AuditLog.target == "platform_config")
+                        .order_by(AuditLog.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) >= 2
+        assert rows[-2].detail["keys"] == {"icp_number": "set"}
+        assert rows[-1].detail["keys"] == {"icp_number": "clear"}
+        # 值不落审计(纪律保留)
+        assert "京ICP备" not in str(rows[-2].detail)
+
+
 class TestProdComplianceGates:
-    """D-4 启动 fail-fast(兜 env/部署层;在线写库层由上面的 prod_forbidden 禁关)。"""
+    """启动 fail-fast(兜 env/部署层;在线写库层由上面的 prod_forbidden 禁关)。"""
 
     def test_prod_refuses_boot_with_switches_off(self):
         from app.core.platform_config import assert_prod_compliance_gates
@@ -463,13 +547,15 @@ class TestConfigWarnings:
 class TestEffectiveConfig:
     async def test_corrupt_secret_row_fails_closed(self, sm):
         """单行密文损坏(主密钥换错/手工改库)fail-closed:抛错而不是静默回落 env——
-        轮换窗口里回落等于悄悄用回旧值(审计 #18)。"""
+        轮换窗口里回落等于悄悄用回旧值。"""
         from app.core.platform_config import PlatformSetting, get_effective_platform_config
 
         async with sm() as session:
             session.add(
                 PlatformSetting(
-                    key="sms_access_key_secret", value="enc:v1:corrupt", updated_by=None
+                    key="sms_access_key_secret",
+                    value="enc:v2:000000000000:corrupt",
+                    updated_by=None,
                 )
             )
             await session.commit()

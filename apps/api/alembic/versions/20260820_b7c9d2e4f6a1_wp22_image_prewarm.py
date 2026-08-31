@@ -19,8 +19,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 语义演进:静态"已预热"标记 → 管理员意图"参与预热";真实状态由 image_node_cache 聚合
-    op.alter_column("images", "is_prewarmed", new_column_name="prewarm_enabled")
+    # 语义演进:静态"已预热"标记 → 管理员意图"参与预热";真实状态由 image_node_cache 聚合。
+    # 改名是纯 catalog 操作(不重写表、不扫行),images 是管理端低频小表
+    op.alter_column(  # ddl-risk: reviewed —— 纯 catalog 改名,小表瞬时锁
+        "images", "is_prewarmed", new_column_name="prewarm_enabled"
+    )
     op.create_table(
         "image_node_cache",
         sa.Column("id", sa.Integer(), nullable=False),

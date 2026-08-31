@@ -41,8 +41,6 @@ POLICY_SPECS: dict[str, tuple[Literal["decimal", "int"], Decimal, Decimal]] = {
     # 每个 GPU 节点最多让 CPU 实例吃掉多少 vCPU(近似库存口径,见 catalog/service)。
     # 0 = 不许 CPU 实例落 GPU 节点:pool != cpu 的 CPU SKU 一律判无容量。
     "gpu_node_cpu_instance_vcpu_cap": ("int", Decimal(0), Decimal(1024)),
-    # 对外服务端点的边缘限流(每端点每秒请求数)。在网关本地桶生效,不回源平台
-    "service_endpoint_rps": ("int", Decimal(1), Decimal(1000)),
     # 包周期折扣(百分数,80 = 8 折)。上界 100 = 不打折,不设 >100 的「加价」档
     "period_discount_day": ("int", Decimal(50), Decimal(100)),
     "period_discount_week": ("int", Decimal(50), Decimal(100)),
@@ -74,7 +72,6 @@ class EffectivePolicies:
     max_vcpus_per_user: int
     max_disks_per_user: int
     gpu_node_cpu_instance_vcpu_cap: int
-    service_endpoint_rps: int
     period_discount_day: int
     period_discount_week: int
     period_discount_month: int

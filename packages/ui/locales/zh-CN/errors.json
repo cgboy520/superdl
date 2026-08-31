@@ -62,6 +62,7 @@
     "callbackChannelMismatch": "回调渠道与订单不符",
     "channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
     "channelStateNotBackfillable": "渠道侧状态为 {{status}},不能补单",
+    "insufficientAvailableFrozen": "可用余额不足:¥{{frozen}} 因支付渠道冲正被冻结,待核销期间不可用于新消费;如有疑问请联系客服",
     "insufficientBalance": "余额不足,请先充值",
     "insufficientForInFlight": "余额不足:在途资源预计还要消耗 ¥{{inflight}},本次操作要求余额不少于 ¥{{required}}(当前 ¥{{balance}}),请先充值",
     "invoiceAmountStale": "可开票金额已变动(当前可开 ¥{{expected}},申请额 ¥{{requested}}):账期内发生了退款,请驳回该申请并通知用户按新金额重新提交",

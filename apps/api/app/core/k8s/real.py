@@ -161,7 +161,6 @@ TENANT_LIMIT_DEFAULT = {"cpu": "8", "memory": "32Gi", "ephemeral-storage": "64Gi
 # 集群级 secrets 权限已收回,实例 env/拉取凭据 Secret 的读写只在本租户 ns 内有效)。
 TENANT_MGR_ROLE_NAME = "superdl-tenant-mgr-secrets"
 TENANT_MGR_SA_NAME = "superdl-tenant-mgr"
-PLATFORM_NAMESPACE = "superdl"
 # 租户容器禁访的内网/元数据网段(Egress 放行公网,黑名单私网)。
 # 100.64.0.0/10 = CGNAT,198.18.0.0/15 = 基准测试段,云 metadata 169.254.169.254 含在 169.254.0.0/16。
 # IPv6 不入表:未开双栈时默认拒已覆盖,开双栈需在部署侧评审放行策略。
@@ -283,8 +282,8 @@ class RealOrchestrator:
         )
         # Gateway API 无 typed model,HTTPRoute 的增删查一律走 CustomObjectsApi(收发裸 dict)
         self.custom = cast(client.CustomObjectsApi, _TimeoutApi(client.CustomObjectsApi(), timeout))
-        # 探测专用 API 提升为实例属性:四个裸客户端共享一个 ApiClient(单 PoolManager),
-        # 不再每次探测新建连接池(巡检每轮 4 个,长跑即 FD/连接累积)
+        # 探测专用 API 提升为实例属性:四个裸客户端共享一个 ApiClient(单 PoolManager);
+        # 每次探测新建连接池会让巡检(每轮 4 个)长跑累积 FD/连接
         probe_client = client.ApiClient()
         self._version = cast(
             client.VersionApi, _TimeoutApi(client.VersionApi(probe_client), timeout)

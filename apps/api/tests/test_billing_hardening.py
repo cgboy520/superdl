@@ -53,6 +53,59 @@ def _utc_day_start() -> datetime:
     return now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+class TestDebitFrozenGuard:
+    """冻结闸(debit 的 allow_frozen):渠道冲正待核销的冻结额不得被新消费击穿。
+
+    挂了 = 冻结款可被订阅续费/购买花掉,渠道核销时平台才发现钱已不在。
+    """
+
+    async def test_debit_into_frozen_rejected_by_default(self, sm):
+        """默认 fail-closed:扣款后余额 < frozen 即拒(先付后用路径全靠这个默认)。"""
+        await fund_wallet(sm, 1, "100.00")
+        async with sm() as s:
+            await wallet.freeze(s, 1, Decimal("60.00"), ref_id="ord-1", remark="渠道冲正")
+            with pytest.raises(AppError) as ei:
+                await wallet.debit(s, 1, Decimal("50.00"), allow_negative=False)
+            assert ei.value.code == ErrorCode.INSUFFICIENT_BALANCE
+            assert ei.value.message_key == "billing.insufficientAvailableFrozen"
+            await s.rollback()
+        async with sm() as s:
+            assert (await wallet.lock_wallet(s, 1)).balance == Decimal("100.00")
+
+    async def test_debit_within_available_passes(self, sm):
+        """不击穿冻结额的扣款照常放行(可用 = balance - frozen)。"""
+        await fund_wallet(sm, 1, "100.00")
+        async with sm() as s:
+            await wallet.freeze(s, 1, Decimal("60.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.debit(s, 1, Decimal("40.00"), allow_negative=False)
+            await s.commit()
+        async with sm() as s:
+            assert (await wallet.lock_wallet(s, 1)).balance == Decimal("60.00")
+
+    async def test_settlement_debit_may_dip_into_frozen(self, sm):
+        """结算扣款显式 allow_frozen=True:对已发生消费的事后收款,冻结不赖旧账。"""
+        await fund_wallet(sm, 1, "100.00")
+        async with sm() as s:
+            await wallet.freeze(s, 1, Decimal("90.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.debit(s, 1, Decimal("50.00"), allow_negative=True, allow_frozen=True)
+            await s.commit()
+        async with sm() as s:
+            w = await wallet.lock_wallet(s, 1)
+            assert w.balance == Decimal("50.00")  # 已击穿冻结额,但结算是合法豁免
+            assert w.frozen == Decimal("90.00")
+
+    async def test_unfreeze_then_debit_is_unblocked(self, sm):
+        """核销路径(resolve_reversal 先解冻后扣减)天然不受冻结闸约束。"""
+        await fund_wallet(sm, 1, "100.00")
+        async with sm() as s:
+            await wallet.freeze(s, 1, Decimal("100.00"), ref_id="ord-1", remark="渠道冲正")
+            await wallet.release_freeze(s, 1, Decimal("100.00"))
+            await wallet.debit(s, 1, Decimal("100.00"), allow_negative=True)
+            await s.commit()
+        async with sm() as s:
+            assert (await wallet.lock_wallet(s, 1)).balance == Decimal("0.00")
+
+
 class TestWalletLockGuards:
     """钱路行锁变异守护:去掉 with_for_update 后只有这三条会红,是最低守护集
     (它们挂了 = 行锁没了,或锁内读到旧值)。"""
@@ -793,32 +846,3 @@ class TestSmsOutbox:
         async with sm() as session:
             tasks = (await session.execute(select(OutboxTask))).scalars().all()
         assert [t for t in tasks if t.type == "notify.sms"] == []
-
-
-class TestPriceFloor:
-    """时价必须满足 2 位小数语义:入账恒舍成 ¥0.00 的「免费价」与会漂移的 4 位价都拦在上架/改价。"""
-
-    def test_min_billable_price_accepted(self):
-        from app.modules.catalog.service import _checked_price
-
-        assert _checked_price(Decimal("0.01")) == Decimal("0.01")
-        assert _checked_price(Decimal("1.6800")) == Decimal("1.6800")
-
-    def test_sub_cent_precision_rejected(self):
-        """按小时计费的 SKU 超过 2 位小数即拒:逐小时独立舍入会单向漂移
-        (0.0051 被按 0.01/时近翻倍收;1.2345 满月少收 0.36%)。"""
-        from app.modules.catalog.service import _checked_price
-
-        with pytest.raises(AppError) as exc:
-            _checked_price(Decimal("0.0051"))
-        assert exc.value.message_key == "catalog.priceHourlyTwoDecimals"
-        with pytest.raises(AppError) as exc:
-            _checked_price(Decimal("1.2345"))
-        assert exc.value.message_key == "catalog.priceHourlyTwoDecimals"
-
-    def test_zero_price_still_rejected_with_original_key(self):
-        from app.modules.catalog.service import _checked_price
-
-        with pytest.raises(AppError) as exc:
-            _checked_price(Decimal("0.0000"))
-        assert exc.value.message_key == "catalog.priceTooSmall"

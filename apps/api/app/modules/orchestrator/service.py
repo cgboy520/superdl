@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_str, encrypt_str, hash_api_key, hash_api_key_candidates
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, TIER_CPU, spec_to_gpu_request
 from app.core.gpu_models import canonical_gpu_model
 from app.core.idempotency import (
@@ -37,7 +37,7 @@ from app.core.idempotency import (
 )
 from app.core.k8s import InstancePodSpec, get_orchestrator
 from app.core.logging import get_logger
-from app.core.money import hourly_cost
+from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
@@ -236,7 +236,7 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
         "sku_name": sku.name,
         # SKU 原价时价快照(字符串,JSONB 不存 Decimal);折扣策略在线可调,竞价转按量
         # 只能读它还原原价,不能拿折后价反推
-        "base_price_hourly": format(sku.price_hourly, "f"),
+        "base_price_hourly": money_str(sku.price_hourly),
         "gpu_model": sku.gpu_model,
         "tier": sku.tier,
         "mig_profile": sku.mig_profile,
@@ -1789,11 +1789,7 @@ async def read_instance_logs(
 
     instance = await get_instance(session, user_id, uuid)
     if instance.status not in (sm_def.RUNNING, sm_def.STOPPING):
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="orchestrator.logsNeedsRunning",
-            http_status=http_status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="orchestrator.logsNeedsRunning")
     await check_rate_limit(f"instance-logs:{user_id}", max_attempts=20, window_seconds=3600.0)
     tail = min(tail_lines, LOGS_MAX_TAIL_LINES)
     try:

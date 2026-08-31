@@ -9,31 +9,8 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.modules.billing.models import BillDailyDisk, BillHourly
-from tests.helpers import user_headers_with_id
-
-
-async def seed_hourly(
-    sm: async_sessionmaker[AsyncSession],
-    user_id: int,
-    instance_id: int,
-    hour_start: datetime,
-    amount: str,
-    seconds: int = 3600,
-) -> None:
-    async with sm() as session:
-        session.add(
-            BillHourly(
-                user_id=user_id,
-                instance_id=instance_id,
-                hour_start=hour_start,
-                seconds_used=seconds,
-                unit_price=Decimal("1.0000"),
-                gpu_count=1,
-                amount=Decimal(amount),
-            )
-        )
-        await session.commit()
+from app.modules.billing.models import BillDailyDisk
+from tests.helpers import seed_bill_hourly, user_headers_with_id
 
 
 async def seed_disk_daily(
@@ -75,10 +52,16 @@ class TestDailySummary:
         inside_last = datetime(2026, 8, 19, 15, 0, tzinfo=UTC)  # 本地 8-19 23:00
         before = datetime(2026, 8, 18, 15, 0, tzinfo=UTC)  # 本地 8-18 23:00
         after = datetime(2026, 8, 19, 16, 0, tzinfo=UTC)  # 本地 8-20 00:00
-        await seed_hourly(sm, uid, 101, inside_first, "1.00")
-        await seed_hourly(sm, uid, 101, inside_last, "2.00")
-        await seed_hourly(sm, uid, 101, before, "40.00")
-        await seed_hourly(sm, uid, 101, after, "80.00")
+        await seed_bill_hourly(
+            sm,
+            uid,
+            rows=[
+                (101, inside_first, "1.00"),
+                (101, inside_last, "2.00"),
+                (101, before, "40.00"),
+                (101, after, "80.00"),
+            ],
+        )
 
         body = await get_summary(client, headers, "2026-08-19")
         assert body["gpu_total"] == "3.00"
@@ -89,8 +72,11 @@ class TestDailySummary:
     ):
         """0.01 级金额累加 10 次无浮点误差(0.10 而非 0.09999…)。"""
         headers, uid = await user_headers_with_id(client, "13900010002")
-        for h in range(10):
-            await seed_hourly(sm, uid, 102, datetime(2026, 8, 19, h, 0, tzinfo=UTC), "0.01")
+        await seed_bill_hourly(
+            sm,
+            uid,
+            rows=[(102, datetime(2026, 8, 19, h, 0, tzinfo=UTC), "0.01") for h in range(10)],
+        )
         body = await get_summary(client, headers, "2026-08-19")
         assert body["gpu_total"] == "0.10"
         assert body["items"][0]["total_amount"] == "0.10"
@@ -118,8 +104,7 @@ class TestDailySummary:
     ):
         headers, uid = await user_headers_with_id(client, "13900010006")
         t = datetime(2026, 8, 19, 2, 0, tzinfo=UTC)
-        await seed_hourly(sm, uid, 201, t, "1.50")
-        await seed_hourly(sm, uid, 202, t, "2.50")
+        await seed_bill_hourly(sm, uid, rows=[(201, t, "1.50"), (202, t, "2.50")])
         body = await get_summary(client, headers, "2026-08-19")
         assert body["gpu_total"] == "4.00"
         by_iid = {i["instance_id"]: i["total_amount"] for i in body["items"]}
@@ -131,8 +116,8 @@ class TestDailySummary:
         headers_a, uid_a = await user_headers_with_id(client, "13900010007")
         headers_b, uid_b = await user_headers_with_id(client, "13900010008")
         t = datetime(2026, 8, 19, 3, 0, tzinfo=UTC)
-        await seed_hourly(sm, uid_a, 301, t, "9.00")
-        await seed_hourly(sm, uid_b, 302, t, "1.00")
+        await seed_bill_hourly(sm, uid_a, rows=[(301, t, "9.00")])
+        await seed_bill_hourly(sm, uid_b, rows=[(302, t, "1.00")])
         body_a = await get_summary(client, headers_a, "2026-08-19")
         body_b = await get_summary(client, headers_b, "2026-08-19")
         assert body_a["gpu_total"] == "9.00"
@@ -147,10 +132,16 @@ class TestMonthMatchesDays:
         """把整月的日账单加起来必须等于月账单:两个接口的日界口径必须一致。"""
         headers, uid = await user_headers_with_id(client, "13900010009")
         # 边界四点(东八区):本地 7-31 23:00 在 8 月之外;8-01 00:00 与 8-31 23:00 在内
-        await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 14, 0, tzinfo=UTC), "100.00")
-        await seed_hourly(sm, uid, 401, datetime(2026, 7, 31, 16, 0, tzinfo=UTC), "1.00")
-        await seed_hourly(sm, uid, 401, datetime(2026, 8, 31, 15, 0, tzinfo=UTC), "2.00")
-        await seed_hourly(sm, uid, 401, datetime(2026, 8, 31, 16, 0, tzinfo=UTC), "200.00")
+        await seed_bill_hourly(
+            sm,
+            uid,
+            rows=[
+                (401, datetime(2026, 7, 31, 14, 0, tzinfo=UTC), "100.00"),
+                (401, datetime(2026, 7, 31, 16, 0, tzinfo=UTC), "1.00"),
+                (401, datetime(2026, 8, 31, 15, 0, tzinfo=UTC), "2.00"),
+                (401, datetime(2026, 8, 31, 16, 0, tzinfo=UTC), "200.00"),
+            ],
+        )
 
         resp = await client.get(
             "/api/v1/bills/summary",

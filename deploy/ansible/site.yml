@@ -39,8 +39,8 @@
     harbor_ca_pem: ""
   tasks:
     # 渲染【前】断言输入:replace() 无条件执行会把占位符直接抹掉,事后搜 CHANGE_ME
-    # 的断言恒通过(曾因此把 agent-token: "" 写进生产 server 配置)。
-    # agent token 缺失时节点回落使用 server token——那是能把新机器拉进 etcd 成员的凭据。
+    # 的断言恒通过。agent token 缺失时节点回落使用 server token——那是能把新机器
+    # 拉进 etcd 成员的凭据。
     - name: 输入变量完备性(渲染前断言,而非断言渲染产物)
       assert:
         that:

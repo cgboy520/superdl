@@ -7,20 +7,15 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  addSshKeyViaApi,
   fillCustomImageForm,
-  loginViaApi,
   pickSharedStandardSku,
-  rechargeViaApi,
-  uniquePhone,
+  setupUser,
   waitFirstRowRunning,
 } from "./helpers";
 
 test("买竞价并转按量", async ({ page }) => {
   // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
-  const token = await loginViaApi(page, uniquePhone());
-  await rechargeViaApi(page, token, "100");
-  await addSshKeyViaApi(page, token);
+  await setupUser(page, "500");
 
   // ── 市场:切竞价 → 常驻警示 + 折后价
   await pickSharedStandardSku(page);

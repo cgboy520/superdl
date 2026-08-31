@@ -4,10 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "echo 'skip (需 API+worker 在跑;用 pnpm --filter @superdl/e2e test:e2e)'",
-    "lint": "echo skip",
     "typecheck": "tsc --noEmit",
-    "build": "echo skip",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

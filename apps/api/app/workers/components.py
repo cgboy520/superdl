@@ -9,8 +9,9 @@ ALL 是 dev/test 单进程的全量模式,生产各 Deployment 必须显式声�
 定时任务必须登记到某个组件,否则测试红(未登记的任务在生产会静默停摆)。
 """
 
-import os
 from enum import StrEnum
+
+from app.core.config import get_settings
 
 
 class WorkerComponent(StrEnum):
@@ -70,7 +71,7 @@ COMPONENT_SCHEDULED_JOBS: dict[WorkerComponent, frozenset[str]] = {
 def current_component() -> WorkerComponent:
     """SUPERDL_WORKER_COMPONENT 解析。缺省 ALL(dev/test);非法值 fail-closed:
     起错组件 = 该组件队列静默停摆,立即报错远比带病运行安全。"""
-    raw = os.environ.get("SUPERDL_WORKER_COMPONENT", "all").strip() or "all"
+    raw = get_settings().worker_component.strip() or "all"
     try:
         return WorkerComponent(raw)
     except ValueError:

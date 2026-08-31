@@ -53,7 +53,7 @@ export function ReasonAction({
     setLoading(true);
     try {
       const custom = await onSubmit(reasonSnapshot);
-      message.success(typeof custom === "string" ? custom : t("common.actionDone", { action: title }));
+      message.success(custom || t("common.actionDone", { action: title }));
       setOpen(false);
       setConfirming(false);
       form.resetFields();

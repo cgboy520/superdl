@@ -1,4 +1,8 @@
-# HAMi v2.9:仅共享池,libvgpu 在 CUDA 层限额
+# HAMi v2.9:仅共享池,libvgpu 在 CUDA 层限额。
+# 安全定位:HAMi 通过 LD_PRELOAD 拦截 CUDA runtime API 实现显存/算力软限额,但容器内 root 可通过
+# unset LD_PRELOAD、静态链接 CUDA、直接调用 CUDA Driver API 绕过配额(HAMi 官方 troubleshooting
+# 明确列出)。因此 HAMi 池是软件限额/性能隔离,不是安全边界,不适合需要强隔离的多租户场景。
+# 详见 docs/reference/security.md 隔离级别分级表。
 scheduler:
   defaultSchedulerPolicy:
     nodeSchedulerPolicy: binpack

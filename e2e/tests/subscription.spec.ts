@@ -8,21 +8,16 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  addSshKeyViaApi,
   fillCustomImageForm,
-  loginViaApi,
   pickSharedStandardSku,
-  rechargeViaApi,
-  uniquePhone,
+  setupUser,
   waitFirstRowRunning,
 } from "./helpers";
 
 test("买包月并续费", async ({ page }) => {
   // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
   // 包月一次性预扣整段周期,充一个够大的数
-  const token = await loginViaApi(page, uniquePhone());
-  await rechargeViaApi(page, token, "5000");
-  await addSshKeyViaApi(page, token);
+  await setupUser(page, "5000");
 
   // ── 市场:选规格 → 计费方式切「包月」→ 下一步
   await pickSharedStandardSku(page);

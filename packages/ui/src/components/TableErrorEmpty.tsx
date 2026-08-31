@@ -9,7 +9,7 @@
  *      ) }}
  *    />
  *
- *  - isForbidden:403 与网络故障分开表达(无权限 ≠ 加载失败),复制自 admin 平台配置页的判据;
+ *  - isForbidden:403 与网络故障分开表达(无权限 ≠ 加载失败);
  *  - isError=false 时渲染空态;业务空态文案经 children、空态 CTA 经 action 传入
  *    (文案规范:空态 = 一句话 + 一个动作);
  *  - compact:表格行内紧凑形态(小字 + 小按钮),默认大 Result。

@@ -3,9 +3,10 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field
 
+from app.core.regex import PHONE_RE
 from app.core.security import check_password_bytes
 
-PhoneStr = Field(pattern=r"^1[3-9]\d{9}$", description="中国大陆手机号")
+PhoneStr = Field(pattern=PHONE_RE, description="中国大陆手机号")
 
 
 def _within_bcrypt_limit(v: str) -> str:

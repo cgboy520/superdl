@@ -216,7 +216,7 @@ class TestBackfill:
             json={"reason": "重复操作"},
             headers=ah,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409
         assert resp.json()["code"] == "CONFLICT"
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "88.00"

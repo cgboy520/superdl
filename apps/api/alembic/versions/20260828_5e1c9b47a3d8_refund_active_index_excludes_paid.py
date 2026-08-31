@@ -27,30 +27,39 @@ _NEW = "status IN ('pending', 'approved')"
 
 
 def upgrade() -> None:
-    op.drop_index(
-        "uq_refund_requests_active_order",
-        table_name="refund_requests",
-        postgresql_where=sa.text(_OLD),
-    )
-    op.create_index(
-        "uq_refund_requests_active_order",
-        "refund_requests",
-        ["order_no"],
-        unique=True,
-        postgresql_where=sa.text(_NEW),
-    )
+    # 换谓词必须 drop 旧索引再建同名新索引:drop→create 之间存在无索引窗口
+    # (refund_requests 是低频管理面表,窗口毫秒级,可接受);CONCURRENTLY 不阻塞读写,
+    # 且不能在事务块内,故整个操作放进 autocommit_block
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "uq_refund_requests_active_order",
+            table_name="refund_requests",
+            postgresql_where=sa.text(_OLD),
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "uq_refund_requests_active_order",
+            "refund_requests",
+            ["order_no"],
+            unique=True,
+            postgresql_where=sa.text(_NEW),
+            postgresql_concurrently=True,
+        )
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "uq_refund_requests_active_order",
-        table_name="refund_requests",
-        postgresql_where=sa.text(_NEW),
-    )
-    op.create_index(
-        "uq_refund_requests_active_order",
-        "refund_requests",
-        ["order_no"],
-        unique=True,
-        postgresql_where=sa.text(_OLD),
-    )
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "uq_refund_requests_active_order",
+            table_name="refund_requests",
+            postgresql_where=sa.text(_NEW),
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "uq_refund_requests_active_order",
+            "refund_requests",
+            ["order_no"],
+            unique=True,
+            postgresql_where=sa.text(_OLD),
+            postgresql_concurrently=True,
+        )

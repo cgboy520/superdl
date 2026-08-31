@@ -24,8 +24,11 @@ WORKLOAD_SERVICE = "service"
 RESERVED_SERVICE_PORTS: tuple[int, ...] = (22, 8888)
 
 # 平台自己往容器里注入的环境变量名段:JUPYTER_*(Jupyter 配置与 token)、SUPERDL_*(自留)、
-# AUTHORIZED_KEYS(SSH 公钥注入)。允许用户覆盖它们,「用户环境变量」就成了改平台行为的口子
-_RESERVED_ENV_PREFIXES = ("JUPYTER_", "SUPERDL_")
+# AUTHORIZED_KEYS(SSH 公钥注入)。允许用户覆盖它们,「用户环境变量」就成了改平台行为的口子。
+# NVIDIA_* 同列:kubelet 合并 env 时 pod spec 里的重复键后写胜出,用户声明
+# NVIDIA_VISIBLE_DEVICES=all 可覆盖 device-plugin 的分配结果,看到节点上全部物理卡
+# (准入层 superdl-tenant-pod-baseline 另有同口径 CEL 规则,双层兜底)
+_RESERVED_ENV_PREFIXES = ("JUPYTER_", "SUPERDL_", "NVIDIA_")
 _RESERVED_ENV_NAMES = frozenset({"AUTHORIZED_KEYS"})
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

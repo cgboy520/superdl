@@ -18,10 +18,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
-from app.core.money import as_amount
+from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
 from app.core.sqlutil import next_daily_seq
 from app.core.timeutil import now_utc
@@ -130,15 +130,15 @@ async def create_refund(
         # 他人的订单号对用户同样回 404(不泄露订单存在性,IDOR 防线)
         raise AppError(ErrorCode.ORDER_NOT_FOUND, key="billing.orderNotFound", http_status=404)
     if order.status != "paid":
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundOrderNotPaid", http_status=409)
+        raise conflict(key="billing.refundOrderNotPaid")
     # 渠道冲正(用户已在微信/支付宝拒付拿回钱)后禁止平台侧二次退款出金——
     # 冲正只打标记不动余额(支付侧策略),出金口必须在此拦截
     if order.channel_reversed_at is not None:
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
+        raise conflict(key="billing.refundChannelReversed")
     if await _order_has_issued_invoice(session, order, lock=True):
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundInvoiceIssued", http_status=409)
+        raise conflict(key="billing.refundInvoiceIssued")
     if await _active_refund_of_order(session, order_no) is not None:
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundAlreadyApplied", http_status=409)
+        raise conflict(key="billing.refundAlreadyApplied")
 
     # 多次部分退款口径:上限 = min(订单剩余可退, 可用余额, 可退余额)。
     # 可用余额 = balance - frozen(渠道冲正冻结额不可退——那部分钱可能已被渠道拿回);
@@ -156,10 +156,10 @@ async def create_refund(
             ErrorCode.VALIDATION_ERROR,
             key="billing.refundAmountExceeded",
             params={
-                "max": format(limit, "f"),
-                "order": format(order.amount, "f"),
-                "refunded": format(refunded, "f"),
-                "refundable": format(refundable, "f"),
+                "max": money_str(limit),
+                "order": money_str(order.amount),
+                "refunded": money_str(refunded),
+                "refundable": money_str(refundable),
             },
         )
 
@@ -190,9 +190,7 @@ async def create_refund(
         except IntegrityError:
             if await _active_refund_of_order(session, order_no) is not None:
                 # 撞的是部分唯一索引(并发重复申请同一订单)
-                raise AppError(
-                    ErrorCode.CONFLICT, key="billing.refundAlreadyApplied", http_status=409
-                ) from None
+                raise conflict(key="billing.refundAlreadyApplied") from None
             continue  # 按 refund_no 序列撞车处理:重试下一序列
         if result is not req:
             return result, False  # 同键并发:返回胜出方的单
@@ -332,12 +330,7 @@ async def review_refund(
     """审批(行锁内做状态迁移)。通过 ≠ 出金:只置 approved,等登记打款。"""
     req = await _get_for_update(session, refund_id)
     if req.status != "pending":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.refundStateNotReviewable",
-            params={"status": req.status},
-            http_status=409,
-        )
+        raise conflict(key="billing.refundStateNotReviewable", params={"status": req.status})
     req.review_by = reviewer_id
     req.review_at = now_utc()
     req.review_comment = comment
@@ -368,82 +361,65 @@ async def payout_refund(
     if req.status == "paid" and idempotency_key and req.payout_idempotency_key == idempotency_key:
         stored = req.payout_request_fingerprint
         if stored is not None and stored != fingerprint:
-            raise AppError(
-                ErrorCode.CONFLICT,
-                key="common.idempotencyKeyMismatch",
-                http_status=409,
-            )
+            raise conflict(key="common.idempotencyKeyMismatch")
         return req, True
     if req.status != "approved":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.refundStateNotPayable",
-            params={"status": req.status},
-            http_status=409,
-        )
+        raise conflict(key="billing.refundStateNotPayable", params={"status": req.status})
     if req.review_by == operator_id:
         # 双人制衡硬要求(DB 还有 CHECK payout_not_reviewer 兜底)
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundPayoutSamePerson", http_status=409)
+        raise conflict(key="billing.refundPayoutSamePerson")
     # 审批到打款之间订单可能被渠道冲正(webhook 随时可达),出金前必须复核:
     # 用户已在渠道侧拿回钱的订单,平台再退一次 = 双重出金
     order = (
         await session.execute(select(Order).where(Order.order_no == req.order_no))
     ).scalar_one_or_none()
     if order is not None and order.channel_reversed_at is not None:
-        raise AppError(ErrorCode.CONFLICT, key="billing.refundChannelReversed", http_status=409)
+        raise conflict(key="billing.refundChannelReversed")
     # 原路退回:打款渠道须与订单支付渠道同源(微信单→微信转账,支付宝单→支付宝转账),
     # 防止把「渠道实付」洗成他渠道出金。offline 是唯一的例外通道(无线上原路时的
     # 兜底),由双人制衡 + 同步审计覆盖;mock(测试渠道)不映射,放行。
     if order is not None:
         expected_payout = _CHANNEL_TO_PAYOUT.get(order.channel)
         if expected_payout is not None and channel not in (expected_payout, "offline"):
-            raise AppError(
-                ErrorCode.CONFLICT,
+            raise conflict(
                 key="billing.refundPayoutChannelMismatch",
                 params={"expected": expected_payout},
-                http_status=409,
             )
     # 多次部分退款的出金闸:累计已退 + 本单 ≤ 订单额。创建时虽已按同口径校验,
     # 这里是出金前最后一道(修数/老数据/口径变更的兜底),超额的坚决不出金
     if order is not None:
         paid_total = await _paid_total_of_order(session, req.order_no)
         if paid_total + req.amount > order.amount:
-            raise AppError(
-                ErrorCode.CONFLICT,
+            raise conflict(
                 key="billing.refundCumulativeExceeded",
                 params={
-                    "order": format(order.amount, "f"),
-                    "refunded": format(paid_total, "f"),
-                    "amount": format(req.amount, "f"),
+                    "order": money_str(order.amount),
+                    "refunded": money_str(paid_total),
+                    "amount": money_str(req.amount),
                 },
-                http_status=409,
             )
     # 不复查账期是否已开票:能走到打款的退款在开票重算时已从票额扣除
     # 钱包行锁内再校验:审批后用户可能已消费,可用余额不足坚决不出金(不允许负余额核销);
     # 可用余额 = balance - frozen(渠道冲正冻结额不出金)
     locked = await wallet.lock_wallet(session, req.user_id)
     if wallet.available_of(locked) < req.amount:
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="billing.refundBalanceConsumed",
             params={
-                "balance": format(wallet.available_of(locked), "f"),
-                "amount": format(req.amount, "f"),
+                "balance": money_str(wallet.available_of(locked)),
+                "amount": money_str(req.amount),
             },
-            http_status=409,
         )
     # 可退余额硬闸(防混池套现):审批→打款之间用户可能继续消费,可退额随之蒸发;
     # 补偿类 credit 永不可提现(wallet.refundable_capacity 口径)
     refundable = await wallet.refundable_capacity(session, req.user_id)
     if refundable < req.amount:
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="billing.refundNotRefundable",
             params={
-                "refundable": format(refundable, "f"),
-                "amount": format(req.amount, "f"),
+                "refundable": money_str(refundable),
+                "amount": money_str(req.amount),
             },
-            http_status=409,
         )
     entry = await wallet.debit(
         session,
@@ -475,12 +451,7 @@ async def cancel_refund(session: AsyncSession, refund_id: int) -> RefundRequest:
     """取消(仅 pending/approved;已打款的终态不可取消)。不动钱包。"""
     req = await _get_for_update(session, refund_id)
     if req.status not in ACTIVE_STATUSES:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.refundStateNotCancellable",
-            params={"status": req.status},
-            http_status=409,
-        )
+        raise conflict(key="billing.refundStateNotCancellable", params={"status": req.status})
     req.status = "cancelled"
     await session.commit()
     logger.info("refund_cancelled", refund_no=req.refund_no)

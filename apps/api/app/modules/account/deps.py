@@ -36,7 +36,8 @@ async def get_current_user(
         raise AppError(
             ErrorCode.FORBIDDEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
-    if payload.get("ver", 0) != user.token_version:
+    # 撤销闸:签发点恒带 ver,缺失不给默认值(None ≠ 任何版本 → 401)
+    if payload.get("ver") != user.token_version:
         raise unauthorized()  # 已被撤销(冻结期版本推进/refresh 重放触发)
     request.state.audit_actor = AuditActor("user", str(user.id))
     return user

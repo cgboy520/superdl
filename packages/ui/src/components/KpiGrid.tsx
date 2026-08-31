@@ -1,6 +1,5 @@
 /** KPI 卡网格:总览/费用中心顶部 Statistic 卡组的统一响应式栅格
- *  (窄屏两块一排,lg 起均分)。收敛各页重复的 Row/Col inline 写法。
- *  loading 时渲染同数量骨架卡,避免 "—" 占位与「无数据」混淆。
+ *  (窄屏两块一排,lg 起均分)。loading 时渲染同数量骨架卡,避免 "—" 占位与「无数据」混淆。
  */
 
 import { Card, Col, Row, Skeleton } from "antd";
@@ -15,7 +14,7 @@ export function KpiGrid({ items, loading }: { items: ReactNode[]; loading?: bool
   return (
     <Row gutter={[layout.cardGap, layout.cardGap]}>
       {items.map((node, i) => (
-        // KPI 数量稳定(2~4),下标作 key 与各页现状一致
+        // KPI 数量稳定(2~4),下标作 key
         <Col xs={12} lg={gridable ? span : undefined} flex={gridable ? undefined : "1 1 0"} key={i}>
           {loading ? (
             <Card>

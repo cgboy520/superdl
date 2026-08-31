@@ -54,6 +54,20 @@ def orch() -> RealOrchestrator:
     return RealOrchestrator()
 
 
+@pytest.fixture(scope="module")
+def orch_restricted() -> RealOrchestrator:
+    """受限身份(superdl-tenant-mgr SA token)的编排器:CI kind job 注入
+    SUPERDL_TEST_KUBECONFIG_RESTRICTED(缺失时对应用例 skip,本地开发不强制)。
+
+    客户端在构造时即加载 kubeconfig,与 orch fixture 各自持有独立会话,互不干扰。
+    """
+    path = os.environ.get("SUPERDL_TEST_KUBECONFIG_RESTRICTED")
+    if not path:
+        pytest.skip("SUPERDL_TEST_KUBECONFIG_RESTRICTED 未设置(仅 CI kind job 注入受限身份)")
+    os.environ["KUBECONFIG"] = path
+    return RealOrchestrator()
+
+
 @pytest.fixture
 async def namespace(orch: RealOrchestrator) -> AsyncIterator[str]:
     """每用例一只独立租户 ns(带前缀,与 list_instance_pods 的口径一致),结束即删。"""
@@ -121,6 +135,31 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert quota.spec is not None and "pods" in quota.spec.hard
     assert "requests.cpu" in quota.spec.hard and "limits.ephemeral-storage" in quota.spec.hard
     orch.core.read_namespaced_persistent_volume_claim(JUICEFS_PVC_NAME, namespace)
+
+
+async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchestrator) -> None:
+    """RBAC 与代码对齐闸:用 superdl-tenant-mgr 的真实受限身份跑 ensure_namespace 全链路
+    (含第二遍的 409→patch 收敛路径——缺 patch 动词时正是这条路在生产 403)。
+
+    挂了 = 01-rbac.yaml 与 real.py 的 _ensure_* 漂移,且 admin kubeconfig 跑的冒烟发现不了。
+    """
+    from kubernetes import config as k8s_config
+
+    ns = f"tenant-rbac-{uuid.uuid4().hex[:8]}"
+    await orch_restricted.ensure_namespace(ns)
+    try:
+        # 第二遍:全部对象已存在,逐一走 patch 收敛——RBAC 缺 patch 动词时在这里炸 403
+        await orch_restricted.ensure_namespace(ns)
+        ns_obj: Any = orch_restricted.core.read_namespace(ns)
+        assert ns_obj.metadata.labels[MANAGED_LABEL] == "true"
+        orch_restricted.core.read_namespaced_resource_quota("tenant-quota", ns)
+        orch_restricted.core.read_namespaced_limit_range("tenant-defaults", ns)
+        orch_restricted.net.read_namespaced_network_policy("tenant-default", ns)
+    finally:
+        # ns 删除超出租户 SA 权限面(delete namespaces 未授,刻意保持最小权限),
+        # 用管理面 kubeconfig 清理
+        k8s_config.load_kube_config(config_file=os.environ["SUPERDL_TEST_KUBECONFIG"])
+        await asyncio.to_thread(k8s_client.CoreV1Api().delete_namespace, ns)
 
 
 async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, namespace: str) -> None:

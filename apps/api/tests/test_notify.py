@@ -6,7 +6,14 @@ from sqlalchemy import select
 from app.modules.billing import wallet
 from app.modules.billing.patrol import balance_patrol
 from app.modules.notify.models import Notification
-from tests.helpers import admin_headers, provision_running, register, set_platform_setting
+from tests.helpers import (
+    admin_headers,
+    get_instance,
+    provision_running,
+    register,
+    set_platform_setting,
+    user_headers_with_id,
+)
 
 pytestmark = pytest.mark.usefixtures("fake")
 
@@ -39,7 +46,7 @@ def am_payload_for(user_id: int) -> dict:
 class TestBalanceWarnNotification:
     async def test_unread_count_endpoint(self, client, sm, fake):
         """未读数轻端点:DB count 与列表分页解耦,标记已读后减少。"""
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        headers, user_id = await user_headers_with_id(client, "13700000061")
         async with sm() as session:
             for i in range(3):
                 session.add(
@@ -62,7 +69,7 @@ class TestBalanceWarnNotification:
 
     async def test_target_id_round_trip(self, client, sm, fake):
         """结构化跳转目标:写入 target_id 的行列表原样返回(深链用),未写的为 null。"""
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        headers, user_id = await user_headers_with_id(client, "13700000062")
         async with sm() as session:
             session.add(
                 Notification(
@@ -81,7 +88,8 @@ class TestBalanceWarnNotification:
         assert by_title["无目标"]["target_id"] is None
 
     async def test_patrol_writes_notification_with_dedup(self, client, sm, fake):
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        """低余额预警:counts 记 warned、实例不停机;同日重复巡检按去重键只留一条站内信。"""
+        headers, uuid, user_id = await provision_running(client, sm, fake)
         from decimal import Decimal
 
         async with sm() as session:
@@ -91,25 +99,22 @@ class TestBalanceWarnNotification:
             )
             await session.commit()
 
-        await balance_patrol(sm)
+        counts = await balance_patrol(sm)
+        assert counts["warned"] == 1
         await balance_patrol(sm)  # 同日重复巡检 → 去重
 
         rows = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         warns = [r for r in rows if r["type"] == "balance_warn"]
         assert len(warns) == 1
         assert "小时" in warns[0]["content"]
+        # 预警只是提醒:实例不停机
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
 
     async def test_read_flow(self, client, sm, fake):
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
-        from decimal import Decimal
-
+        headers, user_id = await user_headers_with_id(client, "13700000063")
         async with sm() as session:
-            balance = await wallet.get_balance(session, user_id)
-            await wallet.debit(
-                session, user_id, balance - Decimal("5.00"), type_="adjust", allow_negative=True
-            )
+            session.add(Notification(user_id=user_id, type="account", title="t", content="c"))
             await session.commit()
-        await balance_patrol(sm)
 
         unread = (
             await client.get("/api/v1/notifications", params={"unread": True}, headers=headers)
@@ -125,7 +130,7 @@ class TestBalanceWarnNotification:
 
     async def test_read_all_marks_everything_and_is_idempotent(self, client, sm, fake):
         """全部已读:多条未读一次清零;重复调用幂等(仍 204,不再改动任何行)。"""
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        headers, user_id = await user_headers_with_id(client, "13700000064")
         async with sm() as session:
             for i in range(3):
                 session.add(
@@ -153,7 +158,7 @@ class TestBalanceWarnNotification:
 
     async def test_read_all_scoped_to_self(self, client, sm, fake):
         """全部已读只动本人:其他用户的未读不受影响。"""
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        headers, user_id = await user_headers_with_id(client, "13700000065")
         async with sm() as session:
             session.add(
                 Notification(
@@ -180,7 +185,7 @@ class TestBalanceWarnNotification:
 
     async def test_list_pagination_beyond_50(self, client, sm, fake):
         """站内信不封顶条数:limit/cursor 游标翻页,降序不重不漏。"""
-        headers, _uuid, user_id = await provision_running(client, sm, fake)
+        headers, user_id = await user_headers_with_id(client, "13700000066")
         async with sm() as session:
             for i in range(60):
                 session.add(
@@ -345,7 +350,7 @@ class TestAlertAck:
         ).json()
         assert len(critical) == 2
         assert all(a["severity"] == "critical" for a in critical)
-        # warning 桶里只有管理员绑定 TOTP 的检测告警(#46),AM 报文不产生 warning
+        # warning 桶里只有管理员绑定 TOTP 的检测告警,AM 报文不产生 warning
         warning = (
             await client.get("/api/admin/v1/alerts", params={"severity": "warning"}, headers=ops)
         ).json()

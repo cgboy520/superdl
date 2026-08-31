@@ -13,7 +13,8 @@
     "test": "turbo run test",
     "api-client": "pnpm --filter @superdl/api-client generate",
     "i18n": "turbo run i18n && pnpm run copy-check",
-    "copy-check": "bash scripts/check-cjk.sh && bash scripts/check-copy-banned.sh"
+    "copy-check": "bash scripts/check-cjk.sh && bash scripts/check-copy-banned.sh",
+    "csp-check": "bash scripts/check-csp-hash.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

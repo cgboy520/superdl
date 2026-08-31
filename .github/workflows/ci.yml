@@ -107,7 +107,7 @@ jobs:
       - run: pnpm i18n
       - run: pnpm test
       # CSP 内联脚本 hash 闸门:index.html 防 FOUC 脚本改动必须同步 CSP 的 sha256
-      - run: bash scripts/check-csp-hash.sh
+      - run: pnpm csp-check
       # orval 生成物必须与入库的 openapi.json 一致(契约漂移即 fail)。
       # openapi.json 本身的新鲜度由 api job 的导出 diff 把关,两个 job 相互印证。
       - run: pnpm api-client
@@ -210,14 +210,19 @@ jobs:
           # 只查本次变更新增/修改的迁移;downgrade 里的 drop 是正常回滚,脚本只看 upgrade()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "workflow_call" ]; then
+            # release.yml 经 workflow_call 复用本闸门(tag 发布):github.event.before 在
+            # tag 场景不存在,基线改取上一 tag;首个 tag(无基线)时全量检查存量迁移
+            BASE=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_SHA}^" 2>/dev/null || true)
           else
             BASE="${{ github.event.before }}"
           fi
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "::notice::无对比基线(首个 push),跳过迁移 DDL 检查"
-            exit 0
+            echo "::warning::无对比基线(首个 push / 首个 tag):全量检查存量迁移"
+            git ls-files 'apps/api/alembic/versions/*.py' > /tmp/migrations.txt
+          else
+            git diff --name-only --diff-filter=AM "$BASE"...HEAD -- apps/api/alembic/versions/ > /tmp/migrations.txt
           fi
-          git diff --name-only --diff-filter=AM "$BASE"...HEAD -- apps/api/alembic/versions/ > /tmp/migrations.txt
           if ! grep -q '\.py$' /tmp/migrations.txt; then
             echo "无迁移变更"
             exit 0
@@ -240,10 +245,42 @@ jobs:
       # 本冒烟断言的是「apiserver 接受我们拼的对象规约」,不需要真有数据面接管路由。
       - name: 装 Gateway API CRD
         run: bash deploy/cluster/gateway-api-crds.sh
+      # RBAC 与代码对齐闸(H2):kind 默认给的是 cluster-admin kubeconfig,直接冒烟永远
+      # 发现不了 01-rbac.yaml 缺动词。这里先 apply 生产 RBAC,再静态断言动词面,最后
+      # 用 superdl-tenant-mgr 的 SA token 造受限 kubeconfig 供冒烟里的受限身份用例
+      # (test_ensure_namespace_under_tenant_mgr_sa)使用。
+      - name: 应用生产 RBAC 并静态断言 tenant-mgr 动词面
+        run: |
+          kubectl create namespace superdl
+          kubectl apply -f deploy/app/k8s/01-rbac.yaml
+          SA=system:serviceaccount:superdl:superdl-tenant-mgr
+          # ensure_namespace 的 _create_or_patch 收敛路径需要的最小动词面(与 real.py 一一对应)
+          for pair in "patch namespaces" "patch networkpolicies" "patch resourcequotas" \
+                      "get limitranges" "create limitranges" "patch limitranges" \
+                      "patch services" "create roles" "patch rolebindings"; do
+            if ! kubectl auth can-i --as="$SA" $pair >/dev/null; then
+              echo "::error::superdl-tenant-mgr 缺动词:$pair(01-rbac.yaml 与 real.py 漂移)"
+              exit 1
+            fi
+          done
+          # 反向面:刻意不授的动词必须保持不授(最小权限回归闸)
+          for pair in "delete namespaces" "patch nodes" "list secrets"; do
+            if kubectl auth can-i --as="$SA" $pair >/dev/null; then
+              echo "::error::superdl-tenant-mgr 越权动词被放行了:$pair"
+              exit 1
+            fi
+          done
+      - name: 生成 superdl-tenant-mgr 受限 kubeconfig
+        run: |
+          TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)
+          cp "${KUBECONFIG:-$HOME/.kube/config}" /tmp/restricted.kubeconfig
+          kubectl config set-credentials tenant-mgr --token="$TOKEN" --kubeconfig=/tmp/restricted.kubeconfig
+          kubectl config set-context --current --user=tenant-mgr --kubeconfig=/tmp/restricted.kubeconfig
       - name: RealOrchestrator 冒烟(kind)
         working-directory: apps/api
         env:
           SUPERDL_TEST_KUBECONFIG: ${{ env.KUBECONFIG || '$HOME/.kube/config' }}
+          SUPERDL_TEST_KUBECONFIG_RESTRICTED: /tmp/restricted.kubeconfig
         run: |
           uv sync --frozen
           uv run pytest tests/test_k8s_real_smoke.py -v

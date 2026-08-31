@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import AppError, ErrorCode, conflict
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import (
@@ -218,6 +218,7 @@ async def upsert_hour_bill(
         ref_id=str(row_id),
         remark=f"实例 GPU 时费({source})",
         allow_negative=True,  # 结算扣款允许透支
+        allow_frozen=True,  # 对已发生消费的收款:冻结只拦新消费,不赖旧账
     )
     return charged
 
@@ -288,7 +289,7 @@ async def settle_on_demand_up_to(
         logger.error(
             "convert_blocked_settlement_behind", instance_id=instance_id, lag_hours=lag_hours
         )
-        raise AppError(ErrorCode.CONFLICT, key="billing.settlementBehind", http_status=409)
+        raise conflict(key="billing.settlementBehind")
     total = Decimal("0.00")
     cursor = start
     while cursor <= last_hour:
@@ -348,6 +349,7 @@ async def reprice_current_hour(
         ref_id=str(row.id),
         remark="实例 GPU 时费(转按量补差价)",
         allow_negative=True,
+        allow_frozen=True,  # 对已发生消费的收款:冻结只拦新消费,不赖旧账
     )
     return delta
 
@@ -682,6 +684,7 @@ async def charge_disk_day(
             ref_id=str(inserted),
             remark="数据盘日常费用",
             allow_negative=True,  # 结算扣款允许透支
+            allow_frozen=True,  # 对已发生消费的收款:冻结只拦新消费,不赖旧账
         )
     return amount
 
@@ -892,12 +895,7 @@ async def replay_gap(
         if gap.resolved_at is not None:
             return AdminSettlementGapOut.model_validate(gap)  # 幂等:已核销直接返回
         if gap.reason == "grace_overlap":
-            raise AppError(
-                ErrorCode.CONFLICT,
-                key="billing.settlementGapNotReplayable",
-                params={"reason": gap.reason},
-                http_status=409,
-            )
+            raise conflict(key="billing.settlementGapNotReplayable", params={"reason": gap.reason})
         kind, window_start, object_id = gap.kind, ensure_utc(gap.window_start), gap.object_id
 
     if kind == "hourly":
@@ -906,11 +904,8 @@ async def replay_gap(
             async with sm() as session:
                 row = await orchestrator_service.instance_billing_snapshot(session, object_id)
             if row is None:
-                raise AppError(
-                    ErrorCode.CONFLICT,
-                    key="billing.settlementGapObjectGone",
-                    params={"objectId": str(object_id)},
-                    http_status=409,
+                raise conflict(
+                    key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}
                 )
             inst_id, user_id, price, gpu_count = row
             async with sm() as session:
@@ -937,11 +932,8 @@ async def replay_gap(
             async with sm() as session:
                 disk_row = await orchestrator_service.disk_billing_snapshot(session, object_id)
                 if disk_row is None:
-                    raise AppError(
-                        ErrorCode.CONFLICT,
-                        key="billing.settlementGapObjectGone",
-                        params={"objectId": str(object_id)},
-                        http_status=409,
+                    raise conflict(
+                        key="billing.settlementGapObjectGone", params={"objectId": str(object_id)}
                     )
                 disk_id, disk_user_id, disk_price, disk_size = disk_row
                 await charge_disk_day(

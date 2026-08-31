@@ -25,7 +25,9 @@ from tests.helpers import (
     fund_wallet,
     provision_running,
     register,
+    seed_node_spec,
     set_platform_setting,
+    user_headers_with_id,
 )
 
 pytestmark = pytest.mark.usefixtures("fake")
@@ -370,7 +372,7 @@ class TestOutboxDead:
             json={"reason": "再试一次"},
             headers=ah,
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409
 
         # 忽略需原因
         task2 = await _make_dead_task(sm)
@@ -463,7 +465,7 @@ class TestAnnouncement:
 
         async def _no_per_user_notify(session, user_id, *args, **kwargs):
             # 只拦逐用户通知;平台告警流(user_id=None)放行——admin_headers 的
-            # 首登 TOTP 绑定会经它上告警(#46),与公告群发无关
+            # 首登 TOTP 绑定会经它上告警,与公告群发无关
             if user_id is not None:
                 raise AssertionError("公告群发不得逐用户调用 notify()")
 
@@ -771,7 +773,7 @@ class TestAdjustContext:
 
     async def test_create_over_cap_rejected(self, client, sm, fake):
         """单笔绝对值上限(ADJUST_MAX_ABS):防手滑多敲零,超出走对公/线下流程。"""
-        _headers, _uuid, user_id = await provision_running(client, sm, fake)
+        _headers, user_id = await user_headers_with_id(client, "13900000772")
         fin = await admin_headers(sm, client, role="finance", username="fin-cap")
 
         for amount in ("100000.01", "-200000.00"):
@@ -794,39 +796,14 @@ class TestAdjustContext:
 class TestOverview:
     async def test_exact_counts(self, client, sm, fake):
         """总览聚合:精确 COUNT 口径,替代在截断列表(200/500 条)里数数。"""
-        from app.modules.nodes.models import NodeSpec
-
         _headers, _uuid, user_id = await provision_running(client, sm, fake)
-        async with sm() as session:
-            session.add_all(
-                [
-                    NodeSpec(
-                        node_name="gpu-a1",
-                        pool_label="hami",
-                        gpu_count=8,
-                        gpu_used=3,
-                        status="Ready",
-                        last_seen=now_utc(),
-                    ),
-                    NodeSpec(
-                        node_name="gpu-b1",
-                        pool_label="hami",
-                        gpu_count=8,
-                        gpu_used=0,
-                        status="NotReady",
-                        last_seen=now_utc(),
-                    ),
-                    NodeSpec(
-                        node_name="gpu-c1",
-                        pool_label="kata",
-                        gpu_count=4,
-                        gpu_used=0,
-                        status="Missing",
-                        last_seen=now_utc(),
-                    ),
-                ]
-            )
-            await session.commit()
+        await seed_node_spec(sm, node_name="gpu-a1", pool_label="hami", gpu_count=8, gpu_used=3)
+        await seed_node_spec(
+            sm, node_name="gpu-b1", pool_label="hami", gpu_count=8, gpu_used=0, status="NotReady"
+        )
+        await seed_node_spec(
+            sm, node_name="gpu-c1", pool_label="kata", gpu_count=4, gpu_used=0, status="Missing"
+        )
 
         ah = await admin_headers(sm, client, role="readonly")
         resp = await client.get("/api/admin/v1/overview", headers=ah)

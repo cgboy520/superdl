@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
-from app.core.money import as_amount, hourly_cost
+from app.core.money import as_amount, hourly_cost, money_str
 from app.core.policies import get_effective_policies
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import hour_floor, now_utc
@@ -160,7 +160,7 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     # 巡检到的每个 user_id 必有阈值行
                     if est_hours < thresholds[user_id]:
                         await notify_service.send_low_balance_warning(
-                            session, user_id, est_hours=est_hours, balance=format(balance, "f")
+                            session, user_id, est_hours=est_hours, balance=money_str(balance)
                         )
                         counts["warned"] += 1
         except Exception:
@@ -239,7 +239,8 @@ async def _patrol_frozen_and_arrears_stopped(
 
 
 async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, int]) -> None:
-    """数据盘欠费链路:欠费 → grace(7 天只读)→ frozen(30 天)→ 清除;回款即恢复。
+    """数据盘欠费链路:欠费 → grace(只读,disk_grace_days)→ frozen(disk_frozen_days)→ 清除;
+    回款即恢复。
 
     巡检集合取「名下有欠费链路上的盘」的用户(见 disks.list_arrears_chain_user_ids)。
     """

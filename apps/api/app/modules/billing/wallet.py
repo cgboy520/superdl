@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
-from app.core.money import as_amount, disk_daily_charge, hourly_cost
+from app.core.money import as_amount, disk_daily_charge, hourly_cost, money_str
 from app.core.pagination import Page, RawPage, paginate_by_id
 from app.core.policies import get_effective_policies
 from app.core.pricing import MARKET_SUBSCRIPTION
@@ -111,11 +111,19 @@ async def debit(
     ref_id: str | None = None,
     remark: str | None = None,
     allow_negative: bool,
+    allow_frozen: bool = False,
 ) -> BalanceLedger:
     """扣款。allow_negative 为必填关键字,每个调用点显式表态。
 
     - 结算扣款(小时账单、盘日费)与管理员调账扣减:允许透支;
     - 「先付后用」的同步消费:不允许(开机/建盘走 assert_can_afford 预校验)。
+
+    allow_frozen 是同一纪律的第二根轴(默认 False = fail-closed,需动用冻结额的
+    调用点必须显式表态):扣款后余额不得击穿 frozen——冻结额是「渠道冲正待核销」的
+    钱,可能被渠道拿回,任何「新消费」(订阅购买/续费、退款打款)都不得动用。
+    唯一合法 True 的场景:对已发生消费的事后收款(小时结算/盘日费,搭配
+    allow_negative=True)——冻结只拦新消费,不赖旧账;渠道冲正核销
+    (resolve_reversal)先解冻后扣减,天然不受此闸约束,无需放行。
 
     返回刚写入的流水行(已 flush,id 可用)——退款闭环需要回写 wallet_entry_id;
     其余调用方忽略返回值即可。
@@ -127,6 +135,14 @@ async def debit(
     new_balance = as_amount(wallet.balance - amount)
     if not allow_negative and new_balance < 0:
         raise AppError(ErrorCode.INSUFFICIENT_BALANCE, key="billing.insufficientBalance")
+    if not allow_frozen and new_balance < wallet.frozen:
+        # 击穿冻结额:文案与裸余额不足区分开——此时充值不能立即解决(新充值同样被
+        # 冻结口径拦住),用户该做的是联系客服核销
+        raise AppError(
+            ErrorCode.INSUFFICIENT_BALANCE,
+            key="billing.insufficientAvailableFrozen",
+            params={"frozen": money_str(wallet.frozen)},
+        )
     wallet.balance = new_balance
     entry = _ledger(wallet, type_, -amount, ref_type, ref_id, remark)
     session.add(entry)
@@ -271,9 +287,9 @@ async def assert_can_afford(
             ErrorCode.INSUFFICIENT_BALANCE,
             key="billing.insufficientForInFlight",
             params={
-                "balance": format(available_of(locked), "f"),
-                "required": format(required, "f"),
-                "inflight": format(inflight, "f"),
+                "balance": money_str(available_of(locked)),
+                "required": money_str(required),
+                "inflight": money_str(inflight),
             },
         )
 
@@ -473,15 +489,14 @@ async def revenue_summary(session: AsyncSession, *, tz_offset_minutes: int = 0) 
     today_prepaid = await _prepaid_since(day_start)
     month_prepaid = await _prepaid_since(month_start)
     return {
-        "today_revenue": format(await _billed_since(day_start) + today_prepaid, "f"),
-        "yesterday_revenue": format(
+        "today_revenue": money_str(await _billed_since(day_start) + today_prepaid),
+        "yesterday_revenue": money_str(
             await _billed_since(prev_day_start, day_start)
-            + await _prepaid_since(prev_day_start, day_start),
-            "f",
+            + await _prepaid_since(prev_day_start, day_start)
         ),
-        "month_revenue": format(await _billed_since(month_start) + month_prepaid, "f"),
-        "today_prepaid": format(today_prepaid, "f"),
-        "month_prepaid": format(month_prepaid, "f"),
+        "month_revenue": money_str(await _billed_since(month_start) + month_prepaid),
+        "today_prepaid": money_str(today_prepaid),
+        "month_prepaid": money_str(month_prepaid),
     }
 
 

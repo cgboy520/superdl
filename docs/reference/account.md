@@ -17,7 +17,7 @@
 | `POST /api/v1/auth/register` | 匿名 | `{phone, sms_code, password?}` → `{access_token, user}`(refresh 只走 HttpOnly Cookie,不进响应体);条款勾选前后端强校验 |
 | `POST /api/v1/auth/login` | 匿名 | `{phone, sms_code \| password}`;冻结用户报 `USER_FROZEN` |
 | `POST /api/v1/auth/password/reset` | 匿名 | 验证码重置密码 |
-| `POST /api/v1/auth/refresh` | refresh cookie | 轮换发放新 token 对;Cookie 路径强制 `X-Requested-With: fetch` 双提交头,body 通道已移除 |
+| `POST /api/v1/auth/refresh` | refresh cookie | 轮换发放新 token 对;refresh 只走 Cookie 不收 body,强制 `X-Requested-With: fetch` 双提交头 |
 | `POST /api/v1/auth/logout` | 匿名(带 refresh cookie) | 登出当前会话:refresh 落 `used_refresh_tokens` 并清 Cookie;token 无效也回 204 |
 | `POST /api/v1/auth/logout-all` | user | 登出全部会话:`token_version+1`,已签发 token 即刻全失效 |
 | `GET /api/v1/me` | user | 用户资料 |

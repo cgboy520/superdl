@@ -20,10 +20,6 @@ Create Date: 2026-08-28 09:12:44.106238
 
 """
 
-# ddl-risk: reviewed —— 删列与收窄 CHECK 均属 contract 窗口:上一版应用早已不读写这些列
-# (本提交之前全仓 grep 无引用),'approved' 从未被任何代码路径写入,且当前无生产库,
-# 无需 expand/contract 两窗口分发。
-
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -38,19 +34,27 @@ _DELETION_STATUS_CK = "ck_account_deletion_requests_status"
 _OLD_DELETION_STATUS = "status IN ('pending', 'approved', 'completed', 'rejected', 'cancelled')"
 _NEW_DELETION_STATUS = "status IN ('pending', 'completed', 'rejected', 'cancelled')"
 
+# 删列均属同一评审结论(contract 窗口:上一版应用早已不读写这些列,本提交之前全仓 grep
+# 无引用,'approved' 从未被任何代码路径写入,且当前无生产库;锁窗为瞬时 ACCESS EXCLUSIVE)。
+# 门禁要求逐行标注,理由统一在此。
+
 
 def upgrade() -> None:
-    op.drop_column("orders", "type")
-    op.drop_column("skus", "oversell_vram")
-    op.drop_column("skus", "updated_at")
-    op.drop_column("usage_hourly", "gpu_util_p95")
-    op.drop_column("usage_hourly", "vram_max_mb")
-    op.drop_column("usage_hourly", "cpu_avg_pct")
-    op.drop_column("service_endpoints", "protocol")
+    op.drop_column("orders", "type")  # ddl-risk: reviewed —— contract 窗口(见文件头)
+    op.drop_column("skus", "oversell_vram")  # ddl-risk: reviewed —— 同上
+    op.drop_column("skus", "updated_at")  # ddl-risk: reviewed —— 同上
+    op.drop_column("usage_hourly", "gpu_util_p95")  # ddl-risk: reviewed —— 同上
+    op.drop_column("usage_hourly", "vram_max_mb")  # ddl-risk: reviewed —— 同上
+    op.drop_column("usage_hourly", "cpu_avg_pct")  # ddl-risk: reviewed —— 同上
+    op.drop_column("service_endpoints", "protocol")  # ddl-risk: reviewed —— 同上
     op.drop_constraint(op.f(_DELETION_STATUS_CK), "account_deletion_requests", type_="check")
-    op.create_check_constraint(
-        op.f(_DELETION_STATUS_CK), "account_deletion_requests", _NEW_DELETION_STATUS
+    # 收窄 CHECK:NOT VALID 先行(不锁表扫存量;'approved' 从未被写入,VALIDATE 必过),
+    # 再独立 VALIDATE(只持 SHARE UPDATE EXCLUSIVE)
+    op.execute(
+        f"ALTER TABLE account_deletion_requests ADD CONSTRAINT {_DELETION_STATUS_CK} "
+        f"CHECK ({_NEW_DELETION_STATUS}) NOT VALID"
     )
+    op.execute(f"ALTER TABLE account_deletion_requests VALIDATE CONSTRAINT {_DELETION_STATUS_CK}")
 
 
 def downgrade() -> None:

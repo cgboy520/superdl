@@ -23,7 +23,6 @@ import {
   mulPrice,
   quoteSubscription,
   spotHourlyPrice,
-  tzSuffix,
   type SharedT,
 } from "./format";
 
@@ -199,7 +198,13 @@ describe("formatDateTime 时区后缀", () => {
   it("输出带 (UTC±x) 后缀,与运行时偏移一致", () => {
     const out = formatDateTime("2026-08-19T02:30:00Z");
     expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(:\d{2})?\)$/);
-    expect(out.endsWith(tzSuffix(new Date("2026-08-19T02:30:00Z")))).toBe(true);
+    // tzSuffix 模块内私有:黑盒断言 —— 用同一时刻的运行时偏移现算期望后缀
+    const d = new Date("2026-08-19T02:30:00Z");
+    const offsetMin = -d.getTimezoneOffset();
+    const sign = offsetMin >= 0 ? "+" : "-";
+    const abs = Math.abs(offsetMin);
+    const suffix = `(UTC${sign}${Math.floor(abs / 60)}${abs % 60 ? `:${String(abs % 60).padStart(2, "0")}` : ""})`;
+    expect(out.endsWith(suffix)).toBe(true);
   });
   it("空值仍为占位符", () => {
     expect(formatDateTime(null)).toBe("-");

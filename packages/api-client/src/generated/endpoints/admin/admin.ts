@@ -2123,7 +2123,11 @@ export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl = () => 
 }
 
 /**
- * 在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。
+ * 在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。
+ *
+ * 审计落键名与动作类型(set/clear),不落值:secret 键的值永远不进审计;
+ * 动作类型必须落——「清除覆盖」会把开关回落到部署层取值,对合规开关而言
+ * 与「写入弱值」同为降防操作,只记键名无法在审计里区分。
  * @summary Admin Update Platform Config
  */
 export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {

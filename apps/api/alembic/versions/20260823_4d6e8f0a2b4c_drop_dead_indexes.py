@@ -26,18 +26,72 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.drop_index("ix_notifications_created_at", table_name="notifications")
-    op.drop_index("ix_balance_ledger_created_at", table_name="balance_ledger")
-    op.drop_index("ix_node_enrollments_node_name", table_name="node_enrollments")
-    op.drop_index("ix_node_specs_pool_label", table_name="node_specs")
-    op.drop_index("ix_node_specs_gpu_model", table_name="node_specs")
-    op.drop_index("ix_used_refresh_tokens_user_id", table_name="used_refresh_tokens")
+    # DROP INDEX CONCURRENTLY:不阻塞表读写;CONCURRENTLY 不能在事务块内,
+    # 必须 autocommit_block(env.py 整轮单事务)
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "ix_notifications_created_at",
+            table_name="notifications",
+            postgresql_concurrently=True,
+        )
+        op.drop_index(
+            "ix_balance_ledger_created_at",
+            table_name="balance_ledger",
+            postgresql_concurrently=True,
+        )
+        op.drop_index(
+            "ix_node_enrollments_node_name",
+            table_name="node_enrollments",
+            postgresql_concurrently=True,
+        )
+        op.drop_index(
+            "ix_node_specs_pool_label", table_name="node_specs", postgresql_concurrently=True
+        )
+        op.drop_index(
+            "ix_node_specs_gpu_model", table_name="node_specs", postgresql_concurrently=True
+        )
+        op.drop_index(
+            "ix_used_refresh_tokens_user_id",
+            table_name="used_refresh_tokens",
+            postgresql_concurrently=True,
+        )
 
 
 def downgrade() -> None:
-    op.create_index("ix_used_refresh_tokens_user_id", "used_refresh_tokens", ["user_id"])
-    op.create_index("ix_node_specs_gpu_model", "node_specs", ["gpu_model"])
-    op.create_index("ix_node_specs_pool_label", "node_specs", ["pool_label"])
-    op.create_index("ix_node_enrollments_node_name", "node_enrollments", ["node_name"])
-    op.create_index("ix_balance_ledger_created_at", "balance_ledger", ["created_at"])
-    op.create_index("ix_notifications_created_at", "notifications", ["created_at"])
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "ix_used_refresh_tokens_user_id",
+            "used_refresh_tokens",
+            ["user_id"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_node_specs_gpu_model",
+            "node_specs",
+            ["gpu_model"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_node_specs_pool_label",
+            "node_specs",
+            ["pool_label"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_node_enrollments_node_name",
+            "node_enrollments",
+            ["node_name"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_balance_ledger_created_at",
+            "balance_ledger",
+            ["created_at"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_notifications_created_at",
+            "notifications",
+            ["created_at"],
+            postgresql_concurrently=True,
+        )

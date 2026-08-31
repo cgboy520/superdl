@@ -20,9 +20,6 @@ Create Date: 2026-08-26 00:47:22.874324
 
 """
 
-# ddl-risk: reviewed —— 删列属 contract 窗口:上一版应用早已不读写这些列(本提交之前
-# 全仓 grep 无引用),且当前无生产库,无需 expand/contract 两窗口分发。
-
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -34,19 +31,23 @@ down_revision: str | None = "d0f5a7b9c2e4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# 删列均属同一评审结论(contract 窗口:上一版应用早已不读写这些列,本提交之前全仓 grep
+# 无引用,且当前无生产库,无需 expand/contract 两窗口分发;锁窗为瞬时 ACCESS EXCLUSIVE)。
+# 门禁要求逐行标注,理由统一在此。
+
 
 def upgrade() -> None:
-    op.drop_column("cluster_status", "detail")
-    op.drop_column("instances", "pod_name")
-    op.drop_column("node_specs", "desired_at")
-    op.drop_column("orders", "invoice_title")
-    op.drop_column("orders", "invoice_tax_id")
-    op.drop_column("used_refresh_tokens", "user_id")
-    op.drop_column("users", "company_name")
-    op.drop_column("users", "company_tax_id")
-    op.drop_column("users", "invoice_title")
+    op.drop_column("cluster_status", "detail")  # ddl-risk: reviewed —— contract 窗口(见文件头)
+    op.drop_column("instances", "pod_name")  # ddl-risk: reviewed —— 同上
+    op.drop_column("node_specs", "desired_at")  # ddl-risk: reviewed —— 同上
+    op.drop_column("orders", "invoice_title")  # ddl-risk: reviewed —— 同上
+    op.drop_column("orders", "invoice_tax_id")  # ddl-risk: reviewed —— 同上
+    op.drop_column("used_refresh_tokens", "user_id")  # ddl-risk: reviewed —— 同上
+    op.drop_column("users", "company_name")  # ddl-risk: reviewed —— 同上
+    op.drop_column("users", "company_tax_id")  # ddl-risk: reviewed —— 同上
+    op.drop_column("users", "invoice_title")  # ddl-risk: reviewed —— 同上
     op.drop_constraint(op.f("ck_wallets_frozen_nonneg"), "wallets", type_="check")
-    op.drop_column("wallets", "frozen_amount")
+    op.drop_column("wallets", "frozen_amount")  # ddl-risk: reviewed —— 同上
 
 
 def downgrade() -> None:

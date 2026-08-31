@@ -1,7 +1,7 @@
 /**
  * 金额/时长/倒计时统一格式化。
  * 金额入参为后端 numeric 序列化出的字符串,禁止在前端做浮点运算;locale 只决定符号与量词。
- * 零外部依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定,见各 app lib/format.ts)。
+ * 零外部依赖:t 由调用方显式传入(应用侧经 useFormat() 绑定)。
  */
 
 import { isBillingPeriod, type BillingPeriod } from "./status";
@@ -30,8 +30,8 @@ type SharedFormatKey =
 
 export type SharedT = (key: SharedFormatKey, opts?: Record<string, unknown>) => string;
 
-/** 业务货币恒为人民币;en 语境用 CN¥ 避免被读作日元。 */
-export function currencySymbol(locale: string): string {
+/** 业务货币恒为人民币;en 语境用 CN¥ 避免被读作日元。模块内私有(对外经 Formatters.currencySymbol 暴露)。 */
+function currencySymbol(locale: string): string {
   return locale.startsWith("zh") ? "¥" : "CN¥";
 }
 
@@ -334,8 +334,8 @@ export function localToday(now: Date = new Date()): { date: string; tzOffsetMinu
   };
 }
 
-/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。 */
-export function tzSuffix(d: Date = new Date()): string {
+/** 时区后缀:按运行时真实偏移渲染 "(UTC+8)" / "(UTC-5)" / "(UTC+5:30)"。模块内私有,只经 formatDateTime 出栈。 */
+function tzSuffix(d: Date = new Date()): string {
   const offsetMin = -d.getTimezoneOffset(); // getTimezoneOffset 以西为正,取反成 UTC 以东为正
   const sign = offsetMin >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMin);

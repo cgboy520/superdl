@@ -1,10 +1,8 @@
-"""主密钥版本化(审计 #18):v2 密文带 kid、HKDF 子密钥分离、双密钥读迁移、
-摘要 candidates 兼容 legacy 世代、解密 fail-closed。"""
+"""主密钥版本化:v2 密文带 kid、HKDF 子密钥分离、双密钥读迁移、解密 fail-closed。"""
 
 import base64
 import hashlib
 import hmac
-import os
 from types import SimpleNamespace
 
 import pytest
@@ -39,13 +37,6 @@ def _raw_key(b64: str) -> bytes:
     return base64.urlsafe_b64decode(b64)
 
 
-def _encrypt_v1(plaintext: str, raw_b64: str, *, aad: str) -> str:
-    """手工构造 legacy v1 密文(裸主密钥,无 HKDF、无 kid)。"""
-    nonce = os.urandom(12)
-    ct = AESGCM(_raw_key(raw_b64)).encrypt(nonce, plaintext.encode(), aad.encode())
-    return "enc:v1:" + base64.b64encode(nonce + ct).decode()
-
-
 class TestV2Format:
     def test_kid_segment_matches_active_key_fingerprint(self, set_keys):
         set_keys()
@@ -62,23 +53,22 @@ class TestV2Format:
         with pytest.raises(InvalidTag):
             AESGCM(_raw_key(_KEY_A)).decrypt(blob[:12], blob[12:], b"k")
 
+    def test_wrong_aad_rejected(self, set_keys):
+        """AAD 绑定键名:密文不可跨字段搬运。"""
+        set_keys()
+        token = crypto.encrypt_str("secret", aad="sms_access_key_secret")
+        with pytest.raises(InvalidTag):
+            crypto.decrypt_str(token, aad="wechat_apiv3_key")
+
 
 class TestDecryptDualRead:
-    def test_v1_readable_with_same_key(self, set_keys):
-        """存量 v1 密文(升级前写入)在新代码下可读。"""
-        set_keys()
-        legacy = _encrypt_v1("old-secret", _KEY_A, aad="k")
-        assert crypto.decrypt_str(legacy, aad="k") == "old-secret"
-
-    def test_v1_and_v2_readable_via_previous_during_rotation(self, set_keys):
-        """轮换窗口:旧钥匙写的 v1/v2 密文经 PREVIOUS 可读,新写入只认新钥匙。"""
+    def test_v2_readable_via_previous_during_rotation(self, set_keys):
+        """轮换窗口:旧钥匙写的 v2 密文经 PREVIOUS 可读,新写入只认新钥匙。"""
         # 先以旧钥匙为 active 造密文
         set_keys(_KEY_B)
-        legacy_v1 = _encrypt_v1("v1-secret", _KEY_B, aad="k")
         rotated_v2 = crypto.encrypt_str("v2-secret", aad="k")
         # 轮换:新钥匙上位,旧钥匙挂 previous
         set_keys(_KEY_A, prev=_KEY_B)
-        assert crypto.decrypt_str(legacy_v1, aad="k") == "v1-secret"
         assert crypto.decrypt_str(rotated_v2, aad="k") == "v2-secret"
         fresh = crypto.encrypt_str("new-secret", aad="k")
         assert fresh.split(":", 3)[2] == hashlib.sha256(_raw_key(_KEY_A)).hexdigest()[:12]
@@ -96,24 +86,20 @@ class TestDecryptDualRead:
         with pytest.raises(ValueError, match="未知 kid"):
             crypto.decrypt_str(forged, aad="k")
 
-    def test_v1_wrong_key_raises_no_silent_fallback(self, set_keys):
-        """v1 密文换错钥匙串:双读均失败即抛,不得静默出值。"""
-        legacy = _encrypt_v1("secret", _KEY_B, aad="k")
-        set_keys()  # 只挂 _KEY_A
-        with pytest.raises(InvalidTag):
-            crypto.decrypt_str(legacy, aad="k")
-
     def test_unprefixed_and_truncated_rejected(self, set_keys):
         set_keys()
         with pytest.raises(ValueError, match="版本前缀"):
             crypto.decrypt_str("not-a-token", aad="k")
+        # v1 前缀已退役:按缺少版本前缀拒绝,不做任何解密尝试
+        with pytest.raises(ValueError, match="版本前缀"):
+            crypto.decrypt_str("enc:v1:AAAA", aad="k")
         with pytest.raises(ValueError, match="kid"):
             crypto.decrypt_str("enc:v2:no-kid-separator", aad="k")
 
 
 class TestDigestGenerations:
     def test_write_uses_hkdf_current_generation(self, set_keys):
-        """写入世代 = HKDF(当前主密钥);不再是裸主密钥 HMAC(legacy)。"""
+        """写入世代 = HKDF(当前主密钥);与裸主密钥 HMAC 输出不同(用钥分离)。"""
         set_keys()
         digest = crypto.hash_api_key("sk-test")
         hkdf_gen = hmac.new(
@@ -121,30 +107,28 @@ class TestDigestGenerations:
             b"service-api-key|sk-test",
             hashlib.sha256,
         ).hexdigest()
-        legacy_gen = hmac.new(
+        bare_gen = hmac.new(
             _raw_key(_KEY_A), b"service-api-key|sk-test", hashlib.sha256
         ).hexdigest()
         assert digest == hkdf_gen
-        assert digest != legacy_gen
+        assert digest != bare_gen
 
-    def test_candidates_cover_legacy_and_previous(self, set_keys):
-        """读路径 candidates:[当前HKDF, 当前裸(legacy)];挂 previous 追加旧钥匙两世代。"""
+    def test_candidates_cover_previous(self, set_keys):
+        """读路径 candidates:[当前HKDF];挂 previous 追加旧钥匙的派生世代。"""
         set_keys()
         single = crypto.hash_api_key_candidates("sk-test")
-        assert len(single) == 2
-        legacy_gen = hmac.new(
-            _raw_key(_KEY_A), b"service-api-key|sk-test", hashlib.sha256
-        ).hexdigest()
-        assert legacy_gen in single  # legacy 世代仍在,旧 API Key 不失效
+        assert len(single) == 1
 
         set_keys(_KEY_A, prev=_KEY_B)
         rotated = crypto.hash_api_key_candidates("sk-test")
-        assert len(rotated) == 4
-        assert rotated[:2] == single  # 当前世代恒在最前(写路径同序)
-        prev_legacy = hmac.new(
-            _raw_key(_KEY_B), b"service-api-key|sk-test", hashlib.sha256
+        assert len(rotated) == 2
+        assert rotated[0] == single[0]  # 当前世代恒在最前(写路径同序)
+        prev_gen = hmac.new(
+            crypto._derive(_raw_key(_KEY_B), crypto._MAC_INFO),
+            b"service-api-key|sk-test",
+            hashlib.sha256,
         ).hexdigest()
-        assert prev_legacy in rotated
+        assert prev_gen in rotated
 
     def test_domain_separation_holds_per_generation(self, set_keys):
         """同一明文不同域的摘要每个世代都不同(域分离不被 candidates 稀释)。"""

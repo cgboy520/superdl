@@ -49,6 +49,13 @@ PIN_K3S_CN="${SUPERDL_JOIN_PIN_K3S_CN:-3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31
 PIN_RKE2_OFFICIAL="${SUPERDL_JOIN_PIN_RKE2_OFFICIAL:-42983c86d1da64a92061d83afb57630cedd69241989f1b0673f3db6c3d92ee6b}"
 PIN_RKE2_CN="${SUPERDL_JOIN_PIN_RKE2_CN:-5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1}"
 
+# nvidia-container-toolkit 版本下限:低于此版本必须升级(上游安全修复线,CVE-2025-23266 修复版起);
+# 升版时与上方安装器 pin 同节奏复核
+NVCTK_MIN_VERSION="${SUPERDL_JOIN_NVCTK_MIN_VERSION:-1.17.8}"
+# 单 Pod PID 上限:fork bomb 可耗尽节点进程表拖垮 kubelet/containerd,殃及同机租户;
+# 与 deploy/cluster/rke2/server-config.yaml 的 podPidsLimit=4096 同值
+POD_PIDS_LIMIT="${SUPERDL_JOIN_POD_PIDS_LIMIT:-4096}"
+
 # ---------- 参数 ----------
 while [[ $# -gt 0 ]]; do
   case "$1" in

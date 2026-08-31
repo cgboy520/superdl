@@ -12,12 +12,13 @@ from app.core.audit import mark_audited_read, set_audit_target
 from app.core.config import get_settings
 from app.core.csvexport import csv_response
 from app.core.db import DbSession
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import AppError, ErrorCode, conflict
 from app.core.http import mark_idempotent_replay
 from app.core.outbox import OutboxTask
 from app.core.pagination import Page
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.platform_config import get_effective_platform_config
+from app.core.regex import PHONE_RE_LOOSE
 from app.core.registry import probe_harbor
 from app.core.timeutil import now_utc
 from app.modules.adminapi import export as admin_export
@@ -347,7 +348,12 @@ async def admin_update_platform_config(
     request: Request,
     admin: AdminUser = require_roles(),
 ) -> UpdatedKeysOut:
-    """在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。审计只落键名不落值。"""
+    """在线配置渠道凭据与合规信息(空串=清除覆盖,回退 env 默认)。
+
+    审计落键名与动作类型(set/clear),不落值:secret 键的值永远不进审计;
+    动作类型必须落——「清除覆盖」会把开关回落到部署层取值,对合规开关而言
+    与「写入弱值」同为降防操作,只记键名无法在审计里区分。
+    """
     from app.core.platform_config import set_platform_settings
 
     try:
@@ -356,13 +362,18 @@ async def admin_update_platform_config(
         raise AppError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
     await session.commit()
     set_audit_target(
-        request, "platform_config", detail={"keys": sorted(body.updates), "reason": body.reason}
+        request,
+        "platform_config",
+        detail={
+            "keys": {k: ("clear" if v.strip() == "" else "set") for k, v in body.updates.items()},
+            "reason": body.reason,
+        },
     )
     return UpdatedKeysOut(updated=sorted(body.updates))
 
 
 class SmsTestRequest(BaseModel):
-    phone: str = Field(pattern=r"^1\d{10}$")
+    phone: str = Field(pattern=PHONE_RE_LOOSE)
 
 
 @router.post("/platform-config/test-sms", dependencies=[require_roles()])
@@ -545,7 +556,7 @@ async def _load_dead_task(session: AsyncSession, task_id: int, *, conflict_key: 
     if task is None:
         raise AppError(ErrorCode.NOT_FOUND, key="adminapi.taskNotFound", http_status=404)
     if task.status != "dead":
-        raise AppError(ErrorCode.CONFLICT, key=conflict_key, params={"status": task.status})
+        raise conflict(key=conflict_key, params={"status": task.status})
     return task
 
 

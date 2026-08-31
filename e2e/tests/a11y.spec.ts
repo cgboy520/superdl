@@ -1,7 +1,7 @@
 /**
  * 可访问性静态扫描(axe-core):公开层全页 + 登录态控制台关键页。
  *
- * 判定口径:critical 违规即红;serious 暂作预警打印(存量收敛后收紧)。
+ * 判定口径:critical 违规即红;serious 只打印预警不判红。
  * 前置同 smoke.spec:API(8000,已迁移+seed_dev)与 worker 在跑;web dev server 由
  * playwright.config 自动拉起。
  */

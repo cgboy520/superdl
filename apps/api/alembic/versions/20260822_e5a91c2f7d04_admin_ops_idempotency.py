@@ -27,10 +27,19 @@ def upgrade() -> None:
     op.add_column(
         "admin_adjustments", sa.Column("idempotency_key", sa.String(length=64), nullable=True)
     )
-    op.create_unique_constraint(
-        op.f("uq_admin_adjustments_created_by_idempotency_key"),
-        "admin_adjustments",
-        ["created_by", "idempotency_key"],
+    # 在线姿势:并发唯一索引 + USING INDEX 提升为约束(UNIQUE 无 NOT VALID 形态)
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_admin_adjustments_created_by_idempotency_key",
+            "admin_adjustments",
+            ["created_by", "idempotency_key"],
+            unique=True,
+            postgresql_concurrently=True,
+        )
+    op.execute(
+        "ALTER TABLE admin_adjustments "
+        "ADD CONSTRAINT uq_admin_adjustments_created_by_idempotency_key "
+        "UNIQUE USING INDEX uq_admin_adjustments_created_by_idempotency_key"
     )
     op.add_column(
         "orders", sa.Column("backfill_idempotency_key", sa.String(length=64), nullable=True)

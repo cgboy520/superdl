@@ -10,7 +10,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
 from app.core.metrics import (
@@ -331,13 +331,9 @@ def _is_backfill_replay(order: Order, idempotency_key: str | None) -> bool:
     if order.status == "paid":
         if idempotency_key is not None and order.backfill_idempotency_key == idempotency_key:
             return True
-        raise AppError(ErrorCode.CONFLICT, key="billing.orderAlreadyPaid")
+        raise conflict(key="billing.orderAlreadyPaid")
     if order.status not in ("pending", "closed", "failed"):
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.orderStateNotBackfillable",
-            params={"status": order.status},
-        )
+        raise conflict(key="billing.orderStateNotBackfillable", params={"status": order.status})
     return False
 
 
@@ -401,11 +397,8 @@ async def backfill_order(
                 )
             ).scalar_one_or_none()
             if holder is not None and holder.order_no != order_no:
-                raise AppError(
-                    ErrorCode.CONFLICT,
-                    key="billing.backfillKeyInUse",
-                    params={"order_no": holder.order_no},
-                    http_status=409,
+                raise conflict(
+                    key="billing.backfillKeyInUse", params={"order_no": holder.order_no}
                 ) from exc
         raise
     if audit_writer is not None:

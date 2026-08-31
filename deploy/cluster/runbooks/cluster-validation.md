@@ -66,6 +66,16 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] GPU Operator 工作负载标签就位(node-join 随池标签自动打,契约见 `values/gpu-operator.yaml` 头注释):
       kata 池 `nvidia.com/gpu.workload.config=vm-passthrough`、hami 池 `nvidia.com/gpu.deploy.device-plugin=false`;
       kata 池注册 `nvidia.com/gpu` 的是 kata-sandbox-device-plugin,hami 池上无官方 device-plugin
+- [ ] **GPU 可见性伪造防线**(租户 `NVIDIA_VISIBLE_DEVICES=all` 覆盖 device-plugin 分配 = 看到同机全部物理卡):
+      ① 应用层:管理端/ API 建服务型实例显式传 `NVIDIA_*` env 必须 422;
+      ② 准入层:`kubectl -n tenant-<uuid> apply` 一个带 `env: [{name: NVIDIA_VISIBLE_DEVICES, value: all}]` 的
+      Pod 必须被 `superdl-tenant-pod-baseline` 拒绝(device-plugin 注入在 kubelet Allocate 阶段,
+      不经 apiserver 准入,故对正常分配零误伤);
+      ③ 运行时纵深(测试集群验证通过后才上生产):`values/gpu-operator.yaml` 的 toolkit 段加
+      `ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false` —— 前提是 CDI 注入确实生效
+      (gpu-operator ≥v25.10 默认;上游 aicr#1354 实测 envvar 注入策略下关此开关会把正常分配一起
+      静默阻断,未验证 CDI 前禁止开启)。验证矩阵:kata / mig / hami 三池各建一台实例,容器内
+      `nvidia-smi` 只见分配到的卡,hami 池显存超限仍在容器内被拒
 
 ## G. 镜像缓存与预热
 

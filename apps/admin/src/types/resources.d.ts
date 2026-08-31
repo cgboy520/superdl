@@ -139,7 +139,6 @@ export default interface Resources {
       "createFailed": "创建失败",
       "exportCsv": "导出 CSV",
       "listCapped": "已达单次返回上限({{max}} 条):更早的记录未列出,请用上方筛选缩小范围",
-      "loadFailed": "加载失败,请重试",
       "loading": "加载中…",
       "next": "下一步",
       "readonlyNoCreate": "只读角色不可创建",
@@ -148,16 +147,9 @@ export default interface Resources {
       "reasonPlaceholder": "原因将写入审计日志",
       "reasonRule": "请填写至少 2 个字的原因",
       "refresh": "刷新",
-      "requestFailed": "请求失败",
-      "retry": "重试",
       "saveFailed": "保存失败",
       "secondConfirm": "二次确认",
       "statusFilter": "状态过滤"
-    },
-    "errorPage": {
-      "subtitle": "页面渲染时发生未处理的错误。请刷新重试;若持续出现,请联系平台管理员",
-      "techDetail": "技术细节",
-      "title": "页面出错了"
     },
     "finance": {
       "adjustCreated": "调账单已发起,等待第二位管理员复核",
@@ -504,9 +496,6 @@ export default interface Resources {
       "utilChart": "GPU 利用率",
       "vramChart": "显存占用",
       "xidBadge": "24h XID {{count}}"
-    },
-    "notFound": {
-      "title": "页面不存在"
     },
     "overview": {
       "ack": "确认",
@@ -1040,6 +1029,7 @@ export default interface Resources {
       "callbackChannelMismatch": "回调渠道与订单不符",
       "channelNotEnabled": "该支付渠道暂未开通,请选择其他支付方式",
       "channelStateNotBackfillable": "渠道侧状态为 {{status}},不能补单",
+      "insufficientAvailableFrozen": "可用余额不足:¥{{frozen}} 因支付渠道冲正被冻结,待核销期间不可用于新消费;如有疑问请联系客服",
       "insufficientBalance": "余额不足,请先充值",
       "insufficientForInFlight": "余额不足:在途资源预计还要消耗 ¥{{inflight}},本次操作要求余额不少于 ¥{{required}}(当前 ¥{{balance}}),请先充值",
       "invoiceAmountStale": "可开票金额已变动(当前可开 ¥{{expected}},申请额 ¥{{requested}}):账期内发生了退款,请驳回该申请并通知用户按新金额重新提交",
@@ -1236,6 +1226,11 @@ export default interface Resources {
       "search": "没有符合条件的结果,试试调整筛选",
       "ticket": "暂无工单"
     },
+    "errorPage": {
+      "subtitle": "页面出现异常,请重试或返回首页",
+      "techDetail": "技术详情",
+      "title": "页面出错了"
+    },
     "format": {
       "countdown": {
         "expired": "已到期",
@@ -1272,6 +1267,10 @@ export default interface Resources {
       "en": "English",
       "switchLabel": "切换语言",
       "zh": "中文"
+    },
+    "notFound": {
+      "subtitle": "你访问的地址不存在或已被移除",
+      "title": "页面不存在"
     },
     "query": {
       "partialFailed": "部分数据加载失败",
@@ -1434,7 +1433,7 @@ export default interface Resources {
       },
       "tierHint": {
         "cpu": "不带 GPU",
-        "shared_hami": "性能可能波动",
+        "shared_hami": "软件限额共享,非安全隔离",
         "shared_mig": "显存与算力硬隔离"
       },
       "workload": {

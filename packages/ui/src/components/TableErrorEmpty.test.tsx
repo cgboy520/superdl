@@ -1,5 +1,5 @@
 /** TableErrorEmpty:错误态渲染「加载失败 + 重试」,非错误态退回 antd 默认空态。
- *  挂了 = 查询失败又被渲染成「没有数据」(P1-4 回归)。 */
+ *  挂了 = 查询失败又被渲染成「没有数据」。 */
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

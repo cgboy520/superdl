@@ -5,8 +5,12 @@
 
 分池铁律:
 - kata → Kata(RuntimeClass=kata-qemu)+ VFIO 整卡直通,不叠 userns(VM 级隔离)
-- mig  → runc + MIG device plugin + userns 加固(hostUsers=false)
-- hami → runc + HAMi 软切分 + userns 加固(hostUsers=false)
+- mig  → runc + MIG device plugin + userns 加固(hostUsers=false);MIG 为 GPU 硬件强制隔离,
+  租户无法绕过,是安全边界
+- hami → runc + HAMi 软切分 + userns 加固(hostUsers=false);HAMi 通过 LD_PRELOAD 拦截
+  CUDA runtime API 实现显存/算力软限额,但容器内 root 可通过 unset LD_PRELOAD、静态链接 CUDA、
+  直接调用 CUDA Driver API 绕过配额(HAMi 官方 troubleshooting 明确列出)。因此 hami 池是
+  **软件限额/性能隔离**,不是安全边界,不适合需要强隔离的多租户场景。详见 docs/reference/security.md。
 - cpu  → runc + userns 加固,不申请任何 nvidia.com/* 资源
 Kata 与 HAMi 永不混布同一节点池。
 

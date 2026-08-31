@@ -12,7 +12,7 @@ from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import mask_phone_value
-from app.core.money import as_amount
+from app.core.money import as_amount, money_str
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit, TzOffset
 from app.modules.account.schemas import AdminDeletionReject, AdminDeletionRequestOut
@@ -118,8 +118,8 @@ async def admin_list_tenants(
                 id=u.id,
                 phone_masked=mask_phone_value(u.phone),
                 status=u.status,
-                balance=format(as_amount(balances.get(u.id, 0)), "f"),
-                total_consumed=format(as_amount(consumed.get(u.id, 0)), "f"),
+                balance=money_str(as_amount(balances.get(u.id, 0))),
+                total_consumed=money_str(as_amount(consumed.get(u.id, 0))),
                 instances=st["instances"],
                 disk_gb=st["disk_gb"],
                 created_at=u.created_at.isoformat(),

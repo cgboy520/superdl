@@ -33,10 +33,18 @@ def upgrade() -> None:
     op.drop_constraint(
         "uq_admin_adjustments_created_by_idempotency_key", "admin_adjustments", type_="unique"
     )
-    op.create_unique_constraint(
-        "uq_admin_adjustments_idem_scope",
-        "admin_adjustments",
-        ["created_by", "user_id", "idempotency_key"],
+    # 在线姿势:并发唯一索引 + USING INDEX 提升为约束(UNIQUE 无 NOT VALID 形态)
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_admin_adjustments_idem_scope",
+            "admin_adjustments",
+            ["created_by", "user_id", "idempotency_key"],
+            unique=True,
+            postgresql_concurrently=True,
+        )
+    op.execute(
+        "ALTER TABLE admin_adjustments ADD CONSTRAINT uq_admin_adjustments_idem_scope "
+        "UNIQUE USING INDEX uq_admin_adjustments_idem_scope"
     )
 
 

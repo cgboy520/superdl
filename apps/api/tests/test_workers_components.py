@@ -8,6 +8,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.workers.components import (
     COMPONENT_OUTBOX_TYPES,
     COMPONENT_SCHEDULED_JOBS,
@@ -71,7 +72,8 @@ class TestPartition:
 
 class TestComponentEnv:
     def test_invalid_component_fails_closed(self, monkeypatch):
-        monkeypatch.setenv("SUPERDL_WORKER_COMPONENT", "typo-worker")
+        # 组件身份走 Settings(lru_cache 缓存):patch 缓存实例属性,monkeypatch env 对缓存不可见
+        monkeypatch.setattr(get_settings(), "worker_component", "typo-worker")
         with pytest.raises(RuntimeError, match="SUPERDL_WORKER_COMPONENT"):
             current_component()
 
@@ -115,7 +117,7 @@ class TestScheduledJobFilter:
 
         from app.workers.main import register_scheduled_jobs
 
-        monkeypatch.setenv("SUPERDL_WORKER_COMPONENT", "prewarm")
+        monkeypatch.setattr(get_settings(), "worker_component", "prewarm")
         scheduler = AsyncIOScheduler(timezone="UTC")
         register_scheduled_jobs(scheduler)
         scheduler.start(paused=True)

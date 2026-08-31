@@ -45,7 +45,7 @@
 | `GET /api/admin/v1/adjustments/export` | finance/readonly | 调账流式 CSV(status/user_id/day 口径),行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/tickets` `/{ticket_id}` `POST .../reply` `/status` | 读 ops/finance/readonly,写 ops/admin | 工单对话流与状态流转 |
 | `GET /api/admin/v1/tickets/count?status=&category=` | ops/finance/readonly | 待办工单计数轻端点(DB count,默认 `pending_staff` 口径;列表页角标 60s 轮询用它,不拉列表全页) |
-| `GET/POST/PUT/POST /api/admin/v1/legal-docs*` | 读全角色,写仅 admin | 法务文档草稿 → 发布 → 归档(归档 `{reason}` 必填,入审计);每 (doc_key, locale) 仅一条 published |
+| `GET/POST/PUT /api/admin/v1/legal-docs*` | 读全角色,写仅 admin | 法务文档草稿 → 发布 → 归档(归档 `{reason}` 必填,入审计);每 (doc_key, locale) 仅一条 published |
 | `GET/PUT /api/admin/v1/tenants/{user_id}/quota` | 读全角色,写 ops | 用户级配额覆盖(留空 = 该维走 policy → env 默认链) |
 | `GET /api/admin/v1/deletion-requests` `POST .../{request_id}/approve` `/reject` | 读 ops/finance/readonly,执行仅 admin | 账号注销:满冷静期且前置校验全过才可执行 |
 | `GET /api/admin/v1/alerts` `/alerts/unread-count` `POST .../{alert_id}/ack` | 读 ops/finance/readonly,写 ops | 告警流与确认闭环;unread-count 回 `{count, critical_count}`(critical 单列供总览 KPI 红色高亮,不从截断列表推导) |

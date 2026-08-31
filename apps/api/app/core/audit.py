@@ -160,7 +160,7 @@ async def _write_audit_row(request: Request, result: int) -> None:
             await session.commit()
         reset_audit_gate()
     except Exception:
-        # 审计失败不得影响业务响应;但必须可告警(失败即留痕缺口,资金域已改同步审计)
+        # 审计失败不得影响业务响应,但必须可告警(失败即留痕缺口);
         # 连续失败累计进 fail-closed 闸(见 AuditMiddleware 的审计闸)
         global _audit_consecutive_failures
         _audit_consecutive_failures += 1

@@ -49,8 +49,13 @@ data:
   # 人机校验(阿里云验证码 2.0)默认值层:开关 captcha_enabled 在 管理端·平台配置·安全策略 切换;
   # scene_id / prefix 是客户端初始化用的公开信息,AccessKey 对在 ../secrets.example.yaml
   SUPERDL_CAPTCHA_ENABLED: "true"
-  # 实名认证开关(默认值层;资质与凭据到位后在 管理端·平台配置·安全策略 打开,再视合规要求开「充值前强制实名」)
-  SUPERDL_REAL_NAME_ENABLED: "false"
+  # 实名认证开关(env 层即开:prod 的 D-4 启动合规闸要求 real_name/captcha/充值强制实名全开;
+  # env 层不开 = 只能靠 DB 覆盖满足启动闸,而清除该覆盖会静默回落到这里——合规开关的
+  # 安全默认必须在部署层就位)。渠道凭据(ACCESS_KEY 对)在 secrets.example.yaml 的
+  # superdl-cloud / 管理端·平台配置补录,缺失时发码/核验接口 fail-closed 502。
+  SUPERDL_REAL_NAME_ENABLED: "true"
+  # 充值前强制实名(境内合规):未实名用户不能充值、不能开通实例;前置是实名已开(上一条)
+  SUPERDL_REAL_NAME_REQUIRED_FOR_RECHARGE: "true"
   # 管理端两步验证(TOTP)总开关(默认值层;关闭属高危运营动作,管理端·平台配置·安全策略可切换)
   SUPERDL_ADMIN_MFA_ENABLED: "true"
   SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"

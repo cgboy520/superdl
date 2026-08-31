@@ -87,44 +87,62 @@ def upgrade() -> None:
         existing_nullable=False,
     )
 
-    # 部分唯一索引(1:1 占用语义)
-    op.create_index(
-        "uq_port_allocations_instance",
-        "port_allocations",
-        ["instance_id"],
-        unique=True,
-        postgresql_where=sa.text("instance_id IS NOT NULL"),
-    )
-    op.create_index(
-        "uq_data_disks_mounted_instance",
-        "data_disks",
-        ["mounted_instance_id"],
-        unique=True,
-        postgresql_where=sa.text("mounted_instance_id IS NOT NULL"),
-    )
-
-    # 查询路径复合/部分索引
-    op.create_index(
-        "ix_outbox_tasks_status_next_retry_at_id",
-        "outbox_tasks",
-        ["status", "next_retry_at", "id"],
-    )
-    op.create_index(
-        "ix_users_status_not_active",
-        "users",
-        ["status"],
-        postgresql_where=sa.text("status <> 'active'"),
-    )
-    op.create_index("ix_audit_log_actor_id_id", "audit_log", ["actor_id", "id"])
-    op.create_index("ix_bills_hourly_user_hour", "bills_hourly", ["user_id", "hour_start"])
-    op.create_index("ix_bills_daily_disk_user_day", "bills_daily_disk", ["user_id", "day"])
+    # 部分唯一索引(1:1 占用语义)与查询路径复合/部分索引:全部 CONCURRENTLY
+    # (在线建索引不锁写),且 CONCURRENTLY 不能在事务块内 → 统一 autocommit_block
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_port_allocations_instance",
+            "port_allocations",
+            ["instance_id"],
+            unique=True,
+            postgresql_where=sa.text("instance_id IS NOT NULL"),
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "uq_data_disks_mounted_instance",
+            "data_disks",
+            ["mounted_instance_id"],
+            unique=True,
+            postgresql_where=sa.text("mounted_instance_id IS NOT NULL"),
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_outbox_tasks_status_next_retry_at_id",
+            "outbox_tasks",
+            ["status", "next_retry_at", "id"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_users_status_not_active",
+            "users",
+            ["status"],
+            postgresql_where=sa.text("status <> 'active'"),
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_audit_log_actor_id_id",
+            "audit_log",
+            ["actor_id", "id"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_bills_hourly_user_hour",
+            "bills_hourly",
+            ["user_id", "hour_start"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_bills_daily_disk_user_day",
+            "bills_daily_disk",
+            ["user_id", "day"],
+            postgresql_concurrently=True,
+        )
 
     # SKU 业务唯一键(mig_profile NULL 参与判重)。
-    # ddl-risk: reviewed —— UNIQUE 约束无 NOT VALID 形态(PG 仅 CHECK/FK 支持);
-    # skus 是管理端低频维护的小表(种子 4 行),建唯一索引的短时锁可接受。
-    # 存量库可能已有重复行(管理端误操作/种子重复,见审计 #73):先按业务键去重——
-    # 保留每组最小 id,instances.sku_id(无 FK,仅展示引用)改挂保留行,再删重复行。
-    # PARTITION BY 把 NULL 归为同组,与 NULLS NOT DISTINCT 语义一致。
+    # UNIQUE 约束无 NOT VALID 形态(PG 仅 CHECK/FK 支持);skus 是管理端低频维护的小表
+    # (种子 4 行),建唯一索引的短时锁可接受。存量库可能已有重复行(管理端误操作/种子
+    # 重复):先按业务键去重——保留每组最小 id,instances.sku_id(无 FK,仅展示引用)
+    # 改挂保留行,再删重复行。PARTITION BY 把 NULL 归为同组,与 NULLS NOT DISTINCT 语义一致。
     op.execute(
         """
         WITH ranked AS (
@@ -157,7 +175,7 @@ def upgrade() -> None:
         WHERE s.id = r.id AND r.rn > 1
         """
     )
-    op.execute(
+    op.execute(  # ddl-risk: reviewed —— UNIQUE 无 NOT VALID 形态;skus 小表(种子 4 行)
         "ALTER TABLE skus ADD CONSTRAINT uq_skus_business_key "
         "UNIQUE NULLS NOT DISTINCT (gpu_model, tier, mig_profile, gpu_cores_pct)"
     )

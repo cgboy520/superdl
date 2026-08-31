@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, Mapped
 
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import conflict
 from app.core.timeutil import ensure_utc, now_utc
 
 # 幂等键有效期(实例 / 数据盘):窗口内重放返回既有资源;窗口外同一键按新单处理
@@ -85,7 +85,7 @@ async def find_replay(
 
     owner_col 为 None 表示键全局唯一(公告)。window 给定时只认 created_at 在窗内的行:
     窗外的行先释放键位(UNIQUE(归属列, idempotency_key) 不再挡新单)再按无既有行处理。
-    fingerprint 给定时做异参检测:行上指纹(老行为 NULL,兼容放行)与本次不符抛 409。
+    fingerprint 给定时做异参检测:行上指纹与本次不符(含老行 NULL)即抛 409。
     """
     stmt = select(model).where(model.idempotency_key == key)
     if owner_col is not None:
@@ -97,15 +97,9 @@ async def find_replay(
         existing.idempotency_key = None
         await session.flush()
         return None
-    if fingerprint is not None:
-        stored = existing.request_fingerprint
-        # 老行(指纹上线前落库)/ 窗口外释放过键位的行没有指纹:不比对,按重放放行
-        if stored is not None and stored != fingerprint:
-            raise AppError(
-                ErrorCode.CONFLICT,
-                key="common.idempotencyKeyMismatch",
-                http_status=409,
-            )
+    # 一律严格比对:行上指纹与本次不符(含老行 NULL)即 409
+    if fingerprint is not None and existing.request_fingerprint != fingerprint:
+        raise conflict(key="common.idempotencyKeyMismatch")
     return existing
 
 

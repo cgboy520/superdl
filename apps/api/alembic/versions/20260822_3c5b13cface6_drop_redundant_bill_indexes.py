@@ -18,11 +18,33 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 两列已被各自唯一约束(instance_id, hour_start)/(disk_id, day)的前导列覆盖,单列索引是纯写放大
-    op.drop_index("ix_bills_hourly_instance_id", table_name="bills_hourly")
-    op.drop_index("ix_bills_daily_disk_disk_id", table_name="bills_daily_disk")
+    # 两列已被各自唯一约束(instance_id, hour_start)/(disk_id, day)的前导列覆盖,单列索引是纯写放大。
+    # DROP INDEX CONCURRENTLY 不持 ACCESS EXCLUSIVE(只锁索引本身的轻量形态);
+    # CONCURRENTLY 不能在事务块内,必须 autocommit_block(env.py 整轮单事务)
+    with op.get_context().autocommit_block():
+        op.drop_index(
+            "ix_bills_hourly_instance_id",
+            table_name="bills_hourly",
+            postgresql_concurrently=True,
+        )
+        op.drop_index(
+            "ix_bills_daily_disk_disk_id",
+            table_name="bills_daily_disk",
+            postgresql_concurrently=True,
+        )
 
 
 def downgrade() -> None:
-    op.create_index("ix_bills_daily_disk_disk_id", "bills_daily_disk", ["disk_id"])
-    op.create_index("ix_bills_hourly_instance_id", "bills_hourly", ["instance_id"])
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "ix_bills_daily_disk_disk_id",
+            "bills_daily_disk",
+            ["disk_id"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_bills_hourly_instance_id",
+            "bills_hourly",
+            ["instance_id"],
+            postgresql_concurrently=True,
+        )

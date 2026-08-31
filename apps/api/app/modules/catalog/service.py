@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.gpu_adapter import (
     POOL_CPU,
     POOL_HAMI,
@@ -86,7 +86,7 @@ def _check_tier_pool(tier: str, pool_label: str, mig_profile: str | None) -> Non
 
     隔离机制的派发键是池(见 core/gpu_adapter),档位只是售卖名字——两者不配对时,
     卖出去的隔离强度与实际跑的不是一回事。建 SKU 与改池两条路径共用本函数。
-    共享档再叠加 D-1 运营开关(SUPERDL_SHARED_TIER_ALLOWED_POOLS):摘掉 hami 即
+    共享档再叠加运营开关(SUPERDL_SHARED_TIER_ALLOWED_POOLS):摘掉 hami 即
     「共享档只卖 MIG 硬切分」,空值即停售共享档。
     """
     allowed = TIER_POOLS.get(tier, ())
@@ -228,11 +228,7 @@ async def admin_create_sku(session: AsyncSession, data: SkuCreate) -> Sku:
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="catalog.skuBusinessKeyExists",
-            http_status=status.HTTP_409_CONFLICT,
-        ) from exc
+        raise conflict(key="catalog.skuBusinessKeyExists") from exc
     await session.refresh(sku)
     return sku
 
@@ -254,11 +250,7 @@ async def admin_update_sku(
         field in updates and updates[field] != getattr(sku, field)
         for field in ("pool_label", "mig_profile")
     ):
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="catalog.isolationChangeNeedsOffSale",
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="catalog.isolationChangeNeedsOffSale")
     if updates.get("price_hourly") is not None:
         updates["price_hourly"] = _checked_price(updates["price_hourly"])
     turning_on = updates.get("status") == "on" and sku.status != "on"
@@ -294,11 +286,7 @@ async def admin_update_sku(
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="catalog.skuBusinessKeyExists",
-            http_status=status.HTTP_409_CONFLICT,
-        ) from exc
+        raise conflict(key="catalog.skuBusinessKeyExists") from exc
     await session.refresh(sku)
     return sku, before
 
@@ -371,11 +359,7 @@ async def admin_create_image(session: AsyncSession, data: ImageCreate) -> Platfo
     try:
         await session.commit()
     except IntegrityError as exc:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="catalog.imageRefExists",
-            http_status=status.HTTP_409_CONFLICT,
-        ) from exc
+        raise conflict(key="catalog.imageRefExists") from exc
     await session.refresh(img)
     return img
 
@@ -393,11 +377,7 @@ async def admin_update_image(
     try:
         await session.commit()
     except IntegrityError as exc:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="catalog.imageRefExists",
-            http_status=status.HTTP_409_CONFLICT,
-        ) from exc
+        raise conflict(key="catalog.imageRefExists") from exc
     await session.refresh(img)
     return img
 

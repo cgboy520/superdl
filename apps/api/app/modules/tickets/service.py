@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent
 from app.core.logging import get_logger
 from app.core.pagination import Page, paginate_by_id
@@ -104,12 +104,7 @@ async def create_ticket(
         )
     ).scalar_one()
     if open_count >= MAX_OPEN_TICKETS:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="tickets.openLimitReached",
-            params={"max": MAX_OPEN_TICKETS},
-            http_status=409,
-        )
+        raise conflict(key="tickets.openLimitReached", params={"max": MAX_OPEN_TICKETS})
 
     # ticket_no = T+yyyymmdd+两位日内序列。并发同序列由唯一索引兜底,撞车换下一个序列重试
     prefix = f"T{now_utc():%Y%m%d}"
@@ -209,12 +204,7 @@ async def _get_my_for_update(session: AsyncSession, user_id: int, ticket_id: int
 
 def _ensure_repliable(ticket: Ticket) -> None:
     if ticket.status in TERMINAL_STATUSES:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="tickets.stateNotRepliable",
-            params={"status": ticket.status},
-            http_status=409,
-        )
+        raise conflict(key="tickets.stateNotRepliable", params={"status": ticket.status})
 
 
 async def append_message(
@@ -242,12 +232,7 @@ async def close_ticket(session: AsyncSession, user_id: int, ticket_id: int) -> T
     """用户关闭(仅 resolved;closed_at 仅此路径落)。"""
     ticket = await _get_my_for_update(session, user_id, ticket_id)
     if ticket.status != "resolved":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="tickets.stateNotClosable",
-            params={"status": ticket.status},
-            http_status=409,
-        )
+        raise conflict(key="tickets.stateNotClosable", params={"status": ticket.status})
     ticket.status = "closed"
     ticket.closed_at = now_utc()
     await session.commit()
@@ -345,21 +330,11 @@ async def admin_update_status(session: AsyncSession, ticket_id: int, *, action: 
     ticket = await _get_for_update(session, ticket_id)
     if action == "resolve":
         if ticket.status in TERMINAL_STATUSES:
-            raise AppError(
-                ErrorCode.CONFLICT,
-                key="tickets.stateNotResolvable",
-                params={"status": ticket.status},
-                http_status=409,
-            )
+            raise conflict(key="tickets.stateNotResolvable", params={"status": ticket.status})
         ticket.status = "resolved"
     else:  # close
         if ticket.status != "resolved":
-            raise AppError(
-                ErrorCode.CONFLICT,
-                key="tickets.stateNotClosable",
-                params={"status": ticket.status},
-                http_status=409,
-            )
+            raise conflict(key="tickets.stateNotClosable", params={"status": ticket.status})
         ticket.status = "closed"
         ticket.closed_at = now_utc()
     await session.commit()

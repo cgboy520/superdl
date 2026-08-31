@@ -41,6 +41,21 @@ else
 fi
 check_secret monitoring superdl-alert-token "Alertmanager→平台告警 webhook token"
 check_secret monitoring superdl-smtp-password "Alertmanager 邮件通道"
+# JWT 签发密钥占位检测:superdl-auth 存在 ≠ 已填真值——存在性检查查不出「填了一半」,
+# 而占位密钥 = 任何人都可按公开模板伪造平台令牌(含 admin audience)。只报键名,不回显值。
+if kubectl -n superdl get secret superdl-auth >/dev/null 2>&1; then
+  jwt_secret=$(kubectl -n superdl get secret superdl-auth \
+    -o jsonpath='{.data.SUPERDL_JWT_SECRET}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  if [[ -z "$jwt_secret" ]]; then
+    miss "superdl/superdl-auth 缺 SUPERDL_JWT_SECRET 键(API 不会启动)"
+  elif [[ "$jwt_secret" == *CHANGE_ME* || ${#jwt_secret} -lt 32 ]]; then
+    miss "superdl/superdl-auth 的 SUPERDL_JWT_SECRET 仍是模板占位或过短(openssl rand -hex 32 生成;prod 启动校验同口径拒启)"
+  else
+    ok "superdl/superdl-auth JWT 密钥已替换为真值"
+  fi
+else
+  miss "superdl/superdl-auth 不存在(JWT 签发密钥,模板见 ../app/secrets.example.yaml)"
+fi
 if grep -qE '^\s*acmeDns:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
   check_secret cert-manager acme-dns-account "acme-dns 账户凭据(acmeDNS solver,建法见 runbooks/acme-dns.md)"
   # 光有 secret 不够:acmedns.json 以**被验证的域**为键,两张泛域名证书各要一个键
@@ -170,9 +185,13 @@ if grep -qE '^\s*cnpg:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; 
 else
   if [[ "${SUPERDL_MANAGED_PG_PITR_ACK:-}" == "yes" ]]; then
     ok "托管 PG PITR 已书面确认(SUPERDL_MANAGED_PG_PITR_ACK=yes)"
+  elif [[ "$env_name" == "full" ]]; then
+    # full 档面向公众生产:资金库(钱包/账本/订单)不能只靠 24h RPO 的每日 pg_dump。
+    # 要么启用 cnpg 档(分钟级 WAL 归档),要么书面确认托管 PG 的 PITR 已开——
+    # 这是阻断项不是提示:「先上线后补 PITR」的窗口期里,一次误删/损坏就是资金账永久丢损
+    miss "full 档必须启用 cnpg(environments/$env_name.yaml 置 cnpg.enabled=true)或确认托管 PG 已开 PITR 后以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑——资金库 24h RPO 不可接受"
   else
-    # 提示不阻断:托管 PG 是否已开 PITR 只有其控制台能证明,脚本查不到,书面确认由人核
-    # (runbooks/cluster-validation.md 发布检查单、runbooks/pg-backup-restore.md 上线前强制项)
+    # light 档限内网试点(文末「light(k3s)专项」另有强制确认):提示不阻断
     say "  ⚠ cnpg.enabled=false 且未登记托管 PG PITR 确认:确认托管 PG 已开 PITR+保留策略后以 SUPERDL_MANAGED_PG_PITR_ACK=yes 重跑可消除本提示;或启用 cnpg 档(environments/$env_name.yaml)。提示项,不阻断"
   fi
 fi

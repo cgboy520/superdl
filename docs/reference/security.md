@@ -10,7 +10,7 @@
 
 ### 启动与配置
 
-- `Settings._validate_prod` 在 prod 下 fail-fast,任一项不合格即拒绝启动(API 与 worker 同一份校验,这份清单就是生产必配项清单;部署模板见 `deploy/app/k8s/00-namespace-config.yaml` 非密与 `deploy/app/secrets.example.yaml` 密):jwt_secret 仍为开发默认或不足 32 字符;access token TTL >1h 或 refresh TTL >7d;`sms_provider=mock`;`k8s_backend=fake`;`payment_mock=true`;database_url 仍为本地默认、或指向非本机 PG 而无 `sslmode=require+`;cors_origins 含 localhost;jupyter_domain_suffix / service_domain_suffix / public_base_url / admin_host 仍为 example.com 占位;`payment_alipay_enabled=true` 而 `alipay_seller_id` 缺失;metrics_token 未配;config_encryption_key 缺失(格式校验在 `_validate_invariants`,任意环境:32 字节 urlsafe-base64,`config_encryption_key_previous` 同口径且不得与当前密钥相同)。
+- `Settings._validate_prod` 在 prod 下 fail-fast,任一项不合格即拒绝启动(API 与 worker 同一份校验,这份清单就是生产必配项清单;部署模板见 `deploy/app/k8s/00-namespace-config.yaml` 非密与 `deploy/app/secrets.example.yaml` 密):jwt_secret 仍为开发默认、含 `CHANGE_ME` 占位残留、不足 32 字符或唯一字符不足 16 个(低熵串);access token TTL >1h 或 refresh TTL >7d;`sms_provider=mock`;`k8s_backend=fake`;`payment_mock=true`;database_url 仍为本地默认、或指向非本机 PG 而无 `sslmode=require+`;cors_origins 含 localhost;jupyter_domain_suffix / service_domain_suffix / public_base_url / admin_host 仍为 example.com 占位;`payment_alipay_enabled=true` 而 `alipay_seller_id` 缺失;metrics_token 未配;config_encryption_key 缺失(格式校验在 `_validate_invariants`,任意环境:32 字节 urlsafe-base64,`config_encryption_key_previous` 同口径且不得与当前密钥相同)。
 - 启动校验只管 provider 选择,不查渠道凭据齐全性:短信 / 验证码 / 实名凭据经平台配置中心在线录入,运行期渠道工厂(`app/core/sms.py`、`app/core/captcha.py`)缺凭据即 fail-closed,管理端 `test-sms` 可验。`alertmanager_token` 未配与 `prometheus_url` 仍指向本地只在 lifespan 打 WARNING。`k8s_backend=real` 不要求 `environment=prod`。
 - 人机验证与实名认证是运行期开关(平台配置·安全策略 `captcha_enabled` / `real_name_enabled`,默认关),不是 provider 选择:关闭即跳过对应校验(发码不带 `captcha_token`、实名提交返 409)。**prod 下关闭是双重封死**:在线写库层 `prod_forbidden` 禁关(单管理员一次请求即降防的口子),lifespan 启动 fail-fast(`assert_prod_compliance_gates`:captcha_enabled / real_name_enabled / real_name_required_for_recharge 任一未开即拒绝启动);`compute_config_warnings` 仍在管理端配置页出红牌。没有 mock 渠道,测试经 `set_captcha_channel` / `set_realname_provider` 注入。组合约束:`real_name_required_for_recharge=true ⇒ real_name_enabled=true`,任意环境生效(`Settings._validate_invariants` 与写入侧 `_check_real_name_invariant` 同口径)。
 - 首个管理员由脚本创建(`ensure_bootstrap_admin`:`admin_users` 为空时才建,口令 ≥12 字符、≤72 字节),没有启动期引导变量:dev/test 随 `apps/api/scripts/seed_dev.py` 一起建,prod 用 `apps/api/scripts/bootstrap_admin.py`(走完整 Settings 校验,口令取 `SUPERDL_SEED_ADMIN_PASSWORD`,未设则随机生成写 0600 文件——绝不打印 stdout,日志采集会长期留存)。幽灵 `SUPERDL_*` 环境变量(不命中任何字段)启动打 WARNING 但不 fail。
@@ -27,6 +27,22 @@
 - 高危管理操作一律「原因必填 → 二次确认 → 审计」;审计不落 token、密钥与配置值。
 
 ### 租户隔离
+
+#### 隔离级别分级
+
+平台提供三级 GPU 隔离;用户可见的「档位」与底层隔离强度并非一一对应,档位的唯一事实源是 `pool_label`:
+
+| 级别 | 池 | 机制 | 安全属性 | 适用场景 |
+|---|---|---|---|---|
+| **VM 级隔离** | kata | Kata Containers (QEMU VM) + VFIO 整卡直通 | 硬件级安全边界;租户无法逃逸 VM | 生产服务、敏感数据 |
+| **硬件切分隔离** | mig | NVIDIA MIG (Multi-Instance GPU) | GPU 硬件强制隔离;显存/算力切分由硬件执行,租户无法绕过 | 标准共享、可信多租户 |
+| **软件限额** | hami | HAMi `libvgpu.so` (LD_PRELOAD CUDA 拦截) | **非安全边界**;容器内 root 可通过 unset LD_PRELOAD、静态链接 CUDA、直接调用 CUDA Driver API 绕过配额;HAMi 官方文档明确列出多种绕过方式(见 HAMi troubleshooting「GPU Memory Limit Not Enforced」) | 成本优化、容错性高的批处理任务 |
+
+**关键安全约束:**
+- HAMi 池的隔离是**性能隔离/资源限额**,不是**安全隔离**。租户容器以 root 运行(ssh 入口所需),root 可以绕过 HAMi 的软限额。
+- 跨租户显存残留:HAMi 将多个租户放在同一未分区 GPU 上,存在已知的跨租户显存残留面(MIG 硬件切分不存在此问题)。
+- 平台默认 `shared_tier_allowed_pools = "mig,hami"`;运营方可通过摘掉 hami 将共享档限制为仅 MIG 硬切分。
+- 前端对经济档(hami 池)有知情同意 modal,明确告知"软件隔离共享"和"性能可能波动",且文案与代码同提交。
 
 - 租户容器加固基线(`core/k8s/real.py::tenant_security_context`,无条件下发):`allowPrivilegeEscalation=false`、`seccompProfile=RuntimeDefault`、`capabilities.drop=[ALL]` 之后只 add 回 `SYS_CHROOT` / `SETUID` / `SETGID` —— OpenSSH 的预认证特权分离强制需要这三个,缺任一个则 `ssh root@` 入口在密钥交换阶段即断。不下发 `runAsNonRoot`(平台镜像以 root 运行)。
 - 租户 Pod 必须带 Egress 隔离 NetworkPolicy:禁访内网网段(含 CGNAT 100.64.0.0/10 与云元数据地址),并按滥用用途封禁 TCP 端口 SMTP(25/465/587)、SMB/NetBIOS(135/139/445)、Telnet(23)、RDP(3389)。

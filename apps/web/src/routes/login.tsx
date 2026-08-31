@@ -198,7 +198,7 @@ function LoginPage() {
       <div
         style={{
           flex: 1,
-          // 容器底色走 token(暗色主题为深靛灰),不再硬编码白
+          // 容器底色走 token(暗色主题为深靛灰)
           background: token.colorBgContainer,
           display: "flex",
           alignItems: "center",

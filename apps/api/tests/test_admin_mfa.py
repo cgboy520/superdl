@@ -9,15 +9,9 @@ import pytest
 from httpx import AsyncClient
 
 from app.modules.adminapi.schemas import AdminRole
-from tests.helpers import admin_headers, complete_mfa_setup, set_platform_setting
+from tests.helpers import admin_headers, admin_login, complete_mfa_setup, set_platform_setting
 
 pytestmark = pytest.mark.usefixtures("fake")
-
-
-async def _login(client: AsyncClient, username: str, password: str = "pass1234"):
-    return await client.post(
-        "/api/admin/v1/auth/login", json={"username": username, "password": password}
-    )
 
 
 async def _create(client, sm, username: str, role: str) -> None:
@@ -33,7 +27,7 @@ class TestMfaEnforcement:
         (ops 可签节点接入令牌、readonly 可导出流水/审计,免 MFA 即口令泄漏直通车)。"""
         for role in get_args(AdminRole):
             await _create(client, sm, f"mfa-{role}", role)
-            body = (await _login(client, f"mfa-{role}")).json()
+            body = (await admin_login(client, f"mfa-{role}")).json()
             assert body["status"] == "mfa_setup", (role, body)
             assert "access_token" not in body
             assert body["ticket"]
@@ -48,11 +42,11 @@ class TestMfaEnforcement:
 
         await _create(client, sm, "sw-bound", "admin")
         await _create(client, sm, "sw-unbound", "ops")
-        await complete_mfa_setup(client, (await _login(client, "sw-bound")).json()["ticket"])
+        await complete_mfa_setup(client, (await admin_login(client, "sw-bound")).json()["ticket"])
 
         await set_platform_setting(sm, "admin_mfa_enabled", "false")
         for name in ("sw-bound", "sw-unbound"):
-            body = (await _login(client, name)).json()
+            body = (await admin_login(client, name)).json()
             assert body["status"] == "ok", (name, body)
             me = await client.get(
                 "/api/admin/v1/me", headers={"Authorization": f"Bearer {body['access_token']}"}
@@ -64,8 +58,8 @@ class TestMfaEnforcement:
                 delete(PlatformSetting).where(PlatformSetting.key == "admin_mfa_enabled")
             )
             await session.commit()
-        assert (await _login(client, "sw-bound")).json()["status"] == "mfa_required"
-        assert (await _login(client, "sw-unbound")).json()["status"] == "mfa_setup"
+        assert (await admin_login(client, "sw-bound")).json()["status"] == "mfa_required"
+        assert (await admin_login(client, "sw-unbound")).json()["status"] == "mfa_setup"
 
 
 class TestSetupFlow:
@@ -74,7 +68,7 @@ class TestSetupFlow:
         挂了说明:两路各生成一枚、后写者覆盖前者,用户照二维码输的首个动态码必然验不过。
         """
         await _create(client, sm, "race-admin", "admin")
-        ticket = (await _login(client, "race-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "race-admin")).json()["ticket"]
         a, b = await asyncio.gather(
             client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket}),
             client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket}),
@@ -90,7 +84,7 @@ class TestSetupFlow:
 
     async def test_confirm_wrong_code_rejected(self, client: AsyncClient, sm):
         await _create(client, sm, "wrong-admin", "admin")
-        ticket = (await _login(client, "wrong-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "wrong-admin")).json()["ticket"]
         await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         resp = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": "000000"}
@@ -104,7 +98,8 @@ class TestSetupFlow:
         from app.modules.notify.models import Notification
 
         await _create(client, sm, "alert-admin", "admin")
-        await complete_mfa_setup(client, (await _login(client, "alert-admin")).json()["ticket"])
+        ticket = (await admin_login(client, "alert-admin")).json()["ticket"]
+        await complete_mfa_setup(client, ticket)
         async with sm() as session:
             rows = (
                 (
@@ -122,7 +117,7 @@ class TestSetupFlow:
     async def test_ticket_cannot_cross_stage(self, client: AsyncClient, sm):
         """setup 票不能拿去登录验证口(typ 校验),反之亦然。"""
         await _create(client, sm, "cross-admin", "admin")
-        ticket = (await _login(client, "cross-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "cross-admin")).json()["ticket"]
         resp = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket, "code": "123456"}
         )
@@ -132,12 +127,12 @@ class TestSetupFlow:
 class TestVerifyLogin:
     async def _bound_admin(self, client: AsyncClient, sm, username: str) -> None:
         await _create(client, sm, username, "admin")
-        ticket = (await _login(client, username)).json()["ticket"]
+        ticket = (await admin_login(client, username)).json()["ticket"]
         await complete_mfa_setup(client, ticket)
 
     async def test_bound_admin_gets_verify_challenge(self, client: AsyncClient, sm):
         await self._bound_admin(client, sm, "bound-admin")
-        body = (await _login(client, "bound-admin")).json()
+        body = (await admin_login(client, "bound-admin")).json()
         assert body["status"] == "mfa_required"
 
     async def test_totp_login_success(self, client: AsyncClient, sm):
@@ -146,7 +141,7 @@ class TestVerifyLogin:
         import pyotp
 
         await _create(client, sm, "totp-admin", "admin")
-        ticket = (await _login(client, "totp-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "totp-admin")).json()["ticket"]
         begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         secret = begin.json()["secret"]
         confirm = await client.post(
@@ -159,7 +154,7 @@ class TestVerifyLogin:
 
         # 重新登录:TOTP 直过(绑定已用当前步,登录用下一枚——valid_window=1 接受相邻步;
         # 真实用户绑定与重登录间隔远大于 30s,不会遇到同码场景)
-        ticket2 = (await _login(client, "totp-admin")).json()["ticket"]
+        ticket2 = (await admin_login(client, "totp-admin")).json()["ticket"]
         resp = await client.post(
             "/api/admin/v1/auth/login/mfa",
             json={"ticket": ticket2, "code": pyotp.TOTP(secret).at(int(time.time()) + 30)},
@@ -168,13 +163,13 @@ class TestVerifyLogin:
         assert resp.json()["recovery_codes_left"] is None
 
         # 恢复码:用后作废,重放即拒
-        ticket3 = (await _login(client, "totp-admin")).json()["ticket"]
+        ticket3 = (await admin_login(client, "totp-admin")).json()["ticket"]
         use = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket3, "code": codes[0]}
         )
         assert use.status_code == 200
         assert use.json()["recovery_codes_left"] == 9
-        ticket4 = (await _login(client, "totp-admin")).json()["ticket"]
+        ticket4 = (await admin_login(client, "totp-admin")).json()["ticket"]
         reuse = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket4, "code": codes[0]}
         )
@@ -186,7 +181,7 @@ class TestVerifyLogin:
         import pyotp
 
         await _create(client, sm, "replay-admin", "admin")
-        ticket = (await _login(client, "replay-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "replay-admin")).json()["ticket"]
         begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         secret = begin.json()["secret"]
         code = pyotp.TOTP(secret).now()
@@ -199,7 +194,7 @@ class TestVerifyLogin:
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
         assert again.json()["code"] == "MFA_CODE_INVALID"
-        ticket2 = (await _login(client, "replay-admin")).json()["ticket"]
+        ticket2 = (await admin_login(client, "replay-admin")).json()["ticket"]
         replay = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket2, "code": code}
         )
@@ -207,7 +202,7 @@ class TestVerifyLogin:
 
     async def test_mfa_rate_limited_after_5_failures(self, client: AsyncClient, sm):
         await self._bound_admin(client, sm, "brute-admin")  # 绑定成功验证计 1 次配额
-        ticket = (await _login(client, "brute-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "brute-admin")).json()["ticket"]
         # 成功也计配额(防窗口内批量领 token):5 次/10min 中绑定已耗 1,剩 4 次失败配额
         for _ in range(4):
             resp = await client.post(
@@ -223,7 +218,7 @@ class TestVerifyLogin:
 class TestRecoveryRegenAndReset:
     async def test_regenerate_invalidates_old_codes(self, client: AsyncClient, sm):
         await _create(client, sm, "regen-admin", "admin")
-        ticket = (await _login(client, "regen-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "regen-admin")).json()["ticket"]
         begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
         import pyotp
 
@@ -240,7 +235,7 @@ class TestRecoveryRegenAndReset:
         new_codes = regen.json()["recovery_codes"]
         assert set(new_codes) != set(old_codes)
         # 旧码已作废
-        ticket2 = (await _login(client, "regen-admin")).json()["ticket"]
+        ticket2 = (await admin_login(client, "regen-admin")).json()["ticket"]
         stale = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket2, "code": old_codes[1]}
         )
@@ -254,7 +249,7 @@ class TestRecoveryRegenAndReset:
 
         h = await admin_headers(sm, client)  # admin-user(超管)
         await _create(client, sm, "rescue-admin", "admin")
-        ticket = (await _login(client, "rescue-admin")).json()["ticket"]
+        ticket = (await admin_login(client, "rescue-admin")).json()["ticket"]
         victim_token = await complete_mfa_setup(client, ticket)
 
         async with sm() as session:
@@ -276,7 +271,7 @@ class TestRecoveryRegenAndReset:
         )
         assert me.status_code == 401
         # 下次登录重新走绑定流
-        assert (await _login(client, "rescue-admin")).json()["status"] == "mfa_setup"
+        assert (await admin_login(client, "rescue-admin")).json()["status"] == "mfa_setup"
 
     async def test_reset_self_forbidden(self, client: AsyncClient, sm):
         from sqlalchemy import select

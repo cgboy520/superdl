@@ -62,7 +62,7 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 10. **状态机迁移**只能通过 `orchestrator/service.py` 的 transition 函数(同事务写 instance_events),禁止直接 UPDATE status。
 11. **前端**:antd 6 原生组件自封装,不引 pro-components;服务端状态全走 TanStack Query(hooks 在两端 api 层自建,包生成的 fetcher);文案与状态映射集中在 `packages/ui`。
 12. **文案**:用户可见文案的单一事实源是后端 `core/messages.py` 与两端 locales JSON;zh-CN 与 en-US 必须同时提交,风格见 `docs/copy-style-guide.md`。
-13. **测试**:每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是:金额与舍入、透支、结算幂等(「重复执行零重复扣款」)、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考,不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`,浏览器冒烟在 `e2e/tests/`(smoke / admin / i18n)。
+13. **测试**:每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是:金额与舍入、透支、结算幂等(「重复执行零重复扣款」)、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考,不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`,浏览器冒烟在 `e2e/tests/`。
 14. **密钥/凭据不入 git**:只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME` 占位(`deploy/app/secrets.example.yaml`)。prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准。
 15. **迁移只增不破坏**:新迁移必过 `scripts/check-migration-ddl.py`(删列/改名/改类型、非空列无默认、既有表上非 CONCURRENTLY 索引、CONCURRENTLY 未包在 `autocommit_block` 内、ADD CONSTRAINT 无 NOT VALID 一律拦下,确属评审过的 contract 窗口才标 `# ddl-risk: reviewed`)。expand / contract 两窗口、大表三步法与 CONCURRENTLY 的可执行写法只写在 `deploy/README.md`「迁移向前兼容窗口」一处,以它为准。
 16. **文档随代码同一提交**:改了端点、表、角色、默认值、巡检周期、命令或流程,同一提交里更新对应的 `docs/reference`、runbook 或 README;新决策写 `docs/decisions.md`;文档与注释只写当前事实,不写评审编号、变更史与日期(变更记录归 git)。引用由 `python3 scripts/check-docs-links.py` 检查。

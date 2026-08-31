@@ -113,8 +113,8 @@
   Spegel / CA / 代理缓存 mirror。约束:轮换 = 配置中心保存新 Secret;换 Harbor 域名要 SQL 批量改
   `images.image_ref`(实例快照是历史值,不改)。
 - **平台镜像 tag 语义化且可覆盖重推,目录 `image_ref` 钉 digest。** k3s 内置 registry(Spegel)按 **tag** 解析
-  会返回节点自己缓存的旧 digest,`imagePullPolicy: Always` 也拉不到新镜像
-  。tag 只表达「框架版本 + CUDA 线 + Python」并允许覆盖重推,`images.image_ref` 一律写 `<repo>:<tag>@sha256:<digest>`。
+  会返回节点自己缓存的旧 digest,`imagePullPolicy: Always` 也拉不到新镜像。
+  tag 只表达「框架版本 + CUDA 线 + Python」并允许覆盖重推,`images.image_ref` 一律写 `<repo>:<tag>@sha256:<digest>`。
   约束:重推后在管理端把该镜像的 ref 换成新 digest,`admin_update_image` 会同事务清掉该镜像的节点缓存行,
   巡检按新 ref 重新预热;实例 Pod 与预热 Job 都保持 `IfNotPresent`(开机不依赖仓库可达);实例的 ref 是创建时
   快照且终身不变,镜像修复只对新建实例生效。
@@ -152,6 +152,12 @@
   `TIER_POOLS` + `apps/api/app/modules/catalog/service.py::_check_tier_pool` 收口(建 SKU 与改池两条路径共用),
   管理端表单只让运营选展示档位、tier 与 pool 由它派生;「改池」仅下架态可用并配可改的 `mig_profile`;
   `unknown pool` 保持 fail-closed。
+- **HAMi 池不是安全边界,是成本优化手段。** HAMi 通过 LD_PRELOAD 注入 `libvgpu.so` 拦截 CUDA runtime API 实现显存/算力
+  软限额,但容器内 root 可通过 unset LD_PRELOAD、静态链接 CUDA、直接调用 CUDA Driver API 绕过配额——HAMi 官方文档
+  明确列出这些绕过方式(见 troubleshooting「GPU Memory Limit Not Enforced」)。因此 hami 池的定位是**软件限额/性能隔离**,
+  不能当作多租户安全隔离使用。运营方可通过 `SUPERDL_SHARED_TIER_ALLOWED_POOLS` 配置将共享档限制为仅 MIG 硬切分
+  (摘掉 hami),或接受 HAMi 的隔离弱点并以前端知情同意 modal 明确告知用户。该决策同时写进 `reference/security.md`
+  的隔离级别分级表。
 - **纯 CPU 实例是第三档 `tier=cpu`,允许挂 hami 池。** 允许挂 hami 池是刻意的,让 CPU 规格吃 GPU 机长期闲置的 CPU;由策略 `gpu_node_cpu_instance_vcpu_cap`
   (默认 16,0 = 禁止)给每个 GPU 节点封顶——这只是**库存口径**上的封顶,不下发调度。
   两个「0 是合法值」的坑必须点名:① `build_gpu_request` 里 `gpu_count == 0` 的判定**必须先于池分支**,且
@@ -173,7 +179,8 @@
 - **告警 `runbook_url` 只加在有专属 runbook 的规则上。** 其余告警的第一步写在 summary 与
   `deploy/cluster/runbooks/README.md` 索引表里。
 - **北向唯一入口是 Gateway API + Envoy Gateway。** 形态:`GatewayClass superdl` + 一个 `Gateway superdl`(ns `superdl`)
-  带 6 个 listener(`http` / `api-https` / `console-https` / `admin-https` / `app-https` / `svc-https`)+ 4 条平台 HTTPRoute;
+  带 6 个 listener(`http` / `api-https` / `console-https` / `admin-https` / `app-https` / `svc-https`)+ 4 条平台域 HTTPRoute
+  与 1 条 80→443 跳转路由;
   租户 Jupyter 与对外服务端点都是**每实例一条 HTTPRoute**,建在租户 ns,跨 ns 靠 `allowedRoutes.namespaces.from: Selector`
   加租户 ns 已有的 `superdl.io/managed=true`。约束:`deploy/cluster/values/cilium.yaml` 的 `gatewayAPI` 保持 false——两个控制器 reconcile 同一批对象会
   互相覆盖 status 与 LB 地址。

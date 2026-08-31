@@ -1,7 +1,9 @@
 from decimal import Decimal
 
+import pytest
 from httpx import AsyncClient
 
+from app.core.errors import AppError
 from tests.helpers import admin_headers, seed_node_spec, seed_skus
 
 
@@ -231,7 +233,7 @@ class TestAdminSku:
         assert resp.json()["message_key"] == "catalog.migProfileMismatch"
 
     async def test_shared_tier_allowed_pools_switch(self, client: AsyncClient, sm, monkeypatch):
-        """D-1 过渡开关:shared_tier_allowed_pools 摘掉 hami 后,共享档只能建 MIG 池 SKU;
+        """过渡开关:shared_tier_allowed_pools 摘掉 hami 后,共享档只能建 MIG 池 SKU;
         置空则共享档整体停售。挂了说明:HAMi 软切分池在运营已禁售后仍能开出来卖。"""
         from app.core.config import get_settings
 
@@ -278,3 +280,32 @@ class TestAdminSku:
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["message_key"] == "catalog.tierPoolMismatch"
+
+
+class TestPriceFloor:
+    """时价必须满足 2 位小数语义:入账恒舍成 ¥0.00 的「免费价」与会漂移的 4 位价都拦在上架/改价。"""
+
+    def test_min_billable_price_accepted(self):
+        from app.modules.catalog.service import _checked_price
+
+        assert _checked_price(Decimal("0.01")) == Decimal("0.01")
+        assert _checked_price(Decimal("1.6800")) == Decimal("1.6800")
+
+    def test_sub_cent_precision_rejected(self):
+        """按小时计费的 SKU 超过 2 位小数即拒:逐小时独立舍入会单向漂移
+        (0.0051 被按 0.01/时近翻倍收;1.2345 满月少收 0.36%)。"""
+        from app.modules.catalog.service import _checked_price
+
+        with pytest.raises(AppError) as exc:
+            _checked_price(Decimal("0.0051"))
+        assert exc.value.message_key == "catalog.priceHourlyTwoDecimals"
+        with pytest.raises(AppError) as exc:
+            _checked_price(Decimal("1.2345"))
+        assert exc.value.message_key == "catalog.priceHourlyTwoDecimals"
+
+    def test_zero_price_still_rejected_with_original_key(self):
+        from app.modules.catalog.service import _checked_price
+
+        with pytest.raises(AppError) as exc:
+            _checked_price(Decimal("0.0000"))
+        assert exc.value.message_key == "catalog.priceTooSmall"

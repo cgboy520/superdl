@@ -9,7 +9,8 @@
 - 不过审计中间件(排除清单在 core/audit):频次等于服务实例的请求量,逐条落 audit_log
   会淹掉审计表。
 - 不过通用限流:它在用户请求的同步路径上,平台侧限流会直接变成服务侧 429;端点限流由
-  网关的 BackendTrafficPolicy 按路由分桶做(service_endpoint_rps)。
+  网关的 BackendTrafficPolicy 按路由分桶做(deploy/app/k8s/04-gateway.yaml 手工渲染,
+  不回源平台配置)。
 - 精确路径,不是 catch-all:网关侧必须用 `extAuth.http.pathOverride`(把鉴权请求的 path
   恒定改写成这一个值),不能用同位置的 `path` —— 后者是前缀语义,会把客户端可控的路径
   连同 query 拼进平台内部 URL。清单若漂回 `path`,精确路由当场 404 → 全部 fail-close 503。

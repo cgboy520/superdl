@@ -96,8 +96,32 @@ EOF
   cat > "$TMP/bin/dpkg" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$SHIM_CALLS"
+# --compare-versions:脚本用它对 toolkit 版本与下限做 ge/lt 判定;用 sort -V 做真实版本序
+if [[ "$1" == "--compare-versions" ]]; then
+  a="$2"; op="$3"; b="$4"
+  case "$op" in
+    ge) [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)" = "$b" ] && exit 0 || exit 1 ;;
+    lt) { [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)" = "$a" ] && [ "$a" != "$b" ]; } && exit 0 || exit 1 ;;
+    *) exit 2 ;;
+  esac
+fi
 [[ "$DPKG_INSTALLED" == "1" ]] && { echo "ii  nvidia-driver-580-server"; exit 0; }
 exit 1
+EOF
+  # dpkg-query:nvidia-container-toolkit 版本查询(DPKG_NVCTK_VERSION 控制,空 = 未安装走安装分支;
+  # 安装分支里第二次查询返回 DPKG_NVCTK_VERSION_AFTER,模拟装完仍低于下限的失败路径。
+  # 判定锚点是精确的 toolkit 安装行——驱动安装(apt-get install nvidia-driver-*)在 toolkit 之前,
+  # 粗配 '^apt-get install' 会让首次查询就误判为「装后复查」)
+  cat > "$TMP/bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+echo "dpkg-query $*" >> "$SHIM_CALLS"
+# 不带冒号的 ${VAR-默认值}:显式 export 空串 = 未安装(走安装分支),unset 才取默认
+v="${DPKG_NVCTK_VERSION-1.17.8}"
+if grep -q '^apt-get install -y -qq nvidia-container-toolkit' "$SHIM_CALLS" 2>/dev/null; then
+  v="${DPKG_NVCTK_VERSION_AFTER:-$v}"
+fi
+[[ -n "$v" ]] || exit 1
+echo "$v"
 EOF
   # lspci:LSPCI_NVIDIA=0 模拟无卡机(cpu 池),其余场景照报 NVIDIA
   cat > "$TMP/bin/lspci" <<'EOF'
@@ -231,8 +255,10 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start completed; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
-  # NVIDIA Container Toolkit:此处 nvidia-ctk 已存在,走跳过分支
-  [[ "$output" == *"nvidia-container-toolkit 已安装"* ]]
+  # NVIDIA Container Toolkit:版本 ≥ 下限,走跳过分支(dpkg-query shim 报 1.17.8)
+  [[ "$output" == *"nvidia-container-toolkit 1.17.8 ≥ 1.17.8,跳过"* ]]
+  # kubelet 单 Pod PID 上限落进 agent config(fork bomb 防线,与 server-config.yaml 同值)
+  grep -q 'podPidsLimit=4096' "$TMP/etc/rancher/rke2/config.yaml"
   # 进度上报含关键阶段与收尾
   grep -q '"phase":"agent_start","state":"ok"' "$CURL_LOG"
   grep -q '"phase":"waiting_node","state":"ok"' "$CURL_LOG"
@@ -397,6 +423,30 @@ RKESHIM
   grep -q '"gpu_details": \[\]' "$CURL_LOG"
 }
 
+@test "toolkit 未安装:走安装分支,装完达下限继续" {
+  export DPKG_NVCTK_VERSION="" DPKG_NVCTK_VERSION_AFTER="1.17.8"   # 未安装;装后返回满足下限的版本
+  run_script
+  [ "$status" -eq 0 ]
+  grep -q "apt-get install -y -qq nvidia-container-toolkit" "$SHIM_CALLS"
+  grep -q '"phase":"nvidia_toolkit","state":"ok"' "$CURL_LOG"
+}
+
+@test "toolkit 装完仍低于下限:按 failed 上报,不带病入群" {
+  export DPKG_NVCTK_VERSION="" DPKG_NVCTK_VERSION_AFTER="1.16.0"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"低于安全下限"* ]]
+  grep -q '"phase":"nvidia_toolkit","state":"failed"' "$CURL_LOG"
+  # 版本下限可经 env 覆盖(应急处置口)
+}
+
+@test "toolkit 下限 env 覆盖:SUPERDL_JOIN_NVCTK_MIN_VERSION 生效" {
+  export SUPERDL_JOIN_NVCTK_MIN_VERSION="99.0.0"   # 高于 shim 报的 1.17.8,必走升级分支
+  run_script
+  [ "$status" -eq 1 ]   # 装完(shim 仍报 1.17.8)仍低于 99.0.0 → 失败,证明覆盖被读取
+  [[ "$output" == *"低于下限 99.0.0"* || "$output" == *"低于安全下限 99.0.0"* ]]
+}
+
 @test "k3s 模式:config/registries 落 /etc/rancher/k3s,走中国镜像 agent 安装并起 k3s-agent" {
   _write_fixture hami k3s
   # k3s shim 报低版本:覆盖宿主机可能存在的真 k3s,并兼测版本不符触发重装
@@ -408,6 +458,7 @@ EOF
   run_script
   [ "$status" -eq 0 ]
   grep -q "superdl.io/pool=hami" "$TMP/etc/rancher/k3s/config.yaml"
+  grep -q 'podPidsLimit=4096' "$TMP/etc/rancher/k3s/config.yaml"
   [ "$(stat -c %a "$TMP/etc/rancher/k3s/config.yaml")" = "600" ]
   grep -q 'mirrors:' "$TMP/etc/rancher/k3s/registries.yaml"
   [ ! -e "$TMP/etc/rancher/rke2" ]

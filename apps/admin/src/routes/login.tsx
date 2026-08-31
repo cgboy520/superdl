@@ -85,7 +85,7 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
 
 /** 首次绑定:二维码 + 手动密钥 → 首个动态码确认 → 恢复码(仅此一次)。 */
 function MfaSetupForm({ ticket }: { ticket: string }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const { message } = App.useApp();
   const finish = useFinishLogin();
@@ -148,7 +148,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
           <Space orientation="vertical" size={8}>
             <Typography.Text type="danger">{errText(begin.error, t("login.failed"))}</Typography.Text>
             <Button size="small" onClick={() => beginSetup({ ticket })}>
-              {t("common.retry")}
+              {t("common.retry", { ns: "shared" })}
             </Button>
           </Space>
         ) : (

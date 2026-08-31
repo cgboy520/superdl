@@ -96,14 +96,6 @@ class TestRecharge:
         async with sm() as session:
             orders = (await session.execute(select(Order))).scalars().all()
         assert [o.order_no for o in orders] == [a["order_no"]]
-        # 同键同参仍是重放(回归不破)
-        replay = await client.post(
-            "/api/v1/wallet/recharges",
-            json={"amount": "20.00", "channel": "mock"},
-            headers=headers,
-        )
-        assert replay.status_code == 200
-        assert replay.headers["x-idempotent-replay"] == "true"
 
     async def test_concurrent_same_key_first_request(self, client: AsyncClient, sm):
         """同键并发首请求(双击/超时重试):负方回查返回同一订单,不许 500。

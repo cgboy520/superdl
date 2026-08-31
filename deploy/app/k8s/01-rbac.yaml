@@ -93,9 +93,12 @@ subjects:
     name: superdl-node-mgr   # 巡检 probe_cluster 同用
     namespace: superdl
 ---
-# tenant-mgr 编排面:租户 namespace/Pod/Service/HTTPRoute/NetworkPolicy/PVC/Quota 全生命周期
-# (instance.* 任务 + reconciler)。secrets 已移出 ClusterRole:集群级 secrets:get 一旦随
-# SA token 泄漏即可读全集群(平台主密钥/TLS/控制器凭据),改为由编排器在建 tenant-*
+# tenant-mgr 编排面:租户 namespace/Pod/Service/HTTPRoute/NetworkPolicy/PVC/Quota/LimitRange
+# 全生命周期(instance.* 任务 + reconciler)。patch 动词与 real.py 的 _create_or_patch
+# 一一对应:既有对象的标签/规格演进靠 patch 收敛存量(409 → patch),缺 patch 动词时
+# 403 直接传播,ensure_namespace 的收敛路径(修复漂移的 NetPol/Quota/LimitRange)永远跑不通。
+# secrets 不在 ClusterRole:集群级 secrets:get 一旦随
+# SA token 泄漏即可读全集群(平台主密钥/TLS/控制器凭据),故由编排器在建 tenant-*
 # namespace 时同步下发同名 Role/RoleBinding(real.py _ensure_tenant_rbac_sync),
 # secrets 权限收窄到本租户 ns 内。残留面:pods:list 仍全集群(reconciler 全量 LIST
 # 需要),但平台侧敏感值恒走 secretKeyRef,Pod 规约只暴露 Secret 名,不含值。
@@ -106,10 +109,16 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get", "create"]
+    verbs: ["get", "create", "patch"]   # patch:既有 ns 的 PSA/managed 标签收敛(real.py _ensure_namespace_sync)
   - apiGroups: [""]
-    resources: ["pods", "services", "persistentvolumeclaims", "resourcequotas"]
+    resources: ["pods", "persistentvolumeclaims"]
     verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "resourcequotas", "limitranges"]
+    # patch:SSH Service 端口漂移收敛(real.py _reconcile_ssh_service_conflict_sync)、
+    # Quota/LimitRange 的收敛 patch;limitranges 不授 list/delete(平台从不删,
+    # 存量清单用不上——最小化到 _ensure_quota_sync/_ensure_limit_range_sync 的真实调用面)
+    verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     # 下发租户 ns 内的 secrets Role/RoleBinding;实际落点由 VAP 策略①钉死在
     # superdl/tenant-* 命名空间,create 无法按 resourceNames 收窄,故不授 get/list。
@@ -117,7 +126,7 @@ rules:
     verbs: ["get", "create", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "create", "delete"]
+    verbs: ["get", "create", "delete", "patch"]   # patch:租户 NetPol 漂移收敛(real.py _ensure_default_netpol_sync)
   - apiGroups: ["gateway.networking.k8s.io"]
     # 租户 Jupyter 入口(每实例一条 HTTPRoute,建在租户 ns,挂平台 ns 的 Gateway)。
     # list 是 reconciler 孤儿端点清理要的全集群 LIST,不能只给 get

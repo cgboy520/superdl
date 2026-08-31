@@ -22,10 +22,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.constants import ADMIN_LIST_CAP
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.idempotency import find_replay, insert_idempotent, request_fingerprint
 from app.core.logging import get_logger
-from app.core.money import as_amount
+from app.core.money import as_amount, money_str
 from app.core.pagination import Page, paginate_by_id
 from app.core.timeutil import BILLING_DAY_OFFSET, billing_month_range, now_utc
 from app.modules.billing.models import InvoiceRequest, Order, RefundRequest
@@ -37,9 +38,6 @@ logger = get_logger(__name__)
 ACTIVE_STATUSES = ("submitted", "issued")
 # 从可开票额扣除的退款状态:已打款 + 在途(pending/approved);rejected/cancelled 不扣
 REFUND_WITHHELD_STATUSES = ("pending", "approved", "paid")
-
-# 管理端列表固定截断,与 admin/components/ListCapNote.tsx 的 LIST_CAPS.invoices 对齐
-ADMIN_LIST_CAP = 200
 
 
 def beijing_period(dt: datetime) -> str:
@@ -199,22 +197,12 @@ async def create_invoice(
             params={"period": period},
         )
     if await _active_of_period(session, user_id, period) is not None:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.invoicePeriodAlreadyApplied",
-            params={"period": period},
-            http_status=409,
-        )
+        raise conflict(key="billing.invoicePeriodAlreadyApplied", params={"period": period})
     # 金额服务端计算(客户端提交金额无效):
     # Σpaid − Σ退款(已打款 + 在途,防票款双重兑现) − Σ(submitted+issued)
     amount = await _period_billable_amount(session, user_id, period)
     if amount <= 0:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.invoiceNothingToBill",
-            params={"period": period},
-            http_status=409,
-        )
+        raise conflict(key="billing.invoiceNothingToBill", params={"period": period})
 
     req = InvoiceRequest(
         user_id=user_id,
@@ -240,11 +228,8 @@ async def create_invoice(
         )
     except IntegrityError:
         # 撞的是部分唯一索引(并发重复申请同一账期)
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.invoicePeriodAlreadyApplied",
-            params={"period": period},
-            http_status=409,
+        raise conflict(
+            key="billing.invoicePeriodAlreadyApplied", params={"period": period}
         ) from None
     if result is not req:
         return result, False  # 同键并发:返回胜出方的单
@@ -298,21 +283,14 @@ async def issue_invoice(
     """开票(行锁内状态迁移):金额重算闸 + 回填发票号 + 操作人,站内信告知用户。"""
     req = await _get_for_update(session, invoice_id)
     if req.status != "submitted":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.invoiceStateNotIssuable",
-            params={"status": req.status},
-            http_status=409,
-        )
+        raise conflict(key="billing.invoiceStateNotIssuable", params={"status": req.status})
     # 必须行锁内按当前口径重算:申请到开票之间若发生退款,按旧额开票 = 票款双重兑现;
     # 不符即 409,由用户按新额重新申请
     current = await _period_billable_amount(session, req.user_id, req.period, excluding=req.amount)
     if current != req.amount:
-        raise AppError(
-            ErrorCode.CONFLICT,
+        raise conflict(
             key="billing.invoiceAmountStale",
-            params={"expected": format(current, "f"), "requested": format(req.amount, "f")},
-            http_status=409,
+            params={"expected": money_str(current), "requested": money_str(req.amount)},
         )
     req.status = "issued"
     req.invoice_no = invoice_no
@@ -324,7 +302,7 @@ async def issue_invoice(
         type_="invoice",
         title="发票已开具",
         content=(
-            f"您 {req.period} 账期的发票(金额 ¥{format(req.amount, 'f')})已开具,"
+            f"您 {req.period} 账期的发票(金额 ¥{money_str(req.amount)})已开具,"
             f"发票号 {invoice_no},将于 1-3 个工作日内发送至您的邮箱 {req.email}。"
         ),
         dedup_key=f"invoice:issued:{req.id}",
@@ -340,12 +318,7 @@ async def reject_invoice(
     """驳回(行锁内状态迁移):理由必填,站内信告知用户;驳回后同账期可重新申请。"""
     req = await _get_for_update(session, invoice_id)
     if req.status != "submitted":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="billing.invoiceStateNotRejectable",
-            params={"status": req.status},
-            http_status=409,
-        )
+        raise conflict(key="billing.invoiceStateNotRejectable", params={"status": req.status})
     req.status = "rejected"
     req.reject_reason = reason
     await notify_service.notify(

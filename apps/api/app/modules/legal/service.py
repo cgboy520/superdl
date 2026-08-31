@@ -1,16 +1,10 @@
-"""法务文档:公开读取(回落 zh-CN)+ 注册同意存证 + 管理端版本流。
+"""法务文档:公开读取(回落 zh-CN)+ 注册同意存证 + 管理端版本流(draft → published → archived)。"""
 
-版本流:新建 draft(基于当前 published 复制,version=max+1;同语言无 published 时以
-zh-CN published 为翻译底稿)→ 仅 draft 可编辑/发布/归档 → 发布事务把同 (doc_key, locale)
-旧 published 转 archived(部分唯一索引兜底)。
-"""
-
-from fastapi import status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, ErrorCode, not_found
+from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.logging import get_logger
 from app.core.timeutil import now_utc
 from app.modules.legal.models import LegalDocVersion, UserConsent
@@ -163,11 +157,7 @@ async def admin_create_draft(
         )
     ).scalar_one_or_none()
     if existing_draft is not None:
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="legal.draftExists",
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="legal.draftExists")
     base = await _published(session, doc_key, locale)
     if base is None and locale != DEFAULT_LOCALE:
         base = await _published(session, doc_key, DEFAULT_LOCALE)
@@ -204,12 +194,7 @@ async def _get_version(session: AsyncSession, version_id: int) -> LegalDocVersio
 
 def _require_draft(row: LegalDocVersion) -> None:
     if row.status != "draft":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="legal.versionNotDraft",
-            params={"status": row.status},
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="legal.versionNotDraft", params={"status": row.status})
 
 
 async def admin_update_draft(
@@ -258,11 +243,7 @@ async def admin_publish(
     except IntegrityError as exc:
         # 并发发布同 (doc_key, locale):部分唯一索引兜底,后手按冲突处理而非 500
         await session.rollback()
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="common.retryableConflict",
-            http_status=status.HTTP_409_CONFLICT,
-        ) from exc
+        raise conflict(key="common.retryableConflict") from exc
     await session.refresh(row)
     logger.info("legal_published", doc_key=row.doc_key, locale=row.locale, version=row.version)
     return row
@@ -272,11 +253,7 @@ async def admin_archive(session: AsyncSession, version_id: int) -> LegalDocVersi
     """draft → archived;published 不可直接归档(409),archived 重复操作亦 409。"""
     row = await _get_version(session, version_id)
     if row.status == "published":
-        raise AppError(
-            ErrorCode.CONFLICT,
-            key="legal.publishedNotArchivable",
-            http_status=status.HTTP_409_CONFLICT,
-        )
+        raise conflict(key="legal.publishedNotArchivable")
     _require_draft(row)
     row.status = "archived"
     await session.commit()

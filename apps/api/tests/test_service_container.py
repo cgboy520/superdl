@@ -331,12 +331,22 @@ class TestCreateContract:
 
     @pytest.mark.parametrize(
         "name",
-        ["JUPYTER_TOKEN", "SUPERDL_ANYTHING", "AUTHORIZED_KEYS", "1BAD", "BAD-KEY", "with space"],
+        [
+            "JUPYTER_TOKEN",
+            "SUPERDL_ANYTHING",
+            "AUTHORIZED_KEYS",
+            "NVIDIA_VISIBLE_DEVICES",  # 覆盖 device-plugin 分配 = 看到节点上全部物理卡
+            "NVIDIA_DRIVER_CAPABILITIES",
+            "1BAD",
+            "BAD-KEY",
+            "with space",
+        ],
     )
     def test_env_key_blacklist(self, name):
         """平台注入项与非法标识符逐条拒。
 
-        放行 JUPYTER_/SUPERDL_/AUTHORIZED_KEYS = 用户能覆盖平台往容器里注入的东西。
+        放行 JUPYTER_/SUPERDL_/AUTHORIZED_KEYS = 用户能覆盖平台往容器里注入的东西;
+        放行 NVIDIA_* = 用户能覆盖 GPU 分配(pod spec env 后写胜出,看到全机显卡)。
         """
         with pytest.raises(ValidationError):
             InstanceCreate(**service_body(1, env={name: "x"}))

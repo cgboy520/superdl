@@ -3,15 +3,16 @@
 钱包余额与 `balance_ledger` 都在此库,恢复演练每季度一次。
 
 > **上线前强制项(公众生产闸)**:逻辑备份层 RPO=24h 不满足资金库要求,分钟级 RPO 二选一 ——
-> ① 托管 PG:书面确认 PITR 与保留策略已开(preflight 以 `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记);
-> ② 自建 cnpg 档:启用 `cnpg.enabled` 且 preflight 全绿(S3 归档无占位符、ScheduledBackup 在跑)。
+> ① 托管 PG:书面确认 PITR 与保留策略已开(preflight 以 `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记,
+> full 档未登记直接判红);② 自建 cnpg 档:启用 `cnpg.enabled`(full 档默认开)且 preflight
+> 全绿(S3 归档无占位符、ScheduledBackup 在跑)。
 > 首次切流前必须按本文件「恢复步骤」+「PITR 抽检」完整演练一次并填 RTO 记录表。
 
 ## 备份分层
 
 | 层 | 手段 | RPO |
 |---|---|---|
-| 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → 对象存储(上传后 restore 冒烟:pg_restore 成功且要害表可查询即通过,行数只打印不判定;失败即 Job Failed 告警) | 24h |
+| 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → **gpg AES256 客户端加密**(口令 = `superdl-pg-backup` 的 `BACKUP_ENCRYPT_KEY`)→ 对象存储(上传后 restore 冒烟:解密 + pg_restore 成功且要害表可查询即通过,行数只打印不判定;失败即 Job Failed 告警) | 24h |
 | 连续归档 | CloudNativePG barmanObjectStore S3 WAL 归档 + 每日基础备份(`values/cnpg-cluster.yaml`,cnpg 档);托管 PG 时用 RDS 自动备份 + PITR | 分钟级 |
 | 集群元数据 | RKE2 etcd 快照(每 6h,留 12 份,`rke2/server-config.yaml`) | 6h |
 
@@ -21,9 +22,14 @@
 ## 恢复步骤(逻辑备份)
 
 ```bash
-# 1. 取最近备份
+# 1. 取最近备份(密文 .gpg)
 aws s3 ls s3://superdl-pg-backup/daily/ --endpoint-url $S3_ENDPOINT | tail -5
-aws s3 cp s3://superdl-pg-backup/daily/superdl-<ts>.dump /tmp/ --endpoint-url $S3_ENDPOINT
+aws s3 cp s3://superdl-pg-backup/daily/superdl-<ts>.dump.gpg /tmp/ --endpoint-url $S3_ENDPOINT
+
+# 1b. 解密(口令在 superdl-pg-backup 的 BACKUP_ENCRYPT_KEY;注意事后清明文)
+gpg --batch --yes --decrypt \
+  --passphrase <(kubectl -n superdl get secret superdl-pg-backup -o jsonpath='{.data.BACKUP_ENCRYPT_KEY}' | base64 -d) \
+  -o /tmp/superdl-<ts>.dump /tmp/superdl-<ts>.dump.gpg
 
 # 2. 停写入(摘 api 流量 + 停全部 worker 组件)
 #    (worker 共 5 个 Deployment:core/tenant-mgr/node-mgr/prewarm/disk-ops,
@@ -35,6 +41,7 @@ kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr \
 # 3. 恢复到新库(禁止原地覆盖),核验后再切换连接串
 createdb superdl_restore
 pg_restore -d superdl_restore --no-owner /tmp/superdl-<ts>.dump
+shred -u /tmp/superdl-<ts>.dump 2>/dev/null || rm -f /tmp/superdl-<ts>.dump   # 明文即用即焚
 
 # 4. 核验:行数量级、最新 ledger 时间、alembic 版本
 psql superdl_restore -c "SELECT max(created_at) FROM balance_ledger"

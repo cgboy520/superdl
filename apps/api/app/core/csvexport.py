@@ -96,7 +96,7 @@ async def stream_rows(
     last_id: int | None = None
     while True:
         want = min(EXPORT_BATCH, EXPORT_MAX_ROWS - sent)
-        batch_stmt = stmt.order_by(id_col.desc()).limit(want + 1)  # 多取一行判是否还有剩余
+        batch_stmt = stmt.order_by(id_col.desc()).limit(want + 1)
         if last_id is not None:
             batch_stmt = batch_stmt.where(id_col < last_id)
         rows = list((await session.execute(batch_stmt)).scalars())

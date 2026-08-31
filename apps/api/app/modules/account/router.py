@@ -28,8 +28,7 @@ router = APIRouter(tags=["account"])
 
 # refresh token 的 HttpOnly Cookie(web SPA 与 API 同源反代,SameSite=Strict 即可):
 # 长期凭据移出 JS 可达面(XSS 偷不走),access token 短 TTL 留前端。
-# 响应体不再回 refresh_token:body 旁路让长期凭据持续暴露在 JS 可读面(XSS 一次偷走
-# 7 天会话),存量前端本来就不读它(只取 access_token)。
+# refresh_token 不进响应体:body 旁路会把长期凭据暴露在 JS 可读面(XSS 一次偷走 7 天会话)。
 #
 # Cookie 名分环境:prod 用 `__Host-` 前缀(浏览器强制 Secure + path=/ + 无 Domain,
 # 租户子域种不了同名 cookie —— 防 cookie tossing;Jupyter 侧同款,见

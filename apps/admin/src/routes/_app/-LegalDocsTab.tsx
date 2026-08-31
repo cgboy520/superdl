@@ -54,7 +54,7 @@ function diffStats(oldText: string, newText: string): { added: number; removed: 
 }
 
 export function LegalDocsTab() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(["admin", "shared"]);
   const errText = useApiErrorText();
   const role = useAdminRole();
   const writable = role === "admin";
@@ -83,8 +83,8 @@ export function LegalDocsTab() {
         <Alert
           type="error"
           showIcon
-          title={t("common.loadFailed")}
-          action={<Button size="small" onClick={() => void overview.refetch()}>{t("common.retry")}</Button>}
+          title={t("common.loadFailed", { ns: "shared" })}
+          action={<Button size="small" onClick={() => void overview.refetch()}>{t("common.retry", { ns: "shared" })}</Button>}
         />
       )}
       <Table
@@ -156,7 +156,7 @@ function CellEditor({
   docLabel: string;
   writable: boolean;
   onChanged: () => void;
-  errText: (e: unknown, fallback: string) => string;
+  errText: (e: unknown, fallback?: string) => string;
 }) {
   const { t } = useTranslation(["admin", "shared"]);
   const { message } = App.useApp();
@@ -198,7 +198,7 @@ function CellEditor({
   const create = useCreateLegalDocVersion({
     mutation: {
       onSuccess: () => invalidate(),
-      onError: (e) => message.error(errText(e, t("common.requestFailed"))),
+      onError: (e) => message.error(errText(e)),
     },
   });
   const update = useUpdateLegalDocVersion({
@@ -208,7 +208,7 @@ function CellEditor({
         localDraft.clear();
         invalidate();
       },
-      onError: (e) => message.error(errText(e, t("common.requestFailed"))),
+      onError: (e) => message.error(errText(e)),
     },
   });
   const publish = usePublishLegalDocVersion({
@@ -219,7 +219,7 @@ function CellEditor({
         setPublishOpen(false);
         invalidate();
       },
-      onError: (e) => message.error(errText(e, t("common.requestFailed"))),
+      onError: (e) => message.error(errText(e)),
     },
   });
   const archive = useArchiveLegalDocVersion({

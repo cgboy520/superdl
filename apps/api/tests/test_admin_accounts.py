@@ -4,17 +4,11 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.helpers import admin_headers
+from tests.helpers import admin_headers, admin_login, complete_mfa_setup_with_secret
 
 pytestmark = pytest.mark.usefixtures("fake")
 
 STRONG = "s3cret-passw0rd"
-
-
-async def login(client: AsyncClient, username: str, password: str):
-    return await client.post(
-        "/api/admin/v1/auth/login", json={"username": username, "password": password}
-    )
 
 
 # TOTP 密钥注册表(进程级):同一账号多次 login_headers(绑定后重登录)共享密钥
@@ -26,21 +20,12 @@ async def login_headers(client: AsyncClient, username: str, password: str) -> di
     已绑定账号走二要素验证流(密钥见 _TOTP_SECRETS)。"""
     import pyotp
 
-    resp = await login(client, username, password)
+    resp = await admin_login(client, username, password)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     if body["status"] == "mfa_setup":
-        ticket = body["ticket"]
-        begin = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
-        assert begin.status_code == 200, begin.text
-        secret = begin.json()["secret"]
+        token, secret = await complete_mfa_setup_with_secret(client, body["ticket"])
         _TOTP_SECRETS[username] = secret
-        confirm = await client.post(
-            "/api/admin/v1/auth/mfa/setup/confirm",
-            json={"ticket": ticket, "code": pyotp.TOTP(secret).now()},
-        )
-        assert confirm.status_code == 200, confirm.text
-        token = confirm.json()["access_token"]
     else:  # mfa_required:已绑定账号的二要素登录
         # 防重放后同一枚码只能用一次:绑定已用当前步,登录用下一枚(valid_window=1 接受)
         import time
@@ -81,7 +66,7 @@ class TestAdminAccounts:
         assert {a["username"] for a in listing} == {"admin-user", "finance01"}
 
         # 新建的账号能登录
-        assert (await login(client, "finance01", STRONG)).status_code == 200
+        assert (await admin_login(client, "finance01", STRONG)).status_code == 200
 
     async def test_long_password_create_then_login(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -101,7 +86,7 @@ class TestAdminAccounts:
             headers=h,
         )
         assert resp.status_code == 201, resp.text
-        assert (await login(client, "longpw01", long_pw)).status_code == 200
+        assert (await admin_login(client, "longpw01", long_pw)).status_code == 200
 
     async def test_username_conflict_is_409_not_500(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -134,7 +119,7 @@ class TestAdminAccounts:
         assert resp.status_code == 200, resp.text
         # 停用即刻生效,不等 2 小时 TTL
         assert (await client.get("/api/admin/v1/me", headers=h2)).status_code == 401
-        assert (await login(client, "ops01", STRONG)).status_code == 403
+        assert (await admin_login(client, "ops01", STRONG)).status_code == 403
 
     async def test_role_change_and_reset_password_bump_token_version(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -164,8 +149,8 @@ class TestAdminAccounts:
         )
         assert resp.status_code == 200, resp.text
         assert (await client.get("/api/admin/v1/me", headers=h3)).status_code == 401
-        assert (await login(client, "ops02", STRONG)).json()["code"] == "LOGIN_FAILED"
-        assert (await login(client, "ops02", "n3w-passw0rd!")).status_code == 200
+        assert (await admin_login(client, "ops02", STRONG)).json()["code"] == "LOGIN_FAILED"
+        assert (await admin_login(client, "ops02", "n3w-passw0rd!")).status_code == 200
 
     async def test_self_password_change_revokes_other_sessions(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -178,7 +163,7 @@ class TestAdminAccounts:
         )
         assert resp.status_code == 204, resp.text
         assert (await client.get("/api/admin/v1/me", headers=h)).status_code == 401
-        assert (await login(client, "admin-user", "an0ther-passw0rd")).status_code == 200
+        assert (await admin_login(client, "admin-user", "an0ther-passw0rd")).status_code == 200
 
     async def test_self_password_change_requires_current(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
@@ -244,7 +229,7 @@ class TestAdminPasswordByteLimit:
             headers=h,
         )
         assert ok.status_code == 201, ok.text
-        assert (await login(client, "ops-cn2", "汉" * 24)).status_code == 200
+        assert (await admin_login(client, "ops-cn2", "汉" * 24)).status_code == 200
 
     async def test_reset_password_multibyte_limit(self, client, sm):
         h = await admin_headers(sm, client)

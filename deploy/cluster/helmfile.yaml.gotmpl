@@ -194,7 +194,7 @@ releases:
     values: [values/cnpg-cluster.yaml]
 
   # 日志栈:Loki 单副本 + Alloy 采集(全 Pod 日志 + 控制面 apiserver 审计文件)。
-    # light 档同开(资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
+  # light 档同开(资源已收紧);磁盘紧张可在 environments/light.yaml 整栈关掉。
   - name: loki
     condition: loki.enabled
     namespace: monitoring

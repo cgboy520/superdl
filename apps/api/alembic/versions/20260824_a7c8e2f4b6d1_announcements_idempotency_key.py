@@ -27,8 +27,18 @@ def upgrade() -> None:
     op.add_column(
         "announcements", sa.Column("idempotency_key", sa.String(length=64), nullable=True)
     )
-    op.create_unique_constraint(
-        "uq_announcements_idempotency_key", "announcements", ["idempotency_key"]
+    # 在线姿势:并发唯一索引 + USING INDEX 提升为约束(UNIQUE 无 NOT VALID 形态)
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_announcements_idempotency_key",
+            "announcements",
+            ["idempotency_key"],
+            unique=True,
+            postgresql_concurrently=True,
+        )
+    op.execute(
+        "ALTER TABLE announcements ADD CONSTRAINT uq_announcements_idempotency_key "
+        "UNIQUE USING INDEX uq_announcements_idempotency_key"
     )
 
 

@@ -133,6 +133,24 @@ def forbidden(
     )
 
 
+def conflict(
+    message: str | None = None,
+    *,
+    key: str | None = None,
+    params: Mapping[str, Any] | None = None,
+    detail: Any = None,
+) -> AppError:
+    key = None if message is not None else (key or "common.retryableConflict")
+    return AppError(
+        ErrorCode.CONFLICT,
+        message,
+        key=key,
+        params=params,
+        http_status=status.HTTP_409_CONFLICT,
+        detail=detail,
+    )
+
+
 def _error_headers(http_status: int, headers: Mapping[str, str] | None) -> dict[str, str]:
     """统一响应头:401 一律带 WWW-Authenticate(RFC 6750),调用方自定义头合并保留。"""
     out = dict(headers or {})

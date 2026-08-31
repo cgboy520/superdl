@@ -150,7 +150,8 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
 1. **临期预警** `expires_at - now < period_expire_warn_days` → 短信 + 站内信。去重锚点是
    `subscriptions.warned_for_expiry`(存「已预警到哪个到期时刻」而不是布尔):续费后 `expires_at` 变了即
    重新可预警,不需要额外清位;站内信另有按日分桶的 dedup_key。
-2. **自动续费**:到期 + `auto_renew` + 余额够 → 扣款、新开一行、通知。**先算价再比余额**,不靠 `debit`
+2. **自动续费**:到期 + `auto_renew` + **可用余额**(balance − frozen)够 → 扣款、新开一行、
+   通知。**先算价再比可用余额**,不靠 `debit`
    抛 `INSUFFICIENT_BALANCE` 兜底(抛错时 `renew` 已把老行改成 expired,同一个 session 继续用会把它一起提交)。
    余额不够则发「自动续费失败」通知,落到停机链路,绝不透支。
 3. **到期停机**:订阅行转 `expired`;running → `system_stop(reason='subscription_expired')`;

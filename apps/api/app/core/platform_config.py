@@ -66,7 +66,7 @@ class SettingSpec:
 # key 与 Settings 同名字段一一对应(env 即默认值层;K8s Secret 注入仍有效)
 SETTING_SPECS: dict[str, SettingSpec] = {
     # ---- 安全策略(开关 ≠ 替身:关闭即跳过;凭据在各渠道组;在线写库层 prod 一律禁关——
-    # 单管理员一次请求即降防的口子必须堵死;人机验证/实名再叠加 prod 启动 fail-fast(D-4)) ----
+    # 单管理员一次请求即降防的口子必须堵死;人机验证/实名再叠加 prod 启动 fail-fast) ----
     "captcha_enabled": SettingSpec(
         "security",
         "bool",
@@ -93,7 +93,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "bool",
         prod_forbidden=("false",),
         hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合);"
-        "prod 在线关闭已禁且启动 fail-fast(境内合规 D-4)",
+        "prod 在线关闭已禁且启动 fail-fast(境内合规要求)",
     ),
     # ---- 微信支付(APIv3;公钥模式与平台证书模式二选一,新商户仅公钥模式) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
@@ -323,6 +323,8 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="可选:Grafana 地址,配置后管理端节点页显示「在 Grafana 打开」外链",
     ),
     # 值班手机号:critical 平台告警短信直发(不依赖平台自身通知流;复用阿里云短信通道)
+    # 注:pattern 为「空串或手机号」的 alternation,fullmatch 语义下不能带 ^/$ 锚点,
+    # 故不直接引用 app.core.regex.PHONE_RE(含锚点),保留内联写法
     "oncall_phone": SettingSpec(
         "observability",
         "str",
@@ -408,7 +410,7 @@ def compute_config_warnings(cfg: Mapping[str, str], environment: str) -> list[Co
     return out
 
 
-# D-4 合规闸门(prod 启动 fail-fast;在线写库层由 prod_forbidden 禁关,这里兜 env/部署层)
+# 合规闸门(prod 启动 fail-fast;在线写库层由 prod_forbidden 禁关,这里兜 env/部署层)
 PROD_REQUIRED_SWITCHES = ("captcha_enabled", "real_name_enabled", "real_name_required_for_recharge")
 
 
@@ -510,6 +512,21 @@ async def set_platform_settings(
         if key not in SETTING_SPECS:
             raise ValueError(f"未知配置键:{key}")
         if raw.strip() == "":
+            # 清除覆盖不是「删除配置」而是「回落到 env 层」:env 层值本身可能是 prod 禁止的
+            # 取值(如 real_name_enabled 的部署默认 false)。prod_forbidden 守卫必须覆盖
+            # 清除路径,否则单次请求即可绕过「禁止在线降防」的写入门禁,且下一次启动的
+            # 合规闸会因回落值拒启——一次 API 调用埋下一个全平台 fail-to-start。
+            spec = SETTING_SPECS[key]
+            fallback = _env_default(key)
+            if (
+                spec.prod_forbidden
+                and get_settings().environment == "prod"
+                and fallback in spec.prod_forbidden
+            ):
+                raise ValueError(
+                    f"{key} 不允许清除覆盖:清除后回落到部署层取值 {fallback!r},"
+                    "生产环境禁止该取值(请显式写入合规值,或修改部署层 env 后清除)"
+                )
             await session.execute(delete(PlatformSetting).where(PlatformSetting.key == key))
             continue
         value = validate_setting_value(key, raw)
