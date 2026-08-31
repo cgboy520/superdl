@@ -221,9 +221,7 @@ async def regenerate_enrollment(
     await require_cluster_config(session)
     enrollment = await get_enrollment(session, enrollment_id)
     if enrollment.status not in REGENERATABLE_STATUSES:
-        raise conflict(
-            key="nodes.regenerateNotAllowed", params={"status": enrollment.status}
-        )
+        raise conflict(key="nodes.regenerateNotAllowed", params={"status": enrollment.status})
     token, enrollment.token_hash = _new_token()
     enrollment.progress_token_hash = None  # 旧 progress 令牌随注册令牌一并作废
     enrollment.status = "pending"
