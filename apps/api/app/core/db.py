@@ -124,29 +124,17 @@ def code_schema_head() -> str:
 def schema_state(db_revisions: list[str]) -> str:
     """比对 DB alembic_version 与代码 head,返回 readyz 判定。
 
-    - ready:一致;或 DB 领先/含代码外的更新版本(滚动发布窗口;迁移约定 expand-only,
-      新 schema 对老代码向后兼容,放行);
+    发布模型是停机发布(stop → alembic upgrade head → start),不存在合法的版本偏差窗口:
+    - ready:仅当 DB 恰为单行且等于代码 head;
     - 其余 503:never_migrated(库从未迁移)/ multi_head(仓库事故)/
-      schema_mismatch(DB 落后=迁移漏跑,或历史分叉)——新代码不得带病接流量。
+      schema_mismatch(落后/领先/未知版本 = 部署事故)——不得带病接流量。
     """
-    from alembic.util import CommandError
-
     try:
         head = code_schema_head()
     except RuntimeError:
         return "multi_head"
     if not db_revisions:
         return "never_migrated"
-    for db_rev in db_revisions:
-        if db_rev == head:
-            continue
-        try:
-            ancestors = {
-                r.revision for r in _script_directory().walk_revisions(base="base", head=db_rev)
-            }
-        except CommandError:
-            continue  # DB 版本在代码里不存在:更新的代码迁移过(老 Pod 滚动窗口),放行
-        if head in ancestors:
-            continue  # DB 领先:滚动窗口
-        return "schema_mismatch"
-    return "ready"
+    if db_revisions == [head]:
+        return "ready"
+    return "schema_mismatch"

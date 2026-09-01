@@ -131,8 +131,8 @@ def create_app() -> FastAPI:
 
     @app.get("/readyz", tags=["infra"], include_in_schema=False)
     async def readyz() -> JSONResponse:
-        """readiness:探 DB + 比对 schema 版本(迁移漏跑的新代码不就绪,防带病放量;
-        滚动窗口内「老代码+新 schema」按 expand-only 约定放行)。"""
+        """readiness:探 DB + 比对 schema 版本必须等于代码 head(停机发布模型,
+        任何版本偏差都是部署事故,503 摘流)。"""
         from sqlalchemy import text
 
         from app.core.db import get_sessionmaker, schema_state
@@ -147,7 +147,7 @@ def create_app() -> FastAPI:
             state = schema_state(list(rows))
         except Exception:
             state = "db_unavailable"
-        # 探针每 5s 一次:只在状态翻转时留日志,避免滚动窗口刷量
+        # 探针每 5s 一次:只在状态翻转时留日志,避免状态抖动刷量
         prev = getattr(app.state, "readyz_state", "ready")
         if state != prev:
             get_logger("app.readyz").warning("readyz_state_change", previous=prev, current=state)

@@ -35,16 +35,12 @@ class TestHealthEndpoints:
         assert resp.status_code == 200
         assert resp.json()["status"] == "ready"
 
-    async def test_schema_lag_not_ready(self, client: AsyncClient, sm):
-        """DB 停在代码 head 的祖先版本 = 迁移漏跑:503 摘流,新代码不得带病放量。"""
-        from app.core.db import _script_directory, code_schema_head
+    async def test_schema_mismatch_not_ready(self, client: AsyncClient, sm):
+        """DB 版本与代码 head 不一致 = 部署事故(迁移漏跑/未 stamp):503 摘流。"""
+        from app.core.db import code_schema_head
 
-        oldest = list(_script_directory().walk_revisions())[-1].revision
-        assert oldest != code_schema_head()  # 仓库已有多个迁移,前提成立
         async with sm() as session:
-            await session.execute(
-                text("UPDATE alembic_version SET version_num = :v"), {"v": oldest}
-            )
+            await session.execute(text("UPDATE alembic_version SET version_num = '000000000000'"))
             await session.commit()
         try:
             resp = await client.get("/readyz")
@@ -58,8 +54,8 @@ class TestHealthEndpoints:
                 )
                 await session.commit()
 
-    async def test_rollout_window_tolerated(self, client: AsyncClient, sm):
-        """DB 版本比代码新(迁移 Job 先跑、老 Pod 未轮换):expand-only 约定下放行。"""
+    async def test_ahead_or_unknown_revision_not_ready(self, client: AsyncClient, sm):
+        """停机发布模型没有合法的版本偏差窗口:DB 领先/未知版本同样 503 摘流。"""
         from app.core.db import code_schema_head
 
         async with sm() as session:
@@ -67,7 +63,8 @@ class TestHealthEndpoints:
             await session.commit()
         try:
             resp = await client.get("/readyz")
-            assert resp.status_code == 200
+            assert resp.status_code == 503
+            assert resp.json()["status"] == "schema_mismatch"
         finally:
             async with sm() as session:
                 await session.execute(

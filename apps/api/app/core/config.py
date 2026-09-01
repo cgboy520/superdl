@@ -442,7 +442,7 @@ def unknown_superdl_env_keys() -> list[str]:
     """扫描 SUPERDL_ 前缀环境变量,返回不命中任何 Settings 字段的键。
 
     幽灵键(拼写错误、改名残留)会被 pydantic 静默忽略,配置者以为生效其实没有;
-    启动时打 WARNING 即可,不 fail(兼容滚动发版期间新旧键并存)。
+    启动时打 WARNING 即可,不 fail(幽灵键只值一条告警,不应把服务拦在门外)。
     """
     known = {f"SUPERDL_{name.upper()}" for name in Settings.model_fields}
     # pydantic-settings 默认大小写不敏感,统一按大写比对
