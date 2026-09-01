@@ -55,12 +55,6 @@ EOF
 `env_encrypted` 随用户改 env 重写,短信验证码(5 分钟 TTL)与节点注册令牌(短 TTL)
 自然过期,均不需手工处理。
 
-**前置:库里不得残留 `enc:v1:` 密文。** `decrypt_str` 只读 v2,上面的片段对 v1 行会抛
-「密文缺少 enc: 版本前缀」;v1 用主密钥直接做用钥,v2 经 HKDF 派生,两者不通用。
-先跑 `cd apps/api && uv run python scripts/reencrypt_v1_to_v2.py`(演练)确认全部可解,
-再 `--apply`。该脚本覆盖 `admin_users.totp_secret` 与 `instances.jupyter_token`:
-后者虽随实例重启/重置自然轮换,但长期 stopped 的实例会一直停在旧格式,读令牌即 500。
-
 ## 摘除 PREVIOUS(轮换收尾)
 
 满足全部条件才可把 `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` 清空并再次滚动重启:
@@ -70,8 +64,3 @@ EOF
   未重签的 Key 在摘除即刻 401 —— 轮换公告必须带这一条);
 - 存量密文 v2 kid 均为当前钥匙指纹(打印 kid:`python3 -c "import hashlib,base64;
   print(hashlib.sha256(base64.urlsafe_b64decode('<新钥匙>')).hexdigest()[:12])"`)。
-
-## 回滚
-
-轮换窗口内任何解密失败:把两把钥匙换回原位(当前=旧、清空 PREVIOUS)并滚动重启,
-即回到轮换前状态;**禁止**在排查前继续滚动,避免新旧钥匙串漂移出第三个世代。

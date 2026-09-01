@@ -28,7 +28,7 @@ class PlatformSetting(Base):
     __tablename__ = "platform_settings"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(Text)  # secret 类为 enc:v2:<kid>: 密文(v1 只读兼容)
+    value: Mapped[str] = mapped_column(Text)  # secret 类为 enc:v2:<kid>: 密文
     updated_by: Mapped[int | None]  # AdminUser.id(仅追溯,不建外键)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

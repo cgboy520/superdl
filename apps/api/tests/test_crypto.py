@@ -86,13 +86,13 @@ class TestDecryptDualRead:
         with pytest.raises(ValueError, match="未知 kid"):
             crypto.decrypt_str(forged, aad="k")
 
-    def test_unprefixed_and_truncated_rejected(self, set_keys):
+    def test_malformed_tokens_rejected(self, set_keys):
         set_keys()
         with pytest.raises(ValueError, match="版本前缀"):
             crypto.decrypt_str("not-a-token", aad="k")
-        # v1 前缀已退役:按缺少版本前缀拒绝,不做任何解密尝试
+        # 非当前版本的 enc: 前缀一律按缺版本前缀拒绝,不做任何解密尝试
         with pytest.raises(ValueError, match="版本前缀"):
-            crypto.decrypt_str("enc:v1:AAAA", aad="k")
+            crypto.decrypt_str("enc:v9:AAAA", aad="k")
         with pytest.raises(ValueError, match="kid"):
             crypto.decrypt_str("enc:v2:no-kid-separator", aad="k")
 

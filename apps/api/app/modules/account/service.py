@@ -178,7 +178,7 @@ async def _consume_sms_code(session: AsyncSession, phone: str, code: str, purpos
     ).scalar_one_or_none()
     if row is None:
         raise AppError(ErrorCode.SMS_CODE_INVALID, key="account.smsCodeInvalid")
-    # candidates 兼读主密钥轮换/legacy 世代(见 crypto.py);全部算完再 any,不短路
+    # candidates 兼读主密钥轮换世代(见 crypto.py);全部算完再 any,不短路
     matched = [
         secrets.compare_digest(row.code_hash, c)
         for c in hash_sms_code_candidates(phone, purpose, code)

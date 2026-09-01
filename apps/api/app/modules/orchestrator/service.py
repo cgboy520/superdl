@@ -1706,7 +1706,7 @@ async def verify_endpoint_key(
     任一环节不过都抛同一个 401(同码同文案),区分开等于给第三方一个枚举平台端点的预言机。"""
     if not slug:
         raise _endpoint_denied()
-    # candidates 兼读主密钥轮换/legacy 世代(见 crypto.py);缓存键取当前世代([0]),稳定
+    # candidates 兼读主密钥轮换世代(见 crypto.py);缓存键取当前世代([0]),稳定
     key_hashes = hash_api_key_candidates(key) if key else []
     key_hash = key_hashes[0] if key_hashes else ""
     cached = _endpoint_auth_cache_get(slug, key_hash)

@@ -125,7 +125,7 @@ def hash_sms_code(phone: str, purpose: str, code: str) -> str:
 
 
 def hash_sms_code_candidates(phone: str, purpose: str, code: str) -> list[str]:
-    """短信验证码的读路径候选(轮换/legacy 世代兼读)。"""
+    """短信验证码的读路径候选(轮换窗口内兼读旧钥匙世代)。"""
     return _hmac_candidates(f"smscode|{phone}|{purpose}|{code}")
 
 
@@ -145,5 +145,5 @@ def hash_node_token(token: str) -> str:
 
 
 def hash_node_token_candidates(token: str) -> list[str]:
-    """节点令牌的读路径候选(轮换/legacy 世代兼读)。"""
+    """节点令牌的读路径候选(轮换窗口内兼读旧钥匙世代)。"""
     return _hmac_candidates(f"node-enroll|{token}")
