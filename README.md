@@ -13,7 +13,7 @@ GPU 算力租赁平台:租户按量租用整卡 / MIG / 共享 GPU 容器实例(
 - [docs/reference/](docs/README.md) —— 各模块契约与不变量(按模块一份)
 - [docs/decisions.md](docs/decisions.md) —— 跨模块决策与它们施加的约束
 - [CLAUDE.md](CLAUDE.md) —— 工程规范、闸门、提交约定(人与 AI 代理共用);上手见 [CONTRIBUTING.md](CONTRIBUTING.md)
-- [deploy/README.md](deploy/README.md) —— 部署、发布、回滚、集群装机与 runbook
+- [deploy/README.md](deploy/README.md) —— 部署、发布、集群装机与 runbook
 - [SECURITY.md](SECURITY.md) —— 报告安全漏洞
 
 ## 快速开始

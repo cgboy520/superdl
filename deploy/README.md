@@ -22,18 +22,17 @@
    - 第 2 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`,**必须先于滚动**:`/readyz` 比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都在这一关现形;
    - 第 3 步 `kubectl kustomize` 渲染后 apply:tag 先解析成**不可变 digest**,三条平台镜像整串换成 `<前缀>/superdl-<name>@sha256:...`。Harbor 默认不开 immutable rule,同名 tag 重推之后已在跑的节点仍用旧镜像(`imagePullPolicy: IfNotPresent`)而新调度的 Pod 拉到新内容 —— 两个版本同时在线且无任何提示;`release.yml` 的 cosign 也按 digest 签名,按 digest 下发才让「签了名的那份」与「跑起来的那份」是同一个东西。渲染后自检:`CHANGE_*` 占位零残留 + 平台镜像一律带 `@sha256:`,任一不满足即拒绝下发(`CHANGE_TAG` 仍保留给迁移 Job 的 Job 名,那不是镜像);
    - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不重复探测);
-   - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,验 DNS / TLS / 网关路由:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败按下方回滚指引处理。
+   - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,验 DNS / TLS / 网关路由:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败先查迁移 Job 与网关链路,修复后重新发布(不回滚)。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(prod 可跑;`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
 5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
-### 回滚指引
+### 发布与迁移约定
 
-- **应用回滚**(向前兼容窗口内,迁移只增不删,无需回滚库):
-  `kubectl -n superdl rollout undo deploy/superdl-api deploy/superdl-worker deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm deploy/superdl-worker-disk-ops deploy/superdl-web deploy/superdl-admin`
-  (worker 共 5 个 Deployment,回滚必须成组;或 `scripts/release.sh <上一 tag>` 重放一遍,迁移 Job 对已追平的库是 no-op)。
-- **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型;两窗口之间禁止回滚越过边界)。
-  回滚前 `git log <上一 tag>..<当前 tag> -- apps/api/alembic/versions/` 确认只有 expand 类迁移。
-- 回滚后核对:`kubectl -n superdl rollout status` × 8(api + 5 个 worker 组件 + web/admin)+ 外部 `/readyz` 一条(同 release.sh 第 5 步)。
+- **停机发布**:迁移与代码同 tag,顺序恒为「先 `alembic upgrade head`,后替换代码」(release.sh 保证迁移 Job 先于滚动);
+  `/readyz` 只认 DB == 代码 head,含迁移的发布在迁移完成到滚动完成之间旧 Pod 短暂 503 摘流(无兼容窗口,已知且接受)。
+- **不支持发布回滚**:fix-forward —— 失败修复后重新发一版;迁移不回退(基线迁移 downgrade 一律 raise)。
+- 迁移无需向前兼容,破坏性 DDL 允许(提交说明写明数据影响);迁移 Job 的 `PGOPTIONS`
+  (`lock_timeout=3s` / `statement_timeout=60s`)仍然生效,超预算的大表改动放维护窗口手工执行。
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 

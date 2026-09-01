@@ -12,10 +12,9 @@
 # 前置工具:kubectl + 以下任一能解析镜像 digest 的工具(需对 Harbor 有读权限,已 docker login):
 #   crane / skopeo / docker buildx。三个都没有就不发布 —— 见下方 resolve_digest 的注释。
 #
-# 顺序铁律:迁移 Job 必须先于滚动。expand-only 窗口内「老代码+新 schema」安全,反序
-# 「新代码+旧 schema」会被 /readyz 的 schema_mismatch 拦下,表现为发布卡死。
-# 回滚见 deploy/README.md「回滚指引」:rollout undo 各 Deployment 即可,迁移只增不删,
-# 向前兼容窗口内无需回滚库。
+# 顺序铁律:迁移 Job 必须先于滚动 —— /readyz 只认 DB==代码 head,反序「新代码+旧 schema」
+# 直接 503 卡死发布。停机发布模型、无兼容窗口:含迁移的发布在迁移完成到滚动完成之间,
+# 旧 Pod 同样短暂 503 摘流(已知且接受)。不支持发布回滚:失败修复后重新发布(fix-forward)。
 set -euo pipefail
 
 TAG="${1:?用法: SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>(形如 v1.2.3,release.yml 已推送 Harbor 的 tag)}"
@@ -131,7 +130,7 @@ if ! kubectl -n "$NS" get secret superdl-registry-pull > /dev/null 2>&1; then
   echo "::warning::Secret ${NS}/superdl-registry-pull 不存在:Harbor 平台项目为 private 时新 Pod 将拉不到镜像" >&2
 fi
 
-echo "==> 2/5 迁移 Job(expand-only,先于滚动)"
+echo "==> 2/5 迁移 Job(先于滚动)"
 render_checked < "${K8S_DIR}/10-migrate-job.yaml" | kubectl create -f -
 if ! kubectl -n "$NS" wait --for=condition=complete --timeout=300s "job/superdl-migrate-${TAG}"; then
   echo "::error::迁移 Job 未成功,终止发布;日志:" >&2
@@ -148,7 +147,7 @@ echo "==> 4/5 rollout status"
 for d in superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-node-mgr \
   superdl-worker-prewarm superdl-worker-disk-ops superdl-web superdl-admin; do
   if ! kubectl -n "$NS" rollout status "deploy/${d}" --timeout=660s; then
-    echo "::error::${d} 滚动超时/失败,按 deploy/README.md「回滚指引」回滚" >&2
+    echo "::error::${d} 滚动超时/失败,修复后重新发布(平台不支持发布回滚)" >&2
     exit 1
   fi
 done

@@ -6,11 +6,16 @@
 ## 工程流程
 
 - **直接在 `main` 提交,不建分支、不发 PR。** 单维护者 + AI 代理协作,没有第二个人做 PR 评审。
-  约束:回滚粒度是单个提交,「一个提交一件事」是硬要求。
+  约束:回退(git revert)粒度是单个提交,「一个提交一件事」是硬要求。
 - **本地闸门是事实源,CI 是复跑。** 闸门按改动范围跑,红了不提交。依赖漏洞、gitleaks、kubeconform、
   kind 冒烟只在 CI 跑。
 - **不设覆盖率阈值。** 用例必须能回答「它挂了说明什么坏了」。
 - **命令清单只有一份**:CLAUDE.md「常用命令」;README 只放快速开始。
+- **停机发布,不留兼容窗口、不支持回滚。** 发布顺序恒为「先 `alembic upgrade head`,后替换代码」
+  (k8s 流:迁移 Job 先于滚动,期间旧 Pod 短暂 503);`/readyz` 只认 DB == 代码 head,落后/领先/未知版本
+  一律摘流。迁移无需向前兼容(expand-only 门禁已拆除),破坏性 DDL 允许但须在提交说明写明数据影响;
+  不支持发布回滚(fix-forward),downgrade 一律 raise。约束:alembic 历史已压缩为单条基线
+  `20260901_1620c05976ce`(prod/dev 库以 `alembic stamp` 对齐),模型与迁移一致性由 `alembic check` 把关。
 - **私有仓库,不放 LICENSE。** 默认保留全部权利;转公开或对外交付前先定许可证。
 - **release notes 不手维护。** 打 tag 用 `gh release create --generate-notes`,不设 CHANGELOG 文件。
 - **orval 只生成 fetcher 与 model 类型,不生成 TanStack Query hooks。** `packages/api-client` 用
@@ -108,7 +113,7 @@
   约束:`spot_grace_seconds` 的真实上限是 `creating_timeout_seconds − PREEMPT_TIME_RESERVE_SECONDS`,
   由 `validate_policy_value` 的跨键校验拦住;调大宽限窗要先调大 creating 超时。见 `docs/reference/limits.md`。
 - **worker 拆成 5 个组件 Deployment**(core / tenant-mgr / node-mgr / prewarm / disk-ops),RBAC 按组件最小化。
-  约束:发布与回滚必须成组。见 `deploy/README.md`、`deploy/app/k8s/03-worker.yaml`。
+  约束:发布必须成组(平台不支持发布回滚)。见 `deploy/README.md`、`deploy/app/k8s/03-worker.yaml`。
 - **控制面 HA 与平台组件落点。** 公众生产强制 3 台 server 堆叠 etcd + VIP;平台组件以
   `node-restriction.kubernetes.io/superdl-infra` 标签选址,不绑死 control-plane。**前缀刻意选 kubelet 打不上的那一族**:
   任何走发行版 `node-label` 的自定义键(`node-role.superdl.io/infra` 这类)都是节点自声明的 —— 持 join token 的

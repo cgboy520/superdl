@@ -14,7 +14,7 @@
 | 用户可见文案怎么写、哪些词禁用 | [copy-style-guide.md](./copy-style-guide.md) |
 | 某个跨模块的决定为什么这么定 | [decisions.md](./decisions.md) |
 | 改代码要守的硬性规范、闸门、提交约定 | [../CLAUDE.md](../CLAUDE.md) |
-| 生产部署、发布、回滚、数据库要求 | [../deploy/README.md](../deploy/README.md) |
+| 生产部署、发布、数据库要求 | [../deploy/README.md](../deploy/README.md) |
 | 集群装机、双档路径、北向入口与 Gateway API CRD、token 轮换 | [../deploy/cluster/README.md](../deploy/cluster/README.md) |
 | 告警响了先做什么 | [../deploy/cluster/runbooks/](../deploy/cluster/runbooks/README.md) |
 | 安全漏洞怎么报 | [../SECURITY.md](../SECURITY.md) |

@@ -14,7 +14,7 @@
 | [key-rotation.md](./key-rotation.md) | SOP | 平台主密钥(crypto)双密钥读轮换与 PREVIOUS 摘除条件 |
 | [cluster-validation.md](./cluster-validation.md) | 清单 | CI 覆盖不到的实机验证清单与每次上线的发布检查单 |
 
-发布与回滚在 [`../../README.md`](../../README.md);集群装机与 token 轮换在 [`../README.md`](../README.md)。
+发布在 [`../../README.md`](../../README.md)(不支持发布回滚,fix-forward);集群装机与 token 轮换在 [`../README.md`](../README.md)。
 
 ## 告警 → 第一步
 
@@ -45,7 +45,7 @@
 | LeakedPodsReclaimed / ReconcileLeakAborted | 泄漏 Pod 批量回收 / 回收熔断 | 核对节点残留 Pod 与 DB 记录差异 | `docs/reference/orchestrator.md` |
 | ReconcileStuckInstances | 实例悬挂超 15 分钟 | 管理端实例详情人工介入(强制停止 / 释放) | `docs/reference/orchestrator.md` |
 | ApiHighErrorRate | API 5xx >5% 持续 5 分钟 | 按 request_id 查未捕获异常 | [loki-logging.md](./loki-logging.md) 查询 2 |
-| WorkerDown | worker 心跳缺失 >2 分钟 | `kubectl -n superdl rollout status` 五个 worker Deployment | `../../README.md` 回滚指引 |
+| WorkerDown | worker 心跳缺失 >2 分钟 | `kubectl -n superdl rollout status` 五个 worker Deployment | `../../README.md` 发布与迁移约定 |
 | PgBackupFailed / PgBackupStale | 每日备份失败 / 超 28h 无成功 | 查 CronJob 日志与 S3 凭据;RPO 正在拉长 | [pg-backup-restore.md](./pg-backup-restore.md) |
 | AuditWriteFailed | 审计行写入失败 | 查 DB 与审计写路径;期间 fail-open 操作可能无留痕 | `docs/reference/security.md` |
 | PatrolFailed | 余额巡检环节异常 | 查 worker 日志 stage 标签 | `docs/reference/billing.md` |
