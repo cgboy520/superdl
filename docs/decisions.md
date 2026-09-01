@@ -235,10 +235,6 @@
 - **服务型实例持续 not-ready 不判故障。** `workload_type='service'` 时 reconciler 跳过 `pod_unready` 一支,实例留在
   running,就绪与否如实呈现在服务 Tab;`pod_lost` 与 `node_lost` 两支不豁免——not-ready 判据是用户自己声明的 readinessProbe。配套:服务容器必配 `startupProbe`(15 分钟启动预算)。
   见 `apps/api/tests/test_orchestrator_lifecycle.py::TestServiceWorkloadUnreadyExemption`。
-- **迁移门禁拦 alembic 的三个约束 helper。** `op.create_check_constraint` / `create_unique_constraint` /
-  `create_foreign_key` 渲染出的是不带 `NOT VALID` 的 `ADD CONSTRAINT`,同样持 ACCESS EXCLUSIVE 全表扫描,只是从
-  SQL 文本里看不见。`scripts/check-migration-ddl.py` 三个 helper 一并拦,本迁移内 `create_table` 新建的表豁免。
-
 ## 功能缺口路线图(仅方向,未排期;实施前各自补设计)
 
 已知的功能完备度缺口,按资金风险与用户价值排序。约束:每一项动工前必须先在本文档补「决定与约束」条目,

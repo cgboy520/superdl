@@ -31,34 +31,9 @@
 - **应用回滚**(向前兼容窗口内,迁移只增不删,无需回滚库):
   `kubectl -n superdl rollout undo deploy/superdl-api deploy/superdl-worker deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm deploy/superdl-worker-disk-ops deploy/superdl-web deploy/superdl-admin`
   (worker 共 5 个 Deployment,回滚必须成组;或 `scripts/release.sh <上一 tag>` 重放一遍,迁移 Job 对已追平的库是 no-op)。
-- **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型,见下节;两窗口之间禁止回滚越过边界)。
+- **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型;两窗口之间禁止回滚越过边界)。
   回滚前 `git log <上一 tag>..<当前 tag> -- apps/api/alembic/versions/` 确认只有 expand 类迁移。
 - 回滚后核对:`kubectl -n superdl rollout status` × 8(api + 5 个 worker 组件 + web/admin)+ 外部 `/readyz` 一条(同 release.sh 第 5 步)。
-
-### 迁移向前兼容窗口(expand-only)规范
-
-滚动窗口内必然存在「老代码 + 新 schema」与「新代码 + 旧 schema」并存,因此:
-
-- **expand-only**:新增表/新增可空列/新增索引(CONCURRENTLY)/加约束(NOT VALID 先行)
-  随时可发;迁移与代码同 tag 发布,顺序「先迁移后滚动」由 release.sh 保证。
-- **contract(删列/改列名/改类型/删表)分两窗口**:窗口 A 先发「代码不再读写旧列 + expand 部分」;
-  全量滚动完成、确认无回滚需求后,窗口 B 再发删除性迁移。两窗口之间禁止回滚越过 A 的边界。
-- 闸门:`scripts/check-migration-ddl.py` 拦 drop(列/表/索引)/rename/既有列 SET NOT NULL/
-  非空列无默认/非 CONCURRENTLY 索引/无 NOT VALID 约束/ALTER TYPE(含 f-string 拼的裸 SQL);
-  确属 contract 窗口 B 的操作在**对应行行尾(或上一行)**标 `# ddl-risk: reviewed` 并写清理由,
-  标记只豁免那一行(文件级豁免会让同文件的其它危险操作搭便车),并在提交说明里写明窗口安排。
-- **大表迁移三步法**,以「大表加非空列」为例:
-  1. **加列**:`add_column(..., nullable=True)` + 代码双写;
-  2. **回填**:按主键区间分批 UPDATE,每批 commit(迁移 Job 带 `statement_timeout=60s` 与 `lock_timeout=3s`,单批必须远小于此);
-  3. **收口**:核对回填完整 → 下一窗口 `alter_column(nullable=False)`(配 NOT VALID 的
-     `CHECK (col IS NOT NULL)` 佐证可跳全表扫描)或补 CHECK NOT VALID → VALIDATE CONSTRAINT。
-- 既有表上建/删索引一律 `postgresql_concurrently=True` 且必须包在 `with op.get_context().autocommit_block():` 里
-  (`alembic/env.py` 整轮单事务,`CREATE/DROP INDEX CONCURRENTLY` 在事务块内直接报错),这类迁移独立成文件;
-  本迁移内新建表上的索引不受此限(空表建索引零成本,门禁已豁免)。
-- **唯一约束没有 NOT VALID 形态**:既有表加唯一约束一律「`autocommit_block` 内并发建唯一索引 →
-  `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE USING INDEX <同名索引>`」两步(提升只动 catalog,
-  不校验存量;门禁对 USING INDEX 形态豁免)。
-- 锁表型 DDL(ALTER TYPE、表重写)一律拆窗口,不得在在线迁移里做。
 
 上线硬性核查项(每次首发/变更发布通道后必过):
 

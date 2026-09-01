@@ -14,7 +14,7 @@ class Sku(Base):
     # 业务唯一键:同一 (型号, 档位, 池, MIG 切片, 算力份额, vCPU, 内存) 只允许一条,
     # mig_profile 为空也算相等(NULLS NOT DISTINCT),防重试建出同义 SKU 把库存口径搅浑。
     # 必须用唯一索引而非 UniqueConstraint:后者的 ADD CONSTRAINT 要全表校验锁,
-    # 唯一索引可以 CONCURRENTLY 在线建(见 scripts/check-migration-ddl.py)
+    # 唯一索引可以 CONCURRENTLY 在线建
     __table_args__ = (
         Index(
             "uq_skus_business_key",

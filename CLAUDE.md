@@ -44,7 +44,6 @@ pnpm --filter @superdl/e2e test:e2e      # 浏览器冒烟:需 API+worker 在跑
 # 脚本与文档
 bash -n apps/api/app/modules/nodes/assets/node-join.sh && shellcheck apps/api/app/modules/nodes/assets/node-join.sh
 bats deploy/node-join/tests              # PATH shim 伪造系统命令,不碰真实系统
-python3 scripts/check-migration-ddl.py apps/api/alembic/versions/<新迁移>.py
 python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径与告警 runbook_url 必须存在
 ```
 
@@ -64,7 +63,7 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 12. **文案**:用户可见文案的单一事实源是后端 `core/messages.py` 与两端 locales JSON;zh-CN 与 en-US 必须同时提交,风格见 `docs/copy-style-guide.md`。
 13. **测试**:每条用例都要能答出「它挂了说明什么坏了」。必须有用例的是:金额与舍入、透支、结算幂等(「重复执行零重复扣款」)、跨小时/跨日/跨月与时区边界、状态机迁移、幂等键与 outbox 重放、鉴权与角色边界。不为覆盖率补测试——覆盖率只作参考,不设阈值闸门。端到端事实源是 `apps/api/tests/test_e2e_lifecycle.py`,浏览器冒烟在 `e2e/tests/`。
 14. **密钥/凭据不入 git**:只经环境变量或平台配置中心注入;deploy 模板一律 `CHANGE_ME` 占位(`deploy/app/secrets.example.yaml`)。prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准。
-15. **迁移只增不破坏**:新迁移必过 `scripts/check-migration-ddl.py`(删列/改名/改类型、非空列无默认、既有表上非 CONCURRENTLY 索引、CONCURRENTLY 未包在 `autocommit_block` 内、ADD CONSTRAINT 无 NOT VALID 一律拦下,确属评审过的 contract 窗口才标 `# ddl-risk: reviewed`)。expand / contract 两窗口、大表三步法与 CONCURRENTLY 的可执行写法只写在 `deploy/README.md`「迁移向前兼容窗口」一处,以它为准。
+15. **迁移与发布**:发布是停机发布(stop → `alembic upgrade head` → start),无兼容窗口、不支持回滚(基线迁移 downgrade 一律 raise);迁移无需向前兼容,破坏性 DDL 允许,但须在提交说明写明数据影响;模型与迁移必须一致(`uv run alembic check`);`/readyz` 只认 DB == 代码 head。
 16. **文档随代码同一提交**:改了端点、表、角色、默认值、巡检周期、命令或流程,同一提交里更新对应的 `docs/reference`、runbook 或 README;新决策写 `docs/decisions.md`;文档与注释只写当前事实,不写评审编号、变更史与日期(变更记录归 git)。引用由 `python3 scripts/check-docs-links.py` 检查。
 
 ## 禁改清单
@@ -78,9 +77,9 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
 - commit message 前缀按性质:`feat:` / `fix:` / `chore:` / `docs:` / `test:` / `ci:` / `refactor:`,一句话说清改了什么。
 - 一个提交一件事:自身能过全部闸门、能被单独回滚。纯机械改动(重命名、格式化)单独成提交;契约再生成(openapi.json / orval 产物 / errors 文案 / i18n 类型)随引发它的改动同一提交。
 - 闸门按改动范围跑,带红不许提交;不要每改一行就跑全量。以本地执行为准:
-  - 后端代码:ruff format/check → pyright → import-linter → pytest;动了模型/迁移再加 `alembic check` + `check-migration-ddl.py`,动了路由/schema 再加 openapi.json 无 diff
+  - 后端代码:ruff format/check → pyright → import-linter → pytest;动了模型/迁移再加 `alembic check`,动了路由/schema 再加 openapi.json 无 diff
   - 前端代码:eslint → tsc → vitest;动了文案或 locale 再加 `pnpm i18n`,动了构建配置再加 build
   - 脚本:bash -n → shellcheck → bats
   - 文档:`python3 scripts/check-docs-links.py`;只改文档或注释不必跑测试
   - 用户可见主链路:Playwright 冒烟
-  - 只在 CI 跑、本地不强求的:pip-audit / pnpm audit、gitleaks 全历史、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟、带数据的迁移升级;`.github/workflows/ci.yml` 是全部闸门的清单
+  - 只在 CI 跑、本地不强求的:pip-audit / pnpm audit、gitleaks 全历史、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟;`.github/workflows/ci.yml` 是全部闸门的清单
