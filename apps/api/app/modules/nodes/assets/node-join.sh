@@ -483,7 +483,12 @@ maybe_reboot() {
     local want actual
     want="$(cfg_get script_sha256)"
     actual="$(sha256sum "$STATE_DIR/node-join.sh" | awk '{print $1}')"
-    if [[ -n "$want" && "$actual" != "$want" ]]; then
+    if [[ -z "$want" ]]; then
+      report reboot failed "bootstrap 未下发 script_sha256,拒绝执行无法校验的重拉脚本"
+      echo "!! bootstrap 未下发 script_sha256,已中止(拒绝执行无法校验的重拉脚本)" >&2
+      exit 1
+    fi
+    if [[ "$actual" != "$want" ]]; then
       report reboot failed "重拉脚本指纹不符(期望 $want,实际 $actual),请检查 API 链路"
       echo "!! 重拉脚本指纹不符,已中止(期望 $want,实际 $actual)" >&2
       exit 1

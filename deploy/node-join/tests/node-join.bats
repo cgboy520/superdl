@@ -36,8 +36,8 @@ setup() {
 
 teardown() { rm -rf "$TMP"; }
 
-_write_fixture() { # _write_fixture <pool> [distro] [mirror=cn] [script_sha256];字段与 BootstrapOut 契约一致,必发
-  python3 - "$1" "${2:-rke2}" "${3:-}" "${4:-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
+_write_fixture() { # _write_fixture <pool> [distro] [mirror=cn] [script_sha256];字段与 BootstrapOut 契约一致,必发(显式传空串模拟缺失)
+  python3 - "$1" "${2:-rke2}" "${3:-}" "${4-$FAKE_SCRIPT_SHA256}" > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json, os, sys
 distro = sys.argv[2]
 data = {
@@ -376,6 +376,16 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"指纹不符"* ]]
   grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
+}
+
+@test "bootstrap 未下发 script_sha256:管道续跑拒绝执行重拉脚本(fail-closed)" {
+  export NVIDIA_OK=0
+  _write_fixture hami rke2 "" ""
+  run bash -s -- --token-file "$TMP/token" --api-base http://fake.local < "$SCRIPT"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"script_sha256"* ]]
+  grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
+  ! grep -q "systemctl reboot" "$SHIM_CALLS"
 }
 
 @test "安装脚本 pin 校验和不符:拒绝执行并上报 failed" {

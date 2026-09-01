@@ -30,7 +30,7 @@
 首次 bootstrap 即被服务端消费,换发窄权限 progress 令牌(仅可上报进度,不可再拉配置),
 落 `/var/lib/superdl-node-join/token`(0600)供断点续跑,装机完成即连同 bootstrap.json 一起删除。
 k3s/rke2 安装器不裸 `curl|sh`:固定 URL 下载后校验脚本内置 sha256 pin 再执行;
-管道执行时重启前从 API 重拉脚本本体,并校验 bootstrap 下发的脚本指纹(script_sha256)。
+管道执行时重启前从 API 重拉脚本本体,并校验 bootstrap 下发的脚本指纹(script_sha256,缺失或不符即中止)。
 join token 轮换:server 侧 `rke2 token rotate` 后在管理端更新一处即可。
 
 落盘权限:`umask 077` 前置(生成文件先窄后宽,无 0644→chmod 窗口),日志显式 0644。
@@ -50,8 +50,8 @@ IOMMU 分组目录),bats 在 setup 里把它们指向临时目录。**新增读�
 默认 4096,与 rke2/k3s server 配置同值)亦是 bats 与应急处置的覆盖口。
 
 覆盖:参数错误 / 全流程免重启 / 令牌不进 argv 与完成后落盘清理 / 完成后重跑直退 /
---force 重装 / 断点续跑(令牌切换)/ 旧服务端无 progress_token 兼容 / 重启断点
-(oneshot + token 0600)/ 管道执行重拉脚本指纹校验与不符中止 / 安装器 pin 不符拒执行 /
+--force 重装 / 断点续跑(令牌切换)/ 重启断点
+(oneshot + token 0600)/ 管道执行重拉脚本指纹校验(缺失或不符即中止)/ 安装器 pin 不符拒执行 /
 重启循环保护 / kata GRUB IOMMU / k3s 模式落位(含 podPidsLimit)/ 安装源 cn 与 official /
 NVMe 未登记不兜底 / loop 显式登记 / toolkit 版本下限(达标跳过、未装安装、装完仍低即失败、
 env 覆盖生效)。
