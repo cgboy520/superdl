@@ -52,8 +52,14 @@ asyncio.run(main())
 EOF
 ```
 
-`instances.jupyter_token` 随实例重启/重置自然轮换,`env_encrypted` 随用户改 env 重写,
-短信验证码(5 分钟 TTL)与节点注册令牌(短 TTL)自然过期,均不需手工处理。
+`env_encrypted` 随用户改 env 重写,短信验证码(5 分钟 TTL)与节点注册令牌(短 TTL)
+自然过期,均不需手工处理。
+
+**前置:库里不得残留 `enc:v1:` 密文。** `decrypt_str` 只读 v2,上面的片段对 v1 行会抛
+「密文缺少 enc: 版本前缀」;v1 用主密钥直接做用钥,v2 经 HKDF 派生,两者不通用。
+先跑 `cd apps/api && uv run python scripts/reencrypt_v1_to_v2.py`(演练)确认全部可解,
+再 `--apply`。该脚本覆盖 `admin_users.totp_secret` 与 `instances.jupyter_token`:
+后者虽随实例重启/重置自然轮换,但长期 stopped 的实例会一直停在旧格式,读令牌即 500。
 
 ## 摘除 PREVIOUS(轮换收尾)
 
