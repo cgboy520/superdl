@@ -9,6 +9,14 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
 - [ ] `kubectl get node -L superdl.io/pool`:池标签齐全,**kata 与 hami 无交集**
 - [ ] `kubectl explain pod.spec.hostUsers` 存在;跑一个 `hostUsers: false` 测试 Pod,容器内 `readlink /proc/self/ns/user` 与宿主不同
 - [ ] 内核 ≥6.3:`uname -r`
+- [ ] 平台组件落点标签只在控制面节点上:`kubectl get nodes -l node-restriction.kubernetes.io/superdl-infra=true`
+      至少一台,且**没有一台带 `superdl.io/pool`**(GPU 池节点带 infra 标签 = 平台组件与租户计算同宿主,
+      租户逃逸直达平台密钥);`preflight.sh` 同款正反两查
+- [ ] **全局 Pod 兜底策略是 `Deny`**(`superdl-global-pod-guard`,`admission/tenant-restrictions.yaml`):
+      `kubectl debug node/<node>` 建的是 hostPID + hostPath 调试 Pod、默认落 `default` ns,会被当场拒绝 ——
+      排障一律加 `--namespace kube-system`(豁免 ns),或临时把目标 ns 加进豁免名单。需要特权 / host 面的栈
+      (cilium / hami / juicefs-csi / kata、gpu-operator、node-exporter+alloy、Envoy 数据面、topolvm node plugin)
+      本就全落在豁免 ns 里,不受影响
 
 ## B. Kata 整卡直通
 
@@ -120,8 +128,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       `Programmed=True`,`attachedRoutes` 与预期条数一致。这也是管理端「集群」页「实例入口(网关)」那一格的判据
 - [ ] **策略真的挂上了**:`kubectl -n superdl describe securitypolicy superdl-admin-allowlist` /
       `securitypolicy superdl-svc-extauth` / `backendtrafficpolicy superdl-api-ratelimit` /
-      `backendtrafficpolicy superdl-svc-ratelimit` / `clienttrafficpolicy superdl-gateway`,
-      五者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
+      `backendtrafficpolicy superdl-svc-ratelimit` / `backendtrafficpolicy superdl-app-ratelimit` /
+      `clienttrafficpolicy superdl-gateway`,六者 `status.ancestors[].conditions` 均 `Accepted=True`。listener 的 `sectionName` 写错**不报错**、
       apply 照样成功,只是策略静默失效(白名单没了、限流没了、**鉴权没了**),线上看不出异常 ——
       这里是唯一线索
 - [ ] 三个平台域各 `curl -I https://<域>` 证书链正确;`curl -I http://<域>` 返回 301
@@ -142,7 +150,8 @@ CI 覆盖不到的检查项,每条为「做什么 + 通过判据」。
       (一实例一条路由,几百上千条是常态;这里 OOMKill 掉的是全站入口,不是单个租户)
 - [ ] 数据面滚动不断流:重启 `envoy-gateway-system` 下 EG 生成的 Envoy Deployment,期间外部 `/readyz` 轮询无 5xx
       (2 副本 + `envoyPDB.minAvailable: 1` + `shutdown.drainTimeout: 60s`)
-- [ ] Envoy Pod 落在 infra 节点且未被准入策略拦下(`admission/tenant-restrictions.yaml` 的豁免名单含
+- [ ] Envoy Pod 落在带 `node-restriction.kubernetes.io/superdl-infra=true` 的节点上,且未被准入策略拦下
+      (`admission/tenant-restrictions.yaml` 的豁免名单含
       `envoy-gateway-system`)。漏改名单时数据面 Deployment 是 EG 动态生成的、仓库里改不到,
       现象只是「Gateway 一直不 Ready」,拒绝信息只在 EG 控制器日志里
 

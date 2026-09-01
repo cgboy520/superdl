@@ -101,12 +101,17 @@ worker 侧其余定时任务:outbox 卡单回收、小时结算、数据盘日�
 | SSH | 控制面维护端口池表 `port_allocations`,每实例分配一个 NodePort;仅密钥登录,禁密码。**SSH 与 Jupyter 必须拆成两个 Service**:合并后 `type=NodePort` 会给每个 port 都分配 NodePort,Jupyter 会占走端口池号段 |
 | JupyterLab | 实例 Pod 内跑 JupyterLab(8888),**每实例一条 HTTPRoute**(建在租户 ns,挂 `app-https` listener)按 host 路由到 ClusterIP Service,token 由控制面注入,泛域名证书一张 |
 | 对外服务端点 | 服务型实例(`workload_type='service'`)的公网入口 `<slug>.svc.<域名>`,**每实例一条 HTTPRoute** 挂 `svc-https` listener。API Key 在网关校验(一条 `SecurityPolicy.extAuth` 挂 listener 服务全部端点,对象数 O(1)),用户容器不实现鉴权;**鉴权结果无缓存**,控制面是全部端点的同步依赖,见 [reference/services.md](./reference/services.md) |
-| 租户 NetworkPolicy | 默认拒东西向。入方向只放行两处:Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明),以及 TCP 22(SSH NodePort,来源不能排私网)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口黑名单、UDP 走白名单,私网与云元数据网段一律拒 |
-| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由同款重写 + 更严请求体上限)、服务端点鉴权与限流、全局超时与连接兜底,6 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**:apply 照样成功,策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名锁死 |
+| 租户 NetworkPolicy | 默认拒东西向。入方向只放行两处:Envoy 数据面所在 ns(`envoy-gateway-system`,不是 Gateway 对象所在的 `superdl`)**不限端口**(服务容器端口由用户声明),以及 TCP 22(SSH NodePort,来源不能排整段私网 —— 跨节点 NodePort 经 SNAT 后是节点内网 IP;但**必须排掉 Pod 网段**,不排则租户可互扫 22)。出方向 DNS 收敛到 CoreDNS,公网 TCP 扣滥用端口与数据存储端口黑名单、UDP 走白名单,私网与云元数据网段一律拒 |
+| 网关策略 | 源 IP 白名单(管理端)、边缘限流(API 域,匿名回调路由同款重写 + 更严请求体上限)、服务端点鉴权与限流、租户 Jupyter listener 限流、全局超时与连接兜底,7 个策略对象挂在 Gateway / HTTPRoute 上(`deploy/app/k8s/04-gateway.yaml`)。挂载点是 listener 的 `sectionName`,**写错不报错**:apply 照样成功,策略静默失效,唯一线索在策略对象的 `status.ancestors[].conditions`;6 个 listener 名锁死 |
 
 控制面 ServiceAccount 按 worker 组件拆分;租户资源的写权限是 ClusterRole,实际可达面由
-`deploy/cluster/admission/tenant-restrictions.yaml` 的 ValidatingAdmissionPolicy 收窄到 `superdl` / `tenant-*`
-namespace 与 nodes,二者叠加才是完整最小权限。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量。
+`deploy/cluster/admission/tenant-restrictions.yaml` 的**七条 ValidatingAdmissionPolicy(全部 `Deny`)**收窄:
+平台 SA 写范围(`superdl` / `tenant-*` namespace 与 nodes)、租户 Pod 安全基线、Node 字段级写白名单、
+全局 Pod 兜底、Pod 与 Job 模板各一条 Secret 引用白名单、Node 删除对象白名单,RBAC 与准入叠加才是完整最小权限。
+后两条 Secret 白名单堵的是一条 RBAC 直觉之外的等价:**某命名空间内的 `pods:create`(或 `batch/jobs:create`)
+等价于该命名空间的 `secrets:get`** —— kubelet 代创建者解析 `secretKeyRef` / `envFrom` / secret 卷 /
+`imagePullSecrets`,不做任何 secrets 授权检查,PSA `restricted` 也不约束 Secret 挂载。口径见
+[`reference/security.md`](./reference/security.md)。HTTPRoute 条数随活跃实例线性增长,是 Envoy 数据面内存的主要变量。
 
 ## 6. 数据模型
 
@@ -135,7 +140,7 @@ namespace 与 nodes,二者叠加才是完整最小权限。HTTPRoute 条数随�
 - **`instances.market`(on_demand / subscription / spot,CHECK 兜底)是「怎么买」,`skus.tier` 是「买什么档」,两者正交** ——
   一条 SKU 同时供多种购买模式售卖,不为包周期另建 SKU 行。包周期的预付凭证落 `subscriptions`:续费**新开一行**
   并用 `renewed_from_id` 串链、老行转 expired,不在原行上累加到期时刻。
-- 订阅行的 UNIQUE(user_id, idempotency_key) 只服务**续费**;下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保。
+- 订阅行的 UNIQUE(user_id, idempotency_key) 服务**转换与续费**两条路径,共用一个键命名空间,故两处重放查询都带 `subscriptions.request_fingerprint` 做异参检测(同键异参 409);下单那条订阅行不带幂等键,整笔创建的幂等由同事务的 `instances` 行担保。
 - 服务端点凭据只存密钥摘要:`service_api_keys.key_hash` 唯一(HMAC-SHA256),明文只在创建响应出现一次,
   吊销写 `revoked_at` 不删行;`service_endpoints.public_slug` 唯一,是公网域名左标签(不用 instance.uuid)。
 - `skus.oversell_cores` 变更仅影响新实例;`data_disks.price_gb_month` 是创建时快照价,调价不追溯已有盘。

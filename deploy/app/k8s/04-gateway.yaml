@@ -40,9 +40,13 @@ spec:
             requests: {cpu: 500m, memory: 512Mi}
             limits: {cpu: 500m, memory: 512Mi}
         pod:
-          # 平台组件落点统一走 infra 标签;GPU 节点严禁打此标签。
+          # 平台组件落点统一走 infra 标签(见 02-api.yaml 同处注释:
+          # node-restriction.kubernetes.io/ 前缀被 NodeRestriction 拉黑,kubelet 不可自打;
+          # 标签由 deploy/ansible/site.yml 用管理凭据打在控制面节点上)。
+          # 数据面持有全部平台域与租户泛域名的 TLS 私钥,落点被冒名节点吸走 = 全站中间人。
+          # GPU 节点严禁打此标签。
           nodeSelector:
-            node-role.superdl.io/infra: "true"
+            node-restriction.kubernetes.io/superdl-infra: "true"
           tolerations:
             # 必须与 nodeSelector 成对出现:infra 标签落在 RKE2 server 上,而 server 带
             # CriticalAddonsOnly=true:NoExecute(rke2/server-config.yaml node-taint),
@@ -460,6 +464,41 @@ spec:
     local:
       rules:
         - limit: {requests: 20, unit: Second}
+---
+# 租户 Jupyter 入口限流。app-https 是唯一一个**既不鉴权也不限流**的 listener:
+# superdl-svc-extauth 只挂 svc-https(两个 listener 鉴权口径相反,见上),
+# 三条 BackendTrafficPolicy 分别挂 API 路由 / webhooks 路由 / svc-https listener,
+# 而 superdl-gateway 那条是 ClientTrafficPolicy —— 只管超时与连接总量,不管 RPS。
+# 于是每个租户的 Jupyter 端点在边缘层裸奔:一条 HTTPRoute 被打满,吃掉的是 Envoy 的 CPU
+# 与连接预算,影响面是同一对 Envoy 副本上的**全部**租户与平台三域名。
+#
+# 与 superdl-svc-ratelimit 同构(**不是**照抄 superdl-api-ratelimit):
+# 只写一条不带 clientSelectors 的默认桶规则 —— EG 把 local 限流写进每条路由的
+# typedPerFilterConfig,一实例一条 HTTPRoute ⇒ 一个端点一个桶,端点之间不互挤。
+# ⚠ 这里**不许**加 `sourceCIDR: {type: Distinct}`:EG 把 alwaysConsumeDefaultTokenBucket
+# 钉死为 false(命中任一 descriptor 就不再消耗默认桶),加一条 Distinct 规则后默认桶一次都
+# 不会被消耗,「每端点 N/s」当场失效并退化成「每端点每源 IP N/s」,换 100 个 IP 就打穿。
+# 也不能再挂第二条 BackendTrafficPolicy 到同一个 targetRef:EG 对同一 targetRef 的同类策略
+# 不合并,最老者生效、另一条静默丢弃(状态条件 Conflicted)—— 要改就改本对象。
+#
+# 100/s/端点的取值理由:JupyterLab 冷启动一次会在几百毫秒内打出几十个 chunk/API 请求,
+# 20/s(svc-https 的取值)会让正常打开页面就吃 429;WebSocket 只在升级时算一次请求,
+# 内核长连接不消耗令牌。local 限流是每个 Envoy 实例本地计数,2 副本时单端点实际上限约 200/s。
+# 冷启动仍见 429 就上调本值,别改成 Distinct。
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-app-ratelimit
+  namespace: superdl
+spec:
+  targetRefs:
+    # sectionName 写错不报错、apply 照样成功,只是策略静默不挂载 = 限流又没了。
+    # 收工前按 status.ancestors[].conditions 确认 Accepted=True。
+    - {group: gateway.networking.k8s.io, kind: Gateway, name: superdl, sectionName: app-https}
+  rateLimit:
+    local:
+      rules:
+        - limit: {requests: 100, unit: Second}
 ---
 # 网关级超时与连接兜底。挂 Gateway(不带 sectionName)= 对 6 个 listener 全部生效;
 # streamIdleTimeout 1h 同时覆盖 LLM 推理那种长时间只出 token 的 SSE 流。

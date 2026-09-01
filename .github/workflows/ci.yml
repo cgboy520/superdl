@@ -249,30 +249,265 @@ jobs:
       # 发现不了 01-rbac.yaml 缺动词。这里先 apply 生产 RBAC,再静态断言动词面,最后
       # 用 superdl-tenant-mgr 的 SA token 造受限 kubeconfig 供冒烟里的受限身份用例
       # (test_ensure_namespace_under_tenant_mgr_sa)使用。
-      - name: 应用生产 RBAC 并静态断言 tenant-mgr 动词面
+      - name: 应用生产 RBAC 并静态断言各 SA 动词面
         run: |
           kubectl create namespace superdl
           kubectl apply -f deploy/app/k8s/01-rbac.yaml
-          SA=system:serviceaccount:superdl:superdl-tenant-mgr
-          # ensure_namespace 的 _create_or_patch 收敛路径需要的最小动词面(与 real.py 一一对应)
+
+          need() {   # <SA 短名> <动词> <资源>… 必须有
+            local sa="system:serviceaccount:superdl:$1"; shift
+            if ! kubectl auth can-i --as="$sa" "$@" > /dev/null; then
+              echo "::error::$1 缺动词:$* (01-rbac.yaml 与代码漂移)"
+              exit 1
+            fi
+          }
+          deny() {   # <SA 短名> <动词> <资源>… 必须没有
+            local sa="system:serviceaccount:superdl:$1"; shift
+            if kubectl auth can-i --as="$sa" "$@" > /dev/null; then
+              echo "::error::$1 越权动词被放行了:$*"
+              exit 1
+            fi
+          }
+
+          # ── tenant-mgr:ensure_namespace 的 _create_or_patch 收敛路径需要的最小动词面
+          #    (与 real.py 一一对应)
           for pair in "patch namespaces" "patch networkpolicies" "patch resourcequotas" \
                       "get limitranges" "create limitranges" "patch limitranges" \
                       "patch services" "create roles" "patch rolebindings" \
                       "escalate roles" "bind roles"; do
-            if ! kubectl auth can-i --as="$SA" $pair >/dev/null; then
-              echo "::error::superdl-tenant-mgr 缺动词:$pair(01-rbac.yaml 与 real.py 漂移)"
-              exit 1
-            fi
+            # shellcheck disable=SC2086
+            need superdl-tenant-mgr $pair
           done
           # 反向面:刻意不授的动词必须保持不授(最小权限回归闸)
           # escalate/bind 只开到命名空间级 roles:clusterroles 一旦可 escalate/bind 就是集群级提权
-          for pair in "delete namespaces" "patch nodes" "list secrets" \
+          for pair in "delete namespaces" "patch nodes" "delete nodes" "list secrets" \
                       "escalate clusterroles" "bind clusterroles"; do
-            if kubectl auth can-i --as="$SA" $pair >/dev/null; then
-              echo "::error::superdl-tenant-mgr 越权动词被放行了:$pair"
+            # shellcheck disable=SC2086
+            deny superdl-tenant-mgr $pair
+          done
+
+          # ── node-mgr:cordon/uncordon + 巡检回写标签 + 节点退役(node.decommission)
+          for pair in "get nodes" "list nodes" "patch nodes" "delete nodes"; do
+            # shellcheck disable=SC2086
+            need superdl-node-mgr $pair
+          done
+          # nodes 之外一律不许写;尤其 create nodes(伪造节点对象)与 secrets
+          for pair in "create nodes" "list secrets" "get secrets" "create pods" \
+                      "create namespaces" "escalate roles" "bind roles" \
+                      "escalate clusterroles" "bind clusterroles"; do
+            # shellcheck disable=SC2086
+            deny superdl-node-mgr $pair
+          done
+
+          # ── nodes:delete 只有 node-mgr 一家:退役是不可逆动作,而 nodes 是集群级资源
+          #    (resourceNames 对 delete 无效),多授一个身份就多一条「删控制面节点」的路。
+          #    对象白名单(只准删 GPU 工作节点)由 VAP 策略⑦ 兜,那条在下一个 step 断言。
+          for sa in superdl-api superdl-worker superdl-tenant-mgr superdl-prewarm superdl-disk-ops; do
+            deny "$sa" delete nodes
+            deny "$sa" patch nodes
+          done
+      # 准入策略反向断言(H1):RBAC 不给 secrets 动词**不等于**读不到 Secret ——
+      # 命名空间内的 pods:create / batch/jobs:create 就等价于该 ns 的 secrets:get
+      # (kubelet 代创建者解析 secretKeyRef / envFrom / secret 卷,不查任何 secrets 授权)。
+      # 上一步的静态动词面断言看不出这件事,只有真拿三个 SA 的身份去建对象才看得出。
+      # 本 step 结束即删掉策略,后面的 RealOrchestrator 冒烟仍在无准入面的裸 kind 上跑。
+      - name: 准入策略:平台 SA 读不到 superdl-auth/superdl-crypto
+        run: |
+          kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
+          # apply 成功 ≠ 生效:CEL 写错时 apiserver 只拒 Policy 而 Binding 照建,
+          # 集群里就成了「装了但全放行」。逐条回读——这是本 step 最要紧的一项断言。
+          for b in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope \
+                   superdl-global-pod-guard superdl-platform-pod-secret-scope \
+                   superdl-platform-job-secret-scope superdl-node-delete-scope; do
+            if ! kubectl get validatingadmissionpolicy "$b" > /dev/null 2>&1; then
+              echo "::error::ValidatingAdmissionPolicy $b 未被 apiserver 接受(CEL 写错?)= 该策略静默失效"
               exit 1
             fi
+            kubectl get validatingadmissionpolicybinding "$b" > /dev/null
           done
+
+          # server 端 dry-run:走完整准入链但不落对象,也不需要被引用的 Secret 真实存在
+          deny_check() { # <说明> <impersonate 身份> < 清单(stdin)
+            local what="$1" as="$2" out
+            if out=$(kubectl --as="$as" create --dry-run=server -f - 2>&1); then
+              echo "::error::${what} 竟被放行(as=${as}):平台主密钥可被读出"
+              echo "$out"
+              exit 1
+            fi
+            case "$out" in
+              *ValidatingAdmissionPolicy*) echo "  ✓ 拒绝:${what}" ;;
+              # 被 RBAC 403 挡下也算「没通过」,但那说明测的不是准入策略这一层,同样判红
+              *) echo "::error::${what} 被拒但原因不是准入策略(as=${as}):${out}"; exit 1 ;;
+            esac
+          }
+          allow_check() { # <说明> <impersonate 身份> < 清单(stdin)
+            local what="$1" as="$2" out
+            if ! out=$(kubectl --as="$as" create --dry-run=server -f - 2>&1); then
+              echo "::error::${what} 被误伤(as=${as}):${out}"
+              exit 1
+            fi
+            echo "  ✓ 放行:${what}"
+          }
+
+          # ── 反向:三个持 create 动词的 SA,各按自己真实的那条路径试读 superdl-auth ──
+          # tenant-mgr 持 pods:create
+          deny_check "tenant-mgr 建 Pod 取 superdl-auth 的 JWT 签发密钥" \
+            system:serviceaccount:superdl:superdl-tenant-mgr <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: leak-auth, namespace: superdl}
+          spec:
+            containers:
+              - name: c
+                image: busybox:1.36
+                command: ["sleep", "1"]
+                env:
+                  - name: LEAK
+                    valueFrom: {secretKeyRef: {name: superdl-auth, key: SUPERDL_JWT_SECRET}}
+          EOF
+          # prewarm 持 batch/jobs:create(没有 pods:create,越权面在 Job 模板上)
+          deny_check "prewarm 建 Job 整份注入 superdl-auth" \
+            system:serviceaccount:superdl:superdl-prewarm <<'EOF'
+          apiVersion: batch/v1
+          kind: Job
+          metadata: {name: leak-auth-prewarm, namespace: superdl}
+          spec:
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: c
+                    image: busybox:1.36
+                    command: ["sleep", "1"]
+                    envFrom:
+                      - secretRef: {name: superdl-auth}
+          EOF
+          # disk-ops 同样只有 batch/jobs:create;换成 Secret 卷这条路
+          deny_check "disk-ops 建 Job 把 superdl-crypto 挂成卷" \
+            system:serviceaccount:superdl:superdl-disk-ops <<'EOF'
+          apiVersion: batch/v1
+          kind: Job
+          metadata: {name: leak-crypto-diskops, namespace: superdl}
+          spec:
+            template:
+              spec:
+                restartPolicy: Never
+                volumes:
+                  - {name: s, secret: {secretName: superdl-crypto}}
+                containers:
+                  - name: c
+                    image: busybox:1.36
+                    command: ["sleep", "1"]
+                    volumeMounts: [{name: s, mountPath: /s}]
+          EOF
+          # Job 派生 Pod 由 kube-system:job-controller 创建,策略①按 username 匹配对它完全
+          # 不适用;这条断言的就是「Job 模板那层被绕过时,Pod 那层还在」
+          deny_check "job-controller 建 Pod 整份注入 superdl-auth" \
+            system:serviceaccount:kube-system:job-controller <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: leak-auth-jobc, namespace: superdl}
+          spec:
+            containers:
+              - name: c
+                image: busybox:1.36
+                command: ["sleep", "1"]
+                envFrom:
+                  - secretRef: {name: superdl-auth}
+          EOF
+
+          # ── 正向:合法引用必须仍然放行(只测 deny 的话,一条「全拒」的策略也会全绿)──
+          allow_check "配额 Job 取 superdl-db 的 juicefs-metaurl" \
+            system:serviceaccount:superdl:superdl-disk-ops <<'EOF'
+          apiVersion: batch/v1
+          kind: Job
+          metadata: {name: quota-ok, namespace: superdl}
+          spec:
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: quota
+                    image: busybox:1.36
+                    command: ["sleep", "1"]
+                    env:
+                      - name: JUICEFS_METAURL
+                        valueFrom: {secretKeyRef: {name: superdl-db, key: juicefs-metaurl}}
+          EOF
+          allow_check "预热 Job 引用 superdl-registry-pull 拉取凭据" \
+            system:serviceaccount:superdl:superdl-prewarm <<'EOF'
+          apiVersion: batch/v1
+          kind: Job
+          metadata: {name: prewarm-ok, namespace: superdl}
+          spec:
+            template:
+              spec:
+                restartPolicy: Never
+                imagePullSecrets: [{name: superdl-registry-pull}]
+                containers:
+                  - name: prewarm
+                    image: busybox:1.36
+                    command: ["sleep", "1"]
+          EOF
+          # 迁移 Job / 备份 CronJob 的 Pod 也由 job-controller 建,整份注入 superdl-db /
+          # superdl-pg-backup 是它们的正常形态,拦下它们 = 发布与备份当场停摆
+          allow_check "迁移 Job 的 Pod 整份注入 superdl-db" \
+            system:serviceaccount:kube-system:job-controller <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: migrate-ok, namespace: superdl}
+          spec:
+            containers:
+              - name: migrate
+                image: busybox:1.36
+                command: ["sleep", "1"]
+                envFrom:
+                  - secretRef: {name: superdl-db}
+          EOF
+
+          # ── 策略⑦:node.decommission 的 nodes:delete 只能落在 GPU 工作节点上 ──
+          # RBAC 给的是「删任意 Node」,收窄只能在准入层。删控制面 Node 的后果在本仓库尤其重:
+          # kubelet 会重新注册,但 node-restriction.kubernetes.io/superdl-infra 不会跟着回来
+          # (NodeRestriction 正是禁止 kubelet 自打该前缀),平台组件会全部 Pending。
+          deny_delete() { # <说明> <impersonate 身份> <node 名>
+            local what="$1" as="$2" node="$3" out
+            if out=$(kubectl --as="$as" delete node "$node" --dry-run=server 2>&1); then
+              echo "::error::${what} 竟被放行(as=${as}):${out}"
+              exit 1
+            fi
+            case "$out" in
+              *ValidatingAdmissionPolicy*) echo "  ✓ 拒绝:${what}" ;;
+              *) echo "::error::${what} 被拒但原因不是准入策略(as=${as}):${out}"; exit 1 ;;
+            esac
+          }
+          NODE_MGR=system:serviceaccount:superdl:superdl-node-mgr
+          # kind 的控制面节点(真实对象,带 node-role.kubernetes.io/control-plane)
+          CP_NODE=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o name | head -1)
+          deny_delete "node-mgr 删控制面节点" "$NODE_MGR" "${CP_NODE#node/}"
+          # 造两台探针节点:一台带 infra 落点标签(必须拒),一台干净的 GPU 工作节点(必须放行)
+          kubectl create -f - <<'EOF'
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: vap-probe-infra
+            labels: {node-restriction.kubernetes.io/superdl-infra: "true"}
+          EOF
+          kubectl create -f - <<'EOF'
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: vap-probe-gpu
+            labels: {superdl.io/pool: hami}
+          EOF
+          deny_delete "node-mgr 删带 infra 落点标签的节点" "$NODE_MGR" vap-probe-infra
+          if ! out=$(kubectl --as="$NODE_MGR" delete node vap-probe-gpu --dry-run=server 2>&1); then
+            echo "::error::node-mgr 退役 GPU 工作节点被误伤:${out}"
+            exit 1
+          fi
+          echo "  ✓ 放行:node-mgr 退役 GPU 工作节点"
+          kubectl delete node vap-probe-infra vap-probe-gpu
+
+          kubectl delete -f deploy/cluster/admission/tenant-restrictions.yaml
       - name: 生成 superdl-tenant-mgr 受限 kubeconfig
         run: |
           TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)

@@ -37,6 +37,9 @@
     # Harbor 自签/私有 CA(PEM 全文):非空即落 /etc/rancher/<distro>/harbor-ca.crt,
     # 与 ../cluster/rke2/registries.yaml 的 configs.tls.ca_file 配套;公信证书留空
     harbor_ca_pem: ""
+    # 装机后打平台落点标签用(见文末「控制面节点打平台组件落点标签」)
+    kubectl_bin: "{{ '/var/lib/rancher/rke2/bin/kubectl' if cluster_distro == 'rke2' else '/usr/local/bin/kubectl' }}"
+    kubeconfig_path: "/etc/rancher/{{ cluster_distro }}/{{ 'rke2.yaml' if cluster_distro == 'rke2' else 'k3s.yaml' }}"
   tasks:
     # 渲染【前】断言输入:replace() 无条件执行会把占位符直接抹掉,事后搜 CHANGE_ME
     # 的断言恒通过。agent token 缺失时节点回落使用 server token——那是能把新机器
@@ -93,24 +96,33 @@
       notify: restart-server
 
     # rke2:模板含 etcd-s3/agent-token 占位;渲染 + 无残留校验,一次落盘。
+    #
+    # 两条硬要求,改这几个 task 时不要退回去:
+    #   1. no_log: true —— 渲染产物含 agent token 与 etcd-s3 密钥。少了它,一次 -v / --diff
+    #      就把两把凭据原样打进控制台与 callback 日志(CI/堡垒机的 job 日志通常长期留存)。
+    #   2. 值一律经 | to_json 注入,不再手工拼引号:to_json 产出的是带完整转义的 JSON 字符串
+    #      字面量(YAML 1.2 的合法子集)。裸拼 '"' + token + '"' 时,凭据里一个双引号或换行
+    #      就能闭合字符串并往 server config 里注入任意指令(例如再开一个 kube-apiserver-arg)。
     - name: 渲染 rke2 server config
+      no_log: true
       set_fact:
         server_config: >-
           {{ lookup('file', '../cluster/rke2/server-config.yaml')
-             | replace('CHANGE_ME_ETCD_SNAPSHOT_BUCKET', etcd_snapshot_bucket)
-             | replace('CHANGE_ME_ETCD_S3_REGION', etcd_s3_region)
-             | replace('CHANGE_ME_ETCD_S3_ENDPOINT', etcd_s3_endpoint)
-             | replace('CHANGE_ME_ETCD_S3_ACCESS_KEY', etcd_s3_access_key)
-             | replace('CHANGE_ME_ETCD_S3_SECRET_KEY', etcd_s3_secret_key)
-             | replace('#agent-token: "CHANGE_ME_AGENT_TOKEN"', 'agent-token: "' + agent_token + '"') }}
+             | replace('"CHANGE_ME_ETCD_SNAPSHOT_BUCKET"', etcd_snapshot_bucket | to_json)
+             | replace('"CHANGE_ME_ETCD_S3_REGION"', etcd_s3_region | to_json)
+             | replace('"CHANGE_ME_ETCD_S3_ENDPOINT"', etcd_s3_endpoint | to_json)
+             | replace('"CHANGE_ME_ETCD_S3_ACCESS_KEY"', etcd_s3_access_key | to_json)
+             | replace('"CHANGE_ME_ETCD_S3_SECRET_KEY"', etcd_s3_secret_key | to_json)
+             | replace('"CHANGE_ME_AGENT_TOKEN"', agent_token | to_json) }}
       when: cluster_distro == 'rke2'
 
     # k3s:模板只有 agent-token 一处占位
     - name: 渲染 k3s server config
+      no_log: true
       set_fact:
         server_config: >-
           {{ lookup('file', '../cluster/k3s/server-config.yaml')
-             | replace('#agent-token: "CHANGE_ME_AGENT_TOKEN"', 'agent-token: "' + agent_token + '"') }}
+             | replace('"CHANGE_ME_AGENT_TOKEN"', agent_token | to_json) }}
       when: cluster_distro == 'k3s'
 
     - name: HA 参数完备性(api_vip 与 server_ips 必须同定义,且奇数台 ≥3)
@@ -127,6 +139,7 @@
     # HA(rke2 且定义 api_vip):tls-san 实块追加到配置末尾(模板内只是注释示例),
     # 渲染一次成型,首台与后续 server 拿到逐字节一致的产物
     - name: HA 集群渲染 tls-san(api_vip + 全部 server 地址入 apiserver 证书)
+      no_log: true   # server_config 此时已含 agent token 与 etcd-s3 密钥
       set_fact:
         server_config: >-
           {{ server_config }}
@@ -149,6 +162,7 @@
           etcd_s3_secret_key(rke2)与 agent_token,见 deploy/ansible/README.md
 
     - name: 落 server config(0600:含 etcd-s3 凭据与 agent token)
+      no_log: true   # copy 的 content 在 --diff / -v 下会被原样打印,那就是两把凭据
       copy:
         dest: "/etc/rancher/{{ cluster_distro }}/config.yaml"
         content: "{{ server_config }}"
@@ -209,6 +223,37 @@
         name: "{{ 'rke2-server' if cluster_distro == 'rke2' else 'k3s' }}.service"
         enabled: true
         state: started
+
+    # ── 平台组件落点标签:装机后用管理凭据打,**不能**退回节点自述的 node-label ──
+    # node-label 写在节点自己的 /etc/rancher/<distro>/config.yaml 里,任何一台加进来的机器
+    # 都能自称 infra,把带库连接串 / JWT 签发密钥 / 配置主密钥 / 支付渠道凭据的 API 与 worker
+    # 吸到攻击者持 root 的硬件上。node-restriction.kubernetes.io/ 前缀被 NodeRestriction 准入
+    # 插件拉黑(rke2/k3s server-config.yaml 的 kube-apiserver-arg 显式钉了该插件),
+    # kubelet 用自己的凭据既打不上也改不掉;平台 SA 同样无权(admission 策略③只放行
+    # superdl.io/*),即平台 SA 失陷也搬不动落点。
+    - name: 等待 kube-apiserver 就绪(打标签的前提)
+      command: "{{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }} get --raw=/readyz"
+      register: apiserver_ready
+      retries: 30
+      delay: 10
+      until: apiserver_ready.rc == 0
+      changed_when: false
+
+    - name: 控制面节点打平台组件落点标签(--overwrite:幂等,可反复跑)
+      # 选择器按 control-plane 角色而非主机名:节点名与 inventory 主机名不保证一致。
+      # 必须由本步骤用管理凭据打,不能回到 server-config.yaml 的 node-label:
+      # node-label 是 kubelet 自声明,持 join token 的机器把它写进自己的 config.yaml
+      # 就能把 api/worker/前端/Envoy 全吸到攻击者 root 的机器上。
+      # node-restriction.kubernetes.io/* 前缀由 NodeRestriction 准入插件禁止 kubelet 自签
+      # (rke2/k3s server-config.yaml 已显式钉住该插件),平台 SA 也无权改(VAP 策略③只放行
+      # superdl.io/*),于是这个落点只有握管理凭据的人能定。
+      command: >-
+        {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}
+        label nodes -l node-role.kubernetes.io/control-plane
+        node-restriction.kubernetes.io/superdl-infra=true
+        --overwrite
+      register: infra_label
+      changed_when: "'labeled' in infra_label.stdout"
 
   handlers:
     - name: restart-server

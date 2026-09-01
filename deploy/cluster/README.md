@@ -57,7 +57,7 @@ chart 侧 `crds.enabled=false`,顺序反了就是「新控制面 + 旧 CRD」:�
 悄悄丢掉而清单看着一切正常。
 
 入口的**配置**不在本目录,在 `../app/k8s/04-gateway.yaml`(GatewayClass / 6 个 listener / 4 条平台路由 /
-5 条策略);数据面 Envoy 的副本与资源也在那里的 `EnvoyProxy`,本目录 `values/envoy-gateway.yaml` 只管**控制面**。
+7 条策略);数据面 Envoy 的副本与资源也在那里的 `EnvoyProxy`,本目录 `values/envoy-gateway.yaml` 只管**控制面**。
 两处名字相近、键名也像,改错地方的表现是「值写了但完全没生效」,没有任何报错。
 
 **light 档单机尤其注意**:租户 Jupyter 一实例一条 HTTPRoute,活跃实例多了就是几百上千条路由全量下发进每个 Envoy,
@@ -80,15 +80,16 @@ chart 侧 `crds.enabled=false`,顺序反了就是「新控制面 + 旧 CRD」:�
    `/etc/rancher/rke2/config.yaml.d/50-join.yaml`(server 指 VIP:9345 + server token,首台严禁放)。
    VIP 就绪前可先单台上线,扩到 3 台前必须:tls-san 补齐 → 滚动重启全部 server → agent/cilium/netpol 统一切 VIP。
 2. **平台接入**:管理端「平台配置 · 集群接入」录入 server 地址(HA 集群录 `https://<VIP>:9345`,单 server 录该机 IP)
-   与 **agent token**(即 server-config.yaml 里 `agent-token` 的值,首装前生成,见该文件注释);
+   与 **agent token**(即 server-config.yaml 里 `agent-token` 的值,由 ansible 按 `agent_token` 变量渲染,见该文件注释);
    **禁止**录入 `/var/lib/rancher/rke2/server/node-token`(server token 能拉 server 进 etcd 环;
    轮换与托管见下文「server token 与 agent token」)。
    GPU 节点的 registries.yaml 由平台按「平台配置 · 镜像仓库」自动生成;server 节点由 ansible 分发 `rke2/registries.yaml`。
 3. **组件**:`./preflight.sh full && ./apply.sh full`(含 Loki/Alloy 日志栈,审计日志留存与查询见
    `runbooks/loki-logging.md`;presync 先跑 `./gateway-api-crds.sh` 按 experimental channel 装 Gateway API CRD)。
-   再 apply 准入策略(preflight 强制校验两个 Binding 存在且 Deny):
-   `kubectl apply -f admission/tenant-restrictions.yaml`
-   (首次上线可先 [Audit] 观察一周再改回 [Deny],见该文件头注释;Audit 期间 preflight 该项会报缺)
+   **准入策略不需要手工 apply**:`admission/tenant-restrictions.yaml` 的七条 VAP 由 `apply.sh` 在 helmfile
+   之前无条件下发并当场回读,七条**全部 `Deny`**、没有 Audit 观察期这一档;`preflight.sh`(apply 前)与
+   `scripts/release.sh`(滚动前)各再断言一次七个 Binding 存在且 `validationActions` 含 Deny ——
+   缺 Binding 是**静默 fail-open**(`failurePolicy: Fail` 只在策略被求值时才拦得住)。
 4. **镜像仓库(Harbor)**:平台镜像与租户实例镜像的权威源,镜像引用一律 Harbor 全限定名。
    Harbor 侧:建平台项目(默认 `superdl`)、仅 Pull + List Repository 权限的机器人账户、
    (可选)Docker Hub 等代理缓存项目(设 public)。管理端「平台配置 · 镜像仓库」录入地址 / 项目 /
@@ -106,16 +107,45 @@ chart 侧 `crds.enabled=false`,顺序反了就是「新控制面 + 旧 CRD」:�
    ```
 6. 验证:`runbooks/cluster-validation.md`。
 
-`apply.sh` 是 `helmfile apply` 的薄包装,固定两个必带开关(漏一个 apply 会中途失败,报错不指向真正的原因):
-`HELM_DIFF_USE_UPGRADE_DRY_RUN=true` 让 helm-diff 走服务端 dry-run(否则模板里的 `lookup` 恒空,
-kata-deploy 的身份校验会误判成「无法确认上一次安装」而拒绝升级),`--skip-diff-on-install` 跳过首装时的 diff
-(gpu-operator 首装时 ClusterPolicy CRD 还不存在)。单个 release:`./apply.sh light -l name=gpu-operator`。
+`apply.sh` 是本目录唯一的 apply 入口,两步:先 `kubectl apply -f admission/tenant-restrictions.yaml` 并回读
+七条 Policy 与 Binding(全是 cluster-scoped 对象,归集群层流水线;刻意不进 `../app/k8s/kustomization.yaml` ——
+那份是 namespace-scoped 应用清单,发布流水线不该因此需要集群级 VAP 写权限),再跑 `helmfile apply` 并固定两个
+必带开关(漏一个 apply 会中途失败,报错不指向真正的原因):`HELM_DIFF_USE_UPGRADE_DRY_RUN=true` 让 helm-diff
+走服务端 dry-run(否则模板里的 `lookup` 恒空,kata-deploy 的身份校验会误判成「无法确认上一次安装」而拒绝升级),
+`--skip-diff-on-install` 跳过首装时的 diff(gpu-operator 首装时 ClusterPolicy CRD 还不存在)。
+**别绕过它直接跑 helmfile**:准入策略缺失是静默 fail-open。单个 release:`./apply.sh light -l name=gpu-operator`。
+
+## 平台组件落点标签
+
+平台组件(api / 5 个 worker / 前端 / Envoy 数据面)的 `nodeSelector` 统一锚点是
+`node-restriction.kubernetes.io/superdl-infra=true`,**由 `../ansible/site.yml` 在装机后用管理凭据打到控制面
+节点上**,不走发行版的 `node-label`:`node-label` 写在节点自己的 `/etc/rancher/<distro>/config.yaml` 里,
+任何一台持 join token 加进来的机器都能自称 infra,把带库连接串 / JWT 签发密钥 / 配置主密钥 / 支付渠道凭据的
+API 与 worker、以及持有全部平台域与租户泛域名 TLS 私钥的 Envoy 数据面,吸到攻击者持 root 的硬件上。
+`node-restriction.kubernetes.io/` 前缀被 apiserver 的 NodeRestriction 准入插件拉黑,kubelet 用自己的凭据既
+打不上也改不掉(该插件在 `rke2/server-config.yaml` 与 `k3s/server-config.yaml` 的 `kube-apiserver-arg` 里
+显式钉住);平台 SA 也无权改这个前缀(准入策略③只放行 `superdl.io/*`),即平台 SA 失陷也搬不动落点。
+
+`preflight.sh` 三项复核:NodeRestriction 已启用、至少一台节点带该标签(缺了全部平台 Pod Pending)、
+**GPU 池节点严禁带该标签**(平台组件与租户计算同宿主 = 租户逃逸直达平台密钥)。手工补标:
+
+```bash
+kubectl label nodes -l node-role.kubernetes.io/control-plane \
+  node-restriction.kubernetes.io/superdl-infra=true --overwrite
+```
 
 ## server token 与 agent token(轮换 + 快照托管)
 
 - **职责分离**:server token(`/var/lib/rancher/<rke2|k3s>/server/node-token`)只允许留在 server 节点与
   本 runbook 约定的保险柜;agent token(server config 的 `agent-token` 值)录入平台库(AES-GCM 加密)
   并下发到 GPU 节点 agent config(0600 root):泄露 agent token 只能拉 agent,动不了 etcd。
+- **两份 server-config 模板里 `agent-token` 是取消注释的 `CHANGE_ME_AGENT_TOKEN` 占位行**,由 ansible 渲染
+  (值经 `group_vars/servers.yml` 或 `-e` 注入)。**不许把它注释回去**:注释掉 agent 就静默回落用 server token
+  认证,而 server token 能把新机器拉成 control-plane/etcd 成员 —— 回落既不报错也不告警。
+- `preflight.sh` 两道校验:模板侧要求该行原样存在且值仍是 `CHANGE_ME`(真值不得入库);集群侧比对
+  `agent-token` ≠ `/var/lib/rancher/<distro>/server/node-token` 且长度 ≥32。这两个文件只在 server 节点上,
+  别处跑 preflight 读不到 —— 人工核对后以 `SUPERDL_AGENT_TOKEN_ACK=yes` 登记(与 `SUPERDL_MANAGED_PG_PITR_ACK`
+  / `SUPERDL_LIGHT_INTERNAL_ACK` 同款登记开关;脚本不回显任何 token 值)。
 - **agent token 轮换**:改全部 server 的 config → 滚动重启 server(逐一,等 etcd 健康再下一台)→
   更新平台「集群接入」配置。**在册节点不受影响**(join 后靠客户端证书双向认证,token 只在首次加入时使用);
   轮换窗口内新节点加入用新 token。
@@ -140,9 +170,8 @@ kata-deploy 的身份校验会误判成「无法确认上一次安装」而拒�
    (config 已含 `disable: traefik` 与 `embedded-registry: true`=Spegel)
 2. **平台接入**:同 full 第 2 步(k3s 同样配 `agent-token`,见 k3s/server-config.yaml;
    禁止用 `/var/lib/rancher/k3s/server/node-token`;server 地址 `https://<ip>:6443`)。
-3. **组件**:`./preflight.sh light && ./apply.sh light`(同样由 presync 先装 Gateway API CRD),
-   再 apply 准入策略(preflight 强制校验两个 Binding 存在且 Deny):
-   `kubectl apply -f admission/tenant-restrictions.yaml`
+3. **组件**:`./preflight.sh light && ./apply.sh light`(同样由 presync 先装 Gateway API CRD;
+   准入策略同 full 第 3 步,由 `apply.sh` 自动下发并回读)。
 
    light 与 full 装同一套组件,差异只在 `values/light/` 的覆盖:
 

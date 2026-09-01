@@ -35,10 +35,11 @@ spec:
       # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点(full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
-        # 的 node-label 自动携带;自建 infra 节点打同款标签 + CriticalAddonsOnly taint)。
+        # 平台组件落点统一锚点。前缀 node-restriction.kubernetes.io/ 被 NodeRestriction 准入
+        # 插件拉黑,kubelet 不能自打(理由与不可自打的完整说明见 02-api.yaml 同处注释);
+        # 标签由 deploy/ansible/site.yml 装机后用管理凭据打在控制面节点上。
         # GPU 节点严禁打此标签。
-        node-role.superdl.io/infra: "true"
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
         # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
@@ -118,7 +119,8 @@ spec:
       serviceAccountName: superdl-tenant-mgr   # 租户资源编排写权限(01-rbac.yaml)
       priorityClassName: system-cluster-critical
       nodeSelector:
-        node-role.superdl.io/infra: "true"
+        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       topologySpreadConstraints:
@@ -193,7 +195,8 @@ spec:
       serviceAccountName: superdl-node-mgr   # nodes patch(cordon/标签)+ 只读探测(01-rbac.yaml)
       priorityClassName: system-cluster-critical
       nodeSelector:
-        node-role.superdl.io/infra: "true"
+        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       terminationGracePeriodSeconds: 660
@@ -256,7 +259,8 @@ spec:
       serviceAccountName: superdl-prewarm   # superdl ns 预热 Job + nodes 只读(01-rbac.yaml)
       priorityClassName: system-cluster-critical
       nodeSelector:
-        node-role.superdl.io/infra: "true"
+        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       terminationGracePeriodSeconds: 660
@@ -320,7 +324,8 @@ spec:
       serviceAccountName: superdl-disk-ops   # 配额下发/擦除 Job(01-rbac.yaml)
       priorityClassName: system-cluster-critical
       nodeSelector:
-        node-role.superdl.io/infra: "true"
+        # 见 02-api.yaml 同处注释:node-restriction.kubernetes.io/ 前缀 kubelet 不可自打
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         - {key: CriticalAddonsOnly, operator: Exists, effect: NoExecute}
       terminationGracePeriodSeconds: 660

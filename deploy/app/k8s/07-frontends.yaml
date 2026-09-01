@@ -21,8 +21,10 @@ spec:
       # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点;GPU 节点严禁打此标签。
-        node-role.superdl.io/infra: "true"
+        # 平台组件落点统一锚点;前缀 node-restriction.kubernetes.io/ 被 NodeRestriction 准入
+        # 插件拉黑,kubelet 不可自打(见 02-api.yaml 同处注释),标签由 deploy/ansible/site.yml
+        # 用管理凭据打在控制面节点上。GPU 节点严禁打此标签。
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
         # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending
@@ -113,8 +115,10 @@ spec:
       # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点;GPU 节点严禁打此标签。
-        node-role.superdl.io/infra: "true"
+        # 平台组件落点统一锚点;前缀 node-restriction.kubernetes.io/ 被 NodeRestriction 准入
+        # 插件拉黑,kubelet 不可自打(见 02-api.yaml 同处注释),标签由 deploy/ansible/site.yml
+        # 用管理凭据打在控制面节点上。GPU 节点严禁打此标签。
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
         # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending

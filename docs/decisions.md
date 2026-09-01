@@ -23,8 +23,12 @@
 
 ## 计费与资金
 
-- **余额归零即回收。** 冻结判据是 `balance > 0` 才放行,余额恰好 0.00 的账户照常进停机 → 冻结 → 回收链,
-  与停机判据 `effective <= 0` 自洽。由 `apps/api/tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。
+- **余额归零即回收,判据一律取可用余额(balance − frozen)。** 解冻判据是 `available > 0` 才放行,
+  可用余额恰好 0.00 的账户照常进停机 → 冻结 → 回收链,与停机判据 `effective <= 0` 自洽。
+  约束:欠费巡检的六处判据(粗筛 / 锁内二次读 / 低余额预警 payload / stopped→frozen / frozen→解冻 /
+  数据盘欠费链)不许有任何一处退回裸余额 —— 渠道冲正冻结的钱随时可能被拿回,而结算侧 `allow_frozen=True` 照扣不误。
+  由 `apps/api/tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 与
+  `apps/api/tests/test_patrol_arrears_frozen.py` 锁定。
 - **计费只认事件流水,指标只做对账。** Prometheus 全挂结算照常。见 `docs/architecture.md` §4、`docs/reference/billing.md`。
 - **不做渠道原路退款。** 退款单审批不动钱包,财务登记打款成功才负向核销,审批与打款分人。见 `docs/reference/payment.md`。
 - **票款双重兑现闸有两道**:申请退款时拒已开票账期(并对该账期的活跃发票申请行加锁,与开票串行);
@@ -72,6 +76,14 @@
 - **日志 PII / 凭据全局脱敏。** `apps/api/app/core/logging.py` 按键名(phone / id_number / token / secret /
   password / code)兜底打码,防新增日志点漏脱敏。
 - **账号级登录锁定。** 账号维 15 分钟窗 + 日窗阶梯锁定,与 IP 维桶叠加——撞库可以换 IP,换不了目标账号。
+  约束:**管理端的日窗账号桶只在失败后计数,不进 bcrypt 前的准入预检**(用户端仍进)。管理端没有第二条认证通路
+  (无短信、无找回),日桶又不清零,预检里带上它等于任何人用 30 个错口令就能把一个具名管理员锁死 24 小时、
+  只能进库改数据;摘掉预检后攻击者仍从第 31 次失败起吃 429,限速一点没松。见 `docs/reference/admin.md`。
+- **租户 SSH 入方向只排 Pod 网段,不排整段私网。** 22 端口的 from 是 `0.0.0.0/0` except `tenant_pod_cidr`
+  (默认 `10.42.0.0/16`)。整段私网排不得:跨节点 NodePort 经 SNAT 后来源是节点内网 IP,排掉就没人能 SSH;
+  Pod 网段必须排:Pod→Pod 是同一 overlay 内直连、不经 SNAT,不排等于把 22 端口对全集群租户敞开
+  (扫一遍 Pod 网段就能挨个连别人的实例)。约束:改 CNI 网段必须同步改 `tenant_pod_cidr`,否则要么漏放要么误封;
+  留空只作排障临时回退。见 `docs/reference/security.md`。
 - **安全功能是开关,不是 mock 提供方。** 人机验证、实名、管理端 MFA 一律用 `*_enabled` 布尔开关表达
   (平台配置·安全策略组);只有流程无它完不成的第三方各保留唯一一个替身(`sms_provider=mock` /
   `payment_mock` / `k8s_backend=fake`),prod 拒绝。prod 允许关闭安全开关,代价是配置中心红牌 + 审计 reason,
@@ -98,8 +110,18 @@
 - **worker 拆成 5 个组件 Deployment**(core / tenant-mgr / node-mgr / prewarm / disk-ops),RBAC 按组件最小化。
   约束:发布与回滚必须成组。见 `deploy/README.md`、`deploy/app/k8s/03-worker.yaml`。
 - **控制面 HA 与平台组件落点。** 公众生产强制 3 台 server 堆叠 etcd + VIP;平台组件以
-  `node-role.superdl.io/infra` 标签选址,不绑死 control-plane。约束:light 档(k3s 单机)只做试点与联调,
-  禁止公众生产。见 `deploy/cluster/README.md`。
+  `node-restriction.kubernetes.io/superdl-infra` 标签选址,不绑死 control-plane。**前缀刻意选 kubelet 打不上的那一族**:
+  任何走发行版 `node-label` 的自定义键(`node-role.superdl.io/infra` 这类)都是节点自声明的 —— 持 join token 的
+  机器把它写进自己的 config.yaml 就能把 API / worker / 前端 / Envoy 数据面吸到攻击者持 root 的硬件上;
+  `node-restriction.kubernetes.io/*`
+  被 NodeRestriction 准入插件拉黑(两份 server-config 的 `kube-apiserver-arg` 显式钉住该插件),标签改由
+  `deploy/ansible/site.yml` 装机后用管理凭据打,平台 SA 也无权改(准入策略③只放行 `superdl.io/*`)。
+  约束:light 档(k3s 单机)只做试点与联调,禁止公众生产。见 `deploy/cluster/README.md`。
+- **节点退役的角色门是 `ops`,不抬到 admin-only。** 与 cordon / 强制停止 / 强制回收同档 —— 都是运维对集群资源的
+  处置动作,抬到 admin 会让「机器已卖出 / 被扣押」这类必须立刻执行的场景卡在超管在不在线上;不可逆性由
+  必填 reason + 审计留痕承担,不由角色门槛承担。约束:「能删哪些节点」由准入策略⑦(拒删控制面 / etcd / infra 节点)
+  界定而不由 RBAC —— nodes 是集群级资源,`resourceNames` 对 delete 不适用;join token 轮换与 kubelet 证书吊销
+  是控制面动作,平台不执行,回执文案里明写交回运维。见 `docs/reference/nodes.md`。
 - **实例盘销毁带 TRIM。** TopoLVM lvmd `issue_discards=1`,`lvremove` 对 extent 发 NVMe TRIM。
 - **JuiceFS 关闭 writeback。** 数据盘一致性优先于顺序写性能。
 - **镜像仓库定为 Harbor,接入参数入配置中心。** `registry_host / registry_project / registry_robot_name /

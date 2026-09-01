@@ -4,13 +4,22 @@
 #   superdl-worker     → core worker(计费/通知/保洁):纯 DB + 外部渠道,零 K8s 权限
 #                        (无任何 ClusterRoleBinding;SA 仅为身份与 VAP 匹配锚点)。
 #   superdl-tenant-mgr → tenant-mgr worker:租户资源全生命周期(instance.* + reconciler)。
-#   superdl-node-mgr   → node-mgr worker:nodes:patch(cordon/巡检回写标签)+ 只读探测。
+#   superdl-node-mgr   → node-mgr worker:nodes:patch(cordon/巡检回写标签)+ nodes:delete(退役)+ 只读探测。
 #   superdl-prewarm    → prewarm worker:superdl ns 预热 Job + nodes 只读(挑选拉取目标)。
 #   superdl-disk-ops   → disk-ops worker:配额下发/擦除 Job(superdl + tenant ns)。
 #
 # tenant-* namespace 动态创建,写权限只能给 ClusterRole;实际可达面由
 # deploy/cluster/admission/tenant-restrictions.yaml 的策略①③收窄,二者叠加才是最小权限。
 # 两条 VAP 按 SA 前缀匹配,新组件 SA 自动纳入。
+#
+# ⚠ 铁律:**「不给 secrets 动词」并不等于「读不到 Secret」**。命名空间内的
+# `pods:create`(tenant-mgr)与 `batch/jobs:create`(prewarm / disk-ops)都等价于该命名空间的
+# `secrets:get` —— kubelet 代创建者解析 secretKeyRef / envFrom / secret 卷 / imagePullSecrets,
+# 这条路径**不做任何 secrets 授权检查**,PSA restricted 也管不着(一个 sleep+env 的 Pod
+# 完全合规)。挡住它的是 tenant-restrictions.yaml 的策略⑤⑥(superdl ns 内 Pod / Job 模板的
+# Secret 引用白名单,含 job-controller 这条 Job 派生路径)。
+# 结论:本文件的动词面 + 策略①③⑤⑥⑦ 才是完整边界;删任一条都会把平台主密钥重新暴露出来,
+# 或(⑦)让一次「退役」把控制面节点从集群里摘掉。
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -102,6 +111,9 @@ subjects:
 # namespace 时同步下发同名 Role/RoleBinding(real.py _ensure_tenant_rbac_sync),
 # secrets 权限收窄到本租户 ns 内。残留面:pods:list 仍全集群(reconciler 全量 LIST
 # 需要),但平台侧敏感值恒走 secretKeyRef,Pod 规约只暴露 Secret 名,不含值。
+# ⚠ 但 pods:create 本身就是「该 ns 内全部 Secret 的读权限」(见本文件头注释的铁律):
+# tenant-mgr 能在 superdl ns 建 Pod(策略①放行 superdl),故 superdl-auth/superdl-crypto
+# 的实际防线是策略⑤的 Secret 引用白名单,不是这里少给的 secrets 动词。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -153,8 +165,15 @@ subjects:
     name: superdl-tenant-mgr
     namespace: superdl
 ---
-# node-mgr:管理端 cordon/uncordon(经 outbox)+ 巡检回写型号标签。
+# node-mgr:管理端 cordon/uncordon(经 outbox)+ 巡检回写型号标签 + 节点退役(node.decommission)。
 # 字段级收窄(unschedulable + superdl.io/* 标签)由 VAP 策略③完成,RBAC 只能到资源粒度。
+#
+# delete 是本 SA 唯一不可逆的动词,且 nodes 是集群级资源(resourceNames 对 delete 同样无效),
+# 所以它的收窄只能在准入层:VAP 策略⑦ 拒绝删除控制面 / infra 节点,平台只能退役 GPU 工作节点。
+# 少了⑦,一个失陷的 node-mgr 可以删掉控制面节点对象 —— kubelet 会重新注册,但
+# node-restriction.kubernetes.io/superdl-infra 标签**不会**跟着回来(NodeRestriction 正是禁止
+# kubelet 自己打该前缀),于是 api/worker/前端/Envoy 数据面全部 Pending,直到有人用管理凭据
+# 重新打标(deploy/ansible/site.yml 的那一步)。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -162,7 +181,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list", "patch"]
+    verbs: ["get", "list", "patch", "delete"]   # delete 新增:节点退役
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -228,8 +247,16 @@ subjects:
 ---
 # superdl ns 内的拉取凭据写权限(仅 prewarm 预热 Job 用;配额 Job 的 metaurl 由 kubelet
 # 经 secretKeyRef 注入,磁盘 worker 自身不需要 secrets 权限)。
-# get/patch 按 resourceNames 收窄到 superdl-registry-pull;create 不支持 resourceNames,
-# 只能新建不能读既有(superdl-db 等平台 Secret 对该 SA 仍不可读)。
+# get/patch 按 resourceNames 收窄到 superdl-registry-pull。
+#
+# create 保留但不可收窄:real.py _ensure_pull_secret_sync 是「读不到就建、读到就 patch」,
+# 首装(或 Secret 被删)时必须能建出 superdl-registry-pull,去掉 create 会让预热链路
+# 在 Harbor 机器人配好后仍恒 403。RBAC 的 create 不支持 resourceNames,收窄只能在准入层:
+#   - 类型侧:策略①禁止平台 SA 建 kubernetes.io/service-account-token 类型的 Secret
+#     ——否则 create 一个名叫 superdl-registry-pull 的 SA token Secret + 已有的 get 白名单,
+#     就能把任意 SA 的长期令牌读出来;
+#   - 引用侧:策略⑤⑥限定 Pod / Job 模板能引用哪些 Secret。
+# 注意 create **不能**推出「读不到既有 Secret」:读既有 Secret 的路子是建 Pod/Job(见文件头)。
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

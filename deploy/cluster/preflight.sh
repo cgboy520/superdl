@@ -107,16 +107,20 @@ for f in "${placeholder_files[@]}"; do
 done
 
 say "== 分发模板卫生(rke2/k3s server-config 是模板,不是渲染产物)=="
-# 反向检查:模板里 agent-token/etcd-s3 必须保持注释/占位。取消注释意味着真实凭据
-# 被提交进仓库;site.yml 的渲染前断言要求 agent_token 经 group_vars/servers.yml 或 -e 注入,绝不落模板。
+# 两个方向都要卡:
+#   - agent-token 必须**在**模板里且不被注释:注释掉它 agent 就静默回落用 server token 认证,
+#     而 server token 能把新机器拉成 control-plane/etcd 成员 —— 节点失陷即控制面失陷,
+#     且没有任何日志或告警提示发生了回落;
+#   - 值必须保持 CHANGE_ME 占位:换成真值意味着凭据被提交进仓库。site.yml 的渲染前断言要求
+#     agent_token 经 group_vars/servers.yml(不入 git)或 -e 注入,绝不落模板。
 for tpl in rke2/server-config.yaml k3s/server-config.yaml; do
   [[ -f "$tpl" ]] || continue
-  if grep -qE '^agent-token:' "$tpl"; then
-    miss "$tpl 的 agent-token 被取消了注释(真实 token 不得入库;经 ansible 变量注入)"
-  elif ! grep -qE '^#agent-token: "CHANGE_ME_AGENT_TOKEN"$' "$tpl"; then
-    miss "$tpl 缺少 #agent-token CHANGE_ME 占位行(模板被改动?site.yml 渲染依赖该行)"
+  if grep -qE '^\s*#\s*agent-token:' "$tpl"; then
+    miss "$tpl 的 agent-token 被注释掉了(agent 回落用 server token 认证 = 一台 GPU 机器失陷即可入 etcd)"
+  elif ! grep -qE '^agent-token: "CHANGE_ME_AGENT_TOKEN"$' "$tpl"; then
+    miss "$tpl 的 agent-token 不是 CHANGE_ME 占位行(真实 token 不得入库;site.yml 渲染依赖该行原样)"
   else
-    ok "$tpl agent-token 占位完好"
+    ok "$tpl agent-token 已启用且占位完好"
   fi
 done
 if [[ "$env_name" == "full" ]]; then
@@ -197,9 +201,13 @@ else
 fi
 
 say "== 准入策略(ValidatingAdmissionPolicy 必须 Deny 生效)=="
-# 正式发布前三个 Binding 必须是 Deny,本检查按 Deny 卡。
-# superdl-global-pod-guard 面大且覆盖第三方 ns,仍在 Audit 观察期,转 Deny 后补进本清单。
-for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope; do
+# 七个 Binding 全部按 Deny 卡。**缺 Binding 是静默 fail-open**:failurePolicy: Fail 只在策略被
+# 求值时生效,策略压根没装的集群等于全放行 —— 而 tenant-mgr 的 pods:create 是全命名空间的
+# (含 kube-system)、roles:escalate/bind 也是,少了 superdl-platform-sa-scope 它约等于
+# cluster-admin。策略由 ./apply.sh 在 helmfile 前自动 apply,scripts/release.sh 滚动前二次断言。
+for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-node-field-scope \
+  superdl-global-pod-guard superdl-platform-pod-secret-scope superdl-platform-job-secret-scope \
+  superdl-node-delete-scope; do
   actions=$(kubectl get validatingadmissionpolicybinding "$binding" \
     -o jsonpath='{.spec.validationActions[*]}' 2>/dev/null || true)
   if [[ -z "$actions" ]]; then
@@ -207,9 +215,95 @@ for binding in superdl-platform-sa-scope superdl-tenant-pod-baseline superdl-nod
   elif [[ " $actions " == *" Deny "* ]]; then
     ok "ValidatingAdmissionPolicyBinding $binding validationActions=[$actions]"
   else
-    miss "ValidatingAdmissionPolicyBinding $binding validationActions=[$actions] 不含 Deny(Audit 观察期结束后改回)"
+    miss "ValidatingAdmissionPolicyBinding $binding validationActions=[$actions] 不含 Deny(仓库里七条都是 Deny:集群里被人改成 Audit 了?)"
+  fi
+  # Binding 在而 Policy 不在 = 同样静默失效(CEL 写错时 apiserver 只拒 Policy,Binding 照建)
+  if ! kubectl get validatingadmissionpolicy "$binding" >/dev/null 2>&1; then
+    miss "ValidatingAdmissionPolicy $binding 不存在而 Binding 在:策略被 apiserver 拒收(多为 CEL 写错),当前等于全放行"
   fi
 done
+
+say "== apiserver 准入插件 NodeRestriction(平台落点标签不可被 kubelet 自打的唯一依据)=="
+# deploy/app/k8s 各清单的 nodeSelector 用 node-restriction.kubernetes.io/superdl-infra,
+# 挡住「节点自称 infra」的只有这个插件。它没开 = 任何加入的机器都能把带库连接串 /
+# JWT 签发密钥 / 配置主密钥的 API 与 worker 吸到攻击者持 root 的硬件上。
+# rke2:apiserver 是 kube-system 静态 Pod,直接读 command;
+# k3s:apiserver 内嵌在 k3s 进程里,集群外读不到,退化为读本机 /etc/rancher/<distro>/config.yaml。
+nr_seen=0
+nr_ok=0
+api_cmd="$(kubectl -n kube-system get pods -l component=kube-apiserver,tier=control-plane \
+  -o jsonpath='{.items[*].spec.containers[*].command}' 2>/dev/null || true)"
+if [[ -n "$api_cmd" ]]; then
+  nr_seen=1
+  [[ "$api_cmd" == *NodeRestriction* ]] && nr_ok=1
+else
+  for cfg in /etc/rancher/rke2/config.yaml /etc/rancher/k3s/config.yaml; do
+    [[ -r "$cfg" ]] || continue
+    nr_seen=1
+    grep -qE '^[[:space:]]*-[[:space:]]*enable-admission-plugins=.*NodeRestriction' "$cfg" && nr_ok=1
+  done
+fi
+if [[ "$nr_seen" == "0" ]]; then
+  miss "无法确认 kube-apiserver 是否启用 NodeRestriction(k3s 的 apiserver 是内嵌进程,集群外看不到):在任一 server 节点上重跑本脚本,或人工确认 /etc/rancher/<distro>/config.yaml 的 kube-apiserver-arg 含 enable-admission-plugins=NodeRestriction"
+elif [[ "$nr_ok" == "1" ]]; then
+  ok "kube-apiserver 已启用 NodeRestriction"
+else
+  miss "kube-apiserver 未启用 NodeRestriction:rke2/k3s server-config.yaml 的 kube-apiserver-arg 补 enable-admission-plugins=NodeRestriction 后滚动重启各 server"
+fi
+
+say "== 平台组件落点标签(缺了全部平台 Pod 会 Pending)=="
+infra_nodes=$(kubectl get nodes -l node-restriction.kubernetes.io/superdl-infra=true \
+  -o name 2>/dev/null | grep -c . || true)
+if [[ "$infra_nodes" -ge 1 ]]; then
+  ok "node-restriction.kubernetes.io/superdl-infra=true 已打在 $infra_nodes 台节点上"
+else
+  miss "无节点带 node-restriction.kubernetes.io/superdl-infra=true:deploy/app/k8s 的 api/worker/前端/Envoy 数据面全部 Pending。由 deploy/ansible/site.yml 装机后打;手工补:kubectl label nodes -l node-role.kubernetes.io/control-plane node-restriction.kubernetes.io/superdl-infra=true"
+fi
+# 反向:GPU 池节点严禁带 infra 标签(平台组件与租户计算同宿主 = 租户逃逸直达平台密钥)
+gpu_infra=$(kubectl get nodes -l 'node-restriction.kubernetes.io/superdl-infra=true,superdl.io/pool' \
+  -o name 2>/dev/null | grep -c . || true)
+if [[ "$gpu_infra" -eq 0 ]]; then
+  ok "无 GPU 池节点带 infra 标签"
+else
+  miss "$gpu_infra 台带 superdl.io/pool 的 GPU 节点同时带 infra 标签:平台组件会调度到租户计算节点上(kubectl label node <name> node-restriction.kubernetes.io/superdl-infra-)"
+fi
+
+say "== 节点加入凭据(agent token 必须 ≠ server node-token)=="
+# agent-token 未设或与 server token 相同时,一台被攻破的 GPU 机器可以用同一把凭据把自己
+# 拉成 control-plane/etcd 成员 —— 节点失陷即集群失陷,且没有任何告警。
+# 两个文件都只存在于 server 节点,故只有在 server 上跑本脚本才能自动核对;
+# 别处以 SUPERDL_AGENT_TOKEN_ACK=yes 登记人工核对结果(不回显任何 token 值)。
+tok_seen=0
+for d in rke2 k3s; do
+  cfg="/etc/rancher/$d/config.yaml"
+  ntok="/var/lib/rancher/$d/server/node-token"
+  [[ -r "$cfg" && -r "$ntok" ]] || continue
+  tok_seen=1
+  # -n + p:取不到就是空串(而不是把整行当成 token,那会假阳性通过下面的判等)
+  agent_tok="$(sed -nE 's/^agent-token:[[:space:]]*"([^"]*)".*$/\1/p' "$cfg" | head -1)"
+  if [[ -z "$agent_tok" ]]; then   # 未加引号的写法
+    agent_tok="$(sed -nE 's/^agent-token:[[:space:]]*([^"[:space:]#]+).*$/\1/p' "$cfg" | head -1)"
+  fi
+  srv_tok="$(tr -d '\n' < "$ntok")"
+  # node-token 形如 K10<ca-hash>::server:<password>,真正的凭据是最后一段
+  srv_pass="${srv_tok##*:}"
+  if [[ -z "$agent_tok" || "$agent_tok" == *CHANGE_ME* ]]; then
+    miss "$cfg 的 agent-token 未设置或仍是占位:agent 会回落用 server token 认证"
+  elif [[ "$agent_tok" == "$srv_pass" || "$agent_tok" == "$srv_tok" ]]; then
+    miss "$cfg 的 agent-token 与 server node-token 相同:下发给 GPU 节点的凭据可以拉起 server(轮换见 README「server token 与 agent token」)"
+  elif [[ ${#agent_tok} -lt 32 ]]; then
+    miss "$cfg 的 agent-token 短于 32 字符(openssl rand -hex 32 生成)"
+  else
+    ok "$d agent-token 已设且与 server node-token 不同"
+  fi
+done
+if [[ "$tok_seen" == "0" ]]; then
+  if [[ "${SUPERDL_AGENT_TOKEN_ACK:-}" == "yes" ]]; then
+    ok "agent token ≠ server node-token 已人工确认(SUPERDL_AGENT_TOKEN_ACK=yes)"
+  else
+    miss "本机不是 server 节点,读不到 /etc/rancher/<distro>/config.yaml 与 server/node-token:在任一 server 上重跑本脚本,或人工核对两者不同后以 SUPERDL_AGENT_TOKEN_ACK=yes 重跑"
+  fi
+fi
 
 say "== 应用 NetworkPolicy 出向(提示性)=="
 netpol=../app/k8s/09-networkpolicy.yaml

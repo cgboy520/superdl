@@ -4,23 +4,25 @@
 |---|---|
 | `app/` | 平台自身部署:本地 compose(PG18)+ 生产 K8s 清单(`k8s/`:API/worker/前端/网关与 TLS/RBAC/迁移 Job/PG 备份 CronJob)+ 前端镜像(`frontend.Dockerfile`+nginx) |
 | `ansible/` | 初始控制面装机([servers] 组 rke2/k3s server:审计策略、server config 渲染、安装器 sha256 校验后安装)。GPU 节点一律走管理端「添加节点」一键命令(node-join.sh),不走 ansible |
-| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Envoy Gateway 北向入口 + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 不跟 chart 走,由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为准入策略(非 helm release,发布流程内单独 `kubectl apply`,preflight 强制校验 Deny 生效) |
+| `cluster/` | 集群组件 helmfile(RKE2/k3s + Cilium + GPU Operator + HAMi + kube-prometheus-stack + JuiceFS CSI + TopoLVM + Envoy Gateway 北向入口 + Loki/Alloy 日志栈),full/light 双档与版本锁定见 `cluster/README.md`;Gateway API CRD 不跟 chart 走,由 `cluster/gateway-api-crds.sh` 单点管(helmfile presync 调用);`cluster/admission/` 为准入策略(七条 VAP,非 helm release,由 `cluster/apply.sh` 在 helmfile 之前自动 apply 并回读,`cluster/preflight.sh` 与 `scripts/release.sh` 各再断言一次全部为 Deny) |
 
 平台代码不依赖真实集群:K8s 走 `app/core/k8s` 抽象层,dev/test 用 FakeOrchestrator。
 
 ## 生产发布流程(deploy/app/k8s)
 
 发布走 `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh <tag>` 一个入口,禁止绕过脚本手改各清单 tag:
-迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`(Harbor 项目前缀)与 `CHANGE_TAG` 再 apply → rollout status →
-经网关从集群外 GET `/readyz`;任一步失败即非零退出。
+准入策略断言 → 迁移 Job → kustomize 渲染后替换占位 `CHANGE_IMAGE_PREFIX`(Harbor 项目前缀)、平台镜像按
+**不可变 digest** 钉死再 apply → rollout status → 经网关从集群外 GET `/readyz`;任一步失败即非零退出。
 
 1. `helmfile -e <full|light> apply`(cluster/,先 `./preflight.sh`;双档见 `cluster/README.md`)→ 按 `app/secrets.example.yaml` 建分域 Secret(`superdl-db`/`superdl-auth`/`superdl-crypto`/`superdl-metrics`/`superdl-edge`/`superdl-cloud`/`superdl-payment`/`superdl-registry`)与 `superdl-registry-pull`(Harbor 拉取机器人;项目 public 可省)。值不入库;字段清单见 `app/k8s/00-namespace-config.yaml`(非密)与 `app/secrets.example.yaml`(密),prod 必配项以 `docs/reference/security.md` 的 `_validate_prod` 清单为准
 2. 打 tag:`gh release create vX.Y.Z --generate-notes`(一步建 tag 与 GitHub Release,release notes 由提交信息生成,不维护 CHANGELOG 文件)。tag 触发 `.github/workflows/release.yml`:CI 闸门(api/frontend/security 复跑)→ 构建 api/web/admin 三镜像 + Trivy 扫描 + 推 Harbor(仓库 secrets `HARBOR_HOST` / `HARBOR_ROBOT_NAME`(push 机器人)/ `HARBOR_ROBOT_SECRET`,variables `HARBOR_PROJECT` 缺省 superdl)。api 镜像三环境同一产物;mock 支付回调路由仅在非 prod 注册
-3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`:
-   - 第 1 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`,**必须先于滚动**:`/readyz` 比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都在这一关现形;
-   - 第 2 步 `kubectl kustomize` 渲染后把两个占位换成 Harbor 项目前缀与本次 tag 再 apply;
-   - 第 3 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不重复探测);
-   - 第 4 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,验 DNS / TLS / 网关路由:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败按下方回滚指引处理。
+3. `SUPERDL_IMAGE_PREFIX=harbor.<域>/superdl scripts/release.sh vX.Y.Z`(前置工具:`kubectl` + `crane` / `skopeo` / `docker buildx` 三选一,需对 Harbor 有读权限且已 `docker login` —— 三个都没有就拒绝发布,不按可变 tag 下发):
+   - 第 0 步断言集群里七条准入策略的 Policy 与 Binding 都在且 `validationActions` 含 Deny。缺 Binding 是**静默 fail-open**(`failurePolicy: Fail` 只在策略被求值时生效),而 tenant-mgr 的 `pods:create` 与 `roles:escalate/bind` 是全命名空间的;策略本身由 `cluster/apply.sh` 下发,这里在滚动前再断言一次,免得集群层与应用层各发各的、谁也不知道准入面已经没了;
+   - 第 1 步检查 `superdl-registry-pull`(Harbor 拉取机器人;private 项目缺它则新 Pod 一律 ImagePullBackOff,仅告警不阻断);
+   - 第 2 步建迁移 Job(`k8s/10-migrate-job.yaml`,Job 不可 apply 复用故单独 create)并 `wait complete`,**必须先于滚动**:`/readyz` 比对 DB `alembic_version` 与代码 head,迁移未跑(503 `schema_mismatch`)或库从未迁移(503 `never_migrated`)时新 Pod 不接流量,漏跑/乱序都在这一关现形;
+   - 第 3 步 `kubectl kustomize` 渲染后 apply:tag 先解析成**不可变 digest**,三条平台镜像整串换成 `<前缀>/superdl-<name>@sha256:...`。Harbor 默认不开 immutable rule,同名 tag 重推之后已在跑的节点仍用旧镜像(`imagePullPolicy: IfNotPresent`)而新调度的 Pod 拉到新内容 —— 两个版本同时在线且无任何提示;`release.yml` 的 cosign 也按 digest 签名,按 digest 下发才让「签了名的那份」与「跑起来的那份」是同一个东西。渲染后自检:`CHANGE_*` 占位零残留 + 平台镜像一律带 `@sha256:`,任一不满足即拒绝下发(`CHANGE_TAG` 仍保留给迁移 Job 的 Job 名,那不是镜像);
+   - 第 4 步等全部 Deployment(api + 5 个 worker 组件 + web/admin)滚动完成(readinessProbe 即 `/readyz`,Pod 内不重复探测);
+   - 第 5 步经网关从集群外 `curl -fsS https://<api-domain>/readyz`,验 DNS / TLS / 网关路由:域名取环境变量 `SUPERDL_API_BASE_URL`,缺省读 ConfigMap `superdl-api-config` 的 `SUPERDL_PUBLIC_BASE_URL`,取不到或仍是占位则跳过并提示。失败按下方回滚指引处理。
 4. 首个管理员(库迁移后、仅首发一次):`cd apps/api && uv run python scripts/bootstrap_admin.py`(prod 可跑;`seed_dev.py` 只允许 dev/test),口令只打印一次,首次登录强制绑定 TOTP
 5. 备份:`06-pg-backup.yaml` 每日逻辑备份;恢复演练见 `cluster/runbooks/pg-backup-restore.md`
 
@@ -31,7 +33,7 @@
   (worker 共 5 个 Deployment,回滚必须成组;或 `scripts/release.sh <上一 tag>` 重放一遍,迁移 Job 对已追平的库是 no-op)。
 - **不得回滚的情形**:本次发布含 contract 迁移(删列/改名/改类型,见下节;两窗口之间禁止回滚越过边界)。
   回滚前 `git log <上一 tag>..<当前 tag> -- apps/api/alembic/versions/` 确认只有 expand 类迁移。
-- 回滚后核对:`kubectl -n superdl rollout status` × 8(api + 5 个 worker 组件 + web/admin)+ 外部 `/readyz` 一条(同 release.sh 第 4 步)。
+- 回滚后核对:`kubectl -n superdl rollout status` × 8(api + 5 个 worker 组件 + web/admin)+ 外部 `/readyz` 一条(同 release.sh 第 5 步)。
 
 ### 迁移向前兼容窗口(expand-only)规范
 

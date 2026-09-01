@@ -21,10 +21,15 @@ spec:
       # 优先级压过租户 Pod:节点资源紧张时不与租户同级被驱逐
       priorityClassName: system-cluster-critical
       nodeSelector:
-        # 平台组件落点统一锚点(full 档 RKE2 server / light 档 k3s server 经 server-config.yaml
-        # 的 node-label 自动携带;自建 infra 节点打同款标签 + CriticalAddonsOnly taint)。
+        # 平台组件落点统一锚点。**必须用 node-restriction.kubernetes.io/ 前缀**:该前缀被
+        # apiserver 的 NodeRestriction 准入插件拉黑,kubelet 无论如何都不能给自己打上它
+        # (rke2/k3s server-config.yaml 显式钉了这个插件)。旧的 node-role.superdl.io/infra
+        # 是节点在自己的 config.yaml 里 node-label 自打的 —— 任何一台加进来的 GPU 机器都能
+        # 声称自己是 infra,把带库连接串/JWT 签发密钥/配置主密钥的 API 与 worker 吸过去。
+        # 标签由 deploy/ansible/site.yml 装机后用管理凭据打在控制面节点上;平台 SA 无权改
+        # 这个前缀(admission 策略③只放行 superdl.io/*),失陷的平台 SA 同样搬不动落点。
         # GPU 节点严禁打此标签。
-        node-role.superdl.io/infra: "true"
+        node-restriction.kubernetes.io/superdl-infra: "true"
       tolerations:
         # 必须与 nodeSelector 成对:server 带 CriticalAddonsOnly=true:NoExecute
         # (rke2/server-config.yaml node-taint),只钉标签不容忍污点 = Pod 永远 Pending

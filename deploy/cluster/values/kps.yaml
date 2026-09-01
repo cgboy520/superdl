@@ -239,13 +239,22 @@ alertmanager:
                 # kubectl -n monitoring create secret generic superdl-alert-token \
                 #   --from-literal=token=<随机强 token>
                 credentials_file: /etc/alertmanager/secrets/superdl-alert-token/token
-      # 第二通道必填:外部 SMTP,不经过平台任何组件;留占位值等于没有第二通道。
+      # 第二通道必填:外部 SMTP,不经过平台任何组件。
+      #
+      # ⚠ 未替换下面四行的**实际后果**,不是「少一条通道」:
+      # 默认路由的 receiver 是 superdl-api,而那条 webhook 指向的
+      # http://superdl-api.superdl.svc —— **被监控的对象自己**。API 挂了 / 网关挂了 /
+      # superdl 命名空间整个不可用时,告警发不出去的原因恰恰就是要告的那件事;
+      # 第三通道(钉钉)默认是注释掉的。于是占位没替换 = critical 告警只剩一条依赖被监控方的
+      # 通道,平台全挂时值班**一个字都收不到**,而监控面板看上去一切正常。
+      # 占位刻意写成 CHANGE_ME_*(而不是 example.com 那种看着像真值的串):
+      # preflight.sh 扫本文件的非注释行,含 CHANGE_ME 即阻断 apply,替换不掉不许上线。
       - name: superdl-oncall-mail
         email_configs:
-          - to: "oncall@superdl.example.com"          # CHANGE_ME
-            from: "alertmanager@superdl.example.com"  # CHANGE_ME
-            smarthost: "smtp.example.com:465"         # CHANGE_ME(外部邮件服务商)
-            auth_username: "alertmanager@superdl.example.com"  # CHANGE_ME
+          - to: "CHANGE_ME_ONCALL_MAIL"            # 值班收件人(用邮件组,别写个人地址)
+            from: "CHANGE_ME_ALERT_FROM_MAIL"      # 发件地址
+            smarthost: "CHANGE_ME_SMTP_HOST:465"   # 外部邮件服务商;**不得**指向本集群内的服务
+            auth_username: "CHANGE_ME_SMTP_USERNAME"
             auth_password_file: /etc/alertmanager/secrets/superdl-smtp-password/password
             require_tls: true
       # 第三通道(仅 critical):钉钉群机器人。Alertmanager 原生不签发钉钉格式,须经
@@ -457,3 +466,59 @@ additionalPrometheusRulesMap:
             for: 10m
             labels: {severity: warning}
             annotations: {summary: "证书 {{ $labels.name }}({{ $labels.namespace }})持续 10 分钟未就绪:查 cert-manager 签发事件与 DNS01 solver", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/acme-dns.md"}
+  # 安全域告警。上面 32 条全是可用性/容量/计费/对账,没有一条盯「有人在攻」——
+  # ApiHighErrorRate 只匹配 status=~"5..",爆破与越权探测恰恰全是 4xx,永远不会触发它。
+  # 指标定义见 apps/api/app/core/metrics.py;排查入口统一是 Loki(按 request_id 串全链)。
+  superdl-security:
+    groups:
+      - name: superdl.security
+        rules:
+          # 撞库/爆破:正常用户输错口令是零星的,5 分钟内几十次一定不是人在敲键盘。
+          # 应用层另有固定窗口限流(core/ratelimit.py)与边缘限流,这条是「被打了要有人知道」。
+          - alert: LoginFailureSpike
+            expr: sum by (actor_type) (increase(superdl_login_failed_total[5m])) > 50
+            labels: {severity: warning}
+            annotations: {summary: "5 分钟内登录失败 {{ $value }} 次({{ $labels.actor_type }} 端):疑似撞库/爆破,按源 IP 查 Loki 决定是否临时封禁", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 管理端登录失败单独一条且更严:管理员数量个位数、登录频次极低,
+          # 10 分钟 10 次失败没有正常解释;管理端另有源 IP 白名单,能打到这里说明白名单也被绕过或配漏了
+          - alert: AdminLoginFailureSpike
+            expr: sum(increase(superdl_login_failed_total{actor_type="admin"}[10m])) > 10
+            labels: {severity: critical}
+            annotations: {summary: "管理端 10 分钟内登录失败 {{ $value }} 次:管理员账号正被爆破(先核对 04-gateway.yaml 的源 IP 白名单是否生效)", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 越权探测:单次 403 是正常的(角色边界),持续的 403 速率不是。
+          # for: 15m 滤掉前端改版/客户端 bug 造成的一阵子集中 403
+          - alert: AuthzDenialSustained
+            expr: sum by (actor_type) (rate(superdl_authz_denied_total[10m])) > 0.5
+            for: 15m
+            labels: {severity: warning}
+            annotations: {summary: "鉴权拒绝持续 {{ $value }}/s({{ $labels.actor_type }} 端)超 15 分钟:有人在遍历越权面,或某个客户端在拿错凭据重试", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 权限变更必须条条被看见:管理员角色调整是低频、需复核的动作,
+          # 攻击者拿到一个管理身份后的第一步通常就是给自己扩权/建第二个后门账号
+          - alert: AdminPrivilegeChanged
+            expr: increase(superdl_admin_privilege_change_total[5m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "管理端权限发生变更({{ $value }} 次):逐条与变更单核对,非计划内变更按失陷处置", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 节点自称的池标签与注册登记不符:kubelet 的 --node-labels 是节点自己说了算的,
+          # 持 join token 的机器可以自称 kata 池去吸 VM 隔离档的负载(巡检会纠偏并 cordon,
+          # 但「谁在冒名」必须有人看)。正常装机不会触发:登记与标签同源。
+          - alert: NodePoolLabelMismatch
+            expr: increase(superdl_node_pool_label_mismatch_total[10m]) > 0
+            labels: {severity: critical}
+            annotations: {summary: "节点池标签与注册登记不符({{ $value }} 次):平台已纠偏并停调度,核对该机是谁装的、config.yaml 被谁改过", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/gpu-fault-sop.md"}
+          # PII 批量拉取:管理端按需查单个用户是常态,一小时上百行不是。
+          # 按 kind 分组,便于区分「手机号」与「实名信息」这类不同敏感度的读取面
+          - alert: PiiRevealVolumeHigh
+            expr: sum by (kind) (increase(superdl_pii_reveal_rows_total[1h])) > 200
+            labels: {severity: warning}
+            annotations: {summary: "1 小时内明文查看 PII {{ $value }} 行({{ $labels.kind }}):核对是谁、为什么,批量导出应走审批而非逐条查看", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          - alert: PiiRevealBurst
+            expr: sum(increase(superdl_pii_reveal_rows_total[5m])) > 500
+            labels: {severity: critical}
+            annotations: {summary: "5 分钟内明文查看 PII {{ $value }} 行:批量脱库特征,立即冻结相关管理账号并保留审计", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}
+          # 未认证/被拒请求的边缘视角:上面两条计数器只统计**进到应用**的请求,
+          # 而带无效令牌的探测在中间件层就 401 了。占比口径与 ApiHighErrorRate 对称。
+          - alert: ApiUnauthorizedRateHigh
+            expr: sum(rate(superdl_http_request_duration_seconds_count{status=~"40[13]"}[5m])) / clamp_min(sum(rate(superdl_http_request_duration_seconds_count[5m])), 0.001) > 0.3
+            for: 10m
+            labels: {severity: warning}
+            annotations: {summary: "API 401/403 占比 >30% 持续 10 分钟:大概率是自动化探测,而不是用户在误操作", runbook_url: "https://github.com/cgboy520/superdl/blob/main/deploy/cluster/runbooks/loki-logging.md#查询方式"}

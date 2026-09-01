@@ -68,12 +68,15 @@ spec:
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 1Gi}
-          containers:
+            # upload 必须是 initContainer 而不是 restore-smoke 的兄弟容器:同 Pod 的多个
+            # containers 是并发起的,冒烟会与上传赛跑,可能在对象还没传完时就「验」完了。
+            # initContainers 顺序执行,dump → upload → (containers) restore-smoke 才是真的串行。
             - name: upload
               image: amazon/aws-cli:2.32.0
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
                 capabilities: {drop: ["ALL"]}
               env:
                 - {name: HOME, value: /tmp}   # 非 root 运行,aws cli 的家目录须可写
@@ -86,15 +89,30 @@ spec:
                   aws s3 cp /backup/ "s3://$S3_BUCKET/daily/" --recursive \
                     --exclude "*" --include "superdl-*.dump.gpg" --endpoint-url "$S3_ENDPOINT"
                   echo "upload done"
+                  # 回读:冒烟必须验**对象存储里的那一份**,不是本地待上传的文件。
+                  # 只验本地文件时,截断上传 / SSE 配错 / 桶策略拒绝 / endpoint 指错
+                  # 全部照样「验证通过」——备份看着有,真要恢复时才发现取不回来。
+                  local_dump=$(ls -t /backup/superdl-*.dump.gpg | head -1)
+                  key="daily/$(basename "$local_dump")"
+                  mkdir -p /backup/verify
+                  aws s3 cp "s3://$S3_BUCKET/$key" /backup/verify/roundtrip.dump.gpg \
+                    --endpoint-url "$S3_ENDPOINT"
+                  # 字节数必须一致:S3 分段上传失败可能留下长度不足的对象且不报错
+                  want=$(wc -c < "$local_dump")
+                  got=$(wc -c < /backup/verify/roundtrip.dump.gpg)
+                  [ "$want" = "$got" ] || {
+                    echo "roundtrip size mismatch: s3=$got local=$want" >&2; exit 1; }
+                  echo "roundtrip ok: $key ($got bytes)"
               volumeMounts:
-                - {name: backup, mountPath: /backup, readOnly: true}
+                - {name: backup, mountPath: /backup}
                 - {name: tmp, mountPath: /tmp}
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 512Mi}
-            # restore 冒烟:解密刚上传的 dump 并恢复进 Pod 内一次性 PG 实例,pg_restore 成功且三张
-            # 资金要害表 SELECT count(*) 可执行即计成功;任一环节失败非零退出 → Job Failed
-            # → PgBackupFailed 告警(kps.yaml)。镜像复用 dump 容器,不新增镜像。
+          containers:
+            # restore 冒烟:解密**从对象存储回读的**那一份 dump 并恢复进 Pod 内一次性 PG 实例,
+            # pg_restore 成功且三张资金要害表 SELECT count(*) 可执行即计成功;任一环节失败非零
+            # 退出 → Job Failed → PgBackupFailed 告警(kps.yaml)。镜像复用 dump 容器,不新增镜像。
             - name: restore-smoke
               image: postgres:18
               imagePullPolicy: IfNotPresent
@@ -108,8 +126,10 @@ spec:
                 - sh
                 - -ec
                 - |
-                  dump=$(ls -t /backup/superdl-*.dump.gpg | head -1)
-                  echo "smoke restore: $dump"
+                  # 固定读 upload 回读下来的那一份(见上一个 initContainer):验的是对象
+                  # 存储里真实存在、可取回、可解密的备份,而不是本地那个还没离开 Pod 的文件
+                  dump=/backup/verify/roundtrip.dump.gpg
+                  echo "smoke restore (from object storage roundtrip): $dump"
                   printf '%s' "$BACKUP_ENCRYPT_KEY" | gpg --batch --yes --decrypt \
                     --passphrase-fd 0 -o /tmp/smoke.dump "$dump"
                   # 临时实例:仅 unix socket;数据落 /backup 卷(只恢复 3 张要害表,体积可控,

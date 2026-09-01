@@ -7,21 +7,32 @@ disable:
                              # 必须装机即禁,不能先启用后禁用:部分 k3s 版本上禁用 traefik 会
                              # 连带删掉它自带的 Gateway API CRD,而平台的 Gateway/HTTPRoute 全挂
                              # 在这组 CRD 上,删 CRD = 平台三域名与全部租户 Jupyter 入口一起消失。
-node-label:
-  - "node-role.superdl.io/infra=true"   # 平台组件 nodeSelector 统一锚点;light 档 server 兼跑
-                             # 平台组件,必须与 full 档 RKE2 server 同款标签。
+# 平台组件落点标签不在这里打(同 rke2/server-config.yaml 的理由):node-label 由节点自己声明,
+# 加入的机器可任意自称 infra 把平台组件吸过去。锚点改用 node-restriction.kubernetes.io/superdl-infra
+# (NodeRestriction 拉黑该前缀,kubelet 打不上),由 deploy/ansible/site.yml 装机后用管理凭据打上。
 secrets-encryption: true     # etcd/sqlite 静态加密;快照仍需异地加密保存(见 rke2/server-config.yaml 注释)
 # 与 full 档同规:节点加入用专用 agent token,禁止下发 server node-token(见
-# deploy/cluster/README.md「server token 与 agent token」节)。首装前生成后取消注释:
-#agent-token: "CHANGE_ME_AGENT_TOKEN"
+# deploy/cluster/README.md「server token 与 agent token」节)。**恒开**:注释掉它 agent 就静默
+# 回落用 server token 认证,而 server token 能把新机器拉成控制面成员。占位由 ansible 渲染
+# (deploy/ansible/site.yml,值经 group_vars/servers.yml 或 -e 注入)。
+agent-token: "CHANGE_ME_AGENT_TOKEN"
 embedded-registry: true      # Spegel P2P 镜像共享;配套 registries.yaml 由平台生成下发
                              # (管理端·平台配置·集群接入,node-join.sh 自动落位)
 # API 审计(对齐 rke2/server-config.yaml):策略文件复用 rke2/audit-policy.yaml,装机时
 # 一并拷到 /etc/rancher/k3s/(见 deploy/cluster/README.md 路径 B;缺失则 apiserver 起不来)。
 kube-apiserver-arg:
+  # NodeRestriction 显式钉死(理由同 rke2/server-config.yaml):平台组件的 nodeSelector 用的是
+  # node-restriction.kubernetes.io/superdl-infra,只有这个插件在挡 kubelet 给自己打该前缀标签。
+  # --enable-admission-plugins 相对 K8s 默认开启集是增量,不会关掉 PodSecurity /
+  # ValidatingAdmissionPolicy;k3s 同名 flag 同样是覆盖语义,需要什么就在这里列全。
+  - enable-admission-plugins=NodeRestriction
   - audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
   - audit-log-maxage=30
+  # 同 rke2:不设 maxsize/maxbackup = 单文件与轮转份数都不限,30 天足够把控制面根分区
+  # (etcd 也在上面)吃光。
+  - audit-log-maxsize=100
+  - audit-log-maxbackup=10
 kubelet-arg:
   # 单 Pod PID 上限:fork bomb 会耗尽节点进程表。
   # 与 node-join.sh / rke2 server-config.yaml 同值,改时同步。

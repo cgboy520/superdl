@@ -18,9 +18,11 @@ disable:
 #  - "<server1-hostname>"       # 主机名 SAN(可选,便于绕过 VIP 直连排障)
 #  - "<server2-hostname>"
 #  - "<server3-hostname>"
-node-label:
-  - "node-role.superdl.io/infra=true"   # 平台组件(api/worker/前端/registry)只落带此标签的
-                             # 节点(deploy/app/k8s 各清单的 nodeSelector);GPU 节点严禁打此标签。
+# 平台组件落点标签**刻意不在这里打**:node-label 是节点自己写进自己 config.yaml 的,
+# 任何一台加入的机器都能声称自己是 infra,把带库连接串/JWT 签发密钥/配置主密钥的 API 与
+# worker 吸到攻击者有 root 的硬件上。落点锚点改用 node-restriction.kubernetes.io/superdl-infra
+# (该前缀被 NodeRestriction 拉黑,kubelet 自己打不上),由 deploy/ansible/site.yml 在装机后
+# 用管理凭据打到控制面节点上。平台 SA 也无权改它(admission 策略③只放行 superdl.io/*)。
 secrets-encryption: true     # etcd 静态加密(Secret Encryption at Rest)。存量集群开启时
                              # RKE2 启动自动重写加密既有 Secret,滚动重启 server 逐台做。
 etcd-snapshot-schedule-cron: "0 */6 * * *"
@@ -38,16 +40,30 @@ etcd-s3-secret-key: "CHANGE_ME_ETCD_S3_SECRET_KEY"  # 来自密管
 etcd-s3-folder: "etcd-snapshots"
 # 节点加入用专用 agent token,禁止把 server token(node-token)下发到 GPU 节点/平台库:
 # server token 可再拉 server 入环(etcd 成员),被泄 = 集群控制面沦陷;agent token 只能拉 agent。
-# 首装前生成(openssl rand -hex 32)并取消下面注释;装机后补设需滚动重启各 server。
-#agent-token: "CHANGE_ME_AGENT_TOKEN"
+# **本项恒开**:注释掉它 agent 就回落用 server token 认证,而「回落」不报错也不告警,
+# 唯一现象是新加的 GPU 机器有能力把自己拉成 etcd 成员。占位由 ansible 渲染
+# (deploy/ansible/site.yml,值经 group_vars/servers.yml 或 -e 注入,openssl rand -hex 32 生成);
+# preflight.sh 反向校验模板占位完好 + 集群侧 agent token ≠ server node-token。
+agent-token: "CHANGE_ME_AGENT_TOKEN"
 # 平台「集群接入」配置项 cluster_join_token 录这个值;轮换步骤见 deploy/cluster/README.md。
 embedded-registry: true      # Spegel P2P 镜像共享:节点间互拉已缓存镜像(TCP 5001/9345 内网互通)
                              # 需配套 registries.yaml 分发到全部节点;latest tag 不参与 P2P
 supervisor-metrics: true     # 暴露 spegel/supervisor 指标供 kps 抓取
 kube-apiserver-arg:
+  # NodeRestriction 显式钉死(与 RKE2 当前默认同值,写出来是为了让它成为被评审的配置项而不是
+  # 上游默认的副产品):它是唯一让 kubelet 不能给自己打 node-restriction.kubernetes.io/* 标签、
+  # 不能改别的节点对象的东西,而平台组件的 nodeSelector 正建立在这条上(deploy/app/k8s)。
+  # ⚠ RKE2 的 kube-apiserver-arg 同名 flag 是**覆盖**不是追加(要追加得写 `key+:`),
+  # 所以这里必须列全需要的插件;--enable-admission-plugins 本身相对 K8s 默认开启集是增量的,
+  # 不会关掉 PodSecurity / ValidatingAdmissionPolicy 等默认项。
+  - enable-admission-plugins=NodeRestriction
   - audit-policy-file=/etc/rancher/rke2/audit-policy.yaml
   - audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log
   - audit-log-maxage=30
+  # maxsize/maxbackup 不设就是不限:单文件无上限、轮转份数无上限,30 天窗口内的审计日志
+  # 会把控制面根分区吃光——那个分区上还有 etcd。100MiB × 10 份封顶。
+  - audit-log-maxsize=100
+  - audit-log-maxbackup=10
 kubelet-arg:
   # 单 Pod PID 上限(默认 -1 = 无限):fork bomb 会耗尽节点进程表、拖垮 kubelet/containerd。
   # 与 node-join.sh 写进 GPU agent 的 config.yaml 同值,改时同步。

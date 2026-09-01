@@ -42,5 +42,22 @@ rules:
   # 其余资源的写操作:记元数据
   - level: Metadata
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
-  # 兜底:读操作不记(上面未匹配到的)
+  # ↓ 以下三条必须在最后的 None 兜底之前:兜底把**全部读**丢掉,而下面这些读正是
+  #   失陷后唯一能回答「攻击者看了什么」的记录。
+  # 租户容器输出与进出容器的通道:pods/log 是 get,被兜底丢掉等于任何人(运维凭据被盗、
+  # 或平台 SA 失陷)可以读遍所有租户的容器输出而零留痕;exec/attach/portforward 同理。
+  # nodes/proxy 是经 apiserver 打 kubelet API 的入口,也只有元数据值得记。
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["pods/log", "pods/exec", "pods/attach", "pods/portforward", "nodes/proxy"]
+  # 匿名与未认证主体的任何请求(含读):正常流量里不该出现,出现即侦察信号。
+  - level: Metadata
+    users: ["system:anonymous"]
+  - level: Metadata
+    userGroups: ["system:unauthenticated"]
+  # 兜底:其余读操作不记。
+  # ⚠ 这条同时吃掉了「被拒绝的读」——RBAC 403 与准入拒绝在审计里仍是一次读请求,
+  #   于是凭据探测/SA token 枚举没有信号。apiserver 无法按 responseStatus 过滤规则,
+  #   要补这一面只能整体抬到 Metadata(日志量按集群规模评估)或在 Loki 侧按 403 抽取。
   - level: None

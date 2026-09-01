@@ -227,5 +227,6 @@ releases:
     values: [values/alloy.yaml]
 
 # 注:admission/tenant-restrictions.yaml(ValidatingAdmissionPolicy)不是 helm release,
-# 由发布流程单独 kubectl apply(步骤见 README 两档「组件」节),
-# preflight.sh 强制校验集群内三个 Binding 存在且 validationActions 含 Deny。
+# 由 ./apply.sh 在 helmfile 之前先 kubectl apply(它是本目录唯一的 apply 入口),
+# preflight.sh 与 scripts/release.sh 双向校验集群内七个 Binding 存在且 validationActions 含 Deny。
+# 别绕过 apply.sh 直接跑 helmfile:准入策略缺失是静默 fail-open。

@@ -107,8 +107,16 @@ jobs:
   promote:
     needs: build-scan
     runs-on: ubuntu-latest
+    # 人工审批闸:本 job 是唯一持 Harbor 推送凭据、且用仓库的 Sigstore 身份签名的地方,
+    # 而 workflow 的触发条件是「推一个 v* tag」或 workflow_dispatch —— 没有 environment 时,
+    # 任何能推 tag 的人都能直接发到生产仓库并让签名带上本仓库的身份。
+    # ⚠ 仅有这一行不够:必须在 GitHub 仓库设置 → Environments → production 里配好
+    # required reviewers,并把 HARBOR_ROBOT_NAME / HARBOR_ROBOT_SECRET / HARBOR_HOST
+    # 从仓库级 secrets 移到该 environment 下(environment 级才受审批保护)。
+    # 没做这两步的话,本行只是给运行打了个标签,不构成任何门。
+    environment: production
     permissions:
-      contents: read # 推送凭据是 Harbor 机器人(仓库 secrets),唯一使用它的 job
+      contents: read # 推送凭据是 Harbor 机器人(environment secrets),唯一使用它的 job
       id-token: write # cosign keyless 的 OIDC 身份(签名进 Rekor 公共账本);仅此 job 持有
     strategy:
       matrix:
@@ -143,20 +151,27 @@ jobs:
           username: ${{ secrets.HARBOR_ROBOT_NAME }}
           password: ${{ secrets.HARBOR_ROBOT_SECRET }}
       - name: 打 tag 并推送(内容与扫描产物同源,digest 一致)
+        # tag 串经 env 传入再引用 "$TAGS":直接把 ${{ }} 展开进单引号 shell 串,内容里
+        # 一个单引号就能闭合字面量并接上任意命令(镜像名含 secrets.HARBOR_HOST 与
+        # vars.HARBOR_PROJECT,后者是仓库变量,写权限比 secrets 松)
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          tags='${{ steps.meta.outputs.tags }}'
           while IFS= read -r t; do
             [ -z "$t" ] && continue
             docker tag scan-target:latest "$t"
             docker push "$t"
-          done <<< "$tags"
+          done <<< "$TAGS"
       - name: 安装 cosign(keyless 签名)
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: cosign 签名(按 digest 引用,签进 Rekor 公共账本)
         # 签名对象是 digest 而非可变 tag:tag 可被覆盖,签名跟着 digest 走才锁得住内容。
-        # 验签/准入侧(sigstore policy-controller 或 kyverno)按 digest 验。
+        # 下发侧 scripts/release.sh 也按 digest 渲染清单,「签了名的那份」与「跑起来的那份」
+        # 因此是同一个东西;集群侧的验签准入(sigstore policy-controller / kyverno)尚未部署。
+        # tag 串同样经 env 传入(见上一步注释)。
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          tags='${{ steps.meta.outputs.tags }}'
           declare -A seen=()
           while IFS= read -r t; do
             [ -z "$t" ] && continue
@@ -169,4 +184,4 @@ jobs:
               seen[$ref]=1
               cosign sign --yes "$ref"
             fi
-          done <<< "$tags"
+          done <<< "$TAGS"
