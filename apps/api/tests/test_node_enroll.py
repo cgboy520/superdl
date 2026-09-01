@@ -364,9 +364,9 @@ class TestEnrollRouterAnonymous:
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["rke2_join_token"].endswith("secrettoken")
+        assert body["cluster_join_token"].endswith("secrettoken")
         assert body["pool"] == "hami"
-        assert body["rke2_server_url"] == "https://10.0.0.10:9345"
+        assert body["cluster_server_url"] == "https://10.0.0.10:9345"
         # 首次 bootstrap 换发窄权限 progress 令牌,并下发脚本指纹
         assert body["progress_token"].startswith("sdlp_")
         assert len(body["script_sha256"]) == 64

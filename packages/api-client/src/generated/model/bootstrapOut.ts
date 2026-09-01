@@ -9,6 +9,9 @@
  * 装机参数下发 —— 含 join token 明文,仅经 Bearer POST 响应体,严禁入日志。
  */
 export interface BootstrapOut {
+  cluster_agent_version: string;
+  cluster_join_token: string;
+  cluster_server_url: string;
   driver_version: string;
   install_mirror?: string;
   k8s_distro: string;
@@ -17,8 +20,5 @@ export interface BootstrapOut {
   progress_token: string;
   registries_yaml: string;
   registry_ca_pem?: string;
-  rke2_join_token: string;
-  rke2_server_url: string;
-  rke2_version: string;
   script_sha256: string;
 }

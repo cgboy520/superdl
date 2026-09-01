@@ -271,7 +271,7 @@ PYEOF
   printf '%s' "$(cfg_get progress_token)" > "$STATE_DIR/token"
   chmod 600 "$STATE_DIR/token"
   use_token_file "$STATE_DIR/token"
-  echo "-- bootstrap 完成: pool=$(cfg_get pool) rke2=$(cfg_get rke2_version)"
+  echo "-- bootstrap 完成: pool=$(cfg_get pool) agent=$(cfg_get cluster_agent_version)"
 }
 
 step_precheck() {
@@ -291,7 +291,7 @@ step_precheck() {
   # server 端口连通性(bash /dev/tcp,免装 nc;rke2 缺省 9345,k3s 缺省 6443)
   local server host port default_port=9345
   [[ "$DISTRO" == "k3s" ]] && default_port=6443
-  server="$(cfg_get rke2_server_url)"
+  server="$(cfg_get cluster_server_url)"
   host="$(python3 -c "from urllib.parse import urlparse;u=urlparse('$server');print(u.hostname)")"
   port="$(python3 -c "from urllib.parse import urlparse;u=urlparse('$server');print(u.port or $default_port)")"
   timeout 5 bash -c "</dev/tcp/$host/$port" || { echo "无法连通 $host:$port(检查内网路由/防火墙)"; return 1; }
@@ -568,14 +568,14 @@ step_agent_config() {
   # join token 必须非空:空 token 会让 agent 安装以残缺配置启动(且平台侧若误把
   # server token 录进「集群接入」,下发的就是能拉 server 入 etcd 的凭据——此处是最后一道闸)
   local join_token
-  join_token="$(cfg_get rke2_join_token)"
+  join_token="$(cfg_get cluster_join_token)"
   if [[ -z "$join_token" ]]; then
-    echo "!! bootstrap 下发的 rke2_join_token 为空:拒绝写 agent 配置。" \
+    echo "!! bootstrap 下发的 cluster_join_token 为空:拒绝写 agent 配置。" \
          "检查管理端「平台配置 · 集群接入」与 ansible agent_token(site.yml 有渲染前断言)" >&2
     return 1
   fi
   {
-    echo "server: $(cfg_get rke2_server_url)"
+    echo "server: $(cfg_get cluster_server_url)"
     echo "token: $join_token"
     echo "node-label:"
     echo "  - \"superdl.io/pool=$pool\""
@@ -594,7 +594,7 @@ step_agent_install() {
     echo "-- 本机是 $SERVER_UNIT(已在集群内),跳过 agent 安装"
     return 0
   fi
-  want="$(cfg_get rke2_version)"
+  want="$(cfg_get cluster_agent_version)"
   mirror="$(cfg_get install_mirror)"
   if command -v "$DISTRO" >/dev/null 2>&1 && "$DISTRO" --version | grep -q "$want"; then
     echo "-- $DISTRO $want 已安装,跳过"

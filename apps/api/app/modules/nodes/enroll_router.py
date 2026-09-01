@@ -81,9 +81,9 @@ async def enroll_bootstrap(
     return BootstrapOut(
         pool=enrollment.pool,
         k8s_distro=await service.derive_node_distro(session, cfg),
-        rke2_version=cfg["cluster_agent_version"],
-        rke2_server_url=cfg["cluster_server_url"],
-        rke2_join_token=cfg["cluster_join_token"],
+        cluster_agent_version=cfg["cluster_agent_version"],
+        cluster_server_url=cfg["cluster_server_url"],
+        cluster_join_token=cfg["cluster_join_token"],
         driver_version=cfg["node_driver_version"],
         nvme_devices=enrollment.nvme_devices or [],
         registries_yaml=service.render_registries_yaml(cfg),

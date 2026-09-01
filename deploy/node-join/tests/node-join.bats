@@ -42,9 +42,9 @@ import json, os, sys
 distro = sys.argv[2]
 data = {
     "pool": sys.argv[1],
-    "rke2_version": "v1.36.2+rke2r1" if distro == "rke2" else "v1.36.3+k3s1",
-    "rke2_server_url": "https://10.0.0.10:9345" if distro == "rke2" else "https://10.0.0.10:6443",
-    "rke2_join_token": "K10fixture::server:secret",
+    "cluster_agent_version": "v1.36.2+rke2r1" if distro == "rke2" else "v1.36.3+k3s1",
+    "cluster_server_url": "https://10.0.0.10:9345" if distro == "rke2" else "https://10.0.0.10:6443",
+    "cluster_join_token": "K10fixture::server:secret",
     "driver_version": "580",
     "nvme_devices": [],
     # 平台生成正文(Spegel / Harbor 代理缓存 / CA,不含凭据);CA 用例经 env 注入
@@ -507,7 +507,7 @@ RKESHIM
   python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
 import json
 print(json.dumps({"pool":"hami","k8s_distro":"rke2","install_mirror":"cn",
-  "rke2_version":"v1.36.2+rke2r1","rke2_server_url":"https://10.0.0.10:9345","rke2_join_token":"K10::server:secret",
+  "cluster_agent_version":"v1.36.2+rke2r1","cluster_server_url":"https://10.0.0.10:9345","cluster_join_token":"K10::server:secret",
   "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":"","progress_token":"sdlp_fixturetoken"}))
 PYEOF
   run_script

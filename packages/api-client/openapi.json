@@ -1927,6 +1927,18 @@
       "BootstrapOut": {
         "description": "装机参数下发 —— 含 join token 明文,仅经 Bearer POST 响应体,严禁入日志。",
         "properties": {
+          "cluster_agent_version": {
+            "title": "Cluster Agent Version",
+            "type": "string"
+          },
+          "cluster_join_token": {
+            "title": "Cluster Join Token",
+            "type": "string"
+          },
+          "cluster_server_url": {
+            "title": "Cluster Server Url",
+            "type": "string"
+          },
           "driver_version": {
             "title": "Driver Version",
             "type": "string"
@@ -1964,18 +1976,6 @@
             "title": "Registry Ca Pem",
             "type": "string"
           },
-          "rke2_join_token": {
-            "title": "Rke2 Join Token",
-            "type": "string"
-          },
-          "rke2_server_url": {
-            "title": "Rke2 Server Url",
-            "type": "string"
-          },
-          "rke2_version": {
-            "title": "Rke2 Version",
-            "type": "string"
-          },
           "script_sha256": {
             "title": "Script Sha256",
             "type": "string"
@@ -1984,9 +1984,9 @@
         "required": [
           "pool",
           "k8s_distro",
-          "rke2_version",
-          "rke2_server_url",
-          "rke2_join_token",
+          "cluster_agent_version",
+          "cluster_server_url",
+          "cluster_join_token",
           "driver_version",
           "nvme_devices",
           "registries_yaml",

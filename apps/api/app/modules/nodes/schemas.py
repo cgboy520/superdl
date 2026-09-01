@@ -78,9 +78,9 @@ class BootstrapOut(BaseModel):
 
     pool: str
     k8s_distro: str  # rke2 | k3s,平台探测派生
-    rke2_version: str
-    rke2_server_url: str
-    rke2_join_token: str
+    cluster_agent_version: str
+    cluster_server_url: str
+    cluster_join_token: str
     driver_version: str
     nvme_devices: list[str]
     registries_yaml: str  # 节点 registries.yaml 正文(Spegel / Harbor 代理缓存 / CA;不含凭据)
