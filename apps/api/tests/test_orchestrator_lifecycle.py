@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.k8s.base import PodStatus
 from app.core.k8s.fake import FakeOrchestrator
 from app.core.outbox import OutboxTask
-from app.core.timeutil import now_utc
+from app.core.timeutil import ensure_utc, now_utc
 from app.modules.orchestrator.models import Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.reconciler import reconcile_once
 from tests.helpers import (
@@ -339,6 +339,113 @@ class TestFailureModes:
         assert (ns, "deadbeef" * 4) not in fake.pods
         # 正常实例不受影响
         assert (await get_instance(client, headers, uuid))["status"] == "running"
+
+
+class _Clock:
+    """可推进的假时钟(注入 reconciler 的 now_utc):跨轮次拉开宽限窗,不碰任何 DB 字段。"""
+
+    def __init__(self) -> None:
+        self.offset = timedelta()
+
+    def __call__(self):
+        return now_utc() + self.offset
+
+
+class TestUnreadyTimer:
+    """not-ready 计时器必须跨轮次累积(reconciler.unready_since)。
+
+    它挂了说明:计时器被写入后又在同一事务里抹掉,超时分支成死代码——卡在
+    Running-but-not-ready 的 Pod 永不判故障、按小时一直计费,平台责任的计费截断
+    (settlement._TRUNCATE_REASONS)与失联通知也一并失效。
+    """
+
+    @staticmethod
+    async def _unready_since(sm, uuid: str):
+        async with sm() as session:
+            return (
+                await session.execute(select(Instance.unready_since).where(Instance.uuid == uuid))
+            ).scalar_one()
+
+    @staticmethod
+    def _pin(monkeypatch, clock: _Clock) -> None:
+        """宽限窗钉死 600s(不受 .env 影响),时钟交给用例推进。"""
+        from app.core.config import get_settings
+        from app.modules.orchestrator import reconciler as reconciler_mod
+
+        monkeypatch.setattr(get_settings(), "running_unready_timeout_seconds", 600)
+        monkeypatch.setattr(reconciler_mod, "now_utc", clock)
+
+    async def test_timer_accumulates_across_rounds_then_fails(self, client, sm, fake, monkeypatch):
+        """两轮巡检跨过宽限窗即判失联:第一轮起表、第二轮到点。
+
+        全程只动假时钟与 Pod 就绪态——直接 UPDATE unready_since 的写法会让本用例
+        对着自己塞的值断言,恰好绕开这个缺陷。
+        """
+        headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000045")
+        ns = f"tenant-{user_id}"
+        clock = _Clock()
+        self._pin(monkeypatch, clock)
+
+        # 第一轮:观测到 not-ready,只起表不判故障
+        fake.mark_unready(ns, uuid)
+        assert (await reconcile_once(sm))["to_failed"] == 0
+        first_seen = await self._unready_since(sm, uuid)
+        assert first_seen is not None  # 计时器必须留在库里,下一轮才有得比
+
+        # 第二轮:同一个 not-ready 持续到宽限窗外 → 判失联
+        clock.offset = timedelta(seconds=601)
+        assert (await reconcile_once(sm))["to_failed"] == 1
+        assert (await get_instance(client, headers, uuid))["status"] == "failed"
+
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]  # 降序:items[0] 是最新事件
+        assert (events[0]["from_status"], events[0]["to_status"]) == ("running", "failed")
+        assert events[0]["reason"] == "node_lost"
+        # 首次不就绪的时刻进了事件 metadata:结算据此把宽限观察期从账单里截掉
+        assert events[0]["event_metadata"]["unready_since"] == ensure_utc(first_seen).isoformat()
+        # 失联要主动告知用户,不是等他自己发现 SSH 连不上
+        notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
+        assert any("节点失联" in n["title"] for n in notes)
+
+    async def test_recovery_restarts_the_timer(self, client, sm, fake, monkeypatch):
+        """抖动恢复要真的重新计时:ready 那一轮清表,之后重新不就绪从零起算。
+
+        挂了 = 计时器只清不写(实例再不就绪也不判故障),或只写不清
+        (一次抖动过后累计到窗外,把健康实例误打成 failed)。
+        """
+        headers, uuid, user_id = await provision_running(client, sm, fake, phone="13900000046")
+        ns = f"tenant-{user_id}"
+        clock = _Clock()
+        self._pin(monkeypatch, clock)
+
+        fake.mark_unready(ns, uuid)
+        await reconcile_once(sm)
+        first_seen = await self._unready_since(sm, uuid)
+        assert first_seen is not None
+
+        # 恢复 → 清表
+        fake.mark_ready(ns, uuid)
+        clock.offset = timedelta(seconds=300)
+        assert (await reconcile_once(sm))["to_failed"] == 0
+        assert await self._unready_since(sm, uuid) is None
+
+        # 再次不就绪:已越过「首次不就绪 + 宽限」,但计时从这一轮重新起算 → 不判故障
+        fake.mark_unready(ns, uuid)
+        clock.offset = timedelta(seconds=660)
+        assert (await reconcile_once(sm))["to_failed"] == 0
+        restarted = await self._unready_since(sm, uuid)
+        assert restarted is not None
+        assert ensure_utc(restarted) - ensure_utc(first_seen) > timedelta(seconds=600)
+        assert (await get_instance(client, headers, uuid))["status"] == "running"
+
+        # 新一轮计时到点才判故障,截断依据用的是重启后的时刻
+        clock.offset = timedelta(seconds=1262)
+        assert (await reconcile_once(sm))["to_failed"] == 1
+        events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
+            "items"
+        ]
+        assert events[0]["event_metadata"]["unready_since"] == ensure_utc(restarted).isoformat()
 
 
 class TestRelease:

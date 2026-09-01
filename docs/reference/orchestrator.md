@@ -43,7 +43,7 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 - 状态迁移只能经 `orchestrator/service.py` 的 transition 函数(同事务写 `instance_events`),禁止直接 UPDATE status;非法迁移报 `INSTANCE_INVALID_TRANSITION`。
 - 请求路径不许调 K8s:业务写入与 `outbox_tasks` 插入同一事务,K8s 动作一律由 worker 执行。唯一例外是日志端点的只读直读,由 owner / 限流 / 超时三道闸兜住。
 - **购买模式变更不写 `instance_events`**(`subscribe_instance` 与 `convert_to_on_demand` 同理):该表是计费主依据(running↔非 running 的边),非状态迁移的行会污染 `running_seconds_in_window` 的重建。变更痕迹在审计日志与资金流水里。
-- K8s 访问收敛在 `app/core/k8s`,`K8sOrchestrator` 协议:ensure_namespace / create_instance / delete_instance / delete_instance_disk / get_status / read_instance_logs / list_instance_pods / wipe_disk / list_nodes / set_node_labels / prewarm_image / get_prewarm_status / delete_prewarm_job / probe_cluster / set_node_unschedulable。FakeOrchestrator(dev/test,内存态,可注入故障)与 RealOrchestrator(kubernetes 官方客户端)必须同步实现协议全部方法。
+- K8s 访问收敛在 `app/core/k8s`,`K8sOrchestrator` 协议:ensure_namespace / create_instance / delete_instance / delete_instance_disk / get_status / read_instance_logs / list_instance_pods / wipe_disk / list_nodes / set_node_labels / prewarm_image / get_prewarm_status / delete_prewarm_job / probe_cluster / set_node_unschedulable / delete_node。FakeOrchestrator(dev/test,内存态,可注入故障)与 RealOrchestrator(kubernetes 官方客户端)必须同步实现协议全部方法。
 - RealOrchestrator 每租户:独立 namespace(PSA enforce=baseline + audit=restricted 标签)、ResourceQuota 兜底(对象数 + cpu/memory/ephemeral-storage 总量)、Egress 隔离 NetworkPolicy(私网黑名单 + 滥用端口黑名单,DNS 收敛到 CoreDNS Pod)、JuiceFS PVC;`disk.wipe` 为真实擦除 Job(幂等 + 退避)。ns/NetPol/Quota 已存在时 patch 收敛,加固覆盖存量租户;K8s list 调用一律分页(limit=500 + continue),同步调用走专属有界执行器。
 - 镜像拉取凭据不落节点、不进 Pod spec 明文:outbox 建 Pod 前在 `ensure_namespace` 之后调 `core/registry.ensure_registry_pull_secret`,按生效 `registry_*` 把 `superdl-registry-pull` 托管到租户 ns(annotation 指纹相同跳过),Pod spec 以 `imagePullSecrets` 引用;未配机器人则 `image_pull_secret=None`。预热 Job 同一条链(平台 ns)。
 - 端口从 `port_allocations` 池分配,释放必须回池;池耗尽时创建失败并给出明确错误。
@@ -66,6 +66,10 @@ reason:欠费 `arrears_stop` / `arrears_freeze`,包周期到期 `subscription_ex
 - 泄漏回收熔断:未知(DB 无记录)Pod 占比超 `leak_reclaim_abort_ratio` 即中止本轮并计 `superdl_reconcile_leak_aborted_total`;在途删除(stopping/releasing)宽限同两档超时,其余一律 force 强删。
 - 保留期 GC 在 reconciler 内:failed 超 `failed_retention_days` → 通知并转 releasing;stopped 超 `stopped_retention_days` → 转 releasing,提前 `stopped_retention_warn_days` 预警。数据盘不受影响。阈值见 [limits.md](./limits.md)。
 - 节点失联判定先看节点 Ready 状况(`list_nodes`):持续 not-ready 超 `running_unready_timeout_seconds`(须宽于 unreachable toleration 的 300s)且节点 NotReady/未知 → node_lost(通知用户);节点正常 → pod_unready(Pod 自身问题,不告警失联)。**`workload_type='service'` 不走 pod_unready 这一支**(not-ready 判据是用户自己声明的 readinessProbe):实例留在 running,就绪与否如实呈现在服务 Tab。`pod_lost` 与 `node_lost` 两支不豁免。
+- **`instances.unready_since` 跨轮累积,清零只有两处**:任一进入 running 的路径(开机 / 重启 / 状态机迁移)与
+  「本轮观测到 Pod 重新 ready」。宽限期内与服务型实例的 `pod_unready` 豁免都返回「无失联原因」,但**不得**据此清零 ——
+  在那里清等于每轮把计时抹平、超时分支永不可达,卡在 Running-but-not-ready 的 Pod 就永远不判故障、一直计费。
+  它同时是事件 `metadata.unready_since` 的来源,平台责任失联的计费截断据它算(见 [billing.md](./billing.md))。
 
 ### 购买模式
 

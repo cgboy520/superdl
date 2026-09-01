@@ -8,7 +8,7 @@
 - `balance_ledger`:user_id、type(recharge/consume/refund/adjust)、amount 带符号 numeric(14,2)、balance_after、ref_type/ref_id —— 追加式
 - `bills_hourly`:instance_id、hour_start、seconds_used、unit_price numeric(12,4)、gpu_count(**照实存,CPU 实例为 0**)、amount numeric(14,2)、detail jsonb、UNIQUE(instance_id, hour_start)。`detail.source` 记这一行由哪条路径落的:`hourly`(整点结算与追平)/ `tail`(离开 running 的尾账)/ `convert`(按量转包周期前的结清)/ `gap_replay`(缺口人工重放);秒数单调递增时原地补差价的行另带 `topped_up`,竞价转按量时被整体改价的行另带 `repriced`
 - `bills_daily_disk`:disk_id、day、size_gb、unit_price、amount、UNIQUE(disk_id, day)
-- `subscriptions`:user_id、instance_id、sku_id、period(CHECK ∈ {day, week, month, year})、period_count(CHECK ≥1)、unit_price numeric(12,4)(下单时的 SKU **原价**时价快照,续费据它重新报价)、amount_paid numeric(14,2)(实扣,已含折扣)、started_at、expires_at、status(active/expired/cancelled)、auto_renew(默认 false)、renewed_from_id?(续费链)、warned_for_expiry?(到期预警去重锚点,存「已预警到哪个到期时刻」)、idempotency_key?、UNIQUE(user_id, idempotency_key);另有部分索引 `ix_subscriptions_active_expiry`(`expires_at` WHERE status='active')供巡检取「到期在即 / 已到期」两种谓词
+- `subscriptions`:user_id、instance_id、sku_id、period(CHECK ∈ {day, week, month, year})、period_count(CHECK ≥1)、unit_price numeric(12,4)(下单时的 SKU **原价**时价快照,续费据它重新报价)、amount_paid numeric(14,2)(实扣,已含折扣)、started_at、expires_at、status(active/expired/cancelled)、auto_renew(默认 false)、renewed_from_id?(续费链)、warned_for_expiry?(到期预警去重锚点,存「已预警到哪个到期时刻」)、idempotency_key?、request_fingerprint?(异参检测指纹:`动作 + user_id + instance_id + period + period_count` 的 sha256,动作分 `subscription:new`(下单与转换)/ `subscription:renew`)、UNIQUE(user_id, idempotency_key);另有部分索引 `ix_subscriptions_active_expiry`(`expires_at` WHERE status='active')供巡检取「到期在即 / 已到期」两种谓词
 - `settlement_watermarks`:key(PK)、settled_through、updated_at —— 结算水位线,漏掉的时段由后续轮次追平
 - `settlement_gaps`:kind、window_start、object_id、reason、resolved_at —— 结算缺口登记(追平截断 catchup_truncated / 单对象连续失败死信 dead_letter / 水位线丢失 watermark_missing / 宽限期重叠 grace_overlap),UNIQUE(kind, window_start, object_id)。水位线被越过但账未结清的窗口一律留痕;缺口不自愈、不自动补结,闭环是管理端「财务 › 结算缺口」的人工重放(幂等入账原语,成功回写 resolved_at;grace_overlap 拒重放走人工核销)+ DB 口径持续告警 `superdl_settlement_gap_unresolved`
 - `reconcile_checkpoints`:user_id(PK)、last_ledger_id、balance_after、updated_at —— 资金核对的增量游标(链式校验断点续扫)
@@ -32,12 +32,13 @@
 - 小时结算(每小时 :02,advisory lock):由 `settlement_watermarks` 水位线驱动,从上次已结窗口追平到上一整点(停机跨整点下一轮自动补);每实例按事件重建窗口 running 秒数,`UNIQUE(instance_id, hour_start)` 幂等 upsert,秒数单调递增时只补差价。重复执行与并发执行必须零重复扣款。
 - 追平截断(超上限)与单对象连续失败死信,跳窗前一律登记 `settlement_gaps`;阈值见 [limits.md](./limits.md)。
 - 尾账:stop/release 时对当前小时已用秒数立即入账,靠同一 UNIQUE 键保持幂等。
-- 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 的时刻(事件 `metadata.unready_since`),宽限观察期不计费;截断在事件重建层(`settlement._billing_view`)生效,尾账/整点/追平三路径同口径(尾账监听器按同一 `metadata.unready_since` 取窗口末,并把 `truncated_at` / `truncate_reason` 留进 `bills_hourly.detail`);`unready_since` 由 reconciler 只在当前 running 段内写入,每条进入 running 的路径先清零,不做残留判定。pod_unready(节点正常)不截断。
+- 平台责任失联(node_lost/pod_lost):计费截断到 Pod 首次 not-ready 的时刻(事件 `metadata.unready_since`),宽限观察期不计费;截断在事件重建层(`settlement._billing_view`)生效,尾账/整点/追平三路径同口径(尾账监听器按同一 `metadata.unready_since` 取窗口末,并把 `truncated_at` / `truncate_reason` 留进 `bills_hourly.detail`);`unready_since` 由 reconciler **跨轮累积**,清零只有两处:任一进入 running 的路径(开机 / 重启 / 状态机迁移)与「本轮观测到 Pod 重新 ready」。宽限期内、以及服务型实例的 `pod_unready` 豁免都**不清** —— 在那两处清零等于每轮把计时抹平,超时分支永不可达:卡在 Running-but-not-ready 的 Pod 永远不判故障、一直计费,这条截断也就永远不触发。pod_unready(节点正常)不截断。
 - 无水位线行只结最近窗口,落 `{kind}_watermark_missing` 告警日志:非首次部署出现即水位线行被误删或库回退,更早窗口需人工补结。
 - 退款:creating 失败全额退;该实例未产生 running 时段即无账,预检冻结不落账。
 - 开户前校验(`assert_can_afford`):余额 ≥ (在途 running 实例时费 + 新增时费) × `afford_cover_hours` + (在途盘日费 + 新增盘日费) × `disk_grace_days`;在钱包 FOR UPDATE 锁内统计,与资源创建同事务。不足报 `INSUFFICIENT_BALANCE`(文案含在途资源预计消耗)。
-- 欠费链路(5min 巡检):预估可用时长低于用户预警阈值 → 预警;余额 − 当前小时未结算实时估算消耗 ≤ 0 → 停机 → frozen → releasing。实时估算与结算同口径:事件重建秒数 − 已出账秒数。
-- 余额恰好 0.00 即进入停机→冻结→回收链(冻结判据 `balance > 0` 才放行,与停机判据 `effective <= 0` 自洽);边界由 `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。判据取 `> 0` 而非 `>= 0` 的口径见 [../decisions.md](../decisions.md)「余额归零即回收」。
+- 欠费链路(5min 巡检):预估可用时长低于用户预警阈值 → 预警;可用余额 − 当前小时未结算实时估算消耗 ≤ 0 → 停机 → frozen → releasing。实时估算与结算同口径:事件重建秒数 − 已出账秒数。
+- **欠费巡检全链路的判据是可用余额**(balance − frozen,`wallet.available_of` / `get_available_balance`),与开机前置 `assert_can_afford` 同口径:粗筛、锁内二次读、低余额预警的 payload、stopped→frozen、frozen→解冻、数据盘欠费链一律取它。拿裸余额判会让渠道冲正冻结的账号一路跑到人工核销 —— 那笔钱随时可能被渠道拿回,而结算侧 `allow_frozen=True` 照扣不误。
+- 可用余额恰好 0.00 即进入停机→冻结→回收链(解冻判据 `available > 0` 才放行,与停机判据 `effective <= 0` 自洽);边界由 `tests/test_billing_flow.py::test_zero_balance_stops_then_freezes_then_reclaims` 锁定。判据取 `> 0` 而非 `>= 0` 的口径见 [../decisions.md](../decisions.md)「余额归零即回收」。
 - 钱包更新必须 `SELECT ... FOR UPDATE`,且同事务写 `balance_ledger`(带 balance_after 快照)。
 - 金额全链路 Decimal:单价 4 位小数,入账 2 位小数,ROUND_HALF_EVEN;0 秒不出账。SKU 时价须使单卡满 1 小时至少入账 ¥0.01(4 位时价 ≥ 0.0051,0.0050 恰为 tie 向偶舍 0),否则上架/改价拒绝。
 - **计费份数只经 `core/money.billing_units(gpu_count)` 换算**:GPU 实例 = 卡数(`price_hourly` 是单卡时价),CPU 实例 `gpu_count=0` = 1 份整机(`price_hourly` 是整机时价)。金额 = `单价 × 份数 × 秒 ÷ 3600`。`bill_amount`、`assert_can_afford` 的在途时费、欠费巡检的 `burn_per_hour`、对账的实例时费、创建/开机的预估全部走 `billing_units` / `hourly_cost`,不许各处写 `max(1, n)` 或 `单价 × gpu_count`(否则 CPU 实例每小时算出 ¥0.00,余额护栏与停机判据一起归零)。账单行照实存 `gpu_count`,复算时按同一函数还原份数(见 [../decisions.md](../decisions.md)「CPU 实例的计费份数收口到 `core/money.billing_units`」)。
@@ -78,7 +79,9 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
 - `market='on_demand'` 却显式带 `period` / `period_count` 一律 422(不是忽略);SKU 的 `period_enabled=false`
   报 `orchestrator.periodNotEnabled`(见 [catalog.md](./catalog.md))。
 - 下单那条订阅行**不带幂等键**:整笔创建的幂等由同事务的 `instances` 行担保(两表共用一个键会在幂等
-  窗口过后撞上订阅表的唯一约束)。`subscriptions.idempotency_key` 只服务续费。
+  窗口过后撞上订阅表的唯一约束)。`subscriptions.idempotency_key` 服务**转换与续费两条路径**,共用
+  `UNIQUE(user_id, idempotency_key)` 一个命名空间,故两处重放查询都带 `request_fingerprint` 比对,
+  同键异参一律 409 `common.idempotencyKeyMismatch`(见「按量转包周期」与「续费」)。
 - 流水:`type='consume'`、`ref_type='subscription'`、`ref_id` 为订阅行 id、remark 形如「<实例名> 包月×1」。
   续费同款,remark 里多一个「续费」。
 
@@ -92,8 +95,8 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
 | 位置 | 不排除会怎样 |
 |---|---|
 | `wallet.assert_can_afford` 的在途燃烧率 | 把余额全买成包月的用户**开不出任何新机**:护栏把他已经付过的钱又扣了一遍 |
-| `billing/patrol.py` `_patrol_running` 的停机判据(`burn_per_hour` 与未结算实时估算的集合) | 余额为 0 的包周期用户被欠费巡检**误停机** |
-| `billing/patrol.py` `_patrol_frozen_and_arrears_stopped` 的两支 | stopped→frozen 那支会按「余额 ≤ 0」把在保实例提前冻结;frozen 的「充值即解冻」那支会让到期没续费但余额充足的用户被无限解冻,冻结倒计时永远走不到头(等于免费续期) |
+| `billing/patrol.py` `_patrol_running` 的停机判据(`burn_per_hour` 与未结算实时估算的集合) | 可用余额为 0 的包周期用户被欠费巡检**误停机** |
+| `billing/patrol.py` `_patrol_frozen_and_arrears_stopped` 的两支 | stopped→frozen 那支会按「可用余额 ≤ 0」把在保实例提前冻结;frozen 的「充值即解冻」那支会让到期没续费但可用余额充足的用户被无限解冻,冻结倒计时永远走不到头(等于免费续期) |
 | `billing/edge_listener.py` 的尾账 | 离开 running 时再出一次小时尾账,对已预付的用户二次收费 |
 
 **frozen 到期回收那一支不过滤**:回收仍由余额巡检统一做,状态机与回收逻辑只有一处实现。
@@ -118,6 +121,9 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
   结算追平后再转即可。
 - **幂等重放必须最先判**,在「只有按量实例可以转」那条守卫之前:转换成功后 `market` 已是 subscription,
   重放会撞上守卫返回一个与真实情况无关的 400,并按折后价再跑一遍本该按按量收的结算。
+- **重放查询要给全 `instance_id` / `period` / `period_count`** 做异参检测:转换与续费共用一个幂等键命名空间,
+  缺了指纹比对时同一把键打向另一台实例会把**别人那单**当作本次重放返回 200 —— 用户被告知「买好了」,
+  可目标实例既没转成包周期也没扣款。指纹不符即 409。
 - **报价基准是 `instance.price_hourly`**(按量实例上即建实例时的 SKU 原价快照),不是 SKU 现价,
   与「变更 SKU 仅影响新实例」同一条口径。这个原价同时落进新订阅行的 `unit_price`,后续续费按它报价。
 - 前置条件:`market='on_demand'`;状态 `running` 或 `stopped`(其余 409
@@ -141,7 +147,7 @@ ref_type='subscription', ref_id=<订阅 id>, allow_negative=False)` → `assert_
   **两个文案**:没有订阅行报 `billing.subscriptionMissing`,`status='cancelled'` 报
   `billing.subscriptionCancelled`。`auto-renew` 同一套判据。
 - 并发同幂等键由 `UNIQUE(user_id, idempotency_key)` 兜住:撞键方 rollback 后回查胜出方按重放返回
-  (rollback 同时撤掉「老行已转 expired」那半步)。
+  (rollback 同时撤掉「老行已转 expired」那半步);回查同样带 `request_fingerprint`,同键异参 409。
 
 `POST /api/v1/instances/{uuid}/auto-renew` 开关自动续费,**默认关**。
 

@@ -162,7 +162,7 @@ class TestArrearsChain:
         async def stale_get_balance(session, uid):
             return Decimal("0.00")
 
-        monkeypatch.setattr(patrol_mod.wallet, "get_balance", stale_get_balance)
+        monkeypatch.setattr(patrol_mod.wallet, "get_available_balance", stale_get_balance)
         async with sm() as session:
             await wallet.credit(session, user_id, Decimal("50.00"), type_="recharge")
             await session.commit()

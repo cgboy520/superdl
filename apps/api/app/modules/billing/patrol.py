@@ -1,6 +1,10 @@
 """余额巡检(5 分钟):预警 → 欠费停机 → 冻结 72h → 到期回收 → 充值解冻。
 
 每步落事件与通知。数据盘独立宽限,不随实例回收。
+
+全链路判据一律是**可用余额**(balance − frozen,`wallet.available_of`),与开机前置
+(`wallet.assert_can_afford`)同口径:渠道冲正冻结的钱可能被渠道拿回,不得继续买算力。
+拿裸余额判会让被冲正的账号一路跑到人工核销——而结算侧 allow_frozen=True 照扣不误。
 """
 
 from datetime import datetime, timedelta
@@ -122,23 +126,23 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
             continue
         try:
             async with sm() as session:
-                balance = await wallet.get_balance(session, user_id)
+                available = await wallet.get_available_balance(session, user_id)
                 burn_per_hour = sum(
                     (hourly_cost(i.price_hourly, i.gpu_count) for i in instances),
                     Decimal("0.00"),
                 )
-                # 停机判据:余额 − 未结算消耗 ≤ 0。只看余额会有约 65 分钟的停机盲区
+                # 停机判据:可用余额 − 未结算消耗 ≤ 0。只看余额会有约 65 分钟的停机盲区
                 # (小时结算次小时 :02 才落账),实时估算把盲区压到巡检周期内
                 now = now_utc()
                 unsettled = Decimal("0.00")
                 for inst in instances:
                     unsettled += await _unsettled_burn(session, inst, now, settled_through)
-                effective = as_amount(balance - unsettled)
+                effective = as_amount(available - unsettled)
                 if effective <= 0:
                     # 必须锁内二次读:粗筛到提交停机之间用户可能刚充值(credit 与本锁互斥),
-                    # 不重读会按旧余额误停机
+                    # 不重读会按旧余额误停机。二次读同样走可用口径,否则冻结额在这里漏回来
                     locked = await wallet.lock_wallet(session, user_id)
-                    effective = as_amount(locked.balance - unsettled)
+                    effective = as_amount(wallet.available_of(locked) - unsettled)
                 if effective <= 0:
                     for inst in instances:
                         fresh = await orchestrator_service.get_instance(session, user_id, inst.uuid)
@@ -160,7 +164,7 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
                     # 巡检到的每个 user_id 必有阈值行
                     if est_hours < thresholds[user_id]:
                         await notify_service.send_low_balance_warning(
-                            session, user_id, est_hours=est_hours, balance=money_str(balance)
+                            session, user_id, est_hours=est_hours, balance=money_str(available)
                         )
                         counts["warned"] += 1
         except Exception:
@@ -190,8 +194,8 @@ async def _patrol_frozen_and_arrears_stopped(
     for inst in (i for i in stopped if i.market != MARKET_SUBSCRIPTION):
         try:
             async with sm() as session:
-                balance = await wallet.get_balance(session, inst.user_id)
-                if balance > 0:
+                available = await wallet.get_available_balance(session, inst.user_id)
+                if available > 0:
                     continue
                 fresh = await orchestrator_service.get_instance(session, inst.user_id, inst.uuid)
                 if fresh.status != orchestrator_service.STOPPED:
@@ -218,9 +222,11 @@ async def _patrol_frozen_and_arrears_stopped(
                 if fresh.status != orchestrator_service.FROZEN:
                     continue
                 # 解冻条件按购买模式分:按量看回款,包周期看续费。给包周期也按余额解冻会让
-                # 到期未续费但余额充足的用户无限解冻,等于免费续期
-                balance = await wallet.get_balance(session, inst.user_id)
-                if balance > 0 and fresh.market != MARKET_SUBSCRIPTION:
+                # 到期未续费但余额充足的用户无限解冻,等于免费续期。
+                # 回款只认可用余额:被渠道冲正冻结的那笔钱随时可能被拿回,拿它解冻等于
+                # 用一笔已在追回中的充值取消掉回收倒计时
+                available = await wallet.get_available_balance(session, inst.user_id)
+                if available > 0 and fresh.market != MARKET_SUBSCRIPTION:
                     await orchestrator_service.unfreeze_instance(session, fresh)
                     counts["unfrozen"] += 1
                 elif fresh.frozen_deadline is not None and fresh.frozen_deadline <= now:
@@ -251,9 +257,9 @@ async def _patrol_disks(sm: async_sessionmaker[AsyncSession], counts: dict[str, 
     for user_id in user_ids:
         try:
             async with sm() as session:
-                balance = await wallet.get_balance(session, user_id)
+                available = await wallet.get_available_balance(session, user_id)
                 changed = await orchestrator_service.disks_arrears_transition(
-                    session, user_id, balance <= 0
+                    session, user_id, available <= 0
                 )
                 await session.commit()
                 counts["disks"] += changed

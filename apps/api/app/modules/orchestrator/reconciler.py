@@ -131,12 +131,19 @@ async def _running_pod_lost_reason(
 
     服务型实例不走 pod_unready 这一支:它的 not-ready 判据是用户自己声明的 readinessProbe,
     长期不过属用户容器问题,判 failed 会把一台付费实例误标成故障。
+
+    unready_since 的清零只有 st.ready 这一处:返回 None 不等于「恢复了」——宽限期内、
+    以及服务型实例的 pod_unready 豁免都返回 None,由调用方按 None 清零会把计时器每轮
+    抹平,超时分支永不可达(Pod 卡在 Running-not-ready 就永远不判故障、一直计费)。
     """
     if not st.exists or st.phase in ("Failed", "Succeeded"):
         return "pod_lost"
     if st.deleting:
         return "pod_lost"  # 被驱逐/被外部删除:running 态的删除一定不是我们发起的
     if st.ready:
+        if instance.unready_since is not None:
+            instance.unready_since = None  # 抖动恢复,重新计时
+            await session.flush()
         return None
     # not-ready 给一段宽限,容忍容器重启、镜像层重挂这类抖动
     if instance.unready_since is None:
@@ -363,10 +370,9 @@ async def _reconcile_instances(
                     lost = await _running_pod_lost_reason(
                         session, instance, st, unready_timeout, node_not_ready
                     )
-                    if lost is None:
-                        if instance.unready_since is not None:
-                            instance.unready_since = None  # 抖动恢复,重新计时
-                    else:
+                    # lost is None 时不动 unready_since:清零只由 _running_pod_lost_reason
+                    # 在 st.ready 分支做。在这里按 None 清零 = 与写入同事务擦掉,计时永不累积
+                    if lost is not None:
                         # 平台责任失联(node_lost/pod_lost):unready_since 写进事件 metadata,
                         # 计费据此截断到 Pod 首次不可用时点;pod_unready 不截断,照常计费
                         meta: dict[str, Any] = {
