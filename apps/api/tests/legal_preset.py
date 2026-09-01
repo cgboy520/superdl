@@ -1,4 +1,4 @@
-"""测试用法务预置文档:与迁移 20260823_cd2abcccda26 内联写入的 published v1 同文。
+"""测试用法务预置文档:与基线迁移 20260901_1620c05976ce 内联写入的 published v1 同文。
 
 生产事实源是迁移;单测走 create_all 不含迁移数据,conftest 经 seed_preset_docs 播种等价物。
 terms/privacy 正文来自用户端原静态页的 markdown 化;deletion_notice 与账号注销弹窗说明同源。
