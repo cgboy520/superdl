@@ -5,6 +5,7 @@
 
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -303,6 +304,17 @@ def stream_admin_refunds_csv(
     )
 
 
+def mask_invoice_identity(value: str) -> str:
+    """发票抬头/邮箱的默认脱敏(复用管理端实名脱敏 mask_id_name:留首字符,其余打星)。
+
+    抬头在个人票上就是自然人姓名,邮箱是可直接触达的联系方式;两者的明文批量读取
+    必须是显式动作(reveal + 事由 + 审计),不能是打开列表页/点一次导出的副作用。
+    """
+    from app.modules.account import service as account_service
+
+    return account_service.mask_id_name(value) if value else value
+
+
 def stream_admin_invoices_csv(
     session: AsyncSession,
     *,
@@ -310,8 +322,15 @@ def stream_admin_invoices_csv(
     period: str | None = None,
     tz_offset_minutes: int = BILLING_TZ_OFFSET_MINUTES,
     lang: str = "zh-CN",
+    reveal: bool = False,
+    row_counter: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
-    """管理端发票申请 CSV(降序;筛选口径与 GET /admin/v1/invoices 一致)。"""
+    """管理端发票申请 CSV(降序;筛选口径与 GET /admin/v1/invoices 一致)。
+
+    reveal=False(默认)下抬头与邮箱脱敏;明文导出由调用方以 reveal + 必填事由开闸并落审计。
+    row_counter 给调用方回读**实际吐出的行数**(审计里要落条数):流是懒的,函数返回时
+    一行都还没生成,只能由 row() 边吐边记,审计行在响应写完后才构建,读到的即最终值。
+    """
     stmt = select(InvoiceRequest)
     if status:
         stmt = stmt.where(InvoiceRequest.status == status)
@@ -320,15 +339,17 @@ def stream_admin_invoices_csv(
     status_labels = _INVOICE_STATUS_LABEL[lang]
 
     def row(r: InvoiceRequest) -> list[object]:
+        if row_counter is not None:
+            row_counter["rows"] = int(row_counter.get("rows", 0)) + 1
         return [
             r.invoice_no or "",
             r.user_id,
             r.period,
             fmt_money(r.amount),
-            r.title,
+            r.title if reveal else mask_invoice_identity(r.title),
             r.tax_id or "",
             status_labels.get(r.status, r.status),
-            r.email,
+            r.email if reveal else mask_invoice_identity(r.email),
             fmt_ts(r.created_at, tz_offset_minutes),
         ]
 

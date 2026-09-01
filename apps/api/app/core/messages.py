@@ -223,6 +223,11 @@ MESSAGES: dict[str, str] = {
     ),
     "nodes.enrollTransition": "注册状态不允许 {from} → {to}",
     "nodes.hostnameMismatch": "主机名与登记不符,令牌已作废,请在管理端核对后重新生成",
+    "nodes.nodeNotFound": "节点不在台账中:请确认节点名,或等待下一轮巡检(60 秒)收录后再试",
+    "nodes.decommissionDone": (
+        "节点已退役:已停止调度、作废该机全部注册令牌,集群侧 Node 对象将在后台删除。"
+        "请另行轮换集群 join token 并吊销该机 kubelet 证书"
+    ),
     "nodes.regenerateNotAllowed": "状态 {status} 不允许重新生成(仅 待执行/已过期/已失败)",
     "nodes.storageClassMissing": "集群存储未就绪(缺少 {names}),暂时无法开通;请联系平台运维",
     # 实例编排

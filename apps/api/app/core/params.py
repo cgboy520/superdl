@@ -15,5 +15,11 @@ TzOffset = Query(default=BILLING_TZ_OFFSET_MINUTES, ge=-720, le=720)
 Cursor = Query(default=None)
 Limit = Query(default=None, le=MAX_LIMIT)
 
-# 创建类写接口的幂等键头(重放语义见 core/idempotency.py)
-IdempotencyKey = Annotated[str | None, Header(alias="Idempotency-Key")]
+# 创建类写接口的幂等键头(重放语义见 core/idempotency.py)。
+# max_length 与全部承载表的 idempotency_key 列宽(varchar(64))对齐:契约层不挡的话,
+# 超长键会在 INSERT 时抛 DataError(StringDataRightTruncation),而 idempotency.py 只接
+# IntegrityError —— 任何已登录用户都能把创建类端点变成 500。
+IDEMPOTENCY_KEY_MAX_LENGTH = 64
+IdempotencyKey = Annotated[
+    str | None, Header(alias="Idempotency-Key", max_length=IDEMPOTENCY_KEY_MAX_LENGTH)
+]

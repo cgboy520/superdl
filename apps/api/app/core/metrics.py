@@ -74,6 +74,26 @@ AUDIT_WRITE_FAILED_TOTAL = Counter(
     "superdl_audit_write_failed_total",
     "审计行写入失败次数(fail-open 独立 session 路径;资金域动作为同事务同步审计,不受影响)",
 )
+# 安全域计数(kps 侧配套告警;失败登录/越权/提权/PII 明文读四条线各自成表)
+LOGIN_FAILED_TOTAL = Counter(
+    "superdl_login_failed_total",
+    "登录失败次数(凭据错/账号不存在;actor_type 区分用户端与管理端)",
+    ["actor_type"],
+)
+AUTHZ_DENIED_TOTAL = Counter(
+    "superdl_authz_denied_total",
+    "已认证但被角色门拒绝的请求数(403);持续非零 = 越权探测或前端菜单与后端角色门不同步",
+    ["actor_type"],
+)
+ADMIN_PRIVILEGE_CHANGE_TOTAL = Counter(
+    "superdl_admin_privilege_change_total",
+    "管理员权限面变更次数(建号、改角色/停用、重置口令、重置 MFA);每一次都应有人认领",
+)
+PII_REVEAL_ROWS_TOTAL = Counter(
+    "superdl_pii_reveal_rows_total",
+    "管理端明文读取到的 PII 行数(kind 区分来源:租户实名 / 发票抬头邮箱)",
+    ["kind"],
+)
 PAYMENT_CALLBACK_MISMATCH_TOTAL = Counter(
     "superdl_payment_callback_mismatch_total", "支付回调金额与订单不符次数"
 )

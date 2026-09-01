@@ -159,6 +159,101 @@ class TestInvoicesExport:
         assert "2026-07" in by_period and "INV-2026-0001" not in by_period
 
 
+class TestInvoicePiiGate:
+    """发票抬头/税号/邮箱是全站最集中的 PII 出口(单次导出封顶 5 万行):
+    只给财务、默认脱敏、明文要事由、每次导出都留痕。"""
+
+    async def test_readonly_is_refused(self, client: AsyncClient, sm):
+        """readonly 一律 403 —— /tenants 已明确不给它明文实名,这里放它整表拉走
+        抬头+邮箱是同一份 PII 换个出口。挂了说明角色门又被放宽回 _ANY_READ。"""
+        await _make_invoices(sm)
+        ro = await admin_headers(sm, client, role="readonly", username="ro-exp-iv")
+        for path in ("/api/admin/v1/invoices", "/api/admin/v1/invoices/export"):
+            resp = await client.get(path, headers=ro)
+            assert resp.status_code == 403, (path, resp.text)
+
+    async def test_masked_by_default_and_reason_required(self, client: AsyncClient, sm):
+        """不给 reveal:抬头与邮箱脱敏;给了 reveal 却不给事由:422,不吐明文。"""
+        await _make_invoices(sm)
+        fin = await admin_headers(sm, client, role="finance", username="fin-mask-iv")
+
+        csv_text = (await client.get("/api/admin/v1/invoices/export", headers=fin)).text
+        assert "示例科技(深圳)有限公司0号" not in csv_text
+        assert "ap0@example.com" not in csv_text
+        assert "示***********" in csv_text  # 留首字符掩其余(与租户实名同一档)
+        # 税号与金额不脱敏:财务核对要用,且不是自然人标识
+        assert "91440300MA5F000000" in csv_text
+
+        rows = (await client.get("/api/admin/v1/invoices", headers=fin)).json()
+        assert all(r["title"].startswith("示*") and "@" not in r["email"] for r in rows), rows
+
+        no_reason = await client.get(
+            "/api/admin/v1/invoices/export", params={"reveal": True}, headers=fin
+        )
+        assert no_reason.status_code == 400
+        assert no_reason.json()["detail"] == {
+            "field": "reason",
+            "constraint": "required_when_reveal",
+        }
+
+    async def test_reveal_with_reason_is_audited_with_row_count(self, client: AsyncClient, sm):
+        """明文导出 = 一次显式动作:CSV 里是明文,同时落一条带筛选条件与**实际行数**的审计。
+
+        挂了说明 5 万行 PII 可以被拉走而没有任何一行记录说明谁、为什么、拉了多少。
+        """
+        from app.core.audit import AuditLog
+
+        await _make_invoices(sm)
+        fin = await admin_headers(sm, client, role="finance", username="fin-reveal-iv")
+        resp = await client.get(
+            "/api/admin/v1/invoices/export",
+            params={"reveal": True, "reason": "月末开票核对", "status": "submitted"},
+            headers=fin,
+        )
+        assert resp.status_code == 200
+        assert "示例科技(深圳)有限公司0号" in resp.text and "ap0@example.com" in resp.text
+
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.target == "invoice-identity:export")
+                )
+            ).scalar_one()
+        assert row.actor_type == "admin"
+        assert row.detail == {
+            "rows": 1,  # status=submitted 只命中一条
+            "reveal": True,
+            "reason": "月末开票核对",
+            "status": "submitted",
+            "period": None,
+            "format": "csv",
+        }
+        # 审计行与该次请求的日志之间有连接键
+        assert row.request_id == resp.headers["x-request-id"]
+
+    async def test_json_reveal_is_audited(self, client: AsyncClient, sm):
+        """JSON 列表与 CSV 同一档:明文同样要事由 + 审计(否则绕开导出就白设闸)。"""
+        from app.core.audit import AuditLog
+
+        await _make_invoices(sm)
+        fin = await admin_headers(sm, client, role="finance", username="fin-reveal-json")
+        resp = await client.get(
+            "/api/admin/v1/invoices",
+            params={"reveal": True, "reason": "客服核对抬头"},
+            headers=fin,
+        )
+        assert resp.status_code == 200
+        assert any(r["title"] == "示例科技(深圳)有限公司0号" for r in resp.json())
+        async with sm() as session:
+            row = (
+                await session.execute(
+                    select(AuditLog).where(AuditLog.target == "invoice-identity:reveal")
+                )
+            ).scalar_one()
+        assert row.detail is not None and row.detail["rows"] == 2
+        assert row.detail["reason"] == "客服核对抬头"
+
+
 async def _make_adjustments(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:
     from app.modules.adminapi.models import AdminAdjustment
 

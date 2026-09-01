@@ -15,4 +15,6 @@ period?: string | null;
  */
 tz_offset_minutes?: number;
 lang?: AdminInvoicesExportApiAdminV1InvoicesExportGetLang;
+reveal?: boolean;
+reason?: string | null;
 };

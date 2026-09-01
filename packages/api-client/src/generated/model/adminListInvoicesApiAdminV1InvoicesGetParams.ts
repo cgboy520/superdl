@@ -8,4 +8,6 @@
 export type AdminListInvoicesApiAdminV1InvoicesGetParams = {
 status?: string | null;
 period?: string | null;
+reveal?: boolean;
+reason?: string | null;
 };

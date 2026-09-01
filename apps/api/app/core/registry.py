@@ -90,10 +90,22 @@ def is_pinned_image_ref(image_ref: str) -> bool:
 
 def effective_image_allowlist(cfg: Mapping[str, str]) -> list[str]:
     """创建实例的镜像来源白名单:配置行(换行/逗号分隔的仓库前缀)∪ Harbor 地址前缀。
-    空列表 = 不限制。平台镜像目录内的引用由调用方另行放行。"""
+    空列表 = 不限制。平台镜像目录内的引用由调用方另行放行。
+
+    每条前缀一律补成以 `/` 结尾:匹配方是裸 `image_ref.startswith(prefix)`
+    (orchestrator/service._check_image),不补斜杠的 `docker.io` 会顺带放行
+    `docker.io.attacker.example/evil:1` —— 攻击者注册一个以白名单项开头的域名就绕过了
+    整道闸门。补上 `/` 后前缀只能停在路径分隔处,`docker.io/library/...` 照常命中。
+    不改成「解析出仓库主机后相等比较」:运营录入的前缀常带项目路径
+    (`harbor.internal/superdl/`),按主机相等会把这种「只许本项目」的意图放宽成整台仓库。
+    """
     raw = (cfg.get("image_allowed_registries") or "").replace(",", "\n")
-    prefixes = [line.strip() for line in raw.splitlines() if line.strip()]
-    host = (cfg.get("registry_host") or "").strip()
+    prefixes: list[str] = []
+    for line in raw.splitlines():
+        prefix = line.strip().rstrip("/")
+        if prefix and f"{prefix}/" not in prefixes:
+            prefixes.append(f"{prefix}/")
+    host = (cfg.get("registry_host") or "").strip().rstrip("/")
     if host and f"{host}/" not in prefixes:
         prefixes.insert(0, f"{host}/")
     return prefixes

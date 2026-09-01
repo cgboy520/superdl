@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from fastapi import status
 from sqlalchemy import select
@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.idempotency import request_fingerprint
 from app.core.logging import get_logger, mask_phone_value
+from app.core.metrics import (
+    ADMIN_PRIVILEGE_CHANGE_TOTAL,
+    AUTHZ_DENIED_TOTAL,
+    LOGIN_FAILED_TOTAL,
+)
 from app.core.money import money_str
 from app.core.pagination import Page
 from app.core.platform_config import get_effective_platform_config
@@ -62,6 +67,28 @@ RECOVERY_CODE_COUNT = 10
 # 单笔调账绝对值上限:超出走对公/线下流程,不进双人复核(防手滑多敲零)
 ADJUST_MAX_ABS = Decimal("100000.00")
 
+# 明文 PII 事由的最短长度(「1」不算事由)
+REVEAL_REASON_MIN_LENGTH = 2
+
+
+def ensure_reveal_allowed(*, role: str, reason: str | None) -> str:
+    """PII 明文读取的统一开闸(租户实名 / 发票抬头邮箱共用)。返回规范化后的事由。
+
+    两条硬规矩:readonly 永不给明文(只读岗位不需要接触明文 PII),事由必填(审计里
+    要能答「为什么看」)。任一处新开明文出口都必须过这里,否则脱敏档位会各写各的。
+    """
+    if role == "readonly":
+        AUTHZ_DENIED_TOTAL.labels(actor_type="admin").inc()
+        raise AppError(ErrorCode.FORBIDDEN, key="common.forbidden", http_status=403)
+    normalized = (reason or "").strip()
+    if len(normalized) < REVEAL_REASON_MIN_LENGTH:
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR,
+            key="common.validation",
+            detail={"field": "reason", "constraint": "required_when_reveal"},
+        )
+    return normalized
+
 
 def _check_password_bytes(password: str) -> None:
     """哈希前按字节数拦截超长口令,否则 bcrypt 5.x 在哈希层抛 ValueError 变 500。"""
@@ -71,18 +98,46 @@ def _check_password_bytes(password: str) -> None:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="common.validation") from None
 
 
-def _login_buckets(client_ip: str | None, username: str) -> list[tuple[str, int, float, bool]]:
-    """四层登录桶 (键, 上限, 窗口秒, 成功即清零),全部只计失败。IP 桶与日桶不清零:
-    口令喷洒不会产生成功登录,清零只会给持续撞库者续命。每次调用重读阈值常量(测试可 monkeypatch)。"""
+class LoginBucket(NamedTuple):
+    """登录限流桶。preflight:是否参与 bcrypt 前的准入预检(封禁面);
+    clear_on_success:凭据正确后是否清零。全部桶都只计失败。"""
+
+    key: str
+    max_attempts: int
+    window_seconds: float
+    clear_on_success: bool
+    preflight: bool
+
+
+def _login_buckets(client_ip: str | None, username: str) -> list[LoginBucket]:
+    """四层登录桶,全部只计失败。IP 桶与日桶不清零:口令喷洒不会产生成功登录,
+    清零只会给持续撞库者续命。每次调用重读阈值常量(测试可 monkeypatch)。
+
+    日窗账号桶 preflight=False —— 它只在失败后计数判定,不进 bcrypt 前的准入预检:
+    进预检就意味着任何人用 30 个错口令能把一个具名管理员锁死 24 小时,而管理端没有
+    第二条认证通路(无短信/无找回),自愈也没有(日桶不清零),只能进库改数据。
+    去掉预检后攻击者仍在第 31 次失败起吃 429(限速不变),拿着正确口令的管理员照常登录。
+    """
     ip = client_ip or "-"
     return [
-        (f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS, False),
-        (f"admin-login:{ip}:{username}", LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS, True),
-        (f"admin-login-acct:{username}", LOGIN_ACCT_MAX_ATTEMPTS, LOGIN_ACCT_WINDOW_SECONDS, True),
-        (
+        LoginBucket(
+            f"admin-login-ip:{ip}", LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_SECONDS, False, True
+        ),
+        LoginBucket(
+            f"admin-login:{ip}:{username}", LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS, True, True
+        ),
+        LoginBucket(
+            f"admin-login-acct:{username}",
+            LOGIN_ACCT_MAX_ATTEMPTS,
+            LOGIN_ACCT_WINDOW_SECONDS,
+            True,
+            True,
+        ),
+        LoginBucket(
             f"admin-login-acct-daily:{username}",
             LOGIN_ACCT_DAILY_MAX_ATTEMPTS,
             LOGIN_ACCT_DAILY_WINDOW_SECONDS,
+            False,
             False,
         ),
     ]
@@ -97,16 +152,23 @@ async def login(
         await session.execute(select(AdminUser).where(AdminUser.username == username))
     ).scalar_one_or_none()
     buckets = _login_buckets(client_ip, username)
-    # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不付哈希成本
-    for key, max_attempts, window, _ in buckets:
-        await ensure_not_rate_limited(key, max_attempts=max_attempts, window_seconds=window)
+    # 已封禁的桶在 bcrypt(~200ms CPU/次)之前拦下:封禁期内的撞库请求不付哈希成本。
+    # 日窗账号桶不进预检(见 _login_buckets):它拦的会是拿着正确口令的本人
+    for b in buckets:
+        if b.preflight:
+            await ensure_not_rate_limited(
+                b.key, max_attempts=b.max_attempts, window_seconds=b.window_seconds
+            )
     password_ok = await verify_password(
         password, admin.password_hash if admin else DUMMY_PASSWORD_HASH
     )
     if admin is None or not password_ok:
         # 只在失败后计数,四层同计:换 IP 逃不掉账号桶,换账号逃不掉 IP 桶
-        for key, max_attempts, window, _ in buckets:
-            await check_rate_limit(key, max_attempts=max_attempts, window_seconds=window)
+        for b in buckets:
+            await check_rate_limit(
+                b.key, max_attempts=b.max_attempts, window_seconds=b.window_seconds
+            )
+        LOGIN_FAILED_TOTAL.labels(actor_type="admin").inc()
         logger.warning("admin_login_failed", username=username, ip=client_ip)
         raise AppError(ErrorCode.LOGIN_FAILED, key="adminapi.loginFailed")
     if admin.status != "active":
@@ -116,9 +178,9 @@ async def login(
             http_status=status.HTTP_403_FORBIDDEN,
         )
     # 凭据正确即清零「成功即清零」的桶(IP 桶与日桶不清)
-    for key, _, _, clear_on_success in buckets:
-        if clear_on_success:
-            await clear_rate_limit(key)
+    for b in buckets:
+        if b.clear_on_success:
+            await clear_rate_limit(b.key)
     # 安全策略关闭两步验证:密码即登录(已绑定者也不挑战;重新开启即恢复二要素)
     cfg = await get_effective_platform_config(session)
     if cfg["admin_mfa_enabled"] != "true":
@@ -267,16 +329,26 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
 
     行锁下读改写:并发 begin(双发/双击/多标签页)各读到 totp_secret is None 时会各生成
     一枚密钥、后写者覆盖前者,页面渲染的二维码可能已失效,首个动态码必然验不过。
+
+    已绑定即拒(MFA_TICKET_INVALID):没有这道闸,任何持有过绑定票的人都能在票据有效期内
+    对已绑定账号再 begin 一次,直接读回**长期有效**的 TOTP 种子,此后可无限自造第二要素。
+    绑定成功时 confirm 会 bump token_version 让在外的绑定票立即失效(票据带 ver),
+    本闸是同一条防线的第二层——即使票据没死,种子也不再出库。
     """
     import pyotp
 
     from app.core.crypto import encrypt_str
 
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
+    # 与 confirm/verify 同一配额桶:begin 本身也是拿票据换敏感物料的动作,不能免检
+    await _check_mfa_rate(admin.id)
     # populate_existing 不可省:_admin_from_ticket 已把该行读进 identity map,
     # 不强制重读则 get() 直接返回缓存实例,锁拿到了却看的是加锁前的旧值
     locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
     assert locked is not None  # 同一事务刚按票据加载过该行;AdminUser 无删除路径
+    if locked.totp_enabled:
+        await session.rollback()  # 只读事务,锁不留到请求结束
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     if locked.totp_secret is None:
         secret = pyotp.random_base32()
         locked.totp_secret = encrypt_str(secret, aad=f"totp:{locked.id}")
@@ -290,7 +362,12 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
 async def confirm_totp_setup(
     session: AsyncSession, ticket: str, code: str
 ) -> tuple[str, AdminUser, list[str]]:
-    """校验首个动态码 → 启用 + 发恢复码(明文仅本次) → 签发正式 token。"""
+    """校验首个动态码 → 启用 + 发恢复码(明文仅本次) → 签发正式 token。
+
+    绑定成功即 token_version+1:绑定票一次性作废(票据带 ver,见 _mfa_ticket),
+    否则那张票在剩余有效期(至多 600s)里仍能换回 begin —— 绑定完成后再 begin 一次
+    就把长期种子交了出去。bump 同时踢掉该账号其它在外会话,正是绑定时该有的语义。
+    """
     admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
     await _check_mfa_rate(admin.id)
     if admin.totp_secret is None:  # 未 begin 直接 confirm
@@ -304,9 +381,13 @@ async def confirm_totp_setup(
         logger.warning("mfa_bind_failed", admin_id=admin.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
     await _count_mfa_attempt(admin.id)  # 成功也计配额:窗口内批量领 token 的兜底
+    if locked.totp_enabled:
+        # begin 的已绑定闸之外的第二道:并发两张票同时 confirm 时后到者不得重发恢复码
+        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     plain = _gen_plain_recovery_codes()
     locked.totp_recovery = await _hash_recovery_codes(plain)
     locked.totp_enabled = True
+    locked.token_version += 1  # 绑定票即刻作废(见 docstring);access token 用 bump 后的版本
     # 绑定即告警(检测闭环):绑定只靠口令是结构性事实(平台无管理员带外通道),
     # 抢先绑定窗口(首登/重置后)内被盗口令可静默换绑——告警流是唯一及时发现面
     from app.modules.notify import service as notify_service
@@ -390,6 +471,7 @@ async def reset_totp(session: AsyncSession, actor: AdminUser, target_id: int) ->
     target.totp_recovery = None
     target.token_version += 1
     await session.commit()
+    ADMIN_PRIVILEGE_CHANGE_TOTAL.inc()
     logger.warning("mfa_reset", actor_id=actor.id, target_id=target_id)
     return target
 
@@ -406,6 +488,7 @@ async def create_admin(session: AsyncSession, username: str, password: str, role
         await session.rollback()
         raise conflict(key="adminapi.adminUsernameTaken") from exc
     await session.refresh(admin)
+    ADMIN_PRIVILEGE_CHANGE_TOTAL.inc()
     return admin
 
 
@@ -468,6 +551,8 @@ async def update_admin(
         admin.token_version += 1
     await session.commit()
     await session.refresh(admin)
+    if before:
+        ADMIN_PRIVILEGE_CHANGE_TOTAL.inc()
     return admin, before
 
 
@@ -478,6 +563,7 @@ async def reset_admin_password(session: AsyncSession, admin_id: int, password: s
     admin.token_version += 1  # 改密即踢掉全部在外会话
     await session.commit()
     await session.refresh(admin)
+    ADMIN_PRIVILEGE_CHANGE_TOTAL.inc()
     return admin
 
 

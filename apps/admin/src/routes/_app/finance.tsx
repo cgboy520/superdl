@@ -72,7 +72,7 @@ import { useOrderColumns } from "../../components/orderColumns";
 import { RowActionModal } from "../../components/RowActionModal";
 import { SignedAmount } from "../../components/SignedAmount";
 import { TenantLink, tenantColumn } from "../../components/TenantLink";
-import { canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
+import { canReadInvoices, canWriteFinance, useAdminRole, useAuth } from "../../stores/auth";
 import { SettlementGapsTab } from "./-SettlementGapsTab";
 
 const FINANCE_TABS = ["orders", "refunds", "invoices", "adjustments", "gaps", "anomalies", "audit"] as const;
@@ -1232,11 +1232,26 @@ function InvoicesTab() {
   }
   // 宽松校验:非 YYYY-MM 格式标红提示,但不阻止提交(后端对非法账期只会回空,不会误操作)
   const periodBad = periodInput.trim() !== "" && !PERIOD_RE.test(periodInput.trim());
+  // 抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + 必填事由),后端按条数与事由落审计。
+  // 授权绑定「授权时的筛选口径」:换状态/换账期即撤销,一条事由不会顺着后续筛选把整表解锁。
+  // 撤销是真删授权而非只藏标签——只比对不清空的话,筛选绕一圈回来会无声地重新解锁。
+  const filterKey = `${status ?? ""}|${urlPeriod}`;
+  const [reveal, setReveal] = useState<{ reason: string; filterKey: string } | null>(null);
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setReveal(null);
+  }
+  const revealReason = reveal?.filterKey === filterKey ? reveal.reason : null;
+  const [revealOpen, setRevealOpen] = useState(false);
+  const [reasonInput, setReasonInput] = useState("");
   const params = {
     ...(status ? { status } : {}),
     ...(urlPeriod ? { period: urlPeriod } : {}),
+    ...(revealReason !== null ? { reveal: true, reason: revealReason } : {}),
   };
   const { data, queryKey, isLoading, isError, error, refetch } = useInvoices(params);
+  // 导出与表格共用同一份 params:CSV 拿不到表格没解锁的明文,明文事由是两个出口的同一道闸
   const { doExport, exporting } = useCsvExport((tz, lang) => exportInvoicesCsv(params, tz, lang));
   const rows: InvoiceRow[] = data ?? [];
   const [issueTarget, setIssueTarget] = useState<InvoiceRow | null>(null);
@@ -1272,10 +1287,43 @@ function InvoicesTab() {
             onSearch={(v) => setFilters({ i_period: v.trim() || undefined })}
           />
         </Form.Item>
-        <Button onClick={() => void doExport()} loading={exporting}>
-          {t("common.exportCsv")}
-        </Button>
+        <Tooltip title={revealReason !== null ? t("finance.exportRevealNote") : ""}>
+          <Button onClick={() => void doExport()} loading={exporting}>
+            {t("common.exportCsv")}
+          </Button>
+        </Tooltip>
+        {revealReason === null ? (
+          <Button onClick={() => setRevealOpen(true)}>{t("finance.revealIdentity")}</Button>
+        ) : (
+          <Tag color="orange" closable onClose={() => setReveal(null)}>
+            {t("finance.revealActive", { reason: revealReason })}
+          </Tag>
+        )}
       </Space>
+      <Modal
+        title={t("finance.revealTitle")}
+        open={revealOpen}
+        onCancel={() => setRevealOpen(false)}
+        okText={t("finance.revealConfirm")}
+        okButtonProps={{ disabled: !isValidReason(reasonInput) }}
+        onOk={() => {
+          setReveal({ reason: reasonInput.trim(), filterKey });
+          setRevealOpen(false);
+          setReasonInput("");
+        }}
+      >
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">{t("finance.revealHint")}</Typography.Text>
+          <Input.TextArea
+            rows={2}
+            value={reasonInput}
+            onChange={(e) => setReasonInput(e.target.value)}
+            placeholder={t("finance.revealReasonPlaceholder")}
+            maxLength={REASON_MAX_LEN}
+            showCount
+          />
+        </Space>
+      </Modal>
       <Table<InvoiceRow>
         scroll={{ x: 1100 }}
         rowKey="id"
@@ -1394,15 +1442,29 @@ function FinancePage() {
   const { t } = useTranslation(["admin", "shared"]);
   const navigate = useNavigate();
   const tab = Route.useSearch({ select: (s) => s.tab });
+  const role = useAdminRole();
   const anomaliesQ = useAnomalies();
   const { data: anomalies, isError: anomaliesError } = anomaliesQ;
   const anomalyCount = anomalies?.length ?? 0;
+  // 发票读门只剩 finance/admin(抬头与邮箱是自然人 PII):无权角色不给 Tab,也就不会挂上必 403 的查询。
+  // 书签直达 ?tab=invoices 时回落充值流水并明示原因——静默换 Tab 会被读成「发票没了」
+  const showInvoices = canReadInvoices(role);
+  const activeTab = tab ?? "orders";
+  const invoicesDenied = activeTab === "invoices" && !showInvoices;
   return (
     <PageContainer title={t("menu.finance")}>
       <ReconciliationCard />
       <Card style={{ marginTop: 16 }}>
+        {invoicesDenied && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            title={t("finance.tabInvoicesDenied")}
+          />
+        )}
         <Tabs
-          activeKey={tab ?? "orders"}
+          activeKey={invoicesDenied ? "orders" : activeTab}
           onChange={(key) =>
             void navigate({
               to: "/finance",
@@ -1413,7 +1475,9 @@ function FinancePage() {
           items={[
             { key: "orders", label: t("finance.tabOrders"), children: <OrdersTab /> },
             { key: "refunds", label: t("finance.tabRefunds"), children: <RefundsTab /> },
-            { key: "invoices", label: t("finance.tabInvoices"), children: <InvoicesTab /> },
+            ...(showInvoices
+              ? [{ key: "invoices", label: t("finance.tabInvoices"), children: <InvoicesTab /> }]
+              : []),
             { key: "adjustments", label: t("finance.tabAdjustments"), children: <AdjustmentsTab /> },
             { key: "gaps", label: t("finance.tabSettlementGaps"), children: <SettlementGapsTab /> },
             {

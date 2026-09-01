@@ -727,3 +727,171 @@ class TestNodeCordon:
                 assert row.desired_unschedulable is False
         finally:
             set_orchestrator(None)
+
+
+class TestNodeDecommission:
+    """节点退役:cordon 只是不再接新活,kubelet 证书仍有效、仍能读走已调度到本机的
+    每个 Pod 的 Secret。卖掉/被扣押/报废的机器必须能被彻底摘掉,且令牌永不可复用。"""
+
+    @staticmethod
+    async def _joined_node(client, sm, *, hostname: str, pool: str = "hami") -> dict:
+        """走完整条登记链让节点进 joined,并让台账收录它。"""
+        from app.core.k8s import get_orchestrator
+        from app.core.k8s.base import NodeInfo
+        from app.modules.nodes.reconciler import reconcile_enrollments_once
+
+        await set_cluster_config(sm)
+        ah = await admin_headers(sm, client, role="ops")
+        created = (
+            await client.post(
+                "/api/admin/v1/node-enrollments",
+                json={"pool": pool, "hostname": hostname},
+                headers=ah,
+            )
+        ).json()
+        boot = await client.post(
+            "/api/v1/node-enroll/bootstrap",
+            json={"hostname": hostname},
+            headers={"Authorization": f"Bearer {created['token']}"},
+        )
+        get_orchestrator().inject_node(  # type: ignore[attr-defined]
+            NodeInfo(
+                name=hostname,
+                pool_label=pool,
+                gpu_model_label="RTX4090",
+                gpu_total=8,
+                gpu_used=0,
+                status="Ready",
+            )
+        )
+        await reconcile_enrollments_once(sm)
+        return {"headers": ah, "progress_token": boot.json()["progress_token"]}
+
+    async def test_decommission_revokes_token_and_deletes_node(self, client, sm) -> None:
+        """退役三件事必须一起发生:停调度期望态落台账、令牌作废、经 outbox 从集群删 Node。
+        挂了 = 卖掉的机器重装一次就能拿旧命令再加回来,或者它的 kubelet 还留在集群里
+        继续读别的租户的 Pod Secret。"""
+        from app.core.k8s import get_orchestrator, set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.core.outbox import OutboxTask
+        from app.modules.nodes.models import NodeSpec
+        from app.modules.nodes.patrol import node_spec_patrol
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            ctx = await self._joined_node(client, sm, hostname="sold-node-1")
+            ah = ctx["headers"]
+            await node_spec_patrol(sm)  # 台账收录(退役校验读 node_specs,不直连 K8s)
+
+            resp = await client.post(
+                "/api/admin/v1/nodes/sold-node-1/decommission",
+                json={"reason": "机器已售出"},
+                headers=ah,
+            )
+            assert resp.status_code == 200
+            assert resp.json() == {
+                "node_name": "sold-node-1",
+                "revoked_enrollments": 1,
+                "queued": True,
+            }
+            # 请求路径零 K8s 调用(规范 3):删除排到 outbox
+            assert "sold-node-1" not in fake.deleted_nodes
+            async with sm() as session:
+                enrollment = (
+                    await session.execute(
+                        select(NodeEnrollment).where(NodeEnrollment.node_name == "sold-node-1")
+                    )
+                ).scalar_one()
+                assert enrollment.status == "revoked"
+                assert "机器已售出" in (enrollment.error or "")
+                row = (
+                    await session.execute(
+                        select(NodeSpec).where(NodeSpec.node_name == "sold-node-1")
+                    )
+                ).scalar_one()
+                assert row.desired_unschedulable is True
+                types = [t.type for t in (await session.execute(select(OutboxTask))).scalars()]
+                assert "node.decommission" in types
+
+            # 令牌当场失效(不等 outbox):progress 上报一律 404
+            assert (
+                await client.post(
+                    "/api/v1/node-enroll/progress",
+                    json={"phase": "waiting_node", "state": "ok"},
+                    headers={"Authorization": f"Bearer {ctx['progress_token']}"},
+                )
+            ).status_code == 404
+
+            assert await drain_strict(sm) == (1, 0)
+            assert "sold-node-1" in fake.deleted_nodes
+            assert all(n.name != "sold-node-1" for n in await get_orchestrator().list_nodes())
+        finally:
+            set_orchestrator(None)
+
+    async def test_decommission_replay_on_absent_node_succeeds(self, client, sm) -> None:
+        """outbox 至少一次:节点已不在集群时重放必须成功而非进死信 ——
+        退役的目标态就是它不在。挂了 = 每次退役都在死信队列里留一条假故障。"""
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+        from app.core.outbox import enqueue
+        from app.modules.nodes.patrol import node_spec_patrol
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            ctx = await self._joined_node(client, sm, hostname="seized-node-1")
+            await node_spec_patrol(sm)
+            await client.post(
+                "/api/admin/v1/nodes/seized-node-1/decommission",
+                json={"reason": "设备被扣押"},
+                headers=ctx["headers"],
+            )
+            assert await drain_strict(sm) == (1, 0)
+            # 手工重放同一任务(模拟 worker 崩在 commit 之前)
+            async with sm() as session:
+                enqueue(session, "node.decommission", {"node_name": "seized-node-1"})
+                await session.commit()
+            assert await drain_strict(sm) == (1, 0)
+        finally:
+            set_orchestrator(None)
+
+    async def test_decommission_unknown_node_404(self, client, sm) -> None:
+        """台账里没有的节点名不该产出一条无人认领的删除任务。"""
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+
+        set_orchestrator(FakeOrchestrator())
+        try:
+            ah = await admin_headers(sm, client, role="ops")
+            resp = await client.post(
+                "/api/admin/v1/nodes/no-such-node/decommission",
+                json={"reason": "误操作"},
+                headers=ah,
+            )
+            assert resp.status_code == 404
+            assert resp.json()["message_key"] == "nodes.nodeNotFound"
+            assert await drain(sm) == 0
+        finally:
+            set_orchestrator(None)
+
+    async def test_manual_revoke_still_rejects_terminal(self, client, sm) -> None:
+        """放开「终态 → revoked」是给退役开的专用口子:管理端手工吊销对终态仍须 409,
+        否则 joined 的节点会被误当成「还能吊销的待加入行」。"""
+        from app.core.k8s import set_orchestrator
+        from app.core.k8s.fake import FakeOrchestrator
+
+        fake = FakeOrchestrator()
+        set_orchestrator(fake)
+        try:
+            ctx = await self._joined_node(client, sm, hostname="joined-node-1")
+            rows = await enrollment_rows(sm)
+            resp = await client.post(
+                f"/api/admin/v1/node-enrollments/{rows[0].id}/revoke",
+                json={"reason": "手工吊销"},
+                headers=ctx["headers"],
+            )
+            assert resp.status_code == 409
+            assert resp.json()["message_key"] == "nodes.alreadyTerminal"
+        finally:
+            set_orchestrator(None)

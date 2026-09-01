@@ -56,12 +56,37 @@ class TestEgressPortRanges:
             covered.update(range(lo, hi + 1))
         assert covered == set(range(1, 65536)) - set(EGRESS_BLOCKED_TCP_PORTS)
 
+    def test_no_blocked_port_falls_inside_an_allowed_range(self):
+        """区间是「顺着排好序的黑名单往前走」拼出来的:黑名单加项若没排序、或边界差一,
+        新加的端口会整个落进某个允许区间里,而上面的集合等式在 endPort 被算错时也可能
+        恰好成立不了但错误信息很难读。这里逐个黑名单端口断言,失败直接指到是哪一个。
+        挂了 = NetworkPolicy 看着有黑名单,实际那个端口照样放行。"""
+        from app.core.k8s.real import _allowed_tcp_port_ranges
+
+        ranges = [
+            (cast(int, p.port), cast(int, p.end_port or p.port)) for p in _allowed_tcp_port_ranges()
+        ]
+        for blocked in EGRESS_BLOCKED_TCP_PORTS:
+            inside = [(lo, hi) for lo, hi in ranges if lo <= blocked <= hi]
+            assert not inside, f"黑名单端口 {blocked} 落在允许区间 {inside} 内"
+
+    def test_datastore_ports_blocked(self):
+        """带公网端点的托管数据库/缓存对每个租户容器都可直连,且这类服务默认口令/无鉴权是常态。
+        挂了 = 租户可以从 GPU 容器直连别人的 PG/MySQL/Redis/Mongo。"""
+        assert {3306, 5432, 6379, 27017} <= set(EGRESS_BLOCKED_TCP_PORTS)
+
 
 class TestTenantNetpol:
     """离线结构断言(与 kind 冒烟的对象级断言互补,模型字段一律按 Any 处理):"""
 
+    @staticmethod
+    def _orch(pod_cidr: str = "10.42.0.0/16") -> RealOrchestrator:
+        orch = _bare()
+        orch.settings = cast(Any, SimpleNamespace(tenant_pod_cidr=pod_cidr))
+        return orch
+
     def test_structure(self):
-        policy = _bare()._tenant_netpol("tenant-x")
+        policy = self._orch()._tenant_netpol("tenant-x")
         spec: Any = policy.spec
         assert set(spec.policy_types) == {"Ingress", "Egress"}
 
@@ -79,6 +104,10 @@ class TestTenantNetpol:
         }
         assert [(p.protocol, p.port) for p in ssh.ports] == [("TCP", 22)]
         assert ssh._from[0].ip_block.cidr == "0.0.0.0/0"
+        # Pod 网段必须排掉:Pod→Pod 不经 SNAT,来源就是对端 Pod IP,不排等于把 22 端口
+        # 对全集群租户敞开(扫一遍 Pod 网段挨个连别人的实例)。
+        # 私网整段不能排 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。
+        assert ssh._from[0].ip_block._except == ["10.42.0.0/16"]
 
         # 出方向:DNS(收敛 CoreDNS Pod)+ 公网 TCP(端口区间)+ 公网 UDP(白名单 53/443)
         assert len(spec.egress) == 3
@@ -91,6 +120,21 @@ class TestTenantNetpol:
             assert set(ip_block._except) == set(PRIVATE_CIDRS)
         udp_ports = spec.egress[2].ports
         assert {(p.protocol, p.port) for p in udp_ports} == {("UDP", 53), ("UDP", 443)}
+
+    def test_ssh_ingress_except_is_pod_cidr_only(self):
+        """只排 Pod 网段,不排整个私网:排了私网,跨节点 NodePort(SNAT 成节点内网 IP)
+        进来的合法 SSH 会被一起挡掉。挂了 = 要么租户能互连 22,要么跨节点 SSH 全断。"""
+        spec: Any = self._orch("10.244.0.0/16")._tenant_netpol("tenant-x").spec
+        ssh = spec.ingress[1]
+        ip_block: Any = ssh._from[0].ip_block
+        assert ip_block._except == ["10.244.0.0/16"]
+        assert not set(PRIVATE_CIDRS) <= set(ip_block._except)
+
+    def test_empty_pod_cidr_emits_no_except(self):
+        """留空是排障回退口:apiserver 拒绝空 except 数组,必须整个字段缺席而不是 []。"""
+        spec: Any = self._orch("")._tenant_netpol("tenant-x").spec
+        ssh = spec.ingress[1]
+        assert ssh._from[0].ip_block._except is None
 
 
 class TestInstanceSecretHandling:

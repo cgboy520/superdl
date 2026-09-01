@@ -11,6 +11,13 @@ pytestmark = pytest.mark.usefixtures("fake")
 STRONG = "s3cret-passw0rd"
 
 
+async def _create_admin(sm: async_sessionmaker[AsyncSession], username: str) -> None:
+    from app.modules.adminapi.service import create_admin
+
+    async with sm() as session:
+        await create_admin(session, username, "pass1234", "admin")
+
+
 # TOTP 密钥注册表(进程级):同一账号多次 login_headers(绑定后重登录)共享密钥
 _TOTP_SECRETS: dict[str, str] = {}
 
@@ -208,6 +215,42 @@ class TestAdminAccounts:
         assert resp.status_code == 403
         assert resp.json()["message_key"] == "adminapi.roleRequired"
         assert resp.json()["params"] == {"roles": "finance"}
+
+
+class TestAdminLoginLockout:
+    async def test_daily_account_bucket_never_locks_out_the_real_password(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], monkeypatch
+    ):
+        """日窗账号桶只计数,不封禁:打满之后拿正确口令仍能登录。
+
+        挂了 = 任何人用 N 个错口令就能把一个具名管理员锁死 24 小时(日桶不清零、
+        管理端没有短信/找回这类第二条通路),救援只能进库删限流行。
+        """
+        from app.modules.adminapi import service as admin_service
+
+        # 只留日桶做闸:其余三桶放宽,压力全落在被测的那一个上
+        monkeypatch.setattr(admin_service, "LOGIN_ACCT_DAILY_MAX_ATTEMPTS", 3)
+        monkeypatch.setattr(admin_service, "LOGIN_IP_MAX_ATTEMPTS", 10_000)
+        monkeypatch.setattr(admin_service, "LOGIN_MAX_ATTEMPTS", 10_000)
+        monkeypatch.setattr(admin_service, "LOGIN_ACCT_MAX_ATTEMPTS", 10_000)
+        await _create_admin(sm, "lockout-admin")
+
+        for _ in range(4):  # 打满并越过日桶阈值
+            resp = await client.post(
+                "/api/admin/v1/auth/login",
+                json={"username": "lockout-admin", "password": "wrong-password"},
+            )
+            assert resp.status_code in (400, 429), resp.text
+        # 越阈之后错口令继续被限速(信号还在)
+        blocked = await client.post(
+            "/api/admin/v1/auth/login",
+            json={"username": "lockout-admin", "password": "wrong-password"},
+        )
+        assert blocked.status_code == 429
+        # 但正确口令照常放行:预检不看日桶
+        ok = await admin_login(client, "lockout-admin")
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["status"] == "mfa_setup"
 
 
 class TestAdminPasswordByteLimit:

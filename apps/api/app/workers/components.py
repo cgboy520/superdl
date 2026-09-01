@@ -37,7 +37,7 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
             "instance.disk_cleanup",
         }
     ),
-    WorkerComponent.NODE_MGR: frozenset({"node.cordon"}),
+    WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission"}),
     WorkerComponent.PREWARM: frozenset({"image.prewarm"}),
     WorkerComponent.DISK_OPS: frozenset({"disk.quota", "disk.wipe"}),
 }

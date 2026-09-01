@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.audit import AuditActor
 from app.core.db import DbSession
 from app.core.errors import forbidden, unauthorized
+from app.core.metrics import AUTHZ_DENIED_TOTAL
 from app.core.security import decode_token
 from app.modules.adminapi.models import AdminUser
 
@@ -42,6 +43,9 @@ def require_roles(*roles: str):
         admin: Annotated[AdminUser, Depends(get_current_admin)],
     ) -> AdminUser:
         if admin.role != "admin" and admin.role not in roles:
+            # 全站唯一的角色拒绝汇聚点:越权探测(拿低权 token 逐个端点试)在这里才有信号,
+            # 应用层其余 403 都是业务前置条件不满足,混进来会淹掉这条曲线
+            AUTHZ_DENIED_TOTAL.labels(actor_type="admin").inc()
             if roles:
                 raise forbidden(key="adminapi.roleRequired", params={"roles": "/".join(roles)})
             # 无参分支单独给文案:空串拼接会留下半截话(「需要角色:」)

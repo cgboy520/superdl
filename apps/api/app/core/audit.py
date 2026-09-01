@@ -14,10 +14,11 @@ from sqlalchemy import String, func, text
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
+from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.db import Base, get_sessionmaker
-from app.core.errors import audit_unavailable_response
+from app.core.errors import audit_unavailable_response, current_request_id
 from app.core.http import client_ip
 from app.core.logging import get_logger
 from app.core.metrics import AUDIT_WRITE_FAILED_TOTAL
@@ -65,17 +66,27 @@ async def audit_probe_ok() -> bool:
         return False
 
 
+ACTION_MAX_LENGTH = 128
+TARGET_MAX_LENGTH = 256
+REQUEST_ID_MAX_LENGTH = 64
+USER_AGENT_MAX_LENGTH = 256
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     actor_type: Mapped[str] = mapped_column(String(16))  # user / admin / system / anonymous
     actor_id: Mapped[str | None] = mapped_column(String(64))
-    action: Mapped[str] = mapped_column(String(128), index=True)  # e.g. POST /api/v1/instances
-    target: Mapped[str | None] = mapped_column(String(256))  # 资源定位,如 instance:uuid
+    # action/target 由请求路径拼出,长度不可控:入库前一律按列宽截断(见 _build_audit_row)
+    action: Mapped[str] = mapped_column(String(ACTION_MAX_LENGTH), index=True)  # POST /api/v1/...
+    target: Mapped[str | None] = mapped_column(String(TARGET_MAX_LENGTH))  # 如 instance:uuid
     ip: Mapped[str | None] = mapped_column(INET)
     result: Mapped[int]  # HTTP 状态码
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 与结构化日志/响应头 X-Request-ID 同一值:没有它,审计行与那次请求的日志之间无键可连
+    request_id: Mapped[str | None] = mapped_column(String(REQUEST_ID_MAX_LENGTH))
+    user_agent: Mapped[str | None] = mapped_column(String(USER_AGENT_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
 
 
@@ -120,6 +131,10 @@ class AuditMiddleware:
         async def send_capture(message: Message) -> None:
             if message["type"] == "http.response.start":
                 status_holder["status"] = message["status"]
+                # request_id 只在这里抄得到:AuditMiddleware 注册在 Observability 之外
+                # (add_middleware 前插),它的 finally 跑在 Observability 解绑 contextvar
+                # **之后**;而响应头此刻已由内层 Observability 填好同一个值
+                request.state.audit_request_id = Headers(scope=message).get("x-request-id")
             await send(message)
 
         try:
@@ -129,19 +144,36 @@ class AuditMiddleware:
             await _write_audit_row(request, status_holder["status"])
 
 
+def _clip(value: str | None, limit: int) -> str | None:
+    return value[:limit] if value is not None else None
+
+
+def _audit_request_id(request: Request) -> str | None:
+    """审计行的 request_id:中间件路径由 send_capture 从响应头抄下(见 AuditMiddleware);
+    资金域同步审计在处理函数内调用,contextvar 还绑着,直接读得到。"""
+    return getattr(request.state, "audit_request_id", None) or current_request_id()
+
+
 def _build_audit_row(request: Request, result: int) -> AuditLog:
-    """审计行的单一定义点(异步独立事务与资金域同步事务两条写路径共用)。"""
+    """审计行的单一定义点(异步独立事务与资金域同步事务两条写路径共用)。
+
+    action/target/user_agent 一律按列宽截断:三者都由请求侧决定长度,超宽会让 INSERT 抛
+    StringDataRightTruncation —— 那既丢了这一行,又推进 fail-closed 闸的连续失败计数,
+    任何人都能用一条超长 URL 把写操作打成 503。
+    """
     actor: AuditActor | None = getattr(request.state, "audit_actor", None)
     path = request.url.path
     action_prefix = "admin." if path.startswith("/api/admin/") else ""
     return AuditLog(
         actor_type=actor.actor_type if actor else "anonymous",
         actor_id=actor.actor_id if actor else None,
-        action=f"{action_prefix}{request.method} {path}",
-        target=getattr(request.state, "audit_target", None),
+        action=f"{action_prefix}{request.method} {path}"[:ACTION_MAX_LENGTH],
+        target=_clip(getattr(request.state, "audit_target", None), TARGET_MAX_LENGTH),
         ip=client_ip(request),
         result=result,
         detail=getattr(request.state, "audit_detail", None),
+        request_id=_clip(_audit_request_id(request), REQUEST_ID_MAX_LENGTH),
+        user_agent=_clip(request.headers.get("user-agent"), USER_AGENT_MAX_LENGTH),
     )
 
 

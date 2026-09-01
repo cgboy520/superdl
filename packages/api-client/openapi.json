@@ -4538,6 +4538,45 @@
         "title": "NodeCordonRequest",
         "type": "object"
       },
+      "NodeDecommissionOut": {
+        "description": "退役受理回执。DB 侧(停调度期望态 + 令牌作废)在响应返回时已生效;\n删 Node 对象经 outbox 异步执行,节点列表轮询看它转 Missing。",
+        "properties": {
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "queued": {
+            "default": true,
+            "title": "Queued",
+            "type": "boolean"
+          },
+          "revoked_enrollments": {
+            "title": "Revoked Enrollments",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_name",
+          "revoked_enrollments"
+        ],
+        "title": "NodeDecommissionOut",
+        "type": "object"
+      },
+      "NodeDecommissionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "NodeDecommissionRequest",
+        "type": "object"
+      },
       "NodeEnrollmentOut": {
         "description": "列表/进度视图 —— 永不含 token。",
         "properties": {
@@ -8768,6 +8807,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -9417,6 +9457,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -10371,6 +10412,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -11374,7 +11416,7 @@
     },
     "/api/admin/v1/invoices": {
       "get": {
-        "description": "发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。",
+        "description": "发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。\n\n抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + reason 必填),按条数与事由落审计。",
         "operationId": "admin_list_invoices_api_admin_v1_invoices_get",
         "parameters": [
           {
@@ -11407,6 +11449,33 @@
                 }
               ],
               "title": "Period"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reveal",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reveal",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
             }
           }
         ],
@@ -11449,7 +11518,7 @@
     },
     "/api/admin/v1/invoices/export": {
       "get": {
-        "description": "发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。\n注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。",
+        "description": "发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。\n注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。\n\n单次最多 50000 行的抬头/税号/邮箱是全站最集中的一处 PII 出口:默认脱敏,\n明文要 reveal + 事由,且**每一次导出**(不论是否明文)都落一条审计,带实际吐出的行数。",
         "operationId": "admin_invoices_export_api_admin_v1_invoices_export_get",
         "parameters": [
           {
@@ -11508,6 +11577,33 @@
               ],
               "title": "Lang",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reveal",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reveal",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
             }
           }
         ],
@@ -12131,6 +12227,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -12410,6 +12507,64 @@
           }
         ],
         "summary": "Admin Cordon Node",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/nodes/{node_name}/decommission": {
+      "post": {
+        "description": "节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 从集群删除 Node 对象。\n\n善后不在本端点内:集群 join token 轮换与 kubelet 证书吊销是控制面动作。",
+        "operationId": "admin_decommission_node_api_admin_v1_nodes__node_name__decommission_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_name",
+            "required": true,
+            "schema": {
+              "title": "Node Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeDecommissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeDecommissionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Decommission Node",
         "tags": [
           "admin"
         ]
@@ -13587,6 +13742,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -15552,6 +15708,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -15910,6 +16067,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -16206,6 +16364,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -16953,6 +17112,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -17263,6 +17423,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -18290,6 +18451,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -18605,6 +18767,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {
@@ -18787,6 +18950,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maxLength": 64,
                   "type": "string"
                 },
                 {

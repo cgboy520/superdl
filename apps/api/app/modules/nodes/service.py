@@ -53,6 +53,12 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "installing": frozenset({"rebooting", "joining", "failed", "revoked", "joined", "expired"}),
     "rebooting": frozenset({"installing", "joining", "failed", "revoked", "joined", "expired"}),
     "joining": frozenset({"joined", "failed", "revoked", "expired"}),
+    # 终态 → revoked 只有退役这一条入口(decommission_node):机器卖了/被扣了/报废了,
+    # 必须能把它的令牌钉死,否则重装一次就又能拿旧命令加回来。
+    # 管理端的手工吊销(revoke_enrollment)仍对终态一律 409,不受此影响。
+    "joined": frozenset({"revoked"}),
+    "failed": frozenset({"revoked"}),
+    "expired": frozenset({"revoked"}),
 }
 
 
@@ -241,6 +247,48 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
     await session.commit()
     await session.refresh(enrollment)
     return enrollment
+
+
+async def decommission_node(session: AsyncSession, node_name: str, *, reason: str) -> int:
+    """节点退役(不可逆)。返回本次被置 revoked 的注册登记行数。
+
+    三件事缺一不可,少任何一件这台机器都还留着一条回来的路:
+    1. 停调度期望态落台账 —— 删 Node 对象只摘身份,kubelet 还活着就会自己重新注册,
+       期望态让巡检(patrol 阶段 D)把重新冒头的它再压住;
+    2. 该主机名下所有注册登记置 revoked —— 令牌永不可复用,重装也换不出 join token;
+    3. outbox 入队 node.decommission —— K8s 侧删 Node 对象在 worker 执行(请求路径不碰 K8s)。
+
+    仍需人工善后:集群 join token 轮换与 kubelet 证书吊销是控制面动作,平台管不到。
+    """
+    from app.core.outbox import enqueue
+
+    row = (
+        await session.execute(select(NodeSpec).where(NodeSpec.node_name == node_name))
+    ).scalar_one_or_none()
+    if row is None:
+        raise not_found(key="nodes.nodeNotFound")
+    row.desired_unschedulable = True
+    enrollments = list(
+        (
+            await session.execute(
+                select(NodeEnrollment).where(
+                    NodeEnrollment.node_name == node_name,
+                    NodeEnrollment.status != "revoked",
+                )
+            )
+        ).scalars()
+    )
+    for enrollment in enrollments:
+        transition_enrollment(enrollment, "revoked", error=f"节点已退役:{reason}")
+    enqueue(session, "node.decommission", {"node_name": node_name, "reason": reason})
+    await session.commit()
+    logger.warning(
+        "node_decommissioned",
+        node=node_name,
+        revoked_enrollments=len(enrollments),
+        reason=reason,
+    )
+    return len(enrollments)
 
 
 async def request_cordon(

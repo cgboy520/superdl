@@ -70,3 +70,10 @@ export function canWriteOps(role: string): boolean {
 export function canWriteFinance(role: string): boolean {
   return role === "admin" || role === "finance";
 }
+
+/** 发票读权限(后端 /invoices 与 /invoices/export 均 require_roles("finance")):admin·finance。
+ *  与 canWriteFinance 当前同集合但不是同一条规则:这是抬头/邮箱这份自然人 PII 的出口口径,
+ *  不跟着财务写权限走,后端改了读门只动这里。 */
+export function canReadInvoices(role: string): boolean {
+  return role === "admin" || role === "finance";
+}

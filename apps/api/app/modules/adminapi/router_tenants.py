@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import mark_audited_read, set_audit_target
 from app.core.csvexport import csv_response
 from app.core.db import DbSession
-from app.core.errors import AppError, ErrorCode
+from app.core.errors import AppError
 from app.core.logging import mask_phone_value
+from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.money import as_amount, money_str
 from app.core.pagination import Page
 from app.core.params import Cursor, Limit, TzOffset
@@ -70,15 +71,7 @@ async def admin_list_tenants(
     from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
-    if reveal:
-        if admin.role == "readonly":
-            raise AppError(ErrorCode.FORBIDDEN, key="common.forbidden", http_status=403)
-        if reason is None or len(reason.strip()) < 2:
-            raise AppError(
-                ErrorCode.VALIDATION_ERROR,
-                key="common.validation",
-                detail={"field": "reason", "constraint": "required_when_reveal"},
-            )
+    reveal_reason = service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
     if q:
         masked = mask_phone_value(q)
         mark_audited_read(request, f"tenant-search:{masked}", detail={"query_len": len(q)})
@@ -129,10 +122,11 @@ async def admin_list_tenants(
         )
     if realname_hits:
         # 明文实名的敏感读逐次留痕:落条数与事由,不落内容(内容即 PII,审计里不复制一份)
+        PII_REVEAL_ROWS_TOTAL.labels(kind="tenant_realname").inc(realname_hits)
         mark_audited_read(
             request,
             "tenant-realname:reveal",
-            detail={"rows": realname_hits, "reason": (reason or "").strip()},
+            detail={"rows": realname_hits, "reason": reveal_reason},
         )
     return Page[TenantOut](items=out, next_cursor=page.next_cursor)
 

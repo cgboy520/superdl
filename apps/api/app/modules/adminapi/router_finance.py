@@ -1,16 +1,18 @@
 """管理端路由(对账/告警/调账/退款/发票/订单/收入/补单)。"""
 
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import set_audit_target, write_audit_sync
+from app.core.audit import mark_audited_read, set_audit_target, write_audit_sync
 from app.core.csvexport import csv_response
 from app.core.db import DbSession
 from app.core.http import mark_idempotent_replay
+from app.core.metrics import PII_REVEAL_ROWS_TOTAL
 from app.core.pagination import Page
 from app.core.params import Cursor, IdempotencyKey, Limit, TzOffset
 from app.core.ratelimit import check_rate_limit
@@ -415,47 +417,130 @@ async def admin_cancel_refund(
     return AdminRefundOut.model_validate(req)
 
 
-# ---------- 发票(人工开票;读 ops/finance/readonly,写 finance/admin) ----------
+# ---------- 发票(人工开票;读写均限 finance/admin) ----------
+#
+# 读的角色门从 ops/finance/readonly 收窄到 finance,两条理由:
+# - readonly:同一份自然人 PII 在 /tenants 已明确不给它明文(见 ensure_reveal_allowed),
+#   却能从这里整表拉走抬头与邮箱——同一份数据换个出口就换一套口径,不成立;
+# - ops:管理端菜单里 /finance 本就不含 ops(apps/admin/src/lib/menu.ts),开票与驳回也是
+#   finance 专属的写动作,ops 的这份读权限没有任何工作流消费,是纯敞口。
+#
+# 脱敏只覆盖抬头与邮箱:个人票抬头即自然人姓名(个人票无税号,schema 强制置空),
+# 公司票税号是工商公开信息且是财务核对的主键,不脱敏。
 
 
-@router.get("/invoices", dependencies=[require_roles("ops", "finance", "readonly")])
+def _invoice_reveal(admin: AdminUser, reveal: bool, reason: str | None) -> str:
+    """明文开闸:与 /tenants 实名同一套(readonly 不可 reveal、事由必填)。返回规范化事由。"""
+    return service.ensure_reveal_allowed(role=admin.role, reason=reason) if reveal else ""
+
+
+@router.get("/invoices")
 async def admin_list_invoices(
-    session: DbSession, status: str | None = None, period: str | None = None
+    session: DbSession,
+    request: Request,
+    status: str | None = None,
+    period: str | None = None,
+    reveal: bool = False,
+    reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
+    admin: AdminUser = require_roles("finance"),
 ) -> list[AdminInvoiceOut]:
-    """发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。"""
+    """发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。
+
+    抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + reason 必填),按条数与事由落审计。
+    """
+    # 脱敏用与 CSV 导出同一个实现(billing/export.mask_invoice_identity 也走它),
+    # 两个出口的档位不会各写各的
+    from app.modules.account import service as account_service
     from app.modules.billing import service as billing_service
 
-    return await billing_service.admin_list_invoices(session, status=status, period=period)
+    reveal_reason = _invoice_reveal(admin, reveal, reason)
+    rows = await billing_service.admin_list_invoices(session, status=status, period=period)
+    if not reveal:
+        return [
+            r.model_copy(
+                update={
+                    "title": account_service.mask_id_name(r.title),
+                    "email": account_service.mask_id_name(r.email),
+                }
+            )
+            for r in rows
+        ]
+    PII_REVEAL_ROWS_TOTAL.labels(kind="invoice_identity").inc(len(rows))
+    mark_audited_read(
+        request,
+        "invoice-identity:reveal",
+        detail={
+            "rows": len(rows),
+            "reason": reveal_reason,
+            "status": status,
+            "period": period,
+            "format": "json",
+        },
+    )
+    return rows
 
 
 @router.get(
     "/invoices/export",
-    dependencies=[require_roles("ops", "finance", "readonly")],
     responses={
         200: {"description": "CSV 导出", "content": {"text/csv": {"schema": {"type": "string"}}}}
     },
 )
 async def admin_invoices_export(
     session: DbSession,
+    request: Request,
     status: str | None = None,
     period: str | None = None,
     tz_offset_minutes: int = TzOffset,
     lang: Literal["zh-CN", "en-US"] = ExportLang,
+    reveal: bool = False,
+    reason: str | None = Query(default=None, max_length=REASON_MAX_LENGTH),
+    admin: AdminUser = require_roles("finance"),
 ) -> StreamingResponse:
     """发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
-    注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。"""
+    注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。
+
+    单次最多 50000 行的抬头/税号/邮箱是全站最集中的一处 PII 出口:默认脱敏,
+    明文要 reveal + 事由,且**每一次导出**(不论是否明文)都落一条审计,带实际吐出的行数。
+    """
     from app.modules.billing import service as billing_service
 
+    reveal_reason = _invoice_reveal(admin, reveal, reason)
+    # 行数只有生成器边吐边记才数得准(流式响应返回时一行都还没生成)。审计 detail 本身就是
+    # 那个计数器:中间件在响应写完后才构建审计行,读到的即最终值(客户端中断则是已送出的行数)
+    detail: dict[str, Any] = {
+        "rows": 0,
+        "reveal": reveal,
+        "reason": reveal_reason,
+        "status": status,
+        "period": period,
+        "format": "csv",
+    }
+    mark_audited_read(request, "invoice-identity:export", detail=detail)
+    stream = billing_service.stream_admin_invoices_csv(
+        session,
+        status=status,
+        period=period,
+        tz_offset_minutes=tz_offset_minutes,
+        lang=lang,
+        reveal=reveal,
+        row_counter=detail,
+    )
     return csv_response(
-        billing_service.stream_admin_invoices_csv(
-            session,
-            status=status,
-            period=period,
-            tz_offset_minutes=tz_offset_minutes,
-            lang=lang,
-        ),
+        _count_revealed_rows(stream, detail) if reveal else stream,
         f"superdl-invoices-{period or 'all'}.csv",
     )
+
+
+async def _count_revealed_rows(
+    stream: AsyncIterator[str], detail: dict[str, Any]
+) -> AsyncIterator[str]:
+    """明文导出的行数进指标(流跑完/被中断都记一次,记的是实际送出的行数)。"""
+    try:
+        async for chunk in stream:
+            yield chunk
+    finally:
+        PII_REVEAL_ROWS_TOTAL.labels(kind="invoice_identity").inc(detail["rows"])
 
 
 @router.post("/invoices/{invoice_id}/issue")

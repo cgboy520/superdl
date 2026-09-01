@@ -24,7 +24,7 @@
 | 约定 | 要求 |
 |---|---|
 | Jupyter 监听 | `--ip=0.0.0.0`,端口 `8888`;只绑 localhost 则 Service/Ingress 打不通 |
-| Jupyter 鉴权 | 读环境变量 `JUPYTER_TOKEN` 作为 token,**缺失必须启动失败**;加载 `superdl_jupyter_auth` 扩展:`/superdl-bootstrap` 一次性票据(单次、60s,HMAC 密钥=token 本体)核销后种第一方 cookie,token 不进 URL |
+| Jupyter 鉴权 | 读环境变量 `JUPYTER_TOKEN` 作为 token,**缺失必须启动失败**;并且**必须显式传 `--IdentityProvider.token="$JUPYTER_TOKEN"`** —— 只靠环境变量时它只是 traitlets 的默认值(优先级最低),`$JUPYTER_CONFIG_DIR/jupyter_server_config.py` 里一行 `c.IdentityProvider.token = ""` 就能把鉴权整个关掉(`auth_enabled` 变 False,匿名请求一律发到生成用户),命令行才压得住配置文件。加载 `superdl_jupyter_auth` 扩展:`/superdl-bootstrap` 一次性票据(单次、60s,HMAC 密钥=token 本体)核销后种第一方 cookie,token 不进 URL |
 | Jupyter 默认界面 | `--ServerApp.default_url=/lab`,票据核销后 302 到 `/lab`;界面语言默认 zh-CN(`lab-overrides.json`,用户可在设置里改) |
 | Jupyter 进程 | 守护循环拉起(不用 exec 当 PID 1),连续秒退 5 次才放弃 |
 | Jupyter Origin | 读环境变量 `JUPYTER_ALLOW_ORIGIN`(本实例域名)作为 `ServerApp.allow_origin`;**禁止写死 `'*'`** —— cookie 会话下等于放行跨站 WebSocket 在用户实例内执行代码 |
@@ -37,9 +37,9 @@
 | 用户安装的包 | 必须落在实例盘:entrypoint 下发 `PYTHONUSERBASE=/root/.local` + `PIP_USER=1`,并把 `JULIA_DEPOT_PATH` 前置 `/root/.julia`(还要把镜像自带的 `environments/vX.Y` 复制过去 —— Julia 的活动环境取 DEPOT_PATH 里第一个**已存在**的那份,不复制则 `Pkg.add` 会去写只读的镜像 depot)。`/opt/conda`、`/opt/julia` 在容器可写层,装进去 Pod 重建即消失,还占 `ephemeral-storage` 配额。`PIP_USER=1` 在已激活的 venv 里会让 pip 直接报错,故 `profile.d` 里定义了一个 `pip` 包装:`$VIRTUAL_ENV` 非空时关掉 `--user` |
 | Lab 设置目录 | `lab-overrides.json` 构建期放到 root 属主的 `/opt/superdl/labsettings`,entrypoint 用 `--LabApp.app_settings_dir` 指过去。不用基座默认的 `<app_dir>/settings`:docker-stacks 系基座的 `/opt/conda` 属主是 jovyan,租户容器 drop 掉 DAC_OVERRIDE 后 root 反而写不进去 |
 | SSH host key | 首次生成后持久化到实例盘(`/root/.ssh/host_keys`),`/etc/ssh` 下为符号链接;否则 Pod 重建即变指纹 |
-| SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)写入 `~/.ssh/authorized_keys`,sshd 监听 `22`,仅密钥登录 |
+| SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)**无条件覆写** `~/.ssh/authorized_keys`,sshd 监听 `22`,仅密钥登录。空值必须把文件清空:`/root` 是持久实例盘,带 `[[ -n ... ]]` 守卫会让「删掉最后一把公钥」变成空操作,泄漏的密钥永远吊销不掉 |
 | 工作目录 | 用户数据放 `/root`(实例盘挂载点);数据盘挂 `/root/data` |
-| HOME 与运行目录 | `HOME=/root`,Jupyter 的 data/config 目录落在 `/root` 下 —— 共享池 userns(`hostUsers:false`)下 `/home/xxx` 不可写。**runtime 目录例外**:`JUPYTER_RUNTIME_DIR=/run/jupyter`(容器可写层),因为 `jpserver-*.json` 与 0644 的 `jpserver-*-open.html` 含 token 明文,落实例盘会随 PVC 长期存活 |
+| HOME 与运行目录 | `HOME=/root`,Jupyter 的 data 目录落在 `/root` 下 —— 共享池 userns(`hostUsers:false`)下 `/home/xxx` 不可写。**runtime 与 config 两个目录例外,都放容器可写层**:`JUPYTER_RUNTIME_DIR=/run/jupyter`,因为 `jpserver-*.json` 与 0644 的 `jpserver-*-open.html` 含 token 明文;`JUPYTER_CONFIG_DIR=/run/jupyter-config`,因为配置文件的 traitlets 优先级高于环境变量默认值,落实例盘就等于给了一处「跨 Pod 重建长期存活、且能改鉴权配置」的落点 |
 | 基础镜像 | 与 SKU 的 `cuda_max` 兼容的 CUDA 运行时 |
 
 ## 默认镜像矩阵(平台自带目录)

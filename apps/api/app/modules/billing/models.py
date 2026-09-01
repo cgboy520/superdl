@@ -333,4 +333,8 @@ class Subscription(Base):
     # expires_at 变了,新周期的预警自然重新可发,不需要额外清位
     warned_for_expiry: Mapped[datetime | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    # 同键重放须过 request_fingerprint 比对,不一致 409(对齐 Stripe 惯例)。
+    # 转换与续费共用 UNIQUE(user_id, idempotency_key) 一个命名空间:没有指纹,
+    # 一把键换台实例复用就会拿回**另一台**实例的订阅 + 200,而目标实例既没转也没扣款
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

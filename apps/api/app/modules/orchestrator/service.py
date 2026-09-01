@@ -1157,8 +1157,16 @@ async def subscribe_instance(
     if idempotency_key:
         # 重放必须最先问:转换后 market 已是 subscription,重放会撞上「只有按量实例可以转」
         # 拿到 400,还会拿已是折后价的 price_hourly 再补一笔本该按按量收的账
+        # 给全三个定位参数才会做异参检测:转换与续费共用 UNIQUE(user_id, idempotency_key)
+        # 一个命名空间,缺了它们同键打向另一台实例会把**别人那单**当本次重放返回 ——
+        # 用户被告知「买好了」,可目标实例既没转成包周期也没扣钱
         replayed = await billing_service.find_subscription_replay(
-            session, user_id=user_id, key=idempotency_key
+            session,
+            user_id=user_id,
+            key=idempotency_key,
+            instance_id=instance.id,
+            period=period,
+            period_count=period_count,
         )
         if replayed is not None:
             return (

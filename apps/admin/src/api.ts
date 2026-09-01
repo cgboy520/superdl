@@ -499,7 +499,9 @@ export const useCancelRefund = adminMutation((v: { refundId: number; data: Refun
   adminCancelRefundApiAdminV1RefundsRefundIdCancelPost(v.refundId, v.data),
 );
 
-/** 发票申请列表。status/period(YYYY-MM)服务端过滤。 */
+/** 发票申请列表(角色:finance/admin)。status/period(YYYY-MM)服务端过滤;
+ *  抬头与邮箱默认脱敏,reveal=true + reason 才回明文(后端按条数与事由落审计),
+ *  两者进 queryKey:换档位即换缓存条目,脱敏与明文不会互相覆盖。 */
 export function useInvoices(params?: AdminListInvoicesApiAdminV1InvoicesGetParams) {
   const queryKey = ["admin", "invoices", params] as const;
   const q = useQuery({
@@ -1020,7 +1022,8 @@ export const exportRefundsCsv = makeCsvExporter(
   "superdl-refunds.csv",
 );
 
-/** 发票导出:跟随当前筛选(status)。 */
+/** 发票导出:跟随当前筛选(status/period)与当前明文档位(reveal/reason),
+ *  CSV 不是绕开表格明文事由的第二条出口。 */
 export const exportInvoicesCsv = makeCsvExporter(
   (params: AdminInvoicesExportApiAdminV1InvoicesExportGetParams | undefined, tz: number, lang: CsvLang) =>
     adminInvoicesExportApiAdminV1InvoicesExportGet(withTzLang(params, tz, lang)),

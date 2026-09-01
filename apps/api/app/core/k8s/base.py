@@ -295,6 +295,19 @@ class K8sOrchestrator(Protocol):
         """cordon(True)/uncordon(False)。幂等:重复设置同值无副作用。"""
         ...
 
+    async def delete_node(self, node_name: str) -> None:
+        """节点退役:先 cordon 再从集群删除 Node 对象。
+
+        删除前先 cordon,是为了不留「已决定退役、Node 对象还在」的可调度窗口
+        (删除本身要走 apiserver,失败还会退避重试)。
+        幂等:节点已不存在即视为成功 —— 退役的目标态就是它不在集群里。
+
+        注意这只摘掉节点在集群中的身份,**不吊销 kubelet 证书**:kubelet 若仍在运行且
+        持有有效证书与 join token,会自行重新注册(台账里的 cordon 期望态会把它再压住)。
+        真正的凭据吊销是控制面侧动作,见 nodes 模块 runbook。
+        """
+        ...
+
 
 GPU_MODEL_NODE_LABEL = (
     "superdl.io/gpu-model"  # 平台 canonical 型号标签(巡检写入,调度 nodeSelector 依赖)

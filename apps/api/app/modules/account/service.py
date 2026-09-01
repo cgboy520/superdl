@@ -1,4 +1,3 @@
-import hashlib
 import math
 import secrets
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from app.core.constants import ADMIN_LIST_CAP
 from app.core.crypto import hash_sms_code, hash_sms_code_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
 from app.core.logging import get_logger, mask_phone_value
+from app.core.metrics import LOGIN_FAILED_TOTAL
 from app.core.money import money_str
 from app.core.pagination import RawPage
 from app.core.platform_config import get_effective_platform_config
@@ -237,6 +237,13 @@ async def register(
     await _consume_sms_code(session, phone, sms_code, "register")
     existing = (await session.execute(select(User).where(User.phone == phone))).scalar_one_or_none()
     if existing is not None:
+        # 已注册号被反复拿去注册 = 号段探测/接管尝试,与登录失败同一条留痕线
+        logger.warning(
+            "user_register_failed",
+            account=mask_phone_value(phone),
+            ip=client_ip,
+            reason="phone_taken",
+        )
         raise AppError(ErrorCode.PHONE_TAKEN, key="account.phoneTaken")
     user = User(phone=phone, password_hash=await hash_password(password) if password else None)
     session.add(user)
@@ -257,7 +264,12 @@ async def register(
 # - acct 桶(15min)/acct-daily 桶:纯账号维度——撞库可以换 IP 但换不了目标账号,
 #   只按 IP+账号的桶在 N 个源地址下是 5×N 次/5 分钟,必须有账号级阶梯锁定。
 # 预检(bcrypt 前拦封禁,不付哈希成本)/计数(只计失败)/清零/异常判定四处遍历同一张表,
-# 改一处即全链路生效
+# 改一处即全链路生效。
+#
+# acct-daily 桶在**用户端**仍参与预检(与管理端相反,管理端见 adminapi/service._login_buckets):
+# 打满 30 次只封口令登录这一条路,验证码登录与找回密码都不经这里的预检,用户自己有出口;
+# 而管理端只有口令一条通路,封死即需进库改数据。代价对称地也不同:手机号面是 1.9e9 量级,
+# 30/日 的账号级封顶是慢速撞库唯一挡得住的一层,拆掉换来的是每账号 960 次/日。
 _LOGIN_BUCKETS: tuple[tuple[str, int, float], ...] = (
     ("user-login-ip:{ip}", 60, 3600.0),
     ("user-login:{ip}:{phone}", 5, 300.0),
@@ -323,6 +335,18 @@ async def login(
                 await check_rate_limit(
                     key, max_attempts=max_attempts, window_seconds=window_seconds
                 )
+            # 失败登录留痕(与管理端 admin_login_failed 同口径):路由的 set_audit_target
+            # 排在 login 返回之后,失败请求的审计行没有 target,「哪个账号被打」只能从这里答。
+            # 号码显式打码后再落,键名不用 phone(否则日志处理器会对已打码值二次打码成
+            # ******,反而丢掉可关联性);与管理端的 username= 位置对应
+            LOGIN_FAILED_TOTAL.labels(actor_type="user").inc()
+            logger.warning(
+                "user_login_failed",
+                account=mask_phone_value(phone),
+                ip=client_ip,
+                via="sms" if sms_code is not None else "password",
+                registered=user is not None,
+            )
         raise
     # 凭据正确即清零该账号桶的失败计数
     for tmpl in _LOGIN_CLEAR_BUCKETS:
@@ -382,6 +406,13 @@ async def reset_password(
         await session.execute(select(User).where(User.phone == phone).with_for_update())
     ).scalar_one_or_none()
     if user is None:
+        # 验码已过但号不存在:号段探测(拿别人的号发码再试改密),留痕同登录失败线
+        logger.warning(
+            "password_reset_failed",
+            account=mask_phone_value(phone),
+            ip=client_ip,
+            reason="no_such_user",
+        )
         raise AppError(ErrorCode.LOGIN_FAILED, key="account.loginFailed")
     if user.status == "frozen":
         raise AppError(
@@ -1032,9 +1063,15 @@ async def approve_deletion(
             params={"balance": money_str(balance)},
             detail={"balance": money_str(balance)},
         )
-    # 匿名化:手机号哈希化(释放唯一约束,原号码可再注册)、身份字段清空、全撤登录态。
-    # 账本 balance_ledger/账单按法定义务保留,不动。
-    user.phone = f"del:{user.id}:{hashlib.sha256(user.phone.encode()).hexdigest()[:12]}"
+    # 匿名化:手机号替换为随机不可逆令牌(释放唯一约束,原号码可再注册)、身份字段清空、
+    # 全撤登录态。账本 balance_ledger/账单按法定义务保留,不动。
+    #
+    # 令牌与原号码**无任何函数关系**:11 位手机号的keyspace 只有约 1.9e9,任何摘要
+    # (哪怕带密钥)一旦泄漏就能离线穷举比对。这里没有任何读路径需要从占位串反查号码,
+    # 只需「唯一 + 已注销可辨识」,故直接取随机数(注销即销毁映射,PIPL 删除义务才真正履行)。
+    # 长度 = 4 + len(id) + 1 + 16(token_hex(8) 为 16 hex 字符),int32 的 id 下最长 31,
+    # 仍在 users.phone 的 40 列宽内。
+    user.phone = f"del:{user.id}:{secrets.token_hex(8)}"
     user.id_name = None
     user.id_number = None
     user.verification_status = "unverified"

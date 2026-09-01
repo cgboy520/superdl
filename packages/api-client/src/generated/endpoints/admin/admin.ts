@@ -98,6 +98,8 @@ import type {
   MfaTicketRequest,
   NodeCordonOut,
   NodeCordonRequest,
+  NodeDecommissionOut,
+  NodeDecommissionRequest,
   NodeEnrollmentOut,
   NodeMetricsOut,
   NodeOut,
@@ -1364,6 +1366,8 @@ export const getAdminListInvoicesApiAdminV1InvoicesGetUrl = (params?: AdminListI
 
 /**
  * 发票申请列表(固定截断 200)。status/period(YYYY-MM)精确过滤。
+ *
+ * 抬头与邮箱默认脱敏;明文是逐次显式动作(reveal=true + reason 必填),按条数与事由落审计。
  * @summary Admin List Invoices
  */
 export const adminListInvoicesApiAdminV1InvoicesGet = async (params?: AdminListInvoicesApiAdminV1InvoicesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut[]> => {
@@ -1396,6 +1400,9 @@ export const getAdminInvoicesExportApiAdminV1InvoicesExportGetUrl = (params?: Ad
 /**
  * 发票申请 CSV(流式):筛选口径与 GET /invoices 一致;行数硬上限 + 截断标记行。
  * 注册在 /invoices/{invoice_id} 动态路由之前,export 不被当 id 解析。
+ *
+ * 单次最多 50000 行的抬头/税号/邮箱是全站最集中的一处 PII 出口:默认脱敏,
+ * 明文要 reveal + 事由,且**每一次导出**(不论是否明文)都落一条审计,带实际吐出的行数。
  * @summary Admin Invoices Export
  */
 export const adminInvoicesExportApiAdminV1InvoicesExportGet = async (params?: AdminInvoicesExportApiAdminV1InvoicesExportGetParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown | string> => {
@@ -1862,6 +1869,33 @@ export const adminCordonNodeApiAdminV1NodesNodeNameCordonPost = async (nodeName:
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(nodeCordonRequest)
+  }
+);}
+
+
+export const getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl = (nodeName: string,) => {
+
+
+
+
+  return `/api/admin/v1/nodes/${nodeName}/decommission`
+}
+
+/**
+ * 节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 从集群删除 Node 对象。
+ *
+ * 善后不在本端点内:集群 join token 轮换与 kubelet 证书吊销是控制面动作。
+ * @summary Admin Decommission Node
+ */
+export const adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost = async (nodeName: string,
+    nodeDecommissionRequest: NodeDecommissionRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeDecommissionOut> => {
+
+  return customFetch<NodeDecommissionOut>(getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl(nodeName),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(nodeDecommissionRequest)
   }
 );}
 

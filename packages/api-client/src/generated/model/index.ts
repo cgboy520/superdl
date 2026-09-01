@@ -200,6 +200,8 @@ export * from './mfaTicketRequest';
 export * from './mockWebhookApiV1WebhooksMockPost200';
 export * from './nodeCordonOut';
 export * from './nodeCordonRequest';
+export * from './nodeDecommissionOut';
+export * from './nodeDecommissionRequest';
 export * from './nodeEnrollmentOut';
 export * from './nodeGpuSeriesOut';
 export * from './nodeMetricsOut';

@@ -1,9 +1,11 @@
 """节点规格台账巡检(60s):K8s 实况 + 装机登记 → node_specs 单一事实源。
 
-三阶段(worker 收敛环,不走 outbox):
+四阶段(worker 收敛环):
   A 纯 K8s 读:list_nodes(全量含未打标);
   B 单事务 DB 收敛:upsert 全字段;消失节点置 Missing,超保留期删行;
-  C label 收敛:canonical 写 superdl.io/gpu-model(逐节点独立 try,失败下轮自愈)。
+  C label 收敛:canonical 写 superdl.io/gpu-model(逐节点独立 try,失败下轮自愈);
+  C2 池标签纠偏:自声明与注册登记不符 → 先 cordon(经 outbox)再按登记改标签;
+  D cordon 期望态收敛:台账期望与实际调度态不符即重放。
 
 数据源优先级(型号 raw):装机登记 nvidia-smi > GFD label(nvidia.com/gpu.product)> 存量。
 驱动/CUDA 版本反过来 GFD label 优先:装机登记是一次性快照,驱动升级后不再更新。
@@ -40,6 +42,8 @@ def _gpu_entry_vram_gb(entry: dict[str, Any]) -> int:
 
 
 async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
+    """装机登记的规格快照(型号/显存/驱动/CUDA)。只认 joined:规格取的是「装机成功那一次」
+    的 nvidia-smi 快照,失败/过期的尝试不该影响台账口径。池归属另走 _enrolled_pools。"""
     rows = (
         await session.execute(select(NodeEnrollment).where(NodeEnrollment.status == "joined"))
     ).scalars()
@@ -54,9 +58,33 @@ async def _enrollment_specs(session: AsyncSession) -> dict[str, dict[str, Any]]:
             "vram_gb": max((_gpu_entry_vram_gb(e) for e in gpu_info), default=0),
             "driver_version": str(os_info.get("driver_version") or "") or None,
             "cuda_version": str(os_info.get("cuda_version") or "") or None,
-            "pool": r.pool,
         }
     return out
+
+
+# 池归属的事实源状态:joined(正常加入)+ failed(对账器判「标签与登记不符」后落的状态)。
+# 少了 failed 这一档,纠偏对冒名节点恰好失效 —— 见 _enrolled_pools 的说明。
+POOL_AUTHORITY_STATUSES = ("joined", "failed")
+
+
+async def _enrolled_pools(session: AsyncSession) -> dict[str, str]:
+    """节点名 → 登记池(池标签对账的唯一事实源)。
+
+    不能复用 _enrollment_specs 的 joined 过滤:nodes/reconciler.py 把「节点自声明的池标签
+    与登记不符」的行判成 **failed** 而非 joined —— 也就是说,只看 joined 时,冒名节点
+    (持 join token 的机器把 config.yaml 改成 superdl.io/pool=kata 去吸 VM 隔离负载)
+    恰好查不到登记池,纠偏静默跳过,伪标签长期有效。纠偏最需要生效的就是 failed 这一行。
+
+    同一主机名多次登记时取 id 最大的那行:它是运维最后一次授权的池。
+    """
+    rows = (
+        await session.execute(
+            select(NodeEnrollment)
+            .where(NodeEnrollment.status.in_(POOL_AUTHORITY_STATUSES))
+            .order_by(NodeEnrollment.id)
+        )
+    ).scalars()
+    return {r.node_name: r.pool for r in rows if r.node_name}
 
 
 async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]:
@@ -70,6 +98,7 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         "probe_ok": 0,
         "cordon_converged": 0,
         "pool_label_corrected": 0,
+        "pool_mismatch_cordoned": 0,
     }
     async with advisory_lock(sm, LockKey.NODE_SPEC_PATROL) as got:
         if not got:
@@ -98,12 +127,14 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
         nodes = await orch.list_nodes(include_unlabeled=True)
 
         desired_labels: list[tuple[str, str]] = []
-        desired_pool_fix: list[tuple[str, str]] = []
+        # (节点名, 登记池, 节点自声明的池)
+        desired_pool_fix: list[tuple[str, str, str]] = []
         now = now_utc()
         # ---- B:单事务 DB 收敛 ----
         async with sm() as session:
             await service.save_cluster_probe(session, probe)
             enroll = await _enrollment_specs(session)
+            enrolled_pools = await _enrolled_pools(session)
             rows = {r.node_name: r for r in (await session.execute(select(NodeSpec))).scalars()}
             seen: set[str] = set()
             for n in nodes:
@@ -154,13 +185,18 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
                 # 池标签对账:kubelet --node-labels 是节点自声明,不可作为隔离档位的事实源
                 # (持 join token 的机器可自称 kata 池吸 VM 隔离负载)。注册登记
                 # (node_enrollments.pool,一次性 token 绑定)才是事实源;不一致即纠正。
-                enrolled_pool = e.get("pool")
+                # 事实源覆盖 joined 与 failed 两态(见 _enrolled_pools):对账器正是把
+                # 不一致的行判成 failed,只看 joined 等于对冒名节点永不纠偏。
+                enrolled_pool = enrolled_pools.get(n.name)
                 if (
                     enrolled_pool
                     and n.pool_label not in ("", "unknown")
                     and n.pool_label != enrolled_pool
                 ):
-                    desired_pool_fix.append((n.name, enrolled_pool))
+                    # 指标在**发现**时计数而非纠正成功后:纠正是 K8s 写,可能连轮失败,
+                    # 而告警要盯的是「出现了冒名节点」这件事本身
+                    NODE_POOL_LABEL_MISMATCH_TOTAL.inc()
+                    desired_pool_fix.append((n.name, enrolled_pool, n.pool_label))
             for name, row in list(rows.items()):
                 if name in seen:
                     continue
@@ -190,19 +226,39 @@ async def node_spec_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, in
             counts["labeled"] += 1
 
         # ---- C2:池标签纠偏(注册登记 > 节点自声明;逐节点独立 try,失败下轮自愈) ----
-        for name, pool in desired_pool_fix:
+        # 先停调度再改标签:改标签存在窗口(kubelet 重启会再次自声明),而调度器只看标签;
+        # 冒名节点在人工核查前一律不该继续接活 —— 只纠标签不停调度,等于承认「纠正成功之前
+        # 落上去的负载」是可接受损失,而那恰是本条防线要挡的事(别人的 VM 隔离负载落到
+        # 攻击者宿主上,宿主 root 可读)。cordon 走 service.request_cordon(期望态落台账 +
+        # outbox),与管理端手工 cordon 同一条路径,巡检阶段 D 也会照期望态复收敛。
+        for name, pool, observed in desired_pool_fix:
+            async with sm() as session:
+                row = (
+                    await session.execute(select(NodeSpec).where(NodeSpec.node_name == name))
+                ).scalar_one_or_none()
+                if row is not None and row.desired_unschedulable is not True:
+                    await service.request_cordon(
+                        session,
+                        name,
+                        unschedulable=True,
+                        reason=(
+                            f"池标签与注册登记不符(节点自称 {observed},登记为 {pool}),"
+                            "已自动停止调度待人工核查"
+                        ),
+                    )
+                    counts["pool_mismatch_cordoned"] += 1
             try:
                 await orch.set_node_labels(name, {POOL_NODE_LABEL: pool})
             except Exception:
                 logger.warning("node_pool_label_fix_failed", node=name, pool=pool)
                 continue
-            NODE_POOL_LABEL_MISMATCH_TOTAL.inc()
             counts["pool_label_corrected"] += 1
             logger.warning(
                 "node_pool_label_corrected",
                 node=name,
                 pool=pool,
-                hint="节点自声明池标签与注册登记不符,已按登记纠正;频繁出现需排查节点凭据",
+                observed=observed,
+                hint="节点自声明池标签与注册登记不符,已按登记纠正并停止调度;需排查节点凭据",
             )
 
         # ---- D:cordon 期望态收敛(实际调度态与台账期望不符即重放,逐节点独立 try) ----

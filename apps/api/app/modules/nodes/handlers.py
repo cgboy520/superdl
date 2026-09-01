@@ -33,3 +33,17 @@ async def handle_node_cordon(session: AsyncSession, task: OutboxTask) -> None:
         unschedulable=row.desired_unschedulable,
         reason=task.payload.get("reason"),
     )
+
+
+@outbox_handler("node.decommission")
+async def handle_node_decommission(session: AsyncSession, task: OutboxTask) -> None:
+    """节点退役的 K8s 侧:cordon 后删 Node 对象(编排层内一并完成,见 delete_node)。
+
+    与 node.cordon 不同,这里读 payload 而非台账期望态:退役是单向终态,不存在
+    「后发的相反意图」把它盖回去的可能,节点名就是全部输入。
+    节点已不在集群时按成功返回(退役的目标态就是它不在),重放不会进死信。
+    令牌作废与停调度期望态在请求路径已同事务落库,本任务失败不影响这两件事。
+    """
+    node_name = task.payload["node_name"]
+    await get_orchestrator().delete_node(node_name)
+    logger.warning("node_decommission_applied", node=node_name, reason=task.payload.get("reason"))

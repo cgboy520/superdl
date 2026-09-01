@@ -12,7 +12,7 @@
 | 路由/端点 | 角色/鉴权 | 说明 |
 |---|---|---|
 | `POST /api/admin/v1/auth/login` | 匿名 | 管理端登录,JWT audience 与用户端隔离。安全策略 `admin_mfa_enabled`(默认开)开启时全角色强制 TOTP,响应为挑战票 `{status: mfa_setup | mfa_required, ticket}`(未绑定发绑定票 10 分钟、已绑定发二要素票 5 分钟),正式 token 由 `/auth/mfa/setup/confirm` 或 `/auth/login/mfa` 签发;关闭时密码校验通过即 `{status: ok, access_token, admin}`(已绑定者也不挑战,审计 detail 记 `login_without_mfa`),重新开启即恢复 |
-| `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废 |
+| `POST /api/admin/v1/auth/mfa/setup/begin` `/setup/confirm` `/auth/login/mfa` | 短时票据 | TOTP 绑定与二要素校验;恢复码用后作废。`begin` 对**已绑定**账号一律拒 `MFA_TICKET_INVALID`(不回吐长期种子),并与 confirm/verify 共用 `admin-mfa:{admin_id}` 配额桶;`confirm` 绑定成功即 `token_version+1`,票据带 ver,绑定票就此一次性 |
 | `POST /api/admin/v1/me/mfa/recovery-codes` | 全角色(本人) | 重新生成恢复码,旧码全部作废,明文仅此一次返回;进审计 |
 | `GET /api/admin/v1/me` | 全角色 | 路由守卫每次进入/切换受保护路由都调用:角色只信服务端响应,token 失效直跳登录(带 returnTo) |
 | `GET /api/admin/v1/overview` | 全角色 | 总览只读聚合:实例分状态 COUNT(非终态)、付费租户 COUNT、`subscriptions_active`(**在保订阅数**,精确 COUNT)、池级 GPU 台账(含非 Ready 段;每池另带 `gpu_spot_used` = 已租那段里属于竞价实例的卡数,**已按 `gpu_used` 截断**,见下)、节点 Ready/Missing 计数 |
@@ -41,7 +41,7 @@
 | `POST /api/admin/v1/finance/orders/{order_no}/verify` `/backfill` | finance | 渠道核验与补单 |
 | `POST /api/admin/v1/adjustments` `/{adjustment_id}/review` | finance 发起,复核双人 | 调账双管理员复核;发起支持 Idempotency-Key(重放 200 + X-Idempotent-Replay) |
 | `GET /api/admin/v1/refunds` `POST .../{refund_id}/review` `/payout` `/cancel` `/refunds/export` | finance/admin | 退款审批与登记打款分人:审批不动钱包,登记打款成功才负向核销;payout 支持 Idempotency-Key(同键同参重放不重复出金,同键异参 409);export 为流式 CSV,筛选口径一致 |
-| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` `/invoices/export` | 读 ops/finance/readonly,写 finance/admin | 人工开票(填发票号)/ 驳回,站内信告知;export 为流式 CSV(status/period 口径) |
+| `GET /api/admin/v1/invoices` `POST .../{invoice_id}/issue` `/reject` `/invoices/export` | finance/admin(读写同档) | 人工开票(填发票号)/ 驳回,站内信告知;**抬头与邮箱默认脱敏**,明文需 `reveal=true` + `reason` 必填,按实际行数与事由落审计;export 为流式 CSV(status/period 口径),**每次导出都落一条审计**,行数是流吐出的实际值(客户端中断即已送出的行数) |
 | `GET /api/admin/v1/adjustments/export` | finance/readonly | 调账流式 CSV(status/user_id/day 口径),行数硬上限 + 截断标记行 |
 | `GET /api/admin/v1/tickets` `/{ticket_id}` `POST .../reply` `/status` | 读 ops/finance/readonly,写 ops/admin | 工单对话流与状态流转 |
 | `GET /api/admin/v1/tickets/count?status=&category=` | ops/finance/readonly | 待办工单计数轻端点(DB count,默认 `pending_staff` 口径;列表页角标 60s 轮询用它,不拉列表全页) |
@@ -58,7 +58,10 @@
 - 菜单项单一事实源是 `lib/menu.ts` 的 `MENU`(侧栏与 ⌘K 命令面板共用,icon 存组件引用),可见性由同文件 `MENU_ROLES` 按角色过滤;两者键集一致性由 `lib/menu.test.ts` 守护。
 - `src/routes/` 目录下的非路由文件(测试/工具)必须以 `-` 开头(tanstack router 的 routeFileIgnorePrefix),否则会被误收入路由树并告警。
 - 管理端登录限流只计失败,四层桶:`admin-login:{ip}:{username}` 与 `admin-login-acct:{username}` 成功即清零,`admin-login-ip:{ip}` 与 `admin-login-acct-daily:{username}` 不清零;TOTP 校验走 `admin-mfa:{admin_id}`。限额数值见 [limits.md](./limits.md)。
+- **日窗账号桶只在失败后计数,不参与 bcrypt 前的准入预检**(其余三层桶都参与)。它排在口令校验之前时,任何人拿 30 个错口令就能把一个具名管理员锁死 24 小时:管理端没有第二条认证通路(无短信、无找回),日桶又不清零,只能进库改数据。摘掉预检后攻击者仍从第 31 次失败起吃 429,限速一点没松,而拿着正确口令的管理员照常登录。
 - readonly 全站只读;finance 只在财务区可写。
+- **PII 明文读取只有一道闸**(`adminapi/service.ensure_reveal_allowed`,租户实名与发票抬头/邮箱共用):readonly 永不给明文,`reason` 必填(≥2 字符),返回规范化事由进审计;新开明文出口一律过它,否则脱敏档位会各写各的。脱敏实现同样共用 `account.mask_id_name`(留首字符、其余打星,单字全掩),列表页与 CSV 导出两个出口档位一致。
+- **发票的 `tax_id` 刻意不脱敏**:个人票没有税号(schema 强制置空),公司票税号是工商公开信息且是财务核对的主键;脱敏只覆盖抬头(个人票上即自然人姓名)与邮箱(可直接触达的联系方式)。
 - 调账复核必须以 `with_for_update` 行锁读取:并发复核的后到者见非 pending 即返 409,保证恰一次入账、ledger 只有一条 adjust。复核人不得是发起人,且必须是调账发起前已创建的账号。
 - 调账发起与人工补单均支持 Idempotency-Key(调账落 `(created_by, idempotency_key)` 唯一约束;补单落 `orders.backfill_idempotency_key`,同键重放回当前状态而非 409)。
 - 公告群发为分块批量 INSERT(单事务 ⌈N/1000⌉ 条语句),只触达 active 用户。

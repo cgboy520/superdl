@@ -114,6 +114,55 @@ class TestSetupFlow:
         assert "alert-admin" in rows[0].content
         assert rows[0].severity == "warning"
 
+    async def test_setup_ticket_dies_at_bind(self, client: AsyncClient, sm):
+        """绑定成功即作废那张 setup 票(token_version+1)。
+
+        挂了说明票在剩余有效期(至多 600s)里还能用:谁截到它,只要在管理员绑完之后
+        再 begin 一次,就把**长期有效**的 TOTP 种子领走了,此后可以一直自造第二要素。
+        """
+        await _create(client, sm, "onetime-admin", "admin")
+        ticket = (await admin_login(client, "onetime-admin")).json()["ticket"]
+        await complete_mfa_setup(client, ticket)
+        again = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
+        assert again.json()["code"] == "MFA_TICKET_INVALID", again.text
+        # confirm 侧同样不认这张票(重复绑定不得重发恢复码)
+        reconfirm = await client.post(
+            "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": "000000"}
+        )
+        assert reconfirm.json()["code"] == "MFA_TICKET_INVALID"
+
+    async def test_begin_refuses_already_bound_account(self, client: AsyncClient, sm):
+        """已绑定账号不再吐种子,哪怕手上是一张**当前版本**的合法 setup 票。
+
+        票据作废之外的第二道闸:少了它,任何能拿到 setup 票的路径(截获、日志、
+        管理员误转发)都等于一把永久的第二要素钥匙。
+        """
+        from sqlalchemy import select
+
+        from app.core.security import create_token
+        from app.modules.adminapi.models import AdminUser
+
+        await _create(client, sm, "bound-begin-admin", "admin")
+        await complete_mfa_setup(
+            client, (await admin_login(client, "bound-begin-admin")).json()["ticket"]
+        )
+        async with sm() as session:
+            admin = (
+                await session.execute(
+                    select(AdminUser).where(AdminUser.username == "bound-begin-admin")
+                )
+            ).scalar_one()
+            fresh = create_token(
+                str(admin.id),
+                "admin",
+                token_type="mfa_setup",
+                ttl_seconds=600,
+                extra={"ver": admin.token_version},
+            )
+        resp = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": fresh})
+        assert resp.json()["code"] == "MFA_TICKET_INVALID", resp.text
+        assert "secret" not in resp.json()
+
     async def test_ticket_cannot_cross_stage(self, client: AsyncClient, sm):
         """setup 票不能拿去登录验证口(typ 校验),反之亦然。"""
         await _create(client, sm, "cross-admin", "admin")
@@ -189,11 +238,12 @@ class TestVerifyLogin:
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
         assert confirm.status_code == 200
-        # 同码重放:绑定路径与登录路径都必须拒
+        # 同码重放:绑定路径与登录路径都必须拒。绑定路径上先撞的是「票已一次性作废」
+        # (绑定即 token_version+1),比 timestep 防重放更早一层,同样是拒
         again = await client.post(
             "/api/admin/v1/auth/mfa/setup/confirm", json={"ticket": ticket, "code": code}
         )
-        assert again.json()["code"] == "MFA_CODE_INVALID"
+        assert again.json()["code"] == "MFA_TICKET_INVALID"
         ticket2 = (await admin_login(client, "replay-admin")).json()["ticket"]
         replay = await client.post(
             "/api/admin/v1/auth/login/mfa", json={"ticket": ticket2, "code": code}

@@ -72,8 +72,11 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/instances/{uuid}/events": _ANY_READ,
     "POST /api/admin/v1/instances/{uuid}/force-stop": _OPS,
     "POST /api/admin/v1/instances/{uuid}/preempt": _OPS,
-    "GET /api/admin/v1/invoices": _ANY_READ,
-    "GET /api/admin/v1/invoices/export": _ANY_READ,
+    # 抬头/邮箱是自然人身份信息:读权限收到 finance(与 issue/reject 同档),
+    # readonly 与 ops 一并摘除 —— readonly 在租户页本就不许 reveal 实名,
+    # 从发票 CSV 拿到同一批身份数据是同一件事的绕道
+    "GET /api/admin/v1/invoices": _FIN,
+    "GET /api/admin/v1/invoices/export": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/issue": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/reject": _FIN,
     "GET /api/admin/v1/legal-docs": _ANY_READ,
@@ -92,6 +95,9 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "GET /api/admin/v1/nodes": _OPS_RO,
     "GET /api/admin/v1/nodes/port-pool": _OPS_RO,
     "POST /api/admin/v1/nodes/{node_name}/cordon": _OPS,
+    # 退役与 cordon / force-stop 同档:都是运维对集群资源的处置动作,
+    # 不可逆性由必填 reason + 审计留痕承担,不由角色门槛承担
+    "POST /api/admin/v1/nodes/{node_name}/decommission": _OPS,
     "GET /api/admin/v1/nodes/{node_name}/metrics": _OPS_RO,
     "POST /api/admin/v1/nodes/{node_name}/uncordon": _OPS,
     "GET /api/admin/v1/orders": _FIN_RO,

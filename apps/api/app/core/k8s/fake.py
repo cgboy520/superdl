@@ -75,6 +75,8 @@ class FakeOrchestrator:
     node_labels: dict[str, dict[str, str]] = field(default_factory=dict)  # set_node_labels 落点
     # cordon 状态:节点名集合,list_nodes 反映为 Cordoned
     cordoned_nodes: set[str] = field(default_factory=set)
+    # 退役已删除的节点名:delete_node 落点,list_nodes 里不再出现(对齐真实集群)
+    deleted_nodes: set[str] = field(default_factory=set)
     # Service/Ingress 端点(create 注册/delete 移除);测试可手工注入孤儿端点
     endpoints: set[tuple[str, str]] = field(default_factory=set)
     # 外部占用的 NodePort(非平台对象的 Service):撞占时 create_instance 抛 NodePortTaken
@@ -371,6 +373,7 @@ class FakeOrchestrator:
                 cuda_version_label=n.cuda_version_label,
             )
             for n in nodes
+            if n.name not in self.deleted_nodes
         ]
 
     def inject_node(self, node) -> None:
@@ -385,3 +388,8 @@ class FakeOrchestrator:
             self.cordoned_nodes.add(node_name)
         else:
             self.cordoned_nodes.discard(node_name)
+
+    async def delete_node(self, node_name: str) -> None:
+        """退役:先 cordon 再从节点视图里摘掉。幂等 —— 已删除的节点重放不报错。"""
+        self.cordoned_nodes.add(node_name)
+        self.deleted_nodes.add(node_name)

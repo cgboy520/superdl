@@ -4,6 +4,7 @@
 """
 
 import hashlib
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -230,12 +231,13 @@ class TestApproveSuccess:
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "completed"
 
-        expected_phone = f"del:{user_id}:{hashlib.sha256(PHONE.encode()).hexdigest()[:12]}"
         async with sm() as session:
             user = await session.get(User, user_id)
             assert user is not None
-            # 手机号哈希化:原号码不再出现;实名字段清空;状态 deleted
-            assert user.phone == expected_phone
+            # 匿名化占位串:del:{user_id}:{16 位随机 hex};原号码不再出现;实名字段清空;
+            # 状态 deleted。长度不得越过 users.phone 的 40 列宽
+            assert re.fullmatch(rf"del:{user_id}:[0-9a-f]{{16}}", user.phone), user.phone
+            assert len(user.phone) <= 40
             assert PHONE not in user.phone
             assert user.id_name is None
             assert user.id_number is None
@@ -276,6 +278,38 @@ class TestApproveSuccess:
         )
         assert reregister.status_code == 201, reregister.text
         assert reregister.json()["user"]["id"] != user_id
+
+    async def test_anonymized_phone_is_not_derivable_from_the_number(self, client: AsyncClient, sm):
+        """占位串与原号码之间不得有任何函数关系。
+
+        挂了说明匿名化退回成了「摘要」:11 位手机号的 keyspace 只有约 1.9e9,拿到库 dump
+        的人可以离线穷举反查回号码——那是假名化,不是删除,PIPL 第 47 条的义务没履行。
+        判据取两个可判定的必要条件:同一号码注销两次得到**不同**占位串(有随机性,
+        不是号码的函数),且占位串不等于该号码任何常见摘要形态。
+        """
+        admin = await admin_headers(sm, client)
+        tokens: list[str] = []
+        for _ in range(2):
+            headers, user_id, _ = await create_user_with_key(client, PHONE)
+            req_id = (await _create_request(client, headers)).json()["id"]
+            await _backdate_request(sm, user_id, days=8)
+            resp = await client.post(
+                f"/api/admin/v1/deletion-requests/{req_id}/approve", headers=admin
+            )
+            assert resp.status_code == 200, resp.text
+            async with sm() as session:
+                user = await session.get(User, user_id)
+                assert user is not None
+                tokens.append(user.phone.split(":")[-1])
+            # 号码已释放,下一轮重新注册同号(上一轮的验证码未落消费标记,回拨发码退避窗)
+            await age_sms_codes(sm)
+
+        assert tokens[0] != tokens[1], "同号两次注销得到同一串 = 占位串是号码的函数"
+        digest = hashlib.sha256(PHONE.encode()).hexdigest()
+        for token in tokens:
+            # 无密钥摘要的各种截断/全长形态都不得命中
+            assert token not in (digest, digest[:12], digest[:16], digest[: len(token)])
+            assert token != hashlib.md5(PHONE.encode()).hexdigest()[: len(token)]
 
     async def test_ledger_preserved(self, client: AsyncClient, sm):
         """账本按法定义务保留:注销只脱敏身份,balance_ledger 行不动。"""

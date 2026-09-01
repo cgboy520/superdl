@@ -6,6 +6,7 @@ from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.errors import AppError, ErrorCode
 from app.core.http import client_ip
+from app.core.logging import mask_phone_value
 from app.modules.account import service
 from app.modules.account.deps import CurrentUser
 from app.modules.account.schemas import (
@@ -104,10 +105,18 @@ async def captcha_config(session: DbSession) -> CaptchaConfigOut:
     )
 
 
+# 凭据类端点的审计目标必须在调用 service **之前**先落一个:失败请求走不到成功分支,
+# 只在成功后标注等于「失败登录是一条没有目标的匿名审计行」——事后答不出哪个账号被打、
+# 是不是撞库。号码一律掩码入库(审计表里不复制一份明文 PII);成功后再覆盖成 user:{id}。
+def _mark_credential_attempt(request: Request, phone: str, action: str) -> None:
+    set_audit_target(request, f"phone:{mask_phone_value(phone)}", detail={"action": action})
+
+
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest, session: DbSession, request: Request, response: Response
 ) -> TokenPairOut:
+    _mark_credential_attempt(request, body.phone, "register")
     pair = await service.register(
         session,
         body.phone,
@@ -116,7 +125,7 @@ async def register(
         accept_terms=body.accept_terms,
         client_ip=client_ip(request),
     )
-    set_audit_target(request, f"user:{pair.user.id}")
+    set_audit_target(request, f"user:{pair.user.id}", detail={"action": "register"})
     _set_refresh_cookie(response, pair.refresh_token)
     return _token_pair_out(pair)
 
@@ -125,10 +134,11 @@ async def register(
 async def login(
     body: LoginRequest, session: DbSession, request: Request, response: Response
 ) -> TokenPairOut:
+    _mark_credential_attempt(request, body.phone, "login")
     pair = await service.login(
         session, body.phone, body.sms_code, body.password, client_ip=client_ip(request)
     )
-    set_audit_target(request, f"user:{pair.user.id}")
+    set_audit_target(request, f"user:{pair.user.id}", detail={"action": "login"})
     _set_refresh_cookie(response, pair.refresh_token)
     return _token_pair_out(pair)
 
@@ -138,6 +148,7 @@ async def reset_password(
     body: PasswordResetRequest, session: DbSession, request: Request, response: Response
 ) -> TokenPairOut:
     """设置/修改/找回密码(手机号 + 验证码)。成功即撤销全部在外会话并换发新 token。"""
+    _mark_credential_attempt(request, body.phone, "password_reset")
     pair = await service.reset_password(
         session, body.phone, body.sms_code, body.new_password, client_ip=client_ip(request)
     )

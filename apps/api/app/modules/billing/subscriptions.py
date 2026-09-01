@@ -17,7 +17,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import AppError, ErrorCode, conflict
-from app.core.idempotency import IDEMPOTENCY_WINDOW, find_replay, insert_idempotent
+from app.core.idempotency import (
+    IDEMPOTENCY_WINDOW,
+    find_replay,
+    insert_idempotent,
+    request_fingerprint,
+)
 from app.core.locks import LockKey, advisory_lock
 from app.core.logging import get_logger
 from app.core.metrics import PATROL_FAILED_TOTAL
@@ -44,9 +49,22 @@ REASON_EXPIRED_FREEZE = "subscription_freeze"
 
 _PERIOD_LABELS = {"day": "日", "week": "周", "month": "月", "year": "年"}
 
+# 幂等指纹的动作名:转换/首单与续费共用 UNIQUE(user_id, idempotency_key) 一个命名空间,
+# 动作名进指纹,跨动作复用同一把键也得到显式 409 而不是静默重放另一条单
+_ACT_NEW = "subscription:new"
+_ACT_RENEW = "subscription:renew"
+
 
 def period_label(period: str) -> str:
     return _PERIOD_LABELS.get(period, period)
+
+
+def _fingerprint(action: str, user_id: int, instance_id: int, period: str, count: int) -> str:
+    """订阅单的请求指纹:决定这单业务形态的全部参数(动作 + 归属 + 目标实例 + 周期)。
+
+    实例 id 必须在内 —— 它正是「同一把键换台实例」时唯一变化的东西,漏了指纹就白做。
+    """
+    return request_fingerprint(action, user_id, instance_id, period, count)
 
 
 async def quote(
@@ -107,6 +125,7 @@ async def charge_new(
         expires_at=started + period_delta(period, period_count),
         status=STATUS_ACTIVE,
         idempotency_key=idempotency_key,
+        request_fingerprint=_fingerprint(_ACT_NEW, user_id, instance_id, period, period_count),
     )
     session.add(row)
     await session.flush()
@@ -146,13 +165,39 @@ async def list_expiring_active(
     )
 
 
-async def find_replay_row(session: AsyncSession, *, user_id: int, key: str) -> Subscription | None:
+async def find_replay_row(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    key: str,
+    instance_id: int | None = None,
+    period: str | None = None,
+    period_count: int | None = None,
+) -> Subscription | None:
     """幂等窗口内同 (user_id, key) 的订阅行。转换/续费的**第一步**就要问它。
 
     转换尤其不能晚问:market 一旦翻成 subscription,重放请求会先撞上「只有按量实例
     可以转」这条守卫拿到 400;守卫若排在结算之后,重放还会用折后价再补一次转换前
     那个小时的账。
+
+    给全 instance_id/period/period_count 时做异参检测:同键但打向另一台实例(或另一种
+    周期)即 409,而不是把**别人那单**当作本次的重放返回 —— 后者会告诉用户「买好了」,
+    可目标实例既没转成包周期也没扣过钱。三个参数缺一即退化为纯按键重放(老调用方)。
     """
+    fingerprint = (
+        _fingerprint(_ACT_NEW, user_id, instance_id, period, period_count)
+        if instance_id is not None and period is not None and period_count is not None
+        else None
+    )
+    if fingerprint is None:
+        return await find_replay(
+            session,
+            Subscription,
+            owner_col=Subscription.user_id,
+            owner_id=user_id,
+            key=key,
+            window=IDEMPOTENCY_WINDOW,
+        )
     return await find_replay(
         session,
         Subscription,
@@ -160,6 +205,7 @@ async def find_replay_row(session: AsyncSession, *, user_id: int, key: str) -> S
         owner_id=user_id,
         key=key,
         window=IDEMPOTENCY_WINDOW,
+        fingerprint=fingerprint,
     )
 
 
@@ -239,6 +285,7 @@ async def renew(
     自动 _try_auto_renew——都遵守),老订阅行在锁内经 FOR UPDATE 重读。
     锁序 wallet → subscriptions,与 debit 内的钱包锁重入一致,不会成环。
     """
+    fingerprint = _fingerprint(_ACT_RENEW, instance.user_id, instance.id, period, period_count)
     if idempotency_key:
         existing = await find_replay(
             session,
@@ -247,6 +294,7 @@ async def renew(
             owner_id=instance.user_id,
             key=idempotency_key,
             window=IDEMPOTENCY_WINDOW,
+            fingerprint=fingerprint,
         )
         if existing is not None:
             return existing, await _quote_of(session, existing, instance.gpu_count), False
@@ -279,6 +327,7 @@ async def renew(
         auto_renew=current.auto_renew,
         renewed_from_id=current.id,
         idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
     )
     current.status = STATUS_EXPIRED
     if idempotency_key:
@@ -289,6 +338,7 @@ async def renew(
             owner_col=Subscription.user_id,
             owner_id=instance.user_id,
             key=idempotency_key,
+            fingerprint=fingerprint,
         )
         if result is not row:
             # 并发同幂等键:UNIQUE(user_id, idempotency_key) 兜住,胜出方按重放返回。

@@ -173,8 +173,29 @@ PRIVATE_CIDRS = [
     "198.18.0.0/15",
 ]
 # Egress 明确滥用途 TCP 端口黑名单:SMTP 发信(25/465/587)、SMB/NetBIOS(135/139/445)、
-# Telnet(23)、RDP(3389)。只封明确滥用途;HTTPS/SSH 出/包管理/对象存储等照常放行。
-EGRESS_BLOCKED_TCP_PORTS = (23, 25, 135, 139, 445, 465, 587, 3389)
+# Telnet(23)、RDP(3389),以及常见数据库/缓存/检索端口(3306 MySQL、5432 PostgreSQL、
+# 6379 Redis、9200 Elasticsearch、11211 Memcached、27017 MongoDB)。
+# 数据库端口必须封:上面的私网黑名单只挡内网,带公网端点的托管库(RDS/云 Redis 等)
+# 走公网 IP,不封端口时每个租户容器都能直连它——而这类服务默认口令/无鉴权是常态,
+# 租户互扫与横向移动的成本几乎为零。
+# 只封明确滥用途;HTTPS/SSH 出/包管理/对象存储等照常放行。租户确需外连自有数据库时
+# 走 TLS 反代或工单白名单逐案开放,与 UDP 同口径。
+EGRESS_BLOCKED_TCP_PORTS = (
+    23,
+    25,
+    135,
+    139,
+    445,
+    465,
+    587,
+    3306,
+    3389,
+    5432,
+    6379,
+    9200,
+    11211,
+    27017,
+)
 # 公网 UDP 白名单:53(公网 DNS 兜底,主路径走 CoreDNS)/443(QUIC/HTTP3)。
 # 全端口放行的 GPU 机器是一流反射/洪泛源(NTP/DNS/CLDAP 放大、DDoS 代理),
 # 其余 UDP 端口按工单白名单逐案评审开放。
@@ -396,6 +417,10 @@ class RealOrchestrator:
 
         SSH 22 必须显式放行:NodePort DNAT 后是否过 NetworkPolicy 取决于 CNI;
         from 不能排私网 —— 跨节点 NodePort 经 SNAT 后来源是节点内网 IP。sshd 仅密钥登录。
+        但**可以且必须**排掉 Pod 网段(tenant_pod_cidr):Pod→Pod 是同一 overlay 内的直连,
+        不经 SNAT,来源仍是对端 Pod IP;不排等于把 22 端口对全集群租户敞开(扫一遍
+        Pod 网段就能挨个连别人的实例),而排掉它不影响任何一条合法路径 —— 节点 SNAT
+        后的来源是节点内网 IP,不落在 Pod 网段里。
 
         网关数据面来源不限端口:服务型实例的容器端口由用户声明,平台事先不知道是哪个;
         Envoy 只打到平台生成的 HTTPRoute 里的 backend 端口,租户间东西向仍默认拒。
@@ -420,10 +445,14 @@ class RealOrchestrator:
                             )
                         ],
                     ),
-                    # SSH NodePort 入流量(见 docstring)
+                    # SSH NodePort 入流量,排除 Pod 网段的租户互连(见 docstring)
                     client.V1NetworkPolicyIngressRule(
                         _from=[
-                            client.V1NetworkPolicyPeer(ip_block=client.V1IPBlock(cidr="0.0.0.0/0"))
+                            client.V1NetworkPolicyPeer(
+                                ip_block=client.V1IPBlock(
+                                    cidr="0.0.0.0/0", _except=self._ssh_ingress_except()
+                                )
+                            )
                         ],
                         ports=[client.V1NetworkPolicyPort(protocol="TCP", port=22)],
                     ),
@@ -471,6 +500,12 @@ class RealOrchestrator:
                 ],
             ),
         )
+
+    def _ssh_ingress_except(self) -> list[str] | None:
+        """SSH 入方向的 except 列表:只排 Pod 网段。空配置返回 None(不下发 except),
+        apiserver 会拒绝空数组,且形态非法的网段应在 Settings 层就拦下。"""
+        cidr = (self.settings.tenant_pod_cidr or "").strip()
+        return [cidr] if cidr else None
 
     def _ensure_default_netpol_sync(self, namespace: str) -> None:
         policy = self._tenant_netpol(namespace)
@@ -1484,6 +1519,19 @@ class RealOrchestrator:
     def _set_node_unschedulable_sync(self, node_name: str, unschedulable: bool) -> None:
         # RBAC:需 ClusterRole nodes patch(deploy/app/k8s/01-rbac.yaml)
         self.core.patch_node(node_name, {"spec": {"unschedulable": unschedulable}})
+
+    async def delete_node(self, node_name: str) -> None:
+        await self._run(self._delete_node_sync, node_name)
+
+    def _delete_node_sync(self, node_name: str) -> None:
+        """cordon → 删 Node。两步都吞 404:退役的目标态就是节点不在集群里,
+        对已消失的节点重放必须是成功(outbox at-least-once),不是失败。
+        RBAC:需 ClusterRole nodes patch + delete(deploy/app/k8s/01-rbac.yaml)。"""
+        _ignore(
+            lambda: self.core.patch_node(node_name, {"spec": {"unschedulable": True}}),
+            404,
+        )
+        _ignore(lambda: self.core.delete_node(node_name), 404)
 
     # ---------- 镜像预热 ----------
 

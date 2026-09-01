@@ -10,9 +10,13 @@ warn() { echo "warn: $*" >&2; }
 export HOME=/root
 export JUPYTER_RUNTIME_DIR="${JUPYTER_RUNTIME_DIR:-/run/jupyter}"   # 该目录下的文件含 token,不能落实例盘
 export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-/root/.local/share/jupyter}"
-export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-/root/.jupyter}"
+# 配置目录同样不能落实例盘(/root 是 PVC):放进去的 jupyter_server_config.py 会跨 Pod
+# 重建长期存活,而配置文件的 traitlets 优先级高于环境变量默认值 —— 一行
+# `c.IdentityProvider.token = ""` 就把整台实例变成免鉴权的 root 代码执行入口
+# (任何一个恶意 pip 包都能顺手写下,用户自己并不知情)。放容器可写层:Pod 重建即消失。
+export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-/run/jupyter-config}"
 mkdir -p "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" /root/.cache
-chmod 700 "$JUPYTER_RUNTIME_DIR" 2>/dev/null || true
+chmod 700 "$JUPYTER_RUNTIME_DIR" "$JUPYTER_CONFIG_DIR" 2>/dev/null || true
 rm -f /root/.local/share/jupyter/runtime/jpserver-* 2>/dev/null || true   # 清残留(含 token)
 
 # 用户装的包落到实例盘(/opt/conda、/opt/julia 在容器可写层,Pod 重建即丢)
@@ -136,12 +140,13 @@ PIPFN
 }
 write_session_env || warn "会话环境未能落盘(SSH 进来可能缺 PATH)"
 
-if [[ -n "${AUTHORIZED_KEYS:-}" ]]; then
-  mkdir -p /root/.ssh
-  printf '%s\n' "$AUTHORIZED_KEYS" > /root/.ssh/authorized_keys
-  chmod 700 /root/.ssh
-  chmod 600 /root/.ssh/authorized_keys
-fi
+# AUTHORIZED_KEYS 由平台恒定注入(可能是空串),这里**无条件覆写**:空值必须把文件清空。
+# 加 `[[ -n ... ]]` 守卫会让「删掉最后一把公钥」变成空操作 —— /root 是持久实例盘,
+# 旧 authorized_keys 原样留着,公钥泄漏的用户永远吊销不掉攻击者的访问。
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+printf '%s\n' "${AUTHORIZED_KEYS:-}" > /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
 
 # TopoLVM 把 /root 挂成 2777,sshd StrictModes 会因此拒绝公钥认证
 chmod g-w,o-w /root 2>/dev/null || warn "/root 权限未能收紧,sshd 可能拒绝公钥认证"
@@ -208,11 +213,15 @@ trap on_term TERM INT
 fast_failures=0
 while true; do
   start_ts=$SECONDS
+  # token 必须显式上 argv:只靠 JUPYTER_TOKEN 时它是 traitlets 的**默认值**(优先级最低,
+  # 配置文件可覆盖),命令行才是最高优先级 —— 这条是「配置文件关不掉鉴权」的兜底,
+  # 与上面把 JUPYTER_CONFIG_DIR 挪出实例盘互为两道。
   jupyter lab \
     --ip=0.0.0.0 \
     --port=8888 \
     --no-browser \
     --allow-root \
+    --IdentityProvider.token="$JUPYTER_TOKEN" \
     --ServerApp.root_dir=/root \
     --ServerApp.default_url=/lab \
     --ResourceUseDisplay.track_cpu_percent=True \

@@ -35,6 +35,8 @@ from app.modules.nodes import service as nodes_service
 from app.modules.nodes.schemas import (
     EnrollmentCommandOut,
     EnrollmentCreate,
+    NodeDecommissionOut,
+    NodeDecommissionRequest,
     NodeEnrollmentOut,
 )
 from app.modules.orchestrator import service as orchestrator_service
@@ -460,6 +462,26 @@ async def admin_uncordon_node(
 ) -> NodeCordonOut:
     """恢复调度(reason 必填)。"""
     return await _cordon(node_name, body, session, request, on=False)
+
+
+# 角色沿用 ops:与 cordon / force-stop / 强制回收同档 —— 都是运维对集群资源的处置动作,
+# 单独抬到 admin 会让「机器已卖出/被扣押」这类必须立刻执行的场景卡在超管在不在线上。
+# 不可逆性由必填 reason + 审计留痕承担,不由角色门槛承担。
+@router.post("/nodes/{node_name}/decommission", dependencies=[require_roles("ops")])
+async def admin_decommission_node(
+    node_name: str, body: NodeDecommissionRequest, session: DbSession, request: Request
+) -> NodeDecommissionOut:
+    """节点退役(不可逆):停止调度 + 作废该机全部注册令牌 + 经 outbox 从集群删除 Node 对象。
+
+    善后不在本端点内:集群 join token 轮换与 kubelet 证书吊销是控制面动作。
+    """
+    revoked = await nodes_service.decommission_node(session, node_name, reason=body.reason)
+    set_audit_target(
+        request,
+        f"node:{node_name}",
+        detail={"action": "decommission", "reason": body.reason, "revoked_enrollments": revoked},
+    )
+    return NodeDecommissionOut(node_name=node_name, revoked_enrollments=revoked)
 
 
 @router.get("/reports/oversell", dependencies=[require_roles("ops", "finance", "readonly")])

@@ -168,8 +168,10 @@
     "clusterNotConfigured": "Cluster access not configured: a super admin must enter the RKE2 server address and join token under Platform Config · Cluster Access",
     "clusterNotReady": "The cluster scheduler is not ready, so instances cannot start right now. The platform is checking automatically — please retry shortly",
     "clusterProbeFailed": "Cluster connection failed: {{error}}",
+    "decommissionDone": "Node decommissioned: scheduling stopped and every enrollment token for this machine revoked; the cluster Node object will be deleted in the background. Rotate the cluster join token and revoke this machine's kubelet certificate separately",
     "enrollTransition": "Enrollment status transition {{from}} → {{to}} is not allowed",
     "hostnameMismatch": "Hostname does not match the registration; the token is revoked — verify in the admin console and regenerate",
+    "nodeNotFound": "Node is not in the ledger: check the node name, or wait for the next patrol round (60s) to pick it up and retry",
     "regenerateNotAllowed": "Status {{status}} does not allow regeneration (only pending/expired/failed)",
     "storageClassMissing": "Cluster storage is not ready (missing {{names}}), so this cannot be provisioned right now — please contact platform operations"
   },

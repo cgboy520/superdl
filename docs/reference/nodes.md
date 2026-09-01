@@ -8,7 +8,7 @@
 - `node_specs`:node_name 唯一、pool_label?、unlabeled、gpu_model_raw?、gpu_model?(canonical)、label_synced、gpu_count、gpu_used、vram_gb、vcpu、mem_gb、disk_gb、driver_version?、cuda_version?、status(Ready/NotReady/Cordoned/Missing)、last_seen
 - `cluster_status`:单行 id=1,api_reachable、k8s_version?、distro?(rke2/k3s)、hami_ready、dcgm_present、kps_present、gpu_operator_present、kata_runtimeclass、nvidia_runtimeclass、gateway_ready、cert_manager_ready、nodes_ready、nodes_total、storage_classes JSONB?、pools JSONB?、error?、probed_at
 
-装机状态机:pending → installing → rebooting ⇆ installing → joining → joined,旁路终态 failed / expired / revoked(非终态均可因绝对过期落 expired)。
+装机状态机:pending → installing → rebooting ⇆ installing → joining → joined,旁路终态 failed / expired / revoked(非终态均可因绝对过期落 expired)。终态 joined / failed / expired 另有一条通向 revoked 的边,**只有节点退役走得到**(管理端手工吊销 `revoke_enrollment` 对终态仍一律 409)。
 
 ## 契约
 
@@ -23,6 +23,7 @@
 | `POST .../{enrollment_id}/revoke` | ops | reason 必填,非终态 → revoked |
 | `GET /api/admin/v1/nodes` | ops/readonly | 数据源为台账;含 `gpu_model_raw / unlabeled / label_synced / last_seen / vram_gb`,含未打标与 Missing |
 | `POST /api/admin/v1/nodes/{node_name}/cordon\|uncordon` | ops | reason 必填,只 enqueue `node.cordon`,请求路径不动 K8s |
+| `POST /api/admin/v1/nodes/{node_name}/decommission` | ops | **不可逆**,reason 必填。同事务:停调度期望态落台账 + 该主机名下全部注册登记置 revoked + enqueue `node.decommission`(worker 删 Node 对象),请求路径不动 K8s;台账无此节点报 404 `nodes.nodeNotFound`。响应 `{node_name, revoked_enrollments, queued}` |
 | `GET /api/admin/v1/cluster/gpu-models` | ops/readonly | 台账聚合 `[{gpu_model, gpu_model_raw, pool_label, node_count, gpu_total, ready_gpu_total, vram_gb}]`,canonical×pool 分组,未识别入 `unrecognized` 桶 |
 | `GET /api/admin/v1/cluster/status` | ops/readonly | 纯 DB:`{api_reachable, distro, k8s_version, probed_at, components:[{key,label,ok,detail,fix_hint}], pools, config:{server_url_set, join_token_set, prometheus_url_set, grafana_url, registry_host, registry_project}}`(registry 两项非密,供镜像页新建表单默认前缀),fix_hint 为可复制修复命令 |
 | `POST /api/admin/v1/cluster/test-connection` | ops | 同步只读探测,upsert `cluster_status` 后原样返回;超时 5s → 502 |
@@ -42,7 +43,12 @@
 ### 台账与巡检
 
 - 对账器(30s,advisory lock 1009)判定 joined 的唯一依据是 K8s 中该 node_name 出现且 Ready 且池标签匹配;池标签不符 → failed;2h 无心跳 → failed。读取走 `FOR UPDATE SKIP LOCKED`,与请求路径并发吊销/上报不互相覆盖。
-- 节点巡检(60s,advisory lock 1010)是节点事实源:阶段 A 纯 K8s 读 → 阶段 B 单事务 DB 收敛 → 阶段 C 逐节点 label patch(失败下轮自愈)。`enrollment.gpu_info` 只是装机一次性快照,不得当事实源。
+- 节点巡检(60s,advisory lock 1010)是节点事实源:阶段 A 纯 K8s 读 → 阶段 B 单事务 DB 收敛 → 阶段 C 型号 label 收敛 → 阶段 C2 池标签纠偏 → 阶段 D cordon 期望态收敛(C / C2 / D 逐节点独立 try,失败下轮自愈)。`enrollment.gpu_info` 只是装机一次性快照,不得当事实源。
+- **池标签纠偏(阶段 C2)的事实源是注册登记,且必须同时看 joined 与 failed 两态**:kubelet `--node-labels` 是节点自声明,持 join token 的机器可自称 kata 池去吸 VM 隔离负载;而入网对账器恰恰把「自声明与登记不符」的行判成 failed —— 只读 joined 等于对冒名节点永不纠偏,最需要生效的就是那一行。同主机名多次登记取 id 最大的那行(运维最后一次授权的池)。规格快照(型号 / 显存 / 驱动 / CUDA)仍只认 joined,那是「装机成功那一次」的快照。
+- 纠偏顺序是**先 cordon 再改标签**:改标签存在窗口(kubelet 重启会再次自声明),而调度器只看标签;只纠标签不停调度等于承认「纠正成功之前落上去的负载」可接受,而那正是这条防线要挡的事(别人的 VM 隔离负载落到攻击者持 root 的宿主上)。cordon 走 `service.request_cordon`(期望态落台账 + outbox),与管理端手工 cordon 同一条路径,阶段 D 会照期望态复收敛。
+- `superdl_node_pool_label_mismatch_total` 在**发现**时自增,不在纠正成功后:纠正是 K8s 写、可能连轮失败,这条计的是「出现了冒名节点」这件事本身,不是纠正动作的成败。消费方是 `NodePoolLabelMismatch`(critical):平台已自动纠偏并停调度,但「谁在冒名」要人去查——正常装机不会触发,登记与标签同源。
+- **节点退役**(`decommission_node`)三件事同一事务,少一件这台机器就还留着一条回来的路:停调度期望态落台账(阶段 D 把重新冒头的它再压住)→ 该主机名下所有注册登记置 revoked(令牌永不可复用,重装也换不出 join token)→ enqueue `node.decommission` 由 worker 删 Node 对象。两条**平台管不到的边界**必须交回运维(回执文案 `nodes.decommissionDone` 就写着):删 Node 对象只摘掉节点在集群里的身份,**不吊销 kubelet 证书** —— kubelet 还活着就会自行重新注册,巡检按期望态把它再 cordon 一次;集群 join token 轮换与 kubelet 证书吊销都是控制面动作,平台不执行。
+- **能删哪些节点由准入层界定,不由 RBAC**:`nodes` 是集群级资源,`resourceNames` 对 delete 不适用(节点名运营时才产生),字段级策略③又只匹配 UPDATE。收窄在 `deploy/cluster/admission/tenant-restrictions.yaml` 的策略⑦:带控制面 / etcd 角色或任一 infra 落点标签的节点一律不可删。删掉一个控制面 Node 对象后 kubelet 会重新注册,但 `node-restriction.kubernetes.io/superdl-infra` **不会**跟着回来(NodeRestriction 正是禁止 kubelet 自打该前缀),现象是 api / 5 个 worker / 前端 / Envoy 数据面一起 Pending,而集群表面上只是「少了一个标签」。
 - 业务读台账,不实时调 K8s;节点消失先置 `Missing`,超保留期才删行(见 [limits.md](./limits.md));上架校验只认 Ready。
 - 巡检在 worker 收敛环直连 K8s 并以幂等重试保证收敛,outbox 只管请求路径的业务事务。
 - 型号归一化在 `core/gpu_models.py`:`canonical_gpu_model(raw)` 未识别返回 None,同名多容量家族(A100/A800/H100/H800/H200/V100)追加 `-{n}G`;`model_matches(sku, node)` 为相等或节点值前缀匹配(SKU `A100` 匹配台账 `A100-80G`)。CMP 系列识别为 `CMP<数字>HX`:nvidia-smi 只报通用名(`NVIDIA Graphics Device`)时,bootstrap 上报的名称回落 lspci 方括号内型号,显存仍取 nvidia-smi。

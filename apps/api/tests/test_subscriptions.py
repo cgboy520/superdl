@@ -500,6 +500,123 @@ class TestRenewal:
         assert resp.json()["message_key"] == "orchestrator.renewNotSubscription"
 
 
+class TestIdempotencyFingerprint:
+    """订阅的幂等键必须带请求指纹:转换与续费共用 UNIQUE(user_id, idempotency_key) 一个
+    命名空间,没有指纹,一把键换个目标就会静默重放**另一条**单。"""
+
+    async def test_same_key_on_another_instance_is_409(self, client, sm, fake):
+        """同一把键打向另一台实例 → 409,而不是回另一台的订阅。
+
+        挂了 = 用户收到 200 + X-Idempotent-Replay 和一份别的实例的订阅详情,被告知
+        「续上了」;而这台目标实例既没续期也没扣款 —— 计费面最难被投诉发现的一类错。
+        """
+        headers, uuid_a, user_id, sku_id, key_id = await provision_subscription(
+            client, sm, fake, "13911100050", fund="20000.00"
+        )
+        code, created = await buy_subscription(client, headers, sku_id, key_id)
+        assert code == 202, created
+        uuid_b = created["uuid"]
+
+        body = {"period": "week", "period_count": 1}
+        h = {**headers, "Idempotency-Key": "shared-renew-key"}
+        first = await client.post(f"/api/v1/instances/{uuid_a}/renew", json=body, headers=h)
+        assert first.status_code == 200, first.text
+
+        async with sm() as s:
+            inst_b = (await s.execute(select(Instance).where(Instance.uuid == uuid_b))).scalar_one()
+            sub_b_before = (
+                await s.execute(select(Subscription).where(Subscription.instance_id == inst_b.id))
+            ).scalar_one()
+            expiry_before, balance_before = (
+                sub_b_before.expires_at,
+                await wallet.get_balance(s, user_id),
+            )
+
+        crossed = await client.post(f"/api/v1/instances/{uuid_b}/renew", json=body, headers=h)
+        assert crossed.status_code == 409, crossed.text
+        assert crossed.json()["message_key"] == "common.idempotencyKeyMismatch"
+        async with sm() as s:
+            rows = (
+                (await s.execute(select(Subscription).where(Subscription.instance_id == inst_b.id)))
+                .scalars()
+                .all()
+            )
+            assert [r.expires_at for r in rows] == [expiry_before]  # B 没被续期
+            assert await wallet.get_balance(s, user_id) == balance_before  # 也没被扣款
+
+    async def test_same_key_with_another_period_is_409(self, client, sm, fake):
+        """同一台实例、同一把键,但换了周期 → 409:指纹覆盖的是「决定这单形态的全部参数」,
+        不只是实例 id。挂了说明改完周期重试会拿回旧周期的单,用户以为买的是新周期。"""
+        headers, uuid, _, _, _ = await provision_subscription(
+            client, sm, fake, "13911100051", fund="20000.00"
+        )
+        h = {**headers, "Idempotency-Key": "period-swap-key"}
+        first = await client.post(
+            f"/api/v1/instances/{uuid}/renew",
+            json={"period": "week", "period_count": 1},
+            headers=h,
+        )
+        assert first.status_code == 200, first.text
+        swapped = await client.post(
+            f"/api/v1/instances/{uuid}/renew",
+            json={"period": "month", "period_count": 1},
+            headers=h,
+        )
+        assert swapped.status_code == 409
+        assert swapped.json()["message_key"] == "common.idempotencyKeyMismatch"
+
+    async def test_convert_replay_lookup_rejects_another_instance(self, client, sm, fake):
+        """转换路径的重放查询(find_replay_row):给全目标参数时同键异参即 409,给对了才回重放行。
+
+        转换的重放查询排在 orchestrator.subscribe_instance 的最前面(必须最先问,见 convert
+        的 docstring),调用点要把目标实例与周期一起传下来才做得了异参检测。本用例直接压
+        billing 侧的守卫:挂了说明指纹比对没接上——那时一把键换台实例就会拿回别人的订阅单,
+        用户被告知转成功了,而目标实例既没转也没扣款。
+        """
+        from app.core.errors import AppError
+        from app.modules.billing import subscriptions
+
+        headers, uuid, user_id = await provision_running(client, sm, fake, phone="13911100052")
+        await fund_wallet(sm, user_id, "20000.00")
+        body = {"period": "week", "period_count": 1}
+        h = {**headers, "Idempotency-Key": "conv-key"}
+        resp = await client.post(f"/api/v1/instances/{uuid}/subscribe", json=body, headers=h)
+        assert resp.status_code == 200, resp.text
+
+        async with sm() as s:
+            converted = (
+                await s.execute(select(Instance).where(Instance.uuid == uuid))
+            ).scalar_one()
+            hit = await subscriptions.find_replay_row(
+                s,
+                user_id=user_id,
+                key="conv-key",
+                instance_id=converted.id,
+                period="week",
+                period_count=1,
+            )
+            assert hit is not None and hit.instance_id == converted.id
+            with pytest.raises(AppError) as exc:  # 同键、另一台实例
+                await subscriptions.find_replay_row(
+                    s,
+                    user_id=user_id,
+                    key="conv-key",
+                    instance_id=converted.id + 10_000,
+                    period="week",
+                    period_count=1,
+                )
+            assert exc.value.message_key == "common.idempotencyKeyMismatch"
+            with pytest.raises(AppError):  # 同键、同实例、另一个周期
+                await subscriptions.find_replay_row(
+                    s,
+                    user_id=user_id,
+                    key="conv-key",
+                    instance_id=converted.id,
+                    period="month",
+                    period_count=1,
+                )
+
+
 class TestExpiryChain:
     async def test_expire_stops_then_freezes_then_reclaims(self, client, sm, fake):
         """到期 → 停机 → 冻结 → 回收全链路。

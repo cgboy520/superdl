@@ -43,6 +43,20 @@ def test_allowlist_merges_harbor_host_and_lines():
     ) == ["docker.io/", "harbor.example.com/"]
 
 
+def test_allowlist_normalizes_trailing_slash_against_prefix_spoofing():
+    """运营录入的前缀一律补 `/`:匹配方是裸 startswith,不补斜杠的 `docker.io` 会顺带
+    放行 `docker.io.attacker.example/evil:1` —— 注册一个以白名单项开头的域名就绕过整道闸门。
+    挂了 = 镜像来源白名单形同虚设,租户可把任意镜像拉进集群。"""
+    allowed = effective_image_allowlist({"image_allowed_registries": "docker.io"})
+    assert allowed == ["docker.io/"]
+    assert not any("docker.io.attacker.example/evil:1".startswith(p) for p in allowed)
+    assert any("docker.io/library/pytorch:2.9".startswith(p) for p in allowed)
+    # 多余斜杠归一,不产生 `docker.io//`;registry_host 同样归一后再比对,不重复插入
+    assert effective_image_allowlist(
+        {"registry_host": "harbor.example.com/", "image_allowed_registries": "docker.io//\nquay.io"}
+    ) == ["harbor.example.com/", "docker.io/", "quay.io/"]
+
+
 def test_parse_proxy_projects():
     assert parse_proxy_projects("docker.io=dockerhub\n\nghcr.io = ghcr\nbad-line\n") == {
         "docker.io": "dockerhub",

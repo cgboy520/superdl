@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 from kubernetes import client as k8s_client
 
+from app.core.config import get_settings
 from app.core.k8s.base import (
     GATEWAY_API_GROUP,
     GATEWAY_API_VERSION,
@@ -130,6 +131,13 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert tcp_rule.ports is not None and any(p.end_port for p in tcp_rule.ports)
     assert tcp_rule.to is not None and tcp_rule.to[0].ip_block is not None
     assert set(tcp_rule.to[0].ip_block._except or []) == set(PRIVATE_CIDRS)
+    # SSH(22)入方向排掉 Pod 网段:租户互扫 22 被挡,而节点 SNAT 后的来源不在该网段。
+    # 这一项与 CNI 的 masquerade 行为强相关(见 _tenant_netpol docstring),集群侧必须验它
+    # 真的被 apiserver 收下 —— 结构本身由 test_k8s_real_units 离线钉死
+    assert spec.ingress is not None and len(spec.ingress) == 2
+    ssh_block = spec.ingress[1]._from[0].ip_block
+    assert ssh_block is not None and ssh_block.cidr == "0.0.0.0/0"
+    assert ssh_block._except == [get_settings().tenant_pod_cidr]
 
     # 配额兜底(对象数 + 资源总量)与共享数据盘 PVC 就位(Pending 即可,kind 无对应 SC)
     quota: Any = orch.core.read_namespaced_resource_quota("tenant-quota", namespace)

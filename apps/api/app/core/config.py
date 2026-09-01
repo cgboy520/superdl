@@ -1,5 +1,7 @@
 import base64
+import ipaddress
 import os
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -7,6 +9,25 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
+
+# 对外地址的形态白名单(锚定,拒绝一切 shell 元字符与空白)。
+# public_base_url 会被逐字替换进 node-join.sh 的 `API_BASE="__API_BASE__"`(双引号赋值,
+# 以 root 执行):含 `"`、换行、反引号、$、\ 的值等于在每台加入的节点上注入 root 命令,
+# 且它经 ConfigMap(非 Secret)下发,改它不需要密钥权限。形态在 Settings 层拦死,
+# 替换点就不必再猜哪些字符危险。
+_URL_PATTERN = (
+    r"https?://"
+    r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
+    r"(:\d{1,5})?"
+    r"(/[A-Za-z0-9._~/-]*)?"
+)
+_URL_RE = re.compile(rf"^{_URL_PATTERN}$")
+# 裸主机名(可带端口):域名后缀与 admin_host 同样会进用户可见的 ssh 连接串、
+# HTTPRoute hostname 与 Host 比较,同口径拒绝元字符
+_HOSTNAME_RE = re.compile(
+    r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(:\d{1,5})?$"
+)
 
 
 def decode_master_key(raw: str, *, label: str) -> bytes:
@@ -167,6 +188,11 @@ class Settings(BaseSettings):
 
     # K8s 编排(dev 默认 fake)
     k8s_backend: Literal["fake", "real"] = "fake"
+    # 集群 Pod 网段:租户 NetworkPolicy 的 SSH(22)入方向据此排除 Pod→Pod 直连
+    # (租户互扫 22 端口)。默认值是 k3s/rke2 出厂网段,与 deploy/app/k8s 的
+    # FORWARDED_ALLOW_IPS 同源;改了 CNI 网段必须同步改这里,否则要么漏放要么误封。
+    # 留空 = 不加 except(仅供排障临时回退)。
+    tenant_pod_cidr: str = "10.42.0.0/16"
     # 共享档允许落的池(逗号分隔:mig=硬切分,hami=软切分超卖;空 = 共享档整体停售)。
     # 安全说明:HAMi 通过 LD_PRELOAD 拦截 CUDA runtime API 实现显存/算力软限额,但容器内
     # root 可通过 unset LD_PRELOAD、静态链接 CUDA、直接调用 CUDA Driver API 绕过配额
@@ -282,6 +308,21 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"shared_tier_allowed_pools 含未知池:{sorted(bad_pools)}(只认 mig/hami)"
             )
+        # 对外地址形态(与环境无关:dev 配歪了同样会把元字符带进装机脚本与连接串)
+        if not _URL_RE.match(self.public_base_url):
+            raise ValueError(
+                "public_base_url 形态非法:须为 http(s)://<主机>[:端口][/路径],"
+                "不得含空白或 shell 元字符(它会逐字进 node-join.sh 的 root 执行上下文)"
+            )
+        for name in ("jupyter_domain_suffix", "service_domain_suffix", "admin_host"):
+            value = getattr(self, name)
+            if value and not _HOSTNAME_RE.match(value):
+                raise ValueError(f"{name} 形态非法:须为裸主机名(可带端口),不得含协议头或元字符")
+        if self.tenant_pod_cidr:
+            try:
+                ipaddress.ip_network(self.tenant_pod_cidr, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"tenant_pod_cidr 不是合法网段:{self.tenant_pod_cidr}") from exc
         for name in ("config_encryption_key", "config_encryption_key_previous"):
             raw = getattr(self, name)
             if raw is not None:
@@ -365,6 +406,12 @@ class Settings(BaseSettings):
         ):
             if "example.com" in getattr(self, name):
                 problems.append(f"{name} 仍为占位域名")
+        # public_base_url 是节点装机脚本的下载源、bootstrap 的 Bearer 令牌与 join token
+        # 的传输端点:明文 http 等于任何在路径上的人都能改写以 root 执行的脚本、
+        # 顺手读走 join token。其余三项是裸主机名(无协议可查),形态已在
+        # _validate_invariants 拦;prometheus_url 是集群内服务端调用,不在此列。
+        if not self.public_base_url.startswith("https://"):
+            problems.append("public_base_url 必须是 https://(装机脚本与注册令牌走这条链路)")
         if self.payment_alipay_enabled and not self.alipay_seller_id:
             # DB 覆盖层也可能已配:env 侧缺失只作 fail-fast 提示的其中一路;
             # 渠道构造期(payment_channels.AlipayChannel)对 effective 配置再拦一次
