@@ -28,7 +28,7 @@
 
 ### 渠道
 
-- 微信支付走 APIv3(wechatpayv3),支持微信支付公钥模式(`PUB_KEY_ID_*`,新商户唯一模式)与平台证书模式(存量商户);支付宝走当面付(alipay-sdk-python):precreate + RSA2 普通公钥模式,含查单。
+- 微信支付走 APIv3(wechatpayv3),验签仅支持微信支付公钥模式(`PUB_KEY_ID_*`;公钥与公钥 ID 为渠道必填,缺一渠道不可用);支付宝走当面付(alipay-sdk-python):precreate + RSA2 普通公钥模式,含查单。
 - `PaymentChannel.query_order` 是各渠道统一查单 seam,mock 渠道自带渠道侧账本。
 - 渠道构造(PEM/RSA 加载)经 `asyncio.to_thread` 出让事件循环,实例按配置指纹缓存。
 - 渠道凭据与开关在管理端配置,不入代码与 K8s Secret 之外的任何位置,见 [platform-config.md](./platform-config.md)。

@@ -105,7 +105,6 @@
     "wechatCallbackVerifyFailed": "WeChat Pay callback signature verification failed",
     "wechatCreateFailed": "WeChat Pay order creation failed: {{message}}",
     "wechatCredentialsIncomplete": "WeChat Pay merchant credentials incomplete (Admin · Platform Config)",
-    "wechatPublicKeyPair": "WeChat Pay public-key mode requires both the public key and its ID",
     "wechatQueryFailed": "WeChat Pay order query failed: {{message}}"
   },
   "catalog": {

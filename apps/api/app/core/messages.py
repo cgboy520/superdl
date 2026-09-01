@@ -144,7 +144,6 @@ MESSAGES: dict[str, str] = {
     "billing.wechatCallbackVerifyFailed": "微信回调验签失败",
     "billing.wechatCreateFailed": "微信下单失败:{message}",
     "billing.wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",
-    "billing.wechatPublicKeyPair": "微信支付公钥模式需同时配置公钥与公钥 ID",
     "billing.wechatQueryFailed": "微信查单失败:{message}",
     # 商品/镜像
     "catalog.imageRefExists": "镜像 image_ref 已存在",

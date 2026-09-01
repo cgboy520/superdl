@@ -105,7 +105,6 @@
     "wechatCallbackVerifyFailed": "微信回调验签失败",
     "wechatCreateFailed": "微信下单失败:{{message}}",
     "wechatCredentialsIncomplete": "微信支付商户凭据不完整(管理端·平台配置)",
-    "wechatPublicKeyPair": "微信支付公钥模式需同时配置公钥与公钥 ID",
     "wechatQueryFailed": "微信查单失败:{{message}}"
   },
   "catalog": {

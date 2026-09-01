@@ -71,6 +71,8 @@
   「以结算时的实例单价为准」:`settlement.reprice_current_hour` 在钱包行锁内改写 `unit_price`、按新价重算 `amount`、
   补扣差价并打 `detail.repriced`。约束:转换对用户必然是涨价(`spot_discount_pct` 上界 90),所以只补扣、不退款;
   这一条必须写进转换确认弹窗。见 `docs/reference/billing.md`。
+- **微信支付验签只走微信支付公钥模式。** 平台证书模式已移除:`wechat_public_key` 与 `wechat_public_key_id`
+  为渠道必填,缺一即 `PAYMENT_CHANNEL_ERROR`(fail-closed,与其余凭据缺失同路径)。见 `docs/reference/payment.md`。
 
 ## 安全
 

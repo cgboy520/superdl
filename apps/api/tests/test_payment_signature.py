@@ -201,6 +201,27 @@ def _wx_resource(**overrides) -> dict:
 
 
 class TestWechatCallbackSignature:
+    async def test_missing_public_key_fails_closed(self, keypair):
+        """公钥模式是唯一验签模式:公钥/公钥 ID 缺失即渠道不可用,没有证书模式回退。"""
+        priv, pub = keypair
+        for overrides in (
+            {"wechat_public_key": "", "wechat_public_key_id": ""},
+            {"wechat_public_key_id": ""},
+        ):
+            cfg = {
+                "wechat_mchid": MCHID,
+                "wechat_appid": WX_APPID,
+                "wechat_private_key": priv,
+                "wechat_cert_serial_no": "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+                "wechat_apiv3_key": APIV3_KEY,
+                "wechat_public_key": pub,
+                "wechat_public_key_id": "PUB_KEY_ID_0000000000000000000000000000",
+                **overrides,
+            }
+            with pytest.raises(AppError) as exc:
+                WechatChannel(cfg)
+            assert exc.value.message_key == "billing.wechatCredentialsIncomplete"
+
     async def test_valid_signature_accepted(self, keypair):
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())

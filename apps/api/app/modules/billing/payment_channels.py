@@ -1,7 +1,7 @@
 """支付渠道抽象。
 
 - mock:dev/test 默认,POST /api/v1/webhooks/mock 直接标记支付成功
-- wechat:wechatpayv3(平台证书自动更新 + 验签)
+- wechat:wechatpayv3(微信支付公钥验签)
 - alipay:alipay-sdk-python
 
 微信/支付宝需真实商户凭据;未配置时报 PAYMENT_CHANNEL_ERROR。
@@ -132,8 +132,8 @@ ALIPAY_CFG_KEYS = (
 class WechatChannel:
     """微信支付 Native(扫码),APIv3。
 
-    验签双模式(wechatpayv3 原生支持):配置了微信支付公钥 + 公钥 ID(PUB_KEY_ID_*)
-    走公钥模式(新商户唯一模式);否则回退平台证书模式(SDK 自动拉取轮换)。
+    验签仅微信支付公钥模式(PUB_KEY_ID_*):wechat_public_key 与 wechat_public_key_id 必填,
+    缺一渠道即不可用(与其余凭据缺失同一 fail-closed 路径)。
     """
 
     name = "wechat"
@@ -145,15 +145,13 @@ class WechatChannel:
             "wechat_private_key",
             "wechat_cert_serial_no",
             "wechat_apiv3_key",
+            "wechat_public_key",
+            "wechat_public_key_id",
         )
         if not all(cfg[k] for k in required):
             raise AppError(
                 ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatCredentialsIncomplete"
             )
-        public_key = cfg["wechat_public_key"] or None
-        public_key_id = cfg["wechat_public_key_id"] or None
-        if bool(public_key) != bool(public_key_id):
-            raise AppError(ErrorCode.PAYMENT_CHANNEL_ERROR, key="billing.wechatPublicKeyPair")
         from wechatpayv3 import WeChatPay, WeChatPayType  # type: ignore[import-untyped]
 
         self._wxpay = WeChatPay(
@@ -164,8 +162,8 @@ class WechatChannel:
             apiv3_key=cfg["wechat_apiv3_key"],
             appid=cfg["wechat_appid"],
             notify_url=f"{get_settings().public_base_url}/api/v1/webhooks/wechatpay",
-            public_key=public_key,
-            public_key_id=public_key_id,
+            public_key=cfg["wechat_public_key"],
+            public_key_id=cfg["wechat_public_key_id"],
         )
         self._mchid = cfg["wechat_mchid"]
         self._appid = cfg["wechat_appid"]

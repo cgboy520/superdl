@@ -95,7 +95,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="开启后未实名用户不能充值、不能开通实例;须先开启实名认证(任意环境都拦这个组合);"
         "prod 在线关闭已禁且启动 fail-fast(境内合规要求)",
     ),
-    # ---- 微信支付(APIv3;公钥模式与平台证书模式二选一,新商户仅公钥模式) ----
+    # ---- 微信支付(APIv3;验签仅微信支付公钥模式,公钥与公钥 ID 必填) ----
     "payment_wechat_enabled": SettingSpec("payment_wechat", "bool"),
     "wechat_mchid": SettingSpec(
         "payment_wechat", "str", pattern=r"\d{8,12}", hint="商户号为 8~12 位数字"
