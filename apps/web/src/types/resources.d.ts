@@ -442,6 +442,20 @@ export default interface Resources {
         "pending": "待审批",
         "rejected": "已驳回"
       },
+      "service": {
+        "deploying": "部署中",
+        "failed": "已失败",
+        "frozen": "已冻结",
+        "released": "已删除",
+        "releasing": "删除中",
+        "running": "运行中",
+        "stopped": "已停止",
+        "stopping": "停止中",
+        "unready": "未就绪"
+      },
+      "serviceHint": {
+        "unready": "容器已启动但健康检查未通过;实例照常计费,平台不会替你停"
+      },
       "subscription": {
         "active": "在保",
         "cancelled": "已作废",

@@ -203,6 +203,20 @@
       "dev": "Dev box",
       "service": "Service"
     },
+    "service": {
+      "deploying": "Deploying",
+      "failed": "Failed",
+      "frozen": "Frozen",
+      "released": "Deleted",
+      "releasing": "Deleting",
+      "running": "Running",
+      "stopped": "Stopped",
+      "stopping": "Stopping",
+      "unready": "Not ready"
+    },
+    "serviceHint": {
+      "unready": "The container is up but its health check has not passed; the instance keeps billing and the platform will not stop it for you"
+    },
     "market": {
       "on_demand": "Pay-as-you-go",
       "spot": "Spot",

@@ -24,6 +24,8 @@ export interface StatusMeta {
   badge: "success" | "processing" | "default" | "warning" | "error";
   /** 是否显示动效(创建/启动中) */
   animated?: boolean;
+  /** 状态本身需要一句解释时(如服务「未就绪」不是故障)挂 Tooltip 的文案 key */
+  hintKey?: string;
 }
 
 /** 按运行时字符串安全取表项:保留字面量 labelKey 联合类型,同时补回 undefined 防御。 */
@@ -90,6 +92,54 @@ export const workloadTypeMap = {
   // 与档位徽标的紫/青/橙/灰蓝拉开:取品牌靛蓝,白字 ≈7.0:1(WCAG AA)
   service: { labelKey: "shared:status.workload.service", color: colorPrimary },
 } as const satisfies Record<WorkloadType, { labelKey: string; color: string }>;
+
+/** 在线服务的派生状态(后端 services/state.py::derive_status,不落库):由 desired_state 与当前 / 候选实例的
+ *  状态与就绪位推导。unready 不是故障:容器在跑、照常计费,就绪与否由用户自己的健康检查决定;
+ *  released 译作「已删除」——服务的终态动词是删除,不是实例的释放。 */
+export type ServiceStatus =
+  | "deploying"
+  | "running"
+  | "unready"
+  | "stopping"
+  | "stopped"
+  | "frozen"
+  | "failed"
+  | "releasing"
+  | "released";
+
+export const serviceStatusMap = {
+  deploying: { labelKey: "shared:status.service.deploying", color: statusColors.blue, badge: "processing", animated: true },
+  running: { labelKey: "shared:status.service.running", color: statusColors.green, badge: "success" },
+  unready: {
+    labelKey: "shared:status.service.unready",
+    color: statusColors.orange,
+    badge: "warning",
+    hintKey: "shared:status.serviceHint.unready",
+  },
+  stopping: { labelKey: "shared:status.service.stopping", color: statusColors.blue, badge: "processing", animated: true },
+  stopped: { labelKey: "shared:status.service.stopped", color: statusColors.gray, badge: "default" },
+  frozen: { labelKey: "shared:status.service.frozen", color: statusColors.orange, badge: "warning" },
+  failed: { labelKey: "shared:status.service.failed", color: statusColors.red, badge: "error" },
+  releasing: { labelKey: "shared:status.service.releasing", color: statusColors.red, badge: "error", animated: true },
+  released: { labelKey: "shared:status.service.released", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<ServiceStatus, StatusMeta>;
+
+/** 服务的过渡态(有后台流程在推进):列表 / 详情据此决定是否高频轮询。
+ *  unready 不算过渡态 —— 它可能永远不就绪,新鲜度靠常规轮询与手动刷新。 */
+const TRANSIENT_SERVICE_STATUSES: readonly string[] = ["deploying", "stopping", "releasing"];
+
+export function isTransientServiceStatus(status: string): boolean {
+  return TRANSIENT_SERVICE_STATUSES.includes(status);
+}
+
+export function isServiceStatus(value: unknown): value is ServiceStatus {
+  return typeof value === "string" && Object.hasOwn(serviceStatusMap, value);
+}
+
+/** 列表状态筛选项:已删除的服务默认不列,只在明确要求时才查。 */
+export const SERVICE_FILTER_STATUSES: readonly ServiceStatus[] = (
+  Object.keys(serviceStatusMap) as ServiceStatus[]
+).filter((s) => s !== "released");
 
 /** 购买模式,与 instances.market 严格一致(后端 core/pricing.py 的 MARKETS)。
  *  与 tier 正交:同一条 SKU 可以按量买也可以包周期买,不是新档位。 */
