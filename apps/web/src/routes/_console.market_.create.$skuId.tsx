@@ -11,7 +11,6 @@ import {
   diskDailyEstimate,
   fontSize,
   formatDate,
-  formatSizeGb,
   GPU_COUNT_STEPS,
   idemKeyOf,
   isBillingPeriod,
@@ -23,7 +22,7 @@ import {
   type BillingPeriod,
 } from "@superdl/ui";
 import { DataErrorAlert, useConfirm } from "@superdl/ui/components";
-import { createFileRoute, Link, useBlocker, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -32,34 +31,43 @@ import {
   Card,
   Cascader,
   Checkbox,
-  Flex,
-  Form,
   Input,
   InputNumber,
-  Modal,
   Radio,
-  Select,
   Skeleton,
-  Slider,
   Space,
   Table,
   Tabs,
   Tooltip,
   Typography,
 } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
-import { useAddSshKey, useCreateDisk, useCreateInstance } from "../api/mutations";
-import { useDisks, useImages, usePolicies, useSkus, useSshKeys, useWallet } from "../api/queries";
+import { useCreateDisk, useCreateInstance } from "../api/mutations";
+import { useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
 import { ChipRow } from "../components/ChipRow";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { ConsentModal } from "../components/ConsentModal";
+import { ArgRowsEditor } from "../components/create/ArgRowsEditor";
+import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
+import { EnvRowsEditor } from "../components/create/EnvRowsEditor";
+import { SshKeyPicker } from "../components/create/SshKeyPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, skuColumns, type BillingMode } from "../components/skuTable";
 import { SpotConsentModal, SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { requireAuth } from "../lib/guard";
+import {
+  commandToList,
+  envEntriesOf,
+  envRowIssue,
+  isPinnedImageRef,
+  RESERVED_SERVICE_PORTS,
+  type ArgRow,
+  type EnvRow,
+} from "../lib/serviceSpec";
+import { useLeaveGuard } from "../lib/useLeaveGuard";
 
 export const Route = createFileRoute("/_console/market_/create/$skuId")({
   validateSearch: (
@@ -94,43 +102,6 @@ export const Route = createFileRoute("/_console/market_/create/$skuId")({
   component: CreatePage,
 });
 
-/** 与后端 schemas._ENV_NAME_RE 同源:容器环境变量名的形态 */
-const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-/** 与后端 _RESERVED_ENV_PREFIXES / _RESERVED_ENV_NAMES 同源:平台自己往容器里注入的名段 */
-const RESERVED_ENV_PREFIXES = ["JUPYTER_", "SUPERDL_"];
-const RESERVED_ENV_NAMES = ["AUTHORIZED_KEYS"];
-/** 与后端 RESERVED_SERVICE_PORTS 同源:22 = sshd,8888 = JupyterLab */
-const RESERVED_SERVICE_PORTS = [22, 8888];
-
-/**
- * 引用是否钉死到具体版本。判据必须与后端 core.registry.is_pinned_image_ref 一致
- * (不写 tag = 隐含 latest,同样不算钉死),后端是硬闸,这里只提前给反馈。
- */
-function isPinnedImageRef(ref: string): boolean {
-  if (ref.includes("@sha256:")) return true;
-  // 冒号也可能是仓库主机的端口(registry:5000/img),tag 只看最后一段路径
-  const last = ref.split("/").pop() ?? "";
-  const colon = last.lastIndexOf(":");
-  return colon > 0 && last.slice(colon + 1) !== "latest";
-}
-
-interface ArgRow {
-  id: string;
-  value: string;
-}
-interface EnvRow {
-  id: string;
-  name: string;
-  value: string;
-  secret: boolean;
-}
-
-function defaultDiskName(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `data-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-}
-
 function CreatePage() {
   const { t } = useTranslation(["web", "shared"]);
   // 「镜像必须钉死版本」这句话的事实源在后端 messages.py,前端不另写一份
@@ -149,11 +120,8 @@ function CreatePage() {
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
 
   const imagesQ = useImages();
-  const keysQ = useSshKeys();
-  const disksQ = useDisks();
   const { data: images } = imagesQ;
-  const { data: keys } = keysQ;
-  const { data: disks } = disksQ;
+  const { data: disks } = useDisks();
   const walletQ = useWallet();
   const { data: wallet } = walletQ;
   const { data: policies } = usePolicies();
@@ -168,7 +136,7 @@ function CreatePage() {
   const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
   const [platformImage, setPlatformImage] = useState<string[]>();
   const [customImage, setCustomImage] = useState("");
-  const [diskMode, setDiskMode] = useState<"none" | "new" | "existing">("none");
+  const [diskMode, setDiskMode] = useState<DiskMode>("none");
   const [newDiskName, setNewDiskName] = useState(defaultDiskName);
   const [newDiskGb, setNewDiskGb] = useState(100);
   const [existingDiskId, setExistingDiskId] = useState<number>();
@@ -183,19 +151,9 @@ function CreatePage() {
   const [healthPath, setHealthPath] = useState("");
   const [requireApiKey, setRequireApiKey] = useState(true);
   const [withSsh, setWithSsh] = useState(false);
-  // 批量粘贴(环境变量 KEY=VALUE / 启动参数每行一个):skipped 记录最近一次解析跳过的条数
-  const [envBulkOpen, setEnvBulkOpen] = useState(false);
-  const [envBulkText, setEnvBulkText] = useState("");
-  const [envBulkSkipped, setEnvBulkSkipped] = useState<number | null>(null);
-  const [argBulkOpen, setArgBulkOpen] = useState(false);
-  const [argBulkText, setArgBulkText] = useState("");
   const [ecoOpen, setEcoOpen] = useState(false);
   const [spotOpen, setSpotOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  // 新增动态行后 autoFocus 第一个输入框(记下刚加的行 id)
-  const [lastArgId, setLastArgId] = useState<string | null>(null);
-  const [lastEnvId, setLastEnvId] = useState<string | null>(null);
-  const [keyForm] = Form.useForm<{ name: string; public_key: string }>();
   // 幂等键 = 本次挂载的 nonce + 参数快照:同参数重放同键;新进入本页才是新单
   const [formNonce] = useState(() => crypto.randomUUID());
   const [mountedAt] = useState(() => Date.now());
@@ -226,23 +184,7 @@ function CreatePage() {
     !requireApiKey ||
     withSsh;
 
-  // 离开防护:脏表单拦截路由跳走(侧栏/浏览器前进后退),刷新与关标签由 beforeunload 兜底;
-  // 提交成功或「取消」已确认后置 bypass 放行,避免同一动作二次确认
-  const leaveBypassRef = useRef(false);
-  const {
-    status: leaveStatus,
-    proceed: proceedLeave,
-    reset: resetLeave,
-  } = useBlocker({
-    shouldBlockFn: () => formDirty && !leaveBypassRef.current,
-    withResolver: true,
-  });
-  useEffect(() => {
-    if (!formDirty) return;
-    const handler = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [formDirty]);
+  const leave = useLeaveGuard(formDirty);
 
   const cascade = useMemo(() => {
     const tree: Record<string, Record<string, Record<string, Record<string, string>>>> = {};
@@ -280,18 +222,11 @@ function CreatePage() {
       message.success(
         isService ? t("create.deploying", { name: inst.name }) : t("create.creating", { name: inst.name }),
       );
-      leaveBypassRef.current = true;
+      leave.bypass();
       void navigate({ to: "/instances" });
     },
   });
   const createDisk = useCreateDisk();
-  const addKey = useAddSshKey({
-    onSuccess: (key) => {
-      message.success(t("create.keyAdded"));
-      keyForm.resetFields();
-      setKeyIds((ids) => (ids.includes(key.id) ? ids : [...ids, key.id]));
-    },
-  });
 
   // 规格三态:加载中骨架 / 加载失败可重试(绝不能渲染成「已下架」) / 真不存在才提示下架
   if (skusError && !skus) {
@@ -389,27 +324,11 @@ function CreatePage() {
       ? platformImage?.[3]
       : customImage.trim();
 
-  // 环境变量:名字非空的行才算数;同名以最后一行为准,但重名会先被下面的 envError 拦下
-  const envEntries = envRows
-    .map((r) => ({ ...r, name: r.name.trim() }))
-    .filter((r) => r.name !== "");
+  const envEntries = envEntriesOf(envRows);
   const envDict = Object.fromEntries(envEntries.map((r) => [r.name, r.value]));
   const envSecretKeys = envEntries.filter((r) => r.secret).map((r) => r.name);
-  // 启动命令按空格拆成 exec 形式:容器 command 不经 shell,整串带空格会被当成一个可执行文件名
-  const commandList = command.trim() ? command.trim().split(/\s+/) : [];
+  const commandList = commandToList(command);
   const argList = argRows.map((r) => r.value.trim()).filter((v) => v !== "");
-
-  /** 单行环境变量的错误(与后端 model_validator 同款判据),没有则返回 null */
-  const envError = (row: EnvRow): string | null => {
-    const key = row.name.trim();
-    if (key === "") return null;
-    if (!ENV_NAME_RE.test(key)) return t("create.envNameInvalid");
-    if (RESERVED_ENV_NAMES.includes(key) || RESERVED_ENV_PREFIXES.some((pre) => key.startsWith(pre))) {
-      return t("create.envNameReserved");
-    }
-    if (envEntries.filter((r) => r.name === key).length > 1) return t("create.envNameDuplicate");
-    return null;
-  };
 
   /** 服务形态的提交前置条件,返回一句可读原因(挂在禁用按钮的 tooltip 上)。 */
   const serviceIssue = ((): string | null => {
@@ -421,54 +340,14 @@ function CreatePage() {
     if (healthPath.trim() !== "" && !healthPath.trim().startsWith("/")) {
       return t("create.healthPathSlash");
     }
-    const bad = envRows.map(envError).find((e) => e != null);
-    if (bad != null) return bad;
+    const bad = envRows.map((r) => envRowIssue(r, envRows)).find((e) => e != null);
+    if (bad === "invalid") return t("create.envNameInvalid");
+    if (bad === "reserved") return t("create.envNameReserved");
+    if (bad === "duplicate") return t("create.envNameDuplicate");
     // 开了 SSH 必须至少选一把公钥(后端同款校验)
     if (withSsh && keyIds.length === 0) return t("create.serviceNeedsKey");
     return null;
   })();
-
-  const submitEnvBulk = () => {
-    const existing = new Set(envRows.map((r) => r.name.trim()).filter((n) => n !== ""));
-    const seen = new Set<string>();
-    const toAdd: EnvRow[] = [];
-    let skipped = 0;
-    for (const rawLine of envBulkText.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (line === "") continue;
-      const eq = line.indexOf("=");
-      const name = (eq >= 0 ? line.slice(0, eq) : line).trim();
-      const value = eq >= 0 ? line.slice(eq + 1) : "";
-      if (
-        !ENV_NAME_RE.test(name) ||
-        RESERVED_ENV_NAMES.includes(name) ||
-        RESERVED_ENV_PREFIXES.some((pre) => name.startsWith(pre)) ||
-        existing.has(name) ||
-        seen.has(name)
-      ) {
-        skipped += 1;
-        continue;
-      }
-      seen.add(name);
-      toAdd.push({ id: crypto.randomUUID(), name, value, secret: false });
-    }
-    if (toAdd.length > 0) setEnvRows((rows) => [...rows, ...toAdd]);
-    setEnvBulkText("");
-    // 有跳过行时留在 Modal 内报跳过条数;全部有效才直接关窗
-    setEnvBulkSkipped(skipped);
-    if (skipped === 0) setEnvBulkOpen(false);
-  };
-
-  const submitArgBulk = () => {
-    const toAdd = argBulkText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line !== "")
-      .map((value) => ({ id: crypto.randomUUID(), value }));
-    if (toAdd.length > 0) setArgRows((rows) => [...rows, ...toAdd]);
-    setArgBulkText("");
-    setArgBulkOpen(false);
-  };
 
   const canSubmit = isService
     ? serviceIssue == null
@@ -487,7 +366,7 @@ function CreatePage() {
       cancelText: t("create.discardConfirmCancel"),
       danger: true,
       onOk: () => {
-        leaveBypassRef.current = true;
+        leave.bypass();
         void navigate({ to: "/market" });
       },
     });
@@ -619,46 +498,6 @@ function CreatePage() {
       ? t("create.deployService")
       : t("create.createAndStart");
 
-  // 开发机形态是一整张卡;服务形态挂在「同时开放 SSH」勾选项下面,共用同一块 UI
-  const sshKeyPicker = keysQ.isError ? (
-    // SSH key 查询失败绝不伪装成「你还没有密钥」(购买路径硬停)
-    <DataErrorAlert onRetry={() => void keysQ.refetch()} />
-  ) : (keys ?? []).length === 0 ? (
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Alert type="warning" showIcon title={t("copy.sshKeyOnly")} />
-      <Form
-        form={keyForm}
-        layout="inline"
-        onFinish={(v) => addKey.mutate({ name: v.name, public_key: v.public_key })}
-      >
-        <Form.Item name="name" rules={[{ required: true, message: t("create.keyNameRequired") }]}>
-          <Input placeholder={t("create.keyNamePlaceholder")} style={{ width: 160 }} />
-        </Form.Item>
-        <Form.Item
-          name="public_key"
-          rules={[{ required: true, message: t("create.keyContentRequired") }]}
-          style={{ flex: 1 }}
-        >
-          <Input placeholder={t("create.keyPlaceholder")} />
-        </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={addKey.isPending}>
-            {t("create.addKey")}
-          </Button>
-        </Form.Item>
-      </Form>
-    </Space>
-  ) : (
-    <Checkbox.Group
-      value={keyIds}
-      onChange={(v) => setKeyIds(v as number[])}
-      options={(keys ?? []).map((k) => ({
-        value: k.id,
-        label: `${k.name}(${k.fingerprint.slice(0, 20)}…)`,
-      }))}
-    />
-  );
-
   return (
     // 不用 Space:其 ant-space-item 包装会让 sticky 结算条的包含块只剩自身高度
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
@@ -759,108 +598,8 @@ function CreatePage() {
                 <Typography.Text type="secondary">{t("create.commandHint")}</Typography.Text>
               </Space>
 
-              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">{t("create.argsLabel")}</Typography.Text>
-                {argRows.map((row, i) => (
-                  <Flex key={row.id} gap={8} wrap style={{ width: "100%" }}>
-                    <Input
-                      style={{ flex: "1 1 320px", minWidth: 0 }}
-                      placeholder={t("create.argPlaceholder")}
-                      aria-label={t("create.argAria", { index: i + 1 })}
-                      autoFocus={row.id === lastArgId}
-                      value={row.value}
-                      onChange={(e) =>
-                        setArgRows((rows) =>
-                          rows.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)),
-                        )
-                      }
-                    />
-                    <Button onClick={() => setArgRows((rows) => rows.filter((r) => r.id !== row.id))}>
-                      {t("create.rowRemove")}
-                    </Button>
-                  </Flex>
-                ))}
-                <Space size={8}>
-                  <Button
-                    onClick={() => {
-                      const id = crypto.randomUUID();
-                      setArgRows((rows) => [...rows, { id, value: "" }]);
-                      setLastArgId(id);
-                    }}
-                  >
-                    {t("create.addArg")}
-                  </Button>
-                  <Button onClick={() => setArgBulkOpen(true)}>{t("create.bulkAdd")}</Button>
-                </Space>
-              </Space>
-
-              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-                <Typography.Text type="secondary">{t("create.envLabel")}</Typography.Text>
-                {envRows.map((row, i) => {
-                  const err = envError(row);
-                  return (
-                    <Space key={row.id} orientation="vertical" size={2} style={{ width: "100%" }}>
-                      <Flex gap={8} wrap align="center">
-                        <Input
-                          style={{ flex: "1 1 180px", minWidth: 140 }}
-                          placeholder={t("create.envNamePlaceholder")}
-                          aria-label={t("create.envNameAria", { index: i + 1 })}
-                          autoFocus={row.id === lastEnvId}
-                          status={err ? "error" : undefined}
-                          value={row.name}
-                          onChange={(e) =>
-                            setEnvRows((rows) =>
-                              rows.map((r) => (r.id === row.id ? { ...r, name: e.target.value } : r)),
-                            )
-                          }
-                        />
-                        <Input
-                          style={{ flex: "2 1 240px", minWidth: 180 }}
-                          placeholder={t("create.envValuePlaceholder")}
-                          aria-label={t("create.envValueAria", { index: i + 1 })}
-                          value={row.value}
-                          onChange={(e) =>
-                            setEnvRows((rows) =>
-                              rows.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)),
-                            )
-                          }
-                        />
-                        <Checkbox
-                          checked={row.secret}
-                          onChange={(e) =>
-                            setEnvRows((rows) =>
-                              rows.map((r) => (r.id === row.id ? { ...r, secret: e.target.checked } : r)),
-                            )
-                          }
-                        >
-                          {t("create.envSecret")}
-                        </Checkbox>
-                        <Button onClick={() => setEnvRows((rows) => rows.filter((r) => r.id !== row.id))}>
-                          {t("create.rowRemove")}
-                        </Button>
-                      </Flex>
-                      {err && (
-                        <Typography.Text type="danger" style={{ fontSize: fontSize.caption }}>
-                          {err}
-                        </Typography.Text>
-                      )}
-                    </Space>
-                  );
-                })}
-                <Space size={8}>
-                  <Button
-                    onClick={() => {
-                      const id = crypto.randomUUID();
-                      setEnvRows((rows) => [...rows, { id, name: "", value: "", secret: false }]);
-                      setLastEnvId(id);
-                    }}
-                  >
-                    {t("create.addEnv")}
-                  </Button>
-                  <Button onClick={() => setEnvBulkOpen(true)}>{t("create.bulkAdd")}</Button>
-                </Space>
-                <Typography.Text type="secondary">{t("create.envSecretHint")}</Typography.Text>
-              </Space>
+              <ArgRowsEditor rows={argRows} onChange={setArgRows} />
+              <EnvRowsEditor rows={envRows} onChange={setEnvRows} />
             </Space>
           </Card>
 
@@ -1005,88 +744,22 @@ function CreatePage() {
       </Card>
       )}
 
-      <Card title={t("create.diskCard")}>
-        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-          <Radio.Group
-            value={diskMode}
-            onChange={(e) => setDiskMode(e.target.value as typeof diskMode)}
-            options={[
-              { value: "none", label: t("create.diskNone") },
-              { value: "new", label: t("create.diskNew") },
-              { value: "existing", label: t("create.diskExisting") },
-            ]}
-          />
-          {diskMode === "new" && (
-            <>
-              <Space size={12} style={{ width: "100%", maxWidth: 420 }}>
-                <Typography.Text type="secondary">{t("storage.nameLabel")}</Typography.Text>
-                <Input
-                  style={{ width: "100%", maxWidth: 260 }}
-                  maxLength={64}
-                  aria-label={t("storage.nameLabel")}
-                  value={newDiskName}
-                  onChange={(e) => setNewDiskName(e.target.value)}
-                />
-              </Space>
-              {/* 容量:Slider 与 InputNumber 联动同值(与存储页新建盘同一录入体验) */}
-              <Flex gap={12} align="center">
-                <Slider
-                  style={{ flex: 1 }}
-                  min={policies?.disk_min_gb}
-                  max={policies?.disk_max_gb}
-                  step={10}
-                  value={newDiskGb}
-                  onChange={setNewDiskGb}
-                  disabled={!policies}
-                />
-                <InputNumber
-                  min={policies?.disk_min_gb}
-                  max={policies?.disk_max_gb}
-                  step={10}
-                  value={newDiskGb}
-                  onChange={(v) => {
-                    if (typeof v === "number") setNewDiskGb(v);
-                  }}
-                  disabled={!policies}
-                  style={{ width: 110 }}
-                  aria-label={t("create.diskSizeAria")}
-                />
-              </Flex>
-              <Typography.Text type="secondary">
-                {formatSizeGb(newDiskGb)}
-                {diskPriceGbMonth
-                  ? ` · ${t("common.gbMonthPrice", { price: diskPriceGbMonth })},${t("common.dailyApprox", { amount: diskDaily })}`
-                  : ""}
-                ;{t("create.diskAutoCreateNote")}
-              </Typography.Text>
-            </>
-          )}
-          {diskMode === "existing" &&
-            (disksQ.isError ? (
-              // 盘清单加载失败绝不伪装成「没有可挂载的盘」
-              <DataErrorAlert onRetry={() => void disksQ.refetch()} />
-            ) : (
-              <Select
-                style={{ width: "100%", maxWidth: 320 }}
-                placeholder={t("create.selectDiskPlaceholder")}
-                value={existingDiskId}
-                onChange={setExistingDiskId}
-                options={(disks ?? [])
-                  .filter((d) => d.status === "active" && d.mounted_instance_id == null)
-                  .map((d) => ({
-                    value: d.id,
-                    label: `${d.name}(${formatSizeGb(d.size_gb)})`,
-                  }))}
-                notFoundContent={t("create.noMountableDisks")}
-              />
-            ))}
-          <Typography.Text type="secondary">
-            {t("create.diskIndependentNote")}
-          </Typography.Text>
-        </Space>
-      </Card>
+      <DataDiskCard
+        mode={diskMode}
+        onModeChange={setDiskMode}
+        newName={newDiskName}
+        onNewNameChange={setNewDiskName}
+        newGb={newDiskGb}
+        onNewGbChange={setNewDiskGb}
+        existingId={existingDiskId}
+        onExistingIdChange={setExistingDiskId}
+      />
 
-      {!isService && <Card title={t("create.sshCard")}>{sshKeyPicker}</Card>}
+      {!isService && (
+        <Card title={t("create.sshCard")}>
+          <SshKeyPicker value={keyIds} onChange={setKeyIds} />
+        </Card>
+      )}
 
       <Card title={t("create.nameCard")}>
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -1105,7 +778,7 @@ function CreatePage() {
               </Checkbox>
               <Typography.Text type="secondary">{t("create.withSshHint")}</Typography.Text>
               {/* 勾了才要公钥:后端对 with_ssh 的实例同样要求 ssh_key_ids 非空 */}
-              {withSsh && sshKeyPicker}
+              {withSsh && <SshKeyPicker value={keyIds} onChange={setKeyIds} />}
             </>
           )}
         </Space>
@@ -1238,54 +911,6 @@ function CreatePage() {
         }
       />
 
-      <Modal
-        title={t("create.bulkAddEnvTitle")}
-        open={envBulkOpen}
-        okText={t("create.bulkAddConfirm")}
-        onOk={submitEnvBulk}
-        onCancel={() => {
-          setEnvBulkOpen(false);
-          setEnvBulkText("");
-          setEnvBulkSkipped(null);
-        }}
-      >
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Typography.Text type="secondary">{t("create.bulkAddEnvHint")}</Typography.Text>
-          <Input.TextArea
-            rows={8}
-            value={envBulkText}
-            onChange={(e) => setEnvBulkText(e.target.value)}
-            placeholder={"KEY=VALUE"}
-            aria-label={t("create.bulkAddEnvTitle")}
-          />
-          {envBulkSkipped != null && envBulkSkipped > 0 && (
-            <Typography.Text type="warning">
-              {t("create.bulkAddSkipped", { count: envBulkSkipped })}
-            </Typography.Text>
-          )}
-        </Space>
-      </Modal>
-      <Modal
-        title={t("create.bulkAddArgsTitle")}
-        open={argBulkOpen}
-        okText={t("create.bulkAddConfirm")}
-        onOk={submitArgBulk}
-        onCancel={() => {
-          setArgBulkOpen(false);
-          setArgBulkText("");
-        }}
-      >
-        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-          <Typography.Text type="secondary">{t("create.bulkAddArgsHint")}</Typography.Text>
-          <Input.TextArea
-            rows={8}
-            value={argBulkText}
-            onChange={(e) => setArgBulkText(e.target.value)}
-            aria-label={t("create.bulkAddArgsTitle")}
-          />
-        </Space>
-      </Modal>
-
       <SpotConsentModal
         open={spotOpen}
         policy={spotPolicy}
@@ -1314,17 +939,7 @@ function CreatePage() {
           void doCreate();
         }}
       />
-      <Modal
-        open={leaveStatus === "blocked"}
-        title={t("create.discardConfirmTitle")}
-        okText={t("create.discardConfirmOk")}
-        cancelText={t("create.discardConfirmCancel")}
-        okButtonProps={{ danger: true }}
-        onOk={proceedLeave}
-        onCancel={resetLeave}
-      >
-        {t("create.discardConfirmBody")}
-      </Modal>
+      {leave.modal}
     </div>
   );
 }
