@@ -9,9 +9,11 @@ import { useMarkNotificationRead } from "../api/mutations";
 
 /** 实例类通知类型(target_id = 实例 uuid → 实例详情) */
 const INSTANCE_TYPES = new Set(["instance", "preempted", "subscription", "gpu_fault"]);
+/** 在线服务类通知(target_id = 服务 slug → 服务详情) */
+const SERVICE_TYPES = new Set(["service"]);
 
 /** 通知类型 → 兜底跳转目标(无 target_id 时落列表页) */
-function fallbackOf(type: string): "/billing" | "/instances" | "/support" | null {
+function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/support" | null {
   switch (type) {
     case "balance_warn":
     case "arrears":
@@ -25,6 +27,8 @@ function fallbackOf(type: string): "/billing" | "/instances" | "/support" | null
       return "/instances";
     case "ticket":
       return "/support";
+    case "service":
+      return "/services";
     default:
       return null;
   }
@@ -40,6 +44,11 @@ export function useNotificationOpen(afterNavigate?: () => void) {
       // 结构化深链优先:实例类 → /instances/$uuid;工单 → /support/$ticketId
       if (n.target_id && INSTANCE_TYPES.has(n.type)) {
         void navigate({ to: "/instances/$uuid", params: { uuid: n.target_id } });
+        afterNavigate?.();
+        return;
+      }
+      if (n.target_id && SERVICE_TYPES.has(n.type)) {
+        void navigate({ to: "/services/$slug", params: { slug: n.target_id } });
         afterNavigate?.();
         return;
       }

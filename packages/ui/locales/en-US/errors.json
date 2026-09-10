@@ -223,9 +223,12 @@
     "apiKeyNotFound": "API key not found",
     "apiKeyQuota": "This service already has the maximum number of API keys ({{max}}); revoke unused keys first",
     "deleteNeedsStopped": "Stop the service before deleting it",
+    "envKeepUnknown": "Secret variables to keep do not exist on the current revision: {{keys}}",
     "notFound": "Service not found",
     "released": "The service has been deleted and can no longer be operated",
-    "rolloutInFlight": "The service is updating to a new version; try again once it finishes"
+    "rolloutInFlight": "The service is updating to a new version; try again once it finishes",
+    "rolloutNeedsSettled": "The current revision is still changing (deploying / stopping / releasing); update it once it settles",
+    "rolloutSubscriptionUnsupported": "Subscription services do not support revision updates yet"
   },
   "tickets": {
     "notFound": "Ticket not found",

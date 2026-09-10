@@ -1,6 +1,6 @@
 /**
  * 在线服务冒烟:市场「部署服务」→ 部署服务页(规格已带入)→ 填容器与服务配置 → 部署 → 跳到服务详情 → 运行中 →
- * 端点卡拿到 URL → 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。
+ * 端点卡拿到 URL → 更新版本(v2)→ 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。
  * 前置与 smoke 同款:API+worker 在跑,fake 编排。
  *
  * 这条挂了通常说明:市场页没把规格带进部署页、部署页没打到 /services(或部署后没跳详情)、
@@ -36,6 +36,21 @@ test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 90_000 });
   // 端点卡:完整 URL 的 <code>(概览 Tab 的 curl 示例里还有一份,取端点卡那个)
   await expect(page.locator("code", { hasText: /^https:\/\/svc-[a-z0-9]+\./ }).first()).toBeVisible();
+
+  // ── 更新版本:抽屉里换镜像 → 发布 → 头部翻成 v2,新版本就绪后回到运行中(旧版本释放由 worker 收尾)
+  await page.getByRole("button", { name: "更新版本" }).click();
+  const drawer = page.getByRole("dialog");
+  await drawer.getByLabel("镜像地址").fill("registry.superdl.local/vllm:v0.7.0");
+  await drawer.getByRole("button", { name: "发布新版本" }).click();
+  await page
+    .locator(".ant-modal-confirm-btns")
+    .getByRole("button", { name: /^确\s*定$/ })
+    .click();
+  await expect(page.getByText("v2", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("运行中").first()).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("tab", { name: "版本" }).click();
+  await expect(page.locator("tbody").getByText("v2")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("tbody").getByText("当前")).toBeVisible();
 
   // ── 访问密钥 Tab:新建 Key 一次性展示,勾选前关不掉
   await page.getByRole("tab", { name: "访问密钥" }).click();

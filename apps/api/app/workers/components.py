@@ -35,6 +35,8 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
             "instance.release",
             # Pod 消失确认 + 删实例盘 PVC,是 instance 生命周期的收尾段,同属租户编排面
             "instance.disk_cleanup",
+            # 服务版本更新收尾:释放旧版本实例,同属租户编排面
+            "service.retire",
         }
     ),
     WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission"}),

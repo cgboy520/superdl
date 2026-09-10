@@ -192,6 +192,9 @@ export const instanceEventReasonMap = {
   tenant_frozen: { labelKey: "shared:status.eventReason.tenant_frozen" },
   // 竞价回收(preempt.py 的 REASON_PREEMPTED):自动腾容量与管理端强制回收共用这一条
   preempted: { labelKey: "shared:status.eventReason.preempted" },
+  // 在线服务版本更新(services/service.py):旧版本关机 / 旧版本释放
+  rollout: { labelKey: "shared:status.eventReason.rollout" },
+  rollout_retire: { labelKey: "shared:status.eventReason.rollout_retire" },
 } as const satisfies Record<string, { labelKey: string }>;
 
 /** 计费周期,与 subscriptions.period 严格一致(定长小时,见 PERIOD_HOURS)。 */

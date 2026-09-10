@@ -46,7 +46,8 @@
 | `POST /api/v1/services/{slug}/stop` `/start` | user | 委托当前实例的关机 / 开机(锁序 instance → service),写 `desired_state`;版本更新在途或已删除 409 |
 | `DELETE /api/v1/services/{slug}` | user | 释放当前实例 + 吊销全部密钥;运行中 409(`services.deleteNeedsStopped`);释放中 / 已删除幂等直回;slug 不复用 |
 | `GET /api/v1/services/{slug}/events` | user | 全部版本实例的 `instance_events` 并集(降序游标分页),每条带 `instance_uuid` 与 `revision` |
-| `GET /api/v1/services/{slug}/revisions` | user | 版本历史 = 该服务下全部实例(含已释放),版本号降序 |
+| `GET /api/v1/services/{slug}/revisions` | user | 版本历史 = 该服务下全部实例(含已释放),版本号降序(`InstanceOut.service_revision`) |
+| `POST /api/v1/services/{slug}/revisions` | user | 版本更新(202,重建):同事务落新版本实例(creating,`revision+1`)+ 旧版本运行中即关机(reason `rollout`)+ `rollout_instance_id`;支持 `Idempotency-Key`(键落新实例行);包周期服务 / 更新在途 / 旧版本变更中 409;`env_secret_keep` 沿用当前版本密文值 |
 | `GET /api/v1/services/{slug}/logs?tail_lines=` | user | 当前版本容器日志,复用实例日志的四道闸(owner / 状态 / 限流 20/h/user / K8s 读 5s 超时) |
 | `GET /api/v1/services/{slug}/bills` | user | `bills_hourly` 按该服务下全部版本实例并集分页(账单主体仍是实例) |
 | `GET /api/v1/services/{slug}/api-keys` | user | 列表,只回 `key_prefix`,不回明文 |
@@ -70,8 +71,22 @@ stop / start / restart / DELETE / 重置 token 一律 409 `orchestrator.serviceI
 - `services` 行的唯一非请求写入点是迁移监听器(`register_service_listeners`):RUNNING 迁出即失效鉴权缓存;
   当前实例 released 即写 `released_at`(覆盖用户删除、欠费回收、保留期 GC 全部路径)。
   监听器在 transition 的实例行锁之后才碰 `services` 行(锁序 instance → service),不得再锁另一台实例。
-- 版本更新(`POST /services/{slug}/revisions`)v1 只做 recreate 且不对包周期服务开放;HTTPRoute 仍每实例一条,
-  `rollout_instance_id` 为蓝绿预留。
+- 版本更新 v1 只做 recreate 且不对包周期服务开放;HTTPRoute 仍每实例一条,`rollout_instance_id` 为蓝绿预留。
+
+### 版本更新(recreate)
+
+1. 请求事务:幂等重放最先判(同键同参回同一新版本);`released` / 在途 / 包周期(请求或当前实例)/ 旧版本不在
+   `running | stopped | failed` 一律 409;锁旧实例 → 锁服务行 → `create_instance_row(service=ServiceBinding(revision+1), exclude_instance_id=旧)`
+   (配额三维与软准入把旧版本的份额让给新版本,余额不让:重叠窗口两台都真实计费);`env_secret_keep` 的键从旧实例密文解出、按新实例 AAD 重加密;
+   `revision += 1`、`rollout_instance_id = 新`、`desired_state = running`;旧版本 running → `stop_instance_row(reason="rollout")`,停机的旧版本不动。
+2. 新版本 → running:迁移监听器翻转 `current_instance_id`、清空 `rollout_instance_id`、失效鉴权缓存、入队 **`service.retire{service_id, instance_id=旧}`**
+   (唯一新增的 outbox 类型,归 `tenant-mgr` 组件)。handler:锁旧实例 → 仍是当前版本 / 已在释放 → no-op;`stopping | stopped | frozen | failed` →
+   `release_instance_row(actor="system", reason="rollout_retire")`;其它状态抛错退避(30 × 20s)。
+3. 新版本 → failed(调度超时):监听器清空 `rollout_instance_id` 并站内信(type `service`,target = slug);旧版本留在 stopped,
+   用户「启动」= 回滚到上一版本(`revision` 号不回退)。
+4. 用户可见窗口:旧 Pod 删除到新 Pod Ready 之间同 hostname 无健康后端,网关回 503;slug / URL / API Key 全程不变。
+5. 零重复扣款:旧版本尾账由计费监听器在 running→stopping 出一次(`bills_hourly` upsert);新版本是新 instance_id;retire 重放到释放中的行是 no-op。
+6. 数据盘不随版本:旧版本释放前仍占用挂载(`mounted_instance_id`),新版本 `data_disk_id` 只能挂空闲盘,前端一律不带。
 
 ### 域名规则
 

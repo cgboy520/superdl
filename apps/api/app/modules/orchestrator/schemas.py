@@ -144,6 +144,7 @@ class InstanceOut(BaseModel):
     ssh_port: int | None
     # 所属在线服务的 slug 快照(dev 恒 None);服务实例默认不进用户端实例列表
     service_slug: str | None = None
+    service_revision: int | None = None
     data_disk_id: int | None
     frozen_deadline: datetime | None
     created_at: datetime

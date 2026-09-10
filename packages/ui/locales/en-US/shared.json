@@ -253,6 +253,8 @@
       "released": "Release completed",
       "restart": "Restart",
       "retention_reclaim": "Reclaimed after retention window",
+      "rollout": "Revision update: previous revision stopped",
+      "rollout_retire": "Revision update: previous revision released",
       "schedule_timeout": "Scheduling timed out",
       "subscription_expired": "Stopped: subscription expired",
       "subscription_freeze": "Frozen: subscription expired",

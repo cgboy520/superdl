@@ -102,3 +102,23 @@ export function commandToList(command: string): string[] {
   const s = command.trim();
   return s ? s.split(/\s+/) : [];
 }
+
+/** 更新版本的 env 三件套:表里的行 → env / env_secret_keys;仍「沿用」的密文键 → env_secret_keep。
+ *  同名键同时出现在表里时以表里的新值为准(后端同判),不重复进 keep。 */
+export function buildRevisionEnv(
+  rows: readonly EnvRow[],
+  keepKeys: readonly string[],
+): {
+  env: Record<string, string> | null;
+  env_secret_keys: string[] | null;
+  env_secret_keep: string[];
+} {
+  const entries = envEntriesOf(rows);
+  const names = new Set(entries.map((r) => r.name));
+  const secret = entries.filter((r) => r.secret).map((r) => r.name);
+  return {
+    env: entries.length > 0 ? Object.fromEntries(entries.map((r) => [r.name, r.value])) : null,
+    env_secret_keys: secret.length > 0 ? secret : null,
+    env_secret_keep: keepKeys.filter((k) => !names.has(k)),
+  };
+}

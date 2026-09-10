@@ -1,14 +1,33 @@
 /** 服务详情:头部(名称 / 状态 / 版本 / 操作)+ 常驻服务端点卡 + Tab
- *  `概览 / 访问密钥 / 监控 / 日志 / 事件 / 账单 / 设置`(危险区在设置里)。
+ *  `概览 / 访问密钥 / 监控 / 日志 / 版本 / 事件 / 账单 / 设置`(危险区在设置里);「更新版本」是抽屉。
  *  只有一条服务轮询(过渡态 5s、运行中 30s、已删除停),端点卡与头部同源不再另打端点查询;
  *  监控与日志打的是当前版本实例。 */
 
-import type { InstanceEventOut, ServiceOut } from "@superdl/api-client";
-import { fontSize, formatDateTime, isTransientServiceStatus, localToday } from "@superdl/ui";
-import { DataErrorAlert, moneyOr } from "@superdl/ui/components";
+import type { InstanceEventOut, InstanceOut, ServiceOut } from "@superdl/api-client";
+import {
+  fontSize,
+  formatDateTime,
+  instanceStatusMap,
+  isTransientServiceStatus,
+  localToday,
+  metaOf,
+} from "@superdl/ui";
+import { DataErrorAlert, moneyOr, TableErrorEmpty } from "@superdl/ui/components";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Alert, Breadcrumb, Card, Descriptions, Skeleton, Space, Tabs, Tag, Typography } from "antd";
+import {
+  Alert,
+  Badge,
+  Breadcrumb,
+  Card,
+  Descriptions,
+  Skeleton,
+  Space,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+} from "antd";
 import { useFormat } from "@superdl/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,6 +39,7 @@ import {
   useServiceBillPages,
   useServiceEventPages,
   useServiceLogs,
+  useServiceRevisions,
 } from "../api/queries";
 import {
   CopyButton,
@@ -34,6 +54,7 @@ import { LogsPanel } from "../components/instance/LogsPanel";
 import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { ApiKeysCard } from "../components/services/ApiKeysCard";
 import { EndpointCard } from "../components/services/EndpointCard";
+import { RevisionDrawer } from "../components/services/RevisionDrawer";
 import { ServiceActions } from "../components/services/ServiceActions";
 import { SettingsTab } from "../components/services/SettingsTab";
 import { requireAuth } from "../lib/guard";
@@ -43,6 +64,7 @@ export const SERVICE_DETAIL_TABS = [
   "keys",
   "metrics",
   "logs",
+  "revisions",
   "events",
   "bills",
   "settings",
@@ -255,6 +277,69 @@ function EventsTab({ slug, status }: { slug: string; status: string }) {
   );
 }
 
+/** 版本历史:该服务下全部实例(含已释放),版本号降序;当前版本打标。 */
+function RevisionsTab({ service }: { service: ServiceOut }) {
+  const { t } = useTranslation(["web", "shared"]);
+  const q = useServiceRevisions(service.slug);
+  const rows = q.data?.items ?? [];
+  const currentUuid = service.current_instance?.uuid;
+  return (
+    <Table<InstanceOut>
+      rowKey="uuid"
+      size="small"
+      pagination={false}
+      loading={q.isLoading}
+      scroll={{ x: 720 }}
+      dataSource={rows}
+      locale={{
+        emptyText: q.isError ? (
+          <TableErrorEmpty isError onRetry={() => void q.refetch()} />
+        ) : (
+          t("services.revision.empty")
+        ),
+      }}
+      columns={[
+        {
+          title: t("services.revision.colRevision"),
+          width: 120,
+          render: (_, r) => (
+            <Space size={4}>
+              <span>v{r.service_revision ?? "?"}</span>
+              {r.uuid === currentUuid && <Tag color="blue">{t("services.revision.currentTag")}</Tag>}
+            </Space>
+          ),
+        },
+        {
+          title: t("services.revision.colStatus"),
+          width: 110,
+          render: (_, r) => {
+            const m = metaOf(instanceStatusMap, r.status);
+            return <Badge status={m?.badge} color={m?.color} text={m ? t(m.labelKey) : r.status} />;
+          },
+        },
+        {
+          title: t("services.revision.colImage"),
+          render: (_, r) => <Typography.Text code>{r.image_ref}</Typography.Text>,
+        },
+        {
+          title: t("services.revision.colInstance"),
+          width: 120,
+          render: (_, r) => (
+            <Link to="/instances/$uuid" params={{ uuid: r.uuid }}>
+              {r.uuid.slice(0, 8)}
+            </Link>
+          ),
+        },
+        {
+          title: t("services.revision.colCreated"),
+          width: 170,
+          render: (_, r) => formatDateTime(r.created_at),
+        },
+      ]}
+    />
+  );
+}
+
 function BillsTab({ slug }: { slug: string }) {
   return <HourlyBillsTable query={useServiceBillPages(slug)} />;
 }
@@ -265,6 +350,7 @@ function ServiceDetail() {
   const { slug } = Route.useParams();
   const { tab } = Route.useSearch();
   const navigate = useNavigate();
+  const [revisionOpen, setRevisionOpen] = useState(false);
   const {
     data: service,
     isError: serviceError,
@@ -364,7 +450,11 @@ function ServiceDetail() {
               ]}
             />
           </Space>
-          <ServiceActions service={service} onDeleted={() => void navigate({ to: "/services" })} />
+          <ServiceActions
+            service={service}
+            onDeleted={() => void navigate({ to: "/services" })}
+            onRollout={() => setRevisionOpen(true)}
+          />
         </Space>
       </Card>
 
@@ -398,6 +488,11 @@ function ServiceDetail() {
           },
           { key: "logs", label: t("services.detail.tabLogs"), children: <LogsTab service={service} /> },
           {
+            key: "revisions",
+            label: t("services.detail.tabRevisions"),
+            children: <RevisionsTab service={service} />,
+          },
+          {
             key: "events",
             label: t("services.detail.tabEvents"),
             children: <EventsTab slug={service.slug} status={service.status} />,
@@ -418,6 +513,7 @@ function ServiceDetail() {
           },
         ]}
       />
+      <RevisionDrawer service={service} open={revisionOpen} onClose={() => setRevisionOpen(false)} />
     </Space>
   );
 }

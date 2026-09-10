@@ -605,6 +605,17 @@
             "title": "Price Hourly",
             "type": "string"
           },
+          "service_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Revision"
+          },
           "service_slug": {
             "anyOf": [
               {
@@ -3615,6 +3626,17 @@
           "price_hourly": {
             "title": "Price Hourly",
             "type": "string"
+          },
+          "service_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Revision"
           },
           "service_slug": {
             "anyOf": [
@@ -7633,6 +7655,174 @@
           }
         },
         "title": "ServicePatch",
+        "type": "object"
+      },
+      "ServiceRevisionCreate": {
+        "description": "版本更新的完整规格(与部署同一形态,规格 / 计费也可换)。\nenv_secret_keep:沿用当前版本密文值的键名 —— 明文从不回给前端,「不改」只能靠键名表达;\n同名键若同时出现在 env 里,以 env 的新值为准。",
+        "properties": {
+          "container_args": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Args"
+          },
+          "container_command": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Command"
+          },
+          "data_disk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Disk Id"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          },
+          "env_secret_keep": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Env Secret Keep",
+            "type": "array"
+          },
+          "env_secret_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Secret Keys"
+          },
+          "gpu_count": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Gpu Count",
+            "type": "integer"
+          },
+          "health_path": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Path"
+          },
+          "image_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Image Ref",
+            "type": "string"
+          },
+          "market": {
+            "default": "on_demand",
+            "enum": [
+              "on_demand",
+              "subscription",
+              "spot"
+            ],
+            "title": "Market",
+            "type": "string"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "week",
+                  "month",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "period_count": {
+            "default": 1,
+            "maximum": 36.0,
+            "minimum": 1.0,
+            "title": "Period Count",
+            "type": "integer"
+          },
+          "service_port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Service Port",
+            "type": "integer"
+          },
+          "sku_id": {
+            "title": "Sku Id",
+            "type": "integer"
+          },
+          "ssh_key_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Ssh Key Ids",
+            "type": "array"
+          },
+          "with_ssh": {
+            "default": false,
+            "title": "With Ssh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sku_id",
+          "image_ref",
+          "service_port"
+        ],
+        "title": "ServiceRevisionCreate",
         "type": "object"
       },
       "SettlementGapResolve": {
@@ -19390,6 +19580,79 @@
           }
         ],
         "summary": "List Revisions",
+        "tags": [
+          "services"
+        ]
+      },
+      "post": {
+        "description": "版本更新(重建):新版本实例 creating,旧版本先关机;新版本就绪前端点返回 503;\n服务端点与 API Key 不变。包周期服务、更新在途、旧版本变更中一律 409。幂等键重放回 200。",
+        "operationId": "create_revision_api_v1_services__slug__revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceRevisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Revision",
         "tags": [
           "services"
         ]

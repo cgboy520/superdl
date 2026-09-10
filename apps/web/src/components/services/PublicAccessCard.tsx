@@ -13,6 +13,7 @@ export function PublicAccessFields({
   onHealthPath,
   requireApiKey,
   onRequireApiKey,
+  hideAuth,
 }: {
   port: number | null;
   onPort: (v: number | null) => void;
@@ -20,6 +21,8 @@ export function PublicAccessFields({
   onHealthPath: (v: string) => void;
   requireApiKey: boolean;
   onRequireApiKey: (v: boolean) => void;
+  /** 更新版本抽屉:鉴权不随版本,在「设置」改 */
+  hideAuth?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -67,6 +70,7 @@ export function PublicAccessFields({
         />
         <Typography.Text type="secondary">{t("services.form.healthHint")}</Typography.Text>
       </Space>
+      {!hideAuth && (
       <Space orientation="vertical" size={4} style={{ width: "100%" }}>
         <Typography.Text type="secondary">{t("services.form.authLabel")}</Typography.Text>
         <Radio.Group
@@ -82,10 +86,13 @@ export function PublicAccessFields({
         )}
         <Typography.Text type="secondary">{t("copy.serviceGatewayAuth")}</Typography.Text>
       </Space>
+      )}
+      {!hideAuth && (
       <Space orientation="vertical" size={4}>
         <Typography.Text type="secondary">{t("services.form.endpointLabel")}</Typography.Text>
         <Typography.Text type="secondary">{t("services.form.endpointPending")}</Typography.Text>
       </Space>
+      )}
     </Space>
   );
 }

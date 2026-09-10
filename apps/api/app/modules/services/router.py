@@ -19,6 +19,7 @@ from app.modules.services.schemas import (
     ServiceEventOut,
     ServiceOut,
     ServicePatch,
+    ServiceRevisionCreate,
 )
 
 router = APIRouter(tags=["services"])
@@ -110,6 +111,31 @@ async def delete_service(
     """删除服务:释放当前实例并吊销全部密钥;运行中须先停止。数据盘不受影响。"""
     svc = await service.delete_service(session, user.id, slug)
     set_audit_target(request, f"service:{slug}")
+    return await service.service_view(session, svc)
+
+
+@router.post("/services/{slug}/revisions", status_code=status.HTTP_202_ACCEPTED)
+async def create_revision(
+    slug: str,
+    body: ServiceRevisionCreate,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey = None,
+) -> ServiceOut:
+    """版本更新(重建):新版本实例 creating,旧版本先关机;新版本就绪前端点返回 503;
+    服务端点与 API Key 不变。包周期服务、更新在途、旧版本变更中一律 409。幂等键重放回 200。"""
+    await account_service.require_real_name_if_required(
+        session, user, key="orchestrator.realNameRequired"
+    )
+    await check_rate_limit(f"instance-create:{user.id}", max_attempts=30, window_seconds=3600.0)
+    svc, created = await service.create_revision(
+        session, user.id, slug, spec=body, idempotency_key=idempotency_key
+    )
+    if not created:
+        mark_idempotent_replay(response)
+    set_audit_target(request, f"service:{slug}", detail={"revision": svc.revision})
     return await service.service_view(session, svc)
 
 

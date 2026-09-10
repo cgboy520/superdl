@@ -302,6 +302,9 @@ MESSAGES: dict[str, str] = {
     "services.notFound": "服务不存在",
     "services.released": "服务已删除,不能再操作",
     "services.rolloutInFlight": "服务正在更新版本,完成后再试",
+    "services.rolloutNeedsSettled": "当前版本正在变更中(部署 / 停止 / 释放),稳定后再更新版本",
+    "services.rolloutSubscriptionUnsupported": "包周期服务暂不支持更新版本",
+    "services.envKeepUnknown": "要沿用的密文变量在当前版本里不存在:{keys}",
     # 工单
     "tickets.notFound": "工单不存在",
     "tickets.openLimitReached": "进行中的工单已达上限({max} 个),请等待客服处理或关闭后再提交",

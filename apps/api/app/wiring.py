@@ -14,6 +14,7 @@ def wire_modules() -> None:
     from app.modules.notify import service as _notify_service  # noqa: F401 注册 notify.sms handler
     from app.modules.orchestrator import handlers as _handlers  # noqa: F401 注册 outbox handlers
     from app.modules.orchestrator.service import estimate_available_many
+    from app.modules.services import handlers as _service_handlers  # noqa: F401 注册 service.retire
     from app.modules.services.service import register_service_listeners
 
     register_inventory_provider(estimate_available_many)

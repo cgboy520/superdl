@@ -247,6 +247,8 @@
       "released": "释放完成",
       "restart": "重启",
       "retention_reclaim": "留存到期回收",
+      "rollout": "版本更新:旧版本关机",
+      "rollout_retire": "版本更新:旧版本释放",
       "schedule_timeout": "调度超时",
       "subscription_expired": "包周期到期停机",
       "subscription_freeze": "包周期到期冻结",

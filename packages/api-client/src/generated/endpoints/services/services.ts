@@ -8,6 +8,7 @@ import type {
   ApiKeyCreate,
   ApiKeyCreateOut,
   ApiKeyOut,
+  CreateRevisionApiV1ServicesSlugRevisionsPostHeaders,
   CreateServiceApiV1ServicesPostHeaders,
   GetServiceLogsApiV1ServicesSlugLogsGetParams,
   InstanceLogsOut,
@@ -21,7 +22,8 @@ import type {
   PageServiceOut,
   ServiceCreate,
   ServiceOut,
-  ServicePatch
+  ServicePatch,
+  ServiceRevisionCreate
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -360,6 +362,33 @@ export const listRevisionsApiV1ServicesSlugRevisionsGet = async (slug: string,
     method: 'GET'
 
 
+  }
+);}
+
+
+export const getCreateRevisionApiV1ServicesSlugRevisionsPostUrl = (slug: string,) => {
+
+
+
+
+  return `/api/v1/services/${slug}/revisions`
+}
+
+/**
+ * 版本更新(重建):新版本实例 creating,旧版本先关机;新版本就绪前端点返回 503;
+ * 服务端点与 API Key 不变。包周期服务、更新在途、旧版本变更中一律 409。幂等键重放回 200。
+ * @summary Create Revision
+ */
+export const createRevisionApiV1ServicesSlugRevisionsPost = async (slug: string,
+    serviceRevisionCreate: ServiceRevisionCreate,
+    headers?: CreateRevisionApiV1ServicesSlugRevisionsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
+
+  return customFetch<ServiceOut>(getCreateRevisionApiV1ServicesSlugRevisionsPostUrl(slug),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    body: JSON.stringify(serviceRevisionCreate)
   }
 );}
 

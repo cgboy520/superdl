@@ -68,12 +68,24 @@ function tipped(label: string, tip?: string) {
   return tip ? <Tooltip title={tip}>{label}</Tooltip> : label;
 }
 
+export function canRolloutService(
+  service: ServiceOut,
+): { ok: boolean; reason?: "subscription" | "unsettled" } {
+  const s = service.status;
+  if (service.current_instance?.market === "subscription") return { ok: false, reason: "subscription" };
+  if (s === "running" || s === "unready" || s === "stopped" || s === "failed") return { ok: true };
+  return { ok: false, reason: "unsettled" };
+}
+
 export function ServiceActions({
   service,
   onDeleted,
+  onRollout,
 }: {
   service: ServiceOut;
   onDeleted?: () => void;
+  /** 详情页头部给:出「更新版本」按钮(列表不出,抽屉只挂在详情) */
+  onRollout?: () => void;
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -89,6 +101,7 @@ export function ServiceActions({
   const startable = canStartService(s);
   const deletable = s === "stopped" || s === "frozen" || s === "failed" || s === "deploying";
   const isSubscription = service.current_instance?.market === "subscription";
+  const rollout = canRolloutService(service);
 
   return (
     <Space>
@@ -116,6 +129,21 @@ export function ServiceActions({
             }
           >
             {t("services.actions.stop")}
+          </Button>
+        </Tooltip>
+      )}
+      {onRollout && (
+        <Tooltip
+          title={
+            rollout.ok
+              ? undefined
+              : rollout.reason === "subscription"
+                ? t("services.revision.subscriptionUnsupported")
+                : t("services.revision.needsSettled")
+          }
+        >
+          <Button size="small" disabled={!rollout.ok} onClick={onRollout}>
+            {t("services.actions.rollout")}
           </Button>
         </Tooltip>
       )}

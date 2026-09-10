@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildRevisionEnv,
   commandToList,
   envRowIssue,
   isPinnedImageRef,
@@ -59,5 +60,21 @@ describe("parseArgBulk / commandToList", () => {
     expect(parseArgBulk("--a\n\n  --b=1 \n").map((r) => r.value)).toEqual(["--a", "--b=1"]);
     expect(commandToList("  python  -m server ")).toEqual(["python", "-m", "server"]);
     expect(commandToList("   ")).toEqual([]);
+  });
+});
+
+describe("buildRevisionEnv", () => {
+  it("沿用的密文只进 keep;覆盖为新值进 env + secret_keys 且退出 keep;删行两边都不带", () => {
+    const rows: EnvRow[] = [
+      { id: "1", name: "MODEL", value: "qwen", secret: false },
+      { id: "2", name: "HF_TOKEN", value: "hf_new", secret: true },
+      { id: "3", name: " ", value: "ignored", secret: false },
+    ];
+    expect(buildRevisionEnv(rows, ["HF_TOKEN", "API_SECRET"])).toEqual({
+      env: { MODEL: "qwen", HF_TOKEN: "hf_new" },
+      env_secret_keys: ["HF_TOKEN"],
+      env_secret_keep: ["API_SECRET"],
+    });
+    expect(buildRevisionEnv([], [])).toEqual({ env: null, env_secret_keys: null, env_secret_keep: [] });
   });
 });

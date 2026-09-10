@@ -21,6 +21,7 @@ export interface AdminInstanceOut {
   name: string;
   node_name: string | null;
   price_hourly: string;
+  service_revision?: number | null;
   service_slug?: string | null;
   sku_id: number;
   spec: AdminInstanceOutSpec;

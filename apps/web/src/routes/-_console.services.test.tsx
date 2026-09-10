@@ -20,8 +20,8 @@ describe("servicesValidateSearch", () => {
 });
 
 describe("serviceDetailValidateSearch", () => {
-  it("七个合法 tab 保留;旧链接的 ?tab=service 与未知值回默认", () => {
-    for (const tab of ["overview", "keys", "metrics", "logs", "events", "bills", "settings"]) {
+  it("八个合法 tab 保留;旧链接的 ?tab=service 与未知值回默认", () => {
+    for (const tab of ["overview", "keys", "metrics", "logs", "revisions", "events", "bills", "settings"]) {
       expect(serviceDetailValidateSearch({ tab })).toEqual({ tab });
     }
     expect(serviceDetailValidateSearch({ tab: "service" })).toEqual({});

@@ -17,6 +17,7 @@ export interface InstanceOut {
   market: string;
   name: string;
   price_hourly: string;
+  service_revision?: number | null;
   service_slug?: string | null;
   sku_id: number;
   spec: InstanceOutSpec;

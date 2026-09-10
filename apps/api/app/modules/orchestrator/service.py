@@ -147,7 +147,13 @@ from app.modules.orchestrator.schemas import (
     WORKLOAD_SERVICE,
 )
 from app.modules.orchestrator.statemachine import (
+    FAILED as FAILED,
+)
+from app.modules.orchestrator.statemachine import (
     FROZEN as FROZEN,
+)
+from app.modules.orchestrator.statemachine import (
+    RELEASED as RELEASED,
 )
 from app.modules.orchestrator.statemachine import (
     RELEASING as RELEASING,
@@ -157,6 +163,9 @@ from app.modules.orchestrator.statemachine import (
 )
 from app.modules.orchestrator.statemachine import (
     STOPPED as STOPPED,
+)
+from app.modules.orchestrator.statemachine import (
+    STOPPING as STOPPING,
 )
 from app.modules.orchestrator.transitions import (
     register_transition_listener as register_transition_listener,

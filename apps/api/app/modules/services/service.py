@@ -22,10 +22,13 @@ from app.core.config import get_settings
 from app.core.crypto import hash_api_key, hash_api_key_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found
 from app.core.logging import get_logger
+from app.core.outbox import enqueue
 from app.core.pagination import Page, paginate_by_id
+from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.sqlutil import like_escape
 from app.core.timeutil import now_utc
 from app.modules.billing import service as billing_service
+from app.modules.notify import service as notify_service
 from app.modules.orchestrator import service as orchestrator_service
 from app.modules.orchestrator.schemas import WORKLOAD_SERVICE, InstanceOut
 from app.modules.services.models import DESIRED_RUNNING, DESIRED_STOPPED, Service, ServiceApiKey
@@ -35,6 +38,7 @@ from app.modules.services.schemas import (
     ServiceCreate,
     ServiceEventOut,
     ServiceOut,
+    ServiceRevisionCreate,
 )
 from app.modules.services.state import RELEASED, derive_status
 
@@ -185,6 +189,109 @@ async def create_service(
     svc.current_instance_id = instance.id
     await session.commit()
     logger.info("service_deploy_accepted", service_id=svc.id, instance_id=instance.id)
+    return await _reload(session, svc), True
+
+
+RETIRE_TASK_TYPE = "service.retire"
+# 版本更新允许的旧版本状态:变更中(部署 / 停止 / 释放)的版本先等它落定
+_ROLLOUT_SETTLED = (
+    orchestrator_service.RUNNING,
+    orchestrator_service.STOPPED,
+    orchestrator_service.FAILED,
+)
+
+
+async def create_revision(
+    session: AsyncSession,
+    user_id: int,
+    slug: str,
+    *,
+    spec: ServiceRevisionCreate,
+    idempotency_key: str | None,
+) -> tuple[Service, bool]:
+    """版本更新(recreate):新版本实例落 creating,旧版本运行中即关机;新版本 running 后由迁移
+    监听器翻转 current 并入队 service.retire 释放旧版本。slug / URL / API Key 全程不变。
+    返回 (服务, created);created=False = 幂等重放。
+
+    配额与软准入把旧版本的份额让给新版本(否则 max_instances=1 永远换不了版本),余额不让
+    (重叠窗口两台都真实计费)。包周期一律 409:新实例 = 重新预付一整段周期、旧订阅随释放作废。
+    """
+    svc = await get_service(session, user_id, slug)
+    kwargs = _spec_kwargs(spec)
+    # 指纹按请求原样算(密文沿用只进键名),同键重试才判得出「同参」;并入 service_id 防跨服务同键
+    fingerprint = orchestrator_service.instance_fingerprint(
+        user_id,
+        workload_type=WORKLOAD_SERVICE,
+        name=svc.name,
+        service_port=spec.service_port,
+        health_path=spec.health_path,
+        extra=("revision", svc.id, tuple(sorted(spec.env_secret_keep))),
+        **kwargs,  # type: ignore[arg-type]
+    )
+    if idempotency_key:
+        existing = await orchestrator_service.find_instance_replay(
+            session, user_id, key=idempotency_key, fingerprint=fingerprint
+        )
+        if existing is not None and existing.service_id == svc.id:
+            return svc, False
+    _require_live(svc)
+    if spec.market == MARKET_SUBSCRIPTION:
+        raise conflict(key="services.rolloutSubscriptionUnsupported")
+    old, svc = await _lock_current(session, svc)
+    if old.market == MARKET_SUBSCRIPTION:
+        raise conflict(key="services.rolloutSubscriptionUnsupported")
+    if old.status not in _ROLLOUT_SETTLED:
+        raise conflict(key="services.rolloutNeedsSettled")
+
+    env: dict[str, str] = dict(spec.env or {})
+    secret_keys = set(spec.env_secret_keys or ())
+    if spec.env_secret_keep:
+        _plain, old_secret = orchestrator_service.instance_env(old)
+        unknown = sorted(k for k in spec.env_secret_keep if k not in old_secret)
+        if unknown:
+            raise AppError(
+                ErrorCode.VALIDATION_ERROR,
+                key="services.envKeepUnknown",
+                params={"keys": ", ".join(unknown)},
+            )
+        for key in spec.env_secret_keep:
+            if key not in env:
+                env[key] = old_secret[key]
+                secret_keys.add(key)
+    kwargs["env"] = env or None
+    kwargs["env_secret_keys"] = sorted(secret_keys) or None
+
+    new, created = await orchestrator_service.create_instance_row(
+        session,
+        user_id,
+        name=svc.name,
+        idempotency_key=idempotency_key,
+        service=orchestrator_service.ServiceBinding(
+            service_id=svc.id,
+            revision=svc.revision + 1,
+            slug=svc.public_slug,
+            service_port=spec.service_port,
+            health_path=spec.health_path,
+        ),
+        exclude_instance_id=old.id,
+        fingerprint=fingerprint,
+        **kwargs,  # type: ignore[arg-type]
+    )
+    if not created:
+        return svc, False
+    svc.revision += 1
+    svc.rollout_instance_id = new.id
+    svc.desired_state = DESIRED_RUNNING
+    if old.status == orchestrator_service.RUNNING:
+        await orchestrator_service.stop_instance_row(session, old, reason="rollout")
+    await session.commit()
+    logger.info(
+        "service_rollout_accepted",
+        service_id=svc.id,
+        revision=svc.revision,
+        old_instance_id=old.id,
+        new_instance_id=new.id,
+    )
     return await _reload(session, svc), True
 
 
@@ -750,8 +857,9 @@ _listener_registered = False
 
 
 def register_service_listeners() -> None:
-    """跟着实例迁移维护 services 行:RUNNING 迁出即失效鉴权缓存;当前实例 released 即写
-    released_at(覆盖用户删除、欠费回收、保留期 GC 全部路径)。幂等注册。
+    """跟着实例迁移维护 services 行:RUNNING 迁出即失效鉴权缓存;候选版本 running 即翻转
+    current 并入队释放旧版本;候选版本 failed 即清空候选并通知(旧版本保留在停机态);
+    当前实例 released 即写 released_at(覆盖用户删除、欠费回收、保留期 GC 全部路径)。幂等注册。
     监听器在 transition 的实例行锁之后才碰 services 行(instance → service),不得再锁另一台实例。"""
     global _listener_registered
     if _listener_registered:
@@ -764,11 +872,43 @@ def register_service_listeners() -> None:
             return
         if event.from_status == orchestrator_service.RUNNING:
             invalidate_endpoint_auth_cache(instance_id=instance.id)
-        if event.to_status != RELEASED:
+        to = event.to_status
+        if to not in (
+            orchestrator_service.RUNNING,
+            orchestrator_service.FAILED,
+            RELEASED,
+        ):
             return
         svc = await session.get(Service, instance.service_id, with_for_update=True)
-        if (
-            svc is not None
+        if svc is None:
+            return
+        if to == orchestrator_service.RUNNING and svc.rollout_instance_id == instance.id:
+            old_id = svc.current_instance_id
+            svc.current_instance_id = instance.id
+            svc.rollout_instance_id = None
+            # 缓存里的 (service, instance) 还指着旧版本:翻转即失效,否则旧实例停机后端点白拒 5s
+            invalidate_endpoint_auth_cache(service_id=svc.id)
+            if old_id is not None and old_id != instance.id:
+                enqueue(session, RETIRE_TASK_TYPE, {"service_id": svc.id, "instance_id": old_id})
+            await session.flush()
+        elif to == orchestrator_service.FAILED and svc.rollout_instance_id == instance.id:
+            svc.rollout_instance_id = None
+            await notify_service.notify(
+                session,
+                svc.user_id,
+                type_="service",
+                title="服务版本更新失败",
+                content=(
+                    f"服务「{svc.name}」的 v{instance.service_revision} 启动失败,"
+                    "上一版本已保留(停机状态),可在服务详情启动上一版本。"
+                ),
+                severity="warning",
+                dedup_key=f"rollout_failed:{instance.id}",
+                target_id=svc.public_slug,
+            )
+            await session.flush()
+        elif (
+            to == RELEASED
             and svc.released_at is None
             and svc.current_instance_id == instance.id
             and svc.rollout_instance_id is None

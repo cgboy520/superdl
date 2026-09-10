@@ -19,6 +19,7 @@ import {
   createInvoiceApiV1BillingInvoicesPost,
   createRechargeApiV1WalletRechargesPost,
   createRefundApiV1WalletRefundsPost,
+  createRevisionApiV1ServicesSlugRevisionsPost,
   createServiceApiV1ServicesPost,
   createTicketApiV1TicketsPost,
   deleteServiceApiV1ServicesSlugDelete,
@@ -69,6 +70,7 @@ import type {
   ServiceCreate,
   ServiceOut,
   ServicePatch,
+  ServiceRevisionCreate,
   SmsCodeRequest,
   TicketCreate,
   TicketMessageCreate,
@@ -219,6 +221,16 @@ export const useCreateService = (o?: { onSuccess?: (d: ServiceOut) => void; sile
     ({ body, idempotencyKey }: { body: ServiceCreate; idempotencyKey: string }) =>
       createServiceApiV1ServicesPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [...SERVICE_INVALIDATES, "skus", "disks"] },
+  );
+/** 版本更新(重建):必须带幂等键(重放回同一个新版本,不再起第三版)。 */
+export const useCreateRevision = (
+  slug: string,
+  o?: { onSuccess?: (d: ServiceOut) => void; silentError?: boolean },
+) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: ServiceRevisionCreate; idempotencyKey: string }) =>
+      createRevisionApiV1ServicesSlugRevisionsPost(slug, body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: [...SERVICE_INVALIDATES, "skus"] },
   );
 export const useStopService = (o?: CallerOpts<ServiceOut>) =>
   useApiMutation((slug: string) => stopServiceApiV1ServicesSlugStopPost(slug), {

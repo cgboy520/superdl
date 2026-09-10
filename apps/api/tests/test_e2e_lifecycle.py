@@ -312,6 +312,44 @@ async def test_service_container_drill(client, sm, fake):
     assert ok.headers["x-superdl-endpoint"] == slug
     assert ok.headers["x-superdl-key-id"] == str(created["id"])
 
+    # ── 版本更新(重建):新镜像 + 沿用密文;slug / Key 不变,旧版本释放 ──
+    rollout = (
+        await client.post(
+            f"/api/v1/services/{slug}/revisions",
+            json={
+                "sku_id": sku_id,
+                "image_ref": "registry.superdl.local/vllm:v0.7.0",
+                "ssh_key_ids": [],
+                "env": {"MAX_MODEL_LEN": "16384"},
+                "env_secret_keep": ["HF_TOKEN"],
+                "service_port": 8000,
+                "health_path": "/health",
+            },
+            headers=h,
+        )
+    ).json()
+    assert rollout["status"] == "deploying" and rollout["revision"] == 2
+    uuid_v2 = rollout["rollout_instance"]["uuid"]
+    await drain(sm)  # 旧版本关机 + 新版本建 Pod
+    fake.finish_delete(f"tenant-{user_id}", uuid)
+    fake.mark_ready(f"tenant-{user_id}", uuid_v2)
+    await reconcile_once(sm)  # 新版本 running → 翻转 current、入队释放旧版本
+    await drain(sm)
+    await reconcile_once(sm)
+    svc = (await client.get(f"/api/v1/services/{slug}", headers=h)).json()
+    assert svc["status"] == "running" and svc["current_instance"]["uuid"] == uuid_v2
+    assert svc["container"]["image_ref"] == "registry.superdl.local/vllm:v0.7.0"
+    assert svc["container"]["env"] == {"MAX_MODEL_LEN": "16384"}
+    assert (
+        fake.pods[(f"tenant-{user_id}", uuid_v2)].spec.secret_env["HF_TOKEN"] == "hf_drill_secret"
+    )
+    assert (await client.get(f"/api/v1/instances/{uuid}", headers=h)).json()["status"] == "released"
+    # 更新前发的 Key 对新版本照样有效
+    assert (
+        await client.post(auth_url, headers={**host, "authorization": f"Bearer {plain}"})
+    ).status_code == 200
+    uuid = uuid_v2
+
     # ── 吊销 → 立即 401(网关侧无缓存,吊销即时生效)──────────
     assert (
         await client.delete(f"/api/v1/services/{slug}/api-keys/{created['id']}", headers=h)
