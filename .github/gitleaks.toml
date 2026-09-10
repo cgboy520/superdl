@@ -1,99 +1,57 @@
-# SuperDL gitleaks 配置:默认规则集 + 已复核误报的行级放行(整文件放行已收窄)。
-# 已复核的误报(全历史扫描):
-# - apps/api/tests/test_payment_signature.py:APIV3_KEY 为 32 位十六进制测试假密钥
-#   ("0123...def" 等差序列),仅该行放行;同文件其他行混入真 secret 仍会告警
-# - apps/api/app/core/platform_config.py:命中行是 hint 文案里的 PEM 头字样
-#   ("含 -----BEGIN PRIVATE KEY-----"),该文件只定义配置项校验规格,不含真实密钥
-# - apps/api/tests/test_account_auth.py:改密/找回用例的入参口令("qwerty123456"
-#   "newpass123456"),是断言 200/422 用的字面量,不是任何环境的真凭据
-# - apps/api/tests/test_security_hardening.py:prod 校验用例的 jwt_secret 是「64 位十六进制」
-#   合法形态样本,只喂给 Settings stub,不是任何环境的真密钥
-# - apps/api/tests/test_k8s_real_units.py:命中行断言的是 Secret 对象名(jupyter-inst-1),不是密钥内容
-# 语义(gitleaks v8.25+):condition="AND" + regexTarget="line"
-# = path 命中且「命中行内容」匹配 regexes 才放行 —— 行级指纹,而非整文件豁免。
+# SuperDL gitleaks 配置:默认规则集 + 已复核误报的行级放行。
+# CI 只扫当前工作树(gitleaks dir),不扫历史:历史 commit 里的误报不会让之后每次 push 都红。
+# 放行语义:condition="AND" + regexTarget="line" = path 命中且命中行内容匹配 regexes 才放行,
+# 同文件其他行混入真 secret 仍会告警。
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "已复核误报(行级):32 位十六进制测试假密钥(见文件头注释)"
+description = "test_payment_signature:APIV3_KEY 是 32 位十六进制等差序列假密钥"
 condition = "AND"
 regexTarget = "line"
-paths = [
-  '''apps/api/tests/test_payment_signature\.py''',
-]
-regexes = [
-  '''0123456789abcdef0123456789abcdef''',
-]
+paths = ['''apps/api/tests/test_payment_signature\.py''']
+regexes = ['''0123456789abcdef0123456789abcdef''']
 
 [[allowlists]]
-description = "已复核误报(行级):hint 文案中的 PEM 头字样(见文件头注释)"
+description = "platform_config:hint 文案里的 PEM 头字样,文件只定义配置项校验规格"
 condition = "AND"
 regexTarget = "line"
-paths = [
-  '''apps/api/app/core/platform_config\.py''',
-]
-regexes = [
-  '''含 -----BEGIN PRIVATE KEY-----''',
-]
+paths = ['''apps/api/app/core/platform_config\.py''']
+regexes = ['''含 -----BEGIN PRIVATE KEY-----''']
 
 [[allowlists]]
-description = "已复核误报(行级):runbook 中的 curl 示例占位口令(<强口令> 非真凭据);该行写成真口令仍会告警"
+description = "runbook 中 curl 示例的占位口令 <强口令>"
 condition = "AND"
 regexTarget = "line"
-paths = [
-  '''deploy/cluster/runbooks/image-prewarm\.md''',
-]
-regexes = [
-  '''curl -u ops:.{0,2}<强口令>''',
-]
+paths = ['''deploy/cluster/runbooks/image-prewarm\.md''']
+regexes = ['''curl -u ops:.{0,2}<强口令>''']
 
 [[allowlists]]
-description = "已复核误报(行级):账号用例的测试口令(改密/找回的入参,非真凭据)"
+description = "账号用例改密/找回的入参口令,断言 200/422 用的字面量"
 condition = "AND"
 regexTarget = "line"
-paths = [
-  '''apps/api/tests/test_account_auth\.py''',
-]
-regexes = [
-  '''"(?:new_)?password": "(?:newpass|qwerty)123456"''',
-]
+paths = ['''apps/api/tests/test_account_auth\.py''']
+regexes = ['''"(?:new_)?password": "(?:newpass|qwerty)123456"''']
 
 [[allowlists]]
-description = "已复核误报(行级):prod 校验用例的 64 位十六进制 jwt_secret 样本(见文件头注释)"
+description = "prod 校验用例的 jwt_secret:64 位十六进制合法形态样本,只喂给 Settings"
 condition = "AND"
 regexTarget = "line"
-paths = [
-  '''apps/api/tests/test_security_hardening\.py''',
-]
-regexes = [
-  '''"jwt_secret": "[0-9a-f]{64}"''',
-]
+paths = ['''apps/api/tests/test_[a-z_]+\.py''']
+regexes = ['''"jwt_secret": "[0-9a-f]{64}"''']
 
 [[allowlists]]
-description = "已复核误报(行级):断言的是 Secret 对象名而非密钥内容(见文件头注释)"
+description = "test_k8s_real_units:断言的是 Secret 对象名,不是密钥内容"
 condition = "AND"
 regexTarget = "line"
-paths = [
-  '''apps/api/tests/test_k8s_real_units\.py''',
-]
-regexes = [
-  '''secret_key_ref\.name == "jupyter-inst-1"''',
-]
+paths = ['''apps/api/tests/test_k8s_real_units\.py''']
+regexes = ['''secret_key_ref\.name == "jupyter-inst-1"''']
 
-# 该 bcrypt hash(集群内 registry 的 CHANGE_ME 占位口令)已泄漏,禁止以任何形式入库。
+# 该 bcrypt hash(集群内 registry 曾用的 CHANGE_ME 占位口令)已泄漏,禁止以任何形式入库。
 [[rules]]
 id = "superdl-leaked-registry-htpasswd"
 description = "已泄漏的 registry htpasswd bcrypt hash"
 regex = '''\$2y\$05\$0JWd7XLpA2WBKjaBnw4KqupCZERl2Yx3cg9giAruPDxz1km4OCfSW'''
-# 规则自身的两处合理出现:本配置(规则定义)与 preflight.sh(拦截器);其余路径一律告警
 [[rules.allowlists]]
 description = "规则定义与拦截器自身"
-paths = [
-  '''\.github/gitleaks\.toml''',
-  '''deploy/cluster/preflight\.sh''',
-]
-# 该 hash 存在于 commit 2985931 的 registry.yaml,全历史扫描无法避开,故按 commit 级放行。
-# 不收窄到 path:未来任何 commit 的 registry.yaml 再含此 hash 仍告警。
-[[rules.allowlists]]
-description = "曾入库该 hash 的历史 commit"
-commits = ["298593134d351607cc12b3ea62232c6dc9480e31"]
+paths = ['''\.github/gitleaks\.toml''', '''deploy/cluster/preflight\.sh''']

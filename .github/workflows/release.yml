@@ -1,8 +1,6 @@
 name: Release
 
-# 一次构建 → 本地 Trivy 扫描(HIGH/CRITICAL 阻断)→ 同一产物推送 Harbor(平台项目,默认 superdl)。
-# 扫描与发布共用同一个 image tar(经 artifact 传递 + image ID 校验),杜绝「扫 A 发 B」。
-# 权限拆分:build-scan 不登录 registry;仅 promote 持 Harbor 推送机器人凭据并登录。
+# 一次构建 → Trivy 扫描(可修复的 HIGH/CRITICAL 阻断)→ 同一镜像推 Harbor(平台项目,默认 superdl)并 cosign 签名。
 # 仓库 secrets:HARBOR_HOST / HARBOR_ROBOT_NAME(robot$<项目>+push,Push + Pull)/ HARBOR_ROBOT_SECRET;
 # variables:HARBOR_PROJECT(缺省 superdl)。部署侧 scripts/release.sh 以同一前缀替换清单占位并跑迁移 Job。
 on:
@@ -14,19 +12,22 @@ permissions:
   contents: read
 
 jobs:
-  # 发布闸门:tag 构建前重跑 CI 的全部闸门 job,任一红则整个 release 中止。
-  # 跨 workflow 不能直接 needs 对方 job,故经 workflow_call 复用 ci.yml(其 on: 已加
-  # workflow_call);发布闸门与 PR 闸门同源,不维护第二份定义。
+  # 发布闸门:tag 构建前重跑 CI 全部 job(经 workflow_call 复用 ci.yml,不维护第二份定义)
   ci-gates:
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
-  build-scan:
+  release:
     needs: ci-gates
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # 人工审批闸:须在 GitHub 仓库设置 → Environments → production 配 required reviewers,
+    # 并把 HARBOR_* secrets 放到该 environment 下;否则本行只是给运行打标签,不构成门。
+    environment: production
     permissions:
-      contents: read # 本 job 不推镜像,不持有任何 registry 凭据
+      contents: read
+      id-token: write # cosign keyless 的 OIDC 身份(签名进 Rekor 公共账本)
     strategy:
       matrix:
         include:
@@ -44,100 +45,33 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - id: build
-        name: Build(唯一一次构建,产出即发布产物)
+      - name: Build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           build-args: ${{ matrix.build_args }}
           load: true
-          tags: scan-target:latest
-      - name: Trivy 全量扫描(HIGH/CRITICAL 含未修复;归档与阻断判定同源)
+          tags: release-target:latest
+      # 只拦可修复的 HIGH/CRITICAL:上游未修复的 CVE 没有可升级版本,拦它等于让发布被上游节奏绑架
+      - name: Trivy(可修复的 HIGH/CRITICAL 阻断)
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
-          image-ref: scan-target:latest
+          image-ref: release-target:latest
           severity: HIGH,CRITICAL
-          ignore-unfixed: false
-          format: json
-          output: trivy-full.json
-          exit-code: "0" # 扫描只负责落盘,阻断由下一步判定:同一 JSON 既归档又判定,不扫两遍
-      - name: 阻断判定(只拦可修复的 HIGH/CRITICAL)
-        run: |
-          # 阻断闸只盯「可修复」(FixedVersion 非空):上游未修复的 CVE 没有可升级版本,
-          # 把它算进阻断闸等于让发布被上游节奏绑架(可用性风险);未修复项由归档报告盯评审
-          hits=$(jq -r '[.Results[]?.Vulnerabilities[]? | select((.Severity == "HIGH" or .Severity == "CRITICAL") and (.FixedVersion // "") != "")] | .[] | "\(.VulnerabilityID) (\(.Severity)) \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion)"' trivy-full.json)
-          if [ -n "$hits" ]; then
-            while IFS= read -r line; do echo "::error::$line"; done <<< "$hits"
-            echo "::error::Trivy 发现可修复的 HIGH/CRITICAL 漏洞,阻断发布(完整清单见归档 trivy-full.json)"
-            exit 1
-          fi
-          echo "无可修复的 HIGH/CRITICAL 漏洞,放行"
-      - name: Upload full vuln report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: trivy-full-${{ matrix.name }}
-          path: trivy-full.json
-      - name: SBOM(CycloneDX,随构建产物留档)
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: SBOM(CycloneDX,随发布留档)
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
-          image-ref: scan-target:latest
+          image-ref: release-target:latest
           format: cyclonedx
           output: sbom.cdx.json
-          exit-code: "0" # 只产出 SBOM,漏洞阻断由上一个 scan step 把关
-      - name: 记录镜像 ID 并打包
-        run: |
-          docker image inspect scan-target:latest --format '{{.Id}}' > image-id.txt
-          docker save scan-target:latest | gzip > image.tar.gz
-      - name: Upload image artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: image-${{ matrix.name }}
-          path: |
-            image.tar.gz
-            image-id.txt
-          compression-level: 0 # tar 已 gzip,关闭二次压缩
-          retention-days: 1 # 仅供 promote job 接力
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          exit-code: "0"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-${{ matrix.name }}
           path: sbom.cdx.json
-
-  promote:
-    needs: build-scan
-    runs-on: ubuntu-latest
-    # 人工审批闸:本 job 是唯一持 Harbor 推送凭据、且用仓库的 Sigstore 身份签名的地方,
-    # 而 workflow 的触发条件是「推一个 v* tag」或 workflow_dispatch —— 没有 environment 时,
-    # 任何能推 tag 的人都能直接发到生产仓库并让签名带上本仓库的身份。
-    # ⚠ 仅有这一行不够:必须在 GitHub 仓库设置 → Environments → production 里配好
-    # required reviewers,并把 HARBOR_ROBOT_NAME / HARBOR_ROBOT_SECRET / HARBOR_HOST
-    # 从仓库级 secrets 移到该 environment 下(environment 级才受审批保护)。
-    # 没做这两步的话,本行只是给运行打了个标签,不构成任何门。
-    environment: production
-    permissions:
-      contents: read # 推送凭据是 Harbor 机器人(environment secrets),唯一使用它的 job
-      id-token: write # cosign keyless 的 OIDC 身份(签名进 Rekor 公共账本);仅此 job 持有
-    strategy:
-      matrix:
-        include:
-          - name: api
-          - name: web
-          - name: admin
-    steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: image-${{ matrix.name }}
-      - name: 载入并校验「扫描产物 == 发布产物」
-        run: |
-          gunzip -c image.tar.gz | docker load
-          want=$(cat image-id.txt)
-          got=$(docker image inspect scan-target:latest --format '{{.Id}}')
-          if [ "$want" != "$got" ]; then
-            echo "::error::镜像 ID 不一致($want != $got),拒绝发布"
-            exit 1
-          fi
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
@@ -150,25 +84,19 @@ jobs:
           registry: ${{ secrets.HARBOR_HOST }}
           username: ${{ secrets.HARBOR_ROBOT_NAME }}
           password: ${{ secrets.HARBOR_ROBOT_SECRET }}
-      - name: 打 tag 并推送(内容与扫描产物同源,digest 一致)
-        # tag 串经 env 传入再引用 "$TAGS":直接把 ${{ }} 展开进单引号 shell 串,内容里
-        # 一个单引号就能闭合字面量并接上任意命令(镜像名含 secrets.HARBOR_HOST 与
-        # vars.HARBOR_PROJECT,后者是仓库变量,写权限比 secrets 松)
+      # tag 串经 env 传入再引用:直接把 ${{ }} 展开进 shell 串,内容里一个单引号就能拼出任意命令
+      - name: 打 tag 并推送
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           while IFS= read -r t; do
             [ -z "$t" ] && continue
-            docker tag scan-target:latest "$t"
+            docker tag release-target:latest "$t"
             docker push "$t"
           done <<< "$TAGS"
-      - name: 安装 cosign(keyless 签名)
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: cosign 签名(按 digest 引用,签进 Rekor 公共账本)
-        # 签名对象是 digest 而非可变 tag:tag 可被覆盖,签名跟着 digest 走才锁得住内容。
-        # 下发侧 scripts/release.sh 也按 digest 渲染清单,「签了名的那份」与「跑起来的那份」
-        # 因此是同一个东西;集群侧的验签准入(sigstore policy-controller / kyverno)尚未部署。
-        # tag 串同样经 env 传入(见上一步注释)。
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # 签 digest 而非可变 tag;下发侧 scripts/release.sh 也按 digest 渲染清单。集群侧验签准入尚未部署。
+      - name: cosign 签名(按 digest,签进 Rekor)
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |

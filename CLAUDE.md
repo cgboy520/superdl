@@ -82,4 +82,4 @@ python3 scripts/check-docs-links.py      # 文档相对链接、反引号路径�
   - 脚本:bash -n → shellcheck → bats
   - 文档:`python3 scripts/check-docs-links.py`;只改文档或注释不必跑测试
   - 用户可见主链路:Playwright 冒烟
-  - 只在 CI 跑、本地不强求的:pip-audit / pnpm audit、gitleaks 全历史、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟;`.github/workflows/ci.yml` 是全部闸门的清单
+  - 只在 CI 跑、本地不强求的:pip-audit / pnpm audit、gitleaks、kubeconform(`deploy/app/k8s`)、kind 上的 RealOrchestrator 冒烟;`.github/workflows/ci.yml` 是全部闸门的清单

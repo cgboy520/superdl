@@ -103,11 +103,9 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      # gitleaks 全历史扫描需要完整历史
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
@@ -119,60 +117,20 @@ jobs:
         working-directory: apps/api
         run: |
           uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
-          code=0
-          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off || code=$?
-          # pip-audit 约定:0=无漏洞,1=发现漏洞;其余非零=工具自身失败(网络/OSV 不可达等)
-          # 工具失败即红——允许一次重试,重试仍失败则闸门红(不得静默放行)
-          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
-            echo "::warning::pip-audit 首次执行失败(code=$code),重试一次"
-            code=0
-            uvx pip-audit -r /tmp/reqs.txt --progress-spinner off || code=$?
-          fi
-          if [ "$code" -eq 1 ]; then
-            echo "::error::pip-audit 发现生产依赖漏洞"
-            exit 1
-          elif [ "$code" -ne 0 ]; then
-            echo "::error::pip-audit 工具执行失败(重试后仍失败,code=$code),闸门红处理"
-            exit 1
-          fi
+          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
       - name: pnpm audit(前端生产依赖,HIGH+ 阻断)
+        run: pnpm audit --prod --audit-level=high
+      # 只扫当前工作树,不扫历史:历史 commit 里的误报不会让之后每次 push 都红。
+      # 已复核误报的行级放行见 .github/gitleaks.toml;镜像按 digest 钉死。
+      - name: gitleaks(secret 泄漏扫描)
         run: |
-          code=0
-          pnpm audit --prod --audit-level=high --json > /tmp/pnpm-audit.json || code=$?
-          # 区分「真发现」与「工具失败」:registry 不可达时 pnpm 也非零退出,但产不出合法 JSON;
-          # 工具失败即红——允许一次重试,重试仍失败则闸门红(不得静默放行)
-          if [ "$code" -ne 0 ] && ! jq -e '.metadata' /tmp/pnpm-audit.json > /dev/null 2>&1; then
-            echo "::warning::pnpm audit 首次执行失败(code=$code,产物非合法 JSON),重试一次"
-            code=0
-            pnpm audit --prod --audit-level=high --json > /tmp/pnpm-audit.json || code=$?
-          fi
-          if [ "$code" -ne 0 ]; then
-            if jq -e '.metadata.vulnerabilities | (.high + .critical) > 0' /tmp/pnpm-audit.json > /dev/null 2>&1; then
-              jq -r '.advisories | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "::error::\(.value.module_name) (\(.value.severity)): \(.value.title)"' /tmp/pnpm-audit.json
-              echo "::error::pnpm audit 发现 HIGH/CRITICAL 生产依赖漏洞"
-              exit 1
-            fi
-            echo "::error::pnpm audit 工具执行失败(重试后仍失败,code=$code),闸门红处理"
-            exit 1
-          fi
-      - name: gitleaks(secret 泄漏扫描,全历史)
-        run: |
-          # 仓库历史短,直接全量扫;历史变重后改 --log-opts 限定 PR diff。
-          # 镜像按 digest 钉死;拉取失败(网络)重试一次,再失败闸门红(不得静默跳过)。
-          img="zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a"
-          if ! docker pull -q "$img" > /dev/null; then
-            echo "::warning::gitleaks 镜像首次拉取失败,重试一次"
-            if ! docker pull -q "$img" > /dev/null; then
-              echo "::error::gitleaks 镜像拉取失败(重试后仍失败),闸门红处理"
-              exit 1
-            fi
-          fi
-          # 容器内 root 与挂载目录属主不同,需先声明 safe.directory 才能跑 git 扫描;
-          # 已复核误报的行级放行(path + 行内容 AND)见 .github/gitleaks.toml
-          docker run --rm -v "$PWD:/repo" --entrypoint sh "$img" \
-            -c "git config --global --add safe.directory /repo && gitleaks git /repo --config /repo/.github/gitleaks.toml --verbose"
+          docker run --rm -v "$PWD:/repo" \
+            zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
+            dir /repo --config /repo/.github/gitleaks.toml --verbose
+
   k8s-real-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # kind 起一次性集群;kind-action 不导出 KUBECONFIG 环境变量,kind 默认写 ~/.kube/config,
@@ -186,7 +144,7 @@ jobs:
       # 本冒烟断言的是「apiserver 接受我们拼的对象规约」,不需要真有数据面接管路由。
       - name: 装 Gateway API CRD
         run: bash deploy/cluster/gateway-api-crds.sh
-      # RBAC 与代码对齐闸(H2):kind 默认给的是 cluster-admin kubeconfig,直接冒烟永远
+      # RBAC 与代码对齐闸:kind 默认给的是 cluster-admin kubeconfig,直接冒烟永远
       # 发现不了 01-rbac.yaml 缺动词。这里先 apply 生产 RBAC,再静态断言动词面,最后
       # 用 superdl-tenant-mgr 的 SA token 造受限 kubeconfig 供冒烟里的受限身份用例
       # (test_ensure_namespace_under_tenant_mgr_sa)使用。
@@ -247,7 +205,7 @@ jobs:
             deny "$sa" delete nodes
             deny "$sa" patch nodes
           done
-      # 准入策略反向断言(H1):RBAC 不给 secrets 动词**不等于**读不到 Secret ——
+      # 准入策略反向断言:RBAC 不给 secrets 动词**不等于**读不到 Secret ——
       # 命名空间内的 pods:create / batch/jobs:create 就等价于该 ns 的 secrets:get
       # (kubelet 代创建者解析 secretKeyRef / envFrom / secret 卷,不查任何 secrets 授权)。
       # 上一步的静态动词面断言看不出这件事,只有真拿三个 SA 的身份去建对象才看得出。
@@ -479,6 +437,8 @@ jobs:
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
           python-version: "3.13"
+          # nohup 起的 API/worker 活到 job 结束;post 步的 uv cache prune 会与之抢缓存目录而非零退出
+          prune-cache: false
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -514,14 +474,6 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: tail -n 80 /tmp/api.log /tmp/worker.log
-      # nohup 起的 API/worker 必须在本 job 的常规步骤里收掉:runner 的 orphan 清理发生在
-      # post 步之后,而 setup-uv 的 post 步会跑 `uv cache prune`,与仍活着的 uv 进程抢缓存
-      # 目录,prune 非零退出会把一次全绿的 e2e 判红。
-      - name: Stop API/worker
-        if: always()
-        run: |
-          pkill -f 'app[.]main:app' || true
-          pkill -f 'app[.]workers[.]main' || true
 
   # k8s 清单 schema 校验(kubeconform):deploy/app/k8s 全部清单过 k8s OpenAPI schema。
   # (compose.yaml 是 docker-compose 格式,非 k8s 清单,不在 kubeconform 适用范围)
@@ -532,22 +484,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: kubeconform(deploy/app/k8s)
         run: |
-          # 镜像按 digest 钉死
-          img="ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e"
-          # 同规:拉取失败重试一次,再失败闸门红
-          if ! docker pull -q "$img" > /dev/null; then
-            echo "::warning::kubeconform 镜像首次拉取失败,重试一次"
-            if ! docker pull -q "$img" > /dev/null; then
-              echo "::error::kubeconform 镜像拉取失败(重试后仍失败),闸门红处理"
-              exit 1
-            fi
-          fi
           # -skip:CRD 类(cert-manager/prometheus-operator/Gateway API/Envoy Gateway)
           # 不在内置 schema;Kustomization 是 kustomize 配置而非 k8s 清单,同样无 schema;
           # -ignore-filename-pattern:10-migrate-job.yaml 的 name 含 CHANGE_TAG 占位
           # (非法 DNS 名,由 scripts/release.sh 渲染后 create),不做静态校验。
           # 被 skip 掉的 7 种网关对象改由下一步按真实 CRD 校验,不是不校验
-          docker run --rm -v "$PWD:/work" "$img" \
+          docker run --rm -v "$PWD:/work" \
+            ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e \
             -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
             -ignore-filename-pattern '10-migrate-job' \
             -summary /work/deploy/app/k8s

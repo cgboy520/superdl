@@ -545,7 +545,7 @@ class RealOrchestrator:
         """全部节点 spec.podCIDR(s) 的网关 /32;读不到(RBAC / apiserver 抖动)返回空并告警,
         NetPol 照常下发,只是跨节点 SSH 要等下一轮收敛(reconciler 在节点集合变化时重下发)。"""
         try:
-            nodes = self.core.list_node().items
+            nodes = self._list_all(self.core.list_node)
         except Exception:
             logger.exception("netpol_node_gateways_unavailable")
             return []

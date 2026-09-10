@@ -13,7 +13,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RenewModal } from "./RenewModal";
 
@@ -104,6 +104,12 @@ function renderConvert() {
 beforeEach(() => {
   vi.clearAllMocks();
   walletBalance.current = "3000.00";
+  // 新到期按 max(老到期, 现在) 起算:把「现在」钉在周期内,用例才不随日历过期
+  vi.setSystemTime(new Date("2026-08-20T00:00:00Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("RenewModal", () => {
