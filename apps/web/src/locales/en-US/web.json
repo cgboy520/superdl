@@ -670,7 +670,6 @@
     "colStatus": "Status",
     "copyEndpoint": "Copy address",
     "deploy": "Deploy service",
-    "deployFromMarketHint": "Publish a container as an HTTPS endpoint with API keys — no auth code of your own",
     "deploying": "Deploying service {{name}}",
     "detail": {
       "argsLabel": "Arguments",
@@ -737,6 +736,8 @@
       "commandHint": "Split on spaces and run in exec form, without a shell. Put arguments containing spaces in the args list below",
       "commandLabel": "Command",
       "commandPlaceholder": "Leave empty to use the image ENTRYPOINT",
+      "diskCreatedButDeployFailed": "The data disk was created and bills per day; the service was not deployed — manage or delete the disk under Storage",
+      "ecoConfirm": "Understood, continue deploying",
       "endpointLabel": "Endpoint",
       "endpointPending": "Generated after deployment",
       "envLabel": "Environment variables",
@@ -782,6 +783,7 @@
       "summaryPort": "Port",
       "summarySpec": "Spec",
       "summarySsh": "Debug SSH",
+      "walletQueryFailedRetry": "Balance query failed. Retry before deploying.",
       "withSsh": "Also open SSH",
       "withSshHint": "Handy for debugging; takes one SSH port. Without it the instance runs no sshd"
     },

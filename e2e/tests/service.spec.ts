@@ -1,24 +1,27 @@
 /**
- * 在线服务冒烟:市场「部署服务」→ 部署服务页(规格已带入)→ 填容器与服务配置 → 部署 → 跳到服务详情 → 运行中 →
+ * 在线服务冒烟:在线服务页「部署服务」→ 部署服务页(页内选规格)→ 填容器与服务配置 → 部署 → 跳到服务详情 → 运行中 →
  * 端点卡拿到 URL → 更新版本(v2)→ 新建 API Key(一次性展示)→ 吊销 → 停止服务 → 设置里改名与关鉴权。
  * 前置与 smoke 同款:API+worker 在跑,fake 编排。
  *
- * 这条挂了通常说明:市场页没把规格带进部署页、部署页没打到 /services(或部署后没跳详情)、
+ * 这条挂了通常说明:在线服务页的「部署服务」没指到 /services/new、部署页规格选择器选不中、部署页没打到 /services(或部署后没跳详情)、
  * 服务详情的端点卡 / 状态派生断了,一次性 Key 弹窗的保存闸松了,或设置 Tab 的 PATCH 没生效。
  */
 import { expect, test } from "@playwright/test";
 
-import { pickSharedStandardSku, setupUser } from "./helpers";
+import { setupUser } from "./helpers";
 
 test("部署在线服务并拿到端点与 API Key", async ({ page }) => {
   // ── 建号 + 充值 + 公钥(API 直达;UI 链路由 smoke 覆盖)
   await setupUser(page, "500");
 
-  // ── 市场:选规格 → 结算条「部署服务」进部署页,规格随 ?sku_id 带入并折叠回显
-  await pickSharedStandardSku(page);
-  await page.getByRole("button", { name: "部署服务" }).click();
-  await expect(page).toHaveURL(/\/services\/new\?.*sku_id=\d+/);
-  await expect(page.getByRole("button", { name: "更换规格" })).toBeVisible({ timeout: 15_000 });
+  // ── 在线服务页「部署服务」直达部署页(不经算力市场:市场结算条只建开发机);规格在页内选
+  await page.goto("/services");
+  await page.getByRole("button", { name: "部署服务" }).first().click();
+  await expect(page).toHaveURL(/\/services\/new$/);
+  const skuRow = page.locator(".ant-table-row", { hasText: "共享·标准" }).first();
+  await expect(skuRow).toBeVisible({ timeout: 15_000 });
+  await skuRow.getByRole("radio").check();
+  await expect(page.getByText("GPU 数量")).toBeVisible();
 
   // ── 容器配置:可变 tag 必须被拦住(后端也有硬闸,这里守前端早报错)
   const image = page.getByLabel("镜像地址");

@@ -74,7 +74,7 @@ export interface DeploySearch {
   count?: number;
 }
 
-/** 市场页透传:规格 / 卡数 / 计费方式;竞价与包周期互斥,两个都带进来时以 period 为准。 */
+/** 深链预填:规格 / 卡数 / 计费方式;竞价与包周期互斥,两个都带进来时以 period 为准。 */
 export function deployValidateSearch(search: Record<string, unknown>): DeploySearch {
   const out: DeploySearch = {};
   const sku = Number(search.sku_id);
@@ -354,7 +354,7 @@ function DeployPage() {
           message.error(errText(err));
         }
         if (diskMode === "new" && diskId != null) {
-          message.warning(t("copy.diskCreatedButInstanceFailed"), 6);
+          message.warning(t("services.form.diskCreatedButDeployFailed"), 6);
         }
       }
     } finally {
@@ -674,7 +674,7 @@ function DeployPage() {
               {t("create.cancel")}
             </Button>
             {walletQ.isError ? (
-              <Tooltip title={t("create.walletQueryFailedRetry")}>
+              <Tooltip title={t("services.form.walletQueryFailedRetry")}>
                 <Button type="primary" size="large" disabled>
                   {submitLabel}
                 </Button>
@@ -732,7 +732,7 @@ function DeployPage() {
           t("copy.ecoTierConsent.c4"),
         ]}
         agreeLabel={t("create.ecoAgree")}
-        confirmLabel={t("create.ecoConfirm")}
+        confirmLabel={t("services.form.ecoConfirm")}
         loading={pending}
         onCancel={() => setEcoOpen(false)}
         onConfirm={() => {

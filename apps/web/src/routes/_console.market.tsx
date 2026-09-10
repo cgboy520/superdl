@@ -413,52 +413,28 @@ function MarketPage() {
         }
         actions={
           loggedIn ? (
-            <>
-              {/* 部署服务走独立页(/services/new),这里只把选中的规格与计费方式带过去 */}
-              <Tooltip title={selected ? t("services.deployFromMarketHint") : t("market.selectFirst")}>
-                <Button
-                  size="large"
-                  disabled={!selected}
-                  onClick={() => {
-                    if (!selected) return;
-                    void navigate({
-                      to: "/services/new",
-                      search: {
-                        sku_id: selected.id,
-                        ...(isCpu ? {} : { gpus: gpuCount }),
-                        ...(period ? { period } : {}),
-                        ...(period && periodCount > 1 ? { count: periodCount } : {}),
-                        ...(isSpot ? { market: "spot" as const } : {}),
-                      },
-                    });
-                  }}
-                >
-                  {t("services.deploy")}
-                </Button>
-              </Tooltip>
-              <Tooltip title={selected ? undefined : t("market.selectFirst")}>
-                <Button
-                  type="primary"
-                  size="large"
-                  disabled={!selected}
-                  onClick={() => {
-                    if (!selected) return;
-                    void navigate({
-                      to: "/market/create/$skuId",
-                      params: { skuId: String(selected.id) },
-                      search: {
-                        ...(isCpu ? {} : { gpus: gpuCount }),
-                        ...(period ? { period } : {}),
-                        ...(period && periodCount > 1 ? { count: periodCount } : {}),
-                        ...(isSpot ? { market: "spot" as const } : {}),
-                      },
-                    });
-                  }}
-                >
-                  {t("market.next")}
-                </Button>
-              </Tooltip>
-            </>
+            <Tooltip title={selected ? undefined : t("market.selectFirst")}>
+              <Button
+                type="primary"
+                size="large"
+                disabled={!selected}
+                onClick={() => {
+                  if (!selected) return;
+                  void navigate({
+                    to: "/market/create/$skuId",
+                    params: { skuId: String(selected.id) },
+                    search: {
+                      ...(isCpu ? {} : { gpus: gpuCount }),
+                      ...(period ? { period } : {}),
+                      ...(period && periodCount > 1 ? { count: periodCount } : {}),
+                      ...(isSpot ? { market: "spot" as const } : {}),
+                    },
+                  });
+                }}
+              >
+                {t("market.next")}
+              </Button>
+            </Tooltip>
           ) : (
             <Button
               type="primary"

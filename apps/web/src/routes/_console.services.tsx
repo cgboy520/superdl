@@ -174,7 +174,7 @@ function ServicesPage() {
     <TableErrorEmpty
       isError={false}
       action={
-        <Link to="/market">
+        <Link to="/services/new">
           <Button type="primary">{t("services.deploy")}</Button>
         </Link>
       }
@@ -202,7 +202,7 @@ function ServicesPage() {
       />
       <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
         <Space>
-          <Link to="/market">
+          <Link to="/services/new">
             <Button type="primary">{t("services.deploy")}</Button>
           </Link>
           <Button

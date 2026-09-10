@@ -1158,7 +1158,6 @@ export default interface Resources {
       "colStatus": "状态",
       "copyEndpoint": "复制地址",
       "deploy": "部署服务",
-      "deployFromMarketHint": "把容器发布成带 API Key 的 HTTPS 地址,不用自己实现鉴权",
       "deploying": "服务 {{name}} 部署中",
       "detail": {
         "argsLabel": "启动参数",
@@ -1224,6 +1223,8 @@ export default interface Resources {
         "commandHint": "按空格拆成 exec 形式执行,不经 shell;带空格的参数请逐行填到启动参数",
         "commandLabel": "启动命令",
         "commandPlaceholder": "留空则用镜像 ENTRYPOINT",
+        "diskCreatedButDeployFailed": "数据盘已创建并开始按日计费;服务部署未成功,可在「存储」页管理或删除该盘",
+        "ecoConfirm": "我已知悉,继续部署",
         "endpointLabel": "服务端点",
         "endpointPending": "部署后生成",
         "envLabel": "环境变量",
@@ -1269,6 +1270,7 @@ export default interface Resources {
         "summaryPort": "端口",
         "summarySpec": "规格",
         "summarySsh": "调试 SSH",
+        "walletQueryFailedRetry": "余额查询失败,重试后可部署",
         "withSsh": "同时开放 SSH",
         "withSshHint": "便于调试,会占用一个 SSH 端口;不勾则实例不开 sshd"
       },

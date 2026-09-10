@@ -250,6 +250,9 @@
   Service 与路由),reconciler 的 `pod_unready` 豁免也按它判;它与 `service_id` 同真同假(CHECK 兜底),不承载产品语义。
 - **对外服务的鉴权放在网关,不要求用户容器自己实现。** 用 `extAuth`,一条 SecurityPolicy 挂在 `svc-https` listener 上服务全部端点,
   对象数 O(1),吊销即时生效。约束:**鉴权结果没有任何缓存**,控制面是全部对外服务的同步依赖。见 `docs/reference/services.md`。
+- **部署服务与创建实例的入口分流,不共享页面。** 算力市场结算条只有「下一步:配置实例」一个 CTA,只建开发机;
+  部署服务只从「在线服务」页与命令面板进 `/services/new`,规格在部署页内的紧凑选择器里选。两条链路各自完整,
+  用户从哪个入口进就得到哪种产物,不会在市场页被「下一步:配置实例」带偏。
 - **服务型实例持续 not-ready 不判故障。** `workload_type='service'` 时 reconciler 跳过 `pod_unready` 一支,实例留在
   running,就绪与否如实呈现在服务 Tab;`pod_lost` 与 `node_lost` 两支不豁免——not-ready 判据是用户自己声明的 readinessProbe。配套:服务容器必配 `startupProbe`(15 分钟启动预算)。
   见 `apps/api/tests/test_orchestrator_lifecycle.py::TestServiceWorkloadUnreadyExemption`。
